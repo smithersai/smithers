@@ -361,7 +361,7 @@ describe("FaultMatrix", () => {
         })
     )
 
-    it.effect("crash between journal.emit and cache.put: completion survives, no divergent cache row is recorded", () =>
+    it.effect("rolls back the cache transaction after provenance emission and recovers one linked cache row", () =>
       Effect.gen(function*() {
         const key = "fault/emit-then-cache"
         const result = yield* run(Effect.gen(function*() {
@@ -376,9 +376,12 @@ describe("FaultMatrix", () => {
             Effect.exit
           )
 
+          const cache = yield* CacheStore.CacheStore
+          const beforeRecovery = yield* cache.get(sha256(key))
+          yield* journal.flush
+          const rolledBack = yield* journal.entries({ runId: "crash-after-emit" as never, limit: 50 })
           const second = makeExecutor({ runId: "crash-after-emit", owner: ownerA, key, result: "v3-again" })
           const recovered = yield* second.execute(1)
-          const cache = yield* CacheStore.CacheStore
           const cached = yield* cache.get(sha256(key))
           yield* journal.flush
           const entries = yield* journal.entries({ runId: "crash-after-emit" as never, limit: 50 })
@@ -386,12 +389,17 @@ describe("FaultMatrix", () => {
             crashed,
             recovered,
             cached,
+            beforeRecovery,
+            rolledBack: rolledBack.entries.filter((entry) => entry.eventType === "flows.engine.cache-provenance"),
+            provenance: entries.entries.filter((entry) => entry.eventType === "flows.engine.cache-provenance"),
             dispatches: first.dispatches() + second.dispatches(),
             eventTypes: entries.entries.map((entry) => entry.eventType)
           }
         }))
 
         expect(isCrash(result.crashed)).toBe(true)
+        expect(Option.isNone(result.beforeRecovery)).toBe(true)
+        expect(result.rolledBack).toEqual([])
         expect(result.recovered).toBe("v3")
         expect(result.dispatches).toBe(1)
         expect(result.eventTypes).toContain("flows.engine.attempt-finished")
@@ -400,7 +408,13 @@ describe("FaultMatrix", () => {
         const cached = Option.getOrThrow(result.cached)
         expect(cached.result).toBe("v3")
         expect(cached.recordedRunId).toBe("crash-after-emit")
-        expect(Number.isSafeInteger(cached.recordedEventSeq)).toBe(true)
+        expect(result.provenance.map((entry) => (entry.payload as { readonly action: string }).action))
+          .toEqual(["recorded", "admitted"])
+        expect(cached.recordedEventSeq).toBe(result.provenance[0]!.seq)
+        expect(result.provenance[1]!.payload).toMatchObject({
+          recordedRunId: cached.recordedRunId,
+          recordedEventSeq: cached.recordedEventSeq
+        })
         expect(result.eventTypes).not.toContain("flows.engine.cache-conflict")
       }))
   })

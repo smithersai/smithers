@@ -172,7 +172,10 @@ describe("EngineStore.layer", () => {
     Effect.gen(function*() {
       const calls: Array<JjCall> = []
       const failing = recordingJj(calls, {
-        snapshot: () => Effect.fail({ _tag: "JjError", message: "worktree busy" } as never)
+        snapshot: (message) =>
+          Effect.sync(() => {
+            calls.push({ op: "snapshot", argument: message ?? "" })
+          }).pipe(Effect.andThen(Effect.fail({ _tag: "JjError", message: "worktree busy" } as never)))
       })
       const exit = yield* withCrypto(
         Effect.scoped(
@@ -204,7 +207,7 @@ describe("EngineStore.layer", () => {
       )
 
       expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
-      expect(calls).toEqual([])
+      expect(calls).toEqual([{ op: "snapshot", argument: "smithers action step/two attempt 1" }])
     }))
 
   it.effect("provides a flow engine from the same layer that drives a registered flow to completion", () =>

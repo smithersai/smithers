@@ -27,7 +27,7 @@ const receipt = (child: ChildProcessWithoutNullStreams, status: string): Promise
     })
     child.stdout.on("data", (chunk) => {
       output += String(chunk)
-      for (const line of output.split("\n")) {
+      for (const line of output.split("\n").slice(0, -1)) {
         if (!line.startsWith("{")) continue
         const parsed = JSON.parse(line) as Record<string, unknown>
         if (parsed.status === status) {
@@ -49,6 +49,27 @@ const receipt = (child: ChildProcessWithoutNullStreams, status: string): Promise
 
 // A timed-out case stops awaiting its children; teardown still kills their process groups.
 afterEach(ChildProcesses.reap)
+
+it("receives a receipt split across stdout chunks", async () => {
+  const child = ChildProcesses.spawn(process.execPath, [
+    "-e",
+    `
+    process.stdout.write('engine log\\n{"status":"com');
+    process.stdin.once("data", () => {
+      process.stdout.write('pleted","value":"split"}\\n');
+    });
+  `
+  ])
+  try {
+    const firstChunk = once(child.stdout, "data")
+    const completed = receipt(child, "completed")
+    await firstChunk
+    child.stdin.end("continue")
+    expect(await completed).toEqual({ status: "completed", value: "split" })
+  } finally {
+    await ChildProcesses.kill(child)
+  }
+})
 
 it(
   "SIGKILL during a durable probe wait reattaches, starts once, and returns the result to its original caller",

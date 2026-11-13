@@ -15,6 +15,7 @@ import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Logger, Schema } from "effect"
 import * as ExitEncoding from "../src/internal/ExitEncoding.ts"
+import * as HostReflection from "../src/internal/HostReflection.ts"
 import { RunState } from "../src/RunState.ts"
 
 /** The shape `@smthrs/agent`'s `agent/run` declares: both channels unknown. */
@@ -295,19 +296,21 @@ describe("value projection", () => {
 
   it("fails closed if descriptor introspection itself refuses", () => {
     const target = {}
-    const descriptor = Object.getOwnPropertyDescriptor
-    Object.getOwnPropertyDescriptor = ((value: object, key: PropertyKey) => {
-      if (value === target) throw new Error("descriptor host refused")
-      return descriptor(value, key)
-    }) as typeof Object.getOwnPropertyDescriptor
-    try {
-      expect(ExitEncoding.projectValue(target)).toEqual({
-        type: "object",
-        message: "[unrepresentable]"
-      })
-    } finally {
-      Object.getOwnPropertyDescriptor = descriptor
-    }
+    const projector = ExitEncoding.makeProjector({
+      ...HostReflection.host,
+      getOwnPropertyDescriptor: (value, key) => {
+        if (value === target) throw new Error("descriptor host refused")
+        return HostReflection.host.getOwnPropertyDescriptor(value, key)
+      }
+    })
+    expect(projector.projectValue(target)).toEqual({
+      type: "object",
+      message: "[unrepresentable]"
+    })
+    expect(projector.projectValue({ cause: target }).cause).toEqual({
+      type: "object",
+      message: "[unrepresentable]"
+    })
   })
 })
 
@@ -344,31 +347,20 @@ describe("cause projection", () => {
   it("fails closed if cause or reason descriptor inspection refuses", () => {
     const reason = Cause.makeFailReason("typed")
     const cause = Cause.fromReasons([reason])
-    const descriptor = Object.getOwnPropertyDescriptor
-    Object.getOwnPropertyDescriptor = ((value: object, key: PropertyKey) => {
-      if (value === reason) throw new Error("reason descriptor refused")
-      return descriptor(value, key)
-    }) as typeof Object.getOwnPropertyDescriptor
-    try {
-      expect(ExitEncoding.projectCause(cause)).toEqual([{
+    for (const target of [reason, cause]) {
+      const projector = ExitEncoding.makeProjector({
+        ...HostReflection.host,
+        getOwnPropertyDescriptor: (value, key) => {
+          if (value === target) throw new Error("descriptor host refused")
+          return HostReflection.host.getOwnPropertyDescriptor(value, key)
+        }
+      })
+      expect(projector.projectCause(cause)).toEqual([{
         _tag: "Die",
         error: { type: "object", message: "[unrepresentable]" }
       }])
-    } finally {
-      Object.getOwnPropertyDescriptor = descriptor
-    }
-
-    Object.getOwnPropertyDescriptor = ((value: object, key: PropertyKey) => {
-      if (value === cause) throw new Error("cause descriptor refused")
-      return descriptor(value, key)
-    }) as typeof Object.getOwnPropertyDescriptor
-    try {
-      expect(ExitEncoding.projectCause(cause)).toEqual([{
-        _tag: "Die",
-        error: { type: "object", message: "[unrepresentable]" }
-      }])
-    } finally {
-      Object.getOwnPropertyDescriptor = descriptor
+      expect(projector.projectResult(new Flow.Complete({ exit: Exit.failCause(cause) }), "refused").reasons)
+        .toEqual([{ _tag: "Die", error: { type: "object", message: "[unrepresentable]" } }])
     }
   })
 })
@@ -404,36 +396,38 @@ describe("result projection failure boundaries", () => {
     expect(projected.note).toContain("exceeded the diagnostic projection bound")
   })
 
-  it("fails closed when JSON serialization or Exit prototype inspection refuses", () => {
-    const stringify = JSON.stringify
-    JSON.stringify = (() => {
-      throw new Error("serializer refused")
-    }) as typeof JSON.stringify
-    try {
-      expect(
-        ExitEncoding.projectResult(
-          new Flow.Handoff({ flow: "next", payload: {} }),
-          "serialize"
-        ).note
-      ).toContain("could not be projected")
-    } finally {
-      JSON.stringify = stringify
-    }
+  it("fails closed when JSON serialization refuses", () => {
+    const projector = ExitEncoding.makeProjector({
+      ...HostReflection.host,
+      stringify: () => {
+        throw new Error("serializer refused")
+      }
+    })
+    expect(
+      projector.projectResult(
+        new Flow.Handoff({ flow: "next", payload: {} }),
+        "serialize"
+      ).note
+    ).toContain("could not be projected")
+  })
 
+  it("fails closed when Exit prototype inspection refuses", () => {
     const exit = Exit.succeed("value")
-    const getPrototypeOf = Object.getPrototypeOf
-    Object.getPrototypeOf = ((value: object) => {
-      if (value === exit) throw new Error("prototype host refused")
-      return getPrototypeOf(value)
-    }) as typeof Object.getPrototypeOf
-    try {
-      expect(ExitEncoding.projectResult(
-        { _tag: "Complete", exit } as never,
-        "prototype"
-      )).toMatchObject({ result: "Complete", note: "prototype" })
-    } finally {
-      Object.getPrototypeOf = getPrototypeOf
-    }
+    const projector = ExitEncoding.makeProjector({
+      ...HostReflection.host,
+      getPrototypeOf: (value) => {
+        if (value === exit) throw new Error("prototype host refused")
+        return HostReflection.host.getPrototypeOf(value)
+      }
+    })
+    expect(projector.projectResult(
+      { _tag: "Complete", exit } as never,
+      "prototype"
+    )).toMatchObject({
+      result: "Complete",
+      note: "prototype",
+      reasons: [{ _tag: "Die", error: { type: "object", message: "[unrepresentable]" } }]
+    })
   })
 
   it("degrades a malformed handoff without inventing a flow name", async () => {

@@ -53,7 +53,7 @@ import * as HostReflection from "./HostReflection.ts"
  * `node:util/types` import: the module has to bundle for a browser, and only
  * some hosts can name a proxy at all.
  */
-const { isNativeError, isProxy } = HostReflection.host
+const { isProxy } = HostReflection.host
 
 /**
  * The `_tag` every projection carries, so a reader of `state_json` can tell a
@@ -214,8 +214,8 @@ const text = (value: unknown): string => {
 const minimalValue = (): ValueProjection => ({ type: "object", message: "[unrepresentable]" })
 
 /** Reads only an own data property; accessors are deliberately inert. */
-const ownData = (value: object, name: PropertyKey): unknown => {
-  const descriptor = Object.getOwnPropertyDescriptor(value, name)
+const readOwnData = (reflection: HostReflection.Reflection, value: object, name: PropertyKey): unknown => {
+  const descriptor = reflection.getOwnPropertyDescriptor(value, name)
   return descriptor !== undefined && "value" in descriptor ? descriptor.value : undefined
 }
 
@@ -227,181 +227,202 @@ const failureExitPrototype = Object.getPrototypeOf(Exit.fail(undefined))
 const exitArguments = "~effect/Effect/args"
 
 /**
- * Projects one value — a typed error, a defect, a success value, a handoff
- * payload — into JSON.
+ * Builds projections with the reflective operations supplied by one host.
  *
- * @since 0.1.0
- * @category conversions
+ * @since 1.0.0
+ * @category constructors
  */
-export const projectValue = (value: unknown, depth = 0, seen = new WeakSet<object>()): ValueProjection => {
-  if (value === null || typeof value !== "object") {
-    return {
-      type: value === null ? "null" : typeof value,
-      message: redactedText(text(value))
-    }
-  }
-  // Generic Proxy introspection is observable user code. A host that can name
-  // a proxy from its internal slot rejects it without invoking a trap.
-  if (isProxy(value) || seen.has(value)) return minimalValue()
-  seen.add(value)
-  try {
-    const message = ownData(value, "message")
-    const tag = ownData(value, "_tag")
-    const code = ownData(value, "code")
-    const stack = ownData(value, "stack")
-    const cause = ownData(value, "cause")
-    const projection: {
-      type: string
-      message: string
-      tag?: string
-      code?: string
-      stack?: string
-      cause?: ValueProjection
-    } = {
-      type: typeof tag === "string" && tag.length > 0
-        ? redactedText(tag)
-        : isNativeError(value)
-        ? "Error"
-        : Array.isArray(value)
-        ? "Array"
-        : "object",
-      message: redactedText(typeof message === "string" ? message : text(value))
-    }
-    if (typeof tag === "string") projection.tag = redactedText(tag)
-    if (typeof code === "string") projection.code = redactedText(code)
-    // Native Error stacks are commonly accessors. They remain deliberately
-    // unread; only an already-materialized own data string is retained.
-    if (typeof stack === "string") {
-      projection.stack = redactedText(stack.split("\n").slice(0, maxStackLines).join("\n"))
-    }
-    if (cause !== undefined && depth < maxCauseDepth) {
-      projection.cause = projectValue(cause, depth + 1, seen)
-    }
-    return projection
-  } catch {
-    return minimalValue()
-  }
-}
+export const makeProjector = (reflection: HostReflection.Reflection) => {
+  const { isNativeError, isProxy } = reflection
+  const ownData = (value: object, name: PropertyKey) => readOwnData(reflection, value, name)
 
-const projectReason = (reason: Cause.Reason<unknown>): ReasonProjection => {
-  if (isProxy(reason)) return { _tag: "Die", error: minimalValue() }
-  try {
-    const tag = ownData(reason, "_tag")
-    if (tag === "Fail") return { _tag: "Fail", error: projectValue(ownData(reason, "error")) }
-    if (tag === "Die") return { _tag: "Die", error: projectValue(ownData(reason, "defect")) }
-    const fiberId = ownData(reason, "fiberId")
-    return typeof fiberId === "number" ? { _tag: "Interrupt", fiberId } : { _tag: "Interrupt" }
-  } catch {
-    return { _tag: "Die", error: minimalValue() }
+  /**
+   * Projects one value — a typed error, a defect, a success value, a handoff
+   * payload — into JSON.
+   *
+   * @since 0.1.0
+   * @category conversions
+   */
+  const projectValue = (value: unknown, depth = 0, seen = new WeakSet<object>()): ValueProjection => {
+    if (value === null || typeof value !== "object") {
+      return {
+        type: value === null ? "null" : typeof value,
+        message: redactedText(text(value))
+      }
+    }
+    // Generic Proxy introspection is observable user code. A host that can name
+    // a proxy from its internal slot rejects it without invoking a trap.
+    if (isProxy(value) || seen.has(value)) return minimalValue()
+    seen.add(value)
+    try {
+      const message = ownData(value, "message")
+      const tag = ownData(value, "_tag")
+      const code = ownData(value, "code")
+      const stack = ownData(value, "stack")
+      const cause = ownData(value, "cause")
+      const projection: {
+        type: string
+        message: string
+        tag?: string
+        code?: string
+        stack?: string
+        cause?: ValueProjection
+      } = {
+        type: typeof tag === "string" && tag.length > 0
+          ? redactedText(tag)
+          : isNativeError(value)
+          ? "Error"
+          : Array.isArray(value)
+          ? "Array"
+          : "object",
+        message: redactedText(typeof message === "string" ? message : text(value))
+      }
+      if (typeof tag === "string") projection.tag = redactedText(tag)
+      if (typeof code === "string") projection.code = redactedText(code)
+      // Native Error stacks are commonly accessors. They remain deliberately
+      // unread; only an already-materialized own data string is retained.
+      if (typeof stack === "string") {
+        projection.stack = redactedText(stack.split("\n").slice(0, maxStackLines).join("\n"))
+      }
+      if (cause !== undefined && depth < maxCauseDepth) {
+        projection.cause = projectValue(cause, depth + 1, seen)
+      }
+      return projection
+    } catch {
+      return minimalValue()
+    }
   }
-}
 
-/**
- * Projects every reason of a cause, in order. An absent cause — a
- * `Flow.Suspended` that carries none — projects to no reasons.
- *
- * @since 0.1.0
- * @category conversions
- */
-export const projectCause = (
-  cause: Cause.Cause<unknown> | undefined
-): ReadonlyArray<ReasonProjection> => {
-  if (cause === undefined) return []
-  if (isProxy(cause)) return [{ _tag: "Die", error: minimalValue() }]
-  try {
-    const reasons = ownData(cause, "reasons")
-    if (!Array.isArray(reasons) || isProxy(reasons)) {
+  const projectReason = (reason: Cause.Reason<unknown>): ReasonProjection => {
+    if (isProxy(reason)) return { _tag: "Die", error: minimalValue() }
+    try {
+      const tag = ownData(reason, "_tag")
+      if (tag === "Fail") return { _tag: "Fail", error: projectValue(ownData(reason, "error")) }
+      if (tag === "Die") return { _tag: "Die", error: projectValue(ownData(reason, "defect")) }
+      const fiberId = ownData(reason, "fiberId")
+      return typeof fiberId === "number" ? { _tag: "Interrupt", fiberId } : { _tag: "Interrupt" }
+    } catch {
+      return { _tag: "Die", error: minimalValue() }
+    }
+  }
+
+  /**
+   * Projects every reason of a cause, in order. An absent cause — a
+   * `Flow.Suspended` that carries none — projects to no reasons.
+   *
+   * @since 0.1.0
+   * @category conversions
+   */
+  const projectCause = (
+    cause: Cause.Cause<unknown> | undefined
+  ): ReadonlyArray<ReasonProjection> => {
+    if (cause === undefined) return []
+    if (isProxy(cause)) return [{ _tag: "Die", error: minimalValue() }]
+    try {
+      const reasons = ownData(cause, "reasons")
+      if (!Array.isArray(reasons) || isProxy(reasons)) {
+        return [{ _tag: "Die", error: minimalValue() }]
+      }
+      const projected = reasons.slice(0, maxReasonCount).map(projectReason)
+      if (reasons.length > maxReasonCount) {
+        projected.push({
+          _tag: "Die",
+          error: { type: "truncated", message: `[${reasons.length - maxReasonCount} reasons omitted]` }
+        })
+      }
+      return projected
+    } catch {
       return [{ _tag: "Die", error: minimalValue() }]
     }
-    const projected = reasons.slice(0, maxReasonCount).map(projectReason)
-    if (reasons.length > maxReasonCount) {
-      projected.push({
-        _tag: "Die",
-        error: { type: "truncated", message: `[${reasons.length - maxReasonCount} reasons omitted]` }
-      })
+  }
+
+  const minimalResult = (note: string): ResultProjection => ({
+    _tag: projectionTag,
+    result: "Complete",
+    note,
+    reasons: [{ _tag: "Die", error: minimalValue() }],
+    value: null
+  })
+
+  const withinBudget = (projection: ResultProjection): ResultProjection => {
+    try {
+      return new TextEncoder().encode(reflection.stringify(projection)).length <= maxProjectionBytes
+        ? projection
+        : minimalResult("the rejected settlement exceeded the diagnostic projection bound")
+    } catch {
+      return minimalResult("the rejected settlement could not be projected")
     }
-    return projected
-  } catch {
-    return [{ _tag: "Die", error: minimalValue() }]
   }
-}
 
-const minimalResult = (note: string): ResultProjection => ({
-  _tag: projectionTag,
-  result: "Complete",
-  note,
-  reasons: [{ _tag: "Die", error: minimalValue() }],
-  value: null
-})
-
-const withinBudget = (projection: ResultProjection): ResultProjection => {
-  try {
-    return new TextEncoder().encode(JSON.stringify(projection)).length <= maxProjectionBytes
-      ? projection
-      : minimalResult("the rejected settlement exceeded the diagnostic projection bound")
-  } catch {
-    return minimalResult("the rejected settlement could not be projected")
+  /**
+   * Projects a settlement the flow's codec rejected.
+   *
+   * @since 0.1.0
+   * @category conversions
+   */
+  const projectResult = (
+    result: Flow.Result<unknown, unknown>,
+    note: string
+  ): ResultProjection => {
+    note = truncate(note, maxTextLength)
+    if (isProxy(result)) return minimalResult(note)
+    try {
+      const tag = ownData(result, "_tag")
+      if (tag === "Suspended") {
+        return withinBudget({
+          _tag: projectionTag,
+          result: "Suspended",
+          note,
+          reasons: projectCause(ownData(result, "cause") as Cause.Cause<unknown> | undefined),
+          value: null
+        })
+      }
+      if (tag === "Handoff") {
+        return withinBudget({
+          _tag: projectionTag,
+          result: "Handoff",
+          note,
+          reasons: [],
+          value: projectValue(ownData(result, "payload"))
+        })
+      }
+      const exit = ownData(result, "exit")
+      if (typeof exit !== "object" || exit === null || isProxy(exit)) return minimalResult(note)
+      const prototype = reflection.getPrototypeOf(exit)
+      const argument = ownData(exit, exitArguments)
+      if (prototype !== successExitPrototype && prototype !== failureExitPrototype) return minimalResult(note)
+      return withinBudget(
+        prototype === successExitPrototype
+          ? {
+            _tag: projectionTag,
+            result: "Complete",
+            note,
+            reasons: [],
+            value: projectValue(argument)
+          }
+          : {
+            _tag: projectionTag,
+            result: "Complete",
+            note,
+            reasons: projectCause(argument as Cause.Cause<unknown> | undefined),
+            value: null
+          }
+      )
+    } catch {
+      return minimalResult(note)
+    }
   }
+
+  return { projectValue, projectCause, projectResult }
 }
 
 /**
- * Projects a settlement the flow's codec rejected.
+ * Default projections use this host's reflection.
  *
  * @since 0.1.0
  * @category conversions
  */
-export const projectResult = (
-  result: Flow.Result<unknown, unknown>,
-  note: string
-): ResultProjection => {
-  note = truncate(note, maxTextLength)
-  if (isProxy(result)) return minimalResult(note)
-  try {
-    const tag = ownData(result, "_tag")
-    if (tag === "Suspended") {
-      return withinBudget({
-        _tag: projectionTag,
-        result: "Suspended",
-        note,
-        reasons: projectCause(ownData(result, "cause") as Cause.Cause<unknown> | undefined),
-        value: null
-      })
-    }
-    if (tag === "Handoff") {
-      return withinBudget({
-        _tag: projectionTag,
-        result: "Handoff",
-        note,
-        reasons: [],
-        value: projectValue(ownData(result, "payload"))
-      })
-    }
-    const exit = ownData(result, "exit")
-    if (typeof exit !== "object" || exit === null || isProxy(exit)) return minimalResult(note)
-    const prototype = Object.getPrototypeOf(exit)
-    const argument = ownData(exit, exitArguments)
-    if (prototype !== successExitPrototype && prototype !== failureExitPrototype) return minimalResult(note)
-    return withinBudget(
-      prototype === successExitPrototype
-        ? {
-          _tag: projectionTag,
-          result: "Complete",
-          note,
-          reasons: [],
-          value: projectValue(argument)
-        }
-        : {
-          _tag: projectionTag,
-          result: "Complete",
-          note,
-          reasons: projectCause(argument as Cause.Cause<unknown> | undefined),
-          value: null
-        }
-    )
-  } catch {
-    return minimalResult(note)
-  }
-}
+export const { projectValue, projectCause, projectResult } = makeProjector(HostReflection.host)
 
 /**
  * The encoded settlement written in place of one the codec rejected.
@@ -414,8 +435,8 @@ export const projectResult = (
  */
 const degrade = (result: Flow.Result<unknown, unknown>, projection: ResultProjection): unknown => {
   try {
-    if (!isProxy(result) && ownData(result, "_tag") === "Handoff") {
-      const flow = ownData(result, "flow")
+    if (!isProxy(result) && readOwnData(HostReflection.host, result, "_tag") === "Handoff") {
+      const flow = readOwnData(HostReflection.host, result, "flow")
       if (typeof flow === "string") return { _tag: "Handoff", flow, payload: projection, capabilityCeilings: [[]] }
     }
   } catch {

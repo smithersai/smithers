@@ -46,7 +46,7 @@ export interface BuiltinSource {
 }
 
 /**
- * The predicates a projection needs.
+ * The reflective operations a projection needs.
  *
  * @since 1.0.0
  * @category models
@@ -56,6 +56,12 @@ export interface Reflection {
   readonly isProxy: (value: object) => boolean
   /** Whether this value carries the error internal slot, in any realm. */
   readonly isNativeError: (value: unknown) => boolean
+  /** Reads an own property without invoking its accessor. */
+  readonly getOwnPropertyDescriptor: typeof Object.getOwnPropertyDescriptor
+  /** Reads an object's prototype. */
+  readonly getPrototypeOf: typeof Object.getPrototypeOf
+  /** Serializes a plain diagnostic projection. */
+  readonly stringify: typeof JSON.stringify
 }
 
 /**
@@ -112,7 +118,10 @@ export const make = (source: BuiltinSource | undefined): Reflection => {
   const types = builtinTypes(source)
   return {
     isProxy: typeof types?.isProxy === "function" ? types.isProxy : undetectableProxy,
-    isNativeError: typeof types?.isNativeError === "function" ? types.isNativeError : taggedNativeError
+    isNativeError: typeof types?.isNativeError === "function" ? types.isNativeError : taggedNativeError,
+    getOwnPropertyDescriptor: Object.getOwnPropertyDescriptor,
+    getPrototypeOf: Object.getPrototypeOf,
+    stringify: JSON.stringify
   }
 }
 

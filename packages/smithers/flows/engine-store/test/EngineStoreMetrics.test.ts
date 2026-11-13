@@ -304,7 +304,8 @@ describe("EngineStoreMetrics", () => {
     expect(observed.failed).toEqual(Exit.fail("typed"))
     // The original cause travels through untouched: the defect is the same
     // object, not a copy or a message.
-    expect(Exit.isFailure(observed.died) && Cause.hasDies(observed.died.cause)).toBe(true)
+    expect(Exit.isFailure(observed.died)).toBe(true)
+    if (Exit.isFailure(observed.died)) expect(Cause.squash(observed.died.cause)).toBe(defect)
     expect(Exit.isFailure(observed.interrupted) && Cause.hasInterruptsOnly(observed.interrupted.cause)).toBe(true)
     expect(observed.success).toBe(1)
     // The typed failure and the defect both classify as `failure`; only an

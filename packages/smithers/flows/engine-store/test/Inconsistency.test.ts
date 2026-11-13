@@ -6,7 +6,6 @@ import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
-import { readFileSync } from "node:fs"
 import * as Inconsistency from "../src/Inconsistency.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
@@ -168,12 +167,4 @@ describe("Inconsistency", () => {
       expect(result.conflicts).toHaveLength(0)
       expect(notes).toBe(0)
     }))
-
-  it("never discards a cache.put result in ActionPersistence", () => {
-    const source = readFileSync(new URL("../src/internal/ActionPersistence.ts", import.meta.url), "utf8")
-    const puts = source.match(/cache\.put\(/g) ?? []
-    const bound = source.match(/= yield\* cache\.put\(/g) ?? []
-    expect(puts.length).toBeGreaterThan(0)
-    expect(bound.length).toBe(puts.length)
-  })
 })

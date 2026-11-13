@@ -10,6 +10,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as RunParentStatements from "../src/internal/RunParentStatements.ts"
 import * as Migrations from "../src/Migrations.ts"
 import { withCrypto } from "./Sha256.ts"
 
@@ -73,8 +74,7 @@ describe("SQL DurableEngineState", () => {
       yield* state.recordRunParent("child", "parent")
       const plan = yield* TestDatabase.explain(
         sql,
-        sql`SELECT COALESCE(MAX(seq), 0) + 1 FROM flows_run_parents WHERE TRUE
-      `
+        RunParentStatements.insert(sql, "planned-child", "planned-parent")
       )
       expect(plan.map((row) => row.detail).join("\n")).toContain("flows_run_parents_seq_idx")
       expect(yield* state.runParents("child")).toEqual([{ childId: "child", parentId: "parent", seq: 2 }])

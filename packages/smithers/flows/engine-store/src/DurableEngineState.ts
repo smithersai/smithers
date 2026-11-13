@@ -30,6 +30,7 @@ import * as AttemptProbe from "./internal/AttemptProbe.ts"
 import * as EngineStateSchema from "./internal/EngineStateSchema.ts"
 import { compareText } from "./internal/Ordering.ts"
 import * as PendingRunStatements from "./internal/PendingRunStatements.ts"
+import * as RunParentStatements from "./internal/RunParentStatements.ts"
 import type { OnParentExit } from "./RunState.ts"
 
 /**
@@ -1980,24 +1981,6 @@ const hasRunChildren = (db: Database, id: string): Effect.Effect<boolean> =>
     Effect.map((rows) => rows.length > 0)
   )
 
-/** Inserts an edge; `true` unless the pair was there already. */
-const insertRunParentRow = (db: Database, childId: string, parentId: string) =>
-  // MAX(seq)+1 reads what has committed. Every writer of an edge holds its
-  // child's partition and its parent's, or the whole schema, so the seq rises
-  // along each child's edges and along each parent's, which is the order the
-  // readers page by; two unrelated edges may share one.
-  db.sql<RunParentDatabaseRow>`
-    INSERT INTO flows_run_parents (child_id, parent_id, seq)
-    SELECT ${childId}, ${parentId}, COALESCE(MAX(seq), 0) + 1
-    FROM flows_run_parents
-    WHERE TRUE
-    ON CONFLICT (child_id, parent_id) DO NOTHING
-    RETURNING
-      child_id AS "childId",
-      parent_id AS "parentId",
-      seq AS "seq"
-  `
-
 /** The outcome of an insert that found its pair already written by another. */
 const existingRunParent = (db: Database, childId: string, parentId: string) =>
   Effect.gen(function*() {
@@ -2034,7 +2017,7 @@ const insertLeafRunParent = (db: Database, childId: string, parentId: string) =>
     db.writer.write(
       Effect.gen(function*() {
         if (yield* hasRunChildren(db, childId)) return yield* insertCheckedRunParent(db, childId, parentId)
-        const inserted = yield* insertRunParentRow(db, childId, parentId)
+        const inserted = yield* RunParentStatements.insert(db.sql, childId, parentId)
         return inserted[0] === undefined
           ? yield* existingRunParent(db, childId, parentId)
           : { _tag: "Recorded" as const, edge: yield* decodeRunParentEdge(inserted[0]) }
@@ -2059,7 +2042,7 @@ const insertLeafRunParent = (db: Database, childId: string, parentId: string) =>
 const insertCheckedRunParent = (db: Database, childId: string, parentId: string) =>
   db.writer.write(
     Effect.gen(function*() {
-      const inserted = yield* insertRunParentRow(db, childId, parentId)
+      const inserted = yield* RunParentStatements.insert(db.sql, childId, parentId)
       if (inserted[0] === undefined) return yield* existingRunParent(db, childId, parentId)
       const cycle = yield* findCyclePath(childId, parentId, (id) => parentIdsOf(db, id))
       if (cycle !== undefined) return yield* Effect.fail(new RunParentCycleError({ path: cycle }))
