@@ -6,6 +6,7 @@
  */
 
 import * as BoundedJson from "@smthrs/canonical/BoundedJson"
+import * as Option from "effect/Option"
 
 /**
  * Strict JSON accepted by agent and CLI invocations.
@@ -148,6 +149,47 @@ export const inspectRecord = (
       output[key] = descriptor.value
     }
     return { ok: true, value: Object.freeze(output) }
+  } catch {
+    return { ok: false, path: "$", complaint: "could not be inspected without executing user code" }
+  }
+}
+
+// Effect keeps an Option's tag on the prototype every `Some` or `None`
+// shares, one step above the value. The walk stops after this many
+// prototypes, so a proxy that reports itself as its own prototype cannot
+// stall it.
+const maximumTagDepth = 4
+
+const inheritedDescriptor = (input: object, key: string): PropertyDescriptor | undefined => {
+  let target: object | null = input
+  for (let depth = 0; target !== null && depth <= maximumTagDepth; depth++) {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key)
+    if (descriptor !== undefined) return descriptor
+    target = Object.getPrototypeOf(target) as object | null
+  }
+  return undefined
+}
+
+/**
+ * Copies an Effect `Option` by its tag and payload data descriptors, without
+ * invoking accessors.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export const inspectOption = (input: unknown): Admission<Option.Option<unknown>> => {
+  try {
+    if (!Option.isOption(input)) return { ok: false, path: "$", complaint: "must be an Option" }
+    const tag = inheritedDescriptor(input, "_tag")
+    if (tag === undefined || !("value" in tag) || (tag.value !== "Some" && tag.value !== "None")) {
+      return { ok: false, path: "$._tag", complaint: "must be a data property tagged Some or None" }
+    }
+    if (tag.value === "None") return { ok: true, value: Option.none() }
+    const payload = Object.getOwnPropertyDescriptor(input, "value")
+    if (payload === undefined || !("value" in payload)) {
+      return { ok: false, path: "$.value", complaint: "must be an own data property" }
+    }
+    return { ok: true, value: Option.some(payload.value) }
   } catch {
     return { ok: false, path: "$", complaint: "could not be inspected without executing user code" }
   }

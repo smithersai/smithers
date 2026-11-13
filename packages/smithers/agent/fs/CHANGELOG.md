@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `Route.snapshot` reads an `Option`'s tag and payload as data properties, so
+  an accessor inside `description`, `placement`, or `ui` fails with
+  `invalid_route` instead of running.
+
 ## [0.1.0] - 2026-09-01
 
 ### Added

@@ -543,7 +543,10 @@ Validation enforces: `name` equals the slash-joined segments after Unicode
 NFC normalization; segments are non-empty, bounded, and free of `.`, `..`,
 and `/`; `kind` is a known `Kind`; `sourcePath` is absolute (a `file:///`
 URL, a POSIX root, or a drive-letter path); text fields are bounded,
-well-formed, and free of NUL; schema locators carry a known `_tag`;
+well-formed, and free of NUL; `description`, `placement`, and `ui` are Effect
+`Option` values whose tag and payload are read as data properties, so an
+accessor in either fails without running; schema locators carry a known
+`_tag`;
 `effects.mode` is `hermetic` or `expected`; `effects.onConflict` is
 `serialize`, `lane`, or `fail`; `effects.tier` is `sealed`, `compensable`, or
 `irreversible`; and `placement` is one of the four `Directive.Literal`

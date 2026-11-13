@@ -1,3 +1,4 @@
+import * as Option from "effect/Option"
 import { describe, expect, it, vi } from "vitest"
 import * as Boundary from "../src/internal/Boundary.ts"
 
@@ -224,5 +225,76 @@ describe("the inert fs boundary", () => {
     const accessor = Object.defineProperty(["a"], "0", { enumerable: true, get: getter })
     expect(Boundary.stringArray(accessor, options)).toMatchObject({ ok: false })
     expect(getter).not.toHaveBeenCalled()
+  })
+})
+
+describe("option admission", () => {
+  it("copies the tag and payload of an Effect Option through data descriptors", () => {
+    expect(Boundary.inspectOption(Option.none())).toEqual({ ok: true, value: Option.none() })
+    const payload = { nested: true }
+    const original = Option.some(payload)
+    const some = Boundary.inspectOption(original)
+    expect(some).toEqual({ ok: true, value: Option.some(payload) })
+    expect(some.ok && Option.isSome(some.value) ? some.value.value : undefined).toBe(payload)
+    expect(some.ok && some.value).not.toBe(original)
+    const hidden = Object.defineProperty(Option.some("original"), "value", { enumerable: false, value: "hidden" })
+    expect(Boundary.inspectOption(hidden)).toEqual({ ok: true, value: Option.some("hidden") })
+  })
+
+  it("refuses values that are not Options", () => {
+    for (const value of [undefined, null, 1, "Some", {}, { _tag: "None" }, { _tag: "Some", value: 1 }]) {
+      expect(Boundary.inspectOption(value)).toEqual({ ok: false, path: "$", complaint: "must be an Option" })
+    }
+  })
+
+  it("refuses an Option whose tag is not a known data property within reach", () => {
+    const tagGetter = vi.fn(() => "None")
+    const accessorTag = Object.defineProperty(Object.create(Option.none()), "_tag", {
+      enumerable: true,
+      get: tagGetter
+    })
+    const unknownTag = Object.create(Option.none(), { _tag: { value: "Other", enumerable: true } })
+    const untagged = Object.assign(Object.create(null), { "~effect/Option": {} })
+    let distant: object = { "~effect/Option": {}, _tag: "None" }
+    for (let depth = 0; depth < 5; depth++) distant = Object.create(distant)
+    const cyclic: object = new Proxy({ "~effect/Option": {} }, { getPrototypeOf: () => cyclic })
+    for (const value of [accessorTag, unknownTag, untagged, distant, cyclic]) {
+      expect(Boundary.inspectOption(value)).toEqual({
+        ok: false,
+        path: "$._tag",
+        complaint: "must be a data property tagged Some or None"
+      })
+    }
+    expect(tagGetter).not.toHaveBeenCalled()
+  })
+
+  it("refuses a Some whose payload is not an own data property, without reading it", () => {
+    const getter = vi.fn(() => "read")
+    const ownAccessor = Object.defineProperty(Option.some("original"), "value", { enumerable: true, get: getter })
+    const inheritedAccessor = Object.create(
+      Object.defineProperty(Option.some("original"), "value", { enumerable: true, get: getter })
+    )
+    const missing = Object.create(Object.getPrototypeOf(Option.some("original")))
+    for (const value of [ownAccessor, inheritedAccessor, missing]) {
+      expect(Boundary.inspectOption(value)).toEqual({
+        ok: false,
+        path: "$.value",
+        complaint: "must be an own data property"
+      })
+    }
+    expect(getter).not.toHaveBeenCalled()
+  })
+
+  it("refuses an Option whose reflection throws", () => {
+    const hostile = new Proxy(Option.some("original"), {
+      getPrototypeOf: () => {
+        throw new Error("trap")
+      }
+    })
+    expect(Boundary.inspectOption(hostile)).toEqual({
+      ok: false,
+      path: "$",
+      complaint: "could not be inspected without executing user code"
+    })
   })
 })

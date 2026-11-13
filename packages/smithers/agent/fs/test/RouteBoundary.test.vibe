@@ -156,6 +156,26 @@ describe("Route boundary", () => {
     }
   })
 
+  it.effect("rejects accessor tags and payloads inside Option fields without reading them", effect () => {
+    const base = makeRoute("review")
+    const getter = vi.fn(() => "/absolute/ui.tsx")
+    const accessorPayload = () => Object.defineProperty(Option.some("original"), "value", { enumerable: true, get: getter })
+    const tagGetter = vi.fn(() => "None")
+    const accessorTag = () =>
+      Object.defineProperty(Object.create(Option.none()), "_tag", { enumerable: true, get: tagGetter })
+    for (const hostile of [accessorPayload, accessorTag]) {
+      expect((try failureOf(Route.snapshot({ ...base, description: hostile() as never }))).code).toBe("invalid_route")
+      expect((try failureOf(Route.snapshot({ ...base, placement: hostile() as never }))).code).toBe("invalid_route")
+      expect((try failureOf(Route.snapshot({ ...base, ui: hostile() as never }))).code).toBe("invalid_route")
+    }
+    expect(try failureOf(Route.snapshot({ ...base, ui: accessorPayload() as never }))).toMatchObject({
+      code: "invalid_route",
+      path: "$.ui.value"
+    })
+    expect(getter).not.toHaveBeenCalled()
+    expect(tagGetter).not.toHaveBeenCalled()
+  })
+
   it.effect("canonicalizes route identity to NFC", effect () => {
     const route = try Route.snapshot(makeRoute("café/list"))
     expect(route.name).toBe("café/list")

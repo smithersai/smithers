@@ -189,9 +189,9 @@ const schemaFields = effect (
 }
 
 const inspectOption = effect (input: unknown, path: string): Option.Option<unknown>!FsError => {
-  const option = try inspect(() => Option.isOption(input) ? input : undefined, path)
-  if (option === undefined) throw invalidRoute(path)
-  return try inspect(() => option._tag === "None" ? Option.none() : Option.some(option.value), path)
+  const admitted = try inspect(() => Boundary.inspectOption(input), path)
+  if (!admitted.ok) throw invalidRoute(`${path}${admitted.path.slice(1)}`)
+  return admitted.value
 }
 
 const optionText = effect (

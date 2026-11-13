@@ -72,8 +72,9 @@ Route metadata violated the immutable contract: a `name` that does not equal
 its slash-joined segments, an empty or `.`/`..`/slash-carrying segment, a
 relative `sourcePath`, an unknown `kind` or schema locator tag, an unknown
 `effects` mode, conflict policy, or tier, or a container the boundary cannot
-inspect without executing user code. Construct routes through
-`FileRouter.scan` or validate hand-built ones with `Route.snapshot`.
+inspect without executing user code, such as an `Option` whose tag or payload
+is an accessor. Construct routes through `FileRouter.scan` or validate
+hand-built ones with `Route.snapshot`.
 
 ## Command resolution failures
 
