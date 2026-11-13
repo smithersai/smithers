@@ -1,11 +1,13 @@
 import { ConfigProvider, Effect, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
+import { HttpEffect } from "effect/http"
 import { expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
+import * as TestDatabase from "../db/TestDatabase.ts"
 import * as TimelineSummaries from "./TimelineSummaries.ts"
 import { TIMELINE_SUMMARIES_ROUTE } from "../src/features/timeline/contract.ts"
-import { segmentRevision } from "../src/features/timeline/identity.ts"
-import { answers, harness, testFile } from "./test/harness.ts"
+import { revisionOf, segmentRevision } from "../src/features/timeline/identity.ts"
+import { answers, branchRoles, eventually, harness, signedIn, testFile } from "./test/harness.ts"
 
 const runtime = testFile("timeline_summaries")
 const person = (id: string) => ({ subject: { kind: "person" as const, id }, role: "member" as const })
@@ -34,23 +36,127 @@ const exchange = async (status = "done", conversationId?: string) => {
 const poster = (h: Awaited<ReturnType<typeof harness>>, run = owner) => (body: unknown) =>
   h.fetch(TIMELINE_SUMMARIES_ROUTE, { method: "POST", body: typeof body === "string" ? body : JSON.stringify(typeof body === "object" && body !== null && "op" in body ? { owner: run, ...body } : body) })
 
+/** The same full-content identity the timeline sends for this stored message. */
+const currentRevision = async (messageId: string) => {
+  const [row] = await sql(sql => sql<{ readonly id: string; readonly role: string; readonly text: string }>`SELECT id, role, text FROM messages WHERE id = ${messageId}`)
+  return revisionOf(row!)
+}
+const summaryRow = (messageId: string) =>
+  sql(sql => sql`SELECT summary, summary_revision AS revision FROM messages WHERE id = ${messageId}`)
+
+test("recorded summaries acknowledge replays without replacing their text or a newer revision", async () => {
+  const h = await harness(runtime, answers("Hi"), { actor })
+  const { answer } = await exchange()
+  const first = { messageId: answer, revision: await currentRevision(answer) }
+  const post = poster(h)
+  await post({ op: "claim", ...first, reason: "answer" })
+  expect((await post({ op: "record", ...first, summary: "First answer" })).status).toBe(200)
+  const before = await sql(sql => sql`SELECT recorded_at FROM timeline_summaries WHERE message_id = ${answer}`)
+  expect((await post({ op: "record", ...first, summary: "Changed replay" })).status).toBe(200)
+  expect(await summaryRow(answer)).toEqual([{ summary: "First answer", revision: first.revision }])
+  await sql(sql => sql`UPDATE messages SET text = 'The answer changed.' WHERE id = ${answer}`)
+  const next = { messageId: answer, revision: await currentRevision(answer) }
+  await post({ op: "claim", ...next, reason: "answer" })
+  expect((await post({ op: "record", ...next, summary: "New answer" })).status).toBe(200)
+  const replay = await post({ op: "record", ...first, summary: "First answer" })
+  expect([replay.status, await replay.json()]).toEqual([200, { recorded: true }])
+  expect(await summaryRow(answer)).toEqual([{ summary: "New answer", revision: next.revision }])
+  expect(await sql(sql => sql`SELECT recorded_at FROM timeline_summaries WHERE message_id = ${answer} AND revision = ${first.revision}`)).toEqual(before)
+})
+
+test("a late first record refuses changed content without consuming its claim", async () => {
+  const h = await harness(runtime, answers("Hi"), { actor })
+  const { answer } = await exchange()
+  const key = { messageId: answer, revision: await currentRevision(answer) }
+  await poster(h)({ op: "claim", ...key, reason: "answer" })
+  await sql(sql => sql`UPDATE messages SET text = 'A newer answer.' WHERE id = ${answer}`)
+  const response = await poster(h)({ op: "record", ...key, summary: "Old answer" })
+  expect([response.status, await response.json()]).toEqual([409, { code: "stale" }])
+  expect(await summaryRow(answer)).toEqual([{ summary: null, revision: null }])
+  expect(await sql(sql => sql`SELECT recorded_at FROM timeline_summaries WHERE message_id = ${answer}`)).toEqual([{ recorded_at: null }])
+  expect(h.line("timeline.summary.claim").at(-1)!.annotations).toMatchObject({ status: 409, outcome: "stale" })
+})
+
+test.each([false, true])("recording is serialized with other records and content edits (edit: %s)", async edit => {
+  const h = await harness(runtime, answers("Hi"), { actor })
+  const { answer } = await exchange()
+  const key = { messageId: answer, revision: await currentRevision(answer) }
+  await poster(h)({ op: "claim", ...key, reason: "answer" })
+  const release = resolvers(), holding = resolvers()
+  let pid = 0
+  const held = sql(sql => sql.withTransaction(Effect.gen(function* () {
+    const [backend] = yield* sql<{ readonly pid: number }>`SELECT pg_backend_pid() AS pid`
+    pid = backend!.pid
+    yield* sql`SELECT id FROM messages WHERE id = ${answer} FOR UPDATE`
+    if (edit) yield* sql`UPDATE messages SET text = 'Changed while recording.' WHERE id = ${answer}`
+    yield* Effect.sync(holding.resolve)
+    yield* Effect.promise(() => release.promise)
+  })))
+  await holding.promise
+  const responses: Array<Promise<Response>> = []
+  // Count real lock waiters, including a second recorder queued behind the first.
+  const waitFor = (count: number) => eventually(async () => {
+    const [row] = await sql(sql => sql<{ readonly n: number }>`
+      WITH RECURSIVE waiting AS (
+        SELECT pid FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))
+        UNION SELECT a.pid FROM pg_stat_activity a JOIN waiting w ON w.pid = ANY(pg_blocking_pids(a.pid))
+      ) SELECT count(*)::int AS n FROM waiting`)
+    return row!.n >= count
+  }, 10_000)
+  try {
+    responses.push(poster(h)({ op: "record", ...key, summary: "First recorder" }))
+    await waitFor(1)
+    if (!edit) {
+      responses.push(poster(h)({ op: "record", ...key, summary: "Second recorder" }))
+      await waitFor(2)
+    }
+  } finally {
+    release.resolve()
+    await held
+  }
+  for (const response of await Promise.all(responses)) {
+    expect([response.status, await response.json()]).toEqual(edit
+      ? [409, { code: "stale" }]
+      : [200, { recorded: true }])
+  }
+  expect(await summaryRow(answer)).toEqual(edit
+    ? [{ summary: null, revision: null }]
+    : [{ summary: "First recorder", revision: key.revision }])
+})
+
+test("an unreadable summary body is refused before it can claim or record anything", async () => {
+  const { database } = await runtime.runPromise(TestDatabase.Scratch)
+  const { write } = await runtime.runPromise(TimelineSummaries.make(database))
+  // Exercise the handler's own body guard, before a host's admission middleware.
+  const handle = HttpEffect.toWebHandler(write.pipe(
+    Effect.provide(signedIn(actor)),
+    Effect.provide(branchRoles(database)),
+  ))
+  const response = await handle(new Request(`http://chat.test${TIMELINE_SUMMARIES_ROUTE}`, {
+    method: "POST", body: new Uint8Array([0xff]),
+  }))
+  expect([response.status, await response.json()]).toEqual([400, { code: "invalid_request" }])
+  expect(await sql(sql => sql`SELECT message_id FROM timeline_summaries`)).toEqual([])
+})
+
 test("the first claim of an answer's revision takes it for every tab, device and person; its summary lands on the message", async () => {
   const h = await harness(runtime, answers("Hi"), { actor })
   const other = await harness(runtime, answers("Hi"), { actor: person("summary-other") })
   const { answer } = await exchange()
-  const claim = { op: "claim", messageId: answer, revision: revision(1), reason: "long_answer" }
+  const rev = await currentRevision(answer)
+  const claim = { op: "claim", messageId: answer, revision: rev, reason: "long_answer" }
   const first = await poster(h)(claim)
   expect([first.status, await first.json()]).toEqual([200, { claimed: true }])
   // The same person's other tab, and another person, are told it is taken.
   for (const who of [poster(h, rival), poster(other, rival)]) expect(await (await who(claim)).json()).toEqual({ claimed: false })
   // Only the claimant records it, onto the message every device syncs.
-  expect((await poster(other)({ op: "record", messageId: answer, revision: revision(1), summary: "Retry kept both attempts" })).status).toBe(409)
-  const recorded = await poster(h)({ op: "record", messageId: answer.toUpperCase(), revision: revision(1), summary: "Retry kept both attempts" })
+  expect((await poster(other)({ op: "record", messageId: answer, revision: rev, summary: "Retry kept both attempts" })).status).toBe(409)
+  const recorded = await poster(h)({ op: "record", messageId: answer.toUpperCase(), revision: rev, summary: "Retry kept both attempts" })
   expect([recorded.status, await recorded.json()]).toEqual([200, { recorded: true }])
   // Recording again (a replay) writes the same summary.
-  expect((await poster(h)({ op: "record", messageId: answer, revision: revision(1), summary: "Retry kept both attempts" })).status).toBe(200)
+  expect((await poster(h)({ op: "record", messageId: answer, revision: rev, summary: "Retry kept both attempts" })).status).toBe(200)
   expect(await sql(sql => sql`SELECT summary, summary_revision AS revision FROM messages WHERE id = ${answer}`))
-    .toEqual([{ summary: "Retry kept both attempts", revision: revision(1) }])
+    .toEqual([{ summary: "Retry kept both attempts", revision: rev }])
   expect(await sql(sql => sql`SELECT person_id, reason, recorded_at IS NOT NULL AS recorded FROM timeline_summaries WHERE message_id = ${answer}`))
     .toEqual([{ person_id: actor.subject.id, reason: "long_answer", recorded: true }])
   // New content is a new revision, claimable once more.
@@ -105,8 +211,9 @@ test("the route refuses what isn't a person's finished answer they may view", as
 test("a question is claimed like an answer: every settled message gets its summary", async () => {
   const h = await harness(runtime, answers("Hi"), { actor })
   const { question } = await exchange()
-  expect(await (await poster(h)({ op: "claim", messageId: question, revision: revision(5), reason: "question" })).json()).toEqual({ claimed: true })
-  expect((await poster(h)({ op: "record", messageId: question, revision: revision(5), summary: "Check the retry" })).status).toBe(200)
+  const rev = await currentRevision(question)
+  expect(await (await poster(h)({ op: "claim", messageId: question, revision: rev, reason: "question" })).json()).toEqual({ claimed: true })
+  expect((await poster(h)({ op: "record", messageId: question, revision: rev, summary: "Check the retry" })).status).toBe(200)
   expect(await sql(sql => sql`SELECT summary FROM messages WHERE id = ${question}`)).toEqual([{ summary: "Check the retry" }])
 })
 
@@ -128,7 +235,8 @@ test("a claim whose model never answered is free again, for anyone, and every at
   const h = await harness(runtime, answers("Hi"), { actor: person("release-person"), config: { TIMELINE_SUMMARY_DAILY_CAP: "2" } })
   const other = await harness(runtime, answers("Hi"), { actor: person("release-other") })
   const { answer } = await exchange()
-  const key = { messageId: answer, revision: revision(6) }
+  const rev = await currentRevision(answer)
+  const key = { messageId: answer, revision: rev }
   const claim = { op: "claim", ...key, reason: "answer" }
   expect(await (await poster(h)(claim)).json()).toEqual({ claimed: true })
   // Someone else's claim isn't theirs to free.
@@ -143,7 +251,7 @@ test("a claim whose model never answered is free again, for anyone, and every at
   expect(await (await poster(other, rival)(claim)).json()).toEqual({ claimed: false })
   // Two attempts spent the cap of two: an outage can't re-claim for ever.
   const next = await exchange()
-  expect((await poster(h)({ op: "claim", messageId: next.answer, revision: revision(6), reason: "answer" })).status).toBe(429)
+  expect((await poster(h)({ op: "claim", messageId: next.answer, revision: rev, reason: "answer" })).status).toBe(429)
 })
 
 test("a claim a closed tab left behind can be taken after ten minutes, not before", async () => {
@@ -332,14 +440,15 @@ test("every attempt stays its person's and its day's, whoever takes the claim ne
 test("the run that holds a claim resumes it for free after a crash, and nobody else's run does", async () => {
   const h = await harness(runtime, answers("Hi"), { actor: person("resuming"), config: { TIMELINE_SUMMARY_DAILY_CAP: "1" } })
   const { answer } = await exchange()
-  const claim = { op: "claim", messageId: answer, revision: revision(25), reason: "answer" }
+  const rev = await currentRevision(answer)
+  const claim = { op: "claim", messageId: answer, revision: rev, reason: "answer" }
   expect(await (await poster(h)(claim)).json()).toEqual({ claimed: true })
   // At the cap, and back after a crash: the attempt is already paid for.
   expect(await (await poster(h)(claim)).json()).toEqual({ claimed: true })
   expect(h.line("timeline.summary.claim").at(-1)!.annotations).toMatchObject({ outcome: "resumed" })
-  expect((await poster(h, rival)({ op: "record", messageId: answer, revision: revision(25), summary: "Stolen" })).status).toBe(409)
-  await poster(h, rival)({ op: "release", messageId: answer, revision: revision(25) })
-  expect((await poster(h)({ op: "record", messageId: answer, revision: revision(25), summary: "Retried twice" })).status).toBe(200)
+  expect((await poster(h, rival)({ op: "record", messageId: answer, revision: rev, summary: "Stolen" })).status).toBe(409)
+  await poster(h, rival)({ op: "release", messageId: answer, revision: rev })
+  expect((await poster(h)({ op: "record", messageId: answer, revision: rev, summary: "Retried twice" })).status).toBe(200)
   // A replay past the record resumes too, and records the same.
   expect(await (await poster(h)(claim)).json()).toEqual({ claimed: true })
   const key = await exchanges(4)

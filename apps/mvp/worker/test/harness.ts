@@ -112,6 +112,8 @@ export const contents = (request: ModelRequest.ModelRequest) =>
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
 
 interface HarnessOptions {
+  /** Host write-body admission; false only when testing a handler's own body guard. */
+  readonly admitBody?: boolean
   /** ChatApi's configuration, in place of the environment. */
   readonly config?: Record<string, string>
   /** The database ChatApi connects to: the file's schema unless set. */
@@ -257,7 +259,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
   })
   const handler = HttpEffect.toWebHandler(
     observed(
-      afterBody(routed).pipe(
+      (options.admitBody === false ? routed : afterBody(routed)).pipe(
         Effect.provideService(BodyLimits.ModelBytes, modelBytes),
         Effect.provideService(Flows.FlowStarter, starter),
         Effect.provideService(Flows.TaskAnswers, options.answers ?? Flows.TaskAnswers.of({ answer: () => Effect.succeed(false) })),

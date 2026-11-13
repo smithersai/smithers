@@ -188,10 +188,14 @@ const insert = (view: Stored, conversationId: string) =>
     return row === undefined ? undefined : Number(row.txid)
   })
 
-/** Whether the view under `view`'s id is `view` itself, in the same conversation: the same add, landed before. */
+/** The reply fields for the same add, landed before in this conversation; nothing when the id holds another view. */
 const landed = (view: Stored, conversationId: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
+    if (view.template === "generated") {
+      const interactions = yield* keptEvents(view, conversationId)
+      return interactions === undefined ? undefined : { interactions }
+    }
     // Every stored docs row is built from docsTarget, which requires its repository and path.
     const [row] = view.template === "docs"
       ? yield* sql<{ readonly same: boolean }>`
@@ -202,7 +206,7 @@ const landed = (view: Stored, conversationId: string) =>
         SELECT template = ${view.template} AND props = ${JSON.stringify(view.props)}::jsonb
           AND conversation_id = ${conversationId} AS same
         FROM views WHERE id = ${view.id}`
-    return row?.same === true
+    return row?.same === true ? {} : undefined
   })
 
 /** Whether a `docs` view of the same repository's same page is already under `id`. */
@@ -506,9 +510,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             if (txid !== undefined) {
               return HttpServerResponse.jsonUnsafe({ txid, ...events }, { status: 202, headers: noStore })
             }
-            if (yield* landed(stored, conversationId)) {
+            const existing = yield* landed(stored, conversationId)
+            if (existing !== undefined) {
               fields.existing = true
-              return HttpServerResponse.jsonUnsafe({ txid: null }, { status: 200, headers: noStore })
+              return HttpServerResponse.jsonUnsafe({ txid: null, ...existing }, { status: 200, headers: noStore })
             }
             return refusal(409, "id_taken")
           }))

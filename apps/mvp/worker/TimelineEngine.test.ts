@@ -8,7 +8,7 @@ import { afterEach, expect, test } from "vitest"
 import { ClientEngine, FlowDispatch } from "../src/flows/dispatch.ts"
 import { FlowRegistry } from "../src/flows/registry.ts"
 import { Phases, Summarize, SummaryFailed } from "../src/features/timeline/flow.ts"
-import { segmentRevision } from "../src/features/timeline/identity.ts"
+import { revisionOf, segmentRevision } from "../src/features/timeline/identity.ts"
 import { phaseRetry, summaryRetry } from "../src/features/timeline/store.ts"
 import { registration, SummaryLedger, SummarySeat } from "../src/features/timeline/steps.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
@@ -73,7 +73,7 @@ const conversation = async (count: number) => {
   return { questions, answer }
 }
 const REVISION = "ab".repeat(32)
-const summaryOf = (id: string) => ({ id, revision: REVISION, role: "assistant" as const, text: "It retried twice.", reason: "answer" as const })
+const summaryOf = (id: string) => ({ id, revision: revisionOf({ id, role: "assistant", text: "It retried." }), role: "assistant" as const, text: "It retried.", reason: "answer" as const })
 const planOver = (ids: ReadonlyArray<string>) => ({
   level: 1 as const, anchorId: ids[0]!, revision: segmentRevision(ids[0]!, 1, ids.length), items: ids.map(id => ({ id, text: "Asked: a" })), full: false,
 })

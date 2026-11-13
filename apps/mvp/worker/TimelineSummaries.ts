@@ -4,7 +4,7 @@ import type { Layer } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { MARK_SUMMARY_LENGTH, MOST_COVERED, PHASES_FLOW, SEGMENT_SPANS, SUMMARIZE_FLOW, SUMMARY_DAILY_CAP, SUMMARY_REASONS, TIMELINE_SUMMARIES_ROUTE, TITLE_LENGTH } from "../src/features/timeline/contract.ts"
-import { segmentRevision } from "../src/features/timeline/identity.ts"
+import { revisionOf, segmentRevision } from "../src/features/timeline/identity.ts"
 import { checkPlan, exchangeUnits, phaseUnits, type PhaseRow, sealSpans } from "../src/features/timeline/marks.ts"
 import { Sessions } from "./Actor.ts"
 import { branchAccess, canView } from "./branch/Access.ts"
@@ -105,16 +105,24 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, uns
           : yield* branchAccess(actor, message.conversationId, "conversation")
         if (message === undefined || access === undefined || !canView(access.access)) return answer(404, { code: "not_found" })
         if (p.op === "record") {
-          const [recorded] = yield* sql`
-            WITH claim AS (
-              UPDATE timeline_summaries SET recorded_at = coalesce(recorded_at, now())
-              WHERE message_id = ${messageId} AND revision = ${p.revision} AND person_id = ${person} AND owner = ${p.owner} AND released_at IS NULL
-              RETURNING message_id
-            )
-            UPDATE messages SET summary = ${p.summary}, summary_revision = ${p.revision}
-            WHERE id IN (SELECT message_id FROM claim)
-            RETURNING id`
-          return recorded === undefined ? answer(409, { code: "unclaimed" }) : answer(200, { recorded: true }, "recorded")
+          return yield* sql.withTransaction(Effect.gen(function* () {
+            // Lock both the claim and its content: concurrent records and edits must agree on one revision.
+            const [claim] = yield* sql<{ readonly id: string; readonly role: string; readonly text: string; readonly recorded: boolean }>`
+              SELECT m.id, m.role, m.text, c.recorded_at IS NOT NULL AS recorded
+              FROM timeline_summaries c JOIN messages m ON m.id = c.message_id
+              WHERE c.message_id = ${messageId} AND c.revision = ${p.revision}
+                AND c.person_id = ${person} AND c.owner = ${p.owner} AND c.released_at IS NULL
+              FOR UPDATE OF m, c`
+            if (claim === undefined) return answer(409, { code: "unclaimed" })
+            // A retained receipt acknowledges the old record without replacing its text or a newer summary.
+            if (claim.recorded) return answer(200, { recorded: true }, "recorded")
+            if (p.revision !== revisionOf(claim)) return answer(409, { code: "stale" })
+            yield* sql`UPDATE messages SET summary = ${p.summary}, summary_revision = ${p.revision} WHERE id = ${messageId}`
+            yield* sql`
+              UPDATE timeline_summaries SET recorded_at = now()
+              WHERE message_id = ${messageId} AND revision = ${p.revision}`
+            return answer(200, { recorded: true }, "recorded")
+          }))
         }
         if (p.op === "release") {
           yield* sql`

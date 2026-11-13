@@ -4,6 +4,7 @@
 import { Deferred, Effect, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
+import { MAX_GENERATED_BODY_BYTES, MAX_VIEW_BODY_BYTES } from "../src/features/views/contract.ts"
 import { TIC_TAC_TOE, TIC_TAC_TOE_STATE } from "../src/features/views/renderer.ts"
 import * as Database from "../db/Database.ts"
 import type { Actor } from "./Actor.ts"
@@ -206,6 +207,21 @@ describe("a form", () => {
   })
 })
 
+test("the add and move handlers refuse oversized bodies before parsing or changing a view", async () => {
+  const h = await harness(runtime, () => Stream.empty, { actor: member, admitBody: false })
+  const id = crypto.randomUUID()
+  for (const [path, limit] of [
+    ["/api/views", MAX_GENERATED_BODY_BYTES],
+    [`/api/views/${id}/state`, MAX_VIEW_BODY_BYTES],
+  ] as const) {
+    const response = await post(h, path, "x".repeat(limit + 1))
+    expect([response.status, await response.json()]).toEqual([413, { code: "too_large" }])
+  }
+  expect(await viewRow(id)).toBeUndefined()
+  expect(h.only("chat.view.add").annotations.status).toBe(413)
+  expect(h.only("chat.view.state").annotations.status).toBe(413)
+})
+
 describe("a generated view", () => {
   test("is checked and rendered by ChatApi, which keeps its own HTML and the module's events", async () => {
     const h = await open()
@@ -221,9 +237,56 @@ describe("a generated view", () => {
     expect(row!.html).toContain(`data-event="cell:4"`)
     expect(row!.html).toContain("X to move")
     // The same add again is the same view; the device never gets the module.
-    expect((await post(h, "/api/views", view)).status).toBe(200)
+    const again = await post(h, "/api/views", view)
+    expect([again.status, await again.json()]).toEqual([200, { txid: null, interactions: row!.interactions }])
     expect(Views.SYNCED_VIEW_COLUMNS).not.toContain("code")
     expect(h.count(Views.renders, { outcome: "rendered", door: "add" })).toBe(1)
+  })
+
+  test("an id cannot accept a different valid generated module with the same props", async () => {
+    const h = await open()
+    const view = board()
+    expect((await post(h, "/api/views", view)).status).toBe(202)
+    const before = await viewRow(view.id)
+    const changed = { ...view, code: view.code.replace("Tic-tac-toe</CardTitle>", "Another board</CardTitle>") }
+    // Both modules render successfully under their own identities.
+    expect((await post(h, "/api/views", { ...changed, id: crypto.randomUUID() })).status).toBe(202)
+    const collision = await post(h, "/api/views", changed)
+    expect([collision.status, await collision.json()]).toEqual([409, { code: "id_taken" }])
+    expect(await viewRow(view.id)).toEqual(before)
+  })
+
+  test.each([false, true])("an insert conflict checks module identity and returns the kept events (same module: %s)", async same => {
+    const h = await open()
+    const original = board()
+    expect((await post(h, "/api/views", original)).status).toBe(202)
+    const view = { ...original, id: crypto.randomUUID() }
+    const release = Deferred.makeUnsafe<void>()
+    const holding = Deferred.makeUnsafe<number>()
+    // This insert is invisible to the resend's first read, then wins its insert.
+    const held = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql.withTransaction(Effect.gen(function* () {
+      yield* sql`INSERT INTO views (id, template, props, conversation_id, title, size, state, code, html, interactions)
+        SELECT ${view.id}, template, props, conversation_id, title, size, state, code, html, interactions
+        FROM views WHERE id = ${original.id}`
+      const [backend] = yield* sql<{ readonly pid: number }>`SELECT pg_backend_pid() AS pid`
+      yield* Deferred.succeed(holding, backend!.pid)
+      yield* Deferred.await(release)
+    }))))
+    const pid = await runtime.runPromise(Deferred.await(holding))
+    const response = post(h, "/api/views", same ? view : { ...view, code: view.code.replace("Tic-tac-toe</CardTitle>", "Another board</CardTitle>") })
+    try {
+      await eventually(async () => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql =>
+        sql`SELECT 1 FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))`.pipe(Effect.map(rows => rows.length > 0))
+      )), 10_000)
+    } finally {
+      await runtime.runPromise(Deferred.succeed(release, undefined))
+      await held
+    }
+    const result = await response
+    expect([result.status, await result.json()]).toEqual(same
+      ? [200, { txid: null, interactions: (await viewRow(original.id))!.interactions }]
+      : [409, { code: "id_taken" }])
+    expect(await viewRow(view.id)).toEqual(await viewRow(original.id))
   })
 
   test("a module that fails its check or its render is 422 with the detail for the renderer, and never logged", async () => {
