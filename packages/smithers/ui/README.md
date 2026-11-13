@@ -181,4 +181,6 @@ a scrollable gap in a crowded viewport. It takes no layout space. Include
 plugin headers and custom primary controls in the host's selector.
 # Notification focus
 
+`Alt+N` toggles `NotificationPanel` and `Alt+T` focuses the first toast in `ToastStack`. Both shortcuts leave inputs, textareas, selects, and editable content alone so Option characters can be typed without losing focus.
+
 `NotificationPanel` closes on Escape even when completion removed its focused answer field. A nested control that prevents the key keeps ownership of it; closing returns focus to the opener.

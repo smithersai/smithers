@@ -48,7 +48,7 @@ export type ToastStackProps = Omit<ComponentProps<"section">, "children"> & {
  * Either placement overlays the page: a toast's arrival and departure never
  * take layout space, and each toast fades and slides in (opacity and transform
  * only). A polite live region, so a new toast is announced without taking
- * focus. Alt+T focuses its first toast from anywhere, arrows (and J and K,
+ * focus. Alt+T focuses its first toast outside editable fields, arrows (and J and K,
  * Home and End) move between its toasts, and Escape gives focus back. Renders
  * nothing while it has no toasts and nothing more.
  */
@@ -72,7 +72,7 @@ export function ToastStack({
   const before = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const onHotkey = (event: globalThis.KeyboardEvent) => {
-      if (!isNoticeHotkey(event, "toasts")) return;
+      if (isTypingTarget(event.target) || !isNoticeHotkey(event, "toasts")) return;
       const first = section.current?.querySelector<HTMLElement>(TOAST_FOCUS);
       if (first === null || first === undefined || section.current?.style.getPropertyValue("--sui-toast-room") === "0px") return;
       event.preventDefault();

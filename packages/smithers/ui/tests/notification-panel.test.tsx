@@ -58,6 +58,21 @@ const elsewhere = () => {
   return button;
 };
 
+/** Editable page controls outside the notices, where Option characters belong to the field. */
+const typingTargets = ["input", "textarea", "select", "contenteditable"] as const;
+const typingTarget = (kind: typeof typingTargets[number]) => {
+  const field = document.createElement(kind === "contenteditable" ? "div" : kind);
+  if (kind === "contenteditable") {
+    field.contentEditable = "true";
+    field.tabIndex = 0;
+  }
+  document.body.appendChild(field);
+  outside.push(field);
+  field.focus();
+  expect(document.activeElement).toBe(field);
+  return field;
+};
+
 const $ = <E extends Element = HTMLElement>(selector: string) => container!.querySelector<E>(selector);
 const $$ = (selector: string) => [...container!.querySelectorAll<HTMLElement>(selector)];
 const click = (element: Element | null) => act(async () => (element as HTMLElement).click());
@@ -294,6 +309,17 @@ describe("ToastStack that opens the panel", () => {
     expect(document.activeElement).toBe(start);
   });
 
+  test.each(typingTargets)("Alt+T in %s preserves the character and focus", async (kind) => {
+    await render(<ToastStack>{[toast("a")]}</ToastStack>);
+    const field = typingTarget(kind);
+    const event = new KeyboardEvent("keydown", { key: "†", code: "KeyT", altKey: true, bubbles: true, cancelable: true });
+    await act(async () => {
+      field.dispatchEvent(event);
+    });
+    expect(event.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(field);
+  });
+
   test("Escape with nowhere to go back to just leaves the toast; Alt+T with a modifier, or the wrong key, does nothing", async () => {
     await render(<ToastStack>{[toast("a")]}</ToastStack>);
     const open = $("button[data-slot=toast-open]")!;
@@ -359,6 +385,23 @@ describe("NotificationPanel", () => {
     await hotkey("KeyN", { metaKey: true });
     await hotkey("KeyT");
     expect(changes).toEqual([true, false]);
+  });
+
+  test.each(typingTargets)("Alt+N in %s preserves the dead key without opening or closing the panel", async (kind) => {
+    const changes: Change = [];
+    for (const open of [false, true]) {
+      await render(<NotificationPanel open={open} onOpenChange={(value) => changes.push(value)}>{entry("a")}</NotificationPanel>);
+      const field = typingTarget(kind);
+      for (const key of ["Dead", "˜"]) {
+        const event = new KeyboardEvent("keydown", { key, code: "KeyN", altKey: true, bubbles: true, cancelable: true });
+        await act(async () => {
+          field.dispatchEvent(event);
+        });
+        expect(event.defaultPrevented).toBe(false);
+        expect(changes).toEqual([]);
+        expect(document.activeElement).toBe(field);
+      }
+    }
   });
 
   test("open: a non-modal dialog named Notifications, its entries in a list; focus goes to the first, or to `focus`", async () => {

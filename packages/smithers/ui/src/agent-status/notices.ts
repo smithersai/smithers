@@ -29,7 +29,7 @@ export const noticeDismissDelay = (state: NoticeState): number =>
 
 /**
  * The keys notices answer to, as `aria-keyshortcuts` names them: Alt+T focuses the first toast and Alt+N opens or
- * closes the notifications panel from anywhere; on a focused toast or notification, O opens what it is about, E
+ * closes the notifications panel outside editable fields; on a focused toast or notification, O opens what it is about, E
  * expands it (a toast's opens the panel at it), A answers its question, H hides it and R marks it read. Arrows (and
  * J and K) move between them, Home and End go to the first and last, and Escape leaves.
  */

@@ -22,7 +22,7 @@ const ENTRY_FOCUS = '[data-slot="notification-row"]';
 const TRIGGER = "[data-notifications-trigger]";
 
 export type NotificationPanelProps = Omit<ComponentProps<"section">, "children" | "onKeyDown"> & {
-  /** Whether the panel shows. Alt+N toggles it from anywhere while it is mounted. */
+  /** Whether the panel shows. Alt+N toggles it outside editable fields while it is mounted. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The person's notifications, newest first: `NotificationEntry` elements. */
@@ -36,7 +36,7 @@ export type NotificationPanelProps = Omit<ComponentProps<"section">, "children" 
 /**
  * The person's notifications, newest first, in a panel at the window's
  * top-right that scrolls (apps/mvp decision 0009). Controlled: `open` and
- * `onOpenChange`. Alt+N opens and closes it from anywhere; opening focuses
+ * `onOpenChange`. Alt+N opens and closes it outside editable fields; opening focuses
  * `focus`'s entry or the first, arrows (and J and K, Home and End) move
  * between entries, and Escape, ×, or a click outside it closes it and gives
  * focus back. A click on an element marked `data-notifications-trigger`, such
@@ -63,7 +63,7 @@ export function NotificationPanel({
 
   useEffect(() => {
     const onHotkey = (event: globalThis.KeyboardEvent) => {
-      if (!isNoticeHotkey(event, "notifications")) return;
+      if (isTypingTarget(event.target) || !isNoticeHotkey(event, "notifications")) return;
       event.preventDefault();
       change.current(!shown.current);
     };
