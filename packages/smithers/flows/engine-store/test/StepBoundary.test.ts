@@ -12,7 +12,6 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
-import { TestClock } from "effect/testing"
 import * as StepBoundary from "../src/StepBoundary.ts"
 
 /**
@@ -187,7 +186,6 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
     // has classified it: listed and stat'd as a file, gone by the time the
     // boundary reads it.
     const vanishAfterStat = new Set<string>()
-    const mtimes = new Map<string, number>()
     const madeDirectories: Array<string> = []
     const probes: Array<string> = []
     const reads: Array<string> = []
@@ -294,7 +292,7 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
             const info = {
               type: "File",
               size: ByteSize.bytes(files.get(path)!.length),
-              mtime: Option.some(new Date(mtimes.get(path) ?? Date.now())),
+              mtime: Option.some(new Date(0)),
               dev: 1n,
               ino: Option.some(1n)
             }
@@ -311,7 +309,6 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
       files,
       fs,
       madeDirectories,
-      mtimes,
       probes,
       reads,
       removals,
@@ -414,45 +411,19 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
       expect(prepared.readSnapshot[0]!.digest).toBe(sha256("post-edit content"))
     }))
 
-  it.effect("re-hashes an unchanged old file across repeated measurements", () =>
-    Effect.gen(function*() {
-      const host = memoryFs({ "memo.txt": "stable" })
-      host.mtimes.set("memo.txt", 0)
-      const boundary = StepBoundary.makeFileSystem(host.fs, hostPath, ArtifactStore.makeNoop())
-      const snapshots = yield* withCrypto(
-        Effect.gen(function*() {
-          yield* TestClock.setTime(3_000)
-          const descriptor: FileBoundary = {
-            readSet: [{ path: "memo.txt", digest: sha256("stable") }],
-            writeSet: [],
-            boundaryMode: "hard"
-          }
-          return [yield* boundary.prepare(descriptor), yield* boundary.prepare(descriptor)]
-        }).pipe(Effect.provide(TestClock.layer()))
-      )
-
-      expect(host.reads).toEqual(["memo.txt", "memo.txt"])
-      expect(snapshots.map((snapshot) => snapshot.readSnapshot[0]?.digest)).toEqual([
-        sha256("stable"),
-        sha256("stable")
-      ])
-    }))
-
   it.effect("hashes the exact bytes capture records", () =>
     Effect.gen(function*() {
       const host = memoryFs({ "memo.txt": "stable" })
-      host.mtimes.set("memo.txt", 0)
       const boundary = StepBoundary.makeFileSystem(host.fs, hostPath, ArtifactStore.makeNoop())
       const evidence = yield* withCrypto(
         Effect.gen(function*() {
-          yield* TestClock.setTime(3_000)
           const prepared = yield* boundary.prepare({
             readSet: [{ path: "memo.txt", digest: sha256("stable") }],
             writeSet: ["memo.txt"],
             boundaryMode: "hard"
           })
           return yield* boundary.settle(prepared)
-        }).pipe(Effect.provide(TestClock.layer()))
+        })
       )
 
       // Prepare and capture each hash the bytes they actually observe.
@@ -462,50 +433,23 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
       })
     }))
 
-  it.effect("re-hashes when stat identity changes and returns the new digest", () =>
-    Effect.gen(function*() {
-      const host = memoryFs({ "memo.txt": "old" })
-      host.mtimes.set("memo.txt", 0)
-      const boundary = StepBoundary.makeFileSystem(host.fs, hostPath, ArtifactStore.makeNoop())
-      const digests = yield* withCrypto(
-        Effect.gen(function*() {
-          yield* TestClock.setTime(3_000)
-          const descriptor: FileBoundary = {
-            readSet: [{ path: "memo.txt", digest: sha256("old") }],
-            writeSet: [],
-            boundaryMode: "hard"
-          }
-          const before = yield* boundary.prepare(descriptor)
-          host.files.set("memo.txt", encoder.encode("new-size"))
-          const after = yield* boundary.prepare(descriptor)
-          return [before.readSnapshot[0]!.digest, after.readSnapshot[0]!.digest]
-        }).pipe(Effect.provide(TestClock.layer()))
-      )
-
-      expect(host.reads).toEqual(["memo.txt", "memo.txt"])
-      expect(digests).toEqual([sha256("old"), sha256("new-size")])
-    }))
-
-  it.effect("re-hashes an old same-size rewrite even when its stat identity is unchanged", () =>
+  it.effect("re-reads a same-size rewrite and returns the new digest", () =>
     Effect.gen(function*() {
       const host = memoryFs({ "memo.txt": "before" })
-      host.mtimes.set("memo.txt", 0)
       const boundary = StepBoundary.makeFileSystem(host.fs, hostPath, ArtifactStore.makeNoop())
       const digest = yield* withCrypto(
         Effect.gen(function*() {
-          yield* TestClock.setTime(10_000)
           const descriptor: FileBoundary = {
             readSet: [{ path: "memo.txt", digest: sha256("before") }],
             writeSet: [],
             boundaryMode: "hard"
           }
           yield* boundary.prepare(descriptor)
-          // Same path, size, old mtime, device, and inode. A stat-identity
-          // memo would return the stale digest forever; only reading the
-          // bytes again can observe this rewrite.
+          // The path and byte length are unchanged; the next measurement
+          // must read the replacement bytes.
           host.files.set("memo.txt", encoder.encode("after!"))
           return (yield* boundary.prepare(descriptor)).readSnapshot[0]!.digest
-        }).pipe(Effect.provide(TestClock.layer()))
+        })
       )
 
       expect(host.reads).toEqual(["memo.txt", "memo.txt"])
@@ -560,7 +504,6 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
   it.effect("hashes and stores the exact post-step bytes after an old same-size rewrite", () =>
     Effect.gen(function*() {
       const host = memoryFs({ "memo.txt": "before" })
-      host.mtimes.set("memo.txt", 0)
       const artifacts = ArtifactStore.makeMemory()
       const boundary = StepBoundary.makeFileSystem(host.fs, hostPath, artifacts, { maxInlineBytes: 0 })
       const observed = yield* withCrypto(Effect.gen(function*() {
@@ -618,66 +561,6 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
       }))
       const outputs = evidence.declaredOutputs as { readonly outputs: ReadonlyArray<{ readonly path: string }> }
       expect(outputs.outputs.map((entry) => entry.path)).toEqual(expected)
-    }))
-
-  it.effect("falls back to read-and-hash without memoizing when stat is unavailable", () =>
-    Effect.gen(function*() {
-      const reads: Array<string> = []
-      const fs = FileSystem.makeNoop({
-        exists: (() => Effect.succeed(true)) as never,
-        stat: (() => Effect.fail(new Error("ENOTSUP: stat"))) as never,
-        readFile: (() =>
-          Effect.sync(() => {
-            reads.push("fallback.txt")
-            return encoder.encode("fallback")
-          })) as never
-      })
-      const boundary = StepBoundary.makeFileSystem(fs, hostPath, ArtifactStore.makeNoop())
-      const descriptor: FileBoundary = {
-        readSet: [{ path: "fallback.txt", digest: sha256("fallback") }],
-        writeSet: [],
-        boundaryMode: "hard"
-      }
-
-      const snapshots = yield* withCrypto(Effect.all([
-        boundary.prepare(descriptor),
-        boundary.prepare(descriptor)
-      ]))
-      expect(reads).toEqual(["fallback.txt", "fallback.txt"])
-      expect(snapshots.every(StepBoundary.readSetMatches)).toBe(true)
-    }))
-
-  it.effect("does not trust stat identities whose optional mtime is unavailable", () =>
-    Effect.gen(function*() {
-      const reads: Array<string> = []
-      const fs = FileSystem.makeNoop({
-        exists: (() => Effect.succeed(true)) as never,
-        stat: (() =>
-          Effect.succeed({
-            type: "File",
-            size: ByteSize.bytes(8),
-            mtime: Option.none(),
-            dev: 1n,
-            ino: Option.none()
-          })) as never,
-        readFile: (() =>
-          Effect.sync(() => {
-            reads.push("timeless.txt")
-            return encoder.encode("timeless")
-          })) as never
-      })
-      const boundary = StepBoundary.makeFileSystem(fs, hostPath, ArtifactStore.makeNoop())
-      const descriptor: FileBoundary = {
-        readSet: [{ path: "timeless.txt", digest: sha256("timeless") }],
-        writeSet: [],
-        boundaryMode: "hard"
-      }
-
-      yield* withCrypto(Effect.gen(function*() {
-        yield* boundary.prepare(descriptor)
-        yield* boundary.prepare(descriptor)
-      }))
-      expect(reads).toEqual(["timeless.txt", "timeless.txt"])
     }))
 
   it.effect("accepts a declaration that still matches the measured files", () =>

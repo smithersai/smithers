@@ -29,9 +29,10 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import { mkdtempSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { afterAll, afterEach } from "vitest"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
@@ -91,7 +92,20 @@ const production = (root: string, sandboxed: boolean) => {
   ).pipe(Layer.provideMerge(artifacts))
 }
 
-const workspace = () => mkdtempSync(join(tmpdir(), "flows-sandbox-"))
+const workspaces: Array<string> = []
+const workspace = () => {
+  const root = mkdtempSync(join(tmpdir(), "flows-sandbox-"))
+  workspaces.push(root)
+  return root
+}
+
+afterEach(() => {
+  for (const root of workspaces) rmSync(root, { recursive: true, force: true })
+})
+
+afterAll(() => {
+  for (const root of workspaces) expect(existsSync(root)).toBe(false)
+})
 
 const seed = (root: string, files: Readonly<Record<string, string>>) =>
   Effect.gen(function*() {
@@ -272,6 +286,7 @@ describe("sealed actions under the production composition", () => {
       const root = workspace()
       const key = "sandbox/effects"
       const dispatched: Array<WorkspaceSandbox.QueuedEffect> = []
+      const dispatchedWhenHostHad: Array<boolean> = []
       const metadata: ActionPersistence.BoundaryMetadata = {
         readSet: [],
         writeSet: [join(root, "out/result.txt")],
@@ -295,8 +310,7 @@ describe("sealed actions under the production composition", () => {
               WorkspaceSandbox.layerDispatcher({
                 dispatch: (effect) =>
                   Effect.sync(() => {
-                    // Proof the dispatch stage runs after copy-back, never
-                    // inside the transaction.
+                    dispatchedWhenHostHad.push(existsSync(join(root, "out/result.txt")))
                     dispatched.push(effect)
                   })
               })
@@ -320,7 +334,60 @@ describe("sealed actions under the production composition", () => {
       expect(payload.dispatched).toEqual(payload.queued)
       expect(dispatched.map((effect) => effect.idempotencyKey)).toEqual(["reply-1", "reply-2"])
       expect(dispatched[0]?.payload).toEqual({ n: 1 })
+      expect(dispatchedWhenHostHad).toEqual([true, true])
       expect(yield* withCrypto(hostText(root, "out/result.txt"))).toBe("done")
+    }))
+
+  it.effect("sends no queued effect when materialization fails", () =>
+    Effect.gen(function*() {
+      const dispatched: Array<WorkspaceSandbox.QueuedEffect> = []
+      let materializations = 0
+      const program = Effect.gen(function*() {
+        const memory = yield* WorkspaceSandbox.makeMemory()
+        const sandbox = WorkspaceSandbox.make({
+          execute: memory.service.execute,
+          materialize: () =>
+            Effect.suspend(() => {
+              materializations++
+              return Effect.fail(
+                new WorkspaceSandbox.WorkspaceError({
+                  code: "host_unavailable",
+                  message: "copy-back refused"
+                })
+              )
+            })
+        })
+        yield* activate("sandbox-materialize-refused")
+        return yield* Effect.flip(
+          dispatch(
+            "sandbox-materialize-refused",
+            "sandbox/materialize-refused",
+            { readSet: [], writeSet: ["out.txt"], boundaryMode: "hard" },
+            () =>
+              body(
+                Effect.gen(function*() {
+                  const inner = yield* WorkspaceSandbox.Workspace
+                  yield* inner.writeFile("out.txt", encoder.encode("done"))
+                  yield* inner.queueEffect({ protocol: "chat/v1", idempotencyKey: "reply", payload: {} })
+                  return null
+                }).pipe(Effect.orDie)
+              )
+          ).pipe(
+            Effect.provideService(WorkspaceSandbox.WorkspaceSandbox, sandbox),
+            Effect.provide(WorkspaceSandbox.layerDispatcher({
+              dispatch: (effect) =>
+                Effect.sync(() => {
+                  dispatched.push(effect)
+                })
+            })),
+            Effect.provide(StepBoundary.layerTest()),
+            Effect.provide(jjLayer)
+          )
+        )
+      }).pipe(Effect.provide(TestStores.layer()))
+      expect(yield* withCrypto(program)).toMatchObject({ code: "host_unavailable" })
+      expect(materializations).toBe(1)
+      expect(dispatched).toEqual([])
     }))
 
   it.effect("sends no queued effect when the boundary settlement fails the attempt (issue #4763)", () =>

@@ -1,6 +1,11 @@
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
+import { Node } from "@smthrs/plan"
 import { PlanStore } from "@smthrs/plan-store"
-import { Effect, Fiber, Latch, Option } from "effect"
+import { Effect, Exit, Fiber, Latch, Option, Scope } from "effect"
+import * as Schema from "effect/Schema"
+import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -96,6 +101,123 @@ describe("differential scheduler recovery through independent store openings", (
       })
     }
   }
+})
+
+describe("differential recovery of an interrupted plan", () => {
+  it("replays the settled prefix and resumes the in-flight node under its original attempt", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "scheduler-interrupted-"))
+    const filenames: Array<string> = []
+    try {
+      const plan = await compile([draft("winner"), draft("loser", ["winner"]), draft("consumer", ["loser"])])
+      const flow = Flow.make("SchedulerRecovery/Test", {
+        payload: {},
+        success: Schema.Void,
+        body: () => Node.succeed(undefined)
+      })
+      const drive = async (reference: boolean) => {
+        const implementation = reference ? Reference : PlanScheduler
+        const filename = TestStores.matrixFilename(join(directory, reference ? "reference.sqlite" : "indexed.sqlite"))
+        filenames.push(filename)
+        const calls: Array<string> = []
+        const service = () =>
+          implementation.make({
+            runId: "interrupted",
+            owner,
+            sourceId: "interrupted",
+            concurrency: { steps: 1 }
+          })
+        const first = await runPromise(
+          Effect.gen(function*() {
+            yield* activate("interrupted")
+            const started = yield* Latch.make()
+            const release = yield* Latch.make()
+            const instance = yield* Effect.acquireRelease(
+              Effect.sync(() => FlowEngine.makeInstance(flow, "interrupted")),
+              (instance) => Scope.close(instance.scope, Exit.void)
+            )
+            const executor: PlanScheduler.Executor = {
+              execute: ({ attempt, node }) =>
+                Effect.gen(function*() {
+                  calls.push(`${node.id}/${attempt}`)
+                  if (node.id === "loser") {
+                    yield* Latch.open(started)
+                    yield* Latch.await(release)
+                  }
+                  return { value: node.id }
+                })
+            }
+            const scheduler = service()
+            yield* scheduler.record(plan)
+            const running = yield* scheduler.run(plan).pipe(
+              Effect.provide(runtime(executor)),
+              Effect.provideService(FlowRuntime.FlowInstance, instance),
+              Effect.forkChild({ startImmediately: true })
+            )
+            yield* Latch.await(started)
+            const sql = yield* SqlClient.SqlClient
+            const before =
+              yield* sql`SELECT step_key_digest, attempt, state FROM flows_attempts ORDER BY step_key_digest`
+            expect(before.map((row) => row.state).sort()).toEqual(["running", "succeeded"])
+            const journal = yield* Journal.Journal
+            const page = yield* journal.entries({ runId: "interrupted" as never, limit: 100 })
+            expect(
+              page.entries.filter((event) => event.eventType === "flows.engine.node-settled")
+                .map((event) => (event.payload as { nodeId: string }).nodeId)
+            ).toEqual(["winner"])
+            // Closing this incarnation must leave the unfinished attempt recoverable.
+            yield* Fiber.interrupt(running)
+            const interrupted = yield* Fiber.await(running)
+            expect(Exit.isFailure(interrupted)).toBe(true)
+            expect(calls).toEqual(["winner/1", "loser/1"])
+            const after =
+              yield* sql`SELECT step_key_digest, attempt, state FROM flows_attempts ORDER BY step_key_digest`
+            expect(after).toEqual(before)
+            return before
+          }).pipe(Effect.provide(TestStores.layerAt(filename)), Effect.scoped)
+        )
+
+        const recovered = await runPromise(
+          Effect.gen(function*() {
+            const plans = yield* PlanStore.PlanStore
+            const loaded = Option.getOrThrow(yield* plans.get(plan.planId))
+            const executor: PlanScheduler.Executor = {
+              execute: ({ attempt, node }) =>
+                Effect.sync(() => {
+                  calls.push(`${node.id}/${attempt}`)
+                  return { value: node.id }
+                })
+            }
+            const scheduler = service()
+            const report = yield* scheduler.run(loaded).pipe(Effect.provide(runtime(executor)))
+            const replay = yield* scheduler.run(loaded).pipe(Effect.provide(runtime(executor)))
+            const sql = yield* SqlClient.SqlClient
+            const attempts =
+              yield* sql`SELECT step_key_digest, attempt, state FROM flows_attempts ORDER BY step_key_digest`
+            const journal = yield* Journal.Journal
+            const page = yield* journal.entries({ runId: "interrupted" as never, limit: 100 })
+            const settled = page.entries.filter((event) => event.eventType === "flows.engine.node-settled")
+              .map((event) => event.payload)
+            return { report, replay, attempts, settled }
+          }).pipe(Effect.provide(TestStores.layerAt(filename)), Effect.scoped)
+        )
+        expect(calls).toEqual(["winner/1", "loser/1", "loser/1", "consumer/1"])
+        expect(recovered.attempts).toHaveLength(3)
+        expect(recovered.attempts.every((row) => row.attempt === 1 && row.state === "succeeded")).toBe(true)
+        // Replay emits observations again; the durable attempt and actual body
+        // calls above establish that no additional work was admitted.
+        expect([...new Set(recovered.settled.map((event) => (event as { nodeId: string }).nodeId))])
+          .toEqual(["winner", "loser", "consumer"])
+        for (const report of [recovered.report, recovered.replay]) {
+          expect(report.settlements.map((node) => node.nodeId)).toEqual(["winner", "loser", "consumer"])
+        }
+        return { first, recovered, calls }
+      }
+      expect(await drive(false)).toEqual(await drive(true))
+    } finally {
+      for (const filename of filenames) await runPromise(TestStores.dropMatrixFilename(filename))
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
 })
 
 describe("differential admission under explicitly gated completions", () => {

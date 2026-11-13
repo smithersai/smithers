@@ -16,7 +16,6 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import { vi } from "vitest"
 import * as JournalRecords from "../src/internal/JournalRecords.ts"
 import * as PlanScheduler from "../src/PlanScheduler.ts"
 import * as Selection from "../src/Selection.ts"
@@ -870,14 +869,15 @@ describe("Selection scope matching", () => {
         edge({ scope: "future/**", validFromMs: 2_000 })
       )
       const paths = Array.from({ length: 500 }, (_, index) => `packages/unrelated${index}/src/index.ts`)
+      const cost = { compilations: 0, steps: 0 }
       const run = () => {
         if (operation === "risk") {
-          expect(Selection.risk({ beliefs: snapshot, changed: paths })).toEqual({ level: "low", reasons: [] })
+          expect(Selection.risk({ beliefs: snapshot, changed: paths }, cost)).toEqual({ level: "low", reasons: [] })
         } else if (operation === "proposeReadSet") {
-          expect(Selection.proposeReadSet({ beliefs: snapshot, flow: "lint-docs", paths })).toEqual([])
+          expect(Selection.proposeReadSet({ beliefs: snapshot, flow: "lint-docs", paths }, cost)).toEqual([])
         } else {
           expect(Effect.runSync(
-            Selection.makeHeuristic().select({
+            Selection.makeHeuristic(cost).select({
               beliefs: snapshot,
               changed: paths,
               sinks: [{ nodeId: "lint-docs", planKey: "lint-key" }],
@@ -887,32 +887,36 @@ describe("Selection scope matching", () => {
           )).toEqual([{ nodeId: "lint-docs", verdict: { _tag: "Admit" } }])
         }
       }
-      // Each compilation starts by splitting the glob on **. Counting that
-      // work catches per-path compilation without a machine-dependent timer.
-      const split = vi.spyOn(String.prototype, "split")
-      try {
-        run()
-        expect(split.mock.calls.filter(([separator]) => (separator as unknown) === "**")).toHaveLength(scopes.length)
-        run()
-        expect(split.mock.calls.filter(([separator]) => (separator as unknown) === "**")).toHaveLength(
-          2 * scopes.length
-        )
-      } finally {
-        split.mockRestore()
-      }
+      run()
+      expect(cost.compilations).toBe(scopes.length)
+      run()
+      expect(cost.compilations).toBe(2 * scopes.length)
     })
   }
 
-  it("matches a many-wildcard scope in linear time, even one stored before the cap", () => {
+  it("bounds many-wildcard matching work by path length and token count", () => {
+    // Also exercise legacy scopes above the current write-time wildcard cap.
+    for (const repeats of [0, 1, 12, 24]) {
+      const scope = "**a".repeat(repeats) + "**b"
+      const tokenCount = 2 * repeats + 2
+      for (const pathLength of [0, 1, 40, 80]) {
+        for (const suffix of ["", "b"]) {
+          const path = "a".repeat(pathLength) + suffix
+          const cost = { compilations: 0, steps: 0 }
+          expect(Selection.makeScopeMatcher(cost)(scope, path))
+            .toBe(suffix === "b" && pathLength >= repeats)
+          expect(cost.compilations).toBe(1)
+          expect(cost.steps).toBeGreaterThan(0)
+          expect(cost.steps).toBeLessThanOrEqual(tokenCount * (1 + 2 * path.length))
+        }
+      }
+    }
     const scope = "**a".repeat(12) + "**b"
     const path = "a".repeat(40)
     const snapshot = beliefs(edge({ scope }))
-    const started = performance.now()
     expect(Selection.risk({ beliefs: snapshot, changed: [path] }).reasons).toEqual([])
     expect(Selection.proposeReadSet({ beliefs: snapshot, flow: "lint-docs", paths: [path] })).toEqual([])
     expect(Selection.risk({ beliefs: snapshot, changed: [`${path}b`] }).reasons).toHaveLength(1)
-    // The backtracking RegExp took minutes here; the linear matcher takes microseconds.
-    expect(performance.now() - started).toBeLessThan(250)
   })
 
   it(`refuses a scope with more than ${Selection.maxScopeWildcards} * or ** wildcards at the schema`, () => {

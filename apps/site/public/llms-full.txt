@@ -17364,6 +17364,13 @@ cache row, or a correctness decision.
 | `card`                             | `(input: CardInput) => ReadonlyArray<string>`                                              | Renders the plan card, one string per line. |
 | `proposeReadSet`                   | `(input: { beliefs, flow, paths }) => ReadonlyArray<string>`                               | The `boundaryMode: "expected"` feeder.      |
 
+For deterministic work measurements, `makeHeuristic(cost)`, `risk(input, cost)`,
+and `proposeReadSet(input, cost)` accept an optional mutable
+`{ compilations: 0, steps: 0 }` counter. Counts accumulate across calls;
+each invocation still creates its own compiled-scope cache. `steps` counts
+token visits during state closure and character advancement, independently
+of host speed. Omitting the counter preserves the pure result-only API.
+
 ### Schemas and models
 
 | Export               | Shape                                                                                     |

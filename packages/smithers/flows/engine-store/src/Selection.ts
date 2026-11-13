@@ -316,13 +316,14 @@ export const layerNoop: Layer.Layer<Selection> = Layer.sync(Selection, makeNoop)
  * character at a time, so a match costs at most path length times token
  * count and never backtracks, even for a scope stored before the wildcard cap.
  */
-const compileScope = (scope: string): (path: string) => boolean => {
+const compileScope = (scope: string, cost?: ScopeMatchingCost): (path: string) => boolean => {
   const tokens = scope.split("**").flatMap((segment, index) => [
     ...(index === 0 ? [] : ["**"]),
     ...segment
   ])
   const close = (states: Uint8Array): Uint8Array => {
     for (let index = 0; index < tokens.length; index++) {
+      if (cost !== undefined) cost.steps++
       if (states[index] === 1 && (tokens[index] === "*" || tokens[index] === "**")) states[index + 1] = 1
     }
     return states
@@ -333,6 +334,7 @@ const compileScope = (scope: string): (path: string) => boolean => {
       const next = new Uint8Array(tokens.length + 1)
       let live = false
       for (let index = 0; index < tokens.length; index++) {
+        if (cost !== undefined) cost.steps++
         if (states[index] !== 1) continue
         const token = tokens[index]
         const target = token === "**" || (token === "*" && char !== "/")
@@ -352,20 +354,43 @@ const compileScope = (scope: string): (path: string) => boolean => {
   }
 }
 
-const makeScopeMatcher = () => {
+/**
+ * Work performed by one compiled-scope cache. Steps count token visits in
+ * state closure and character advancement, independently of host speed.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export interface ScopeMatchingCost {
+  compilations: number
+  steps: number
+}
+
+/**
+ * Creates an invocation-local matcher with optional work accounting.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const makeScopeMatcher = (cost?: ScopeMatchingCost) => {
   const matchers = new Map<string, (path: string) => boolean>()
   return (scope: string, path: string): boolean => {
     let matcher = matchers.get(scope)
     if (matcher === undefined) {
-      matcher = compileScope(scope)
+      matcher = compileScope(scope, cost)
+      if (cost !== undefined) cost.compilations++
       matchers.set(scope, matcher)
     }
     return matcher(path)
   }
 }
 
-const liveEdges = (beliefs: BeliefSnapshot, paths: ReadonlyArray<string>): ReadonlyArray<SuspectedEdge> => {
-  const matchesScope = makeScopeMatcher()
+const liveEdges = (
+  beliefs: BeliefSnapshot,
+  paths: ReadonlyArray<string>,
+  cost?: ScopeMatchingCost
+): ReadonlyArray<SuspectedEdge> => {
+  const matchesScope = makeScopeMatcher(cost)
   return beliefs.edges.filter((edge) =>
     edge.validFromMs <= beliefs.pinnedAtMs
     && paths.some((path) => matchesScope(edge.scope, path))
@@ -389,11 +414,12 @@ const liveEdges = (beliefs: BeliefSnapshot, paths: ReadonlyArray<string>): Reado
  *
  * @since 0.1.0
  * @category constructors
+ * @param cost Optional counters for invocation-local scope compilation and token visits.
  */
-export const makeHeuristic = (): Service => ({
+export const makeHeuristic = (cost?: ScopeMatchingCost): Service => ({
   select: Effect.fn("Selection.select")((input) =>
     Effect.sync(() => {
-      const live = liveEdges(input.beliefs, input.changed)
+      const live = liveEdges(input.beliefs, input.changed, cost)
       const verdicts: Array<Selected> = []
       for (const candidate of input.sinks) {
         let best: SuspectedEdge | undefined = undefined
@@ -586,12 +612,13 @@ export interface Risk {
  *
  * @since 0.1.0
  * @category combinators
+ * @param cost Optional counters for invocation-local scope compilation and token visits.
  */
 export const risk = (input: {
   readonly changed: ReadonlyArray<string>
   readonly beliefs: BeliefSnapshot
-}): Risk => {
-  const live = liveEdges(input.beliefs, input.changed)
+}, cost?: ScopeMatchingCost): Risk => {
+  const live = liveEdges(input.beliefs, input.changed, cost)
   const level = live.some((edge) => edge.confidence >= 0.7)
     ? "high"
     : live.some((edge) => edge.confidence >= 0.4)
@@ -660,16 +687,17 @@ export const card = (input: CardInput): ReadonlyArray<string> => {
  *
  * @since 0.1.0
  * @category combinators
+ * @param cost Optional counters for invocation-local scope compilation and token visits.
  */
 export const proposeReadSet = (input: {
   readonly beliefs: BeliefSnapshot
   readonly flow: string
   readonly paths: ReadonlyArray<string>
-}): ReadonlyArray<string> => {
+}, cost?: ScopeMatchingCost): ReadonlyArray<string> => {
   const edges = input.beliefs.edges.filter((edge) =>
     edge.validFromMs <= input.beliefs.pinnedAtMs && edge.affects === input.flow
   )
-  const matchesScope = makeScopeMatcher()
+  const matchesScope = makeScopeMatcher(cost)
   const seen = new Set<string>()
   const selected: Array<string> = []
   for (const path of input.paths) {
