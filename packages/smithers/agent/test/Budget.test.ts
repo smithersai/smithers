@@ -1091,16 +1091,12 @@ const parkingBetweenSteps = (tokensPerCall: number, calls: Array<string>): Model
       })
   })
 
-/** Waits for the run to show up in the engine's own view of quota waits. */
-const waitForPark = (state: DurableEngineState.Service) =>
-  Effect.gen(function*() {
-    for (let poll = 0; poll < 400; poll++) {
-      const rows = yield* state.waitingRuns({ reason: "quota" })
-      if (rows.length > 0) return rows
-      yield* Effect.sleep("10 millis")
-    }
-    return yield* state.waitingRuns({ reason: "quota" })
-  })
+/** Waits for the quota park's journal commit without advancing the clock. */
+const waitForPark = (state: DurableEngineState.Service, running: Fiber.Fiber<unknown, unknown>) =>
+  DurableRun.untilCommitted(running, Effect.map(state.waitingRuns({ reason: "quota" }), (rows) => rows.length > 0))
+    .pipe(
+      Effect.flatMap((parked) => parked ? Effect.void : Effect.die(new Error("the run settled before its quota park")))
+    )
 
 describe("a budget across an engine boundary", () => {
   it("counts what the run spent before the restart, folded back from the replay", async () => {
@@ -1140,7 +1136,7 @@ describe("a budget across an engine boundary", () => {
             const running = yield* TwoSteps.execute({ diff: "-  old\n+  new" }, {
               executionId: "budget-boundary"
             }).pipe(Effect.provide(wiring), Effect.forkChild({ startImmediately: true }))
-            yield* waitForPark(state)
+            yield* waitForPark(state, running)
             yield* Fiber.interrupt(running)
           })
         )
@@ -2679,7 +2675,7 @@ describe("a budget whose journal keeps nothing lossy", () => {
               const running = yield* TwoSteps.execute({ diff: "-  old\n+  new" }, {
                 executionId: "budget-lossy"
               }).pipe(Effect.provide(wiring), Effect.forkChild({ startImmediately: true }))
-              yield* waitForPark(state)
+              yield* waitForPark(state, running)
               yield* Fiber.interrupt(running)
             })
           )

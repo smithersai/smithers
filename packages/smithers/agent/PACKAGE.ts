@@ -93,7 +93,8 @@ const importRules = ImportRules({
     {
       kind: "forbidCalls",
       files: ["test/AgentAction.test.ts", "test/Budget.test.ts", "test/BudgetDurability.test.ts"],
-      callees: ["setTimeout", "*.waitForTimeout"],
+      // `Effect.sleep` by name: `DurableClock.sleep` is the durable park these cases drive, not a wait.
+      callees: ["setTimeout", "*.setTimeout", "*.waitForTimeout", "sleep", "Effect.sleep"],
       because: "test.behavioral: wait on a condition or TestClock, never a fixed sleep."
     },
     {
