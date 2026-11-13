@@ -1,0 +1,143 @@
+// @vitest-environment node
+import { expect, it } from "@effect/vitest"
+import { ObjectDatabase } from "@smthrs/platform-cloudflare"
+import * as SqlClient from "effect/sql/SqlClient"
+import { objectStorage } from "./support/objectStorage.ts"
+
+effect function clients() {
+  const storage = try Effect.try(() => objectStorage())
+  const make = effect () => {
+    const context = try Layer.build(Layer.fresh(ObjectDatabase.layer(storage as unknown as ObjectDatabase.Storage)))
+    return try Effect.try(() => Context.get(context, SqlClient.SqlClient))
+  }
+  return { storage, first: try make(), second: try make() }
+}
+
+it.live("the real SQL client can open sequential nested savepoints", () => scoped(effect {
+  const { first } = try clients()
+  provide SqlClient.SqlClient = first {
+    try first`CREATE TABLE items(id INTEGER PRIMARY KEY)`
+    try first.withTransaction(effect {
+      try first`INSERT INTO items VALUES (1)`
+      try first.withTransaction(first`INSERT INTO items VALUES (2)`)
+      try first.withTransaction(first`INSERT INTO items VALUES (3)`)
+    })
+    const rows = try first<{ id: number }>`SELECT id FROM items ORDER BY id`
+    try Effect.try(() => expect(rows).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]))
+  }
+}), 10_000)
+
+it.live("forked SQL savepoints belong to the outer rollback", () => scoped(effect {
+  const { first } = try clients()
+  provide SqlClient.SqlClient = first {
+    try first`CREATE TABLE items(id INTEGER PRIMARY KEY)`
+    const outcome = try exit(first.withTransaction(effect {
+      try first`INSERT INTO items VALUES (1)`
+      const child = fork first.withTransaction(first`INSERT INTO items VALUES (2)`)
+      try join child
+      try first.withTransaction(first`INSERT INTO items VALUES (3)`)
+      throw { _tag: "AbortOuter" as const }
+    }))
+    const rows = try first<{ id: number }>`SELECT id FROM items`
+    try Effect.try(() => {
+      expect(Exit.isFailure(outcome)).toBe(true)
+      expect(rows).toEqual([])
+    })
+  }
+}), 10_000)
+
+it.live("independent SQL clients sharing a storage serialize their Effect fibers", () => scoped(effect {
+  const { storage, first, second } = try clients()
+  try first`CREATE TABLE items(id INTEGER PRIMARY KEY)`
+  const entered = try Deferred.make<void>()
+  const release = try Deferred.make<void>()
+  const secondRelease = try Deferred.make<void>()
+  const held = effect {
+    provide SqlClient.SqlClient = first {
+      try first.withTransaction(effect {
+        try first`INSERT INTO items VALUES (1)`
+        try Deferred.succeed(entered, undefined)
+        try Deferred.await(release)
+      })
+    }
+  }
+  const rejected = effect {
+    provide SqlClient.SqlClient = second {
+      try second.withTransaction(effect {
+        try second`INSERT INTO items VALUES (2)`
+        try Deferred.await(secondRelease)
+        throw { _tag: "AbortSecond" as const }
+      })
+    }
+  }
+  const firstFiber = fork held
+  try Deferred.await(entered)
+  const secondFiber = fork exit(rejected)
+  try Deferred.succeed(release, undefined)
+  try join firstFiber
+  try Deferred.succeed(secondRelease, undefined)
+  const outcome = try join secondFiber
+  const rows = try Effect.try(() => storage.sql.exec("SELECT id FROM items ORDER BY id").toArray())
+  try Effect.try(() => {
+    expect(Exit.isFailure(outcome)).toBe(true)
+    expect(rows).toEqual([{ id: 1 }])
+  })
+}), 10_000)
+
+it.live("an escaped SQL context cannot join a later transaction at the same level", () => scoped(effect {
+  const { storage, first } = try clients()
+  provide SqlClient.SqlClient = first {
+    try first`CREATE TABLE items(id INTEGER PRIMARY KEY)`
+    const start = try Deferred.make<void>()
+    const attempted = try Deferred.make<void>()
+    const entered = try Deferred.make<void>()
+    const release = try Deferred.make<void>()
+    const childRelease = try Deferred.make<void>()
+    const child = try first.withTransaction(effect {
+      const fiber = fork effect {
+        try Deferred.await(start)
+        try Deferred.succeed(attempted, undefined)
+        return try exit(first.withTransaction(effect {
+          try first`INSERT INTO items VALUES (2)`
+          try Deferred.await(childRelease)
+          throw { _tag: "AbortEscaped" as const }
+        }))
+      }
+      return fiber
+    })
+    const current = fork first.withTransaction(effect {
+      try first`INSERT INTO items VALUES (1)`
+      try Deferred.succeed(entered, undefined)
+      try Deferred.await(release)
+    })
+    try Deferred.await(entered)
+    try Deferred.succeed(start, undefined)
+    try Deferred.await(attempted)
+    // Let the already-started open reach its queue without advancing a wall clock.
+    for (let tick = 0; tick < 3; tick++) try promise(() => Promise.resolve())
+    const beforeRelease = try Effect.try(() => storage.sql.exec("SELECT id FROM items ORDER BY id").toArray())
+    try Deferred.succeed(release, undefined)
+    try Deferred.succeed(childRelease, undefined)
+    try join current
+    const outcome = try join child
+    const rows = try Effect.try(() => storage.sql.exec("SELECT id FROM items ORDER BY id").toArray())
+    try Effect.try(() => {
+      expect(beforeRelease).toEqual([{ id: 1 }])
+      expect(Exit.isFailure(outcome)).toBe(true)
+      expect(rows).toEqual([{ id: 1 }])
+    })
+  }
+}), 10_000)
+
+it.live("consuming the SQL service in a layer preserves forked nested transaction ownership", () => scoped(effect {
+  const { first } = try clients()
+  // The client is closed over, as the object runtime's services close over their consumed SQL dependency.
+  try first`CREATE TABLE items(id INTEGER PRIMARY KEY)`
+  try first.withTransaction(effect {
+    const child = fork first.withTransaction(first`INSERT INTO items VALUES (1)`)
+    try join child
+    try first.withTransaction(first`INSERT INTO items VALUES (2)`)
+  })
+  const rows = try first<{ id: number }>`SELECT id FROM items ORDER BY id`
+  try Effect.try(() => expect(rows).toEqual([{ id: 1 }, { id: 2 }]))
+}), 10_000)

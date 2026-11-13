@@ -26,7 +26,7 @@ const bundle = {
   f: { "0": 0, "1": 0 },
 }
 
-it("the build's structure replaces each compiler item it contains, and keeps tree-shaken code", () => {
+it("the build replaces corresponding shifted initializers and keeps tree-shaken code", () => {
   const json = builtStructure(compiler, bundle)
   expect(starts(json.statementMap)).toEqual(["4:8", "5:8", "10:2"])
   expect(Object.values(json.fnMap).map(fn => fn.name)).toEqual(["make", "dropped"])
@@ -36,4 +36,70 @@ it("the build's structure counts one item per source start, as the gate credits 
   const json = builtStructure(compiler, bundle)
   expect(Object.keys(json.f)).toHaveLength(2)
   expect(starts(Object.fromEntries(Object.entries(json.fnMap).map(([id, fn]) => [id, fn.loc!])))).toEqual(["2:24", "9:26"])
+})
+
+it.each([0, 7, 30])("keeps nested tree-shaken obligations at line offset %i", (offset) => {
+  const at = (line: number, column: number, endLine: number, end: number) => range(line + offset, column, endLine + offset, end)
+  const retained = { name: "result", decl: at(1, 16, 1, 22), loc: at(1, 25, 5, 1) }
+  const nested = { name: "unused", decl: at(2, 8, 2, 14), loc: at(2, 23, 2, 24) }
+  const full = {
+    ...empty,
+    statementMap: { "0": at(2, 17, 2, 24), "1": at(2, 23, 2, 24), "2": at(3, 17, 3, 29), "3": at(4, 2, 4, 10) },
+    s: { "0": 0, "1": 0, "2": 0, "3": 0 },
+    fnMap: { "0": retained, "1": nested }, f: { "0": 0, "1": 0 },
+    branchMap: { "0": { loc: at(3, 17, 3, 29), type: "cond-expr", locations: [at(3, 24, 3, 25), at(3, 28, 3, 29)] } }, b: { "0": [0, 0] },
+  }
+  const shipped = {
+    ...empty,
+    statementMap: { "0": at(4, 2, 4, 10) }, s: { "0": 1 },
+    fnMap: { "0": retained }, f: { "0": 1 },
+  }
+  const json = builtStructure(full, shipped)
+  expect(Object.values(json.fnMap).map(fn => fn.name)).toEqual(["result", "unused"])
+  expect(starts(json.statementMap)).toEqual([4 + offset + ":2", 2 + offset + ":17", 2 + offset + ":23", 3 + offset + ":17"])
+  expect(Object.values(json.f)).toEqual([1, 0])
+  expect(Object.values(json.s)).toEqual([1, 0, 0, 0])
+  expect(Object.values(json.b)).toEqual([[0, 0]])
+})
+
+it("a shifted declaration replaces only its initializer, not a removed arrow body sharing its end", () => {
+  const declaration = range(2, 8, 2, 35)
+  const initializer = range(2, 17, 2, 35)
+  const inner = range(2, 30, 2, 35)
+  const json = builtStructure({
+    ...empty,
+    statementMap: { "0": initializer, "1": inner }, s: { "0": 0, "1": 0 },
+    fnMap: { "0": { name: "unused", decl: range(2, 17, 2, 20), loc: inner } }, f: { "0": 0 },
+  }, {
+    ...empty,
+    statementMap: { "0": declaration }, s: { "0": 1 },
+  })
+  expect(starts(json.statementMap)).toEqual(["2:8", "2:30"])
+  expect(Object.values(json.s)).toEqual([1, 0])
+  expect(Object.values(json.f)).toEqual([0])
+})
+
+it("a bundle statement starting after its compiler counterpart replaces only that statement", () => {
+  const json = builtStructure({
+    ...empty,
+    statementMap: { "0": range(2, 8, 2, 30), "1": range(2, 12, 2, 20) }, s: { "0": 0, "1": 0 },
+  }, {
+    ...empty,
+    statementMap: { "0": range(2, 10, 2, 30) }, s: { "0": 1 },
+  })
+  expect(starts(json.statementMap)).toEqual(["2:10", "2:12"])
+  expect(Object.values(json.s)).toEqual([1, 0])
+})
+
+it("duplicate bundled starts share one replacement and retain unmatched nested statements", () => {
+  const shipped = range(1, 5, 1, 40)
+  const json = builtStructure({
+    ...empty,
+    statementMap: { "0": range(1, 10, 1, 40), "1": range(1, 20, 1, 40) }, s: { "0": 0, "1": 0 },
+  }, {
+    ...empty,
+    statementMap: { "0": shipped, "1": shipped }, s: { "0": 1, "1": 1 },
+  })
+  expect(starts(json.statementMap)).toEqual(["1:5", "1:20"])
+  expect(Object.values(json.s)).toEqual([1, 0])
 })

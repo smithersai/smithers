@@ -28,7 +28,7 @@ it.live("the browser gate credits a statement whose start Rolldown leaves unmapp
       const fixture = path.join(app, "e2e/coverage-fixtures/initializer.vibe")
       // Inside the app's node_modules so the entry resolves like the app does; removed with the scope.
       const root = try fs.makeTempDirectoryScoped({ directory: path.join(app, "node_modules"), prefix: ".browser-coverage-build-" })
-      try fs.writeFileString(path.join(root, "entry.mjs"), `import { scrolled } from ${JSON.stringify(fixture)}\nconsole.log(scrolled(undefined, 1))\n`)
+      try fs.writeFileString(path.join(root, "entry.mjs"), `import { scrolled, result } from ${JSON.stringify(fixture)}\nconsole.log(scrolled(undefined, 1), result())\n`)
       const output = path.join(root, "dist")
       // Unminified, as the e2e build is: Rolldown still prints no segment at `() =>` or `(serial ?? 0)`.
       try tryPromise(() => build({
@@ -60,7 +60,7 @@ it.live("the browser gate credits a statement whose start Rolldown leaves unmapp
   const { status, stderr, stdout, native, file } = observed
   try Effect.try(() => {
     expect(status, stderr).toBe(0)
-    expect(stdout.trim()).toBe("2")
+    expect(stdout.trim()).toBe("2 2")
     expect(native).toBe(true)
     // Both initializers ran. The compiler's map starts them at `(` (3:19, 4:15); the bundle's map has no segment
     // there, so its statements start at the names. The build's structure is the denominator, so each is credited.
@@ -69,6 +69,11 @@ it.live("the browser gate credits a statement whose start Rolldown leaves unmapp
     // The tree-shaken export is in no chunk: the compiler's structure keeps it in the denominator, uncovered.
     expect(hitsAt(file, 10)).toEqual([0])
     expect(functionHitsAt(file, 9)).toEqual([0])
+    // The enclosing function ran; its removed nested function and conditional still count as unexecuted source.
+    expect(functionHitsAt(file, 14)).toEqual([1])
+    expect(functionHitsAt(file, 15)).toEqual([0])
+    expect(hitsAt(file, 15)).toEqual([0, 0])
+    expect(hitsAt(file, 16)).toEqual([0])
   })
   // A real Vite build: about a minute alone on a loaded host.
 }, 300_000)

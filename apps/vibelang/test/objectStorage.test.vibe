@@ -1,0 +1,234 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const barrier = () => {
+  let resolve!: () => void
+  const promise = new Promise<void>(release => { resolve = release })
+  return { promise, resolve }
+}
+
+it.live("overlapping transactions wait their turn and retain the original rollback error", () => effect {
+  try tryPromise(async () => {
+    const storage = objectStorage()
+    storage.sql.exec("CREATE TABLE items(id INTEGER PRIMARY KEY)")
+    const entered = barrier()
+    const release = barrier()
+    const secondRelease = barrier()
+    const failure = new Error("abort second")
+    const order: string[] = []
+    const first = storage.transaction(async () => {
+      storage.sql.exec("INSERT INTO items VALUES (1)")
+      order.push("first")
+      entered.resolve()
+      await release.promise
+    })
+    await entered.promise
+    const second = storage.transaction(async () => {
+      order.push("second")
+      storage.sql.exec("INSERT INTO items VALUES (2)")
+      await secondRelease.promise
+      throw failure
+    })
+    const secondOutcome = second.catch(error => error)
+    // A deterministic microtask checkpoint: the second call has reached its first await.
+    await Promise.resolve()
+    const beforeRelease = [...order]
+    release.resolve()
+    await first
+    secondRelease.resolve()
+    expect(await secondOutcome).toBe(failure)
+    expect(beforeRelease).toEqual(["first"])
+    expect(order).toEqual(["first", "second"])
+    expect(storage.sql.exec("SELECT id FROM items ORDER BY id").toArray()).toEqual([{ id: 1 }])
+    await storage.transaction(() => storage.sql.exec("INSERT INTO items VALUES (3)"))
+    expect(storage.sql.exec("SELECT id FROM items ORDER BY id").toArray()).toEqual([{ id: 1 }, { id: 3 }])
+  })
+})
+
+it.live("nested savepoints roll back only their own writes and leave the outer transaction usable", () => effect {
+  try tryPromise(async () => {
+    const storage = objectStorage()
+    storage.sql.exec("CREATE TABLE items(id INTEGER PRIMARY KEY)")
+    const failure = new Error("nested failure")
+    const result = await storage.transaction(async () => {
+      storage.sql.exec("INSERT INTO items VALUES (1)")
+      await expect(storage.transaction(async () => {
+        storage.sql.exec("INSERT INTO items VALUES (2)")
+        throw failure
+      })).rejects.toBe(failure)
+      await storage.transaction(txn => {
+        storage.sql.exec("INSERT INTO items VALUES (3)")
+        txn.rollback()
+      })
+      storage.transactionSync(() => storage.sql.exec("INSERT INTO items VALUES (4)"))
+      return "committed"
+    })
+    expect(result).toBe("committed")
+    expect(storage.sql.exec("SELECT id FROM items ORDER BY id").toArray()).toEqual([{ id: 1 }, { id: 4 }])
+  })
+})
+
+it.live("a failed commit rolls back and releases transaction bookkeeping exactly once", () => effect {
+  try tryPromise(async () => {
+    const storage = objectStorage()
+    storage.sql.exec("PRAGMA foreign_keys = ON")
+    storage.sql.exec("CREATE TABLE parents(id INTEGER PRIMARY KEY)")
+    storage.sql.exec("CREATE TABLE children(parent INTEGER REFERENCES parents(id) DEFERRABLE INITIALLY DEFERRED)")
+    await expect(storage.transaction(() => {
+      storage.sql.exec("INSERT INTO children VALUES (1)")
+    })).rejects.toThrow("FOREIGN KEY constraint failed")
+    expect(storage.sql.exec("SELECT * FROM children").toArray()).toEqual([])
+    await storage.transaction(() => {
+      storage.sql.exec("INSERT INTO parents VALUES (1)")
+      storage.sql.exec("INSERT INTO children VALUES (1)")
+    })
+    expect(storage.sql.exec("SELECT * FROM children").toArray()).toEqual([{ parent: 1 }])
+  })
+})
+
+it.live("a rejected owner releases queued callers and nested commits remain part of its rollback", () => effect {
+  try tryPromise(async () => {
+    const storage = objectStorage()
+    storage.sql.exec("CREATE TABLE items(id INTEGER PRIMARY KEY)")
+    const entered = barrier()
+    const release = barrier()
+    const failure = new Error("abort owner")
+    const first = storage.transaction(async () => {
+      storage.sql.exec("INSERT INTO items VALUES (1)")
+      await storage.transaction(() => storage.sql.exec("INSERT INTO items VALUES (2)"))
+      entered.resolve()
+      await release.promise
+      throw failure
+    })
+    const firstOutcome = first.catch(error => error)
+    await entered.promise
+    const second = storage.transaction(() => storage.sql.exec("INSERT INTO items VALUES (3)"))
+    release.resolve()
+    expect(await firstOutcome).toBe(failure)
+    await second
+    expect(storage.sql.exec("SELECT id FROM items ORDER BY id").toArray()).toEqual([{ id: 3 }])
+  })
+})
+
+it.live("explicit rollback and a failed BEGIN leave the next transaction usable", () => effect {
+  try tryPromise(async () => {
+    const storage = objectStorage()
+    storage.sql.exec("CREATE TABLE items(id INTEGER PRIMARY KEY)")
+    await storage.transaction(txn => {
+      storage.sql.exec("INSERT INTO items VALUES (1)")
+      txn.rollback()
+    })
+    expect(storage.sql.exec("SELECT * FROM items").toArray()).toEqual([])
+    storage.sql.exec("BEGIN")
+    await expect(storage.transaction(() => undefined)).rejects.toThrow("cannot start a transaction within a transaction")
+    expect(() => storage.transactionSync(() => undefined)).toThrow("cannot start a transaction within a transaction")
+    storage.sql.exec("ROLLBACK")
+    await storage.transaction(() => storage.sql.exec("INSERT INTO items VALUES (2)"))
+    storage.transactionSync(() => storage.sql.exec("INSERT INTO items VALUES (3)"))
+    expect(storage.sql.exec("SELECT * FROM items ORDER BY id").toArray()).toEqual([{ id: 2 }, { id: 3 }])
+  })
+})
+
+it.live("one storage's suspended callback does not delay another storage", () => effect {
+  try tryPromise(async () => {
+    const firstStorage = objectStorage()
+    const secondStorage = objectStorage()
+    const entered = barrier()
+    const release = barrier()
+    const first = firstStorage.transaction(async () => {
+      entered.resolve()
+      await release.promise
+    })
+    await entered.promise
+    const second = await secondStorage.transaction(() => 42)
+    release.resolve()
+    await first
+    expect(second).toBe(42)
+  })
+})
+
+it.live("overlapping siblings use separate savepoints without committing a failed sibling's writes", () => effect {
+  try tryPromise(async () => {
+    const storage = objectStorage()
+    storage.sql.exec("CREATE TABLE items(id INTEGER PRIMARY KEY)")
+    await storage.transaction(async () => {
+      const releaseA = barrier()
+      const releaseB = barrier()
+      const failure = new Error("abort sibling")
+      const a = storage.transaction(async () => {
+        storage.sql.exec("INSERT INTO items VALUES (1)")
+        await releaseA.promise
+      })
+      const b = storage.transaction(async () => {
+        storage.sql.exec("INSERT INTO items VALUES (2)")
+        await releaseB.promise
+        throw failure
+      })
+      const outcome = b.catch(error => error)
+      releaseA.resolve()
+      await a
+      releaseB.resolve()
+      expect(await outcome).toBe(failure)
+    })
+    expect(storage.sql.exec("SELECT id FROM items ORDER BY id").toArray()).toEqual([{ id: 1 }])
+  })
+})
+
+it.live("an outer rollback waits until its previously started child releases its savepoint", () => effect {
+  try tryPromise(async () => {
+    const storage = objectStorage()
+    storage.sql.exec("CREATE TABLE items(id INTEGER PRIMARY KEY)")
+    const entered = barrier()
+    const release = barrier()
+    const failure = new Error("abort outer")
+    let child: Promise<unknown> | undefined
+    const outer = storage.transaction(async () => {
+      child = storage.transaction(async () => {
+        storage.sql.exec("INSERT INTO items VALUES (1)")
+        entered.resolve()
+        await release.promise
+      })
+      await entered.promise
+      throw failure
+    })
+    const outcome = outer.catch(error => error)
+    await entered.promise
+    release.resolve()
+    expect(await outcome).toBe(failure)
+    await child
+    expect(storage.sql.exec("SELECT * FROM items").toArray()).toEqual([])
+    await storage.transaction(() => storage.sql.exec("INSERT INTO items VALUES (2)"))
+    expect(storage.sql.exec("SELECT * FROM items").toArray()).toEqual([{ id: 2 }])
+  })
+})
+
+it.live("a continuation from a completed callback rejoins the independent callers", () => effect {
+  try tryPromise(async () => {
+    const storage = objectStorage()
+    storage.sql.exec("CREATE TABLE items(id INTEGER PRIMARY KEY)")
+    const delayed = barrier()
+    const entered = barrier()
+    const release = barrier()
+    const failure = new Error("abort continuation")
+    let continuation: Promise<unknown> | undefined
+    await storage.transaction(() => {
+      continuation = delayed.promise.then(() => storage.transaction(async () => {
+        storage.sql.exec("INSERT INTO items VALUES (2)")
+        throw failure
+      })).catch(error => error)
+    })
+    const current = storage.transaction(async () => {
+      storage.sql.exec("INSERT INTO items VALUES (1)")
+      entered.resolve()
+      await release.promise
+    })
+    await entered.promise
+    delayed.resolve()
+    await Promise.resolve()
+    release.resolve()
+    await current
+    expect(await continuation).toBe(failure)
+    expect(storage.sql.exec("SELECT * FROM items ORDER BY id").toArray()).toEqual([{ id: 1 }])
+  })
+})

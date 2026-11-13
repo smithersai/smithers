@@ -1,6 +1,10 @@
 // Stays .ts: node:sqlite is a Node host API. This in-memory Durable Object storage is the unit tests' host
 // adapter (the role ctx.storage plays in workerd), not product code.
 import { DatabaseSync } from "node:sqlite"
+import { AsyncLocalStorage } from "node:async_hooks"
+import type * as Context from "effect/Context"
+import * as Fiber from "effect/Fiber"
+import type * as SqlClient from "effect/sql/SqlClient"
 
 /** One executed statement's rows, as the Durable Object SQL cursor exposes them. */
 export class SqlCursor {
@@ -62,11 +66,32 @@ export interface ObjectStorage {
   transactionSync<A>(body: () => A): A
 }
 
+interface TransactionScope {
+  active: boolean
+  tail: Promise<void>
+  readonly parent: TransactionScope | undefined
+  readonly fiber: ReturnType<typeof Fiber.getCurrent>
+  readonly entryContext: Context.Context<never> | undefined
+}
+
+/** The public SQL transaction frame, without depending on a driver's private service key. */
+const isSqlTransaction = (value: unknown): value is SqlClient.TransactionConnection.Service => {
+  if (!Array.isArray(value) || value.length !== 2 || !Number.isSafeInteger(value[1]) || value[1] < 0
+    || typeof value[0] !== "object" || value[0] === null) return false
+  const connection = value[0] as Record<string, unknown>
+  return ["execute", "executeRaw", "executeValues", "executeValuesUnprepared", "executeUnprepared", "executeStream"]
+    .every(method => typeof connection[method] === "function")
+}
+
 /** ctx.storage for one object, in memory: key-value, alarm, and a real SQLite database. */
 export function objectStorage(): ObjectStorage {
   const db = new DatabaseSync(":memory:")
   const kv = new Map<string, unknown>()
   let depth = 0
+  const transactions = new AsyncLocalStorage<TransactionScope>()
+  const fiberScopes = new WeakMap<NonNullable<ReturnType<typeof Fiber.getCurrent>>, Array<TransactionScope>>()
+  const activeScopes = new Set<TransactionScope>()
+  const root = { tail: Promise.resolve() }
   const storage: ObjectStorage = {
     kv,
     alarmAt: undefined,
@@ -108,9 +133,10 @@ export function objectStorage(): ObjectStorage {
       },
     },
     transactionSync(body) {
-      const level = depth++
+      const level = depth
       const savepoint = `vibelang_sync_${level}`
       db.exec(level === 0 ? "BEGIN" : `SAVEPOINT ${savepoint}`)
+      depth++
       try {
         const result = body()
         db.exec(level === 0 ? "COMMIT" : `RELEASE ${savepoint}`)
@@ -123,25 +149,74 @@ export function objectStorage(): ObjectStorage {
       }
     },
     async transaction(closure) {
-      const level = depth++
-      const savepoint = `vibelang_sp_${level}`
-      db.exec(level === 0 ? "BEGIN" : `SAVEPOINT ${savepoint}`)
-      let aborted = false
-      const end = (commit: boolean) => {
-        depth--
-        // Real Durable Object storage resolves transaction() after txn.rollback(): a rollback is
-        // an outcome, not an exception, and the closure's value is discarded (see the monorepo's
-        // workerd-validated fixture, platform-cloudflare/test/fixtures/SqliteStorage.ts).
-        if (level === 0) db.exec(commit ? "COMMIT" : "ROLLBACK")
-        else db.exec(commit ? `RELEASE ${savepoint}` : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`)
+      // Each parent serializes its children: independent callers share the root; actual nesting gets savepoints.
+      const fiber = Fiber.getCurrent()
+      const entryContext = fiber?.context
+      const frames = entryContext ? [...entryContext.mapUnsafe].filter(([, value]) => isSqlTransaction(value)) : []
+      let parent = transactions.getStore()
+      while (parent && !parent.active) parent = parent.parent
+      // The SQL driver parks its callback and runs the body on a fiber. Forks inherit the fresh transaction tuple,
+      // even when a layer has consumed the SqlClient service. Compare that tuple by identity, never by depth alone.
+      const sqlParent = [...activeScopes].reverse().find(scope => scope.active && scope.fiber && scope.entryContext
+        && frames.some(([key, value]) => scope.fiber!.context.mapUnsafe.get(key) === value
+          && scope.entryContext!.mapUnsafe.get(key) !== value))
+      if (sqlParent) {
+        if (!parent) parent = sqlParent
+        else for (let ancestor = sqlParent.parent; ancestor; ancestor = ancestor.parent) {
+          if (ancestor === parent) { parent = sqlParent; break }
+        }
+      } else if (parent?.fiber && parent.entryContext && fiber && frames.length === 0
+        && [...parent.fiber.context.mapUnsafe].some(([key, value]) => isSqlTransaction(value)
+          && parent!.entryContext!.mapUnsafe.get(key) !== value)) {
+        // A different root fiber cannot inherit ownership merely from a scheduler's native async context.
+        parent = undefined
       }
+      if (!parent && fiber && frames.length === 0) parent = fiberScopes.get(fiber)?.slice().reverse().find(scope => scope.active)
+      const owner = parent ?? root
+      const previous = owner.tail
+      let release!: () => void
+      owner.tail = new Promise<void>(resolve => { release = resolve })
+      await previous
+      const scope: TransactionScope = { active: true, tail: Promise.resolve(), parent, fiber, entryContext }
+      const scopes = fiber ? fiberScopes.get(fiber) ?? [] : undefined
+      if (fiber && scopes) { scopes.push(scope); fiberScopes.set(fiber, scopes) }
+      activeScopes.add(scope)
       try {
-        const result = await closure({ sql: storage.sql, rollback: () => { aborted = true } })
-        end(!aborted)
-        return result
-      } catch (error) {
-        end(false)
-        throw error
+        return await transactions.run(scope, async () => {
+          const level = depth
+          const savepoint = "vibelang_sp_" + level
+          db.exec(level === 0 ? "BEGIN" : "SAVEPOINT " + savepoint)
+          depth++
+          let aborted = false
+          const end = (commit: boolean) => {
+            // rollback() is an outcome, not an exception, on real Durable Object storage.
+            if (level === 0) db.exec(commit ? "COMMIT" : "ROLLBACK")
+            else db.exec(commit ? "RELEASE " + savepoint : "ROLLBACK TO " + savepoint + "; RELEASE " + savepoint)
+          }
+          try {
+            let result: Awaited<ReturnType<typeof closure>>
+            try {
+              result = await closure({ sql: storage.sql, rollback: () => { aborted = true } })
+            } finally {
+              // A parent must not finalize while a previously started child still owns a savepoint.
+              scope.active = false
+              await scope.tail
+            }
+            end(!aborted)
+            return result
+          } catch (error) {
+            // A deferred constraint can reject COMMIT while SQLite still owns the transaction.
+            if (db.isTransaction) end(false)
+            throw error
+          } finally {
+            depth--
+          }
+        })
+      } finally {
+        scope.active = false
+        activeScopes.delete(scope)
+        if (scopes) scopes.splice(scopes.indexOf(scope), 1)
+        release()
       }
     },
   }

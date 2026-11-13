@@ -2,6 +2,7 @@
 import { expect, test } from "./coverage"
 import { measure, readBuild, sourcesIn } from "./coverage-reporter"
 import { resolve } from "node:path"
+import type { FileCoverageJSON } from "../test/support/coverageUnion.ts"
 
 test("Chromium remapping retains a tree-shaken export and an unvisited nested Effect branch, and credits what Rolldown leaves unmapped", async ({ context }, info) => {
   test.skip(process.env.E2E_BASE_URL !== undefined, "it remaps the local build's source maps, which a deployment does not serve")
@@ -43,7 +44,17 @@ test("Chromium remapping retains a tree-shaken export and an unvisited nested Ef
     expect(await page.evaluate(() => Reflect.get(window, "coverageScrolled"))).toBe(2)
     const built = coverage.fileCoverageFor(resolve("e2e/coverage-fixtures/initializer.vibe"))
     const unrun = Object.entries(built.s).filter(([, count]) => count === 0).map(([id]) => built.statementMap[id].start.line)
-    expect(unrun).toEqual([10])
+    expect(unrun).toContain(10)
+    expect(await page.evaluate(() => Reflect.get(window, "coverageNested"))).toBe(2)
+    expect(unrun).toContain(15)
+    expect(unrun).toContain(16)
+    const structure = built.toJSON() as FileCoverageJSON
+    const nested = Object.entries(structure.fnMap).filter(([, fn]) => fn.decl.start.line === 15)
+    expect(nested).toHaveLength(1)
+    expect(structure.f[nested[0]![0]]).toBe(0)
+    const droppedBranch = Object.entries(structure.branchMap).filter(([, branch]) => branch.loc.start.line === 16)
+    expect(droppedBranch).toHaveLength(1)
+    expect(structure.b[droppedBranch[0]![0]]).toEqual([0, 0])
   } finally {
     await page.close()
   }

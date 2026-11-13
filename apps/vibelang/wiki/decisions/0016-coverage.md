@@ -3046,3 +3046,28 @@ selection and an empty selection. This check runs before any early return or sou
 `onTestEnd` and `onEnd` together in an isolated process with the actual strict-mode environment flag.
 
 Tracked and fixed in [#5340](https://github.com/smithersai/smithers/issues/5340).
+
+## Nested source obligations and fixture transaction isolation
+
+The browser denominator retains unexecuted code removed from inside a retained function. Bundle statements replace
+only corresponding compiler statements, paired by source start or by a single initializer's end when Rolldown omits
+its start. Functions match by body start; branches match by type and ordered arm starts. An enclosing range alone
+never removes a nested function, statement or branch. `test/browserStructure.test.vibe`,
+`test/browserCoverageBuild.test.vibe` and `e2e/source-map.spec.ts` keep both synthetic and real bundled negative
+controls: the outer function runs while its removed arrow and conditional remain uncovered.
+
+The Node object-storage host serializes independent asynchronous transaction callbacks per storage. Calls made
+inside an active callback retain savepoint nesting. Siblings serialize, and parents await their started children.
+A rejected callback rolls back its own writes and preserves its error. Failed `BEGIN` leaves depth unchanged;
+every opened transaction releases depth once, even when `COMMIT` fails. A failed commit rolls back before
+the next caller enters. `test/objectStorage.test.vibe` exercises overlap with explicit barriers, nested rollback,
+deferred foreign-key failure and recovery against real in-memory SQLite. These are test-host guarantees, not claims
+about production Durable Object storage.
+
+The SQL driver parks its storage callback while an Effect fiber runs the body. The fixture preserves ownership
+across that boundary using the fresh public SQL transaction frame's identity in caller and owner contexts. It
+never infers ownership from a global nesting depth or a reused level number. Tests in
+`test/objectStorage.effect.test.vibe` cover sequential and forked savepoints, independent clients, rollback,
+escaped contexts and a SQL client consumed as a layer dependency.
+
+Tracked and fixed in [#5354](https://github.com/smithersai/smithers/issues/5354).

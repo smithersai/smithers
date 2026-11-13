@@ -113,39 +113,57 @@ export function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON
 }
 
 /**
- * The structure a bundle runs, for a source the bundle contains: the bundle's statements, functions and branches, plus
- * each compiler item whose start no bundle statement or function contains (tree-shaken code). Rolldown prints no
- * source-map segment at some starts, an arrow or parenthesized initializer among them, so the bundle starts
- * `const next = (a ?? 0)` at `next` where the compiler starts it at `(`, sometimes a line earlier; matched by start
- * against the compiler's structure, Chromium's run of it would never count (decision 0016,
- * ~/vl/vibelang-bugs/coverage-source-ranges/rolldown-segments). The two structures then differ only where the bundler
- * changed the code. Items that share a source start count once: the gate credits by start, and Rolldown can map two
- * functions to one (an inner `make` renamed `make_2`).
+ * The bundle's structure plus unmatched compiler obligations, including code removed inside retained functions.
+ * A replacement has the same kind and source start. For a statement whose initializer start Rolldown leaves
+ * unmapped, pair just one compiler statement with the same end and the closest start. A containing function or
+ * declaration cannot replace its nested statements, functions or branches (decision 0016).
  */
 export function builtStructure(compiler: FileCoverageJSON, bundle: FileCoverageJSON): FileCoverageJSON {
   const json: FileCoverageJSON = { ...structuredClone(compiler), statementMap: {}, fnMap: {}, branchMap: {}, s: {}, f: {}, b: {} }
   const order = (position: Partial<Position>) => [position.line ?? -1, position.column ?? -1] as const
   const before = (a: Partial<Position>, b: Partial<Position>) => order(a)[0] < order(b)[0] || (order(a)[0] === order(b)[0] && order(a)[1] <= order(b)[1])
-  const ranges = [...Object.values(bundle.statementMap), ...Object.values(bundle.fnMap).map(fn => fn.loc ?? fn.decl)]
-  const contained = (position: Partial<Position>) => ranges.some(range => before(range.start, position) && before(position, range.end))
-  const start = (range: { start: Partial<Position> }) => `${range.start.line}:${range.start.column}`
+  const start = (range: { start: Partial<Position> }) => JSON.stringify([range.start.line, range.start.column])
+  const body = (fn: FileCoverageJSON["fnMap"][string]) => fn.loc ?? fn.decl
+  const shippedFunctions = new Set(Object.values(bundle.fnMap).map(fn => start(body(fn))))
+  const removedBodies = Object.values(compiler.fnMap).map(body).filter(loc => !shippedFunctions.has(start(loc)))
+  const statements = Object.entries(compiler.statementMap)
+  const replaced = new Set<string>()
+  const matchedStarts = new Set<string>()
+  for (const loc of Object.values(bundle.statementMap)) {
+    const key = start(loc)
+    if (matchedStarts.has(key)) continue
+    matchedStarts.add(key)
+    const exact = statements.filter(([, candidate]) => start(candidate) === start(loc))
+    if (exact.length > 0) {
+      for (const [id] of exact) replaced.add(id)
+      continue
+    }
+    // Keep statements inside a removed nested function, even if its final expression shares the declaration's end.
+    const candidates = statements.filter(([id, candidate]) => !replaced.has(id)
+      && start({ start: candidate.end }) === start({ start: loc.end })
+      && !removedBodies.some(range => before(range.start, candidate.start) && before(candidate.start, range.end)))
+      .sort(([, a], [, b]) => before(a.start, b.start) ? -1 : 1)
+    const preceding = candidates.filter(([, candidate]) => before(candidate.start, loc.start))
+    const match = preceding.at(-1) ?? candidates[0]
+    if (match) replaced.add(match[0])
+  }
   const seen = { s: new Set<string>(), f: new Set<string>(), b: new Set<string>() }
   const first = (kind: keyof typeof seen, key: string) => !seen[kind].has(key) && Boolean(seen[kind].add(key))
-  for (const [owner, kept] of [[bundle, () => true], [compiler, (position: Partial<Position>) => !contained(position)]] as const) {
+  for (const owner of [bundle, compiler]) {
     for (const [id, loc] of Object.entries(owner.statementMap)) {
-      if (!kept(loc.start) || !first("s", start(loc))) continue
+      if ((owner === compiler && replaced.has(id)) || !first("s", start(loc))) continue
       const key = String(Object.keys(json.statementMap).length)
       json.statementMap[key] = structuredClone(loc)
       json.s[key] = owner.s[id] ?? 0
     }
     for (const [id, fn] of Object.entries(owner.fnMap)) {
-      if (!kept((fn.loc ?? fn.decl).start) || !first("f", start(fn.loc ?? fn.decl))) continue
+      if (!first("f", start(body(fn)))) continue
       const key = String(Object.keys(json.fnMap).length)
       json.fnMap[key] = structuredClone(fn)
       json.f[key] = owner.f[id] ?? 0
     }
     for (const [id, branch] of Object.entries(owner.branchMap)) {
-      if (!kept(branch.loc.start) || !first("b", JSON.stringify([branch.type, start(branch.loc), branch.locations.map(start)]))) continue
+      if (!first("b", JSON.stringify([branch.type, branch.locations.map(start)]))) continue
       const key = String(Object.keys(json.branchMap).length)
       json.branchMap[key] = structuredClone(branch)
       json.b[key] = [...(owner.b[id] ?? branch.locations.map(() => 0))]

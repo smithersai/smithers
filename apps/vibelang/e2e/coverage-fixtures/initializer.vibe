@@ -9,3 +9,10 @@ export function scrolled(page: { readonly scrollY?: number } | undefined, serial
 export function dropped() {
   return 13
 }
+
+/** Nested code removed while its enclosing function remains in the bundle. */
+export function result() {
+  const unused = () => 1
+  const droppedChoice = true ? 3 : 4
+  return 2
+}
