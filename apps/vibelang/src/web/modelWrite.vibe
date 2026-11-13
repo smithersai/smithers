@@ -4,7 +4,7 @@ import type { AccountState, Model } from "./main.vibe"
 import type { ActionView } from "./actionModel.vibe"
 import type { AccountScreen, ActionScreen, RunSelection } from "./modelDecision.vibe"
 import type { AfterUpdate, EscapeRoute, EscapeStep, EventPlan, WikiVisit } from "./updateDecision.vibe"
-import type { SandboxPane, TourEnd, TourStarted } from "./tourDecision.vibe"
+import type { SandboxPane, StreamScreen, TourEnd, TourKeep, TourStarted } from "./tourDecision.vibe"
 import type { SandboxResult, SandboxScreen, WikiEditScreen } from "./paneDecision.vibe"
 import { pressedEscape } from "./updateDecision.vibe"
 import { escapeScreen, screenOf } from "./screenRead.vibe"
@@ -494,4 +494,89 @@ export function actionCancelWrite(model: Model, actions: ActionView): Model {
 //@ ensures \result == { ...model, client: client }
 export function clientWrite(model: Model, client: Model["client"]): Model {
   return { ...model, client }
+}
+
+/** The Model with the media that failed to load (`failedMediaAfter`); nothing else. */
+//@ verify
+//@ ensures \result == { ...model, failedMedia: failed }
+export function failedMediaWrite(model: Model, failed: ReadonlyArray<string>): Model {
+  return { ...model, failedMedia: failed }
+}
+
+/** The Model with the mode the host resolved; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, mode: mode }
+export function modeWrite(model: Model, mode: Model["mode"]): Model {
+  return { ...model, mode }
+}
+
+/** The Model after an account replay: the resumed ledger and the step's epoch and position over `account`; nothing
+ *  else. */
+//@ verify
+//@ ensures \result == { ...model, account: { ...account, ledger: ledger, epoch: epoch, from: from } }
+export function accountReplayWrite(model: Model, account: AccountState, ledger: AccountState["ledger"], epoch: number, from: number): Model {
+  return { ...model, account: { ...account, ledger, epoch, from } }
+}
+
+/** The Model with the theatre's measured box; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, theatreBox: box }
+export function theatreBoxWrite(model: Model, box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }): Model {
+  return { ...model, theatreBox: box }
+}
+
+/** The Model with the tour's sound as `toggledSound` decided; the rest of the theatre and the Model unchanged. */
+//@ verify
+//@ ensures \result == { ...model, theatre: { ...model.theatre, sound: sound } }
+export function soundWrite(model: Model, sound: boolean): Model {
+  return { ...model, theatre: { ...model.theatre, sound } }
+}
+
+/** The Model when the tour's events fail: a connection error; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, tourError: "connection" }
+export function tourEventsFailedWrite(model: Model): Model {
+  return { ...model, tourError: "connection" }
+}
+
+/** The Model when a failed tour keeps control (`keptTour`); nothing else. */
+//@ verify
+//@ ensures \result == { ...model, tour: keep.tour, recoverTour: keep.recoverTour, tourError: keep.tourError }
+export function keptTourWrite(model: Model, keep: TourKeep): Model {
+  return { ...model, ...keep }
+}
+
+/** The Model with the sandbox pane as `toggleSandbox` or `maximizeSandbox` decided; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, sandboxPane: pane }
+export function sandboxPaneWrite(model: Model, pane: SandboxPane): Model {
+  return { ...model, sandboxPane: pane }
+}
+
+/** The Model with the terminal's draft; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, terminalDraft: value }
+export function terminalDraftWrite(model: Model, value: string): Model {
+  return { ...model, terminalDraft: value }
+}
+
+/** The Model with the wiki filter; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, wikiQuery: value }
+export function wikiQueryWrite(model: Model, value: string): Model {
+  return { ...model, wikiQuery: value }
+}
+
+/** The Model after a replay plan: the resumed client and the plan's epoch and position; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, client: client, epoch: epoch, from: from }
+export function eventReplayWrite(model: Model, client: Model["client"], epoch: number, from: number): Model {
+  return { ...model, client, epoch, from }
+}
+
+/** The Model with the stream step (`failedEvents`, `reconnected`); nothing else. */
+//@ verify
+//@ ensures \result == { ...model, stream: state.stream, connection: state.connection, epoch: state.epoch, from: state.from }
+export function streamWrite(model: Model, state: StreamScreen): Model {
+  return { ...model, ...state }
 }
