@@ -502,22 +502,34 @@ const redriveParent = (memory: Memory, state: ExecutionState, result: Result) =>
 /**
  * Forks one round of `state` in its registration's scope: the body runs on a
  * fresh copy of the payload, under the execution's admitted ceilings, with
- * this engine and the round's instance provided.
+ * this engine and the round's instance provided. Cancellation needs no
+ * handler; after its registration closes it settles in the engine's scope.
  */
-const drive = (memory: Memory, state: ExecutionState, entry: Registration, instance: Instance) =>
-  snapshot(instance.flow, state.payload).pipe(
-    Effect.flatMap((payload) => entry.execute(payload as object, instance.executionId)),
-    CapabilitySet.attenuateGroups(state.capabilityCeilings),
-    (body) => startBody(state, instance, body),
-    Effect.onExit(() => interruptCancelled(instance)),
-    Flow.intoResult,
-    Effect.provideService(FlowRuntime.FlowInstance, instance),
-    Effect.provideService(FlowRuntime.FlowRuntime, memory.engine()),
-    Effect.tap((result) => endExpiredLineage(memory, state, result)),
-    Effect.tap((result) => redriveParent(memory, state, result)),
-    Effect.onExit(() => Effect.sync(() => wake(memory, state.instance.executionId))),
-    Effect.forkIn(entry.scope)
-  )
+const drive = (memory: Memory, state: ExecutionState, entry: Registration | undefined, instance: Instance) =>
+  (entry === undefined
+    ? Effect.interrupt
+    : snapshot(instance.flow, state.payload).pipe(
+      Effect.flatMap((payload) => entry.execute(payload as object, instance.executionId))
+    )).pipe(
+      CapabilitySet.attenuateGroups(state.capabilityCeilings),
+      (body) => startBody(state, instance, body),
+      Effect.onExit(() => interruptCancelled(instance)),
+      Flow.intoResult,
+      Effect.provideService(FlowRuntime.FlowInstance, instance),
+      Effect.provideService(FlowRuntime.FlowRuntime, memory.engine()),
+      Effect.tap((result) => endExpiredLineage(memory, state, result)),
+      Effect.tap((result) => redriveParent(memory, state, result)),
+      Effect.onExit((exit) =>
+        Effect.gen(function*() {
+          // A forced round interrupt bypasses the normal completion taps.
+          if (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)) {
+            yield* redriveParent(memory, state, new Flow.Complete({ exit }))
+          }
+          wake(memory, state.instance.executionId)
+        })
+      ),
+      Effect.forkIn(entry?.scope ?? memory.scope)
+    )
 
 // Untraced because resume recursively drives suspended executions.
 const resumeUnlocked = Effect.fnUntraced(function*(
@@ -545,11 +557,16 @@ const resumeUnlocked = Effect.fnUntraced(function*(
   // one exactly as `make.register`'s declaration table does. With every
   // registration closed the execution stays parked for a process that
   // registers the flow again, the posture the durable driver takes for a run
-  // that wakes where its flow is unknown.
+  // that wakes where its flow is unknown. A cancelled run needs no handler
+  // to settle its interruption and close the flow scope.
   const entry = admittedEntry ?? memory.flows.get(state.instance.flow._tag)?.at(-1)
-  if (entry === undefined) return
+  if (entry === undefined && !state.instance.interrupted) return
   const previous = state.instance
-  const instance = makeInstance(previous.flow, previous.executionId, previous.lineageDeadline)
+  // Without a handler there is no replay to install finalizers again: finish
+  // cancellation on the parked instance so its retained scope is closed.
+  const instance = entry === undefined
+    ? previous
+    : makeInstance(previous.flow, previous.executionId, previous.lineageDeadline)
   instance.interrupted = previous.interrupted
   state.instance = instance
   state.awaited.clear()
@@ -769,7 +786,7 @@ const interruptUnsafe = Effect.fnUntraced(function*(memory: Memory, flow: Flow.A
   // yielding, so every publicly observable execution has one.
   yield* Effect.forEach(requestCancellation(memory, executionId), (target) => {
     const state = memory.executions.get(target)!
-    return Fiber.interrupt(state.fiber!)
+    return settledSuspended(state) ? resume(memory, target) : Fiber.interrupt(state.fiber!)
   }, { concurrency: "unbounded", discard: true })
 })
 
@@ -925,7 +942,13 @@ const actionExecute = Effect.fnUntraced(function*(
 const settledResult = (memory: Memory, flow: Flow.Any, executionId: string, state: ExecutionState) => {
   const exit = state.fiber?.pollUnsafe()
   if (!exit) return Effect.succeedNone
-  if (exit._tag !== "Success") return Effect.die(exit.cause)
+  if (Exit.isFailure(exit)) {
+    // The unsafe path interrupts the round itself, outside Flow.intoResult.
+    // Preserve its whole cause, including any failed interruption cleanup.
+    return Cause.hasInterrupts(exit.cause)
+      ? Effect.succeedSome(new Flow.Complete({ exit }))
+      : Effect.die(exit.cause)
+  }
   return Effect.map(settlement(memory, flow, executionId, exit.value), Option.some)
 }
 

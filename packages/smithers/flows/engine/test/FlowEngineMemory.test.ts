@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Layer, Option, Schema } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
@@ -99,15 +99,238 @@ describe("memory engine execution surface", () => {
       yield* flow.execute({ id: "x" }, { executionId: "run-i", discard: true })
       const engine = yield* FlowRuntime.FlowRuntime
       yield* engine.interruptUnsafe(flow, "run-i")
-      const result = yield* flow.poll("run-i").pipe(Effect.exit)
+      const result = yield* flow.poll("run-i")
       // A discard result is observable only after `resume` has installed the
-      // execution fiber; unsafe interruption can therefore always target it.
-      expect(Exit.isFailure(result)).toBe(true)
-      expect(Exit.isFailure(result) && String(result.cause)).toContain("Interrupt")
+      // execution fiber; its forced interruption is still a flow settlement.
+      expect(Option.isSome(result) && result.value._tag).toBe("Complete")
+      const exit = Option.isSome(result) && result.value._tag === "Complete" ? result.value.exit : undefined
+      expect(exit !== undefined && Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
       // interrupting an unknown id is a no-op
       yield* flow.interrupt("missing")
     }).pipe(Effect.provide(layer))
   })
+})
+
+describe("unsafe interruption settlements", () => {
+  for (const mode of ["running", "parked"] as const) {
+    effect(`settles a ${mode} child and re-drives every parked parent`, () =>
+      Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        const Child = Flow.make("Memory/unsafe-child", {
+          payload: { id: Schema.String },
+          success: Schema.String,
+          body: () => Node.succeed("unused")
+        })
+        const Parent = Flow.make("Memory/unsafe-parent", {
+          payload: {},
+          success: Schema.String,
+          body: () => Node.succeed("unused")
+        })
+        const Grandparent = Flow.make("Memory/unsafe-grandparent", {
+          payload: {},
+          success: Schema.String,
+          body: () => Node.succeed("unused")
+        })
+        const entered = yield* Deferred.make<void>()
+        let active = false
+        let childDrives = 0
+        let parentDrives = 0
+        yield* engine.register(Child, () =>
+          Effect.gen(function*() {
+            childDrives++
+            if (active) {
+              yield* Deferred.succeed(entered, undefined)
+              return yield* Effect.never
+            }
+            return yield* Flow.suspend(yield* FlowRuntime.FlowInstance)
+          }))
+        yield* engine.register(Parent, () => {
+          parentDrives++
+          return Child.execute({ id: "child" }, { executionId: "unsafe-child" }).pipe(Effect.orDie)
+        })
+        yield* engine.register(Grandparent, () => Parent.execute({}, { executionId: "left-parent" }).pipe(Effect.orDie))
+        for (const executionId of ["left-parent", "right-parent"]) {
+          yield* Parent.execute({}, { executionId, discard: true })
+          const parked = yield* pollUntil(Parent.poll(executionId), (result) => result._tag === "Suspended", {
+            turns: 200
+          })
+          expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
+        }
+        yield* Grandparent.execute({}, { executionId: "grandparent", discard: true })
+        const grandparent = yield* pollUntil(
+          Grandparent.poll("grandparent"),
+          (result) => result._tag === "Suspended",
+          { turns: 200 }
+        )
+        expect(Option.isSome(grandparent) && grandparent.value._tag).toBe("Suspended")
+        if (mode === "running") {
+          active = true
+          yield* Child.resume("unsafe-child")
+          yield* Deferred.await(entered)
+          expect(yield* Child.poll("unsafe-child")).toEqual(Option.none())
+        }
+        yield* engine.interruptUnsafe(Child, "unsafe-child")
+
+        for (
+          const [flow, executionId] of [
+            [Child, "unsafe-child"],
+            [Parent, "left-parent"],
+            [Parent, "right-parent"],
+            [Grandparent, "grandparent"]
+          ] as const
+        ) {
+          const result = yield* pollUntil(flow.poll(executionId), (result) => result._tag === "Complete", {
+            turns: 200
+          })
+          expect(Option.isSome(result) && result.value._tag).toBe("Complete")
+          const exit = Option.isSome(result) && result.value._tag === "Complete" ? result.value.exit : undefined
+          expect(exit !== undefined && Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+        }
+        expect(parentDrives).toBe(4)
+        expect(childDrives).toBe(mode === "running" ? 2 : 1)
+        const terminal = yield* Child.poll("unsafe-child")
+        yield* engine.interruptUnsafe(Child, "unsafe-child")
+        yield* Child.resume("unsafe-child")
+        expect(yield* Child.poll("unsafe-child")).toEqual(terminal)
+        expect(childDrives).toBe(mode === "running" ? 2 : 1)
+        const conflict = yield* Child.execute({ id: "different" }, {
+          executionId: "unsafe-child",
+          discard: true
+        }).pipe(Effect.exit)
+        expect(Exit.isFailure(conflict) && Cause.squash(conflict.cause)).toMatchObject({
+          _tag: "@smthrs/engine/ExecutionIdentityConflict",
+          status: "cancelled",
+          field: "payload"
+        })
+      }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory)))
+  }
+
+  effect("settles a parked child after its registration closes and wakes its parent", () =>
+    Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const Child = Flow.make("Memory/unsafe-unregistered-child", {
+        payload: {},
+        success: Schema.Void,
+        body: () => Node.succeed(undefined)
+      })
+      const Parent = Flow.make("Memory/unsafe-unregistered-parent", {
+        payload: {},
+        success: Schema.Void,
+        body: () => Node.succeed(undefined)
+      })
+      let childDrives = 0
+      let parentDrives = 0
+      const finalizers: Array<Exit.Exit<unknown, unknown>> = []
+      yield* engine.register(Parent, () =>
+        Effect.gen(function*() {
+          if (++parentDrives === 1) {
+            yield* Child.execute({}, { executionId: "unregistered-child", discard: true }).pipe(Effect.orDie)
+          }
+          const result = yield* Child.poll("unregistered-child").pipe(Effect.orDie)
+          if (Option.isSome(result) && result.value._tag === "Complete") return yield* result.value.exit
+          return yield* Flow.suspend(yield* FlowRuntime.FlowInstance)
+        }))
+      yield* Effect.scoped(
+        Effect.gen(function*() {
+          yield* engine.register(Child, () =>
+            Effect.gen(function*() {
+              childDrives++
+              yield* Flow.addFinalizer((exit) => Effect.sync(() => void finalizers.push(exit)))
+              return yield* Flow.suspend(yield* FlowRuntime.FlowInstance)
+            }))
+          yield* Parent.execute({}, { executionId: "unregistered-parent", discard: true })
+          const result = yield* pollUntil(Parent.poll("unregistered-parent"), (result) => result._tag === "Suspended", {
+            turns: 200
+          })
+          expect(Option.isSome(result) && result.value._tag).toBe("Suspended")
+          const child = yield* pollUntil(Child.poll("unregistered-child"), (result) => result._tag === "Suspended", {
+            turns: 200
+          })
+          expect(Option.isSome(child) && child.value._tag).toBe("Suspended")
+        })
+      )
+      yield* Child.resume("unregistered-child")
+      const parked = yield* Child.poll("unregistered-child")
+      expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
+      expect(finalizers).toEqual([])
+
+      yield* engine.interruptUnsafe(Child, "unregistered-child")
+      for (const [flow, id] of [[Child, "unregistered-child"], [Parent, "unregistered-parent"]] as const) {
+        const result = yield* pollUntil(flow.poll(id), (result) => result._tag === "Complete", { turns: 200 })
+        expect(Option.isSome(result) && result.value._tag).toBe("Complete")
+        const exit = Option.isSome(result) && result.value._tag === "Complete" ? result.value.exit : undefined
+        expect(exit !== undefined && Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+      }
+      expect(childDrives).toBe(1)
+      expect(parentDrives).toBe(2)
+      expect(finalizers).toHaveLength(1)
+      const finalized = finalizers[0]!
+      expect(Exit.isFailure(finalized) && Cause.hasInterruptsOnly(finalized.cause)).toBe(true)
+      yield* engine.interruptUnsafe(Child, "unregistered-child")
+      yield* Child.resume("unregistered-child")
+      expect(childDrives).toBe(1)
+      expect(finalizers).toHaveLength(1)
+    }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory)))
+
+  effect("preserves cleanup defects alongside forced interruption", () =>
+    Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const Run = Flow.make("Memory/unsafe-cleanup", {
+        payload: {},
+        success: Schema.Void,
+        body: () => Node.succeed(undefined)
+      })
+      const entered = yield* Deferred.make<void>()
+      yield* engine.register(Run, () =>
+        Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.ensuring(Effect.die("cleanup failed"))
+        ))
+      yield* Run.execute({}, { executionId: "unsafe-cleanup", discard: true })
+      yield* Deferred.await(entered)
+      yield* engine.interruptUnsafe(Run, "unsafe-cleanup")
+      const result = yield* Run.poll("unsafe-cleanup")
+      expect(Option.isSome(result) && result.value._tag).toBe("Complete")
+      const exit = Option.isSome(result) && result.value._tag === "Complete" ? result.value.exit : undefined
+      expect(exit !== undefined && Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true)
+      expect(exit !== undefined && Exit.isFailure(exit) && exit.cause.reasons.filter(Cause.isDieReason)).toEqual([
+        expect.objectContaining({ defect: "cleanup failed" })
+      ])
+    }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory)))
+
+  effect("ignores unknown and foreign executions and preserves completed results", () =>
+    Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const Run = Flow.make("Memory/unsafe-completed", {
+        payload: {},
+        success: Schema.String,
+        body: () => Node.succeed("unused")
+      })
+      const Foreign = Flow.make("Memory/unsafe-foreign", {
+        payload: {},
+        success: Schema.String,
+        body: () => Node.succeed("unused")
+      })
+      let drives = 0
+      yield* engine.register(Run, () =>
+        Effect.sync(() => {
+          drives++
+          return "done"
+        }))
+      expect(yield* Run.execute({}, { executionId: "unsafe-completed" })).toBe("done")
+      yield* engine.interruptUnsafe(Run, "unknown")
+      expect(yield* Effect.flip(Run.poll("unknown"))).toMatchObject({
+        _tag: "@smthrs/flow/FlowExecutionNotFound"
+      })
+      yield* engine.interruptUnsafe(Foreign, "unsafe-completed")
+      yield* engine.interruptUnsafe(Run, "unsafe-completed")
+      yield* Run.resume("unsafe-completed")
+      const result = yield* Run.poll("unsafe-completed")
+      expect(Option.isSome(result) && result.value._tag === "Complete" && result.value.exit).toEqual(
+        Exit.succeed("done")
+      )
+      expect(drives).toBe(1)
+    }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory)))
 })
 
 describe("execution identity", () => {
@@ -877,8 +1100,8 @@ describe("compensable snapshot boundary", () => {
     // Between snapshot and diff the dispatch is `Effect.ensuring`-guarded:
     // even `interruptUnsafe` — which promises no cleanup — currently tears
     // the attempt down through the ensuring finalizer, so the boundary's
-    // diff observes the aborted attempt and the poll reports interruption,
-    // not a result.
+    // diff observes the aborted attempt and the poll reports a completion
+    // carrying the interruption.
     const events: Array<string> = []
     const step = Action.make({
       name: "Memory/compensable-interrupt/step",
@@ -925,11 +1148,12 @@ describe("compensable snapshot boundary", () => {
       expect(events).toEqual(["snapshot:1", "execute"])
       const engine = yield* FlowRuntime.FlowRuntime
       yield* engine.interruptUnsafe(flow, "run-compensable-interrupt")
-      const polled = yield* flow.poll("run-compensable-interrupt").pipe(Effect.exit)
+      const polled = yield* flow.poll("run-compensable-interrupt")
       // The terminal cause is the interruption, and the diff cleanup ran
       // before it reported.
-      expect(Exit.isFailure(polled)).toBe(true)
-      expect(Exit.isFailure(polled) && String(polled.cause)).toContain("Interrupt")
+      expect(Option.isSome(polled) && polled.value._tag).toBe("Complete")
+      const exit = Option.isSome(polled) && polled.value._tag === "Complete" ? polled.value.exit : undefined
+      expect(exit !== undefined && Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
       expect(events).toEqual(["snapshot:1", "execute", "diff:1"])
     }).pipe(Effect.provide(layer))
   })
