@@ -127,8 +127,10 @@ async function onSend(message: PromptInputMessage): Promise<void> {
 }
 ```
 
-A host that supplies `attachments` as a controlled prop owns the whole
-collection, and the component revokes nothing on submit.
+A host that supplies `attachments` and `onAttachmentsChange` controls the
+collection and clears submitted items itself. When the host removes an item,
+the component revokes the preview URL it created, after any pending `onSubmit`
+handler settles. URLs supplied by the host remain the host's responsibility.
 
 ## Related
 

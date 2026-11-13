@@ -98,7 +98,13 @@ const unitTests = Smithers.NodeTest({
     ...generatedViewInputs,
     ...testSources
   ],
-  deps: [viewsSources, cssSources],
+  deps: [
+    viewsSources,
+    cssSources,
+    // The tests execute flow and engine source through their public exports.
+    Smithers.Target.subtree("//packages/smithers/flows/flow/...", "lib"),
+    Smithers.Target.subtree("//packages/smithers/flows/engine/...", "sourceInputs")
+  ],
   cwd
 })
 

@@ -6864,12 +6864,21 @@ importers:
         specifier: 13.6.32
         version: 13.6.32
     devDependencies:
+      '@effect/platform-node':
+        specifier: 4.1.1
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@happy-dom/global-registrator':
         specifier: ^20.13.2
         version: 20.13.2
       '@jitl/quickjs-singlefile-browser-release-sync':
         specifier: 0.32.0
         version: 0.32.0
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:../flows/engine
+      '@smthrs/flow':
+        specifier: workspace:*
+        version: link:../flows/flow
       '@smthrs/harness':
         specifier: workspace:*
         version: link:../agent/harness

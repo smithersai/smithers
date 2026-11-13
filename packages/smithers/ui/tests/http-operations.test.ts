@@ -75,13 +75,12 @@ test("source co-edit declares its batch and excludes general app-agent authority
   expect(() => decode({ changes: [{ path: "asset.bin", base_digest: "absent", content: "AA==", encoding: "unknown" }] })).toThrow()
 })
 
-test("the system rebase door encodes the typed branch POST without a caller-selected target", async () => {
-  const { catalogRequest } = await import("../../src/CatalogRequest")
+test("the system rebase door declares the typed branch POST without a caller-selected target", () => {
   const row = catalog().find(row => row.name === "branch.rebase-now")!
   expect(row.agent).toBe("run")
   expect(row.minimumRole).toBe("member")
-  expect(catalogRequest(row, { branch: "scratch/ben/work" })).toEqual({
-    method: "POST", path: "/api/branches/scratch%2Fben%2Fwork", body: { rebase: true }
+  expect(row.http).toEqual({
+    method: "POST", path: "/api/branches/{branch}", defaults: { rebase: true }
   })
 })
 

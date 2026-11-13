@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import { catalogDescriptors } from "../src/Catalog.ts"
 import { catalogRequest, CatalogRequestError } from "../src/CatalogRequest.ts"
 import { makeCli } from "../src/Cli.ts"
 import { catalogCommands } from "../src/internal/backend/Catalog.ts"
@@ -946,4 +947,13 @@ it.each(
     expect(error).toBeInstanceOf(CatalogRequestError)
     expect(error).toMatchObject({ _tag: "CatalogRequestError", code })
   }
+})
+
+it("the system rebase door encodes the typed branch POST without a caller-selected target", () => {
+  const row = catalogDescriptors.find((row) => row.name === "branch.rebase-now")!
+  expect(catalogRequest(row, { branch: "scratch/ben/work" })).toEqual({
+    method: "POST",
+    path: "/api/branches/scratch%2Fben%2Fwork",
+    body: { rebase: true }
+  })
 })

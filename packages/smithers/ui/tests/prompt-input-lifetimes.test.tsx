@@ -6,12 +6,13 @@
 // input, so anything the input enforces has to be enforced there too.
 import { afterEach, describe, expect, test } from "bun:test";
 import { File as NativeFile, resolveObjectURL } from "node:buffer";
-import { act, type ReactElement } from "react";
+import { act, useEffect, useState, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   PromptInput,
   PromptInputActionMenu,
   PromptInputActionMenuContent,
+  type PromptInputAttachmentItem,
   type PromptInputError,
   type PromptInputMessage,
   PromptInputTextarea,
@@ -533,4 +534,132 @@ test.each(["resolve", "reject"] as const)("pending submission blocks duplicates 
   await act(async () => pressEnter(textarea()));
   expect(calls).toBe(2);
   await act(async () => { settle(); });
+});
+
+describe("controlled attachment URL ownership", () => {
+  async function controlled(onSubmit: (message: PromptInputMessage) => void | Promise<void> = () => {}) {
+    let hook!: ReturnType<typeof usePromptInputAttachments>;
+    let update!: (items: readonly PromptInputAttachmentItem[]) => void;
+    function Contents() {
+      hook = usePromptInputAttachments();
+      return <PromptInputTextarea />;
+    }
+    function Host() {
+      const [items, setItems] = useState<readonly PromptInputAttachmentItem[]>([]);
+      update = setItems;
+      return (
+        <PromptInput value="draft" multiple attachments={items} onAttachmentsChange={setItems}
+          onSubmit={onSubmit} onError={() => {}}>
+          <Contents />
+        </PromptInput>
+      );
+    }
+    await render(<Host />);
+    return {
+      current: () => hook,
+      update: async (items: readonly PromptInputAttachmentItem[]) => {
+        await act(async () => update(items));
+      },
+    };
+  }
+
+  test.each(["before submission", "after synchronous submission"])("host clearing revokes URLs %s", async (when) => {
+    await withObjectUrls(async ({ created, revoked }) => {
+      const messages: PromptInputMessage[] = [];
+      const host = await controlled((message) => { messages.push(message); });
+      await act(async () => host.current().add([makeFile("image.png", "image/png")]));
+      const attachment = host.current().attachments[0]!;
+      if (when === "after synchronous submission") {
+        await act(async () => pressEnter(textarea()));
+        expect(messages[0]!.attachments).toEqual([attachment]);
+      }
+      expect(revoked()).toEqual([]);
+      expect(host.current().attachments).toEqual([attachment]);
+      await host.update([]);
+      expect(host.current().attachments).toEqual([]);
+      expect(revoked()).toEqual([created[0]!]);
+    });
+  });
+
+  test("host removal releases only the removed URL and leaves caller-owned URLs alone", async () => {
+    await withObjectUrls(async ({ created, revoked }) => {
+      const host = await controlled();
+      await act(async () => host.current().add([makeFile("first.png", "image/png"), makeFile("second.png", "image/png")]));
+      const retained = host.current().attachments[1]!;
+      const externalUrl = URL.createObjectURL(makeFile("external.png", "image/png"));
+      const external: PromptInputAttachmentItem = { id: "external", name: "external.png", url: externalUrl };
+      await host.update([retained, external]);
+      expect(revoked()).toEqual([created[0]!]);
+      expect(resolveObjectURL(retained.url!)).toBeDefined();
+      await host.update([]);
+      expect(revoked()).toEqual([created[0]!, created[1]!]);
+      expect(resolveObjectURL(externalUrl)).toBeDefined();
+    });
+  });
+
+  test.each(["resolve", "reject"] as const)("host removal preserves the async borrow until %s", async (outcome) => {
+    await withObjectUrls(async ({ created, revoked }) => {
+      let settle!: () => void;
+      let submitted!: PromptInputMessage;
+      const host = await controlled((message) => {
+        submitted = message;
+        return new Promise<void>((resolve, reject) => {
+          settle = () => outcome === "resolve" ? resolve() : reject(new Error("upload failed"));
+        });
+      });
+      await act(async () => host.current().add([makeFile("submitted.png", "image/png")]));
+      await act(async () => pressEnter(textarea()));
+      await host.update([]);
+      await act(async () => host.current().add([makeFile("next.png", "image/png")]));
+      const next = host.current().attachments[0]!;
+      expect(resolveObjectURL(submitted.attachments[0]!.url!)).toBeDefined();
+      expect(revoked()).toEqual([]);
+      await act(async () => settle());
+      expect(revoked()).toEqual([created[0]!]);
+      expect(host.current().attachments).toEqual([next]);
+      expect(resolveObjectURL(next.url!)).toBeDefined();
+    });
+  });
+
+  test("host clearing after async acceptance releases the retained URL", async () => {
+    await withObjectUrls(async ({ created, revoked }) => {
+      let settle!: () => void;
+      const host = await controlled(() => new Promise<void>((resolve) => { settle = resolve; }));
+      await act(async () => host.current().add([makeFile("image.png", "image/png")]));
+      await act(async () => pressEnter(textarea()));
+      await act(async () => settle());
+      expect(host.current().attachments).toHaveLength(1);
+      expect(revoked()).toEqual([]);
+      await host.update([]);
+      expect(revoked()).toEqual([created[0]!]);
+    });
+  });
+});
+
+test.each([false, true])("attachment intake from a descendant mount effect keeps its URL (controlled=%s)", async (controlled) => {
+  await withObjectUrls(async ({ created, revoked }) => {
+    let hook!: ReturnType<typeof usePromptInputAttachments>;
+    const file = makeFile("mounted.png", "image/png");
+    function Contents() {
+      hook = usePromptInputAttachments();
+      const { add } = hook;
+      useEffect(() => { add([file]); }, [add]);
+      return <PromptInputTextarea />;
+    }
+    function Host() {
+      const [items, setItems] = useState<readonly PromptInputAttachmentItem[]>([]);
+      return (
+        <PromptInput attachments={controlled ? items : undefined} onAttachmentsChange={setItems} onSubmit={() => {}}>
+          <Contents />
+        </PromptInput>
+      );
+    }
+    await render(<Host />);
+    expect(hook.attachments).toHaveLength(1);
+    expect(hook.attachments[0]!.url).toBe(created[0]!);
+    expect(revoked()).toEqual([]);
+    expect(resolveObjectURL(created[0]!)).toBeDefined();
+    await act(async () => hook.clear());
+    expect(revoked()).toEqual([created[0]!]);
+  });
 });

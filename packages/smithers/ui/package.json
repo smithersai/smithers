@@ -163,6 +163,9 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@effect/platform-node": "4.1.1",
+    "@smthrs/engine": "workspace:*",
+    "@smthrs/flow": "workspace:*",
     "@happy-dom/global-registrator": "^20.13.2",
     "@types/bun": "1.4.4",
     "@types/d3-force": "^3.0.10",

@@ -289,6 +289,17 @@ export function PromptInput({
     }
   }, []);
 
+  // Controlled hosts can remove files without calling the attachment hook.
+  // Keep only listed previews and URLs still borrowed by a pending submission.
+  useEffect(() => {
+    const retainedIds = new Set(attachmentsRef.current.map((item) => item.id));
+    for (const [id, objectUrl] of objectUrlsRef.current) {
+      if (retainedIds.has(id) || leasedIdsRef.current.has(id)) continue;
+      if (canCreateObjectUrl()) URL.revokeObjectURL(objectUrl);
+      objectUrlsRef.current.delete(id);
+    }
+  }, [attachments]);
+
   const addFiles = useCallback(
     (files: FileList | readonly File[]) => {
       // `addFiles` is the single admission point: the hook, paste, form drop and
