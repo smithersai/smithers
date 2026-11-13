@@ -1,12 +1,11 @@
 ---
 title: "Testing"
-description: "Test code that runs on @smthrs/platform-browser without a browser: satisfy the filesystem slice with node:fs/promises, stub the interpreter with an object literal, pin error tags with a throwing backend, and run the durable engine under Node."
+description: "Test code that runs on @smthrs/platform-browser without a browser: satisfy the filesystem slice with node:fs/promises, use the real mounted interpreter, pin error tags with a throwing backend, and run the durable engine under Node."
 ---
 
-The filesystem and child-process backends are structural slices, so their
-adapter tests run under Node without a browser, `@zenfs/core`, or just-bash.
-The seam that keeps their dependency lists short also makes them testable. One
-suite needs the real pair: the shared-mount contract, below.
+The filesystem and child-process backends are structural slices. Their adapter
+tests run under Node against a real filesystem or a real ZenFS and just-bash
+mount. The same shared-mount contract also runs in Chromium.
 
 ## Satisfy the filesystem slice with node:fs/promises
 
@@ -33,24 +32,17 @@ the virtual namespace by stripping the canonical host root back off. Then the
 test asserts the paths your program uses, such as `/workspace/notes.txt`, rather
 than whatever temp directory the machine handed it.
 
-## Stub the interpreter with an object literal
+## Use the real mounted interpreter
 
-`JustBashLike` has one member, `exec`, so a stub is an object literal holding
-one function. Returning the command line as `stdout` makes the rendered line
-observable in the assertion:
+Happy paths use a real just-bash interpreter over the same filesystem volume
+as `BrowserFileSystem`. The package's `test/fixtures/ZenFsMount.ts` binds
+just-bash to ZenFS: a command must read what the filesystem service wrote.
+Assert the output bytes or count the chunks with a `Sink`; do not replace
+`TextEncoder` or another global to observe an implementation detail.
 
-```ts
-import { BrowserChildProcessSpawner } from "@smthrs/platform-browser"
-
-const bash: BrowserChildProcessSpawner.JustBashLike = {
-  exec: async (commandLine) => ({ stdout: commandLine, stderr: "", exitCode: 0 })
-}
-```
-
-Record the calls when the test is about what the adapter passed on, rather than
-about what came back. `cwd`, `env`, and `replaceEnv` are the three fields worth
-capturing: `replaceEnv` is the one that inverts a caller's environment semantics
-if the adapter gets it wrong.
+Inject a failing backend for an interpreter fault and assert that the returned
+error contains neither the thrown message nor its cause. Redaction assertions
+must name the private text supplied by that test.
 
 ## Provide both together
 
@@ -62,15 +54,14 @@ import { BrowserChildProcessSpawner, BrowserServices } from "@smthrs/platform-br
 import * as Effect from "effect/Effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import * as NodeFsPromises from "node:fs/promises"
-
-/** The stub from the previous section. */
+/** Two views of the same real filesystem volume. */
 declare const bash: BrowserChildProcessSpawner.JustBashLike
+declare const fs: import("@smthrs/platform-browser").BrowserFileSystem.ZenFsPromisesLike
 
 const output = Effect.flatMap(
   ChildProcessSpawner,
   (spawner) => spawner.string(ChildProcess.make("wc", ["-l", "notes.txt"], { cwd: "/tmp" }))
-).pipe(Effect.provide(BrowserServices.layer({ bash, fs: NodeFsPromises })))
+).pipe(Effect.provide(BrowserServices.layer({ bash, fs })))
 ```
 
 The spawner stats `cwd` before it runs anything. For an absent path, assert
@@ -220,6 +211,13 @@ const engine = BrowserRuntime.layer({ name: "test" }, registration).pipe(Layer.p
 is a tab that reaches it. Interrupting the leader's fiber is its tab closing:
 its runs are released, and the next leader you start over the same database
 resumes them.
+
+`BrowserRuntime.run({ port })` accepts a `WorkerPort`: `postMessage`,
+`addEventListener` and `removeEventListener`. A Node test can bind a real
+`MessageChannel` and `EventTarget` to that boundary; it does not replace worker
+globals. The Chromium suite also exercises the default dedicated worker port,
+SQLite and telemetry startup failures, and actual uncaught errors and
+unhandled rejections. It asserts their names and kinds without private content.
 
 Every failure is a service you provide. `WebLock.make` takes a lock manager,
 `TabChannel.make` a channel constructor, `StoragePersistence.make` a storage

@@ -166,6 +166,60 @@ const tagOf = <A, E extends { readonly _tag: string }>(effect: Effect.Effect<A, 
   Effect.map(Effect.flip(effect), (error) => error._tag)
 
 describe("SqlConnection receipts", () => {
+  it.effect.each(["VACUUM", "vacuum main", "/* maintenance */ VaCuUm", "-- maintenance\nVACUUM"])(
+    "names the tab compaction refusal for %s and preserves its data and receipts",
+    (sql) =>
+      Effect.gen(function*() {
+        const service = yield* receipting
+        yield* service.run("a", "INSERT INTO t (id) VALUES (1)", [], false, decided(1))
+        const before = yield* receipts(service)
+        expect(yield* tagOf(service.run("a", sql, [], false, decided(2))))
+          .toBe("@smthrs/platform-browser/VacuumUnsupported")
+        expect(service.isOpen("a")).toBe(false)
+        expect(yield* ids(service)).toEqual([{ id: 1 }])
+        expect(yield* receipts(service)).toEqual(before)
+        // Trusted leader maintenance runs without a request, outside a transaction.
+        yield* service.run("leader", "VACUUM", [], false)
+        expect(yield* ids(service)).toEqual([{ id: 1 }])
+        expect(yield* receipts(service)).toEqual(before)
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect("refuses compaction in scripts and batches without consuming the next statement", () =>
+    Effect.gen(function*() {
+      const service = yield* receipting
+      for (
+        const operation of [
+          service.run("a", "SELECT 1; VACUUM; INSERT INTO t VALUES (2)", [], false, decided(2)).pipe(Effect.asVoid),
+          service.runBatch(
+            "a",
+            [
+              { sql: "SELECT 1", params: [] },
+              { sql: "VACUUM", params: [] },
+              { sql: "INSERT INTO t VALUES (3)", params: [] }
+            ],
+            false,
+            decided(3)
+          ).pipe(Effect.asVoid)
+        ]
+      ) {
+        expect(yield* tagOf(operation)).toBe("@smthrs/platform-browser/VacuumUnsupported")
+        expect(yield* ids(service)).toEqual([])
+        expect(yield* receipts(service)).toEqual([])
+      }
+      expect(yield* service.run("a", "/* */ SELECT '/* */VACUUM' AS value", [], false, decided(4)))
+        .toEqual({ rows: [{ value: "/* */VACUUM" }], open: false })
+      expect(yield* service.run("a", "/* */".repeat(1_000) + " SELECT 1 AS n", [], false, decided(4)))
+        .toEqual({ rows: [{ n: 1 }], open: false })
+      yield* service.run("a", "BEGIN", [], false, decided(4))
+      expect(yield* tagOf(service.run("a", "VACUUM", [], true, decided(5))))
+        .toBe("@smthrs/platform-browser/VacuumUnsupported")
+      expect(service.isOpen("a")).toBe(true)
+      yield* service.run("a", "ROLLBACK", [], true, decided(6))
+      expect(yield* service.run("a", "SELECT 'VACUUM' AS word", [], false, decided(7)))
+        .toEqual({ rows: [{ word: "VACUUM" }], open: false })
+    }).pipe(Effect.scoped))
+
   it.effect("runs a request's write outside a transaction inside one with its receipt, and returns its rows", () =>
     Effect.gen(function*() {
       const service = yield* receipting

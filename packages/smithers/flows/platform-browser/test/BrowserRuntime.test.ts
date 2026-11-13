@@ -15,7 +15,8 @@ import * as Layer from "effect/Layer"
 import * as PubSub from "effect/PubSub"
 import * as Queue from "effect/Queue"
 import * as Scope from "effect/Scope"
-import { afterEach, beforeEach, vi } from "vitest"
+import { MessageChannel, receiveMessageOnPort } from "node:worker_threads"
+import { afterEach, beforeEach } from "vitest"
 import { BrowserRuntime, type SharedSqlite, TabChannel, WebLock } from "../src/index.ts"
 import * as Engines from "./fixtures/Engines.ts"
 import { flows, registration, Sleeper, Steps } from "./fixtures/Flows.ts"
@@ -219,31 +220,42 @@ describe("BrowserRuntime over OPFS", () => {
     }))
 
   describe("in a dedicated worker", () => {
-    const posted: Array<unknown> = []
+    let channel: MessageChannel
+    let events: EventTarget
+    const port = () => ({
+      addEventListener: events.addEventListener.bind(events),
+      removeEventListener: events.removeEventListener.bind(events),
+      postMessage: channel.port1.postMessage.bind(channel.port1)
+    })
     beforeEach(() => {
-      posted.length = 0
-      vi.stubGlobal("WorkerGlobalScope", function WorkerGlobalScope() {})
-      vi.stubGlobal("postMessage", (message: unknown) => posted.push(message))
+      channel = new MessageChannel()
+      events = new EventTarget()
     })
     afterEach(() => {
-      vi.unstubAllGlobals()
+      channel.port1.close()
+      channel.port2.close()
     })
 
     it.live("run tells its tab when the engine cannot be built, by the failure's tag", () =>
       Effect.gen(function*() {
         const worker = BrowserRuntime.run({
+          port: port(),
           name: Engines.name(),
           sqlite: { ...MemorySqlite.build, wasm: () => Promise.resolve(new Uint8Array([0])) },
           flows,
           registerFlows: registration(Effect.succeed)
         })
         yield* Fiber.await(worker)
-        expect(posted).toEqual([{ _tag: "@smthrs/platform-browser/EngineStopped", error: "SqlError" }])
+        expect(receiveMessageOnPort(channel.port2)?.message).toEqual({
+          _tag: "@smthrs/platform-browser/EngineStopped",
+          error: "SqlError"
+        })
       }))
 
     it.live("run tells its tab when telemetry initialization fails", () =>
       Effect.gen(function*() {
         const worker = BrowserRuntime.run({
+          port: port(),
           name: Engines.name(),
           sqlite: MemorySqlite.build,
           flows,
@@ -251,20 +263,18 @@ describe("BrowserRuntime over OPFS", () => {
           telemetry: Layer.effectDiscard(Effect.fail({ _tag: "TelemetryUnavailable" }))
         })
         expect(Exit.isFailure(yield* Fiber.await(worker))).toBe(true)
-        expect(posted).toEqual([{ _tag: "@smthrs/platform-browser/EngineStopped", error: "TelemetryUnavailable" }])
+        expect(receiveMessageOnPort(channel.port2)?.message).toEqual({
+          _tag: "@smthrs/platform-browser/EngineStopped",
+          error: "TelemetryUnavailable"
+        })
       }))
 
     it.live("run logs what nothing caught on the worker's global while it runs, by kind and name, never the message", () =>
       Effect.gen(function*() {
-        const listeners = new Map<string, (event: unknown) => void>()
-        vi.stubGlobal(
-          "addEventListener",
-          (type: string, listener: (event: unknown) => void) => listeners.set(type, listener)
-        )
-        vi.stubGlobal("removeEventListener", (type: string) => listeners.delete(type))
         const telemetry = Telemetry.make()
         const name = Engines.name()
         const worker = BrowserRuntime.run({
+          port: port(),
           name,
           sqlite: MemorySqlite.build,
           flows,
@@ -276,9 +286,9 @@ describe("BrowserRuntime over OPFS", () => {
         const error = Object.assign(new Event("error", { cancelable: true }), {
           error: new TypeError("SENTINEL private words")
         })
-        listeners.get("error")!(error)
-        listeners.get("unhandledrejection")!({ type: "unhandledrejection", reason: { _tag: "Refused" } })
-        listeners.get("unhandledrejection")!({ type: "unhandledrejection", reason: "SENTINEL a string" })
+        events.dispatchEvent(error)
+        events.dispatchEvent(Object.assign(new Event("unhandledrejection"), { reason: { _tag: "Refused" } }))
+        events.dispatchEvent(Object.assign(new Event("unhandledrejection"), { reason: "SENTINEL a string" }))
         yield* Fiber.interrupt(worker)
         expect(error.defaultPrevented).toBe(true)
         expect(telemetry.lines("browser.runtime.uncaught").map(({ level, annotations }) => [level, annotations]))
@@ -288,7 +298,9 @@ describe("BrowserRuntime over OPFS", () => {
             ["ERROR", expect.objectContaining({ kind: "rejection", "error.type": "string" })]
           ])
         // The worker's listeners go with it.
-        expect(listeners.size).toBe(0)
+        const recorded = telemetry.lines("browser.runtime.uncaught").length
+        events.dispatchEvent(new Event("error", { cancelable: true }))
+        expect(telemetry.lines("browser.runtime.uncaught")).toHaveLength(recorded)
         expect(Telemetry.dump(telemetry)).not.toContain("SENTINEL")
       }).pipe(Effect.scoped))
 
@@ -296,6 +308,7 @@ describe("BrowserRuntime over OPFS", () => {
       Effect.gen(function*() {
         const name = Engines.name()
         const worker = BrowserRuntime.run({
+          port: port(),
           name,
           sqlite: MemorySqlite.build,
           flows,
@@ -304,7 +317,7 @@ describe("BrowserRuntime over OPFS", () => {
         const engine = yield* Engines.tab(name)
         yield* engine.start(Steps, { executionId: "quiet", payload: { prefix: "q" } })
         yield* Fiber.interrupt(worker)
-        expect(posted).toEqual([])
+        expect(receiveMessageOnPort(channel.port2)).toBeUndefined()
       }).pipe(Effect.scoped))
   })
 })

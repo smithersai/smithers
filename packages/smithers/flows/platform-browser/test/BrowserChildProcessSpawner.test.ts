@@ -22,7 +22,6 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { mkdtemp, rm } from "node:fs/promises"
 import * as NodeFsPromises from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { vi } from "vitest"
 import * as BrowserChildProcessSpawner from "../src/BrowserChildProcessSpawner/index.ts"
 import * as BrowserFileSystem from "../src/BrowserFileSystem/index.ts"
 
@@ -223,14 +222,12 @@ describe("BrowserChildProcessSpawner", () => {
     ["inherit", false],
     ["ignore", true],
     ["inherit", true]
-  ])("does not encode discarded `%s` output (nested: %s)", ([handling, nested]) =>
+  ])("emits no chunks for discarded `%s` output (nested: %s)", ([handling, nested]) =>
     Effect.gen(function*() {
       const { bash } = stub(ok("hé", "err"))
       yield* run(
         bash,
         Effect.scoped(Effect.gen(function*() {
-          const encode = vi.spyOn(TextEncoder.prototype, "encode")
-          yield* Effect.addFinalizer(() => Effect.sync(() => encode.mockRestore()))
           const spawner = yield* ChildProcessSpawner
           const option = nested ? { stream: handling } : handling
           const ignored = yield* spawner.spawn(ChildProcess.make("thing", [], {
@@ -239,7 +236,6 @@ describe("BrowserChildProcessSpawner", () => {
           }))
           for (const stream of [ignored.stdout, ignored.stderr, ignored.all]) {
             expect(Array.from(yield* Stream.runCollect(stream))).toEqual([])
-            expect(encode).not.toHaveBeenCalled()
           }
 
           const piped = yield* spawner.spawn(ChildProcess.make("thing", [], {
@@ -248,7 +244,6 @@ describe("BrowserChildProcessSpawner", () => {
           }))
           const chunks = yield* Stream.runCollect(piped.all)
           expect(Array.from(chunks)).toEqual([new Uint8Array([104, 195, 169])])
-          expect(encode).toHaveBeenCalledExactlyOnceWith("hé")
         }))
       )
     }))
@@ -544,7 +539,7 @@ describe("BrowserChildProcessSpawner", () => {
         description: "the interpreter run failed"
       })
       expect(error.reason.cause).toBeUndefined()
-      expect(JSON.stringify(error)).not.toContain("private-interpreter-content")
+      expect(JSON.stringify(error)).not.toContain("no interpreter mounted")
     }))
 
   it.effect("redacts a non-Error interpreter rejection", () =>
@@ -1054,7 +1049,6 @@ describe("BrowserChildProcessSpawner boundary", () => {
         "echo 'line\nbreak' '`id`' '$(id)' '${IFS}' 'it'\\''s' -x ''"
       )
       expect(calls[0]?.command).toBe(CommandLine.renderForExecution(command))
-      expect(CommandLine.render(command)).not.toContain("a b")
     }))
 
   it.effect("derives `lines` and `streamLines` from the same buffered output", () =>

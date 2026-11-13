@@ -122,6 +122,18 @@ export class TransactionUndecided extends Schema.TaggedError<TransactionUndecide
 ) {}
 
 /**
+ * A tab cannot compact the shared database: `VACUUM` rebuilds the leader's
+ * receipt tables and cannot run inside a receipted transaction.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class VacuumUnsupported extends Schema.TaggedError<VacuumUnsupported>()(
+  "@smthrs/platform-browser/VacuumUnsupported",
+  {}
+) {}
+
+/**
  * Connection operations.
  *
  * @category models
@@ -136,6 +148,7 @@ export interface Service {
    * `request`, every change it commits carries that request's receipt: a
    * change it can't record fails with {@link TransactionUnrecorded}, and one
    * an undecided request would commit with {@link TransactionUndecided}.
+   * A tab cannot run `VACUUM`: it fails with {@link VacuumUnsupported}.
    */
   readonly run: {
     (
@@ -150,7 +163,10 @@ export interface Service {
       params: ReadonlyArray<unknown>,
       continuing: boolean,
       request: Request | undefined
-    ): Effect.Effect<Result, SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided>
+    ): Effect.Effect<
+      Result,
+      SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided | VacuumUnsupported
+    >
   }
   /**
    * Runs each of `statements` in order for `owner`, as one request: as {@link run}
@@ -163,7 +179,10 @@ export interface Service {
     statements: ReadonlyArray<Statements.Entry>,
     continuing: boolean,
     request: Request | undefined
-  ) => Effect.Effect<BatchResult, SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided>
+  ) => Effect.Effect<
+    BatchResult,
+    SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided | VacuumUnsupported
+  >
   /** Whether this owner still holds an open transaction, including after a failed statement. */
   readonly isOpen: (owner: string) => boolean
   /**
@@ -380,8 +399,12 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
         try: async () => {
           try {
             return await Statements.runEach(database, script.entries, "object", {
-              before: async ({ last, results }) => {
+              before: async ({ sql, last, results }) => {
                 if (guard === undefined || request === undefined) return
+                // Inspect SQLite's prepared statement, so comments and earlier statements cannot hide compaction.
+                if (Statements.isVacuum(sql)) {
+                  throw new VacuumUnsupported()
+                }
                 guard.last = last
                 // The statement that commits is the request's last: what the earlier ones returned is its reply.
                 if (last && guard.ends && returnedRows(results) && holder?.receipted === true) {
@@ -397,7 +420,9 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
           }
         },
         catch: (cause) =>
-          cause instanceof ReceiptFailed ? cause : Statements.failed(cause, "Failed to execute statement", "execute")
+          cause instanceof ReceiptFailed || cause instanceof VacuumUnsupported
+            ? cause
+            : Statements.failed(cause, "Failed to execute statement", "execute")
       }).pipe(
         Effect.map(({ results }): BatchResult => ({ results, open: holder?.owner === owner }))
       )
@@ -412,6 +437,7 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
       if (abandoned?.owner !== owner) return Effect.void
       return execute(owner, single("ROLLBACK")).pipe(
         Effect.catchTag("ReceiptFailed", Effect.die),
+        Effect.catchTag("@smthrs/platform-browser/VacuumUnsupported", Effect.die),
         Effect.catch((error) => {
           // The connection still contains the abandoned transaction. Fail closed,
           // and wake every waiter so none can hang or read its uncommitted data.
@@ -441,11 +467,13 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
       script: Script,
       continuing: boolean,
       request: Request
-    ): Effect.Effect<BatchResult, SqlError | TransactionUnrecorded | TransactionUndecided> => {
+    ): Effect.Effect<BatchResult, SqlError | TransactionUnrecorded | TransactionUndecided | VacuumUnsupported> => {
       const current: Guard = { undecided: request.undecided, last: false, ends: false, vetoed: undefined }
       // What a failed request fails with: its own error, or the refusal of a change the commit hook or a receipt
       // refused.
-      const failure = (error: SqlError | ReceiptFailed): SqlError | TransactionUnrecorded | TransactionUndecided =>
+      const failure = (
+        error: SqlError | ReceiptFailed | VacuumUnsupported
+      ): SqlError | TransactionUnrecorded | TransactionUndecided | VacuumUnsupported =>
         current.vetoed === "undecided" ?
           new TransactionUndecided()
           : error instanceof ReceiptFailed || current.vetoed !== undefined ?
@@ -453,7 +481,7 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
           : error
       // A refused change is rolled back with the transaction it was in; a statement SQLite refused leaves its
       // transaction as SQLite left it.
-      const refused = (error: SqlError | ReceiptFailed) =>
+      const refused = (error: SqlError | ReceiptFailed | VacuumUnsupported) =>
         error instanceof ReceiptFailed || current.vetoed !== undefined ?
           rollback(owner).pipe(Effect.andThen(Effect.fail(failure(error))))
           : Effect.fail(error)
@@ -501,10 +529,13 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
       script: Script,
       continuing: boolean,
       request?: Request
-    ): Effect.Effect<BatchResult, SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided> =>
+    ): Effect.Effect<
+      BatchResult,
+      SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided | VacuumUnsupported
+    > =>
       statement.withPermits(1)(Effect.suspend((): Effect.Effect<
         Outcome,
-        SqlError | TransactionUnrecorded | TransactionUndecided
+        SqlError | TransactionUnrecorded | TransactionUndecided | VacuumUnsupported
       > => {
         if (poisoned !== undefined) return Effect.fail(poisoned)
         const held = holder !== undefined && holder.owner === owner
@@ -514,14 +545,16 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
         return Effect.uninterruptible(Effect.map(
           request === undefined ?
             // Only a request's statements write a receipt.
-            execute(owner, script).pipe(Effect.catchTag("ReceiptFailed", Effect.die))
+            execute(owner, script).pipe(
+              Effect.catchTags({ ReceiptFailed: Effect.die, "@smthrs/platform-browser/VacuumUnsupported": Effect.die })
+            )
             : receipted(owner, script, continuing, request),
           (result) => ({ _tag: "Ran", result })
         ))
       })).pipe(
         Effect.flatMap((outcome): Effect.Effect<
           BatchResult,
-          SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided
+          SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided | VacuumUnsupported
         > => {
           switch (outcome._tag) {
             case "Ran":
@@ -548,7 +581,10 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
       params: ReadonlyArray<unknown>,
       continuing: boolean,
       request?: Request
-    ): Effect.Effect<Result, SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided> =>
+    ): Effect.Effect<
+      Result,
+      SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided | VacuumUnsupported
+    > =>
       Effect.map(runScript(owner, single(sql, params), continuing, request), ({ open, results }) => ({
         rows: results[0]!,
         open

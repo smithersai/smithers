@@ -1,36 +1,27 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Jj } from "@smthrs/jj"
-import type { SyncFsLike } from "@smthrs/jj/browser/WasiFs"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, Path } from "effect"
 import { HttpClient } from "effect/http/HttpClient"
+import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { build } from "esbuild"
-import { posix } from "node:path"
+import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { vi } from "vitest"
+import * as ZenFsMount from "./fixtures/ZenFsMount.ts"
+
 import * as BrowserHost from "../src/BrowserHost.ts"
 import * as BrowserServices from "../src/BrowserServices.ts"
+
+const wasm = new Uint8Array(readFileSync(new URL("../../jj/wasm/flows_jj.wasm", import.meta.url)))
 
 describe("BrowserHost roots", () => {
   it.effect.each([undefined, "/", "/repo"])(
     "keeps the mount isolated at / with jj.root %s",
     (root) =>
       Effect.gen(function*() {
-        const unexpected = vi.fn(async (): Promise<never> => {
-          throw new Error("unexpected backend operation during layer construction")
-        })
-        const realpath = vi.fn(async (path: string) => posix.normalize(path))
-        const fs = {
-          open: unexpected,
-          readFile: unexpected,
-          writeFile: unexpected,
-          mkdir: unexpected,
-          readdir: unexpected,
-          stat: unexpected,
-          rm: unexpected,
-          realpath
-        }
+        const mount = yield* Effect.promise(() => ZenFsMount.mount())
+        mount.fs.mkdirSync("/repo")
         const services = yield* Effect.gen(function*() {
           return {
             fileSystem: yield* FileSystem.FileSystem,
@@ -40,14 +31,12 @@ describe("BrowserHost roots", () => {
             http: yield* HttpClient
           }
         }).pipe(Effect.provide(BrowserHost.layer({
-          bash: { exec: unexpected },
-          fs,
+          bash: mount.bash,
+          fs: mount.fs.promises,
           // BrowserJj loads wasm on its first operation, not while building the host.
-          jj: { wasm: new Uint8Array(), fs: {} as SyncFsLike, ...(root === undefined ? {} : { root }) }
+          jj: { wasm, fs: mount.fs, ...(root === undefined ? {} : { root }) }
         })))
 
-        expect(unexpected).not.toHaveBeenCalled()
-        expect(realpath).not.toHaveBeenCalled()
         expect(typeof services.spawner.spawn).toBe("function")
         expect(typeof services.jj.status).toBe("function")
         expect(yield* services.jj.root!("/repo")).toBe(root ?? "/")
@@ -58,7 +47,8 @@ describe("BrowserHost roots", () => {
         ]
         expect(attestation.isolated).toBe(services.fileSystem)
         expect(yield* services.fileSystem.realPath(".")).toBe("/")
-        expect(realpath).toHaveBeenCalledExactlyOnceWith("/.")
+        yield* services.fileSystem.writeFileString("/repo/message", "shared")
+        expect(yield* services.spawner.string(ChildProcess.make("cat", ["/repo/message"]))).toBe("shared")
       })
   )
 })
@@ -87,29 +77,11 @@ describe("BrowserHost composition", () => {
   /** The three shared tags answer identically however the caller reaches them. */
   it.effect("serves the same platform trio BrowserServices does", () =>
     Effect.gen(function*() {
-      const backend = () => {
-        const unexpected = vi.fn(async (): Promise<never> => {
-          throw new Error("unexpected backend operation during layer construction")
-        })
-        return {
-          unexpected,
-          realpath: vi.fn(async (path: string) => posix.normalize(path)),
-          rest: {
-            open: unexpected,
-            readFile: unexpected,
-            writeFile: unexpected,
-            mkdir: unexpected,
-            readdir: unexpected,
-            stat: unexpected,
-            rm: unexpected
-          }
-        }
-      }
       const trio = Effect.gen(function*() {
         const fileSystem = yield* FileSystem.FileSystem
         return {
           normalized: (yield* Path.Path).normalize("/repo/.."),
-          spawn: typeof (yield* ChildProcessSpawner).spawn,
+          output: yield* (yield* ChildProcessSpawner).string(ChildProcess.make("printf", ["shared"])),
           isolated:
             (fileSystem as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId].isolated ===
               fileSystem,
@@ -117,20 +89,18 @@ describe("BrowserHost composition", () => {
         }
       })
 
-      const host = backend()
-      const services = backend()
+      const mount = yield* Effect.promise(() => ZenFsMount.mount())
+      mount.fs.mkdirSync("/repo")
       const fromHost = yield* trio.pipe(Effect.provide(BrowserHost.layer({
-        bash: { exec: host.unexpected },
-        fs: { ...host.rest, realpath: host.realpath },
-        jj: { wasm: new Uint8Array(), fs: {} as SyncFsLike, root: "/repo" }
+        bash: mount.bash,
+        fs: mount.fs.promises,
+        jj: { wasm, fs: mount.fs, root: "/repo" }
       })))
       const fromServices = yield* trio.pipe(Effect.provide(BrowserServices.layer({
-        bash: { exec: services.unexpected },
-        fs: { ...services.rest, realpath: services.realpath }
+        bash: mount.bash,
+        fs: mount.fs.promises
       })))
 
       expect(fromHost).toEqual(fromServices)
-      expect(host.realpath.mock.calls).toEqual(services.realpath.mock.calls)
-      expect(host.unexpected).not.toHaveBeenCalled()
     }))
 })

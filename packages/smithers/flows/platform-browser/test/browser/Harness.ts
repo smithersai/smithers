@@ -86,6 +86,7 @@ export const serve = async (
   const bundled = await bundle({
     page: "./app/page.ts",
     worker: "./app/worker.ts",
+    "runtime-worker": "./app/runtime-worker.ts",
     cache: "./app/cache.ts",
     tanstack: "./app/tanstack.ts",
     "wal-worker": "./app/wal-worker.ts"

@@ -144,6 +144,7 @@ const lost = "@smthrs/platform-browser/TransactionLost"
 
 /** Why a statement never reached SQLite, by the tag it failed with: the `ConnectionError`'s message. */
 const unreached: Readonly<Record<string, string>> = {
+  "@smthrs/platform-browser/VacuumUnsupported": "VACUUM is not supported through the shared database tab connection",
   "@smthrs/platform-browser/PrepareFailed": "The database is not prepared for this build",
   "@smthrs/platform-browser/TabChannelOverflow": "This tab fell too far behind the database's channel"
 }

@@ -168,6 +168,12 @@ browser persistence, so it loads one SQLite build and opens one pool.
   not change either table, hang a trigger or an index on it, create a table
   or view by its name, or set `PRAGMA writable_schema`: SQLite's authorizer
   refuses it, and the leader names them as `main.` tables.
+- A tab cannot run `VACUUM` on `app.db`. It rebuilds the leader's receipt
+  tables and cannot run inside the transaction that records a request.
+  The statement fails with a `ConnectionError` whose `cause.name` is
+  `@smthrs/platform-browser/VacuumUnsupported`. This also applies to
+  `VACUUM` inside a script or batch. Deleted pages remain available for reuse
+  within the file; the shared database does not compact itself automatically.
 - So a handover never runs a committed request twice. A statement that
   committed a transaction just as the old leader ended is answered as
   committed by the new one when the receipt names the request that opened

@@ -48,19 +48,30 @@ const bindable = (value: unknown): unknown =>
     : value
 
 /**
- * Whether `tail`, the SQL after a statement, holds another statement rather
- * than only whitespace, semicolons and comments.
+ * The first non-comment SQL offset, or the end when only whitespace,
+ * semicolons and comments remain.
  */
-const holdsStatement = (tail: string): boolean => {
+const statementAt = (tail: string): number => {
   let at = 0
   while (at < tail.length) {
     if (/[\s;]/u.test(tail[at]!)) at++
     else if (tail.startsWith("--", at)) at = tail.includes("\n", at) ? tail.indexOf("\n", at) + 1 : tail.length
     else if (tail.startsWith("/*", at)) at = tail.includes("*/", at + 2) ? tail.indexOf("*/", at + 2) + 2 : tail.length
-    else return true
+    else return at
   }
-  return false
+  return at
 }
+
+const holdsStatement = (tail: string): boolean => statementAt(tail) < tail.length
+
+/**
+ * Whether SQLite's prepared statement starts with the VACUUM keyword.
+ * Comments end at their first terminator; quoted SQL text is never scanned as a comment.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const isVacuum = (sql: string): boolean => /^VACUUM\b/iu.test(sql.slice(statementAt(sql)))
 
 /**
  * One entry of a script: `sql`, which may hold several statements, and the
@@ -86,7 +97,7 @@ export interface Entry {
  */
 export interface Hooks {
   readonly before?: (
-    statement: { readonly last: boolean; readonly results: ReadonlyArray<ReadonlyArray<unknown>> }
+    statement: { readonly sql: string; readonly last: boolean; readonly results: ReadonlyArray<ReadonlyArray<unknown>> }
   ) => Promise<void>
   readonly after?: () => Promise<void>
 }
@@ -121,7 +132,7 @@ export const runEach = async (
       // Text that isn't where it should be is never taken for the last statement.
       const last = lastEntry && sql.startsWith(text, at) && !holdsStatement(sql.slice(at + text.length))
       at += text.length
-      await hooks.before?.({ last, results })
+      await hooks.before?.({ sql: text, last, results })
       sqlite3.bind_collection(statement, params.map(bindable) as Array<SQLiteCompatibleType>)
       const names = sqlite3.column_names(statement)
       columns += names.length

@@ -1,30 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, Path } from "effect"
+import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { vi } from "vitest"
 import * as BrowserServices from "../src/BrowserServices.ts"
-
-const backend = () => {
-  const unexpected = vi.fn(async (): Promise<never> => {
-    throw new Error("unexpected backend operation during layer construction")
-  })
-  return {
-    unexpected,
-    bash: { exec: unexpected },
-    fs: {
-      open: unexpected,
-      readFile: unexpected,
-      writeFile: unexpected,
-      mkdir: unexpected,
-      readdir: unexpected,
-      stat: unexpected,
-      lstat: unexpected,
-      realpath: unexpected,
-      rm: unexpected
-    }
-  }
-}
+import * as ZenFsMount from "./fixtures/ZenFsMount.ts"
 
 const services = Effect.gen(function*() {
   return {
@@ -37,9 +17,10 @@ const services = Effect.gen(function*() {
 describe("BrowserServices isolation root", () => {
   it.effect.each([undefined, "/"])("builds with workspaceRoot %s", (workspaceRoot) =>
     Effect.gen(function*() {
-      const { unexpected, ...options } = backend()
+      const mount = yield* Effect.promise(() => ZenFsMount.mount())
       const built = yield* services.pipe(Effect.provide(BrowserServices.layer({
-        ...options,
+        bash: mount.bash,
+        fs: mount.fs.promises,
         ...(workspaceRoot === undefined ? {} : { workspaceRoot })
       })))
       expect(typeof built.spawner.spawn).toBe("function")
@@ -48,16 +29,35 @@ describe("BrowserServices isolation root", () => {
         (built.fileSystem as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId].isolated
       )
         .toBe(built.fileSystem)
-      expect(unexpected).not.toHaveBeenCalled()
+      yield* built.fileSystem.writeFileString("/message", "shared")
+      expect(yield* built.spawner.string(ChildProcess.make("cat", ["/message"]))).toBe("shared")
     }))
 
   it.effect.each(["/repo", "repo", "/repo/", "/.", ""])(
     "refuses workspaceRoot %s before backend use",
     (workspaceRoot) =>
       Effect.gen(function*() {
-        const { unexpected, ...options } = backend()
+        let backendCalls = 0
+        const unavailable = async (): Promise<never> => {
+          backendCalls++
+          throw new Error("backend unavailable")
+        }
         const error = yield* Effect.flip(services.pipe(
-          Effect.provide(BrowserServices.layer({ ...options, workspaceRoot }))
+          Effect.provide(BrowserServices.layer({
+            bash: { exec: unavailable },
+            fs: {
+              open: unavailable,
+              readFile: unavailable,
+              writeFile: unavailable,
+              mkdir: unavailable,
+              readdir: unavailable,
+              stat: unavailable,
+              lstat: unavailable,
+              realpath: unavailable,
+              rm: unavailable
+            },
+            workspaceRoot
+          }))
         ))
         expect(error._tag).toBe("PlatformError")
         expect(error.reason).toMatchObject({
@@ -67,7 +67,7 @@ describe("BrowserServices isolation root", () => {
           pathOrDescriptor: workspaceRoot,
           description: "isolation requires the workspace root to equal the mount root /"
         })
-        expect(unexpected).not.toHaveBeenCalled()
+        expect(backendCalls).toBe(0)
       })
   )
 })

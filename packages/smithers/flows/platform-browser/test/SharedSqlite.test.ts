@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as PubSub from "effect/PubSub"
 import * as Queue from "effect/Queue"
+import { MinimumLogLevel } from "effect/References"
 import * as Scope from "effect/Scope"
 import { BrowserRuntime, BrowserSqlite, SharedSqlite, TabChannel, WebLock } from "../src/index.ts"
 import * as SqlConnection from "../src/internal/SqlConnection.ts"
@@ -96,6 +97,30 @@ const rawTab = (name: string) =>
   }).pipe(Effect.provide(Engines.platform))
 
 describe("SharedSqlite", () => {
+  it.live("names unsupported tab compaction without changing data or leaking SQL into telemetry", () => {
+    const telemetry = Telemetry.make()
+    return telemetry.observed(
+      Effect.gen(function*() {
+        const { tab } = yield* setup
+        yield* tab.execute("INSERT INTO t (id) VALUES (1)")
+        const error = yield* tab.execute("/* private-compaction-request */ VACUUM").pipe(Effect.flip)
+        expect(error.reason).toMatchObject({
+          _tag: "ConnectionError",
+          cause: { name: "@smthrs/platform-browser/VacuumUnsupported" },
+          message: "VACUUM is not supported through the shared database tab connection"
+        })
+        expect(yield* tab.execute("SELECT id FROM t")).toEqual([{ id: 1 }])
+        expect(telemetry.lines("browser.runtime.statement")).toContainEqual(expect.objectContaining({
+          annotations: expect.objectContaining({
+            outcome: "failed",
+            "error.type": "@smthrs/platform-browser/VacuumUnsupported"
+          })
+        }))
+        expect(Telemetry.dump(telemetry)).not.toContain("private-compaction-request")
+      }).pipe(Effect.scoped, Effect.provideService(MinimumLogLevel, "Debug"))
+    )
+  })
+
   it.live("retains a BEGIN reply when its caller is interrupted", () =>
     Effect.gen(function*() {
       const name = Engines.name()

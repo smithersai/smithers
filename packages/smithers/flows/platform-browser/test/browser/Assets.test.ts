@@ -10,6 +10,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium, webkit } from "playwright"
+import vibelang from "vibelang-unplugin/esbuild"
 import { afterAll, beforeAll, expect, test } from "vitest"
 
 const bytes = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])
@@ -18,6 +19,7 @@ let origin: string
 beforeAll(async () => {
   const result = await build({
     bundle: true,
+    plugins: [vibelang({ root: fileURLToPath(new URL("../../", import.meta.url)) })],
     entryPoints: [fileURLToPath(new URL("./app/asset-worker.ts", import.meta.url))],
     format: "esm",
     platform: "browser",

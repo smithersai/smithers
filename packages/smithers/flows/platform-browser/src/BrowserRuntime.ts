@@ -252,6 +252,18 @@ export const requests = Metrics.requests
 export const statements = Metrics.statements
 
 /**
+ * The worker entry's boundary: its message port back to the tab and the
+ * event target reporting uncaught errors and unhandled rejections.
+ * Omit `RunOptions.port` in a dedicated worker to use its own global.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface WorkerPort extends Pick<EventTarget, "addEventListener" | "removeEventListener"> {
+  readonly postMessage: (message: unknown) => void
+}
+
+/**
  * What a worker's engine runs: the engine's name, the SQLite build, every
  * flow followers may start, the layer that registers their implementations,
  * and optionally where the worker's logs, spans and metrics go.
@@ -262,6 +274,8 @@ export const statements = Metrics.statements
 export interface RunOptions<Registered, RegistrationError, RegistrationRequirements> extends HostOptions {
   readonly flows: ReadonlyArray<Flow.Any>
   readonly registerFlows: Layer.Layer<Registered, RegistrationError, RegistrationRequirements>
+  /** The worker boundary; defaults to the dedicated worker global. */
+  readonly port?: WorkerPort | undefined
   /**
    * Where the worker's own records go, such as `Otlp.layerFetch` from
    * `@smthrs/observability`: provided to the whole program, so the leader's,
@@ -304,36 +318,36 @@ export const run = <
   RegistrationRequirements extends FlowRuntime.FlowRuntime | Host | SqlClient | DurableWriter.DurableWriter
 >(
   options: RunOptions<Registered, RegistrationError, RegistrationRequirements>
-): Fiber.Fiber<never, unknown> =>
-  Effect.runFork(
-    Effect.scoped(Effect.andThen(uncaught, Effect.flatMap(engine, (module) => module.program(options)))).pipe(
-      // Inside the telemetry, so the stop reaches the worker's exporter: an engine that couldn't be built included. An
-      // interruption from outside never reaches here.
-      Effect.tapCause((cause) =>
-        Effect.logError("browser.runtime.stopped").pipe(
-          Effect.annotateLogs({ "error.type": RetryPolicy.failureType(cause) })
+): Fiber.Fiber<never, unknown> => {
+  const port: WorkerPort = options.port ?? globalThis
+  return Effect.runFork(
+    Effect.scoped(Effect.andThen(uncaught(port), Effect.flatMap(engine, (module) => module.program(options))))
+      .pipe(
+        // Inside the telemetry, so the stop reaches the worker's exporter: an engine that couldn't be built included. An
+        // interruption from outside never reaches here.
+        Effect.tapCause((cause) =>
+          Effect.logError("browser.runtime.stopped").pipe(
+            Effect.annotateLogs({ "error.type": RetryPolicy.failureType(cause) })
+          )
+        ),
+        Effect.provide(Layer.mergeAll(WebLock.layer, TabChannel.layer, options.telemetry ?? Layer.empty)),
+        Effect.tapCause((cause) =>
+          Effect.sync(() => {
+            if (
+              options.port === undefined &&
+              typeof (globalThis as { readonly WorkerGlobalScope?: unknown }).WorkerGlobalScope !== "function"
+            ) return
+            port.postMessage(
+              Schema.encodeSync(Protocol.Stopped)({
+                _tag: "@smthrs/platform-browser/EngineStopped",
+                error: RetryPolicy.failureType(cause)
+              })
+            )
+          })
         )
       ),
-      Effect.provide(Layer.mergeAll(WebLock.layer, TabChannel.layer, options.telemetry ?? Layer.empty)),
-      Effect.tapCause((cause) =>
-        Effect.sync(() => {
-          if (typeof (globalThis as { readonly WorkerGlobalScope?: unknown }).WorkerGlobalScope !== "function") return
-          ;(globalThis as unknown as { postMessage(message: unknown): void }).postMessage(
-            Schema.encodeSync(Protocol.Stopped)({
-              _tag: "@smthrs/platform-browser/EngineStopped",
-              error: RetryPolicy.failureType(cause)
-            })
-          )
-        })
-      )
-    ),
     { scheduler: BrowserScheduler.make() }
   )
-
-/** The worker scope's listeners for what nothing caught: `addEventListener` on the global, when it has one. */
-interface WorkerEvents {
-  readonly addEventListener?: (type: string, listener: (event: unknown) => void) => void
-  readonly removeEventListener?: (type: string, listener: (event: unknown) => void) => void
 }
 
 /** A thrown value's name for a log line: an error's name or a tagged value's tag, never its message. */
@@ -349,35 +363,35 @@ const nameOf = (thrown: unknown): string =>
  * `browser.runtime.uncaught` at Error with `kind` (`error` or `rejection`) and `error.type`, never its message. Runtime
  * errors are canceled here so they do not reach the tab as a worker load failure; the worker is still running.
  */
-const uncaught = Effect.gen(function*() {
-  const target = globalThis as WorkerEvents
-  if (typeof target.addEventListener !== "function") return
-  const log = Effect.runSyncWith(yield* Effect.context<never>())
-  const listener = (event: unknown) => {
-    const { type, error, reason } = event as {
-      readonly type: string
-      readonly error?: unknown
-      readonly reason?: unknown
-    }
-    if (type === "error") (event as Event).preventDefault()
-    log(
-      Effect.logError("browser.runtime.uncaught").pipe(
-        Effect.annotateLogs({
-          kind: type === "error" ? "error" : "rejection",
-          "error.type": nameOf(type === "error" ? error : reason)
-        })
+const uncaught = (target: Partial<WorkerPort>) =>
+  Effect.gen(function*() {
+    if (typeof target.addEventListener !== "function") return
+    const log = Effect.runSyncWith(yield* Effect.context<never>())
+    const listener = (event: unknown) => {
+      const { type, error, reason } = event as {
+        readonly type: string
+        readonly error?: unknown
+        readonly reason?: unknown
+      }
+      if (type === "error") (event as Event).preventDefault()
+      log(
+        Effect.logError("browser.runtime.uncaught").pipe(
+          Effect.annotateLogs({
+            kind: type === "error" ? "error" : "rejection",
+            "error.type": nameOf(type === "error" ? error : reason)
+          })
+        )
       )
-    )
-  }
-  yield* Effect.acquireRelease(
-    Effect.sync(() => {
-      target.addEventListener!("error", listener)
-      target.addEventListener!("unhandledrejection", listener)
-    }),
-    () =>
+    }
+    yield* Effect.acquireRelease(
       Effect.sync(() => {
-        target.removeEventListener!("error", listener)
-        target.removeEventListener!("unhandledrejection", listener)
-      })
-  )
-})
+        target.addEventListener!("error", listener)
+        target.addEventListener!("unhandledrejection", listener)
+      }),
+      () =>
+        Effect.sync(() => {
+          target.removeEventListener!("error", listener)
+          target.removeEventListener!("unhandledrejection", listener)
+        })
+    )
+  })
