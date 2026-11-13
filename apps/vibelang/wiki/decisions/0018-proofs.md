@@ -7191,6 +7191,11 @@ The remaining branches, by kind:
 | Run and machine lifecycle | `ActionRuns.vibe:138, 140`, `ActionDirectory.vibe:61, 79, 91, 100`, `machineObject.vibe:64–66` | Open |
 | Assignee membership and approval | `Issues.vibe:239, 245` (case-insensitive login match), `Issues.vibe:251–253` | Host boundary for `toLowerCase` (Unicode casing); the "accept needs Accepted" check reads the proved `approveVip` |
 
+The same pass over `src/` and `scripts/` leaves 657 branches past the absence and tag tests, mostly view markup
+(`src/web/main.vibe` 101, `issuesView.vibe` 89, other views), which the audit leaves out. The non-view files with the
+most are the next scope: `src/surfaces/signin.vibe` (27), `src/core/sandboxHost.vibe` (23), `src/surfaces/commands.vibe`
+(21), `src/history/export.vibe` (21), `src/history/seed.vibe` (16) and `src/core/IssuesFactory.vibe` (14).
+
 "Open" rows are decisions that hold no row of their own and are not "Not yet proved", so the landing check cannot
 see them. They are the next proof batches, in the order above (authority first). The audit scripts and their full
 output (file, line, row, condition) are in the lane report (`~/vl/vl-proveall3.REPORT.md`, nyc-01).
