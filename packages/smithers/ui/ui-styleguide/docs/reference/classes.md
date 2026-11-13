@@ -53,9 +53,11 @@ All four take `min-height: var(--ctl-h)` (32px), `--r-1` corners, and
 `.doc-link`, `.segmented`, and every text input. `:disabled` sets
 `cursor: not-allowed` and 45 percent opacity.
 
-Primary and danger controls retain the 3px focus glow while hovered or pressed.
-Primary hover and both pressed states compose the glow with their elevation
-shadow, including when hover and press coincide.
+The solid focus border and 3px glow remain visible on tinted controls, typed
+inputs, and `textarea.prompt`, including during hover and press. Primary hover
+and both pressed states compose the glow with their elevation shadow, including
+when hover and press coincide. Selected `.run-row.active` and
+`.run-row.is-active` rows retain their inset stripe alongside the focus glow.
 
 ## Inputs
 

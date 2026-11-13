@@ -45,18 +45,18 @@ The full site is at https://ui-styleguide.smithers.sh. Its sources live in
 | `src/themeTokens.ts` | Theme-invariant tokens: aliases, tint recipes, geometry, type scale. |
 | `tests/paintedPairs.ts` | The audited (foreground, background) table and the recorded upstream gaps. |
 | `tests/nodeBinary.ts` | The Node executable the two spawning suites use, because `process.execPath` under this package's runner is Bun. |
-| `tests/bunTest.d.ts` | A typecheck-only stand-in for `bun-types`, so the suites are inside the TypeScript program while the package declares no dependencies. |
+| `tests/bunTest.d.ts` | A typecheck-only stand-in for `bun-types`, so the suites are inside the TypeScript program without Bun type declarations. |
 
 ## Commands
 
 ```sh
 pnpm --filter @smthrs/ui-styleguide test    # bun test tests
-pnpm --filter @smthrs/ui-styleguide check   # tsc --noEmit over src/ and tests/
+pnpm --filter @smthrs/ui-styleguide check   # vibelang --noEmit over src/ and tests/
 ```
 
 There is no `lint` script. `eslint` and `dprint` are package-level
 devDependencies everywhere they run in this repository, and this package
-declares none at all, so linting it means adding dependencies. That is the one
+declares neither tool, so linting it means adding dependencies. That is the one
 open item from the tooling review.
 
 `bunfig.toml` turns coverage on for the test run and fails it below 100% line
@@ -65,6 +65,13 @@ so there is no separate coverage command.
 
 `tests/docs.test.ts` reads `docs/api.md` against the barrel and fails when an
 export goes undocumented, so a new export is a documentation change too.
+
+The cascade suite also tabs through the actual exported CSS in Chromium, in
+light and dark modes. Install the browser before running the suite:
+
+```sh
+pnpm exec playwright install chromium
+```
 
 ## Test failures
 

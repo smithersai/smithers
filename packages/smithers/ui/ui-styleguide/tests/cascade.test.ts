@@ -9,7 +9,8 @@
  * rules in order does not show that; resolving them does.
  */
 import { describe, expect, test } from "bun:test";
-import { workflowUiThemeCss } from "../src/index.ts";
+import { chromium } from "playwright";
+import { workflowUiStyles, workflowUiThemeCss } from "../src/index.ts";
 
 type Rule = { selector: string; declarations: string; order: number };
 
@@ -157,3 +158,83 @@ describe("the resolved fill on a tinted button", () => {
     expect(specificity(".button.primary,.primary".split(",")[0]!)).toBe(2);
   });
 });
+
+// Resolve the exported stylesheet in Chromium: the unit resolver above only
+// models button compounds and cannot account for element/attribute specificity,
+// border shorthands, theme variables, or the browser's keyboard focus state.
+for (const mode of ["light", "dark"] as const) {
+  test(`keyboard focus survives component states in ${mode} mode`, async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage({ colorScheme: mode, reducedMotion: "reduce" });
+      const controls = [
+        { name: "selected-row", markup: '<button class="run-row active">Selected</button>', stripe: true },
+        { name: "selected-row-alias", markup: '<button class="run-row is-active">Selected</button>', stripe: true },
+        { name: "row", markup: '<button class="run-row">Row</button>' },
+        { name: "primary", markup: '<button class="button primary">Primary</button>' },
+        { name: "bare-primary", markup: '<button class="primary">Primary</button>' },
+        { name: "danger", markup: '<button class="button danger">Danger</button>' },
+        { name: "bare-danger", markup: '<button class="danger">Danger</button>' },
+        { name: "neutral", markup: '<button class="button">Neutral</button>' },
+        { name: "secondary", markup: '<button class="secondary">Secondary</button>' },
+        { name: "text", markup: '<input type="text" aria-label="Text">' },
+        { name: "search", markup: '<input type="search" aria-label="Search">' },
+        { name: "number", markup: '<input type="number" aria-label="Number">' },
+        { name: "classed-input", markup: '<input class="input" aria-label="Input">' },
+        { name: "prompt", markup: '<textarea class="prompt" aria-label="Prompt"></textarea>' },
+        { name: "textarea", markup: '<textarea class="textarea" aria-label="Textarea"></textarea>' },
+        { name: "select", markup: '<select aria-label="Select"><option>Choice</option></select>' },
+        ...["icon-button", "tab", "doc-link", "segmented"].map((name) => ({
+          name, markup: `<button class="${name}">${name}</button>`,
+        })),
+      ];
+      await page.setContent(`<!doctype html><html data-theme="${mode}"><head>
+        <style>${workflowUiStyles}</style></head><body>
+        <div id="ring" style="border:1px solid var(--ring-border);box-shadow:0 0 0 3px var(--ring)"></div>
+        <div id="stripe" style="box-shadow:inset 2px 0 0 var(--brand)"></div>
+        ${controls.map(({ name, markup }) => `<div id="${name}">${markup}</div>`).join("")}
+        </body></html>`);
+      const read = (selector: string) => page.locator(selector).evaluate(async (element) => {
+        await Promise.all(element.getAnimations().map((animation) => animation.finished));
+        const style = getComputedStyle(element);
+        return {
+          border: style.borderTopColor,
+          shadow: style.boxShadow,
+          focused: element.matches(":focus-visible"),
+          hovered: element.matches(":hover"),
+          pressed: element.matches(":active"),
+        };
+      });
+      const ring = await read("#ring");
+      const stripe = await read("#stripe");
+      for (const control of controls) {
+        const selector = `#${control.name} > :first-child`;
+        await page.mouse.move(1200, 0);
+        const resting = await read(selector);
+        await page.keyboard.press("Tab");
+        for (const [hovered, pressed] of [[false, false], [true, false], [false, true], [true, true]]) {
+          const button = control.markup.startsWith("<button");
+          if (pressed && !button) continue;
+          if (hovered) await page.locator(selector).hover();
+          else await page.mouse.move(1200, 0);
+          if (pressed) await page.keyboard.down("Space");
+          try {
+            const focused = await read(selector);
+            const context = `${control.name}: hover=${hovered}, press=${pressed}`;
+            expect(focused.focused, context).toBe(true);
+            expect(focused.hovered, context).toBe(hovered);
+            expect(focused.pressed, context).toBe(pressed);
+            expect(focused.border, context).toBe(ring.border);
+            expect(focused.shadow, context).toContain(ring.shadow);
+            expect(focused.shadow, context).not.toBe(resting.shadow);
+            if ("stripe" in control) expect(focused.shadow, context).toContain(stripe.shadow);
+          } finally {
+            if (pressed) await page.keyboard.up("Space");
+          }
+        }
+      }
+    } finally {
+      await browser.close();
+    }
+  }, 60_000);
+}

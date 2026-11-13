@@ -23,6 +23,7 @@
     "test": "bun test tests"
   },
   "devDependencies": {
-    "@shikijs/themes": "4.4.3"
+    "@shikijs/themes": "4.4.3",
+    "playwright": "1.62.1"
   }
 }

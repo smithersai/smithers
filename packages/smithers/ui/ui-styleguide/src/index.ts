@@ -71,7 +71,6 @@ export const workflowUiPrimitiveCss = [
   ".button,.primary,.secondary,.danger { min-height:var(--ctl-h); display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:0 var(--sp-3); border:1px solid var(--line); border-radius:var(--r-1); background:var(--panel); color:var(--text); text-decoration:none; cursor:pointer; white-space:nowrap; box-shadow:var(--shadow-1); transition:background-color .12s ease, border-color .12s ease, color .12s ease; }",
   ".button:hover,.primary:hover,.secondary:hover { background:var(--hover); }",
   ".button:active:not(:disabled),.primary:active:not(:disabled),.secondary:active:not(:disabled) { background:color-mix(in srgb, var(--text) 6%, var(--hover)); }",
-  ".button:focus-visible,.primary:focus-visible,.secondary:focus-visible,.danger:focus-visible,.icon-button:focus-visible,.tab:focus-visible,.run-row:focus-visible,.doc-link:focus-visible,.segmented:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible { outline:none; border-color:var(--ring-border); box-shadow:0 0 0 3px var(--ring); }",
   ".button:disabled,.primary:disabled,.secondary:disabled,.danger:disabled { cursor:not-allowed; opacity:.45; }",
   ".button.primary,.primary { border-color:var(--brand-border); background:var(--brand-soft); color:var(--brand); font-weight:650; }",
   // Hover and press on a tinted button move the border and the elevation, never
@@ -90,9 +89,6 @@ export const workflowUiPrimitiveCss = [
   ".button.danger,.danger { border-color:var(--danger-border); color:var(--danger); }",
   ".button.danger:hover,.danger:hover { background:var(--danger-soft); }",
   ".button.danger:active:not(:disabled),.danger:active:not(:disabled) { background:var(--danger-soft); border-color:var(--danger-border-strong); box-shadow:inset 0 1px 2px rgb(var(--shadow-rgb) / 0.20); }",
-  // Compose the keyboard ring with elevation so hover and press cannot erase it.
-  ".button.primary:hover:focus-visible,.primary:hover:focus-visible { box-shadow:0 0 0 3px var(--ring), var(--shadow-2); }",
-  ".button.primary:active:not(:disabled):focus-visible,.primary:active:not(:disabled):focus-visible,.button.danger:active:not(:disabled):focus-visible,.danger:active:not(:disabled):focus-visible { box-shadow:0 0 0 3px var(--ring), inset 0 1px 2px rgb(var(--shadow-rgb) / 0.20); }",
   ".input,.textarea,.prompt,textarea.prompt,input[type='text'],input[type='search'],input[type='number'],select { min-width:0; border:1px solid var(--line); border-radius:var(--r-1); background:var(--panel); color:var(--text); outline:none; }",
   ".input,.prompt,input[type='text'],input[type='search'],input[type='number'],select { min-height:var(--ctl-h); padding:0 10px; }",
   ".textarea,textarea.prompt,textarea.input,textarea { padding:10px var(--sp-3); min-height:88px; resize:vertical; line-height:1.45; }",
@@ -132,6 +128,14 @@ export const workflowUiPrimitiveCss = [
   ".livelog-node { color:var(--warning); flex:none; }",
   ".livelog-detail { color:var(--code-text); min-width:0; }",
   "* { scrollbar-width:thin; scrollbar-color:color-mix(in srgb,var(--text-muted) 35%,transparent) transparent; }",
+  // Focus follows component borders and shadows so equal-specificity state
+  // rules and input border shorthands cannot erase the keyboard indicator.
+  ".button:focus-visible,.primary:focus-visible,.secondary:focus-visible,.danger:focus-visible,.icon-button:focus-visible,.tab:focus-visible,.run-row:focus-visible,.doc-link:focus-visible,.segmented:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible { outline:none; border-color:var(--ring-border); box-shadow:0 0 0 3px var(--ring); }",
+  // Higher-specificity hover and press states retain both the solid border
+  // and the ring, composed with their elevation or selected-row stripe.
+  ".button.primary:hover:focus-visible,.primary:hover:focus-visible { border-color:var(--ring-border); box-shadow:0 0 0 3px var(--ring), var(--shadow-2); }",
+  ".button.primary:active:not(:disabled):focus-visible,.primary:active:not(:disabled):focus-visible,.button.danger:active:not(:disabled):focus-visible,.danger:active:not(:disabled):focus-visible { border-color:var(--ring-border); box-shadow:0 0 0 3px var(--ring), inset 0 1px 2px rgb(var(--shadow-rgb) / 0.20); }",
+  ".run-row.active:focus-visible,.run-row.is-active:focus-visible { box-shadow:0 0 0 3px var(--ring), inset 2px 0 0 var(--brand); }",
   "@media (max-width: 760px) { .top,.topbar { align-items:flex-start; flex-direction:column; padding:10px var(--sp-3); } .toolbar,.actions { width:100%; justify-content:flex-start; } .button,.primary,.secondary,.danger { min-width:0; } }",
   reducedMotionCss,
 ].join("\n");
