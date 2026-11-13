@@ -286,7 +286,7 @@ whether the hosts share that deduplication state.
 
 A trigger whose `activeRun` never clears is holding either a run the runner
 still calls active, or a launch reservation from a process that died. A
-reservation looks like `trigger-reservation:<triggerId>:<occurrence>`, and
+reservation looks like `trigger-reservation:<triggerId>:<uuid>:<occurrence>`, and
 `TriggerStore.isReservation` says so.
 
 A reservation releases itself when its 5-minute lease expires, at which point

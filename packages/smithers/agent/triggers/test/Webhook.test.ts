@@ -1,6 +1,7 @@
 import * as ControlChannels from "@smthrs/control/Channels"
 import * as Control from "@smthrs/control/Control"
 import { InvalidInput } from "@smthrs/control/ControlError"
+import type { RunSummary } from "@smthrs/control/ControlSchema"
 import type { CredentialRef } from "@smthrs/control/Credential"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -9,6 +10,7 @@ import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { describe, expect, it } from "vitest"
+import * as Channel from "../src/Channel.ts"
 import { TriggerError } from "../src/TriggerError.ts"
 import * as Webhook from "../src/Webhook.ts"
 
@@ -89,13 +91,14 @@ const declaration = (
   }
 })
 
-const controlLayer = (calls: Array<string>) =>
+const controlLayer = (calls: Array<string>, requests: Array<unknown>) =>
   Layer.succeed(
     Control.Control,
     Control.make({
       plan: (input) =>
         Effect.sync(() => {
           calls.push(`plan:${input.flowId}`)
+          requests.push(input)
           return {
             planId: "plan-1",
             flowId: input.flowId,
@@ -131,6 +134,7 @@ const controlLayer = (calls: Array<string>) =>
       signal: (input) =>
         Effect.sync(() => {
           calls.push(`signal:${input.runId}:${input.signal.name}`)
+          requests.push(input)
           return { _tag: "Accepted" as const, receiptId: "signalled" }
         }),
       cancel: () => Effect.die("unused"),
@@ -142,15 +146,65 @@ const controlLayer = (calls: Array<string>) =>
 
 const run = <A, E>(
   effect: Effect.Effect<A, E, ControlChannels.Channels>,
-  calls: Array<string>
+  calls: Array<string>,
+  requests: Array<unknown> = []
 ) =>
   Effect.runPromise(
     effect.pipe(
-      Effect.provide(ControlChannels.layerMemory.pipe(Layer.provide(controlLayer(calls))))
+      Effect.provide(ControlChannels.layerMemory.pipe(Layer.provide(controlLayer(calls, requests))))
     )
   )
 
 describe("Webhook", () => {
+  it("forwards only start and signal fields from a verified channel to Control", async () => {
+    const calls: Array<string> = []
+    const requests: Array<unknown> = []
+    const authority = {
+      envelope: { capabilities: ["admin"], flows: ["other"], budget: {} },
+      capabilities: ["admin"],
+      grants: ["admin"],
+      approval: "approved"
+    }
+    const config = declaration(calls)
+    const channel = Channel.make<Payload, RunSummary>({
+      ...config,
+      inbound: (payload: Payload) =>
+        payload._tag === "start"
+          ? { start: { flowId: payload.flowId, input: payload.input, ...authority } }
+          : { signal: { runId: payload.runId, stepId: payload.stepId, value: payload.value, ...authority } }
+    })
+    const webhook = Webhook.make({ ...config, ...channel })
+    await run(
+      Effect.gen(function*() {
+        yield* webhook.register
+        yield* webhook.ingest(raw({ _tag: "start", flowId: "review", input: { pr: 42 } }, "limited-start"))
+        yield* webhook.ingest(raw({
+          _tag: "signal",
+          runId: "run-1",
+          stepId: "approval",
+          value: true
+        }, "limited-signal"))
+      }),
+      calls,
+      requests
+    )
+    expect(requests).toEqual([
+      { flowId: "review", input: { pr: 42 }, idempotencyKey: "channel:6:events:limited-start" },
+      {
+        runId: "run-1",
+        signal: { name: "approval", payload: true },
+        idempotencyKey: "channel:6:events:limited-signal",
+        principal: { id: "events", kind: "channel", stampedAt: expect.any(Number) },
+        reader: { id: "events", kind: "channel", stampedAt: expect.any(Number) }
+      }
+    ])
+    expect(calls).toContain(
+      "verify:events-secret:" + JSON.stringify({ _tag: "start", flowId: "review", input: { pr: 42 } })
+    )
+    expect(calls).toContain("run")
+    expect(calls).toContain("signal:run-1:approval")
+  })
+
   it("rejects an invalid signature as verification_failed before decode or planning", async () => {
     const calls: Array<string> = []
     let inbound = false

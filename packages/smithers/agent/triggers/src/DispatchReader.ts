@@ -15,7 +15,7 @@
 
 import type { ControlError } from "@smthrs/control/ControlError"
 import { PersistenceError } from "@smthrs/control/ControlError"
-import { defaultPageSize, type FireSummary, type TriggerSummary } from "@smthrs/control/ControlSchema"
+import { defaultPageSize, type FireSummary, maxPageSize, type TriggerSummary } from "@smthrs/control/ControlSchema"
 import * as Port from "@smthrs/control/DispatchReader"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
@@ -37,15 +37,18 @@ export const nextOccurrenceCount = 5
 /**
  * How many ledger rows one `fires` page needs: every row before the page's
  * offset cursor, the page, and one more so `Control.list` can tell a next page
- * exists. A cursor Control will refuse reads nothing extra: it answers
- * `undefined`, and the refusal comes from Control.
+ * exists. Invalid or overflowing pagination reads at most one row; Control
+ * remains responsible for reporting a refused cursor or page size.
  */
-const firesNeeded = (request: Port.FiresRequest): number | undefined => {
+const firesNeeded = (request: Port.FiresRequest): number => {
   const start = request.cursor === undefined ? 0 : Number(request.cursor)
   const size = request.limit ?? defaultPageSize
-  return Number.isSafeInteger(start) && start >= 0 && Number.isSafeInteger(size) && size >= 1
-    ? start + size + 1
-    : undefined
+  const needed = start + size + 1
+  return Number.isSafeInteger(start) && start >= 0 &&
+      Number.isSafeInteger(size) && size >= 1 && size <= maxPageSize &&
+      Number.isSafeInteger(needed)
+    ? needed
+    : 1
 }
 
 const persistence = (operation: string) => (error: TriggerError): ControlError =>
@@ -115,7 +118,7 @@ export const toFireSummary = (record: FireRecord): FireSummary => ({
   triggerId: record.triggerId,
   occurrenceAtMs: record.occurrence,
   outcome: record.outcome,
-  ...(record.runId === undefined ? {} : { runId: record.runId }),
+  ...(record.runId === undefined || isReservation(record.runId) ? {} : { runId: record.runId }),
   ...(record.error === undefined ? {} : { error: record.error })
 })
 

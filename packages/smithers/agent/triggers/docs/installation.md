@@ -56,8 +56,11 @@ Three subpath forms are not public and are blocked in the package's export map:
 `@smthrs/triggers/*/index`. `@smthrs/triggers/package.json` is exported.
 
 Migrations are internal on purpose. `SqlTriggerStore.layer` applies
-`0001_triggers` and then `0002_reservation_lease` when it builds, so a host
-never runs them itself.
+`0001_triggers`, `0002_reservation_lease`, `0003_heartbeat`,
+`0004_fire_run_index`, and `0005_registered_at` in order when it builds, so a
+host never runs them itself. These create the trigger and fire tables, add the
+reservation lease, create the scheduler heartbeat table, index fires by run,
+and record each trigger's registration time.
 
 ## What a running host adds
 

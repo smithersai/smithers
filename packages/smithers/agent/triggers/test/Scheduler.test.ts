@@ -612,7 +612,13 @@ describe("Scheduler", () => {
     )
 
     expect(runner.starts).toHaveLength(2)
-    expect(results.some((result) => result.outcome === "failed")).toBe(true)
+    const failed = results.find((result) => result.outcome === "failed")
+    expect(failed).toMatchObject({
+      outcome: "failed",
+      reservationId: expect.stringMatching(/^trigger-reservation:hourly:/),
+      error: "runner launch failed"
+    })
+    expect(failed?.runId).toBeUndefined()
     expect(results.some((result) => result.outcome === "launched")).toBe(true)
     expect(lastFiredAt).toBe(2 * hour)
   })

@@ -28,6 +28,25 @@ const layerWithSql = SqlTriggerStore.layer.pipe(Layer.provideMerge(TestDatabase.
 storeConformance("SqlTriggerStore", layer)
 
 describe("TriggerStore", () => {
+  it("clears an old reservation from the ledger when a pre-launch failure settles", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        const sql = yield* SqlClient.SqlClient
+        const registered = yield* store.register(trigger)
+        const fire = { triggerId: trigger.id, occurrence: 1, expectedRevision: registered.revision }
+        yield* store.claimFire(fire)
+        const reservation = (yield* store.inspect(trigger.id)).activeRunId!
+        yield* sql`UPDATE flows_trigger_fires SET run_id = ${reservation} WHERE trigger_id = ${trigger.id}`
+        yield* store.recordResult({ ...fire, outcome: "failed", reservationId: reservation })
+        const rows = yield* sql<{ readonly run_id: string | null }>`SELECT run_id FROM flows_trigger_fires`
+        expect(rows).toEqual([{ run_id: null }])
+        expect((yield* store.history()).items).toEqual([{ triggerId: trigger.id, occurrence: 1, outcome: "failed" }])
+        expect(yield* store.inspect(trigger.id)).toEqual({})
+      }).pipe(Effect.provide(layerWithSql))
+    )
+  })
+
   it("answers a fires query filtered by run through the run_id index", async () => {
     const plan = await Effect.runPromise(
       Effect.gen(function*() {

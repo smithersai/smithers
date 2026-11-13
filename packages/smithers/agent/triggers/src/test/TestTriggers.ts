@@ -400,8 +400,9 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
           result.outcome === "superseded"
         // resultRefusal proved this ledger entry exists and can transition.
         fires.set(fireKey, result.outcome)
-        if (result.runId !== undefined) fireRunIds.set(fireKey, result.runId)
-        else if (!terminal) fireRunIds.delete(fireKey)
+        const runId = result.runId ?? (existing?.outcome === "launched" ? recordedRunId : undefined)
+        if (runId === undefined || isReservation(runId)) fireRunIds.delete(fireKey)
+        else fireRunIds.set(fireKey, runId)
         // The SQL store overwrites the error column on every result.
         if (result.error === undefined) fireErrors.delete(fireKey)
         else fireErrors.set(fireKey, result.error)

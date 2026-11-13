@@ -31,6 +31,70 @@ export const storeConformance = <LayerError>(
     )
 
   describe(`${name} TriggerStore conformance`, () => {
+    it.each(["reservationId", "runId"] as const)(
+      "records a refused launch without reporting its %s owner as a run",
+      async (ownerField) => {
+        const state = await run(Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          const registered = yield* store.register(declaration)
+          const fire = { triggerId: declaration.id, occurrence: 1, expectedRevision: registered.revision }
+          yield* store.claimFire(fire)
+          const reservation = (yield* store.inspect(declaration.id)).activeRunId!
+          yield* store.recordResult({ ...fire, outcome: "failed", [ownerField]: reservation, error: "flow removed" })
+          const before = (yield* store.history()).items
+          yield* store.recordResult({
+            ...fire,
+            outcome: "failed",
+            [ownerField]: reservation,
+            error: "changed on replay"
+          })
+          expect((yield* store.history()).items).toEqual(before)
+          expect(
+            (yield* Effect.flip(store.recordResult({
+              ...fire,
+              outcome: "failed",
+              runId: "unrelated-run"
+            }))).code
+          ).toBe("stale_owner")
+          return {
+            history: (yield* store.history()).items,
+            byReservation: (yield* store.history({ runId: reservation })).items,
+            held: yield* store.inspect(declaration.id)
+          }
+        }))
+        expect(state.history).toEqual([
+          { triggerId: declaration.id, occurrence: 1, outcome: "failed", error: "flow removed" }
+        ])
+        expect(state.byReservation).toEqual([])
+        expect(state.held).toEqual({})
+      }
+    )
+
+    it("does not report a supersede predecessor as the refused replacement's run", async () => {
+      await run(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        const registered = yield* store.register({ ...declaration, overlap: "supersede" })
+        const fire = { triggerId: declaration.id, expectedRevision: registered.revision }
+        yield* store.claimFire({ ...fire, occurrence: 1 })
+        yield* store.recordResult({
+          ...fire,
+          occurrence: 1,
+          outcome: "launched",
+          runId: "predecessor",
+          reservationId: (yield* store.inspect(declaration.id)).activeRunId!
+        })
+        yield* store.claimFire({ ...fire, occurrence: 2 })
+        const reservationId = (yield* store.inspect(declaration.id)).activeRunId!
+        yield* store.recordResult({ ...fire, occurrence: 1, outcome: "superseded", runId: "predecessor" })
+        yield* store.recordResult({ ...fire, occurrence: 2, outcome: "failed", reservationId, error: "flow removed" })
+        expect((yield* store.history()).items).toEqual([
+          { triggerId: declaration.id, occurrence: 2, outcome: "failed", error: "flow removed" },
+          { triggerId: declaration.id, occurrence: 1, outcome: "superseded", runId: "predecessor" }
+        ])
+        expect(yield* store.inspect(declaration.id)).toEqual({})
+      }))
+    })
+
     it("reports unknown_trigger from every missing-row path", async () => {
       const errors = await run(
         Effect.gen(function*() {

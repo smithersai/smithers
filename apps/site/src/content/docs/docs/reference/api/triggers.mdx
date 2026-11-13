@@ -462,8 +462,12 @@ an unfinished fire (`null` or `buffered`). Stale ownership or an impermissible
 fire transition fails with `stale_owner` without changing the ledger, cursor,
 lease, or active run. Terminal results may omit `runId` to settle the run
 already recorded for that occurrence. Before launch, pass `reservationId` to
-fence settlement to a particular attempt. Repeated terminal results and
-claim decisions leave the existing row unchanged.
+fence settlement to a particular attempt. A pre-launch failure records no
+`runId`: its reservation only fences the write. Terminal settlement preserves
+an actual launched run id, clearing a stored reservation token instead.
+Repeated terminal results and
+claim decisions leave the existing row unchanged, including retries from older
+callers that passed a reservation token as `runId` for a pre-launch failure.
 
 `resultRefusal(result, fire, activeRunId)` returns a `TriggerError` for invalid
 or stale results, or `undefined` for a permissible transition. Store adapters
@@ -636,7 +640,7 @@ them.
 
 ## SqlTriggerStore
 
-The SQLite implementation of `TriggerStore.Service`, with every write going
+The SQLite and PostgreSQL implementation of `TriggerStore.Service`, with every write going
 through the durable writer.
 
 ### SqlTriggerStore.make and layer
@@ -1028,8 +1032,9 @@ clock, and `schedulerLastTickMs` from the newest heartbeat when any scheduler
 has polled. `fires` pushes the request's `triggerId`, `runId`, and `outcome`
 filters into `TriggerStore.history` with a limit of the page's offset cursor
 plus its size plus one, so it reads only the rows the requested page needs,
-and answers them newest first; `Control.list` applies the filters again and
-pages. A store failure is a
+and answers them newest first, omitting reservation tokens from `runId` even
+in older records. Invalid or overflowing pagination reads at most one row;
+`Control.list` validates pagination, applies the filters again, and pages. A store failure is a
 control `PersistenceError` whose `operation` names the listing, `triggers` or
 `fires`.
 
@@ -1382,7 +1387,7 @@ accepting traffic.
 
 Migrations are internal. The export map null-maps
 `@smthrs/triggers/migrations/*`. Use `SqlTriggerStore.layer`; it applies
-`0001_triggers`, `0002_reservation_lease`, `0003_heartbeat`, and
-`0004_fire_run_index` in order. The package exports
+`0001_triggers`, `0002_reservation_lease`, `0003_heartbeat`,
+`0004_fire_run_index`, and `0005_registered_at` in order. The package exports
 `@smthrs/triggers/package.json`. It does not export `internal/*` or nested
 `*/index` subpaths.

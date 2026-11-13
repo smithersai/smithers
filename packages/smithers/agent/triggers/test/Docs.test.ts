@@ -1,9 +1,18 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
+import { migrations } from "../src/migrations/index.ts"
 
 const read = (path: string): string => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\s+/g, " ")
 
 describe("documentation contracts", () => {
+  it("documents the applied migrations, SQL backends, and reservation token format", () => {
+    for (const path of ["docs/installation.md", "docs/api.md"]) {
+      for (const name of Object.keys(migrations)) expect(read(path), path).toContain(`\`${name}\``)
+    }
+    expect(read("docs/troubleshooting.md")).toContain("trigger-reservation:<triggerId>:<uuid>:<occurrence>")
+    expect(read("docs/api.md")).toContain("SQLite and PostgreSQL implementation")
+  })
+
   it("requires durable runner deduplication for at-least-once launch attempts (documentation/1)", () => {
     for (
       const path of [

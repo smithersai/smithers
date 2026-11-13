@@ -406,22 +406,17 @@ export const make: Effect.Effect<
           const refusal = resultRefusal(result, existing, active)
           if (refusal !== undefined) return yield* Effect.fail(refusal)
           if (result.outcome !== "launched" && existing?.outcome === result.outcome) return
-          const terminal = result.outcome === "completed" || result.outcome === "failed" ||
-            result.outcome === "superseded"
           const resultOwner = (existing?.outcome === "launched"
             ? existing.runId
             : result.reservationId ?? result.runId ?? active) ?? null
-          if (terminal && result.runId === undefined) {
-            // Keep the recorded owner so an unqualified late result can only
-            // clear the run launched by this occurrence, never a newer one.
-            yield* sql`UPDATE flows_trigger_fires
-              SET outcome = ${result.outcome}, error = ${result.error ?? null}
-              WHERE trigger_id = ${result.triggerId} AND occurrence_at_ms = ${result.occurrence}`
-          } else {
-            yield* sql`UPDATE flows_trigger_fires
-              SET outcome = ${result.outcome}, run_id = ${result.runId ?? null}, error = ${result.error ?? null}
-              WHERE trigger_id = ${result.triggerId} AND occurrence_at_ms = ${result.occurrence}`
-          }
+          // Preserve a launched run on unqualified settlement, but never
+          // expose a pre-launch ownership token as a runtime run identity.
+          const runId = result.runId ?? (existing?.outcome === "launched" ? existing.runId : undefined)
+          yield* sql`UPDATE flows_trigger_fires
+            SET outcome = ${result.outcome},
+                run_id = ${runId === undefined || isReservation(runId) ? null : runId},
+                error = ${result.error ?? null}
+            WHERE trigger_id = ${result.triggerId} AND occurrence_at_ms = ${result.occurrence}`
           // `last_fired_at_ms` is the cursor catch-up resumes from, so it only
           // ever moves forward. An older run settling after a newer occurrence
           // was skipped used to drag it backwards and replay settled work.

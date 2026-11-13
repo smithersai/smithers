@@ -92,6 +92,10 @@
 
 ### Fixed
 
+- A scheduled launch refused before a run exists no longer lists its
+  reservation token as a run id. Fire summaries also hide older reservation
+  tokens, and invalid fire pagination cannot read the whole ledger (#4909).
+
 - A buffered or re-armed occurrence whose retry fails outright (#4906). A
   start refused with any code other than `runner_timeout` or
   `runner_unavailable` now records `failed` on every launch path. A launch from

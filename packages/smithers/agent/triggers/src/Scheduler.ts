@@ -732,14 +732,14 @@ const build = (
       trigger: Registered,
       occurrence: number,
       error: TriggerError,
-      runId?: string | undefined
+      reservationId: string
     ): Effect.Effect<void, TriggerError> =>
       store.recordResult({
         triggerId: trigger.id,
         occurrence,
         outcome: "failed",
         error: error.message,
-        runId
+        reservationId
       })
 
     // An inspection error is not evidence that a run stopped. Retry three

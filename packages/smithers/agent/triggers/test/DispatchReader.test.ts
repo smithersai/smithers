@@ -1,5 +1,5 @@
 import { PersistenceError } from "@smthrs/control/ControlError"
-import { defaultPageSize, FireSummary, TriggerSummary } from "@smthrs/control/ControlSchema"
+import { defaultPageSize, FireSummary, maxPageSize, TriggerSummary } from "@smthrs/control/ControlSchema"
 import * as Port from "@smthrs/control/DispatchReader"
 import { Option, Result } from "effect"
 import * as Effect from "effect/Effect"
@@ -197,9 +197,24 @@ describe("DispatchReader", () => {
         yield* reader.fires({ ...fires, limit: 10 })
         yield* reader.fires({ ...fires, cursor: "20", limit: 10 })
         yield* reader.fires({ ...fires, cursor: "not a cursor", limit: 10 })
+        yield* reader.fires({ ...fires, cursor: "-1", limit: 10 })
+        yield* reader.fires({ ...fires, cursor: "1.5", limit: 10 })
+        yield* reader.fires({ ...fires, cursor: String(Number.MAX_SAFE_INTEGER), limit: 10 })
+        for (const limit of [0, 1.5, Infinity, maxPageSize + 1]) yield* reader.fires({ ...fires, limit })
       })
     )
-    expect(limits).toEqual([defaultPageSize + 1, 11, 31, undefined])
+    expect(limits).toEqual([defaultPageSize + 1, 11, 31, 1, 1, 1, 1, 1, 1, 1, 1])
+  })
+
+  it("hides reservation tokens in historical fire summaries", () => {
+    const reservation = TriggerStore.reservationId("hourly", hour, "attempt")
+    expect(DispatchReader.toFireSummary({
+      triggerId: "hourly",
+      occurrence: hour,
+      outcome: "failed",
+      runId: reservation,
+      error: "flow removed"
+    })).toEqual({ triggerId: "hourly", occurrenceAtMs: hour, outcome: "failed", error: "flow removed" })
   })
 
   it("reports a store it cannot read as a persistence failure naming the listing", async () => {

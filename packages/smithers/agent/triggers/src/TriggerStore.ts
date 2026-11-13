@@ -191,7 +191,11 @@ export const resultRefusal = (
     ? unfinished && reservation && result.reservationId === activeRunId
     : fire !== undefined && (
       // A repeated decision or settlement is harmless; callers do not rewrite it.
-      (fire.outcome === result.outcome && (result.runId === undefined || result.runId === fire.runId)) ||
+      (fire.outcome === result.outcome && (result.runId === undefined || result.runId === fire.runId ||
+        // Older callers used the reservation as runId for pre-launch failure.
+        // Its removal from history must not turn a harmless retry into a refusal.
+        (fire.runId === undefined && isReservation(result.runId) &&
+          reservationOccurrence(result.runId) === result.occurrence))) ||
       (fire.outcome === "launched" && result.outcome !== "skipped" && result.outcome !== "buffered" &&
         result.reservationId === undefined && (result.runId === undefined || result.runId === fire.runId)) ||
       (unfinished && reservation && owner === activeRunId)
