@@ -5,6 +5,7 @@ import { Button } from "./button";
 import { cn } from "@smthrs/ui-css";
 import { Input } from "./input";
 import { isPlainNavigationClick } from "./internal/navigationClick";
+import { isImeKeyDown } from "./internal/imeKeyDown";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { Skeleton } from "./skeleton";
 import { useInjectUiCss } from "./styles";
@@ -97,7 +98,7 @@ export function RefPicker({
   };
   const first = commit ?? (tab === "branches" ? branches : tags)[0]?.name;
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+    if (isImeKeyDown(event)) return;
     if (event.key !== "Enter" || first === undefined) return;
     event.preventDefault();
     choose(first);

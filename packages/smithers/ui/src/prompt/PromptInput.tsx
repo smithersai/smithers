@@ -19,6 +19,7 @@ import {
 import { Attachment, AttachmentGroup } from "../chat/Attachment";
 import { cn } from "@smthrs/ui-css";
 import { LoadingBar } from "../loading";
+import { isImeKeyDown } from "../internal/imeKeyDown";
 import { useInjectUiCss } from "../styles";
 import type { AttachmentState } from "../chat/Attachment";
 
@@ -643,7 +644,7 @@ export function PromptInputTextarea({
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     onKeyDown?.(event);
-    if (event.defaultPrevented || event.nativeEvent.isComposing) return;
+    if (event.defaultPrevented || isImeKeyDown(event)) return;
     if (event.key === "Escape" && (status === "submitted" || status === "streaming") && onStop) {
       onStop();
       return;

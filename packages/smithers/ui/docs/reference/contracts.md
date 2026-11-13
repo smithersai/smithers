@@ -69,8 +69,14 @@ the host decides whether to keep or clear the draft.
 
 ### Input and dispatch
 
-`RefPicker` leaves IME confirmation Enter untouched, including key code 229.
-The picker keeps its filter and stays open until a later selection.
+`PromptInputTextarea`, `CommandPalette`, `isSubmitChord` and `RefPicker` leave
+IME confirmation keys untouched, including Safari key code `229` after
+`compositionend`. A later Enter can submit or select normally. The picker keeps
+its filter and stays open until a later selection.
+
+`parseUnifiedFile` removes only the diff header prefixes. Repository paths
+starting with `a/` or `b/` retain those directories, including both sides of a
+rename; a modified file does not gain a spurious `oldPath`.
 
 `runSourceCommand` dispatches once. A synchronous dispatch exception propagates
 to its caller; only malformed JSON uses the text argument fallback.

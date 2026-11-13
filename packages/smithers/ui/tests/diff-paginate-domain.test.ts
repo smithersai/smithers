@@ -339,3 +339,37 @@ describe("diff-level aggregates", () => {
     expect(PAGINATE_VISIBLE).toBeLessThan(PAGINATE_THRESHOLD);
   });
 });
+
+
+describe("repository paths starting with a/ or b/", () => {
+  for (const path of ["a/foo.ts", "b/foo.ts", "a/b/foo.ts", "b/a/file name.ts"]) {
+    for (const quoted of [false, true]) {
+      const quote = (value: string) => quoted ? JSON.stringify(value) : value;
+      test(`modified ${JSON.stringify(path)}, quoted=${quoted}, has no rename`, () => {
+        for (const header of [
+          `diff --git ${quote("a/" + path)} ${quote("b/" + path)}\n`,
+          "",
+        ]) {
+          const patch = header + `--- ${quote("a/" + path)}\n+++ ${quote("b/" + path)}\n@@ -1 +1 @@\n-old\n+new\n`;
+          const parsed = parseUnifiedFile(patch);
+          expect(parsed.path).toBe(path);
+          expect(parsed.oldPath).toBeUndefined();
+          expect(parsed.status).toBe("modified");
+          expect([parsed.add, parsed.del]).toEqual([1, 1]);
+        }
+      });
+
+      test(`rename ${JSON.stringify(path)}, quoted=${quoted}, keeps both repository paths`, () => {
+        const oldPath = path;
+        const newPath = path.replace("foo", "renamed").replace("file name", "new name");
+        for (const header of [
+          `diff --git ${quote("a/" + oldPath)} ${quote("b/" + newPath)}\n`,
+          "",
+        ]) {
+          const parsed = parseUnifiedFile(header + `rename from ${quote(oldPath)}\nrename to ${quote(newPath)}\n`);
+          expect([parsed.oldPath, parsed.path, parsed.status]).toEqual([oldPath, newPath, "renamed"]);
+        }
+      });
+    }
+  }
+});

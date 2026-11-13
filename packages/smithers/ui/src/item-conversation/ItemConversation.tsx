@@ -8,6 +8,7 @@ import { ITEM_STATE_VARIANTS, ItemStateIcon, type ItemStateKind, type ItemStatus
 import { issueNumberText, PENDING_WORDS, STATE_STATUS, type IssuesViewPending } from "../issues-view/IssuesView";
 import { ItemLink, type ItemLinkTarget } from "../issues-view/ItemLink";
 import { safeHref } from "../internal/safeHref";
+import { isImeKeyDown } from "../internal/imeKeyDown";
 import { Markdown } from "../primitives/markdown";
 import { Skeleton } from "../skeleton";
 import { useInjectUiCss } from "../styles";
@@ -84,7 +85,7 @@ export type ItemConversationProps = Omit<ComponentProps<"article">, "children" |
 
 /** ⌘Enter on macOS, Ctrl+Enter elsewhere; never while an IME composes. */
 export const isSubmitChord = (event: KeyboardEvent<HTMLElement>): boolean =>
-  event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing;
+  event.key === "Enter" && (event.metaKey || event.ctrlKey) && !isImeKeyDown(event);
 
 /** A timestamp as a ticking relative time, or nothing when it isn't a date. */
 function When({ iso }: { readonly iso: string | undefined }) {

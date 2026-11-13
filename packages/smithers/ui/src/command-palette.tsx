@@ -3,6 +3,7 @@ import { type KeyboardEvent, type ReactNode, useId } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { cn } from "@smthrs/ui-css";
 import { Dialog, DialogOverlay, DialogPortal } from "./dialog";
+import { isImeKeyDown } from "./internal/imeKeyDown";
 
 export type CommandPaletteItem = {
   id: string;
@@ -63,7 +64,7 @@ export function CommandPalette({
   const active = items[highlighted] === undefined ? undefined : optionId(highlighted);
   const clamp = (index: number) => Math.max(0, Math.min(index, items.length - 1));
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing) return;
+    if (isImeKeyDown(event)) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (items.length > 0) onHighlight(clamp(highlighted + (event.key === "ArrowDown" ? 1 : -1)));

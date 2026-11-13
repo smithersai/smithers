@@ -573,7 +573,7 @@ const listItems = (lines: ReadonlyArray<string>, marker: RegExp): string[] => {
 };
 
 function scanBlocks(content: string, variant: MarkdownVariant = "chat"): BlockSpan[] {
-  const lines = (variant === "document" ? markdownDocumentBody(content) : content).split("\n");
+  const lines = content.split("\n");
   const spans: BlockSpan[] = [];
   const document = variant === "document";
   let i = 0;
@@ -876,8 +876,10 @@ function renderBlocks(
   onLinkClick?: MarkdownLinkClick,
   variant: MarkdownVariant = "chat",
   resolveImage?: MarkdownImageResolver,
+  stripFrontMatter = true,
 ): ReactNode[] {
-  return scanBlocks(content, variant).map((span, index) => renderSpan(span, index, onLinkClick, variant, false, resolveImage));
+  const body = variant === "document" && stripFrontMatter ? markdownDocumentBody(content) : content;
+  return scanBlocks(body, variant).map((span, index) => renderSpan(span, index, onLinkClick, variant, false, resolveImage));
 }
 
 /** @internal Exposed so parser reuse can be verified without mocking Markdown output. */
@@ -920,15 +922,16 @@ export type MarkdownProps = Omit<ComponentProps<"div">, "children" | "onClick"> 
 function MarkdownImpl({ content, onLinkClick, variant = "chat", resolveImage, baseUrl, className, ...props }: MarkdownProps) {
   useInjectUiCss();
   const completedBlocks = useMemo(() => new Map<string, ReactNode[]>(), [onLinkClick, variant, resolveImage]);
-  const spans = scanBlocks(content, variant);
+  const body = variant === "document" ? markdownDocumentBody(content) : content;
+  const spans = scanBlocks(body, variant);
   const live = new Set<string>();
   const rendered = spans.map((span, index) => {
-    if (index === spans.length - 1) return markdownBlockParser.render(span.text, onLinkClick, variant, resolveImage);
+    if (index === spans.length - 1) return markdownBlockParser.render(span.text, onLinkClick, variant, resolveImage, false);
 
     live.add(span.text);
     let block = completedBlocks.get(span.text);
     if (!block) {
-      block = markdownBlockParser.render(span.text, onLinkClick, variant, resolveImage);
+      block = markdownBlockParser.render(span.text, onLinkClick, variant, resolveImage, false);
       completedBlocks.set(span.text, block);
     }
     return block;

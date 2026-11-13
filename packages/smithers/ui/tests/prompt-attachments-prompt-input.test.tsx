@@ -569,3 +569,28 @@ describe("PromptInput", () => {
     expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(promptAttachmentsCss.trim());
   });
 });
+
+
+for (const submitKey of ["enter", "mod-enter"] as const) {
+  for (const ime of [{ isComposing: true }, { keyCode: 229 }, { isComposing: true, keyCode: 229 }]) {
+    test(`PromptInput ${submitKey} keeps IME confirmation as input: ${JSON.stringify(ime)}`, async () => {
+      const submitted: PromptInputMessage[] = [];
+      await render(
+        <PromptInput defaultValue="draft" submitKey={submitKey} onSubmit={(message) => submitted.push(message)}>
+          <PromptInputTextarea />
+        </PromptInput>,
+      );
+      const textarea = container!.querySelector<HTMLTextAreaElement>("textarea")!;
+      const chord = submitKey === "mod-enter" ? { ctrlKey: true } : {};
+      const event = new KeyboardEvent("keydown", {
+        key: "Enter", bubbles: true, cancelable: true, ...chord, ...ime,
+      });
+      await act(async () => { textarea.dispatchEvent(event); });
+      expect(event.defaultPrevented).toBe(false);
+      expect(submitted).toEqual([]);
+      expect(textarea.value).toBe("draft");
+      await act(async () => pressEnter(textarea, chord));
+      expect(submitted.map((message) => message.text)).toEqual(["draft"]);
+    });
+  }
+}

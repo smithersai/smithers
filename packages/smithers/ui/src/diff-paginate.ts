@@ -270,11 +270,11 @@ const MINUS_HEADER_RE = new RegExp(String.raw`^--- (?:${QUOTED}|(.+))$`, "m");
 const RENAME_TO_RE = new RegExp(String.raw`^rename to (?:${QUOTED}|(.+))$`, "m");
 const RENAME_FROM_RE = new RegExp(String.raw`^rename from (?:${QUOTED}|(.+))$`, "m");
 
-/** Decode whichever alternative matched, then drop a leading `a/` or `b/`. */
-function headerPath(quoted: string | undefined, plain: string | undefined): string | undefined {
+/** Decode the matched path, dropping `a/` or `b/` only when the header supplies it. */
+function headerPath(quoted: string | undefined, plain: string | undefined, prefixed: boolean): string | undefined {
   const raw = quoted !== undefined ? decodeGitPath(quoted) : plain?.replace(/\t?\r?$/, "");
   if (raw === undefined || raw === "") return undefined;
-  return raw.startsWith("a/") || raw.startsWith("b/") ? raw.slice(2) : raw;
+  return prefixed && (raw.startsWith("a/") || raw.startsWith("b/")) ? raw.slice(2) : raw;
 }
 
 /**
@@ -388,27 +388,27 @@ function statusFromDiffText(diffText: string): DiffFileStatus {
 function pathFromDiffText(diffText: string): string {
   const git = GIT_HEADER_RE.exec(diffText);
   if (git) {
-    const newPath = headerPath(git[3], git[4]);
+    const newPath = headerPath(git[3], git[4], git[3] !== undefined);
     if (newPath) return newPath;
   }
   const rename = RENAME_TO_RE.exec(diffText);
-  const renamed = rename ? headerPath(rename[1], rename[2]) : undefined;
+  const renamed = rename ? headerPath(rename[1], rename[2], false) : undefined;
   if (renamed) return renamed;
   const plus = PLUS_HEADER_RE.exec(diffText);
-  const added = plus ? headerPath(plus[1], plus[2]) : undefined;
+  const added = plus ? headerPath(plus[1], plus[2], true) : undefined;
   if (added && added !== "/dev/null") return added;
   const minus = MINUS_HEADER_RE.exec(diffText);
-  const removed = minus ? headerPath(minus[1], minus[2]) : undefined;
+  const removed = minus ? headerPath(minus[1], minus[2], true) : undefined;
   if (removed && removed !== "/dev/null") return removed;
   return "";
 }
 
 function oldPathFrom(diffText: string): string | undefined {
   const rename = RENAME_FROM_RE.exec(diffText);
-  const renamed = rename ? headerPath(rename[1], rename[2]) : undefined;
+  const renamed = rename ? headerPath(rename[1], rename[2], false) : undefined;
   if (renamed) return renamed;
   const minus = MINUS_HEADER_RE.exec(diffText);
-  const header = minus ? headerPath(minus[1], minus[2]) : undefined;
+  const header = minus ? headerPath(minus[1], minus[2], true) : undefined;
   return header && header !== "/dev/null" ? header : undefined;
 }
 

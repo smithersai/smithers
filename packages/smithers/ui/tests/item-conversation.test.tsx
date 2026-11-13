@@ -448,3 +448,18 @@ describe("generated host attributes", () => {
     expect(el.textContent).toContain("Content");
   });
 });
+
+
+for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+  for (const ime of [{ isComposing: true }, { keyCode: 229 }, { isComposing: true, keyCode: 229 }]) {
+    test(`comment keeps IME confirmation until a later submit chord: ${JSON.stringify({ ...modifier, ...ime })}`, async () => {
+      let submits = 0;
+      await render(<Harness initial="Ship it" onSubmit={() => (submits += 1)} />);
+      expect(await key(textarea(), { key: "Enter", ...modifier, ...ime })).toBe(true);
+      expect(submits).toBe(0);
+      expect(textarea().value).toBe("Ship it");
+      expect(await key(textarea(), { key: "Enter", ...modifier })).toBe(false);
+      expect(submits).toBe(1);
+    });
+  }
+}

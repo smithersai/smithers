@@ -305,3 +305,19 @@ for (const arrow of ["ArrowDown", "ArrowUp"]) {
     expect(calls).toEqual([]);
   });
 }
+
+
+for (const ime of [{ isComposing: true }, { keyCode: 229 }, { isComposing: true, keyCode: 229 }]) {
+  for (const name of ["Enter", "ArrowDown", "ArrowUp"]) {
+    test(`palette leaves ${name} to IME confirmation: ${JSON.stringify(ime)}`, async () => {
+      const calls = await palette();
+      const event = new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true, ...ime });
+      await act(async () => { input().dispatchEvent(event); });
+      expect(event.defaultPrevented).toBe(false);
+      expect(calls).toEqual([]);
+      expect(input().value).toBe("flow");
+      expect(await key(input(), "Enter")).toBe(false);
+      expect(calls).toEqual([["choose", "flow-make"]]);
+    });
+  }
+}

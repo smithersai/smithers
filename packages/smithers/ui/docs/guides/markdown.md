@@ -1,7 +1,8 @@
 # Render Markdown documents
 
-Use Markdown with variant="document" for repository content. Complete leading
-YAML metadata is hidden; continuation lines stay inside list items. Tables
+Use `Markdown` with `variant="document"` for repository content. Complete leading
+YAML metadata is hidden once, at the start of the document. Blocks between `---`
+lines in the body or a blockquote stay visible. Continuation lines stay inside list items. Tables
 scroll independently on narrow screens.
 
 Document blockquotes and inline HTML formatting nest up to `16` levels. Deeper
