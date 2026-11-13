@@ -29,15 +29,13 @@ Priority is a signed integer ordering ready work. Fractions and values past
 `Number.MAX_SAFE_INTEGER` are refused at declaration time rather than silently
 truncated.
 
-### Node.andThen at "x" must return a Node
+### Node.catch expected its failure arm to return a Node
 
-`GraphBuildError` with code `invalid_continuation` is raised during
-`Graph.build`, when a `bindPlanned` continuation or a `catch` recovery arm returns something
-other than a node. The message names the node id, so the structural position
-tells you which builder in your source is wrong.
-
-An arm that has nothing to do still has to return a node. `Node.succeed` for
-the value you want, or `Node.fail` to re-raise, is the shape.
+`Node.catch` constructs its recovery arm immediately, before `Graph.build`.
+If `onFailure` returns something other than a node, construction throws a
+`GraphBuildError` with code `invalid_continuation`. Return `Node.succeed`
+or `Node.fail` even when the arm has no further work. Invalid `Node.branch`
+arms also throw during construction.
 
 ### Node.capture: capture at $.x ...
 
@@ -82,11 +80,41 @@ The usual cause is a generated declaration, or a loop that composes nodes
 without a bound. `graph_too_deep` after a recursive builder means the recursion
 has no base case that stops at 512.
 
+### duplicate_node
+
+Two nodes claim the same structural id. Ordinary `Node.all` member names can
+collide with structural separators:
+
+```ts
+import { Graph, Node } from "@smthrs/core"
+
+const graph = Graph.build(Node.all({
+  a: Node.all({ b: Node.succeed(1) }),
+  "a.all.b": Node.succeed(2)
+}))
+```
+
+Both leaves have id `root.all.a.all.b`. `Graph.build` throws a
+`GraphBuildError` with code `duplicate_node`; it does not return a graph.
+Rename the colliding member, for example from `"a.all.b"` to `"other"`.
+Dotted member names are allowed when their structural ids are unambiguous.
+
 ## Failures that are recorded
 
 Read them with `Graph.diagnostics`. Every code except
 `capability_outside_grant` is fatal, which means `Graph.drafts` refuses the
 graph rather than compiling a plan the builder called invalid.
+
+### invalid_continuation from Node.bindPlanned
+
+`GraphBuildError` with code `invalid_continuation` is recorded in
+`Graph.diagnostics` during `Graph.build`, when a `bindPlanned` continuation
+returns something other than a node. The message names the node id, so the structural position
+tells you which builder in your source is wrong. `Graph.drafts` refuses
+the graph until the fatal diagnostic is fixed.
+
+An arm that has nothing to do still has to return a node. `Node.succeed` for
+the value you want, or `Node.fail` to re-raise, is the shape.
 
 ### effect_outside_envelope
 
@@ -123,25 +151,6 @@ from `irreversible` to `compensable` to `sealed`, and an omitted tier reads as
 
 Raise the enclosing flow's tier to cover the step, or lower the step's.
 
-### write_conflict
-
-```text
-{
-  _tag: '@smthrs/plan/GraphBuildError',
-  code: 'write_conflict',
-  node: 'root.all.a',
-  path: [ 'out/report.json' ]
-}
-```
-
-Two work nodes declared overlapping writes and at least one of them declared
-`onConflict: "fail"`. This is fatal by design: it is what `fail` is for. `node`
-names the first of the pair and the message names both.
-
-Fix the declarations so only one node writes the path, or change the strategy.
-`serialize` orders the two writers with a `conflict` edge; `lane` gives each a
-lane and synthesizes a merge node. Both keep the graph keyable.
-
 ### capability_outside_grant
 
 ```text
@@ -160,31 +169,6 @@ capability is dropped rather than smuggled through.
 
 Add the capability to the outer flow's `capabilities` option, or remove it
 from the inner one.
-
-### duplicate_node
-
-Two nodes claim the same structural id. Ordinary `Node.all` member names can
-collide with structural separators:
-
-```ts
-import { Graph, Node } from "@smthrs/core"
-
-const graph = Graph.build(Node.all({
-  a: Node.all({ b: Node.succeed(1) }),
-  "a.all.b": Node.succeed(2)
-}))
-```
-
-Both leaves have id `root.all.a.all.b`. `Graph.diagnostics(graph)` records
-`duplicate_node`, and `Graph.drafts(graph)` refuses the graph.
-Rename the colliding member, for example from `"a.all.b"` to `"other"`.
-Dotted member names are allowed when their structural ids are unambiguous.
-
-### missing_key_material
-
-A node reached draft compilation without key material. This does not arise from
-ordinary declarations. If you see it from a graph `Graph.build` produced, report
-a package defect.
 
 ## Behavior that is not an error
 
@@ -223,18 +207,6 @@ Move the decision inside the step that has the real value.
 The placeholder reserves the member name `then`, so nothing above the plan
 mistakes it for a promise. Rename the field, or read it inside the step that
 produces it.
-
-### No conflicts, despite overlapping writes
-
-A container node is not a second writer for the children it encloses, and a
-plan built from `Node.succeed` alone contains no work to conflict.
-[`@smthrs/flow`](/api/flow) states which node kinds count as writers.
-
-### A graph will not accept a mutation
-
-`Graph.build` deep-freezes everything it constructs, and the getters hand back
-the graph's own values rather than copies. Copy what you need before you edit
-it.
 
 ### A declaration that crossed a process boundary will not plan
 

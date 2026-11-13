@@ -5,10 +5,10 @@ sidebar:
   order: 5
 ---
 
-An effect declaration says which resources a step touches. The planner checks
-that every step stays inside the envelope it inherited, and compares every pair
-of writers to find the ones that would race. Both checks are plan-time data
-work: nothing opens a file.
+An effect declaration says which resources a step touches. `Graph.build`
+checks that every step stays inside the envelope it inherited. Later,
+`Plan.compile` in [`@smthrs/plan`](/api/plan) compares plan drafts' write
+declarations for conflicts. Both are plan-time data checks: nothing opens a file.
 
 ## Declare an envelope on the signature
 
@@ -104,12 +104,16 @@ struct payload, so both the declaration and every call use the same shape.
 
 ## Two writers of one path
 
-[`@smthrs/flow`](/api/flow) owns the comparison: its graph builder records a
-conflict when two writers' effective write declarations overlap, orders them
-under `serialize`, lanes them under `lane`, and refuses the plan under `fail`.
-The stricter declaration decides: `fail` beats `lane`, and `lane` beats
-`serialize`, so one careful step can refuse to share a path with a careless
-one. Its reference documents each strategy and the diagnostics it records.
+`Graph.build` does not diagnose write overlaps or apply `onConflict`.
+`Plan.compile` in [`@smthrs/plan`](/api/plan) owns that comparison, using
+the plan drafts' `effects` and `conflictStrategy`. Set the draft strategy
+explicitly; `Graph.drafts` does not translate `onConflict` for you.
+
+The compiled plan carries conflict annotations. `serialize` adds ordering;
+`lane` records a strategy without synthesizing a merge node; `fail` refuses
+an unordered overlap with `overlap_forbidden`. For each pair, `fail` beats
+`lane`, and `lane` beats `serialize`. See
+[Effect envelopes](../concepts/effects.md#two-writers-of-the-same-path).
 
 ## Declare a sealed envelope
 

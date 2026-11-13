@@ -367,11 +367,6 @@ the other. `Priority` is a signed integer read by registry and host lowering;
 use `Node.priority` to set priority directly in a graph. Priority is never part
 of step identity, so raising it never invalidates a cached step.
 
-A fourth key, `Lane`, and its `LaneOptions` are gone. They were a second
-spelling of `Effects.Declaration.onConflict: "lane"` with no caller outside
-this package's own tests; the lane a node carries is now only the one the
-write-conflict pass assigns it, typed as `Graph.Lane`.
-
 ## KeyMaterial
 
 The digest-free input to [`@smthrs/plan`](/api/plan). Types only; this module
@@ -383,6 +378,7 @@ exports no runtime values.
 interface KeyMaterial {
   readonly version: "flows/key-material/v2"
   readonly kind: "sealed" | "compensable" | "irreversible"
+  readonly nondeterministic?: true | undefined
   readonly body: unknown
   readonly inputs: ReadonlyArray<InputRef>
   readonly layers: ReadonlyArray<string>
@@ -393,8 +389,10 @@ interface KeyMaterial {
 ```
 
 `kind` is the effective declaration's tier. `body` is the node's own
-declaration projected into inert data: a call records the callee's schema
-identity, capabilities, and effects.
+declaration projected into inert data: a call records its flow or action tag
+and the callee's declaration identity. Renaming that tag changes the call's
+key. `nondeterministic: true` is emitted for explicitly nondeterministic actions
+and enters the key; otherwise the field is absent.
 
 ### KeyMaterial.InputRef
 

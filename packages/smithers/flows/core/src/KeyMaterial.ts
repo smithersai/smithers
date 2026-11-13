@@ -10,8 +10,9 @@
  * https://smithers.sh/docs/reference/api/core.
  *
  * Graph-local ids may occur only inside dependency references. The key
- * compiler replaces those references with dependency digests; names and tree
- * positions are never hashed directly.
+ * compiler replaces those references with dependency digests; graph-local ids
+ * and tree positions are never hashed directly. A call's flow or action tag
+ * is part of its body and does enter the key.
  *
  * @since 0.0.0
  */
@@ -32,7 +33,7 @@ export type InputRef = PlanKeyMaterial.InputRef
 /**
  * Digest-free key material for a planned node.
  *
- * `version`, `kind`, `body`, `inputs`, `layers` and `capabilities` are
+ * `version`, `kind`, `nondeterministic`, `body`, `inputs`, `layers` and `capabilities` are
  * `@smthrs/plan`'s, field for field. `effects` and `placement` are
  * `Schema.Unknown` there on purpose, because the key compiler serializes them
  * canonically and never interprets them; this package's graph puts a
@@ -44,7 +45,7 @@ export type InputRef = PlanKeyMaterial.InputRef
  * @slop
  */
 export type KeyMaterial =
-  & Omit<PlanKeyMaterial.KeyMaterial, "effects" | "placement" | "nondeterministic">
+  & Omit<PlanKeyMaterial.KeyMaterial, "effects" | "placement">
   & {
     readonly effects: Effects.Declaration | undefined
     readonly placement: Placement.Placement | undefined

@@ -49,8 +49,9 @@ Host step execution is separate from these planning callbacks. Evaluating the bu
 the downstream topology visible: the plan contains the report step and its
 dependency on the review step before either has run.
 
-The result is frozen. `Graph.nodes`, `Graph.edges`, and `Graph.diagnostics` hand
-back the graph's own values, so a reader cannot edit the plan it is reading.
+`Graph.nodes`, `Graph.edges`, and `Graph.diagnostics` return the graph's own
+values with readonly TypeScript types. `Graph.build` does not deep-freeze the
+graph or its arrays. Treat them as read-only; make a separate copy for editing.
 
 ## Node ids are structural
 
@@ -58,26 +59,27 @@ A node's id is its position in the declaration: `root`, `root.andThen`,
 `root.andThen.all.api`, `root.then`. The id is traversal data, not identity;
 it never reaches the hash that produces a step key. Two consequences follow.
 
-The ids are stable across processes, so a diagnostic naming
-`root.andThen.all.api` names the same place in your source every time. And
-renaming a flow, or moving it inside a lane, does not change what a step keys
-on, because the name and the tree position were never part of the key.
+The ids are stable across processes for the same topology, so a diagnostic
+naming `root.andThen.all.api` names the same structural position. Moving a node
+without changing its key material does not by itself re-key that node. A flow's
+tag is different: it is part of a `FlowCall` body, so renaming the flow re-keys
+its calls and anything whose key consumes them.
 
 ## Edges say why
 
-Every edge carries a `reason`, and the four values are distinct kinds of
-ordering:
+Every edge carries a `reason`, and the three values describe dependencies:
 
-| Reason         | What it means                                                          |
-| -------------- | ---------------------------------------------------------------------- |
-| `value`        | A structural dependency: the target consumes the source's value.       |
-| `continuation` | A statically planned `andThen` or `catch` arm follows the source.      |
-| `conflict`     | The write-conflict pass ordered two writers that would otherwise race. |
-| `lane-merge`   | Two laned writers join at the merge node this package synthesized.     |
+| Reason         | What it means                                                     |
+| -------------- | ----------------------------------------------------------------- |
+| `value`        | A structural dependency: the target consumes the source's value.  |
+| `continuation` | A statically planned continuation or branch arm follows a source. |
+| `failure`      | A recovery arm follows the protected node's failure.              |
 
-A scheduler reading only `value` edges sees the data flow. A scheduler that
-honors `conflict` edges too gets the serialization the effect declarations
-asked for, without either declaration knowing the other exists.
+`Graph.build` does not run a write-conflict pass or synthesize lane-merge
+nodes. Write conflicts are resolved later by `Plan.compile` in
+[`@smthrs/plan`](/api/plan), using the plan drafts' effects and
+`conflictStrategy`. The resulting plan carries conflict annotations and any
+inferred ordering edges; those are separate from this graph's edge reasons.
 
 ## The placeholder is a name, not a value
 
@@ -124,11 +126,12 @@ that matters for your code, pass a value nothing else holds a handle to.
 
 Construction failures throw, because they mean the declaration is malformed and
 there is nothing to inspect: a missing flow name raises `TypeError`;
-invalid nodes and continuation elaboration raise the native `GraphBuildError`;
-and invalid capture data raises `TypeError`. A body-less signature is a declared
+invalid nodes, duplicate structural ids, and computations on planned values
+raise the native `GraphBuildError`; and invalid capture data raises `TypeError`. A body-less signature is a declared
 action, so it remains callable without inventing a second dynamic node model.
 
-Declaration failures are recorded. `Graph.build` returns a graph even when the
+Declaration failures, including a `bindPlanned` continuation that returns a non-node, are
+recorded. `Graph.build` returns a graph even when the
 declaration is invalid and lists the problems in `Graph.diagnostics`, so a
 reviewer can see the whole plan and its objections at once.
 `Graph.drafts` is where the two meet: it refuses a graph carrying a fatal

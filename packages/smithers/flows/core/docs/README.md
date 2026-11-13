@@ -73,9 +73,10 @@ const graph = Graph.build(review.call({ path: "src/api.ts" }))
 ```
 
 The graph holds the explicit action call the author wrote. The capability ceiling, the effect envelope, and the placement
-travel as annotations on both, which is how a planner orders two writers of one
-path and how a reviewer sees what a step will touch before a model is called.
-`@smthrs/flow` owns that analysis and documents its refusals.
+travel as annotations so a reviewer can see the declared resource access before
+a model is called. `Graph.build` checks effect envelopes. `Plan.compile` in
+[`@smthrs/plan`](/api/plan) resolves write overlaps from plan-draft effects and
+conflict strategies; the graph builder does not order writers or assign lanes.
 
 ## How this fits with @smthrs/flows
 

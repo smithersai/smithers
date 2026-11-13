@@ -6,12 +6,10 @@ sidebar:
 ---
 
 An effect declaration is a claim: this flow, or this step, touches these
-resources and no others. The planner does two things with the claim. It checks
-that a step stays inside the envelope it inherited, and it compares every pair
-of writers to find the ones that would race.
-
-Both happen at plan time, on data. Nothing here opens a file or asks a host
-what a path means.
+resources and no others. `Graph.build` checks that a step stays inside the
+envelope it inherited. Later, `Plan.compile` in [`@smthrs/plan`](/api/plan)
+compares the plan drafts' write declarations for conflicts. Both are plan-time
+data checks. Nothing here opens a file or asks a host what a path means.
 
 ## What a declaration says
 
@@ -31,7 +29,7 @@ const envelope = Effects.make({
 | ----------------- | --------------------------------------------------------------------------------------------------- |
 | `reads`, `writes` | The paths and patterns this declaration claims. Normalized into sorted, duplicate-free arrays.      |
 | `mode`            | `hermetic` means these are all of them. `expected` means these are the ones worth declaring.        |
-| `onConflict`      | What the planner should do about another writer of the same path: `serialize`, `lane`, or `fail`.   |
+| `onConflict`      | Declared conflict policy: `serialize`, `lane`, or `fail`. Not applied by `Graph.build`.             |
 | `tier`            | How reversible the effect is: `sealed`, `compensable`, or `irreversible`. Absent reads as `sealed`. |
 
 `Effects.make` normalizes, and normalization is exactly sorting and
@@ -95,14 +93,20 @@ needs its own cache contract before results can be shared across runs.
 
 ## Two writers of the same path
 
-The comparison is [`@smthrs/flow`](/api/flow)'s: it holds the graph builder that
-walks a plan, and it records a conflict when two writers' effective write
-declarations overlap. The strategy comes from the two declarations, and the
-stricter one wins: `fail` beats `lane`, and `lane` beats `serialize`. Its
-reference documents what each strategy produces and which refusals are fatal.
+`Graph.build` checks envelopes but does not compare writers, assign lanes,
+or reject overlapping writes. `onConflict` is declaration metadata; graph
+diagnostics do not enforce it.
 
-What belongs here is the declaration: `Effects.overlaps` answers whether two
-declarations touch the same path, on data, without a graph.
+`Plan.compile` in [`@smthrs/plan`](/api/plan) resolves overlaps using each
+`Plan.NodeDraft`'s `effects` and `conflictStrategy`. It records conflict
+annotations: `serialize` adds ordering, `lane` records a lane strategy without
+a merge node, and `fail` refuses an unordered overlap with `overlap_forbidden`.
+The stricter draft strategy wins: `fail`, then `lane`, then `serialize`.
+Set `conflictStrategy` on plan drafts when selecting a policy; do not assume
+`Graph.drafts` translates `onConflict` into that field.
+
+`Effects.overlaps` answers whether two declarations touch the same path, on
+data, without a graph.
 
 ## Where to go next
 

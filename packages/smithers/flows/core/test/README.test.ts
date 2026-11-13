@@ -1,6 +1,9 @@
+import { Action } from "@smthrs/flow"
+import * as Schema from "effect/Schema"
 import { readdirSync, readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Core from "../src/index.ts"
+import type * as KeyMaterial from "../src/KeyMaterial.ts"
 
 const publicApiRows = (): ReadonlyMap<string, ReadonlySet<string>> => {
   const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
@@ -49,6 +52,31 @@ describe("README public API table", () => {
     for (const [module, namespace] of Object.entries(Core)) {
       const documented = rows.get(module) ?? new Set<string>()
       expect(Object.keys(namespace).filter((name) => !documented.has(name)), module).toEqual([])
+    }
+  })
+})
+
+describe("documented key material", () => {
+  it("exposes an action's nondeterminism to typed consumers and in the API reference", () => {
+    for (const nondeterministic of [undefined, true] as const) {
+      const action = Action.make("key-material", {
+        payload: {},
+        success: Schema.Void,
+        ...(nondeterministic === undefined ? {} : { nondeterministic })
+      })
+      const draft = Core.Graph.drafts(Core.Graph.build(action.call({})))[0]!
+      const material: KeyMaterial.KeyMaterial = {
+        ...draft.material,
+        effects: undefined,
+        placement: undefined
+      }
+      const flag: true | undefined = material.nondeterministic
+      expect(flag).toBe(nondeterministic)
+      expect(Object.hasOwn(material, "nondeterministic")).toBe(nondeterministic === true)
+      const api = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8")
+      const shape = api.match(/interface KeyMaterial \{([\s\S]*?)\n\}/)![1]!
+      const documented = new Set([...shape.matchAll(/readonly (\w+)[?:]/g)].map((match) => match[1]!))
+      expect(Object.keys(material).filter((field) => !documented.has(field))).toEqual([])
     }
   })
 })

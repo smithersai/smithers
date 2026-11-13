@@ -15,27 +15,31 @@ contract.
 
 Every planned node carries one `KeyMaterial` record:
 
-| Field          | What it holds                                                         |
-| -------------- | --------------------------------------------------------------------- |
-| `version`      | `"flows/key-material/v2"`. The shape's own version.                   |
-| `kind`         | The effect declaration's `tier`, or `"sealed"` when none is declared. |
-| `body`         | The node's own declaration, projected into inert data.                |
-| `inputs`       | Literal values, references to other nodes, and pending markers.       |
-| `layers`       | Whatever the build's `resolveLayers` option returned for this node.   |
-| `capabilities` | The sorted capability names in force at this node.                    |
-| `effects`      | The effective effect declaration, if any.                             |
-| `placement`    | The resolved placement directive, if any.                             |
+| Field              | What it holds                                                              |
+| ------------------ | -------------------------------------------------------------------------- |
+| `version`          | `"flows/key-material/v2"`. The shape's own version.                        |
+| `kind`             | The effect declaration's `tier`, or `"sealed"` when none is declared.      |
+| `nondeterministic` | Optional `true` for explicitly nondeterministic actions; absent otherwise. |
+| `body`             | The node's own declaration, projected into inert data.                     |
+| `inputs`           | Literal values, references to other nodes, and pending markers.            |
+| `layers`           | Whatever the build's `resolveLayers` option returned for this node.        |
+| `capabilities`     | The sorted capability names in force at this node.                         |
+| `effects`          | The effective effect declaration, if any.                                  |
+| `placement`        | The resolved placement directive, if any.                                  |
 
-Two absences are as deliberate as the fields. The graph-local node id is not in
-the material: it appears only inside dependency references, and the key
-compiler replaces those with the dependency's digest before hashing, so a
-node's position in the tree never reaches a key. And a flow's name is not in
-the material either. A `FlowCall` body records the flow's input and output
-schema identity, its capabilities, its effects, and its implementation
-identity. Renaming a flow does not invalidate its cached results; changing what
-it does will.
+The graph-local node id is absent from the material: it appears only inside
+dependency references, and the key compiler replaces those with the
+dependency's digest before hashing. A node's tree position is not hashed
+directly.
 
-Priority is absent for a third reason: it orders ready work without changing
+A call's tag is part of its `body`: `FlowCall` records `flow`, and
+`ActionCall` records `action`. The body also records the callee's declaration
+identity. Renaming a flow or action changes its calls' key material, so those
+calls and steps whose keys consume them are re-keyed. Effects and placement
+also enter the material, and the optional `nondeterministic: true` flag changes
+the key.
+
+Priority is absent for a different reason: it orders ready work without changing
 what the work produces, so raising it never invalidates a cached step.
 
 ## Function identity has two algorithms
@@ -147,7 +151,7 @@ unsupported field values are refused instead of omitted.
 
 The `layers` field is the one place identity comes from outside the
 declaration. `Graph.build` accepts a `resolveLayers` option, calls it once per
-node with the node's kind, model, capabilities, effects, and placement, and
+node with its `nodeId`, kind, capabilities, effects, and placement, and
 records whatever it returns:
 
 ```ts
