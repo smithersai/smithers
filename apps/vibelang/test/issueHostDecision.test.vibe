@@ -2,6 +2,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { carriesCode, choiceLabel, choiceLogin, failureReason, issueWriteRefusal, refusalReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, timelineText, unwritten, vipState } from "../src/core/issueHostDecision.vibe"
 import { issueFailureOf } from "../worker/Issues.vibe"
+import { connectFailure, grantsParticipation, issuePagesExhausted, joinsReceipt, needsConnection, objectPath, parentInRepository, readRetriesSignedOut, retriesSettledFailure, sameActor, selectsIssue, wikiEditRefusal } from "../src/core/issueHostDecision.vibe"
 
 describe("the issues host", () => {
   it("refuses an issue write before it writes: title, then the split's issue or the proposal's details; else the issue, empty text, a closed commitment", () => {
@@ -60,5 +61,29 @@ describe("the issues host", () => {
       timelineText("labeled", false, "", false, ""), timelineText("unlabeled", false, "", false, ""), timelineText("assigned", false, "", false, ""),
       timelineText("unassigned", false, "", false, ""), timelineText("mentioned", true, "bug", true, "ada"),
     ]).toEqual(["added the bug label", "removed the bug label", "assigned ada", "unassigned ada", "closed this issue", "reopened this issue", "", "", "", "", ""])
+  })
+})
+
+describe("the issues and wiki hosts' remaining decisions (batch 51)", () => {
+  it("caps the list at 50 pages, reads only this repository's parents, and selects a positive number", () => {
+    expect([issuePagesExhausted(true, 50), issuePagesExhausted(true, 49), issuePagesExhausted(false, 50)]).toEqual([true, false, false])
+    const prefix = "https://api.github.com/repos/o/r/issues/"
+    expect([parentInRepository(prefix + "7", prefix), parentInRepository("https://api.github.com/repos/o/x/issues/7", prefix), parentInRepository("", prefix)]).toEqual([true, false, false])
+    expect([selectsIssue(1), selectsIssue(0), selectsIssue(-1)]).toEqual([true, false, false])
+  })
+  it("needs a connection for every write but a draft, the same person throughout, and retries a read signed out", () => {
+    expect([needsConnection("new", false), needsConnection("draft", false), needsConnection("new", true)]).toEqual([true, false, false])
+    expect([sameActor("1", "1"), sameActor("2", "1")]).toEqual([true, false])
+    expect([readRetriesSignedOut("read", true), readRetriesSignedOut("read", false), readRetriesSignedOut("new", true)]).toEqual([true, false, false])
+    expect(["connect", "missing", "forbidden"].map(connectFailure)).toEqual([true, false, false])
+  })
+  it("retries only a settled failure with a recovery key, joins a known receipt otherwise, and grants participation for new issues and comments", () => {
+    expect([retriesSettledFailure(true, true), retriesSettledFailure(false, true), retriesSettledFailure(true, false)]).toEqual([true, false, false])
+    expect([joinsReceipt(false, false), joinsReceipt(true, false), joinsReceipt(false, true)]).toEqual([true, false, false])
+    expect(["new", "comment", "link", "read"].map(grantsParticipation)).toEqual([true, true, false, false])
+    expect([objectPath("/api/issues", "/api/issues"), objectPath("/api/issues/x", "/api/issues"), objectPath("/api/wiki", "/api/issues")]).toEqual([true, true, false])
+  })
+  it("refuses a wiki edit on a stale base, a blank text or an unchanged page", () => {
+    expect([wikiEditRefusal(false, false, false), wikiEditRefusal(false, true, true), wikiEditRefusal(true, true, false), wikiEditRefusal(true, false, true), wikiEditRefusal(true, false, false)]).toEqual(["conflict", "conflict", "empty", "empty", ""])
   })
 })

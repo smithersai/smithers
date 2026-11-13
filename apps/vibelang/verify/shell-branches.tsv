@@ -2,18 +2,12 @@
 scripts/agent-context.vibe	main	check	Unreviewed: recorded by the 2026-11-13 audit
 scripts/fuzz-preflight.vibe	preflight	!(try fs.exists(path.join(root, ".smithers/flows/node_modules", name, "package.json")))	Unreviewed: recorded by the 2026-11-13 audit
 scripts/mythical-seed-program.vibe	entriesOf	line.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
-scripts/mythical-seed-program.vibe	log/callback	Number(status) !== 0	Unreviewed: recorded by the 2026-11-13 audit
 scripts/mythical-seed-program.vibe	log/callback	line === ""	Unreviewed: recorded by the 2026-11-13 audit
+scripts/mythical-seed-program.vibe	log/callback	Number(status) !== 0	Unreviewed: recorded by the 2026-11-13 audit
 scripts/mythical-seed-program.vibe	main	refused.length > 0	Unreviewed: recorded by the 2026-11-13 audit
 scripts/wiki.vibe	generate	file === "decisions.md"	Unreviewed: recorded by the 2026-11-13 audit
 scripts/wiki.vibe	generate/collect	name.endsWith(".md")	Unreviewed: recorded by the 2026-11-13 audit
 scripts/wiki.vibe	generate/collect	stat.type === "Directory"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/LiveActions.vibe	LiveActions/callback/request	method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/LiveActions.vibe	LiveActions/callback/request	method === "POST"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/authorize	!allowed(person.role, entry)	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/authorize	entry.least === "viewer"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/command	entry.command === command && (authorize(entry.name) catch () => undefined) !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/commands	!entry.runnable	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/catalog.vibe	registration	name === "vibelang/docs/open"	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/catalog.vibe	registration	name === EndTour._tag	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/catalog.vibe	registration	name === HistoryTools.Show._tag	Unreviewed: recorded by the 2026-11-13 audit
@@ -28,16 +22,35 @@ src/actions/catalog.vibe	registration	name === Start._tag	Unreviewed: recorded b
 src/actions/catalog.vibe	registration	name === Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/catalog.vibe	registration	name === Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/execution.vibe	prepareHistory	!isHistory(invocation)	Unreviewed: recorded by the 2026-11-13 audit
+src/actions/LiveActions.vibe	LiveActions/callback/request	method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
+src/actions/LiveActions.vibe	LiveActions/callback/request	method === "POST"	Unreviewed: recorded by the 2026-11-13 audit
+src/actions/MockActions.vibe	MockActions/callback/authorize	!allowed(person.role, entry)	Unreviewed: recorded by the 2026-11-13 audit
+src/actions/MockActions.vibe	MockActions/callback/authorize	entry.least === "viewer"	Unreviewed: recorded by the 2026-11-13 audit
+src/actions/MockActions.vibe	MockActions/callback/command	entry.command === command && (authorize(entry.name) catch () => undefined) !== undefined	Unreviewed: recorded by the 2026-11-13 audit
+src/actions/MockActions.vibe	MockActions/callback/commands	!entry.runnable	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	beginTour	try (try Tours).running(tour)	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	openDocs	opened	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	openWiki/callback	opened	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	readingMillis	text.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	say	said	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	say	words === ""	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	say	words === ""	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	toured	!Continuation.canSpeakTour(run)	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	walk	!(Continuation.firstTourVisit(visit) && restored !== null && restored.target !== "") && !(try narrateLine(tour, stop.subtitle, visit))	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	walk	Continuation.firstTourVisit(visit) && restored !== null && restored.target !== ""	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	walk	Continuation.tourWait(state.paused) === "control"	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	walk	control.action === "seek"	Unreviewed: recorded by the 2026-11-13 audit
+src/core/flows.vibe	walk/callback	saved === null || saved.paused	Unreviewed: recorded by the 2026-11-13 audit
 src/core/IssuesFactory.vibe	makeIssueFactory/act	!Schema.is(IssueRequest)(request)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	cause.reasons.length === 1	Unreviewed: recorded by the 2026-11-13 audit
 src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Unreviewed: recorded by the 2026-11-13 audit
+src/core/LiveFactory.vibe	health	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveFactory.vibe	LiveFactory/callback/events/callback	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveFactory.vibe	LiveFactory/callback/read	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveFactory.vibe	LiveFactory/callback/sandbox	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveFactory.vibe	LiveFactory/callback/sandboxCommand	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveFactory.vibe	LiveFactory/callback/startSandbox	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveFactory.vibe	LiveFactory/callback/stopSandbox	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveFactory.vibe	health	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveFactory.vibe	sandboxRefusal	response.status !== 403 && response.status !== 409	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockAccounts.vibe	make/choose	role !== "new"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockAccounts.vibe	make/choose	role === "viewer"	Unreviewed: recorded by the 2026-11-13 audit
@@ -62,28 +75,6 @@ src/core/MockFactory.vibe	scripted	prompt === "Split #38 into three children, li
 src/core/MockFactory.vibe	scripted	prompt.startsWith("File an issue:")	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	scripted/callback	!(try ownsReply())	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	scripted/callback	error.reason === "forbidden"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	!instance.executionId.startsWith(`wiki/${person.id || "public"}/`)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	before.pages.some((page) => page.id === request.page)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	existing.page !== request.page || existing.base !== request.base || existing.text !== request.text	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "draft"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "read"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	makeWikiFactory/act/callback	cause.reasons.length === 1	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag.endsWith("ExecutionIdentityConflict")	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	makeWikiFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	personOf	identity === "maintainer"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	beginTour	try (try Tours).running(tour)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	openDocs	opened	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	openWiki/callback	opened	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	readingMillis	text.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	say	said	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	say	words === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	say	words === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	toured	!Continuation.canSpeakTour(run)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk	!(Continuation.firstTourVisit(visit) && restored !== null && restored.target !== "") && !(try narrateLine(tour, stop.subtitle, visit))	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk	Continuation.firstTourVisit(visit) && restored !== null && restored.target !== ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk	Continuation.tourWait(state.paused) === "control"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk	control.action === "seek"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk/callback	saved === null || saved.paused	Unreviewed: recorded by the 2026-11-13 audit
 src/core/mockReplies.vibe	historyReply	open.length === 0	Unreviewed: recorded by the 2026-11-13 audit
 src/core/routes.vibe	routeOf	!pathname.startsWith(CONVERSATIONS)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/routes.vibe	routeOf	parts.length > 2	Unreviewed: recorded by the 2026-11-13 audit
@@ -108,15 +99,16 @@ src/core/specification.vibe	requestedSpecificationReview	!/review.*specification
 src/core/specification.vibe	revisedSpecificationState	next === spec	Unreviewed: recorded by the 2026-11-13 audit
 src/core/walkthroughSteps.vibe	walkthroughStop	Number.isNaN(step)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/wiki.vibe	wikiPage	base.startsWith("/wiki/")	Unreviewed: recorded by the 2026-11-13 audit
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	!instance.executionId.startsWith(`wiki/${person.id || "public"}/`)	Unreviewed: recorded by the 2026-11-13 audit
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	before.pages.some((page) => page.id === request.page)	Unreviewed: recorded by the 2026-11-13 audit
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	existing.page !== request.page || existing.base !== request.base || existing.text !== request.text	Unreviewed: recorded by the 2026-11-13 audit
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "draft"	Unreviewed: recorded by the 2026-11-13 audit
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "read"	Unreviewed: recorded by the 2026-11-13 audit
+src/core/WikiFactory.vibe	makeWikiFactory/act/callback	cause.reasons.length === 1	Unreviewed: recorded by the 2026-11-13 audit
+src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag.endsWith("ExecutionIdentityConflict")	Unreviewed: recorded by the 2026-11-13 audit
+src/core/WikiFactory.vibe	makeWikiFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Unreviewed: recorded by the 2026-11-13 audit
+src/core/WikiFactory.vibe	personOf	identity === "maintainer"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/wire.vibe	conversationPath	conversation.length === 0 || conversation.length > MAX_CONVERSATION	Unreviewed: recorded by the 2026-11-13 audit
-src/history/LiveMythical.vibe	LiveMythical/callback/events/callback	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/history/LiveMythical.vibe	LiveMythical/callback/page	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/history/MockMythical.vibe	MockMythical	seed === seeded	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	answered	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	answered	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	make/fold/callback	commit.sha === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	make/fold/callback	commit.sha.length > MAX_ID || commit.change.length > MAX_ID	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	make/record	!decision.ok	Unreviewed: recorded by the 2026-11-13 audit
 src/history/export.vibe	check	!manifest.commits.every((entry) => noted.has(entry[1]))	Host boundary: Set membership; the notes tree holds a note for every manifest commit
 src/history/export.vibe	check	!old.has(oid)	Host boundary: Set membership; a commit the last publication holds was checked when it was published
 src/history/export.vibe	check	published.manifest === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
@@ -129,6 +121,9 @@ src/history/export.vibe	section	lines.length === 0	Formatting: an empty note sec
 src/history/flows.vibe	foldCommits	count === 0	Unreviewed: recorded by the 2026-11-13 audit
 src/history/flows.vibe	loadBootstrap	loaded	Unreviewed: recorded by the 2026-11-13 audit
 src/history/flows.vibe	runExport/callback	history.commits.length === 0	Unreviewed: recorded by the 2026-11-13 audit
+src/history/LiveMythical.vibe	LiveMythical/callback/events/callback	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
+src/history/LiveMythical.vibe	LiveMythical/callback/page	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
+src/history/MockMythical.vibe	MockMythical	seed === seeded	Unreviewed: recorded by the 2026-11-13 audit
 src/history/pages.vibe	matchesOf	needle === ""	Unreviewed: recorded by the 2026-11-13 audit
 src/history/publish.vibe	batch	history.commits.length === 0	Unreviewed: recorded by the 2026-11-13 audit
 src/history/publish.vibe	batch	plan.needs.length > read.length	Unreviewed: recorded by the 2026-11-13 audit
@@ -145,11 +140,16 @@ src/history/seed.vibe	seedOf	!list.includes(entry)	Host boundary: identity membe
 src/history/seed.vibe	seedOf	!members.has(area)	Host boundary: Map membership; epics keep the order the project first touched them
 src/history/seed.vibe	seedOf	attempt.reason === ""	Formatting: an evidence line names the gate or reason only when there is one
 src/history/seed.vibe	seedOf	entry.gate === ""	Formatting: an evidence line names the gate or reason only when there is one
+src/history/Sequencer.vibe	answered	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
+src/history/Sequencer.vibe	answered	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
+src/history/Sequencer.vibe	make/fold/callback	commit.sha === ""	Unreviewed: recorded by the 2026-11-13 audit
+src/history/Sequencer.vibe	make/fold/callback	commit.sha.length > MAX_ID || commit.change.length > MAX_ID	Unreviewed: recorded by the 2026-11-13 audit
+src/history/Sequencer.vibe	make/record	!decision.ok	Unreviewed: recorded by the 2026-11-13 audit
+src/history/tools.vibe	show/callback	{	Unreviewed: recorded by the 2026-11-13 audit
 src/history/tools.vibe	show/callback	when { what: "commit"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/tools.vibe	show/callback	when { what: "epic"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/tools.vibe	show/callback	when { what: "outline"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/tools.vibe	show/callback	when { what: "search"	Unreviewed: recorded by the 2026-11-13 audit
-src/history/tools.vibe	show/callback	{	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/backend.vibe	backend	probe	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/backend.vibe	callback	stored?.origin === "mock"	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/backend.vibe	callback/callback	!("ledger" in identity)	Unreviewed: recorded by the 2026-11-13 audit
@@ -192,6 +192,10 @@ src/surfaces/signin.vibe	signOutSurface	factory.mode === "mock"	Variant dispatch
 src/surfaces/signin.vibe	signOutSurface/callback	factory.mode === "mock"	Variant dispatch on the Factory's mode: mock mode signs in and out as the fixture person (VL-13)
 src/surfaces/signin.vibe	signOutSurface/callback/callback	factory.mode === "mock"	Variant dispatch on the Factory's mode: mock mode signs in and out as the fixture person (VL-13)
 src/surfaces/signin.vibe	startLogin/callback	error.reason === "misconfigured"	Variant dispatch on GitHubRefused's reason: a misconfigured device flow names the factory
+worker/accountObject.vibe	accountObject/callback/call	!answer.ok	Unreviewed: recorded by the 2026-11-13 audit
+worker/accountObject.vibe	gatewayOf/request	!answer.ok	Unreviewed: recorded by the 2026-11-13 audit
+worker/accountObject.vibe	identityFromPolicy/request	admitted	Unreviewed: recorded by the 2026-11-13 audit
+worker/accountObject.vibe	identityFromPolicy/role	admitted	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/authorize	!(try sequencer.allows(actor, action))	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback	(url.pathname === "/api/auth/device" || url.pathname === CALLBACK) && request.method === "POST"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback	url.origin !== setup.origin || !writeOriginAdmitted(request.method, request.headers.origin, setup.origin, url.pathname, request.headers["sec-fetch-site"])	Unreviewed: recorded by the 2026-11-13 audit
@@ -234,6 +238,11 @@ worker/ActionRuns.vibe	traced/callback/callback	child	Unreviewed: recorded by th
 worker/ActionsHttp.vibe	handle	!allowed(principal.role, entry)	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionsHttp.vibe	handle	raw.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionsHttp.vibe	handle	raw.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
+worker/apiObjects.vibe	actionIndexBody/callback/request	exact === true	Unreviewed: recorded by the 2026-11-13 audit
+worker/apiObjects.vibe	apiFetch/callback	healthUrl.pathname === "/api/health/objects" && incoming.method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
+worker/apiObjects.vibe	historyBody/callback/callback	exporter !== off	Unreviewed: recorded by the 2026-11-13 audit
+worker/apiObjects.vibe	sandboxIdentityOf/request	admitted	Unreviewed: recorded by the 2026-11-13 audit
+worker/apiObjects.vibe	sandboxIdentityOf/role	allowed	Unreviewed: recorded by the 2026-11-13 audit
 worker/Budget.vibe	make/spend/callback	recorded	Forwards: for a recorded reply the proved settle leaves charges, overshoot and receipt unchanged (added 0), so only the reservation and hold are written
 worker/Budget.vibe	make/spend/callback	result.over > over	Metric only: the overshoot counter; no ledger write
 worker/CallBudget.vibe	callBudget/callback/callback	usable	Forwards: the proved settle charges the ceiling when the count is not usable, so the 0 passed then is never charged
@@ -247,9 +256,9 @@ worker/HistoryObject.vibe	write/callback	name === "start"	Unreviewed: recorded b
 worker/Http.vibe	answer	body === undefined || body.name.length > MAX_NAME	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answer	route.kind === "post"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answer	route.kind === "read"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Http.vibe	answer	route.kind === "tour-control"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answer	route.kind === "tour"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answer	route.kind === "tour" || route.kind === "end-tour"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Http.vibe	answer	route.kind === "tour-control"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answer	route.kind === "wiki"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answerHistory	route.kind !== "history-write"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answerHistory	route.kind === "history-events"	Unreviewed: recorded by the 2026-11-13 audit
@@ -259,144 +268,44 @@ worker/Http.vibe	handle	url.pathname === "/api/actions" || url.pathname.startsWi
 worker/Http.vibe	handle	url.pathname === HEALTH_PATH	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	handle	url.pathname.startsWith("/api/sandboxes/")	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	handleConversations	url.pathname === HEALTH_PATH	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues	failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	!known	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	!observed.fresh && !failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	original.op === "read" && original.resumeKey !== undefined && original.resumeOp !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/perform	request.op === "accept" && current !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/perform	request.op === "spec-revise" || request.op === "spec-review"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/perform/callback	item.number === request.number	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform	first.failure.reason !== "connect"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform	request.op === "read" && actor?.connection !== undefined	Unreviewed: recorded by the 2026-11-13 audit
+worker/Issues.vibe	executeIssues/callback	!known	Host boundary: whether the engine knows the recovery execution
+worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
+worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
+worker/Issues.vibe	executeIssues/callback	original.op === "read" && original.resumeKey !== undefined && original.resumeOp !== undefined	Variant dispatch: a read that names a resumable operation also answers its receipt; resumable and requestKey (proved) admit it
+worker/Issues.vibe	executeIssues/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Variant test: an engine deadline answers unavailable
+worker/Issues.vibe	executeIssues/perform	request.op === "accept" && current !== undefined	Variant dispatch: an accept records the person's approval through the proved approveVip
+worker/Issues.vibe	executeIssues/perform	request.op === "spec-revise" || request.op === "spec-review"	Variant dispatch on the specification operations, which the proved issuePermission admits
+worker/Issues.vibe	executeIssues/perform/callback	item.number === request.number	Selects the requested issue
 worker/Issues.vibe	githubHost/perform/callback	!after.items.some((item) => item.number === existing.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase()))	Host boundary: GitHub’s assignee read-back, matched case-insensitively with toLowerCase (Unicode casing)
-worker/Issues.vibe	githubHost/perform/callback	!observed.items.some(issue => issue.number === made.number && issue.vip !== "")	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	actor === undefined || request.key === ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	committing	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	committing && (login.trim() === "" || !before.assignees.some(choice => choice.login.toLowerCase() === login.toLowerCase()))	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`	Unreviewed: recorded by the 2026-11-13 audit
+worker/Issues.vibe	githubHost/perform/callback	!observed.items.some(issue => issue.number === made.number && issue.vip !== "")	Host boundary: GitHub's read-back of the proposed VIP
+worker/Issues.vibe	githubHost/perform/callback	actor === undefined || request.key === ""	Refusal: no signed-in person or no request key is sign-in; requestKey (proved) validated the key at the door
+worker/Issues.vibe	githubHost/perform/callback	committing	Variant dispatch: commit or uncommit
+worker/Issues.vibe	githubHost/perform/callback	committing && (login.trim() === "" || !before.assignees.some(choice => choice.login.toLowerCase() === login.toLowerCase()))	Host boundary: assignee choice matched case-insensitively with toLowerCase (Unicode casing); an empty login is refused
+worker/Issues.vibe	githubHost/perform/callback	current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`	Write skip: a split's new issue is linked only when GitHub did not already link it
 worker/Issues.vibe	githubHost/perform/callback	existing.parent !== request.parent	Write skip: an unchanged parent needs no GitHub write; the proved canLinkIssues admits the link
-worker/Issues.vibe	githubHost/perform/callback	request.op !== "draft" && actor.connection === undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	request.op === "accept"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	request.op === "accept"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "accept"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "accept"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
 worker/Issues.vibe	githubHost/perform/callback	request.op === "accept" && existing.vip === "In review"	Variant dispatch on the VIP state: an In-review accept must pass the proved approveVip; any other state goes to the proved reviewActions
-worker/Issues.vibe	githubHost/perform/callback	request.op === "accept" || request.op === "decline"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	request.op === "comment"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	request.op === "commit" || request.op === "uncommit"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	request.op === "draft"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	request.op === "link"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	request.op === "new" || request.op === "split"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	request.op === "propose"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	request.op === "read"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	request.op === "split"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback/callback	current === undefined || current.id !== actor.id || !issuePermission(current.role, request.op)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/run/callback	failure.reason === "connect" && authority.lost !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	at === -1	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	comments.truncated	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	cursor !== null && pages >= 50	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	number === i.number	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	number === i.number && vip !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	number > 0	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	own._tag === "Failure" && issueFailureOf(own.failure).reason !== "missing"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	parentUrl.startsWith(prefix)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	review.user !== null && !reviewers.includes(review.user.login)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	reviews.truncated	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read/callback	a.login === repo.agent	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read/callback	b.login === repo.agent	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	serveIssues	!new URL(request.url, "https://issues.invalid").pathname.startsWith("/api/issues")	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	serveIssues	actor !== undefined && accepted !== undefined && (payload.op === "new" || payload.op === "comment")	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	serveIssues	request.method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	serveIssues	result.failure._tag === "IssueFailure" && result.failure.unwritten === true	Unreviewed: recorded by the 2026-11-13 audit
-worker/ObjectStartup.vibe	make/callback/callback	result._tag === "Success" || !Deferred.doneUnsafe(pending, fail(new ObjectStartupFailed({ objectClass, objectId, codeVersion })))	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	controlTour	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	controlTour	action === "resume"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	controlTour/callback	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	controlTour/callback	action === "resume"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	dispatcher/tour	started	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	dispatcher/tour	started	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	executionResult/callback	intent.flow === Reply._tag	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	openWiki	opened	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	post	!Schema.is(PostBody)({ clientId, name, text })	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	tour	held !== undefined && unanswered(try sequencer.snapshot()).length > 0	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	wakeTour	intent.flow !== Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	agentOf/resolve	id === AGENT_SEAT	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	answer/callback	Cause.hasInterrupts(cause)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	answer/callback	answered === "busy"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	answer/callback	when { _tag: "Answered"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	answer/callback	when { _tag: "Failed"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	failure instanceof HarnessError.HarnessError && typeof failure.cause === "object" && failure.cause !== null && "_tag" in failure.cause && failure.cause._tag === "vibelang/DailyBudgetExceeded"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	progress.usageValid	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	fold	event.delta.type === "text-delta"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	respond/callback	!next.text.startsWith(shown)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	respond/callback	next.text === shown	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	tagOf	typeof error !== "object" || error === null || !("_tag" in error)	Unreviewed: recorded by the 2026-11-13 audit
-worker/ReplyAccounting.vibe	alarm	receipts.length > 0	Unreviewed: recorded by the 2026-11-13 audit
-worker/ReplyAccounting.vibe	tracked/admit	admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/SandboxHttp.vibe	sandboxRequest	!match	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	execute	kind === "command"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	execute	kind === "command"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	execute	kind === "start"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	execute	kind === "start"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	execute	kind === "stop"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	execute	kind === "stop"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	open/hold/callback	count === 0	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	open/read	!rows[0]	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	open/receipt	!rows[0]	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	open/write/callback/callback	receipt	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/controlTour/callback	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/controlTour/callback	action === "seek"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/ensureDispatched	posts.length > 0	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/ensureDispatched	tour !== ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/record	!decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/SpecificationReviewers.vibe	callback/review	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/SpecificationReviewers.vibe	callback/review	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
-worker/VipDraft.vibe	callback/draft	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/VipDraft.vibe	callback/draft	!agent.available	Unreviewed: recorded by the 2026-11-13 audit
-worker/VipDraft.vibe	callback/draft	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	executeWiki	failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	executeWiki/callback	!known	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	executeWiki/callback	!observed.fresh && !failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	executeWiki/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	executeWiki/callback	failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/loadDraft	storage === undefined || person === ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform	first.failure.reason !== "connect"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform	request.op === "read" && actor?.connection !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	!authored || !changed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	actor === undefined || request.key === ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	request.base !== current.text	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "draft"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "read"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	request.text === current.text	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	request.text.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	request.text.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	storage !== undefined && retained?.text === request.text	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback/callback	current === undefined || current.id !== actor.id || !wikiPermission(current.role, request.op) || !wikiSubmissionAllowed(request.op, current.kind ?? "person")	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback/callback	pinned.text !== request.base	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback/callback	storage !== undefined && !touched	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/run/callback	failure.reason === "connect" && authority.lost !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	serveWiki	!url.pathname.startsWith("/api/wiki")	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	serveWiki	request.method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	serveWiki	result.failure._tag === "WikiFailure" && result.failure.unwritten === true	Unreviewed: recorded by the 2026-11-13 audit
-worker/WikiDraft.vibe	callback/draft	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/WikiDraft.vibe	callback/draft	!agent.available	Unreviewed: recorded by the 2026-11-13 audit
-worker/WikiDraft.vibe	callback/draft	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
-worker/accountObject.vibe	accountObject/callback/call	!answer.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/accountObject.vibe	gatewayOf/request	!answer.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/accountObject.vibe	identityFromPolicy/request	admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/accountObject.vibe	identityFromPolicy/role	admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/apiObjects.vibe	actionIndexBody/callback/request	exact === true	Unreviewed: recorded by the 2026-11-13 audit
-worker/apiObjects.vibe	apiFetch/callback	healthUrl.pathname === "/api/health/objects" && incoming.method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
-worker/apiObjects.vibe	historyBody/callback/callback	exporter !== off	Unreviewed: recorded by the 2026-11-13 audit
-worker/apiObjects.vibe	sandboxIdentityOf/request	admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/apiObjects.vibe	sandboxIdentityOf/role	allowed	Unreviewed: recorded by the 2026-11-13 audit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "accept" || request.op === "decline"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "comment"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "commit" || request.op === "uncommit"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "draft"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "link"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "new" || request.op === "split"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "propose"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "read"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/perform/callback	request.op === "split"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/read	at === -1	Host boundary: findIndex; the issue's own copy replaces its listed copy, or joins the list
+worker/Issues.vibe	githubHost/read	comments.truncated	Refusal: a truncated GitHub list is partial; the library sets the flag
+worker/Issues.vibe	githubHost/read	number === i.number	Selects the requested issue (its reviews, timeline and comments are read only for it); the number is the proved selectsIssue's
+worker/Issues.vibe	githubHost/read	number === i.number && vip !== undefined	Selects the requested issue (its reviews, timeline and comments are read only for it); the number is the proved selectsIssue's
+worker/Issues.vibe	githubHost/read	own._tag === "Failure" && issueFailureOf(own.failure).reason !== "missing"	Variant dispatch: the selected issue's own read failing as anything but missing fails the read; missing falls back to the list
+worker/Issues.vibe	githubHost/read	review.user !== null && !reviewers.includes(review.user.login)	Host boundary: Array membership; each reviewer is listed once
+worker/Issues.vibe	githubHost/read	reviews.truncated	Refusal: a truncated GitHub list is partial; the library sets the flag
+worker/Issues.vibe	githubHost/read/callback	a.login === repo.agent	Order: the agent's login sorts first among assignee choices
+worker/Issues.vibe	githubHost/read/callback	b.login === repo.agent	Order: the agent's login sorts first among assignee choices
+worker/Issues.vibe	serveIssues	request.method === "GET"	Variant dispatch on the method the proved objectMethod admitted: a GET is a read
+worker/Issues.vibe	serveIssues	result.failure._tag === "IssueFailure" && result.failure.unwritten === true	Forwards the unwritten mark the proved unwritten decided
 worker/machineObject.vibe	machineObject/callback/apply	!(try box.running)	Host boundary: whether the container runs after wake
 worker/machineObject.vibe	machineObject/callback/apply	!currentRunning(generation, previous.generation, previous.phase) || !(try box.running)	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	checkpointPhase(previous.phase) && (try box.running)	Unreviewed: recorded by the 2026-11-13 audit
@@ -410,9 +319,76 @@ worker/machineObject.vibe	machineObject/callback/apply	try box.running	Unreviewe
 worker/machineObject.vibe	machineObject/callback/apply/callback	!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply/callback	!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply/callback	answer.ok	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	controlTour	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	controlTour	action === "resume"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	controlTour/callback	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	controlTour/callback	action === "resume"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	dispatcher/tour	started	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	dispatcher/tour	started	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	executionResult/callback	intent.flow === Reply._tag	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	openWiki	opened	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	post	!Schema.is(PostBody)({ clientId, name, text })	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	tour	held !== undefined && unanswered(try sequencer.snapshot()).length > 0	Unreviewed: recorded by the 2026-11-13 audit
+worker/Objects.vibe	wakeTour	intent.flow !== Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
+worker/ObjectStartup.vibe	make/callback/callback	result._tag === "Success" || !Deferred.doneUnsafe(pending, fail(new ObjectStartupFailed({ objectClass, objectId, codeVersion })))	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	agentOf/resolve	id === AGENT_SEAT	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	answer/callback	answered === "busy"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	answer/callback	Cause.hasInterrupts(cause)	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	answer/callback	when { _tag: "Answered"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	answer/callback	when { _tag: "Failed"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	compose	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	compose	Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	compose	failure instanceof HarnessError.HarnessError && typeof failure.cause === "object" && failure.cause !== null && "_tag" in failure.cause && failure.cause._tag === "vibelang/DailyBudgetExceeded"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	compose	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	compose	progress.usageValid	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	fold	event.delta.type === "text-delta"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	respond/callback	!next.text.startsWith(shown)	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	respond/callback	next.text === shown	Unreviewed: recorded by the 2026-11-13 audit
+worker/Reply.vibe	tagOf	typeof error !== "object" || error === null || !("_tag" in error)	Unreviewed: recorded by the 2026-11-13 audit
+worker/ReplyAccounting.vibe	alarm	receipts.length > 0	Unreviewed: recorded by the 2026-11-13 audit
+worker/ReplyAccounting.vibe	tracked/admit	admitted	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sandboxes.vibe	execute	kind === "command"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sandboxes.vibe	execute	kind === "command"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sandboxes.vibe	execute	kind === "start"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sandboxes.vibe	execute	kind === "start"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sandboxes.vibe	execute	kind === "stop"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sandboxes.vibe	execute	kind === "stop"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sandboxes.vibe	open/hold/callback	count === 0	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sandboxes.vibe	open/read	!rows[0]	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sandboxes.vibe	open/receipt	!rows[0]	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sandboxes.vibe	open/write/callback/callback	receipt	Unreviewed: recorded by the 2026-11-13 audit
+worker/SandboxHttp.vibe	sandboxRequest	!match	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeContainer.vibe	probeBox	mode === "passthrough"	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	direct	!admitted(owner, try Clock.currentTimeMillis)	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	leaseClamped/getByName/apply	kind !== "lease"	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	probeFetch/callback	!(try authorized(token, request.headers["authorization"]))	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	sweep	admitted(owner, now)	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	sweep	read.ok && read.snapshot.status === "running"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sequencer.vibe	make/controlTour/callback	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sequencer.vibe	make/controlTour/callback	action === "seek"	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sequencer.vibe	make/ensureDispatched	posts.length > 0	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sequencer.vibe	make/ensureDispatched	tour !== ""	Unreviewed: recorded by the 2026-11-13 audit
+worker/Sequencer.vibe	make/record	!decision.ok	Unreviewed: recorded by the 2026-11-13 audit
+worker/SpecificationReviewers.vibe	callback/review	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
+worker/SpecificationReviewers.vibe	callback/review	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
+worker/VipDraft.vibe	callback/draft	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
+worker/VipDraft.vibe	callback/draft	!agent.available	Unreviewed: recorded by the 2026-11-13 audit
+worker/VipDraft.vibe	callback/draft	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
+worker/Wiki.vibe	executeWiki/callback	!known	Host boundary: whether the engine knows the recovery execution
+worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
+worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
+worker/Wiki.vibe	executeWiki/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Variant test: an engine deadline answers unavailable
+worker/Wiki.vibe	githubWikiHost/loadDraft	storage === undefined || person === ""	Absence: no storage or no person has no retained draft
+worker/Wiki.vibe	githubWikiHost/perform/callback	!authored || !changed	Host boundary: GitHub's read-back that the review is the person's and changes exactly this page
+worker/Wiki.vibe	githubWikiHost/perform/callback	actor === undefined || request.key === ""	Refusal: no signed-in person or no request key is sign-in; requestKey (proved) validated the key at the door
+worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "draft"	Variant dispatch on the wiki operation, which the proved wikiPermission and wikiSubmissionAllowed admit
+worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "read"	Variant dispatch on the wiki operation, which the proved wikiPermission and wikiSubmissionAllowed admit
+worker/Wiki.vibe	githubWikiHost/perform/callback	request.text.trim() === ""	Refusal: a blank draft ask is empty (trim is a host boundary)
+worker/Wiki.vibe	githubWikiHost/perform/callback	storage !== undefined && retained?.text === request.text	Write skip: the retained draft is deleted only when it is the text just proposed
+worker/Wiki.vibe	githubWikiHost/perform/callback/callback	pinned.text !== request.base	Refusal: the pinned head's page must equal the reviewed base, else conflict (the same rule as the proved wikiEditRefusal's base check)
+worker/Wiki.vibe	githubWikiHost/perform/callback/callback	storage !== undefined && !touched	Forwards: a first execution that wrote nothing yet keeps the draft
+worker/Wiki.vibe	serveWiki	request.method === "GET"	Variant dispatch on the method the proved objectMethod admitted: a GET is a read
+worker/Wiki.vibe	serveWiki	result.failure._tag === "WikiFailure" && result.failure.unwritten === true	Forwards the unwritten mark the proved wikiUnwritten decided
+worker/WikiDraft.vibe	callback/draft	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
+worker/WikiDraft.vibe	callback/draft	!agent.available	Unreviewed: recorded by the 2026-11-13 audit
+worker/WikiDraft.vibe	callback/draft	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit

@@ -310,3 +310,96 @@ export function wikiRefusalStatus(reason: string): number {
   if (reason === "empty" || reason === "invalid" || reason === "fork" || reason === "install") return 400
   return 503
 }
+
+// 0018 third-lane batch 51: the issues and wiki hosts' remaining inline decisions.
+
+/** An issue list with another page after the 50th is partial: the read refuses rather than show part of it. */
+//@ verify
+//@ ensures \result == (more && pages >= 50)
+export function issuePagesExhausted(more: boolean, pages: number): boolean {
+  return more && pages >= 50
+}
+
+/** A parent issue counts only when its URL is under this repository's issues; any other parent reads as none. */
+//@ verify
+//@ ensures \result == url.startsWith(prefix)
+export function parentInRepository(url: string, prefix: string): boolean {
+  return url.startsWith(prefix)
+}
+
+/** A positive number selects one issue, read by itself so a write's answer shows the write. */
+//@ verify
+//@ ensures \result == (number > 0)
+export function selectsIssue(number: number): boolean {
+  return number > 0
+}
+
+/** Every write but a draft needs the person's GitHub connection. */
+//@ verify
+//@ ensures \result == (op != "draft" && !connected)
+export function needsConnection(op: string, connected: boolean): boolean {
+  return op !== "draft" && !connected
+}
+
+/** A write step continues only for the same person who started it. */
+//@ verify
+//@ ensures \result == (current == original)
+export function sameActor(current: string, original: string): boolean {
+  return current === original
+}
+
+/** A read with a connection retries signed out after a connect failure: an ended delegation never hides public pages. */
+//@ verify
+//@ ensures \result == (op == "read" && connected)
+export function readRetriesSignedOut(op: string, connected: boolean): boolean {
+  return op === "read" && connected
+}
+
+/** A connect failure means the delegation ended: the read retries signed out, and the host forgets the connection. */
+//@ verify
+//@ ensures \result == (reason == "connect")
+export function connectFailure(reason: string): boolean {
+  return reason === "connect"
+}
+
+/** Only an explicit retry (a recovery key) of a settled failure starts another execution. */
+//@ verify
+//@ ensures \result == (hasRecovery && settledFailure)
+export function retriesSettledFailure(hasRecovery: boolean, settledFailure: boolean): boolean {
+  return hasRecovery && settledFailure
+}
+
+/** A known execution that is not retried joins its receipt, after its recorded payload is compared with the request. */
+//@ verify
+//@ ensures \result == (!fresh && !retried)
+export function joinsReceipt(fresh: boolean, retried: boolean): boolean {
+  return !fresh && !retried
+}
+
+/** A new issue or a comment makes its author a participant. */
+//@ verify
+//@ ensures \result == (op == "new" || op == "comment")
+export function grantsParticipation(op: string): boolean {
+  return op === "new" || op === "comment"
+}
+
+/** The issues and wiki objects answer only their own path prefix; anything else is 404. */
+//@ verify
+//@ ensures \result == path.startsWith(prefix)
+export function objectPath(path: string, prefix: string): boolean {
+  return path.startsWith(prefix)
+}
+
+/**
+ * A wiki save or proposal: a base that is not the page's current text is a conflict; a blank text, or one equal to the
+ * page, is empty; else none (`""`). `blank` is the caller's `text.trim() === ""`.
+ */
+//@ verify
+//@ ensures !baseMatches ==> \result == "conflict"
+//@ ensures baseMatches && (blank || unchanged) ==> \result == "empty"
+//@ ensures baseMatches && !blank && !unchanged ==> \result == ""
+export function wikiEditRefusal(baseMatches: boolean, blank: boolean, unchanged: boolean): "conflict" | "empty" | "" {
+  if (!baseMatches) return "conflict"
+  if (blank || unchanged) return "empty"
+  return ""
+}

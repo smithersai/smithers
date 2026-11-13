@@ -15,6 +15,7 @@ import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/co
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { agentRefused } from "../src/core/flowPolicyDecision.vibe"
+import { connectFailure, grantsParticipation, issuePagesExhausted, joinsReceipt, needsConnection, objectPath, parentInRepository, readRetriesSignedOut, retriesSettledFailure, sameActor, selectsIssue } from "../src/core/issueHostDecision.vibe"
 import { carriesCode, choiceLabel, issueWriteRefusal, refusalReason, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, reviewActions, timelineText, unwritten, vipDocumentMatches, vipState } from "../src/core/issueHostDecision.vibe"
 import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
@@ -92,11 +93,11 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       raw.push(...page.items)
       cursor = page.next
       pages += 1
-      if (cursor !== null && pages >= 50) throw new IssueFailure({ reason: "partial" })
+      if (issuePagesExhausted(cursor !== null, pages)) throw new IssueFailure({ reason: "partial" })
     } while (cursor !== null)
     // GitHub's issue list trails a write by seconds; the issue's own read does not (recorded on real GitHub, VL-36).
     // The selected issue is read by itself and stands in for its listed copy, so a write's answer shows the write.
-    if (number > 0) {
+    if (selectsIssue(number)) {
       const own = try Effect.result(Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repo.owner}/${repo.name}/issues/${number}`, undefined)))
       if (own._tag === "Failure" && issueFailureOf(own.failure).reason !== "missing") throw issueFailureOf(own.failure)
       if (own._tag === "Success") {
@@ -114,7 +115,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       const assignee = i.assignees.flatMap((a) => a === null ? [] : [a.login]).join(", ")
       const parentUrl = i.parent_issue_url ?? ""
       const prefix = `${repo.api}/repos/${repo.owner}/${repo.name}/issues/`
-      const parent = parentUrl.startsWith(prefix) ? Number(parentUrl.slice(prefix.length)) : 0
+      const parent = parentInRepository(parentUrl, prefix) ? Number(parentUrl.slice(prefix.length)) : 0
       const body = try Effect.try(() => GitHub.Issues.withoutWriteMarker(i.body ?? ""))
       const vip = try verifiedVip(repo, body, i.user?.id ?? 0)
       // verifiedVip admits only this repository's pull URL with a positive safe-integer number.
@@ -157,14 +158,14 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           return observed.stale === undefined ? observed.value : { ...observed.value, stale: observed.stale }
         }
         if (actor === undefined || request.key === "") throw new IssueFailure({ reason: "sign-in" })
-        if (request.op !== "draft" && actor.connection === undefined) throw new IssueFailure({ reason: "connect" })
+        if (needsConnection(request.op, actor.connection !== undefined)) throw new IssueFailure({ reason: "connect" })
         // A logical write keeps its marker when SDK retryFrom creates a new execution.
         const key = (name: string) => issueWriteKey(repo, actor.id, request, name)
         const repository = `${repo.owner}/${repo.name}`
         /** Every write re-reads who is asking; a role lost mid-flow stops the next step. */
         const live = effect {
           const current = try authority.current()
-          if (current === undefined || current.id !== actor.id || !issuePermission(current.role, request.op)) throw new IssueFailure({ reason: "forbidden" })
+          if (current === undefined || !sameActor(current.id, actor.id) || !issuePermission(current.role, request.op)) throw new IssueFailure({ reason: "forbidden" })
           if (current.connection === undefined || Option.isNone(delegate)) throw new IssueFailure({ reason: "connect" })
           if (authority.authorize !== undefined) try authority.authorize(request.op)
           touched = true
@@ -263,12 +264,12 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate, reads), Effect.mapError((error) => {
         const failure = error._tag === "IssueFailure" ? error : issueFailureOf(error)
         return unwritten(fresh(), touched, failure.reason) ? new IssueFailure({ ...failure, unwritten: true }) : failure
-      }), Effect.tapError((failure) => failure.reason === "connect" && authority.lost !== undefined ? authority.lost() : Effect.void))
+      }), Effect.tapError((failure) => connectFailure(failure.reason) && authority.lost !== undefined ? authority.lost() : Effect.void))
       // A delegation that ended must not hide public issues from its owner.
-      if (request.op === "read" && actor?.connection !== undefined) {
+      if (readRetriesSignedOut(request.op, actor?.connection !== undefined) && actor?.connection !== undefined) {
         const first = try Effect.result(run(actor.connection))
         if (first._tag === "Success") return first.success
-        if (first.failure.reason !== "connect") throw first.failure
+        if (!connectFailure(first.failure.reason)) throw first.failure
         return try run(undefined)
       }
       return try run(actor?.connection)
@@ -280,7 +281,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
 /** Runs the exact browser/agent flow with the object's persistent engine, then answers the HTTP request. */
 export effect function serveIssues(hostId: string, storage: Storage, repo: Repository = repository, accepted?: (person: Principal) => void!!) {
   const request = try HttpServerRequest.HttpServerRequest
-  if (!new URL(request.url, "https://issues.invalid").pathname.startsWith("/api/issues")) return HttpServerResponse.empty({ status: 404 })
+  if (!objectPath(new URL(request.url, "https://issues.invalid").pathname, "/api/issues")) return HttpServerResponse.empty({ status: 404 })
   const authority = try IssueAuthority
   const actor = try authority.current()
   if (!objectMethod(request.method)) return HttpServerResponse.empty({ status: 405 })
@@ -296,7 +297,7 @@ export effect function serveIssues(hostId: string, storage: Storage, repo: Repos
     const status = refusalStatus(reason)
     return HttpServerResponse.jsonUnsafe({ reason, ...(result.failure._tag === "IssueFailure" && result.failure.unwritten === true ? { unwritten: true } : {}) }, { status, headers: { "cache-control": "no-store" } })
   }
-  if (actor !== undefined && accepted !== undefined && (payload.op === "new" || payload.op === "comment")) try accepted(actor)
+  if (actor !== undefined && accepted !== undefined && grantsParticipation(payload.op)) try accepted(actor)
   const current = try authority.current()
   return HttpServerResponse.jsonUnsafe({ ...result.success, role: current?.role ?? "viewer" }, { headers: { "cache-control": "no-store" } })
 }
@@ -371,11 +372,11 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     return { fresh: polled._tag === "Failure", failed: polled._tag === "Success" && Option.isSome(polled.success) && polled.success.value._tag === "Complete" && polled.success.value.exit._tag === "Failure" }
   }, runtime(executionId)))
   fresh = observed.fresh
-  const failed = recovery !== undefined && observed.failed
+  const failed = retriesSettledFailure(recovery !== undefined, observed.failed)
   const target = failed ? try issueRecoveryId(executionId, recovery!) : executionId
   const result = try scoped(Effect.provide(effect {
     const engine = try FlowRuntime.FlowRuntime
-    if (!observed.fresh && !failed) {
+    if (joinsReceipt(observed.fresh, failed)) {
       // A reused key joins only the exact request it first named; a changed payload is a typed refusal, never an engine conflict.
       const inspection = try RunInspection.RunInspection
       const recorded = try inspection.payload(executionId)

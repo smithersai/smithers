@@ -19,7 +19,7 @@ import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
-import { carriesCode, failureReason, refusalReason, requestKey, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
+import { carriesCode, connectFailure, failureReason, joinsReceipt, objectPath, readRetriesSignedOut, refusalReason, requestKey, retriesSettledFailure, sameActor, wikiEditRefusal, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
 import { editable } from "../src/core/wikiPageDecision.vibe"
 import { bodyLimit, objectMethod, withinBodyLimit } from "./workerDecision.vibe"
 
@@ -99,7 +99,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         /** Every step re-reads who is asking; a role lost mid-flow stops the next one. */
         const live = effect {
           const current = try authority.current()
-          if (current === undefined || current.id !== actor.id || !wikiPermission(current.role, request.op) || !wikiSubmissionAllowed(request.op, current.kind ?? "person")) throw new WikiFailure({ reason: "forbidden" })
+          if (current === undefined || !sameActor(current.id, actor.id) || !wikiPermission(current.role, request.op) || !wikiSubmissionAllowed(request.op, current.kind ?? "person")) throw new WikiFailure({ reason: "forbidden" })
           if (current.connection === undefined || Option.isNone(delegate)) {
             // As when the person arrived without a credential: keep the reviewed text until they reconnect.
             if (storage !== undefined && !touched) try promise(() => storage.put(`wiki/draft/${actor.id}/${request.page}`, { page: request.page, text: request.text }))
@@ -137,9 +137,8 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
           throw new WikiFailure({ reason: "connect", ...(fresh() ? { unwritten: true } : {}) })
         }
         const current = try authorized(readSource(path))
-        if (request.base !== current.text) throw new WikiFailure({ reason: "conflict" })
-        if (request.text.trim() === "") throw new WikiFailure({ reason: "empty" })
-        if (request.text === current.text) throw new WikiFailure({ reason: "empty" })
+        const refusal = wikiEditRefusal(request.base === current.text, request.text.trim() === "", request.text === current.text)
+        if (refusal !== "") throw new WikiFailure({ reason: refusal })
         const contents = try Effect.try(() => Base64.encode(request.text))
         // WikiOperation is read, save, propose or draft (wikiSchemas.vibe); read and draft returned above, and every
         // caller's request is a decoded WikiRequest. A fifth operation fails to compile here.
@@ -172,12 +171,12 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
       const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate, reads), Effect.mapError((error) => {
         const failure = error._tag === "WikiFailure" ? error : wikiFailureOf(error)
         return wikiUnwritten(fresh(), touched, failure.reason) ? new WikiFailure({ ...failure, unwritten: true }) : failure
-      }), Effect.tapError((failure) => failure.reason === "connect" && authority.lost !== undefined ? authority.lost() : Effect.void))
+      }), Effect.tapError((failure) => connectFailure(failure.reason) && authority.lost !== undefined ? authority.lost() : Effect.void))
       // A delegation that ended must not hide the public wiki from its owner.
-      if (request.op === "read" && actor?.connection !== undefined) {
+      if (readRetriesSignedOut(request.op, actor?.connection !== undefined) && actor?.connection !== undefined) {
         const first = try Effect.result(run(actor.connection))
         if (first._tag === "Success") return first.success
-        if (first.failure.reason !== "connect") throw first.failure
+        if (!connectFailure(first.failure.reason)) throw first.failure
         return try run(undefined)
       }
       return try run(actor?.connection)
@@ -190,7 +189,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
 export effect function serveWiki(hostId: string, storage: Storage, repo: WikiRepository = wikiRepository) {
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "https://wiki.invalid")
-  if (!url.pathname.startsWith("/api/wiki")) return HttpServerResponse.empty({ status: 404 })
+  if (!objectPath(url.pathname, "/api/wiki")) return HttpServerResponse.empty({ status: 404 })
   const authority = try WikiAuthority
   if (!objectMethod(request.method)) return HttpServerResponse.empty({ status: 405 })
   if (!withinBodyLimit(Number(request.headers["content-length"]), bodyLimit("wiki"))) return HttpServerResponse.jsonUnsafe({ reason: "invalid" }, { status: 413 })
@@ -231,11 +230,11 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
     return { fresh: polled._tag === "Failure", failed: polled._tag === "Success" && Option.isSome(polled.success) && polled.success.value._tag === "Complete" && polled.success.value.exit._tag === "Failure" }
   }, runtime(executionId)))
   fresh = observed.fresh
-  const failed = recovery !== undefined && observed.failed
+  const failed = retriesSettledFailure(recovery !== undefined, observed.failed)
   const target = failed ? try wikiRecoveryId(executionId, recovery!) : executionId
   const result = try scoped(Effect.provide(effect {
     const engine = try FlowRuntime.FlowRuntime
-    if (!observed.fresh && !failed) {
+    if (joinsReceipt(observed.fresh, failed)) {
       const inspection = try RunInspection.RunInspection
       const recorded = try inspection.payload(executionId)
       const decoded = Schema.decodeUnknownOption(WikiRequest)(recorded.payload)
