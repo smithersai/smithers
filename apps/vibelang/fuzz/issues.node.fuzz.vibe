@@ -119,7 +119,10 @@ const hostOperations = (ops: typeof Input.Type) => effect {
     } else {
       if (!permitted) return false
       if (!Schema.is(IssuesState)(result.success)) return false
-      if (["new", "split", "propose"].includes(request.op) && (recovery ? fake.issues.length - issuesBefore > 1 : fake.issues.length - issuesBefore !== 1)) return false
+      // GitHub lists a pull request among the issues; a proposal opens its review pull request and then its issue.
+      const opened = fake.issues.slice(issuesBefore).filter((issue) => !issue.node_id.startsWith("pull-")).length
+      if (["new", "split", "propose"].includes(request.op) && (recovery ? opened > 1 : opened !== 1)) return false
+      if (request.op === "propose" && seenBefore === undefined && fake.issues.length - issuesBefore !== 2) return false
       if (request.op === "new" && seenBefore === undefined && !result.success.items.some((item) => item.title === request.title.trim())) return false
       if (request.op === "propose" && seenBefore === undefined && !result.success.items.some((item) => item.vip !== "")) return false
       if (!recovery && !badKey && !["read", "draft"].includes(request.op)) writes.set(`${op.key % 4}`, request)

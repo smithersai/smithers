@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 19
+bias 6
+null-prototype false
+key 726095498
+tape BiIpL8qOBHfWIObwG_axncHi0zmixpdzGZJxD9hxjS-tA_XKsQ2U9bkoiyrVXmhltqN4xTmacuvihFCYU7t3-i-FvVlL01OAoUx5vGgTbWYMqI4EfXixYcUit6mfPr7aCp8rvSu5hJ0TNVIFFUNaPZw4tto1hyEFtFt84O4uENRWD4aLFNBgD57l7l2QiqDCLrz1N03Og2i17_hC7UvsXar7dg7-kFSjnS5GaWMFyXJk_7MDQkenox78pJc4LrKnOQHQvqpFDbvxPxh6DOaIg41uubnQHuF8pM-pSVzl8VtQvBeMg3tWG_8dSu8dhhaHKY_QpW53aCGkFg2va9d3fowRdkzT08bMrR5QA9q9_hYturh__GGXJZE25uCRERB_xPUZ6gGUEm0npYEPzKUGDSB3QeGO1A3xcaSeP_YhXKP0LRru4Mg9Sj-rVnAnqY3ttcHbLv0zpofnApDEDwhFZx8P8WsARrPjsZQ_J0NAm-ElRF01EkS2iZgfn4o_oeAgQYlg86JTMoE8qyBPos2P6dWAnrSOeNkVKRxIC2lX0jdtVn1cMRmy_qePJBPTzEf-n1IYP8zpdnribIJC4UzaOfzE3KG0WN_ZwMyQtsvy3XUAdk2r77cumkPWYZs_XIg0aoB4-_j897mrheGfErQ3wYYcv4TSwnHuEPchEwwwIapKxBozXXXtzlyc_yhFJ5M-gUey7FXuk6AvFM4vZNV6YDxCRUxOPnFJLiEo6DXUTAY7epLBqGTQxRE9D-2MQ9LGQG7ni7LCGbeECAux8QPsxr7IBFgqVE9O3ppxa8JDuHMqNTid0DghNjj6aa6pO7fUFuTURLjC9UiQjddJ6slFRTUJj3ANL5TC7Z7sE_j_PiYnfhDlTV9Qi669zcorWkrOOAoFHlLHBoTJKy5EUedMiHLyGNfxUHp9veMA3R7W99Av9n2iRX3JNKu8GLsYQedxX4O9fm61jOb23UVWWrw0kAYpRc6JPJxSQQeV1oFbUBsGASma1dqcenclV62v-3z21LxYocT4frA9WNThtv7P6vchQNITYfBHOyun0wGTmDPydTwOy40yLS_K7pUpQrbZ6fMa1Iz3Jp9XCGRoqd8q64f8U_Jb_w9NXaN2aU7GJ4pv8dFv5cCgH4pG387w5XOz5-TYlyBhnu1Eam1T-xDmfZ1l0DivzG5efnpJgqeLyv37VLlfh9IgptOULHb76oxkJ6Ozcv-wrFT2BRnj4gTfab0prY03PZMA3sOw0K0vbjvKzlcRbIZ4JNFuMmSTVjxdfak4jXAcUpw3FhE4FvkbTYhorma-Y99RME3gsC-w3_sT-DOK5FCBMBYHzt3SdDhPVgh19lFCV-hi4zO5zRLS3QUHM-sl3tg0rcVnJ5X5bCMmxayoKBmpULszJIDCpJO8N4Mm83sNgiXXxXz0kCIK9MVtBafaVJCrOMqqKj_s-ZTQqIFfJetebhA_sMUXrtdoTah17ZS7NRFcH1byDjhFpBZz9wQO-H4LIllg9GcdxN9kByMVYdXjYYZYAUMA6ObgcnbTaDTTjJZ6-NJkRWOT7e5XO22Goc3BatUpUA
+schedule-key 1284319872
+schedule 
+signature "ReturnedFalse"
+path 1.1.14.2.2
+codec "json"
+value "[{\"op\":\"propose\",\"role\":\"contributor\",\"signedOut\":false,\"noToken\":false,\"number\":2,\"parent\":2,\"title\":\"䊮䞈洊ፍ}쑷ᴔ䈌큠혘鵪땀竇\",\"text\":\"倇᩵盇ﻉ꫻䖰ㇻ2틨騭\",\"example\":\"A longer body\",\"prior\":\"汓t錚僒㜉縷岻牻\",\"assignee\":\"fuzz\",\"key\":0,\"salt\":0}]"
+# ReturnedFalse
+# [{"op":"propose","role":"contributor","signedOut":false,"noToken":false,"number":2,"parent":2,"title":"䊮䞈洊ፍ}쑷ᴔ䈌큠혘鵪땀竇","text":"倇᩵盇ﻉ꫻䖰ㇻ2틨騭","example":"A longer body","prior":"汓t錚僒㜉縷岻牻","assignee":"fuzz","key":0,"salt":0}]
