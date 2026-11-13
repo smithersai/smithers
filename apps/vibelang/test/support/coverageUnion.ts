@@ -114,7 +114,7 @@ export function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON
 
 /**
  * The bundle's structure plus unmatched compiler obligations, including code removed inside retained functions.
- * A replacement has the same kind and source start. For a statement whose initializer start Rolldown leaves
+ * A replacement has the same kind and source start; a branch also has the same number of arms. For a statement whose initializer start Rolldown leaves
  * unmapped, pair just one compiler statement with the same end and the closest start. A containing function or
  * declaration cannot replace its nested statements, functions or branches (decision 0016).
  */
@@ -149,6 +149,10 @@ export function builtStructure(compiler: FileCoverageJSON, bundle: FileCoverageJ
   }
   const seen = { s: new Set<string>(), f: new Set<string>(), b: new Set<string>() }
   const first = (kind: keyof typeof seen, key: string) => !seen[kind].has(key) && Boolean(seen[kind].add(key))
+  // The minified bundle's map may start a later arm elsewhere (a ternary's second arm at its first arm's start, an
+  // if/else printed as an `if`): its branch of the same kind, start and arm count replaces the compiler's.
+  const shape = (branch: FileCoverageJSON["branchMap"][string]) => JSON.stringify([branch.type, start(branch.loc), branch.locations.length])
+  const shippedBranches = new Set(Object.values(bundle.branchMap).map(shape))
   for (const owner of [bundle, compiler]) {
     for (const [id, loc] of Object.entries(owner.statementMap)) {
       if ((owner === compiler && replaced.has(id)) || !first("s", start(loc))) continue
@@ -163,7 +167,7 @@ export function builtStructure(compiler: FileCoverageJSON, bundle: FileCoverageJ
       json.f[key] = owner.f[id] ?? 0
     }
     for (const [id, branch] of Object.entries(owner.branchMap)) {
-      if (!first("b", JSON.stringify([branch.type, branch.locations.map(start)]))) continue
+      if ((owner === compiler && shippedBranches.has(shape(branch))) || !first("b", JSON.stringify([branch.type, branch.locations.map(start)]))) continue
       const key = String(Object.keys(json.branchMap).length)
       json.branchMap[key] = structuredClone(branch)
       json.b[key] = [...(owner.b[id] ?? branch.locations.map(() => 0))]

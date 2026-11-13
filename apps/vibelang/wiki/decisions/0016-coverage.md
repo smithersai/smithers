@@ -1600,7 +1600,17 @@ source in a chunk?  ── no ──▶ compiler's structure (unloaded file)
 bundle's statements, functions, branches
   + each compiler item whose start no bundle statement or function range contains (tree-shaken code)
   − duplicates at one source start (Rolldown maps an inner `make` and its renamed `make_2` to one start)
+  − each compiler branch the bundle has with the same kind, start and number of arms (2026-11-13)
 ```
+
+The last rule (lane vl-coverage-core, 2026-11-13). The minified bundle's map can start a branch's later arm elsewhere
+than the compiler's map does: a ternary's second arm at its first arm's start, an if/else printed as an `if` with no
+else. Both copies stayed, Chromium's ranges credited only the bundle's, and the compiler's copy stayed open forever:
+17 such branches in 12 files of the full gate `core1/s6full1` (`sandboxDecision.replaceSandbox`'s `if`, `MockAccounts`
+`participated`'s `??`, `sandboxHost.observed`'s default argument, 4 in `src/history/export.vibe`). Those were the
+"rises" in `sandboxDecision` (29 to 31) and `MockAccounts` (9 to 11) that no source change explained. Test:
+`test/browserStructure.test.vibe` "the build's branch replaces the compiler's branch of the same kind, start and arm
+count" (failed before the rule: 5 branches for 3).
 
 Executed bundles still credit it by identical start (`unionEvidence`). Browser and unit structures differ only where
 the bundler changed the code. A run against a deployment (`E2E_BASE_URL`) keeps the compiler's structure: its bundle

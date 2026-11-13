@@ -103,3 +103,28 @@ it("duplicate bundled starts share one replacement and retain unmatched nested s
   expect(starts(json.statementMap)).toEqual(["1:5", "1:20"])
   expect(Object.values(json.s)).toEqual([1, 0])
 })
+
+// Rolldown's minified map starts a branch's later arm elsewhere than the compiler's map does: a ternary's second arm at
+// its first arm's start, an if/else printed as an `if` with no else. The bundle's branch, which Chromium's ranges
+// credit, replaces the compiler's; keeping both left the compiler's copy open forever (17 such branches in 12 files
+// of the browser gate, 2026-11-13: sandboxDecision.replaceSandbox's `if`, MockAccounts' `??`).
+it("the build's branch replaces the compiler's branch of the same kind, start and arm count", () => {
+  const json = builtStructure({
+    ...empty,
+    branchMap: {
+      "0": { loc: range(3, 9, 3, 65), type: "cond-expr", locations: [range(3, 24, 3, 25), range(3, 28, 3, 65)] },
+      "1": { loc: range(5, 2, 9, 3), type: "if", locations: [range(5, 2, 9, 3), range(7, 9, 9, 3)] },
+      "2": { loc: range(11, 4, 11, 20), type: "binary-expr", locations: [range(11, 4, 11, 8), range(11, 12, 11, 20)] },
+    },
+    b: { "0": [0, 0], "1": [0, 0], "2": [0, 0] },
+  }, {
+    ...empty,
+    branchMap: {
+      "0": { loc: range(3, 9, 3, 65), type: "cond-expr", locations: [range(3, 24, 3, 29), range(3, 24, 3, 65)] },
+      "1": { loc: range(5, 2, 6, 26), type: "if", locations: [range(5, 2, 6, 26), { start: {}, end: {} }] },
+    },
+    b: { "0": [1, 1], "1": [1, 0] },
+  })
+  expect(Object.values(json.branchMap).map(branch => `${branch.type}@${branch.loc.start.line}:${branch.loc.start.column}`)).toEqual(["cond-expr@3:9", "if@5:2", "binary-expr@11:4"])
+  expect(Object.values(json.b)).toEqual([[1, 1], [1, 0], [0, 0]])
+})
