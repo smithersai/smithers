@@ -39,6 +39,7 @@ export const Player = () => {
   const [keys, setKeys] = useState<{ viewer: ActorId; keys: string }>()
   const [theme, setTheme] = useState<"light" | "dark">(params.get("theme") === "dark" ? "dark" : "light")
   const [speed, setSpeed] = useState(1)
+  const [generation, setGeneration] = useState(0)
   const run = useRef(0)
   const indexRef = useRef(index)
   indexRef.current = index
@@ -55,6 +56,7 @@ export const Player = () => {
 
   const jump = (target: Journey, at: number) => {
     run.current += 1
+    setGeneration(value => value + 1)
     setTyped(undefined)
     setKeys(undefined)
     setPointer(undefined)
@@ -152,7 +154,7 @@ export const Player = () => {
     }
     void play()
     return () => { run.current += 1 }
-  }, [playing, journey, speed])
+  }, [playing, journey, speed, generation])
 
   useEffect(() => {
     if (playing) return

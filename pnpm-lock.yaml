@@ -148,6 +148,9 @@ importers:
       istanbul-reports:
         specifier: ^3.2.0
         version: 3.2.0
+      lucide-react:
+        specifier: 0.468.0
+        version: 0.468.0(react@19.2.8)
       mermaid:
         specifier: ^11.17.2
         version: 11.17.2
@@ -14421,6 +14424,11 @@ packages:
   lru_map@0.4.1:
     resolution: {integrity: sha512-I+lBvqMMFfqaV8CJCISjI3wbjmwVu/VyOoU7+qtu9d7ioW5klMgsTTiUOUp+DJvfTTzKXoPbyC6YfgkNcyPSOg==}
 
+  lucide-react@0.468.0:
+    resolution: {integrity: sha512-6koYRhnM2N0GGZIdXzSeiNwguv1gt/FAjZOiPl76roBi3xKEXa4WmfpxgQwTTL4KipXjefrnf3oV4IsYhi4JFA==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0-rc
+
   madge@8.0.0:
     resolution: {integrity: sha512-9sSsi3TBPhmkTCIpVQF0SPiChj1L7Rq9kU2KDG1o6v2XH9cCw086MopjVCD+vuoL5v8S77DTbVopTO8OUiQpIw==}
     engines: {node: '>=18'}
@@ -24730,6 +24738,10 @@ snapshots:
   lru-cache@7.18.3: {}
 
   lru_map@0.4.1: {}
+
+  lucide-react@0.468.0(react@19.2.8):
+    dependencies:
+      react: 19.2.8
 
   madge@8.0.0(supports-color@10.2.2):
     dependencies:

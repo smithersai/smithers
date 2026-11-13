@@ -38,7 +38,7 @@ const audit = () => {
     if (label(button) === "") problems.push("button with no name")
     /* React keeps handlers off the DOM: a button that does nothing must say so with data-inert="reason". */
     const props = Object.keys(button).find(key => key.startsWith("__reactProps"))
-    const handled = props !== undefined && (typeof button[props].onClick === "function" || button.type === "submit" || button.disabled)
+    const handled = props !== undefined && (typeof button[props].onClick === "function" || (button.type === "submit" && button.form !== null) || button.disabled)
     if (!handled && !button.hasAttribute("data-inert")) problems.push(`button "${label(button)}" does nothing`)
   }
   for (const input of document.querySelectorAll("input:not([type=hidden]), textarea, select")) {

@@ -32,7 +32,7 @@ export const auditPage = (): string[] => {
     if (label(button) === "") problems.push("button with no name")
     const props = Object.keys(button).find(key => key.startsWith("__reactProps"))
     const handlers = props ? (button as unknown as Record<string, { onClick?: unknown }>)[props] : undefined
-    const handled = props !== undefined && (typeof handlers?.onClick === "function" || button.type === "submit" || button.disabled)
+    const handled = props !== undefined && (typeof handlers?.onClick === "function" || (button.type === "submit" && button.form !== null) || button.disabled)
     if (!handled && !button.hasAttribute("data-inert")) problems.push(`button "${label(button)}" does nothing`)
   }
   for (const input of document.querySelectorAll<HTMLInputElement>("input:not([type=hidden]), textarea, select")) {

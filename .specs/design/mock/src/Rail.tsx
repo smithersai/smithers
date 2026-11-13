@@ -9,7 +9,7 @@
  * per edge.
  */
 import { useLayoutEffect, useRef, type ReactNode } from "react"
-import { Button, Spinner } from "@smthrs/ui"
+import { Button, LoadingBar } from "@smthrs/ui"
 import { Bell, Check, CircleAlert, MessageSquare, X } from "lucide-react"
 import { Avatar, StateGlyph, actorName } from "./parts"
 import { isAgent, refOf, STACK, type Activity, type Entry, type Event, type State } from "./world"
@@ -37,7 +37,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
 const EVENT_TONE: Record<Event["tone"], Tone> = { running: "live", ok: "done", attention: "attention", failed: "failed" }
 
 const eventGlyph = (tone: Event["tone"]): ReactNode =>
-  tone === "running" ? <Spinner size="sm" aria-label="Working" />
+  tone === "running" ? <LoadingBar loading placement="inline" label="Working" />
   : tone === "ok" ? <Check size={13} className="mvp-tl-ok" aria-hidden="true" />
   : tone === "attention" ? <CircleAlert size={13} className="mvp-toast-attention" aria-hidden="true" />
   : <X size={13} className="mvp-tl-failed" aria-hidden="true" />
@@ -118,6 +118,7 @@ export const markOf = (state: State, me: string, entry: Entry): Mark | undefined
     }
     case "draft": {
       const draft = world.drafts.find(each => each.id === card.target)
+      if (draft?.by !== undefined && draft.by !== me && draft.committed === undefined) return undefined
       return { id: entry.id, title: draft?.title ?? "New TODO", summary: draft?.committed === undefined ? "Draft" : "Committed", tone: "quiet", glyph: <StateGlyph state="queued" /> }
     }
     case "confirm": {

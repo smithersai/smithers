@@ -27,7 +27,7 @@
  * copy line.
  */
 import type { ReactNode } from "react"
-import { Button, Spinner } from "@smthrs/ui"
+import { Button, LoadingBar } from "@smthrs/ui"
 import { Check, ChevronDown, ChevronRight, Circle, Copy, ExternalLink, Minus, Plus, RotateCw, X } from "lucide-react"
 import { Avatar, AvatarStack, Card, GitHubMark } from "../parts"
 import { typedOr, useFrame } from "../frame"
@@ -99,7 +99,7 @@ const SquashCheck = ({ repo, off }: { readonly repo: string; readonly off: boole
 
 const KeyStatus = ({ state, words = KEY_WORDS }: { readonly state: KeyState | undefined; readonly words?: Words }) => {
   switch (state) {
-    case "validating": return <span className="mvp-key-status" data-state={state}><Spinner size="sm" aria-label={words.validating} />{words.validating}</span>
+    case "validating": return <span className="mvp-key-status" data-state={state}><LoadingBar loading placement="inline" label={words.validating} />{words.validating}</span>
     case "saved": return <span className="mvp-key-status" data-state={state}><Check size={14} aria-hidden="true" />{words.saved}</span>
     case "failed": return <span className="mvp-key-status" data-state={state}><X size={14} role="img" aria-label="Failed" /></span>
     default: return <span className="mvp-key-status" />
@@ -272,7 +272,7 @@ const Access = ({ name, state, words = ACCESS_KEY_WORDS }: { readonly name: stri
   <span className="mvp-setting-state" data-state={state}>
     {state === "saved" ? <Check size={13} role="img" aria-label={words.saved} />
       : state === "failed" ? <X size={13} role="img" aria-label={words.failed} />
-      : state === "validating" ? <Spinner size="sm" aria-label={words.validating} />
+      : state === "validating" ? <LoadingBar loading placement="inline" label={words.validating} />
       : <Circle size={9} role="img" aria-label={words.none} />}
     {name}
   </span>

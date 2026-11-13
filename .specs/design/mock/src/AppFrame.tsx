@@ -4,7 +4,7 @@
  * cards, the floating composer, the Chat control and the toast stack.
  */
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react"
-import { ChatComposer, ChatMessage } from "@smthrs/ui"
+import { ChatComposer, ChatMessage, WORDMARK } from "@smthrs/ui"
 import { ChevronDown } from "lucide-react"
 import { Notifications, Rail, markOf, noticesOf, type Mark } from "./Rail"
 import { FrameContext, typedOr, type FrameValue } from "./frame"
@@ -16,7 +16,6 @@ import { TodoCard } from "./cards/Todo"
 import { EXTRA_CARDS } from "./cards/extra"
 import { Avatar, ContextChip, Maximized, actorName } from "./parts"
 import { BranchTree } from "./Tree"
-import { WORDMARK } from "../../../../apps/app/src/mainview/Wordmark"
 import { STACK, type CardKind, type CardRef, type Event, type State } from "./world"
 
 export interface Pointer {

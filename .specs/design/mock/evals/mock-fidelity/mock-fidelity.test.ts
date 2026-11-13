@@ -459,7 +459,7 @@ test("DOM audit uses the same rules as crawl.mjs without launching a browser", (
     hasAttribute: (key: string) => key in attributes, closest: () => null, querySelector: () => null, ...extra
   })
   const anchors = [element("Dead", { href: "#" }), element("Unknown", { href: "#/missing" }), element("External", { href: "https://example.test" }), element("Valid", { href: "#/valid" }), element("Mail", { href: "mailto:a@example.test" }), element("Unsupported", { href: "/relative" }), element("", { href: "https://example.test", target: "_blank" }), element("Harness", {}, { closest: () => ({}) })]
-  const buttons = [element(""), element("Inert", { "data-inert": "preview" }), element("Working", {}, { __reactPropsTest: { onClick() {} } }), element("Submit", {}, { type: "submit", __reactPropsTest: {} }), element("Disabled", {}, { disabled: true, __reactPropsTest: {} })]
+  const buttons = [element(""), element("Inert", { "data-inert": "preview" }), element("Working", {}, { __reactPropsTest: { onClick() {} } }), element("Submit", {}, { type: "submit", form: {}, __reactPropsTest: {} }), element("Disabled", {}, { disabled: true, __reactPropsTest: {} })]
   const inputs = [element("", {}, { name: "email" }), element("", { "aria-label": "Search" }), element("", {}, { labels: [{}] })]
   const environment = () => ({
     window: { __SITE__: { resolve: (path: string) => path === "valid" }, innerWidth: 390 },
