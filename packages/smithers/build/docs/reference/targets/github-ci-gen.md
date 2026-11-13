@@ -226,16 +226,17 @@ writes made with read credentials.
 
 ### Job
 
-| Name              | Type                    | Default                  | Description                                                                                                              |
-| ----------------- | ----------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `id`              | `string`                | required                 | GitHub job id: a letter or `_`, then letters, digits, `-`, `_`.                                                          |
-| `name`            | `string`                | optional                 | Operator-facing job name.                                                                                                |
-| `runsOn`          | `string`                | required unless `matrix` | One runner label, or a label set `[a, b]`. A job declares `runsOn` or `matrix`, never both and never neither.            |
-| `matrix`          | `Array<MatrixRow>`      | optional                 | A platform matrix. The job renders once and runs per row, with `runs-on: ${{ matrix.os }}`. See [MatrixRow](#matrixrow). |
-| `timeoutMinutes`  | `number`                | optional                 | A whole number from 1 to 360.                                                                                            |
-| `continueOnError` | `boolean`               | optional                 | Advisory lane.                                                                                                           |
-| `toolchain`       | `CiToolchain.Toolchain` | required                 | What the runner must provide before the first target runs. See [CiToolchain](#citoolchain).                              |
-| `steps`           | `Array<TargetStep>`     | required                 | The target invocations this job performs. A job with none is refused.                                                    |
+| Name               | Type                    | Default                  | Description                                                                                                              |
+| ------------------ | ----------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `id`               | `string`                | required                 | GitHub job id: a letter or `_`, then letters, digits, `-`, `_`.                                                          |
+| `name`             | `string`                | optional                 | Operator-facing job name.                                                                                                |
+| `runsOn`           | `string`                | required unless `matrix` | One runner label, or a label set `[a, b]`. A job declares `runsOn` or `matrix`, never both and never neither.            |
+| `matrix`           | `Array<MatrixRow>`      | optional                 | A platform matrix. The job renders once and runs per row, with `runs-on: ${{ matrix.os }}`. See [MatrixRow](#matrixrow). |
+| `matrixNameSuffix` | `"os"`                  | optional                 | Append the generator-owned platform suffix to a named matrix job.                                                        |
+| `timeoutMinutes`   | `number`                | optional                 | A whole number from 1 to 360.                                                                                            |
+| `continueOnError`  | `boolean`               | optional                 | Advisory lane.                                                                                                           |
+| `toolchain`        | `CiToolchain.Toolchain` | required                 | What the runner must provide before the first target runs. See [CiToolchain](#citoolchain).                              |
+| `steps`            | `Array<TargetStep>`     | required                 | The target invocations this job performs. A job with none is refused.                                                    |
 
 ### MatrixRow
 
@@ -252,10 +253,12 @@ ${{ matrix.advisory }}`. The bit is data rather than a job-level
 `matrixFailFast` (`false`): a platform matrix asks which platforms are green,
 and cancelling the remaining rows when one fails throws away the answer.
 
-A matrix job reports one GitHub check per row, named after the rendered job
-name, so `package suites (${{ matrix.os }})` over three rows becomes three
-checks: `package suites (ubuntu-latest)`, `(macos-latest)`, `(windows-latest)`.
-Branch protection lists them individually.
+Workflow, job and step names are declared as literal text. For a matrix job
+with `name: "package suites"` and `matrixNameSuffix: "os"`, the generator appends a space and its own fixed
+`(${{ matrix.os }})` suffix. This keeps one distinct check name per platform,
+such as `package suites (ubuntu-latest)`, without accepting an expression
+from the declaration. Without `matrixNameSuffix`, a literal job name stays
+unchanged. Branch protection lists these check names individually.
 
 ### TargetStep
 
@@ -364,8 +367,9 @@ its own terms, so `[self-hosted, null]` renders `[self-hosted, "null"]` rather
 than silently losing a label. A value that opens a flow collection without being
 that label set (`[self-hosted, my label]`, `{group: g, labels: [x]}`, `[]`) is
 **refused**, because quoting it would produce a single label no runner carries
-and a job that never picks up. An expression in a declared `runsOn` string
-(`${{ matrix.os }}`) is a quoted scalar, which GitHub still evaluates.
+and a job that never picks up. Declared `runsOn`, workflow, job and step names,
+and push branches refuse the GitHub expression opener `${{`: YAML quoting
+does not prevent GitHub from evaluating an expression inside a string.
 
 A matrix job does not go through that path at all: the renderer emits
 `runs-on: ${{ matrix.os }}` unquoted from `matrixExpressions.os`, and

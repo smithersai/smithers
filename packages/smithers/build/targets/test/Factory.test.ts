@@ -10,6 +10,7 @@
  * never writes under the lint verb, and carries the loaded declarations the
  * planner fills rather than anything a `PACKAGE.ts` wrote.
  */
+import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as Factory from "../src/Factory.ts"
 import * as Flow from "../src/Flow.ts"
@@ -155,6 +156,76 @@ describe("Smithers.Github.Policy", () => {
     expect(() => Factory.Policy({ mirror: "push-on-land" as never })).toThrow(/Github.Policy/)
     expect(() => Factory.Policy({ issues: "write" as never })).toThrow(/Github.Policy/)
     expect(() => Factory.Policy({ pushOnLand: true } as never)).toThrow(/unknown option "pushOnLand"/)
+  })
+})
+
+describe("GitHub policy validation at every boundary", () => {
+  const valid = Factory.Policy()
+  const invalid: ReadonlyArray<Partial<Factory.GithubPolicy>> = [
+    { changes: "land" },
+    { mirror: "none", changes: "land" },
+    { mirror: "push" },
+    ...["", " infra", "infra ", "/etc", "a/../b", ".."].map((path) => ({ protectedPaths: [path] })),
+    ...["", " agent", "agent "].flatMap((login) => [
+      { reviewerAgents: [login] },
+      { maintainers: [login] }
+    ]),
+    ...["garbage", "2026-01-01T00:00:00", "2026-01-01T99:00:00Z"].map((todoSince) => ({ todoSince })),
+    ...[-5, 0, 1.5].map((dailyTokens) => ({ dailyTokens }))
+  ]
+
+  it.each(invalid)("refuses a literal policy with %j", (patch) => {
+    const github = { ...valid, ...patch }
+    expect(Schema.is(Factory.GithubPolicy)(github)).toBe(false)
+    expect(() => Factory.Factory({ summary: "S.", github })).toThrow()
+    const declaration = { ...Factory.Factory({ summary: "S." }), github }
+    expect(Schema.is(Factory.Declaration)(declaration)).toBe(false)
+    expect(
+      Schema.is(Factory.Payload)({
+        root: "flows",
+        output: "factory.json",
+        homeOutput: "home.json",
+        mode: "check",
+        factory: declaration,
+        home: null
+      })
+    ).toBe(false)
+    const projection = JSON.parse(Factory.renderProjection(Factory.Factory({ summary: "S." }), []))
+    const { _tag, ...fields } = github
+    expect(typeof Factory.parseProjection(JSON.stringify({ ...projection, github: fields }))).toBe("string")
+  })
+
+  it("accepts valid literals and legacy projections without optional policy fields", () => {
+    for (
+      const github of [
+        {
+          ...valid,
+          protectedPaths: ["infra", "deploy/keys"],
+          reviewerAgents: ["review-bot"],
+          maintainers: ["maintainer"],
+          todoSince: "2026-01-01T00:00:00Z",
+          dailyTokens: 1
+        },
+        { ...valid, mirror: "push" as const, changes: "land" as const, todoSince: "2026-01-01T00:00:00+01:00" },
+        { ...valid, mirror: "none" as const }
+      ]
+    ) {
+      const declaration = Factory.Factory({ summary: "S.", github })
+      expect(declaration.github).toEqual(github)
+      expect(Factory.parseProjection(Factory.renderProjection(declaration, []))).toMatchObject({
+        github: { mirror: github.mirror, changes: github.changes }
+      })
+    }
+    expect(
+      Factory.parseProjection(
+        JSON.stringify({
+          summary: "S.",
+          flows: [],
+          on: [],
+          github: { mirror: "pull", issues: "read", changes: "send-upstream" }
+        })
+      )
+    ).toMatchObject({ github: { mirror: "pull" } })
   })
 })
 

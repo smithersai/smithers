@@ -288,6 +288,8 @@ export const Job = Schema.Struct({
    * toolchain, and the timeout are written once and every platform runs them.
    */
   matrix: Schema.optional(Schema.Array(MatrixRow)),
+  /** Append the generator-owned OS expression to this matrix job's literal name. */
+  matrixNameSuffix: Schema.optional(Schema.Literal("os")),
   /**
    * `timeout-minutes`, in the range GitHub Actions supports. Zero and negative
    * values are rejected by the runner, and anything above 360 is silently
@@ -526,6 +528,22 @@ const scalar = (value: string): string => {
   return JSON.stringify(value)
 }
 
+/** A workflow label or its declared naming mode is invalid. */
+class InvalidLiteral extends Schema.TaggedError<InvalidLiteral>()("smithers-build/InvalidCiLiteral", {
+  message: Schema.String
+}) {}
+
+/**
+ * Declared labels stay literal: YAML quoting does not prevent GitHub from
+ * evaluating an expression. Generator-owned expressions use their own paths.
+ */
+const literalScalar = (value: string): string => {
+  if (value.includes("${{")) {
+    throw new InvalidLiteral({ message: `GithubCiGen: ${JSON.stringify(value)} contains a GitHub expression` })
+  }
+  return scalar(value)
+}
+
 /**
  * A `runs-on` flow sequence of plain runner labels, `[self-hosted, linux]`.
  * Quoting the whole sequence would turn a label set into a single nonexistent
@@ -549,7 +567,7 @@ const runnerSequence = /^\[\s*([A-Za-z0-9_.-]+(?:\s*,\s*[A-Za-z0-9_.-]+)*)\s*\]$
  */
 const runner = (value: string): string => {
   const match = value.match(runnerSequence)
-  if (match !== null) return `[${match[1]!.split(",").map((label) => scalar(label.trim())).join(", ")}]`
+  if (match !== null) return `[${match[1]!.split(",").map((label) => literalScalar(label.trim())).join(", ")}]`
   if (value.startsWith("[") || value.startsWith("{")) {
     throw new Error(
       `GithubCiGen: ${
@@ -557,7 +575,7 @@ const runner = (value: string): string => {
       } is not a runner label set; use one label, or [label, label] with labels of [A-Za-z0-9_.-]`
     )
   }
-  return scalar(value)
+  return literalScalar(value)
 }
 
 /**
@@ -566,9 +584,10 @@ const runner = (value: string): string => {
  * They are constants of the implementation, exactly like {@link actions}: a
  * matrix job's `runs-on` and `continue-on-error` read the row GitHub is
  * currently running, and nothing in {@link Attrs} can put an expression here.
- * They are rendered PLAIN rather than through `scalar`, because a quoted
+ * Matrix control fields render them PLAIN rather than through `scalar`, because a quoted
  * `continue-on-error` value is a string GitHub coerces rather than the boolean
- * the row declares, and the plain form is the one GitHub documents.
+ * the row declares, and the plain form is the one GitHub documents. A matrix
+ * job can request the fixed OS name suffix as a quoted string expression.
  *
  * @category constants
  * @since 0.1.0
@@ -658,7 +677,7 @@ interface RenderedStep {
 export const renderStep = (step: RenderedStep, indent: string): ReadonlyArray<string> => {
   const lines: Array<string> = []
   const fields: Array<string> = []
-  if (step.name !== undefined) fields.push(`name: ${scalar(step.name)}`)
+  if (step.name !== undefined) fields.push(`name: ${literalScalar(step.name)}`)
   if (step.id !== undefined) fields.push(`id: ${step.id}`)
   if (step.condition !== undefined) fields.push(`if: ${step.condition}`)
   if (step.uses !== undefined) fields.push(`uses: ${scalar(step.uses)}`)
@@ -1299,6 +1318,12 @@ const jobIdShape = /^[A-Za-z_][A-Za-z0-9_-]*$/
  * while its two `include:` rows disagree about the advisory bit.
  */
 const validateJobRunners = (job: Job): void => {
+  if (
+    job.matrixNameSuffix !== undefined &&
+    (job.matrixNameSuffix !== "os" || job.matrix === undefined || job.name === undefined)
+  ) {
+    throw new InvalidLiteral({ message: "GithubCiGen: matrixNameSuffix must be \"os\" on a named matrix job" })
+  }
   if (job.matrix === undefined) {
     if (job.runsOn === undefined) {
       throw new Error(`GithubCiGen: job ${JSON.stringify(job.id)} declares no runs-on and no matrix`)
@@ -1673,12 +1698,12 @@ export const render = (attrs: Attrs): string => {
   }
   const triggers: Array<string> = []
   if (attrs.pushBranches.length > 0) {
-    triggers.push("  push:", `    branches: [${attrs.pushBranches.map(scalar).join(", ")}]`)
+    triggers.push("  push:", `    branches: [${attrs.pushBranches.map(literalScalar).join(", ")}]`)
   }
   if (attrs.pullRequest) triggers.push("  pull_request:")
   if (attrs.workflowDispatch) triggers.push("  workflow_dispatch:")
   const lines: Array<string> = [
-    `name: ${scalar(attrs.workflowName)}`,
+    `name: ${literalScalar(attrs.workflowName)}`,
     "on:",
     ...triggers,
     "concurrency:",
@@ -1724,7 +1749,13 @@ export const render = (attrs: Attrs): string => {
     // A job id is a mapping KEY, and YAML resolves a plain `no:` or `on:` to a
     // boolean just as it does a value, so an id that reads as one is quoted.
     lines.push(`  ${scalar(job.id)}:`)
-    if (job.name !== undefined) lines.push(`    name: ${scalar(job.name)}`)
+    if (job.name !== undefined) {
+      const name = literalScalar(job.name)
+      // Keep each platform's check identity without accepting an expression
+      // from the declaration. Only the generator supplies this fixed suffix.
+      const renderedName = job.matrixNameSuffix === undefined ? name : scalar(`${job.name} (${matrixExpressions.os})`)
+      lines.push(`    name: ${renderedName}`)
+    }
     // The matrix comes before `runs-on`, because `runs-on` reads it. The rows
     // are emitted in declaration order, twice: once as the platform list the
     // matrix expands, and once as the `include:` rows that attach each

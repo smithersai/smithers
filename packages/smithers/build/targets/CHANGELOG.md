@@ -79,6 +79,15 @@ of it.
 
 ### Fixed
 
+- Foundry targets require their native executor, which honors skip patterns,
+  profiles, configuration and formatting mode.
+- Literal GitHub policies and factory projections enforce the same path,
+  login, time, budget and single-writer rules as `Github.Policy`.
+- Generated CI refuses GitHub expressions in declared runners, workflow, job
+  and step names, and push branches. Matrix jobs declare a literal base name;
+  `matrixNameSuffix: "os"` opts into a generator-owned platform suffix.
+  Existing literal matrix names stay unchanged when the option is omitted.
+
 - The secret proxy redacts every credential value its vault has resolved
   during the run from every response it returns. Redaction covered only the
   request that resolved the value, so a tool could store a placeholder at the

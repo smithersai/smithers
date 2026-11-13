@@ -6,18 +6,16 @@
  * `Foundry.Test`, and `Foundry.Fmt` are the forge compile, test, and
  * format rules keyed on that toolchain, the resolved forge identity, and
  * the declared config. Fmt is a check/write rule confined to its declared
- * `changes` write set.
+ * `changes` write set. These rules require the package executor; a bare
+ * flow host refuses them instead of planning a second forge command line.
  *
  * @since 0.1.0
  */
 
 import * as Schema from "effect/Schema"
 import * as Attr from "./Attr.ts"
-import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as Mise from "./Mise.ts"
-import * as Reference from "./Reference.ts"
-import * as Shell from "./Shell.ts"
 import * as Target from "./Target.ts"
 
 /**
@@ -122,28 +120,26 @@ export const FmtAttrs = Schema.Struct({
   sandbox: Schema.optional(Attr.Sandbox)
 })
 
-const forge = Reference.hostBin("forge")
-
 const buildDefinition = Target.make("Foundry.Build", {
   attrs: BuildAttrs,
   kinds: ["build"],
   cache: true,
   outputs: (attrs) => ({ cwd: ".", paths: attrs.outDirs }),
-  implementation: (attrs) => Exec.runTool(Shell.execPayload({ bin: forge, args: ["build", ...(attrs.skip ?? [])] }))
+  implementation: () => Target.notImplemented("Foundry.Build")
 })
 
 const testDefinition = Target.make("Foundry.Test", {
   attrs: TestAttrs,
   kinds: ["test"],
   cache: true,
-  implementation: () => Exec.runTool(Shell.execPayload({ bin: forge, args: ["test"] }))
+  implementation: () => Target.notImplemented("Foundry.Test")
 })
 
 const fmtDefinition = Target.make("Foundry.Fmt", {
   attrs: FmtAttrs,
   kinds: ["lint", "run"],
   cache: (attrs) => attrs.changes.length > 0,
-  implementation: () => Exec.runTool(Shell.execPayload({ bin: forge, args: ["fmt", "--check"] }))
+  implementation: () => Target.notImplemented("Foundry.Fmt")
 })
 
 /**

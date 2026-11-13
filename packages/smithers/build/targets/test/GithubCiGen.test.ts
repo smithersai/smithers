@@ -502,6 +502,7 @@ describe("the declaration surface", () => {
         "continueOnError",
         "id",
         "matrix",
+        "matrixNameSuffix",
         "name",
         "publishesToCache",
         "runsOn",
@@ -940,16 +941,35 @@ describe("render", () => {
     ).toThrow(/no CLI verb/)
   })
 
+  it("refuses declared GitHub expressions in runners, names and branches", () => {
+    const base = { ...goldenAttrs, gates: [] }
+    const job = base.jobs[0]!
+    for (const value of ["${{ inputs.runner }}", "CI ${{ github.actor }}", "${{unclosed"]) {
+      const candidates = [
+        { ...base, workflowName: value },
+        { ...base, pushBranches: [value] },
+        { ...base, jobs: [{ ...job, runsOn: value }] },
+        { ...base, jobs: [{ ...job, name: value }] },
+        { ...base, jobs: [{ ...job, steps: [{ ...job.steps[0]!, name: value }] }] }
+      ]
+      for (const attrs of candidates) expect(() => render(attrs), value).toThrow(/GitHub expression/)
+    }
+    const rendered = render({ ...base, workflowName: "CI $runner {{literal}}", pushBranches: ["feature/$literal"] })
+    expect(rendered).toContain("name: \"CI $runner {{literal}}\"")
+    expect(rendered).toContain("branches: [\"feature/$literal\"]")
+    expect(rendered).toContain("group: ci-${{")
+  })
+
   it("quotes values that would otherwise change the shape of the YAML", () => {
     const rendered = render(attrsOf({
       ...goldenAttrs,
       workflowName: "CI: main",
       pushBranches: ["main", "release: next"],
-      jobs: goldenAttrs.jobs.map((job) => job.id !== "rust" ? job : { ...job, runsOn: "${{ matrix.os }}" })
+      jobs: goldenAttrs.jobs.map((job) => job.id !== "rust" ? job : { ...job, runsOn: "runner: linux" })
     }))
     expect(rendered).toContain("name: \"CI: main\"\n")
     expect(rendered).toContain("    branches: [\"main\", \"release: next\"]\n")
-    expect(rendered).toContain("    runs-on: \"${{ matrix.os }}\"\n")
+    expect(rendered).toContain("    runs-on: \"runner: linux\"\n")
     expect(parseWorkflow(rendered).name).toBe("CI: main")
     // A label set is a YAML sequence GitHub reads, so it is not quoted into one
     // nonexistent label.
@@ -1821,7 +1841,8 @@ describe("a platform matrix", () => {
   const step = { name: "Package test targets", verb: Verb.Test, pattern: "//packages/..." }
   const matrixJob = {
     id: "packages",
-    name: "package suites (${{ matrix.os }})",
+    name: "package suites",
+    matrixNameSuffix: "os",
     matrix: [
       { os: "ubuntu-latest", advisory: false },
       { os: "macos-latest", advisory: true },
@@ -1833,6 +1854,22 @@ describe("a platform matrix", () => {
   }
   const withMatrixJob = (job: unknown, requiredJobs: ReadonlyArray<string> = []): never =>
     attrsOf({ ...goldenAttrs, gates: [], requiredJobs, jobs: [job] })
+
+  it("preserves literal matrix names unless the OS suffix is requested", () => {
+    const { matrixNameSuffix, ...literal } = matrixJob
+    expect(render(withMatrixJob(literal))).toContain("name: \"package suites\"\n")
+    const { name, ...unnamed } = matrixJob
+    expect(() => render(withMatrixJob(unnamed))).toThrow(/matrixNameSuffix/)
+    expect(() => render(withMatrixJob({ ...matrixJob, matrixNameSuffix: "input" }))).toThrow()
+    const { matrix, continueOnError, ...single } = { ...matrixJob, continueOnError: false }
+    expect(() => render(withMatrixJob({ ...single, runsOn: "ubuntu-latest" }))).toThrow(/matrixNameSuffix/)
+  })
+
+  it("refuses expressions in a matrix job's declared name", () => {
+    expect(() => render(withMatrixJob({ ...matrixJob, name: "package suites (${{ matrix.os }})" }))).toThrow(
+      /GitHub expression/
+    )
+  })
 
   it("renders one job over every declared platform, with the advisory bit as data", () => {
     const rendered = render(withMatrixJob(matrixJob, ["packages"]))
@@ -1869,7 +1906,7 @@ describe("a platform matrix", () => {
   it("refuses a job that declares both a runner and a matrix, or neither", () => {
     expect(() => render(withMatrixJob({ ...matrixJob, runsOn: "ubuntu-latest" })))
       .toThrow(/declares both runs-on and a matrix/)
-    const { matrix: _matrix, ...noRunner } = matrixJob
+    const { matrix: _matrix, matrixNameSuffix: _suffix, ...noRunner } = matrixJob
     expect(() => render(withMatrixJob(noRunner))).toThrow(/declares no runs-on and no matrix/)
   })
 
@@ -1976,6 +2013,7 @@ describe("a platform matrix", () => {
         "continueOnError",
         "id",
         "matrix",
+        "matrixNameSuffix",
         "name",
         "publishesToCache",
         "runsOn",

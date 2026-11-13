@@ -725,7 +725,8 @@ const ci = Smithers.GithubCiGen({
       // Every shard retains the same required Linux and advisory macOS/Windows
       // policy. Each job owns disjoint package roots; dependencies may repeat.
       id: shardJobId("packages", index),
-      name: index === 0 ? "package suites (${{ matrix.os }})" : `package suites ${index + 1}/${packageShards.length} (${'${{ matrix.os }}'})`,
+      name: index === 0 ? "package suites" : `package suites ${index + 1}/${packageShards.length}`,
+      matrixNameSuffix: "os" as const,
       matrix: [
         { os: ubuntu, advisory: false },
         { os: "macos-latest", advisory: true },

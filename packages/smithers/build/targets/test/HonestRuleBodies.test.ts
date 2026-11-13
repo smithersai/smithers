@@ -6,16 +6,22 @@ import * as Foundry from "../src/Foundry.ts"
 import * as NewPackage from "../src/NewPackage.ts"
 import * as Owners from "../src/Owners.ts"
 import * as Reference from "../src/Reference.ts"
-import * as Shell from "../src/Shell.ts"
 import * as S from "../src/Smithers.ts"
 import * as Target from "../src/Target.ts"
-import { plannedArgv, plannedCalls } from "./plan.ts"
+import { plannedCalls } from "./plan.ts"
 
 const manifest = S.file("package.json")
 const build = S.Shell.Build({ shell: "true", outDirs: ["dist"] })
 
 describe("package-executor declarations require their owning executor", () => {
   const cases: ReadonlyArray<readonly [string, () => Target.AnyTarget]> = [
+    [
+      "Foundry.Build",
+      () => Foundry.Build({ outDirs: ["out"], skip: ["test"], profile: "ci", config: S.file("foundry.toml") })
+    ],
+    ["Foundry.Build", () => Foundry.Build({ outDirs: ["out"] })],
+    ["Foundry.Test", () => Foundry.Test({ profile: "ci", config: S.file("foundry.toml") })],
+    ["Foundry.Fmt", () => Foundry.Fmt({ changes: ["src/**"], config: S.file("foundry.toml") })],
     ["Cargo.Fetch", () => Cargo.Fetch({ outDirs: [".cargo"] })],
     ["Cargo.Build", () => Cargo.Build({ workspace: true, data: [] })],
     ["Cargo.Test", () => Cargo.Test({ workspace: true, data: [] })],
@@ -56,28 +62,6 @@ describe("package-executor declarations require their owning executor", () => {
   it.each(cases)("%s explicitly refuses a bare flow host", (name, make) => {
     expect(plannedCalls(make())).toEqual([
       { action: "smithers-build/not-implemented", payload: { target: name } }
-    ])
-  })
-})
-
-describe("Foundry plans the requested forge operation", () => {
-  it("builds with declared skips and defaults to no skips", () => {
-    expect(plannedArgv(Foundry.Build({ outDirs: ["out"], skip: ["test"] }))).toEqual([
-      Shell.toolToken(Reference.hostBin("forge")),
-      "build",
-      "test"
-    ])
-    expect(plannedArgv(Foundry.Build({ outDirs: ["out"] }))).toEqual([
-      Shell.toolToken(Reference.hostBin("forge")),
-      "build"
-    ])
-  })
-  it("tests and format-checks without writing", () => {
-    expect(plannedArgv(Foundry.Test({}))).toEqual([Shell.toolToken(Reference.hostBin("forge")), "test"])
-    expect(plannedArgv(Foundry.Fmt({ changes: ["src/**"] }))).toEqual([
-      Shell.toolToken(Reference.hostBin("forge")),
-      "fmt",
-      "--check"
     ])
   })
 })

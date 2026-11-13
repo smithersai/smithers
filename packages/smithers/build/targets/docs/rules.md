@@ -73,9 +73,9 @@ or pull-request operations. Use an implemented publication tool or CI job.
 | `FactoryProjection`      | Factory           | build, lint        | by attrs         | by attrs         | flow body        |
 | `Fetch`                  | Fetch             | build              | yes              | yes              | package executor |
 | `Filegroup`              | Filegroup         | none               | yes              | no               | flow body        |
-| `Foundry.Build`          | Foundry           | build              | yes              | yes              | flow body        |
-| `Foundry.Fmt`            | Foundry           | lint, run          | by attrs         | no               | flow body        |
-| `Foundry.Test`           | Foundry           | test               | yes              | no               | flow body        |
+| `Foundry.Build`          | Foundry           | build              | yes              | yes              | package executor |
+| `Foundry.Fmt`            | Foundry           | lint, run          | by attrs         | no               | package executor |
+| `Foundry.Test`           | Foundry           | test               | yes              | no               | package executor |
 | `Generate`               | Compose           | run, lint          | check            | no               | flow body        |
 | `Git.Commit`             | GitTarget         | run                | no               | no               | package executor |
 | `Git.Pr`                 | GitTarget         | run                | no               | no               | unsupported      |

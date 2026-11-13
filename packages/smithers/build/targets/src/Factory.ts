@@ -228,8 +228,56 @@ export const Changes = Schema.Literals(["land", "send-upstream", "none"])
  */
 export const AgentIssueSource = Schema.Literals(["run", "linear", "trial"])
 
+/** Value rules shared by declarations and the projection's untagged policy. */
+const githubPolicyIssue = (policy: {
+  readonly mirror: typeof Mirror.Type
+  readonly changes: typeof Changes.Type
+  readonly protectedPaths?: ReadonlyArray<string> | undefined
+  readonly reviewerAgents?: ReadonlyArray<string> | undefined
+  readonly maintainers?: ReadonlyArray<string> | undefined
+  readonly todoSince?: string | undefined
+  readonly dailyTokens?: number | undefined
+}): string | undefined => {
+  if (
+    policy.todoSince !== undefined &&
+    (!/^\d{4}-\d{2}-\d{2}T[^ ]*(Z|[+-]\d{2}:\d{2})$/.test(policy.todoSince) ||
+      Number.isNaN(Date.parse(policy.todoSince)))
+  ) {
+    return `todoSince ${JSON.stringify(policy.todoSince)} is not an RFC 3339 time`
+  }
+  if (policy.dailyTokens !== undefined && policy.dailyTokens <= 0) {
+    return "dailyTokens must be positive"
+  }
+  for (
+    const [field, logins] of [["reviewerAgents", policy.reviewerAgents], ["maintainers", policy.maintainers]] as const
+  ) {
+    for (const login of logins ?? []) {
+      if (login.trim() !== login || login === "") {
+        return `${field} entry ${JSON.stringify(login)} is not a login`
+      }
+    }
+  }
+  for (const entry of policy.protectedPaths ?? []) {
+    if (entry.trim() !== entry || entry === "" || entry.startsWith("/") || entry.split("/").includes("..")) {
+      return `protectedPaths entry ${JSON.stringify(entry)} is not a repository-relative path`
+    }
+  }
+  if (policy.changes === "land" && policy.mirror !== "push") {
+    return (
+      `changes "land" requires mirror "push"; with mirror ${
+        JSON.stringify(policy.mirror)
+      } GitHub writes main and a Change is sent upstream`
+    )
+  }
+  if (policy.changes === "send-upstream" && policy.mirror === "push") {
+    return `changes "send-upstream" refuses mirror "push"; GitHub merges the pull request and writes main`
+  }
+  return undefined
+}
+
 /**
- * The GitHub policy, `S.Github.Policy({...})`.
+ * The GitHub policy, `S.Github.Policy({...})`. Value and writer rules are
+ * enforced when decoding declarations and projections, including literal policies.
  *
  * @category schemas
  * @since 1.0.0
@@ -244,7 +292,7 @@ export const GithubPolicy = Schema.TaggedStruct("GithubPolicy", {
   maintainers: Schema.Array(Schema.String),
   todoSince: Schema.optional(Schema.String),
   dailyTokens: Schema.optional(Schema.Int)
-})
+}).check(Schema.makeFilter(githubPolicyIssue))
 
 /**
  * The GitHub policy.
@@ -334,44 +382,6 @@ export const Policy = (options: GithubPolicyOptions = {}): GithubPolicy => {
     ...(plain["todoSince"] === undefined ? {} : { todoSince: plain["todoSince"] }),
     ...(plain["dailyTokens"] === undefined ? {} : { dailyTokens: plain["dailyTokens"] })
   })
-  if (
-    policy.todoSince !== undefined &&
-    (!/^\d{4}-\d{2}-\d{2}T[^ ]*(Z|[+-]\d{2}:\d{2})$/.test(policy.todoSince) ||
-      Number.isNaN(Date.parse(policy.todoSince)))
-  ) {
-    throw new TypeError(`Github.Policy: todoSince ${JSON.stringify(policy.todoSince)} is not an RFC 3339 time`)
-  }
-  if (policy.dailyTokens !== undefined && policy.dailyTokens <= 0) {
-    throw new TypeError("Github.Policy: dailyTokens must be positive")
-  }
-  for (
-    const [field, logins] of [["reviewerAgents", policy.reviewerAgents], ["maintainers", policy.maintainers]] as const
-  ) {
-    for (const login of logins) {
-      if (login.trim() !== login || login === "") {
-        throw new TypeError(`Github.Policy: ${field} entry ${JSON.stringify(login)} is not a login`)
-      }
-    }
-  }
-  for (const entry of policy.protectedPaths) {
-    if (entry.trim() !== entry || entry === "" || entry.startsWith("/") || entry.split("/").includes("..")) {
-      throw new TypeError(
-        `Github.Policy: protectedPaths entry ${JSON.stringify(entry)} is not a repository-relative path`
-      )
-    }
-  }
-  if (policy.changes === "land" && policy.mirror !== "push") {
-    throw new TypeError(
-      `Github.Policy: changes "land" requires mirror "push"; with mirror ${
-        JSON.stringify(policy.mirror)
-      } GitHub writes main and a Change is sent upstream`
-    )
-  }
-  if (policy.changes === "send-upstream" && policy.mirror === "push") {
-    throw new TypeError(
-      `Github.Policy: changes "send-upstream" refuses mirror "push"; GitHub merges the pull request and writes main`
-    )
-  }
   return Home.freezeDeep(policy)
 }
 
@@ -885,7 +895,7 @@ export const GithubProjection = Schema.Struct({
   maintainers: Schema.optionalKey(Schema.Array(Schema.String)),
   todoSince: Schema.optionalKey(Schema.String),
   dailyTokens: Schema.optionalKey(Schema.Int)
-})
+}).check(Schema.makeFilter(githubPolicyIssue))
 
 /**
  * The document `.smithers/factory.json` holds: the summary, the flow catalog
