@@ -80,7 +80,8 @@ const complete = [
   "src/internal/rules/NativeFileRule.ts",
   "src/internal/rules/NativeRules.ts",
   "src/internal/rules/SkillsInstallRule.ts",
-  "src/main.js"
+  "src/main.js",
+  "src/main.ts"
 ]
 
 export default defineConfig({

@@ -1,8 +1,98 @@
 diff --git a/dist/index.js b/dist/index.js
-index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..5acb20fb3beb93708ed51529596b4ca20369977d 100644
+index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..bd777c458c5d57a55be33c950041c06bb6bcd054 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -44,7 +44,14 @@
+@@ -4,11 +4,89 @@ import { existsSync } from 'node:fs';
+ import { readdir, readFile, rm } from 'node:fs/promises';
+ import inspector from 'node:inspector/promises';
+ import { resolve } from 'node:path';
++import { SourceMap } from 'node:module';
+ import { fileURLToPath } from 'node:url';
+ import { provider } from 'std-env';
+ import { n as normalize, w as writeCoverageFile } from './commands-wCiafWY1.js';
+ import { l as loadProvider } from './load-provider-CdgAx3rL.js';
+ 
++const loaderSourceExtension = /\.(?:[cm]?js|[cm]?ts)$/;
++/**
++* Moves the ranges of a script a module loader rewrote onto the offsets of the file it read, through the source
++* map Node recorded for the script. Returns undefined when the file is not JavaScript or TypeScript, or no map
++* names it. A function whose start maps nowhere in the file (a loader's helper) is dropped, as is a block range.
++*/
++function remapLoaderScript(entry, scriptLength, cached, text) {
++	if (!cached?.data || !cached.lineLengths) return undefined;
++	const url = new URL(entry.url);
++	url.search = "";
++	url.hash = "";
++	const file = fileURLToPath(url);
++	if (!loaderSourceExtension.test(file)) return undefined;
++	let sourceMap;
++	try { sourceMap = new SourceMap(cached.data, { lineLengths: cached.lineLengths }); } catch { return undefined; }
++	const generatedStarts = [0];
++	for (const length of cached.lineLengths) generatedStarts.push(generatedStarts.at(-1) + length + 1);
++	const lineStarts = [0];
++	for (const match of text.matchAll(/\r?\n/g)) lineStarts.push(match.index + match[0].length);
++	const lineOf = (starts, offset) => {
++		let low = 0;
++		let high = starts.length - 1;
++		while (low < high) {
++			const middle = (low + high + 1) >> 1;
++			if (starts[middle] <= offset) low = middle;
++			else high = middle - 1;
++		}
++		return low;
++	};
++	let named = false;
++	const toFile = (offset) => {
++		const line = lineOf(generatedStarts, offset);
++		const column = offset - generatedStarts[line];
++		const found = sourceMap.findEntry(line, column);
++		if (found?.originalSource === undefined || lineStarts[found.originalLine] === undefined) return undefined;
++		let source;
++		try { source = fileURLToPath(new URL(found.originalSource, url)); } catch { return undefined; }
++		if (source !== file) return undefined;
++		named = true;
++		return Math.min(text.length, lineStarts[found.originalLine] + found.originalColumn);
++	};
++	// A range starts at the token its mapping names. It ends after the token holding its last character: the
++	// mapping names that token's first character, and an identifier or number continues past it.
++	const toEnd = (offset) => {
++		let end = toFile(offset - 1);
++		if (end === undefined) return undefined;
++		end++;
++		while (end < text.length && /[\w$]/.test(text[end - 1]) && /[\w$]/.test(text[end])) end++;
++		return end;
++	};
++	const toRange = (range) => {
++		const startOffset = toFile(range.startOffset);
++		const endOffset = toEnd(range.endOffset);
++		return startOffset === undefined || endOffset === undefined || endOffset <= startOffset ? undefined : { startOffset, endOffset, count: range.count };
++	};
++	const functions = [];
++	for (const fn of entry.functions) {
++		const [outer, ...blocks] = fn.ranges;
++		if (!outer) continue;
++		const whole = outer.startOffset === 0 && outer.endOffset === scriptLength ? { startOffset: 0, endOffset: text.length, count: outer.count } : toRange(outer);
++		if (!whole) continue;
++		// A loader may drop an arrow's parentheses ("(x: T) =>" runs as "x=>"), but the file's function node
++		// starts at them, and a function's count is read at its node's start.
++		for (let start = whole.startOffset; start > 0; ) {
++			while (start > 0 && /\s/.test(text[start - 1])) start--;
++			if (text[start - 1] !== "(") break;
++			whole.startOffset = --start;
++		}
++		const ranges = blocks.map(toRange).filter((range) => range && range.startOffset >= whole.startOffset && range.endOffset <= whole.endOffset);
++		ranges.sort((left, right) => left.startOffset - right.startOffset || right.endOffset - left.endOffset);
++		functions.push({ ...fn, ranges: [whole, ...ranges] });
++	}
++	// The ranges now index the file as written, not Vite's transform of it: a distinct URL keeps them out of a
++	// worker's script of the same file. The provider converts them apart and adds their hits (addLoaderCoverage).
++	return named ? { url: `${url.href}?loader-source-map`, functions } : undefined;
++}
++
+ let enabled = false;
+ const mod = {
+ 	extendedContextCoverageDir: undefined,
+@@ -44,7 +122,14 @@ const mod = {
  		// Reduce amount of data sent over rpc by doing some early result filtering
  		for (const entry of coverage.result) {
  			if (filterResult(entry)) {
@@ -18,20 +108,22 @@ index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..5acb20fb3beb93708ed51529596b4ca2
  				result.push(entry);
  			}
  		}
-@@ -56,20 +63,38 @@
+@@ -56,20 +141,46 @@ const mod = {
  				await rm(path);
  				return content;
  			}));
 +			// A child's script is remapped against the file's own text (or Vite's transform of it). A loader such as
 +			// `node --import=vibelang/register` runs other code under the same URL, and merging its offsets into a
-+			// worker's script of that URL corrupts both. Keep a child's script only when Node ran the file as written:
-+			// its top-level range spans exactly the file's length.
-+			const fileLengths = new Map();
-+			const fileLength = async (url) => {
++			// worker's script of that URL corrupts both. Keep a child's script when Node ran the file as written:
++			// its top-level range spans exactly the file's length. A JavaScript or TypeScript script a loader such
++			// as tsx rewrote is kept when Node recorded the loader's source map: its ranges move to the file's own
++			// offsets, which Vitest's type stripping preserves. Other rewritten scripts are dropped.
++			const fileTexts = new Map();
++			const fileText = async (url) => {
 +				let path;
-+				try { path = fileURLToPath(url); } catch { return -1; }
-+				if (!fileLengths.has(path)) fileLengths.set(path, await readFile(path, "utf8").then((text) => text.length, () => -1));
-+				return fileLengths.get(path);
++				try { path = fileURLToPath(url); } catch { return undefined; }
++				if (!fileTexts.has(path)) fileTexts.set(path, await readFile(path, "utf8").catch(() => undefined));
++				return fileTexts.get(path);
 +			};
 +			let loaderScripts = 0;
  			for (const content of contents) {
@@ -39,9 +131,15 @@ index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..5acb20fb3beb93708ed51529596b4ca2
  				for (const entry of json.result) {
  					if (filterResult(entry)) {
 +						const scriptLength = Math.max(0, ...entry.functions.map((fn) => fn.ranges[0]?.endOffset ?? 0));
-+						if (scriptLength !== await fileLength(entry.url)) {
-+							loaderScripts++;
-+							continue;
++						const text = await fileText(entry.url);
++						if (scriptLength !== text?.length) {
++							const remapped = text === undefined ? undefined : remapLoaderScript(entry, scriptLength, json["source-map-cache"]?.[entry.url], text);
++							if (!remapped) {
++								loaderScripts++;
++								continue;
++							}
++							entry.url = remapped.url;
++							entry.functions = remapped.functions;
 +						}
  						entry.startOffset = 0;
  						entry.isExtendedContext = true;
@@ -59,18 +157,89 @@ index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..5acb20fb3beb93708ed51529596b4ca2
  	async stopCoverage({ isolate }) {
  		if (isolate === false) {
 diff --git a/dist/provider.js b/dist/provider.js
-index 07ecd376670f3d648d0745632862debc22cba049..5d9a0514e09d3138a90daca127a2abea06692cf3 100644
+index 07ecd376670f3d648d0745632862debc22cba049..cef50e113d437e299e3aca1c68dbda8502af2a88 100644
 --- a/dist/provider.js
 +++ b/dist/provider.js
-@@ -50,6 +50,7 @@ class V8CoverageProvider extends BaseCoverageProvider {
+@@ -16,6 +16,37 @@ import 'node:fs/promises';
+ var version = "5.0.0";
+ 
+ const FILE_PROTOCOL = "file://";
++// Marks a child script that index.js remapped through a module loader's source map.
++const LOADER_SOURCE_MAP = "?loader-source-map";
++/**
++* Adds remapped child-process coverage to the coverage of the same files. A file no worker loaded through Vite keeps
++* the child's counters. Otherwise a child's hits go only to the counter Vite's conversion has at the same location;
++* adding the child's own counters would count one statement twice and report its unmatched copy as missed.
++*/
++function addLoaderCoverage(coverageMap, loaderCoverageMap) {
++	const files = new Set(coverageMap.files());
++	const key = (loc) => `${loc.start.line}:${loc.start.column}-${loc.end.line}:${loc.end.column}`;
++	for (const file of loaderCoverageMap.files()) {
++		const loader = loaderCoverageMap.fileCoverageFor(file);
++		if (!files.has(file)) {
++			coverageMap.addFileCoverage(loader);
++			continue;
++		}
++		const target = coverageMap.fileCoverageFor(file).data;
++		const source = loader.data;
++		const add = (targetMap, sourceMap, targetHits, sourceHits, locate, addHits) => {
++			const sourceIds = new Map(Object.entries(sourceMap).map(([id, item]) => [locate(item), id]));
++			for (const [id, item] of Object.entries(targetMap)) {
++				const sourceId = sourceIds.get(locate(item));
++				if (sourceId !== undefined) targetHits[id] = addHits(targetHits[id], sourceHits[sourceId]);
++			}
++		};
++		const sum = (left, right) => left + right;
++		add(target.statementMap, source.statementMap, target.s, source.s, key, sum);
++		add(target.fnMap, source.fnMap, target.f, source.f, (fn) => key(fn.loc), sum);
++		add(target.branchMap, source.branchMap, target.b, source.b, (branch) => `${branch.type}:${key(branch.loc)}:${branch.locations.map(key).join(",")}`, (left, right) => left.map((hits, index) => hits + right[index]));
++	}
++}
+ const debug = createDebug("vitest:coverage");
+ class V8CoverageProvider extends BaseCoverageProvider {
+ 	name = "v8";
+@@ -47,11 +78,17 @@ class V8CoverageProvider extends BaseCoverageProvider {
+ 		const start = debug.enabled ? performance.now() : 0;
+ 		const coverageMap = this.createCoverageMap();
+ 		const mergedScripts = new Map();
++		// Child scripts remapped through a loader's source map index the file as written. They convert against
++		// that text, not Vite's transform, so their counters differ from Vite's; addLoaderCoverage reconciles them.
++		const loaderScripts = new Map();
++		const loaderCoverageMap = this.createCoverageMap();
  		const autoAttachSubprocess = this.options.autoAttachSubprocess;
  		await this.readCoverageFiles({
  			onFileRead(coverage) {
 +				if (coverage.loaderScripts) debug("Dropped %d child-process scripts a module loader rewrote", coverage.loaderScripts);
  				for (const script of coverage.result) {
- 					const previous = mergedScripts.get(script.url);
+-					const previous = mergedScripts.get(script.url);
++					const scripts = script.url.endsWith(LOADER_SOURCE_MAP) ? loaderScripts : mergedScripts;
++					const previous = scripts.get(script.url);
  					const merged = mergeScriptCovs(previous ? [previous, script] : [script]);
-@@ -158,7 +159,7 @@ class V8CoverageProvider extends BaseCoverageProvider {
+ 					const startOffset = previous?.startOffset || script.startOffset || 0;
+ 					const isExtendedContext = previous?.isExtendedContext || script.isExtendedContext;
+@@ -59,7 +96,7 @@ class V8CoverageProvider extends BaseCoverageProvider {
+ 					if (autoAttachSubprocess && isExtendedContext) {
+ 						merged.isExtendedContext = true;
+ 					}
+-					mergedScripts.set(merged.url, merged);
++					scripts.set(merged.url, merged);
+ 				}
+ 			},
+ 			onFinished: async (project, environment) => {
+@@ -68,9 +105,12 @@ class V8CoverageProvider extends BaseCoverageProvider {
+ 				const converted = await this.convertCoverage({ result: Array.from(mergedScripts.values()) }, project, environment);
+ 				coverageMap.merge(converted);
+ 				mergedScripts.clear();
++				loaderCoverageMap.merge(await this.convertCoverage({ result: Array.from(loaderScripts.values()) }, project, environment));
++				loaderScripts.clear();
+ 			},
+ 			onDebug: debug
+ 		});
++		addLoaderCoverage(coverageMap, loaderCoverageMap);
+ 		// Include untested files when all tests were run (not a single file re-run)
+ 		// or if previous results are preserved by "cleanOnRerun: false"
+ 		if (this.options.include != null && (allTestsRun || !this.options.cleanOnRerun)) {
+@@ -158,7 +198,7 @@ class V8CoverageProvider extends BaseCoverageProvider {
  			this.ctx.logger.error(`Failed to parse ${filename}. Excluding it from coverage.\n`, error);
  			return {};
  		}
@@ -79,7 +248,7 @@ index 07ecd376670f3d648d0745632862debc22cba049..5d9a0514e09d3138a90daca127a2abea
  			code: result.code,
  			sourceMap: result.map,
  			ast,
-@@ -173,10 +174,8 @@ class V8CoverageProvider extends BaseCoverageProvider {
+@@ -173,10 +213,8 @@ class V8CoverageProvider extends BaseCoverageProvider {
  				if (type === "statement" && node.type === "VariableDeclarator" && node.id.type === "Identifier" && node.id.name.startsWith("__vite_ssr_import_")) {
  					return true;
  				}
@@ -92,7 +261,7 @@ index 07ecd376670f3d648d0745632862debc22cba049..5d9a0514e09d3138a90daca127a2abea
  				// SSR transformed exports vite@>6.3.5
  				if (type === "statement" && node.type === "ExpressionStatement" && node.expression.type === "AssignmentExpression" && node.expression.left.type === "MemberExpression" && node.expression.left.object.type === "Identifier" && node.expression.left.object.name === "__vite_ssr_exports__") {
  					return true;
-@@ -215,6 +214,39 @@ class V8CoverageProvider extends BaseCoverageProvider {
+@@ -215,6 +253,39 @@ class V8CoverageProvider extends BaseCoverageProvider {
  				}
  			}
  		});

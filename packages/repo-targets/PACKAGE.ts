@@ -27,6 +27,8 @@ const testSupport = Smithers.Filegroup({
   srcs: [
     Smithers.file("//packages/smithers/build/targets/test-support/plan.ts"),
     Smithers.file("//packages/smithers/build/build-cli/src/internal/InputPackage.ts"),
+    // `NativeCoverage.test.ts` evaluates a child's declaration module through the CLI's tsx resolution.
+    Smithers.file("//packages/smithers/build/build-cli/src/effect-resolution.js"),
     // The registry cache-input regression reads its declarations, discovery sources, fixtures, and production flow.
     registryPackage.issueSweepSources,
     registryTestInputs

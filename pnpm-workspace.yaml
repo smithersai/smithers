@@ -77,7 +77,9 @@ overrides:
   "@effect/vitest": "4.1.1"
 
 # @vitest/coverage-v8 5.0.0 remaps native-loader hits against code Vite did not run. The patch drops them, from a
-# worker or a child process, instead of merging them into Vite's script of the same file.
+# worker or a child process, instead of merging them into Vite's script of the same file. A child's JS or TS script
+# that a loader such as tsx rewrote is kept when Node recorded its source map: it is remapped to the file as written,
+# and adds its hits only to Vite's counters where a worker loaded the file (repo-targets/test/NativeCoverage.test.ts).
 # Remove when an upstream Vitest release fixes coverage of natively loaded copies.
 patchedDependencies:
   # otlp-transformer 0.222.0 sends every JS integer as intValue, even Number.MAX_VALUE, which int64 cannot hold.
