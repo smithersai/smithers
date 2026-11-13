@@ -43,9 +43,11 @@ A caller renders the stream, journals it, or ignores it:
 
 The stream's requirements tell the same story: `FlowRuntime` and `FlowInstance`
 (a run must be started inside a running flow body, because the engine port is
-per-execution), plus `Sandbox` and `Steering.Source`, which the host supplies.
-`Agent.layerDefaults` provides browser-safe defaults for the latter two, and
-nothing in the composition imports a Node built-in, so the same composition
+per-execution), plus `Sandbox`, `Steering.Source`, `Budget.Budget`,
+`QuotaPolicy.QuotaClassifier`, and `Evaluator.Evaluator`, which the host supplies.
+`Agent.layerDefaults` provides browser-safe defaults for `Sandbox` and
+`Steering.Source`. The host supplies the budget, quota policy, and evaluator.
+Nothing in the composition imports a Node built-in, so the same composition
 runs in Node and in a browser.
 
 ## One catalog, shown and enforced

@@ -65,6 +65,7 @@ interface Service {
     | Steering.Source
     | Budget.Budget
     | QuotaPolicy.QuotaClassifier
+    | Evaluator.Evaluator
   >
 }
 ```
@@ -678,8 +679,8 @@ interface AgentAction<Tag, Payload, Output> extends Action.Declared<Tag, Payload
 
 A declared model-backed action, plus the layer that implements it. The layer's
 requirements are `Agent`, `FlowRuntime`, `Host`, `Sandbox.Sandbox`,
-`SeatResolver`, `Steering.Source`, `(EffectDigest.Digest | SecureRandom.SecureRandom)`, `Budget.Budget`, and
-`QuotaPolicy.QuotaClassifier`.
+`SeatResolver`, `Steering.Source`, `(EffectDigest.Digest | SecureRandom.SecureRandom)`, `Budget.Budget`,
+`QuotaPolicy.QuotaClassifier`, and `Evaluator.Evaluator`.
 
 ### AgentAction.Host
 
@@ -729,6 +730,7 @@ Provides one host composition to every model-backed action in a run.
 const AgentFailure = Schema.Union([
   StructuredOutput.StructuredOutputFailure,
   Seat.SeatUnresolved,
+  Seat.SeatUnrouted,
   Budget.BudgetExceeded,
   Budget.Skipped,
   HarnessError,
@@ -739,7 +741,8 @@ const AgentFailure = Schema.Union([
 Everything a model-backed action can fail with. `StructuredOutputFailure` is
 the one an author handles: the model answered and the answer did not fit the
 declared schema after its correction budget. `SeatUnresolved` is the host
-having no model for the declared seat. `BudgetExceeded` is the run having spent
+having no model for the declared seat. `SeatUnrouted` is Jev not picking one
+for a step that declared `auto`. `BudgetExceeded` is the run having spent
 what it was approved for, and `Budget.Skipped` is every later model call in a
 run whose budget declared `skip-remaining`. `HarnessError` and `PluginError`
 are the composition failing underneath the step.
@@ -930,7 +933,8 @@ of 128,000 for models the catalog has not met. Never zero.
 | `claude-fable-5*`, `claude-mythos-5*` (numeric version suffixes)             | 1,000,000 |
 | `claude-opus-4-6`, `claude-opus-4-7`, `claude-opus-4-8`, `claude-sonnet-4-6` | 1,000,000 |
 | Other `claude` ids, including Haiku and Bedrock/Vertex-prefixed ids          | 200,000   |
-| `gpt-5`                                                                      | 400,000   |
+| `gpt-6.1-sol`                                                                | 1,050,000 |
+| Other `gpt-5*`, `gpt-6*` ids                                                 | 400,000   |
 | `gpt-4.1`                                                                    | 1,000,000 |
 | `gpt-4o`                                                                     | 128,000   |
 | `o1`, `o3`, `o4`                                                             | 200,000   |
@@ -1628,7 +1632,7 @@ class ConfigurationError extends Schema.TaggedError<ConfigurationError>()(
 class BudgetExceeded extends Schema.TaggedError<BudgetExceeded>()(
   "flows/agent/BudgetExceeded",
   {
-    scope: Schema.Literals(["tokens", "latency"]),
+    scope: Schema.Literals(["tokens", "usd", "latency", "daily"]),
     onExceeded: OnExceeded,
     used: Schema.Number,
     reserved: Schema.optional(Schema.Number),
@@ -3214,7 +3218,7 @@ commands against `checksRun` and `lastCheck`, rejects commands absent from the
 record, and refuses question sets other than `complete`, `overclaims`, and
 `invented`. Its command syntax is deliberately limited; it is not a general
 language judge or a production default. A whole host must dispatch its other
-classifiers too; see [the whole-host fixture](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts).
+classifiers too; see [the whole-host fixture](https://github.com/smithersai/smithers/blob/main/.smithers/flows/test/fixtures/scripted-judge.ts).
 
 `layerAll` answers every classifier the agent asks: completion, relevance,
 compaction marks, seat routing, the supervisor and `memory/mine`, which accepts

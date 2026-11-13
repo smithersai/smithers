@@ -10,7 +10,8 @@ import { registerRootCleanup } from "../../../../../repo-targets/test-utils/vite
 
 const implementations = new Set([
   new URL("../../../examples/12-agent-live-smoke.ts", import.meta.url).pathname,
-  new URL("../../../examples/13-agent-live-smoke-local.ts", import.meta.url).pathname
+  new URL("../../../examples/13-agent-live-smoke-local.ts", import.meta.url).pathname,
+  new URL("../../../examples/14-agent-live-smoke-gemini.ts", import.meta.url).pathname
 ])
 const implementationImports: string[] = []
 
@@ -35,7 +36,8 @@ try {
   // or Effect test options. Import the declarations without running their bodies.
   const { testModules, unhandledErrors } = await runner.collect([
     "test/examples/12-agent-live-smoke.test.ts",
-    "test/examples/13-agent-live-smoke-local.test.ts"
+    "test/examples/13-agent-live-smoke-local.test.ts",
+    "test/examples/14-agent-live-smoke-gemini.test.ts"
   ], { staticParse: false })
   assert.deepEqual(implementationImports, [], "collection must defer live implementations until test execution")
   if (unhandledErrors.length > 0) throw new AggregateError(unhandledErrors)

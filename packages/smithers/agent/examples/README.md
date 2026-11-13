@@ -13,12 +13,16 @@ SMITHERS_LIVE_EXAMPLES=1 pnpm exec vitest run test/examples/12-agent-live-smoke.
 
 # Requires Ollama at localhost:11434 and ollama pull qwen2.5:7b.
 SMITHERS_LIVE_EXAMPLES=1 pnpm exec vitest run test/examples/13-agent-live-smoke-local.test.ts
+
+# Also requires GEMINI_API_KEY in the environment.
+SMITHERS_LIVE_EXAMPLES=1 pnpm exec vitest run test/examples/14-agent-live-smoke-gemini.test.ts
 ```
 
-Both tests allow 300 seconds for model work. Without opt-in they report skipped
-with their requirements in the test titles. The OpenAI test also skips without
-a key; the local test reports a skip reason if its daemon or model is missing.
-Both declarations defer loading their native agent implementations until the
+All three tests allow 300 seconds for model work. Without opt-in they report
+skipped with their requirements in the test titles. The OpenAI and Gemini
+tests also skip without their provider key; the local test reports a skip
+reason if its daemon or model is missing. All three declarations defer loading
+their native agent implementations until the
 test bodies execute. The selection fixture verifies the real opt-in gates and
 rejects eager implementation imports while collecting the declarations.
 

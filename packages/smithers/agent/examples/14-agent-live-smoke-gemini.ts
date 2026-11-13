@@ -142,7 +142,8 @@ export const liveLayer = (baseUrl: string, apiKey: string) =>
   )
 
 /**
- * Runs the workflow against a live Gemini seat.
+ * Runs the workflow against a live Gemini seat. Refuses an empty API key
+ * before constructing the provider services.
  *
  * @category constructors
  * @since 0.1.0
@@ -151,14 +152,18 @@ export const main = (
   question: string,
   baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai",
   apiKey = process.env.GEMINI_API_KEY ?? ""
-) =>
-  LiveSmokeGeminiWorkflow.execute(
+) => {
+  if (apiKey === "") {
+    throw new Error("Set GEMINI_API_KEY to run this live smoke test")
+  }
+  return LiveSmokeGeminiWorkflow.execute(
     { question },
     { executionId: `live-smoke-gemini-${Date.now()}` }
   ).pipe(
     Effect.orDie,
     Effect.provide(liveLayer(baseUrl, apiKey))
   )
+}
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   Effect.runPromise(main("What is the capital of France? Answer in one word.")).then(

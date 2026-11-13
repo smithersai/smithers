@@ -48,7 +48,7 @@ export const executorLayer = RequestExecutor.layer.pipe(
 /**
  * A real `SeatResolver`: any `openai:<modelId>` seat resolves to a live
  * OpenAI Chat Completions route, credentialed from `OPENAI_API_KEY`. Mirrors
- * `packages/smithers/src/NodeControl.ts`'s `seatOf`, narrowed to one provider.
+ * `packages/smithers/src/internal/NativeEquipment.ts`'s `seatOf`, narrowed to one provider.
  *
  * @category layers
  * @since 0.1.0

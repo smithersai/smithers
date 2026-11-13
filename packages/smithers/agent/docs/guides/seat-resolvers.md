@@ -54,7 +54,8 @@ a conservative floor of 128,000 for models it has not met:
 | `claude-fable-5*`, `claude-mythos-5*` (numeric version suffixes)             | 1,000,000 |
 | `claude-opus-4-6`, `claude-opus-4-7`, `claude-opus-4-8`, `claude-sonnet-4-6` | 1,000,000 |
 | Other `claude` ids, including Haiku and Bedrock/Vertex-prefixed ids          | 200,000   |
-| `gpt-5`                                                                      | 400,000   |
+| `gpt-6.1-sol`                                                                | 1,050,000 |
+| Other `gpt-5*`, `gpt-6*` ids                                                 | 400,000   |
 | `gpt-4.1`                                                                    | 1,000,000 |
 | `gpt-4o`                                                                     | 128,000   |
 | `o1`, `o3`, `o4`                                                             | 200,000   |

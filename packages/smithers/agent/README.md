@@ -128,7 +128,7 @@ through their seat resolver; no provider API key or gateway key is required.
 An unavailable seat or invalid judgment fails as `completion_unjudged`.
 Offline tests deliberately bind `Evaluator.layerScripted` with an
 evidence-based judge. Scripts must dispatch by question id and read the
-supplied evidence; see the [whole-host fixture](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts).
+supplied evidence; see the [whole-host fixture](https://github.com/smithersai/smithers/blob/main/.smithers/flows/test/fixtures/scripted-judge.ts).
 The completion-only `ScriptedJudge.layer` fixture rejects named commands missing
 from the record and refuses questions it does not understand. Neither it nor
 `Evaluator.layerUnavailable()` is a production default.

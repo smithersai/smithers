@@ -104,7 +104,7 @@ Dispatch by question id and compute answers from the supplied evidence. One
 composition shares one evaluator across its classifiers, so a completion-only
 answer map cannot answer an intake screen or citation check. Unknown question
 sets must refuse, and a constant yes is a disabled brake. See the repository's
-[whole-host scripted judge](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts).
+[whole-host scripted judge](https://github.com/smithersai/smithers/blob/main/.smithers/flows/test/fixtures/scripted-judge.ts).
 `@smthrs/agent/ScriptedJudge.layer` is a deliberately limited completion-only
 fixture: it checks named commands against the record and refuses other questions.
 It is not a production default or a general language judge.

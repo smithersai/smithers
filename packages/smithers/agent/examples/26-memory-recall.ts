@@ -1,9 +1,9 @@
 /**
  * Store facts in one run and recall them in a later execution.
  *
- * Separate durable runs share the SQL memory store. `WithMemory.withMemory`
- * applies namespace, recall budget, and retention policy to a flow tree. The
- * handler source must use the annotated flow so those policies reach the store.
+ * Separate durable runs share the SQL memory store. `StandardFlows.memory`
+ * binds the memory flows under one namespace, recall budget, and retention
+ * policy, with no recall judge required.
  *
  * The scenarios also exercise `recall: "none"` and `retain: "never"`. Recall
  * uses SQLite FTS5, enabled for the relevant namespace kind. A scripted model
@@ -18,15 +18,14 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Journal, type JournalEvent } from "@smthrs/journal"
-import * as MemoryFlows from "@smthrs/memory/Flows"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as RecallFts from "@smthrs/memory/RecallFts"
 import * as WithMemory from "@smthrs/memory/WithMemory"
-import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -51,32 +50,11 @@ export const basePolicy: WithMemory.Policy = {
   maxTokens: 2048
 }
 
-/**
- * The two memory flows, bound under one policy, as a source a cell can call.
- *
- * This is the shape `Flows.handlersFor` documents and the reason it exists: the
- * declaration a host binds is the policy-carrying COPY, and the handler is
- * built from that same copy. `StandardFlows.memory` binds a different
- * `recall`: the bare declaration, filtered by Jev (`JudgedRecallOutput`), so it
- * needs a judge context and applies no policy.
- */
+/** The two memory flows, bound under one policy, as a source a cell can call. */
 export const memorySource = (
   services: Context.Context<MemoryStore.MemoryStore | Recall.Recall>,
   policy: WithMemory.Policy
-): FlowBinding.Source => {
-  const remember = WithMemory.withMemory(MemoryFlows.remember, policy)
-  const recall = WithMemory.withMemory(MemoryFlows.recall, policy)
-  return FlowBinding.source("memory", [
-    FlowBinding.provide(
-      FlowBinding.make({ flow: remember, handler: MemoryFlows.handlersFor(remember).remember }),
-      services
-    ),
-    FlowBinding.provide(
-      FlowBinding.make({ flow: recall, handler: MemoryFlows.handlersFor(recall).recall }),
-      services
-    )
-  ])
-}
+): FlowBinding.Source => StandardFlows.memory(services, { policy })
 
 /** What one notebook step must answer with. Nothing downstream parses prose. */
 export const Reading = Schema.Struct({ keys: Schema.Array(Schema.String) })

@@ -24,11 +24,13 @@ step with `SeatUnresolved` in its `AgentFailure` union. See
 ## LaunchFailed: flow declares no model seat
 
 **What happened.** A control-plane launch named a prompt flow whose frontmatter
-has no `model:` line. No agent host can ever run one, so the launch is refused
-rather than left pending. The refusal message says to add the line and run
+has no `model:` line, and the host binds no `SeatRouter.Catalog` to route it as
+`auto`. The launch is refused rather than left pending. The refusal message
+says to add the line and run
 [`smthrs doctor`](/cli/doctor) to see which provider keys the project has.
 
-**What to change.** Add `model: PROVIDER:MODEL_ID` to the flow's frontmatter.
+**What to change.** Add `model: PROVIDER:MODEL_ID` to the flow's frontmatter,
+or bind a `SeatRouter.Catalog` with at least one available seat for automatic routing.
 A flow with a module body is a different case: it stays `pending`, because only
 prompt flows run on the agent.
 
@@ -78,12 +80,12 @@ bound, before any model work. The message identifies the configuration path.
 **What to change.** Use non-negative safe integers for token ceilings, finite
 non-negative milliseconds for latency, and positive safe integers for
 `maxRuns` and `recoveryEntries`. Omit a ceiling for no limit; do not use infinity
-or `NaN`. `onExceeded` must be `fail`, `warn`, or `skip-remaining`.
+or `NaN`. `onExceeded` must be `fail`, `warn`, `skip-remaining`, or `park`.
 
 ## BudgetExceeded
 
 **What happened.** The run has spent `used` of its `max` approved `scope`
-(`tokens` or `latency`), and the next model call is projected at `next`, the
+(`tokens`, `usd`, `latency`, or `daily`), and the next model call is projected at `next`, the
 largest call the run has made. `reserved` is capacity held by other in-flight
 calls. Until a positive cost is known, one call reserves the whole token
 allowance; zero refuses new calls unless `warn` permits them. A paid step's
@@ -163,9 +165,7 @@ left waiting on an operator who is not there.
 built without a `calls` runner, so there is nothing to execute the flow.
 
 **What to change.** Build the port through `Agent.run`, which always wires a
-runner, or pass `calls` to `FlowEngineLike.make` directly. The sibling refusal,
-"has a module body; only prompt flows run on the agent", means `AgentSession`
-was asked to execute a module-backed flow.
+runner, or pass `calls` to `FlowEngineLike.make` directly.
 
 ## HarnessError: the agent action ended without a completed answer
 
@@ -204,9 +204,10 @@ handed its lineage to a new execution id).
 `failed`, the message carries the child's rendered cause, bounded to 2,048
 characters. Two concurrent children of one flow need two labels: the label is
 the child's identity within the parent. For `not_found` on `await` or `send`,
-check the id: a run reaches only ids under its own `${executionId}/child/`
-prefix, which is what the refusal message names, so an id copied from another
-run is refused whether or not that run exists.
+check the id: a run reaches only its own length-delimited
+`child-v2:<parent length>:<parent><label length>:<label>` ids. The refusal
+message names `childExecutionId(parent, "<label>")`; an id copied from another
+run is refused whether or not that run exists. Treat returned child ids as opaque.
 
 ## checkpoint_unsupported and checkpoint_unavailable
 
