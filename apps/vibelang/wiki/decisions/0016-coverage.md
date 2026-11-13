@@ -3037,3 +3037,12 @@ registered commands (`src/actions/catalog.vibe`). The pattern now takes `[a-z][a
 | `historyStatus`, `historyResponse`, `resolvedRole`'s and `signedRole`'s live arms | Live mode only: `historyStatus` runs in the Worker (`wire.vibe`), `historyResponse` in `LiveMythical`, which the browser gate has no host for yet. A live history host beside `test/workerd/live-issues.vibe` closes them in the browser; the unit and workerd gates measure them meanwhile. |
 | `initialEpic`'s `"new"` arm | A history with no epics. The mock always bootstraps the seed, and the page shows Plan only after the outline loads. Unit: `test/flowMachineEdges.coverage.test.vibe`. |
 | `validPlanField`'s operation checks | No view sends `UpdatedForm` with field `how` (`historyView.vibe` sends title, epic, newEpic and task); the guard refuses a forged message the fuzz lane found (0015). Dead in the browser: removing `how` from `UpdatedForm`'s field literals would delete it, a change to vl-fuzzpkg's fix that this lane proposes on the board rather than makes. |
+
+## No execution is no coverage evidence
+
+The strict browser gate fails a green selection with zero executed checks, including an all-skipped opt-in
+selection and an empty selection. This check runs before any early return or source-map read. The ordinary
+`pnpm e2e` reporting mode still permits skipped selections. `test/browserCoverageEvidence.test.vibe` exercises
+`onTestEnd` and `onEnd` together in an isolated process with the actual strict-mode environment flag.
+
+Tracked and fixed in [#5340](https://github.com/smithersai/smithers/issues/5340).

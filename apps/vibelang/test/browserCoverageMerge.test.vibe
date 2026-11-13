@@ -4,6 +4,8 @@ import { it, expect } from "@effect/vitest"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
 import { build } from "vite"
+import FuzzCoverage from "../fuzz/browser-reporter.ts"
+import { metrics, type FileCoverageJSON } from "./support/coverageUnion.ts"
 import { measure, sourcesIn } from "../e2e/coverage-reporter.ts"
 import { node, run } from "./support/processes.vibe"
 
@@ -20,8 +22,8 @@ interface Coverage {
 const hitsAt = (hits: Coverage["s"], ranges: Coverage["statementMap"], line: number) =>
   Object.entries(ranges).filter(([, range]) => range.start.line === line).map(([id]) => Math.min(hits[id] ?? 0, 1))
 
-/** One real build and V8 run, shared by both tests: a Vite build that bundles effect takes about a minute. */
-let observed: Promise<{ readonly status: number; readonly stderr: string; readonly stdout: string; readonly native: boolean; readonly before: Summary; readonly after: Summary; readonly file: Coverage }> | undefined
+/** One real build and V8 run, shared by the tests: a Vite build that bundles effect takes about a minute. */
+let observed: Promise<{ readonly status: number; readonly stderr: string; readonly stdout: string; readonly native: boolean; readonly before: Summary; readonly after: Summary; readonly file: Coverage; readonly fuzz: FileCoverageJSON }> | undefined
 const observe = () => observed ??= runPromise(scoped(effect {
   provide NodeServices.layer, ExperimentalNodeServices.layer {
     const fs = try FileSystem.FileSystem
@@ -56,10 +58,18 @@ const observe = () => observed ??= runPromise(scoped(effect {
     const sources = try tryPromise(() => sourcesIn([path.relative(app, path.dirname(fixture))]))
     const seeded = try tryPromise(() => measure([], sources))
     const merged = try tryPromise(() => measure([{ ...native!, source, sourceMap }], sources))
+    const attachment = path.join(root, "chromium.json")
+    try fs.writeFileString(attachment, JSON.stringify([{ ...native!, source, sourceMap }]))
+    const directory = path.join(root, "report")
+    const reporter = new FuzzCoverage({ sources, directory, build: [{ url, source, sourceMap }] })
+    try Effect.try(() => reporter.onTestEnd(undefined, { status: "passed", attachments: [{ name: "chromium-coverage", path: attachment }] } as never))
+    try tryPromise(() => reporter.onEnd({ status: "passed" } as never))
+    const fuzzText = try fs.readFileString(path.join(directory, "coverage-final.json"))
+    const fuzz = (try Effect.try(() => JSON.parse(fuzzText) as Record<string, FileCoverageJSON>))[fixture]!
     const summary = (map: typeof merged) => map.fileCoverageFor(fixture).toSummary().toJSON() as Summary
     const before = summary(seeded), after = summary(merged)
     const file = try Effect.try(() => merged.fileCoverageFor(fixture).toJSON() as Coverage)
-    return { status: executed.status, stderr: executed.stderr, stdout: executed.stdout, native: native !== undefined, before, after, file }
+    return { status: executed.status, stderr: executed.stderr, stdout: executed.stdout, native: native !== undefined, before, after, file, fuzz }
   }
 }))
 
@@ -88,4 +98,14 @@ it.live("the browser gate counts a bundled source once, on its compiler structur
 it.live.fails("the merge credits no statement the bundle never executed", () => effect {
   const { file } = try tryPromise(observe)
   try Effect.try(() => expect(hitsAt(file.s, file.statementMap, 4)).toEqual([0]))
+}, 300_000)
+
+it.live("the fuzz reporter retains a tree-shaken export in a partially loaded source", () => effect {
+  const { fuzz } = try tryPromise(observe)
+  try Effect.try(() => {
+    expect(Object.values(fuzz.fnMap).map(fn => fn.name)).toContain("unused")
+    expect(Object.entries(fuzz.fnMap).filter(([, fn]) => fn.name === "unused").map(([id]) => fuzz.f[id])).toEqual([0])
+    expect(metrics(fuzz).covered.functions).toBeGreaterThan(0)
+    expect(metrics(fuzz).covered.functions).toBeLessThan(metrics(fuzz).total.functions)
+  })
 }, 300_000)

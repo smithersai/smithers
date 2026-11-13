@@ -154,14 +154,17 @@ export function builtStructure(compiler: FileCoverageJSON, bundle: FileCoverageJ
   return json
 }
 
-/** The merged report, keyed by absolute source path: the base's structure, credited by each evidence in order. */
-export function mergeByPosition(base: Readonly<Record<string, FileCoverageJSON>>, evidences: ReadonlyArray<Readonly<Record<string, FileCoverageJSON>>>): Record<string, FileCoverageJSON> {
+/**
+ * The merged report, keyed by absolute source path, credited by each evidence in order.
+ * A whole-source gate keeps even an unexecuted base structure: partial evidence cannot shrink its denominator.
+ */
+export function mergeByPosition(base: Readonly<Record<string, FileCoverageJSON>>, evidences: ReadonlyArray<Readonly<Record<string, FileCoverageJSON>>>, keepBaseStructure = false): Record<string, FileCoverageJSON> {
   const combined: Record<string, FileCoverageJSON> = { ...base }
   for (const evidence of evidences) {
     for (const [file, json] of Object.entries(evidence)) {
       const existing = combined[file]
-      // No base execution: the other runtime's structure is the gate for all four metrics.
-      combined[file] = existing === undefined || metrics(existing).covered.statements === 0 ? json : unionEvidence(existing, json)
+      // Outside a whole-source gate, no base execution makes the other runtime's structure the gate.
+      combined[file] = existing === undefined || (!keepBaseStructure && metrics(existing).covered.statements === 0) ? json : unionEvidence(existing, json)
     }
   }
   return combined

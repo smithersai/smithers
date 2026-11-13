@@ -1,0 +1,60 @@
+// @vitest-environment node
+import { expect, it } from "@effect/vitest"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { isHistory, prepare } from "../src/actions/execution.vibe"
+import * as HistoryActions from "../worker/HistoryActions.vibe"
+import { history, request, world } from "./support/actionObjects.vibe"
+import { requireSettledReceipt } from "../fuzz/history-receipt.vibe"
+
+it.effect("the history oracle requires a complete receipt exactly when an alarm settled", () => effect {
+  for (const admitted of [false, true]) for (const settled of [false, true]) {
+    for (const receipt of [Option.none(), Option.some({ _tag: "Complete" }), Option.some({ _tag: "Suspended" })]) {
+      const answer = try Effect.result(requireSettledReceipt(settled, receipt, admitted))
+      try Effect.try(() => expect(answer._tag).toBe(settled && (admitted ? (!Option.isSome(receipt) || receipt.value._tag !== "Complete") : Option.isSome(receipt)) ? "Failure" : "Success"))
+    }
+  }
+})
+
+it.live("removing the receipt after a real settled history alarm fails the fuzz oracle", () => effect {
+  const w = try world()
+  const object = try w.object("history-receipt")
+  const host = HistoryActions.make("history-receipt", object.storage)
+  const body = request("history-receipt", "vibelang/history/show", { what: "outline" }, w.person.id)
+  const prepared = try prepare(body.flow, body.input, body.id)
+  try Effect.try(() => expect(isHistory(prepared)).toBe(true))
+  if (!isHistory(prepared)) return
+  try host.start(body, prepared)
+  provide history {
+    const alarm = try host.alarm(try Mythical, { principal: { role: "maintainer", name: "Ada", agent: false } })
+    const receipt = try host.receipt(body, prepared)
+    try Effect.try(() => {
+      expect(alarm._tag).toBe("Settled")
+      expect(receipt).toMatchObject({ _tag: "Some", value: { _tag: "Complete" } })
+    })
+    try requireSettledReceipt(true, receipt)
+    // Negative control mutates only the observed receipt, after the real host settled.
+    const missing = Option.filter(receipt, () => false)
+    const answer = try Effect.result(requireSettledReceipt(true, missing))
+    try Effect.try(() => expect(answer).toMatchObject({ _tag: "Failure", failure: { _tag: "Finding", report: "a settled run has no complete receipt" } }))
+  }
+}, 60_000)
+
+it.live("a history intent refused before admission settles without an execution receipt", () => effect {
+  const w = try world()
+  const object = try w.object("history-refused")
+  const host = HistoryActions.make("history-refused", object.storage, () => succeed(false))
+  const body = request("history-refused", "vibelang/history/show", { what: "outline" }, w.person.id)
+  const prepared = try prepare(body.flow, body.input, body.id)
+  try Effect.try(() => expect(isHistory(prepared)).toBe(true))
+  if (!isHistory(prepared)) return
+  try host.start(body, prepared)
+  provide history {
+    const alarm = try host.alarm(try Mythical, { principal: { role: "maintainer", name: "Ada", agent: false } })
+    const receipt = try host.receipt(body, prepared)
+    try Effect.try(() => {
+      expect(alarm._tag).toBe("Settled")
+      expect(Option.isNone(receipt)).toBe(true)
+    })
+    try requireSettledReceipt(true, receipt, false)
+  }
+}, 60_000)

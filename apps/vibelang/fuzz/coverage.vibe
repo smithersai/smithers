@@ -36,8 +36,8 @@ export effect function main() {
   // Each fuzz workerd isolate's Istanbul counters, remapped to the .vibe sources (test/support/workerd.vibe).
   const workerd = try tryPromise(() => workerdEvidence(path.join(root, "coverage/fuzz-unit/workerd-raw"), root.replace(/\/$/, "")))
   inputs.push(try Effect.try(() => workerd.toJSON() as unknown as Record<string, FileCoverageJSON>))
-  // Node's statement structure is the gate; workerd's counters and Chromium credit it only at identical source starts (0015).
-  const coverage = try Effect.try(() => createCoverageMap(mergeByPosition(inputs[0]!, inputs.slice(1))))
+  // Node's whole-source structure is the gate, even for files Node never executed; workerd's counters and Chromium credit it only at identical source starts (0015).
+  const coverage = try Effect.try(() => createCoverageMap(mergeByPosition(inputs[0]!, inputs.slice(1), true)))
   // The unit gate's denominator: every source under src/, worker/, scripts/ and infra/, none excluded (VL-14).
   try Effect.try(() => coverage.filter((file) => file.startsWith(root) && /\/(?:src|worker|scripts|infra)\/.*\.vibe$/.test(file)))
   const directory = path.join(root, "coverage/fuzz")

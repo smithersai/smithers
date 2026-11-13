@@ -203,7 +203,14 @@ export default class SourceCoverage implements Reporter {
   async onEnd(result: FullResult) {
     console.info(`Chromium checks: ${this.counts.passed} passed; ${this.counts.expectedFailures} expected failures; ${this.counts.skipped} skipped; ${this.counts.unexpected} unexpected.`)
     if (this.unmeasured.length > 0) console.error(`Chromium checks without coverage evidence (import test from "./coverage"): ${this.unmeasured.length}\n${this.unmeasured.join("\n")}`)
-    if (this.executed === 0) return
+    const strict = process.env.E2E_COVERAGE_GATE === "1"
+    if (this.executed === 0) {
+      if (strict && gateFailed(0, 0, 0, result.status)) {
+        console.error("Chromium coverage gate failed: no checks executed.")
+        return { status: "failed" as const }
+      }
+      return
+    }
     const files = this.files
     // One attachment at a time; each script's source and map are read once (coverageStore.ts).
     // A deployment runs its own build; only a local run measures against the chunks it served (decision 0016).
@@ -223,7 +230,6 @@ export default class SourceCoverage implements Reporter {
       return metrics.filter((metric) => summary[metric].pct < 100).map((metric) => `${file.slice(root.length)}: ${metric} ${summary[metric].pct}% < 100%`)
     })
     // `pnpm e2e` always measures and reports; only `pnpm e2e:coverage` (decision 0016) fails below 100%.
-    const strict = process.env.E2E_COVERAGE_GATE === "1"
     console.info(`Chromium coverage: ${coverage.files().length} files, ${gaps.length} metrics below 100%; report in coverage/browser.`)
     if (!strict) return
     if (gaps.length > 0) console.error(`Chromium coverage gate failed:\n${gaps.join("\n")}`)

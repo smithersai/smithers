@@ -1,0 +1,12 @@
+// The history-host target's durable-receipt oracle, shared with its negative controls.
+import { Finding } from "./run.vibe"
+
+/** A settled admitted execution needs a complete receipt; a refused intent has no execution or receipt. */
+export effect function requireSettledReceipt(settled: boolean, receipt: Option.Option<{ readonly _tag: string }>, admitted = true) {
+  if (!settled) return
+  if (!admitted) {
+    if (Option.isSome(receipt)) throw new Finding({ report: "a refused intent has an execution receipt" })
+    return
+  }
+  if (Option.isNone(receipt) || receipt.value._tag !== "Complete") throw new Finding({ report: "a settled run has no complete receipt" })
+}

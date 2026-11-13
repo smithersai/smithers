@@ -3,7 +3,7 @@
 import { it, expect } from "@effect/vitest"
 // @ts-expect-error The pinned Istanbul tool ships no declarations.
 import coverageApi from "istanbul-lib-coverage"
-import { mergeByPosition } from "./support/coverageUnion.ts"
+import { mergeByPosition, metrics, type FileCoverageJSON } from "./support/coverageUnion.ts"
 
 const file = "/app/src/web/fixture.vibe"
 const range = (line: number, start: number, endLine: number, end: number) => ({ start: { line, column: start }, end: { line: endLine, column: end } })
@@ -76,4 +76,24 @@ it("Chromium credits a statement, a function body and an arm at the same start w
 it("Chromium credits nothing that starts elsewhere", () => {
   const shifted = { [file]: { ...composed[file], statementMap: { "0": range(16, 3, 16, 40), "1": range(16, 25, 16, 38) }, fnMap: { "0": { name: "(anonymous_1)", decl: range(15, 64, 15, 70), loc: range(15, 89, 19, 3) } }, branchMap: { "0": { loc: range(16, 2, 16, 40), type: "if", locations: [range(16, 3, 16, 40), implicit] } } } }
   expect(covered(unexecutedArrow, shifted)).toEqual({ s: { "0": 1, "1": 0 }, b: { "0": [0, 0] }, f: { "0": 0 } })
+})
+
+it("the whole-source fuzz merge retains unexecuted exports when later evidence is partial or empty", () => {
+  const used = range(1, 0, 1, 20), unused = range(4, 0, 4, 20)
+  const compiler: FileCoverageJSON = {
+    ...empty, statementMap: { "0": used, "1": unused }, s: { "0": 0, "1": 0 },
+    fnMap: { "0": { name: "used", decl: used }, "1": { name: "unused", decl: unused } }, f: { "0": 0, "1": 0 },
+  }
+  for (const hits of [0, 1]) {
+    const partial: FileCoverageJSON = {
+      ...empty, statementMap: { "0": used }, s: { "0": hits },
+      fnMap: { "0": { name: "used", decl: used } }, f: { "0": hits },
+    }
+    const combined = mergeByPosition({ [file]: compiler }, [{ [file]: partial }, { [file]: empty }], true)[file]!
+    expect(metrics(combined)).toEqual({
+      total: { lines: 2, statements: 2, functions: 2, branches: 0 },
+      covered: { lines: hits, statements: hits, functions: hits, branches: 0 },
+    })
+    expect(combined.f["1"]).toBe(0)
+  }
 })

@@ -2,6 +2,9 @@
 // A browser check that runs without the coverage fixture executes app code the Chromium report never sees, so the
 // report would call that code uncovered. The reporter names each such check, and the strict gate fails on it.
 import { describe, expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { node, run } from "./support/processes.vibe"
 import SourceCoverage, { gateFailed } from "../e2e/coverage-reporter.ts"
 
 const app = new URL("../", import.meta.url).pathname
@@ -33,3 +36,28 @@ describe("Chromium coverage evidence", () => {
     expect(gateFailed(0, 0, 0, "failed")).toBe(false)
   })
 })
+
+// The real reporter lifecycle in an isolated process: its strict flag is read at the program boundary.
+it.live("an all-skipped selection fails only the strict browser coverage gate", () => effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const reporter = new URL("../e2e/coverage-reporter.ts", import.meta.url).href
+    for (const strict of ["0", "1"]) for (const selected of [2, 0]) {
+      const script = [
+        "import SourceCoverage from " + JSON.stringify(reporter),
+        "const reporter = new SourceCoverage()",
+        "for (let index = 0; index < " + selected + "; index++) {",
+        'reporter.onTestEnd({ title: "opt-in", expectedStatus: "passed", location: { file: "live.spec.ts", line: 1 } }, { status: "skipped", attachments: [] })',
+        "}",
+        'const outcome = await reporter.onEnd({ status: "passed" })',
+        'console.log("outcome=" + (outcome?.status ?? "unchanged"))',
+        'process.exitCode = outcome?.status === "failed" ? 1 : 0',
+      ].join("\n")
+      const result = try run(try node(), ["--input-type=module", "-e", script], { E2E_COVERAGE_GATE: strict })
+      try Effect.try(() => {
+        expect(result.status, result.stderr).toBe(strict === "1" ? 1 : 0)
+        expect(result.stdout).toContain(String(selected) + " skipped")
+        expect(result.stdout).toContain(strict === "1" ? "outcome=failed" : "outcome=unchanged")
+      })
+    }
+  }
+}, 60_000)

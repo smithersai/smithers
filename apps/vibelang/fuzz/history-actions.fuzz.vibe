@@ -8,6 +8,8 @@ import * as HistoryActions from "../worker/HistoryActions.vibe"
 import { world, request, history } from "../test/support/actionObjects.vibe"
 import { run, Finding, Int, REPLAY_FLOOR } from "./run.vibe"
 
+import { requireSettledReceipt } from "./history-receipt.vibe"
+
 const FLOWS = ["vibelang/history/show", "vibelang/history/Plan", "vibelang/history/Start", "vibelang/history/Note", "vibelang/sandbox/start", "vibelang/sandbox/stop", "vibelang/sandbox/command", "vibelang/EndTour", "vibelang/Post", "vibelang/Tour"] as const
 const inputOf = (flow: string, variant: number): Schema.Json => {
   switch (flow) {
@@ -63,7 +65,9 @@ const drive = (input: typeof Input.Type) => effect {
       // A receipt is asked for once an alarm settled the run, or once a cancellation was recorded.
       if (!settled && !input.cancel) return true
       const receipt = try host.receipt(body, prepared)
-      if (settled && Option.isSome(receipt) && receipt.value._tag !== "Complete") throw new Finding({ report: "a settled run has no complete receipt" })
+      // The SDK also settles an intent refused before admission, for which no execution row or receipt exists.
+      try requireSettledReceipt(settled, receipt, input.admit).pipe(Effect.mapError((error) =>
+        new Finding({ report: input.flow + " (" + (input.admit ? "admitted" : "refused") + "): " + error.report })))
       return true
     }
   }

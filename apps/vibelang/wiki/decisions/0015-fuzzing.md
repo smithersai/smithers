@@ -1710,3 +1710,22 @@ drawn ids from empty to 121 units and past; `decisions/wiki-links` holds `sectio
 `/^[a-z0-9-]+$/`, and `foldedPrefix` (wikiLinkDecision.vibe) to its doc: no empty or `.` segment, a `..` only after
 another, and exactly as many `..` and named segments as the parts leave. Mutants caught: a 121-unit limit; an empty
 section accepted; a `..` climbing out of another `..`.
+
+## Complete browser sources and settled history receipts
+
+The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the
+compiler, including tree-shaken exports in a file whose other exports the bundle runs. The build's structure and
+Chromium hits join by source position. The final fuzz merge keeps the Node report's whole-source denominator even
+when Node recorded no hits, so a partial browser or workerd report cannot remove uncovered code. Other suites keep
+their existing merge policy.
+
+The history-host oracle requires a present, `Complete` receipt after an admitted execution's alarm reports
+`Settled`. A missing receipt is a finding as surely as a suspended one. The SDK also settles an intent refused
+before admission; its cancellation tombstone has no execution row or receipt (`ExecutionObject.drive` in
+`@smthrs/platform-cloudflare`). The oracle checks that separate case has no receipt, and findings name the actual
+flow and admission choice. `test/historyReceiptOracle.test.vibe` checks the settlement/receipt
+combinations and removes the observed receipt after a real history run settles as a negative control.
+`test/browserCoverageMerge.test.vibe` runs the fuzz reporter over a real minified bundle with an unused export;
+`test/fuzzCoverage.test.vibe` checks that partial and empty reports preserve the whole-source denominator.
+
+Tracked and fixed in [#5340](https://github.com/smithersai/smithers/issues/5340).
