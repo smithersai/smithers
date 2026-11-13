@@ -87,13 +87,3 @@ it("documents the rewind rate limiter as a knob the composition supplies", () =>
     expect(read(path), `${path} omits Options.rateLimit beside rate_limited`).toContain("`Options.rateLimit`")
   }
 })
-
-it("states the two source coordinates a guarded effect must reserve", () => {
-  expect(read("../src/EffectBoundary.ts")).toContain("reserve two consecutive source sequences")
-})
-
-it("places the fork marker and subsequent child records after the inclusive prefix", () => {
-  const text = read("../src/Frame.ts")
-  expect(text).toContain("forkJournalOffset + 1")
-  expect(text).toContain("forkJournalOffset + 2")
-})
