@@ -4,17 +4,14 @@ import { execFileSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
+import { Process } from "../src/internal/Process.ts"
 import * as ReviewBatches from "../src/internal/ReviewBatches.ts"
 import { maximumResponseTokens } from "../src/internal/ReviewModel.ts"
 import * as LlmLint from "../src/LlmLint.ts"
 import * as SecurityReview from "../src/SecurityReview.ts"
 import * as Target from "../src/Target.ts"
-
-vi.mock("@smthrs/platform-node/ScopedProcess", async (original) => ({
-  ...await original<typeof import("@smthrs/platform-node/ScopedProcess")>()
-}))
 
 let root: string
 
@@ -253,7 +250,7 @@ describe("LlmLint.review related-file discovery boundaries", () => {
   })
 
   describe("with a substituted git grep", () => {
-    const withGrep = async <A>(body: string, use: () => Promise<A>): Promise<A> => {
+    const withGrep = async <A, E>(body: string, use: Effect.Effect<A, E>): Promise<A> => {
       const executable = Path.join(root, "git-protocol.mjs")
       await Fs.writeFile(
         executable,
@@ -262,19 +259,21 @@ describe("LlmLint.review related-file discovery boundaries", () => {
           "const result = spawnSync(\"git\", process.argv.slice(2), { stdio: \"inherit\" })\n" +
           "process.exit(result.status ?? 1)\n}\n"
       )
-      const spawn = ScopedProcess.spawn
-      const replacement = vi.spyOn(ScopedProcess, "spawn").mockImplementation((options) =>
-        spawn(
-          options.command === "git"
-            ? { ...options, command: process.execPath, args: [executable, ...options.args ?? []] }
-            : options
-        )
-      )
-      try {
-        return await use()
-      } finally {
-        replacement.mockRestore()
-      }
+      let redirects = 0
+      const result = await Effect.runPromise(use.pipe(Effect.provideService(Process, {
+        spawn: (options) => {
+          if (options.command !== "git") return ScopedProcess.spawn(options)
+          redirects++
+          return ScopedProcess.spawn({
+            ...options,
+            command: process.execPath,
+            args: [executable, ...options.args ?? []]
+          })
+        },
+        status: ScopedProcess.status
+      })))
+      expect(redirects).toBeGreaterThan(0)
+      return result
     }
     const changedScript = async () => {
       await write("src/a.ts", "export const a = 1\n")
@@ -287,7 +286,7 @@ describe("LlmLint.review related-file discovery boundaries", () => {
       const cli = await recorder("[]")
       await withGrep(
         "process.stdout.write(\"src/bad\\u0001.ts\\0../escape.ts\\0\")",
-        () => Effect.runPromise(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
+        LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload())
       )
       const [prompt] = await cli.prompts()
       expect(relatedIn(prompt!)).toEqual([])
@@ -298,15 +297,13 @@ describe("LlmLint.review related-file discovery boundaries", () => {
       const cli = await recorder("[]")
       const exited = await withGrep(
         "process.stderr.write(\"grep broke\"); process.exit(2)",
-        () =>
-          Effect.runPromise(Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload())))
+        Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
       )
       expect(exited).toBeInstanceOf(LlmLint.LlmReviewError)
       expect(exited.message).toContain("git grep exited 2: grep broke")
       const invalid = await withGrep(
         "process.stdout.write(Buffer.from([0xff, 0]))",
-        () =>
-          Effect.runPromise(Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload())))
+        Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
       )
       expect(invalid).toBeInstanceOf(LlmLint.LlmReviewError)
       expect(invalid.message).toContain("not valid UTF-8")

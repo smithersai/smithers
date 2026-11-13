@@ -7,20 +7,15 @@ import { randomUUID } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import { Smithers } from "../src/index.ts"
 import * as Input from "../src/Input.ts"
+import { Process } from "../src/internal/Process.ts"
 import * as LlmLint from "../src/LlmLint.ts"
 import * as SecurityReview from "../src/SecurityReview.ts"
 import * as Target from "../src/Target.ts"
 import { plannedCalls } from "./plan.ts"
-
-// These two git-output fault cases still run a real process. Select its Node
-// interpreter explicitly: Windows cannot execute an extensionless shebang shim.
-vi.mock("@smthrs/platform-node/ScopedProcess", async (original) => ({
-  ...await original<typeof import("@smthrs/platform-node/ScopedProcess")>()
-}))
 
 let root: string
 
@@ -154,7 +149,7 @@ const readPids = async (path: string, timeoutMs = 15_000): Promise<ReadonlyArray
 }
 
 /** Runs one review with a real process producing the selected git protocol fault. */
-const withGitProgram = async <A>(body: string, use: () => Promise<A>): Promise<A> => {
+const withGitProgram = async <A, E>(body: string, use: Effect.Effect<A, E>): Promise<A> => {
   const directory = NodePath.join(root, "git-bin")
   const executable = NodePath.join(directory, "git")
   await Fs.mkdir(directory, { recursive: true })
@@ -163,19 +158,21 @@ const withGitProgram = async <A>(body: string, use: () => Promise<A>): Promise<A
     "if (process.argv.includes('rev-parse')) { process.stdout.write('a'.repeat(40) + '\\n' + 'b'.repeat(40) + '\\n'); process.exit(0) }"
   await Fs.writeFile(executable, `#!/usr/bin/env node\n${resolve}\n${body}\n`, "utf8")
   await Fs.chmod(executable, 0o755)
-  const spawn = ScopedProcess.spawn
-  const replacement = vi.spyOn(ScopedProcess, "spawn").mockImplementation((options) =>
-    spawn(
-      options.command === "git"
-        ? { ...options, command: process.execPath, args: [executable, ...options.args ?? []] }
-        : options
-    )
-  )
-  try {
-    return await use()
-  } finally {
-    replacement.mockRestore()
-  }
+  let redirects = 0
+  const result = await Effect.runPromise(use.pipe(Effect.provideService(Process, {
+    spawn: (options) => {
+      if (options.command !== "git") return ScopedProcess.spawn(options)
+      redirects++
+      return ScopedProcess.spawn({
+        ...options,
+        command: process.execPath,
+        args: [executable, ...options.args ?? []]
+      })
+    },
+    status: ScopedProcess.status
+  })))
+  expect(redirects).toBeGreaterThan(0)
+  return result
 }
 
 const payload = (overrides: Partial<LlmLint.Payload> = {}): LlmLint.Payload => ({
@@ -752,8 +749,7 @@ describe("LlmLint.review changed-file filtering", () => {
     const cli = await fakeCli("unused-malformed-git", claudeEnvelope("[]"))
     const failure = await withGitProgram(
       `process.stdout.write(${JSON.stringify(output)})`,
-      () =>
-        Effect.runPromise(Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload())))
+      Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
     )
     expect(failure._tag).toBe("smithers-build/LlmReviewError")
     expect((failure as LlmLint.LlmReviewError).phase).toBe("diff")
@@ -765,8 +761,7 @@ describe("LlmLint.review changed-file filtering", () => {
     const cli = await fakeCli("unused-failed-git", claudeEnvelope("[]"))
     const failure = await withGitProgram(
       "process.stderr.write('discarded-git-prefix' + 'x'.repeat(3000) + 'git-diagnostic-end', () => process.exit(9))",
-      () =>
-        Effect.runPromise(Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload())))
+      Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
     )
     const message = (failure as LlmLint.LlmReviewError).message
     expect(message).toContain("git diff exited 9")
@@ -1347,27 +1342,29 @@ describe("LlmLint.promptEngine protocol boundary", () => {
       JSON.stringify({ type: "result", subtype: "success", result: "portable" })
     )
     await Fs.chmod(cli.executable, 0o644)
-    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
-    const originalSpawn = ScopedProcess.spawn
-    const launched = vi.spyOn(ScopedProcess, "spawn").mockImplementation((options) => {
-      // Model only selection. The actual process and its cleanup run on this OS.
-      Object.defineProperty(process, "platform", platform)
-      expect(options.command).toBe(process.execPath)
-      expect(options.args?.[0]).toBe(cli.executable)
-      return originalSpawn(options)
-    })
-    try {
-      Object.defineProperty(process, "platform", { ...platform, value: "win32" })
-      const output = await Effect.runPromise(LlmLint.promptEngine(
+    const hostPlatform = process.platform
+    let launches = 0
+    const service = {
+      platform: "win32" as const,
+      spawn: (options: ScopedProcess.Options) => {
+        expect(process.platform).toBe(hostPlatform)
+        expect(options.command).toBe(process.execPath)
+        expect(options.args?.[0]).toBe(cli.executable)
+        launches++
+        return ScopedProcess.spawn(options)
+      },
+      status: ScopedProcess.status
+    }
+    const output = await Effect.runPromise(
+      LlmLint.promptEngine(
         { workspaceRoot: root, executable: cli.executable },
         { engine: "claude", model: "model", prompt: "prompt" }
-      ))
-      expect(output).toBe("portable")
-      expect((await cli.calls())[0]?.stdin).toBe("prompt")
-    } finally {
-      Object.defineProperty(process, "platform", platform)
-      launched.mockRestore()
-    }
+      ).pipe(Effect.provideService(Process, service))
+    )
+    expect(output).toBe("portable")
+    expect(launches).toBe(1)
+    expect((await cli.calls())[0]?.stdin).toBe("prompt")
+    expect(process.platform).toBe(hostPlatform)
   })
 
   it("runs both engine adapters with their isolated argv and returns plain answer text", async () => {
@@ -1414,47 +1411,46 @@ describe("LlmLint.promptEngine protocol boundary", () => {
 
   it.each([false, true])("reports an unread prompt refusal with Windows EOF=%s", async (windowsEof) => {
     let closedPipe = 0
-    const spawn = ScopedProcess.spawn
-    const launched = vi.spyOn(ScopedProcess, "spawn").mockImplementation((options) =>
-      spawn(options).pipe(Effect.map((child) => ({
-        ...child,
-        stdin: child.stdin.pipe(Sink.mapError((error) => {
-          const cause = error.cause
-          if (
-            windowsEof && cause instanceof Error && "code" in cause &&
-            (cause.code === "EPIPE" || cause.code === "EOF")
-          ) {
-            Object.defineProperty(cause, "code", { value: "EOF", configurable: true })
-            closedPipe++
-          }
-          return error
-        }))
-      })))
+    const service = {
+      spawn: (options: ScopedProcess.Options) =>
+        ScopedProcess.spawn(options).pipe(Effect.map((child) => ({
+          ...child,
+          stdin: child.stdin.pipe(Sink.mapError((error) => {
+            const cause = error.cause
+            if (
+              cause instanceof Error && "code" in cause &&
+              (cause.code === "EPIPE" || cause.code === "EOF")
+            ) {
+              if (windowsEof) Object.defineProperty(cause, "code", { value: "EOF", configurable: true })
+              closedPipe++
+            }
+            return error
+          }))
+        }))),
+      status: ScopedProcess.status
+    }
+    // A model CLI that refuses (not logged in, bad flag, rate limited) exits
+    // before draining a multi-megabyte prompt, so the parent's queued stdin
+    // write raises EPIPE. That pipe failure says nothing about the refusal:
+    // the exit code and the stderr tail are the only diagnosis, so they must
+    // outrank it.
+    const executable = await scriptCli(
+      "prompt-refusal",
+      "import { writeSync } from \"node:fs\"\n" +
+        "writeSync(2, \"fake engine: not logged in\")\n" +
+        "process.exit(3)"
     )
-    try {
-      // A model CLI that refuses (not logged in, bad flag, rate limited) exits
-      // before draining a multi-megabyte prompt, so the parent's queued stdin
-      // write raises EPIPE. That pipe failure says nothing about the refusal:
-      // the exit code and the stderr tail are the only diagnosis, so they must
-      // outrank it.
-      const executable = await scriptCli(
-        "prompt-refusal",
-        "import { writeSync } from \"node:fs\"\n" +
-          "writeSync(2, \"fake engine: not logged in\")\n" +
-          "process.exit(3)"
-      )
-      const failure = await Effect.runPromise(Effect.flip(LlmLint.promptEngine(
+    const failure = await Effect.runPromise(
+      Effect.flip(LlmLint.promptEngine(
         { workspaceRoot: root, executable },
         { engine: "claude", model: "model", prompt: "x".repeat(4 * 1024 * 1024) }
-      )))
-      expect(failure._tag).toBe("smithers-build/LlmReviewError")
-      expect((failure as LlmLint.LlmReviewError).phase).toBe("review")
-      expect((failure as LlmLint.LlmReviewError).message).toContain("exited 3")
-      expect((failure as LlmLint.LlmReviewError).message).toContain("not logged in")
-      if (windowsEof) expect(closedPipe).toBeGreaterThan(0)
-    } finally {
-      launched.mockRestore()
-    }
+      )).pipe(Effect.provideService(Process, service))
+    )
+    expect(failure._tag).toBe("smithers-build/LlmReviewError")
+    expect((failure as LlmLint.LlmReviewError).phase).toBe("review")
+    expect((failure as LlmLint.LlmReviewError).message).toContain("exited 3")
+    expect((failure as LlmLint.LlmReviewError).message).toContain("not logged in")
+    expect(closedPipe).toBeGreaterThan(0)
   })
 
   it("bounds the malformed envelope excerpt in a protocol diagnostic", async () => {

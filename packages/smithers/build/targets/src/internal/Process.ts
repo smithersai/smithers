@@ -12,7 +12,13 @@ import * as Context from "effect/Context"
  * @since 1.0.0
  * @private
  */
-export const Process = Context.Reference<Pick<typeof ScopedProcess, "spawn" | "status"> | undefined>(
+export const Process = Context.Reference<
+  | (Pick<typeof ScopedProcess, "spawn" | "status"> & {
+    /** Platform used only to select a module launcher; execution keeps the native host lifecycle. */
+    readonly platform?: NodeJS.Platform
+  })
+  | undefined
+>(
   "@smthrs/targets/internal/Process",
   { defaultValue: () => undefined }
 )

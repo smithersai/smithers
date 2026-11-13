@@ -1360,8 +1360,8 @@ export const publicError = (error: LlmReviewError | ModelCliMissing) =>
   }
 
 /** Windows Node modules use this host's Node, never file associations or a shell. */
-const nodeModule = (path: string): boolean =>
-  process.platform === "win32" && NodePath.isAbsolute(path) && /\.(?:mjs|cjs|js)$/.test(path) &&
+const nodeModule = (path: string, options: { readonly platform: NodeJS.Platform }): boolean =>
+  options.platform === "win32" && NodePath.isAbsolute(path) && /\.(?:mjs|cjs|js)$/.test(path) &&
   NodeFs.statSync(path, { throwIfNoEntry: false })?.isFile() === true
 
 /** Spawns git in the workspace and model CLIs in an isolated home, never through a shell. */
@@ -1376,11 +1376,12 @@ const spawnText = (
       Effect.sync(() => NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "smithers-review-"))),
       (directory) => Effect.sync(() => NodeFs.rmSync(directory, { recursive: true, force: true }))
     )
+    const processOverride = yield* Process
     const script = yield* Effect.try({
-      try: () => nodeModule(executable),
+      try: () => nodeModule(executable, { platform: processOverride?.platform ?? process.platform }),
       catch: (cause) => cause as NodeJS.ErrnoException
     })
-    const processService = (yield* Process) ?? ScopedProcess
+    const processService = processOverride ?? ScopedProcess
     const child = yield* processService.spawn({
       command: script ? process.execPath : executable,
       args: script ? [executable, ...args] : args,
@@ -2677,7 +2678,7 @@ const executableIdentity = (
         const hash = createHash("sha256")
         for await (const chunk of io.createReadStream(path)) hash.update(chunk as Buffer)
         const identity = { path: io.realpathSync(path), sha256: hash.digest("hex") }
-        if (!nodeModule(path)) return { executable: identity }
+        if (!nodeModule(path, { platform: process.platform })) return { executable: identity }
         const interpreter = createHash("sha256")
         for await (const chunk of io.createReadStream(process.execPath)) interpreter.update(chunk as Buffer)
         return {
