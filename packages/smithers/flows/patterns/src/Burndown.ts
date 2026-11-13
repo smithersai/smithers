@@ -957,10 +957,12 @@ const journaled = <R>(
  * with status `requeued` and a later round works the item again. A member that
  * throws fails only its item, with `Fault.of(defect)` in the detail. Typed
  * {@link Stop} is the only member failure that stops the round; a release
- * already running finishes and every open claim is released as `failed`. When the round itself is interrupted, each open
- * claim is released the same way if `cancelled` reports a recorded cancel for
- * it, and otherwise with status `requeued` and the detail `round interrupted`,
- * so a resumed run claims it again.
+ * already running finishes. Cleanup releases a settled item with its recorded
+ * status and detail, even when its release was still queued. An unsettled claim
+ * is released as `failed` after `Stop`. When the round itself is interrupted,
+ * an unsettled claim is released the same way if `cancelled` reports a recorded
+ * cancel for it, and otherwise with status `requeued` and the detail
+ * `round interrupted`, so a resumed run claims it again.
  *
  * `round` fails with a `PatternError` before any member runs when `key` is
  * blank, `concurrency`, `landConcurrency`, or `slots` is not a positive safe integer, `round` is
@@ -1314,9 +1316,9 @@ export const round = <I, It extends Item, W, E = never, R = never, L = unknown>(
                 (died) =>
                   releaseOne(
                     card,
-                    died
+                    rows.get(card.id) ?? (died
                       ? { status: "failed", detail: "round died" }
-                      : { status: "requeued", detail: "round interrupted" }
+                      : { status: "requeued", detail: "round interrupted" })
                   )
               ).pipe(
                 Effect.catch((error) => Effect.logWarning("Burndown release stopped during round cleanup", error))

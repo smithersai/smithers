@@ -377,6 +377,22 @@ const escalation: Pattern<EscalationCase> = {
         }))
       )
     ),
+    ...[null, 0, ""].flatMap((decision) =>
+      [false, true].map((fallback) => ({
+        name: `escalation-escalateif-falsy-${String(decision)}-fallback-${fallback}`,
+        input: "ticket",
+        options: { accept: false, fallback, escalateIf: true },
+        script: {
+          cheap: () => ({ ok: false, by: "cheap" }),
+          strong: () => ({ ok: false, by: "strong" }),
+          escalateIf: () => decision,
+          human: () => ({ ok: true, by: "human" })
+        },
+        expected: fallback
+          ? { level: 2, result: { ok: true, by: "human" }, exhausted: false }
+          : { level: 1, result: { ok: false, by: "strong" }, accepted: false, exhausted: true }
+      }))
+    ),
     ...[true, false].map((settle) => ({
       name: `escalation-escalateif-${settle}`,
       input: "ticket",

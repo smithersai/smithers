@@ -81,7 +81,7 @@ effect function escalates<I, A, E, R, E2, R2>(
   result: A,
   level: number
 ): boolean!E2!R2 {
-  if (rung.escalateIf !== undefined) return try rung.escalateIf(result, level)
+  if (rung.escalateIf !== undefined) return (try rung.escalateIf(result, level)) !== false
   // The readers run in `sync` and `map`: a getter or proxy that throws while
   // they read a result is a defect, as it was inside the generator.
   if (accept !== undefined) return try map(accept(result), (decision) => !accepted(decision))

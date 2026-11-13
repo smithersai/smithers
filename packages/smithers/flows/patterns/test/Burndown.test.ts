@@ -1875,3 +1875,108 @@ for (const stopped of ["cancelled", "release"] as const) {
     ])
   })
 }
+
+for (const status of ["landed", "failed", "requeued"] as const) {
+  it(`preserves a settled ${status} row when Stop arrives before its queued release starts`, async () => {
+    const releases: Array<{ id: string; status: Burndown.Status; detail: string }> = []
+    Fault.register("BurndownSettledInfra", "infra")
+    const stop = new Burndown.Stop({ message: "round stopped" })
+    const exit = await Effect.runPromiseExit(
+      Burndown.round({ input: null, round: 0, items: items("settled", "pending") }, {
+        ...baseOptions(() => Effect.void),
+        work: (
+          { item }
+        ): Effect.Effect<string, string | Burndown.Stop | { readonly _tag: string; readonly message: string }> => {
+          if (item.id === "pending") return Effect.fail(stop)
+          return status === "failed"
+            ? Effect.fail("checks red")
+            : status === "requeued"
+            ? Effect.fail({ _tag: "BurndownSettledInfra", message: "offline" })
+            : Effect.succeed("merged")
+        },
+        detail: (output) => output,
+        release: ({ item, status, detail }) =>
+          Effect.sync(() => {
+            releases.push({ id: item.id, status, detail })
+          })
+      }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER))
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(releases.filter(({ id }) => id === "settled")).toEqual([{
+      id: "settled",
+      status,
+      detail: status === "failed" ? "work: checks red" : status === "requeued" ? "work: offline" : "merged"
+    }])
+    expect(releases.filter(({ id }) => id === "pending")).toEqual([{
+      id: "pending",
+      status: "failed",
+      detail: "round died"
+    }])
+  })
+
+  it(`preserves a settled ${status} row queued behind a slow release when the round is interrupted`, async () => {
+    const releases: Array<{ id: string; status: Burndown.Status; detail: string }> = []
+    Fault.register("BurndownSettledInfra", "infra")
+    const exit = await Effect.runPromise(Effect.gen(function*() {
+      const releaseStarted = yield* Deferred.make<void>()
+      const finishRelease = yield* Deferred.make<void>()
+      const pendingStarted = yield* Deferred.make<void>()
+      const pendingInterrupted = yield* Deferred.make<void>()
+      const fiber = yield* Effect.forkChild(
+        Burndown.round({ input: null, round: 0, items: items("blocker", "settled", "pending") }, {
+          ...baseOptions(() => Effect.void),
+          concurrency: 1,
+          work: ({ item }): Effect.Effect<string, string | { readonly _tag: string; readonly message: string }> => {
+            if (item.id === "blocker") return Effect.succeed("blocker")
+            if (item.id === "pending") {
+              return Effect.andThen(Deferred.succeed(pendingStarted, undefined), Effect.never).pipe(
+                Effect.onInterrupt(() => Deferred.succeed(pendingInterrupted, undefined))
+              )
+            }
+            return Effect.gen(function*() {
+              yield* Deferred.await(releaseStarted)
+              if (status === "failed") return yield* Effect.fail("checks red")
+              if (status === "requeued") {
+                return yield* Effect.fail({ _tag: "BurndownSettledInfra", message: "offline" })
+              }
+              return "merged"
+            })
+          },
+          detail: (output) => output,
+          release: ({ item, status, detail }) =>
+            Effect.gen(function*() {
+              releases.push({ id: item.id, status, detail })
+              if (item.id === "blocker") {
+                yield* Deferred.succeed(releaseStarted, undefined)
+                yield* Deferred.await(finishRelease)
+              }
+            })
+        })
+      )
+      // Starting the next item proves the previous row and queued release exist.
+      // Hold the only releaser until cancellation reaches the unfinished work.
+      yield* Deferred.await(pendingStarted)
+      const cancelled = yield* Effect.forkChild(Fiber.interrupt(fiber))
+      yield* Deferred.await(pendingInterrupted)
+      yield* Deferred.succeed(finishRelease, undefined)
+      yield* Fiber.join(cancelled)
+      return yield* Fiber.await(fiber)
+    }))
+    expect(Exit.hasInterrupts(exit)).toBe(true)
+    expect(releases.filter(({ id }) => id === "settled")).toEqual([{
+      id: "settled",
+      status,
+      detail: status === "failed" ? "work: checks red" : status === "requeued" ? "work: offline" : "merged"
+    }])
+    expect(releases.filter(({ id }) => id === "blocker")).toEqual([{
+      id: "blocker",
+      status: "landed",
+      detail: "blocker"
+    }])
+    expect(releases.filter(({ id }) => id === "pending")).toEqual([{
+      id: "pending",
+      status: "requeued",
+      detail: "round interrupted"
+    }])
+  })
+}

@@ -19,6 +19,13 @@
 
 ### Fixed
 
+- `Burndown.round` preserves a settled item's status and detail when cleanup
+  drains its queued release. `Escalation.run` advances on every `escalateIf`
+  answer except `false`, matching `make`. `ScanFixVerify.make` rejects a
+  non-array scan with `invalid_input` before dispatching further stages.
+  The reference now includes stalled reviews and the omitted public exports
+  ([#4682](https://github.com/smithersai/smithers/issues/4682)).
+
 - `ScanFixVerify.make` confirms the result with a final scan after its last
   allowed fix round, so fixing everything at the retry bound reports
   `resolved: true` and `remaining` contains only issues still present

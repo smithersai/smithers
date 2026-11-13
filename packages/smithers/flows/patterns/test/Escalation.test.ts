@@ -535,3 +535,24 @@ describe("Escalation", () => {
       expect(error.code).toBe("invalid_decorator")
     }))
 })
+
+it("escalates an undefined runtime decider answer through to the fallback", async () => {
+  const calls: Array<string> = []
+  const result = await Effect.runPromise(Escalation.run("ticket", {
+    rungs: [{
+      run: () =>
+        Effect.sync(() => {
+          calls.push("cheap")
+          return "weak"
+        }),
+      escalateIf: () => Effect.succeed(undefined as never)
+    }],
+    fallback: () =>
+      Effect.sync(() => {
+        calls.push("human")
+        return "reviewed"
+      })
+  }))
+  expect(result).toEqual({ level: 1, result: "reviewed", exhausted: false })
+  expect(calls).toEqual(["cheap", "human"])
+})

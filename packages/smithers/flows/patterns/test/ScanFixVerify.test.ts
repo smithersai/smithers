@@ -3,11 +3,12 @@ import { Action, Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as ScanFixVerify from "../src/ScanFixVerify.ts"
-import { execute } from "./Execute.ts"
+import { execute, executeExit } from "./Execute.ts"
 import { callsTo } from "./Graphs.ts"
 
 // One stage flow per role, tagged with its own name. Core named a stage by the
@@ -91,6 +92,77 @@ describe("ScanFixVerify", () => {
   })
 
   describe("executed declaration", () => {
+    for (const answer of [null, "issue", 0, { issues: ["a"] }, { length: 1, 0: "a" }]) {
+      for (const invalidAt of [1, 2, 3]) {
+        it(`rejects a non-array scan ${JSON.stringify(answer)} at iteration ${invalidAt} before dispatching more stages`, async () => {
+          const calls: Array<string> = []
+          const Scan = Action.make("sfv/invalid-scan", {
+            payload: { input: Schema.Unknown, iteration: Schema.Number },
+            success: Schema.Unknown
+          })
+          const Fix = Action.make("sfv/invalid-fix", {
+            payload: { issue: Schema.Unknown, index: Schema.Number, iteration: Schema.Number },
+            success: Schema.Unknown
+          })
+          const Verify = Action.make("sfv/invalid-verify", {
+            payload: { input: Schema.Unknown, issues: Schema.Unknown, fixes: Schema.Unknown, iteration: Schema.Number },
+            success: Schema.Unknown
+          })
+          const pattern = ScanFixVerify.make<
+            Action.Requirement<"sfv/invalid-scan" | "sfv/invalid-fix" | "sfv/invalid-verify">
+          >({
+            scan: Scan,
+            fix: Fix,
+            verify: Verify,
+            maxRetries: 2,
+            maxIssues: 2,
+            concurrency: 1
+          })
+          const exit = await executeExit(
+            pattern,
+            { input: "repo" },
+            `sfv-invalid-${invalidAt}`,
+            Scan.toLayer(({ iteration }) =>
+              Effect.sync(() => {
+                calls.push(`scan/${iteration}`)
+                return iteration === invalidAt ? answer : ["a"]
+              })
+            ),
+            Fix.toLayer(({ iteration }) =>
+              Effect.sync(() => {
+                calls.push(`fix/${iteration}`)
+                return "fixed"
+              })
+            ),
+            Verify.toLayer(({ iteration }) =>
+              Effect.sync(() => {
+                calls.push(`verify/${iteration}`)
+                return true
+              })
+            )
+          )
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) {
+            expect(exit.cause.reasons).toEqual([expect.objectContaining({
+              _tag: "Fail",
+              error: expect.objectContaining({
+                _tag: "flows/patterns/PatternError",
+                code: "invalid_input",
+                message: `ScanFixVerify scan at iteration ${invalidAt} must return an array`
+              })
+            })])
+          }
+          expect(calls).toEqual([
+            ...Array.from(
+              { length: invalidAt - 1 },
+              (_, index) => [`scan/${index + 1}`, `fix/${index + 1}`, `verify/${index + 1}`]
+            ).flat(),
+            `scan/${invalidAt}`
+          ])
+        })
+      }
+    }
+
     it.effect("bounds fixes in flight and holds the next batch until slots are free", () =>
       Effect.gen(function*() {
         const concurrency = 2

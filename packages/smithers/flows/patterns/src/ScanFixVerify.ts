@@ -81,8 +81,16 @@ export type ScanFixVerifyFlow<R = never> = Flow.Flow<
   R
 >
 
-// How many issues a scan returned. A scan answers with an array.
-const issueCount = (issues: unknown): number => (issues as ReadonlyArray<unknown>).length
+// The scan is validated once before any length or indexed reads.
+interface Scanned {
+  readonly issues: ReadonlyArray<unknown>
+  readonly invalid: boolean
+}
+
+const scanned = (issues: unknown): Scanned =>
+  Array.isArray(issues) ? { issues, invalid: false } : { issues: [], invalid: true }
+
+const issueCount = (issues: ReadonlyArray<unknown>): number => issues.length
 
 const positive = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
@@ -131,24 +139,46 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
     stages.fix,
     stages.verify
   ])
-  const clean = Node.capture({ ...captures, clean: true }, (issues: unknown) => issueCount(issues) === 0)
+  const clean = Node.capture({ ...captures, clean: true }, (issues: ReadonlyArray<unknown>) => issueCount(issues) === 0)
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const visit = (
       iteration: number,
       verifications: ReadonlyArray<Planned.Planned<unknown>>
     ): Node.Node<unknown, unknown, R> =>
-      Node.branch(callMember(stages.scan, { input, iteration }), {
-        if: clean,
-        then: () =>
-          Node.succeed({ iterations: Math.min(iteration, maxRetries), remaining: [], resolved: true, verifications }),
-        else: (issues) =>
-          iteration > maxRetries
-            ? Node.succeed({ iterations: maxRetries, remaining: issues, resolved: false, verifications })
-            : fixAll(iteration, issues, verifications)
-      })
+      Node.branch(
+        Node.map(
+          callMember(stages.scan, { input, iteration }),
+          Node.capture({ ...captures, iteration, scan: true }, (issues: unknown) => scanned(issues))
+        ),
+        {
+          if: Node.capture({ ...captures, iteration, invalid: true }, (state: Scanned) => state.invalid),
+          then: () =>
+            Node.fail(
+              new PatternError({
+                code: "invalid_input",
+                message: `ScanFixVerify scan at iteration ${iteration} must return an array`
+              })
+            ),
+          else: (state: Planned.Planned<Scanned>) =>
+            Node.branch(Node.succeed(state.issues), {
+              if: clean,
+              then: () =>
+                Node.succeed({
+                  iterations: Math.min(iteration, maxRetries),
+                  remaining: [],
+                  resolved: true,
+                  verifications
+                }),
+              else: (issues) =>
+                iteration > maxRetries
+                  ? Node.succeed({ iterations: maxRetries, remaining: issues, resolved: false, verifications })
+                  : fixAll(iteration, issues, verifications)
+            })
+        }
+      )
     const fixAll = (
       iteration: number,
-      issues: Planned.Planned<unknown>,
+      issues: Planned.Planned<ReadonlyArray<unknown>>,
       verifications: ReadonlyArray<Planned.Planned<unknown>>
     ): Node.Node<unknown, unknown, R> => {
       const found = issues as unknown as Readonly<Record<number, unknown>>
@@ -165,7 +195,10 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
           // A slot the scan left empty runs nothing: the predicate reads the
           // real issue list, so no fix is paid for an issue that is not there.
           members[`fix-${index}`] = Node.branch(Node.succeed(issues), {
-            if: Node.capture({ ...captures, iteration, index }, (list: unknown) => index < issueCount(list)),
+            if: Node.capture(
+              { ...captures, iteration, index },
+              (list: ReadonlyArray<unknown>) => index < issueCount(list)
+            ),
             then: () => callMember(stages.fix, { issue: found[index], index, iteration }),
             else: () => Node.succeed(null)
           })
@@ -179,7 +212,7 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
           Node.succeed({ issues, slots }),
           Node.capture(
             { ...captures, iteration, fixes: true },
-            (state: { readonly issues: unknown; readonly slots: ReadonlyArray<unknown> }) =>
+            (state: { readonly issues: ReadonlyArray<unknown>; readonly slots: ReadonlyArray<unknown> }) =>
               state.slots.slice(0, issueCount(state.issues))
           )
         )

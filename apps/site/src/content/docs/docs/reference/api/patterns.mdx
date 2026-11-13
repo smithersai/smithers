@@ -152,16 +152,17 @@ original values.
 optional `cause` with the reported error or errors.
 Member errors keep every field, including any input they hold.
 
-| Code                  | Raised when                                                                                                         |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `missing_slot`        | A required `Pattern.slot` was neither bound nor defaulted                                                           |
-| `invalid_decorator`   | A decorator broke a schema or authority contract, or an option was out of range                                     |
-| `invalid_input`       | A flow input, a `Supervisor` plan, an `Optimizer` or `Sidecar` score, or a `Quarantine.settle` entry was malformed  |
-| `envelope_conflict`   | A supplied flow declares authority its template excludes                                                            |
-| `recursion_bound`     | `Recursion.recurse` hit its declared depth                                                                          |
-| `exhausted`           | A runtime pattern reached its declared iteration or round limit, or `MapReduce` was configured to fail on no shards |
-| `compensation_failed` | One or more `Saga` compensations failed while unwinding                                                             |
-| `quarantined`         | `Quarantine.settle` was called on a result holding quarantined members                                              |
+| Code                  | Raised when                                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `missing_slot`        | A required `Pattern.slot` was neither bound nor defaulted                                                                                  |
+| `invalid_decorator`   | A decorator broke a schema or authority contract, or an option was out of range                                                            |
+| `invalid_input`       | A flow input, a `Supervisor` plan, a `ScanFixVerify` scan, an `Optimizer` or `Sidecar` score, or a `Quarantine.settle` entry was malformed |
+| `envelope_conflict`   | A supplied flow declares authority its template excludes                                                                                   |
+| `recursion_bound`     | `Recursion.recurse` hit its declared depth                                                                                                 |
+| `exhausted`           | A runtime pattern reached its declared iteration or round limit, or `MapReduce` was configured to fail on no shards                        |
+| `compensation_failed` | One or more `Saga` compensations failed while unwinding                                                                                    |
+| `stalled`             | A configured review-loop stall breaker uses `on: "escalate"` after repeated unchanged output                                               |
+| `quarantined`         | `Quarantine.settle` was called on a result holding quarantined members                                                                     |
 
 ### `TrellisError`
 
@@ -348,13 +349,21 @@ round.
 
 `review` receives `(output, round)` and `revise` receives
 `{ output, review, round }`. `ReviewLoop.accepted` is the acceptance reader:
-`true`, `"approved"`, `{ approved: true }`, or `{ accepted: true }`. Both
+`true`, `"approved"`, `{ approved: true }`, or `{ accepted: true }`. All
 outcomes are tagged and nest the produced value: an approved round returns
 `{ _tag: "Approved", output }` and a run that spends every round returns
 `{ _tag: "Exhausted", output, review }` rather than failing, so the caller
 branches on `_tag` and decides what an unapproved result is worth. The value
-the loop produced never forges the other arm, whatever shape it has.
+the loop produced never forges another arm, whatever shape it has.
 `maxRounds` must be a positive safe integer.
+
+Both forms accept `stall: { rounds, on? }`. After `rounds` rejected reviews
+of unchanged output, `on: "stop"` (the default) and `on: "park"` return
+`{ _tag: "Stalled", output, review, stalled }`; `on: "escalate"` fails with
+`PatternError` code `stalled`. The `stalled` field carries the stall verdict.
+`rounds` must be a safe integer of at least two. `run` may supply
+`stall.signals(output)` to compare other signals; `make` compares output.
+Approval and the final round's exhaustion take precedence over a stall.
 
 Use `ReviewLoop` when one artifact is revised in place. When every issue needs
 its own fix, use [`ScanFixVerify`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/loops.md#scanfixverify).
@@ -366,6 +375,9 @@ alternative strategies. A rung is a flow, or `{ flow, escalateIf }` when that
 rung decides for itself. `accept` decides every rung that declares no
 `escalateIf`; `fallback` is the last rung and runs only after all of them
 escalated, which is where a human approval flow belongs.
+
+A rung's `escalateIf` settles only on the literal `false`. Every other answer,
+including `null`, `undefined`, `0`, and `""`, escalates in both forms.
 
 `Escalation.run(input, options)` returns `{ level, result, exhausted: false }`
 naming the rung that settled, counting from zero. A fallback result carries the
@@ -496,9 +508,12 @@ a child released because its host's lease lapsed, gets a `requeued` row and a
 `Fault.of(defect)` class and tag in its detail; siblings continue. This also
 applies to thrown selection, detail, landing, and release callbacks.
 Only typed `Stop({ message })` stops the round; open claims are released.
-A defect containing a `Stop` is still an item defect. When the round itself is
-interrupted, each open claim is released the same way if `cancelled` answers
-`true`, and otherwise with status `requeued` and `round interrupted`. A release failure is appended to the row's detail. A landed item stays `landed` whatever its release fails with; for any other item, a release defect fails it and a typed infra release failure requeues it within `maxRequeues`. Rows keep
+A defect containing a `Stop` is still an item defect. Cleanup preserves the
+status and detail of an item that already settled, including one whose release
+is still queued. An item without a settled row is released as `failed` with
+`round died` after `Stop`. When the round itself is interrupted, an unsettled
+claim is released the same way if `cancelled` answers `true`, and otherwise
+with status `requeued` and `round interrupted`. A release failure is appended to the row's detail. A landed item stays `landed` whatever its release fails with; for any other item, a release defect fails it and a typed infra release failure requeues it within `maxRequeues`. Rows keep
 discovery order. `round` fails with `PatternError` before any member runs for a
 blank `key`, a `concurrency` or `slots` that is not a positive safe integer,
 a negative or fractional `round`, or an item without a unique nonblank string
@@ -534,8 +549,8 @@ Every `make` expands its declared bounds eagerly into graph nodes. The options
 that expand or multiply topology are `Optimizer.maxIterations`,
 `ReviewLoop.maxRounds`, `Debate.rounds`, `Recursion` envelope depth across
 fanout, `ScanFixVerify.maxRetries` times `maxIssues` in concurrency-sized
-batches, `Trellis` envelope fuel, and `DelegationChain.maxDepth` together with
-`maxDeriskRounds`. These bounds are sized for tens to low hundreds of declared
+batches, and `DelegationChain.maxDepth` together with
+`maxDeriskRounds`. `Trellis` declares only the plan supplied for the current round. These bounds are sized for tens to low hundreds of declared
 calls. A very large bound builds a very large graph before anything runs. For a loop whose count depends on runtime values, use a flow that hands off
 to itself with `Flow.to` and bounds its lineage with `maxRounds`.
 

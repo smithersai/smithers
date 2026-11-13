@@ -81,7 +81,10 @@ const report = yield* repair.execute({ input: { path: "src" } }, { executionId: 
 receives `{ issue, index, iteration }`. `verify` receives
 `{ input, issues, fixes, iteration }`. `ScanFixVerify.resolved` reads `true`
 or an object's own `resolved: true` from a verification. The final confirming
-scan receives `iteration: maxRetries + 1`.
+scan receives `iteration: maxRetries + 1`. Every scan, including this final
+confirmation, must return an array. A non-array fails with `PatternError`
+code `invalid_input`, naming the iteration, before any further fix,
+verification, or scan.
 
 An empty scan settles `resolved: true`. Even a verification that reports success
 is followed by a confirming rescan. A clean first scan runs no fix or verify.
