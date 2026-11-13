@@ -20,3 +20,27 @@ it("resolves a separate coverage scratch directory in each coordinator process",
   }
   expect(join(first.directory, ".tmp")).not.toBe(join(second.directory, ".tmp"))
 })
+
+it("refuses provider environment reads outside default parameters", () => {
+  const config = new URL("../eslint.config.js", import.meta.url).href
+  const result = JSON.parse(execFileSync(process.execPath, [
+    "--input-type=module",
+    "-e",
+    "import { Linter } from \"eslint\";" +
+    "const { default: configs } = await import(" + JSON.stringify(config) + ");" +
+    "const rules = configs.filter(c => c.rules?.[\"no-restricted-syntax\"]).at(-1).rules;" +
+    "const linter = new Linter();" +
+    "console.log(JSON.stringify([" +
+    "\"const env = process.env;\"," +
+    "\"consume(globalThis.process.env);\"," +
+    "\"const env = globalThis.process?.env;\"," +
+    "\"consume(options.hostEnvironment);\"" +
+    "].map(source => linter.verify(source, {rules}).map(message => message.ruleId))));"
+  ], { encoding: "utf8", timeout: 12_000 })) as Array<Array<string>>
+  expect(result).toEqual([
+    ["no-restricted-syntax"],
+    ["no-restricted-syntax"],
+    ["no-restricted-syntax"],
+    []
+  ])
+})

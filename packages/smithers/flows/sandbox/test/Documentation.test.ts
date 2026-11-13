@@ -97,3 +97,15 @@ function checkFences(source: string): void {
     rmSync(directory, { recursive: true, force: true })
   }
 }
+
+it("lists the runtime packages and every provider's reattachment contract", () => {
+  const manifest = JSON.parse(read("package.json")) as { dependencies: Record<string, string> }
+  for (const dependency of Object.keys(manifest.dependencies)) {
+    expect(read("docs/installation.md")).toContain("`" + dependency + "`")
+  }
+  const providers = [...read("docs/README.md").matchAll(/`(\w+Sandbox)`/g)]
+    .map((match) => match[1]!)
+  const table = read("docs/concepts/sessions.md")
+  for (const provider of new Set(providers)) expect(table).toContain("| `" + provider + "`")
+  expect(new Set(providers).size).toBe(11)
+})

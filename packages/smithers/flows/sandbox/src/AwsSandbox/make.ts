@@ -304,7 +304,7 @@ const deregisterDefinition = (
       `aws task definition ${taskDefinition}`
     )
 
-/** Reclaim older crash-left registrations without touching the adopted revision. */
+/** Reclaim older crash-left registrations without touching the current revision. */
 const deregisterStaleDefinitions = (
   options: AwsSandboxImageOptions,
   startedBy: string,
@@ -680,6 +680,9 @@ export const make = (input: AwsSandboxOptions): Provider => {
             const taskDefinition = options.taskDefinition === undefined
               ? yield* registerDefinition(options, startedBy, workdir, options.container ?? "sandbox")
               : options.taskDefinition
+            if (imageOptions !== undefined) {
+              yield* deregisterStaleDefinitions(imageOptions, startedBy, taskDefinition)
+            }
             const output = yield* Effect.acquireRelease(
               runTask(options, taskDefinition, startedBy, container, fingerprint),
               (output) => stopTasks(options, taskArnsOf(output))

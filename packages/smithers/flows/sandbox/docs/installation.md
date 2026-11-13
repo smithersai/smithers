@@ -13,13 +13,20 @@ npm install @smthrs/sandbox@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-The package requires Node.js 22.19.0 or later and ships as ESM and CommonJS
-with TypeScript declarations. It has two runtime dependencies,
-[`effect`](https://effect.website) and
-[`@smthrs/kernel`](/api/kernel), and the second is used only for command line
-rendering and POSIX quoting. Nothing else is required: a sandbox is one way to
-satisfy Effect's `ChildProcessSpawner` rather than a new host interface you
-have to adopt.
+The package supports Node.js 22.19.0 or later and ships as ESM and CommonJS
+with TypeScript declarations. Its peer dependency is
+[Effect](https://effect.website). It also declares these Smithers runtime dependencies:
+
+| Package              | Used by                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------ |
+| `@smthrs/capability` | `Remotes` capability checks.                                                               |
+| `@smthrs/kernel`     | Command rendering, quoting, environment filtering, and contained process lifecycle checks. |
+| `@smthrs/flow`       | `CiJob`, `SandboxCommand`, `SandboxMerge`, and `SandboxTools` actions and flows.           |
+| `@smthrs/plan`       | `CiJob` plan nodes.                                                                        |
+| `@smthrs/jj`         | `SandboxMerge` repository operations.                                                      |
+
+The root entry re-exports these namespaces. A sandbox satisfies Effect's
+`ChildProcessSpawner` through injected services; vendor SDKs remain optional.
 
 ## Import forms
 

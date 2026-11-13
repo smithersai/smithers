@@ -46,18 +46,19 @@ previous acquire left behind. That is what makes a crash-interrupted run resume
 on the machine it was using. What survives depends on the backend and on what
 the finalizer does:
 
-| Provider              | Reattach on the same key                                        | What a normal release leaves                                         |
-| --------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `DirectorySandbox`    | the recursive create finds a crash-left directory and its files | nothing; the directory is removed                                    |
-| `ContainerSandbox`    | a refused create whose name `container inspect` finds           | nothing; `rm --force` ends the container                             |
-| `KubernetesSandbox`   | an `AlreadyExists` Pod sealed under the same `reattachKey`      | nothing; the Pod is force deleted                                    |
-| `MicrosandboxSandbox` | `sandboxAlreadyExists` connects or restarts                     | nothing for `ephemeral`; a `sticky` machine stays running on purpose |
-| `VercelSandbox`       | `getOrCreate` with `persistent` and `resume`                    | the persistent sandbox, stopped                                      |
-| `DaytonaSandbox`      | `get(name)` before `create`                                     | nothing; teardown deletes the sandbox                                |
-| `AwsSandbox`          | `ListTasks` by the `startedBy` tag adopts a leftover            | nothing; `StopTask` runs on the scope                                |
-| `CloudflareSandbox`   | the Durable Object id is derived from the key                   | nothing; the object is destroyed, unless `retained` keeps it running |
-| `HttpSandbox`         | the service's retained provider acquires the key's machine      | nothing; `DELETE` destroys the machine                               |
-| `JustBashSandbox`     | not applicable, the session is in process                       | nothing; the directory is removed                                    |
+| Provider              | Reattach on the same key                                                       | What a normal release leaves                                         |
+| --------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `DirectorySandbox`    | the recursive create finds a crash-left directory and its files                | nothing; the directory is removed                                    |
+| `CommandSandbox`      | the machine outlives the session; acquire resets its private pidfile directory | session commands and pidfiles end; the machine stays running         |
+| `ContainerSandbox`    | a refused create whose name `container inspect` finds                          | nothing; `rm --force` ends the container                             |
+| `KubernetesSandbox`   | an `AlreadyExists` Pod sealed under the same `reattachKey`                     | nothing; the Pod is force deleted                                    |
+| `MicrosandboxSandbox` | `sandboxAlreadyExists` connects or restarts                                    | nothing for `ephemeral`; a `sticky` machine stays running on purpose |
+| `VercelSandbox`       | `getOrCreate` with `persistent` and `resume`                                   | the persistent sandbox, stopped                                      |
+| `DaytonaSandbox`      | `get(name)` before `create`                                                    | nothing; teardown deletes the sandbox                                |
+| `AwsSandbox`          | `ListTasks` by the `startedBy` tag adopts a leftover                           | nothing; `StopTask` runs on the scope                                |
+| `CloudflareSandbox`   | the Durable Object id is derived from the key                                  | nothing; the object is destroyed, unless `retained` keeps it running |
+| `HttpSandbox`         | the service's retained provider acquires the key's machine                     | nothing; `DELETE` destroys the machine                               |
+| `JustBashSandbox`     | not applicable, the session is in process                                      | nothing; the directory is removed                                    |
 
 Read the middle column as crash recovery, not as storage. Only
 `MicrosandboxSandbox` with `persistence: "sticky"`, `CloudflareSandbox` with

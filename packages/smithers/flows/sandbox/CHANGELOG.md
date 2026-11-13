@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- Image-based AWS sessions reclaim crash-left task definitions even when no task remains; every image acquisition now needs `ecs:ListTaskDefinitions` permission. Directory and existing-container sessions take bootstrap variables through `hostEnvironment`, and the installation and session docs list the current dependencies and providers.
+
 - `SandboxMerge.apply` reports `base_not_found` when a failed fetch leaves
   the work's base absent, including repositories without remotes. The original
   fetch failure remains available in `MergeError.cause`; lock contention

@@ -5,6 +5,7 @@
  */
 
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
+import { ambientEnvironment } from "@smthrs/kernel/ChildProcessSpawner"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -79,6 +80,12 @@ export interface ExistingOptions {
   readonly workdir: string
   /** The spawner the transport's host commands run through. */
   readonly spawner: ChildProcessSpawner["Service"]
+  /**
+   * Bootstrap environment supplied by the host composition. Only the kernel's
+   * bootstrap allowlist is inherited. Omission preserves the host defaults through
+   * the kernel's browser-safe accessor; pass an empty record to inherit none.
+   */
+  readonly hostEnvironment?: Readonly<Record<string, string | undefined>> | undefined
   readonly transport: Transport
 }
 
@@ -156,7 +163,7 @@ export const existing = (options: ExistingOptions): Session => {
       (plan) =>
         Effect.mapError(
           options.spawner.spawn(ChildProcess.make(plan.file, [...plan.args], {
-            env: ChildProcessEnvironment.make(process.env, plan.env),
+            env: ChildProcessEnvironment.make(options.hostEnvironment ?? ambientEnvironment(), plan.env),
             extendEnv: false,
             ...stdin === undefined ? {} : { stdin }
           })),

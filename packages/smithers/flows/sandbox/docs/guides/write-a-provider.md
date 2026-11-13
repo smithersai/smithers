@@ -32,9 +32,7 @@ interface VendorSdk {
 ```
 
 A command-line tool arrives the same way, as an injected
-`ChildProcessSpawner` rather than a call to `node:child_process`. No module in
-`@smthrs/sandbox` reads a host global, which is what lets the package bundle
-for a browser; a provider that follows the same rule keeps that property.
+`ChildProcessSpawner` rather than a call to `node:child_process`. Providers take bootstrap environment through `hostEnvironment`, supplied by the host composition along with its services. They do not read `process.env` themselves. Omitting `hostEnvironment` preserves the defaults through the kernel's browser-safe `ChildProcessSpawner.ambientEnvironment()` accessor, which returns an empty record without a host process. The remote command adapter uses the same accessor to filter copied host defaults.
 
 ## Implement acquire
 

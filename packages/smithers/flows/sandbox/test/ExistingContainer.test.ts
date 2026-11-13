@@ -45,10 +45,15 @@ const here = (env?: Record<string, string>): ContainerSandbox.Transport => ({
       : Effect.fail(new Error(`no container named ${request.container}`))
 })
 
-const session = (workdir: string, transport: ContainerSandbox.Transport = here(), container = "task") =>
+const session = (
+  workdir: string,
+  transport: ContainerSandbox.Transport = here(),
+  container = "task",
+  hostEnvironment?: Record<string, string | undefined>
+) =>
   Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner
-    return ContainerSandbox.existing({ container, workdir, spawner, transport })
+    return ContainerSandbox.existing({ container, workdir, spawner, transport, hostEnvironment })
   }).pipe(Effect.provide(rawPlatform))
 
 const directory = (name: string): string => {
@@ -61,6 +66,46 @@ const output = (process: { readonly stdout: Stream.Stream<Uint8Array, unknown> }
   Stream.mkString(Stream.decodeText(process.stdout))
 
 describe("ContainerSandbox.existing", () => {
+  it.effect("preserves default bootstrap inheritance and accepts an empty environment", () =>
+    Effect.scoped(Effect.gen(function*() {
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const previous = process.env.LC_SANDBOX_BOOTSTRAP
+          process.env.LC_SANDBOX_BOOTSTRAP = "host-default"
+          return previous
+        }),
+        (previous) =>
+          Effect.sync(() => {
+            if (previous === undefined) delete process.env.LC_SANDBOX_BOOTSTRAP
+            else process.env.LC_SANDBOX_BOOTSTRAP = previous
+          })
+      )
+      for (const hostEnvironment of [undefined, {}]) {
+        const existing = yield* session(directory("default-environment"), here(), "task", hostEnvironment)
+        const actual = yield* Effect.scoped(Effect.flatMap(
+          existing.spawn("printf '%s' \"$LC_SANDBOX_BOOTSTRAP\"", {}),
+          output
+        ))
+        expect(actual).toBe(hostEnvironment === undefined ? "host-default" : "")
+      }
+    })))
+
+  it.effect("takes bootstrap environment from the composition and overlays transport declarations", () =>
+    Effect.gen(function*() {
+      const existing = yield* session(directory("environment"), here({ LANG: "C", HOME: "/transport-home" }), "task", {
+        HOME: "/configured-home",
+        USER: "configured-user",
+        LANG: "configured-locale",
+        GH_TOKEN: "withheld",
+        EXTRA: "withheld"
+      })
+      const actual = yield* Effect.scoped(Effect.flatMap(
+        existing.spawn("printf '%s:%s:%s:%s:%s' \"$HOME\" \"$USER\" \"$LANG\" \"$GH_TOKEN\" \"$EXTRA\"", {}),
+        output
+      ))
+      expect(actual).toBe("/transport-home:configured-user:C::")
+    }))
+
   it.effect(
     "passes the sandbox conformance suite over a transport that reaches this host",
     () =>

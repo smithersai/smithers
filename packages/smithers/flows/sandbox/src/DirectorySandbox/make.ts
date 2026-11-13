@@ -5,6 +5,7 @@
  */
 
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
+import { ambientEnvironment } from "@smthrs/kernel/ChildProcessSpawner"
 import * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -49,6 +50,12 @@ export interface DirectorySandboxOptions {
   readonly fs: FileSystem.FileSystem
   /** A host spawner with a platform lifecycle; raw and deadline-only spawners are refused. */
   readonly spawner: ChildProcessSpawner["Service"]
+  /**
+   * Bootstrap environment supplied by the host composition. Only the kernel's
+   * bootstrap allowlist is inherited. Omission preserves the host defaults through
+   * the kernel's browser-safe accessor; pass an empty record to inherit none.
+   */
+  readonly hostEnvironment?: Readonly<Record<string, string | undefined>> | undefined
   /** The absolute host directory session workspaces are created under; a relative one throws. */
   readonly root: string
   /** Leave scratch workspaces across scope closure until explicit destroy. */
@@ -162,7 +169,7 @@ export const make = (options: DirectorySandboxOptions): Provider => {
             // Sessions use POSIX command and probe syntax on every host.
             shell: "sh",
             cwd: resolve(spawnOptions.cwd ?? ""),
-            env: ChildProcessEnvironment.make(globalThis.process.env, spawnOptions.env),
+            env: ChildProcessEnvironment.make(options.hostEnvironment ?? ambientEnvironment(), spawnOptions.env),
             extendEnv: false,
             ...spawnOptions.stdin === undefined ? {} : { stdin: Stream.make(spawnOptions.stdin) }
           }

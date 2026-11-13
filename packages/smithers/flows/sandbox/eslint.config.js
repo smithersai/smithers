@@ -45,5 +45,15 @@ export default tseslint.config(
     }
   },
   ...jsdocConvention,
-  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)
+  ...invariants(uninstalledSafety, swallowedCause, {
+    ...ambientAuthority,
+    selectors: [
+      ...ambientAuthority.selectors,
+      {
+        selector:
+          "MemberExpression[property.name='env']:matches([object.name='process'], [object.type='MemberExpression'][object.object.name='globalThis'][object.property.name='process'])",
+        message: "Inject hostEnvironment from the host composition instead of reading process.env in a provider."
+      }
+    ]
+  })
 )

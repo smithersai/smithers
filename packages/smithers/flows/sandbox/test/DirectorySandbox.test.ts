@@ -154,12 +154,66 @@ const services = Effect.gen(function*() {
   return { fs, spawner }
 }).pipe(Effect.provide(platform))
 
-const provider = Effect.map(services, ({ fs, spawner }) => DirectorySandbox.make({ fs, spawner, root }))
+const provider = Effect.map(
+  services,
+  ({ fs, spawner }) => DirectorySandbox.make({ fs, spawner, root })
+)
 
 // The suite spawns real `sleep` processes; a loaded machine still fits this.
 const budget = 30_000
 
 describe("DirectorySandbox", () => {
+  it.effect("preserves default bootstrap inheritance and accepts an empty environment", () =>
+    Effect.scoped(Effect.gen(function*() {
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const previous = process.env.LC_SANDBOX_BOOTSTRAP
+          process.env.LC_SANDBOX_BOOTSTRAP = "host-default"
+          return previous
+        }),
+        (previous) =>
+          Effect.sync(() => {
+            if (previous === undefined) delete process.env.LC_SANDBOX_BOOTSTRAP
+            else process.env.LC_SANDBOX_BOOTSTRAP = previous
+          })
+      )
+      const { fs, spawner } = yield* services
+      for (const hostEnvironment of [undefined, {}]) {
+        const directory = DirectorySandbox.make({ fs, spawner, root, hostEnvironment })
+        const session = yield* directory.acquire("default-environment")
+        const actual = yield* Effect.scoped(Effect.flatMap(
+          session.spawn("printf '%s' \"$LC_SANDBOX_BOOTSTRAP\"", {}),
+          stdoutOf
+        ))
+        expect(actual).toBe(hostEnvironment === undefined ? "host-default" : "")
+      }
+    })))
+
+  it.effect("takes only the injected bootstrap environment and overlays command declarations", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const { fs, spawner } = yield* services
+      const directory = DirectorySandbox.make({
+        fs,
+        spawner,
+        root,
+        hostEnvironment: {
+          HOME: "/configured-home",
+          USER: "configured-user",
+          LANG: "configured-locale",
+          GH_TOKEN: "withheld",
+          EXTRA: "withheld"
+        }
+      })
+      const session = yield* directory.acquire("injected-environment")
+      const actual = yield* Effect.scoped(Effect.flatMap(
+        session.spawn("printf '%s:%s:%s:%s:%s' \"$HOME\" \"$USER\" \"$LANG\" \"$GH_TOKEN\" \"$EXTRA\"", {
+          env: { HOME: undefined, LANG: "C" }
+        }),
+        stdoutOf
+      ))
+      expect(actual).toBe(":configured-user:C::")
+    })))
+
   it("refuses every resource limit at construction, before touching its dependencies", () => {
     const deps = untouchable<never>()
     for (

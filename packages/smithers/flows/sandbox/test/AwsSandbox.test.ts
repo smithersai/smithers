@@ -675,6 +675,89 @@ describe("AwsSandbox", () => {
       ])
     })))
 
+  it.effect("reclaims crash-left image definitions when no live task remains", () =>
+    Effect.gen(function*() {
+      for (const stopped of [false, true]) {
+        const fake = fakeEcs()
+        const base = sdkOf(fake)
+        const active = new Set<string>()
+        let listed: Array<string> = []
+        const sdk: AwsSandbox.Sdk = {
+          ...base,
+          async registerTaskDefinition(input) {
+            const result = await base.registerTaskDefinition(input)
+            active.add(result.taskDefinition!.taskDefinitionArn!)
+            return result
+          },
+          async listTaskDefinitions(input) {
+            if (input.nextToken === undefined) listed = [...active]
+            return input.nextToken === undefined
+              ? { taskDefinitionArns: listed.slice(0, 1), nextToken: "rest" }
+              : { taskDefinitionArns: listed.slice(1) }
+          },
+          async deregisterTaskDefinition(input) {
+            active.delete(input.taskDefinition)
+            return base.deregisterTaskDefinition(input)
+          }
+        }
+        const provider = AwsSandbox.make({
+          sdk,
+          image: "img",
+          taskRoleArn: "role",
+          cluster: "cluster-arn",
+          region: "us-west-2",
+          subnets: ["subnet-a"]
+        })
+        const leaked = yield* Scope.make()
+        yield* Effect.provideService(provider.acquire("image-without-live-task"), Scope.Scope, leaked)
+        const original = fake.runInputs[0]!.taskDefinition
+        const older = original.replace(/:1$/, ":0")
+        const unrelated = original.replace(/:1$/, "-other:1")
+        active.add(older)
+        active.add(unrelated)
+        if (stopped) fake.describeSteps.push("stopped")
+        else fake.running.splice(0)
+        yield* Effect.scoped(Effect.gen(function*() {
+          yield* provider.acquire("image-without-live-task")
+          expect(fake.registerInputs).toHaveLength(2)
+          const current = fake.runInputs[1]!.taskDefinition
+          expect([...active]).toEqual([unrelated, current])
+          expect(fake.deregisterInputs).toEqual([
+            { taskDefinition: original },
+            { taskDefinition: older }
+          ])
+          expect(fake.events.indexOf("deregister")).toBeLessThan(fake.events.lastIndexOf("run"))
+        }))
+        expect([...active]).toEqual([unrelated])
+        expect(fake.events.slice(-2)).toEqual(["stop", "deregister"])
+        yield* Scope.close(leaked, Exit.void)
+      }
+    }))
+
+  it.effect("releases a new image definition when stale revision listing fails", () =>
+    Effect.gen(function*() {
+      const fake = fakeEcs()
+      const provider = AwsSandbox.make({
+        sdk: {
+          ...sdkOf(fake),
+          async listTaskDefinitions() {
+            throw new Error("list denied")
+          }
+        },
+        image: "img",
+        taskRoleArn: "role",
+        cluster: "cluster-arn",
+        region: "us-west-2",
+        subnets: ["subnet-a"]
+      })
+      expect(yield* Effect.flip(Effect.scoped(provider.acquire("image-fresh-list-failure")))).toMatchObject({
+        code: "unavailable"
+      })
+      expect(fake.runInputs).toHaveLength(0)
+      expect(fake.deregisterInputs).toHaveLength(1)
+      expect(fake.deregisterInputs[0]!.taskDefinition).toContain(":1")
+    }))
+
   it.effect("reuses a crash-left image definition and reclaims its stale revisions", () =>
     Effect.gen(function*() {
       const fake = fakeEcs()
@@ -685,6 +768,7 @@ describe("AwsSandbox", () => {
         ...sdkOf(fake),
         async listTaskDefinitions(input: typeof listInputs[number]) {
           listInputs.push(input)
+          if (original === "") return {}
           return input.nextToken === undefined
             ? { taskDefinitionArns: [original, original.replace(/:1$/, ":2")], nextToken: "next" }
             : { taskDefinitionArns: [original.replace(/:1$/, ":3"), original.replace(/:1$/, "-other:1")] }
@@ -711,6 +795,7 @@ describe("AwsSandbox", () => {
         ])
       }))
       expect(listInputs).toEqual([
+        { familyPrefix: fake.registerInputs[0]!.family, status: "ACTIVE" },
         { familyPrefix: fake.registerInputs[0]!.family, status: "ACTIVE" },
         { familyPrefix: fake.registerInputs[0]!.family, status: "ACTIVE", nextToken: "next" }
       ])
@@ -752,6 +837,7 @@ describe("AwsSandbox", () => {
       const sdk = {
         ...sdkOf(fake),
         async listTaskDefinitions() {
+          if (fake.runInputs.length === 0) return {}
           throw new Error("list denied")
         }
       }
