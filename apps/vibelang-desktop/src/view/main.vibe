@@ -4,6 +4,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Web from "../../../vibelang/src/web/main.vibe"
 import { newClient } from "../../../vibelang/src/core/conversation.vibe"
 import { Factory } from "../../../vibelang/src/core/Factory.vibe"
+import { Actions } from "../../../vibelang/src/actions/Actions.vibe"
 import { viewer } from "../../../vibelang/src/core/roles.vibe"
 const localViewer = { ...viewer, available: false }
 import { Snapshot, type Operation } from "../protocol.vibe"
@@ -59,7 +60,7 @@ const Connect = Command.define("Desktop.Connect", { args: { endpoint: Schema.Str
   return try orDie(Effect.try(() => Exit.isSuccess(result) ? Message.Listed({ models: result.value }) : Message.Failed({ reason: "Model unavailable" })))
 } })
 
-export function init(flags: Web.Flags): Update.Return<Model, Message, DesktopClient | Factory> {
+export function init(flags: Web.Flags): Update.Return<Model, Message, DesktopClient | Factory | Actions> {
   const base = Web.init(flags)
   return { model: { ...base.model, surface: "chat", desktop: { mock: true, folder: null, model: null, tools: [] }, manager: false, maximized: false, picker: false, endpoint: "", available: [], highlighted: 0, busy: false, error: "", offline: false }, commands: [Refresh({ conversation: base.model.conversation }), Web.LoadAccount({})] }
 }
@@ -69,7 +70,7 @@ function change(model: Model, operation: Operation, selected = ""): Update.Retur
 }
 export function canSend(model: Model): boolean { return !model.busy && (model.conversation.startsWith("tour-") || modelReady(model.desktop.mock, model.desktop.model?.model ?? "", model.desktop.model?.state ?? "failed")) }
 
-export function update(model: Model, message: Message): Update.Return<Model, Message, DesktopClient | Factory> {
+export function update(model: Model, message: Message): Update.Return<Model, Message, DesktopClient | Factory | Actions> {
   switch (message._tag) {
     case "OpenExternal": return { model, commands: [External({ url: message.url })] }
     case "ExternalOpened": return { model }
@@ -77,7 +78,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     case "CloseFolder": return change(model, "close")
     case "TogglePicker": return { model: { ...model, picker: !model.picker, highlighted: 0 }, commands: [model.picker ? FocusActive({ palette: model.palette }) : FocusPicker({})] }
     case "OpenModels": {
-      const closed = model.palette ? Web.update(model, Web.Message.PressedEscape()) : { model }
+      const closed = model.palette ? Web.update(model, Web.Message.PressedEscape()) : { model, commands: [] }
       return { model: { ...model, ...closed.model, manager: true, picker: false }, commands: closed.commands ?? [] }
     }
     case "CloseModels": return { model: { ...model, manager: false, maximized: false }, commands: [Web.FocusComposer({})] }
@@ -92,7 +93,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     case "Snapshot": {
       if (message.conversation !== undefined && message.conversation !== model.conversation) return { model }
       const switched = model.desktop.mock !== message.state.mock
-      const reset = switched && !message.state.mock ? Web.update(model, Web.Message.AccountLoaded({ identity: localViewer })) : { model }
+      const reset = switched && !message.state.mock ? Web.update(model, Web.Message.AccountLoaded({ identity: localViewer })) : { model, commands: [] }
       return { model: { ...model, ...reset.model, desktop: message.state, endpoint: message.state.model?.endpoint ?? model.endpoint, mode: message.state.mock ? "mock" : "live", busy: false, error: "", ...(switched ? { epoch: model.epoch + 1, from: 0, client: newClient, stream: "open" as const } : {}) }, commands: [...(reset.commands ?? []), ...(switched ? [Web.LoadAccount({})] : []), ...(message.conversation === undefined ? [Refresh({ conversation: model.conversation })] : [])] }
     }
     case "PickerKey": {

@@ -106,3 +106,25 @@ it("clears the prior conversation's receipts immediately when leaving the tour f
   expect(selected.conversation).toBe("home")
   expect(selected.desktop.tools).toEqual([])
 })
+
+it("preserves shared commands when opening Models and handles the empty-command branches", () => {
+  const model = initial()
+  const opened = update({ ...model, palette: true }, Message.OpenModels())
+  expect(opened.model.manager).toBe(true)
+  expect(opened.model.palette).toBe(false)
+  expect(opened.commands?.map((command) => command.name)).toEqual(["ClosePalette"])
+  const alreadyClosed = update(model, Message.OpenModels())
+  expect(alreadyClosed.model.manager).toBe(true)
+  expect(alreadyClosed.commands).toEqual([])
+  const snapshot = update(model, Message.Snapshot({ conversation: model.conversation, state: model.desktop }))
+  expect(snapshot.commands).toEqual([])
+})
+
+it("retains shared wiki and actions commands in the desktop update", () => {
+  const model = initial()
+  const wiki = update(model, Message.ClickedWiki({ page: "index" }))
+  expect(wiki.commands?.map((command) => command.name)).toEqual(["OpenWiki"])
+  expect(wiki.commands?.[0]?.args).toMatchObject({ conversation: model.conversation, page: "index" })
+  const actions = update(model, Message.ClickedActions())
+  expect(actions.commands?.map((command) => command.name)).toEqual(["LoadActions"])
+})

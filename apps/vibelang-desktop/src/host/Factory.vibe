@@ -10,6 +10,9 @@ import { Node } from "@smthrs/plan"
 import { Grep } from "@smthrs/std"
 import { Registry } from "@smthrs/registry"
 import { Factory, Refused, Unavailable } from "../../../vibelang/src/core/Factory.vibe"
+import { AccountUnavailable, viewer } from "../../../vibelang/src/core/roles.vibe"
+import { IssueFailure } from "../../../vibelang/src/core/issueSchemas.vibe"
+import { WikiFailure } from "../../../vibelang/src/core/wikiSchemas.vibe"
 import { EventSchema } from "../../../vibelang/src/core/schemas.vibe"
 import type { Event } from "../../../vibelang/src/core/conversation.vibe"
 import { mockReply } from "../../../vibelang/src/core/mockReplies.vibe"
@@ -335,12 +338,31 @@ export const registration = Layer.effectContext(effect {
   const factory: Factory.Shape = {
     ...signedOutGateway,
     mode: "live",
+    accounts: {
+      current: () => succeed({ ...viewer, available: false }),
+      members: effect () => { throw new AccountUnavailable({ reason: "account unavailable" }) },
+      grant: effect () => { throw new AccountUnavailable({ reason: "account unavailable" }) },
+      signOut: effect () => { throw new AccountUnavailable({ reason: "account unavailable" }) },
+      choose: effect () => { throw new AccountUnavailable({ reason: "account unavailable" }) },
+      signInAgent: effect () => { throw new AccountUnavailable({ reason: "account unavailable" }) },
+      participated: () => Effect.void,
+      events: () => Stream.fail(new AccountUnavailable({ reason: "account unavailable" })),
+    },
+    issues: {
+      read: effect () => { throw new IssueFailure({ reason: "unavailable" }) },
+      act: effect () => { throw new IssueFailure({ reason: "unavailable", unwritten: true }) },
+    },
+    wiki: {
+      read: effect () => { throw new WikiFailure({ reason: "unavailable" }) },
+      act: effect () => { throw new WikiFailure({ reason: "unavailable", unwritten: true }) },
+    },
     post: effect (conversation, clientId, name, text) => {
       const refusal = try engine.execute(Post, { executionId: `desktop/post/${conversation}/${clientId}`, payload: { conversation, clientId, name, text } }).pipe(Effect.orDie)
       if (refusal !== null) throw new Refused({ refusal })
     },
     read: effect (conversation, after) => { return try (try room(conversation)).read(after) },
     events: (conversation, after) => Stream.unwrap(effect { const seq = try room(conversation); try seq.ensureDispatched(); return seq.follow(after) }),
+    openWiki: effect () => { throw new Refused({ refusal: "not-replying" }) },
     tour: () => Effect.fail(new Refused({ refusal: "not-replying" })),
     endTour: () => Effect.fail(new Refused({ refusal: "not-replying" })),
   }

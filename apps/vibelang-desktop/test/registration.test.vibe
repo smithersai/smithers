@@ -2,11 +2,15 @@
 import { expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import { BunHost } from "@smthrs/platform-bun"
-import { HttpClient } from "effect/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Factory } from "../../vibelang/src/core/Factory.vibe"
 import { Desktop, Preferences, registration } from "../src/host/Factory.vibe"
 import { replyIdOf } from "../../vibelang/src/core/flows.vibe"
 import { folderLayer } from "../src/host/Folder.vibe"
+import { clientLayer, DesktopClient } from "../src/view/Client.vibe"
+import { Actions } from "../../vibelang/src/actions/Actions.vibe"
+import { handler } from "../src/host/Http.vibe"
+import { init, Message, update } from "../src/view/main.vibe"
 import { localModelsLayer } from "../src/host/LocalModel.vibe"
 
 const initial = { mock: true, folder: null, model: null, tools: [] }
@@ -179,5 +183,120 @@ it.effect("retains an applied edit's original through an archive failure and rec
     expect(JSON.parse(reclaimed)).toEqual([])
     expect(tools).toEqual([receipt])
     expect(actual).toBe("new")
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+for (const forcedMock of [false, true]) {
+  it.effect(`shares wiki and action commands with the selected backend (forced Mock: ${forcedMock})`, () => (effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try fs.makeTempDirectoryScoped()
+    // Restore a local session without a selected provider: no model request can run.
+    try fs.writeFileString(path.join(directory, "settings.json"), JSON.stringify({ snapshot: { ...initial, mock: false }, edits: [] }))
+    const host = try start(directory, [])
+    const origin = "http://127.0.0.1:44509"
+    const launch = "c".repeat(64)
+    // Reach the real desktop handler through its HTTP request/response boundary.
+    const transport = HttpClient.make((request) => (effect {
+      const web = try orDie(HttpClientRequest.toWeb(request.pipe(HttpClientRequest.setHeaders({
+        host: "127.0.0.1:44509", origin, cookie: `vibelang-desktop-launch=${launch}`,
+      }))))
+      const response = try orDie(handler(origin, directory, launch).pipe(
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)),
+        Effect.provideService(Factory, host.factory),
+        Effect.provideService(Desktop, host.desktop),
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+      ))
+      return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(response))
+    }))
+    provide clientLayer(origin, forcedMock).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, transport))) {
+      const factory = try Factory
+      const desktop = try DesktopClient
+      const actionApi = try Actions
+      const run = try actionApi.start("vibelang/Tour", {}, "button")
+      const followed = try Stream.runCollect(actionApi.follow(run).pipe(Stream.take(1)))
+      try actionApi.cancel(run)
+      const stopped = try actionApi.read(run)
+      const repeated = try actionApi.rerun(run)
+      try actionApi.cancel(repeated)
+      const commanded = try actionApi.command("/tour")
+      try actionApi.cancel(commanded)
+      const model = init({ session: "desktop-contract", name: "Guest", mode: "mock" }).model
+      const wiki = try Effect.try(() => update(model, Message.ClickedWiki({ page: "index" })))
+      const actions = try Effect.try(() => update(model, Message.ClickedActions()))
+      const opened = try wiki.commands![0]!.effect
+      const loaded = try actions.commands![0]!.effect
+      const page = try factory.wiki.read("index")
+      const issues = try factory.issues.read()
+      const before = try factory.read(model.conversation, 0)
+      const state = try desktop.snapshot()
+      const afterOpen = try wiki.commands![0]!.effect
+      const afterLoad = try actions.commands![0]!.effect
+      const after = try factory.read(model.conversation, 0)
+      const localPage = try exit(factory.wiki.read("index"))
+      const localIssues = try exit(factory.issues.read())
+      const selectedRun = try exit(actionApi.read(run))
+      const selectedFollow = try exit(Stream.runCollect(actionApi.follow(run).pipe(Stream.take(1))))
+      const selectedCancel = try exit(actionApi.cancel(run))
+      const selectedStart = try exit(actionApi.start("vibelang/Tour", {}, "button"))
+      if (Exit.isSuccess(selectedStart)) try actionApi.cancel(selectedStart.value)
+      const selectedRerun = try exit(actionApi.rerun(run))
+      if (Exit.isSuccess(selectedRerun)) try actionApi.cancel(selectedRerun.value)
+      const selectedCommand = try exit(actionApi.command("/tour"))
+      if (Exit.isSuccess(selectedCommand)) try actionApi.cancel(selectedCommand.value)
+      // Guided conversations remain in the product mock, even with a local model.
+      try factory.openWiki("tour-desktop-contract", "index")
+      const guided = try factory.read("tour-desktop-contract", 0)
+      try Effect.try(() => {
+        expect(followed).toHaveLength(1)
+        expect(followed[0]?.id).toBe(run)
+        expect(stopped.state).toBe("cancelled")
+        expect(repeated).not.toBe(run)
+        expect(commanded).not.toBe(repeated)
+        for (const outcome of [selectedRun, selectedFollow, selectedCancel, selectedStart, selectedRerun, selectedCommand]) expect(outcome._tag).toBe(forcedMock ? "Success" : "Failure")
+        expect(opened._tag).toBe("SucceededWiki")
+        expect(loaded._tag).toBe("LoadedActions")
+        if (loaded._tag === "LoadedActions") expect(loaded.entries.length).toBeGreaterThan(0)
+        expect(page.pages.length).toBeGreaterThan(0)
+        expect(issues.items.length).toBeGreaterThan(0)
+        expect(before.seq).toBeGreaterThan(0)
+        expect(state.mock).toBe(forcedMock)
+        expect(factory.mode).toBe(forcedMock ? "mock" : "live")
+        expect(afterOpen._tag).toBe(forcedMock ? "SucceededWiki" : "FailedWiki")
+        expect(afterLoad._tag).toBe(forcedMock ? "LoadedActions" : "FailedActions")
+        expect(after.seq).toBe(forcedMock ? before.seq + 1 : 0)
+        expect(Exit.isSuccess(localPage)).toBe(forcedMock)
+        expect(Exit.isSuccess(localIssues)).toBe(forcedMock)
+        expect(guided.seq).toBeGreaterThan(0)
+      })
+    }
+  }).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+}
+
+it.effect("local project services refuse cloud authority without losing the Viewer session", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const directory = try fs.makeTempDirectoryScoped()
+  const { factory } = try start(directory, [])
+  const identity = try factory.accounts.current()
+  const failures = try all([
+    exit(factory.openWiki("home", "index")),
+    exit(factory.issues.read()),
+    exit(factory.issues.act({ op: "read", key: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" })),
+    exit(factory.wiki.read("index")),
+    exit(factory.wiki.act({ op: "save", page: "index", base: "", text: "changed", key: "save" })),
+    exit(factory.accounts.members()),
+    exit(factory.accounts.grant("person", "maintainer")),
+    exit(factory.accounts.signOut()),
+    exit(factory.accounts.choose("maintainer")),
+    exit(factory.accounts.signInAgent()),
+    exit(Stream.runCollect(factory.accounts.events(0))),
+  ])
+  try factory.accounts.participated()
+  try Effect.try(() => {
+    expect(identity).toEqual({ id: "", login: "", role: "viewer", available: false })
+    expect(failures.every((outcome) => outcome._tag === "Failure")).toBe(true)
+    const refused = failures[0]!
+    if (Exit.isFailure(refused)) expect(Cause.squash(refused.cause)).toMatchObject({ _tag: "Refused", refusal: "not-replying" })
   })
 }).pipe(Effect.provide(BunHost.layer), Effect.scoped))

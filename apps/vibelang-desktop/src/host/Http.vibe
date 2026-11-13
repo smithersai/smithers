@@ -59,6 +59,7 @@ effect function handle(origin: string, assets: string, launch: string) {
   if (url.pathname.startsWith("/api/sandboxes/")) return try sandboxRequest(signedOutGateway)
   if (url.pathname.startsWith("/api/")) return try factoryHttp({
     post: effect (conversation, body) => { return Effect.as(factory.post(conversation, body.clientId, body.name, body.text), null) catch (error) => error._tag === "Refused" ? error.refusal : "busy" },
+    openWiki: effect (conversation, page) => { return Effect.as(factory.openWiki(conversation, page), null) catch (error) => error._tag === "Refused" ? error.refusal : "busy" },
     read: (conversation, after) => factory.read(conversation, after).pipe(Effect.orDie),
     tour: effect (conversation) => { return Effect.as(factory.tour(conversation), null) catch () => "not-replying" },
     endTour: effect (conversation) => { return Effect.as(factory.endTour(conversation), null) catch () => "not-replying" },

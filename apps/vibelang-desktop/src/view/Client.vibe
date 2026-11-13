@@ -3,6 +3,9 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { Factory, Unavailable } from "../../../vibelang/src/core/Factory.vibe"
 import { LiveFactory } from "../../../vibelang/src/core/LiveFactory.vibe"
 import { MockFactory } from "../../../vibelang/src/core/MockFactory.vibe"
+import { Actions } from "../../../vibelang/src/actions/Actions.vibe"
+import { MockActions } from "../../../vibelang/src/actions/MockActions.vibe"
+import { LiveActions } from "../../../vibelang/src/actions/LiveActions.vibe"
 import { Snapshot, type Operation } from "../protocol.vibe"
 
 export service DesktopClient {
@@ -19,6 +22,8 @@ export function clientLayer(origin: string, forcedMock: boolean) {
     const http = Layer.succeed(HttpClient.HttpClient, client)
     const mock = Context.get(try Layer.buildWithScope(MockFactory, scope), Factory)
     const local = Context.get(try Layer.buildWithScope(LiveFactory(origin).pipe(Layer.provide(http)), scope), Factory)
+    const mockActions = Context.get(try Layer.buildWithScope(MockActions({ actor: "person" }).pipe(Layer.provide(Layer.succeed(Factory, mock))), scope), Actions)
+    const localActions = Context.get(try Layer.buildWithScope(LiveActions(origin).pipe(Layer.provide(http)), scope), Actions)
     let mocked = true
     const backend = (conversation: string) => forcedMock || mocked || conversation.startsWith("tour-") ? mock : local
     effect function snapshot(conversation?: string) {
@@ -50,7 +55,9 @@ export function clientLayer(origin: string, forcedMock: boolean) {
     }
     const factory: Factory.Shape = {
       get mode() { return forcedMock || mocked ? "mock" : "live" },
-      get accounts() { return backend("home").accounts! },
+      get accounts() { return backend("home").accounts },
+      get issues() { return backend("home").issues },
+      get wiki() { return backend("home").wiki },
       post: (conversation, clientId, name, text) => backend(conversation).post(conversation, clientId, name, text),
       read: (conversation, after) => backend(conversation).read(conversation, after),
       events: (conversation, after) => backend(conversation).events(conversation, after),
@@ -58,9 +65,23 @@ export function clientLayer(origin: string, forcedMock: boolean) {
       startSandbox: (conversation, operationId) => backend(conversation).startSandbox(conversation, operationId),
       stopSandbox: (conversation, operationId, generation) => backend(conversation).stopSandbox(conversation, operationId, generation),
       sandboxCommand: (conversation, operationId, command, generation) => backend(conversation).sandboxCommand(conversation, operationId, command, generation),
+      openWiki: (conversation, page) => backend(conversation).openWiki(conversation, page),
+      controlTour: (conversation, action, step) => mock.controlTour!(conversation, action, step),
       tour: (conversation) => mock.tour(conversation),
       endTour: (conversation) => mock.endTour(conversation),
     }
-    return Context.make(Factory, factory).pipe(Context.add(DesktopClient, desktop))
+    const actionBackend = () => forcedMock || mocked ? mockActions : localActions
+    const actions: Actions.Shape = {
+      list: () => actionBackend().list(),
+      commands: () => actionBackend().commands(),
+      runs: (flow) => actionBackend().runs(flow),
+      read: (id) => actionBackend().read(id),
+      follow: (id) => actionBackend().follow(id),
+      start: (flow, input, door) => actionBackend().start(flow, input, door),
+      command: (text, door) => actionBackend().command(text, door),
+      rerun: (id) => actionBackend().rerun(id),
+      cancel: (id) => actionBackend().cancel(id),
+    }
+    return Context.make(Factory, factory).pipe(Context.add(DesktopClient, desktop), Context.add(Actions, actions))
   })
 }

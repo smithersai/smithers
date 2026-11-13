@@ -9,6 +9,7 @@ From the repository root:
 ```sh
 pnpm install --frozen-lockfile --filter '@smthrs/vibelang-site...' --filter '@smthrs/vibelang-desktop...'
 cargo build --locked --release --package smithers-ffi --bin smithers-jj-export
+pnpm --filter @smthrs/vibelang-site wiki:build
 cd apps/vibelang-desktop
 pnpm typecheck
 pnpm test
@@ -52,7 +53,8 @@ Screenshots default to the Playwright output directory; `VIBELANG_DESKTOP_SCREEN
 
 The History page reuses the shared view and the existing no-backend `MockMythical` service, including its labelled
 Mock mode and shared role source. Local model selection configures the chat; it does not create a cloud project
-session. This host adds no second project backend. The shared offline role picker works in Mock; a local model restores Viewer and reports sign-in unavailable.
+session. Wiki navigation and registered actions use the same selected backend as the shared app. Guided conversations keep
+their Mock wiki navigation and controls. This host adds no second project backend. The shared offline role picker works in Mock; a local model restores Viewer and reports sign-in unavailable.
 
 Decision [0025](../vibelang/wiki/decisions/0025-desktop.md) records the design and its ruling conflicts.
 

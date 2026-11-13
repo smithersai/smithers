@@ -1,6 +1,8 @@
 {
   "extends": "../vibelang/tsconfig.json",
   "compilerOptions": {
+    // Build declarations import JavaScript metadata from the workspace targets.
+    "allowJs": true,
     "types": [
       "node",
       "vite/client"

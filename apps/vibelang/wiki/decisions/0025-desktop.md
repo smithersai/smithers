@@ -96,3 +96,9 @@ search receipt text is bounded too. Exact edit originals remain in a separate wr
 return, their receipt is archived and their reply settles. Startup migrates older settings idempotently and
 archives completed recovery intents before reclaiming those whose reply has a durable terminal event.
 Confirmed refusals discard their intents; uncertain filesystem outcomes retain their originals for recovery.
+
+The desktop supplies the complete shared `Factory` and `Actions` contracts. Wiki navigation and action commands
+use the selected backend; guided conversations stay in Mock, including their wiki navigation and tour controls.
+Without a project backend, the local host retains its unavailable Viewer session and returns typed refusals for
+project services and wiki navigation. The Foldkit wrapper retains shared commands and supplies `Actions` to the
+application runtime; desktop transitions with no shared work use an empty command list.
