@@ -1,0 +1,8 @@
+// The sandbox binding classes' test-stage counter export (decision 0017), outside Alchemy's constructors so the
+// fuzz suite runs it: Alchemy evaluates a Durable Object's constructor at plan time but builds the object only deployed.
+import { sandboxCounters, type SandboxCounters } from "../bench/sandbox-counters.ts"
+
+/** `object` with `benchmarkCoverage`, which answers this isolate's instrumenter counters (none in a production build). */
+export function withCounters<A extends object>(object: A): A & { readonly benchmarkCoverage: () => SandboxCounters!! } {
+  return { ...object, benchmarkCoverage: () => Effect.sync(sandboxCounters) }
+}

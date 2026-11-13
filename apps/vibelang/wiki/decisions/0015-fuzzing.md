@@ -1826,6 +1826,36 @@ needs a successful issue write through smithers.sh's connection), `ActionRuns` 7
 `SandboxHttp` 50, `SandboxMachine` 17 and `Wiki` 86. `sandboxHost` 272 and `Sandboxes` 37-39, new with `b49d96d4`,
 are reached by `sandbox/evicted-command` after it, leaving 9.
 
+### Session 17: the last nine lines (vl-fuzz2, 2026-11-13)
+
+Each of `full15`'s nine remaining lines is now run by a chosen case, and each case has a mutant it catches:
+
+| Line | Case | Mutant caught |
+| --- | --- | --- |
+| `worker/Accounts.vibe` 435 | `accounts/broker-sequences`: a fifth world in which smithers.sh's real delegation grants the issue repository (`smithersai/vibelang`, id 1) and reaches an in-memory GitHub serving it; person 7 signs in, connects and files an issue. The filing answers 200 (check 274) and leaves them `community`, never `new` (check 273) | the participation grant removed |
+| `worker/ActionRuns.vibe` 72 | `actions/run-hosts`: a history host whose `start` cannot encode a fresh run's intent (a faulty Effect service) answers `input` and records the run failed | the refusal answered `null` |
+| `worker/SandboxHttp.vibe` 50 | `sandbox/http-surface`: a command write naming a generation and no command answers 400 before the gateway | the write accepted |
+| `worker/Wiki.vibe` 86 | `wiki/steered-host` (`default-host`): one host that reads a page twice holds one copy of it | the earlier copy kept |
+| `src/core/MockAccounts.vibe` 102 | `accounts/agent-without-fixture-maintainer` (new): a maintainer the fixture never had, then both fixture maintainers demoted; the agent's sign-in is `AccountUnavailable` `no fixture` and the selection is unchanged | the guard removed |
+| `worker/HistoryObject.vibe` 149-150 | `objects/steered-host` (`routing`): the publisher's router dies on a start and a wake, as the reply router's check already did | either member answering |
+| `worker/SandboxAccounts.vibe` 20, `SandboxMachine.vibe` 17 | `sandbox/benchmark-coverage`: `withCounters` (below) | |
+
+Session 16 called `MockAccounts` 102 unreachable because `grantPolicy` never demotes the last maintainer. That was
+wrong: a maintainer may grant `maintainer` to an id outside the fixture's people, after which both fixture
+maintainers can be demoted. `test/fixtureRecoveryEdges.coverage.test.vibe` already reached it. The guard stays.
+
+The `unrouted` guards in `worker/HistoryObject.vibe` stay. `ExecutionObject.Router` requires `start` and `wake`, and
+the publisher's rounds hand off only to their next round in the same object, so a call means the engine routed a
+flow that this object does not hold. Dying names that defect. There is nothing to delete, so the fuzz suite calls
+both members directly, as it already did for `Objects.unrouted`.
+
+`SandboxAccounts` 20 and `SandboxMachine` 17 were the `Effect.map` callbacks that add `benchmarkCoverage` to each
+object. Alchemy runs a Durable Object's constructor at plan time with a stand-in state (`infra/stack` does this),
+which covers the constructor up to its `return`, but builds the object only in a deployed Worker. No local host
+here does that for the sandbox classes, which need a Container binding. The callback is now
+`worker/benchmarkCounters.vibe`'s `withCounters`, passed by name, so the constructors hold only Alchemy wiring that
+plan time runs, and the fuzz and unit suites run the counter export itself.
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the

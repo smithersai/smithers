@@ -10,6 +10,8 @@ import type { MachineBox, ObjectState } from "../worker/machineObject.vibe"
 import { DIRECT_CONVERSATION, deadlineOf, leaseClamped, OWNER_HEADER, PROBE_CONVERSATION, PROBE_WINDOW_MS, probeFetch, probeIdentity, probeOwner } from "../worker/sandboxProbeFetch.vibe"
 import { probeMachine } from "../worker/sandboxProbeContainer.vibe"
 import { benchmarkFetch } from "../worker/sandboxBenchmark.vibe"
+import { withCounters } from "../worker/benchmarkCounters.vibe"
+import { sandboxCounters } from "../bench/sandbox-counters.ts"
 import { makeBox, namespaceOf, type BoxFault } from "./machine-box.ts"
 import { objectStorage } from "../test/support/objectStorage.ts"
 import { run, Int, same } from "./run.vibe"
@@ -225,6 +227,10 @@ const BenchmarkInput = Schema.Struct({
  * machine's counters, in that order.
  */
 it.live("sandbox/benchmark-coverage", () => run("sandbox/benchmark-coverage", BenchmarkInput, (input) => provided(effect {
+  // The binding classes' export: an object keeps its own members and gains this isolate's counters.
+  const object = { apply: () => succeed("kept") }
+  const exported = withCounters(object)
+  if (exported.apply !== object.apply || !same(try exported.benchmarkCoverage(), sandboxCounters())) return false
   const asked: Array<string> = []
   const inner = HttpServerResponse.jsonUnsafe({ inner: true }, { status: 299 })
   const counters = (who: string) => ({ buildId: who, coverage: {} })

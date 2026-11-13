@@ -1,0 +1,11 @@
+// worker/benchmarkCounters.vibe: the sandbox binding classes' test-stage counter export.
+import { expect, it } from "@effect/vitest"
+import { withCounters } from "../worker/benchmarkCounters.vibe"
+import { sandboxCounters } from "../bench/sandbox-counters.ts"
+
+it.effect("an exported object keeps its own members and answers this isolate's counters", () => effect {
+  const object = { apply: () => succeed("kept") }
+  const exported = withCounters(object)
+  expect(exported.apply).toBe(object.apply)
+  expect(try exported.benchmarkCoverage()).toEqual(sandboxCounters())
+})

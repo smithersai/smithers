@@ -5,7 +5,8 @@ import { identity as unchanged } from "effect/Function"
 import { SandboxMachine, machineLive, type MachineShape } from "./SandboxMachine.vibe"
 import { accountObject, gatewayOf, noIdentity, SandboxGateway, SandboxIdentity, type AccountShape } from "./accountObject.vibe"
 import { signedOutGateway } from "./SandboxHttp.vibe"
-import { sandboxCounters, type SandboxCounters } from "../bench/sandbox-counters.ts"
+import type { SandboxCounters } from "../bench/sandbox-counters.ts"
+import { withCounters } from "./benchmarkCounters.vibe"
 
 export { accountObject, gatewayOf, identityFromPolicy, noIdentity, SandboxGateway, SandboxIdentity } from "./accountObject.vibe"
 export type { AccountShape } from "./accountObject.vibe"
@@ -17,7 +18,7 @@ export const accountWithMachines = (machines: (namespace: { getByName(name: stri
   const namespace = (try SandboxMachine) as Cloudflare.DurableObject<MachineShape>
   const identity = try SandboxIdentity
   // accountObject calls only getByName(id).apply; the probe's clamped namespace needs no stub fetch.
-  return Effect.map(accountObject(state, machines(namespace) as typeof namespace, identity), (account) => ({ ...account, benchmarkCoverage: () => Effect.sync(sandboxCounters) }))
+  return Effect.map(accountObject(state, machines(namespace) as typeof namespace, identity), withCounters)
 })
 const accountLive = accountWithMachines(unchanged)
 

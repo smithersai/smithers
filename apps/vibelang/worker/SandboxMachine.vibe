@@ -2,7 +2,8 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { SandboxImage } from "../infra/SandboxImage.vibe"
 import { machineObject, type MachineShape } from "./machineObject.vibe"
-import { sandboxCounters, type SandboxCounters } from "../bench/sandbox-counters.ts"
+import type { SandboxCounters } from "../bench/sandbox-counters.ts"
+import { withCounters } from "./benchmarkCounters.vibe"
 
 export { machineObject } from "./machineObject.vibe"
 export type { MachineBox, MachineShape, ObjectState } from "./machineObject.vibe"
@@ -14,6 +15,6 @@ export const machineWithBody = (body: Effect.Effect<typeof machineObject>) => Sa
   const box = try SandboxImage
   const state = try Cloudflare.DurableObjectState
   const open = try body
-  return Effect.map(open(box, state), (machine) => ({ ...machine, benchmarkCoverage: () => Effect.sync(sandboxCounters) }))
+  return Effect.map(open(box, state), withCounters)
 })
 export const machineLive = machineWithBody(Effect.succeed(machineObject))
