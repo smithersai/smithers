@@ -80,15 +80,6 @@ export const make = (options: Options) =>
   Effect.gen(function*() {
     const gate = yield* Semaphore.make(1)
     const positions = new Map<string, Position>()
-    /**
-     * Rounds whose journal was drained after a lineage read showed them ended,
-     * with the ending they showed and the children they had. An ended run
-     * writes no further evidence and spawns no further child, so a later pass
-     * does not read it again while the lineage still shows the same ending. A
-     * rewind makes the run live again or ends it at another time, and either
-     * reopens it here.
-     */
-    const closed = new Map<string, { readonly ending: string; readonly children: ReadonlyArray<string> }>()
     const target = options.controlRunId as JournalEvent.RunId
 
     const gap = (executionId: string, generation: number | null, detail: Readonly<Record<string, unknown>>) =>
@@ -253,22 +244,11 @@ export const make = (options: Options) =>
       // rounds settled from these rather than reading every round's row, and
       // with it the round's saved state, again on every pass.
       const statuses = new Map<string, RunStore.RunStatus>()
-      // How each ended round a lineage read named had ended when it was read.
-      const endings = new Map<string, string>()
       const pending = [options.executionId]
       for (let index = 0; index < pending.length; index++) {
         const executionId = pending[index]!
         if (seen.has(executionId)) continue
         seen.add(executionId)
-        const ending = endings.get(executionId)
-        const settled = closed.get(executionId)
-        if (settled !== undefined) {
-          if (settled.ending === ending) {
-            for (const child of settled.children) if (!seen.has(child)) pending.push(child)
-            continue
-          }
-          closed.delete(executionId)
-        }
         yield* readRun(executionId)
         if (options.runLineage !== undefined && !listed.has(executionId)) {
           // Membership only: the rounds' saved state is never read here.
@@ -291,9 +271,6 @@ export const make = (options: Options) =>
             }
             listed.add(round.runId)
             statuses.set(round.runId, round.status)
-            if (RunStore.isTerminalRunStatus(round.status)) {
-              endings.set(round.runId, `${round.status} ${round.finishedAtMs}`)
-            }
             if (!seen.has(round.runId)) pending.push(round.runId)
           }
         }
@@ -309,8 +286,6 @@ export const make = (options: Options) =>
           }
           if (!seen.has(edge.childId)) pending.push(edge.childId)
         }
-        // Its ending was read before its journal and its children were: both are complete.
-        if (ending !== undefined) closed.set(executionId, { ending, children: children.map((edge) => edge.childId) })
       }
       return { seen, statuses }
     }))
