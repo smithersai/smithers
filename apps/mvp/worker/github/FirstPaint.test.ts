@@ -1,6 +1,6 @@
 // The first paint's pure parts (worker/github/FirstPaint.ts): which paths and queries it answers, and that a late, failed
 // or dying read is the same empty 204 as a refusal. The access matrix and the reads are worker/github/Readers.test.ts's.
-import { Deferred, Effect } from "effect"
+import { Deferred, Effect, Exit, Fiber } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { describe, expect, test, vi } from "vitest"
 import { Behind, FIRST_PAINT_HEADERS, guarded, parseFirstPaintPath, parseForm } from "./FirstPaint.ts"
@@ -44,6 +44,94 @@ describe("a read that can't paint in time answers like a refusal", () => {
     const fields: Record<string, string | number> = {}
     return Effect.runPromise(guarded(() => answer, fields, code, 20)).then((response) => ({ status: response.status, headers: response.headers, fields }))
   }
+
+  test.each([false, true])("cancelling before the deadline interrupts the read without waiting for cleanup (background: %s)", async (background) => {
+    const started = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const interrupted = Effect.runSync(Deferred.make<void>())
+    const cleaned = Effect.runSync(Deferred.make<void>())
+    const behind: Array<Effect.Effect<void>> = []
+    const fields: Record<string, string | number> = {}
+    const answer = Deferred.succeed(started, undefined).pipe(
+      Effect.andThen(Deferred.await(release)),
+      Effect.as(HttpServerResponse.text("ok")),
+      Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined).pipe(
+        Effect.andThen(Deferred.await(release)),
+        Effect.andThen(Deferred.succeed(cleaned, undefined)),
+        Effect.asVoid,
+      )),
+    )
+    const request = guarded(() => answer, fields, code, 10_000).pipe(
+      Effect.provideService(Behind, Behind.of({ run: (work) => Effect.sync(() => void behind.push(work)) })),
+    )
+    await Effect.runPromise(Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(background ? request : guarded(() => answer, fields, code, 10_000))
+      yield* Deferred.await(started)
+      yield* Fiber.interrupt(fiber).pipe(Effect.timeout("1 second"))
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      yield* Deferred.await(interrupted).pipe(Effect.timeout("1 second"))
+      expect(yield* Deferred.isDone(cleaned)).toBe(false)
+      expect([fields, behind.length]).toEqual([{}, 0])
+      yield* Deferred.succeed(release, undefined)
+      yield* Deferred.await(cleaned).pipe(Effect.timeout("1 second"))
+    }).pipe(Effect.ensuring(Deferred.succeed(release, undefined))))
+  })
+
+  test.each([false, true])("cancelling during background registration interrupts the read (registered: %s)", async (registered) => {
+    const started = Effect.runSync(Deferred.make<void>())
+    const registering = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const interrupted = Effect.runSync(Deferred.make<void>())
+    const behind: Array<Effect.Effect<void>> = []
+    const fields: Record<string, string | number> = {}
+    const answer = Deferred.succeed(started, undefined).pipe(
+      Effect.andThen(Deferred.await(release)),
+      Effect.as(HttpServerResponse.text("late")),
+      Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid)),
+    )
+    const keeper = Behind.of({ run: (work) => Effect.gen(function* () {
+      if (registered) behind.push(work)
+      yield* Deferred.succeed(registering, undefined)
+      yield* Deferred.await(release)
+      if (!registered) behind.push(work)
+    }) })
+    await Effect.runPromise(Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(guarded(() => answer, fields, code, 10).pipe(Effect.provideService(Behind, keeper)))
+      yield* Deferred.await(started)
+      yield* Deferred.await(registering)
+      yield* Fiber.interrupt(fiber).pipe(Effect.timeout("1 second"))
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      yield* Deferred.await(interrupted).pipe(Effect.timeout("1 second"))
+      expect([fields, behind.length]).toEqual([{ outcome: "deadline" }, registered ? 1 : 0])
+      if (registered) yield* behind[0]!
+    }).pipe(Effect.ensuring(Deferred.succeed(release, undefined))))
+  })
+
+  test("cancelling after the background handoff keeps the read bounded by its new owner", async () => {
+    const handedOff = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const interrupted = Effect.runSync(Deferred.make<void>())
+    const behind: Array<Effect.Effect<void>> = []
+    const answer = Deferred.await(release).pipe(
+      Effect.as(HttpServerResponse.text("late")),
+      Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid)),
+    )
+    await Effect.runPromise(Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(guarded(() => answer, {}, code, 10, "20 millis").pipe(
+        Effect.provideService(Behind, Behind.of({ run: (work) => Effect.sync(() => void behind.push(work)) })),
+        Effect.andThen(Deferred.succeed(handedOff, undefined)),
+        Effect.andThen(Effect.never),
+      ))
+      yield* Deferred.await(handedOff)
+      yield* Fiber.interrupt(fiber)
+      expect(yield* Deferred.isDone(interrupted)).toBe(false)
+      expect(behind).toHaveLength(1)
+      yield* behind[0]!
+      yield* Deferred.await(interrupted).pipe(Effect.timeout("1 second"))
+    }).pipe(Effect.ensuring(Deferred.succeed(release, undefined))))
+  })
 
   test("a stalled read is never interrupted: the answer comes at the deadline, and the read finishes behind it", async () => {
     let finished = false

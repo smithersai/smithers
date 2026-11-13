@@ -107,6 +107,7 @@ export const painted = (body: FirstPaint) => HttpServerResponse.jsonUnsafe(body,
  * cleanup of its (a role claim given back, a transaction that must first begin) holds the answer: the read keeps running
  * on its own fiber behind the response (`Behind`), at most `behindMs`, and what it renews, such as the person's role,
  * is there for their next read. Its answer goes nowhere. With no `Behind`, it is interrupted, on a fiber of its own.
+ * Cancellation before that handoff also interrupts the read without waiting for its cleanup.
  */
 export const guarded = <E, R>(
   answer: (fields: Record<string, string | number>) => Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
@@ -115,33 +116,38 @@ export const guarded = <E, R>(
   deadlineMs: number = FIRST_PAINT_DEADLINE_MS,
   behindMs: Duration.Input = BEHIND_WITHIN,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R> =>
-  Effect.gen(function* () {
+  Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
     // The read writes its own fields, which only an answer in time hands back: a late read rewrites nothing counted.
     const own = { ...fields }
-    const read = yield* Effect.forkDetach(answer(own))
-    const answered = yield* Fiber.join(read).pipe(Effect.timeoutOption(Duration.millis(deadlineMs)))
-    if (Option.isSome(answered)) {
-      Object.assign(fields, own)
-      return answered.value
-    }
-    fields.outcome = "deadline"
+    const read = yield* Effect.forkDetach(restore(answer(own)))
     const stop = Effect.asVoid(Effect.forkDetach(Fiber.interrupt(read)))
-    const behind = yield* Effect.serviceOption(Behind)
-    yield* Option.isNone(behind) ? stop : behind.value.run(
-      Fiber.await(read).pipe(
-        Effect.timeoutOption(behindMs),
-        Effect.flatMap(Option.match({
-          onNone: () => stop,
-          // Behind the response nothing else says a read failed.
-          onSome: Exit.match({
-            onFailure: (cause) => Effect.logWarning("github.first_paint.behind").pipe(Effect.annotateLogs({ errorCode: codeOf(Cause.squash(cause)) })),
-            onSuccess: () => Effect.void,
-          }),
-        })),
-      ),
-    )
-    return nothing()
-  }).pipe(
+    let handedOff = false
+    // Install cancellation cleanup before restoring interruption; only a completed registration releases ownership.
+    return yield* restore(Effect.gen(function* () {
+      const answered = yield* Fiber.join(read).pipe(Effect.timeoutOption(Duration.millis(deadlineMs)))
+      if (Option.isSome(answered)) {
+        Object.assign(fields, own)
+        return answered.value
+      }
+      fields.outcome = "deadline"
+      const behind = yield* Effect.serviceOption(Behind)
+      yield* Option.isNone(behind) ? stop : behind.value.run(
+        Fiber.await(read).pipe(
+          Effect.timeoutOption(behindMs),
+          Effect.flatMap(Option.match({
+            onNone: () => stop,
+            // Behind the response nothing else says a read failed.
+            onSome: Exit.match({
+              onFailure: (cause) => Effect.logWarning("github.first_paint.behind").pipe(Effect.annotateLogs({ errorCode: codeOf(Cause.squash(cause)) })),
+              onSuccess: () => Effect.void,
+            }),
+          })),
+        ),
+      )
+      handedOff = true
+      return nothing()
+    })).pipe(Effect.ensuring(Effect.suspend(() => handedOff ? Effect.void : stop)))
+  })).pipe(
     Effect.catchCause((cause) =>
       Effect.sync(() => {
         fields.outcome = "error"
