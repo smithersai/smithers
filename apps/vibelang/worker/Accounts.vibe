@@ -21,7 +21,7 @@ import { type Storage, postExecutionId, EXECUTION_RETENTION } from "./Objects.vi
 import * as Sequencer from "./Sequencer.vibe"
 import { afterOf, eventStream } from "./Http.vibe"
 import { logOver } from "./ObjectStorage.vibe"
-import { accountRoute, bootstrapGrant, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
+import { accountRoute, bootstrapGrant, openOperation, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
 
 export const CALLBACK = "/api/auth/callback"
 /** Alchemy preserves the original origin; loopback hosts use an unprefixed cookie over HTTP. */
@@ -425,7 +425,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
             if (live !== undefined) try connections.forget(live.value.id)
           },
           authorize: effect (op) => {
-            if (op === "read") return
+            if (openOperation(op)) return
             const actor = try connections.current(presented(request))
             if (actor === undefined) throw new IssueFailure({ reason: "sign-in" })
             try policy.authorize(actor.id, issuePolicyAction(op)).pipe(Effect.mapError(() => new IssueFailure({ reason: "forbidden" })))
@@ -443,7 +443,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
             if (live !== undefined) try connections.forget(live.value.id)
           },
           authorize: effect (op) => {
-            if (op === "read") return
+            if (openOperation(op)) return
             const actor = try connections.current(presented(request))
             if (actor === undefined) throw new WikiFailure({ reason: "sign-in" })
             try policy.authorize(actor.id, wikiPolicyAction(op)).pipe(Effect.mapError(() => new WikiFailure({ reason: "forbidden" })))

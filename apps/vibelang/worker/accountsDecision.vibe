@@ -256,3 +256,13 @@ export function signedInAndAllowed(owner: string, allowed: boolean): boolean {
 export function ownerRefused(owner: string, saved: string | undefined): boolean {
   return owner === "" || (saved !== undefined && saved !== owner)
 }
+
+/**
+ * The issue and wiki operations anyone may run, signed in or not: reading only. Every other operation, drafts too,
+ * needs a signed-in person the policy allows.
+ */
+//@ verify
+//@ ensures \result == (op == "read")
+export function openOperation(op: string): boolean {
+  return op === "read"
+}

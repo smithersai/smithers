@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import {
   accountRoute, admittedRole, bootstrapGrant, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed,
-  connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, ownerRefused, personId,
+  connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, openOperation, originAccepted, ownerRefused, personId,
   pruned, resumableOp, resumeToken, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, signedInAndAllowed, stepOutcome,
   unexpired, writeOriginAdmitted,
 } from "../worker/accountsDecision.vibe"
@@ -10,6 +10,9 @@ const SITE = "https://vibelang.example"
 const CALLBACK = "/api/auth/callback"
 
 describe("the account host's admission decisions", () => {
+  it("opens only reading to a person who is not signed in; every write and a draft need sign-in", () => {
+    expect(["read", "draft", "new", "comment", "propose", "save", "accept", "spec-revise", ""].filter(openOperation)).toEqual(["read"])
+  })
   it("takes writes only from the site, except the handoff page's same-site callback post", () => {
     expect(writeOriginAdmitted("GET", undefined, SITE, "/api/roles", undefined)).toBe(true)
     expect(writeOriginAdmitted("POST", SITE, SITE, "/api/roles", undefined)).toBe(true)

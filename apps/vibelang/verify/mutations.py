@@ -217,6 +217,8 @@ cases += [
 ('worker/budgetDecision.vibe','budget-settle-held','settleAdmissible','held >= 0 && held <= reserved && used >= 0','held >= 0 && used >= 0','a hold is part of the open reservations'),
 ('worker/budgetDecision.vibe','budget-settle-over','settleAdmissible',' && over + used <= 9007199254740991 - ceiling','','the overshoot stays in the safe range'),
 ('worker/budgetDecision.vibe','budget-settle-used','settleAdmissible','held <= reserved && used >= 0 && ceiling > 0','held <= reserved && ceiling > 0','a charge is nonnegative'),
+('worker/accountsDecision.vibe','account-open-read','openOperation','return op === "read"','return op === "read" || op === "draft"','a draft is not open to everyone'),
+('worker/accountsDecision.vibe','account-open-only','openOperation','return op === "read"','return op !== "comment"','only reading is open'),
 ('worker/mainLogDecision.vibe','lc-ancestry-starts','ancestryShas','ancestry.add(starts[i]!)','ancestry.add(starts[0]!)','every start is in the ancestry'),
 ]
 cases += web_cases
