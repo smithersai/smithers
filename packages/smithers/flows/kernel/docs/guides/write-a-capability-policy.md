@@ -184,12 +184,30 @@ exported as `GrantStore.maximumRules`, alongside
 changes. Check against the exported constants rather than hardcoding the
 numbers.
 
-Decorator resources use UTF-16 code units: 4,096 is valid; 4,097 fails with
+Decorator resources use UTF-16 code units. Except for process commands and
+snapshot messages as described below, 4,096 is valid; 4,097 fails with
 `GrantStoreError` code `invalid_resolution` before the grant check or guarded
 host operation. Filesystem and process decorators project this error into
 `PlatformError`; HTTP projects it into `HttpClientError`. The structured error
 is retained as the cause. Jujutsu returns the typed `GrantStoreError` directly.
 Filesystem canonicalization can read metadata before rejecting a resource.
+
+A process command or Jujutsu snapshot message longer than 4,096 units is checked
+using its first 3,900 units (without splitting a surrogate pair), followed by
+`… sha256:` and the SHA-256 digest of the entire rendered text. Literal lines ending in `… sha256:` and 64 lowercase hexadecimal digits
+use the same hashing form even below the length limit, preventing them from
+impersonating a shortened resource. Grant the
+bounded resource shown in the request, or use a policy that covers it. A
+changed suffix produces a different digest, so an exact grant cannot authorize
+another line with the same prefix. The full rendered text is available in
+permission metadata as `commandLine`; protected process arguments remain
+fingerprinted and environment values remain absent. The existing metadata
+byte limit still applies. Execution receives the original command or message.
+
+Policies match only this bounded resource, never the omitted suffix. A
+text-based deny pattern cannot reject an option or message text beyond the
+prefix. Use exact digest-form grants when the complete line matters, or deny
+the whole action instead of relying on a suffix filter.
 
 ## Related
 

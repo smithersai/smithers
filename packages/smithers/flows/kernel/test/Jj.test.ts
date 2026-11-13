@@ -4,6 +4,7 @@ import * as Capability from "@smthrs/capability/Capability"
 import { permissionDenied } from "@smthrs/capability/Permission"
 import * as HostJj from "@smthrs/jj"
 import { Deferred, Effect, Fiber, FileSystem as EffectFileSystem, Path } from "effect"
+import { createHash } from "node:crypto"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore, type Service as GrantStoreService } from "../src/GrantStore.ts"
 import * as Jj from "../src/Jj.ts"
@@ -135,9 +136,15 @@ describe("Jj", () => {
       return Effect.gen(function*() {
         const jj = yield* Jj.Jj
         const error = yield* Effect.flip(jj.snapshot("x".repeat(length)))
-        expect(error).toMatchObject({ code: length === 4096 ? "permission_denied" : "invalid_resolution" })
-        if (length === 4097) expect(error).toMatchObject({ message: expect.stringContaining("4096") })
-        expect(checks).toHaveLength(length === 4096 ? 1 : 0)
+        expect(error).toMatchObject({ code: "permission_denied" })
+        expect(checks).toHaveLength(1)
+        const rendered = "x".repeat(length)
+        expect(checks[0]).toEqual({
+          action: "jj:snapshot",
+          resource: length === 4096 ?
+            rendered
+            : `${rendered.slice(0, 3900)}… sha256:${createHash("sha256").update(rendered).digest("hex")}`
+        })
         expect(invoked).toBe(false)
       }).pipe(
         Effect.provide(Jj.layer),

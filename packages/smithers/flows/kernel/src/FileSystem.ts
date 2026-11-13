@@ -1527,16 +1527,18 @@ export const layer: Layer.Layer<
         utimes: Effect.fn("FileSystem.utimes")((value, atime, mtime) =>
           isolatedOne("fs:write", value, "utimes", (host) => host.utimes(normalize(value), atime, mtime))
         ),
-        watch: (value) =>
-          Stream.unwrap(
+        watch: (value, options) => {
+          const captured = snapshotOptions(options)
+          return Stream.unwrap(
             Effect.fn("FileSystem.watch")(() =>
               Effect.suspend(() =>
                 atomic?.isolated === undefined
                   ? atomicUnavailable("fs:read", value, "watch")
-                  : read(value).pipe(Effect.map(() => atomic.isolated!.watch(normalize(value))))
+                  : read(value).pipe(Effect.map(() => atomic.isolated!.watch(normalize(value), captured)))
               )
             )()
-          ),
+          )
+        },
         writeFile: Effect.fn("FileSystem.writeFile")((value, data, options) => {
           const captured = snapshotOptions(options)
           const bytes = data.slice()

@@ -20,7 +20,7 @@ import { Jj, type OperationId, type Revision } from "@smthrs/jj"
 import { Effect, FileSystem as EffectFileSystem, Layer, Path as EffectPath } from "effect"
 import { canonicalResource } from "./FileSystem.ts"
 import { GrantStore } from "./GrantStore.ts"
-import { makeCapability } from "./internal/makeCapability.ts"
+import { makeCapability, makeCommandCapability } from "./internal/makeCapability.ts"
 import { Workspace } from "./Workspace.ts"
 
 /**
@@ -96,7 +96,12 @@ export const layer: Layer.Layer<
         check("jj:diff", `${from}:${to}`).pipe(Effect.andThen(jj.diff(from, to)))
       ),
       snapshot: Effect.fn("Jj.snapshot")((message) =>
-        check("jj:snapshot", message ?? "").pipe(Effect.andThen(jj.snapshot(message)))
+        makeCommandCapability("jj:snapshot", message ?? "").pipe(
+          Effect.flatMap((capability) =>
+            grants.check(capability, capability.resource === (message ?? "") ? undefined : { commandLine: message })
+          ),
+          Effect.andThen(jj.snapshot(message))
+        )
       ),
       restore: Effect.fn("Jj.restore")((revision) =>
         check("jj:restore", revision).pipe(Effect.andThen(jj.restore(revision)))

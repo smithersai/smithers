@@ -82,6 +82,19 @@ const refused = (result: { readonly exit: import("effect").Exit.Exit<unknown, Pl
   ))
 
 describe("proc:spawn grant identity", () => {
+  it.effect("matches policies against the bounded resource rather than the omitted suffix", () =>
+    Effect.gen(function*() {
+      const result = yield* run([
+        allow("tool *"),
+        new Permission.Rule({
+          effect: "deny",
+          pattern: new CapabilityPattern({ action: "proc:spawn", resource: "*blocked-suffix*" })
+        })
+      ], ChildProcess.make("tool", ["x".repeat(5000) + "blocked-suffix"]))
+      expect(result.exit._tag).toBe("Success")
+      expect(result.spawned).toBe(1)
+    }))
+
   it.effect("a prefix grant runs a simple shell line", () =>
     Effect.gen(function*() {
       const result = yield* run([allow("git status *")], ChildProcess.make("git status --short", { shell: true }))

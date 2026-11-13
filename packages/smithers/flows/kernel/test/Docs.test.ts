@@ -57,6 +57,33 @@ const coversAll = (pattern: string, resources: ReadonlyArray<string>): boolean =
   )
 
 describe("documentation contracts", () => {
+  it("tells attended hosts to display the full command metadata alongside its exact resource", async () => {
+    const text = await readDoc("guides/answer-permission-requests.md")
+    expect(text).toContain("request.meta.commandLine")
+    expect(text).toContain("resource: request.capability.resource")
+    expect(text).toContain("show it alongside the exact resource")
+  })
+
+  it("declares optional test peers and documents every installed Smithers dependency", async () => {
+    const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+    expect(manifest.peerDependencies["@effect/vitest"]).toBe(manifest.devDependencies["@effect/vitest"])
+    for (const name of Object.keys(manifest.peerDependenciesMeta)) {
+      expect(manifest.peerDependencies[name]).toBeDefined()
+    }
+    for (const page of ["installation.md", "README.md"]) {
+      const text = await readDoc(page)
+      for (const name of Object.keys(manifest.dependencies)) expect(text).toContain(`\`${name}\``)
+    }
+  })
+
+  it("documents the host identity, batch and serialized-write limit switches", async () => {
+    const text = await readDoc("api.md")
+    for (const name of ["identifyRoot", "batchLimits", "contentLimit"]) {
+      expect(text).toContain(`readonly ${name}?:`)
+      expect(text).toContain(`\`${name}\``)
+    }
+  })
+
   it("ships no copyable proc:spawn grant that also covers an appended pipeline", () => {
     const grants = documentedSpawnGrants()
     expect(grants.length).toBeGreaterThan(0)

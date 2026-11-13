@@ -11,6 +11,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
+import { createHash } from "node:crypto"
 import * as ChildProcessSpawner from "../src/ChildProcessSpawner.ts"
 import * as CommandLine from "../src/CommandLine.ts"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
@@ -119,9 +120,15 @@ describe("ChildProcessSpawner", () => {
         const error = denial(
           yield* Effect.flip(spawner.exitCode(ChildProcess.make("tool", ["x".repeat(length - "tool ".length)])))
         )
-        expect(error.code).toBe(length === 4096 ? "permission_denied" : "invalid_resolution")
-        if (length === 4097) expect(error).toMatchObject({ message: expect.stringContaining("4096") })
-        expect(checks).toHaveLength(length === 4096 ? 1 : 0)
+        expect(error.code).toBe("permission_denied")
+        expect(checks).toHaveLength(1)
+        const rendered = `tool ${"x".repeat(length - "tool ".length)}`
+        expect(checks[0]).toEqual({
+          action: "proc:spawn",
+          resource: length === 4096 ?
+            rendered
+            : `${rendered.slice(0, 3900)}… sha256:${createHash("sha256").update(rendered).digest("hex")}`
+        })
         expect(invoked).toBe(false)
       }).pipe(
         Effect.provide(guarded),

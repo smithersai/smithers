@@ -131,7 +131,8 @@ package separately.
 
 Depend on `@smthrs/kernel` on its own when you are guarding a host of your own
 rather than running Smithers flows. Its only Smithers dependencies are the
-capability vocabulary, the journal, and the Jujutsu port, and its root entry
+capability vocabulary, SHA-256 utilities, the journal, and the Jujutsu port
+(`@smthrs/capability`, `@smthrs/crypto`, `@smthrs/journal`, and `@smthrs/jj`), and its root entry
 point imports no Node built-ins, so the kernel runs wherever its host does.
 
 Further up, [`@smthrs/cli`](/api/cli) is the `smthrs` command line that

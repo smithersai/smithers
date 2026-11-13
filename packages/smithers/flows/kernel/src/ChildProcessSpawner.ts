@@ -32,7 +32,7 @@ import * as ChildProcessEnvironment from "./ChildProcessEnvironment.ts"
 import * as CommandLine from "./CommandLine.ts"
 import { GrantStore } from "./GrantStore.ts"
 import * as Containment from "./internal/Containment.ts"
-import { makeCapability } from "./internal/makeCapability.ts"
+import { makeCommandCapability } from "./internal/makeCapability.ts"
 import * as ProcessConfinement from "./ProcessConfinement.ts"
 import * as Rooted from "./Rooted.ts"
 import { Workspace } from "./Workspace.ts"
@@ -435,7 +435,7 @@ export const layerWith = (options: Options): Layer.Layer<
           return ChildProcess.setCwd(stage, judged.resolvedCwd)
         })
       const refuseMoved = (rendered: string) =>
-        makeCapability("proc:spawn", rendered).pipe(
+        makeCommandCapability("proc:spawn", rendered).pipe(
           Effect.flatMap((capability) =>
             Effect.fail(permissionDenied(capability, "cwd no longer names the directory that was authorized"))
           ),
@@ -450,9 +450,10 @@ export const layerWith = (options: Options): Layer.Layer<
         )
       const checkResolved = (stage: ChildProcess.StandardCommand, rendered: string) => {
         const environment = environmentNames(stage)
-        return makeCapability("proc:spawn", rendered).pipe(
+        return makeCommandCapability("proc:spawn", rendered).pipe(
           Effect.flatMap((capability) =>
             grants.check(capability, {
+              ...(capability.resource === rendered ? {} : { commandLine: rendered }),
               cwd: stage.options.cwd,
               ...(environment === undefined ? {} : { env: environment })
             })

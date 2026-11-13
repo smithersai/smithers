@@ -7,6 +7,7 @@ import * as Permission from "@smthrs/capability/Permission"
 import { Deferred, Effect, Fiber, Option, type PlatformError, Redacted } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner as EffectChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { createHash } from "node:crypto"
 import { access, mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -73,6 +74,101 @@ const waitForEsrch = async (pid: number): Promise<void> => {
 }
 
 describe("ChildProcessSpawner real Node lifecycle", () => {
+  it.effect("refuses oversized command metadata in the typed channel before execution", () =>
+    withGuardedSpawner({
+      attended: false,
+      rules: [
+        new Permission.Rule({
+          effect: "allow",
+          pattern: new CapabilityPattern({ action: "proc:spawn", resource: "**" })
+        })
+      ]
+    }, () =>
+      Effect.gen(function*() {
+        const spawner = yield* EffectChildProcessSpawner
+        const code = `/*${"x".repeat(GrantStore.maximumMetadataBytes)}*/`
+        const error = yield* Effect.flip(spawner.string(ChildProcess.make(process.execPath, ["-e", code])))
+        expect(Option.getOrThrow(Permission.fromPlatformError(error))).toMatchObject({
+          code: "invalid_resolution",
+          message: expect.stringContaining("metadata exceeds")
+        })
+      })))
+
+  it.effect("never reuses a digest-form literal run grant for a different long shell command", () =>
+    withGuardedSpawner({ planDigest: "command-plan" }, (store) =>
+      Effect.gen(function*() {
+        const spawner = yield* EffectChildProcessSpawner
+        const line = `echo ${" ".repeat(3895)}long-text${" ".repeat(500)}`
+        const literal = `${line.slice(0, 3900)}… sha256:${createHash("sha256").update(line).digest("hex")}`
+        const first = yield* spawner.string(ChildProcess.make(literal, { shell: true })).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        const approved = yield* awaitPending(store)
+        expect(approved.capability.resource).not.toBe(literal)
+        yield* store.reply(approved.requestId, "run")
+        expect((yield* Fiber.join(first)).trim()).toContain("sha256:")
+        const next = yield* spawner.string(ChildProcess.make(line, { shell: true })).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        const pending = yield* Effect.raceFirst(
+          awaitPending(store),
+          Fiber.join(next).pipe(
+            Effect.andThen(Effect.fail(new Error("a literal run grant authorized another command")))
+          )
+        )
+        expect(pending.capability.resource).not.toBe(approved.capability.resource)
+        yield* store.reply(pending.requestId, "deny")
+        expect((yield* Fiber.await(next))._tag).toBe("Failure")
+      })))
+
+  it.effect("runs long argument and shell commands under an explicit allow policy", () =>
+    Effect.gen(function*() {
+      const code = `console.log(42);//${"x".repeat(5000)}`
+      const rules = [
+        new Permission.Rule({
+          effect: "allow",
+          pattern: new CapabilityPattern({ action: "proc:spawn", resource: "**" })
+        })
+      ]
+      for (
+        const command of [
+          ChildProcess.make(process.execPath, ["-e", code]),
+          ChildProcess.make(`echo 42 #${"x".repeat(5000)}`, { shell: true })
+        ]
+      ) {
+        const output = yield* withGuardedSpawner(
+          { attended: false, rules },
+          () => Effect.flatMap(EffectChildProcessSpawner, (spawner) => spawner.string(command))
+        )
+        expect(output.trim()).toBe("42")
+      }
+    }))
+
+  it.effect("retains the full rendered command in attended metadata and binds the whole suffix", () =>
+    withGuardedSpawner({ planDigest: "command-plan" }, (store) =>
+      Effect.gen(function*() {
+        const spawner = yield* EffectChildProcessSpawner
+        const code = `console.log(42);//${"x".repeat(5000)}`
+        const command = ChildProcess.make(process.execPath, ["-e", code])
+        const rendered = CommandLine.resource(command)
+        const child = yield* spawner.string(command).pipe(Effect.forkChild({ startImmediately: true }))
+        const pending = yield* awaitPending(store)
+        const digest = createHash("sha256").update(rendered).digest("hex")
+        expect(pending.capability).toEqual({
+          action: "proc:spawn",
+          resource: `${rendered.slice(0, 3900)}… sha256:${digest}`
+        })
+        expect(pending.meta.commandLine).toBe(rendered)
+        yield* store.reply(pending.requestId, "run")
+        expect((yield* Fiber.join(child)).trim()).toBe("42")
+        const changed = ChildProcess.make(process.execPath, ["-e", code + "y"])
+        const next = yield* spawner.string(changed).pipe(Effect.forkChild({ startImmediately: true }))
+        const second = yield* awaitPending(store)
+        expect(second.capability.resource).not.toBe(pending.capability.resource)
+        yield* store.reply(second.requestId, "deny")
+        expect((yield* Fiber.await(next))._tag).toBe("Failure")
+      })))
+
   it.effect("withholds ambient credentials unless a child explicitly declares them", () =>
     Effect.gen(function*() {
       const name = "SMITHERS_CHILD_TEST_SECRET"

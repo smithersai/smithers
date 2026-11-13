@@ -404,6 +404,46 @@ const provide = <A, E>(
   )
 
 describe("FileSystem operation guards", () => {
+  for (const recursive of [undefined, false, true]) {
+    it.effect(`snapshots watch options and preserves the ready callback with recursive=${recursive}`, () =>
+      Effect.gen(function*() {
+        const checks: Array<Capability.Capability> = []
+        const observed: Array<unknown> = []
+        let ready = 0
+        const onReady = () => {
+          ready += 1
+        }
+        const options = recursive === undefined ? undefined : { recursive, onReady }
+        const host = FileSystem.withIsolatedFileSystem(EffectFileSystem.makeNoop({
+          realPath: (path) => Effect.succeed(path),
+          watch: (path, captured) =>
+            Stream.fromEffect(Effect.sync(() => {
+              observed.push([path, captured])
+              captured?.onReady?.()
+              return { _tag: "Update", path } as EffectFileSystem.WatchEvent
+            }))
+        }))
+        const exit = yield* provide(
+          (fs) => {
+            const stream = fs.watch("a", options)
+            if (options !== undefined) {
+              options.recursive = !recursive
+              options.onReady = () => {
+                throw new Error("mutated callback")
+              }
+            }
+            return Stream.runDrain(stream)
+          },
+          host,
+          scriptedStore(() => true, checks)
+        )
+        expect(exit._tag).toBe("Success")
+        expect(observed).toEqual([["/workspace/a", recursive === undefined ? undefined : { recursive, onReady }]])
+        expect(ready).toBe(recursive === undefined ? 0 : 1)
+        expect(checks).toEqual([read("/workspace/a")])
+      }))
+  }
+
   for (const length of [4096, 4097]) {
     for (const isolated of [true, false]) {
       it.effect(`keeps a ${length}-unit path resource typed with isolation=${isolated}`, () =>

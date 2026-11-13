@@ -49,16 +49,31 @@ const requests = yield * store.list
 // [{ requestId, capability, tier, meta }]
 ```
 
-| Field        | What to show                                                                                                                           |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `requestId`  | The handle you reply with. Not for display.                                                                                            |
-| `capability` | The action and the exact resource. This is what the operator is approving.                                                             |
-| `tier`       | `sealed`, `compensable`, or `irreversible`: what re-running the operation would cost. Show it.                                         |
-| `meta`       | Display metadata the decorator attached. For a spawn, `cwd` and the **names** of overridden environment variables. Never their values. |
+| Field        | What to show                                                                                                                                                                                                          |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requestId`  | The handle you reply with. Not for display.                                                                                                                                                                           |
+| `capability` | The action and the exact resource. This is what the operator is approving.                                                                                                                                            |
+| `tier`       | `sealed`, `compensable`, or `irreversible`: what re-running the operation would cost. Show it.                                                                                                                        |
+| `meta`       | Display metadata the decorator attached. For a spawn, `cwd` and the **names** of overridden environment variables. Never their values. For a bounded command or snapshot, `commandLine` holds the full rendered text. |
 
 Show the resource verbatim. It is the exact string that will be matched, and
 the difference between `/workspace/src` and `/workspace/src/../..` is the whole
 decision.
+
+When `meta.commandLine` is present, show it alongside the exact resource so the
+operator can inspect the text omitted from the bounded prefix. For example,
+the operator-side presentation can retain both:
+
+```ts
+const display = requests.map((request) => ({
+  action: request.capability.action,
+  resource: request.capability.resource,
+  commandLine: typeof request.meta.commandLine === "string" ? request.meta.commandLine : undefined
+}))
+```
+
+`commandLine` is display metadata; reply using `requestId`, and derive policy
+patterns from `capability.resource`. Protected arguments remain fingerprinted.
 
 ## Reply
 

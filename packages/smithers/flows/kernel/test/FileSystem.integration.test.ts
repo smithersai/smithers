@@ -3,7 +3,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { Rule } from "@smthrs/capability/Permission"
-import { Effect, Fiber, FileSystem as EffectFileSystem, Layer } from "effect"
+import { Deferred, Effect, Fiber, FileSystem as EffectFileSystem, Layer, Stream } from "effect"
 import { mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -72,6 +72,35 @@ const workspaceRules = (workspace: string): GrantStore.MakeOptions => ({
 })
 
 describe("FileSystem real host confinement", () => {
+  it.effect("installs a recursive watcher and observes a nested file after readiness", () =>
+    Effect.gen(function*() {
+      const directory = yield* Effect.promise(() => temporaryDirectory())
+      yield* Effect.promise(() => mkdir(join(directory, "watched", "nested"), { recursive: true }))
+      yield* withGuardedFileSystem(directory, workspaceRules(directory), () =>
+        Effect.gen(function*() {
+          const fs = yield* EffectFileSystem.FileSystem
+          const ready = yield* Deferred.make<void>()
+          const options = {
+            recursive: true,
+            onReady: () => {
+              Deferred.doneUnsafe(ready, Effect.void)
+            }
+          }
+          const watch = fs.watch("watched", options).pipe(
+            Stream.filter((event) => event.path.endsWith("created.txt")),
+            Stream.take(1),
+            Stream.runCollect
+          )
+          options.recursive = false
+          const watcher = yield* watch.pipe(Effect.forkChild({ startImmediately: true }))
+          yield* Deferred.await(ready)
+          yield* fs.writeFileString("watched/nested/created.txt", "watched")
+          const events = yield* Fiber.join(watcher)
+          expect(events.length).toBe(1)
+          expect(events[0]!.path).toContain("created.txt")
+        }))
+    }))
+
   // The attended grant suspends the asking fiber, and the delegate would open
   // the logical path only after approval. The guard therefore resolves the
   // capability resource again once the decision arrives and refuses when the

@@ -25984,6 +25984,9 @@ type AtomicHandlers = {
 
 interface AtomicFileSystem {
   readonly noFollowAuthorization?: true | undefined
+  readonly identifyRoot?: ((path: string) => Effect.Effect<string, PlatformError>) | undefined
+  readonly batchLimits?: { readonly size: number; readonly response: number } | undefined
+  readonly contentLimit?: number | undefined
   readonly execute: <R extends AtomicRequest>(request: R) => Effect.Effect<AtomicResult<R>, PlatformError>
   readonly isolated?: FileSystem.FileSystem | undefined
 }
@@ -25998,6 +26001,12 @@ plain path-based filesystem cannot provide confinement, because an attacker can
 replace any checked component before the delegate resolves it. `isolated` is
 the escape hatch for a filesystem already confined by an enforceable boundary,
 used for methods not expressible as one descriptor-relative request.
+`identifyRoot` supplies exact composition-time root identity when native file
+IDs exceed numeric precision. `batchLimits` advertises support for the bounded
+batch protocol, with maximum operation count (`size`) and response bytes
+(`response`). `contentLimit` advertises the byte ceiling for one serialized
+`writeFile` payload; the kernel rejects larger writes before encoding them.
+An isolated host receives bytes directly and leaves `contentLimit` unset.
 
 A request is discriminated by `operation` and carries exactly the operands that
 operation needs, and `execute` answers the result that operation names rather
@@ -26121,7 +26130,8 @@ refuses unsafe hard-linked files. After any grant suspension it resolves the
 resource again and refuses if the path now names something else. Open handles
 bind authorization to the descriptor's `device:inode` identity and recheck it
 on guarded handle operations. Option records, nested arrays, and maps are
-snapshotted before any suspension. A host declaring neither extension fails
+snapshotted before any suspension. `watch` forwards `recursive` and preserves
+the `onReady` callback by reference in that snapshot. A host declaring neither extension fails
 every relevant path, directory, stream, glob, and handle operation closed.
 
 Refusals are `PlatformError` with reason `PermissionDenied`, carrying the
@@ -26182,7 +26192,7 @@ const layer: Layer.Layer<
 The decorator. The check is suspended into the spawn itself, so building a
 `Command` or a stream neither requests permission nor starts a process. The
 check runs once per pipeline stage, left to right, before any stage starts.
-Each stage's resource is `CommandLine.resource(stage, context)`: the rendered
+Each stage's resource starts from `CommandLine.resource(stage, context)`: the rendered
 line, with each protected (`Redacted`) argument fingerprinted under a key the
 layer draws once, a `shell: true` line that holds shell control syntax marked as
 `sh -c '<line>'`, environment overrides the child would not inherit named in an
@@ -26193,7 +26203,18 @@ leads out of it is named as its target, and a root reached through
 `/private` on macOS still counts as inside. The working directory is resolved
 again when the grant decision arrives: a stage whose directory now resolves
 elsewhere is refused, and an approved stage starts in the directory that was
-judged. The spawner passes this process's environment as `context.ambient`.
+judged. Lines longer than 4,096 UTF-16 code units use the first 3,900
+units (without splitting a surrogate pair), followed by `… sha256:` and the
+SHA-256 digest of the entire rendered line. Literal lines ending in `… sha256:` and 64 lowercase hexadecimal digits
+use the same hashing form even below the length limit, preventing them from
+impersonating a shortened resource. The full rendered line is passed
+as permission metadata `commandLine`; protected arguments remain fingerprinted.
+Policies match only this bounded resource, never the omitted suffix. A
+text-based deny pattern cannot reject an option or message text beyond the
+prefix. Use exact digest-form grants when the complete line matters, or deny
+the whole action instead of relying on a suffix filter.
+
+The spawner passes this process's environment as `context.ambient`.
 Pipeline `from`/`to` routing is not part of what a grant authorizes. `cwd` and the **names** of overridden environment
 variables also reach an attended surface as display metadata; the values do
 not. A
@@ -26737,7 +26758,10 @@ cannot turn an inside-workspace grant into outside authority or separate the
 authorized path from the directory jj runs in.
 
 Smithers owns this service, so its interface names
-`Permission.PermissionError` directly and nothing is projected.
+`Permission.PermissionError` directly and nothing is projected. Snapshot
+messages longer than 4,096 UTF-16 code units use the same bounded prefix and
+SHA-256 form as process commands, with the full message in `commandLine`
+permission metadata. The host still receives the original message.
 
 ## Path
 

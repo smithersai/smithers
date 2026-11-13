@@ -17,7 +17,8 @@ The `next` tag carries the 1.0 release candidates.
 
 The package requires Node.js 22.19.0 or later and ships as ESM, CommonJS, and
 TypeScript declarations. Its Smithers dependencies install with it:
-[`@smthrs/capability`](/api/capability), [`@smthrs/jj`](/api/jj), and
+[`@smthrs/capability`](/api/capability), [`@smthrs/crypto`](/api/crypto),
+[`@smthrs/jj`](/api/jj), and
 [`@smthrs/journal`](/api/journal). The host supplies the
 `effect@4.1.1` peer so the library never installs a second runtime.
 
