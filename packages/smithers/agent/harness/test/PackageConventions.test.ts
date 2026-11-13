@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join, matchesGlob, posix } from "node:path"
 import { describe, expect, it } from "vitest"
+import * as Sandbox from "../src/Sandbox.ts"
 
 const srcDir = join(import.meta.dirname, "..", "src")
 
@@ -81,6 +82,34 @@ describe("package conventions", () => {
         .map((match) => `${name}:${text.slice(0, match.index).split("\n").length}`)
     )
     expect(stacked).toEqual([])
+  })
+
+  it("documents the default per-call ceiling", () => {
+    const readme = readFileSync(join(srcDir, "..", "README.md"), "utf8")
+    const seconds = readme.match(/a (\d+)-second ceiling on any one flow call/)?.[1]
+    expect(Number(seconds) * 1000).toBe(Sandbox.defaultLimits.callMs)
+  })
+
+  it("documents every root-only namespace", () => {
+    const root = join(srcDir, "..")
+    const readme = readFileSync(join(root, "README.md"), "utf8")
+    const { exports } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
+    const index = readFileSync(join(srcDir, "index.ts"), "utf8")
+    const rootOnly = [...index.matchAll(/export \* as (\w+) from/g)]
+      .map((match) => match[1]!)
+      .filter((name) => !exports[`./${name}`])
+    const exceptions = readme.match(/except (.+?), which are on the root only/)?.[1] ?? ""
+    const documented = [...exceptions.matchAll(/`(\w+)`/g)].map((match) => match[1]!)
+    expect(documented.sort()).toEqual(rootOnly.sort())
+  })
+
+  it("links README repository examples to existing files", () => {
+    const root = join(srcDir, "..", "../../../..")
+    const readme = readFileSync(join(srcDir, "..", "README.md"), "utf8")
+    const links = [...readme.matchAll(/\]\(https:\/\/github\.com\/smithersai\/smithers\/blob\/main\/([^ )#]+)\b/g)]
+      .map((match) => match[1]!)
+    expect(links.length).toBeGreaterThan(0)
+    expect(links.filter((target) => !existsSync(join(root, target)))).toEqual([])
   })
 
   // The allowlist once read `docs/*.md`, so the four guides linked from
