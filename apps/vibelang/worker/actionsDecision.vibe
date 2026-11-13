@@ -89,3 +89,24 @@ export function startConflict(original: string | undefined, request: string): bo
 export function cancelFlow(replyChild: boolean, requestFlow: string, runFlow: string): string {
   return replyChild ? requestFlow : runFlow
 }
+
+/** A post is the one flow that reserves a reply child: its route, its index entry and a child's root. */
+//@ verify
+//@ ensures \result == (flow == "vibelang/Post")
+export function postFlow(flow: string): boolean {
+  return flow === "vibelang/Post"
+}
+
+/** A post's alarm settles the agent-started runs once its reply is done. */
+//@ verify
+//@ ensures \result == (flow == "vibelang/Post" && done)
+export function agentRunsSettle(flow: string, done: boolean): boolean {
+  return postFlow(flow) && done
+}
+
+/** Only a run the agent started settles with the post's reply. */
+//@ verify
+//@ ensures \result == (actor == "agent")
+export function agentRun(actor: string): boolean {
+  return actor === "agent"
+}

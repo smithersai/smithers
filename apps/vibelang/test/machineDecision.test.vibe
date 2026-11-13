@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { checkpointOutput, checkpointPhase, checkpointed, commandOutput, commandTimeout, currentRunning, generationRefused, leaseDurationRefused, leaseExpired, receiptPassed, receiptText, restoredOptions, startRefused, stoppedPhase } from "../src/core/machineDecision.vibe"
+import { checkpointOutput, checkpointPhase, checkpointed, commandOutput, commandTimeout, currentRunning, generationRefused, leaseDurationRefused, leaseExpired, receiptPassed, receiptText, restoredOptions, setupSucceeded, startRefused, stoppedPhase } from "../src/core/machineDecision.vibe"
 
 describe("machine admission and receipts", () => {
   it("fences old generations and permits a higher generation only for start", () => {
@@ -57,5 +57,11 @@ describe("machine derived policies", () => {
     expect(checkpointed("old", { _tag: "Success", success: "new" })).toEqual({ snapshot: "new", failed: false })
     expect(checkpointed("old", { _tag: "Failure" })).toEqual({ snapshot: "old", failed: true })
     expect(checkpointed(undefined, { _tag: "Failure" })).toEqual({ snapshot: undefined, failed: true })
+  })
+})
+
+describe("machine setup", () => {
+  it("runs a started machine only after its setup exits 0", () => {
+    expect([setupSucceeded(0), setupSucceeded(1), setupSucceeded(-1), setupSucceeded(127)]).toEqual([true, false, false, false])
   })
 })

@@ -273,3 +273,10 @@ export function openOperation(op: string): boolean {
 export function mayConnect(agent: boolean): boolean {
   return !agent
 }
+
+/** A signed-in person has an id; the signed-out viewer's is empty: it may not write roles and gets no participation grant. */
+//@ verify
+//@ ensures \result == (id != "")
+export function signedIn(id: string): boolean {
+  return id !== ""
+}

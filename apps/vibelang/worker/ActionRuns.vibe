@@ -8,6 +8,7 @@ import { allowed, registration } from "../src/actions/catalog.vibe"
 import { RunRequest } from "../src/actions/wire.vibe"
 import { isHistory, prepare, prepareHistory, refused } from "../src/actions/execution.vibe"
 import { cancellable } from "../src/actions/actionHostDecision.vibe"
+import { agentRun, agentRunsSettle } from "./actionsDecision.vibe"
 import { historyPassed, isReplyChild, replyChildId, settledResult, settledState, startRuns, startSettles, tourSettles } from "../src/core/actionRunDecision.vibe"
 import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
 import * as HistoryActions from "./HistoryActions.vibe"
@@ -135,9 +136,9 @@ export effect function alarm(hostId: string, storage: Objects.Storage, sequencer
     try sequencer.action({ type: "SettleAction", id: request.id, state: settledState(failed), result: settledResult(failed), at: try Clock.currentTimeMillis })
   }
   // The reply the post dispatched is itself a registered, agent-started action.
-  if (request.flow === Post._tag && done) {
+  if (agentRunsSettle(request.flow, done) && reply !== undefined) {
     for (const run of try read(sequencer)) {
-      if (run.actor === "agent") try sequencer.action({ type: "SettleAction", id: run.id, state: settledState(reply.error !== ""), result: settledResult(reply.error !== ""), at: try Clock.currentTimeMillis })
+      if (agentRun(run.actor)) try sequencer.action({ type: "SettleAction", id: run.id, state: settledState(reply.error !== ""), result: settledResult(reply.error !== ""), at: try Clock.currentTimeMillis })
     }
   }
   return result.value

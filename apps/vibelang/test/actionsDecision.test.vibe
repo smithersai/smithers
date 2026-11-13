@@ -1,4 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
+import { Post } from "../src/core/flows.vibe"
+import { agentRun, agentRunsSettle, postFlow } from "../worker/actionsDecision.vibe"
 import { actionsRoute, callerActor, cancelFlow, crossOriginWrite, declaredTooLarge, runIdValid, runRoute, startActor, startConflict, writeStatus } from "../worker/actionsDecision.vibe"
 import { ACTIONS_PATH } from "../src/actions/wire.vibe"
 
@@ -24,5 +26,14 @@ describe("the Actions protocol's and directory's decisions", () => {
   it("refuses a different request under a used id and cancels a reply child as its Post", () => {
     expect([startConflict(undefined, "{}"), startConflict("{}", "{}"), startConflict("{\"a\":1}", "{}")]).toEqual([false, false, true])
     expect([cancelFlow(true, "vibelang/Post", "vibelang/Reply"), cancelFlow(false, "vibelang/Post", "vibelang/Reply")]).toEqual(["vibelang/Post", "vibelang/Reply"])
+  })
+})
+
+describe("a post's reply child and its agent runs", () => {
+  it("reserves a child only for a post, and settles the agent's runs once the reply is done", () => {
+    expect([postFlow("vibelang/Post"), postFlow("vibelang/Tour"), postFlow("vibelang/Post2"), postFlow("")]).toEqual([true, false, false, false])
+    expect([agentRunsSettle("vibelang/Post", true), agentRunsSettle("vibelang/Post", false), agentRunsSettle("vibelang/Tour", true)]).toEqual([true, false, false])
+    expect([agentRun("agent"), agentRun("person"), agentRun("")]).toEqual([true, false, false])
+    expect(Post._tag).toBe("vibelang/Post")
   })
 })

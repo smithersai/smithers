@@ -340,7 +340,6 @@ worker/accountObject.vibe	identityFromPolicy/request	admitted	Unreviewed: record
 worker/accountObject.vibe	identityFromPolicy/role	admitted	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/authorize	!(try sequencer.allows(actor, action))	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback	(url.pathname === "/api/auth/device" || url.pathname === CALLBACK) && request.method === "POST"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/callback	actor.id === ""	Open: the signed-out principal (an empty actor id)
 worker/Accounts.vibe	make/callback	url.origin !== setup.origin || !writeOriginAdmitted(request.method, request.headers.origin, setup.origin, url.pathname, request.headers["sec-fetch-site"])	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback	url.pathname === "/api/issues"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback	url.pathname === "/api/roles" && request.method === "POST"	Unreviewed: recorded by the 2026-11-13 audit
@@ -366,26 +365,20 @@ worker/Accounts.vibe	make/handle	route === "sign-out"	Unreviewed: recorded by th
 worker/Accounts.vibe	make/handle	url.origin !== setup.origin	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/handle/callback	"session" in pending	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/mutation/callback/callback	result !== null && typeof result === "object" && "status" in result	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/participation/callback	actor.id !== ""	Open: the signed-out principal (an empty actor id)
 worker/Accounts.vibe	make/readResponse	method !== "GET"	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionDirectory.vibe	directory/cancel	!allowed(currentRole, registration(parent))	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionDirectory.vibe	directory/root	parent === id || (try runs.request(id, true)) !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionDirectory.vibe	directory/root	request?.flow === "vibelang/Post"	Open: run lifecycle
 worker/ActionDirectory.vibe	directory/submit	!allowed(currentRole, registration(request.flow))	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionDirectory.vibe	directory/submit	(reserved !== undefined && reserved !== request.id) || (try runs.request(child, true)) !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionDirectory.vibe	directory/submit	request.flow === "vibelang/Post"	Open: run lifecycle
 worker/ActionDirectory.vibe	directory/submit	routed !== request.id	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionDirectory.vibe	directory/submit/callback/callback	cause.reasons.length === 1	Open: run lifecycle
+worker/ActionDirectory.vibe	directory/submit/callback/callback	cause.reasons.length === 1	Host boundary: Effect’s Cause shape; the engine’s identity conflict dies as the only reason
 worker/ActionDirectory.vibe	directory/submit/callback/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionDirectory.vibe	directory/submit/callback/callback	request.flow === "vibelang/Post"	Open: run lifecycle
 worker/ActionIdentity.vibe	fromAccounts/request	admitted	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionIdentity.vibe	fromAccounts/request	person.agent === true	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionIdentity.vibe	fromAccounts/role	owner === "" || !(try accounts.allowed(owner, "action"))	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	alarm	engineFailed && intent !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	alarm	request.flow !== Tour._tag && request.flow !== Post._tag	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	alarm	request.flow === Post._tag && done	Open: run lifecycle
 worker/ActionRuns.vibe	alarm	request.flow === Tour._tag && tourSettles(done, failed)	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	alarm	run.actor === "agent"	Open: run lifecycle
 worker/ActionRuns.vibe	cancel	!allowed(try authority.role(owner), registration(child ? Post._tag : run.flow))	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	cancel	run.flow === Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	make/admit	!permitted	Unreviewed: recorded by the 2026-11-13 audit
@@ -501,7 +494,7 @@ worker/Issues.vibe	serveIssues	actor !== undefined && accepted !== undefined && 
 worker/Issues.vibe	serveIssues	request.method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	serveIssues	result.failure._tag === "IssueFailure" && result.failure.unwritten === true	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	verifiedVip	tail === "" || !Number.isSafeInteger(number)	Unreviewed: recorded by the 2026-11-13 audit
-worker/machineObject.vibe	machineObject/callback/apply	!(try box.running)	Open: machine lifecycle
+worker/machineObject.vibe	machineObject/callback/apply	!(try box.running)	Host boundary: whether the container runs after wake
 worker/machineObject.vibe	machineObject/callback/apply	!currentRunning(generation, previous.generation, previous.phase) || !(try box.running)	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	checkpointPhase(previous.phase) && (try box.running)	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	kind === "command"	Unreviewed: recorded by the 2026-11-13 audit
@@ -509,7 +502,6 @@ worker/machineObject.vibe	machineObject/callback/apply	kind === "lease"	Unreview
 worker/machineObject.vibe	machineObject/callback/apply	kind === "start"	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	kind === "status"	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	kind === "stop"	Unreviewed: recorded by the 2026-11-13 audit
-worker/machineObject.vibe	machineObject/callback/apply	setup !== 0	Open: machine lifecycle
 worker/machineObject.vibe	machineObject/callback/apply	try box.running	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	try box.running	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply/callback	!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)	Unreviewed: recorded by the 2026-11-13 audit

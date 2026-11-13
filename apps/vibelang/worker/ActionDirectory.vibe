@@ -1,7 +1,7 @@
 import { actionRoot } from "./apiObjectDecision.vibe"
 import { indexedRun, matchingFlow, sameRun } from "../src/actions/actionHostDecision.vibe"
 import { isReplyChild, replyChildId } from "../src/core/actionRunDecision.vibe"
-import { cancelFlow, startConflict } from "./actionsDecision.vibe"
+import { cancelFlow, postFlow, startConflict } from "./actionsDecision.vibe"
 // Public run index: requests are durable steps; each registered workflow runs in its own Conversation object.
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -58,7 +58,7 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
     const parent = actionRoot(id)
     if (parent === id || (try runs.request(id, true)) !== undefined) return id
     const request = try runs.request(parent, true)
-    return request?.flow === "vibelang/Post" ? parent : id
+    return postFlow(request?.flow ?? "") ? parent : id
   }
   effect function list(flow: string) {
     const stored = try promise(() => storage.list({ prefix: "action-index/" }))
@@ -76,7 +76,7 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
     if (startConflict(original === undefined ? undefined : JSON.stringify(original), JSON.stringify(request))) return "conflict"
     const routed = try root(request.id)
     if (routed !== request.id) return "conflict"
-    if (request.flow === "vibelang/Post") {
+    if (postFlow(request.flow)) {
       const child = replyChildId(request.id)
       const reserved = try promise(() => storage.get(routeKey(child)))
       if ((reserved !== undefined && reserved !== request.id) || (try runs.request(child, true)) !== undefined) return "conflict"
@@ -88,7 +88,7 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
       IndexRequest.toLayer(() => Effect.as(promise(() => storage.put({
         [`action-index/${request.id}`]: request.id,
         [routeKey(request.id)]: request.id,
-        ...(request.flow === "vibelang/Post" ? { [routeKey(replyChildId(request.id))]: request.id } : {}),
+        ...(postFlow(request.flow) ? { [routeKey(replyChildId(request.id))]: request.id } : {}),
       })), null)),
       StartRequest.toLayer(() => runs.start(request, currentRole)),
     ))).pipe(Layer.provide(ObjectDatabase.layer(storage)))

@@ -101,3 +101,10 @@ export function checkpointed<S>(previous: S | undefined, result: CheckpointResul
   if (result._tag === "Success") return { snapshot: result.success, failed: false }
   return { snapshot: previous, failed: true }
 }
+
+/** A started machine is running only after its setup command exits 0. */
+//@ verify
+//@ ensures \result == (code == 0)
+export function setupSucceeded(code: number): boolean {
+  return code === 0
+}

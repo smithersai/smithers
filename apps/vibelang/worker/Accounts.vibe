@@ -22,7 +22,7 @@ import * as Sequencer from "./Sequencer.vibe"
 import { afterOf, eventStream } from "./Http.vibe"
 import { bodyLimit, withinBodyLimit } from "./workerDecision.vibe"
 import { logOver } from "./ObjectStorage.vibe"
-import { accountRoute, bootstrapGrant, mayConnect, openOperation, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
+import { accountRoute, bootstrapGrant, mayConnect, openOperation, signedIn, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
 
 export const CALLBACK = "/api/auth/callback"
 /** Alchemy preserves the original origin; loopback hosts use an unprefixed cookie over HTTP. */
@@ -464,7 +464,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       if (url.pathname === "/api/roles" && request.method === "POST") {
         if (!sameSiteRequest(url.origin, setup.origin, request.method, request.headers.origin)) return json({ error: "origin" }, 403)
         const actor = try Semaphore.withPermits(lock, 1)(current(presented(request)))
-        if (actor.id === "") return json({ refusal: "forbidden" }, 403)
+        if (!signedIn(actor.id)) return json({ refusal: "forbidden" }, 403)
         if (!withinBodyLimit(Number(request.headers["content-length"]), bodyLimit("account"))) return json({ error: "body size" }, 413)
         const bounded = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(bodyLimit("account"))), Effect.timeoutOption("3 seconds"))
         const read = bounded catch () => undefined
@@ -484,7 +484,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
     },
     participation: (signed: string | undefined) => Effect.orDie(Semaphore.withPermits(lock, 1)(mutation("participation", effect {
       const actor = try current(signed)
-      if (actor.id !== "") try sequencer.grant(actor.id, actor.id, "community", "participation")
+      if (signedIn(actor.id)) try sequencer.grant(actor.id, actor.id, "community", "participation")
     }))),
   }
 }
