@@ -9,6 +9,8 @@ import * as Executable from "../src/Executable.ts"
 import * as ModuleClosure from "../src/internal/ModuleClosure.ts"
 import * as Registry from "../src/Registry.ts"
 
+const specifiersOf = (source: string, file = "module.ts") => ModuleClosure.specifiersOf(source, file)
+
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 const modulesRoot = fileURLToPath(new URL("./fixtures/executable/modules", import.meta.url))
 const template = (expression: string) => "`${" + expression + "}`"
@@ -43,7 +45,7 @@ const project = (entry: string) =>
 
 describe("template closure tokens", () => {
   it.each([1, 2, 3, 64])("measures literal imports at nesting depth %i", (depth) => {
-    const found = ModuleClosure.specifiersOf(source(nested(literal, depth)))
+    const found = specifiersOf(source(nested(literal, depth)))
     expect(found.relative).toEqual(["./helper.ts"])
     expect(found.opaque).toBe(0)
   })
@@ -54,11 +56,11 @@ describe("template closure tokens", () => {
     template("/* } ` */ " + literal + " // }\n"),
     template("(() => { const v = { end: \"}\" }; return " + literal + " })()")
   ])("keeps expression braces, comments and regular expressions distinct: %s", (expression) => {
-    expect(ModuleClosure.specifiersOf(source(expression)).relative).toEqual(["./helper.ts"])
+    expect(specifiersOf(source(expression)).relative).toEqual(["./helper.ts"])
   })
 
   it("measures every substitution while leaving text and escaped substitutions inert", () => {
-    const found = ModuleClosure.specifiersOf(
+    const found = specifiersOf(
       "`import(\"./text.ts\") \\${import(\"./escaped.ts\")} ${import(\"./one.ts\")} tail ${import(\"./two.ts\")}`"
     )
     expect(found.relative).toEqual(["./one.ts", "./two.ts"])
@@ -71,7 +73,7 @@ describe("template closure tokens", () => {
     "`unfinished ${import(\"./helper.ts\")",
     "`unfinished text"
   ])("refuses computed, excessive or unfinished source: %s", (expression) => {
-    expect(ModuleClosure.specifiersOf(source(expression)).opaque).toBeGreaterThan(0)
+    expect(specifiersOf(source(expression)).opaque).toBeGreaterThan(0)
   })
 })
 

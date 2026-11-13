@@ -24,8 +24,9 @@ The obvious implementation, importing every file under a directory, has two
 costs. It runs third-party code before anyone decided to, and it pays for every
 flow in the tree to learn about one. Discovery avoids both. The scan reads and
 hashes each entry file whole, up to `Discovery.entrySizeLimit`, and parses at
-most its first 64 KiB to find the declaration, so a catalog of a thousand flows
-costs a thousand reads and frontmatter parses and no imports. The body stays
+most its first 64 KiB to find declaration metadata. For module entries, discovery also scans the complete source and walks its import closure, bounded to 512 modules and 16 MiB per entry. It reads ancestor `package.json`, `tsconfig.json` and `jsconfig.json` files to resolve project aliases, and compiles `.mdx` helpers with `@mdx-js/mdx`. It never evaluates a discovered flow module. TypeScript and VibeLang sources containing `import(...)` are also parsed with
+`@babel/parser` to identify erased import types.
+The body stays
 behind a path plus the SHA-256 digest measured during the scan, and the one
 read that goes back to disk rehashes those bytes before it returns them, so a
 file edited after discovery is refused rather than run against a stale

@@ -16,10 +16,13 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
 import * as Stream from "effect/Stream"
+import * as fc from "fast-check"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as ModuleClosure from "../src/internal/ModuleClosure.ts"
 import { tokenize } from "../src/internal/ModuleMetadata.ts"
+
+const specifiersOf = (source: string, file = "module.ts") => ModuleClosure.specifiersOf(source, file)
 
 const modulesRoot = fileURLToPath(new URL("./fixtures/executable/modules", import.meta.url))
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
@@ -87,7 +90,7 @@ const fs = require("node:fs"); const sdk = () => import("microsandbox");`
 
 describe("the specifiers a module states", () => {
   it("reads every shape that names a module, and nothing that does not", () => {
-    const found = ModuleClosure.specifiersOf(
+    const found = specifiersOf(
       [
         `import a from "./a.ts"`,
         `import { b } from "../b.ts"`,
@@ -125,31 +128,140 @@ describe("the specifiers a module states", () => {
     expect(found.opaque).toBe(0)
   })
 
+  it.each([
+    "export type B = import(\"./types.ts\").B",
+    "export type B = typeof import(\"./types.ts\")",
+    "export const f = (x: typeof import(\"./types.ts\")) => x",
+    "export const f = (x: import(\"./types.ts\").B) => x",
+    "export type B = { member: import(\"./types.ts\").B }",
+    "export const f = <T extends import(\"./types.ts\").B>(x: T) => x",
+    "export const f = () => null as import(\"./types.ts\").B",
+    "type B = import(\"./types.ts\").B; const value = <number>1"
+  ])("pins an erased import type without treating it as a runtime load: %s", (source) => {
+    const found = specifiersOf(source)
+    expect(found.relative).toEqual(["./types.ts"])
+    expect(found.runtime).toEqual([])
+    expect(found.opaque).toBe(0)
+  })
+
+  it("recognizes erased import types in a TSX module", () => {
+    const found = specifiersOf("type B = import(\"./types.ts\").B; const view = <div />", "flow.tsx")
+    expect(found.relative).toEqual(["./types.ts"])
+    expect(found.runtime).toEqual([])
+    expect(found.opaque).toBe(0)
+  })
+
+  it.each(["js", "mjs", "cjs", "jsx", "mdx"])("does not erase a real runtime comparison in .%s source", (extension) => {
+    const found = specifiersOf(
+      "export const result = f < import(\"./impl.js\") > (0)",
+      `helper.${extension}`
+    )
+    expect(found.relative).toEqual(["./impl.js"])
+    expect(found.runtime).toEqual(["./impl.js"])
+    expect(found.opaque).toBe(0)
+  })
+
+  it.each(["ts", "mts", "cts", "vibe"])("distinguishes erased and runtime queries in .%s source", (extension) => {
+    const source = String.raw`type T = import("\u002e/types.ts").T; const kind = typeof import("./impl.ts")`
+    const found = specifiersOf(source, `flow.${extension}`)
+    expect(found.relative).toEqual(["./types.ts", "./impl.ts"])
+    expect(found.runtime).toEqual(["./impl.ts"])
+    expect(found.opaque).toBe(0)
+  })
+
+  it("pins nested import types without treating their type arguments as runtime loads", () => {
+    const found = specifiersOf(
+      "type T = import(\"./outer.ts\").Outer<import(\"./inner.ts\").Inner>"
+    )
+    expect(found.relative).toEqual(["./outer.ts", "./inner.ts"])
+    expect(found.runtime).toEqual([])
+    expect(found.opaque).toBe(0)
+  })
+
+  it.each([
+    "const b = typeof import(\"./impl.ts\")",
+    "const b: unknown = import(\"./impl.ts\")",
+    "type B = string; const b = import(\"./impl.ts\")",
+    "const b = { member: import(\"./impl.ts\") }",
+    "const b = true ? null : import(\"./impl.ts\")",
+    "const b = () => import(\"./impl.ts\")"
+  ])("still identifies a runtime import beside type syntax: %s", (source) => {
+    const found = specifiersOf(source)
+    expect(found.relative).toEqual(["./impl.ts"])
+    expect(found.runtime).toEqual(["./impl.ts"])
+  })
+
+  it.effect("snapshots type-only import queries without refusing the measured closure", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "flow.ts": "export type B = import(\"./types.ts\").B; export const f = (x: typeof import(\"./impl.ts\")) => x",
+        "types.ts": "export type B = string",
+        "impl.ts": "export const value = 1"
+      })
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const entry = join(root, "flow.ts")
+      const measured = yield* ModuleClosure.snapshot(fs, path, entry, yield* fs.readFile(entry))
+      expect(measured.unsupported).toEqual([])
+      expect(measured.imports.map((entry) => entry.path)).toEqual(["impl.ts", "types.ts"])
+      expect(measured.modules.size).toBe(3)
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it("keeps generated type imports separate from runtime calls in the same source", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(" ", "/* erased */", "\n"),
+        fc.constantFrom(
+          (query: string) => `type T = ${query}.T`,
+          (query: string) => `type T = typeof ${query}`,
+          (query: string) => `const f = (x: typeof ${query}) => x`,
+          (query: string) => `interface T { value: ${query}.T }`,
+          (query: string) => `type T = ${query}.T; const value = <number>1`,
+          (query: string) => `type T = ${query}.T; const view = <div />`,
+          (query: string) => `type T = import("./outer.ts").Outer<${query}.T>`
+        ),
+        fc.stringMatching(/^[a-z][a-z0-9]{0,10}$/),
+        (gap, declaration, name) => {
+          const typePath = `./${name}-types.ts`
+          const runtimePath = `./${name}-runtime.ts`
+          const source = `${declaration(`import${gap}(${JSON.stringify(typePath)})`)};
+const live = typeof import${gap}(${JSON.stringify(runtimePath)})`
+          const found = specifiersOf(source, source.includes("<div") ? "flow.tsx" : "flow.ts")
+          expect(found.relative).toContain(typePath)
+          expect(found.relative).toContain(runtimePath)
+          expect(found.runtime).toEqual([runtimePath])
+          expect(found.opaque).toBe(0)
+        }
+      ),
+      { numRuns: 100 }
+    )
+  })
+
   it("counts an import whose target is decided at run time", () => {
     // A template with a substitution is as unreadable as an identifier: what
     // it names is not in the source.
-    expect(ModuleClosure.specifiersOf(`const m = await import(name)`).opaque).toBe(1)
-    expect(ModuleClosure.specifiersOf("const m = await import(`./${name}.ts`)").opaque).toBe(1)
-    expect(ModuleClosure.specifiersOf(`const m = await import("./fixed.ts")`).opaque).toBe(0)
+    expect(specifiersOf(`const m = await import(name)`).opaque).toBe(1)
+    expect(specifiersOf("const m = await import(`./${name}.ts`)").opaque).toBe(1)
+    expect(specifiersOf(`const m = await import("./fixed.ts")`).opaque).toBe(0)
     // `import.meta` is not a call, and reading it as one would refuse every
     // module that asks where it lives.
-    expect(ModuleClosure.specifiersOf(`export const here = import.meta.dirname`).opaque).toBe(0)
+    expect(specifiersOf(`export const here = import.meta.dirname`).opaque).toBe(0)
   })
 
   it("reads require() like import(), and counts a computed or created require as opaque", () => {
-    expect(ModuleClosure.specifiersOf(`const { a } = require("./impl.ts")`).relative).toEqual(["./impl.ts"])
-    expect(ModuleClosure.specifiersOf(`const { a } = import.meta.require("./impl.ts")`).relative).toEqual([
+    expect(specifiersOf(`const { a } = require("./impl.ts")`).relative).toEqual(["./impl.ts"])
+    expect(specifiersOf(`const { a } = import.meta.require("./impl.ts")`).relative).toEqual([
       "./impl.ts"
     ])
-    expect(ModuleClosure.specifiersOf(`const m = require(name)`).opaque).toBe(1)
+    expect(specifiersOf(`const m = require(name)`).opaque).toBe(1)
     expect(
-      ModuleClosure.specifiersOf(
+      specifiersOf(
         `import { createRequire } from "node:module"\ncreateRequire(import.meta.url)("./impl.ts")`
       )
         .opaque
     ).toBeGreaterThan(0)
     // `require.resolve` names a path without loading it.
-    expect(ModuleClosure.specifiersOf(`const p = require.resolve("./x.ts")`).opaque).toBe(0)
+    expect(specifiersOf(`const p = require.resolve("./x.ts")`).opaque).toBe(0)
   })
 
   it("counts a loader reached under another name as opaque", () => {
@@ -164,19 +276,19 @@ describe("the specifiers a module states", () => {
       `const [r] = [require]\nr("./impl.ts")`
     ]
     for (const source of aliased) {
-      expect(ModuleClosure.specifiersOf(source).opaque, source).toBeGreaterThan(0)
+      expect(specifiersOf(source).opaque, source).toBeGreaterThan(0)
     }
     // Not loaders: an object key named `require`, and an identifier that
     // merely starts with the word.
-    expect(ModuleClosure.specifiersOf(`const o = { require: true, x: 1 }`).opaque).toBe(0)
-    expect(ModuleClosure.specifiersOf(`const o = { x: 1, require: true }`).opaque).toBe(0)
-    expect(ModuleClosure.specifiersOf(`const requireAuth = 1`).opaque).toBe(0)
+    expect(specifiersOf(`const o = { require: true, x: 1 }`).opaque).toBe(0)
+    expect(specifiersOf(`const o = { x: 1, require: true }`).opaque).toBe(0)
+    expect(specifiersOf(`const requireAuth = 1`).opaque).toBe(0)
   })
 
   it("does not count an ordinary property named require as a loader", () => {
-    expect(ModuleClosure.specifiersOf(`opts.require = true`).opaque).toBe(0)
-    expect(ModuleClosure.specifiersOf(`const y = cfg.require`).opaque).toBe(0)
-    expect(ModuleClosure.specifiersOf(`const y = cfg?.require`).opaque).toBe(0)
+    expect(specifiersOf(`opts.require = true`).opaque).toBe(0)
+    expect(specifiersOf(`const y = cfg.require`).opaque).toBe(0)
+    expect(specifiersOf(`const y = cfg?.require`).opaque).toBe(0)
     // The loader reached as a property of a host object is still a loader.
     const loaders = [
       `const r = module.require\nr("./impl.ts")`,
@@ -188,12 +300,12 @@ describe("the specifiers a module states", () => {
       `const r = globalThis['require']\nr("./impl.ts")`
     ]
     for (const source of loaders) {
-      expect(ModuleClosure.specifiersOf(source).opaque, source).toBeGreaterThan(0)
+      expect(specifiersOf(source).opaque, source).toBeGreaterThan(0)
     }
   })
 
   it("lists every other literal specifier as bare, except node: and bun: builtins", () => {
-    const found = ModuleClosure.specifiersOf(
+    const found = specifiersOf(
       [
         `import { suffix } from "#impl"`,
         `import { other } from "@x/other.ts"`,
@@ -207,7 +319,7 @@ describe("the specifiers a module states", () => {
   })
 
   it("lists absolute and file: specifiers, which the pin does not follow", () => {
-    const found = ModuleClosure.specifiersOf(
+    const found = specifiersOf(
       [
         `import { a } from "/workspace/repo/flows/echo/impl.ts"`,
         `import "file:///workspace/repo/x.ts"`,
@@ -224,8 +336,8 @@ describe("the specifiers a module states", () => {
     ])
     expect(found.relative).toEqual([])
     // A specifier with a substitution names nothing the scan can list.
-    expect(ModuleClosure.specifiersOf("export * from `./${name}.ts`").absolute).toEqual([])
-    expect(ModuleClosure.specifiersOf(`import "\\\\host\\share\\x.ts"`).absolute).toHaveLength(1)
+    expect(specifiersOf("export * from `./${name}.ts`").absolute).toEqual([])
+    expect(specifiersOf(`import "\\\\host\\share\\x.ts"`).absolute).toHaveLength(1)
   })
 })
 
@@ -247,7 +359,7 @@ describe("where a regular expression may start (#3106)", () => {
     ]
     for (const source of literal) {
       compiles(source)
-      expect(ModuleClosure.specifiersOf(source), source).toMatchObject({ relative: ["./evil.ts"], opaque: 0 })
+      expect(specifiersOf(source), source).toMatchObject({ relative: ["./evil.ts"], opaque: 0 })
     }
   })
 
@@ -260,7 +372,7 @@ describe("where a regular expression may start (#3106)", () => {
     ]
     for (const source of computed) {
       compiles(source)
-      expect(ModuleClosure.specifiersOf(source).opaque, source).toBe(1)
+      expect(specifiersOf(source).opaque, source).toBe(1)
     }
   })
 
@@ -274,12 +386,12 @@ describe("where a regular expression may start (#3106)", () => {
     ]
     for (const source of computed) {
       compiles(source)
-      expect(ModuleClosure.specifiersOf(source).opaque, source).toBe(1)
+      expect(specifiersOf(source).opaque, source).toBe(1)
     }
     // An escape decodes to the binding it names, so the loader stays a loader.
     compiles(`const m = requir\\u0065(p)`)
-    expect(ModuleClosure.specifiersOf(`const m = requir\\u0065(p)`).opaque).toBe(1)
-    expect(ModuleClosure.specifiersOf(`const m = \\u{72}equire("./impl.ts")`).relative).toEqual(["./impl.ts"])
+    expect(specifiersOf(`const m = requir\\u0065(p)`).opaque).toBe(1)
+    expect(specifiersOf(`const m = \\u{72}equire("./impl.ts")`).relative).toEqual(["./impl.ts"])
   })
 
   it("reads a regular expression after an if, while, for or with head", () => {
@@ -292,7 +404,7 @@ describe("where a regular expression may start (#3106)", () => {
     ]
     for (const source of literal) {
       compiles(source)
-      expect(ModuleClosure.specifiersOf(source).relative, source).toEqual(["./evil.ts"])
+      expect(specifiersOf(source).relative, source).toEqual(["./evil.ts"])
     }
   })
 
@@ -301,7 +413,7 @@ describe("where a regular expression may start (#3106)", () => {
     // regular expression. The same tokens in JavaScript divide, so the scan
     // reads both and keeps what either finds.
     const typed = `let x: string\n/'/.test(s); import("./evil.ts"); /'/`
-    expect(ModuleClosure.specifiersOf(typed).relative).toEqual(["./evil.ts"])
+    expect(specifiersOf(typed).relative).toEqual(["./evil.ts"])
     const both = [
       `const o = {}\n/'/.test(s); import("./evil.ts"); /'/`,
       `const o = f()\n/'/.test(s); import("./evil.ts"); /'/`,
@@ -309,10 +421,10 @@ describe("where a regular expression may start (#3106)", () => {
       `const o = "s"\n/'/.test(s); import("./evil.ts"); /'/`
     ]
     for (const source of both) {
-      expect(ModuleClosure.specifiersOf(source).relative, source).toEqual(["./evil.ts"])
+      expect(specifiersOf(source).relative, source).toEqual(["./evil.ts"])
     }
     // A load both readings find is listed once.
-    expect(ModuleClosure.specifiersOf(`import "./a.ts"\nconst o = {}\n/x/.test(s)`).relative).toEqual(["./a.ts"])
+    expect(specifiersOf(`import "./a.ts"\nconst o = {}\n/x/.test(s)`).relative).toEqual(["./a.ts"])
   })
 
   it("still divides where only a division can stand", () => {
@@ -326,15 +438,15 @@ describe("where a regular expression may start (#3106)", () => {
     ]
     for (const source of divisions) {
       compiles(source)
-      expect(ModuleClosure.specifiersOf(source).opaque, source).toBe(1)
+      expect(specifiersOf(source).opaque, source).toBe(1)
     }
     // `+ +/re/` is two prefix operators before a regular expression.
     compiles(`const x = + +/'/.source; import("./evil.ts"); /'/`)
-    expect(ModuleClosure.specifiersOf(`const x = + +/'/.source; import("./evil.ts"); /'/`).relative)
+    expect(specifiersOf(`const x = + +/'/.source; import("./evil.ts"); /'/`).relative)
       .toEqual(["./evil.ts"])
     // Ordinary division beside a string keeps both where they were.
     const plain = `const half = total / 2; const s = "import(x)"; import "./a.ts"`
-    expect(ModuleClosure.specifiersOf(plain)).toMatchObject({ relative: ["./a.ts"], opaque: 0 })
+    expect(specifiersOf(plain)).toMatchObject({ relative: ["./a.ts"], opaque: 0 })
   })
 
   it("reads what is not a name as punctuation", () => {

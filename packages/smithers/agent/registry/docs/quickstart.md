@@ -195,7 +195,16 @@ export effect function main() {
 
 The scan read and hashed each entry file whole, parsed at most its first 64 KiB
 to find the metadata, and built a serializable descriptor with the body left
-behind a reference. `capabilities: ["fs:read:**"]` is why `review` came back as
+behind a reference.
+
+For module entries, discovery also scans the complete source and walks its
+import closure, bounded to 512 modules and 16 MiB per entry. It reads ancestor
+`package.json`, `tsconfig.json` and `jsconfig.json` files to resolve project
+aliases, and compiles `.mdx` helpers with `@mdx-js/mdx`. It never evaluates a
+discovered flow module. TypeScript and VibeLang sources containing `import(...)` are also parsed with
+`@babel/parser` to identify erased import types.
+
+`capabilities: ["fs:read:**"]` is why `review` came back as
 `tier=sealed`: reading files is reversible, so nothing has to be undone, and
 the tier is inferred from the authority the flow declared. The flow with no
 description contributed two `DiscoveryWarning` values instead of an entry: one

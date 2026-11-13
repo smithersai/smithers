@@ -17,9 +17,16 @@ A flow lives on disk as a directory holding one entry file: a markdown
 `flow.mdx`, its Agent Skills spelling `SKILL.md`, a TypeScript `flow.ts`, or a VibeLang `flow.vibe`.
 Scanning one produces a `FlowDescriptor`, a plain value you can journal, send
 over a wire, or compare against another. The scan reads and hashes each entry
-file whole and parses at most its first 64 KiB to find the declaration, so it
-imports nothing, and the body stays behind a path plus the SHA-256 digest
-measured during the scan.
+file whole, up to `Discovery.entrySizeLimit`. At most its first 64 KiB is
+parsed for declaration metadata; the body stays behind a path plus the SHA-256
+digest measured during the scan.
+
+For module entries, discovery also scans the complete source and walks its
+import closure, bounded to 512 modules and 16 MiB per entry. It reads ancestor
+`package.json`, `tsconfig.json` and `jsconfig.json` files to resolve project
+aliases, and compiles `.mdx` helpers with `@mdx-js/mdx`. It never evaluates a
+discovered flow module. TypeScript and VibeLang sources containing `import(...)` are also parsed with
+`@babel/parser` to identify erased import types.
 
 Literal `payload` objects and `Schema.Struct({...})` using an unshadowed
 `Schema` import from `effect` or a namespace import from `effect/Schema` expose

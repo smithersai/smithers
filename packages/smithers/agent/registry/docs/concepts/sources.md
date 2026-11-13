@@ -144,13 +144,20 @@ Two more ceilings bound what one file can cost:
 | Ceiling                    | Value  | What it bounds                                                                                                                                                                                                                  |
 | -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Discovery.entrySizeLimit` | 4 MiB  | The size of an entry file discovery admits. A larger file is skipped with `entry_too_large` and contributes no descriptor, so a stray build artifact under `.smithers/flows/` cannot exhaust the process at layer construction. |
-| The metadata parse ceiling | 64 KiB | How much of an admitted file is decoded and parsed looking for frontmatter or module metadata. It bounds parsing only.                                                                                                          |
+| The metadata parse ceiling | 64 KiB | How much of an admitted file is decoded and parsed looking for frontmatter or module metadata. It bounds metadata parsing only.                                                                                                 |
 
 A `stat` size past the limit skips the file unread. Otherwise discovery reads
 at most `entrySizeLimit + 1` bytes through `FileSystem.stream`, independently
 of the reported size. The extra byte detects overflow; `entry_too_large`
 reports this measured lower bound without consuming the rest of the file.
 Oversized entries are refused before hashing, decoding, or parsing.
+
+For module entries, discovery also scans the complete source and walks its
+import closure, bounded to 512 modules and 16 MiB per entry. It reads ancestor
+`package.json`, `tsconfig.json` and `jsconfig.json` files to resolve project
+aliases, and compiles `.mdx` helpers with `@mdx-js/mdx`. It never evaluates a
+discovered flow module. TypeScript and VibeLang sources containing `import(...)` are also parsed with
+`@babel/parser` to identify erased import types.
 
 ## Reading it back
 

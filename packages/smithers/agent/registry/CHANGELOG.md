@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Flows using TypeScript import types in aliases or annotations are admitted
+  without treating the erased query as a runtime load. Their referenced files
+  remain measured, so edits still invalidate stale descriptors (#4737).
+
 - Scanning flows with diamond-shaped `tsconfig` inheritance no longer repeats
   shared parents exponentially. Inheritance depth and uncached work are bounded,
   and imports whose mapping exceeds a limit remain visibly unpinnable (#4736).

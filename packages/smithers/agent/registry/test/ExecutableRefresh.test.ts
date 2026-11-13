@@ -30,9 +30,11 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
+import type * as Scope from "effect/Scope"
 import { fileURLToPath } from "node:url"
 import * as Executable from "../src/Executable.ts"
 import * as Registry from "../src/Registry.ts"
+import { recordingRuntime } from "./Runtime.ts"
 
 const modulesRoot = fileURLToPath(new URL("./fixtures/executable/modules", import.meta.url))
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
@@ -116,13 +118,6 @@ capabilities: []
 Hand this to the flow the frontmatter names.
 `
 
-/** Every registration the runtime was asked for, in order. */
-const observed = (registered: Array<string>) =>
-  Layer.succeed(
-    FlowRuntime.FlowRuntime,
-    { register: (flow: { readonly _tag: string }) => Effect.sync(() => void registered.push(flow._tag)) } as never
-  )
-
 /**
  * One project root that starts with `early` on disk and nothing else, under a
  * directory whose `node_modules` resolve, so the default loader really
@@ -130,7 +125,18 @@ const observed = (registered: Array<string>) =>
  */
 const withProject = <A, E>(
   registered: Array<string>,
-  use: (root: string) => Effect.Effect<A, E, Executable.Catalog | Executable.Refresh | FileSystem.FileSystem>
+  use: (
+    root: string
+  ) => Effect.Effect<
+    A,
+    E,
+    | Executable.Catalog
+    | Executable.Refresh
+    | FileSystem.FileSystem
+    | FlowRuntime.FlowRuntime
+    | Action.Implementations
+    | Scope.Scope
+  >
 ) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -141,7 +147,11 @@ const withProject = <A, E>(
       Effect.provide(
         Executable.layer({ delegates: [Delegate, Other] }).pipe(
           Layer.provideMerge(
-            Layer.mergeAll(observed(registered), Action.layerImplementations, NodeCrypto.layer)
+            Layer.mergeAll(
+              recordingRuntime(registered),
+              Action.layerImplementations,
+              NodeCrypto.layer
+            )
           ),
           Layer.provideMerge(Registry.layerProject({ root })),
           Layer.orDie
@@ -189,6 +199,11 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         const late = catalog.executables.find((entry) => entry.descriptor.name === "late")!
         expect(late.delegate).toBeUndefined()
         expect(drafts(late.flow)).toContain("root.flow.flow.andThen")
+        const runtime = yield* FlowRuntime.FlowRuntime
+        yield* Layer.build(Probe.toLayer(({ step }) => Effect.succeed(step)))
+        expect(yield* runtime.execute(late.flow, { payload: { input: {} }, executionId: "late-runtime" })).toBe(
+          "second"
+        )
       }))
   }, 60_000)
 
@@ -313,7 +328,11 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         Effect.provide(
           Executable.layer({ delegates: [Delegate, Other], refreshable: () => false }).pipe(
             Layer.provideMerge(
-              Layer.mergeAll(observed(registered), Action.layerImplementations, NodeCrypto.layer)
+              Layer.mergeAll(
+                recordingRuntime(registered),
+                Action.layerImplementations,
+                NodeCrypto.layer
+              )
             ),
             Layer.provideMerge(Registry.layerProject({ root })),
             Layer.orDie

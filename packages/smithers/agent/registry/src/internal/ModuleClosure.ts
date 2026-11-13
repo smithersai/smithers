@@ -45,6 +45,7 @@
  * @since 1.0.0-rc.0
  */
 
+import { parse } from "@babel/parser"
 import * as Digest from "@smthrs/core/Digest"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -252,9 +253,11 @@ export interface StaticSpecifier {
  * @since 1.0.0-rc.0
  * @private
  */
-export const specifiersOf = (source: string): Specifiers => {
-  const likely = scan(tokenize(source, "likely"))
-  const alternate = scan(tokenize(source, "alternate"))
+export const specifiersOf = (source: string, file: string): Specifiers => {
+  const tokens = tokenize(source, "likely")
+  const erased = importTypes(source, tokens, file)
+  const likely = scan(tokens, erased)
+  const alternate = scan(tokenize(source, "alternate"), erased)
   const union = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) => [
     ...left,
     ...right.filter((specifier) => !left.includes(specifier))
@@ -282,7 +285,40 @@ interface Specifiers {
   readonly statics: ReadonlyArray<StaticSpecifier>
 }
 
-const scan = (tokens: ReadonlyArray<Token>): Specifiers => {
+/**
+ * Only a parsed TypeScript import type may be exempted from runtime loads.
+ * In particular, `typeof import("x")` is also a valid JavaScript expression.
+ * Unsupported syntax retains the lexer's conservative runtime classification.
+ */
+const importTypes = (source: string, tokens: ReadonlyArray<Token>, file: string): ReadonlySet<number> => {
+  const erased = new Set<number>()
+  // JavaScript comparisons can spell a TypeScript type argument. The host
+  // executes JavaScript as JavaScript, including compiled MDX expressions.
+  if (!/\.(?:[cm]?ts|tsx|vibe)$/.test(file)) return erased
+  if (!tokens.some((token, index) => token.value === "import" && tokens[index + 1]?.value === "(")) return erased
+  try {
+    const syntax = parse(source, {
+      sourceType: "module",
+      plugins: file.endsWith(".tsx") ? ["typescript", "jsx"] : ["typescript"]
+    })
+    const pending: Array<unknown> = [syntax.program]
+    while (pending.length > 0) {
+      const value = pending.pop()
+      if (Array.isArray(value)) {
+        for (const child of value) pending.push(child)
+      } else if (value !== null && typeof value === "object") {
+        const node = value as { readonly type?: string; readonly start: number }
+        if (node.type === "TSImportType") erased.add(node.start)
+        for (const child of Object.values(value)) pending.push(child)
+      }
+    }
+  } catch {
+    // A failed parse is never evidence that a load is erased.
+  }
+  return erased
+}
+
+const scan = (tokens: ReadonlyArray<Token>, erased: ReadonlySet<number>): Specifiers => {
   const relative: Array<string> = []
   const absolute: Array<string> = []
   const bare: Array<string> = []
@@ -353,7 +389,8 @@ const scan = (tokens: ReadonlyArray<Token>): Specifiers => {
       // `import(name)` does not, and neither does a template with a
       // substitution in it.
       const literal = argument?.kind === "string" ? stringLiteral(argument.value) : undefined
-      if (literal === undefined || tokens[index + 3]?.value !== ")") opaque++
+      if (token.value === "import" && erased.has(token.start)) record(literal)
+      else if (literal === undefined || tokens[index + 3]?.value !== ")") opaque++
       else {
         record(literal)
         runtime.push(literal)
@@ -992,7 +1029,7 @@ const walk = (
           if (!mapped) hostImports.add(specifier)
         }
       })
-    const { absolute, bare, builtins, opaque, relative, unparsed } = specifiersOf(entrySource)
+    const { absolute, bare, builtins, opaque, relative, unparsed } = specifiersOf(entrySource, normalizedEntryPath)
     if (opaque > 0) {
       found.set(
         normalizedEntryPath,
@@ -1102,7 +1139,7 @@ const walk = (
       }
       const source = compiled.success
       reads?.set(resolved, { bytes: contents, source })
-      const specifiers = specifiersOf(source)
+      const specifiers = specifiersOf(source, resolved)
       reportOpaque(`"${recorded}"`, specifiers.opaque, specifiers.unparsed)
       reportAbsolute(`"${recorded}"`, specifiers.absolute)
       reportBuiltins(specifiers.builtins)
@@ -1190,7 +1227,7 @@ export const snapshot = (
     for (const [file, read] of reads) {
       const directory = path.dirname(file)
       const links: Array<Module["links"][number]> = []
-      const specifiers = specifiersOf(read.source)
+      const specifiers = specifiersOf(read.source, file)
       // Mapping candidates can be missing (for example wildcard paths for an
       // installed package). Only a target actually resolved into this measured
       // closure needs project-module admission rather than host package trust.
@@ -1269,7 +1306,7 @@ export const linked = (
 ): boolean => {
   const directory = path.dirname(file)
   let count = 0
-  for (const site of specifiersOf(module.source).statics) {
+  for (const site of specifiersOf(module.source, file).statics) {
     const relative = isRelativeSpecifier(site.literal)
     if (!relative && !site.literal.startsWith("#")) continue
     const target = relative

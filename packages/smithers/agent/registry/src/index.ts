@@ -5,9 +5,16 @@
  *
  * Discovery is metadata-only. Scanning a source reads and hashes each entry
  * file whole, up to `Discovery.entrySizeLimit`, then parses at most its first
- * 64 KiB for markdown frontmatter or module metadata, so a catalog of a
- * thousand flows costs a thousand reads and frontmatter parses and no imports.
- * No module is evaluated and no prompt body reaches the result. A body is
+ * 64 KiB for markdown frontmatter or module metadata.
+ *
+ * For module entries, discovery also scans the complete source and walks its
+ * import closure, bounded to 512 modules and 16 MiB per entry. It reads ancestor
+ * `package.json`, `tsconfig.json` and `jsconfig.json` files to resolve project
+ * aliases, and compiles `.mdx` helpers with `@mdx-js/mdx`. It never evaluates a
+ * discovered flow module.
+ * TypeScript and VibeLang sources containing `import(...)` are also parsed with
+ * `@babel/parser` to identify erased import types.
+ * No prompt body reaches the result. A body is
  * loaded when a flow is actually invoked, and its bytes are checked against the
  * content address discovery recorded.
  *

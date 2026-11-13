@@ -14,6 +14,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Annotations, Placement as CorePlacement } from "@smthrs/core"
 import * as Digest from "@smthrs/core/Digest"
 import * as CoreMarkdown from "@smthrs/core/Markdown"
+import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Graph } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import { Node } from "@smthrs/plan"
@@ -37,8 +38,10 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
+import * as Pack from "../src/Pack.ts"
 import * as Registry from "../src/Registry.ts"
 import greetModule from "./fixtures/executable/.smithers/flows/greet/flow.ts"
+import { recordingRuntime } from "./Runtime.ts"
 
 const flowsRoot = fileURLToPath(new URL("./fixtures/executable/.smithers/flows", import.meta.url))
 const projectRoot = fileURLToPath(new URL("./fixtures/executable", import.meta.url))
@@ -809,9 +812,7 @@ export default ({
       let attempts = 0
       const entered = yield* Deferred.make<void>()
       const retryEntered = yield* Deferred.make<void>()
-      const runtime = Layer.succeed(FlowRuntime.FlowRuntime, {
-        register: (flow: Flow.Any) => Effect.sync(() => void registered.push(flow._tag))
-      } as never)
+      const runtime = recordingRuntime(registered)
       const pending = yield* Effect.forkChild(
         Effect.gen(function*() {
           const catalog = yield* Executable.Catalog
@@ -887,13 +888,18 @@ export default ({
         const entered = yield* Deferred.make<void>()
         const resources: Array<string> = []
         let attempts = 0
-        const runtime = Layer.succeed(FlowRuntime.FlowRuntime, {
-          register: () =>
-            Effect.acquireRelease(
-              Effect.sync(() => resources.push("acquired")),
-              () => Effect.sync(() => resources.push("released"))
-            ).pipe(Effect.andThen(Deferred.succeed(acquired, undefined)), Effect.andThen(Effect.never))
-        } as never)
+        const runtime = Layer.effect(
+          FlowRuntime.FlowRuntime,
+          Effect.map(FlowRuntime.FlowRuntime, (real) =>
+            FlowRuntime.FlowRuntime.of({
+              ...real,
+              register: () =>
+                Effect.acquireRelease(
+                  Effect.sync(() => resources.push("acquired")),
+                  () => Effect.sync(() => resources.push("released"))
+                ).pipe(Effect.andThen(Deferred.succeed(acquired, undefined)), Effect.andThen(Effect.never))
+            }))
+        ).pipe(Layer.provide(FlowEngine.layerMemory))
         const pending = yield* Effect.forkChild(
           Effect.gen(function*() {
             const catalog = yield* Executable.Catalog
@@ -943,7 +949,7 @@ export default ({
     Effect.gen(function*() {
       const registry = yield* Registry.Registry
       let attempts = 0
-      const runtime = Layer.succeed(FlowRuntime.FlowRuntime, { register: () => Effect.void } as never)
+      const runtime = FlowEngine.layerMemory
       yield* Effect.gen(function*() {
         const catalog = yield* Executable.Catalog
         expect(catalog.executables).toEqual([])
@@ -1046,6 +1052,49 @@ describe("the modules a flow's entry imports", () => {
       const registry = yield* Registry.Registry
       return yield* registry.get(name)
     }).pipe(Effect.provide(Registry.layerProject({ root })))
+
+  it.effect("refuses a JavaScript helper whose comparison contains a real import call", () =>
+    Effect.gen(function*() {
+      const root = yield* project({
+        ".smithers/flows/pinned/flow.ts": selfFlow("Node.succeed(\"unused\")", ["./helper.js"]),
+        ".smithers/flows/pinned/helper.js": "const f = 1; export const value0 = f < import(\"./impl.js\") > (0)",
+        ".smithers/flows/pinned/impl.js": "export const value = 1"
+      })
+      const descriptor = yield* descriptorIn(root, "pinned")
+      const failure = yield* Effect.flip(Executable.fromDescriptor(descriptor, options()))
+      expect(failure.code).toBe("body_unavailable")
+      expect(failure.message).toContain("import() or require()")
+      expect(failure.message).toContain("runtime module cache")
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("admits erased import types, executes without loading them, and still pins their bytes", () =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const root = yield* project({
+        ".smithers/flows/typed/flow.ts": `import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Schema } from "effect"
+export type B = import("./types.ts").B
+export const identity = (x: typeof import("./impl.ts")) => x
+export default Flow.make("typed", { description: "A typed flow", payload: {}, success: Schema.String, body: () => Node.succeed("typed") })`,
+        ".smithers/flows/typed/types.ts": "export type B = string; throw new Error(\"types evaluated\")",
+        ".smithers/flows/typed/impl.ts": "export const value = 1; throw new Error(\"type query evaluated\")"
+      })
+      const descriptor = yield* descriptorIn(root, "typed")
+      const executable = yield* Executable.fromDescriptor(descriptor, options())
+      const value = yield* Effect.gen(function*() {
+        const runtime = yield* FlowRuntime.FlowRuntime
+        return yield* runtime.execute(executable.flow, { payload: { input: {} }, executionId: "typed-imports" })
+      }).pipe(Effect.provide(executable.layer.pipe(
+        Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, Action.layerImplementations, NodeCrypto.layer))
+      )))
+      expect(value).toBe("typed")
+
+      yield* fs.writeFileString(`${root}/.smithers/flows/typed/types.ts`, "export type B = number")
+      const changed = yield* Effect.flip(Executable.fromDescriptor(descriptor, options()))
+      expect(changed.code).toBe("body_unavailable")
+      expect(changed.message).toContain("changed")
+    }).pipe(Effect.scoped, Effect.provide(platform)))
 
   it.effect("verifies a retained module's lockfiles in its workspace and preserves approved identity", () =>
     Effect.gen(function*() {
@@ -1937,7 +1986,7 @@ describe("the host's catalog", () => {
           warnings.push(fields as Readonly<Record<string, unknown>>)
         }
       })
-      const runtime = Layer.succeed(FlowRuntime.FlowRuntime, { register: () => Effect.void } as never)
+      const runtime = FlowEngine.layerMemory
       const entered = yield* Deferred.make<void>()
       let attempts = 0
       const pending = yield* Effect.forkChild(
@@ -2169,9 +2218,9 @@ describe("the project registry", () => {
       Effect.provide(platform)
     ))
 
-  it.effect("dies on a pack source that is not a directory", () =>
+  it.effect("refuses a pack source that is not a directory", () =>
     Effect.gen(function*() {
-      const built = yield* Effect.exit(Effect.provide(
+      const built = yield* Effect.flip(Effect.provide(
         Effect.void,
         Registry.layerProject({
           root: projectRoot,
@@ -2180,17 +2229,18 @@ describe("the project registry", () => {
             installed: [{
               dir: modulesRoot,
               origin: "local",
-              manifest: { name: "broken", version: "1.0.0", flows: ["plain.mjs"] } as never
+              manifest: new Pack.Manifest({ name: "broken", version: "1.0.0", flows: ["plain.mjs"] })
             }]
           }
         })
       ))
-      expect(built._tag).toBe("Failure")
+      expect(built.code).toBe("invalid_pack")
+      expect(built.message).toContain("broken@1.0.0")
     }).pipe(Effect.provide(platform)))
 
   it.effect("refuses a pack this runtime is too old for", () =>
     Effect.gen(function*() {
-      const registry = yield* Effect.exit(Effect.provide(
+      const registry = yield* Effect.flip(Effect.provide(
         Effect.void,
         Registry.layerProject({
           root: projectRoot,
@@ -2199,17 +2249,18 @@ describe("the project registry", () => {
             installed: [{
               dir: projectRoot,
               origin: "installed",
-              manifest: {
+              manifest: new Pack.Manifest({
                 name: "future",
                 version: "2.0.0",
-                flows: ["flows"],
+                flows: [".smithers/flows"],
                 requires: { smithers: ">=9.0.0" }
-              } as never
+              })
             }]
           }
         })
       ))
-      expect(registry._tag).toBe("Failure")
+      expect(registry.code).toBe("incompatible_pack")
+      expect(registry.message).toContain("future@2.0.0")
     }).pipe(Effect.provide(platform)))
 })
 
@@ -2283,7 +2334,7 @@ describe("registration", () => {
       const capture = Logger.make((entry) => {
         if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message))
       })
-      const runtime = Layer.succeed(FlowRuntime.FlowRuntime, { register: () => Effect.void } as never)
+      const runtime = FlowEngine.layerMemory
       yield* Effect.gen(function*() {
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
@@ -2318,10 +2369,7 @@ describe("registration", () => {
     Effect.gen(function*() {
       const logs: Array<string> = []
       const capture = Logger.make((entry) => void logs.push(String(entry.message)))
-      const runtime = Layer.succeed(
-        FlowRuntime.FlowRuntime,
-        { register: () => Effect.void } as never
-      )
+      const runtime = FlowEngine.layerMemory
       const built = yield* Effect.provide(
         Executable.Catalog,
         Executable.layer(options()).pipe(
@@ -2340,13 +2388,8 @@ describe("registration", () => {
   it.effect("registers every runnable flow with the runtime", () =>
     Effect.gen(function*() {
       const registered: Array<string> = []
-      const runtime = Layer.succeed(
-        FlowRuntime.FlowRuntime,
-        {
-          register: (flow: Flow.Any) => Effect.sync(() => void registered.push(flow._tag))
-        } as never
-      )
-      yield* Layer.build(
+      const runtime = recordingRuntime(registered)
+      const services = yield* Layer.build(
         // `Crypto` is part of the registration requirement now: the action the
         // bridged flow dispatches derives its delegate's child execution id.
         Executable.layer(options()).pipe(
@@ -2383,6 +2426,14 @@ describe("registration", () => {
         "test/standalone",
         "tuned"
       ])
+      const host = Context.get(services, FlowRuntime.FlowRuntime)
+      const catalog = Context.get(services, Executable.Catalog)
+      const greet = catalog.executables.find((entry) => entry.descriptor.name === "greet")!
+      // Direct runtime dispatch cannot repair a missing registration.
+      expect(
+        yield* host.execute(greet.flow, { payload: { input: { name: "world" } }, executionId: "registered-greet" })
+      )
+        .toBe("greet")
     }).pipe(Effect.scoped, Effect.provide(registryLayer), Effect.provide(platform)))
 })
 

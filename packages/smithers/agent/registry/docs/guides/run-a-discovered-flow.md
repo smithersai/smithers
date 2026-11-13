@@ -81,6 +81,12 @@ host module cache cannot guarantee fresh measured bytes, and deferred loads
 can outlive temporary module cleanup. Installed packages without project
 mappings and Node/Bun builtins remain host dependencies.
 
+Type-only imports, including `type T = import("./types.ts").T` and
+`typeof import("./types.ts")` in type annotations, are measured conservatively
+but erased before execution. They do not trigger the runtime-load refusal.
+An expression such as `const kind = typeof import("./impl.ts")` still loads
+code at runtime and remains refused.
+
 A TypeScript entry can statically import `.vibe` helpers when its native host
 loads `vibelang/register`. Verified copies use visible, exclusively reserved
 `smithers-<digest>-<sequence>-<time>.<extension>` siblings: compiler project globs

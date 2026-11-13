@@ -16,9 +16,15 @@ Scanning a source never evaluates a module and never reads a prompt body into
 the result. The scan reads and hashes each entry file whole, up to
 `Discovery.entrySizeLimit`, then parses at most its first 64 KiB looking for the
 metadata: the closing frontmatter fence for markdown, the end of the default
-`Flow.make` value for a module. The 64 KiB ceiling bounds parsing, not the read.
-A catalog of a thousand flows therefore costs a thousand reads and hashes, a
-thousand frontmatter parses, and no imports.
+`Flow.make` value for a module. The 64 KiB ceiling bounds metadata parsing,
+not the read.
+
+For module entries, discovery also scans the complete source and walks its
+import closure, bounded to 512 modules and 16 MiB per entry. It reads ancestor
+`package.json`, `tsconfig.json` and `jsconfig.json` files to resolve project
+aliases, and compiles `.mdx` helpers with `@mdx-js/mdx`. It never evaluates a
+discovered flow module. TypeScript and VibeLang sources containing `import(...)` are also parsed with
+`@babel/parser` to identify erased import types.
 
 That rule is what makes a catalog cheap enough to build at startup, and it is
 also what makes it safe. A `.smithers/flows/` directory is a directory a person edits and
@@ -59,7 +65,10 @@ changed. The default executable loader evaluates the verified bytes of that
 whole closure under fresh module identities, so refresh adopts an edited
 entry or helper, including its priority, cache, and placement annotations,
 even after an earlier load in the same process. Discovery also measures literal
-`import()` and `require()` project helpers and mapped aliases. Executable
+`import()` and `require()` project helpers and mapped aliases. TypeScript
+import types such as `type T = import("./types.ts").T` and
+`typeof import("./types.ts")` in type annotations are pinned too, but are
+erased and do not count as runtime loads. Executable
 admission refuses those runtime loads, tsconfig aliases and conditional
 package mappings without one static target before evaluating the entry: their
 host cache cannot guarantee fresh measured bytes, and deferred calls can

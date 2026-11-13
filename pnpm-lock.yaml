@@ -2941,6 +2941,9 @@ importers:
 
   packages/smithers/agent/registry:
     dependencies:
+      '@babel/parser':
+        specifier: 7.29.8
+        version: 7.29.8
       '@mdx-js/mdx':
         specifier: 3.1.1
         version: 3.1.1(supports-color@10.2.2)

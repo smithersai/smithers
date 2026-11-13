@@ -301,7 +301,7 @@ describe("durable execution snapshots", () => {
   it("retains the unsupported import refusal when a fresh plan has no admitted snapshot", async () => {
     await run(Effect.gen(function*() {
       const { fs, root, entry } = yield* fixture
-      yield* fs.writeFileString(entry, `${source}\nexport type Options = Pick<import("./helper.ts").Options, "name">`)
+      yield* fs.writeFileString(entry, `${source}\nexport const helper = () => import("./helper.ts")`)
       const discovery = yield* Discovery.Discovery
       const descriptor = (yield* discovery.scan({ source: "project", root: `${root}/flows`, naming: "path" }))
         .entries[0]!
@@ -322,7 +322,7 @@ describe("durable execution snapshots", () => {
       expect(failure.cause).toBeUndefined()
       yield* fs.writeFileString(
         entry,
-        `${source}\nimport type { Options } from "./helper.ts"\nexport type Selected = Pick<Options, "name">`
+        `${source}\nexport type Selected = Pick<import("./helper.ts").Options, "name">`
       )
       const fresh = (yield* discovery.scan({ source: "project", root: `${root}/flows`, naming: "path" })).entries[0]!
       yield* Executable.fromDescriptor(fresh, {

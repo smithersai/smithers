@@ -341,6 +341,12 @@ specifier, a `#` specifier with no relative `imports` target, a self-import of
 the flow's own package through `exports`, or a closure past its bound. Its `path` then carries that reason instead of a
 location, and `Executable.fromDescriptor` refuses to run such a module.
 
+Type-only imports, including `type T = import("./types.ts").T` and
+`typeof import("./types.ts")` in type annotations, are measured conservatively
+but erased before execution. They do not trigger the runtime-load refusal.
+An expression such as `const kind = typeof import("./impl.ts")` still loads
+code at runtime and remains refused.
+
 One of those reasons is different in kind. A module that computes the target of
 a load (`import(name)`, `createRequire(...)`, `require` passed as a value, an
 import of `node:module`) names its file only when the load runs, which is how a
@@ -622,7 +628,14 @@ The entry-name path is the flow name, so a deeper tree is a loop or a mistake,
 and it is reported as `max_depth_exceeded`.
 
 A third ceiling has no export: at most 64 KiB of an admitted file is decoded
-and parsed looking for metadata. It bounds parsing only.
+and parsed looking for metadata. It bounds metadata parsing only.
+
+For module entries, discovery also scans the complete source and walks its
+import closure, bounded to 512 modules and 16 MiB per entry. It reads ancestor
+`package.json`, `tsconfig.json` and `jsconfig.json` files to resolve project
+aliases, and compiles `.mdx` helpers with `@mdx-js/mdx`. It never evaluates a
+discovered flow module. TypeScript and VibeLang sources containing `import(...)` are also parsed with
+`@babel/parser` to identify erased import types.
 
 ## MarkdownFlow
 

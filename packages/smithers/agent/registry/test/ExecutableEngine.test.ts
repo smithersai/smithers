@@ -15,7 +15,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
-import { describe, expect, it } from "@effect/vitest"
+import { afterAll, describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import { EngineStore } from "@smthrs/engine-store"
 import * as PlanScheduler from "@smthrs/engine-store/PlanScheduler"
@@ -28,6 +28,7 @@ import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Node, Plan } from "@smthrs/plan"
+import { NodeHost } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
@@ -36,7 +37,8 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { TestClock } from "effect/testing"
-import { existsSync, mkdtempSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -128,21 +130,8 @@ const inputDependentRunLayer = Run.toLayer((payload) =>
   })
 )
 
-const stubJj = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () =>
-      Effect.succeed({
-        commitId: "registry-executable-snapshot" as never,
-        changeId: "registry-executable-snapshot" as never
-      }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
+/** Bind the real host adapter to this case's private repository. */
+const realJj = (root: string) => Layer.effect(Jj.Jj, Jj.Jj).pipe(Layer.provide(NodeHost.layerAt(root)))
 
 const scan = Effect.gen(function*() {
   const discovery = yield* Discovery.Discovery
@@ -163,7 +152,23 @@ const executableNamed = (name: string) =>
   ).pipe(Effect.provide(platform))
 
 /** A private directory for one case's engine database and workspace. */
-const workspace = (name: string): string => mkdtempSync(join(tmpdir(), `registry-executable-${name}-`))
+const repositories: Array<string> = []
+const workspace = (name: string): string => {
+  const root = mkdtempSync(join(tmpdir(), `registry-executable-${name}-`))
+  repositories.push(root)
+  try {
+    execFileSync("jj", ["git", "init", "--no-colocate", root], { stdio: "pipe" })
+  } catch (cause) {
+    throw new Error("The durable registry tests require jj with non-colocated repository support on PATH", { cause })
+  }
+  // Engine databases are runtime state, outside the workspace's source identity.
+  writeFileSync(join(root, ".gitignore"), "*.db*\n")
+  return root
+}
+
+afterAll(() => {
+  for (const root of repositories) rmSync(root, { recursive: true, force: true })
+})
 
 /**
  * The durable runtime the bridged flow is registered with: real SQLite, the
@@ -189,7 +194,7 @@ const durable = <A, E, R>(filename: string, hostId: string, registration: Layer.
       )
     ),
     Layer.provideMerge(
-      Layer.mergeAll(stubJj, Action.layerCacheEnvironment({ layers: [], capabilities: {} }))
+      Layer.mergeAll(realJj(dirname(filename)), Action.layerCacheEnvironment({ layers: [], capabilities: {} }))
     ),
     Layer.provideMerge(NodeCrypto.layer),
     Layer.provideMerge(platform)
@@ -719,7 +724,7 @@ describe("the annotation golden", () => {
       const stores = TestStores.layerAt(join(directory, "scheduler.db"))
       const harness = Layer.mergeAll(
         StepBoundary.layerTest(),
-        stubJj,
+        realJj(directory),
         PlanScheduler.layerExecutor({
           execute: ({ node }) =>
             Effect.sync(() => {

@@ -74,6 +74,18 @@ describe("the documented scan cost model", () => {
     expect(document).toContain("64 KiB")
   })
 
+  it.each(documents)("accounts for the module closure in %s", (...parts) => {
+    const document = flatten(...parts)
+    expect(document).toContain("512")
+    expect(document).toContain("16 MiB")
+    expect(document).toContain("complete source")
+    expect(document).toContain("ancestor")
+    expect(document).toContain("@mdx-js/mdx")
+    expect(document).toContain("@babel/parser")
+    expect(document).not.toContain("thousand reads")
+    expect(document).not.toContain("imports nothing")
+  })
+
   it.each(documents)("claims no prefix-only read in %s", (...parts) => {
     expect(flatten(...parts)).not.toContain("only far enough")
   })
