@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import ts from "typescript"
 import { describe, expect, test } from "vitest"
 
 const packageRoot = join(import.meta.dirname, "..")
@@ -66,5 +67,31 @@ describe("the comments in this package", () => {
         .map((block) => `${path}: ${block}`)
     )
     expect(stale).toEqual([])
+  })
+})
+
+describe("card contract documentation", () => {
+  test.each(
+    [
+      ["CardAction.ts", "CatalogTag", /(?:catalog|command).*tags?/i],
+      ["CardAction.ts", "ActionSchema", /filtered for the viewer/],
+      ["Cards.ts", "CurrentCardSchema", /card values at the RPC boundary/]
+    ] as const
+  )("%s documents %s at its declaration", (file, name, description) => {
+    const source = ts.createSourceFile(
+      file,
+      readFileSync(join(packageRoot, "src", file), "utf8"),
+      ts.ScriptTarget.Latest,
+      true
+    )
+    const declaration = source.statements.find((statement) =>
+      ts.isTypeAliasDeclaration(statement)
+        ? statement.name.text === name
+        : ts.isVariableStatement(statement) &&
+          statement.declarationList.declarations.some((item) => ts.isIdentifier(item.name) && item.name.text === name)
+    )
+    expect(declaration).toBeDefined()
+    const comments = ts.getJSDocCommentsAndTags(declaration!).map((comment) => comment.getText(source)).join("\n")
+    expect(comments).toMatch(description)
   })
 })

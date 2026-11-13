@@ -14,7 +14,7 @@ import type { SetupStepId } from "./SetupCard.ts"
 import { TodoPlacementSchema } from "./TodoCommands.ts"
 import type { TodoNewInputSchema as TodoCommandNewInputSchema } from "./TodoCommands.ts"
 /**
- * The failure codes and fault classes shared by refusal boundaries.
+ * Catalog command tags, including historical tags accepted in recorded actions.
  * @since 1.0.0
  * @category models
  */
@@ -59,12 +59,6 @@ export const FormFieldSchema = z.object({
  */
 export type FormField = z.infer<typeof FormFieldSchema>
 
-/**
- * An action already filtered for the viewer by its Container. `args` are bound by the Container, such as
- * `{ n: "12", wait: "w-3" }`; the View passes them back unchanged with its form input.
- * @since 1.0.0
- * @category schemas
- */
 const historicalPullNavigation = ["prs", "prs.list", "prs.view"] as const
 const historicalWorkspaceNavigation = ["box.list", "box.open", "box.view"] as const
 const workspaceNavigationOperation = (tag: string) =>
@@ -132,8 +126,8 @@ const recordedSecretArgs = (tag: string, args: Readonly<Record<string, string>> 
   }
 }
 /**
- * A card action as decoded: its catalog tag, label and arguments.
- *
+ * An action already filtered for the viewer by its Container. `args` are bound by the Container, such as
+ * `{ n: "12", wait: "w-3" }`; the View passes them back unchanged with its form input.
  * @since 1.0.0
  * @category schemas
  */

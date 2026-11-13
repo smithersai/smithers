@@ -673,12 +673,6 @@ export const SearchRefusalSchema = z.object({
  */
 export type SearchRefusal = z.infer<typeof SearchRefusalSchema>
 
-/**
- * Validates card values at the RPC boundary.
- *
- * @since 1.0.0
- * @category schemas
- */
 /** Where an issue comment was written: the app, or the chat it was mirrored from. */
 const IssueCommentOriginSchema = z.enum(["app", "slack", "telegram"])
 
@@ -825,6 +819,12 @@ export const RepositoryImportRequestSchema = z.object({
  */
 export type RepositoryImportRequest = z.infer<typeof RepositoryImportRequestSchema>
 
+/**
+ * Validates card values at the RPC boundary.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
 const CurrentCardSchema = z.discriminatedUnion("kind", [
   z.object({
     ...cardBaseShape,
@@ -1093,7 +1093,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       note: z.string().optional()
     })
   }),
-  /* The admin plugin's cards (Launch Checklist §E — registered only for admin sessions). */
   /* A world query's embedded answer card (the agent's world form; §2c″). */
   z.object({
     ...cardBaseShape,
@@ -1744,13 +1743,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
-   * The composer for one configured model (ConfiguredModel.ts): the request a
-   * person edits, the typed answer it got, and whether one is out. The
-   * request is fields and questions, the answer is numbers and option names
-   * or the generated text, and no value exists on this payload.
-   */
-
-  /*
    * Lane sync (ADR 0005): the sync-ops card for GitHub mirror syncs. Rows
    * are the durable ops, newest first, a failed row carrying the server's
    * error verbatim with a Retry act
@@ -2128,22 +2120,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       images: z.array(EnvironmentImageRowSchema)
     })
   }),
-  /*
-   * Lane citc: one workspace service's log (WORKBENCH-UX §3.1 Services
-   * facet). The routes that would feed it do not exist yet (plue#449), so no
-   * flow produces this card today — the schema lands with the workspace card
-   * so the contract is one change, and the body renders what it is handed.
-   */
-  /*
-   * The /theme picker: one swatch per palette, painted in that palette's own
-   * colors. `selected` is the palette live when the card last synced; the
-   * mainview owns the palette list, so the payload carries only the key.
-   */
-  /*
-   * The local app's repository cards:
-   * the opened repository, its trusted typed target list, and one streamed
-   * target run.
-   */
   /* The agents a host answered for (its factory inventory, or the loaded repository's agent flows) or a repository's cloud session inventory. */
   z.object({
     ...cardBaseShape,
@@ -2312,14 +2288,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   }),
 
   /*
-   * The anonymous turn ceiling's refusal (factory mock 22): a signed-out
-   * visitor's turn the Worker refused with 429 turn_rate_limited. `message`
-   * is the server's own sentence (per-address or deployment-wide wording),
-   * `retryAt` its ISO reset time or null when the body named none. The card
-   * renders only these two fields plus the sign-in door; no count or reset is
-   * invented client-side.
-   */
-  /*
    * The palette's results card (palette spec §3, §6): the rows one `search.*`
    * flow answered, re-runnable from `flow` and `args`, each row carrying the
    * registered flows that act on it. The agent embeds one when it surfaces
@@ -2383,6 +2351,14 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       links: z.array(z.object({ source: z.string(), target: z.string() }))
     })
   }),
+  /*
+   * The anonymous turn ceiling's refusal (factory mock 22): a signed-out
+   * visitor's turn the Worker refused with 429 turn_rate_limited. `message`
+   * is the server's own sentence (per-address or deployment-wide wording),
+   * `retryAt` its ISO reset time or null when the body named none. The card
+   * renders only these two fields plus the sign-in door; no count or reset is
+   * invented client-side.
+   */
   z.object({
     ...cardBaseShape,
     kind: z.literal("anonymous-ceiling"),

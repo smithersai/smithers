@@ -30,11 +30,10 @@ agent flow whose id matches a built-in role keeps its own facts. Its
 as a verdict the read did not reach: a refused catalog read is `unreadable`,
 not a repository that declares no agent. Only a card written before the field
 existed carries none. A kind joins the legacy set
-only when its last producer is removed (L3). `grant-confirm` is legacy;
-`stack` and `factory.home` retain live schemas under #3447. They are deferred
-and hidden by the app-local `DEFERRED_CARD_KINDS` list. `branches`, `file`,
-`diff`, `secrets`, `run-trace`, `balance` and `billing-plans` remain current.
-`cardAvailable` excludes decoded tombstones and the two deferred app kinds.
+only when its last producer is removed (L3). `grant-confirm` and `branches`
+are legacy; `stack` and `factory.home` retain live schemas.
+`file`, `diff`, `secrets`, `run-trace`, `balance` and `billing-plans`
+also remain current.
 
 `CardPatchSchema` requires `kind`, including for metadata-only updates. Its payload
 is a shallow partial of that kind's payload schema: every top-level field is
@@ -43,14 +42,9 @@ merge keeps the stored value. Nested objects and arrays keep their full
 validation, including file diagnostic caps. Consumers must require the patch kind
 to match the existing card, merge payload fields, then validate the resulting card
 with `CardSchema` before storing the parsed result. The UI store fills in the
-existing kind for local transitions; model frames must provide it. Environment
-transitions are redacted before journaling or tracing.
-
-Environment variable `value` fields are display-only. Decoding cards and patches
-keeps three leading characters followed by `…`; values of three characters or fewer
-become `…`. Repeated decoding is stable. Use parsed values for persistence and
-re-read upstream when a raw value is needed. This does not scrub old bytes already
-on disk; it redacts them when decoded and on subsequent writes.
+existing kind for local transitions; model frames must provide it.
+Legacy kinds, including `env`, are not accepted by `CardPatchSchema`.
+Recorded environment rows discard `value` rather than keeping a masked preview.
 
 ## Link fields
 

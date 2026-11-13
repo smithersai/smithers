@@ -69,21 +69,15 @@ stale revision as `stale`) and `SettingsModelSetInputSchema` (`{role, model}`,
 with the shared model role enum and a catalog model id). Who may run each is
 catalog policy, not an input field.
 
-`CatalogTags` exports the card command tag union generated from the shared
-Operation declarations and checked against `catalog.mvp.json`. `CardAction`
-keeps command inputs correlated with their tags.
-No command is registered by these data modules.
+`CatalogTags` exports manually maintained schemas for card command tags and
+operation names. `CatalogOperationSchema` validates a confirmation's
+`action.tag`. `CardAction` keeps command inputs
+correlated with their tags. No command is registered by these data modules.
 
-A Container gives the app's `flows/cardActions` helper viewer-filtered action
-definitions and their typed command inputs. The helper preserves order and
-returns props-only `actions`, named `gestures` and `onAction`, bound through
-`flowAction`. Definitions may supply an input resolver for forms. Repeated tags
-on separate rows use `forScope(rowId)`, which keeps each row's input and callback
-together. `actionProps(tag)` preloads with the command's canonical `flowArgs`
-line; an action with a secret field or a secret-bearing command preloads by tag
-only, so a secret never reaches a DOM attribute.
-Unknown or disabled actions report a typed failure without dispatching; supplied
-form values require a resolver.
+A Container supplies viewer-filtered `actions`, named `gestures` and
+`onAction` through `CardProps`. It binds command inputs and owns dispatch
+and permission checks. These contracts describe the props and callbacks;
+they do not implement action binding or dispatch.
 
 A View control renders `data-flow={action.tag}` and invokes
 `onAction(action.tag)`, optionally with form values. The View never owns a
