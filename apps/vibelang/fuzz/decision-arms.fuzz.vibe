@@ -105,6 +105,9 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
   for (const toured of [false, true]) for (const kind of ["ReplyFinished", "WalkthroughDriven"]) {
     try check("completeScreenTour", same(Screen.completeScreenTour(screen, toured, kind), { ...screen, tour: toured ? false : screen.tour, docs: toured && kind !== "ReplyFinished" ? "pane" : screen.docs }))
   }
+  // A run's place in the list is found past runs with other ids, and a new run has none.
+  const clocks = ["a", "b", "c"].map((id) => ({ id: `${id}${text}`, state: "running", at: 1, started: 1 }))
+  try check("runIndex", ModelD.runIndex(clocks, `c${text}`) === 2 && ModelD.runIndex(clocks, `a${text}`) === 0 && ModelD.runIndex(clocks, `d${text}`) === -1 && ModelD.runIndex([], other) === -1)
   // A loaded history without epics is empty whatever else is set; a wiki submit is ignored while busy, unchanged
   // without an edit, and otherwise saved, proposed or refused by the person's rights.
   try check("historyBody empty", HistoryViewD.historyBody("ready", 0, true, true, false, true, true) === "empty" && HistoryViewD.historyBody("ready", 1, false, false, false, false, false) === "list")
