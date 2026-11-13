@@ -20,6 +20,27 @@ const apiDoc = read("docs/api.md");
 const barrelSource = read("src/index.ts");
 
 describe("consumer theming guides", () => {
+  test("contrast guidance describes retained Paper variants and fixed token inputs", () => {
+    const guide = read("docs/concepts/contrast-budget.md").replace(/\s+/g, " ");
+    expect(guide).toContain("Paper light and dark");
+    expect(guide).toContain("`scripts/paperTokens.ts`");
+    expect(guide).toContain("does not search");
+    expect(guide).toContain("`KNOWN_TERMINAL_GAPS` and `KNOWN_ROLE_COLLISIONS` are empty");
+    expect(guide).not.toMatch(/Solarized|Rose Pine|Eight palettes|16 (?:token sets|shipped variants|variants)|`one` dark/);
+    expect(guide).not.toContain("Each search checks");
+    expect(guide).not.toContain("11 percent tint already misses AA");
+  });
+
+  test("contrast recovery uses the retained Paper inputs and audit", () => {
+    const guide = read("docs/troubleshooting.md").replace(/\s+/g, " ");
+    expect(guide).toContain("`paper`");
+    expect(guide).toContain("`scripts/paperTokens.ts`");
+    expect(guide).toContain("./guides/audit-a-color-pair.md");
+    expect(guide).toContain("scripts/generate-theme-registry.ts --check");
+    expect(guide).not.toMatch(/Solarized|Rose Pine|unreachable contrast target|unreachable\/light\/textPlaceholder/);
+    expect(guide).not.toContain("Generation validates every palette");
+  });
+
   test("palette sources distinguish host overrides from registry regeneration", () => {
     const guide = read("docs/concepts/palette-sources.md").replace(/\s+/g, " ");
     expect(guide).not.toContain("None of these can be fixed by overriding a token in your own sheet");

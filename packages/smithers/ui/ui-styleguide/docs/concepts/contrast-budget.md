@@ -1,15 +1,14 @@
 ---
 title: "The contrast budget"
-description: "Every foreground and background pair the shipped rules paint is required to meet WCAG AA across all Paper light/dark variants in both modes."
+description: "Every foreground and background pair the shipped rules paint is required to meet WCAG AA in Paper light and dark."
 sidebar:
   order: 1
 ---
 
-The package makes one central claim: every audited UI text pair in any selectable palette
-meets WCAG AA at 4.5:1 or higher. Eight palettes times two modes is 16 token sets, and a person
-picking Solarized at random is not opting out of legible text. That claim is
-what shapes the token values, the tint percentages, and several rules that are
-conspicuously absent from the sheet.
+The package makes one central claim: every audited UI text pair in
+Paper light and dark meets WCAG AA at 4.5:1 or higher. These are the registry's
+two token sets. That claim shapes the token values, the tint percentages, and
+several rules that are conspicuously absent from the sheet.
 
 ## The claim is a table, not a spot check
 
@@ -39,36 +38,27 @@ what is painted, so a rule with no entry is visibly an unaudited surface.
 ## Backgrounds resolve to exact channels
 
 `mixColors` rounds each channel to an integer. A browser evaluating
-`color-mix(in srgb, ...)` does not. At least one shipped pair sits in the gap.
-
-The `one` dark `--success` tint at the old 12 percent scored 4.5033 with rounded
-channels and 4.4781 with the channels the browser renders: passing on the
-rounded number, failing in the product. That is why `mixChannels` returns
-unrounded `Rgb` and `contrastRatioOf` scores channels rather than hex, and why
-the audit uses that pair throughout. The current 10 percent recipe scores 4.6329
-rounded and 4.6469 rendered, so it clears AA either way.
+`color-mix(in srgb, ...)` does not, so a rounded result can cross a contrast
+threshold that the rendered color misses. The audit uses `mixChannels` to
+resolve unrounded `Rgb` values and `contrastRatioOf` to score those exact channels.
 
 ## Two tint ceilings
 
 `SOFT_TINT_AMOUNT` is 0.1 and `STRONG_TINT_AMOUNT` is 0.16. The difference
 between them is whether the fill carries text in its own semantic color.
 
-- **A fill under same-color text is capped at 10 percent.** The darkest shipped
-  seeds sit near 4.6:1 on a plain `--surface`, so 11px badge text on an
-  11 percent tint already misses AA in at least one palette.
+- **A fill under same-color text is capped at 10 percent.** The audited soft
+  tints keep every semantic foreground above 4.5:1 in both Paper variants.
 - **A fill with no tinted text may go to 16 percent.**
   `--brand-soft-strong` exists for exactly that, and the sheet never puts brand
-  text on it: brand on a 16 percent brand tint measures below 4.5:1 in 10 of the
-  16 shipped variants.
+  text on it: Paper light brand text on a 16 percent brand tint measures about
+  4.33:1, below AA.
 
-Two visible consequences follow. Hover and press on `.button.primary` and
-`.button.danger` move the border and the elevation rather than deepening the
-fill, because there is nowhere deeper to go. And each of those state rules
-restates its own `background`, because the generic `.button:hover` and
-`.button:active` rules match them too at higher specificity; without the
-restatement the resolved fill is brand text on a neutral surface nobody
-measured. The suite resolves the sheet rule by rule and pins what each state
-actually paints.
+Hover and press on `.button.primary` and `.button.danger` move the border and
+the elevation while retaining the audited soft fill. Each state rule restates
+its own `background`, because the generic `.button:hover` and `.button:active`
+rules match them too at higher specificity. The suite resolves the sheet rule
+by rule and pins what each state actually paints.
 
 ## The topbar is measured twice
 
@@ -109,29 +99,23 @@ the page background sets a color too.
 
 ## UI text has no contrast exemptions
 
-Every audited UI pair must meet 4.5:1 in every palette and mode, including
-Solarized. The generator preserves the upstream surface seeds and adjusts
-primary text toward black or white until it reaches 5.25:1 on `bg`, `surface`,
-`surface2`, and `surface3`. This leaves room for the secondary ramp's targets:
-5:1 for muted text, 4.75:1 for faint text, and 4.5:1 for placeholders.
+Every audited UI pair must meet 4.5:1 in both Paper variants. The generator
+copies the fixed semantic tokens from `scripts/paperTokens.ts` into
+`src/themes/paper.ts`; it does not search for contrast targets or adjust the
+text ramp. The package's test suite enforces the UI AA guarantee, including the
+actual active fills and both glass topbar composites.
 
-Each search checks every background before accepting its result. Exhaustion
-throws an error naming the palette, mode, token, target, and achieved minimum
-ratio. All palettes are validated before any output file is written. The suite
-also measures the actual active fills and both glass topbar composites.
-
-Terminal and syntax colors preserve upstream fidelity separately from this UI
-AA guarantee. Solarized light's terminal foreground remains at 4.13:1; its
-measured exception is pinned in `KNOWN_TERMINAL_GAPS`. Rose Pine's shared
-success/info colors remain in `KNOWN_ROLE_COLLISIONS`. These lists must name
-only existing variants whose recorded behavior still holds. See
+The generator reads the pinned `@shikijs/themes` Night Owl inputs for syntax
+identifiers and terminal ANSI colors. Terminal and syntax inputs remain
+separate from the UI AA guarantee. `KNOWN_TERMINAL_GAPS` and `KNOWN_ROLE_COLLISIONS` are empty
+for the retained Paper variants. See
 [Where the palettes come from](./palette-sources.md).
 
 ## The same discipline in your own rules
 
 The budget only covers what this package ships. Any rule you write that puts a
 foreground on a background is a new pair, and it is unaudited until you measure
-it in all 16 variants. Deleting a rule to make a failing pair disappear hides
+it in both Paper variants. Deleting a rule to make a failing pair disappear hides
 the token failure rather than fixing it.
 
 For the mechanics, see [Audit a color pair](../guides/audit-a-color-pair.md).
