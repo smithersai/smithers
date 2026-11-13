@@ -10,7 +10,7 @@ const node = (source: string, options: Partial<Driver.Options> = {}) =>
   Driver.make({ executable: process.execPath, args: ["-e", source], ...options })
 
 describe("isolated real CLI driver", () => {
-  it("supports an executable with no arguments, input or ambient environment", async () => {
+  it("supports an executable with no arguments or input", async () => {
     expect(await run(Driver.execute({ executable: process.execPath, cwd: "/tmp" })))
       .toEqual({ code: 0, stdout: "", stderr: "" })
   })
@@ -33,20 +33,31 @@ describe("isolated real CLI driver", () => {
   })
 
   it("passes literal argv and an explicit environment without inheriting credentials", async () => {
-    const value = await run(Effect.scoped(Effect.gen(function*() {
-      const driver = yield* node("console.log(JSON.stringify({args:process.argv.slice(1),env:process.env}))", {
-        env: { PATH: process.env.PATH ?? "", FIXTURE: "kept", HOME: "/ignored" }
-      })
-      return { driver, result: yield* driver.run(["a b", "$(false)", "'quoted'"]) }
-    })))
-    const output = JSON.parse(value.result.stdout)
-    expect(output.args).toEqual(["a b", "$(false)", "'quoted'"])
-    expect(output.env.HOME).toBe(value.driver.home)
-    expect(output.env.FIXTURE).toBe("kept")
-    expect(output.env.SMITHERS_AUTH_FILE).toBe(`${value.driver.home}/auth.json`)
-    expect(output.env.SMITHERS_DISABLE_SYSTEM_KEYRING).toBe("1")
-    expect(output.env).not.toHaveProperty("SMITHERS_TOKEN")
-    expect(output.env.XDG_CONFIG_HOME).toBe(`${value.driver.home}/config`)
+    const previous = process.env.SMTHRS_AMBIENT_MARKER
+    process.env.SMTHRS_AMBIENT_MARKER = "parent-only"
+    try {
+      const value = await run(Effect.scoped(Effect.gen(function*() {
+        const driver = yield* node("console.log(JSON.stringify({args:process.argv.slice(1),env:process.env}))", {
+          env: { PATH: process.env.PATH ?? "", FIXTURE: "kept", HOME: "/ignored" }
+        })
+        return { driver, result: yield* driver.run(["a b", "$(false)", "'quoted'"]) }
+      })))
+      const output = JSON.parse(value.result.stdout)
+      expect(output.args).toEqual(["a b", "$(false)", "'quoted'"])
+      expect(output.env.HOME).toBe(value.driver.home)
+      expect(output.env.FIXTURE).toBe("kept")
+      expect(output.env.SMITHERS_AUTH_FILE).toBe(`${value.driver.home}/auth.json`)
+      expect(output.env.SMITHERS_DISABLE_SYSTEM_KEYRING).toBe("1")
+      expect(Object.hasOwn(output.env, "SMITHERS_TOKEN")).toBe(false)
+      expect(Object.hasOwn(output.env, "SMTHRS_AMBIENT_MARKER")).toBe(false)
+      expect(output.env.XDG_CONFIG_HOME).toBe(`${value.driver.home}/config`)
+      const allowedKeys = new Set(Object.keys(value.driver.env))
+      if (process.platform === "win32") allowedKeys.add("SystemRoot")
+      expect(Object.keys(output.env).filter((key) => !allowedKeys.has(key))).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env.SMTHRS_AMBIENT_MARKER
+      else process.env.SMTHRS_AMBIENT_MARKER = previous
+    }
   })
 
   it("pipes input literally without putting it in argv", async () => {
