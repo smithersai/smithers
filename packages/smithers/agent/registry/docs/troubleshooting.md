@@ -55,6 +55,13 @@ configuration mistake, not a tree with no flows in it.
 about the root itself: an unreadable directory found during the walk is a
 `unreadable` warning, and the scan continues.
 
+### unknown
+
+**What happened.** The failure has no more specific discovery code.
+
+**What to change.** Read `message` and `cause` to identify the host operation
+that failed.
+
 ## RegistryError
 
 Raised while constructing a registry, looking one up, loading a body, or
@@ -63,9 +70,8 @@ rendering a prompt.
 Every `RegistryError` carries `module` and `method`, the operation that raised
 it: a `not_found` from `runPrompt` says `runPrompt`, not the `loadBody` it
 delegates the body read to. `path` is present when the failure is about a file,
-which is every code below except `not_found`, `system_collision`, and
-`not_prompt_flow`; those are about a name the snapshot does not hold, and there
-is no file to name.
+when one is available. Name lookups, snapshot restoration, and pack checks may
+fail without a file path; use `message` and `cause` for the specific reason.
 
 ### not_found
 
@@ -106,6 +112,16 @@ something nobody admitted.
 
 `Executable.fromDescriptor` raises the same condition as
 `ExecutableError { code: "body_unavailable" }`.
+
+### execution_changed
+
+**What happened.** `loadBody(name, expectedExecutionDigest)` could not recover
+the approved execution identity. The live descriptor or its source changed or became unavailable, and its
+approved source snapshot was unavailable, invalid, or belonged to another flow.
+
+**What to change.** Restore the approved source snapshot, or create and approve
+a new plan for the current flow. Refreshing discovery alone does not approve
+changed code.
 
 ### not_prompt_flow
 
@@ -154,6 +170,13 @@ inclusive hyphen range, or whitespace-separated bare, `=`, `>=`, `>`, `<=`,
 `<`, `^`, and `~` comparators. This is a separate code from
 `incompatible_pack` on purpose, so an operator can tell an unparseable
 declaration from a pack that genuinely needs a newer runtime.
+
+### unknown
+
+**What happened.** The failure has no more specific registry code.
+
+**What to change.** Read `message`, `module`, `method`, and `cause` to identify
+the failed operation.
 
 ## ExecutableError
 

@@ -10,6 +10,7 @@ import { runInNewContext } from "node:vm"
 import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
+import * as RegistryErrors from "../src/RegistryError.ts"
 
 // The package owns its own prose. Nothing generates these files, so this is
 // the gate that keeps the scan's cost model honest: discovery reads and
@@ -142,4 +143,74 @@ describe("the documented warning vocabulary", () => {
     expect(api).toContain(`\`${code}\``)
     expect(guide).toContain(`| \`${code}\``)
   })
+})
+
+describe("the documented registry contracts", () => {
+  const api = readFileSync(join(packageRoot, "docs", "api.md"), "utf8")
+  const executable = readFileSync(join(packageRoot, "src", "Executable.ts"), "utf8")
+  const tick = "`"
+  const declaration = (text: string, name: string): string =>
+    text.match(new RegExp("(?:export )?interface " + name + " \\{[\\s\\S]*?^\\}", "m"))?.[0] ?? ""
+  const normalize = (text: string): string =>
+    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\bexport /g, "").replace(/\s+/g, "")
+
+  it.each(["Executable", "Options", "Delegate", "Catalog"])(
+    "keeps the %s interface aligned with its source",
+    (name) => {
+      const source = declaration(executable, name)
+      expect(source).not.toBe("")
+      expect(normalize(declaration(api, name))).toBe(normalize(source))
+    }
+  )
+
+  it("lists every root module and its reference section", () => {
+    const index = readFileSync(join(packageRoot, "src", "index.ts"), "utf8")
+    const names = Array.from(index.matchAll(/export \* as (\w+) from/g), (match) => match[1]!)
+    expect(api.match(/exports (\d+) modules/)?.[1]).toBe(String(names.length))
+    for (const name of names) {
+      expect(api).toContain("[" + tick + name + tick + "](#" + name.toLowerCase() + ")")
+      expect(api).toContain("\n## " + name + "\n")
+    }
+  })
+
+  it("names only the services that registration requires", () => {
+    const registration = (text: string): string => text.match(/type Registration = [^\n]+/)?.[0] ?? ""
+    expect(registration(executable)).not.toBe("")
+    expect(registration(api)).toBe(registration(executable))
+  })
+
+  it("documents ordered model fallback selection in both envelope references", () => {
+    expect(api.includes("model: Schema.NullOr<typeof Descriptor.ModelSelection>")).toBe(true)
+    expect(flatten("docs", "concepts", "delegation.md")).toContain("readonly model: Descriptor.ModelSelection | null")
+  })
+
+  it("distinguishes the retired project root from the discovery root", () => {
+    const row = flatten("docs", "guides", "diagnose-a-missing-flow.md").split("| " + tick + "retired_root" + tick)[1]
+      ?.split("|").slice(0, 3).join("|")
+    expect(row).toContain("root " + tick + "flows/" + tick)
+    expect(row).toContain("to " + tick + ".smithers/flows/" + tick)
+    const guide = flatten("docs", "guides", "run-a-discovered-flow.md")
+    expect(guide).toContain(tick + "<root>/.smithers/flows/**" + tick)
+    expect(guide).toContain("no " + tick + ".smithers/flows/" + tick + " directory")
+  })
+
+  it("describes the fresh ambient execution identity consistently", () => {
+    const guide = flatten("docs", "guides", "reuse-a-flow-result.md")
+    expect(guide).toContain("fresh UUID")
+    const comment = flatten("src", "Executable.ts")
+    expect(comment).toContain("fresh UUID")
+    expect(comment).not.toContain("the ambient default derives an id from the flow tag and the payload")
+  })
+
+  const troubleshooting = readFileSync(join(packageRoot, "docs", "troubleshooting.md"), "utf8")
+  const families = [
+    ["DiscoveryError", RegistryErrors.DiscoveryErrorCode.literals],
+    ["RegistryError", RegistryErrors.RegistryErrorCode.literals]
+  ] as const
+  for (const [family, codes] of families) {
+    const section = troubleshooting.split("\n## " + family + "\n")[1]?.split("\n## ")[0] ?? ""
+    it.each(codes)("explains " + family + " code %s", (code) => {
+      expect(Array.from(section.matchAll(/^### (\w+)$/gm), (match) => match[1])).toContain(code)
+    })
+  }
 })

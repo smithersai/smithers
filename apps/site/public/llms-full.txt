@@ -38774,8 +38774,9 @@ https://smithers.sh/docs/reference/api/registry/
 
 > **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
-`@smthrs/registry` exports nine modules from its root entry point, and each is
-also importable from `@smthrs/registry/<Module>`:
+`@smthrs/registry` exports 13 modules from its root entry point. All except
+`Bundled` are also importable from `@smthrs/registry/<Module>`; import
+`Bundled` from the root:
 
 ```ts
 import { Descriptor, Discovery, Registry } from "@smthrs/registry"
@@ -38804,6 +38805,8 @@ declaration values a discovered body carries, see the
 | [`ExecutionSnapshot`](#executionsnapshot) | Durable admitted source closures and approved descriptor restoration.              |
 | [`Pack`](#pack)                           | Manifests, content addresses, compatibility ranges, and merge precedence.          |
 | [`RegistryError`](#registryerror)         | The typed failures and their constructors.                                         |
+| [`LoadGuard`](#loadguard)                 | Run-time refusal of unmeasured project loads.                                      |
+| [`Bundled`](#bundled)                     | Catalogs of host-imported declarations without filesystem discovery.               |
 | [`Prompt`](#prompt)                       | Compiles typed MDX prompts to Markdown text components.                            |
 
 ## Example
@@ -38839,6 +38842,33 @@ Declare it in a sibling `prompt.d.mdx.ts`; there is no untyped wildcard import.
 `@smthrs/registry/Prompt/jsx-runtime` exports `jsx`, `jsxs`, `Fragment`, and
 `render(content)`. Markdown elements render as Markdown text; expressions and
 imported components use ordinary MDX semantics. See [MDX prompts](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/guides/mdx-prompts.md).
+
+## Bundled
+
+Catalogs of flow declarations the host already imported, without filesystem
+discovery. Import this module with `import { Bundled } from "@smthrs/registry"`.
+
+```ts
+class BundledError {
+  readonly _tag: "BundledError"
+  readonly code: "duplicate_name" | "not_found"
+  readonly name: string
+}
+
+interface Catalog<F extends RuntimeFlow.Any = RuntimeFlow.Any> {
+  readonly list: () => Effect.Effect<ReadonlyArray<F>>
+  readonly get: (name: string) => Effect.Effect<F, BundledError>
+}
+
+const make: <F extends RuntimeFlow.Any>(
+  flows: ReadonlyArray<F>
+) => Effect.Effect<Catalog<F>, BundledError>
+```
+
+`make` copies the declarations and refuses duplicate tags with
+`duplicate_name`. `list` returns a new array; `get` resolves by tag or fails
+with `not_found`. The declarations retain their schemas, capabilities, and
+executable identity. The host still supplies their runtime registrations.
 
 ## Descriptor
 
@@ -39052,14 +39082,17 @@ verifies source bytes before returning a prompt or module locator, and
 `Executable.fromDescriptor` verifies source before loading it. A missing digest
 or mismatch is `body_unavailable`; refresh the registry before loading it.
 
-`contentDigest` measures the ENTRY FILE. `imports` measures what that entry
-loads from beside itself: every module reached through a relative specifier
-(`import`, `export … from`, `import()`, `require()` or `import.meta.require()`),
-transitively, as a path relative to the entry's directory plus the digest of
-its bytes. The loader imports the verified entry bytes as a sibling of the
-original so those specifiers resolve to the live files, which makes them code
-the flow runs, so they ride `Descriptor.executionDigest` and are re-measured
-before anything is imported. The field is ABSENT, not empty, when the entry
+`contentDigest` measures the entry file. `imports` measures its project
+closure: modules reached transitively through literal relative `import`,
+`export … from`, `import()`, `require()` or `import.meta.require()` specifiers,
+as paths relative to the entry's directory plus the digest of their bytes.
+These records enter `Descriptor.executionDigest` and are re-measured before
+anything is imported. The default loader writes the verified bytes of the
+whole closure as private siblings and rewrites each static link to its
+target's measured sibling. It never follows those links to live project files.
+Measured project loads through `import()`, `require()` or `import.meta.require()`
+are refused with `body_unavailable`: discovery can measure a literal target,
+but those calls cannot guarantee fresh bytes through the host module cache. The field is ABSENT, not empty, when the entry
 loads nothing beside itself, so such a module hashes exactly as it did before
 the field existed. A bare specifier that a loader maps onto project files is
 measured too: a package.json `imports` entry (`#impl`), and a tsconfig or
@@ -39801,19 +39834,34 @@ Turning a discovered descriptor into something the durable engine runs.
 
 ```ts
 interface Executable {
-  readonly quiesce?: ((executionIds: Iterable<string>) => Effect.Effect<void>) | undefined
   readonly source?: VerifiedSource | undefined
+  readonly quiesce?: ((executionIds: Iterable<string>) => Effect.Effect<void>) | undefined
   readonly descriptor: Descriptor.FlowDescriptor
+  readonly declaredTag?: string | undefined
+  readonly inspect?: (() => Graph.Inspection) | undefined
   readonly delegate: string | undefined
+  readonly input: Schema.Top | undefined
+  readonly prompt?: ((input: unknown) => string) | undefined
   readonly lowered: Lowered
   readonly invocation: (input: Schema.Json) => Invocation
-  readonly flow: RuntimeFlow.Flow<string, typeof Payload, typeof Schema.Unknown, typeof Schema.Unknown, any>
+  readonly flow: RuntimeFlow.Flow<
+    string,
+    typeof Payload,
+    Schema.Codec<unknown, unknown>,
+    Schema.Codec<unknown, unknown>,
+    any
+  >
   readonly layer: Layer.Layer<never, never, Registration>
 }
 ```
 
-One discovered flow, made runnable. `flow` is tagged with the descriptor's
-registry name and `layer` registers it with the runtime.
+One discovered flow, made runnable. `layer` registers the input adapter `flow`
+with the runtime. When a module's declared tag equals its registry name, the
+adapter uses `registry/entry/<digest>/<name>`, with the descriptor's execution
+digest unless `adapterExecutionDigest` overrides it; otherwise it uses the
+registry name. `declaredTag` retains the module's own tag. `input` exposes its
+payload codec, `prompt` its optional typed renderer, and `inspect` its optional
+declaration inspector. Discovery never calls that inspector.
 
 `delegate` is the registered flow this descriptor hands its work to, and
 `undefined` when the module IS the flow: a `.smithers/flows/<name>/flow.ts` or `flow.vibe` that
@@ -39828,8 +39876,9 @@ that entry imports from beside itself.
 
 ```ts
 interface Options {
-  readonly adapterExecutionDigest?: ((descriptor: Descriptor.FlowDescriptor) => string | undefined) | undefined
+  readonly initialFlows?: ReadonlyArray<string> | undefined
   readonly snapshots?: ExecutionSnapshot.Service | undefined
+  readonly adapterExecutionDigest?: ((descriptor: Descriptor.FlowDescriptor) => string | undefined) | undefined
   readonly sourceRoot?: { readonly identity: string; readonly workspace: string } | undefined
   readonly delegates: ReadonlyArray<Delegate>
   readonly agent?: string | undefined
@@ -39838,6 +39887,7 @@ interface Options {
     | ((path: string, source: {
       readonly bytes: Uint8Array
       readonly contentDigest: string
+      readonly modules: ReadonlyMap<string, ClosureModule>
     }) => Effect.Effect<unknown, unknown>)
     | undefined
 }
@@ -39845,7 +39895,9 @@ interface Options {
 
 `delegates` is the set of registered runtime flows a descriptor may delegate
 to. `agent` renames the fallback delegate for a host that calls its driver
-something other than `agent`.
+something other than `agent`. `initialFlows` limits startup loading to the named
+flows and their declared collaborators. Other measured descriptors remain in
+`Catalog.deferred` for first use; omitting it loads every discovered entry.
 
 `load` receives the resolved filesystem path (or the original `file:` URL),
 the verified entry bytes, their SHA-256 `contentDigest`, and `modules`: the
@@ -39910,17 +39962,20 @@ interruptible loader.
 ```ts
 interface Delegate {
   readonly _tag: string
-  readonly call: (payload: any) => PlanNode.Node<any, any, any>
+  readonly successSchema?: Schema.Top | undefined
+  readonly errorSchema?: Schema.Top | undefined
+  readonly call: (payload: Invocation) => PlanNode.Node<any, any, any>
   readonly execute: (
-    payload: any,
+    payload: Invocation,
     options?: { readonly executionId?: string | undefined }
   ) => Effect.Effect<any, any, any>
 }
 ```
 
 A registered `@smthrs/flow` flow a descriptor may delegate to. The contract is
-structural on purpose: a `Flow.make` value satisfies it, and so does a test
-double. Both ways of reaching the flow are required because the descriptor
+structural on purpose: a `Flow.make` value or a typed host delegate satisfies
+it. Optional `successSchema` and `errorSchema` preserve the delegate's codecs;
+omitting them retains the `Schema.Unknown` fallback. Both ways of reaching the flow are required because the descriptor
 decides which one is used. A declared cache policy makes the delegation one
 dispatched step with a child execution beneath it; no policy leaves it a call
 in the caller's plan.
@@ -39934,7 +39989,7 @@ const Invocation: Schema.Struct<{
   flow: Schema.String
   input: Schema.Json
   prompt: Schema.String
-  model: Schema.NullOr<Schema.String>
+  model: Schema.NullOr<typeof Descriptor.ModelSelection>
   placement: Schema.NullOr<Schema.Literals<["client", "local", "sandbox", "remote"]>>
   placementOptions: Schema.NullOr<
     Schema.Struct<{
@@ -40052,12 +40107,12 @@ would go looking in the wrong place.
 
 ```ts
 interface Catalog {
+  readonly deferred?: ReadonlyArray<Descriptor.FlowDescriptor> | undefined
   readonly executables: ReadonlyArray<Executable>
   readonly refused: ReadonlyArray<ExecutableError>
-  readonly load?: (name: string) => Effect.Effect<
-    Executable,
-    ExecutableError | RegistryError | DiscoveryError
-  >
+  readonly load?:
+    | ((name: string) => Effect.Effect<Executable, ExecutableError | RegistryError | DiscoveryError>)
+    | undefined
 }
 
 const Catalog: Context.Service<Catalog, Catalog>
@@ -40069,7 +40124,8 @@ const catalog: (options: Options) => Effect.Effect<
 >
 ```
 
-Every discovered flow this host can run, and the ones it declined. A project's
+The loaded flows this host can run, the ones it declined, and the measured
+descriptors deliberately deferred by `Options.initialFlows`. A project's
 flows directory is a mixed set: some entries delegate to a flow this host
 registered, others name a delegate only another host has, and one may simply be
 broken. None of those is a reason to withhold the rest, so every refusal is
@@ -40177,7 +40233,7 @@ without registering anything twice.
 ### Executable.Registration
 
 ```ts
-type Registration = FlowRuntime | Action.Implementations | (EffectDigest.Digest | SecureRandom.SecureRandom)
+type Registration = FlowRuntime | Action.Implementations | EffectDigest.Digest
 ```
 
 What a registration layer still needs from its host: the flow runtime it

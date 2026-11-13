@@ -248,7 +248,7 @@ live `Catalog` and the `Refresh` without registering anything twice.
 ## Hand the registry to a Node host
 
 `Registry.layerProject({ root, packs })` is the registry a Node host
-discovers a project in: `<root>/flows/**` first, then every installed pack,
+discovers a project in: `<root>/.smithers/flows/**` first, then every installed pack,
 under one refreshable first-found registry.
 
 ```ts
@@ -271,7 +271,7 @@ The host builds the registry between the engine and the registration phase, so
 running a discovered flow by name reaches a registered durable flow instead of
 an empty catalog.
 
-A project with no `flows/` directory is not a failure: it has no flows yet,
+A project with no `.smithers/flows/` directory is not a failure: it has no flows yet,
 which is the state [`smthrs init`](/cli/init) leaves behind.
 `layerProject` checks for that optional directory on every scan. Creating the
 first flow or removing and recreating the directory is reflected by `refresh()`.

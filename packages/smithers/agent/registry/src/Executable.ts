@@ -1560,11 +1560,12 @@ const selfDelegate = (flow: LoadedFlow): Delegate => ({
  * The delegate runs underneath as a CHILD EXECUTION derived from the parent's —
  * the same derivation `@smthrs/flow` `Interpreter` uses for a `.child()`
  * boundary — so it keeps its own execution, journal lineage, and retry policy
- * beneath the step rather than being hidden inside it. Deriving the id from the
- * parent's is what keeps two runs' children apart: the ambient default derives
- * an id from the flow tag and the payload, so two runs invoking the same
- * descriptor the same way would otherwise be one child execution, and a
- * descriptor that declared nothing would reuse a result anyway.
+ * beneath the step rather than being hidden inside it. The ambient default
+ * mints a fresh UUID for each unkeyed invocation, which would create a new
+ * child on every retry. A host using the opt-in derived source would instead
+ * reuse one child across parents invoking the same flow and payload. Supplying
+ * the parent-derived child id keeps separate parents apart and retries attached
+ * to the same child, independent of the host's execution-id source.
  */
 const dispatchedAction = (options: {
   readonly tag: string

@@ -47,11 +47,13 @@ Every delegate receives the same fixed, serializable envelope, because one
 delegate runs many descriptors and none of them share an input schema:
 
 ```ts
+import type * as Descriptor from "@smthrs/registry/Descriptor"
+
 interface Invocation {
   readonly flow: string
   readonly input: Schema.Json
   readonly prompt: string
-  readonly model: string | null
+  readonly model: Descriptor.ModelSelection | null
   readonly placement: "client" | "local" | "sandbox" | "remote" | null
   readonly placementOptions: { image?: string; profile?: string; target?: string } | null
   readonly capabilities: ReadonlyArray<string>
@@ -61,7 +63,7 @@ interface Invocation {
 
 `prompt` is the rendered markdown body, or the empty string for a module flow.
 `model` and `placement` are the two decisions a driver cannot re-derive: which
-seat to run on, and which host to spawn a cell on. The envelope and everything
+seat or non-empty ordered list of fallback seats to run on, and which host to spawn a cell on. The envelope and everything
 in it is frozen, and the same values are captured as the delegating node's
 durable identity, so what a delegate reads and what the engine recorded cannot
 diverge.
