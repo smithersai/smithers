@@ -44,6 +44,7 @@ import { IssuesStore } from "../issues/store"
 import { AuthClient } from "../auth/api"
 import { TodosStore } from "./store"
 import { issuesSynced } from "./tab"
+import { syncIssueChoices } from "./issuePickers"
 import { Todos } from "./todos"
 import { accessFor, draftsOfAnswer, draftsOfRepo, notSentRows, stackRows, todoCardOf, todosByIssue } from "./view"
 import { keep, StackWrites } from "./writes"
@@ -1465,5 +1466,89 @@ describe("issues for TODOs (decision 0153)", () => {
     expect(tab.notSent()).toEqual([expect.objectContaining({ op: "drop", label: "Drop T9", reason: "Merged" })])
     expect(tab.drafts().map((draft) => draft.title)).toEqual(["Kept draft"])
     expect([...outbox.keys()].filter((key) => key.startsWith("parked:"))).toEqual([])
+  }, WITHIN)
+})
+
+describe("TODO issue picker lifecycle", () => {
+  test("records startup failure without private text, permits recovery, and preserves cancellation", async () => {
+    const tab = await open()
+    const real = await tab.runtime.runPromise(Effect.service(IssuesStore))
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const loggers = new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])
+    const otherRepo = repoId(OWNER, NAME + "-other")
+    const faulty = IssuesStore.of({
+      ...real, forRepo: (id) => id === REPO_ID
+        ? Effect.die({ _tag: "PickerUnavailable", message: "private content" })
+        : real.forRepo(id),
+    })
+    await tab.runtime.runPromise(syncIssueChoices(["", REPO_ID, REPO_ID, otherRepo]).pipe(
+      Effect.provideService(IssuesStore, faulty),
+      Effect.provideService(Logger.CurrentLoggers, loggers),
+    ))
+    expect(logs).toEqual([expect.objectContaining({
+      message: "todos.issue.load", level: "WARN",
+      annotations: expect.objectContaining({ feature: "todos", outcome: "failed", errorCode: "PickerUnavailable" }),
+    })])
+    expect(JSON.stringify(logs)).not.toContain("private content")
+    expect(real.opened(REPO_ID)).toBeUndefined()
+    expect(real.opened(otherRepo)).toBeDefined()
+    logs.length = 0
+    const cancelled = await tab.runtime.runPromise(Effect.exit(syncIssueChoices([REPO_ID]).pipe(
+      Effect.provideService(IssuesStore, IssuesStore.of({ ...real, forRepo: () => Effect.interrupt })),
+      Effect.provideService(Logger.CurrentLoggers, loggers),
+    )))
+    expect(Exit.hasInterrupts(cancelled)).toBe(true)
+    expect(logs).toEqual([])
+    await tab.runtime.runPromise(syncIssueChoices([REPO_ID]))
+    expect(real.opened(REPO_ID)).toBeDefined()
+  }, WITHIN)
+
+  test("keeps independent per-TODO choices in live local state across navigation, but not another tab", async () => {
+    const tab = await open()
+    const selections = tab.todos.queries.attachmentIssues
+    selections.startSyncImmediate()
+    const selected = () => selections.toArray.map(({ id, issue }) => ({ id, issue })).sort((a, b) => a.id.localeCompare(b.id))
+    expect(selected()).toEqual([])
+    tab.actions.setAttachmentIssue("first", 5)
+    tab.actions.setAttachmentIssue("second", 8)
+    await until(() => expect(selected()).toEqual([{ id: "first", issue: 5 }, { id: "second", issue: 8 }]))
+    tab.actions.setAttachmentIssue("first", 9)
+    await tab.actions.open(OWNER, NAME, 3)
+    await until(() => expect(selected()).toEqual([{ id: "first", issue: 9 }, { id: "second", issue: 8 }]))
+    const other = await another(tab.api)
+    other.todos.queries.attachmentIssues.startSyncImmediate()
+    expect(other.todos.queries.attachmentIssues.toArray).toEqual([])
+    for (const invalid of [undefined, 0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      tab.actions.setAttachmentIssue("first", 9)
+      tab.actions.setAttachmentIssue("first", invalid)
+      tab.actions.setAttachmentIssue("absent", invalid)
+      await until(() => expect(selected()).toEqual([{ id: "second", issue: 8 }]))
+    }
+  }, WITHIN)
+
+  test("opens issue choices when a stack route opens, without mounting a picker or changing the issues route", async () => {
+    const tab = await open()
+    const issues = await tab.runtime.runPromise(Effect.service(IssuesStore))
+    expect(issues.opened(REPO_ID)).toBeUndefined()
+    await tab.actions.open(OWNER, NAME)
+    await until(() => expect(issues.opened(REPO_ID)).toBeDefined())
+    expect((await tab.runtime.runPromise(issues.view.toArray))[0]?.repoId).toBe("")
+  }, WITHIN)
+
+  test("opens issue choices for a draft outside a stack route and for drafts restored after reload", async () => {
+    const opened = await open()
+    const host = nodeDevice({ agent: opened.api })
+    const tab = await another(opened.api, { host })
+    const issues = await tab.runtime.runPromise(Effect.service(IssuesStore))
+    expect(issues.opened(REPO_ID)).toBeUndefined()
+    const id = tab.actions.newDraft(OWNER, NAME)
+    await until(() => expect(issues.opened(REPO_ID)).toBeDefined())
+    expect(tab.view()?.repoId).toBe("")
+    await tab.runtime.runPromise(Effect.forEach(await tab.runtime.runPromise(tab.store.drafts.pendingWrites(id)), (write) => write.persisted))
+    const restored = await another(opened.api, { host })
+    const restoredIssues = await restored.runtime.runPromise(Effect.service(IssuesStore))
+    await until(() => expect(restored.drafts()).toContainEqual(expect.objectContaining({ id })))
+    await until(() => expect(restoredIssues.opened(REPO_ID)).toBeDefined())
+    expect(restored.view()?.repoId).toBe("")
   }, WITHIN)
 })

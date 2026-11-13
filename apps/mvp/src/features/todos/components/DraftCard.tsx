@@ -1,7 +1,6 @@
 import { TodoDraftCard } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate } from "@tanstack/react-router"
-import { useEffect } from "react"
 import type { Draft } from "../schema"
 import { useTodos } from "./TodosContext"
 import { useIssues } from "../../issues/components/IssuesContext"
@@ -11,7 +10,7 @@ import { issueChoices } from "../view"
 
 // One private draft (decision 0016 §3): its title, the issue it hangs under and its prompt as the person edits them,
 // Commit and Discard. A TODO hangs under exactly one issue (decision 0153), so Commit waits until one is chosen from
-// the repository's open issues, which the card starts syncing. Commit opens the stack it goes to, where it shows `T–`
+// the repository's open issues, which the TODO feature keeps syncing. Commit opens the stack it goes to, where it shows `T–`
 // and Requested until the stack numbers it.
 export function DraftCard({ draft }: { readonly draft: Draft }) {
   const stopped = useEngineStopped()
@@ -21,10 +20,6 @@ export function DraftCard({ draft }: { readonly draft: Draft }) {
   // Redrawn once the repository's issues are open, which then reads its own rows.
   useLiveQuery(issues.queries.opened)
   const { data: rows } = useLiveQuery(issues.queries.summariesOf(draft.repoId))
-  const [owner = "", name = ""] = draft.repo.split("/")
-  useEffect(() => {
-    void issues.actions.warm(owner, name).catch(() => undefined)
-  }, [owner, name])
   const navigate = useNavigate()
   return (
     <>

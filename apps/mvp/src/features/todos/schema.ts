@@ -161,6 +161,10 @@ export const StackView = Schema.Struct({
 })
 export type StackView = typeof StackView.Type
 
+/** This tab's issue choice for one orphan TODO; never persisted or shared between tabs. */
+export const AttachmentIssue = Schema.Struct({ id: Schema.String, issue: Schema.Number })
+export type AttachmentIssue = typeof AttachmentIssue.Type
+
 /**
  * Whether this person may read a repository's stack, from its shape's answers: `unknown` until one answers, `allowed`,
  * `unavailable` (ChatApi couldn't answer the role: Try again asks once more), or refused: `sign_in` (signed out) or

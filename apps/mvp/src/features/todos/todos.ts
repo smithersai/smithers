@@ -1,7 +1,8 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Stream } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { attach, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setIssue, setPrompt, setTitle, warm } from "./actions"
+import { attach, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setAttachmentIssue, setIssue, setPrompt, setTitle, warm } from "./actions"
+import { syncIssueChoices } from "./issuePickers"
 import { type RepoStack, TodosStore } from "./store"
 
 // TODOs as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders
@@ -26,6 +27,8 @@ export interface TodosQueries {
   readonly requested: Store["requestedQuery"]["tanstack"]
   /** Whether this person may read each opened stack, as its shape last said. */
   readonly access: Store["accessQuery"]["tanstack"]
+  /** This tab's issue choice, keyed by orphan TODO id. */
+  readonly attachmentIssues: Store["attachmentIssuesQuery"]["tanstack"]
   /** Repository `repoId`'s stack once a route opened it; no rows before. */
   readonly stack: (repoId: string) => StackQueries
 }
@@ -40,6 +43,8 @@ export interface TodosActions {
   readonly newDraft: (owner: string, name: string) => string
   readonly setTitle: (draftId: string, title: string) => void
   readonly setPrompt: (draftId: string, prompt: string) => void
+  /** This tab's issue choice for one orphan TODO. */
+  readonly setAttachmentIssue: (todoId: string, issue: number | undefined) => void
   /** The issue a draft hangs under (decision 0153). */
   readonly setIssue: (draftId: string, issue: number) => void
   /** Commit on a draft: the stack's page to show, or nothing when it didn't run. */
@@ -69,6 +74,14 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
     Todos,
     Effect.gen(function* () {
       const store = yield* TodosStore
+      // Routes and restored or newly kept drafts own issue subscriptions, even without a mounted card.
+      yield* Stream.zipLatest(store.viewQuery.rows, store.draftsQuery.rows).pipe(
+        Stream.runForEach(([views, drafts]) => syncIssueChoices([
+          ...views.map((view) => view.repoId),
+          ...drafts.map((draft) => draft.repoId),
+        ])),
+        Effect.forkIn(store.scope, { startImmediately: true }),
+      )
       const context = yield* Effect.context<TodosStore | FlowDispatch>()
       const { runSync: run, runPromise: runAsync } = runners(context, "todos")
       const stackQueries = (stack: RepoStack): StackQueries => ({
@@ -82,6 +95,7 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
           sending: store.sendingQuery.tanstack,
           requested: store.requestedQuery.tanstack,
           access: store.accessQuery.tanstack,
+          attachmentIssues: store.attachmentIssuesQuery.tanstack,
           stack: (repoId) => stackQueries(store.opened(repoId) ?? store.empty),
         },
         actions: {
@@ -91,6 +105,7 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
           newDraft: (owner, name) => run(newDraft(owner, name)),
           setTitle: (draftId, title) => run(setTitle(draftId, title)),
           setPrompt: (draftId, prompt) => run(setPrompt(draftId, prompt)),
+          setAttachmentIssue: (todoId, issue) => run(setAttachmentIssue(todoId, issue)),
           setIssue: (draftId, issue) => run(setIssue(draftId, issue)),
           commit: (draftId) => runAsync(commit(draftId)),
           discardDraft: (draftId) => run(discardDraft(draftId)),

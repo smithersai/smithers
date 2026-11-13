@@ -68,6 +68,20 @@ export const setTitle = (id: string, title: string) => changeDraft(id, { title }
 export const setIssue = (id: string, issue: number) => changeDraft(id, { issue })
 export const setPrompt = (id: string, prompt: string) => changeDraft(id, { prompt })
 
+/** Changes this tab's issue choice for one orphan TODO; clearing or an invalid number removes the choice. */
+export const setAttachmentIssue = (todoId: string, issue: number | undefined) =>
+  Effect.gen(function* () {
+    const { attachmentIssues } = yield* TodosStore
+    const held = yield* attachmentIssues.get(todoId)
+    if (issue === undefined || !Number.isInteger(issue) || issue <= 0) {
+      if (Option.isSome(held)) yield* attachmentIssues.delete(todoId)
+    } else if (Option.isSome(held)) {
+      yield* attachmentIssues.update(todoId, (row) => { row.issue = issue })
+    } else {
+      yield* attachmentIssues.insert({ id: todoId, issue })
+    }
+  }).pipe(Effect.orDie)
+
 /** Marks draft `id`'s Commit on its way from this tab, or no longer. */
 const setCommitting = (id: string, committing: boolean) =>
   Effect.flatMap(TodosStore, ({ view }) =>

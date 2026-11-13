@@ -14,6 +14,7 @@ import { sendingAdmitted } from "../../outboxAdmission"
 import { TODO_REQUESTS_SHAPE_ROUTE, TODOS_SHAPE_ROUTE } from "./contract"
 import {
   Access,
+  AttachmentIssue,
   Draft,
   type QueuedOp,
   type Requested,
@@ -84,6 +85,8 @@ export class TodosStore extends Context.Service<
     readonly requested: Collection.Collection<Requested, string>
     readonly drafts: Collection.Collection<Draft, string>
     readonly view: Collection.Collection<StackView, string>
+    readonly attachmentIssues: Collection.Collection<AttachmentIssue, string>
+    readonly attachmentIssuesQuery: Rows<AttachmentIssue>
     readonly access: Collection.Collection<Access, string>
     /** What shows of the drafts and of this device's own changes, through the data gate (repo/gate.ts). */
     readonly draftsQuery: Gated<Draft>
@@ -127,6 +130,9 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
     schema: StackView,
     getKey: byId,
     initialData: [{ id: VIEW, owner: "", name: "", repoId: "", number: null, committing: [] }],
+  })
+  const attachmentIssues = yield* Collection.local<AttachmentIssue, string>({
+    id: "todo-attachment-issues", schema: AttachmentIssue, getKey: byId,
   })
   const access = yield* Collection.local<Access, string>({ id: "todo-access", schema: Access, getKey: byId })
   // The store's own follower reads every requested change; what shows reads `requestedQuery`, through the data gate.
@@ -298,6 +304,8 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
     drafts,
     view,
     access,
+    attachmentIssues,
+    attachmentIssuesQuery: yield* rowsOf(attachmentIssues),
     draftsQuery: yield* repos.gate(drafts),
     sendingQuery: yield* repos.gate(sending),
     requestedQuery,

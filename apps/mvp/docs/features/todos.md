@@ -95,13 +95,20 @@ Drafts and changes are steps (`src/features/todos/steps.ts`) that ask, over the 
 
 ## The browser
 
+The TODO feature opens issue choices when the stack route opens or a private draft appears, including drafts restored
+on reload. Components only read live queries and dispatch actions. Each orphan TODO's selection lives in
+`todo-attachment-issues`, so navigation or remounting a picker keeps its choice within this tab. Other tabs and a
+reload start with no orphan selection. Subscription startup failures are recorded as `todos.issue.load`; later
+shape failures retain the issue store's sync state and telemetry.
+
+
 `src/features/todos/`, framework-free logic beside React views ([state.md](../state.md#todos-2026-10-20)).
 
 | Piece | What it is |
 |---|---|
 | `stack.ts` | the stack's rules, pure; the writer applies them |
 | `writes.ts` | `todo-sending` (the outbox's optimistic rows) and `todo-requested` (kept on the device: taken with the stack's number, or refused with why); the outbox's `todo-op` mutation posts to the stack route and never waits for Electric |
-| `store.ts` | per repository, Electric collections `todos:<repo id>` and `todo-requests:<repo id>`, kept on the device and opened by the route; `todo-drafts`, kept on the device; `todo-view`, `todo-access`; followers that drop a requested change once Electric shows what it did, and read the shape's refusal |
+| `store.ts` | per repository, Electric collections `todos:<repo id>` and `todo-requests:<repo id>`, kept on the device and opened by the route; `todo-drafts`, kept on the device; `todo-view`, `todo-access` and the tab-local `todo-attachment-issues` (one choice per orphan TODO); followers that drop a requested change once Electric shows what it did, and read the shape's refusal |
 | `view.ts` | the stack's rows (`todos ∪ (pending commits − todos by op id)`, a pending drop on its TODO), the TODO at full size, the drafts, Not sent changes, access and who may change a stack |
 | `actions.ts`, `todos.ts` | `open` (the routes), `warm` (a link's hover: opens the stack's sync), New TODO, a draft's text, Commit, Discard, Drop, and Edit and Discard on a change Not sent |
 | `components/` | `DraftCard` (`TodoDraftCard`, with its issue `#12` when it has one), `AnswerDrafts` (the drafts under the answer that made them) |

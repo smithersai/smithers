@@ -1,6 +1,5 @@
 import { Button } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useEffect, useState } from "react"
 import { useIssues } from "../../issues/components/IssuesContext"
 import { useTodos } from "./TodosContext"
 import { issueChoices, needsAnIssue } from "../view"
@@ -17,9 +16,6 @@ export function NeedsAnIssue({ owner, name, repoId, todos }: {
   const issues = useIssues()
   useLiveQuery(issues.queries.opened)
   const { data: rows } = useLiveQuery(issues.queries.summariesOf(repoId))
-  useEffect(() => {
-    void issues.actions.warm(owner, name).catch(() => undefined)
-  }, [owner, name])
   const orphans = needsAnIssue(repoId, todos, rows ?? [])
   if (orphans.length === 0) return null
   const choices = issueChoices(repoId, rows ?? [])
@@ -39,8 +35,9 @@ function Orphan({ owner, name, todo, choices }: {
   readonly todo: Todo
   readonly choices: ReadonlyArray<{ readonly number: number; readonly title: string }>
 }) {
-  const { actions } = useTodos()
-  const [issue, setIssue] = useState<number | undefined>(undefined)
+  const { queries, actions } = useTodos()
+  const { data: selections } = useLiveQuery(queries.attachmentIssues)
+  const issue = selections?.find((row) => row.id === todo.id)?.issue
   const label = `Issue for T${todo.number}`
   return (
     <li className="stack-needs-issue-row" data-todo={todo.number}>
@@ -51,7 +48,7 @@ function Orphan({ owner, name, todo, choices }: {
         value={issue === undefined ? "" : String(issue)}
         onChange={(event) => {
           const chosen = Number(event.currentTarget.value)
-          setIssue(Number.isInteger(chosen) && chosen > 0 ? chosen : undefined)
+          actions.setAttachmentIssue(todo.id, chosen)
         }}
       >
         <option value="">Choose an issue</option>
