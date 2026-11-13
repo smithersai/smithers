@@ -73,7 +73,7 @@ export * as Tokens from "./Tokens.ts"
 export * as ContextWindow from "./ContextWindow.ts"
 
 /**
- * @category projections
+ * @category validation
  * @since 0.1.0
  */
 export * as Transcript from "./Transcript.ts"

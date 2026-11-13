@@ -66,7 +66,7 @@ The `./internal/*` and `./*/index` subpaths map to `null` and do not resolve.
 
 ## Module index
 
-37 public root modules. Each module's full export table is
+38 public root modules. Each module's full export table is
 in the [module and export inventory](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/reference.md); the sections below state
 behavior and signatures.
 
@@ -80,7 +80,7 @@ behavior and signatures.
 | `EngineLike`                 | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `Binding`, `Resolved`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `resolve`, `makeNoop`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Narrow engine port consumed by the built-in harness.                                                     |
 | `Tokens`                     | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Deterministic token accounting for context windows.                                                      |
 | `ContextWindow`              | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `Mark`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactMarked`, `compactPrefix`, `compact`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The immutable, provider-neutral context assembled for one model request.                                 |
-| `Transcript`                 | `journalVersion`, `validateJournal`, `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Transcript projection from durable journal entries.                                                      |
+| `Transcript`                 | `journalVersion`, `controlEventPrefix`, `ControlEventType`, `validateJournal`, `decodeClaude`, `decodeCodex`, `ExternalDecoded`, `ExternalEntry`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Journal compatibility validation and external transcript decoders.                                       |
 | `ExternalTranscript`         | `AgentKind`, `EditedFile`, `Part`, `Entry`, `ExternalTranscriptErrorCode`, `ExternalTranscriptError`, `codexReleases`, `CodexState`, `CodexCall`, `codexStart`, `Decoded`, `decodeCodex`, `claudeReleases`, `ClaudeCall`, `ClaudeState`, `claudeStart`, `decodeClaude`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Read-only conversation entries decoded from another agent's transcript file.                             |
 | `Compaction`                 | `summaryInstruction`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `judgedAbove`, `consultsJudge`, `selectPrefix`, `declare`, `summaryRequest`, `apply`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Declarations for sealed transcript-summary steps.                                                        |
 | `Steering`                   | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `empty`, `enqueue`, `drainAtClose`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Turn-boundary steering values and their source contract.                                                 |
@@ -236,8 +236,7 @@ frame boundary.
 Harness journal format 2 versions controller state and model-key inputs.
 Resuming older controller state or an agent session journal fails before a live
 model call with `HarnessError` code `incompatible_journal`; start a new run.
-Historical transcript projection remains available for display and renders
-summary text as a user message. rc.0 does not promise journal compatibility.
+rc.0 does not promise journal compatibility.
 
 `import * as CellTurn from "@smthrs/harness/CellTurn"`
 
@@ -851,8 +850,9 @@ they are never acknowledged without a frame available to consume them.
 otherwise go idle), and `SeatChange` and `ThinkingChange` (applied only after
 the current turn closes). A `SteerInsert` with `outsideChange: true` is a
 committed outside change.
-`Steering.empty`, `enqueue`, and `drainAtClose(queue, cutoff)` operate on it
-without mutation. `Steering.Drain` is
+`Steering.empty`, `enqueue`, and `drainAtClose(queue, cutoff, wouldIdle)` operate
+on it without mutation. Only items admitted at or before `cutoff` are delivered;
+`queue` inserts wait until `wouldIdle` is `true` (the default is `false`). `Steering.Drain` is
 what one boundary promoted; `Steering.DrainRecord` and `drainRecord` project
 it into its journaled record, which also carries what the supervisor delivered
 there: its messages, the memory keys, the monitor delivered, the monitors
@@ -1270,8 +1270,7 @@ and decides nothing: a host that never reads it charges exactly as before.
 
 Every member's `_tag` is the kebab-case discriminant `switch` and
 `Stream.filter` match on. `AgentEvent.eventType` is keyed by the camelCase
-property name and holds the journal event type, the one table `CellTurn`
-writes and `Transcript` reads:
+property name and holds the journal event type, the table used by `CellTurn` and journal consumers:
 
 | `_tag`                          | `eventType` property          | Journal event type                               |
 | ------------------------------- | ----------------------------- | ------------------------------------------------ |
@@ -1340,8 +1339,7 @@ actually raise, and `test/Contracts.test.ts` pins every member to a
 construction site; a foreign CLI adapter declares its own family beside the
 adapter rather than borrowing this one. Interrupting a run raises no
 `HarnessError`: `CellTurn` emits `AgentEvent.Aborted` and forwards the
-interrupt cause unchanged. A failed projection is a
-`Transcript.TranscriptError`, not a `HarnessError`. An `Evaluator.EvaluatorError`
+interrupt cause unchanged. An `Evaluator.EvaluatorError`
 cause keeps its typed fields across replay, and so does a provider's
 `ModelError`, live or as `AgentAction` renders it to JSON before journaling: a
 flow that catches a refused model call reads its `code` and `httpStatus`. Any other cause is a `Schema.Defect`, so
@@ -1498,18 +1496,15 @@ cache zone.
 
 `import * as Transcript from "@smthrs/harness/Transcript"`
 
-Transcript projection from durable journal entries. The transcript grows:
-what the model saw is what it said plus what the harness answered, in journal
-order. `Transcript.projectResult` projects model-visible messages in canonical
-journal sequence order; `Transcript.projectStateResult` projects the same
-events into typed state (`ProjectedState`, with the compaction replacement
-identity when one was recorded), preserving malformed-payload failures as
-typed `TranscriptError`s instead of throwing. `CellEvidence` is the
-schema-decoded cell evidence the rebuild consumes. `CompactionSettled.retainedMessageCount`
-records the number of messages in the live retained suffix, across all retained
-segments. Projection applies these boundaries in journal order, replacing only
-the preceding prefix with the summary. Older events without the field replace
-all messages preceding the event.
+Journal compatibility validation and external transcript decoders.
+`Transcript.validateJournal` checks entries under `controlEventPrefix` against
+`journalVersion`. An incompatible record returns a `HarnessError` with code
+`incompatible_journal`, so a session cannot resume against different sealed
+model steps. Entries outside that namespace are left alone.
+
+`decodeClaude` and `decodeCodex` are also available here; see
+[`ExternalTranscript`](#externaltranscript) for their import-only contract.
+The harness does not expose a journal-to-message projection.
 
 ## ExternalTranscript
 

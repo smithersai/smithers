@@ -15,8 +15,8 @@ import { Schema } from "effect"
  * The set is closed to codes this package and `@smthrs/agent` actually raise;
  * `test/Contracts.test.ts` pins every member to a construction site under
  * `src`. Interrupting a run does not raise one: `CellTurn` emits
- * `AgentEvent.Aborted` and forwards the interrupt cause unchanged, and a
- * failed projection is `Transcript.TranscriptError`. A foreign CLI adapter declares its own error family beside the adapter in
+ * `AgentEvent.Aborted` and forwards the interrupt cause unchanged. A foreign
+ * CLI adapter declares its own error family beside the adapter in
  * `@smthrs/agent` rather than borrowing this one.
  *
  * @category models

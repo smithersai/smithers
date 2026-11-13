@@ -177,7 +177,7 @@ const invalidProbeNotice = (calls: ReadonlyArray<ObservedCall>): string | undefi
     lines.length === 1 ? "" : "s"
   } this frame failed about the command, not about the code:\n${
     lines.join("\n")
-  }\nThat result is not a reproduction and is not a regression: it reads identically on a broken tree and on a fixed one, so it can neither prove the bug nor prove the repair. Repair the command before editing anything — find the real names first — and do not store it as \`state.verification\` or name it when you complete.`
+  }\nThat result is not a reproduction and is not a regression: it reads identically on a broken tree and on a fixed one, so it can neither prove the bug nor prove the repair. Repair the command before editing anything — find the real names first — and do not keep it as \`verification\` or name it when you complete.`
 }
 
 /**

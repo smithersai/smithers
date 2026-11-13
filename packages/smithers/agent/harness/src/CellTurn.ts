@@ -3653,7 +3653,7 @@ const drain = (settling: Settling, wouldIdle: boolean): Effect.Effect<Steering.D
           // run's present rather than its past.
           Effect.tap(() => Effect.sync(() => void (settling.live.value = true)))
         )
-        : Effect.succeed({ inserts: [], seatChanges: [], queued: false })
+        : Effect.succeed({ inserts: [], seatChanges: [] })
     })
     yield* settling.emit(
       new AgentEvent.SteeringDrained({

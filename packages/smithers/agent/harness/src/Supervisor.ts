@@ -70,6 +70,7 @@ import * as Schema from "effect/Schema"
 import type * as AgentEvent from "./AgentEvent.ts"
 import { answeredBy } from "./internal/decidedBy.ts"
 import * as elide from "./internal/elide.ts"
+import { stripCells } from "./internal/fence.ts"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 import { untrustedData } from "./internal/untrustedData.ts"
 import * as Judgement from "./Judgement.ts"
@@ -801,8 +802,6 @@ export const tail = (text: string): string => {
   return kept.length === trimmed.length ? trimmed : `[… older bytes elided]\n${kept}`
 }
 
-const fencedCell = /```(?:cell|typescript|ts|javascript|js)[^\n]*\n[\s\S]*?(?:```|$)/g
-
 /**
  * What the model wrote around its cell: the reply with every fenced cell
  * removed. The anxiety question reads it, and so does the run-end
@@ -811,4 +810,4 @@ const fencedCell = /```(?:cell|typescript|ts|javascript|js)[^\n]*\n[\s\S]*?(?:``
  * @category conversions
  * @since 1.0.0-rc.0
  */
-export const prose = (text: string): string => text.replace(fencedCell, "").trim()
+export const prose = (text: string): string => stripCells(text).trim()

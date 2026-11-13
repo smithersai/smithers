@@ -149,7 +149,7 @@ export const make = (hooks: Hooks = {}): Queue => {
             Effect.sync(() => {
               const seen = drained.get(input.boundary)
               if (seen !== undefined) return { ...seen, duplicate: true }
-              const drain = { ...Steering.drainAtClose(queue, Date.now()), duplicate: false }
+              const drain = { ...Steering.drainAtClose(queue, Date.now(), input.wouldIdle), duplicate: false }
               queue = drain.remaining
               driven = false
               drained.set(input.boundary, drain)

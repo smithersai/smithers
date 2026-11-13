@@ -35,7 +35,6 @@ import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
 import * as Supervisor from "../src/Supervisor.ts"
 import * as Tokens from "../src/Tokens.ts"
-import * as Transcript from "../src/Transcript.ts"
 import { batchedReply } from "./fixtures/batchedReplies.ts"
 import {
   arrives,
@@ -52,7 +51,6 @@ import {
   tasked,
   window
 } from "./fixtures/cellTurn.ts"
-import { entry } from "./fixtures/journal.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
@@ -307,7 +305,7 @@ describe("CellTurn", () => {
               ? []
               : [{ _tag: "ThinkingChange", delivery: "steer", admittedAt: 1, thinking: to } as const]
             drained = true
-            return { inserts: [], seatChanges, remaining: Steering.empty(), queued: false, duplicate: false }
+            return { inserts: [], seatChanges, remaining: Steering.empty(), duplicate: false }
           })
       })
       const initial = state(modelCallMs === undefined ? {} : { modelCallMs })
@@ -662,7 +660,6 @@ console.log(kept)`
                   inserts: input.park === undefined ? [] : [ModelRequest.Message.user("confirmed")],
                   seatChanges: [],
                   remaining: Steering.empty(),
-                  queued: false,
                   duplicate: false
                 })
               }
@@ -918,7 +915,6 @@ console.log(kept)`
               inserts: [],
               seatChanges: [],
               remaining: Steering.empty(),
-              queued: false,
               duplicate: false
             }
           }
@@ -930,7 +926,6 @@ console.log(kept)`
               { _tag: "ThinkingChange", delivery: "steer", admittedAt: 2, thinking: "high" }
             ],
             remaining: Steering.empty(),
-            queued: false,
             duplicate: false
           }
         })
@@ -3821,17 +3816,6 @@ describe("CellTurn compaction", () => {
     )
     const rebuilt = Effect.runSync(Compaction.apply(crowded, step, summary!))
     expect(conversation(model.recorder.requests[1])).toEqual(ContextWindow.render(rebuilt).messages)
-    // The initial context represents already-journaled conversation; project
-    // through the emitted compaction event at the next model boundary.
-    const initial = new AgentEvent.SteeringDrained({
-      eventType: AgentEvent.eventType.steeringDrained,
-      messages: ContextWindow.render(crowded).messages
-    })
-    const boundary = events.findIndex((event) => event._tag === "compaction-settled")
-    const entries = [initial, ...events.slice(0, boundary + 1)].map((event, index) =>
-      entry(index + 1, event.eventType, event)
-    )
-    expect(Result.getOrThrow(Transcript.projectResult(entries))).toEqual(ContextWindow.render(rebuilt).messages)
     expect(of(events, "resolved")[0]?.message.content).toEqual([
       ModelRequest.TextPart.make({ text: "done" })
     ])
@@ -3958,7 +3942,7 @@ const textsOf = (request: ModelRequest.ModelRequest | undefined): string =>
   )
     .join("\n")
 
-/** The window a recorded settlement rebuilds from `from`, and the projection of the journal up to it. */
+/** The window a recorded compaction settlement rebuilds from `from`. */
 const replayed = (
   from: ContextWindow.ContextWindow,
   events: ReadonlyArray<AgentEvent.AgentEvent>
@@ -3972,15 +3956,7 @@ const replayed = (
     }, settled.marks?.map((marked) => marked.mark))
   )
   const rebuilt = Effect.runSync(Compaction.apply(from, step, settled.summary))
-  const initial = new AgentEvent.SteeringDrained({
-    eventType: AgentEvent.eventType.steeringDrained,
-    messages: ContextWindow.render(from).messages
-  })
-  const boundary = events.findIndex((event) => event._tag === "compaction-settled")
-  const entries = [initial, ...events.slice(0, boundary + 1)].map((event, index) =>
-    entry(index + 1, event.eventType, event)
-  )
-  return { rebuilt, projected: Result.getOrThrow(Transcript.projectResult(entries)) }
+  return rebuilt
 }
 
 /**
@@ -4012,7 +3988,6 @@ const gated = () => {
         inserts: [],
         seatChanges: [],
         remaining: Steering.empty(),
-        queued: false,
         duplicate: false
       }))
     }
@@ -4287,7 +4262,7 @@ describe("CellTurn frame time", () => {
       drain: () =>
         Effect.sync(() => {
           advance(millis)
-          return { inserts: [], seatChanges: [], remaining: Steering.empty(), queued: false, duplicate: false }
+          return { inserts: [], seatChanges: [], remaining: Steering.empty(), duplicate: false }
         })
     })
   const times = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
@@ -4603,8 +4578,7 @@ describe("CellTurn compaction marks", () => {
     expect(decided).toHaveLength(1)
     expect(decided[0]).toMatchObject({ scope: "session-1", frame: 0, acted: true })
 
-    const { projected, rebuilt } = replayed(crowded, events)
-    expect(projected).toEqual(ContextWindow.render(rebuilt).messages)
+    const rebuilt = replayed(crowded, events)
     expect(conversation(model.recorder.requests[1])).toEqual(ContextWindow.render(rebuilt).messages)
   })
 
@@ -4622,8 +4596,7 @@ describe("CellTurn compaction marks", () => {
     const settled = of(events, "compaction-settled")[0]!
     expect(settled.summary).toBeUndefined()
     expect(settled.marks?.map((marked) => marked.mark)).toEqual(["remove", "keep", "remove", "keep"])
-    const { projected, rebuilt } = replayed(crowded, events)
-    expect(projected).toEqual(ContextWindow.render(rebuilt).messages)
+    const rebuilt = replayed(crowded, events)
     expect(conversation(model.recorder.requests[0])).toEqual(ContextWindow.render(rebuilt).messages)
   })
 
@@ -4646,7 +4619,6 @@ describe("CellTurn compaction marks", () => {
           inserts: frame === 0 ? [ModelRequest.Message.user("Also keep the parser tests green.")] : [],
           seatChanges: [],
           remaining: Steering.empty(),
-          queued: false,
           duplicate: false
         }))
       }

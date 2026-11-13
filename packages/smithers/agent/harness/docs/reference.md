@@ -20,7 +20,7 @@ importable as `@smthrs/harness/<Module>`.
 | `EngineLike` | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `Binding`, `Resolved`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `resolve`, `makeNoop`, `layerNoop` | Narrow engine port consumed by the built-in harness. |
 | `Tokens` | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine` | Deterministic token accounting for context windows. |
 | `ContextWindow` | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `Mark`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactMarked`, `compactPrefix`, `compact`, `render` | The immutable, provider-neutral context assembled for one model request. |
-| `Transcript` | `journalVersion`, `controlEventPrefix`, `ControlEventType`, `validateJournal`, `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult` | Transcript projection from durable journal entries. |
+| `Transcript` | `journalVersion`, `controlEventPrefix`, `ControlEventType`, `validateJournal`, `decodeClaude`, `decodeCodex`, `ExternalDecoded`, `ExternalEntry` | Journal compatibility validation and external transcript decoders. |
 | `Compaction` | `summaryInstruction`, `summaryTurn`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `judgedAbove`, `consultsJudge`, `selectPrefix`, `declare`, `summaryRequest`, `apply` | Declarations for sealed transcript-summary steps. |
 | `Steering` | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `empty`, `enqueue`, `drainAtClose`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop` | Turn-boundary steering values and their source contract. |
 | `Notifications` | `Options`, `make`, `layer` | Adapter from the durable notification queue to harness turn boundaries. |
@@ -231,7 +231,7 @@ of silently invalidating the cached digest. Governing design:
 
 `import * as Transcript from "@smthrs/harness/Transcript"`
 
-Transcript projection from durable journal entries. The transcript grows: what
+Journal compatibility validation and external transcript decoders. The transcript grows: what
 the model saw is what it said plus what the harness answered, in journal order.
 
 | Export | Kind | Category | Summary |
@@ -240,13 +240,6 @@ the model saw is what it said plus what the harness answered, in journal order.
 | `controlEventPrefix` | const | constants | The event-type namespace a session journals its controller events under. |
 | `ControlEventType` | type | models | An event type under `controlEventPrefix`. |
 | `validateJournal` | const | validation | Refuses history whose replay could address different sealed model steps. |
-| `TranscriptErrorCode` | const | models | Stable failures produced while projecting a durable transcript. |
-| `TranscriptError` | class | errors | Stable failures produced while projecting a durable transcript. |
-| `ProjectedMessage` | interface | models | The kind and message of one projected transcript item. |
-| `ProjectedState` | interface | models | A projection with the compaction replacement identity, when one was recorded. |
-| `CellEvidence` | interface | models | Schema-decoded cell evidence consumed while rebuilding a journal. |
-| `projectStateResult` | const | projections | Projects journal events into their model-visible transcript state as typed data, preserving malformed payload failures instead of throwing. |
-| `projectResult` | const | projections | Projects model-visible messages in canonical journal sequence order. |
 
 ## Compaction
 

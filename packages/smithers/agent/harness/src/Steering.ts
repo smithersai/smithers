@@ -134,7 +134,6 @@ export interface Drain {
   readonly notes?: ReadonlyArray<ModelRequest.Message>
   readonly seatChanges: ReadonlyArray<SeatChange | ThinkingChange>
   readonly remaining: Queue
-  readonly queued: boolean
   /**
    * Whether this boundary had already drained, so the answer is the one it gave
    * the first time.
@@ -217,7 +216,8 @@ export const DrainRecord = Schema.Struct({
   inserts: Schema.Array(ModelRequest.Message),
   notes: Schema.optional(Schema.Array(ModelRequest.Message)),
   seatChanges: Schema.Array(Schema.Union([SeatChangeRecord, ThinkingChangeRecord])),
-  queued: Schema.Boolean,
+  /** Retired delivery flag, accepted only for older journal records. */
+  queued: Schema.optional(Schema.Boolean),
   /**
    * Messages the run's supervisor delivers at this boundary, kept apart from
    * `inserts` and their personal-instruction list: the model reads them,
@@ -276,8 +276,7 @@ export const drainRecord = (drain: Drain): DrainRecord => ({
   inserts: drain.inserts,
   ...(drain.instructions === undefined ? {} : { instructions: drain.instructions }),
   ...(drain.notes === undefined || drain.notes.length === 0 ? {} : { notes: drain.notes }),
-  seatChanges: drain.seatChanges,
-  queued: drain.queued
+  seatChanges: drain.seatChanges
 })
 
 const immutable = (items: ReadonlyArray<Item>): Queue => Object.freeze({ items: Object.freeze([...items]) })
@@ -303,18 +302,19 @@ export const empty = (): Queue => immutable([])
 export const enqueue = (queue: Queue, item: Item): Queue => immutable([...queue.items, immutableItem(item)])
 
 /**
- * Drains only items admitted at or before the turn's fixed cutoff.
+ * Drains items admitted at or before the turn's fixed cutoff. Queue inserts
+ * wait until `wouldIdle` is true; the default keeps them for a later boundary.
  *
  * @category operations
  * @since 0.1.0
  * @slop
  */
-export const drainAtClose = (queue: Queue, cutoff: number): Drain => {
+export const drainAtClose = (queue: Queue, cutoff: number, wouldIdle = false): Drain => {
   const inserts: Array<ModelRequest.Message> = []
   const seatChanges: Array<SeatChange | ThinkingChange> = []
   const remaining: Array<Item> = []
   for (const item of queue.items) {
-    if (item.delivery === "queue" || item.admittedAt > cutoff) {
+    if ((item.delivery === "queue" && !wouldIdle) || item.admittedAt > cutoff) {
       remaining.push(item)
       continue
     }
@@ -332,7 +332,6 @@ export const drainAtClose = (queue: Queue, cutoff: number): Drain => {
     inserts: Object.freeze(inserts),
     seatChanges: Object.freeze(seatChanges),
     remaining: immutable(remaining),
-    queued: false,
     // An in-memory cutoff drain keeps no boundary ledger, so it can never say
     // it has answered this boundary before.
     duplicate: false
@@ -409,7 +408,6 @@ export const makeNoop = (overrides: Partial<Source> = {}): Source =>
         inserts: [],
         seatChanges: [],
         remaining: empty(),
-        queued: false,
         duplicate: false
       })
     ),

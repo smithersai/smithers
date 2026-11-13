@@ -116,9 +116,7 @@ The controller's own failures are `HarnessError`s, with
 | `suspended`             | The run parked: a permission requirement, a durable wait, or an engine suspension.                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 Interrupting a run raises no `HarnessError`: the stream ends with an
-`AgentEvent.Aborted` event and the interrupt cause is forwarded unchanged. A
-projection that fails is a `Transcript.TranscriptError` with code
-`projection_failed`, not a `HarnessError`.
+`AgentEvent.Aborted` event and the interrupt cause is forwarded unchanged.
 
 **A required `park` fails with `approval_unavailable`.** `CellTurn.make`
 defaults `approvalChannel` to `false`. A park without an approval channel

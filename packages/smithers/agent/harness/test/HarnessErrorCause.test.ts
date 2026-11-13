@@ -8,7 +8,6 @@ import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { HarnessError } from "../src/HarnessError.ts"
 import { SandboxError } from "../src/Sandbox.ts"
-import { TranscriptError } from "../src/Transcript.ts"
 
 const causes = {
   error: () => new Error("provider returned 429"),
@@ -59,15 +58,6 @@ describe("a harness failure carrying a non-JSON cause", () => {
     )
     expect(decoded.code).toBe("runtime_failed")
     expect(decoded.message).toBe("the realm died")
-  })
-
-  it("encodes a transcript failure whose cause holds a bigint and a function", () => {
-    const { decoded } = roundTrip(
-      TranscriptError,
-      new TranscriptError({ code: "projection_failed", message: "the projection failed", cause: causes.raw() })
-    )
-    expect(decoded.code).toBe("projection_failed")
-    expect(decoded.message).toBe("the projection failed")
   })
 
   it("keeps a provider's ModelError, live or rendered to JSON, as a ModelError across the journal", () => {

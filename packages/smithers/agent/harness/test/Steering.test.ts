@@ -114,6 +114,25 @@ describe("Steering", () => {
     expect(queue.items).toHaveLength(2)
   })
 
+  it.each([false, true])("promotes follow-ups only at an idle boundary (%s)", (wouldIdle) => {
+    const items: ReadonlyArray<Steering.Insert> = [
+      { _tag: "Insert", delivery: "queue", admittedAt: 1, message: ModelRequest.Message.user("first") },
+      { _tag: "Insert", delivery: "steer", admittedAt: 2, message: ModelRequest.Message.user("second") },
+      { _tag: "Insert", delivery: "queue", admittedAt: 2, message: ModelRequest.Message.user("at cutoff") },
+      { _tag: "Insert", delivery: "queue", admittedAt: 3, message: ModelRequest.Message.user("later") }
+    ]
+    const queue = items.reduce(Steering.enqueue, Steering.empty())
+    const drained = Steering.drainAtClose(queue, 2, wouldIdle)
+    expect(drained.inserts).toEqual(wouldIdle ? items.slice(0, 3).map((item) => item.message) : [items[1]!.message])
+    expect(drained.remaining.items).toEqual(wouldIdle ? [items[3]] : [items[0], items[2], items[3]])
+    expect(Steering.drainAtClose(drained.remaining, 3, true).inserts).toEqual(
+      (wouldIdle ? [items[3]!] : [items[0]!, items[2]!, items[3]!]).map((item) => item.message)
+    )
+    expect(queue.items).toEqual(items)
+    expect(Object.isFrozen(drained.inserts)).toBe(true)
+    expect(Object.isFrozen(drained.remaining.items)).toBe(true)
+  })
+
   it("drains an empty queue into an empty result", () => {
     const drained = Steering.drainAtClose(Steering.empty(), 0)
 
@@ -121,7 +140,6 @@ describe("Steering", () => {
       inserts: [],
       seatChanges: [],
       remaining: Steering.empty(),
-      queued: false,
       duplicate: false
     })
     expect(Object.isFrozen(drained.inserts)).toBe(true)
@@ -166,7 +184,7 @@ describe("Steering", () => {
 
     expect(drained.inserts).toEqual([ModelRequest.Message.user("now")])
     expect(drained.seatChanges.map((change) => change._tag)).toEqual(["SeatChange", "ThinkingChange"])
-    expect(drained.queued).toBe(false)
+
     // Everything held back keeps its FIFO order for the next close.
     expect(drained.remaining.items.map((item) => item._tag)).toEqual(["Insert", "SeatChange"])
   })
@@ -192,7 +210,6 @@ describe("Steering", () => {
         admittedAt: 2,
         message: ModelRequest.Message.user("queued")
       }),
-      queued: true,
       duplicate: false
     }
 
@@ -201,7 +218,11 @@ describe("Steering", () => {
     // The retired provider-tool loop's `activatedToolNames` is gone from the
     // record. A journal written before it was retired always carried it empty,
     // and still decodes: the extra key is dropped, not refused.
-    expect(Object.keys(record).sort()).toEqual(["inserts", "queued", "seatChanges"])
+    expect(Schema.decodeUnknownSync(Steering.DrainRecord)({ ...record, queued: true })).toEqual({
+      ...record,
+      queued: true
+    })
+    expect(Object.keys(record).sort()).toEqual(["inserts", "seatChanges"])
     expect(
       Schema.decodeUnknownSync(Steering.DrainRecord)({
         ...Schema.encodeSync(Steering.DrainRecord)(record),
@@ -227,7 +248,6 @@ describe("Steering.Source", () => {
       inserts: [],
       seatChanges: [],
       remaining: Steering.empty(),
-      queued: false,
       duplicate: false
     })
   })
@@ -260,7 +280,6 @@ describe("Steering.Source", () => {
             inserts: [ModelRequest.Message.user("from the host")],
             seatChanges: [],
             remaining: Steering.empty(),
-            queued: false,
             duplicate: false
           }
         })
@@ -283,8 +302,7 @@ describe("Steering.Source", () => {
                   inserts: [],
                   seatChanges: [],
                   remaining: Steering.empty(),
-                  queued: true,
-                  duplicate: false
+                  duplicate: true
                 })
             })
           )
@@ -295,7 +313,7 @@ describe("Steering.Source", () => {
     expect(boundaries).toEqual([{ boundary: "turn-1", wouldIdle: false }])
     expect(fromHost.inserts).toEqual([ModelRequest.Message.user("from the host")])
     expect(fromNoop.inserts).toEqual([])
-    expect(fromOverride.queued).toBe(true)
+    expect(fromOverride.duplicate).toBe(true)
   })
 
   it("lets a failing source refuse in the typed channel", async () => {
@@ -322,7 +340,6 @@ describe("Steering.Source", () => {
           inserts: [steer],
           seatChanges: [],
           remaining: Steering.empty(),
-          queued: false,
           duplicate: false
         })
     })

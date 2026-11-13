@@ -1119,7 +1119,6 @@ describe("CellTurn steering boundaries", () => {
     inserts: [],
     seatChanges: [],
     remaining: Steering.empty(),
-    queued: false,
     duplicate: false
   }
 
@@ -2066,7 +2065,6 @@ const steeringQueue = () => {
             inserts,
             seatChanges: [],
             remaining: Steering.empty(),
-            queued: false,
             duplicate: prior !== undefined
           }
         })
@@ -2292,7 +2290,7 @@ describe("CellTurn recorded observations", () => {
           seatChanges: boundary++ === 6
             ? [{ _tag: "SeatChange" as const, delivery: "steer" as const, admittedAt: 1, seat: "smaller" }]
             : [],
-          queued: false,
+
           duplicate: false,
           remaining: Steering.empty()
         }))
@@ -2896,7 +2894,6 @@ describe("CellTurn recorded observations", () => {
                 inserts: input.park === undefined ? [] : [answer],
                 seatChanges: [],
                 remaining: Steering.empty(),
-                queued: false,
                 duplicate: false
               }
             })
@@ -2938,7 +2935,7 @@ describe("CellTurn recorded observations", () => {
           drain: () =>
             Effect.sync(() => {
               pending = false
-              return { inserts: [], seatChanges: [], remaining: Steering.empty(), queued: false, duplicate: false }
+              return { inserts: [], seatChanges: [], remaining: Steering.empty(), duplicate: false }
             })
         })
       }

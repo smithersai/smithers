@@ -179,6 +179,8 @@ describe("account", () => {
     })
     expect(probed.facts.checkpointIds).toEqual(["cp-0-1", "cp-1-1"])
     expect(probed.probeNotice).toContain("- bash (unknown_test): no such test")
+    expect(probed.probeNotice).toContain("do not keep it as `verification`")
+    expect(probed.probeNotice).not.toContain("state.verification")
     expect(account({ calls: [call()] }).probeNotice).toBeUndefined()
   })
 })

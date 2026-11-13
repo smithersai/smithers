@@ -105,8 +105,6 @@ transaction and publication. T-AGT-03 owns the conversation view.
 
 ## Why two decoders and no framework
 
-`Transcript.projectResult` projects harness journal entries into model
-messages; it does not parse another agent's JSONL.
 `GatewayProjection.transcript` needs an executable `runId`, so feeding it an
 external record would invent a run. `EntryRowCard` and `CardPrimitives.Actor`
 describe presentation and participants; neither decodes a source record. The

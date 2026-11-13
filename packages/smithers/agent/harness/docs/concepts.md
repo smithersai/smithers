@@ -113,9 +113,7 @@ Harness journal format 2 changes summaries to user context. The agent session
 checks persisted trace versions before opening model or cell boundaries, and
 `CellTurn.run` rejects controller state decoded from an older format with typed
 `HarnessError` code `incompatible_journal`. Start a new run for old journals;
-rc.0 has no compatibility promise. Transcript projection is for display and
-normalizes historical summary text to user messages; it does not authorize
-resuming a historical run. The session trace is best-effort telemetry, while
+rc.0 has no compatibility promise. The session trace is best-effort telemetry;
 the engine's sealed steps and recorded boundaries provide durable replay.
 
 The controller's own reads of the world go through `EngineLike.record` for the
@@ -173,9 +171,9 @@ are none.
 Compaction summaries are rendered as user messages, including summaries read
 from older journal records. This keeps every compacted request anchored by a
 leading user turn on providers that reject assistant-first conversations.
-The settlement records the retained suffix's message count so transcript
-projection replaces only the summarized prefix. Repeated compactions apply in
-journal order. Legacy settlements without a count replace all earlier messages.
+The settlement records the retained suffix's message count and the summary
+used to replace its prefix. Applying that summary to the same window rebuilds
+the next model context.
 
 Enforced by `ContextWindow`, `Tokens`, and `Compaction`.
 

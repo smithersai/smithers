@@ -124,7 +124,6 @@ describe("harness notification adapter", () => {
       )
     )
 
-    expect(result.active.queued).toBe(false)
     expect(result.active.inserts[0]).toMatchObject({
       role: "user",
       content: [{
@@ -133,7 +132,7 @@ describe("harness notification adapter", () => {
         )
       }]
     })
-    expect(result.idle.queued).toBe(true)
+
     expect(result.idle.inserts[0]).toMatchObject({
       content: [{ text: expect.stringContaining("body:queued") }]
     })
@@ -174,7 +173,6 @@ describe("harness notification adapter", () => {
       instructions: [],
       seatChanges: [],
       remaining: Steering.empty(),
-      queued: false,
       duplicate: false
     })
   })
@@ -196,7 +194,6 @@ describe("harness notification adapter", () => {
       rendered("second", "body:second"),
       rendered("third", "body:third")
     ])
-    expect(drained.queued).toBe(false)
   })
 
   it("renders payloads that are not string-keyed records as JSON", async () => {
@@ -238,12 +235,11 @@ describe("harness notification adapter", () => {
     )
 
     expect(result.busy.inserts).toEqual([])
-    expect(result.busy.queued).toBe(false)
+
     expect(result.firstIdle.inserts).toEqual([rendered("one", "body:one")])
-    expect(result.firstIdle.queued).toBe(true)
+
     expect(result.secondIdle.inserts).toEqual([rendered("two", "body:two")])
     expect(result.exhausted.inserts).toEqual([])
-    expect(result.exhausted.queued).toBe(false)
   })
 
   it("replays a boundary it already drained instead of draining a second time", async () => {
@@ -298,7 +294,6 @@ describe("harness notification adapter", () => {
     )
 
     expect(drained.inserts).toEqual([rendered("build-2", "built", "machine:ci", "ci/root", 0)])
-    expect(drained.queued).toBe(true)
   })
 
   it("reports an unreachable durable queue as an engine failure at the boundary", async () => {

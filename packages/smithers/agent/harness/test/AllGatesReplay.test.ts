@@ -132,7 +132,6 @@ const untilRead = (live: number, interrupt: number | undefined) => {
             inserts: [],
             seatChanges: [],
             remaining: Steering.empty(),
-            queued: false,
             duplicate: false
           })
         )

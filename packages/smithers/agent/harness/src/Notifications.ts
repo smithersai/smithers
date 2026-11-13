@@ -204,7 +204,6 @@ const drainOf = (receipt: NotificationQueue.DrainReceipt, options: Options): Ste
     instructions,
     seatChanges,
     remaining: Steering.empty(),
-    queued: notifications.some((notification) => notification.delivery === "queue"),
     // The queue's own answer to "has this boundary drained before". A parked
     // run walks its park's boundaries until one says no, which is the first one
     // it has not already consulted. See `Steering.Drain.duplicate`.

@@ -210,7 +210,6 @@ const steeringAfter = (wait: (boundary: string) => Effect.Effect<void>): Layer.L
         inserts: [],
         seatChanges: [],
         remaining: Steering.empty(),
-        queued: false,
         duplicate: false
       }))
   })
@@ -1839,6 +1838,36 @@ describe("Supervisor", () => {
       const clipped = Supervisor.tail(long)
       expect(clipped.startsWith("[… older bytes elided]\n")).toBe(true)
       expect(clipped.endsWith("x".repeat(Supervisor.frameBytes))).toBe(true)
+    })
+
+    it.each(["cell", "js", "javascript", "ts", "typescript", "CELL", "cell title=plan"])(
+      "keeps inline fences inside a %s cell out of prose",
+      (language) => {
+        const cell = "console.log(\"```\");\nctx.done(\"ok\")"
+        expect(Supervisor.prose(["Plan.", "```" + language, cell, "```", "After."].join("\n")))
+          .toBe("Plan.\n\nAfter.")
+        expect(Supervisor.prose(["Plan.", "```" + language, cell].join("\n"))).toBe("Plan.")
+      }
+    )
+
+    it("strips multiple cells without losing the prose between them", () => {
+      const reply = [
+        "Before.",
+        "```cell",
+        "console.log(\"```\")",
+        "```",
+        "Between.",
+        "```ts",
+        "const markdown = \"```js\\nx\\n```\"",
+        "```",
+        "After."
+      ].join("\n")
+      expect(Supervisor.prose(reply)).toBe("Before.\n\nBetween.\n\nAfter.")
+    })
+
+    it("keeps non-cell fences and inline fence examples in prose", () => {
+      const text = ["Use ```cell inline.", "```markdown", "```cell", "quoted", "```", "After."].join("\n")
+      expect(Supervisor.prose(text)).toBe(text)
     })
 
     it("strips a fenced cell from the model's prose", () => {
