@@ -1,6 +1,12 @@
+---
+title: Run change-feed progress
 status: done
+area: sdk
 owner: Codex GPT-6.1 Sol
 updated: 2026-10-22
+links: []
+---
+
 ## Revised design — 2026-10-21
 
 **What:** Keep the run page and steer delivery current while `todo/Implement`

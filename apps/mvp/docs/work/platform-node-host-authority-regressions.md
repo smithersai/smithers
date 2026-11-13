@@ -4,7 +4,7 @@ status: done
 area: sdk
 owner: Codex fix-ackages-smithers-flows-platform-node-src-900640
 updated: 2026-10-21
-links: [../../../../../packages/smithers/flows/platform-node/test/HostSecurityRegressions.test.ts]
+links: [../../../../packages/smithers/flows/platform-node/test/HostSecurityRegressions.test.ts]
 ---
 
 Six reported constructor and sandbox authority bugs. Seven regression cases failed on the original code on Latitude. Catalog entry: “Spawn a process or touch the filesystem”, using the existing `@smthrs/platform-node` host.

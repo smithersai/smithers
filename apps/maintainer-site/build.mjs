@@ -11,6 +11,8 @@ import { basename, dirname, join, posix, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { escapeHtml, renderMarkdown, safeUrl, slugify, splitFrontmatter } from "./markdown.mjs"
 
+const check = process.argv[2] === "--check"
+const requested = new Set(check ? process.argv.slice(3) : [])
 const started = performance.now()
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(here, "../..")
@@ -29,7 +31,18 @@ const markdownUnder = (dir) =>
 const sources = [...markdownUnder("apps/mvp/docs"), "apps/mvp/AGENTS.md", "AGENTS.md", "docs/libraries.md", "README.md"]
   .filter((path) => existsSync(join(repo, path)))
   .sort()
+if (check) {
+  for (const path of requested) {
+    if (!sources.includes(path)) throw new Error(`Not a site note: ${path}`)
+  }
+}
+const selected = sources.filter((path) => !check || requested.size === 0 || requested.has(path))
 const warnings = []
+const validationErrors = []
+const invalid = (message) => {
+  warnings.push(message)
+  validationErrors.push(message)
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // Notes: render once to learn titles, then again with every link resolved.
@@ -37,7 +50,7 @@ const warnings = []
 const raw = new Map(sources.map((path) => [path, readFileSync(join(repo, path), "utf8")]))
 // Front matter (`---` key: value lines) becomes the note's properties; the Markdown after it is the body.
 const front = new Map(sources.map((path) => [path, splitFrontmatter(raw.get(path))]))
-for (const [path, { errors }] of front) for (const error of errors) warnings.push(`front matter in ${path}: ${error}`)
+for (const path of selected) for (const error of front.get(path).errors) invalid(`front matter in ${path}: ${error}`)
 const bodyOf = (path) => front.get(path).body
 const dataOf = (path) => front.get(path).data
 const text = (value) => (Array.isArray(value) ? value.join(", ") : typeof value === "string" && value !== "" ? value : null)
@@ -74,6 +87,7 @@ const resolverFor = (from) => {
       if (href.startsWith("#")) return { href: noteHref(from, href.slice(1)) }
       if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(href)) {
         const safe = safeUrl(href)
+        if (!safe) invalid(`unsafe link in ${from}: ${href}`)
         return safe ? { href: safe, cls: "ext", title: null } : { href: null, cls: "broken", title: "Unsafe link" }
       }
       const { target, anchor } = local(href)
@@ -81,14 +95,14 @@ const resolverFor = (from) => {
       if (note) return { href: noteHref(note, anchor), note, anchor }
       const file = join(repo, target)
       if (!target.startsWith("..") && existsSync(file)) return { href: pathToFileURL(file).href, cls: "file", title: target }
-      warnings.push(`broken link in ${from}: ${href}`)
+      invalid(`broken link in ${from}: ${href}`)
       return { href: null, cls: "broken", title: `Missing: ${target}` }
     },
     image(src) {
       if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(src)) return { href: safeUrl(src) }
       const { target } = local(src)
       if (target.startsWith("..") || !existsSync(join(repo, target)) || !statSync(join(repo, target)).isFile()) {
-        warnings.push(`missing image in ${from}: ${src}`)
+        invalid(`missing image in ${from}: ${src}`)
         return null
       }
       copiedFiles.set(target, join(repo, target))
@@ -100,7 +114,7 @@ const resolverFor = (from) => {
       const anchor = hash < 0 ? "" : name.slice(hash + 1).trim()
       const hit = key === "" ? { path: from } : wikiIndex.get(key) ?? wikiIndex.get(`${key}.md`)
       if (!hit) {
-        warnings.push(`unresolved wikilink in ${from}: [[${name}]]`)
+        invalid(`unresolved wikilink in ${from}: [[${name}]]`)
         return null
       }
       return { href: noteHref(hit.path, anchor), note: hit.path, anchor, label: titles.get(hit.path) }
@@ -112,13 +126,14 @@ const resolverFor = (from) => {
 const WORK_DIR = "apps/mvp/docs/work/"
 const STATUSES = ["idea", "todo", "designing", "in-progress", "blocked", "done"]
 const AREAS = ["app", "sdk", "infra", "design", "process"]
+const validStatus = (data) => typeof data?.status === "string" && STATUSES.includes(data.status)
 const statusLabel = (status) => ({ todo: "To do", "in-progress": "In progress" })[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
 const isWork = (path) => path.startsWith(WORK_DIR) && !path.slice(WORK_DIR.length).includes("/")
 
 // Reject unsupported values before publishing a board with misleading columns or counts.
 // Notes without a status retain the existing warning below.
 for (const [path, { data }] of front) {
-  if (isWork(path) && data && "status" in data && (typeof data.status !== "string" || !STATUSES.includes(data.status))) {
+  if (!check && isWork(path) && data && "status" in data && !validStatus(data)) {
     throw new Error(`work note ${path}: status ${JSON.stringify(data.status)} is not one of ${STATUSES.join(", ")}`)
   }
 }
@@ -151,7 +166,7 @@ function properties(data, resolver) {
   return { html: `<dl class="props">${rows.join("")}</dl>`, links: links.map((link) => ({ ...link, context })) }
 }
 
-const notes = sources.map((path) => {
+const notes = selected.map((path) => {
   const resolver = resolverFor(path)
   const rendered = renderMarkdown(bodyOf(path), resolver)
   const data = dataOf(path)
@@ -170,14 +185,21 @@ const work = notes
   .filter((note) => isWork(note.path))
   .map((note) => {
     const data = dataOf(note.path)
-    if (!data) warnings.push(`work note without front matter: ${note.path}`)
+    if (!data) invalid(`work note without front matter: ${note.path}`)
     const status = text(data?.status)
     const area = text(data?.area)
-    if (!STATUSES.includes(status)) warnings.push(`work note ${note.path}: status ${status ?? "(none)"} is not one of ${STATUSES.join(", ")}`)
+    if (!validStatus(data)) invalid(`work note ${note.path}: status ${status ?? "(none)"} is not one of ${STATUSES.join(", ")}`)
     if (!AREAS.includes(area)) warnings.push(`work note ${note.path}: area ${area ?? "(none)"} is not one of ${AREAS.join(", ")}`)
     return { path: note.path, title: note.title, status: status ?? "unknown", area: area ?? "unknown", owner: text(data?.owner), updated: text(data?.updated) }
   })
   .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? "") || a.title.localeCompare(b.title))
+// Validate the same metadata and destinations the board renders, without writing the site.
+if (check) {
+  for (const error of validationErrors) console.error(error)
+  console.log(`Checked ${notes.length} notes: ${validationErrors.length} errors`)
+  process.exit(validationErrors.length ? 1 : 0)
+}
+
 const workStatuses = [...STATUSES, ...new Set(work.map((item) => item.status).filter((status) => !STATUSES.includes(status)))].map((id) => ({ id, label: statusLabel(id) }))
 const workAreas = [...AREAS, ...new Set(work.map((item) => item.area).filter((area) => !AREAS.includes(area)))].filter((area) => work.some((item) => item.area === area))
 const openWork = work.filter((item) => item.status !== "done").length

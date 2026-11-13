@@ -4,7 +4,7 @@ status: done
 area: sdk
 owner: codex-nodejj-stale
 updated: 2026-10-21
-links: [../../../../../packages/smithers/flows/jj/docs/troubleshooting.md]
+links: [../../../../packages/smithers/flows/jj/docs/troubleshooting.md]
 ---
 
 Will requires tooling never to run `jj workspace update-stale` implicitly.

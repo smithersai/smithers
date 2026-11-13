@@ -5,8 +5,8 @@ area: flow
 owner: codex-fix-amend-d847d43b-081245
 updated: 2026-10-22
 links:
-  - packages/smithers/flows/flow/src/Action/once.ts
-  - packages/smithers/flows/flow/test/IdempotencyCompatibility.test.ts
+  - ../../../../packages/smithers/flows/flow/src/Action/once.ts
+  - ../../../../packages/smithers/flows/flow/test/IdempotencyCompatibility.test.ts
 ---
 
 Uses the library catalog durable-workflow entry, `@smthrs/flow`.

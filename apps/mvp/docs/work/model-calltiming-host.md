@@ -5,8 +5,8 @@ area: sdk
 owner: Codex Sol (calltiming-host)
 updated: 2026-10-22
 links:
-  - packages/smithers/agent/model/src/internal/CallTiming.ts
-  - packages/smithers/agent/model/src/internal/WireTrace.ts
+  - ../../../../packages/smithers/agent/model/src/internal/CallTiming.ts
+  - ../../../../packages/smithers/agent/model/src/internal/WireTrace.ts
 ---
 
 Keep timing and cache diagnostics platform neutral. Replace ambient synchronous wire-trace file writes with an optional Effect sink backed by the host FileSystem.

@@ -5,7 +5,7 @@ area: sdk
 owner: codex-platform-browser-851768
 updated: 2026-10-21
 links:
-  - packages/smithers/flows/platform-browser
+  - ../../../../packages/smithers/flows/platform-browser
 ---
 
 Reproduce and fix the nine reported receipt, leadership, rollback and TypeScript workspace bugs in an isolated jj workspace. Run regression and package checks on Latitude. Library catalog entries: browser language intelligence and durable browser engine (`@smthrs/platform-browser`). No new libraries.

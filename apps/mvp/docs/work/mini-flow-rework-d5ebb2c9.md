@@ -4,7 +4,7 @@ status: done
 area: sdk
 owner: Codex mini/fix-rework-d5ebb2c9-190528
 updated: 2026-10-22
-links: [../../../../../packages/smithers/flows/flow/docs/api.md]
+links: [../../../../packages/smithers/flows/flow/docs/api.md]
 ---
 
 Rework d5ebb2c9ecfb on main@origin. Keep durable transient retries and one

@@ -5,8 +5,8 @@ area: sdk/agent
 owner: codex-mini-fix-073840
 updated: 2026-10-21
 links:
-  - packages/smithers/agent/src/QuotaPolicy.ts
-  - packages/smithers/agent/src/SmithersPlugin.ts
+  - ../../../../packages/smithers/agent/src/QuotaPolicy.ts
+  - ../../../../packages/smithers/agent/src/SmithersPlugin.ts
 ---
 
 Reproduce and fix the four supplied findings: NaN default wait, NaN maximum wait,

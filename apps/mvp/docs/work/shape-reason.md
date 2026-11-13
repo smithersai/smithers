@@ -5,8 +5,8 @@ area: observability
 owner: Codex GPT-6.1 Sol (shape-reason)
 updated: 2026-11-04
 links:
-  - packages/effect-electric/docs/shape-proxy.md
-  - apps/mvp/docs/features/notifications.md
+  - ../../../../packages/effect-electric/docs/shape-proxy.md
+  - ../../../../apps/mvp/docs/features/notifications.md
 ---
 
 Name the existing proxy refusal paths and notifications cursor checks without changing access or retry behavior. Use the catalog's `@smthrs/effect-electric` ShapeProxy and existing Effect logging/metrics. Regression tests use real Postgres/Electric; failures enter through injected Effect services. Production's historical refusal cannot be classified retroactively; this change makes subsequent refusals identifiable.

@@ -7,7 +7,8 @@
   "scripts": {
     "build": "node build.mjs",
     "serve": "node serve.mjs",
-    "test": "node --test markdown.test.mjs test/build.test.mjs test/serve.test.mjs test/outline.test.mjs test/revision.test.mjs",
+    "check": "node build.mjs --check",
+    "test": "node --test markdown.test.mjs test/build.test.mjs test/serve.test.mjs test/outline.test.mjs test/revision.test.mjs test/work-metadata.test.mjs",
     "test:queue": "node --test test/queue-review.test.mjs && node test/queue.e2e.mjs",
     "test:code": "node test/code-tools.e2e.mjs",
     "screenshots": "node screenshots.mjs"

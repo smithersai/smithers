@@ -5,7 +5,7 @@ area: registry
 owner: codex-mini-483815
 updated: 2026-10-21
 links:
-  - packages/smithers/agent/registry
+  - ../../../../packages/smithers/agent/registry
 ---
 
 Reproduce and fix confinement resolution, bounded entry reads, retired-root cycles,

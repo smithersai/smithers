@@ -5,7 +5,7 @@ area: platform-node
 owner: codex-platform-node-reds
 updated: 2026-10-22
 links:
-  - packages/smithers/flows/platform-node/test/NativeRuntimeRestart.test.ts
+  - ../../../../packages/smithers/flows/platform-node/test/NativeRuntimeRestart.test.ts
 ---
 
 Reproduce and repair the Linux coverage gate on Latitude. No push.

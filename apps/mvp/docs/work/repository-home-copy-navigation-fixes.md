@@ -4,7 +4,7 @@ status: done
 area: ui
 owner: Codex mini/fix-packages-smithers-ui-src-repository-home-072388
 updated: 2026-10-21
-links: [../../../../../packages/smithers/ui/docs/guides/show-a-repository-home.md]
+links: [../../../../packages/smithers/ui/docs/guides/show-a-repository-home.md]
 ---
 
 Reproduce copy failures without visible or announced feedback and native links that cannot carry a selected flow. Use the library catalog's repository-home entry (`@smthrs/ui`), its existing copy state machine, and host-provided flow URLs: the generic component cannot choose an application's routes. Keep string `askHref` compatibility; accept a resolver for flow-specific destinations. No new library or feature plugin is needed for these component corrections.

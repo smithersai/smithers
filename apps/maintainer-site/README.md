@@ -57,6 +57,12 @@ open ~/Desktop/smithers-maintainer/index.html
 
 The build has no dependencies and takes well under a second. It prints the path to `index.html`, and warns about broken links, flows without a GIF, and GIFs without a test.
 
+Validate notes without writing the site with `pnpm --filter @smthrs/maintainer-site check`.
+To check selected notes, run `node apps/maintainer-site/build.mjs --check <note.md>...` with repository-relative paths.
+The check rejects malformed frontmatter, work notes without frontmatter or with unknown statuses, and broken links in both Markdown and frontmatter.
+Completed work uses `status: done`. Frontmatter `links` resolve relative to the note, just like Markdown links;
+from `apps/mvp/docs/work/`, repository-root targets start with `../../../../`.
+
 ## What it reads
 
 | Content | Source |

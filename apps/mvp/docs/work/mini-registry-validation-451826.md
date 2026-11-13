@@ -5,7 +5,7 @@ area: registry
 owner: codex-mini-451826
 updated: 2026-10-22
 links:
-  - packages/smithers/agent/registry
+  - ../../../../packages/smithers/agent/registry
 ---
 
 Reproduce the three reported registry bugs, retain regression tests, and fix
