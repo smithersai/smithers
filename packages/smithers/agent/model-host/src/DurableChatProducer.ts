@@ -406,6 +406,7 @@ export class DurableChatProducer {
               reply.batch.runId !== expected.runId || reply.batch.legId !== expected.legId ||
               reply.batch.batch !== expected.batch + 1 || reply.batch.from !== expected.position + 1 ||
               reply.batch.previousHash !== expected.hash || reply.batch.hash !== expectedHash ||
+              reply.cursor.runId !== expected.runId || reply.cursor.legId !== expected.legId ||
               reply.cursor.hash !== reply.batch.hash ||
               reply.cursor.batch !== reply.batch.batch ||
               reply.cursor.position !== reply.batch.from + reply.batch.frames.length - 1

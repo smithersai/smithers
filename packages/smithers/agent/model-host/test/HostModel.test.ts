@@ -83,6 +83,37 @@ describe("HostModel.make", () => {
     expect(unusable(exit)).toEqual(new HostModelUnusable({ reason: "credential_missing" }))
   })
 
+  test.each([
+    "not-a-sign-in-pair",
+    "null",
+    "{}",
+    JSON.stringify({ accessToken: "access-token-canary" }),
+    JSON.stringify({ accountId: "account-id-canary" }),
+    JSON.stringify({ accessToken: "", accountId: "account-id-canary" }),
+    JSON.stringify({ accessToken: "access-token-canary", accountId: "" })
+  ])("returns a typed, credential-free authentication failure for malformed ChatGPT access: %s", async (credential) => {
+    const exit = await build(
+      { CHATGPT_SUBSCRIPTION: credential },
+      { protocol: "openai-responses-chatgpt", modelId: "gpt-fixture", credential: "CHATGPT_SUBSCRIPTION" }
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.hasDies(exit.cause)).toBe(false)
+      expect(Cause.hasFails(exit.cause)).toBe(true)
+    }
+    expect(unusable(exit)).toEqual(new HostModelUnusable({ reason: "authentication" }))
+    expect(JSON.stringify(exit)).not.toContain("access-token-canary")
+    expect(JSON.stringify(exit)).not.toContain("account-id-canary")
+  })
+
+  test("builds a ChatGPT model when the configured credential is a complete sign-in pair", async () => {
+    const exit = await build(
+      { CHATGPT_SUBSCRIPTION: JSON.stringify({ accessToken: "access-token-canary", accountId: "account-id-canary" }) },
+      { protocol: "openai-responses-chatgpt", modelId: "gpt-fixture", credential: "CHATGPT_SUBSCRIPTION" }
+    )
+    expect(Exit.isSuccess(exit) && exit.value.modelId).toBe("gpt-fixture")
+  })
+
   test("fails with the planner's code for a record it cannot use", async () => {
     const exit = await build(
       { SMITHERS_MODEL_KEY_FIXTURE: "fixture-key", SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: "https://models.example" },

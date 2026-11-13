@@ -1,6 +1,6 @@
 import { Model, type ModelEvent } from "@smthrs/model"
 import { AgentTurnJournal, type NativeAgent } from "@smthrs/rpc"
-import { Effect, Stream } from "effect"
+import { Cause, Effect, Exit, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { DurableChatProducer, runDurableChatTurn } from "./fixtures/durable.ts"
@@ -178,12 +178,51 @@ test.each([
   },
   (value: ReturnType<typeof reply>) => {
     value.cursor.position += 1
+  },
+  (value: ReturnType<typeof reply>) => {
+    value.cursor.runId = "other"
+  },
+  (value: ReturnType<typeof reply>) => {
+    value.cursor.legId = "other"
   }
 ])("refuses a receipt that cannot extend the committed cursor", async (forge) => {
   const value = reply(cursor, frame)
   forge(value)
   const producer = new DurableChatProducer("http://host.test", grant, async () => Response.json(value))
   await expect(Effect.runPromise(producer.write(frame))).rejects.toThrow("did not extend")
+})
+
+test.each(
+  (["runId", "legId"] as const).flatMap((identity) =>
+    (["committed", "duplicate"] as const).flatMap((status) =>
+      (["delta", "done"] as const).map((type) => ({ identity, status, type }))
+    )
+  )
+)("refuses a $status receipt with a foreign cursor $identity for a $type frame without adopting it", async ({
+  identity,
+  status,
+  type
+}) => {
+  const current: NativeAgent.AgentTurnFrame = type === "done" ? { runId: "run", type } : frame
+  const bodies: Array<{ expected: AgentTurnJournal.AgentTurnCursor }> = []
+  const producer = new DurableChatProducer("http://host.test", grant, async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)))
+    const value = { ...reply(cursor, current), status }
+    if (bodies.length === 1) value.cursor[identity] = "other"
+    return Response.json(value)
+  })
+  const exit = await Effect.runPromiseExit(producer.write(current))
+  expect(Exit.isFailure(exit)).toBe(true)
+  if (Exit.isFailure(exit)) {
+    expect(Cause.hasDies(exit.cause)).toBe(false)
+    expect(Cause.squash(exit.cause)).toMatchObject({ _tag: "ReceiptMismatch" })
+  }
+  expect(bodies).toEqual([expect.objectContaining({ expected: cursor })])
+  await Effect.runPromise(producer.write(current))
+  expect(bodies).toEqual([
+    expect.objectContaining({ expected: cursor }),
+    expect.objectContaining({ expected: cursor })
+  ])
 })
 
 test("accepts a duplicate receipt, then advances the next batch from that cursor", async () => {

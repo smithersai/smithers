@@ -48,7 +48,8 @@ export interface HostModelOptions {
 /**
  * A configured-model record this host cannot use: `reason` is the planner's
  * failure code (`invalid`, `credential_missing`, `model_not_allowed` and the
- * other `ConfiguredModel` codes), or `config` when the host's configuration
+ * other `ConfiguredModel` codes), a route-construction code such as
+ * `authentication` for malformed sign-in credentials, or `config` when the host's configuration
  * could not be read. It never carries a key.
  *
  * @category errors
@@ -110,7 +111,7 @@ export class HostModel extends Context.Service<HostModel, {
    * record read from a database rather than from configuration. Its key and
    * origin are read through Effect `Config` exactly as {@link layerConfig}
    * reads them. A record this host cannot use, its key missing included,
-   * fails with {@link HostModelUnusable}.
+   * fails with {@link HostModelUnusable}, including malformed sign-in credentials.
    *
    * @category constructors
    * @since 1.0.0
@@ -135,7 +136,9 @@ export class HostModel extends Context.Service<HostModel, {
       if (!planned.ok) return yield* new HostModelUnusable({ reason: planned.failure.code })
       // The planner refuses a record whose key is missing, so a usable plan has one.
       const key = Option.getOrThrow(apiKey)
-      const { model, route } = yield* Effect.orDie(toModel(planned.plan, key, { fetch: options.fetch }))
+      const { model, route } = yield* toModel(planned.plan, key, { fetch: options.fetch }).pipe(
+        Effect.mapError((error) => new HostModelUnusable({ reason: error.code }))
+      )
       return HostModel.of({ modelId: planned.plan.modelId, model, route })
     }).pipe(
       Effect.catchTag("ConfigError", () => Effect.fail(new HostModelUnusable({ reason: "config" })))
