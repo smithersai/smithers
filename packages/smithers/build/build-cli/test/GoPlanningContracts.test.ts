@@ -1,11 +1,10 @@
 import { Smithers as S } from "@smthrs/targets"
-import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import * as GoExec from "../src/GoExec.ts"
-import * as PackageTree from "../src/PackageTree.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 
 const workspace = S.Workspace("go-contracts", {
   repository: "git+https://example.invalid/go-contracts.git",
@@ -20,113 +19,28 @@ const context: GoExec.Context = {
   workspace,
   environment: { PATH: "/selected/bin" }
 }
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof NodeChildProcess>()
-  return { ...actual, execFile: vi.fn(actual.execFile) }
-})
-afterEach(() => {
-  vi.restoreAllMocks()
-  vi.clearAllMocks()
-})
-
 describe("Go planning contracts", () => {
   it.each([0, -1, NaN, Infinity, -Infinity])(
     "rejects invalid probe timeout %s before process dispatch",
     async (timeoutMs) => {
-      const spawn = vi.mocked(NodeChildProcess.execFile)
-      await expect(GoExec.planRule("Go.Packages", { pkgs: ["./..."] }, { ...context, timeoutMs }, process.execPath))
-        .rejects.toThrow("Go probe timeoutMs must be positive and finite")
-      expect(spawn).not.toHaveBeenCalled()
+      const root = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "go-invalid-deadline-"))
+      try {
+        const marker = NodePath.join(root, "dispatched")
+        const binary = await writeExecutable(
+          NodePath.join(root, "go"),
+          `#!/usr/bin/env node
+require("node:fs").writeFileSync(${JSON.stringify(marker)}, "dispatched")
+process.exit(1)
+`
+        )
+        await expect(GoExec.planRule("Go.Packages", { pkgs: ["./..."] }, { ...context, root, timeoutMs }, binary))
+          .rejects.toThrow("Go probe timeoutMs must be positive and finite")
+        expect(await Fs.access(marker).then(() => true, () => false)).toBe(false)
+      } finally {
+        await Fs.rm(root, { recursive: true, force: true })
+      }
     }
   )
-
-  it("accepts a valid selected SDK and inventories its compiler executables", async () => {
-    const root = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "go-sdk-contract-"))
-    try {
-      const sdkRoot = NodePath.join(root, "sdk")
-      const toolDir = NodePath.join(sdkRoot, "pkg", "tool", "test-host")
-      const go = NodePath.join(root, "launcher", "go")
-      await Fs.mkdir(NodePath.dirname(go), { recursive: true })
-      await Fs.mkdir(NodePath.join(sdkRoot, "bin"), { recursive: true })
-      await Fs.mkdir(toolDir, { recursive: true })
-      await Fs.mkdir(NodePath.join(toolDir, "not-an-executable-directory"))
-      for (
-        const file of [
-          go,
-          NodePath.join(sdkRoot, "bin", process.platform === "win32" ? "go.exe" : "go"),
-          NodePath.join(toolDir, "link"),
-          NodePath.join(toolDir, "compile")
-        ]
-      ) {
-        await Fs.writeFile(file, "fixture executable bytes")
-      }
-      vi.spyOn(PackageTree, "findOnPath").mockReturnValue(go)
-      vi.spyOn(PackageTree, "probeVersion")
-        .mockResolvedValueOnce({ exitCode: 0, output: "go version go1.26.8 test/host" })
-        .mockResolvedValueOnce({ exitCode: 0, output: JSON.stringify({ GOROOT: sdkRoot, GOTOOLDIR: toolDir }) })
-      expect(await GoExec.resolveGo({ ...context, root })).toEqual({
-        ok: true,
-        // The selected SDK's own go runs the target, never the older launcher.
-        path: NodePath.join(sdkRoot, "bin", process.platform === "win32" ? "go.exe" : "go"),
-        sdkRoot,
-        executables: [
-          go,
-          NodePath.join(sdkRoot, "bin", process.platform === "win32" ? "go.exe" : "go"),
-          NodePath.join(toolDir, "compile"),
-          NodePath.join(toolDir, "link")
-        ],
-        identity: {
-          tag: "GoBin",
-          path: go,
-          cwd: "",
-          probe: { exitCode: 0, output: "go version go1.26.8 test/host" },
-          authorities: []
-        }
-      })
-    } finally {
-      await Fs.rm(root, { recursive: true, force: true })
-    }
-  })
-
-  it.each(
-    [
-      ["malformed JSON", "{", 0],
-      ["null", "null", 0],
-      ["array", "[]", 0],
-      ["scalar", "42", 0],
-      ["missing GOROOT", "{\"GOTOOLDIR\":\"/sdk/tools\"}", 0],
-      ["numeric GOROOT", "{\"GOROOT\":42,\"GOTOOLDIR\":\"/sdk/tools\"}", 0],
-      ["missing GOTOOLDIR", "{\"GOROOT\":\"/sdk\"}", 0],
-      ["null GOTOOLDIR", "{\"GOROOT\":\"/sdk\",\"GOTOOLDIR\":null}", 0],
-      ["failed command with valid JSON", "{\"GOROOT\":\"/sdk\",\"GOTOOLDIR\":\"/sdk/tools\"}", 1]
-    ] as const
-  )("refuses SDK identification from %s", async (_name, output, exitCode) => {
-    vi.spyOn(PackageTree, "findOnPath").mockReturnValue("/selected/bin/go")
-    const probe = vi.spyOn(PackageTree, "probeVersion")
-      .mockResolvedValueOnce({ exitCode: 0, output: "go version go1.26.8 test/host" })
-      .mockResolvedValueOnce({ exitCode, output })
-    expect(await GoExec.resolveGo(context)).toEqual({
-      ok: false,
-      refusal: "go env could not identify GOROOT and GOTOOLDIR",
-      identity: {
-        tag: "GoBin",
-        path: "/selected/bin/go",
-        probe: { exitCode: 0, output: "go version go1.26.8 test/host" },
-        selected: { exitCode, output }
-      }
-    })
-    expect(probe).toHaveBeenNthCalledWith(1, "/selected/bin/go", {
-      cwd: context.root,
-      args: ["version"],
-      environment: { PATH: "/selected/bin" }
-    })
-    expect(probe).toHaveBeenNthCalledWith(2, "/selected/bin/go", {
-      cwd: context.root,
-      args: ["env", "-json", "GOROOT", "GOTOOLDIR"],
-      environment: { PATH: "/selected/bin" }
-    })
-    expect(probe).toHaveBeenCalledTimes(2)
-  })
 
   it.each(
     [

@@ -571,9 +571,13 @@ export const Package = S.Package({ targets: { check } })
     })
   })
 
-  it.each(["ci", "test", "lint", "build", "auto"])(
-    "fails %s when a consumer depends on an unavailable review",
-    async (verb) => {
+  it.each(
+    ["ci", "test", "lint", "build", "auto"].flatMap((verb) =>
+      [false, true].map((knownRed) => [verb, knownRed] as const)
+    )
+  )(
+    "fails %s when a consumer depends on an unavailable review (known-red: %s)",
+    async (verb, knownRed) => {
       const root = await packageFixture()
       await write(
         root,
@@ -595,16 +599,18 @@ const outer = S.Alias(alias)
 export const Package = S.Package({ targets: { review, alias, outer } })
 `
       )
+      await write(root, "known-red.json", JSON.stringify({ entries: [] }))
       const result = await jsonCommand(root, [
         ...(verb === "auto" ? [] : [verb]),
         "//:outer",
         "--no-cache",
+        ...(knownRed ? ["--known-red", "known-red.json"] : []),
         "--results-file",
         "receipt.json"
       ])
       expect(result.exitCode, result.envelope + result.stderr).toBe(1)
       expect(result.envelope).toContain("targets_failed")
-      expect(result.envelope).toContain("1 of 3 targets failed")
+      if (!knownRed) expect(result.envelope).toContain("1 of 3 targets failed")
       expect(result.stderr).toContain("dependency //:review was skipped, so this target did not run")
       const receipt = JSON.parse(await Fs.readFile(NodePath.join(root, "receipt.json"), "utf8"))
       expect(receipt).toMatchObject({ ok: false, counts: { failed: 1, skipped: 2 } })

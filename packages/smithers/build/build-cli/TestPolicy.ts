@@ -11,16 +11,6 @@ export const legacyModuleReplacements: Readonly<Record<string, number>> = {
   "test/ContainedProcessWindows.test.ts": 2,
   "test/DockerOwnership.test.ts": 3,
   "test/DockerProbe.test.ts": 1,
-  "test/FetchRuleContract.test.ts": 1,
-  "test/FetchRuleEquivalence.test.ts": 1,
-  "test/GitCommit.test.ts": 1,
-  "test/GoExec.test.ts": 2,
-  "test/GoExecFailures.test.ts": 2,
-  "test/GoExecution.test.ts": 2,
-  "test/GoPlanningContracts.test.ts": 5,
-  "test/LaneExecution.test.ts": 1,
-  "test/MaterializeRollback.test.ts": 1,
-  "test/MemoryBackend.test.ts": 1,
   "test/NativeArtifactOutput.test.ts": 1,
   "test/Owners.test.ts": 1,
   "test/PlanDigestIndex.test.ts": 2,
@@ -28,4 +18,11 @@ export const legacyModuleReplacements: Readonly<Record<string, number>> = {
   "test/PlanInputSharing.test.ts": 2,
   "test/PackageExecReporter.test.ts": 2,
   "test/ServiceSupervisor.test.ts": 1
+}
+
+/** Existing process-platform patches outside the boundary suites; no additions are admitted. */
+export const legacyPlatformReplacements: Readonly<Record<string, number>> = {
+  "test/AgentPublication.test.ts": 4,
+  "test/ContainedProcessWindows.test.ts": 2,
+  "test/WindowsPathResolution.test.ts": 2
 }

@@ -31,6 +31,8 @@ class GoPatternRefused extends Data.TaggedError("smithers-build/GoPatternRefused
  */
 export interface Context {
   readonly root: string
+  /** Host platform selecting the SDK executable; defaults to this process. */
+  readonly platform?: NodeJS.Platform | undefined
   /** Cancels planning subprocesses when the run stops. */
   readonly signal?: AbortSignal | undefined
   /** Per-probe override in milliseconds; go list defaults to 60000, Nix to 300000. */
@@ -241,7 +243,11 @@ export const resolveGo = async (context: Context): Promise<
       identity: { tag: "GoBin", path, probe, selected }
     }
   }
-  const selectedGo = NodePath.join(sdk.GOROOT, "bin", process.platform === "win32" ? "go.exe" : "go")
+  const selectedGo = NodePath.join(
+    sdk.GOROOT,
+    "bin",
+    (context.platform ?? process.platform) === "win32" ? "go.exe" : "go"
+  )
   const executables = [path]
   for (const directory of [NodePath.join(String(sdk.GOROOT), "bin"), String(sdk.GOTOOLDIR)]) {
     for (

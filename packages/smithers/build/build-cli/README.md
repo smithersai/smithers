@@ -74,6 +74,8 @@ The API reference is derived from the JSDoc on the exported declarations in
 
 ## Testing
 
+Run `pnpm install` at the workspace root first; the catalog test loads all workspace declarations.
+
 Run `pnpm run check`, `pnpm run test --run`, and `pnpm run coverage --run`
 under a supported Node version. The suite runs two Vitest workers by default.
 Append `--fsModuleCache` to reuse transforms between runs. Coverage floors
@@ -82,7 +84,15 @@ functions `96.61%`, and lines `96.84%`. The conformance gate prevents a lower
 floor or weaker file override; add behavioral cases and raise these floors
 toward `100%`. Execution tests start real child CLIs and create temporary
 repositories outside this checkout, so cold process startup is part of their
-wall-clock cost.
+wall-clock cost. Linux execution fixtures also require `bubblewrap` on PATH.
+Install the pinned Rust toolchain for native executable fixtures.
+
+Subprocess boundary tests run real executables and wait for observed startup
+before cancellation. Executor faults use invocation-local `ExecutionServices`;
+artifact publication faults use the scoped `TreeIo` adapter, including directory
+fsync. These boundary suites never replace modules or change the process platform. Go SDK
+planning accepts `Context.platform` to select the executable name for a host;
+omitting it uses the running process platform.
 
 The Git fixtures require a working `git` executable. Tests that intentionally
 remove other tools from PATH retain only that executable; a forwarding wrapper

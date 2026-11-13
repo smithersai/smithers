@@ -6,13 +6,12 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import * as FetchExec from "../src/FetchExec.ts"
 import * as FetchPlan from "../src/internal/rules/FetchPlan.ts"
 import { contract } from "../src/internal/rules/FetchRule.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
-import * as Planner from "../src/Planner.ts"
 
 const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex")
 const body = (size: number) => Buffer.alloc(size, 0x61)
@@ -44,11 +43,9 @@ afterAll(async () => {
 })
 beforeEach(async () => {
   root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-fetch-contract-")))
-  vi.spyOn(Planner, "implementationFingerprint").mockResolvedValue("fetch-contract-fixture")
 })
 afterEach(async () => {
   received = undefined
-  vi.restoreAllMocks()
   await Fs.rm(root, { recursive: true, force: true })
 })
 

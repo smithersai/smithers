@@ -5,7 +5,7 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import { openCache } from "../src/Cache.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
@@ -18,7 +18,6 @@ const bytes = Buffer.from([0, 1, 2, 10, 13, 127, 128, 254, 255])
 const digest = createHash("sha256").update(bytes).digest("hex")
 const directories: Array<string> = []
 afterEach(async () => {
-  vi.restoreAllMocks()
   await Promise.all(directories.splice(0).map((root) => Fs.rm(root, { recursive: true, force: true })))
 })
 
@@ -71,7 +70,6 @@ const stableMaterial = (node: PackageExec.PackageNode): Planner.KeyMaterial => {
 
 describe("Fetch extraction goldens recorded through the original PackageExec path", () => {
   it("preserves complete key material, output, provenance, report, and cache replay", async () => {
-    vi.spyOn(Planner, "implementationFingerprint").mockResolvedValue("baseline-fixture")
     let requests = 0
     const server = createServer((_request, response) => {
       requests += 1

@@ -96,6 +96,13 @@ const joined = <A>(run: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, u
  */
 export interface ExecutionServices {
   readonly exec: typeof Exec.run
+  readonly findOnPath: (
+    ...args: Parameters<typeof PackageTree.findOnPath>
+  ) => Effect.Effect<string | undefined, unknown>
+  readonly captureFile: (
+    ...args: Parameters<typeof PackageTree.captureFile>
+  ) => Effect.Effect<PackageTree.FileManifest, unknown>
+  readonly revertIgnored: (...args: Parameters<typeof PackageTree.revertIgnored>) => Effect.Effect<boolean, unknown>
   readonly target: typeof runTarget
   readonly install: (
     ...args: Parameters<typeof runInstall>
@@ -119,6 +126,9 @@ export interface ExecutionServices {
  */
 export const executionServicesLive: ExecutionServices = {
   exec: Exec.run,
+  findOnPath: (...args) => Effect.sync(() => PackageTree.findOnPath(...args)),
+  captureFile: (...args) => joined(() => PackageTree.captureFile(...args)),
+  revertIgnored: (...args) => joined(() => PackageTree.revertIgnored(...args)),
   target: runTarget,
   install: (root, options) => joined((signal) => runInstall(root, { ...options, signal })),
   resolveGraph: RspackRunner.resolveGraph,
@@ -1048,7 +1058,7 @@ export const executeEffect = (
             if (stats.isDirectory()) {
               manifests.push(yield* joined(() => PackageTree.captureOutDir(root, cacheDirectory, path)))
             } else {
-              files.push(yield* joined(() => PackageTree.captureFile(root, cacheDirectory, path)))
+              files.push(yield* services.captureFile(root, cacheDirectory, path))
             }
           }
           return { kind: targetOutputsKind, result, manifests, files }
@@ -1123,7 +1133,7 @@ export const executeEffect = (
         )
         const files = yield* Effect.forEach(
           node.outFiles,
-          (file) => joined(() => PackageTree.captureFile(sourceRoot, cacheDirectory, file, root))
+          (file) => services.captureFile(sourceRoot, cacheDirectory, file, root)
         )
         if (publish) yield* cachePut(node, { kind: "build", manifests, files }, key, confined)
         return { manifests, files }
@@ -1133,7 +1143,7 @@ export const executeEffect = (
     const captureDirectoryArchive = (node: PackageNode): Effect.Effect<string | undefined, unknown> =>
       Effect.gen(function*() {
         if (node.outDirs.length !== 1) return "directory archive requires exactly one declared outDir"
-        const tar = PackageTree.findOnPath("tar")
+        const tar = yield* services.findOnPath("tar")
         if (
           tar === undefined
         ) return "host binary \"tar\" is not present on PATH; Go.ModDownload cache capture cannot run"
@@ -1147,7 +1157,7 @@ export const executeEffect = (
             [tar, "-cf", absoluteArchive, "-C", NodePath.join(root, ...node.outDirs[0]!.split("/")), "."]
           )
           if (!created.ok) return created.error
-          const manifest = yield* joined(() => PackageTree.captureFile(root, cacheDirectory, archive))
+          const manifest = yield* services.captureFile(root, cacheDirectory, archive)
           yield* cachePut(node, { kind: "directory-archive", outDir: node.outDirs[0], digest: manifest.digest })
           return undefined
         }).pipe(Effect.ensuring(
@@ -1166,7 +1176,7 @@ export const executeEffect = (
           record.kind !== "directory-archive" || record.outDir !== node.outDirs[0] ||
           typeof record.digest !== "string" || !PackageTree.isSha256Hex(record.digest)
         ) return false
-        const tar = PackageTree.findOnPath("tar")
+        const tar = yield* services.findOnPath("tar")
         if (tar === undefined) return false
         const archive = Input.resolvePath(cacheDirectory, `tmp/go-mod-${node.keyPreview}.tar`)
         const manifest: PackageTree.FileManifest = { path: archive, digest: record.digest, executable: false }
@@ -1544,7 +1554,7 @@ export const executeEffect = (
             // every gitignored file, so the revert is exact.
             for (const path of changed) yield* joined(() => PackageTree.revertPath(snapshot, path, quarantine))
             for (const path of changedIgnored) {
-              if (!(yield* joined(() => PackageTree.revertIgnored(ignored, path, quarantine)))) unrestored.push(path)
+              if (!(yield* services.revertIgnored(ignored, path, quarantine))) unrestored.push(path)
             }
             if (unrestored.length === 0) {
               return quarantine.held.length === 0 ? ran : { ok: false as const, error: `${ran.error}${kept()}` }
@@ -1564,7 +1574,7 @@ export const executeEffect = (
           for (const path of changedIgnored) {
             const resolved = PackageTree.resolveChangedPath(root, path)
             if (resolved === undefined || !matchesWriteSet(resolved, writeSet)) {
-              if (!(yield* joined(() => PackageTree.revertIgnored(ignored, path, quarantine)))) unrestored.push(path)
+              if (!(yield* services.revertIgnored(ignored, path, quarantine))) unrestored.push(path)
               ignoredOutOfSet.push(path)
             }
           }

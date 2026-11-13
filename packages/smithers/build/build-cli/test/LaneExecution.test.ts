@@ -28,7 +28,7 @@ import { createRequire } from "node:module"
 import * as NodeNet from "node:net"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as AgentFake from "../src/AgentFake.ts"
 import type * as AgentSession from "../src/AgentSession.ts"
 import { executeEffect, ExecutionServices, executionServicesLive } from "../src/internal/PackageRunner.ts"
@@ -38,6 +38,7 @@ import { graphKeySentinel, keyMaterialWithGraph } from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
+import { executeWithServices } from "./helpers/ExecuteWithServices.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -429,20 +430,25 @@ export const Package = S.Package({ targets: { svc, change } })
       const reverting: Array<Promise<boolean>> = []
       let stashDirectory: string | undefined
       let restored = false
-      const revert = vi.spyOn(PackageTree, "revertIgnored").mockImplementation((snapshot, path) => {
-        stashDirectory = snapshot.stash.directory
-        const pending = (async () => {
-          // Hold the revert long enough for the service scope to close first.
-          await new Promise((resolve) => setTimeout(resolve, 1000))
-          const result = await revertIgnored(snapshot, path)
-          restored = true
-          return result
-        })()
-        reverting.push(pending)
-        return pending
-      })
+      const revert: typeof executionServicesLive.revertIgnored = (snapshot, path, quarantine) =>
+        Effect.promise(() => {
+          stashDirectory = snapshot.stash.directory
+          const pending = (async () => {
+            // Hold the revert long enough for the service scope to close first.
+            await new Promise((resolve) => setTimeout(resolve, 1000))
+            const result = await revertIgnored(snapshot, path, quarantine)
+            restored = true
+            return result
+          })()
+          reverting.push(pending)
+          return pending
+        })
       try {
-        const result = await serve(root, ["//:change", "--write"], {
+        const result = await executeWithServices(root, ["//:change"], {
+          ...executionServicesLive,
+          revertIgnored: revert
+        }, {
+          write: true,
           signal: controller.signal,
           onLog: (line) => {
             if (failure === "interrupt" && line.includes("consumer-wrote")) controller.abort()
@@ -461,7 +467,6 @@ export const Package = S.Package({ targets: { svc, change } })
         // Drain the intentionally delayed cleanup even on the pre-fix failure.
         await new Promise((resolve) => setTimeout(resolve, 1500))
         await Promise.allSettled(reverting)
-        revert.mockRestore()
       }
     },
     60_000

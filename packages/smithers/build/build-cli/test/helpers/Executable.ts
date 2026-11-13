@@ -45,10 +45,8 @@ export const writeExecutable = async (
   const interpreter = shell ? process.platform === "win32" ? "sh" : "bash" : nodeInterpreter
   const programSource = shell ? shellArguments + source.slice(source.indexOf("\n") + 1) : source
   await Fs.writeFile(path, programSource, { mode: 0o755 })
-  const directory = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-fixture-exe-"))
   const executable = `${path}.exe`
-  try {
-    const code = `use std::{env, fs, process::{Command, exit}};
+  const code = `use std::{env, fs, process::{Command, exit}};
 fn take_input() -> std::process::Stdio {
   // Own the input handle so dropping Command after spawn releases the parent's
   // reader. Windows also has a CRT descriptor, which may be a distinct handle.
@@ -96,10 +94,18 @@ fn main() {
   match status { Ok(status) => exit(status.code().unwrap_or(1)), Err(error) => { eprintln!("{}", error); exit(96); } }
 }
 `
+  return writeNativeExecutable(executable, code)
+}
+
+/** Compiles a real native fixture with no interpreter or dispatcher process. */
+export const writeNativeExecutable = async (path: string, code: string): Promise<string> => {
+  await Fs.mkdir(Path.dirname(path), { recursive: true })
+  const directory = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-native-fixture-"))
+  try {
     const program = Path.join(directory, "fixture.rs")
     await Fs.writeFile(program, code)
-    await promisify(execFile)("rustc", ["--edition=2021", "--crate-name=fixture_cli", program, "-o", executable])
-    return executable
+    await promisify(execFile)("rustc", ["--edition=2021", "--crate-name=fixture_cli", program, "-o", path])
+    return path
   } finally {
     await Fs.rm(directory, { recursive: true, force: true })
   }

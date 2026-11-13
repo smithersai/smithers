@@ -9,9 +9,10 @@ import * as Target from "@smthrs/targets/Target"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import * as GoExec from "../src/GoExec.ts"
 import * as PackageTree from "../src/PackageTree.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 
 const roots: Array<string> = []
 afterAll(async () => {
@@ -124,22 +125,6 @@ describe.skipIf(process.platform === "win32")("resolveGo", () => {
       ok: false,
       refusal: "host binary \"go\" is not present on PATH",
       identity: { tag: "GoBin", absent: true }
-    })
-  })
-
-  it.each([
-    ["a failing go env", "{}", "2"],
-    ["unparseable go env output", "not json", "0"],
-    ["a go env without GOTOOLDIR", JSON.stringify({ GOROOT: "/sdk" }), "0"],
-    ["a go env with a non-string GOROOT", JSON.stringify({ GOROOT: 1, GOTOOLDIR: "/t" }), "0"]
-  ])("refuses %s", async (_name, output, exit) => {
-    await host.set("env.out", output)
-    await host.set("env.exit", exit)
-    const resolved = await GoExec.resolveGo(host.context)
-    expect(resolved).toMatchObject({
-      ok: false,
-      refusal: "go env could not identify GOROOT and GOTOOLDIR",
-      identity: { tag: "GoBin", path: NodePath.join(host.bin, "go"), probe: { exitCode: 0 } }
     })
   })
 
@@ -655,24 +640,71 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
   })
 })
 
+const sdkProbe = async (output: string, exitCode = 0) => {
+  const log = NodePath.join(host.root, "sdk-probe.jsonl")
+  const launcher = await writeExecutable(
+    NodePath.join(host.root, "launcher", "go"),
+    `#!/usr/bin/env node
+require("node:fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n")
+if (process.argv[2] === "version") process.stdout.write("go version go1.26.0 fixture/host")
+else {
+  process.stdout.write(${JSON.stringify(output)})
+  process.exitCode = ${exitCode}
+}
+`
+  )
+  return {
+    launcher,
+    log,
+    context: {
+      ...host.context,
+      environment: { ...process.env, PATH: NodePath.dirname(launcher) + NodePath.delimiter + process.env["PATH"] }
+    }
+  }
+}
+
+it.each(
+  [
+    ["a failing go env", "{}", 2],
+    ["malformed JSON", "{", 0],
+    ["null", "null", 0],
+    ["an array", "[]", 0],
+    ["a scalar", "42", 0],
+    ["missing GOROOT", JSON.stringify({ GOTOOLDIR: "tools" }), 0],
+    ["numeric GOROOT", JSON.stringify({ GOROOT: 1, GOTOOLDIR: "tools" }), 0],
+    ["missing GOTOOLDIR", JSON.stringify({ GOROOT: "sdk" }), 0],
+    ["null GOTOOLDIR", JSON.stringify({ GOROOT: "sdk", GOTOOLDIR: null }), 0],
+    ["a failing command with valid JSON", JSON.stringify({ GOROOT: "sdk", GOTOOLDIR: "tools" }), 1]
+  ] as const
+)("refuses SDK identification from %s on the native host", async (_name, output, exitCode) => {
+  const probe = await sdkProbe(output, exitCode)
+  expect(await GoExec.resolveGo(probe.context)).toMatchObject({
+    ok: false,
+    refusal: "go env could not identify GOROOT and GOTOOLDIR",
+    identity: { tag: "GoBin", path: probe.launcher, probe: { exitCode: 0 } }
+  })
+  expect((await Fs.readFile(probe.log, "utf8")).trim().split("\n").map((row) => JSON.parse(row))).toEqual([
+    ["version"],
+    ["env", "-json", "GOROOT", "GOTOOLDIR"]
+  ])
+})
+
 it("resolves the native Windows executable in the selected SDK", async () => {
   const { goroot, tooldir } = await sdk()
   const binary = NodePath.join(goroot, "bin", "go.exe")
   await Fs.rename(NodePath.join(goroot, "bin", "go"), binary)
-  const platform = Object.getOwnPropertyDescriptor(process, "platform")!
-  const find = vi.spyOn(PackageTree, "findOnPath").mockReturnValue(process.execPath)
-  const probe = vi.spyOn(PackageTree, "probeVersion")
-    .mockResolvedValueOnce({ exitCode: 0, output: "go version go1.26.0 windows/amd64" })
-    .mockResolvedValueOnce({ exitCode: 0, output: JSON.stringify({ GOROOT: goroot, GOTOOLDIR: tooldir }) })
-  try {
-    Object.defineProperty(process, "platform", { ...platform, value: "win32" })
-    const resolved = await GoExec.resolveGo(host.context)
-    expect(resolved).toMatchObject({ ok: true, path: binary })
-    expect(await Fs.stat(binary)).toBeDefined()
-    if (resolved.ok) expect(resolved.executables).toContain(binary)
-  } finally {
-    Object.defineProperty(process, "platform", platform)
-    find.mockRestore()
-    probe.mockRestore()
-  }
+  const probe = await sdkProbe(JSON.stringify({ GOROOT: goroot, GOTOOLDIR: tooldir }))
+  const resolved = await GoExec.resolveGo({ ...probe.context, platform: "win32" })
+  expect(resolved).toMatchObject({
+    ok: true,
+    path: binary,
+    executables: [
+      probe.launcher,
+      binary,
+      NodePath.join(goroot, "bin/gofmt"),
+      NodePath.join(tooldir, "compile"),
+      NodePath.join(tooldir, "link")
+    ]
+  })
+  expect(await Fs.stat(binary)).toBeDefined()
 })

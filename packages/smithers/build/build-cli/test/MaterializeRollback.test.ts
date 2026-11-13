@@ -4,15 +4,15 @@
  * The swap is two renames with nothing between them. A failure of the second
  * used to remove the temp tree, leave the declared output absent, and strand
  * the previous tree beside it as `.smthrs-old-<destination>-<stamp>`, worse than
- * either the old state or the new one. Injecting the failure needs the module boundary,
- * so this file mocks `node:fs/promises` and therefore stands apart from the
- * rest of the artifact-store suite.
+ * either the old state or the new one. Failures enter through the publication filesystem adapter, leaving the
+ * host filesystem and concurrent invocations untouched.
  */
 import { createHash } from "node:crypto"
 import * as RealFs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import * as PackageTree from "../src/PackageTree.ts"
 
 /** One-shot filesystem failures and parent-sync observations for the publish boundary. */
 const failure: {
@@ -33,62 +33,58 @@ const failure: {
   code: "ENOSPC"
 }
 
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:fs/promises")>()
-  return {
-    ...original,
-    default: original,
-    rename: async (from: string, to: string): Promise<void> => {
-      if (failure.renameTo !== undefined && String(to).includes(failure.renameTo)) {
-        // One shot: the rollback rename that follows must be allowed to run.
-        const code = failure.code
-        failure.renameTo = undefined
-        throw Object.assign(new Error(`${code}: injected`), { code })
-      }
-      return original.rename(from, to)
-    },
-    rm: async (...args: Parameters<typeof original.rm>): Promise<void> => {
-      if (failure.remove !== undefined && String(args[0]).includes(failure.remove)) {
-        const code = failure.removeCode ?? failure.code
-        failure.remove = undefined
-        failure.removeCode = undefined
-        throw Object.assign(new Error(`${code}: injected`), { code })
-      }
-      return original.rm(...args)
-    },
-    rmdir: async (...args: Parameters<typeof original.rmdir>): Promise<void> => {
-      if (failure.rmdirCode !== undefined && String(args[0]).includes(".smthrs-lock-")) {
-        const code = failure.rmdirCode
-        failure.rmdirCode = undefined
-        throw Object.assign(new Error(`${code}: injected`), { code })
-      }
-      return original.rmdir(...args)
-    },
-    open: async (...args: Parameters<typeof original.open>) => {
-      const handle = await original.open(...args)
-      const directory = String(args[0])
-      return new Proxy(handle, {
-        get(target, property) {
-          if (property === "sync") {
-            return async (): Promise<void> => {
-              failure.syncedDirectories.push(directory)
-              if (failure.syncCode !== undefined) {
-                const code = failure.syncCode
-                failure.syncCode = undefined
-                throw Object.assign(new Error(`${code}: injected`), { code })
-              }
-              await target.sync()
-            }
-          }
-          const value: unknown = Reflect.get(target, property, target)
-          return typeof value === "function" ? value.bind(target) : value
-        }
-      })
+const original = RealFs
+const io: PackageTree.TreeIo = {
+  ...original,
+  rename: async (...args: Parameters<typeof original.rename>): Promise<void> => {
+    const [from, to] = args
+    if (failure.renameTo !== undefined && String(to).includes(failure.renameTo)) {
+      // One shot: the rollback rename that follows must be allowed to run.
+      const code = failure.code
+      failure.renameTo = undefined
+      throw Object.assign(new Error(`${code}: injected`), { code })
     }
-  }
-})
-
-const PackageTree = await import("../src/PackageTree.ts")
+    return original.rename(from, to)
+  },
+  rm: async (...args: Parameters<typeof original.rm>): Promise<void> => {
+    if (failure.remove !== undefined && String(args[0]).includes(failure.remove)) {
+      const code = failure.removeCode ?? failure.code
+      failure.remove = undefined
+      failure.removeCode = undefined
+      throw Object.assign(new Error(`${code}: injected`), { code })
+    }
+    return original.rm(...args)
+  },
+  rmdir: async (...args: Parameters<typeof original.rmdir>): Promise<void> => {
+    if (failure.rmdirCode !== undefined && String(args[0]).includes(".smthrs-lock-")) {
+      const code = failure.rmdirCode
+      failure.rmdirCode = undefined
+      throw Object.assign(new Error(`${code}: injected`), { code })
+    }
+    return original.rmdir(...args)
+  },
+  open: (async (...args: Parameters<typeof original.open>) => {
+    const handle = await original.open(...args)
+    const directory = String(args[0])
+    return new Proxy(handle, {
+      get(target, property) {
+        if (property === "sync") {
+          return async (): Promise<void> => {
+            failure.syncedDirectories.push(directory)
+            if (failure.syncCode !== undefined) {
+              const code = failure.syncCode
+              failure.syncCode = undefined
+              throw Object.assign(new Error(`${code}: injected`), { code })
+            }
+            await target.sync()
+          }
+        }
+        const value: unknown = Reflect.get(target, property, target)
+        return typeof value === "function" ? value.bind(target) : value
+      }
+    })
+  }) as typeof RealFs.open
+}
 
 let root: string
 
@@ -141,7 +137,7 @@ describe("materializeManifest publishes or restores, never neither", () => {
     await PackageTree.materializeManifest(root, ".flows", {
       outDir: "dist",
       entries: [{ path: "a.txt", kind: "file", digest, executable: false, target: "" }]
-    })
+    }, io)
 
     expect(await RealFs.readFile(NodePath.join(root, "dist", "a.txt"), "utf8")).toBe("next")
     expect((await RealFs.readdir(root)).filter((name) => name.startsWith(".smthrs-old-"))).toEqual([])
@@ -153,7 +149,7 @@ describe("materializeManifest publishes or restores, never neither", () => {
     await expect(PackageTree.materializeManifest(root, ".flows", {
       outDir: "dist",
       entries: [{ path: "a.txt", kind: "file", digest, executable: false, target: "" }]
-    })).rejects.toThrow(/ENOSPC/)
+    }, io)).rejects.toThrow(/ENOSPC/)
 
     expect(await RealFs.readFile(NodePath.join(root, "dist", "previous.txt"), "utf8")).toBe("previous")
     expect((await RealFs.readdir(root)).filter((name) => name.startsWith(".smthrs-old-"))).toEqual([])
@@ -167,7 +163,7 @@ describe("materializeManifest publishes or restores, never neither", () => {
     await expect(PackageTree.materializeManifest(root, ".flows", {
       outDir: "dist",
       entries: [{ path: "a.txt", kind: "file", digest, executable: false, target: "" }]
-    })).rejects.toThrow(/EIO/)
+    }, io)).rejects.toThrow(/EIO/)
 
     expect(await RealFs.readFile(NodePath.join(root, "dist", "a.txt"), "utf8")).toBe("next")
     expect(await RealFs.lstat(NodePath.join(root, "dist", "previous.txt")).then(() => true, () => false)).toBe(false)
@@ -183,7 +179,7 @@ describe("materializeManifest publishes or restores, never neither", () => {
     await expect(PackageTree.materializeManifest(root, ".flows", {
       outDir: "dist",
       entries: [{ path: "a.txt", kind: "file", digest, executable: false, target: "" }]
-    })).rejects.toThrow("ENOSPC: injected")
+    }, io)).rejects.toThrow("ENOSPC: injected")
 
     expect(await RealFs.readFile(NodePath.join(root, "dist", "previous.txt"), "utf8")).toBe("previous")
     const remaining = await RealFs.readdir(root)
@@ -197,7 +193,7 @@ describe("materializeManifest publishes or restores, never neither", () => {
     await PackageTree.materializeManifest(root, ".flows", {
       outDir: "dist",
       entries: [{ path: "a.txt", kind: "file", digest, executable: false, target: "" }]
-    })
+    }, io)
     expect(failure.syncedDirectories).toContain(root)
   })
 
@@ -207,7 +203,7 @@ describe("materializeManifest publishes or restores, never neither", () => {
     await expect(PackageTree.materializeManifest(root, ".flows", {
       outDir: "dist",
       entries: [{ path: "a.txt", kind: "file", digest, executable: false, target: "" }]
-    })).resolves.toBeUndefined()
+    }, io)).resolves.toBeUndefined()
     expect(await RealFs.readFile(NodePath.join(root, "dist", "a.txt"), "utf8")).toBe("next")
   })
 
@@ -225,7 +221,7 @@ describe("materializeManifest publishes or restores, never neither", () => {
       await expect(PackageTree.materializeManifest(root, ".flows", {
         outDir: "dist",
         entries: [{ path: "a.txt", kind: "file", digest, executable: false, target: "" }]
-      })).rejects.toThrow(/EACCES/)
+      }, io)).rejects.toThrow(/EACCES/)
     } finally {
       failure.code = "ENOSPC"
     }

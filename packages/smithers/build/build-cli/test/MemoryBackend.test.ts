@@ -5,12 +5,12 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
-import * as ContainedProcess from "../src/internal/ContainedProcess.ts"
 import * as MemoryBackend from "../src/MemoryBackend.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
+import { hungExecutable } from "./helpers/HungExecutable.ts"
 
 /** Temp directories this file created; removed after the suite so a run leaves nothing in the OS temp dir. */
 const temporaryDirectories: Array<string> = []
@@ -311,12 +311,7 @@ esac
   })
 })
 
-vi.mock("../src/internal/ContainedProcess.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof ContainedProcess>()
-  return { ...actual, run: vi.fn(actual.run) }
-})
 afterEach(() => {
-  vi.restoreAllMocks()
   vi.unstubAllEnvs()
 })
 
@@ -339,45 +334,52 @@ describe("subprocess boundaries", () => {
     expect(JSON.parse(output.stdout)).toEqual({ allowed: "kept" })
   })
 
-  it.each(["git", "cli"] as const)("aborts a hung memory %s subprocess", async (kind) => {
+  it.each(["git", "cli"] as const)("aborts a running memory %s subprocess", async (kind) => {
+    const root = await temporaryRoot()
+    const child = await hungExecutable(root, kind === "git" ? "git" : "memory-cli")
     const controller = new AbortController()
-    const actual = await vi.importActual<typeof ContainedProcess>("../src/internal/ContainedProcess.ts")
-    vi.mocked(ContainedProcess.run).mockImplementationOnce((options) => {
-      const pending = actual.run({
-        ...options,
-        command: process.execPath,
-        args: ["-e", "setTimeout(() => process.exit(9), 1500)"]
+    try {
+      const pending = MemoryBackend.retain({
+        root,
+        target: retainTarget(),
+        memory,
+        environment: { ...process.env, PATH: root + NodePath.delimiter + process.env["PATH"] },
+        locator: { find: async () => child.binary },
+        ...(kind === "cli" ? { resolveSource } : {}),
+        signal: controller.signal,
+        timeoutMs: 10_000
       })
-      setTimeout(() => controller.abort(), 20)
-      return pending
-    })
-    await expect(MemoryBackend.retain({
-      root: Os.tmpdir(),
-      target: retainTarget(),
-      memory,
-      locator: { find: async () => process.execPath },
-      ...(kind === "cli" ? { resolveSource } : {}),
-      signal: controller.signal,
-      timeoutMs: 10_000
-    })).rejects.toThrow(/abort/i)
+      const rejected = expect(pending).rejects.toThrow(/abort/i)
+      await Promise.race([
+        child.started,
+        pending.then(() => {
+          throw new Error("memory ended before readiness")
+        })
+      ])
+      controller.abort()
+      await rejected
+      await expect.poll(child.alive, { timeout: 5_000 }).toBe(false)
+    } finally {
+      await child.close()
+    }
   })
 
-  it.each(["git", "cli"] as const)("bounds a hung memory %s subprocess with a timeout", async (kind) => {
-    const actual = await vi.importActual<typeof ContainedProcess>("../src/internal/ContainedProcess.ts")
-    vi.mocked(ContainedProcess.run).mockImplementationOnce((options) =>
-      actual.run({
-        ...options,
-        command: process.execPath,
-        args: ["-e", "setTimeout(() => process.exit(9), 1500)"]
-      })
-    )
-    await expect(MemoryBackend.retain({
-      root: Os.tmpdir(),
-      target: retainTarget(),
-      memory,
-      locator: { find: async () => process.execPath },
-      ...(kind === "cli" ? { resolveSource } : {}),
-      timeoutMs: 30
-    })).rejects.toThrow(/timed out after 30ms/)
+  it.each(["git", "cli"] as const)("bounds a running memory %s subprocess with a timeout", async (kind) => {
+    const root = await temporaryRoot()
+    const child = await hungExecutable(root, kind === "git" ? "git" : "memory-cli")
+    try {
+      await expect(MemoryBackend.retain({
+        root,
+        target: retainTarget(),
+        memory,
+        environment: { ...process.env, PATH: root + NodePath.delimiter + process.env["PATH"] },
+        locator: { find: async () => child.binary },
+        ...(kind === "cli" ? { resolveSource } : {}),
+        timeoutMs: 500
+      })).rejects.toThrow(/timed out after 500ms/)
+      await expect.poll(child.alive, { timeout: 5_000 }).toBe(false)
+    } finally {
+      await child.close()
+    }
   })
 })

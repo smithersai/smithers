@@ -6,7 +6,9 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
 import * as GitCommit from "../src/GitCommit.ts"
-import * as ContainedProcess from "../src/internal/ContainedProcess.ts"
+import * as PackageTree from "../src/PackageTree.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
+import { hungExecutable } from "./helpers/HungExecutable.ts"
 
 /** Temp directories this file created; removed after the suite so a run leaves nothing in the OS temp dir. */
 const temporaryDirectories: Array<string> = []
@@ -545,70 +547,77 @@ describe("a git command that cannot run is not an exit code", () => {
   })
 })
 
-vi.mock("../src/internal/ContainedProcess.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof ContainedProcess>()
-  return { ...actual, run: vi.fn(actual.run) }
-})
 afterEach(() => {
-  vi.restoreAllMocks()
   vi.unstubAllEnvs()
 })
 
 describe("subprocess bounds", () => {
-  it("passes the run signal, deadline and sanitized environment to every git command", async () => {
+  it("sanitizes the environment of every real git command", async () => {
     const root = await temporaryRepo()
+    const realGit = PackageTree.findOnPath("git")!
+    const bin = NodePath.join(root, ".bin")
+    const log = NodePath.join(root, ".git", "environment.jsonl")
+    await writeExecutable(
+      NodePath.join(bin, "git"),
+      `#!/usr/bin/env node
+const fs = require("node:fs")
+const cp = require("node:child_process")
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({
+  credential: process.env.TEST_WORKSPACE_CACHE_CREDENTIAL,
+  editor: process.env.GIT_EDITOR, prompt: process.env.GIT_TERMINAL_PROMPT
+}) + "\\n")
+const result = cp.spawnSync(${JSON.stringify(realGit)}, process.argv.slice(2), { stdio: "inherit" })
+process.exit(result.status ?? 1)
+`
+    )
+    await Fs.appendFile(NodePath.join(root, ".git", "info", "exclude"), "\n.bin/\n")
     await Fs.writeFile(NodePath.join(root, "feature.txt"), "new\n")
-    const controller = new AbortController()
-    vi.stubEnv("TEST_WORKSPACE_CACHE_CREDENTIAL", "invented-test-marker")
-    vi.mocked(ContainedProcess.run).mockClear()
     await GitCommit.commit({
       root,
       target: fixedCommit(),
       gateRunner: greenGates,
       paths: ["feature.txt"],
-      signal: controller.signal,
+      environment: {
+        ...process.env,
+        PATH: bin + NodePath.delimiter + process.env["PATH"],
+        TEST_WORKSPACE_CACHE_CREDENTIAL: "invented-test-marker"
+      },
       sensitiveNames: ["TEST_WORKSPACE_CACHE_CREDENTIAL"]
     })
-    const calls = vi.mocked(ContainedProcess.run).mock.calls
+    const calls = (await Fs.readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line))
     expect(calls.length).toBeGreaterThan(5)
-    for (const call of calls) {
-      expect(call[0]).toMatchObject({
-        signal: controller.signal,
-        timeoutMs: 60_000,
-        maxOutputBytes: 8 * 1024 * 1024,
-        environment: { GIT_TERMINAL_PROMPT: "0", GIT_EDITOR: "true" }
-      })
-      expect(Object.hasOwn(call[0].environment!, "TEST_WORKSPACE_CACHE_CREDENTIAL")).toBe(
-        false
-      )
-    }
+    for (const call of calls) expect(call).toEqual({ editor: "true", prompt: "0" })
   })
 
-  it.each(["abort", "timeout"] as const)("bounds a hung git with %s", async (mode) => {
+  it.each(["abort", "timeout"] as const)("bounds a running git with %s", async (mode) => {
+    const root = await temporaryRepo()
+    const bin = NodePath.join(root, ".bin")
+    await Fs.mkdir(bin)
+    const child = await hungExecutable(bin, "git")
     const controller = new AbortController()
-    const actual = await vi.importActual<typeof ContainedProcess>("../src/internal/ContainedProcess.ts")
-    vi.mocked(ContainedProcess.run).mockImplementationOnce((options) => {
-      const pending = actual.run({
-        ...options,
-        command: process.execPath,
-        args: ["-e", "setTimeout(() => process.exit(9), 1500)"]
-      })
-      if (mode === "abort") setTimeout(() => controller.abort(), 20)
-      return pending
-    })
-    const error = await failure(GitCommit.commit({
-      root: Os.tmpdir(),
-      target: fixedCommit(),
-      gateRunner: greenGates,
-      signal: controller.signal,
-      timeoutMs: mode === "timeout" ? 30 : 10_000
-    }))
-    expect(error.message).toMatch(mode === "abort" ? /ABORT_ERR/ : /timed out/)
-    expect(vi.mocked(ContainedProcess.run).mock.calls.at(-1)?.[0]).toMatchObject({
-      signal: controller.signal,
-      timeoutMs: mode === "timeout" ? 30 : 10_000,
-      environment: { GIT_TERMINAL_PROMPT: "0", GIT_EDITOR: "true" }
-    })
+    try {
+      const pending = failure(GitCommit.commit({
+        root,
+        target: fixedCommit(),
+        gateRunner: greenGates,
+        environment: { ...process.env, PATH: bin + NodePath.delimiter + process.env["PATH"] },
+        signal: controller.signal,
+        timeoutMs: mode === "timeout" ? 500 : 10_000
+      }))
+      if (mode === "abort") {
+        await Promise.race([
+          child.started,
+          pending.then(() => {
+            throw new Error("git ended before readiness")
+          })
+        ])
+        controller.abort()
+      }
+      expect((await pending).message).toMatch(mode === "abort" ? /ABORT_ERR/ : /timed out/)
+      await expect.poll(child.alive, { timeout: 5_000 }).toBe(false)
+    } finally {
+      await child.close()
+    }
   })
 
   it("parses a staged rename followed by a modified sibling", async () => {
@@ -644,30 +653,21 @@ describe("subprocess bounds", () => {
     await git(root, ["add", "-A"])
     expect(await git(root, ["diff", "--cached", "-C", "--find-copies-harder", "--name-status", "-z"]))
       .toBe("C100\0a.txt\0b.txt\0M\0sibling.txt\0")
-    // status does not consistently discover copies across Git versions. Supply
-    // its documented C record for the copy that diff -C verified above.
-    const actual = await vi.importActual<typeof ContainedProcess>("../src/internal/ContainedProcess.ts")
-    vi.mocked(ContainedProcess.run).mockImplementation(async (options) => {
-      if (options.args[0] === "status") {
-        options.stdout("C  b.txt\0a.txt\0M  sibling.txt\0")
-        return 0
-      }
-      return actual.run(options)
+    await git(root, ["config", "status.renames", "copies"])
+    await Fs.appendFile(NodePath.join(root, "a.txt"), "changed\n")
+    await git(root, ["add", "a.txt"])
+    const status = await git(root, ["status", "--porcelain", "-z"])
+    expect(status).toContain("C  b.txt\0a.txt\0")
+    const refusal = await failure(GitCommit.commit({ root, target: fixedCommit(), gateRunner: greenGates }))
+    expect(refusal.code).toBe("unrelated_changes")
+    expect(refusal.message).toContain("carries 3 change(s)")
+    expect(refusal.message).toMatch(/declared: a.txt, b.txt, sibling.txt$/)
+    const result = await GitCommit.commit({
+      root,
+      target: fixedCommit(),
+      gateRunner: greenGates,
+      paths: ["a.txt", "b.txt", "sibling.txt"]
     })
-    try {
-      const refusal = await failure(GitCommit.commit({ root, target: fixedCommit(), gateRunner: greenGates }))
-      expect(refusal.code).toBe("unrelated_changes")
-      expect(refusal.message).toContain("carries 2 change(s)")
-      expect(refusal.message).toMatch(/declared: b.txt, sibling.txt$/)
-      const result = await GitCommit.commit({
-        root,
-        target: fixedCommit(),
-        gateRunner: greenGates,
-        paths: ["b.txt", "sibling.txt"]
-      })
-      expect(result.staged).toEqual(["b.txt", "sibling.txt"])
-    } finally {
-      vi.mocked(ContainedProcess.run).mockImplementation(actual.run)
-    }
+    expect(result.staged).toEqual(["a.txt", "b.txt", "sibling.txt"])
   })
 })

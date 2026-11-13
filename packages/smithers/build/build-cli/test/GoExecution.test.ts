@@ -1,16 +1,19 @@
 import { Smithers as S } from "@smthrs/targets"
+import * as Effect from "effect/Effect"
 import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterAll, describe, expect, it, vi } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import * as GoExec from "../src/GoExec.ts"
+import * as Runner from "../src/internal/PackageRunner.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
+import { executeWithServices } from "./helpers/ExecuteWithServices.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -448,16 +451,13 @@ func TestExternalImport(t *testing.T) { if externalhelper.Want < 1 || helper.Wan
       NodePath.join(root, "fake-tar"),
       "#!/bin/sh\nif [ \"$1\" = \"-cf\" ]; then printf partial > \"$2\"; echo archive-failed >&2; exit 1; fi\necho fixture-tar\n"
     )
-    const findOnPath = PackageTree.findOnPath
-    const find = vi.spyOn(PackageTree, "findOnPath").mockImplementation((name) =>
-      name === "tar" ? tar : findOnPath(name)
-    )
-    let result: Awaited<ReturnType<typeof serve>>
-    try {
-      result = await serve(root, ["//:fetch"])
-    } finally {
-      find.mockRestore()
-    }
+    const result = await executeWithServices(root, ["//:fetch"], {
+      ...Runner.executionServicesLive,
+      findOnPath: (name, environment) =>
+        name === "tar"
+          ? Effect.succeed(tar)
+          : Runner.executionServicesLive.findOnPath(name, environment)
+    })
     expect(result.exitCode).toBe(1)
     expect(result.logs).toContain("archive-failed")
     expect(await Fs.readdir(NodePath.join(root, ".flows/tmp"))).toEqual([])
@@ -467,25 +467,26 @@ func TestExternalImport(t *testing.T) { if externalhelper.Want < 1 || helper.Wan
     const root = await fixture()
     await write(root, ".gomodcache/fixture-module", "cached module\n")
     await write(root, "PACKAGE.ts", packageWithoutSandbox(await Fs.readFile(NodePath.join(root, "PACKAGE.ts"), "utf8")))
-    const captureFile = PackageTree.captureFile
     let capturedArchive = false
-    const capture = vi.spyOn(PackageTree, "captureFile").mockImplementation(async (...args) => {
-      if (args[2].startsWith(".flows/tmp/go-mod-")) {
-        expect((await Fs.stat(NodePath.join(root, args[2]))).size).toBeGreaterThan(0)
-        capturedArchive = true
-        throw new Error("fixture capture failure")
-      }
-      return captureFile(...args)
+    const result = await executeWithServices(root, ["//:fetch"], {
+      ...Runner.executionServicesLive,
+      captureFile: (...args) =>
+        Effect.gen(function*() {
+          if (args[2].startsWith(".flows/tmp/go-mod-")) {
+            const stat = yield* Effect.promise(() => Fs.stat(NodePath.join(root, args[2])))
+            expect(stat.size).toBeGreaterThan(0)
+            capturedArchive = true
+            return yield* Effect.fail(new Error("fixture capture failure"))
+          }
+          return yield* Runner.executionServicesLive.captureFile(...args)
+        })
     })
-    try {
-      const result = await serve(root, ["//:fetch"])
-      expect(capturedArchive, result.output + result.logs).toBe(true)
-      expect(result.exitCode).toBe(1)
-      expect(result.logs).toContain("fixture capture failure")
-      expect(await Fs.readdir(NodePath.join(root, ".flows/tmp"))).toEqual([])
-    } finally {
-      capture.mockRestore()
-    }
+    expect(capturedArchive, result.output + result.logs).toBe(true)
+    expect(result.exitCode).toBe(1)
+    expect(result.logs).toContain("fixture capture failure")
+    expect(await Fs.readdir(NodePath.join(root, ".flows/tmp"))).toEqual([])
+    const recovered = await serve(root, ["//:fetch"])
+    expect(recovered.exitCode, recovered.output + recovered.logs).toBe(0)
   }, 120_000)
 
   it("captures the module cache as one tar blob and restores it on a hit", async () => {

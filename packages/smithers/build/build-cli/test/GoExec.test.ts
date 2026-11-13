@@ -1,101 +1,78 @@
 import { Smithers as S } from "@smthrs/targets"
-import * as NodeChildProcess from "node:child_process"
+import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
-import { describe, expect, it, vi } from "vitest"
+import * as Path from "node:path"
+import { afterAll, describe, expect, it } from "vitest"
 import * as GoExec from "../src/GoExec.ts"
-import * as PackageTree from "../src/PackageTree.ts"
+import { hungExecutable } from "./helpers/HungExecutable.ts"
 
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof NodeChildProcess>()
-  return { ...actual, execFile: vi.fn(actual.execFile) }
+const roots: Array<string> = []
+afterAll(async () => {
+  await Promise.all(roots.map((root) => Fs.rm(root, { recursive: true, force: true })))
 })
+const context = async () => {
+  const root = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-go-bounds-"))
+  roots.push(root)
+  return {
+    root,
+    packagePath: "",
+    environment: { ...process.env, PATH: root + Path.delimiter + process.env["PATH"] },
+    workspace: S.Workspace("bounds", {
+      repository: "git+https://example.test/bounds.git",
+      cache: S.Cache({ directory: ".flows" })
+    })
+  }
+}
 
 describe("Go planning subprocess bounds", () => {
-  it.each(["go list", "nix"] as const)("aborts a hung %s probe", async (kind) => {
+  it.each(["go list", "nix"] as const)("aborts a running %s probe", async (kind) => {
+    const host = await context()
+    const child = await hungExecutable(host.root, kind === "nix" ? "nix" : "go")
     const controller = new AbortController()
-    const actual = await vi.importActual<typeof NodeChildProcess>("node:child_process")
-    vi.mocked(NodeChildProcess.execFile).mockImplementationOnce(
-      ((
-        file: string,
-        args: ReadonlyArray<string>,
-        options: NodeChildProcess.ExecFileOptionsWithStringEncoding,
-        callback: (error: NodeChildProcess.ExecFileException | null, stdout: string, stderr: string) => void
-      ) => {
-        const child = actual.execFile(
-          process.execPath,
-          ["-e", "setTimeout(() => process.exit(9), 1500)"],
-          options,
-          callback
-        )
-        setTimeout(() => controller.abort(), 20)
-        return child
-      }) as typeof NodeChildProcess.execFile
-    )
-    const context = {
-      root: Os.tmpdir(),
-      packagePath: "",
-      signal: controller.signal,
-      workspace: S.Workspace("bounds", {
-        repository: "git+https://example.test/bounds.git",
-        cache: S.Cache({ directory: ".flows" }),
-        toolchains: [
-          S.Go.Toolchain({
-            mod: S.file("//go.mod"),
-            sum: S.file("//go.sum"),
-            versions: S.Nix.DevShell({ flake: S.file("//flake.nix"), lock: S.file("//flake.lock") })
-          })
-        ]
-      })
+    try {
+      const pending = kind === "nix"
+        ? GoExec.resolveNix("go", { ...host, signal: controller.signal })
+        : GoExec.planRule("Go.Packages", { pkgs: ["./..."] }, { ...host, signal: controller.signal }, child.binary)
+      const rejected = kind === "nix" ? undefined : expect(pending).rejects.toThrow(/abort/i)
+      const pid = await Promise.race([
+        child.started,
+        pending.then(() => {
+          throw new Error("probe ended before readiness")
+        })
+      ])
+      controller.abort()
+      if (kind === "nix") expect(await pending).toMatchObject({ ok: false, refusal: expect.stringMatching(/abort/i) })
+      else await rejected
+      expect(Number.isSafeInteger(pid) && pid > 0).toBe(true)
+      await expect.poll(child.alive, { timeout: 5_000 }).toBe(false)
+    } finally {
+      await child.close()
     }
-    if (kind === "go list") {
-      await expect(GoExec.planRule("Go.Packages", { pkgs: ["./..."] }, context, process.execPath))
-        .rejects.toThrow(/abort/i)
-    } else {
-      const found = vi.spyOn(PackageTree, "findOnPath").mockReturnValue(process.execPath)
-      try {
-        const result = await GoExec.resolveNix("go", context)
-        expect(result).toMatchObject({ ok: false, refusal: expect.stringMatching(/abort/i) })
-      } finally {
-        found.mockRestore()
-      }
-    }
-    expect(vi.mocked(NodeChildProcess.execFile).mock.calls.at(-1)?.[2]).toMatchObject({
-      signal: controller.signal,
-      timeout: kind === "nix" ? 300_000 : 60_000
-    })
   })
 
-  it("times out go list with the context deadline", async () => {
-    const actual = await vi.importActual<typeof NodeChildProcess>("node:child_process")
-    vi.mocked(NodeChildProcess.execFile).mockImplementationOnce(
-      ((
-        file: string,
-        args: ReadonlyArray<string>,
-        options: NodeChildProcess.ExecFileOptionsWithStringEncoding,
-        callback: (error: NodeChildProcess.ExecFileException | null, stdout: string, stderr: string) => void
-      ) =>
-        actual.execFile(
-          process.execPath,
-          ["-e", "setTimeout(() => process.exit(9), 1500)"],
-          options,
-          callback
-        )) as typeof NodeChildProcess.execFile
-    )
-    await expect(GoExec.planRule("Go.Packages", { pkgs: ["./..."] }, {
-      root: Os.tmpdir(),
-      packagePath: "",
-      timeoutMs: 30,
-      workspace: S.Workspace("bounds", {
-        repository: "git+https://example.test/bounds.git",
-        cache: S.Cache({ directory: ".flows" }),
-        toolchains: [
-          S.Go.Toolchain({
-            mod: S.file("//go.mod"),
-            sum: S.file("//go.sum"),
-            versions: S.Nix.DevShell({ flake: S.file("//flake.nix"), lock: S.file("//flake.lock") })
+  it.each(process.platform === "win32" ? [true] : [false, true])(
+    "times out go list and leaves no live process (native: %s)",
+    async (native) => {
+      const host = await context()
+      const child = await hungExecutable(host.root, "go", native)
+      try {
+        const pending = GoExec.planRule("Go.Packages", { pkgs: ["./..."] }, {
+          ...host,
+          timeoutMs: 500
+        }, child.binary)
+        const rejected = expect(pending).rejects.toThrow(/timed out after 500ms/)
+        const pid = await Promise.race([
+          child.started,
+          pending.then(() => {
+            throw new Error("probe ended before readiness")
           })
-        ]
-      })
-    }, process.execPath)).rejects.toThrow(/timed out after 30ms/)
-  })
+        ])
+        await rejected
+        expect(Number.isSafeInteger(pid) && pid > 0).toBe(true)
+        await expect.poll(child.alive, { timeout: 5_000 }).toBe(false)
+      } finally {
+        await child.close()
+      }
+    }
+  )
 })

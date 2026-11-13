@@ -1729,10 +1729,10 @@ const unsupportedSync = new Set(["EINVAL", "EPERM", "EISDIR", "EACCES", "ENOTSUP
  * Flushes one path on the hosts that support fsync on it: a freshly written
  * temp blob before its publishing rename, and the parent directory after one.
  */
-const syncForPublish = async (path: string): Promise<void> => {
+const syncForPublish = async (path: string, io: TreeIo = Fs): Promise<void> => {
   let handle: Awaited<ReturnType<typeof Fs.open>> | undefined
   try {
-    handle = await Fs.open(path, "r")
+    handle = await io.open(path, "r")
     await handle.sync()
   } catch (cause) {
     const code = errno(cause)
@@ -2344,7 +2344,7 @@ export const materializeManifest = async (
       }
       throw cause
     }
-    await syncForPublish(parent)
+    await syncForPublish(parent, io)
     if (hadOld) await io.rm(old, { recursive: true, force: true })
   } catch (cause) {
     await io.rm(temp, { recursive: true, force: true }).catch(() => {})
