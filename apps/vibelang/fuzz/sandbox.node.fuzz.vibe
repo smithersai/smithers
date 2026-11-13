@@ -142,3 +142,38 @@ it.live("sandbox/object-lifecycle", () => run("sandbox/object-lifecycle", Object
   }
   return true
 }))
+
+const Evicted = Schema.Struct({ role: Schema.Literals(["contributor", "maintainer"]), command: Schema.Literals(["make", "ls", "echo hi > f", "cat f", "pwd"]) })
+
+/**
+ * A command an evicted incarnation left running (b49d96d4): the next incarnation over the same storage settles it
+ * `command-uncertain` on the read that finds it, so nothing is pending; the old fiber, when its machine call returns,
+ * finds that receipt and answers uncertain too; a replay answers the same; and the machine ran the command once.
+ */
+it.live("sandbox/evicted-command", () => run("sandbox/evicted-command", Evicted, ({ role, command }) => effect {
+  const entered = try Deferred.make<void>()
+  const release = try Deferred.make<void>()
+  const ran: Array<string> = []
+  const machines: Machines = { start: () => Effect.void, stop: () => Effect.void, lease: () => succeed(true), command: (_id, _generation, operationId) => sync(() => { ran.push(operationId); return "done" }) }
+  const held: Machines = { ...machines, command: (id, generation, operationId, text) => effect {
+    try Deferred.succeed(entered, undefined)
+    try Deferred.await(release)
+    return try machines.command(id, generation, operationId, text)
+  } }
+  const storage = (try Effect.try(() => objectStorage())) as unknown as Sandboxes.SandboxStorage
+  const evicted = try Effect.provide(Sandboxes.open(storage, held), mockPolicy(role))
+  const started = (try Sandboxes.execute("h", storage, evicted, "start", "c-1", "op-1", 0, "")) as SandboxSnapshot
+  const running = try Effect.forkChild(Effect.result(evicted.command("c-1", "op-2", command, started.generation)).pipe(Effect.provide(mockPolicy(role))))
+  try Deferred.await(entered)
+  const next = try Effect.provide(Sandboxes.open(storage, machines), mockPolicy(role))
+  try Effect.provide(next.tick(), mockPolicy(role))
+  const settled = try Effect.try(() => {
+    const rows = storage.sql.exec<{ body: string }>("SELECT body FROM vibelang_sandbox_state WHERE id = 1").toArray()
+    return rows[0] !== undefined && (JSON.parse(rows[0].body) as { readonly pending: unknown }).pending === null
+  })
+  try Deferred.succeed(release, undefined)
+  const answered = try Fiber.join(running)
+  const replayed = try Effect.result(Sandboxes.execute("h", storage, next, "command", "c-1", "op-2", started.generation, command))
+  const uncertain = (result: typeof answered | typeof replayed) => result._tag === "Failure" && result.failure._tag === "Unavailable" && result.failure.reason === "command-uncertain"
+  return settled && uncertain(answered) && uncertain(replayed) && JSON.stringify(ran) === JSON.stringify(["op-2"])
+}))
