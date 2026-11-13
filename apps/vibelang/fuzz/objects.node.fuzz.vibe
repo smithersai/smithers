@@ -10,7 +10,7 @@ import type { HistoryReader } from "../src/history/tools.vibe"
 import * as Objects from "../worker/Objects.vibe"
 import * as Daily from "../worker/Budget.vibe"
 import * as Accounting from "../worker/ReplyAccounting.vibe"
-import { readerOver } from "../worker/HistoryObject.vibe"
+import { readerOver, unrouted as publisherRouter } from "../worker/HistoryObject.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { objectStorage } from "../test/support/objectStorage.ts"
 import { run, same, Finding, Int, TextOrBoundary, REPLAY_FLOOR } from "./run.vibe"
@@ -178,6 +178,10 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
       const started = try exit(Objects.unrouted.start(intent))
       const woken = try exit(Objects.unrouted.wake(`reply/m${pick}`))
       if (started._tag !== "Failure" || woken._tag !== "Failure") throw new Finding({ report: "a reply or tour execution routed a flow" })
+      // The History object's publisher hands each round only to its next one, kept in its own object (0015).
+      const published = try exit(publisherRouter.start({ ...intent, flow: "vibelang/history/Publish" }))
+      const roused = try exit(publisherRouter.wake(`history-publish/${pick}`))
+      if (published._tag !== "Failure" || roused._tag !== "Failure") throw new Finding({ report: "the History publisher routed a flow" })
       // Tours with no host wake: waking them writes nothing and arms nothing.
       const before = try sequencer.snapshot()
       try Objects.toursOf(sequencer, () => Effect.void).wake()

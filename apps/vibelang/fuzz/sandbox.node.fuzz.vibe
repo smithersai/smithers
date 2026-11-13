@@ -100,6 +100,8 @@ it.live("sandbox/http-surface", () => run("sandbox/http-surface", HttpInput, (in
   for (const route of ["start", "stop", "command"] as const) {
     if (!(try surface({ method: "POST", route, body: "valid", length: "true", gateway: "signed-out" }))) return false
   }
+  // A command write that names a generation and no command: refused before the gateway (chosen, 0015).
+  if (!(try surface({ method: "POST", route: "command", body: "no-command", length: "true", gateway: "ok" }))) return false
   return try surface(input)
 }))
 

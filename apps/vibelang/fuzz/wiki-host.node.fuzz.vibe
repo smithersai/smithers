@@ -229,6 +229,12 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
       const stored = try githubWikiHost(repo, storage).pipe(Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)))
       const unknown = try Effect.result(stored.perform({ op: "read", page: "no-such-page", base: "", text: "", key: "k1" }).pipe(Effect.provide(WebCrypto.layer)) as typeof WikiState.Type!WikiFailure)
       if (unknown._tag !== "Failure" || unknown.failure.reason !== "missing" || unknown.failure.unwritten === true) throw new Finding({ report: `an unknown page answered ${reasonOf(unknown)}` })
+      // One host that reads a page twice holds one copy of it: a read replaces the page it observed before.
+      for (const turn of [1, 2]) {
+        const read = try Effect.result(stored.perform({ op: "read", page, base: "", text: "", key: "k1" }).pipe(Effect.provide(WebCrypto.layer)) as typeof WikiState.Type!WikiFailure)
+        const copies = read._tag === "Success" ? read.success.pages.filter((entry) => entry.id === page).length : 0
+        if (copies !== 1 || (read._tag === "Success" && read.success.seq !== turn)) throw new Finding({ report: `read ${turn} of one host holds ${copies} copies of its page` })
+      }
       // A connected person on a host with no storage: nothing to keep the text in, and still no write.
       const connected: WikiAuthority.Shape = { current: () => succeed({ id: "7", login: "fuzz", role: "maintainer" as const, connection: { person: 1, delegation: "fixture-delegation" } }) }
       const bare = try githubWikiHost(repo).pipe(Effect.provideService(WikiAuthority, connected), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)))

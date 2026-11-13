@@ -12,11 +12,13 @@ import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
 import * as Accounts from "../worker/Accounts.vibe"
 import { wikiRepository } from "../worker/Wiki.vibe"
+import { repository as issueRepository } from "../worker/Issues.vibe"
 import { may, type Role } from "../src/core/conversation.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "../test/support/objectStorage.ts"
 import { run, stepped, Int, STEERED_FLOOR } from "./run.vibe"
 import { delegated as smithersConnection, reach } from "./delegated.vibe"
+import { fakeClient, seed } from "./issues-node-fake.vibe"
 
 const SITE = "https://factory.example"
 const BROKER = "https://broker.example"
@@ -66,12 +68,21 @@ type Jar = Map<string, string>
 /** The world's GitHub when person 7's delegation is smithers.sh's real one: down, so no write lands. */
 const githubDown = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 503 })))))
 
+/** The in-memory GitHub serving the site's issue repository, which smithers.sh's grant names (id 1). */
+const servingIssues = () => {
+  const fake = Object.assign(seed(), { repositories: { [`${issueRepository.owner}/${issueRepository.name}`]: { id: 1, name: issueRepository.name, owner: { login: issueRepository.owner }, default_branch: "main" } } })
+  return fakeClient(fake)
+}
+
 /**
  * `real`: person 7's Connect installs smithers.sh's real delegation (fuzz/delegated.vibe), the site's delegate calls
  * smithers.sh's real route, and `revoke` ends that delegation there. Otherwise the custodian hands out `d-<person>`.
+ * `served`: that delegation grants the issue repository and reaches a GitHub serving it; otherwise it grants the wiki's
+ * repository and GitHub is down.
  */
-effect function world(slug: boolean, brokered: boolean, named: boolean, legacy = false, real = false) {
-  const smithers = real ? try smithersConnection(githubDown, reach(), "p7", { api: wikiRepository.api, repository: `${wikiRepository.owner}/${wikiRepository.name}`, repositoryId: 1, token: Redacted.make("fixture-token") }) : undefined
+effect function world(slug: boolean, brokered: boolean, named: boolean, legacy = false, real = false, served = false) {
+  const granted = served ? issueRepository : wikiRepository
+  const smithers = real ? try smithersConnection(served ? servingIssues() : githubDown, reach(), "p7", { api: granted.api, repository: `${granted.owner}/${granted.name}`, repositoryId: 1, token: Redacted.make("fixture-token") }) : undefined
   const storage = try Effect.try(() => objectStorage())
   // An object that held tokens from the per-site connect path (0165 migration) before this version started.
   if (legacy) try promise(() => storage.put({ "github/1": { token: "sealed" }, "github/7": { token: "sealed" } }))
@@ -194,12 +205,15 @@ it.live("accounts/broker-sequences", () => run("accounts/broker-sequences", Inpu
   const as = (kind: Op["kind"], person: Op["person"], role: Op["role"] = "community", n = 0): Op => ({ kind, person, tamper: "none", query: "", answer: "connect", install: true, role, body: "valid", n })
   const ended = [as("sign-in", "1"), as("grant", "1", "contributor", 6), as("sign-out", "1"), as("sign-in", "7"), as("connect", "7"), as("revoke", "7"), as("propose", "7", "community", 2), as("connect", "7"), as("file", "7", "community", 3)]
   if (!(try play({ ...input, ops: ended }, true, false, false, true))) return false
+  // smithers.sh's real delegation to a GitHub that serves the issue repository: a new person's first issue lands and
+  // records their participation (checks 273 and 274).
+  if (!(try play({ ...input, ops: [as("sign-in", "7"), as("connect", "7"), as("file", "7", "community", 4)] }, true, false, false, true, true))) return false
   return try play(input, input.brokered, !input.brokered && input.named, false)
   // One execution walks three worlds: about 20 s on nyc-01 and over a minute on a 4-vCPU box, after the 30 s floor.
 }), undefined, { minimum: STEERED_FLOOR }), 300_000)
 
-effect function play(input: typeof Input.Type, brokered: boolean, named: boolean, walking: boolean, real = false) {
-  const w = try world(input.slug, brokered, named, walking, real)
+effect function play(input: typeof Input.Type, brokered: boolean, named: boolean, walking: boolean, real = false, served = false) {
+  const w = try world(input.slug, brokered, named, walking, real, served)
   // The migration deletes every per-site token once, before the object answers anything.
   if (walking && (kvOf(w).has("github/1") || kvOf(w).has("github/7") || kvOf(w).get("migrated/connect-v1") !== true)) throw new Refuted({ kind: "migration", check: 1 })
   const base: Op = { kind: "session", person: "7", tamper: "none", query: "", answer: "connect", install: true, role: "community", body: "valid", n: 0 }
@@ -510,6 +524,11 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
         if (signedIn === undefined && (filed.status !== 401 || reason !== "sign-in")) return try refute(op.kind, 270)
         if (held && revoked && (filed.status !== 401 || reason !== "connect")) return try refute(op.kind, 271)
         if (signedIn !== undefined && reason === "connect" && kvOf(w).has("delegation/" + signedIn.id)) return try refute(op.kind, 272)
+        // A person whose issue landed is a participant: never left new.
+        const role = ((try parsed((try w.ask(SITE + "/api/auth/session")).text)) as { readonly role: Role }).role
+        if (filed.status === 200 && signedIn !== undefined && !signedIn.agent && role === "new") return try refute(op.kind, 273)
+        // A delegation smithers.sh still honors, to a GitHub that serves the repository, files the issue.
+        if (served && held && !revoked && signedIn !== undefined && !signedIn.agent && filed.status !== 200) return try refute(op.kind, 274)
         break
       }
       case "queued": {

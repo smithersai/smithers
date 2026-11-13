@@ -48,6 +48,22 @@ it.live("accounts/random-role-sequences", () => run("accounts/random-role-sequen
   return roleOf(ledger.roles, "1") === "maintainer" && roleOf(ledger.roles, "4") === "contributor"
 }))
 
+/**
+ * The agent signs in as a fixture maintainer: once every fixture maintainer is demoted beneath a maintainer the fixture
+ * never had, there is none, and the sign-in is unavailable and leaves the selected person as it was (0015, chosen).
+ */
+it.live("accounts/agent-without-fixture-maintainer", () => run("accounts/agent-without-fixture-maintainer", Int, (id) => effect {
+  const accounts = try MockAccounts.make()
+  const chosen = try accounts.choose("maintainer")
+  try accounts.grant(String(100 + id), "maintainer")
+  for (const person of ["1", "5"]) if (person !== chosen.id) try accounts.grant(person, "new")
+  try accounts.grant(chosen.id, "new")
+  const before = try accounts.current()
+  const result = try exit(accounts.signInAgent())
+  const failure = result._tag === "Failure" ? Cause.findError(result.cause) : undefined
+  return failure?._tag === "Success" && failure.success instanceof AccountUnavailable && failure.success.reason === "no fixture" && same(before, try accounts.current())
+}))
+
 /** Fault injection is the HTTP service itself; no request interception or manufactured happy response. */
 it.live("accounts/transport-refusal", () => run("accounts/transport-refusal", Schema.Struct({ op: Int, text: Text }), ({ op, text }) => effect {
   const client = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request }) })))

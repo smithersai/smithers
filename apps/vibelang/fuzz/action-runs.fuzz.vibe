@@ -54,6 +54,12 @@ it.live("actions/run-hosts", () => run("actions/run-hosts", Steps, (steps) => ef
     try device.accounts.choose("maintainer")
     const product = try Mythical
     provide ActionDevice = device {
+      // A history host that cannot encode a fresh run's intent (a faulty Effect service, chosen): the start answers
+      // input and the run is recorded as failed (0015).
+      const broken = try w.object("broken")
+      const failing = { ...HistoryActions.make("broken", broken.storage), start: () => Schema.decodeUnknownEffect(Schema.String)(0).pipe(Effect.as(null)) }
+      const refused = try Runs.start("broken", broken.storage, broken.sequencer, request("broken", "vibelang/history/show", {}, w.person.id), "maintainer", failing, w.authority)
+      if (refused !== "input" || (try Runs.read(broken.sequencer)).find((row) => row.id === "broken")?.state !== "failed") throw new Finding({ report: `a history host that cannot start answered ${refused}` })
       const sent = new Map<string, ReturnType<typeof request>>()
       const settled = new Map<string, string>()
       // Every execution first starts and alarms one run, sometimes demoting its person in between, so the random
