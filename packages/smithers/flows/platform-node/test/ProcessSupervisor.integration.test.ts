@@ -1,6 +1,3 @@
-import * as NodeSpawner from "@effect/platform-node/NodeChildProcessSpawner"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
-import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
@@ -21,11 +18,10 @@ import { Control, prepare, targetPidOf } from "../src/internal/ProcessSupervisor
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 import { waitForExit } from "./helpers/waitForExit.ts"
 
-const rawLayer = NodeSpawner.layer.pipe(Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
 const layers = Layer.succeed(ChildProcessSpawner)(
   makeSpawner((command) => PipedProcess.spawn(command as ChildProcess.StandardCommand, undefined))
 )
-const contained = ProcessReaper.layerSpawner().pipe(Layer.provide(rawLayer))
+const contained = ProcessReaper.layerSpawner()
 const fixture = Effect.acquireRelease(
   Effect.sync(() => mkdtempSync(join(tmpdir(), "flows-supervisor-contract-"))),
   (directory) => Effect.sync(() => rmSync(directory, { recursive: true, force: true }))

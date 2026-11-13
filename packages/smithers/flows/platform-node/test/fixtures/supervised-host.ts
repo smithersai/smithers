@@ -1,8 +1,5 @@
-import * as NodeSpawner from "@effect/platform-node/NodeChildProcessSpawner"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
-import * as NodePath from "@effect/platform-node/NodePath"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { existsSync, readFileSync } from "node:fs"
@@ -35,8 +32,7 @@ const target = `const cp=require('node:child_process');const token=process.argv.
   cp.spawn(process.execPath,['-e',${JSON.stringify(grandchild)},token],{stdio:'ignore'});
   ${beating(targetBeat)}`
 
-const raw = NodeSpawner.layer.pipe(Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
-const contained = ProcessReaper.layerSpawner({ graceMs }).pipe(Layer.provide(raw))
+const contained = ProcessReaper.layerSpawner({ graceMs })
 
 const beat = (path: string): { readonly token: string; readonly pid: number; readonly tick: number } | undefined => {
   try {

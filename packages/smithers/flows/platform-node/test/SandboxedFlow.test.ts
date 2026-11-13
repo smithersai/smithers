@@ -305,7 +305,7 @@ describe("SandboxedFlow.execute on a scratch machine", () => {
           // Read before the execution: its completion releases the key, which
           // removes the workspace under this holder, as the contract says.
           const workdir = realpathSync(earlier.workdir)
-          const result = yield* SandboxedFlow.execute(Inspector, { marker: "left by the guest" }, {
+          const result = yield* SandboxedFlow.execute(Inspector, {}, {
             provider: directory,
             session: "seeded",
             entry,
@@ -430,7 +430,7 @@ describe.skipIf(!bunInstalled)("SandboxedFlow.execute under bun", () => {
   it.live("starts the bundle with the runtime it was told to", () =>
     Effect.gen(function*() {
       const directory = yield* provider
-      const result = yield* SandboxedFlow.execute(Inspector, { marker: "bun" }, {
+      const result = yield* SandboxedFlow.execute(Inspector, {}, {
         provider: directory,
         session: "bun",
         entry,

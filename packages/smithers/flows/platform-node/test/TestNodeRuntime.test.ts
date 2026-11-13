@@ -61,6 +61,7 @@ describe("TestNodeRuntime", () => {
 
   it.effect("replays a sealed result from the SQLite file in a later engine", () =>
     Effect.gen(function*() {
+      executions = 0
       const filename = join(directory, "replay.sqlite")
       expect(yield* drive(filename, "test-first")).toBe(1)
       expect(yield* drive(filename, "test-second")).toBe(1)
@@ -69,8 +70,12 @@ describe("TestNodeRuntime", () => {
 
   it.effect("opens the same stores without an engine", () =>
     Effect.gen(function*() {
-      const journal = yield* Journal.Journal
-      const page = yield* journal.entries({ runId: "counted-1" as JournalEvent.RunId, limit: 200 })
+      const filename = join(directory, "stores.sqlite")
+      yield* drive(filename, "test-stores")
+      const page = yield* Effect.flatMap(Journal.Journal, (journal) =>
+        journal.entries({ runId: "counted-1" as JournalEvent.RunId, limit: 200 })).pipe(
+          Effect.provide(requirements(filename))
+        )
       expect(page.entries.length).toBeGreaterThan(0)
-    }).pipe(Effect.provide(requirements(join(directory, "replay.sqlite"))), Effect.scoped))
+    }).pipe(Effect.scoped))
 })

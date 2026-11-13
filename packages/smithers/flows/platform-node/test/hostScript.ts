@@ -1,6 +1,14 @@
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
+import { afterAll } from "vitest"
+
+const directories: Array<string> = []
+/** Removes only the directories this suite created, including after a failed test. */
+export const cleanupHostScripts = (): void => {
+  for (const directory of directories.splice(0)) NodeFs.rmSync(directory, { recursive: true, force: true })
+}
+afterAll(cleanupHostScripts)
 
 /**
  * Writes a test server's source to a fresh host directory outside every test
@@ -10,6 +18,7 @@ import * as NodePath from "node:path"
  */
 export const hostScript = (source: string): string => {
   const directory = NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "smithers-lsp-server-"))
+  directories.push(directory)
   const file = NodePath.join(directory, "server.cjs")
   NodeFs.writeFileSync(file, source)
   return file

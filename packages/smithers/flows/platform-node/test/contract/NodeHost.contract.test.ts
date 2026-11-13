@@ -52,7 +52,19 @@ const waitForEsrch = (pid: number) =>
   )
 
 describe("NodeHost child-process lifecycle", () => {
-  it.effect("reaps the child OS process when its owning fiber is interrupted", () =>
+  it.live("polls a still-running child until the OS reaps it", () =>
+    Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner
+      const handle = yield* spawner.spawn(
+        ChildProcess.make(process.execPath, ["-e", "setTimeout(()=>{},100)"])
+      )
+      const pid = Number(handle.pid)
+      expect(() => process.kill(pid, 0)).not.toThrow()
+      yield* waitForEsrch(pid)
+      expect(yield* handle.exitCode).toBe(0)
+    }).pipe(Effect.provide(NodeHost.layer), Effect.scoped))
+
+  it.live("reaps the child OS process when its owning fiber is interrupted", () =>
     Effect.gen(function*() {
       const pid = yield* (
         Effect.gen(function*() {

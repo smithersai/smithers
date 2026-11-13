@@ -46,12 +46,12 @@ export class WindowsProcessJob {
   private receivedSettled = false
   private failed = false
 
-  constructor(ownerPid: number, created: unknown, executable: string) {
+  constructor(ownerPid: number, created: unknown, executable: string, args: ReadonlyArray<string> = []) {
     if (typeof created !== "string" || !/^[1-9][0-9]{0,19}$/.test(created)) {
       throw processFault("owner_identity_missing", "Windows process owner has no exact creation identity")
     }
     const options = { cwd: parse(process.execPath).root, env: {}, windowsHide: true }
-    this.child = spawn(executable, ["--process-job", String(ownerPid), created], {
+    this.child = spawn(executable, [...args, "--process-job", String(ownerPid), created], {
       ...options,
       stdio: ["pipe", "pipe", "pipe"]
     })

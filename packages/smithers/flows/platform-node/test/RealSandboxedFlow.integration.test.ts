@@ -67,7 +67,7 @@ describe.skipIf(!engineAvailable)("SandboxedFlow inside a real container", () =>
       Effect.gen(function*() {
         const provider = ContainerSandbox.make({ spawner: yield* spawner, image: "node:22-alpine" })
         const started = Date.now()
-        const result = yield* SandboxedFlow.execute(Inspector, { marker: "written in the container" }, {
+        const result = yield* SandboxedFlow.execute(Inspector, {}, {
           provider,
           session: containerKeys.node,
           entry,
@@ -192,7 +192,7 @@ describe.skipIf(!microvmAvailable)("SandboxedFlow inside a real microVM", () => 
           maxDurationSecs: 900,
           idleTimeoutSecs: 120
         })
-        const result = yield* SandboxedFlow.execute(Inspector, { marker: "written in the microVM" }, {
+        const result = yield* SandboxedFlow.execute(Inspector, {}, {
           provider,
           session: microvmSession,
           entry,

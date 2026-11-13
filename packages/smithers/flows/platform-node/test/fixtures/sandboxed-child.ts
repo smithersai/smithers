@@ -68,18 +68,17 @@ export const Inspection = Schema.Struct({
 })
 
 export const Inspect = Action.make("flows/SandboxedFlow/fixtures/Inspect", {
-  payload: { marker: Schema.String },
+  payload: {},
   success: Inspection
 })
 
 /**
  * Reports what the guest can see: a `seed.txt` the host may have left in the
  * workspace, the image's `/etc/os-release`, the runtime, and the working
- * directory; and writes `marker` to `marker.txt` so the host can read a file
- * only the guest wrote.
+ * directory.
  */
 export const Inspector = Flow.make("flows/SandboxedFlow/fixtures/Inspector", {
-  payload: { marker: Schema.String },
+  payload: {},
   success: Inspection,
   body: (payload) => Inspect.call(payload)
 })
@@ -221,9 +220,8 @@ export const layer = Layer.mergeAll(
       return count
     })
   ),
-  Inspect.toLayer(({ marker }) =>
+  Inspect.toLayer(() =>
     Effect.promise(async () => {
-      await writeFile("marker.txt", marker)
       return {
         seed: await text("seed.txt"),
         osRelease: await text("/etc/os-release"),
