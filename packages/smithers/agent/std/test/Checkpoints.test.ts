@@ -589,13 +589,15 @@ describe("Checkpoints.makeGit materialize", () => {
     expect(failureOf(exit)?.code).toBe("not_found")
   })
 
-  it.each([
-    ["mkdir", "the directory could not be prepared"],
-    ["read-tree", "the tree could not be written"],
-    ["cat --", "the index could not be copied"],
-    ["mv --", "the finished directory could not take its name"],
-    ["stat -c %d", "the filesystems could not be measured"]
-  ])("says so when the checkout itself failed at %s (%s)", async (fragment) => {
+  it.each(
+    [
+      [".git/objects/info", "the directory could not be prepared", 1],
+      ["read-tree", "the tree could not be written", 2],
+      ["set -C; cat --", "the index could not be copied", 3],
+      ["mv --", "the finished directory could not take its name", 4],
+      ["stat -c %d", "the filesystems could not be measured", 0]
+    ] as const
+  )("says so when the checkout itself failed at %s (%s)", async (fragment, _reason, failedStage) => {
     const spawns: Array<ReadonlyArray<string>> = []
     const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
       const checkpoints = yield* store(spawns, [
@@ -606,6 +608,9 @@ describe("Checkpoints.makeGit materialize", () => {
     })))
 
     expect(failureOf(exit)?.message).toContain("Could not check out abc123")
+    const stages = ["stat -c %d", ".git/objects/info", "read-tree", "set -C; cat --", "mv --"]
+    const attempted = lines(spawns).flatMap((line) => stages.filter((stage) => line.includes(stage)))
+    expect(attempted).toEqual(stages.slice(0, failedStage + 1))
     expect(lines(spawns).at(-1)).toMatch(/^rm -rf -- \/work\/repo\/\.flows-checkpoints\//)
   })
 })

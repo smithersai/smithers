@@ -90,9 +90,14 @@ created, and the file's mode is preserved.
 | `bytesWritten` | number  | UTF-8 bytes written.                       |
 | `created`      | boolean | Whether the file did not previously exist. |
 
-Fails with `command_failed` when the path is a directory, when the parent cannot
-be created, when the write fails, or when the mode could not be restored after a
-successful write.
+`created` is `true` only when the initial `stat` result is `NotFound`,
+including a batched host's snapshot. An existing file returns `false`.
+Any other inspection failure refuses the write.
+
+Fails with `permission_denied` for a permission refusal, or `command_failed`
+when the path is a directory, inspection fails for another reason, the parent
+cannot be created, the write fails, or the mode could not be preserved before
+replacement.
 
 ## edit
 

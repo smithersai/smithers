@@ -20,6 +20,10 @@
 
 ### Fixed
 
+- `write` reports an overwritten file as `created: false` even when an
+  existence probe is unavailable. Only a `NotFound` inspection means a new
+  file; other inspection failures refuse the write on ordinary and batched hosts.
+
 - `edit`, `write` and `apply_patch` release their lock on a kernel-guarded
   host whose rules restrict content under every directory, such as the
   `deny fs:* <root>/**/.env*` a migration runs under. The release removed the

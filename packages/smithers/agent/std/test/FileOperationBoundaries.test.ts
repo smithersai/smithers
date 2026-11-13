@@ -10,7 +10,7 @@ import * as Read from "../src/Read.ts"
 import * as Write from "../src/Write.ts"
 
 describe("file tools preserve source data across host failures", () => {
-  it("a failed existence probe cannot bypass a later inspection refusal or mutate existing bytes", async () => {
+  it("a stat refusal preserves existing bytes without consulting an existence hint", async () => {
     const root = mkdtempSync(join(tmpdir(), "std-write-exists-"))
     const target = join(root, "file.txt")
     const probes: Array<string> = []
@@ -44,7 +44,7 @@ describe("file tools preserve source data across host failures", () => {
         }).pipe(Effect.provide(NodeServices.layer))
       )
       expect(error).toMatchObject({ code: "permission_denied", path: target, message: `Permission denied: ${target}` })
-      expect(probes).toEqual(["exists", "stat"])
+      expect(probes).toEqual(["stat"])
       expect(readFileSync(target, "utf8")).toBe("original guarded bytes")
       expect(readdirSync(root)).toEqual(["file.txt"])
     } finally {

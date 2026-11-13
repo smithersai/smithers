@@ -233,8 +233,12 @@ const written = Write.run({ path: "/workspace/notes.md", content: "# Notes\n" })
 ```
 
 It preserves the file's mode, and it refuses to write over a directory with
-`command_failed`. Prefer `edit` for a targeted change: a whole-file write of a
-file you only partly know is how an unrelated region disappears.
+`command_failed`. `created` is `true` only when `stat` reports `NotFound`;
+an existing file returns `false`. Ordinary hosts use `stat` directly and
+batched hosts use its snapshot result. Any other inspection failure refuses
+the write: `PermissionDenied` becomes `permission_denied`, and other failures
+become `command_failed`. Prefer `edit` for a targeted change: a whole-file
+write of a file you only partly know is how an unrelated region disappears.
 
 On ordinary filesystem hosts, `write`, `edit`, and every `apply_patch` add or
 update stage replacement bytes in a unique sibling file, preserve existing

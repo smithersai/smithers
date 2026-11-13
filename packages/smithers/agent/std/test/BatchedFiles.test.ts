@@ -396,7 +396,7 @@ describe("write on a batched host", () => {
     })
   })
 
-  it("refuses a directory, and writes over a path its snapshot could not describe as new", async () => {
+  it("refuses a directory before committing", async () => {
     await fixture(async (root) => {
       const directory = await run(Write.run({ path: join(root, "dir"), content: "x" }))
       expect(refusal(directory.result)).toMatchObject({
@@ -404,10 +404,24 @@ describe("write on a batched host", () => {
         message: `Cannot write a file over directory ${join(root, "dir")}`
       })
       expect(directory.calls.commit).toEqual([])
-      const undescribed = await run(Write.run({ path: join(root, "a.txt"), content: "x" }), {
-        seen: (_path, taken) => ({ ...taken, info: Result.fail(failure("stat")) })
+    })
+  })
+
+  it.each(["Unknown", "PermissionDenied"] as const)("refuses a %s stat result before committing", async (tag) => {
+    await fixture(async (root) => {
+      const target = join(root, "a.txt")
+      const { calls, result } = await run(Write.run({ path: target, content: "x" }), {
+        seen: (_path, taken) => ({ ...taken, info: Result.fail(failure("stat", tag)) })
       })
-      expect(answer(undescribed.result)).toMatchObject({ created: true })
+      expect(refusal(result)).toMatchObject({
+        code: tag === "PermissionDenied" ? "permission_denied" : "command_failed",
+        path: target,
+        message: tag === "PermissionDenied"
+          ? `Permission denied: ${target}`
+          : `Could not inspect ${target} before writing`
+      })
+      expect(calls.commit).toEqual([])
+      expect(await readFile(target, "utf8")).toBe("alpha\nbeta\n")
     })
   })
 

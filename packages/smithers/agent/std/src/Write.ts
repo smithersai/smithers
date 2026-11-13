@@ -8,7 +8,6 @@ import * as Path from "@smthrs/kernel/Path"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import type * as PlatformError from "effect/PlatformError"
-import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
 import * as Diagnostics from "./internal/Diagnostics.ts"
@@ -167,17 +166,17 @@ export const run = Effect.fn("Write.run")(function*(
   }
   return yield* Effect.scoped(Effect.gen(function*() {
     const mutation = yield* FileMutation.acquire(fileSystem, [input.path], path, { read: [], failure: inspectFailure })
-    // A batched host's snapshot answers what `exists` and `stat` would. A
-    // path it could not describe is written as new, as one `exists` could
-    // not answer for is.
-    let existing: FileSystem.File.Type | undefined
-    if (batched) {
-      const info = mutation.seen!(input.path).info
-      existing = Result.isSuccess(info) ? info.success.type : undefined
-    } else if (yield* fileSystem.exists(input.path).pipe(Effect.orElseSucceed(() => false))) {
-      existing = (yield* fileSystem.stat(input.path).pipe(Effect.mapError(inspectFailure))).type
-    }
-    if (existing === "Directory") {
+    const inspected: Effect.Effect<
+      { readonly type: FileSystem.File.Type },
+      PlatformError.PlatformError
+    > = batched
+      ? Effect.fromResult(mutation.seen!(input.path).info)
+      : fileSystem.stat(input.path)
+    const existing = yield* inspected.pipe(
+      Effect.catch((error) => error.reason._tag === "NotFound" ? Effect.succeed(undefined) : Effect.fail(error)),
+      Effect.mapError(inspectFailure)
+    )
+    if (existing?.type === "Directory") {
       return yield* Effect.fail(writeError(input.path, `Cannot write a file over directory ${input.path}`))
     }
     const writeFailure = (error: PlatformError.PlatformError): StdError.StdError =>

@@ -116,11 +116,15 @@ it.each(["oversized", "invalid UTF-8"])("read refuses %s without recording a rea
   expect(recorded).toBe(0)
 })
 
-it("write tolerates an unavailable existence hint while preserving content publication", async () => {
+it("write reports an overwrite from stat when the existence probe is unavailable", async () => {
   let published = ""
   let staged = ""
+  let existenceProbes = 0
   const host = FileSystem.makeNoop({
-    exists: () => Effect.fail(PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "exists" })),
+    exists: () => {
+      existenceProbes++
+      return Effect.fail(PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "exists" }))
+    },
     stat: () => Effect.succeed(fileInfo()),
     realPath: (path) => Effect.succeed(path),
     makeDirectory: () => Effect.void,
@@ -141,7 +145,73 @@ it("write tolerates an unavailable existence hint while preserving content publi
     )
   )
   expect(published).toBe("new")
-  expect(result).toEqual({ path: "/a", bytesWritten: 3, created: true })
+  expect(result).toEqual({ path: "/a", bytesWritten: 3, created: false })
+  expect(existenceProbes).toBe(0)
+})
+
+it.each(["Unknown", "PermissionDenied"] as const)(
+  "write refuses a %s stat failure before publication",
+  async (reason) => {
+    let writes = 0
+    let publications = 0
+    const host = FileSystem.makeNoop({
+      exists: () => Effect.succeed(false),
+      stat: () => Effect.fail(PlatformError.systemError({ _tag: reason, module: "FileSystem", method: "stat" })),
+      realPath: (path) => Effect.succeed(path),
+      makeDirectory: () => Effect.void,
+      writeFileString: () =>
+        Effect.sync(() => {
+          writes++
+        }),
+      rename: () =>
+        Effect.sync(() => {
+          publications++
+        }),
+      remove: () => Effect.void
+    })
+    const failure = await Effect.runPromise(
+      Write.run({ path: "/a", content: "new" }).pipe(
+        Effect.provideService(FileSystem.FileSystem, host),
+        Effect.flip,
+        Effect.provide(layer())
+      )
+    )
+    expect(failure).toMatchObject({
+      code: reason === "PermissionDenied" ? "permission_denied" : "command_failed",
+      path: "/a",
+      message: reason === "PermissionDenied" ? "Permission denied: /a" : "Could not inspect /a before writing"
+    })
+    expect(writes).toBe(0)
+    expect(publications).toBe(0)
+  }
+)
+
+it("write refuses a directory even when the existence probe is unavailable", async () => {
+  let writes = 0
+  const host = FileSystem.makeNoop({
+    exists: () => Effect.fail(PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "exists" })),
+    stat: () => Effect.succeed(fileInfo({ type: "Directory" })),
+    realPath: (path) => Effect.succeed(path),
+    makeDirectory: () => Effect.void,
+    writeFileString: () =>
+      Effect.sync(() => {
+        writes++
+      }),
+    rename: () => Effect.void,
+    remove: () => Effect.void
+  })
+  const result = await Effect.runPromise(
+    Write.run({ path: "/a", content: "new" }).pipe(
+      Effect.provideService(FileSystem.FileSystem, host),
+      Effect.result,
+      Effect.provide(layer())
+    )
+  )
+  expect(result).toMatchObject({
+    _tag: "Failure",
+    failure: { code: "command_failed", path: "/a", message: "Cannot write a file over directory /a" }
+  })
+  expect(writes).toBe(0)
 })
 
 it("patch permission declarations retain all affected paths in the static envelope", () => {
