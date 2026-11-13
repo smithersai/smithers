@@ -33,7 +33,8 @@ const run = agent.run({
   script instead of failing.
 - `flows/write-flow` takes the three files that come back (the flow, its
   end-to-end test, and the fixture that test replays) and writes them through a
-  `FlowStore`. When a `Registry` is in context it is refreshed afterwards,
+  `FlowStore`. Pass `{ id, flowSource, testSource, fixtureJson }`; the flow's
+  description belongs in `flowSource`. When a `Registry` is in context it is refreshed afterwards,
   and a successful refresh makes the saved model-invocable flow appear in
   `ctx.flows` on the next frame. Supply the same registry to `Agent.run` and
   the promotion binding's context. Refresh is best effort; a failed refresh

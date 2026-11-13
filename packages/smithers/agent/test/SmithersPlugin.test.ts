@@ -210,9 +210,11 @@ describe("SmithersPlugin", () => {
   })
 
   it("names every CLI verb it teaches in the brief", () => {
-    for (const verb of ["flow", "runs", "generate", "test", "docs", "tui"]) {
-      expect(SmithersPlugin.knowledge.cli.some((fact) => fact.name.startsWith(`smthrs ${verb}`))).toBe(true)
-      expect(SmithersPlugin.brief).toContain(verb)
+    const cliLine = SmithersPlugin.brief.split("\n").find((line) => line.startsWith("The CLI is "))
+    expect(cliLine).toBeDefined()
+    for (const fact of SmithersPlugin.knowledge.cli) {
+      const verb = fact.name.split(" ")[1]!
+      expect(cliLine).toMatch(new RegExp("(?:`: |, )" + verb + "(?:[ ,.]|$)"))
     }
   })
 

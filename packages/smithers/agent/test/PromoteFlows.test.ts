@@ -22,7 +22,7 @@ import type { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Node } from "@smthrs/plan"
-import * as Descriptor from "@smthrs/registry/Descriptor"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
@@ -75,8 +75,9 @@ const invoke = (
 
 const saved = (id: string) => ({
   id,
-  description: `Digest the week's ${id}.`,
-  flowSource: `export default ({ name: "${id}" })`,
+  flowSource: PromoteFlows.flowTemplate
+    .replaceAll("<id>", id)
+    .replace("<one line naming what this flow produces>", "The promoted weekly digest."),
   testSource: `it("runs ${id}", () => {})`,
   fixtureJson: `{ "calls": [] }`
 })
@@ -90,46 +91,10 @@ const writeFlowEnvelope = PromoteFlows.writeFlowCapabilities.map((pattern) =>
 
 /** Runs a real agent whose first cell saves a flow and whose second calls it. */
 const promoteAndCall = async (capabilityEnvelope: ReadonlyArray<Capability.CapabilityPattern>) => {
-  let refreshes = 0
-  let visibleReads = 0
-  let calls = 0
-  const written = new Map<string, string>()
-  const descriptor = new Descriptor.FlowDescriptor({
-    name: "weekly-digest",
-    description: "The promoted weekly digest.",
-    body: new Descriptor.BodyRefModule({ path: "/flows/weekly-digest/flow.ts" }),
-    input: new Descriptor.SchemaRefNone(),
-    output: new Descriptor.SchemaRefNone(),
-    model: Option.none(),
-    flows: [],
-    capabilities: [],
-    effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
-    placement: Option.none(),
-    modelInvocable: true,
-    path: "/flows/weekly-digest",
-    frontmatter: {},
-    provenance: new Descriptor.Provenance({ source: "test", root: "/flows" })
-  })
-  const entries = () => refreshes > 0 ? [descriptor] : []
-  const registry = Registry.makeNoop({
-    list: () => Effect.sync(entries),
-    visible: () =>
-      Effect.sync(() => {
-        visibleReads += 1
-        return entries()
-      }),
-    getOption: (name) => Effect.sync(() => Option.fromUndefinedOr(entries().find((entry) => entry.name === name))),
-    refresh: () =>
-      Effect.sync(() => {
-        refreshes += 1
-      })
-  })
-  const source = PromoteFlows.source(
-    Context.add(services(ran(), FlowStore.makeMemory(written)), Registry.Registry, registry)
-  )
+  const platform = Layer.merge(AtomicFileSystem.layer, NodePath.layer)
   const cells = [
     `await ctx.call("flows/write-flow", ${JSON.stringify(saved("weekly-digest"))}); console.log("saved")`,
-    `const discovered = Object.keys(ctx.flows); const result = await ctx.call("weekly-digest", {}); ctx.done({ discovered, result })`
+    `const discovered = Object.keys(ctx.flows); const result = await ctx.call("weekly-digest", { value: "digest ready" }); ctx.done({ discovered, result })`
   ]
   const prompts: Array<string> = []
   const model = Model.make({
@@ -154,6 +119,19 @@ const promoteAndCall = async (capabilityEnvelope: ReadonlyArray<Capability.Capab
   const events: Array<AgentEvent.AgentEvent> = []
   await Effect.runPromise(
     Effect.scoped(Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const root = yield* fs.makeTempDirectoryScoped({
+        directory: fileURLToPath(new URL(".", import.meta.url)),
+        prefix: ".promotion-"
+      })
+      const flows = join(root, ".smithers", "flows")
+      yield* fs.makeDirectory(flows, { recursive: true })
+      const registry = yield* Registry.make({ sources: [{ source: "project", root: flows, naming: "path" }] })
+      const store = yield* FlowStore.FlowStore.pipe(Effect.provide(FlowStore.layerFileSystem(root)))
+      const source = PromoteFlows.source(
+        Context.add(services(ran(), store), Registry.Registry, registry)
+      )
+      expect(yield* registry.list()).toEqual([])
       const engine = yield* FlowRuntime.FlowRuntime
       const agent = yield* Agent.Agent
       yield* engine.register(flow, () =>
@@ -183,32 +161,71 @@ const promoteAndCall = async (capabilityEnvelope: ReadonlyArray<Capability.Capab
           maxFrames: 2,
           capabilityEnvelope,
           unmovedCap: 0,
-          implementations: new Map([["weekly-digest", () =>
-            Effect.sync(() => {
-              calls += 1
-              return Cell.CallResult.new({ outcome: "success", value: "digest ready" })
-            })]])
+          implementations: new Map([["weekly-digest", (call) =>
+            Effect.gen(function*() {
+              const descriptor = yield* registry.get(call.flowName)
+              const executable = yield* Executable.fromDescriptor(descriptor, { delegates: [] })
+              // The dynamic loader erases codec services; this template uses only Schema.String.
+              const execution = executable.flow.execute(
+                { input: call.input },
+                { executionId: "promotion-saved-flow" }
+              ) as Effect.Effect<string, unknown, Executable.Registration>
+              const value = yield* execution.pipe(Effect.provide(
+                Layer.mergeAll(Interpreter.layer(executable.flow), executable.layer).pipe(
+                  Layer.provideMerge(Action.layerImplementations),
+                  Layer.provideMerge(FlowEngine.layerMemory),
+                  Layer.provideMerge(NodeCrypto.layer)
+                )
+              ))
+              return Cell.CallResult.new({ outcome: "success", value })
+            }).pipe(Effect.provide(platform), Effect.orDie)]])
         }).pipe(Stream.runForEach((event) =>
           Effect.sync(() => {
             events.push(event)
           })
         )))
       yield* engine.execute(flow, { executionId: "promotion", payload: {} })
-    })).pipe(Effect.provide(
-      Layer.mergeAll(
-        Agent.layer,
-        Agent.layerDefaults,
-        scriptedCompletionJudge,
-        FlowEngine.layerMemory,
-        NodeCrypto.layer
-      )
-        .pipe(
-          Layer.provideMerge(Safety.layer)
+      const entries = yield* store.list()
+      const discovered = yield* registry.list()
+      if (capabilityEnvelope.length > 0) {
+        expect(entries).toEqual([{
+          id: "weekly-digest",
+          files: [
+            ".smithers/flows/weekly-digest/fixtures/weekly-digest.json",
+            ".smithers/flows/weekly-digest/flow.e2e.ts",
+            ".smithers/flows/weekly-digest/flow.ts"
+          ]
+        }])
+        const input = saved("weekly-digest")
+        expect(yield* fs.readFileString(join(flows, "weekly-digest", "flow.ts"))).toBe(input.flowSource)
+        expect(yield* fs.readFileString(join(flows, "weekly-digest", "flow.e2e.ts"))).toBe(input.testSource)
+        expect(yield* fs.readFileString(join(flows, "weekly-digest", "fixtures", "weekly-digest.json"))).toBe(
+          input.fixtureJson
         )
-    ))
+        expect(discovered.map((entry) => entry.name)).toEqual(["weekly-digest"])
+      } else {
+        expect(entries).toEqual([])
+        expect(discovered).toEqual([])
+      }
+    })).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Agent.layer,
+          Agent.layerDefaults,
+          scriptedCompletionJudge,
+          FlowEngine.layerMemory,
+          NodeCrypto.layer
+        )
+          .pipe(
+            Layer.provideMerge(Safety.layer)
+          )
+      ),
+      Effect.provide(Discovery.layer.pipe(Layer.provide(platform))),
+      Effect.provide(platform)
+    )
   )
 
-  return { refreshes, written, prompts, events, calls, visibleReads }
+  return { prompts, events }
 }
 
 describe("PromoteFlows.source", () => {
@@ -380,28 +397,26 @@ describe("flows/write-flow", () => {
   })
 
   it("discovers and calls the saved flow in the next real agent cell", async () => {
-    const { calls, events, prompts, refreshes, visibleReads, written } = await promoteAndCall(writeFlowEnvelope)
+    const { events, prompts } = await promoteAndCall(writeFlowEnvelope)
 
-    expect(refreshes).toBe(1)
-    expect(written.size).toBe(3)
     expect(prompts).toHaveLength(2)
     expect(JSON.stringify(events)).not.toContain("unknown_flow")
-    expect(calls).toBe(1)
     const completion = [...events].reverse().find((event) => event._tag === "cell-settled")
     expect(completion).toMatchObject({
       outcome: { transition: { output: expect.stringContaining("\"weekly-digest\"") } }
     })
-    expect(completion).toMatchObject({ outcome: { transition: { output: expect.stringContaining("digest ready") } } })
+    expect(completion).toMatchObject({
+      outcome: {
+        transition: { output: expect.stringContaining("\"result\":\"digest ready\"") }
+      }
+    })
     expect(prompts[0]).not.toContain("The promoted weekly digest.")
     expect(prompts[1]).toContain("The promoted weekly digest.")
-    expect(visibleReads).toBe(2)
   })
 
   it("refuses to save a flow when the run's envelope grants no flow writes", async () => {
-    const { events, refreshes, written } = await promoteAndCall([])
+    const { events } = await promoteAndCall([])
 
-    expect(written.size).toBe(0)
-    expect(refreshes).toBe(0)
     expect(JSON.stringify(events)).toContain(
       "Flow flows/write-flow needs fs:write:/.smithers/flows/**, which is outside this run's capability envelope."
     )

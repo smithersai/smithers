@@ -39,7 +39,7 @@ import { ModelError } from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import * as Registry from "@smthrs/registry/Registry"
-import { Effect, Exit, Layer, Option, Schema, Stream } from "effect"
+import { Effect, Exit, Fiber, Layer, Option, Schema, Stream } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import type * as Scope from "effect/Scope"
 import { SqlClient } from "effect/sql/SqlClient"
@@ -210,15 +210,13 @@ const dialectRefusal = new ModelError({
 })
 
 /** One composition's provider-specific reading of {@link dialectRefusal}. */
-const dialectClassifier = (): Layer.Layer<QuotaPolicy.QuotaClassifier> =>
+const dialectClassifier = (waitMillis = 1): Layer.Layer<QuotaPolicy.QuotaClassifier> =>
   Layer.succeed(QuotaPolicy.QuotaClassifier)(
     QuotaPolicy.make({
       classify: (error, nowMillis) => {
         const model = QuotaPolicy.modelErrorOf(error)
         if (Option.isNone(model) || !model.value.message.includes("overloaded")) return Option.none()
-        // One millisecond: the park is real and durable, and the wake is
-        // immediate, so the case measures the recovery rather than the wait.
-        return Option.some({ wakeAt: nowMillis + 1, source: "text" })
+        return Option.some({ wakeAt: nowMillis + waitMillis, source: "text" })
       }
     })
   )
@@ -395,15 +393,47 @@ describe("a quota refusal under a sealed model step", () => {
 
 describe("the durable engine state the quota park annotates", () => {
   it("is the same state a composition reads its waiting runs from", async () => {
-    // Guards the layer this suite's stores depend on: `layerAt` provides
-    // `DurableEngineState` itself, so a case that also merged the in-memory one
-    // would be reading a different map than the engine writes.
+    const calls: Array<string> = []
     const rows = await durable(
       Effect.gen(function*() {
         const state = yield* DurableEngineState.DurableEngineState
-        return yield* state.waitingRuns({ reason: "quota" })
+        const engine = yield* EngineStore.make({
+          owner: { hostId: "quota-state" },
+          journalSource: "quota-state",
+          isAlive: () => Effect.succeed(false)
+        })
+        const wiring = Layer.mergeAll(Step.layer, Interpreter.layer(OneStep)).pipe(
+          Layer.provideMerge(AgentAction.layerHost(host)),
+          Layer.provideMerge(seats(provider(1, dialectRefusal, calls))),
+          Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
+          Layer.provideMerge(dialectClassifier(60_000)),
+          Layer.provideMerge(Budget.layerUnbounded()),
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime)(engine))
+        )
+        const running = yield* OneStep.execute(input, { executionId: "quota-state-run" }).pipe(
+          Effect.provide(wiring),
+          Effect.forkChild({ startImmediately: true })
+        )
+        const waiting = yield* Effect.gen(function*() {
+          while (true) {
+            const exit = running.pollUnsafe()
+            if (exit !== undefined) {
+              if (Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
+              return yield* Effect.die(new Error("the run completed without a quota park"))
+            }
+            const waiting = yield* state.waitingRuns({ reason: "quota" })
+            if (waiting.length > 0) return waiting
+            yield* Effect.yieldNow
+          }
+        }).pipe(Effect.timeout("10 seconds"))
+        yield* Fiber.interrupt(running)
+        return waiting
       }).pipe(Effect.provide(stores))
     )
-    expect(rows).toEqual([])
+    expect(calls).toHaveLength(1)
+    expect(rows.map((row) => ({ runId: row.runId, reason: row.reason }))).toEqual([
+      { runId: "quota-state-run", reason: "quota" }
+    ])
   })
 })

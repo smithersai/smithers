@@ -114,7 +114,6 @@ export const WriteFlowInput = Schema.Struct({
   id: Schema.String.annotate({
     description: "Flow id and directory name; lowercase letters, digits, and hyphens, starting with a letter"
   }),
-  description: Schema.String.annotate({ description: "One line naming what the flow produces" }),
   flowSource: Schema.String.annotate({ description: "Complete flow.ts source" }),
   testSource: Schema.String.annotate({ description: "Complete flow.e2e.ts source" }),
   fixtureJson: Schema.String.annotate({ description: "The recorded fixture that test replays, as JSON text" })
