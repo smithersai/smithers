@@ -102,8 +102,8 @@ const importRules = ImportRules({
     },
     {
       kind: "forbidCalls",
-      files: ["test/ControlSurface.test.ts"],
-      callees: ["setTimeout", "*.sleep", "*.waitForTimeout", "vi.mock", "vi.doMock", "jest.mock"],
+      files: ["test/ControlSurface.test.ts", "test/ControlBridge.test.ts", "test/EvaluationPublication.test.ts"],
+      callees: ["setTimeout", "*.sleep", "*.waitForTimeout", "vi.mock", "vi.doMock", "vi.spyOn", "jest.mock"],
       because: "test.behavioral: control HTTP host tests use real services and completion signals."
     }
   ]

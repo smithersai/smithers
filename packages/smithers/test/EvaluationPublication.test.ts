@@ -1,60 +1,13 @@
+import { Cause, Effect } from "effect"
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
-
-const collision = vi.hoisted(() => "00000000-0000-4000-8000-000000000000")
-const faults = vi.hoisted(() => ({
-  write: false,
-  close: false,
-  cleanup: false,
-  closed: 0,
-  abort: undefined as AbortController | undefined
-}))
-vi.mock("node:crypto", async (load) => ({
-  ...await load<typeof import("node:crypto")>(),
-  randomUUID: () => collision
-}))
-vi.mock("node:fs/promises", async (load) => {
-  const actual = await load<typeof import("node:fs/promises")>()
-  const isTemporary = (path: unknown) => String(path).endsWith(`.${collision}.tmp`)
-  return {
-    ...actual,
-    async open(...args: Parameters<typeof actual.open>) {
-      const handle = await actual.open(...args)
-      if (isTemporary(args[0])) {
-        const write = handle.writeFile.bind(handle)
-        const close = handle.close.bind(handle)
-        if (faults.write) {
-          vi.spyOn(handle, "writeFile").mockImplementation(async () => {
-            await write("partial JSON")
-            throw Object.assign(new Error("fixture disk full"), { code: "ENOSPC" })
-          })
-        }
-        vi.spyOn(handle, "close").mockImplementation(async () => {
-          await close()
-          faults.closed++
-          faults.abort?.abort()
-          if (faults.close) throw Object.assign(new Error("fixture close failed"), { code: "EIO" })
-        })
-      }
-      return handle
-    },
-    async unlink(path: Parameters<typeof actual.unlink>[0]) {
-      if (faults.cleanup && isTemporary(path)) {
-        throw Object.assign(new Error("fixture cleanup denied"), { code: "EACCES" })
-      }
-      return actual.unlink(path)
-    }
-  }
-})
-
+import { afterEach, describe, expect, it } from "vitest"
 import * as Evaluation from "../src/evaluation/Evaluation.ts"
 
+const collision = "00000000-0000-4000-8000-000000000000"
 const roots: Array<string> = []
 afterEach(async () => {
-  Object.assign(faults, { write: false, close: false, cleanup: false, closed: 0, abort: undefined })
-  vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
@@ -64,27 +17,77 @@ const fixture = async () => {
   return root
 }
 
+const withFiles = <A>(
+  decorate: (files: Evaluation.ArtifactFilesService) => Evaluation.ArtifactFilesService,
+  operation: Effect.Effect<A, unknown>
+) =>
+  Effect.runPromise(
+    Effect.flatMap(Evaluation.ArtifactFiles, (files) =>
+      operation.pipe(Effect.provideService(Evaluation.ArtifactFiles, decorate(files))))
+  )
+
 describe("evaluation artifact publication ownership", () => {
   it.each(["write", "close"] as const)("closes its handle and never publishes after a %s failure", async (phase) => {
     const root = await fixture()
     const destination = join(root, "result.json")
-    faults[phase] = true
-
-    await expect(Evaluation.writeJson(destination, "{\"complete\":true}")).rejects.toMatchObject({
+    let closed = 0
+    await expect(withFiles((files) => ({
+      ...files,
+      open: (file) =>
+        Effect.map(files.open(file), (handle) => ({
+          write: (source) =>
+            phase === "write"
+              ? Effect.andThen(
+                handle.write("partial JSON"),
+                Effect.fail(Object.assign(new Error("disk full"), { code: "ENOSPC" }))
+              )
+              : handle.write(source),
+          close: Effect.andThen(
+            handle.close,
+            Effect.suspend(() => {
+              closed++
+              return phase === "close"
+                ? Effect.fail(Object.assign(new Error("close failed"), { code: "EIO" }))
+                : Effect.void
+            })
+          )
+        }))
+    }), Evaluation.publishJson(destination, "{\"complete\":true}"))).rejects.toMatchObject({
       code: phase === "write" ? "ENOSPC" : "EIO"
     })
+    expect(closed).toBe(1)
+    expect(await readdir(root)).toEqual([])
+  })
 
-    expect(faults.closed).toBe(1)
+  it("preserves an existing cancellation reason without creating an artifact directory", async () => {
+    const root = await fixture()
+    const controller = new AbortController()
+    const reason = new Error("cancelled before publication")
+    controller.abort(reason)
+    await expect(Evaluation.writeJson(join(root, "new", "result.json"), "complete", false, controller.signal))
+      .rejects.toBe(reason)
     expect(await readdir(root)).toEqual([])
   })
 
   it("checks cancellation after writing and closes and removes its unpublished temporary file", async () => {
     const root = await fixture()
-    const destination = join(root, "result.json")
     const controller = new AbortController()
-    faults.abort = controller
-    await expect(Evaluation.writeJson(destination, "complete", false, controller.signal)).rejects.toBeDefined()
-    expect(faults.closed).toBe(1)
+    let closed = 0
+    await expect(withFiles((files) => ({
+      ...files,
+      open: (file) =>
+        Effect.map(files.open(file), (handle) => ({
+          ...handle,
+          close: Effect.andThen(
+            handle.close,
+            Effect.sync(() => {
+              closed++
+              controller.abort()
+            })
+          )
+        }))
+    }), Evaluation.publishJson(join(root, "result.json"), "complete", false, controller.signal))).rejects.toBeDefined()
+    expect(closed).toBe(1)
     expect(await readdir(root)).toEqual([])
   })
 
@@ -92,13 +95,16 @@ describe("evaluation artifact publication ownership", () => {
     const root = await fixture()
     const destination = join(root, "result.json")
     const source = "{\"complete\":true}"
-    faults.cleanup = true
-
-    await expect(Evaluation.writeJson(destination, source)).rejects.toMatchObject({ code: "EACCES" })
-
-    expect(faults.closed).toBe(1)
+    let temporary = ""
+    await expect(withFiles((files) => ({
+      ...files,
+      remove: (file) => {
+        temporary = file
+        return Effect.fail(Object.assign(new Error("cleanup denied"), { code: "EACCES" }))
+      }
+    }), Evaluation.publishJson(destination, source))).rejects.toMatchObject({ code: "EACCES" })
     expect(await readFile(destination, "utf8")).toBe(source)
-    expect(await readFile(`${destination}.${collision}.tmp`, "utf8")).toBe(source)
+    expect(await readFile(temporary, "utf8")).toBe(source)
   })
 
   it("never removes a pre-existing temporary file after exclusive creation fails", async () => {
@@ -106,9 +112,12 @@ describe("evaluation artifact publication ownership", () => {
     const destination = join(root, "result.json")
     const temporary = `${destination}.${collision}.tmp`
     await writeFile(temporary, "another writer owns these bytes")
-
-    await expect(Evaluation.writeJson(destination, "new result")).rejects.toMatchObject({ code: "EEXIST" })
-
+    await expect(
+      withFiles(
+        (files) => ({ ...files, temporaryId: Effect.succeed(collision) }),
+        Evaluation.publishJson(destination, "new result")
+      )
+    ).rejects.toMatchObject({ code: "EEXIST" })
     expect(await readFile(temporary, "utf8")).toBe("another writer owns these bytes")
     expect(await readdir(root)).toEqual([`result.json.${collision}.tmp`])
   })
@@ -120,9 +129,12 @@ describe("evaluation artifact publication ownership", () => {
     const temporary = `${destination}.${collision}.tmp`
     await writeFile(original, "original")
     await symlink(original, temporary)
-
-    await expect(Evaluation.writeJson(destination, "replacement", true)).rejects.toMatchObject({ code: "EEXIST" })
-
+    await expect(
+      withFiles(
+        (files) => ({ ...files, temporaryId: Effect.succeed(collision) }),
+        Evaluation.publishJson(destination, "replacement", true)
+      )
+    ).rejects.toMatchObject({ code: "EEXIST" })
     expect(await readFile(temporary, "utf8")).toBe("original")
     expect(await readFile(original, "utf8")).toBe("original")
   })
@@ -136,17 +148,63 @@ describe("evaluation artifact publication ownership", () => {
     expect(await readdir(destination)).toEqual([])
   })
 
-  it("keeps a complete winner when two writers contend for the same artifact", async () => {
+  it.each([0, 65_536])("keeps a complete winner when both writers reach publication (payload=%s)", async (size) => {
     const root = await fixture()
     const destination = join(root, "result.json")
-    const sources = [JSON.stringify({ writer: 1, data: "a".repeat(65_536) }), JSON.stringify({ writer: 2 })]
-    const results = await Promise.allSettled(sources.map((source) => Evaluation.writeJson(destination, source)))
-    const winner = results.findIndex((result) => result.status === "fulfilled")
-    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1)
-    expect(results.find((result) => result.status === "rejected")).toMatchObject({
-      reason: { code: "EEXIST" }
-    })
-    expect(await readFile(destination, "utf8")).toBe(sources[winner])
+    const sources = [JSON.stringify({ writer: 1, data: "a".repeat(size) }), JSON.stringify({ writer: 2 })]
+    const ready = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const stopped = Promise.withResolvers<void>()
+    const publications: string[] = []
+    const running = withFiles(
+      (files) => ({
+        ...files,
+        publish: (temporary, file, overwrite) =>
+          Effect.gen(function*() {
+            publications.push(temporary)
+            if (publications.length === 2) ready.resolve()
+            yield* Effect.promise(() => release.promise)
+            yield* files.publish(temporary, file, overwrite)
+          })
+      }),
+      Effect.all(
+        sources.map((source) =>
+          Effect.exit(Evaluation.publishJson(destination, source)).pipe(
+            Effect.tap(() => Effect.sync(() => stopped.resolve()))
+          )
+        ),
+        {
+          concurrency: "unbounded"
+        }
+      )
+    )
+    try {
+      // Both complete, independently owned temporary files must exist before
+      // either writer may attempt the destination's atomic no-replace operation.
+      await Promise.race([
+        ready.promise,
+        stopped.promise.then(() => {
+          throw new Error("a writer stopped before publication")
+        })
+      ])
+      expect(new Set(publications).size).toBe(2)
+      expect(await Promise.all(publications.map((file) => readFile(file, "utf8")))).toEqual(
+        expect.arrayContaining(sources)
+      )
+      expect(await readdir(root)).toHaveLength(2)
+    } finally {
+      release.resolve()
+      await running
+    }
+    const results = await running
+    const successes = results.flatMap((result, index) => result._tag === "Success" ? [index] : [])
+    expect(successes).toHaveLength(1)
+    const failure = results.find((result) => result._tag === "Failure")
+    expect(failure).toBeDefined()
+    if (failure?._tag === "Failure") {
+      expect(Cause.squash(failure.cause)).toMatchObject({ code: "EEXIST" })
+    }
+    expect(await readFile(destination, "utf8")).toBe(sources[successes[0]!])
     expect(await readdir(root)).toEqual(["result.json"])
   })
 
@@ -156,7 +214,6 @@ describe("evaluation artifact publication ownership", () => {
     const destination = join(root, "result.json")
     await writeFile(original, "original")
     await symlink(original, destination)
-
     await expect(Evaluation.writeJson(destination, "new result")).rejects.toMatchObject({ code: "EEXIST" })
     expect(await readFile(original, "utf8")).toBe("original")
     await Evaluation.writeJson(destination, "new result", true)

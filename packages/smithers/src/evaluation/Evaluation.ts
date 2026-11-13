@@ -18,7 +18,7 @@ import type { ScorerError } from "@smthrs/scorers/ScorerError"
 import * as ScoreStore from "@smthrs/scorers/ScoreStore"
 import * as Scoring from "@smthrs/scorers/Scoring"
 import * as SqlScoreStore from "@smthrs/scorers/SqlScoreStore"
-import { Effect, Layer, Logger, Option, Schema } from "effect"
+import { Context, Effect, Exit, Layer, Logger, Option, Schema } from "effect"
 import type * as Scope from "effect/Scope"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { z } from "incur"
@@ -302,38 +302,92 @@ export const runPath = (root: string, runId: string): string => {
 }
 
 /**
+ * An exclusively owned artifact's open handle.
+ * @category models
+ * @since 1.0.0
+ */
+export interface ArtifactHandle {
+  readonly write: (source: string) => Effect.Effect<void, unknown>
+  readonly close: Effect.Effect<void, unknown>
+}
+
+/**
+ * Filesystem operations at the atomic artifact publication boundary.
+ * @category services
+ * @since 1.0.0
+ */
+export interface ArtifactFilesService {
+  readonly temporaryId: Effect.Effect<string>
+  readonly mkdir: (directory: string) => Effect.Effect<unknown, unknown>
+  readonly open: (file: string) => Effect.Effect<ArtifactHandle, unknown>
+  readonly publish: (temporary: string, file: string, overwrite: boolean) => Effect.Effect<void, unknown>
+  readonly remove: (file: string) => Effect.Effect<void, unknown>
+}
+
+const artifactIo = <A>(operation: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: operation, catch: (cause) => cause })
+
+/**
+ * The real filesystem by default; hosts may inject filesystem failures.
+ * @category services
+ * @since 1.0.0
+ */
+export const ArtifactFiles = Context.Reference<ArtifactFilesService>("/cli/Evaluation/ArtifactFiles", {
+  defaultValue: () => ({
+    temporaryId: Effect.sync(randomUUID),
+    mkdir: (directory) => artifactIo(() => mkdir(directory, { recursive: true })),
+    open: (file) =>
+      artifactIo(async () => {
+        const handle = await open(file, "wx", 0o600)
+        return {
+          write: (source: string) => artifactIo(() => handle.writeFile(source, { encoding: "utf8" })),
+          close: artifactIo(() => handle.close())
+        }
+      }),
+    publish: (temporary, file, overwrite) =>
+      artifactIo(() => overwrite ? rename(temporary, file) : link(temporary, file)),
+    remove: (file) => artifactIo(() => unlink(file))
+  })
+})
+
+/**
+ * Publishes complete JSON through the host's filesystem service.
+ * Cleanup starts only after exclusive creation proves ownership of the path.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const publishJson = (file: string, source: string, overwrite = false, signal?: AbortSignal) =>
+  Effect.uninterruptible(Effect.gen(function*() {
+    yield* Effect.try({ try: () => signal?.throwIfAborted(), catch: (cause) => cause })
+    const files = yield* ArtifactFiles
+    yield* files.mkdir(dirname(file))
+    const temporary = `${file}.${yield* files.temporaryId}.tmp`
+    const handle = yield* files.open(temporary)
+    const result = yield* Effect.exit(Effect.gen(function*() {
+      const written = yield* Effect.exit(handle.write(source))
+      // A close failure supersedes a write failure, as in a JavaScript finally.
+      yield* handle.close
+      yield* Exit.match(written, { onSuccess: Effect.succeed, onFailure: Effect.failCause })
+      yield* Effect.try({ try: () => signal?.throwIfAborted(), catch: (cause) => cause })
+      yield* files.publish(temporary, file, overwrite)
+    }))
+    yield* files.remove(temporary).pipe(
+      Effect.catch((cause) => (cause as NodeJS.ErrnoException)?.code === "ENOENT" ? Effect.void : Effect.fail(cause))
+    )
+    return yield* Exit.match(result, { onSuccess: Effect.succeed, onFailure: Effect.failCause })
+  }))
+
+/**
  * Writes a JSON artifact atomically and refuses replacement by default.
  * @category constructors
  * @since 1.0.0
  */
-export const writeJson = async (
+export const writeJson = (
   file: string,
   source: string,
   overwrite = false,
   signal?: AbortSignal
-): Promise<void> => {
-  signal?.throwIfAborted()
-  await mkdir(dirname(file), { recursive: true })
-  const temporary = `${file}.${randomUUID()}.tmp`
-  // Enter cleanup only after exclusive creation proves we own this path.
-  // A colliding file or symlink belongs to another writer and must survive.
-  const handle = await open(temporary, "wx", 0o600)
-  try {
-    try {
-      await handle.writeFile(source, { encoding: "utf8" })
-    } finally {
-      await handle.close()
-    }
-    signal?.throwIfAborted()
-    // link is an atomic no-replace publication; a crash never exposes partial JSON.
-    if (overwrite) await rename(temporary, file)
-    else await link(temporary, file)
-  } finally {
-    await unlink(temporary).catch((cause: NodeJS.ErrnoException) => {
-      if (cause.code !== "ENOENT") throw cause
-    })
-  }
-}
+): Promise<void> => Effect.runPromise(publishJson(file, source, overwrite, signal))
 
 const batchScoring = Layer.effect(Runner.Runner)(Effect.gen(function*() {
   const store = yield* ScoreStore.ScoreStore

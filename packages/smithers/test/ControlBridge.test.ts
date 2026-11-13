@@ -1,336 +1,207 @@
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Audience from "@smthrs/build-cli/Audience"
 import { ApprovalAuthority, Control } from "@smthrs/control"
 import { Unavailable } from "@smthrs/control/ControlError"
-import * as TestControl from "@smthrs/control/test/TestControl"
-import { Cause, Console, Effect, Layer, Logger, References, Stream } from "effect"
+import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
+import { Cause, Effect, Layer, Logger, References, Stream } from "effect"
+import { HttpServer } from "effect/http"
 import { getEventListeners } from "node:events"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  watch,
+  writeFileSync
+} from "node:fs"
+import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join, relative, resolve } from "node:path"
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { PassThrough, Writable } from "node:stream"
+import { afterEach, describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import * as Bridge from "../src/cli/ControlBridge.ts"
-import { createRunsCli } from "../src/cli/ControlCommands.ts"
 import * as Presentation from "../src/cli/Presentation.ts"
 import * as RunProgress from "../src/cli/RunProgress.ts"
+import * as BugCommand from "../src/commands/Bug.ts"
 import * as CommandStatus from "../src/internal/CommandStatus.ts"
-import * as Serve from "../src/Serve.ts"
+import * as ControlDatabase from "../src/internal/ControlDatabase.ts"
+import * as NodeControl from "../src/NodeControl.ts"
+import * as Project from "../src/Project.ts"
 import * as Ui from "../src/Ui.ts"
 
-const ports = vi.hoisted(() => ({
-  runWith: vi.fn(),
-  control: vi.fn(),
-  observe: vi.fn(),
-  prepare: vi.fn(),
-  project: vi.fn(),
-  registry: vi.fn(),
-  readOnly: vi.fn(),
-  scheduler: vi.fn(),
-  serve: vi.fn()
-}))
-
-// Host transports are bounded doubles, so these tests never open a database,
-// worktree, or listener. The bug consent cases drive the unified `bug` verb
-// through its typed command; routing-only cases use a bounded handler.
-vi.mock("../src/Command.ts", () => ({ cli: "legacy" }))
-vi.mock("effect/cli", async (load) => {
-  const actual = await load<typeof import("effect/cli")>()
-  return { ...actual, Command: { ...actual.Command, runWith: ports.runWith } }
+const roots: string[] = []
+const fixture = () => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-control-bridge-"))
+  roots.push(root)
+  return { root, quiet: false }
+}
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
-vi.mock("../src/NodeControl.ts", async (load) => {
-  const actual = await load<typeof import("../src/NodeControl.ts")>()
-  const { Effect, Layer } = await import("effect")
-  return {
-    ...actual,
-    layer: ports.control,
-    layerObserve: ports.observe,
-    layerRegistry: ports.registry,
-    layerOutput: Layer.effectDiscard(Effect.sync(() => ports.readOnly("output")))
-  }
-})
-vi.mock("../src/history/History.ts", async (load) => ({
-  ...await load<typeof import("../src/history/History.ts")>(),
-  prepare: ports.prepare
-}))
-vi.mock("../src/Project.ts", async (load) => ({
-  ...await load<typeof import("../src/Project.ts")>(),
-  layer: ports.project
-}))
-vi.mock("../src/operator/Triggers.ts", async (load) => ({
-  ...await load<typeof import("../src/operator/Triggers.ts")>(),
-  layerTriggerScheduler: ports.scheduler
-}))
-vi.mock("../src/Serve.ts", async (load) => ({
-  ...await load<typeof import("../src/Serve.ts")>(),
-  host: ports.serve
-}))
-
-const directory = mkdtempSync(join(tmpdir(), "smithers-control-bridge-"))
-const relativeRoot = relative(process.cwd(), join(directory, "relative"))
-mkdirSync(join(directory, "relative"))
-afterAll(() => rmSync(directory, { recursive: true, force: true }))
-const local = { root: directory, quiet: false }
 const plain = Audience.resolve({ env: {}, audience: "human", stdout: false, stderr: false })
 const silent = { ...plain, progress: "silent" as const, interactive: false }
-const runtime = { environment: {}, presentation: plain }
+const runtime = { environment: {}, presentation: plain, evaluator: ScriptedJudge.layer }
 const bind = { host: "127.0.0.1", port: 0, listen: false, credential: undefined }
-let handler: Effect.Effect<unknown, unknown, Control.Control | Ui.Ui> = Effect.void
-let service: Control.Service
-let lifecycle: Array<string>
-let receivedArguments: ReadonlyArray<string>
 
-beforeEach(async () => {
-  vi.spyOn(process.stderr, "write").mockReturnValue(true)
-  for (const port of Object.values(ports)) port.mockReset()
-  lifecycle = []
-  receivedArguments = []
-  handler = Effect.void
-  service = await Effect.runPromise(Control.Control.pipe(Effect.provide(Control.layerNoop)))
-  ports.runWith.mockImplementation(() => (args: ReadonlyArray<string>) => {
-    receivedArguments = args
-    return handler
-  })
-  const control = () =>
-    Layer.effect(
-      Control.Control,
-      Effect.acquireRelease(
-        Effect.sync(() => {
-          lifecycle.push("control:open")
-          return service
-        }),
-        () =>
-          Effect.sync(() => {
-            lifecycle.push("control:close")
-          })
-      )
-    )
-  ports.control.mockImplementation(control)
-  ports.observe.mockImplementation(control)
-  ports.project.mockImplementation(() => Layer.effectDiscard(Effect.sync(() => ports.readOnly("project"))))
-  ports.registry.mockImplementation(() => Layer.effectDiscard(Effect.sync(() => ports.readOnly("registry"))))
-  ports.prepare.mockResolvedValue({ executionRoot: "/bridge-snapshot", migrationRoot: "/bridge-legacy" })
-  ports.scheduler.mockImplementation(() =>
-    Layer.effectDiscard(Effect.gen(function*() {
-      const control = yield* Control.Control
-      expect(control).toBe(service)
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          lifecycle.push("scheduler:open")
-        }),
-        () =>
-          Effect.sync(() => {
-            lifecycle.push("scheduler:close")
-          })
-      )
-    }))
-  )
-  ports.serve.mockImplementation(() =>
+// The RPC server and client are real, backed by the production SQLite control
+// host. Only unhappy paths decorate that public service with a failing Effect.
+const remote = <A>(
+  root: string,
+  use: (options: Bridge.ConnectionOptions) => Promise<A>,
+  fault?: (service: Control.Service) => Control.Service
+) => {
+  const live = NodeControl.layerControl({ root, startsRuns: false })
+  const control = fault === undefined ? live : Layer.effect(
+    Control.Control,
+    Effect.map(Control.Control, fault)
+  ).pipe(Layer.provide(live))
+  return Effect.runPromise(
     Effect.gen(function*() {
-      expect(yield* Control.Control).toBe(service)
-      yield* Effect.flatten(Serve.Ready)
-      lifecycle.push("serve")
-    })
-  )
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllEnvs()
-})
-
-describe("typed control hosts", () => {
-  it("query reports command status to its host without changing process.exitCode", async () => {
-    const exit = vi.fn()
-    const previous = process.exitCode
-    try {
-      expect(await Bridge.query(Effect.as(CommandStatus.set(130), "cancelled"), local, { ...runtime, exit })).toBe(
-        "cancelled"
-      )
-      expect(exit).toHaveBeenCalledExactlyOnceWith(130)
-      expect(process.exitCode).toBe(previous)
-    } finally {
-      process.exitCode = previous
-    }
-  })
-  it("provides a run-capable host and reports settlement through Incur", async () => {
-    const exit = vi.fn()
-    const document = { _tag: "Accepted", runId: "failed-run", status: "failed" }
-    const result = await Bridge.launch(
-      Effect.gen(function*() {
-        expect(yield* Control.Control).toBe(service)
-        yield* CommandStatus.set(1)
-        return document
-      }),
-      local,
-      { ...runtime, exit }
+      const { address } = yield* HttpServer.HttpServer
+      if (address._tag !== "InetAddressV4") throw new Error("expected a loopback TCP server")
+      return yield* Effect.tryPromise({
+        try: () => use({ root, quiet: false, remote: `http://127.0.0.1:${address.port}` }),
+        catch: (cause) => cause
+      })
+    }).pipe(
+      Effect.provide(NodeControl.layerServerNoopAuth({ host: "127.0.0.1", port: 0 }).pipe(Layer.provide(control))),
+      Effect.scoped
     )
-    expect(result).toEqual(document)
-    expect(exit).toHaveBeenCalledExactlyOnceWith(1)
-    expect(ports.control).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ startsRuns: true }))
-    expect(ports.runWith).not.toHaveBeenCalled()
-    expect(lifecycle).toEqual(["control:open", "control:close"])
-  })
-  it.each(["failed", "cancelled", "waiting-approval", "completed"] as const)(
-    "flow start --wait renders %s and exits through Incur",
-    async (status) => {
-      const exit = vi.fn()
-      const calls: string[] = []
-      const envelope = { capabilities: [], flows: [], budget: {} }
-      const card = await Effect.runPromise(
-        Effect.flatMap(Control.Control, (control) => control.plan({ flowId: "demo", input: {} })).pipe(
-          Effect.provide(TestControl.layer({
-            now: () => 0,
-            flows: [{ flowId: "demo", description: "fixture", deployClass: false, envelope }]
-          }))
-        )
-      )
-      service = {
-        ...service,
-        plan: vi.fn(() => {
-          calls.push("plan")
-          return Effect.succeed(card)
-        }),
-        approve: vi.fn((input) => {
-          calls.push("approve")
-          expect(input.scope).toBe("run")
-          return Effect.succeed({ _tag: "Accepted", receiptId: "approval" } as const)
-        }),
-        run: vi.fn(() => {
-          calls.push("run")
-          return Effect.succeed({ _tag: "Accepted", receiptId: "launch", runId: "run-1" } as const)
-        }),
-        watch: vi.fn(() =>
-          Stream.make({
-            sequence: 1,
-            runId: "run-1",
-            occurredAt: 1,
-            kind: `control.run.${status}` as const,
-            payload: { cause: "fixture failure" }
+  )
+}
+
+const seedEvents = (root: string) =>
+  Effect.runPromise(
+    Effect.gen(function*() {
+      const journal = yield* Journal.Journal
+      for (const eventType of ["first", "second"]) {
+        yield* journal.emitDurableUnfenced(
+          new JournalEvent.Input({
+            runId: JournalEvent.RunId.make("watched"),
+            sourceId: JournalEvent.SourceId.make("test"),
+            eventType,
+            payload: {}
           })
         )
       }
-      const result = { stdout: "", codes: [] as number[] }
-      await makeCli({
-        ...runtime,
-        exit,
-        stdout: {
-          isTTY: false,
-          columns: 80,
-          write: (text) => {
-            result.stdout += text
-          }
-        }
-      }).serve(
-        ["flow", "start", "demo", "--wait", "--remote", "https://fixture.invalid", "--json"],
-        {
-          stdout: (text) => {
-            result.stdout += text
-          },
-          exit: (code) => {
-            result.codes.push(code)
-          }
-        }
-      )
-      const document = JSON.parse(result.stdout)
-      expect(document).toMatchObject({ _tag: "Accepted", runId: "run-1" })
-      if (status === "failed") expect(document).toMatchObject({ status: "failed", cause: "fixture failure" })
-      expect(calls).toEqual(["plan", "approve", "run"])
-      expect(exit).toHaveBeenCalledExactlyOnceWith(
-        status === "completed" ? 0 : status === "failed" ? 1 : status === "cancelled" ? 130 : 3
-      )
-      expect(result.codes).toEqual([])
-      expect(ports.control).toHaveBeenCalledWith(expect.objectContaining({ startsRuns: true }))
-      expect(ports.runWith).not.toHaveBeenCalled()
-    }
-  )
-  it("enables flow planning on an observing host only when requested", async () => {
-    await Bridge.query(Effect.succeed({ planId: "plan" }), local, runtime, { plansFlows: true })
-    expect(ports.control).toHaveBeenLastCalledWith(expect.objectContaining({ startsRuns: false, plansFlows: true }))
-    await Bridge.query(Effect.void, local, runtime)
-    expect(ports.control).toHaveBeenLastCalledWith(expect.objectContaining({ startsRuns: false }))
-    expect(ports.control.mock.calls[1]![0].plansFlows).toBeUndefined()
-    expect(ports.runWith).not.toHaveBeenCalled()
-  })
-  it("closes a typed launch host after failure without invoking the legacy parser", async () => {
-    await expect(Bridge.launch(Effect.fail(new Error("launch failed")), local, runtime)).rejects.toThrow(
-      "launch failed"
+    }).pipe(
+      Effect.provide(
+        SqlJournal.layer({ capacity: 1024, overflow: "reject" }).pipe(
+          Layer.provide(ControlDatabase.layer(NodeControl.databasePath(root)))
+        )
+      ),
+      Effect.scoped
     )
-    expect(lifecycle).toEqual(["control:open", "control:close"])
-    expect(ports.runWith).not.toHaveBeenCalled()
-  })
-})
+  )
 
-describe("control bridge configuration and routing", () => {
+describe("control bridge configuration", () => {
+  it("preserves explicit connection arguments and quiet defaults", () => {
+    expect(Bridge.connectionOptions.parse({})).toEqual({ quiet: false })
+    expect(Bridge.connectionArguments({ quiet: false })).toEqual([])
+    expect(
+      Bridge.connectionArguments({
+        root: "some project",
+        remote: "https://control.invalid",
+        mcpConfig: "servers.json",
+        quiet: true
+      })
+    )
+      .toEqual([
+        "--root",
+        "some project",
+        "--remote",
+        "https://control.invalid",
+        "--mcp-config",
+        "servers.json",
+        "--quiet"
+      ])
+  })
+
+  it("resolves relative roots and explicit transport precedence", () => {
+    const local = fixture()
+    const root = relative(process.cwd(), local.root)
+    const environment = { SMITHERS_REMOTE: "https://env.invalid", SMITHERS_TOKEN: "env-fixture" }
+    expect(Bridge.configuration({ root, quiet: false }, { environment })).toMatchObject({
+      root: resolve(root),
+      remote: "https://env.invalid",
+      credential: "env-fixture",
+      executionRoot: undefined
+    })
+    expect(Bridge.configuration({ ...local, remote: "https://explicit.invalid" }, {
+      environment,
+      executionRoot: join(local.root, "snapshot")
+    })).toMatchObject({
+      root: local.root,
+      remote: "https://explicit.invalid",
+      credential: "env-fixture",
+      executionRoot: join(local.root, "snapshot")
+    })
+  })
+
   it("has records only over a remote plane or an existing local control store", () => {
-    const root = mkdtempSync(join(tmpdir(), "smthrs-bridge-records-"))
-    try {
-      const options = { root, quiet: false }
-      expect(Bridge.hasRecords(options, { environment: {} })).toBe(false)
-      expect(Bridge.isRemote(options, { environment: {} })).toBe(false)
-      const remote = { environment: { SMITHERS_REMOTE: "https://control.invalid" } }
-      expect(Bridge.hasRecords(options, remote)).toBe(true)
-      expect(Bridge.isRemote(options, remote)).toBe(true)
-      mkdirSync(join(root, ".flows"))
-      writeFileSync(join(root, ".flows", "control.db"), "")
-      expect(Bridge.hasRecords(options, { environment: {} })).toBe(true)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
+    const local = fixture()
+    expect(Bridge.hasRecords(local, runtime)).toBe(false)
+    expect(Bridge.isRemote(local, runtime)).toBe(false)
+    expect(Bridge.hasRecords(local, { environment: { SMITHERS_REMOTE: "https://control.invalid" } })).toBe(true)
+    mkdirSync(join(local.root, ".flows"))
+    writeFileSync(NodeControl.databasePath(local.root), "")
+    expect(Bridge.hasRecords(local, runtime)).toBe(true)
   })
 
-  it("binds MCP transport identity independently of display preferences and forwards only host policy", async () => {
-    const approvalAuthority = ApprovalAuthority.local
-    const host = { ...runtime, approvalAuthority }
+  it("binds MCP identity and host policy independently of presentation", async () => {
+    const local = fixture()
+    const host = { ...runtime, approvalAuthority: ApprovalAuthority.local }
     for (
-      const context of [
-        { agent: true, formatExplicit: true, globals: {} },
-        { request: {}, globals: { audience: "human" as const } }
-      ]
+      const context of [{ agent: true, formatExplicit: true, globals: {} }, {
+        request: {},
+        globals: { audience: "human" as const }
+      }]
     ) {
       await Presentation.scope(context, host, async () => {
         expect(Presentation.current()?.transport).toBe("mcp")
-        await Bridge.invoke(["ls"], { quiet: false }, host)
-        expect(ports.control).toHaveBeenLastCalledWith(expect.objectContaining({
+        expect(Bridge.configuration({ quiet: false }, host)).toMatchObject({
           principal: { id: "mcp", kind: "agent" },
-          approvalAuthority
-        }))
+          approvalAuthority: ApprovalAuthority.local
+        })
       })
     }
-    await Presentation.scope({ globals: { audience: "agent" } }, host, async () => {
-      expect(Presentation.current()?.transport).toBe("cli")
-      expect(Bridge.configuration(local, host).principal).toBeUndefined()
-    })
-    expect(Bridge.configuration(local, runtime).principal).toBeUndefined()
+    expect(Bridge.configuration(local, host).principal).toBeUndefined()
     expect(Bridge.connectionOptions.parse({ approvalAuthority: { authorize: "untrusted" } })).not.toHaveProperty(
       "approvalAuthority"
     )
   })
 
-  it("refuses caller-selected connection overrides over MCP and keeps the host destination", async () => {
-    const environment = { SMITHERS_REMOTE: "https://host.invalid", SMITHERS_TOKEN: "host-bearer" }
-    const host = { ...runtime, environment }
+  it("refuses caller-selected MCP destinations before opening a host", async () => {
+    const local = fixture()
+    const host = { ...runtime, environment: { SMITHERS_REMOTE: "https://host.invalid", SMITHERS_TOKEN: "host-bearer" } }
     await Presentation.scope({ request: {}, command: "flow_list" }, host, async () => {
-      for (const override of [{ remote: "https://attacker.invalid" }]) {
-        expect(() => Bridge.configuration({ ...local, ...override }, host)).toThrow(/is not accepted over MCP/)
-        await expect(Bridge.invoke(["ls"], { ...local, ...override }, host)).rejects.toThrow(/is not accepted over MCP/)
-        await expect(Bridge.query(Effect.void, { ...local, ...override }, host)).rejects.toThrow(
+      for (
+        const override of [{ remote: "https://attacker.invalid" }, { root: local.root }, {
+          mcpConfig: "untrusted.json"
+        }]
+      ) {
+        await expect(Bridge.invoke(["ls"], { quiet: false, ...override }, host)).rejects.toThrow(
+          /is not accepted over MCP/
+        )
+        await expect(Bridge.query(Effect.void, { quiet: false, ...override }, host)).rejects.toThrow(
           /is not accepted over MCP/
         )
       }
-      expect(ports.control).not.toHaveBeenCalled()
-      expect(receivedArguments).toEqual([])
-      await Bridge.invoke(["ls"], { quiet: false }, host)
-      expect(ports.control).toHaveBeenLastCalledWith(expect.objectContaining({
+      expect(Bridge.configuration({ quiet: false }, host)).toMatchObject({
         remote: "https://host.invalid",
         credential: "host-bearer",
         principal: { id: "mcp", kind: "agent" }
-      }))
+      })
     })
-    expect(Bridge.configuration({ ...local, remote: "https://explicit.invalid" }, host))
-      .toMatchObject({ remote: "https://explicit.invalid", principal: undefined })
+    expect(existsSync(join(local.root, ".flows"))).toBe(false)
   })
 
   it("keeps concurrent CLI and MCP identities separate", async () => {
+    const local = fixture()
     await Promise.all([
       Presentation.scope({ agent: true, formatExplicit: true, globals: {} }, runtime, async () => {
         await Promise.resolve()
@@ -342,125 +213,59 @@ describe("control bridge configuration and routing", () => {
       })
     ])
   })
-  it("preserves explicitly supplied connection arguments and quiet defaults", () => {
-    expect(Bridge.connectionOptions.parse({})).toEqual({ quiet: false })
-    expect(Bridge.connectionArguments({ quiet: false })).toEqual([])
-    expect(Bridge.connectionArguments({
-      root: "some project",
-      remote: "https://control.invalid",
-      mcpConfig: "servers.json",
-      quiet: true
-    })).toEqual([
-      "--root",
-      "some project",
-      "--remote",
-      "https://control.invalid",
-      "--mcp-config",
-      "servers.json",
-      "--quiet"
-    ])
-  })
+})
 
-  it("resolves relative roots, caller environment and explicit transport precedence", () => {
-    const environment = { SMITHERS_REMOTE: "https://env.invalid", SMITHERS_TOKEN: "env-fixture" }
-    expect(Bridge.configuration({ root: relativeRoot, quiet: false }, { environment })).toMatchObject({
-      root: resolve(relativeRoot),
-      remote: "https://env.invalid",
-      credential: "env-fixture",
-      executionRoot: undefined
-    })
-    expect(Bridge.configuration({ ...local, remote: "https://explicit.invalid" }, {
-      environment,
-      executionRoot: "/snapshot"
-    })).toMatchObject({
-      root: local.root,
-      remote: "https://explicit.invalid",
-      credential: "env-fixture",
-      executionRoot: "/snapshot"
-    })
-    vi.stubEnv("SMITHERS_REMOTE", "https://ambient.invalid")
-    expect(Bridge.configuration(local, {}).remote).toBe("https://ambient.invalid")
-  })
-
-  it("awaits committed workspace resolution before constructing a direct local execution host", async () => {
-    const ready = Promise.withResolvers<{ executionRoot: string }>()
-    ports.prepare.mockReturnValue(ready.promise)
-    const invocation = Bridge.invoke(["resume", "run-7"], local, runtime)
-    expect(ports.prepare).toHaveBeenCalledExactlyOnceWith(local.root, "run-7")
-    expect(ports.control).not.toHaveBeenCalled()
-    expect(ports.runWith).not.toHaveBeenCalled()
-    ready.resolve({ executionRoot: "/committed-fork" })
-    await invocation
-    expect(ports.control.mock.calls[0]![0].executionRoot).toBe("/committed-fork")
-  })
-
-  it("propagates failed workspace resolution without opening a direct execution host", async () => {
-    ports.prepare.mockRejectedValue(new Error("fork workspace unavailable"))
-    await expect(Bridge.invoke(["resume", "run-7"], local, runtime)).rejects.toThrow("fork workspace unavailable")
-    expect(ports.control).not.toHaveBeenCalled()
-    expect(ports.runWith).not.toHaveBeenCalled()
-  })
-
-  it.each(["resume", "cancel", "signal", "steer"])("prepares the recorded workspace for local %s", async (verb) => {
-    await Bridge.invoke([verb, "run-7"], local, runtime)
-    expect(ports.prepare).toHaveBeenCalledExactlyOnceWith(local.root, "run-7")
-    expect(ports.control).toHaveBeenCalledWith(expect.objectContaining({
-      root: local.root,
-      executionRoot: "/bridge-snapshot",
-      migrationRoot: "/bridge-legacy"
-    }))
-    expect(lifecycle).toEqual(["control:open", "control:close"])
-  })
-
-  it.each(["approve", "deny"])("prepares a node-target %s from its decoded run identity", async (verb) => {
-    // The same complete payload `approvals approve` serializes; the bridge
-    // shares the legacy executable's extraction, which decodes it in full.
-    const payload = {
-      target: {
-        _tag: "Node",
-        runId: "approved-run",
-        requestId: "ask",
-        digest: "reviewed",
-        envelope: { capabilities: [], flows: [], budget: {} }
-      },
-      scope: "once",
-      idempotencyKey: "decision"
-    }
-    await Bridge.invoke([verb, JSON.stringify(payload), "--scope", "once"], local, runtime)
-    expect(ports.prepare).toHaveBeenCalledExactlyOnceWith(local.root, "approved-run")
-  })
-
-  it.each([
-    undefined,
-    "{",
-    "null",
-    "{}",
-    "{\"target\":{\"_tag\":\"Plan\",\"runId\":\"wrong\"}}",
-    "{\"target\":{\"_tag\":\"Node\",\"runId\":4}}"
-  ])(
-    "leaves malformed or non-run approvals to the handler: %s",
-    async (payload) => {
-      const failure = { _tag: "decoder-failure", payload }
-      handler = Effect.fail(failure)
-      await expect(Bridge.invoke(payload === undefined ? ["approve"] : ["approve", payload], local, runtime))
-        .rejects.toBe(failure)
-      expect(ports.prepare).not.toHaveBeenCalled()
-      expect(lifecycle).toEqual(["control:open", "control:close"])
+describe("control bridge with production dependencies", () => {
+  it.each([false, true])(
+    "parses the emitted invocation and captures the actual flow document (remote=%s)",
+    async (overRpc) => {
+      const local = fixture()
+      const flow = join(local.root, ".smithers", "flows", "failing", "flow.ts")
+      mkdirSync(join(local.root, ".smithers", "flows", "failing"), { recursive: true })
+      writeFileSync(flow, readFileSync(new URL("./fixtures/bin-failing/flow.ts", import.meta.url)))
+      symlinkSync(resolve("node_modules"), join(local.root, "node_modules"), "dir")
+      const check = async (options: Bridge.ConnectionOptions) => {
+        const document = await Bridge.invoke(["ls"], options, runtime)
+        expect(document).toMatchObject({
+          _tag: "flows",
+          items: [{ flowId: "failing", description: "Fail at the native flow boundary." }]
+        })
+        expect(await Bridge.invoke(["ls"], { ...options, quiet: true }, runtime)).toEqual(document)
+        // This used to pass with the canned handler even though "list" is not a
+        // production flat command. Parser regressions must cross this boundary.
+        await expect(Bridge.invoke(["not-a-command"], options, runtime)).rejects.toBeDefined()
+      }
+      if (overRpc) await remote(local.root, check)
+      else await check(local)
+      expect(existsSync(NodeControl.databasePath(local.root))).toBe(true)
     }
   )
 
-  it("uses remote and explicit execution roots without preparing a history workspace", async () => {
-    await Bridge.invoke(["resume", "r"], { ...local, remote: "https://control.invalid" }, runtime)
-    await Bridge.invoke(["resume", "r"], local, { ...runtime, executionRoot: "/provided-snapshot" })
-    await Bridge.invoke([], local, runtime)
-    expect(ports.prepare).not.toHaveBeenCalled()
-    expect(ports.control.mock.calls[1]![0].executionRoot).toBe("/provided-snapshot")
+  it.each([undefined, "{", "null", "{}", "{\"target\":{\"_tag\":\"Node\",\"runId\":4}}"])(
+    "lets the production approval parser reject malformed input (%s)",
+    async (payload) => {
+      const local = fixture()
+      await expect(Bridge.invoke(payload === undefined ? ["approve"] : ["approve", payload], local, runtime))
+        .rejects.toBeDefined()
+    }
+  )
+
+  it.each([
+    { verb: "resume", args: ["resume", "missing-run"] },
+    { verb: "cancel", args: ["cancel", "missing-run"] },
+    { verb: "signal", args: ["signal", "missing-run", JSON.stringify({ name: "continue", payload: {} })] },
+    { verb: "steer", args: ["steer", "missing-run", "--message", "continue"] }
+  ])("runs the real local $verb handler after history preparation", async ({ args }) => {
+    const local = fixture()
+    await expect(Bridge.invoke(args, local, runtime)).rejects.toThrow(/missing-run/)
+    expect(existsSync(NodeControl.databasePath(local.root))).toBe(true)
   })
 
-  it("composes a project verb without starting the durable control host", async () => {
-    const failure = new Error("project verb failed")
+  it("provides real project and registry layers without creating a control database", async () => {
+    const local = fixture()
     const seen = await Bridge.local(
       Effect.gen(function*() {
+        expect(yield* Project.ProjectRoot).toBe(local.root)
         expect((yield* RunProgress.Configuration)?.policy.progress).toBe("silent")
         expect(yield* References.MinimumLogLevel).toBe("Error")
         return (yield* Ui.Ui).interactive
@@ -469,50 +274,204 @@ describe("control bridge configuration and routing", () => {
       runtime
     )
     expect(seen).toBe(false)
-    expect(ports.project).toHaveBeenCalledExactlyOnceWith(local.root, local.root)
-    expect(ports.registry).toHaveBeenCalledExactlyOnceWith(local.root)
-    expect(ports.control).not.toHaveBeenCalled()
-    expect(ports.readOnly.mock.calls.map(([name]) => name).sort()).toEqual(["project", "registry"])
-    await expect(Bridge.local(Effect.fail(failure), local, runtime)).rejects.toBe(failure)
+    expect(existsSync(NodeControl.databasePath(local.root))).toBe(false)
   })
 
-  it("hands a typed query the host's control service and prompt surface", async () => {
-    const interactive = await Bridge.query(
-      Effect.gen(function*() {
-        expect(yield* Control.Control).toBe(service)
-        return (yield* Ui.Ui).interactive
-      }),
-      local,
-      { ...runtime, presentation: { ...plain, interactive: true } }
+  it.each([undefined, plain, silent])(
+    "queries real SQLite with the requested presentation (%j)",
+    async (presentation) => {
+      const local = fixture()
+      const rows = await Bridge.query(
+        Effect.gen(function*() {
+          expect(yield* Logger.LogToStderr).toBe(true)
+          expect(yield* References.MinimumLogLevel).toBe(presentation === silent ? "Error" : "Info")
+          return yield* (yield* Control.Control).list({ _tag: "runs" })
+        }),
+        local,
+        { ...runtime, presentation }
+      )
+      expect(rows).toEqual({ _tag: "runs", items: [] })
+      expect(existsSync(NodeControl.databasePath(local.root))).toBe(true)
+      await Presentation.scope({ command: "list" }, { ...runtime, presentation: silent }, async () => {
+        expect(await Bridge.query(References.MinimumLogLevel, local, runtime)).toBe("Error")
+      })
+    }
+  )
+
+  it.each(["query", "launch"] as const)(
+    "reports %s status to its host without changing process.exitCode",
+    async (kind) => {
+      const local = fixture()
+      const codes: number[] = []
+      const before = process.exitCode
+      const result = await Bridge[kind](Effect.as(CommandStatus.set(130), "cancelled"), local, {
+        ...runtime,
+        exit: (code) => {
+          codes.push(code)
+        }
+      })
+      expect(result).toBe("cancelled")
+      expect(codes).toEqual([130])
+      expect(process.exitCode).toBe(before)
+      // Reopening the real database after the scope closes must succeed.
+      expect(
+        await Bridge.query(Effect.flatMap(Control.Control, (control) => control.list({ _tag: "runs" })), local, runtime)
+      )
+        .toEqual({ _tag: "runs", items: [] })
+    }
+  )
+
+  it.each(["query", "launch"] as const)("preserves %s failure identity and runs acquired finalizers", async (kind) => {
+    const local = fixture()
+    const failure = new Error("operation failed")
+    let released = false
+    const operation = Effect.gen(function*() {
+      yield* Effect.acquireRelease(Effect.void, () =>
+        Effect.sync(() => {
+          released = true
+        }))
+      return yield* Effect.fail(failure)
+    }).pipe(Effect.scoped)
+    await expect(Bridge[kind](operation, local, runtime)).rejects.toBe(failure)
+    expect(released).toBe(true)
+  })
+
+  it("interrupts an active query and releases its resources", async () => {
+    const local = fixture()
+    const abort = new AbortController()
+    const ready = Promise.withResolvers<void>()
+    let released = false
+    const operation = Effect.gen(function*() {
+      yield* Effect.acquireRelease(Effect.sync(() => ready.resolve()), () =>
+        Effect.sync(() => {
+          released = true
+        }))
+      return yield* Effect.never
+    }).pipe(Effect.scoped)
+    const running = Bridge.query(operation, local, { ...runtime, signal: abort.signal })
+    const result = running.catch((error: unknown) => error)
+    await ready.promise
+    abort.abort(new Error("test cancellation"))
+    expect(await result).toMatchObject({ code: "interrupted", fault: "user" })
+    expect(released).toBe(true)
+  })
+
+  it("surfaces a failing Control Effect through the real parser and RPC transport", async () => {
+    const local = fixture()
+    await remote(local.root, async (options) => {
+      await expect(Bridge.invoke(["ls"], options, runtime)).rejects.toMatchObject({
+        _tag: "/control/Unavailable",
+        feature: "list"
+      })
+    }, (service) => ({ ...service, list: () => Effect.fail(new Unavailable({ feature: "list", ticket: "fixture" })) }))
+  })
+
+  it("observes existing stores without changing the database", async () => {
+    const local = fixture()
+    await Bridge.query(Effect.void, local, runtime)
+    const before = statSync(NodeControl.databasePath(local.root)).mtimeMs
+    expect(
+      await Bridge.read(Effect.flatMap(Control.Control, (control) => control.list({ _tag: "runs" })), local, runtime)
     )
-    expect(interactive).toBe(true)
-    expect(ports.control).toHaveBeenCalledWith(expect.objectContaining({ root: local.root }))
+      .toEqual({ _tag: "runs", items: [] })
+    const rows: unknown[] = []
+    for await (const row of Bridge.events("missing", false, local, runtime)) rows.push(row)
+    expect(rows).toEqual([])
+    expect(statSync(NodeControl.databasePath(local.root)).mtimeMs).toBe(before)
+  })
+
+  it.each(["abort", "return"] as const)(
+    "releases an acquired remote watch on %s and removes its listener",
+    async (stop) => {
+      const local = fixture()
+      await seedEvents(local.root)
+      const released = Promise.withResolvers<void>()
+      await remote(local.root, async (options) => {
+        const abort = new AbortController()
+        const iterator = Bridge.events("watched", true, options, { ...runtime, signal: abort.signal })
+          [Symbol.asyncIterator]()
+        const first = await iterator.next()
+        expect(first).toMatchObject({ done: false, value: { kind: "first", runId: "watched" } })
+        if (stop === "abort") {
+          abort.abort()
+          // A buffered second event may be delivered before the interruption;
+          // exhaust it to observe closure of the acquired RPC stream.
+          while (!(await iterator.next()).done) {}
+        } else await iterator.return!()
+        await released.promise
+        expect(getEventListeners(abort.signal, "abort")).toEqual([])
+      }, (service) => ({
+        ...service,
+        watch: (request) => service.watch(request).pipe(Stream.ensuring(Effect.sync(() => released.resolve())))
+      }))
+    }
+  )
+
+  it("forwards real watch cursors without redelivering earlier events", async () => {
+    const local = fixture()
+    await seedEvents(local.root)
+    await remote(local.root, async (options) => {
+      const rows = []
+      for await (const row of Bridge.events("watched", false, options, runtime)) rows.push(row)
+      expect(rows.map((row) => row.kind)).toEqual(["first", "second"])
+      for (const after of [{ sequence: rows[0]!.sequence }, { sequence: rows[0]!.sequence, offset: 0 }]) {
+        const resumed = []
+        for await (const row of Bridge.events("watched", false, options, runtime, after)) resumed.push(row)
+        expect(resumed.map((row) => row.kind)).toEqual(["second"])
+      }
+    })
+  })
+
+  it("releases a failed watch through the public service boundary", async () => {
+    const local = fixture()
+    const released = Promise.withResolvers<void>()
+    await remote(local.root, async (options) => {
+      const iterator = Bridge.events("watched", false, options, runtime)[Symbol.asyncIterator]()
+      await expect(iterator.next()).rejects.toMatchObject({ _tag: "/control/Unavailable", feature: "watch" })
+      await released.promise
+    }, (service) => ({
+      ...service,
+      watch: () =>
+        Stream.fail(new Unavailable({ feature: "watch", ticket: "fixture" })).pipe(
+          Stream.ensuring(Effect.sync(() => released.resolve()))
+        )
+    }))
+  })
+
+  it("completes an already-cancelled watch without retaining a listener", async () => {
+    const local = fixture()
+    await seedEvents(local.root)
+    const abort = new AbortController()
+    abort.abort()
+    const iterator = Bridge.events("missing", true, local, { ...runtime, signal: abort.signal })[Symbol.asyncIterator]()
+    expect(await iterator.next()).toEqual({ done: true, value: undefined })
+    expect(getEventListeners(abort.signal, "abort")).toEqual([])
   })
 })
 
-describe("control bridge result and progress contract", () => {
-  it("captures complete JSON, scalar, object and plain-text documents in order", async () => {
-    const document = { rows: [1, 2] }
-    handler = Console.log("{\"status\":\"ok\"}", document, "3", "false", "null", "plain text")
-    expect(await Bridge.invoke(["list"], local, runtime))
-      .toEqual([{ status: "ok" }, document, 3, false, null, "plain text"])
-    expect(receivedArguments).toEqual(["--json", "--root", local.root, "list"])
-    handler = Effect.void
-    expect(await Bridge.invoke(["list"], local, runtime)).toEqual([])
-  })
-
-  it("uses scoped stderr and policy, sanitizes and bounds progress, and preserves returned data", async () => {
-    let stderr = ""
-    handler = Effect.gen(function*() {
-      expect((yield* RunProgress.Configuration)?.policy.progress).toBe("plain")
-      expect(yield* References.MinimumLogLevel).toBe("Info")
-      expect(yield* Logger.LogToStderr).toBe(true)
-      yield* Console.error("%s\n%s", "\u001b[31mprogress\u001b[0m", "x".repeat(600))
-      yield* Console.log("{\"complete\":true}")
+// A token file is written by Serve.Ready only after the real socket and
+// scheduler layers have acquired. Watching its publication is a readiness
+// barrier, and the HTTP probe proves the executable is actually serving.
+describe("real serve command", () => {
+  it.each([false, true])("serves authenticated loopback RPC and keeps the token private (quiet=%s)", async (quiet) => {
+    const local = fixture()
+    const reservation = createServer()
+    await new Promise<void>((resolve) => reservation.listen(0, "127.0.0.1", resolve))
+    const address = reservation.address()
+    if (address === null || typeof address === "string") throw new Error("expected a TCP port")
+    await new Promise<void>((resolve, reject) => reservation.close((error) => error ? reject(error) : resolve()))
+    const tokenFile = join(local.root, "operator.token")
+    const ready = Promise.withResolvers<void>()
+    const watcher = watch(local.root, () => {
+      if (existsSync(tokenFile)) ready.resolve()
     })
-    let result: unknown
-    await Presentation.scope({ command: "list" }, {
+    const abort = new AbortController()
+    let stdout = ""
+    let stderr = ""
+    const codes: number[] = []
+    const running = makeCli({
       ...runtime,
+      signal: abort.signal,
       stderr: {
         isTTY: false,
         columns: 80,
@@ -520,83 +479,83 @@ describe("control bridge result and progress contract", () => {
           stderr += text
         }
       }
-    }, async () => {
-      result = await Bridge.invoke(["list"], local, { ...runtime, presentation: silent })
+    }).serve([
+      "serve",
+      "--root",
+      local.root,
+      "--port",
+      String(address.port),
+      "--operator-token-file",
+      tokenFile,
+      ...(quiet ? ["--quiet"] : [])
+    ], {
+      env: {},
+      stdout: (text) => {
+        stdout += text
+      },
+      exit: (code) => {
+        codes.push(code)
+      }
     })
-    expect(result).toEqual({ complete: true })
-    expect(stderr).toMatch(/^progress x+…\n$/)
-    expect(stderr.length).toBe(501)
+    const settled = running.then(() => "settled", (error: unknown) => error)
+    try {
+      await Promise.race([
+        ready.promise,
+        settled.then((error) => {
+          throw new Error(`serve ended before readiness: ${String(error)}`)
+        })
+      ])
+      const url = `http://127.0.0.1:${address.port}`
+      expect((await fetch(`${url}/health`)).ok).toBe(true)
+      const token = readFileSync(tokenFile, "utf8").trim()
+      expect(token).toMatch(/^[0-9a-f]{64}$/)
+      expect(statSync(tokenFile).mode & 0o777).toBe(0o600)
+      expect(
+        await Bridge.invoke(["ls"], { ...local, remote: url }, { ...runtime, environment: { SMITHERS_TOKEN: token } })
+      )
+        .toMatchObject({ _tag: "flows", items: expect.any(Array) })
+      expect(stdout + stderr).not.toContain(token)
+      if (quiet) expect(stdout + stderr).toBe("")
+      else expect(stderr).toContain(String(address.port))
+    } finally {
+      watcher.close()
+      abort.abort()
+      await settled
+    }
+    expect(codes.every((code) => code === 0 || code === 1)).toBe(true)
+    await expect(fetch(`http://127.0.0.1:${address.port}/health`)).rejects.toThrow()
   })
 
-  it("quiet suppresses progress and interaction while retaining the final document and exit status", async () => {
-    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true)
-    const exit = vi.fn()
-    handler = Effect.gen(function*() {
-      expect((yield* RunProgress.Configuration)?.policy.progress).toBe("silent")
-      expect((yield* Ui.Ui).interactive).toBe(false)
-      expect(yield* References.MinimumLogLevel).toBe("Error")
-      yield* Console.error("hidden progress")
-      yield* CommandStatus.set(2)
-      yield* Console.log("{\"document\":\"retained\"}")
-    })
-    expect(await Bridge.invoke(["list"], { ...local, quiet: true }, { ...runtime, exit }))
-      .toEqual({ document: "retained" })
-    expect(exit).toHaveBeenCalledExactlyOnceWith(2)
-    expect(receivedArguments).not.toContain("--quiet")
-    expect(stderr).not.toHaveBeenCalled()
-    await Bridge.invoke(["list"], { ...local, quiet: true })
-  })
-
-  it.each([
-    { output: false, failure: { _tag: "/cli/UnsupportedError" } },
-    { output: true, failure: { _tag: "/cli/UnsupportedError" } },
-    { output: true, failure: { _tag: "other" } },
-    { output: true, failure: new Error("transport failed") },
-    { output: true, failure: null },
-    { output: true, failure: "failure" }
-  ])("preserves the original failure identity ($failure)", async (fixture) => {
-    const exit = vi.fn()
-    handler = (fixture.output ? Console.log("partial") : Effect.void).pipe(
-      Effect.andThen(Effect.fail(fixture.failure))
+  it("refuses remote or public hosting before opening a store or token file", async () => {
+    const local = fixture()
+    await expect(Bridge.host(bind, { ...local, remote: "https://control.invalid" }, runtime)).rejects.toThrow(
+      "--remote is not supported"
     )
-    await expect(Bridge.invoke(["list"], local, { ...runtime, exit })).rejects.toBe(fixture.failure)
-    expect(exit).not.toHaveBeenCalled()
+    await expect(Bridge.host({ ...bind, host: "0.0.0.0" }, local, runtime)).rejects.toThrow("pass --listen")
+    expect(existsSync(join(local.root, ".flows"))).toBe(false)
   })
 })
 
-describe("control bridge bug report consent", () => {
-  const endpoint = "https://preview.invalid/report"
+describe("bug report consent through real local dependencies", () => {
   const summary = `${"two  spaces of diagnostic context; ".repeat(30)}Authorization: Bearer private-preview-token`
-  /** Drives the unified `bug` verb the way `bin` does, with a captured session stderr. */
-  const bug = async (flags: ReadonlyArray<string>, overrides: Partial<Bridge.Runtime> = {}) => {
-    const captured = { stdout: "", stderr: "", codes: [] as Array<number> }
-    const stderr = {
-      isTTY: false,
-      columns: 80,
-      write: (text: string) => {
-        captured.stderr += text
-        return true
-      }
-    }
-    const config = {
-      environment: { SMITHERS_BUG_ENDPOINT: endpoint },
-      presentation: plain,
-      stderr,
-      ...overrides
-    }
-    const argv = ["bug", summary, "--root", local.root, ...flags, "--json"]
-    await makeCli(config).serve(Audience.incurArguments(argv, config.presentation ?? plain), {
-      env: config.environment,
-      stdout: (text) => {
-        captured.stdout += text
-      },
-      exit: (code) => {
-        captured.codes.push(code)
-      }
+  const receiver = async (use: (endpoint: string, posts: string[]) => Promise<void>) => {
+    const posts: string[] = []
+    const server = createServer(async (request, response) => {
+      let body = ""
+      for await (const chunk of request) body += String(chunk)
+      posts.push(body)
+      response.writeHead(202).end("{}")
     })
-    return captured
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const address = server.address()
+    if (address === null || typeof address === "string") throw new Error("expected a loopback port")
+    try {
+      await use(`http://127.0.0.1:${address.port}/report`, posts)
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    }
   }
-  const preview = (stderr: string) => {
+  const preview = (stderr: string, endpoint: string) => {
     const [shownEndpoint, payload] = stderr.trimEnd().split("\n")
     expect(shownEndpoint).toBe(endpoint)
     expect(payload!.length).toBeGreaterThan(500)
@@ -605,440 +564,109 @@ describe("control bridge bug report consent", () => {
     return payload!
   }
 
-  it.each([true, false])("shows the complete redacted payload before interactive consent (%s)", async (accepted) => {
-    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 202 }))
-    let shownBeforeConsent = ""
-    let stderrSoFar = () => ""
-    const ui = Ui.make({ output: process.stderr, input: process.stdin, interactive: true })
-    const confirm = vi.fn(() =>
-      Effect.sync(() => {
-        expect(fetch).not.toHaveBeenCalled()
-        shownBeforeConsent = preview(stderrSoFar())
-        return accepted
-      })
-    )
-    vi.spyOn(Ui, "make").mockReturnValue({ ...ui, confirm })
-    const captured = { stderr: "" }
-    stderrSoFar = () => captured.stderr
-    const result = await bug([], {
-      presentation: { ...plain, interactive: true },
-      stderr: {
-        isTTY: false,
-        columns: 80,
-        write: (text: string) => {
-          captured.stderr += text
-          return true
-        }
-      }
-    })
-    if (accepted) {
-      expect(JSON.parse(result.stdout)).toMatchObject({ reported: true, endpoint })
-      expect(fetch).toHaveBeenCalledExactlyOnceWith(
-        endpoint,
-        expect.objectContaining({
-          method: "POST",
-          body: shownBeforeConsent
-        })
-      )
-    } else {
-      expect(result.stdout).toContain("Report not sent")
-      expect(result.codes).toContain(2)
-      expect(fetch).not.toHaveBeenCalled()
-    }
-    expect(confirm).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      initialValue: false,
-      nonInteractive: false
-    }))
-  })
-
-  it("quiet explicit consent still shows the complete payload before posting", async () => {
-    let shown = ""
-    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, options) => {
-      shown = String(options?.body)
-      return new Response("{}", { status: 202 })
-    })
-    const result = await bug(["--yes", "--quiet"])
-    expect(JSON.parse(result.stdout)).toMatchObject({ reported: true, endpoint })
-    expect(preview(result.stderr)).toBe(shown)
-    expect(fetch).toHaveBeenCalledOnce()
-  })
-
-  it("dry-run wins over explicit consent and quiet without posting", async () => {
-    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 202 }))
-    const result = await bug(["--yes", "--dry-run", "--quiet"])
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      reported: false,
-      endpoint,
-      payload: JSON.parse(preview(result.stderr))
-    })
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it("quiet without consent previews the report and refuses to post", async () => {
-    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 202 }))
-    const result = await bug(["--quiet"])
-    expect(result.stdout).toContain("Report not sent")
-    preview(result.stderr)
-    expect(fetch).not.toHaveBeenCalled()
-  })
-})
-
-describe("control bridge transport scope", () => {
-  it("keeps one acquired Control alive through bulk listing and cancellation", async () => {
-    service = {
-      ...service,
-      list: () =>
-        Effect.sync(() => {
-          lifecycle.push("list")
-          return {
-            _tag: "runs" as const,
-            items: ["first", "second"].map((runId) => ({
-              runId,
-              flowId: "demo/ship",
-              status: "parked" as const,
-              createdAt: 1,
-              updatedAt: 1
-            }))
+  it.each([{ flags: ["--yes", "--quiet"] }, { flags: ["--yes", "--dry-run", "--quiet"] }, { flags: ["--quiet"] }])(
+    "previews the full redacted document and obeys consent flags %j",
+    async ({ flags }) => {
+      const local = fixture()
+      await receiver(async (endpoint, posts) => {
+        let stderr = ""
+        let stdout = ""
+        const codes: number[] = []
+        const config = {
+          ...runtime,
+          environment: { SMITHERS_BUG_ENDPOINT: endpoint },
+          stderr: {
+            isTTY: false,
+            columns: 80,
+            write: (text: string) => {
+              stderr += text
+            }
           }
-        }),
-      cancel: ({ runId, idempotencyKey }) =>
-        Effect.sync(() => {
-          lifecycle.push(`cancel:${runId}`)
-          return { _tag: "Accepted" as const, runId, receiptId: idempotencyKey }
+        }
+        await makeCli(config).serve(["bug", summary, "--root", local.root, "--json", ...flags], {
+          env: config.environment,
+          stdout: (text) => {
+            stdout += text
+          },
+          exit: (code) => {
+            codes.push(code)
+          }
         })
-    }
-    const codes: Array<number> = []
-    await createRunsCli(runtime).serve(["cancel-all", "--remote", "https://control.invalid", "--json"], {
-      stdout: () => {},
-      exit: (code) => {
-        codes.push(code)
-      }
-    })
-    expect(codes).toEqual([])
-    expect(ports.control).toHaveBeenCalledTimes(1)
-    expect(lifecycle).toEqual(["control:open", "list", "cancel:first", "cancel:second", "control:close"])
-  })
-
-  it.each([undefined, plain, silent])(
-    "queries the selected service and closes it with policy %j",
-    async (presentation) => {
-      const value = await Bridge.query(
-        Effect.gen(function*() {
-          expect(yield* Control.Control).toBe(service)
-          expect(yield* Logger.LogToStderr).toBe(true)
-          expect(yield* References.MinimumLogLevel).toBe(presentation === silent ? "Error" : "Info")
-          return { rows: ["first", "second"] }
-        }),
-        local,
-        { environment: {}, presentation }
-      )
-      expect(value).toEqual({ rows: ["first", "second"] })
-      expect(lifecycle).toEqual(["control:open", "control:close"])
-    }
-  )
-
-  it("reads through the observing host alone, and events do too", async () => {
-    service = { ...service, watch: () => Stream.empty }
-    const value = await Bridge.read(
-      Effect.map(Control.Control, (control) => control === service),
-      local,
-      runtime
-    )
-    expect(value).toBe(true)
-    for await (const _ of Bridge.events("r", false, local, runtime)) break
-    expect(ports.control).not.toHaveBeenCalled()
-    expect(ports.observe).toHaveBeenCalledTimes(2)
-    expect(ports.observe.mock.calls[0]![0]).toMatchObject({ root: directory })
-    expect(lifecycle).toEqual(["control:open", "control:close", "control:open", "control:close"])
-  })
-
-  it("preserves query failure identity and releases its transport", async () => {
-    const failure = { _tag: "query-failure", code: 17 }
-    await expect(Bridge.query(Effect.fail(failure), local, runtime)).rejects.toBe(failure)
-    expect(lifecycle).toEqual(["control:open", "control:close"])
-  })
-
-  it("applies the current presentation session to queries ahead of caller defaults", async () => {
-    await Presentation.scope({ command: "list" }, { ...runtime, presentation: silent }, async () => {
-      expect(await Bridge.query(References.MinimumLogLevel, local, runtime)).toBe("Error")
-    })
-    expect(await Bridge.query(Effect.succeed("default runtime"), local)).toBe("default runtime")
-  })
-
-  it.each(["command", "query", "host"])("aborts an active %s and releases every acquired resource", async (kind) => {
-    const abort = new AbortController()
-    let started!: () => void
-    const ready = new Promise<void>((resolve) => {
-      started = resolve
-    })
-    const waiting = Effect.sync(started).pipe(Effect.andThen(Effect.never))
-    handler = waiting
-    ports.serve.mockReturnValue(waiting)
-    const options = { ...local, quiet: true }
-    const invocation = { ...runtime, signal: abort.signal }
-    const result = (kind === "command"
-      ? Bridge.invoke(["list"], options, invocation)
-      : kind === "query"
-      ? Bridge.query(waiting, options, invocation)
-      : Bridge.host(bind, options, invocation)).then(() => "completed", () => "interrupted")
-    await ready
-    expect(lifecycle).toContain("control:open")
-    abort.abort()
-    expect(await result).toBe("interrupted")
-    expect(lifecycle).toEqual(
-      kind === "host"
-        ? ["control:open", "scheduler:open", "scheduler:close", "control:close"]
-        : ["control:open", "control:close"]
-    )
-  })
-
-  it.each([undefined, { sequence: 0 }, { sequence: 17 }, { sequence: 17, offset: 2 }])(
-    "forwards watch cursors and releases the transport on early consumer return (%j)",
-    async (after) => {
-      const watch = vi.fn().mockReturnValue(Stream.make({ sequence: 18 }, { sequence: 19 }))
-      service = { ...service, watch }
-      const iterator = Bridge.events("watched", true, local, runtime, after)[Symbol.asyncIterator]()
-      expect(await iterator.next()).toEqual({ done: false, value: { sequence: 18 } })
-      await iterator.return!()
-      expect(watch).toHaveBeenCalledExactlyOnceWith({
-        runId: "watched",
-        follow: true,
-        ...(after === undefined
-          ? {}
-          : after.offset === undefined
-          ? { afterSequence: after.sequence }
-          : { afterCursor: after })
+        const payload = preview(stderr, endpoint)
+        if (flags.includes("--dry-run")) {
+          expect(JSON.parse(stdout)).toMatchObject({ reported: false, endpoint, payload: JSON.parse(payload) })
+          expect(posts).toEqual([])
+        } else if (flags.includes("--yes")) {
+          expect(JSON.parse(stdout)).toMatchObject({ reported: true, endpoint })
+          expect(posts).toEqual([payload])
+        } else {
+          expect(stdout).toContain("Report not sent")
+          expect(codes).toContain(2)
+          expect(posts).toEqual([])
+        }
       })
-      expect(lifecycle).toEqual(["control:open", "control:close"])
     }
   )
 
-  it.each(["completed", "failed", "cancelled"] as const)(
-    "ends a follow once the run is %s and drains rows after the last delivered event",
-    async (status) => {
-      const pages = [
-        [{ runId: "other", status: "completed" }, { runId: "watched", status: "running" }],
-        [{ runId: "watched", status }]
-      ]
-      const list = vi.fn(() => Effect.succeed({ _tag: "runs", items: pages.shift() ?? [] }))
-      const watch = vi.fn((request: { follow: boolean }) =>
-        request.follow
-          ? Stream.concat(Stream.make({ sequence: 4 }), Stream.never)
-          : Stream.make({ sequence: 5 })
-      )
-      service = { ...service, list, watch } as unknown as Control.Service
-      const events: Array<unknown> = []
-      for await (const event of Bridge.events("watched", true, local, runtime, { sequence: 3 })) events.push(event)
-      expect(events).toEqual([{ sequence: 4 }, { sequence: 5 }])
-      expect(watch.mock.calls).toEqual([
-        [{ runId: "watched", follow: true, afterSequence: 3 }],
-        [{ runId: "watched", follow: false, afterSequence: 4 }]
-      ])
-      expect(list).toHaveBeenCalledTimes(2)
-      expect(list).toHaveBeenCalledWith({ _tag: "runs", filters: { runId: "watched" } })
-      expect(lifecycle).toEqual(["control:open", "control:close"])
-    }
-  )
-
-  it("releases the watch service after stream failure", async () => {
-    const failure = new Unavailable({ feature: "watch", ticket: "bridge-fixture" })
-    service = { ...service, watch: () => Stream.fail(failure) }
-    const iterator = Bridge.events("r", false, local)[Symbol.asyncIterator]()
-    await expect(iterator.next()).rejects.toBe(failure)
-    expect(lifecycle).toEqual(["control:open", "control:close"])
-  })
-
-  it("aborts a waiting watch and removes its abort listener", async () => {
-    const abort = new AbortController()
-    const add = vi.spyOn(abort.signal, "addEventListener")
-    let started!: () => void
-    const ready = new Promise<void>((resolve) => {
-      started = resolve
-    })
-    service = {
-      ...service,
-      list: () => Effect.succeed({ _tag: "runs", items: [] }),
-      watch: () => Stream.fromEffect(Effect.sync(started).pipe(Effect.andThen(Effect.never)))
-    }
-    const iterator = Bridge.events("r", true, local, { ...runtime, signal: abort.signal })[Symbol.asyncIterator]()
-    const waiting = iterator.next()
-    await ready
-    abort.abort()
-    expect(await waiting).toEqual({ done: true, value: undefined })
-    expect(lifecycle).toEqual(["control:open", "control:close"])
-    expect(add).toHaveBeenCalledWith("abort", expect.any(Function), { once: true })
-    expect(getEventListeners(abort.signal, "abort")).toEqual([])
-  })
-
-  it("completes a watch whose signal was already aborted without retaining a listener", async () => {
-    const abort = new AbortController()
-    abort.abort()
-    const add = vi.spyOn(abort.signal, "addEventListener")
-    service = { ...service, watch: () => Stream.never }
-    const iterator = Bridge.events("r", true, local, { ...runtime, signal: abort.signal })[Symbol.asyncIterator]()
-    expect(await iterator.next()).toEqual({ done: true, value: undefined })
-    expect(add).not.toHaveBeenCalled()
-    expect(getEventListeners(abort.signal, "abort")).toEqual([])
-    expect(lifecycle.filter((event) => event === "control:open").length)
-      .toBe(lifecycle.filter((event) => event === "control:close").length)
-  })
-
-  it("removes an untriggered abort listener when the consumer stops following", async () => {
-    const abort = new AbortController()
-    const remove = vi.spyOn(abort.signal, "removeEventListener")
-    service = { ...service, watch: vi.fn().mockReturnValue(Stream.make({ sequence: 1 })) }
-    const iterator = Bridge.events("r", true, local, { ...runtime, signal: abort.signal })[Symbol.asyncIterator]()
-    expect(await iterator.next()).toEqual({ done: false, value: { sequence: 1 } })
-    await iterator.return!()
-    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function))
-    expect(getEventListeners(abort.signal, "abort")).toEqual([])
-    expect(lifecycle).toEqual(["control:open", "control:close"])
-  })
-
-  it.each([false, true])("real serve CLI publishes a private token without printing it (quiet=%s)", async (quiet) => {
-    const operatorTokenFile = join(directory, quiet ? "quiet.token" : "operator.token")
-    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true)
-    const stdout = vi.fn()
-    const codes: number[] = []
-    await makeCli(runtime).serve([
-      "serve",
-      "--root",
-      directory,
-      "--port",
-      "0",
-      "--operator-token-file",
-      operatorTokenFile,
-      ...(quiet ? ["--quiet"] : [])
-    ], {
-      env: {},
-      stdout,
-      exit: (code) => {
-        codes.push(code)
-      }
-    })
-    expect(codes.every((code) => code === 0)).toBe(true)
-    expect(ports.serve).toHaveBeenCalledOnce()
-    expect(statSync(operatorTokenFile).mode & 0o777).toBe(0o600)
-    const token = readFileSync(operatorTokenFile, "utf8").trim()
-    expect(token).toMatch(/^[0-9a-f]{64}$/)
-    expect(ports.serve.mock.calls[0]![0]).toMatchObject({ operatorToken: token, operatorTokenFile })
-    expect(stderr.mock.calls.map((call) => String(call[0])).join("")).not.toMatch(/^  approval token  /m)
-    expect(stderr.mock.calls.map((call) => String(call[0])).join("")).not.toContain(token)
-    expect(stdout.mock.calls.map((call) => String(call[0])).join("")).not.toContain(token)
-    if (quiet) {
-      expect(stderr).not.toHaveBeenCalled()
-      expect(stdout).not.toHaveBeenCalled()
-    }
-  })
-
-  it("real serve CLI refuses a public bind before publishing the token file", async () => {
-    const operatorTokenFile = join(directory, "refused.token")
-    vi.spyOn(process.stderr, "write").mockReturnValue(true)
-    const codes: number[] = []
-    await makeCli(runtime).serve([
-      "serve",
-      "--root",
-      directory,
-      "--host",
-      "0.0.0.0",
-      "--operator-token-file",
-      operatorTokenFile
-    ], {
-      env: {},
-      stdout: () => {},
-      exit: (code) => {
-        codes.push(code)
-      }
-    })
-    expect(codes.some((code) => code !== 0)).toBe(true)
-    expect(existsSync(operatorTokenFile)).toBe(false)
-    expect(ports.serve).not.toHaveBeenCalled()
-  })
-
-  it("shares one scoped control service between the server and scheduler", async () => {
-    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true)
-    await Bridge.host(bind, local, runtime)
-    expect(ports.scheduler).toHaveBeenCalledExactlyOnceWith(local.root)
-    // A host with no credential mints a per-session operator token for approvals.
-    expect(ports.serve).toHaveBeenCalledExactlyOnceWith(
-      { ...bind, operatorToken: expect.stringMatching(/^[0-9a-f]{64}$/) },
-      local.root
-    )
-    const { operatorToken } = ports.serve.mock.calls[0]![0] as { readonly operatorToken: string }
-    expect(lifecycle).toEqual(["control:open", "scheduler:open", "serve", "scheduler:close", "control:close"])
-    expect(stderr.mock.calls.map(([text]) => String(text))).toEqual([
-      expect.stringContaining("127.0.0.1:0"),
-      `  approval token  ${operatorToken}\n`
-    ])
-  })
-
-  it("mints no operator token for a host that carries a credential", async () => {
-    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true)
-    const credentialed = { ...bind, credential: "host-bearer" }
-    await Bridge.host(credentialed, local, runtime)
-    expect(ports.serve).toHaveBeenCalledExactlyOnceWith({ ...credentialed, operatorToken: undefined }, local.root)
-    expect(stderr).toHaveBeenCalledOnce()
-    expect(String(stderr.mock.calls[0]![0])).not.toContain("approval token")
-  })
-
-  it("publishes a carried credential to the token file for a host on the process environment", async () => {
-    vi.stubEnv("SMITHERS_REMOTE", undefined)
-    const operatorTokenFile = join(directory, "carried.token")
-    const credentialed = { ...bind, credential: "host-bearer", operatorTokenFile }
-    try {
-      await Bridge.host(credentialed, { ...local, quiet: true }, { presentation: plain })
-    } finally {
-      vi.unstubAllEnvs()
-    }
-    expect(ports.serve).toHaveBeenCalledExactlyOnceWith({ ...credentialed, operatorToken: undefined }, local.root)
-    expect(readFileSync(operatorTokenFile, "utf8").trim()).toBe("host-bearer")
-    expect(statSync(operatorTokenFile).mode & 0o777).toBe(0o600)
-  })
-
-  it("does not print a quiet host banner and preserves launch failures after cleanup", async () => {
-    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true)
-    const failure = { _tag: "host-failure" }
-    ports.serve.mockReturnValue(Effect.fail(failure))
-    await expect(Bridge.host(bind, { ...local, quiet: true }, runtime)).rejects.toBe(failure)
-    // Quiet suppresses every progress line, including generated credentials.
-    expect(stderr).not.toHaveBeenCalled()
-    expect(lifecycle).toEqual(["control:open", "scheduler:open", "scheduler:close", "control:close"])
-  })
-
-  it("refuses remote or unapproved public hosting before any resource is acquired", async () => {
-    await expect(Bridge.host(bind, { ...local, remote: "https://control.invalid" }, runtime))
-      .rejects.toMatchObject({
-        _tag: "/cli/UnsupportedError",
-        message: expect.stringContaining("--remote is not supported")
+  it.each([false, true])("previews before a real prompt accepts or declines (%s)", async (accepted) => {
+    const local = fixture()
+    await receiver(async (endpoint, posts) => {
+      let stderr = ""
+      let prompted = false
+      const input = new PassThrough()
+      const output = new Writable({
+        write(chunk, _encoding, done) {
+          if (!prompted && String(chunk).includes("Post this report")) {
+            prompted = true
+            preview(stderr, endpoint)
+            expect(posts).toEqual([])
+            queueMicrotask(() => input.write(accepted ? "y\r" : "n\r"))
+          }
+          done()
+        }
       })
-    await expect(Bridge.host({ ...bind, host: "0.0.0.0" }, local, runtime)).rejects.toThrow("pass --listen")
-    expect(ports.control).not.toHaveBeenCalled()
-    expect(ports.scheduler).not.toHaveBeenCalled()
-    expect(ports.serve).not.toHaveBeenCalled()
-    expect(lifecycle).toEqual([])
+      const ui = Ui.make({ output, input, interactive: true })
+      try {
+        const operation = BugCommand.submit({
+          summary,
+          yes: false,
+          dryRun: false,
+          preview: (line) =>
+            Effect.sync(() => {
+              stderr += `${line}\n`
+            })
+        }, { environment: { SMITHERS_BUG_ENDPOINT: endpoint } }).pipe(
+          Effect.provideService(Ui.Ui, ui)
+        )
+        const result = Bridge.query(operation, local, runtime)
+        if (accepted) expect(await result).toMatchObject({ reported: true, endpoint })
+        else await expect(result).rejects.toThrow("Report not sent")
+        expect(prompted).toBe(true)
+        expect(posts).toEqual(accepted ? [preview(stderr, endpoint)] : [])
+      } finally {
+        input.destroy()
+        output.destroy()
+      }
+    })
   })
 })
 
 describe("failureOf", () => {
-  it("names the signal that interrupted a command instead of Effect's bare interruption", () => {
+  it("names the signal that interrupted a command", () => {
     const controller = new AbortController()
     controller.abort(new Error("smthrs interrupted by SIGINT"))
     expect(Bridge.failureOf(Cause.interrupt(), controller.signal)).toMatchObject({
-      _tag: "/cli/Refused",
       fault: "user",
       code: "interrupted",
       message: "smthrs interrupted by SIGINT before the command finished."
     })
   })
-
-  it("names an interruption from inside the host as one, not a crash", () => {
-    const failure = Bridge.failureOf(Cause.interrupt(), new AbortController().signal)
-    expect(failure).toMatchObject({ _tag: "/cli/Refused", fault: "bug", code: "interrupted" })
-    expect(String((failure as Error).message)).not.toContain("All fibers interrupted")
-  })
-
-  it("keeps a failure's own error", () => {
-    const error = new Error("down")
-    expect(Bridge.failureOf(Cause.fail(error), undefined)).toBe(error)
+  it("names an internal interruption and preserves ordinary failures", () => {
+    expect(Bridge.failureOf(Cause.interrupt(), new AbortController().signal)).toMatchObject({
+      fault: "bug",
+      code: "interrupted"
+    })
+    const failure = new Error("down")
+    expect(Bridge.failureOf(Cause.fail(failure), undefined)).toBe(failure)
   })
 })
