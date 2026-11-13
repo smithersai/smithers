@@ -13,7 +13,7 @@ skip cannot pass the acceptance summary. See [infrastructure](../docs/infrastruc
 
 Deployment specs run with one worker because they share an account. Tests that remove or replace the model must disable traces and restore it in `afterEach`, including on failure. Personal-model tests exercise Remove without asking the hosted model afterward. Setup has video and trace disabled; the restoration helper never reports credential-bearing request diagnostics or provider bodies. Never pass keys on a command line or print them.
 
-For a deployment: `BASE_URL=https://your-deployment.example pnpm exec playwright test agent.spec.ts --grep 'ask:'` runs deployment setup first. For collection only: `pnpm exec playwright test --list`. Run the prerequisite regression with `pnpm vitest run e2e/target.test.ts --coverage.enabled=false`.
+For a deployment: `E2E_PROD_URL=https://your-deployment.example pnpm e2e:prod agent.spec.ts --grep 'ask:'` runs deployment setup and personal-model provisioning under the runner's resource leases. For collection only: `pnpm exec playwright test --list`. Run the prerequisite regression with `pnpm vitest run e2e/target.test.ts --coverage.enabled=false`.
 
 Mobile layout audits retain full-document PNG evidence and original recordings.
 Full-page capture can temporarily resize Chromium's recorded surface. The
