@@ -10,13 +10,13 @@ import * as NodePath from "node:path"
 
 const recordName = /^[a-z]+\/[a-f0-9]{64}\.json$/
 
-const privateDirectory = (path: string): void => {
-  NodeFs.mkdirSync(path, { recursive: true, mode: 0o700 })
-  const stats = NodeFs.lstatSync(path)
+const privateDirectory = (path: string, io: typeof NodeFs): void => {
+  io.mkdirSync(path, { recursive: true, mode: 0o700 })
+  const stats = io.lstatSync(path)
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`Review finding store is not a directory: ${path}`)
   }
-  if (process.platform !== "win32") NodeFs.chmodSync(path, 0o700)
+  if (process.platform !== "win32") io.chmodSync(path, 0o700)
 }
 
 /**
@@ -24,16 +24,16 @@ const privateDirectory = (path: string): void => {
  * @category store
  * @since 1.0.0
  */
-export const ensure = (directory: string): string => {
+export const ensure = (directory: string, io: typeof NodeFs = NodeFs): string => {
   if (!NodePath.isAbsolute(directory)) throw new Error("Review finding store directory must be absolute")
-  privateDirectory(directory)
-  return NodeFs.realpathSync(directory)
+  privateDirectory(directory, io)
+  return io.realpathSync(directory)
 }
 
 /** A collection is a real directory inside the store, never a link out of it. */
-const collection = (directory: string, name: string): string | undefined => {
+const collection = (directory: string, name: string, io: typeof NodeFs): string | undefined => {
   const path = NodePath.join(directory, name)
-  const stats = NodeFs.lstatSync(path, { throwIfNoEntry: false })
+  const stats = io.lstatSync(path, { throwIfNoEntry: false })
   if (stats === undefined) return undefined
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`Review finding store collection is not a directory: ${name}`)
@@ -51,12 +51,12 @@ const recordPath = (directory: string, name: string): string => {
  * @category store
  * @since 1.0.0
  */
-export const write = (directory: string, name: string, value: unknown): void => {
+export const write = (directory: string, name: string, value: unknown, io: typeof NodeFs = NodeFs): void => {
   const path = recordPath(directory, name)
-  privateDirectory(NodePath.dirname(path))
+  privateDirectory(NodePath.dirname(path), io)
   const temporary = `${path}.${randomBytes(8).toString("hex")}.tmp`
-  NodeFs.writeFileSync(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600, flag: "wx" })
-  NodeFs.renameSync(temporary, path)
+  io.writeFileSync(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600, flag: "wx" })
+  io.renameSync(temporary, path)
 }
 
 /** One refusal for every way an opened record can fail its identity check. */
@@ -68,32 +68,32 @@ const invalidRecord = (name: string, cause?: unknown): Error =>
  * @category store
  * @since 1.0.0
  */
-export const read = (directory: string, name: string): unknown => {
+export const read = (directory: string, name: string, io: typeof NodeFs = NodeFs): unknown => {
   const path = recordPath(directory, name)
-  if (collection(directory, NodePath.dirname(name)) === undefined) return undefined
+  if (collection(directory, NodePath.dirname(name), io) === undefined) return undefined
   let descriptor: number
   let expected: NodeFs.BigIntStats
   try {
-    expected = NodeFs.lstatSync(path, { bigint: true })
+    expected = io.lstatSync(path, { bigint: true })
     if (!expected.isFile()) throw invalidRecord(name)
     // O_NOFOLLOW is unavailable on Windows. Verify the opened identity against
     // the non-following stat before reading; O_NONBLOCK never waits on a FIFO.
-    descriptor = NodeFs.openSync(
+    descriptor = io.openSync(
       path,
-      NodeFs.constants.O_RDONLY | NodeFs.constants.O_NOFOLLOW | NodeFs.constants.O_NONBLOCK
+      io.constants.O_RDONLY | io.constants.O_NOFOLLOW | io.constants.O_NONBLOCK
     )
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
     throw invalidRecord(name, cause)
   }
   try {
-    const opened = NodeFs.fstatSync(descriptor, { bigint: true })
+    const opened = io.fstatSync(descriptor, { bigint: true })
     if (!opened.isFile() || opened.dev !== expected.dev || opened.ino !== expected.ino) {
       throw invalidRecord(name)
     }
-    return JSON.parse(NodeFs.readFileSync(descriptor, "utf8")) as unknown
+    return JSON.parse(io.readFileSync(descriptor, "utf8")) as unknown
   } finally {
-    NodeFs.closeSync(descriptor)
+    io.closeSync(descriptor)
   }
 }
 
@@ -102,10 +102,10 @@ export const read = (directory: string, name: string): unknown => {
  * @category store
  * @since 1.0.0
  */
-export const list = (directory: string, name: string): ReadonlyArray<unknown> => {
-  const path = collection(directory, name)
+export const list = (directory: string, name: string, io: typeof NodeFs = NodeFs): ReadonlyArray<unknown> => {
+  const path = collection(directory, name, io)
   if (path === undefined) return []
-  return NodeFs.readdirSync(path).filter((entry) => entry.endsWith(".json")).sort().map((entry) =>
-    read(directory, `${name}/${entry}`)
+  return io.readdirSync(path).filter((entry) => entry.endsWith(".json")).sort().map((entry) =>
+    read(directory, `${name}/${entry}`, io)
   )
 }

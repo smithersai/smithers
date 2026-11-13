@@ -914,14 +914,15 @@ const directorySyncUnsupported = new Set(["ENOTSUP", "EOPNOTSUPP", "EINVAL", "EN
  * done. Any other sync failure, and a close failure after the sync, is
  * reported, because the entry the caller just published may not be durable.
  * Every durable publication in the workspace, generated files, scaffolded
- * packages, and redacted deployment state, ends with this call.
+ * packages, and redacted deployment state, ends with this call. A supplied
+ * filesystem opens the directory through the caller's publication capability.
  *
  * @category publication
  * @since 0.1.0
  */
-export const syncDirectory = async (directory: string): Promise<void> => {
+export const syncDirectory = async (directory: string, io: Pick<typeof Fs, "open"> = Fs): Promise<void> => {
   if (process.platform === "win32") return
-  const handle = await Fs.open(directory, "r")
+  const handle = await io.open(directory, "r")
   let primary: unknown
   try {
     await handle.sync()

@@ -26,10 +26,12 @@ import * as Fs from "node:fs/promises"
 import * as NodeHttp from "node:http"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as Changesets from "../src/Changesets.ts"
 import * as Exec from "../src/Exec.ts"
 import * as ExecSandbox from "../src/ExecSandbox.ts"
+import { Process } from "../src/internal/Process.ts"
+import { SandboxHost } from "../src/internal/SandboxHost.ts"
 import * as Runtime from "../src/Runtime.ts"
 import * as Secret from "../src/Secret.ts"
 import * as Target from "../src/Target.ts"
@@ -51,8 +53,14 @@ const run = (
   value: Exec.Payload
 ): Promise<Exit.Exit<Exec.Result, Exec.ExecError>> => Effect.runPromiseExit(Exec.run(options, value))
 
-const failed = async (value: Exec.Payload, options: Parameters<typeof Exec.run>[0] = { workspaceRoot: root }) => {
-  const exit = await Effect.runPromiseExit(Exec.run(options, value))
+const failed = async (
+  value: Exec.Payload,
+  options: Parameters<typeof Exec.run>[0] = { workspaceRoot: root },
+  hostFacts?: ExecSandbox.Host
+) => {
+  const exit = await Effect.runPromiseExit(
+    Exec.run(options, value).pipe(Effect.provideService(SandboxHost, hostFacts))
+  )
   if (Exit.isSuccess(exit)) throw new Error("expected an exec failure")
   const rendered = JSON.stringify(exit.cause)
   const parsed = JSON.parse(rendered) as { readonly reasons?: ReadonlyArray<{ readonly error: Exec.ExecError }> }
@@ -67,7 +75,6 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  vi.restoreAllMocks()
   await Fs.rm(root, { recursive: true, force: true })
   await Fs.rm(outside, { recursive: true, force: true })
 })
@@ -83,77 +90,77 @@ describe("Docker cleanup", () => {
     "removes a real daemon container on cancellation",
     "removes a real daemon container on cancellation after a removal timeout"
   ])("%s", async (name) => {
-    if (name.endsWith("after a removal timeout")) {
-      const spawn = ScopedProcess.spawn
-      let firstRemoval = true
-      // Inject only a stuck removal CLI; run/start, retries and absence checks
-      // still use the real daemon, without altering shared daemon behavior.
-      vi.spyOn(ScopedProcess, "spawn").mockImplementation((options) => {
-        if (options.args?.[0] === "rm" && firstRemoval) {
-          firstRemoval = false
-          return spawn({ ...options, command: process.execPath, args: ["-e", "setInterval(()=>{},1000)"] })
-        }
-        return spawn(options)
-      })
-    }
     let containerName: string | undefined
-    const wrap = ExecSandbox.wrap
-    vi.spyOn(ExecSandbox, "wrap").mockImplementation((...args) => {
-      const wrapped = wrap(...args)
-      const index = wrapped.argv.indexOf("--name")
-      if (index !== -1) containerName = wrapped.argv[index + 1]
-      return wrapped
-    })
+    let firstRemoval = true
+    const service = {
+      spawn: (options: ScopedProcess.Options) => {
+        const index = options.args?.indexOf("--name") ?? -1
+        if (index !== -1) containerName = options.args![index + 1]
+        // Only the first removal stalls; the real daemon handles every other call.
+        if (name.endsWith("after a removal timeout") && options.args?.[0] === "rm" && firstRemoval) {
+          firstRemoval = false
+          return ScopedProcess.spawn({
+            ...options,
+            command: process.execPath,
+            args: ["-e", "setInterval(()=>{},1000)"]
+          })
+        }
+        return ScopedProcess.spawn(options)
+      },
+      status: ScopedProcess.status
+    }
     let ready!: () => void
     const started = new Promise<void>((resolve) => {
       ready = resolve
     })
     let stdout = ""
     try {
-      await Effect.runPromise(Effect.gen(function*() {
-        const fiber = yield* Exec.run({
-          workspaceRoot: root,
-          sandbox: { policy: {}, reads: [], writes: [], mechanism: { _tag: "SandboxDocker", image: dockerImage } },
-          onStdout: (chunk) => {
-            stdout += Buffer.from(chunk).toString("utf8")
-            if (stdout.includes("ready")) ready()
-          }
-        }, { ...payload(["node", "-e", "console.log('ready');setInterval(()=>{},1000)"]), timeoutMs: 45000 })
-          .pipe(Effect.forkChild)
-        try {
-          const outcome = yield* Effect.promise(() =>
-            Promise.race([
-              started.then(() => "ready"),
-              Effect.runPromise(Fiber.await(fiber)).then((exit) => JSON.stringify(exit))
-            ])
-          )
-          expect(outcome).toBe("ready")
-          expect(containerName).toBeDefined()
-          expect(
-            spawnSync("docker", ["inspect", "--format", "{{.State.Running}}", containerName!], {
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const fiber = yield* Exec.run({
+            workspaceRoot: root,
+            sandbox: { policy: {}, reads: [], writes: [], mechanism: { _tag: "SandboxDocker", image: dockerImage } },
+            onStdout: (chunk) => {
+              stdout += Buffer.from(chunk).toString("utf8")
+              if (stdout.includes("ready")) ready()
+            }
+          }, { ...payload(["node", "-e", "console.log('ready');setInterval(()=>{},1000)"]), timeoutMs: 45000 })
+            .pipe(Effect.forkChild)
+          try {
+            const outcome = yield* Effect.promise(() =>
+              Promise.race([
+                started.then(() => "ready"),
+                Effect.runPromise(Fiber.await(fiber)).then((exit) => JSON.stringify(exit))
+              ])
+            )
+            expect(outcome).toBe("ready")
+            expect(containerName).toBeDefined()
+            expect(
+              spawnSync("docker", ["inspect", "--format", "{{.State.Running}}", containerName!], {
+                timeout: 5000,
+                encoding: "utf8"
+              }).stdout.trim()
+            ).toBe("true")
+            yield* Fiber.interrupt(fiber)
+            expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true)
+            const listed = spawnSync("docker", [
+              "ps",
+              "-a",
+              "--filter",
+              `name=^/${containerName!}$`,
+              "--format",
+              "{{.Names}}"
+            ], {
               timeout: 5000,
               encoding: "utf8"
-            }).stdout.trim()
-          ).toBe("true")
-          yield* Fiber.interrupt(fiber)
-          expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true)
-          const listed = spawnSync("docker", [
-            "ps",
-            "-a",
-            "--filter",
-            `name=^/${containerName!}$`,
-            "--format",
-            "{{.Names}}"
-          ], {
-            timeout: 5000,
-            encoding: "utf8"
-          })
-          expect(listed.status).toBe(0)
-          expect(listed.stdout.trim()).toBe("")
-        } finally {
-          yield* Fiber.interrupt(fiber)
-        }
-      }))
+            })
+            expect(listed.status).toBe(0)
+            expect(listed.stdout.trim()).toBe("")
+          } finally {
+            yield* Fiber.interrupt(fiber)
+          }
+        }).pipe(Effect.provideService(Process, service))
+      )
     } finally {
       if (containerName !== undefined) {
         spawnSync("docker", ["rm", "--force", containerName], { timeout: 5000, stdio: "ignore" })
@@ -181,28 +188,28 @@ describe("Docker cleanup", () => {
     "removes the container after client cleanup and before scratch cleanup: %s",
     async (mode) => {
       const host = ExecSandbox.host()
-      vi.spyOn(ExecSandbox, "host").mockReturnValue({ ...host, executable: () => "/fake/docker" })
+      const hostFacts = { ...host, executable: () => NodePath.join(NodePath.parse(root).root, "fixture", "docker") }
       const events: Array<string> = []
       const calls: Array<ScopedProcess.Options> = []
       let removals = 0
       let scratch = ""
-      const plan = ExecSandbox.plan
-      vi.spyOn(ExecSandbox, "plan").mockImplementation((...args) => {
-        const result = plan(...args)
-        if (result !== undefined && !ExecSandbox.isUnenforceable(result)) scratch = result.tmp
-        return result
-      })
       let ready!: () => void
       const started = new Promise<void>((resolve) => {
         ready = resolve
       })
-      vi.spyOn(ScopedProcess, "spawn").mockImplementation((options) =>
+      const spawn = (options: ScopedProcess.Options) =>
         Effect.gen(function*() {
           const removing = options.args?.[0] === "rm"
           calls.push(options)
           if (removing) removals++
           const firstRemoval = removals === 1
           events.push(removing ? "remove" : "run")
+          if (scratch === "") {
+            const parent = NodePath.join(root, "cache", "sandbox")
+            const entries = NodeFs.readdirSync(parent)
+            expect(entries).toHaveLength(1)
+            scratch = NodePath.join(parent, entries[0]!)
+          }
           expect(NodeFs.existsSync(scratch)).toBe(true)
           yield* Effect.addFinalizer(() =>
             Effect.sync(() => {
@@ -271,11 +278,14 @@ describe("Docker cleanup", () => {
             { targetPid: 1 }
           )
         })
-      )
       const effect = Exec.run({
         workspaceRoot: root,
+        cacheDirectory: "cache",
         sandbox: { policy: {}, reads: [], writes: [], mechanism: { _tag: "SandboxDocker", image: "fixture" } }
-      }, { ...payload(["true"]), timeoutMs: mode === "timeout" ? 10 : "unbounded" })
+      }, { ...payload(["true"]), timeoutMs: mode === "timeout" ? 10 : "unbounded" }).pipe(
+        Effect.provideService(SandboxHost, hostFacts),
+        Effect.provideService(Process, { spawn, status: ScopedProcess.status })
+      )
       const warnings: Array<string> = []
       const capture = Logger.layer([
         Logger.make(({ logLevel, message }) => {
@@ -328,34 +338,60 @@ describe("Docker cleanup", () => {
 })
 
 describe("run", () => {
+  it("plans execution with injected sandbox host facts", async () => {
+    const executable = NodePath.join(NodePath.parse(root).root, "fixture", "docker")
+    const calls: Array<ScopedProcess.Options> = []
+    const service = {
+      spawn: (options: ScopedProcess.Options) => {
+        calls.push(options)
+        return Effect.fail(PlatformError.systemError({
+          _tag: "Unknown",
+          module: "ChildProcess",
+          method: "spawn",
+          description: "injected process refusal",
+          cause: new Error("injected process refusal")
+        }))
+      },
+      status: ScopedProcess.status
+    }
+    const error = await Effect.runPromise(
+      Effect.flip(Exec.run({
+        workspaceRoot: root,
+        sandbox: { policy: {}, reads: [], writes: [], mechanism: { _tag: "SandboxDocker", image: "fixture" } }
+      }, payload(["true"]))).pipe(
+        Effect.provideService(SandboxHost, { ...ExecSandbox.host(), platform: "win32", executable: () => executable }),
+        Effect.provideService(Process, service),
+        Effect.provide(Logger.layer([]))
+      )
+    )
+    expect(error.code).toBe("spawn_failed")
+    expect(error.stderr).toContain("injected process refusal")
+    expect(calls).toHaveLength(4)
+    expect(calls.map((call) => call.command)).toEqual(Array(4).fill(executable))
+    expect(calls[0]!.args?.[0]).toBe("run")
+    expect(calls.slice(1).map((call) => call.args?.[0])).toEqual(["rm", "rm", "rm"])
+    expect(await Fs.readdir(NodePath.join(root, ".flows", "sandbox"))).toEqual([])
+  })
+
   it("removes scratch directories when preparing a write directory fails", async () => {
     const host = ExecSandbox.host()
-    vi.spyOn(ExecSandbox, "host").mockReturnValue({
+    const blocked = NodePath.join(root, "blocked")
+    await Fs.writeFile(blocked, "occupied")
+    const hostFacts: ExecSandbox.Host = {
       ...host,
       platform: "linux",
-      executable: (name) => `/usr/bin/${name}`
-    })
-    const plan = ExecSandbox.plan
-    let scratch: string | undefined
-    vi.spyOn(ExecSandbox, "plan").mockImplementationOnce((...args) => {
-      const confinement = plan(...args)
-      if (confinement === undefined || ExecSandbox.isUnenforceable(confinement)) {
-        throw new Error("expected an enforceable plan")
-      }
-      scratch = confinement.tmp
-      // A declared directory becomes a file between planning and preparation.
-      NodeFs.writeFileSync(NodePath.join(root, "blocked"), "occupied")
-      return confinement
-    })
+      executable: (name) => NodePath.join(NodePath.parse(root).root, "fixture", name),
+      // Planning sees stale host facts; preparing the real directory must fail.
+      exists: (path) => path === blocked ? false : host.exists(path)
+    }
     const error = await failed(payload([process.execPath, "-e", "0"]), {
       workspaceRoot: root,
       sandbox: { policy: {}, reads: [], writes: ["blocked"] }
-    })
+    }, hostFacts)
     expect(error.code).toBe("spawn_failed")
     expect(error.stderr).toContain("could not prepare the confinement")
     expect(error.stderr).toContain("EEXIST")
-    expect(scratch).toBeDefined()
-    expect(NodeFs.existsSync(scratch!)).toBe(false)
+    expect(await Fs.readdir(NodePath.join(root, ".flows", "sandbox"))).toEqual([])
     expect(await Fs.readFile(NodePath.join(root, "blocked"), "utf8")).toBe("occupied")
   })
 
@@ -366,11 +402,11 @@ describe("run", () => {
     ] as const
   )("refuses declared secrets under a closed network on %s before spawning", async (platform, remedy) => {
     const host = ExecSandbox.host()
-    vi.spyOn(ExecSandbox, "host").mockReturnValue({
+    const hostFacts: ExecSandbox.Host = {
       ...host,
       platform,
-      executable: (name) => `/usr/bin/${name}`
-    })
+      executable: (name) => NodePath.join(NodePath.parse(root).root, "fixture", name)
+    }
     const marker = NodePath.join(root, "spawned")
     const error = await failed({
       ...payload([process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`]),
@@ -378,7 +414,7 @@ describe("run", () => {
     }, {
       workspaceRoot: root,
       sandbox: { policy: {}, reads: [], writes: [] }
-    })
+    }, hostFacts)
     expect(error.code).toBe("sandbox_unenforceable")
     expect(error.stderr).toContain("cannot reach the loopback secret proxy")
     expect(error.stderr).toContain(remedy)

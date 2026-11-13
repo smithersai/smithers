@@ -193,6 +193,11 @@ replaced. `GeneratedFile` writes and drift-checks a generated
 file; its `DriftError` carries a `reason` of `missing`, `drifted`, or
 `unreadable`, because only the first two are answered by regenerating.
 
+`SafeFs.syncDirectory(directory, io?)` flushes a published directory and closes
+its handle, reporting durability failures. Its optional filesystem supplies the
+directory `open` operation; generated-file publication passes the same
+filesystem capability used to write and rename the file.
+
 `Secret` declares which environment variable holds a value and which origins may
 receive it. `SecretProxy` is the execution half: it mints the placeholder a
 child receives and substitutes the real value at the transport boundary, never

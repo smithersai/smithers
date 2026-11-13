@@ -29,6 +29,7 @@ import * as Input from "./Input.ts"
 import * as PrivateStore from "./internal/PrivateStore.ts"
 import { Process } from "./internal/Process.ts"
 import * as ReviewBatches from "./internal/ReviewBatches.ts"
+import { ReviewFileSystem } from "./internal/ReviewFileSystem.ts"
 import { maximumResponseTokens, reviewModel, seatReviewModel } from "./internal/ReviewModel.ts"
 import { Engine } from "./ModelEngine.ts"
 import * as SafeFs from "./SafeFs.ts"
@@ -579,9 +580,15 @@ const decodeStoredRunRecord = (stored: unknown): RunRecord => {
  * @since 1.0.0
  */
 export const storedFindings = (directory: string): Effect.Effect<ReadonlyArray<FindingRecord>, LlmReviewError> =>
-  Effect.try({
-    try: () => PrivateStore.list(PrivateStore.ensure(directory), "findings").map((value) => decodeFindingRecord(value)),
-    catch: storeError
+  Effect.flatMap(ReviewFileSystem, (provided) => {
+    const io = provided ?? NodeFs
+    return Effect.try({
+      try: () =>
+        PrivateStore.list(PrivateStore.ensure(directory, io), "findings", io).map((value) =>
+          decodeFindingRecord(value)
+        ),
+      catch: storeError
+    })
   })
 
 /**
@@ -597,29 +604,31 @@ export const closeFinding = (
   fingerprint: string,
   receipt: typeof Reproduction.Type
 ): Effect.Effect<FindingRecord, LlmReviewError> =>
-  Effect.try({
-    try: () => {
-      const root = PrivateStore.ensure(directory)
-      const name = `findings/${fingerprint}.json`
-      const stored = PrivateStore.read(root, name)
-      if (stored === undefined) throw new Error(`no finding ${fingerprint}`)
-      const record = decodeFindingRecord(stored)
-      if (record.state !== "fixed-pending-retest") {
-        throw new Error(
-          `finding ${fingerprint} is ${record.state}; only a fix a later review no longer reports can close`
-        )
-      }
-      const closed: FindingRecord = {
-        ...record,
-        state: "closed",
-        closure: Schema.decodeUnknownSync(Reproduction)(receipt),
-        updatedAt: new Date().toISOString()
-      }
-      PrivateStore.write(root, name, closed)
-      return closed
-    },
-    catch: storeError
-  })
+  Effect.flatMap(ReviewFileSystem, (provided) =>
+    Effect.try({
+      try: () => {
+        const io = provided ?? NodeFs
+        const root = PrivateStore.ensure(directory, io)
+        const name = `findings/${fingerprint}.json`
+        const stored = PrivateStore.read(root, name, io)
+        if (stored === undefined) throw new Error(`no finding ${fingerprint}`)
+        const record = decodeFindingRecord(stored)
+        if (record.state !== "fixed-pending-retest") {
+          throw new Error(
+            `finding ${fingerprint} is ${record.state}; only a fix a later review no longer reports can close`
+          )
+        }
+        const closed: FindingRecord = {
+          ...record,
+          state: "closed",
+          closure: Schema.decodeUnknownSync(Reproduction)(receipt),
+          updatedAt: new Date().toISOString()
+        }
+        PrivateStore.write(root, name, closed, io)
+        return closed
+      },
+      catch: storeError
+    }))
 
 /**
  * Every failure an llm-review call can produce.
@@ -2655,32 +2664,34 @@ const workspaceRevisions = (
 const executableIdentity = (
   executable: string
 ): Effect.Effect<{ readonly executable?: { readonly path: string; readonly sha256: string } }, LlmReviewError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const path = (NodePath.isAbsolute(executable) || executable.includes("/") ?
-        [NodePath.resolve(executable)] :
-        (process.env["PATH"] ?? "")
-          .split(NodePath.delimiter).filter(Boolean).map((directory) => NodePath.join(directory, executable)))
-        .find((candidate) => NodeFs.statSync(candidate, { throwIfNoEntry: false })?.isFile() === true)
-      if (path === undefined) return {}
-      const hash = createHash("sha256")
-      for await (const chunk of NodeFs.createReadStream(path)) hash.update(chunk as Buffer)
-      const identity = { path: NodeFs.realpathSync(path), sha256: hash.digest("hex") }
-      if (!nodeModule(path)) return { executable: identity }
-      const interpreter = createHash("sha256")
-      for await (const chunk of NodeFs.createReadStream(process.execPath)) interpreter.update(chunk as Buffer)
-      return {
-        executable: {
-          path: identity.path,
-          sha256: createHash("sha256").update(JSON.stringify([identity.sha256, interpreter.digest("hex")])).digest(
-            "hex"
-          )
+  Effect.flatMap(ReviewFileSystem, (provided) =>
+    Effect.tryPromise({
+      try: async () => {
+        const io = provided ?? NodeFs
+        const path = (NodePath.isAbsolute(executable) || executable.includes("/") ?
+          [NodePath.resolve(executable)] :
+          (process.env["PATH"] ?? "")
+            .split(NodePath.delimiter).filter(Boolean).map((directory) => NodePath.join(directory, executable)))
+          .find((candidate) => io.statSync(candidate, { throwIfNoEntry: false })?.isFile() === true)
+        if (path === undefined) return {}
+        const hash = createHash("sha256")
+        for await (const chunk of io.createReadStream(path)) hash.update(chunk as Buffer)
+        const identity = { path: io.realpathSync(path), sha256: hash.digest("hex") }
+        if (!nodeModule(path)) return { executable: identity }
+        const interpreter = createHash("sha256")
+        for await (const chunk of io.createReadStream(process.execPath)) interpreter.update(chunk as Buffer)
+        return {
+          executable: {
+            path: identity.path,
+            sha256: createHash("sha256").update(JSON.stringify([identity.sha256, interpreter.digest("hex")])).digest(
+              "hex"
+            )
+          }
         }
-      }
-    },
-    catch: (cause) =>
-      new LlmReviewError({ phase: "review", message: `Review executable identity: ${failureMessage(cause)}` })
-  })
+      },
+      catch: (cause) =>
+        new LlmReviewError({ phase: "review", message: `Review executable identity: ${failureMessage(cause)}` })
+    }))
 
 /** The engine and model of each independent security pass: selected, other family, selected. */
 const securitySeats = (payload: Payload): ReadonlyArray<{ readonly engine: Engine; readonly model: string }> => {
@@ -3027,6 +3038,7 @@ export const review = (
       catch: (cause) => new LlmReviewError({ phase: "review", message: failureMessage(cause) })
     })
     const store = options.store
+    const storeIo = (yield* ReviewFileSystem) ?? NodeFs
     if (plan.length > maximumReviewBatches && store === undefined) {
       return yield* Effect.fail(
         new LlmReviewError({
@@ -3086,11 +3098,11 @@ export const review = (
     const runKey = digest(JSON.stringify(manifest))
     const storeRoot = store === undefined
       ? undefined
-      : yield* Effect.try({ try: () => PrivateStore.ensure(store.directory), catch: storeError })
+      : yield* Effect.try({ try: () => PrivateStore.ensure(store.directory, storeIo), catch: storeError })
     const runName = `runs/${runKey}.json`
     const previous = storeRoot === undefined ? undefined : yield* Effect.try({
       try: () => {
-        const stored = PrivateStore.read(storeRoot, runName)
+        const stored = PrivateStore.read(storeRoot, runName, storeIo)
         return stored === undefined ? undefined : decodeStoredRunRecord(stored)
       },
       catch: storeError
@@ -3140,7 +3152,7 @@ export const review = (
             },
             updatedAt: now()
           }
-          PrivateStore.write(storeRoot, runName, run)
+          PrivateStore.write(storeRoot, runName, run, storeIo)
         },
         catch: storeError
       })
@@ -3166,7 +3178,7 @@ export const review = (
             for (const [index, finding] of reported.entries()) {
               const fingerprint = fingerprints[index]!
               const recordName = `findings/${fingerprint}.json`
-              const stored = PrivateStore.read(storeRoot, recordName)
+              const stored = PrivateStore.read(storeRoot, recordName, storeIo)
               const prior = stored === undefined ? undefined : decodeFindingRecord(stored)
               // Within one run a weaker report of the same flaw never replaces a stronger one.
               if (prior !== undefined && prior.lastSeenRun === runKey && strength(prior.finding) >= strength(finding)) {
@@ -3184,7 +3196,7 @@ export const review = (
                 updatedAt: now(),
                 finding
               }
-              PrivateStore.write(storeRoot, recordName, next)
+              PrivateStore.write(storeRoot, recordName, next, storeIo)
             }
           },
           catch: storeError
@@ -3321,7 +3333,7 @@ export const review = (
         const seen = new Set(stored.fingerprints)
         yield* Effect.try({
           try: () => {
-            for (const value of PrivateStore.list(storeRoot, "findings")) {
+            for (const value of PrivateStore.list(storeRoot, "findings", storeIo)) {
               const entry = decodeFindingRecord(value)
               if (
                 entry.state === "open" && entry.owner === store?.owner && entry.policy === policy &&
@@ -3332,7 +3344,7 @@ export const review = (
                   ...entry,
                   state: "fixed-pending-retest",
                   updatedAt: now()
-                })
+                }, storeIo)
               }
             }
           },

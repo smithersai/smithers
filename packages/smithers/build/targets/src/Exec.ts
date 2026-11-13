@@ -30,6 +30,7 @@ import * as ExecSandbox from "./ExecSandbox.ts"
 import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
 import { Process } from "./internal/Process.ts"
+import { SandboxHost } from "./internal/SandboxHost.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Secret from "./Secret.ts"
 import * as SecretProxy from "./SecretProxy.ts"
@@ -1547,44 +1548,46 @@ export const run = (
       stdout: "",
       stderr: tail(failureMessage(cause))
     })
-  const prepared = Effect.try({
-    try: () => {
-      const payload = validatedPayload(untrustedPayload)
-      const sensitiveEnv = validatedSensitiveNames(options.sensitiveEnv ?? [])
-      const cacheDirectory = options.cacheDirectory === undefined
-        ? Config.defaultCacheDirectory
-        : Config.normalizeCacheDirectory(options.cacheDirectory)
-      // The token is replaced by a real host directory that a tool will then
-      // write into, so the directory gets the same confinement check every
-      // other path crossing this boundary gets. `normalizeCacheDirectory`
-      // settles the lexical question only: a `.flows` that is a symbolic
-      // link to somewhere else entirely is refused here.
-      const cacheRoot = resolveWorkspacePath(options.workspaceRoot, cacheDirectory)
-      const substitute = (value: string): string =>
-        resolveScriptToken(
-          value.replaceAll(cacheDirectoryToken, cacheRoot).replaceAll(runtimeBinToken, process.execPath)
-        )
-      const cwd = resolveWorkspacePath(options.workspaceRoot, payload.cwd)
-      const [executable, ...args] = payload.argv
-      const resolved: Payload = {
-        ...payload,
-        argv: [substitute(executable), ...args.map(substitute)]
-      }
-      const confinement = options.sandbox === undefined
-        ? undefined
-        : ExecSandbox.plan(
-          options.sandbox,
-          {
-            workspaceRoot: NodeFs.realpathSync(NodePath.resolve(options.workspaceRoot)),
-            cwd,
-            tmp: NodePath.join(cacheRoot, "sandbox", sandboxRunId())
-          },
-          ExecSandbox.host()
-        )
-      return { resolved, sensitiveEnv, cwd, confinement, destinations: options.sandbox?.destinations }
-    },
-    catch: refused
-  })
+  const prepared = Effect.flatMap(SandboxHost, (host) =>
+    Effect.try({
+      try: () => {
+        const payload = validatedPayload(untrustedPayload)
+        const sensitiveEnv = validatedSensitiveNames(options.sensitiveEnv ?? [])
+        const cacheDirectory = options.cacheDirectory === undefined
+          ? Config.defaultCacheDirectory
+          : Config.normalizeCacheDirectory(options.cacheDirectory)
+        // The token is replaced by a real host directory that a tool will then
+        // write into, so the directory gets the same confinement check every
+        // other path crossing this boundary gets. `normalizeCacheDirectory`
+        // settles the lexical question only: a `.flows` that is a symbolic
+        // link to somewhere else entirely is refused here.
+        const cacheRoot = resolveWorkspacePath(options.workspaceRoot, cacheDirectory)
+        const substitute = (value: string): string =>
+          resolveScriptToken(
+            value.replaceAll(cacheDirectoryToken, cacheRoot).replaceAll(runtimeBinToken, process.execPath)
+          )
+        const cwd = resolveWorkspacePath(options.workspaceRoot, payload.cwd)
+        const [executable, ...args] = payload.argv
+        const resolved: Payload = {
+          ...payload,
+          argv: [substitute(executable), ...args.map(substitute)]
+        }
+        const hostFacts = options.sandbox === undefined ? undefined : host ?? ExecSandbox.host()
+        const confinement = options.sandbox === undefined
+          ? undefined
+          : ExecSandbox.plan(
+            options.sandbox,
+            {
+              workspaceRoot: NodeFs.realpathSync(NodePath.resolve(options.workspaceRoot)),
+              cwd,
+              tmp: NodePath.join(cacheRoot, "sandbox", sandboxRunId())
+            },
+            hostFacts!
+          )
+        return { resolved, sensitiveEnv, cwd, confinement, destinations: options.sandbox?.destinations, hostFacts }
+      },
+      catch: refused
+    }))
   // Resolving a declared preload can start a Node probe, so it runs after the
   // synchronous checks and never blocks other targets.
   const expanded = Effect.flatMap(prepared, (values) =>
@@ -1594,7 +1597,7 @@ export const run = (
     ))
   return Effect.flatMap(
     expanded,
-    ({ confinement, cwd, resolved, sensitiveEnv, destinations }) => {
+    ({ confinement, cwd, resolved, sensitiveEnv, destinations, hostFacts }) => {
       if (ExecSandbox.isUnenforceable(confinement)) {
         return Effect.fail(
           execError({
@@ -1654,7 +1657,7 @@ export const run = (
       }
       return withSecretEnvironment(resolved, diagnostic, (secretEnv, brokered) =>
         Effect.flatMap(
-          confined(confinement, cwd, brokered, sensitiveEnv, secretEnv, options, destinations),
+          confined(confinement, cwd, brokered, sensitiveEnv, secretEnv, options, destinations, hostFacts),
           (output) =>
             resolved.expectedExitCodes.includes(output.exitCode)
               ? Effect.succeed({
@@ -1706,7 +1709,8 @@ const confined = (
     readonly onStdout?: ((chunk: Uint8Array) => void) | undefined
     readonly onStderr?: ((chunk: Uint8Array) => void) | undefined
   },
-  destinations?: ReadonlyArray<string>
+  destinations?: ReadonlyArray<string>,
+  hostFacts?: ExecSandbox.Host
 ): Effect.Effect<Spawned, ExecError> => {
   if (confinement === undefined) {
     return spawnTool(cwd, resolved, sensitiveEnv, secretEnv, options.onStdout, options.onStderr, options.environment)
@@ -1725,14 +1729,14 @@ const confined = (
   let effectiveConfinement = confinement
   const prepare = Effect.try({
     try: () => {
-      ExecSandbox.validateWrites(confinement)
+      ExecSandbox.validateWrites(confinement, hostFacts)
       NodeFs.mkdirSync(NodePath.join(confinement.tmp, "home"), { recursive: true })
       NodeFs.mkdirSync(NodePath.join(confinement.tmp, "cache"), { recursive: true })
       for (const write of confinement.writes) NodeFs.mkdirSync(write, { recursive: true })
       const base = toolEnvironment(resolved.env, sensitiveEnv, secretEnv, options.environment)
       const visible = Object.create(null) as Record<string, string>
       for (const [name, value] of Object.entries(base)) if (typeof value === "string") visible[name] = value
-      const wrapped = ExecSandbox.wrap(effectiveConfinement, command, visible)
+      const wrapped = ExecSandbox.wrap(effectiveConfinement, command, visible, hostFacts)
       return {
         containerName: wrapped.containerName,
         payload: {

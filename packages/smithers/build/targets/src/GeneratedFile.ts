@@ -289,7 +289,7 @@ const publication = (io: typeof Fs) => {
         } catch (mkdirCause) {
           if (SafeFs.errorCode(mkdirCause) !== "EEXIST") throw mkdirCause
         }
-        if (created) await SafeFs.syncDirectory(current)
+        if (created) await SafeFs.syncDirectory(current, io)
         stats = await io.lstat(candidate, { bigint: true })
       }
       if (stats.isSymbolicLink()) throw new Error(`generated output parent is a symbolic link: ${candidate}`)
@@ -405,7 +405,7 @@ const publication = (io: typeof Fs) => {
         await checkParent(root, parent, signal)
         await io.rename(temp.path, absolute)
         consumed = true
-        await SafeFs.syncDirectory(parent.path)
+        await SafeFs.syncDirectory(parent.path, io)
       } catch (cause) {
         primary = cause
         failed = true

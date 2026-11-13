@@ -6,16 +6,11 @@ import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
 import * as PrivateStore from "../src/internal/PrivateStore.ts"
+import { ReviewFileSystem } from "../src/internal/ReviewFileSystem.ts"
 import * as LlmLint from "../src/LlmLint.ts"
-
-// Exercise the Windows open flags on every host.
-vi.mock("node:fs", async (original) => {
-  const fs = await original<typeof import("node:fs")>()
-  return { ...fs, constants: { ...fs.constants, O_NOFOLLOW: 0 } }
-})
 
 let root: string
 let store: string
@@ -360,19 +355,17 @@ describe("LlmLint.review provenance manifest", () => {
 
   it("names every security seat and fails closed on an unreadable executable or base", async () => {
     const cli = await engine({})
-    await Fs.chmod(cli.executable, 0o111)
-    const createReadStream = NodeFs.createReadStream
-    const denied = process.platform === "win32"
-      ? vi.spyOn(NodeFs, "createReadStream").mockImplementationOnce((path, options) =>
-        createReadStream(path, options).destroy(Object.assign(new Error("read denied"), { code: "EACCES" }))
-      )
-      : undefined
-    try {
-      const unreadable = await Effect.runPromise(Effect.flip(review(cli.executable)))
-      expect(unreadable.message).toContain("Review executable identity")
-    } finally {
-      denied?.mockRestore()
+    const deniedIo: typeof NodeFs = {
+      ...NodeFs,
+      createReadStream: (path, options) =>
+        NodeFs.createReadStream(path, options)
+          .destroy(Object.assign(new Error("read denied"), { code: "EACCES" }))
     }
+    const unreadable = await Effect.runPromise(
+      Effect.flip(review(cli.executable)).pipe(Effect.provideService(ReviewFileSystem, deniedIo))
+    )
+    expect(unreadable.message).toContain("Review executable identity")
+    expect(unreadable.message).toContain("read denied")
     const missing = await Effect.runPromise(Effect.flip(review(Path.join(root, "absent-engine"))))
     expect(missing).toBeInstanceOf(LlmLint.ModelCliMissing)
     const onPath = await Effect.runPromise(Effect.flip(review("smithers-absent-engine")))
@@ -463,29 +456,75 @@ describe("LlmLint.review review hardening", () => {
 })
 
 describe("finding record identity", () => {
-  it("closes a replaced record before reading its bytes", () => {
-    const directory = PrivateStore.ensure(store)
-    const name = `findings/${"a".repeat(64)}.json`
-    PrivateStore.write(directory, name, { trusted: true })
-    const record = Path.join(directory, name)
-    const open = NodeFs.openSync
-    const replaced = vi.spyOn(NodeFs, "openSync").mockImplementationOnce((path, flags, mode) => {
-      NodeFs.renameSync(record, `${record}.old`)
-      NodeFs.writeFileSync(record, JSON.stringify({ trusted: false }))
-      return open(path, flags, mode)
-    })
-    const read = vi.spyOn(NodeFs, "readFileSync")
-    const close = vi.spyOn(NodeFs, "closeSync")
-    try {
-      expect(() => PrivateStore.read(directory, name)).toThrow("not a regular file")
-      expect(read).not.toHaveBeenCalled()
-      expect(close).toHaveBeenCalledOnce()
-    } finally {
-      replaced.mockRestore()
-      read.mockRestore()
-      close.mockRestore()
+  it.each(["native", "without no-follow"] as const)(
+    "refuses a record replaced by a symlink without reading its target: %s",
+    (flags) => {
+      const directory = PrivateStore.ensure(store)
+      const name = `findings/${"b".repeat(64)}.json`
+      PrivateStore.write(directory, name, { trusted: true })
+      const record = Path.join(directory, name)
+      const nativeFlags = NodeFs.constants.O_NOFOLLOW
+      let reads = 0
+      let closes = 0
+      const io: typeof NodeFs = {
+        ...NodeFs,
+        constants: flags === "native" ? NodeFs.constants : { ...NodeFs.constants, O_NOFOLLOW: 0 },
+        openSync: (path, value, mode) => {
+          NodeFs.renameSync(record, `${record}.old`)
+          NodeFs.writeFileSync(Path.join(directory, "replacement"), "{}")
+          NodeFs.symlinkSync(Path.join(directory, "replacement"), record, "file")
+          return NodeFs.openSync(path, value, mode)
+        },
+        readFileSync: () => {
+          reads++
+          throw new Error("symlink target must not be read")
+        },
+        closeSync: (descriptor) => {
+          closes++
+          NodeFs.closeSync(descriptor)
+        }
+      }
+      expect(() => PrivateStore.read(directory, name, io)).toThrow("not a regular file")
+      expect(reads).toBe(0)
+      expect(closes).toBe(flags === "native" && nativeFlags ? 0 : 1)
+      expect(NodeFs.constants.O_NOFOLLOW).toBe(nativeFlags)
     }
-  })
+  )
+
+  it.each(["native", "without no-follow"] as const)(
+    "closes a replaced record before reading its bytes: %s",
+    (flags) => {
+      const directory = PrivateStore.ensure(store)
+      const name = `findings/${"a".repeat(64)}.json`
+      PrivateStore.write(directory, name, { trusted: true })
+      const record = Path.join(directory, name)
+      let reads = 0
+      let closes = 0
+      let openedFlags: number | undefined
+      const io: typeof NodeFs = {
+        ...NodeFs,
+        constants: flags === "native" ? NodeFs.constants : { ...NodeFs.constants, O_NOFOLLOW: 0 },
+        openSync: (path, value, mode) => {
+          openedFlags = Number(value)
+          NodeFs.renameSync(record, `${record}.old`)
+          NodeFs.writeFileSync(record, JSON.stringify({ trusted: false }))
+          return NodeFs.openSync(path, value, mode)
+        },
+        readFileSync: () => {
+          reads++
+          throw new Error("record bytes must not be read")
+        },
+        closeSync: (descriptor) => {
+          closes++
+          NodeFs.closeSync(descriptor)
+        }
+      }
+      expect(() => PrivateStore.read(directory, name, io)).toThrow("not a regular file")
+      expect(reads).toBe(0)
+      expect(closes).toBe(1)
+      expect(openedFlags).toBe(io.constants.O_RDONLY | io.constants.O_NOFOLLOW | io.constants.O_NONBLOCK)
+    }
+  )
 })
 
 describe("LlmLint.review containment follow-up", () => {
@@ -624,28 +663,24 @@ describe("LlmLint.review containment follow-up", () => {
     const cli = await engine({ findings: { "src/a.ts": [danger] } })
     await Effect.runPromise(review(cli.executable))
     const fifo = Path.join(store, "findings", `${"e".repeat(64)}.json`)
-    const lstat = NodeFs.lstatSync
-    // Windows has no filesystem FIFO. Report that native type at the stat seam;
-    // the POSIX case still uses a real FIFO with no writer.
-    const synthetic = process.platform === "win32"
-      ? vi.spyOn(NodeFs, "lstatSync").mockImplementation((path, options) => {
-        const stats = lstat(path, options)
-        if (String(path) === fifo && stats !== undefined) {
-          Object.defineProperty(stats, "isFile", { value: () => false })
-          Object.defineProperty(stats, "isFIFO", { value: () => true })
-        }
-        return stats
-      })
-      : undefined
-    if (synthetic === undefined) execFileSync("mkfifo", [fifo])
+    if (process.platform !== "win32") execFileSync("mkfifo", [fifo])
     else await Fs.writeFile(fifo, "not readable as a record")
-    try {
-      expect((await Effect.runPromise(Effect.flip(LlmLint.storedFindings(store)))).message).toContain(
-        "not a regular file"
-      )
-    } finally {
-      synthetic?.mockRestore()
+    const io: typeof NodeFs = process.platform !== "win32" ? NodeFs : {
+      ...NodeFs,
+      lstatSync: ((...args: Parameters<typeof NodeFs.lstatSync>) => {
+        const stats = NodeFs.lstatSync(...args)
+        if (String(args[0]) !== fifo || stats === undefined) return stats
+        return Object.assign(Object.create(Object.getPrototypeOf(stats)), stats, {
+          isFile: () => false,
+          isFIFO: () => true
+        })
+      }) as typeof NodeFs.lstatSync
     }
+    expect(
+      (await Effect.runPromise(
+        Effect.flip(LlmLint.storedFindings(store)).pipe(Effect.provideService(ReviewFileSystem, io))
+      )).message
+    ).toContain("not a regular file")
   })
 })
 
