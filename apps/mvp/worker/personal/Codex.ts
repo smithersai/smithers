@@ -85,31 +85,39 @@ export const claimsOf = (idToken: string): { readonly accountId: string; readonl
   }
 }
 
-const post = (url: string, body: HttpClientRequest.HttpClientRequest) =>
-  Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient
-    // Bounded: a refresh runs holding the person's row, so a silent OpenAI can't hold a database connection.
-    const answer = yield* client.execute(body).pipe(
-      Effect.timeout(REQUEST_TIMEOUT),
-      Effect.mapError(() => new CodexAuthFailed({ reason: "unreachable", status: null })),
-    )
-    return { status: answer.status, json: answer.json, url }
-  }).pipe(Effect.provide(FetchHttpClient.layer))
-
-const jsonTo = (url: string, value: unknown) => post(url, HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), value))
-
 const decoded = <A, I>(schema: Schema.Codec<A, I>, json: Effect.Effect<unknown, unknown>) =>
   json.pipe(
     Effect.flatMap(Schema.decodeUnknownEffect(schema)),
     Effect.mapError(() => new CodexAuthFailed({ reason: "refused", status: 200 })),
   )
 
+const post = <A, I>(body: HttpClientRequest.HttpClientRequest, schema: Schema.Codec<A, I>, pending = false) =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient
+    const answer = yield* client.execute(body).pipe(
+      Effect.mapError(() => new CodexAuthFailed({ reason: "unreachable", status: null })),
+    )
+    if (answer.status !== 200) {
+      return yield* new CodexAuthFailed({
+        reason: pending && (answer.status === 403 || answer.status === 404) ? "pending" : "refused",
+        status: answer.status,
+      })
+    }
+    return yield* decoded(schema, answer.json)
+  }).pipe(
+    // Keep the body and decoding inside the deadline: a refresh holds a database row until this finishes.
+    Effect.timeout(REQUEST_TIMEOUT),
+    Effect.catchTag("TimeoutError", () => Effect.fail(new CodexAuthFailed({ reason: "unreachable", status: null }))),
+    Effect.provide(FetchHttpClient.layer),
+  )
+
+const jsonTo = <A, I>(url: string, value: unknown, schema: Schema.Codec<A, I>, pending = false) =>
+  post(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), value), schema, pending)
+
 /** Asks OpenAI for a code the person types at {@link verificationUrl}. */
 export const requestCode = Effect.gen(function* () {
   const { origin, clientId } = yield* CodexAuth
-  const answer = yield* jsonTo(`${origin}/api/accounts/deviceauth/usercode`, { client_id: clientId })
-  if (answer.status !== 200) return yield* new CodexAuthFailed({ reason: "refused", status: answer.status })
-  const code = yield* decoded(UserCode, answer.json)
+  const code = yield* jsonTo(`${origin}/api/accounts/deviceauth/usercode`, { client_id: clientId }, UserCode)
   const userCode = code.user_code ?? code.usercode
   if (userCode === undefined) return yield* new CodexAuthFailed({ reason: "refused", status: 200 })
   return {
@@ -120,8 +128,8 @@ export const requestCode = Effect.gen(function* () {
   }
 })
 
-const form = (url: string, fields: Record<string, string>) =>
-  post(url, HttpClientRequest.bodyUrlParams(HttpClientRequest.post(url), fields))
+const form = <A, I>(url: string, fields: Record<string, string>, schema: Schema.Codec<A, I>) =>
+  post(HttpClientRequest.bodyUrlParams(HttpClientRequest.post(url), fields), schema)
 
 /** The credential OpenAI's `answer` holds, keeping `earlier`'s refresh token when it rotated none. */
 const credentialOf = (tokens: typeof Tokens.Type, earlier: Credential | undefined, now: number): Credential | undefined => {
@@ -144,21 +152,17 @@ const credentialOf = (tokens: typeof Tokens.Type, earlier: Credential | undefine
 export const poll = (deviceAuthId: string, userCode: string, now: number) =>
   Effect.gen(function* () {
     const { origin, clientId } = yield* CodexAuth
-    const answer = yield* jsonTo(`${origin}/api/accounts/deviceauth/token`, { device_auth_id: deviceAuthId, user_code: userCode })
-    if (answer.status === 403 || answer.status === 404) {
-      return yield* new CodexAuthFailed({ reason: "pending", status: answer.status })
-    }
-    if (answer.status !== 200) return yield* new CodexAuthFailed({ reason: "refused", status: answer.status })
-    const approved = yield* decoded(Approved, answer.json)
+    const approved = yield* jsonTo(
+      `${origin}/api/accounts/deviceauth/token`, { device_auth_id: deviceAuthId, user_code: userCode }, Approved, true,
+    )
     const exchanged = yield* form(`${origin}/oauth/token`, {
       grant_type: "authorization_code",
       code: approved.authorization_code,
       redirect_uri: `${origin}/deviceauth/callback`,
       client_id: clientId,
       code_verifier: approved.code_verifier,
-    })
-    if (exchanged.status !== 200) return yield* new CodexAuthFailed({ reason: "refused", status: exchanged.status })
-    const credential = credentialOf(yield* decoded(Tokens, exchanged.json), undefined, now)
+    }, Tokens)
+    const credential = credentialOf(exchanged, undefined, now)
     if (credential === undefined) return yield* new CodexAuthFailed({ reason: "refused", status: 200 })
     return credential
   })
@@ -171,7 +175,6 @@ export const refresh = (credential: Credential, now: number) =>
       grant_type: "refresh_token",
       refresh_token: credential.refreshToken,
       client_id: clientId,
-    })
-    if (answer.status !== 200) return yield* new CodexAuthFailed({ reason: "refused", status: answer.status })
-    return credentialOf(yield* decoded(Tokens, answer.json), credential, now)!
+    }, Tokens)
+    return credentialOf(answer, credential, now)!
   })

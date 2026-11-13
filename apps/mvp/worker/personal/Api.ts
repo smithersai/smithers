@@ -182,7 +182,7 @@ export const make = <E, R>(
         return { ok: false, latencyMs, code: failure.code, status: jevStatus(failure) ?? null, host: JEV_HOST } satisfies TestResult
       }
       if (connection.kind === "codex_subscription") {
-        const refreshed = yield* Subscriptions.fresh(personId, keys.value, true).pipe(
+        const refreshed = yield* Subscriptions.fresh(personId, keys.value, true, connection.id).pipe(
           Effect.provideService(Codex.CodexAuth, codexAuth),
           Effect.provide(database),
           Effect.provideContext(context),
@@ -258,7 +258,7 @@ export const make = <E, R>(
         Effect.exit,
       )
       const failure = Exit.isFailure(answered) ? Cause.squash(answered.cause) as Evaluator.EvaluatorError : undefined
-      const usage = Exit.isSuccess(answered) ? answered.value.usage : undefined
+      const usage = Exit.isSuccess(answered) ? answered.value.usage : failure?.usage
       yield* PersonalUsage.end(call, {
         outcome: failure === undefined ? "success" : "failed",
         usage: { inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens },

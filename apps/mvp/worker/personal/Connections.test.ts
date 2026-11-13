@@ -5,7 +5,7 @@
 // through `FetchHttpClient.Fetch`. Every credential is searched for in what was stored and recorded.
 import { Action } from "@smthrs/flow"
 import { Classifier, type ModelEvent, ModelRequest } from "@smthrs/model"
-import { ConfigProvider, Deferred, Effect, Exit, Layer, Option, Redacted, Schema, Stream, Tracer } from "effect"
+import { ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Stream, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
@@ -31,6 +31,7 @@ import * as ModelFlows from "./ModelFlows.ts"
 import { PersonalModels, sealContext } from "./Models.ts"
 import * as Store from "./Store.ts"
 import * as Subscriptions from "./Subscriptions.ts"
+import * as PersonalUsage from "./Usage.ts"
 import {
   agent,
   dump,
@@ -988,6 +989,64 @@ describe("a Codex token kept fresh", () => {
     expect(openai.seen).toEqual([])
   })
 
+  test.each([
+    { active: true, refused: true },
+    { active: true, refused: false },
+    { active: false, refused: true },
+    { active: false, refused: false },
+  ])("Check Access refreshes the requested Codex connection: active=$active refused=$refused", async ({ active, refused }) => {
+    const [first, selected] = await seedKeys(runtime, "person-member", [
+      { kind: "codex_subscription", active: !active, key: JSON.stringify(credentialOf({ refreshToken: "refresh-first" })) },
+      { kind: "codex_subscription", active, key: JSON.stringify(credentialOf({ refreshToken: "refresh-selected" })) },
+    ])
+    const before = await rows(runtime)
+    const openai = scriptedOpenAi((_path, _index, body) =>
+      (body.refresh_token === "refresh-selected") === refused
+        ? { status: 401 }
+        : { status: 200, body: { access_token: "renewed-selected", refresh_token: "rotated-selected" } }
+    )
+    const h = await open({ actor: member, provider: openai.fetch })
+    const [status, answer] = await json(await h.fetch(`${PERSONAL_MODEL_TEST_ROUTE}?connection=${selected}`, { method: "POST" }))
+    expect(status).toBe(200)
+    expect(answer).toMatchObject(refused ? { ok: false, code: "refused", status: 401 } : { ok: true })
+    expect(openai.seen.map((seen) => seen.body.refresh_token)).toEqual(["refresh-selected"])
+    const after = await rows(runtime)
+    expect(after.find((row) => row.id === first)).toEqual(before.find((row) => row.id === first))
+    const changed = after.find((row) => row.id === selected)!
+    expect(changed).toMatchObject({ failureStatus: refused ? 401 : null })
+    if (!refused) expect(await credentialIn(changed)).toMatchObject({ accessToken: "renewed-selected", refreshToken: "rotated-selected" })
+    await nothingLeaked(h, ["refresh-first", "refresh-selected", "renewed-selected", "rotated-selected"])
+  })
+
+  test("Check Access does not lock an unrelated Codex connection", async () => {
+    const [first, selected] = await seedKeys(runtime, "person-member", [
+      { kind: "codex_subscription", active: false, key: JSON.stringify(credentialOf()) },
+      { kind: "codex_subscription", key: JSON.stringify(credentialOf()) },
+    ])
+    const keys = await keysOf()
+    const openai = refreshed()
+    const answer = await onNetwork(openai.fetch, Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      const held = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const locker = yield* Effect.forkChild(sql.withTransaction(Effect.gen(function* () {
+        yield* sql`SELECT id FROM personal_models WHERE person_id = 'person-member' AND id = ${first!} FOR UPDATE`
+        yield* Deferred.succeed(held, undefined)
+        yield* Deferred.await(release)
+      })))
+      yield* Deferred.await(held)
+      const result = yield* sql.withTransaction(Effect.gen(function* () {
+        yield* sql`SET LOCAL lock_timeout = '250ms'`
+        yield* Subscriptions.fresh("person-member", keys, true, selected!)
+      })).pipe(Effect.exit, Effect.ensuring(Deferred.succeed(release, undefined)))
+      yield* Fiber.join(locker)
+      return result
+    }))
+    expect(Exit.isSuccess(answer)).toBe(true)
+    if (Exit.isSuccess(answer)) expect(answer.value).toMatchObject({ _tag: "Success" })
+    expect(openai.seen).toHaveLength(1)
+  })
+
   test("Check Access on a Codex connection refreshes it, and answers OpenAI's refusal by its status", async () => {
     const [id] = await seedKeys(runtime, "person-member", [{ kind: "codex_subscription", key: JSON.stringify(credentialOf()) }])
     const fine = refreshed()
@@ -1166,6 +1225,37 @@ describe("POST /api/me/model/jev", () => {
     }
     expect(await rows(runtime)).toEqual([expect.objectContaining({ failureStatus: null })])
     expect((await usage(runtime)).map((row) => row.errorCode)).toEqual(["refused", "empty"])
+  })
+
+  test.each([
+    { route: "judge", invalid: false },
+    { route: "judge", invalid: true },
+    { route: "test", invalid: false },
+    { route: "test", invalid: true },
+  ])("failed Jev judgments retain paid tokens: route=$route invalid=$invalid", async ({ route, invalid }) => {
+    const [id] = await jev()
+    const gateway = scriptedGateway(() => ({
+      status: 200,
+      body: {
+        ...(invalid ? { answers: { ok: { type: "boolean", probability: "invalid" } } } : {}),
+        usage: { inputTokens: 40, outputTokens: 2 },
+      },
+    }))
+    const h = await open({ actor: member, provider: gateway.fetch })
+    const response = route === "judge"
+      ? await h.fetch(JEV_ROUTE, post())
+      : await h.fetch(`${PERSONAL_MODEL_TEST_ROUTE}?connection=${id}`, { method: "POST" })
+    const code = invalid ? "invalid_answer" : "empty"
+    expect(response.status).toBe(route === "judge" ? 502 : 200)
+    expect(await response.json()).toMatchObject({ code })
+    expect(await usage(runtime)).toEqual([expect.objectContaining({
+      connectionId: id, role: route, outcome: "failed", errorCode: code, inputTokens: 40, outputTokens: 2, settled: true,
+    })])
+    expect(h.count(PersonalUsage.calls, { role: route, outcome: "failed" })).toBe(1)
+    expect(h.count(PersonalUsage.tokens, { role: route, type: "input" })).toBe(40)
+    expect(h.count(PersonalUsage.tokens, { role: route, type: "output" })).toBe(2)
+    expect((await rows(runtime))[0]).toMatchObject({ failureStatus: null })
+    await nothingLeaked(h, [JEV_KEY])
   })
 
   test("a malformed body is 400, an oversized body 413; a method but POST is 405; signed out is 401", async () => {

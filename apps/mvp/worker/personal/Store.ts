@@ -191,11 +191,12 @@ export const link = (write: Linked): Effect.Effect<"set" | "replace" | "repeat" 
     })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
   })
 
-/** Holds `personId`'s Codex rows for the transaction it runs in, so one refresh runs at a time. */
-export const holdCodex = (personId: string): Effect.Effect<void, unknown, SqlClient.SqlClient> =>
+/** Holds `personId`'s Codex rows, or just `connectionId`, for the transaction, so a token refreshes once at a time. */
+export const holdCodex = (personId: string, connectionId?: string): Effect.Effect<void, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     Effect.asVoid(sql`
-      SELECT id FROM personal_models WHERE person_id = ${personId} AND kind = 'codex_subscription' FOR UPDATE`))
+      SELECT id FROM personal_models WHERE person_id = ${personId} AND kind = 'codex_subscription'
+        ${connectionId === undefined ? sql`` : sql`AND id = ${connectionId}`} FOR UPDATE`))
 
 /**
  * Replaces a Codex subscription's credential with what a refresh answered, only over the one it refreshed: `false`

@@ -66,17 +66,18 @@ export const reveal = (personId: string, connectionId: string, keys: Keys) =>
  * OpenAI answered at once, since its refresh tokens rotate. It holds the row while it does, so two runs starting together
  * refresh once: the second waits and reads the first's token. A refusal marks the row and fails. Nothing to do for a
  * Codex connection the person turned off: no run reads it, so its token can't fail one. `force` refreshes it whatever
- * its age or activity: what Check Access does.
+ * its age or activity: what Check Access does, selecting only its requested row when `selectedId` is given.
  */
-export const fresh = (personId: string, keys: Keys, force = false) =>
+export const fresh = (personId: string, keys: Keys, force = false, selectedId?: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     let connectionId: string | undefined
     const outcome = yield* sql.withTransaction(
       Effect.gen(function* () {
-        yield* Store.holdCodex(personId)
+        yield* Store.holdCodex(personId, selectedId)
         const row = (yield* Store.saved(personId)).find((connection) =>
-          connection.kind === "codex_subscription" && (force || connection.active)
+          connection.kind === "codex_subscription" && (force || connection.active) &&
+          (selectedId === undefined || connection.id === selectedId)
         )
         if (row === undefined) return
         connectionId = row.id

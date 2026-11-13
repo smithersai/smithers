@@ -142,7 +142,8 @@ models and other hosts speak the protocol the key was saved under.
   on the deployment's model.
 - **Outside the budget.** The call reserves nothing against `MODEL_DAILY_TOKEN_BUDGET`, writes no `model_usage` row and
   starts no spend alert. It writes a `personal_model_usage` row before the model runs, settled when it ends with the
-  tokens the model reported, its outcome, its failure's code and the provider's status. A settle Postgres refuses is
+  tokens the model reported, its outcome, its failure's code and the provider's status. Failed Jev judgments retain
+  reported token counts too, even when the answers are missing or invalid. A settle Postgres refuses is
   logged and counted (`smithers_personal_model_usage_errors`) and leaves the row unsettled, as the deployment's ledger
   does; a test cancelled while the provider answers settles as `interrupted`.
 - **No fallback to the deployment.** A saved model that can't be used here (its key doesn't open, SECRETS_KEY is unset,
@@ -191,8 +192,10 @@ agent ─ Authorization: Bearer <placeholder> ─▶ box egress ─ host in the 
 - **Refusals.** Only a request that used the credential says anything of the connection: a vendor's 401, 402 or 403
   marks it, a success clears it. A box's other traffic to that host never does.
 - **Codex tokens** are refreshed in the Worker before a Codex run, when under `FRESH_FOR_MS` from expiring, and on Check
-  Access, one at a time per person (the row is held). The answer is sealed at once, since refresh tokens rotate, and
-  any status OpenAI refuses a refresh with marks the connection. The box's `auth.json` holds the placeholder.
+  Access, one at a time per connection (the row is held). Check Access refreshes only the requested connection, even
+  when it is inactive. Each auth request has a `30`-second deadline through response-body reading and decoding; a
+  timeout is unreachable and leaves the connection unmarked. The answer is sealed at once, since refresh tokens rotate,
+  and any status OpenAI refuses a refresh with marks the connection. The box's `auth.json` holds the placeholder.
 - **Records.** Log and span `todo.agent_cli` (agent, outcome, exit code, duration, tokens Claude Code reports), span
   `secrets.egress.subscription`, and `secret_events` under the name `connection:<id>`: never a credential.
 
