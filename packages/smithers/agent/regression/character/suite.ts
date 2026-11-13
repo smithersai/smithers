@@ -14,8 +14,8 @@
  *
  * @since 0.1.0
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs"
-import { dirname, isAbsolute, join, resolve } from "node:path"
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs"
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { parse as parseYaml } from "yaml"
 import type * as Subject from "./subject.ts"
 import type * as World from "./world.ts"
@@ -136,7 +136,23 @@ export interface Suite {
   readonly cases: ReadonlyArray<Case>
 }
 
-const at = (base: string, path: string): string => (isAbsolute(path) ? path : resolve(base, path))
+/**
+ * Resolves a suite-owned file and refuses lexical or symlink escapes.
+ * @private
+ * @since 0.1.0
+ */
+export const suitePath = (base: string, path: string): string => {
+  const resolved = resolve(base, path)
+  const outside = (root: string, target: string): boolean => {
+    const rel = relative(root, target)
+    return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+  }
+  if (outside(base, resolved) ||
+    (existsSync(resolved) && outside(realpathSync(base), realpathSync(resolved)))) {
+    throw new Error(`Suite path ${JSON.stringify(path)} must stay inside the suite directory`)
+  }
+  return resolved
+}
 
 const readYaml = (path: string): Record<string, unknown> =>
   (parseYaml(readFileSync(path, "utf8")) ?? {}) as Record<string, unknown>
@@ -192,13 +208,13 @@ export const parseCase = (file: string, raw: Record<string, unknown>): Case => {
 /** Loads a suite directory. `only` keeps the named cases. */
 export const load = (dir: string, only?: ReadonlyArray<string>): Suite => {
   const base = resolve(dir)
-  const raw = readYaml(join(base, "suite.yaml"))
+  const raw = readYaml(suitePath(base, "suite.yaml"))
   const voice = (raw.voice ?? {}) as Record<string, unknown>
   const jargonFiles = strings(voice.jargon)
   const booking = (raw.booking ?? {}) as Record<string, unknown>
-  const caseDir = join(base, "cases")
+  const caseDir = suitePath(base, "cases")
   const cases = readdirSync(caseDir).filter((name) => name.endsWith(".yaml")).sort().map((name) => {
-    const file = join(caseDir, name)
+    const file = suitePath(base, join(caseDir, name))
     const parsed = parseCase(file, readYaml(file))
     if (parsed.id !== name.replace(/\.yaml$/, "")) throw new Error(`${file}: id must be the file name`)
     return parsed
@@ -207,20 +223,20 @@ export const load = (dir: string, only?: ReadonlyArray<string>): Suite => {
   if (typeof raw.profile !== "string" || raw.profile === "") {
     throw new Error(`${join(base, "suite.yaml")}: profile must name the role's flow.mdx`)
   }
-  const calibration = typeof raw.calibration === "string" ? at(base, raw.calibration) : undefined
+  const calibration = typeof raw.calibration === "string" ? suitePath(base, raw.calibration) : undefined
   return {
     dir: base,
     name: String(raw.name ?? raw.role),
     role: String(raw.role),
-    profile: at(base, raw.profile),
-    org: at(base, String(raw.org)),
-    world: at(base, String(raw.world)),
+    profile: suitePath(base, raw.profile),
+    org: suitePath(base, String(raw.org)),
+    world: suitePath(base, String(raw.world)),
     seat: String(raw.seat ?? "openai:gpt-6.1-sol"),
     judgeSeat: String(raw.judgeSeat ?? "openai:gpt-6-sol"),
     voice: {
       openers: strings(voice.openers),
       forbid: patterns(voice.forbid),
-      jargon: jargonFiles.flatMap((path) => wordList(at(base, path))).concat(strings(voice.terms))
+      jargon: jargonFiles.flatMap((path) => wordList(suitePath(base, path))).concat(strings(voice.terms))
     },
     references: (raw.references ?? []) as Suite["references"],
     booking: {

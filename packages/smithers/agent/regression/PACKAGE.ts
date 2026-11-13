@@ -79,7 +79,8 @@ const character = Smithers.NodeTest({
  * the world's patching and tools, the deterministic checks, what the judge
  * sees and re-judges, the seat environment's credential stripping, the
  * profile composer, the `--label` guard, and the rescore exit codes through
- * the real CLI. Fast; no model, no network.
+ * the real CLI. The baseline gate checks also execute the offline agent suite.
+ * No provider or network.
  *
  * @since 0.1.0
  * @category test
@@ -87,7 +88,7 @@ const character = Smithers.NodeTest({
 const characterUnit = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   runner: Smithers.testSuite(["character"]),
-  srcs: characterSources,
+  srcs: [...sources, ...characterSources],
   deps: [],
   cwd
 })
@@ -120,7 +121,7 @@ const securityReview = Smithers.SecurityReview({
       title: "A live character run signs only with subscription logins and never leaks them",
       threat: "Anyone who reads a results file, trace, or error text obtains the owner's model API keys or Codex/ChatGPT session tokens.",
       lookFor: [
-        "`subscriptionEnvironment` keeps an API key variable the resolver reads (OPENROUTER_API_KEY and SMITHERS_ACCOUNT_POOL_KEY are not deleted today; OPENAI_API_KEY and ANTHROPIC_API_KEY are) in the env handed to `NativeEquipment.seatResolver`.",
+        "`subscriptionEnvironment` keeps an API key variable or account-pool credential the resolver reads (including OPENROUTER_API_KEY and SMITHERS_ACCOUNT_POOL_KEY) in the env handed to `NativeEquipment.seatResolver`.",
         "A `Cause.pretty`, `CHARACTER_DEBUG` detail, or `--trace` output that prints request headers, env values, or `$CODEX_HOME/auth.json` contents.",
         "A results JSON or REGRESSION-LOG row that serializes the seat, route, or env rather than only usage counts."
       ],

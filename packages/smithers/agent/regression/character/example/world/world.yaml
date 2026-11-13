@@ -12,11 +12,11 @@ chat: { channels: [{ id: C1, name: team }], messages: [] }
 issues:
   - { number: 7, kind: issue, title: "Signup button does nothing on Safari", state: open, body: "Fix in review, PR #8." }
   - { number: 8, kind: pr, title: "Fix Safari signup button", state: open, checks: passing }
-# Scripted test results for run_tests: the first entry whose match terms all appear in the filter wins.
+# Scripted test results for run_tests: the entry with the most match terms that all appear in the filter wins.
 tests:
   - { match: [signup], status: failed, passed: 2, failed: 1, output: "FAIL src/signup.test.ts › submits on Safari\n  expected the form to submit, but onClick never fired (Safari 26: click on <button> inside <a> is swallowed)\n2 passed, 1 failed" }
   - { match: [], status: passed, passed: 41, failed: 0, output: "41 passed" }
-# Scripted results for ops_run: the first entry whose action matches (when set) and whose match terms all appear in the target wins.
+# Scripted results for ops_run: among entries whose action matches (when set) and whose match terms all appear in the target, the most specific wins.
 ops:
   - { action: rollback, match: [api], status: succeeded, output: "api rolled back to 1.4.1 in 3m 40s; health checks pass" }
   - { status: started, output: "Running; the result arrives as an event." }

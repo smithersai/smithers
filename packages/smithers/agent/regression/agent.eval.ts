@@ -1,6 +1,6 @@
 /**
- * The fixed suite: seventeen scenarios that put the Smithers agent through the
- * behaviours a host depends on, and the two scorers that grade them.
+ * The fixed suite: twenty-three scenarios that put the Smithers agent through the
+ * behaviours a host depends on, and the behaviour scorer that grades them.
  *
  * Each scenario is a whole agent run against a scripted provider, so a case is
  * not a prompt-response fixture — it is one execution of the production loop
@@ -9,18 +9,14 @@
  * is why a failing case names the behaviour that changed rather than a number
  * that moved.
  *
- * Two scorers grade every case, and they are independent on purpose. `behaviour`
- * asks whether the run did what the case declares. `contract` asks whether the
- * observation is well formed at all: it decodes against the declared schema and
- * then holds the invariants that schema cannot state, so a scenario that
- * reduced its run into a contradictory observation fails the second scorer even
- * when the first happens to compare equal.
+ * The behaviour scorer compares each observation with its declared expectation.
+ * Observation shape is constructed by the subject, so it is not a separate
+ * measured grade.
  *
  * @since 0.1.0
  */
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
 import { CaseExecutor, EvalError, Suite, type Runner as EvalRunner } from "../evals/src/index.ts"
 import { Binding, Scoring as ScorerRunner, Scorer } from "../scorers/src/index.ts"
 import * as Subject from "./subject.ts"
@@ -29,8 +25,8 @@ import * as Subject from "./subject.ts"
  * The target every binding applies to.
  *
  * The evaluation runner scores an execution only when its `target` is the value
- * a binding was declared against, so one declaration here is what attaches both
- * scorers to every case.
+ * a binding was declared against, so one declaration here attaches the behaviour
+ * scorer to every case.
  *
  * @category models
  * @since 0.1.0
@@ -67,47 +63,6 @@ const behaviour = Scorer.make({
       stable(output) === stable(groundTruth)
         ? { score: 1, reason: "the observation matched the declared expectation" }
         : { score: 0, reason: `expected ${stable(groundTruth)}, observed ${stable(output)}` }
-    )
-})
-
-/**
- * The invariants the observation schema cannot state.
- *
- * `kind` decides which of the two optional fields carries the result, and a
- * call tally is a count. The schema admits an observation that breaks either
- * rule — a failure with no tag, an answer that also carries one, a fractional
- * `modelCalls` — so this is where a scenario that reduced its run wrongly is
- * caught. Returns the broken invariant, or `undefined` when all of them hold.
- */
-const brokenInvariant = (observation: Subject.Observation): string | undefined => {
-  if (observation.kind === "failure") {
-    if (observation.failure === undefined) return "a failure observation carried no failure tag"
-    if (observation.value !== undefined) return "a failure observation also carried an answer value"
-  } else if (observation.failure !== undefined) {
-    return "an answer observation also carried a failure tag"
-  }
-  return Number.isInteger(observation.modelCalls) && observation.modelCalls >= 0
-    ? undefined
-    : `modelCalls is not a count: ${observation.modelCalls}`
-}
-
-/** Is the observation the shape this suite promises? */
-const contract = Scorer.make({
-  id: "evals/agent/suite/contract",
-  version: "1",
-  name: "evals/agent/contract",
-  description: "The observation decodes as the declared schema and holds the invariants that schema cannot state.",
-  score: ({ output }) =>
-    Schema.decodeUnknownEffect(Subject.Observation)(output).pipe(
-      Effect.match({
-        onFailure: () => ({ score: 0, reason: "the observation did not decode as the declared schema" }),
-        onSuccess: (observation) => {
-          const broken = brokenInvariant(observation)
-          return broken === undefined
-            ? { score: 1, reason: "the observation decoded and held every declared invariant" }
-            : { score: 0, reason: broken }
-        }
-      })
     )
 })
 
@@ -644,14 +599,13 @@ export const cases: ReadonlyArray<Suite.Case> = Object.entries(scenarios).map(([
 }))
 
 /**
- * Both scorers, bound to the one target every case executes.
+ * The behaviour scorer, bound to the one target every case executes.
  *
  * @category models
  * @since 0.1.0
  */
 export const bindings: ReadonlyArray<Binding.Binding> = [
-  Binding.make({ scorer: behaviour, appliesTo: target }),
-  Binding.make({ scorer: contract, appliesTo: target })
+  Binding.make({ scorer: behaviour, appliesTo: target })
 ]
 
 /** Fixed-suite declaration for the public eval CLI. */

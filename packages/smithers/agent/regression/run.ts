@@ -4,7 +4,7 @@
  * Launch line, from the repository root:
  *
  * ```bash
- * node packages/smithers/agent/regression/run.ts
+ * bun packages/smithers/agent/regression/run.ts
  * ```
  *
  * Add `--update` to rewrite `packages/smithers/agent/regression/baseline.json` from this run. Do that
@@ -18,9 +18,11 @@
  *
  * Exit codes follow the shared CI convention. `0` means every case matched the
  * baseline and cleared the gate. `1` means the run disagreed with the committed
- * baseline: a score dropped, a score moved under an unchanged step key, or an
- * observation went missing. `5` means the gate could not decide, which is an
- * unusable harness rather than a result — repair it instead of reading the red.
+ * baseline: a score dropped, a score moved under an unchanged step key, or a
+ * threshold was breached. `5` means the gate could not decide: observations
+ * are missing, a case did not finish, scoring was inconclusive, or the baseline
+ * could not be loaded. Inspect the report: a case error can be a behaviour
+ * regression as well as a harness fault.
  *
  * @since 0.1.0
  */
@@ -52,7 +54,12 @@ interface EvalRunHostService {
   readonly setExitCode: (code: number) => Effect.Effect<void>
 }
 
-class EvalRunHost extends Context.Service<EvalRunHost, EvalRunHostService>()("evals/agent/run/EvalRunHost") {}
+/**
+ * The entry point's injectable I/O boundary.
+ * @private
+ * @since 0.1.0
+ */
+export class EvalRunHost extends Context.Service<EvalRunHost, EvalRunHostService>()("evals/agent/run/EvalRunHost") {}
 
 const evalRunHostLayer = Layer.succeed(EvalRunHost)(EvalRunHost.of({
   args: process.argv.slice(2),
@@ -128,18 +135,7 @@ const gate = Effect.gen(function*() {
   const baselineText = yield* host.readBaseline
   const baseline = yield* Baseline.load(baselineText)
   const regression = yield* Regression.compare(baseline, run)
-  // A threshold breach is a typed failure rather than a verdict, so it is
-  // caught here: a case that scored zero is a result this suite has to report,
-  // not a crash.
-  const graded = yield* Gate.check(regression, { mean: 1, min: 1 }).pipe(
-    Effect.map(Gate.ciGrade),
-    Effect.catch((error) =>
-      Effect.succeed({
-        exitCode: 1 as const,
-        summary: `${error.code}: threshold ${error.threshold}, actual ${error.actual}`
-      })
-    )
-  )
+  const graded = Gate.ciGrade(yield* Gate.check(regression, { mean: 1, min: 1 }))
   const drifted = regression.regressions.length + regression.nondeterminism.length + regression.missing.length
   yield* host.stdout(`${scores(run)}\n\n${Report.markdown(regression)}`)
   if (drifted > 0) {
@@ -149,32 +145,26 @@ const gate = Effect.gen(function*() {
     if (host.args.includes("--json")) yield* host.stdout(Report.json(regression))
     yield* host.stdout(`\nthe run disagrees with ${baselinePath.pathname}\n`)
   }
-  // Precedence: an undecided gate outranks drift. An inconclusive observation
-  // is excluded from the comparison's actual set, so it also counts as a
-  // missing observation; letting drift win would report a red result the run
-  // never measured and would make exit code 5 unreachable.
-  const exitCode = graded.exitCode === 5 ? 5 : drifted > 0 ? 1 : graded.exitCode
-  // The verdict names the exit. Drift made entirely of missing observations
-  // reaches no threshold, so the gate's own summary would say "passed" on a run
-  // that exits 1.
-  const verdict = drifted > 0 && exitCode === 1
-    ? `failed: ${drifted} observation(s) disagree with the baseline`
-    : graded.summary
-  yield* host.stdout(`${AgentSuite.name}: ${verdict}\n`)
-  return exitCode
+  yield* host.stdout(`${AgentSuite.name}: ${graded.summary}\n`)
+  return graded.exitCode
 })
 
 // A harness that cannot load its own baseline, or a scenario that crashed the
 // suite, still has to leave a readable exit rather than an unhandled rejection.
-const program = Effect.gen(function*() {
+/**
+ * Runs the real suite against an injected baseline host.
+ * @private
+ * @since 0.1.0
+ */
+export const program = Effect.gen(function*() {
   const host = yield* EvalRunHost
   return yield* (host.args.includes("--update") ? update : gate)
 }).pipe(
   Effect.catchCause((cause) =>
-    EvalRunHost.use((host) => host.stderr(`${Cause.pretty(cause)}\n`).pipe(Effect.as(1)))
+    EvalRunHost.use((host) => host.stderr(`${Cause.pretty(cause)}\n`).pipe(Effect.as(5)))
   ),
   Effect.flatMap((exitCode) => EvalRunHost.use((host) => host.setExitCode(exitCode))),
-  Effect.provide([layer, evalRunHostLayer])
+  Effect.provide(layer)
 )
 
-await Effect.runPromise(program)
+if (import.meta.main) await Effect.runPromise(program.pipe(Effect.provide(evalRunHostLayer)))

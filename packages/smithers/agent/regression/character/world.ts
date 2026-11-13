@@ -27,9 +27,10 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs"
-import { join, relative } from "node:path"
+import { join, relative, resolve } from "node:path"
 import { parse as parseYaml } from "yaml"
 import { FlowBinding } from "../../harness/src/index.ts"
+import { suitePath } from "./suite.ts"
 
 /** One recorded tool call. */
 export interface Action {
@@ -202,8 +203,8 @@ const merge = (base: unknown, extra: unknown): unknown => {
 }
 
 /** Loads a world directory and applies one case's patch. */
-export const load = (dir: string, patch: Patch = {}): World => {
-  let data = parseYaml(readFileSync(join(dir, "world.yaml"), "utf8")) as Record<string, unknown>
+export const load = (dir: string, patch: Patch = {}, suiteRoot = dir): World => {
+  let data = parseYaml(readFileSync(suitePath(suiteRoot, resolve(dir, "world.yaml")), "utf8")) as Record<string, unknown>
   if (patch.set !== undefined) data = { ...data, ...patch.set }
   if (patch.remove !== undefined) {
     for (const [key, ids] of Object.entries(patch.remove)) {
@@ -287,6 +288,10 @@ const anyTerm = (haystack: string, query: string | undefined): boolean => {
 const within = (iso: string, from: string | undefined, to: string | undefined): boolean =>
   (from === undefined || iso.slice(0, 16) >= from.slice(0, 16)) &&
   (to === undefined || iso.slice(0, 16) <= to.slice(0, 16))
+
+// Calendar queries use half-open local-minute intervals, like booking checks.
+const overlaps = (event: CalendarEvent, from: string, to: string): boolean =>
+  event.start.slice(0, 16) < to.slice(0, 16) && event.end.slice(0, 16) > from.slice(0, 16)
 
 const sealed = { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" } as const
 const acting = { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "irreversible" } as const
@@ -470,7 +475,7 @@ export const tools: ReadonlyArray<ToolSpec> = [
     writes: false,
     handler: (world, _role, state) => (input) =>
       state.events.filter((event) =>
-        within(event.start, text(input.from), text(input.to)) || within(event.end, text(input.from), text(input.to))
+        overlaps(event, text(input.from), text(input.to))
       )
         .map((event) => eventView(world, event))
   },
@@ -480,7 +485,7 @@ export const tools: ReadonlyArray<ToolSpec> = [
     input: Schema.Struct({ from: S, to: S }),
     writes: false,
     handler: (_world, _role, state) => (input) =>
-      state.events.filter((event) => within(event.start, text(input.from), text(input.to)))
+      state.events.filter((event) => overlaps(event, text(input.from), text(input.to)))
         .map((event) => ({ start: event.start, end: event.end, busy: true }))
   },
   {

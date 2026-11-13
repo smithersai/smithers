@@ -78,7 +78,16 @@ const suiteDir = resolve(option("suite") ?? new URL("./example", import.meta.url
 const live = flag("live")
 const calibrate = flag("calibrate")
 const judging = flag("judge") || calibrate
-let trials = Number(option("trials") ?? 1)
+const positiveInteger = (name: string, fallback: number): number => {
+  const value = option(name)
+  const parsed = Number(value ?? fallback)
+  if ((flag(name) && value === undefined) || !Number.isSafeInteger(parsed) || parsed <= 0) {
+    process.stderr.write(`--${name} must be a positive integer\n`)
+    process.exit(5)
+  }
+  return parsed
+}
+let trials = positiveInteger("trials", 1)
 // `--rescore <results.json>` scores the conversations of an earlier live run
 // again with the current cases and checks, without calling the role's model;
 // with `--judge`, a conversation goes to the judge when it has no verdict or
@@ -86,7 +95,7 @@ let trials = Number(option("trials") ?? 1)
 const rescoreFile = option("rescore")
 const rejudge = flag("rejudge")
 const reportLive = live || rescoreFile !== undefined
-const concurrency = Number(option("concurrency") ?? 2)
+const concurrency = positiveInteger("concurrency", 2)
 const trace = flag("trace")
 const only = option("cases")?.split(",").map((name) => name.trim()).filter((name) => name.length > 0)
 const profileFile = option("profile")
@@ -109,6 +118,7 @@ const composed = ((): Profile.Composed => {
   try {
     return Profile.compose({
       org: suite.org,
+      suiteRoot: suite.dir,
       role: suite.role,
       profile: profileFile === undefined ? suite.profile : resolve(profileFile),
       commonFile: commonFile === undefined ? undefined : resolve(commonFile)
@@ -227,7 +237,7 @@ const converse = (suiteCase: CharacterSuite.Case, variant: Variant, trial: numbe
     const results: Array<TurnResult> = []
     const history: Array<CharacterSuite.Message> = [...suiteCase.history]
     for (const [index, turn] of suiteCase.turns.entries()) {
-      const world = World.load(suite.world, suiteCase.world)
+      const world = World.load(suite.world, suiteCase.world, suite.dir)
       const prompt = Event.render({ world, role: suite.role, where: suiteCase.where, history, trigger: turn.trigger })
       const transcript = transcriptFor(turn, index, variant)
       if (variant.kind !== "live" && transcript === undefined) {
@@ -528,12 +538,15 @@ const rescore = (file: string) =>
     const outcomes: Array<Outcome> = []
     for (const conversation of saved.conversations) {
       const suiteCase = byId.get(conversation.case)
-      if (suiteCase === undefined) continue
+      if (suiteCase === undefined) {
+        process.stderr.write(`skipping saved case ${JSON.stringify(conversation.case)}: not in the loaded suite\n`)
+        continue
+      }
       const history: Array<CharacterSuite.Message> = [...suiteCase.history]
       const results: Array<TurnResult> = []
       for (const [index, savedTurn] of (conversation.turns ?? []).entries()) {
         const expect = suiteCase.turns[index]?.expect ?? {}
-        const world = World.load(suite.world, suiteCase.world)
+        const world = World.load(suite.world, suiteCase.world, suite.dir)
         const prompt = Event.render({
           world,
           role: suite.role,
@@ -599,6 +612,12 @@ const rescore = (file: string) =>
         judgeReason: checksPass ? judgeReason : undefined,
         judgeKey: checksPass ? judgeKey : undefined
       })
+    }
+    if (outcomes.length === 0) {
+      return yield* Effect.fail(new EvalError.EvalError({
+        code: "invalid_suite",
+        message: "No saved conversation matched the loaded suite"
+      }))
     }
     return outcomes
   })

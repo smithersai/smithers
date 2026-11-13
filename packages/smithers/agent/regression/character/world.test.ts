@@ -184,3 +184,36 @@ describe("fixture walk", () => {
     expect(JSON.stringify([...world.pages.values()])).not.toContain("SECRET-TOKEN")
   })
 })
+
+describe("calendar query overlap", () => {
+  const from = "2026-10-06T09:00:00-07:00"
+  const to = "2026-10-06T12:00:00-07:00"
+  for (const [label, start, end, overlaps] of [
+    ["starts before", "08:30", "09:30", true],
+    ["spans the window", "08:30", "12:30", true],
+    ["inside", "09:30", "10:30", true],
+    ["ends after", "11:30", "12:30", true],
+    ["exact window", "09:00", "12:00", true],
+    ["ends at start", "08:00", "09:00", false],
+    ["starts at end", "12:00", "13:00", false],
+    ["before", "07:00", "08:00", false],
+    ["after", "13:00", "14:00", false]
+  ] as const) {
+    test(label, () => {
+      const event = {
+        id: "busy", title: "Existing event",
+        start: `2026-10-06T${start}:00-07:00`, end: `2026-10-06T${end}:00-07:00`
+      }
+      const world = World.load(example, {
+        set: { calendar: [event], grants: { default: ["calendar_list", "calendar_freebusy"] } }
+      })
+      const state = World.initialState(world)
+      expect(World.call(world, "assistant", state, "calendar_list", { from, to })).toEqual(
+        overlaps ? [expect.objectContaining({ id: "busy" })] : []
+      )
+      expect(World.call(world, "assistant", state, "calendar_freebusy", { from, to })).toEqual(
+        overlaps ? [{ start: event.start, end: event.end, busy: true }] : []
+      )
+    })
+  }
+})

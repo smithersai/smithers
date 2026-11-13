@@ -34,7 +34,7 @@ const saved = (replies: ReadonlyArray<string>) => ({
   }))
 })
 
-const rescore = (input: string, where = "dm") => {
+const rescore = (input: string, where = "dm", args: ReadonlyArray<string> = []) => {
   const dir = mkdtempSync(join(tmpdir(), "character-rescore-"))
   try {
     const suite = join(dir, "suite")
@@ -47,7 +47,7 @@ const rescore = (input: string, where = "dm") => {
     // mocks. The runtime running this suite runs it: the target names Bun,
     // and Node cannot load the `.vibe` modules the CLI imports.
     const result = spawnSync(process.execPath, [
-      entry, "--suite", suite, "--rescore", file, "--label", "exit-test"
+      entry, "--suite", suite, "--rescore", file, "--label", "exit-test", ...args
     ], { encoding: "utf8", timeout: 30_000 })
     if (result.error) throw result.error
     const reports = result.status === 5 ? [] : readdirSync(join(suite, "results")).filter((name) =>
@@ -125,6 +125,40 @@ describe("character rescore exit status", () => {
     expect(channel.status).toBe(1)
     expect(channel.summary.failures[0].checks).toEqual(["turn 1: leakage: leaked: reply: marker 1"])
   }, 70_000)
+
+  for (const args of [[], ["--cases", "renamed-case"], ["--category", "missing-category"]]) {
+    test(`rescore refuses zero matching conversations: ${args.join(" ") || "unknown ids"}`, () => {
+      const input = saved([answer, answer])
+      const result = rescore(JSON.stringify({
+        ...input,
+        conversations: input.conversations.map((conversation, i) => ({ ...conversation, case: `old-case-${i}` }))
+      }), "dm", args)
+      expect(result.status).toBe(5)
+      expect(result.stderr).toContain('skipping saved case "old-case-0"')
+      expect(result.stderr).toContain('skipping saved case "old-case-1"')
+      expect(result.stderr).toContain("No saved conversation matched")
+      expect(result.summary).toBeUndefined()
+    }, 40_000)
+  }
+
+  test("an empty saved run is a harness error", () => {
+    const result = rescore(JSON.stringify(saved([])))
+    expect(result.status).toBe(5)
+    expect(result.stderr).toContain("No saved conversation matched")
+    expect(result.summary).toBeUndefined()
+  }, 40_000)
+
+  test("mixed ids warn for the skipped conversation and score the matching one", () => {
+    const input = saved([answer, answer])
+    const result = rescore(JSON.stringify({
+      ...input,
+      conversations: [input.conversations[0], { ...input.conversations[1], case: "removed-case" }]
+    }))
+    expect(result.status).toBe(0)
+    expect(result.stderr).toContain('skipping saved case "removed-case"')
+    expect(result.summary.cases).toBe(1)
+    expect(result.conversations).toHaveLength(1)
+  }, 40_000)
 
   test("an unreadable saved conversation remains a harness error (5)", () => {
     const result = rescore("{")
@@ -229,4 +263,37 @@ describe("offline counterexample gate", () => {
     expect(result.stdout).toContain("✓ offline-gate golden: passes")
     expect(result.stdout).toContain("✓ offline-gate turn-1-counterexample-1: fails (must fail): turn 1: reply: empty")
   }, 70_000)
+})
+
+describe("live argument validation", () => {
+  for (const option of ["trials", "concurrency"]) {
+    for (const value of ["0", "-1", "2.5", "NaN", "Infinity", ""]) {
+      test(`--${option} refuses ${JSON.stringify(value)} before loading a suite or seat`, () => {
+        const result = spawnSync(process.execPath, [
+          entry, "--suite", join(example, "does-not-exist"), "--live", `--${option}`, value
+        ], { encoding: "utf8", timeout: 30_000 })
+        if (result.error) throw result.error
+        expect(result.status).toBe(5)
+        expect(result.stderr).toContain(`--${option} must be a positive integer`)
+        expect(result.stderr).not.toContain("ENOENT")
+        expect(result.stdout).toBe("")
+      }, 40_000)
+    }
+    test(`--${option} requires a value`, () => {
+      const result = spawnSync(process.execPath, [entry, "--live", `--${option}`], {
+        encoding: "utf8", timeout: 30_000
+      })
+      expect(result.status).toBe(5)
+      expect(result.stderr).toContain(`--${option} must be a positive integer`)
+    }, 40_000)
+  }
+
+  test("positive integers pass argument validation", () => {
+    const result = spawnSync(process.execPath, [
+      entry, "--suite", example, "--trials", "2", "--concurrency", "3", "--check-profile"
+    ], { encoding: "utf8", timeout: 30_000 })
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("ok ")
+    expect(result.stderr).toBe("")
+  }, 40_000)
 })
