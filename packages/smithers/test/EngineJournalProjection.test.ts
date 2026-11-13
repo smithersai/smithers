@@ -234,6 +234,101 @@ describe("private engine journal projection", () => {
       expect(yield* rows(f.controlJournal)).toHaveLength(42)
     }))))
 
+  it("does not read an ended, drained round again, and reads it again once a rewind reopens or re-ends it", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      const state = JSON.stringify({ version: 1, flowName: "agent/run", payload: {} })
+      yield* f.runs.create("native-root", state)
+      yield* emit(f.engineJournal, "native-root", { round: 0 })
+      for (let round = 1; round <= 30; round++) {
+        yield* f.runs.create(`round-${round}`, state, {
+          lineageId: "native-root",
+          roundOrdinal: round,
+          parentRunId: "native-root"
+        })
+        yield* emit(f.engineJournal, `round-${round}`, { round })
+      }
+      yield* f
+        .sql`UPDATE flows_runs SET status = 'completed', finished_at_ms = 100 WHERE run_id NOT IN ('native-root', 'round-30')`
+      const pages: Array<string> = []
+      const engineJournal: Journal.Service = {
+        ...f.engineJournal,
+        entries: (query) =>
+          Effect.tap(f.engineJournal.entries(query), () => Effect.sync(() => void pages.push(query.runId)))
+      }
+      const projector = yield* Projection.make({ ...f.options, engineJournal, runLineage: f.runs.lineage })
+      const copied = Effect.map(rows(f.controlJournal), (entries) => entries.length)
+
+      // The first pass reads every round. The ended ones were shown ended before they were read: they close.
+      yield* projector.catchUp
+      expect(pages).toHaveLength(31)
+      expect(yield* copied).toBe(31)
+      // Later passes read only the root and the live round, however many rounds ended.
+      for (let pass = 0; pass < 3; pass++) {
+        pages.length = 0
+        yield* projector.catchUp
+        expect(pages).toEqual(["native-root", "round-30"])
+      }
+      // A record written to the live round is copied.
+      yield* emit(f.engineJournal, "round-30", { late: true }, "fixture", 1)
+      yield* projector.catchUp
+      expect(yield* copied).toBe(32)
+
+      // A rewind makes an ended round live again: it is read on every pass while it is live.
+      yield* f.sql`UPDATE flows_runs SET status = 'suspended', finished_at_ms = NULL WHERE run_id = 'round-7'`
+      yield* emit(f.engineJournal, "round-7", { again: true }, "fixture", 1)
+      pages.length = 0
+      yield* projector.catchUp
+      expect(pages).toEqual(["native-root", "round-7", "round-30"])
+      expect(yield* copied).toBe(33)
+      // It ends again at another time and writes its last record: read once more, then closed.
+      yield* emit(f.engineJournal, "round-7", { final: true }, "fixture", 2)
+      yield* f.sql`UPDATE flows_runs SET status = 'failed', finished_at_ms = 200 WHERE run_id = 'round-7'`
+      pages.length = 0
+      yield* projector.catchUp
+      yield* projector.catchUp
+      expect(pages).toEqual(["native-root", "round-7", "round-30", "native-root", "round-30"])
+      expect(yield* copied).toBe(34)
+
+      // Rewound and ended again between two passes: the new ending differs, so it is read.
+      yield* emit(f.engineJournal, "round-9", { rerun: true }, "fixture", 1)
+      yield* f.sql`UPDATE flows_runs SET finished_at_ms = 300 WHERE run_id = 'round-9'`
+      yield* projector.catchUp
+      expect(yield* copied).toBe(35)
+    }))))
+
+  it("keeps following the children of an ended round without reading the round", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      const state = JSON.stringify({ version: 1, flowName: "agent/run", payload: {} })
+      yield* f.runs.create("native-root", state)
+      yield* f.runs.create("round-1", state, { lineageId: "native-root", roundOrdinal: 1, parentRunId: "native-root" })
+      yield* f.runs.create("child", state)
+      yield* f.engineState.recordRunParent("child", "round-1")
+      yield* emit(f.engineJournal, "round-1", { round: 1 })
+      yield* emit(f.engineJournal, "child", { child: 0 })
+      yield* f.sql`UPDATE flows_runs SET status = 'completed', finished_at_ms = 100 WHERE run_id = 'round-1'`
+      expect((yield* f.engineState.runChildren("round-1")).map((edge) => edge.childId)).toEqual(["child"])
+      const pages: Array<string> = []
+      const engineJournal: Journal.Service = {
+        ...f.engineJournal,
+        entries: (query) =>
+          Effect.tap(f.engineJournal.entries(query), () => Effect.sync(() => void pages.push(query.runId)))
+      }
+      const projector = yield* Projection.make({ ...f.options, engineJournal, runLineage: f.runs.lineage })
+      expect([...(yield* projector.catchUp)].sort()).toEqual(["child", "native-root", "round-1"])
+      pages.length = 0
+      yield* emit(f.engineJournal, "child", { child: 1 }, "fixture", 1)
+      expect([...(yield* projector.catchUp)].sort()).toEqual(["child", "native-root", "round-1"])
+      expect(pages).not.toContain("round-1")
+      expect(pages).toContain("child")
+      expect((yield* rows(f.controlJournal)).map((entry) => record(entry).executionId)).toEqual([
+        "round-1",
+        "child",
+        "child"
+      ])
+    }))))
+
   it("still refuses a lineage read that omits the run it was asked for or returns a foreign round", () =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       const f = yield* setup
