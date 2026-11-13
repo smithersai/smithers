@@ -50,13 +50,16 @@
  */
 
 import * as Dialect from "@smthrs/database/Dialect"
+import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
+import * as JournalGeneration from "@smthrs/journal/JournalGeneration"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
@@ -278,7 +281,7 @@ export const runScopedTables: ReadonlyArray<RunScopedTable> = [
   { table: "flows_journal_events", column: "run_id", ladder: true, companions: true },
   { table: "flows_journal_checkpoints", column: "run_id", ladder: true, companions: true },
   { table: "flows_journal_dedup", column: "run_id", ladder: true, companions: true },
-  { table: "flows_journal_generations", column: "run_id", ladder: false },
+  { table: "flows_journal_generations", column: "run_id", ladder: false, companions: true },
   { table: "flows_consensus_leases", column: "run_id", ladder: true },
   { table: "flows_step_cache_recorded", column: "recorded_run_id", ladder: true },
   { table: "flows_time_travel_archive", column: "run_id", ladder: false },
@@ -696,9 +699,10 @@ const generations = (
  * parent always sorts before its successor, so a pass that deleted in age
  * order broke as soon as one lineage straddled a chunk boundary.
  *
- * The caller owns the transaction. Nothing here is atomic on its own, and a
- * pass that removed the dependents of every candidate and then refused on the
- * run rows would have destroyed history it could not put back.
+ * The caller owns a managed write transaction. Cache invalidation must follow
+ * its outermost commit; a raw SQL transaction is refused before any deletion.
+ * Nothing here is atomic on its own: deleting dependents and then refusing on
+ * the run rows would destroy history the caller could not put back.
  *
  * @category constructors
  * @since 0.1.0
@@ -748,7 +752,24 @@ export const deleteRuns = (
     }
     if (runIds.length > 0) deleted["flows_runs"] = runIds.length
 
-    if (!options.dryRun) {
+    if (!options.dryRun && runIds.length > 0) {
+      // Register before deleting: an enclosing raw SQL transaction has no
+      // observable commit, so it must refuse without changing durable state.
+      const forget = JournalGeneration.forget([...runIds, ...companionIds]).pipe(
+        Effect.provideService(SqlClient.SqlClient, sql)
+      )
+      const journal = yield* Effect.serviceOption(Journal.Journal)
+      const registered = yield* Option.isSome(journal)
+        ? journal.value.whenCommitted(forget)
+        : DurableWriter.afterCommit(forget, sql)
+      if (!registered) {
+        return yield* Effect.fail(
+          new RetentionError({
+            code: "delete_failed",
+            message: "retention requires a managed write transaction; no history was deleted"
+          })
+        )
+      }
       // Receipts have no run column, so remove them through their audits
       // before the ordinary inventory reaches and deletes those audit rows.
       if (hasTimeTravelReceipts) yield* deleteTimeTravelReceipts(sql, runIds)

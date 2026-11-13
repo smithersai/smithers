@@ -15,7 +15,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
-import { Journal, SqlJournal } from "@smthrs/journal"
+import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import * as Notifying from "@smthrs/journal/test/Notifying"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
@@ -682,14 +682,22 @@ describe("a durable lineage", () => {
           discard: true
         }).pipe(Effect.provide(wiring))
         yield* TestDatabase.until(Effect.sync(() => refused))
+        // A refused SQL statement precedes its asynchronous rollback. Join the
+        // drive before reading the successor or ending the engine's scope.
+        yield* Effect.flatMap(FlowRuntime.FlowRuntime, (runtime) =>
+          runtime.resume(Counter, "handoff-fence-race", { poll: true })).pipe(Effect.provide(wiring))
+        const successorId = roundId("handoff-fence-race", 1)
+        const journal = yield* Journal.Journal
         return {
           calls,
-          successor: yield* Effect.exit(store.get(roundId("handoff-fence-race", 1)))
+          successor: yield* Effect.exit(store.get(successorId)),
+          successorEvents: (yield* journal.entries({ runId: JournalEvent.RunId.make(successorId), limit: 100 })).entries
         }
       }))
 
       expect(observed.calls).toEqual([0])
       expect(Exit.isFailure(observed.successor)).toBe(true)
+      expect(observed.successorEvents).toEqual([])
     }))
 
   it.effect("tags every derived-id collision in persisted round metadata", () =>

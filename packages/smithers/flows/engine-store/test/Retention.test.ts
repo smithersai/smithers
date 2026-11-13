@@ -17,8 +17,10 @@ import { executeUntilParked } from "./ExecuteUntilParked.ts"
 import { describe, expect, it } from "@effect/vitest"
 import { Action, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
+import * as JournalGeneration from "@smthrs/journal/JournalGeneration"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
@@ -28,6 +30,7 @@ import { TestClock } from "effect/testing"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as RetentionOps from "../src/internal/RetentionOps.ts"
+import * as Retention from "../src/Retention.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
@@ -263,7 +266,122 @@ const retention = Effect.gen(function*() {
   return yield* RetentionOps.make()
 })
 
+const retentionPass = (mode: "retain" | "collect" | "collect-without-journal", dryRun: boolean) =>
+  Effect.gen(function*() {
+    if (mode === "retain") {
+      const service = yield* RetentionOps.make()
+      yield* service.retain({ olderThanMs: 0, dryRun })
+      return
+    }
+    const collect = Retention.collect({ olderThanMs: Number.MAX_SAFE_INTEGER, dryRun })
+    yield* mode === "collect-without-journal"
+      ? collect.pipe(
+        Effect.updateContext((context: Context.Context<SqlClient.SqlClient>) => Context.omit(Journal.Journal)(context))
+      )
+      : collect
+  })
+
 describe("retention", () => {
+  for (const mode of ["retain", "collect", "collect-without-journal"] as const) {
+    for (const subject of ["generations", "identities"] as const) {
+      it.effect(`forgets deleted run and companion ${subject} after ${mode} commits`, () =>
+        withCrypto(
+          Effect.gen(function*() {
+            const sql = yield* SqlClient.SqlClient
+            const journal = yield* Journal.Journal
+            const runId = "reusable-run"
+            yield* activate(runId)
+            yield* finish(runId, "completed")
+            const streams = [runId, JournalEvent.companionRunId(RunStore.companionStream, runId)]
+            const forgotten: Array<ReadonlyArray<string>> = []
+            yield* JournalGeneration.onTruncate((ids) => {
+              forgotten.push([...ids])
+            })
+            const event = (id: string, value: string) =>
+              new JournalEvent.Input({
+                runId: JournalEvent.RunId.make(id),
+                sourceId: JournalEvent.SourceId.make("retention-reuse"),
+                sourceSeq: JournalEvent.SourceSeq.make(0),
+                eventType: "flows.retention.reuse",
+                payload: { value }
+              })
+            for (const id of streams) {
+              yield* journal.emitDurableUnfenced(event(id, "before"))
+              yield* sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq)
+              VALUES (${id}, ${2}, ${40})`
+            }
+            yield* retentionPass(mode, true)
+            expect(yield* sql`SELECT run_id FROM flows_journal_generations ORDER BY run_id`)
+              .toHaveLength(2)
+            for (const id of streams) {
+              expect((yield* journal.emitDurableUnfenced(event(id, "before")))._tag).toBe("Duplicate")
+            }
+            expect(forgotten).toEqual([])
+            // A surrounding journal transaction must keep its callbacks until
+            // COMMIT, and discard them if a later operation rolls back.
+            const rolledBack = yield* journal.transact(
+              retentionPass(mode, false).pipe(
+                Effect.andThen(Effect.fail("abort retention"))
+              )
+            ).pipe(Effect.exit)
+            expect(Exit.isFailure(rolledBack)).toBe(true)
+            expect(forgotten).toEqual([])
+            for (const id of streams) {
+              expect((yield* journal.emitDurableUnfenced(event(id, "before")))._tag).toBe("Duplicate")
+            }
+            yield* journal.transact(retentionPass(mode, false))
+            expect(forgotten).toEqual([streams])
+            if (subject === "generations") {
+              expect(yield* sql`SELECT run_id FROM flows_journal_generations`).toEqual([])
+            } else {
+              for (const id of streams) {
+                const receipt = yield* journal.emitDurableUnfenced(event(id, "after"))
+                expect(receipt._tag).toBe("Accepted")
+                expect(receipt.seq).toBe(0)
+                const page = yield* journal.entries({ runId: JournalEvent.RunId.make(id), limit: 100 })
+                expect(page.entries.map((entry) => entry.payload)).toEqual([{ value: "after" }])
+              }
+            }
+          }).pipe(Effect.scoped, Effect.provide(stores))
+        ))
+    }
+
+    it.effect(`rolls back ${mode} when an enclosing raw SQL commit cannot be observed`, () =>
+      withCrypto(
+        Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          const journal = yield* Journal.Journal
+          const runId = "raw-retention"
+          yield* activate(runId)
+          yield* finish(runId, "completed")
+          const event = new JournalEvent.Input({
+            runId: JournalEvent.RunId.make(runId),
+            sourceId: JournalEvent.SourceId.make("raw-retention"),
+            sourceSeq: JournalEvent.SourceSeq.make(0),
+            eventType: "flows.retention.reuse",
+            payload: {}
+          })
+          yield* journal.emitDurableUnfenced(event)
+          const forgotten: Array<ReadonlyArray<string>> = []
+          yield* JournalGeneration.onTruncate((ids) => {
+            forgotten.push([...ids])
+          })
+          const failure = yield* sql.withTransaction(retentionPass(mode, false)).pipe(
+            Effect.match({ onFailure: (error) => error, onSuccess: () => undefined })
+          )
+          expect(failure).toMatchObject({
+            _tag: "@smthrs/engine-store/RetentionError",
+            code: "delete_failed"
+          })
+          expect(forgotten).toEqual([])
+          expect(yield* statusOf(runId)).toBe("completed")
+          expect((yield* journal.emitDurableUnfenced(event))._tag).toBe("Duplicate")
+          expect((yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 100 })).entries)
+            .toHaveLength(1)
+        }).pipe(Effect.scoped, Effect.provide(stores))
+      ))
+  }
+
   it.effect("discovers optional run-scoped tables and retains assumed ladder tables", () =>
     Effect.gen(function*() {
       const result = yield* withCrypto(
@@ -280,6 +398,8 @@ describe("retention", () => {
       )
 
       expect(result.discovered.map((entry) => entry.table)).toContain("flows_time_travel_archive")
+      expect(result.discovered.find((entry) => entry.table === "flows_journal_generations"))
+        .toMatchObject({ companions: true, ladder: false })
       expect(result.discovered.map((entry) => entry.table)).not.toContain("flows_time_travel_snapshots")
       expect(result.assumed).toEqual(result.discovered)
       expect(result.empty.deleted).toEqual({})

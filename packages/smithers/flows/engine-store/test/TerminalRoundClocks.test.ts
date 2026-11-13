@@ -1,8 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { RunStore } from "@smthrs/run-store"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Exit, Option, Schema } from "effect"
+import * as DeferredClockFold from "../src/DeferredClockFold.ts"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as DeferredPersistence from "../src/internal/DeferredPersistence.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
@@ -38,17 +40,28 @@ describe("terminal rounds close their clocks", () => {
           }
           const pending = yield* state.completedDeferreds(flow._tag, runId)
           expect(pending.map((wake) => wake.deferredName)).toEqual([])
-          expect(Option.getOrThrow(yield* state.deferred(address)).exit).toEqual({ _tag: "Success", value: "clock" })
-          expect(Option.getOrThrow(yield* state.deferred(event)).exit).toEqual({ _tag: "Success", value: "event" })
+          expect(Option.getOrThrow(yield* state.deferred(address)).exit).toEqual(Exit.succeed("clock"))
+          expect(Option.getOrThrow(yield* state.deferred(event)).exit).toEqual(Exit.succeed("event"))
           return "done"
         }))
       yield* driver.execute(flow, { executionId: runId, payload: {}, discard: false })
-      const completedAtMs = yield* Clock.currentTimeMillis
-      yield* state.completeDeferred({ ...address, exit: { _tag: "Success", value: "clock" }, completedAtMs })
-      yield* state.completeDeferred({ ...event, exit: { _tag: "Success", value: "event" }, completedAtMs })
-      yield* driver.resume(flow, runId)
+      const persistence = yield* DeferredPersistence.make({
+        owner,
+        journalSource: "clock-consumption",
+        scheduleResume: () => Effect.void
+      })
+      yield* persistence.deferredDone({ ...address, exit: Exit.succeed("clock") })
+      yield* persistence.deferredDone({ ...event, exit: Exit.succeed("event") })
+      yield* driver.resume(flow, runId, { poll: true })
       yield* driver.execute(flow, { executionId: runId, payload: {}, discard: false, follow: true })
-      expect((yield* (yield* RunStore.RunStore).get(runId)).status).toBe("completed")
+      const completed = yield* (yield* RunStore.RunStore).get(runId)
+      expect(completed.status, completed.stateJson).toBe("completed")
+      expect(yield* state.hasDueWake(runId, Number.MAX_SAFE_INTEGER)).toBe(false)
+      const rebuilt = yield* DeferredClockFold.rebuild()
+      expect(rebuilt.deferreds).toBe(2)
+      expect(yield* state.completedDeferreds(flow._tag, runId)).toEqual([])
+      expect(yield* state.hasDueWake(runId, Number.MAX_SAFE_INTEGER)).toBe(false)
+      expect(Option.getOrThrow(yield* state.deferred(address)).exit).toEqual(Exit.succeed("clock"))
     }).pipe(Effect.scoped, Effect.provide(TestStores.layerAt(":memory:")), withCrypto))
 
   for (const ending of ["handoff", "exhausted", "invalid"] as const) {

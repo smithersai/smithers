@@ -15,6 +15,7 @@ import type * as EffectDigest from "effect/crypto/Digest"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as DeferredClockFold from "../src/DeferredClockFold.ts"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
 import * as TestStores from "../src/test/TestStores.ts"
@@ -187,6 +188,26 @@ describe("a settled child wakes its parked parent (#4774)", () => {
       yield* test.until("parent", "completed")
       yield* restarted.drained
       yield* restarted.close
+    })))
+
+  it.live("rebuilds a consumed parent wake without waking its next child wait", () =>
+    onDisk(Effect.gen(function*() {
+      const test = yield* fixture
+      const home = yield* test.makeDriver("home")
+      yield* test.parked(home.driver, home.drained)
+      yield* home.driver.resume(Child, "child")
+      yield* home.drained
+      yield* home.close
+      assert.strictEqual(yield* test.status("parent"), "suspended")
+      assert.strictEqual(yield* test.status("second"), "suspended")
+      assert.isFalse(yield* test.parentWakeDue)
+      const rebuilt = yield* DeferredClockFold.rebuild()
+      assert.strictEqual(rebuilt.deferreds, 2)
+      assert.isFalse(yield* test.parentWakeDue)
+      const journal = yield* Journal.Journal
+      const page = yield* journal.entries({ runId: "parent" as never, limit: 100 })
+      assert.lengthOf(page.entries.filter((entry) => entry.eventType === "flows.engine.deferred-completed"), 1)
+      assert.lengthOf(page.entries.filter((entry) => entry.eventType === "flows.engine.deferred-consumed"), 1)
     })))
 
   it.live("schedules no second wake for a settled child whose wake was recorded and consumed", () =>

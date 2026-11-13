@@ -16,8 +16,11 @@ import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as Option from "effect/Option"
@@ -72,6 +75,29 @@ const run = <A, E>(body: Effect.Effect<A, E, Services>, database = TestStores.da
       Effect.provide(TestClock.layer())
     )
   )
+
+/**
+ * Observe actual virtual-clock registration, after SQL rollback has unwound.
+ * Starting the delegated sleep immediately registers it before publishing the
+ * notice; joining its child preserves the real clock and cancellation.
+ */
+const observedSleeps = Effect.gen(function*() {
+  const base = yield* Clock.Clock
+  const registered = new Set<number>()
+  const clock: Clock.Clock = {
+    ...base,
+    sleep: (duration) =>
+      Effect.gen(function*() {
+        const sleeping = yield* base.sleep(duration).pipe(Effect.forkChild({ startImmediately: true }))
+        registered.add(Duration.toMillis(duration))
+        yield* Fiber.join(sleeping)
+      })
+  }
+  return {
+    clock,
+    waitFor: (millis: number) => TestDatabase.until(Effect.sync(() => registered.has(millis)))
+  }
+})
 
 /** Creates a run and leaves it running under `owner`, so it may park and schedule clocks. */
 const owned = (runId: string) =>
@@ -562,6 +588,7 @@ describe("DeferredPersistence", () => {
       yield* owned("retry-run")
       const state = yield* DurableEngineState.DurableEngineState
       const resumes: Array<string> = []
+      const sleeps = yield* observedSleeps
       // The first two durable emits at fire time die (e.g. SQLITE_BUSY
       // surfaced through the orDie journal path); the third succeeds.
       let failuresRemaining = 0
@@ -581,7 +608,10 @@ describe("DeferredPersistence", () => {
       }
       const clock = DurableClock.make({ name: "retry", duration: "10 seconds" })
       const service = yield* build(resumes, { journal })
-      yield* service.scheduleClock(TestFlow, { executionId: "retry-run", clock })
+      yield* service.scheduleClock(TestFlow, { executionId: "retry-run", clock }).pipe(
+        Effect.provideService(Clock.Clock, sleeps.clock)
+      )
+      yield* sleeps.waitFor(10_000)
       failuresRemaining = 2
       const address = {
         flowName: TestFlow._tag,
@@ -591,11 +621,13 @@ describe("DeferredPersistence", () => {
 
       yield* TestClock.adjust("10 seconds")
       yield* TestDatabase.until(Effect.sync(() => fireFailures === 1))
+      yield* sleeps.waitFor(100)
       // First fire failed at the journal; without redispatch the timer
       // fiber is dead and the clock row never completes in this process.
       const afterFirstFailure = Option.getOrThrow(yield* state.clock(address))
       yield* TestClock.adjust("100 millis")
       yield* TestDatabase.until(Effect.sync(() => fireFailures === 2))
+      yield* sleeps.waitFor(200)
       const afterSecondFailure = Option.getOrThrow(yield* state.clock(address))
       yield* TestClock.adjust("200 millis")
       yield* TestDatabase.until(Effect.sync(() => resumes.length === 1))
@@ -618,6 +650,7 @@ describe("DeferredPersistence", () => {
       yield* owned("slow-retry-run")
       const state = yield* DurableEngineState.DurableEngineState
       const resumes: Array<string> = []
+      const sleeps = yield* observedSleeps
       let failuresRemaining = 0
       let fireFailures = 0
       const base = yield* Journal.Journal
@@ -635,7 +668,10 @@ describe("DeferredPersistence", () => {
       }
       const clock = DurableClock.make({ name: "slow-retry", duration: "10 seconds" })
       const service = yield* build(resumes, { journal, fireRetryPolicy: Schedule.spaced("5 seconds") })
-      yield* service.scheduleClock(TestFlow, { executionId: "slow-retry-run", clock })
+      yield* service.scheduleClock(TestFlow, { executionId: "slow-retry-run", clock }).pipe(
+        Effect.provideService(Clock.Clock, sleeps.clock)
+      )
+      yield* sleeps.waitFor(10_000)
       failuresRemaining = 1
       const address = {
         flowName: TestFlow._tag,
@@ -645,6 +681,7 @@ describe("DeferredPersistence", () => {
 
       yield* TestClock.adjust("10 seconds")
       yield* TestDatabase.until(Effect.sync(() => fireFailures === 1))
+      yield* sleeps.waitFor(5_000)
       yield* TestClock.adjust("4999 millis")
       yield* Effect.yieldNow
       const beforeSuppliedDelay = Option.getOrThrow(yield* state.clock(address))
