@@ -1,5 +1,6 @@
 import * as Effects from "@smthrs/core/Effects"
 import * as Graph from "@smthrs/core/Graph"
+import * as Markdown from "@smthrs/core/Markdown"
 import * as Node from "@smthrs/core/Node"
 import * as Flow from "@smthrs/flow/Flow"
 import { Effect, Schema } from "effect"
@@ -55,6 +56,8 @@ describe("Flows", () => {
       body: () => Node.succeed([])
     })
     expect(Flows.bindRecall(binding)).toBe(binding)
+    expect(() => Flows.bindRecall(Markdown.lowerMarkdown({ name: "signature" }, "Recall prompt")))
+      .toThrow(/incompatible input schema/u)
     expect(Flows.handlersFor(Flows.recall)).toMatchObject({
       remember: expect.any(Function),
       recall: expect.any(Function)

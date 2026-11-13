@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import { DurableWriter } from "@smthrs/database"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import type { DatabaseService } from "../Database.ts"
@@ -15,7 +16,6 @@ import { searchableText } from "./FactProjection.ts"
 import * as Fts from "./Fts.ts"
 import { resolveNamespace } from "./ResolveNamespace.ts"
 import {
-  changed,
   decodeFact,
   decodeJson,
   encodeJson,
@@ -175,7 +175,7 @@ export const make = (database: DatabaseService): {
               AND namespace_id = ${namespace.id}
               AND record_kind = 'fact'
               AND record_id = ${input.key}`
-          return changed(result) > 0
+          return (yield* DurableWriter.affectedRows(result)) > 0
         })
       ).pipe(Effect.mapError(storeError("could not delete memory fact")))
     })
@@ -228,7 +228,7 @@ export const make = (database: DatabaseService): {
                   AND ${sql.in("fact_key", group.keys)}
                   AND ttl_ms IS NOT NULL
                   AND updated_at_ms + ttl_ms <= ${now}`.raw
-              deleted += changed(result)
+              deleted += yield* DurableWriter.affectedRows(result)
             }
             hasMore = expiring.length === DELETE_EXPIRED_FACTS_CHUNK_SIZE
           }

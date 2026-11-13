@@ -50,17 +50,19 @@ const run = (input: Recall.Input): Effect.Effect<Recall.Output, MemoryError.Memo
       { concurrency: 4 }
     )
     const results: Array<Recall.Result> = []
-    for (let index = 0; index < rows.length; index++) {
-      for (const row of rows[index] ?? []) {
+    for (const [index, batch] of rows.entries()) {
+      // Effect.all preserves the order and length of the resolved bank list.
+      const bank = banks[index]!.bank
+      for (const row of batch) {
         if (row.status !== undefined && row.status !== "accepted") continue
         if (input.tagGroups !== undefined && !input.tagGroups.every((group) => Namespace.matches(group, row.tags))) {
           continue
         }
         results.push({
-          bank: banks[index]?.bank ?? "",
+          bank,
           key: row.key,
           text: row.text,
-          score: row.score ?? 0,
+          score: row.score,
           updatedAtMs: row.updatedAtMs
         })
       }

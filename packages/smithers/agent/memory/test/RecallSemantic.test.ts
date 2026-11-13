@@ -230,25 +230,33 @@ describe("RecallSemantic", () => {
     expect(projector.activeKeys()).toBe(0)
   })
 
-  it("returns a decorated write at commit when the embedding provider hangs", async () => {
+  it("returns the committed write once the projection times out", async () => {
     const namespace = { kind: "flow", id: "hung" } as const
-    const committed = await Effect.runPromise(
-      Effect.gen(function*() {
-        const store = yield* MemoryStore.MemoryStore
-        const sql = yield* Effect.service(SqlClient.SqlClient)
-        const writer = yield* DurableWriter
-        const vectorStore = Semantic.makeSqlVectorStore({ sql, write: writer.write })
-        const decorated = Semantic.decorateStore(
-          store,
-          makeProjector({ vectorStore, projectionTimeout: "20 millis" }),
-          Embedding.make(() => Effect.never)
-        )
-        yield* decorated.putFact({ namespace, key: "k", value: { content: "v" }, provenance: {} }).pipe(
-          Effect.timeout("2 seconds")
-        )
-        return yield* store.getFact({ namespace, key: "k" })
-      }).pipe(Effect.provide(TestMemory.layerWithDatabase))
-    )
+    const committed = await withMemory(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      const sql = yield* SqlClient.SqlClient
+      const writer = yield* DurableWriter
+      const vectorStore = Semantic.makeSqlVectorStore({ sql, write: writer.write })
+      const entered = yield* Deferred.make<void>()
+      const decorated = Semantic.decorateStore(
+        store,
+        makeProjector({ vectorStore, projectionTimeout: "20 millis" }),
+        Embedding.make(() => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)))
+      )
+      const write = yield* Effect.forkChild(
+        decorated.putFact({ namespace, key: "k", value: { content: "v" }, provenance: {} })
+      )
+      yield* Deferred.await(entered)
+      const fact = yield* store.getFact({ namespace, key: "k" })
+      expect(fact?.value).toEqual({ content: "v" })
+      expect(write.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust("19 millis")
+      expect(write.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust("1 millis")
+      yield* Fiber.join(write)
+      expect(write.pollUnsafe()).toEqual(Exit.void)
+      return fact
+    }))
 
     expect(committed?.value).toEqual({ content: "v" })
   })

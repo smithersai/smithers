@@ -100,12 +100,8 @@ export const make = (embedMany: EmbedMany): Service => {
   const service: Service = {
     embed: (input) =>
       service.embedMany([input]).pipe(
-        Effect.flatMap((response) => {
-          const embedding = response.embeddings[0]
-          return embedding === undefined
-            ? Effect.fail(unavailable("embedding provider returned an empty batch"))
-            : Effect.succeed(embedding)
-        })
+        // Validation guarantees exactly one embedding for this one-input batch.
+        Effect.map((response) => response.embeddings[0]!)
       ),
     embedMany: (inputs) =>
       inputs.length === 0
@@ -174,9 +170,9 @@ export const inProcessVector = (input: string): ReadonlyArray<number> => {
   const vector = new Array<number>(64).fill(0)
   const normalized = input.normalize("NFKC").toLowerCase()
   for (const [index, character] of [...normalized].entries()) {
-    const code = character.codePointAt(0) ?? 0
+    const code = character.codePointAt(0)!
     const bucket = Math.abs(Math.imul(code + index, 16777619)) % vector.length
-    vector[bucket] = (vector[bucket] ?? 0) + (index % 2 === 0 ? 1 : -1)
+    vector[bucket] = vector[bucket]! + (index % 2 === 0 ? 1 : -1)
   }
   const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0))
   return magnitude === 0 ? vector : vector.map((value) => value / magnitude)

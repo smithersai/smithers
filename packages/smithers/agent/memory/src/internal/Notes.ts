@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import { DurableWriter } from "@smthrs/database"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import type { DatabaseService } from "../Database.ts"
@@ -14,7 +15,6 @@ import { canonicalJson, compareText } from "./Canonical.ts"
 import * as Fts from "./Fts.ts"
 import { resolveNamespace } from "./ResolveNamespace.ts"
 import {
-  changed,
   collectUntil,
   decodeJson,
   decodeNote,
@@ -140,7 +140,7 @@ export const make = (database: DatabaseService): {
             ${namespace.kind}, ${namespace.id}, ${input.id}, ${input.text}, ${tagsJson},
             ${provenanceJson}, ${status}, ${now}
             ) ON CONFLICT (id) DO NOTHING`.raw
-          const created = changed(inserted) > 0
+          const created = (yield* DurableWriter.affectedRows(inserted)) > 0
           const persisted = yield* sql<NoteRow>`SELECT ${columns}
             FROM memory_notes WHERE id = ${input.id} LIMIT 1`
           if (persisted.length === 0) {
@@ -229,7 +229,7 @@ export const make = (database: DatabaseService): {
         // A no-op update acquires the row lock on PostgreSQL as well as the
         // serialized SQLite writer, before reading the lifecycle binding.
         const locked = yield* sql`UPDATE memory_notes SET status = status WHERE id = ${input.id}`.raw
-        if (changed(locked) === 0) {
+        if ((yield* DurableWriter.affectedRows(locked)) === 0) {
           return yield* Effect.fail(error("not_found", `memory note "${input.id}" was not found`))
         }
         const rows = yield* sql<NoteRow>`SELECT ${columns} FROM memory_notes WHERE id = ${input.id}`

@@ -23,10 +23,13 @@ describe("TestMemory", () => {
     const result = await Effect.runPromise(
       Effect.gen(function*() {
         const crypto = yield* EffectDigest.Digest
-        return yield* crypto.digest(EffectDigest.sha256, input)
+        return {
+          bytes: yield* crypto.digest(EffectDigest.sha256, input),
+          hex: yield* crypto.digestHex(EffectDigest.sha256, input)
+        }
       }).pipe(Effect.provide(TestMemory.layerWithDatabase))
     )
-    expect(result).toEqual(input)
+    expect(result).toEqual({ bytes: input, hex: "0001ff" })
   })
 
   it("generates a distinct thread id past the 256th request", async () => {

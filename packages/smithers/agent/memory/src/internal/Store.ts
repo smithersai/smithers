@@ -132,29 +132,6 @@ export const storeError = (message: string) => (cause: unknown): MemoryError =>
   isMemoryError(cause) ? cause : error("store", message, cause)
 
 /**
- * Reads the affected-row count from a raw driver result.
- *
- * @category utils
- * @since 0.1.0
- */
-export const changed = (result: unknown): number => {
-  if (typeof result !== "object" || result === null) {
-    return 0
-  }
-  const changes = "changes" in result ? result.changes : undefined
-  const rowsAffected = "rowCount" in result
-    ? result.rowCount
-    : "rowsAffected" in result
-    ? result.rowsAffected
-    : undefined
-  return typeof changes === "number"
-    ? changes
-    : typeof rowsAffected === "number"
-    ? rowsAffected
-    : 0
-}
-
-/**
  * Validates tags against the memory vocabulary and cap.
  *
  * @category validation

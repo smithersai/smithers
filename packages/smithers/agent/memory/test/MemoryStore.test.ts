@@ -248,36 +248,60 @@ describe("MemoryStore", () => {
     ])
   })
 
-  // A driver that reports neither `changes` nor `rowsAffected` reads as "no row
-  // written", which sends createThread down its read-back branch with nothing
-  // to read. It must fail typed rather than return a half-built thread.
-  it("fails typed when the driver reports no write and the row is absent", async () => {
-    const failures = await Effect.runPromise(
-      Effect.gen(function*() {
-        const sql = yield* Effect.service(SqlClient.SqlClient)
-        // Neither a scalar nor an object without a row count tells the store a
-        // row landed; both must take the read-back branch.
-        const answers = [Effect.succeed("opaque driver answer"), Effect.succeed({ ok: true })]
+  it.each([{ raw: "opaque driver answer" }, { raw: { ok: true } }, { raw: [] }])(
+    "rolls back a real insert when its driver omits the affected-row count: $raw",
+    async ({ raw }) => {
+      let inserted = false
+      const result = await runWithDatabase(Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
         const opaqueSql = new Proxy(sql, {
           apply(target, thisArg, argumentsList) {
+            const query = Reflect.apply(target, thisArg, argumentsList)
             const statement = Array.isArray(argumentsList[0]) ? argumentsList[0].join(" ") : ""
-            return statement.includes("INSERT INTO memory_threads")
-              ? { raw: answers.shift() ?? Effect.succeed({}) }
-              : Reflect.apply(target, thisArg, argumentsList)
+            if (!statement.includes("INSERT INTO memory_threads")) return query
+            return new Proxy(query, {
+              get(queryTarget, property, receiver) {
+                return property === "raw"
+                  ? queryTarget.raw.pipe(Effect.map(() => {
+                    inserted = true
+                    return raw
+                  }))
+                  : Reflect.get(queryTarget, property, receiver)
+              }
+            })
           }
         })
         const store = yield* MemoryStore.make.pipe(Effect.provideService(SqlClient.SqlClient, opaqueSql))
-        return [
-          yield* Effect.flip(store.createThread({ id: "opaque-scalar", namespace })),
-          yield* Effect.flip(store.createThread({ id: "opaque-object", namespace }))
-        ]
-      }).pipe(Effect.provide(TestMemory.layerWithDatabase))
-    )
+        const failure = yield* Effect.flip(store.createThread({ id: "opaque", namespace }))
+        return { failure, thread: yield* store.getThread({ threadId: "opaque" }) }
+      }))
 
-    expect(failures.map((failure) => [failure.code, failure.message])).toEqual([
-      ["store", "created memory thread could not be read back"],
-      ["store", "created memory thread could not be read back"]
-    ])
+      expect(inserted).toBe(true)
+      expect(result.failure).toMatchObject({
+        code: "store",
+        cause: { code: "unsupported" }
+      })
+      expect(result.failure.cause).toBeInstanceOf(DurableWriter.DatabaseError)
+      expect(result.thread).toBeUndefined()
+    }
+  )
+
+  it("fails typed when a reported thread insert cannot be read back", async () => {
+    const failure = await runWithDatabase(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const inconsistentSql = new Proxy(sql, {
+        apply(target, thisArg, argumentsList) {
+          const statement = Array.isArray(argumentsList[0]) ? argumentsList[0].join(" ") : ""
+          return statement.includes("INSERT INTO memory_threads")
+            ? { raw: Effect.succeed({ changes: 1 }) }
+            : Reflect.apply(target, thisArg, argumentsList)
+        }
+      })
+      const store = yield* MemoryStore.make.pipe(Effect.provideService(SqlClient.SqlClient, inconsistentSql))
+      return yield* Effect.flip(store.createThread({ id: "absent", namespace }))
+    }))
+
+    expect(failure).toMatchObject({ code: "store", message: "created memory thread could not be read back" })
   })
 
   it("summarizes a non-Error failure cause without leaking an unbounded value", async () => {

@@ -26,17 +26,13 @@ export default defineConfig({
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-memory-coverage-${process.pid}`),
       include: ["src/**/*.{ts,vibe}"],
-      // These floors also apply to a single-adapter developer run. The declared
-      // SQLite/PostgreSQL matrix measures their combined coverage; neither
-      // adapter alone exercises every adapter-specific path. Remaining branch
-      // gaps keep this package in `coverageFloorDeferred` in
-      // packages/repo-targets/conformance/coverage.test.ts. Raising the last floor to 100 must remove
-      // that deferral in the same change.
+      // The SQLite/PostgreSQL matrix combines adapter-specific paths and enforces full coverage.
+      // Single-adapter runs can miss backend-specific branches; use `pnpm coverage` for this gate.
       thresholds: {
-        branches: 95,
-        functions: 99,
-        lines: 99,
-        statements: 99
+        branches: 100,
+        functions: 100,
+        lines: 100,
+        statements: 100
       }
     }
   }

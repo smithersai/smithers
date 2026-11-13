@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import { DurableWriter } from "@smthrs/database"
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
@@ -14,7 +15,6 @@ import type { Service } from "../MemoryStore.ts"
 import { canonicalJson } from "./Canonical.ts"
 import { resolveNamespace } from "./ResolveNamespace.ts"
 import {
-  changed,
   decodeJson,
   decodeThread,
   encodeJson,
@@ -97,7 +97,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
           if (existing === undefined) {
             return yield* Effect.fail(error("store", "created memory thread could not be read back"))
           }
-          if (changed(inserted) === 0) {
+          if ((yield* DurableWriter.affectedRows(inserted)) === 0) {
             const existingMetadata = existing.metadata_json === null
               ? null
               : canonicalJson(yield* decodeJson(existing.metadata_json, "thread metadata"))
@@ -144,7 +144,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
         Effect.gen(function*() {
           yield* sql`DELETE FROM memory_messages WHERE thread_id = ${input.threadId}`
           const result = yield* sql`DELETE FROM memory_threads WHERE thread_id = ${input.threadId}`.raw
-          return changed(result) > 0
+          return (yield* DurableWriter.affectedRows(result)) > 0
         })
       ).pipe(Effect.mapError(storeError("could not delete memory thread")))
     })
@@ -166,7 +166,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
           const inserted = yield* sql`INSERT INTO memory_messages (id, thread_id, role, text, at_ms)
             VALUES (${input.id}, ${input.threadId}, ${input.role}, ${input.text}, ${at})
             ON CONFLICT (thread_id, id) DO NOTHING`.raw
-          if (changed(inserted) > 0) {
+          if ((yield* DurableWriter.affectedRows(inserted)) > 0) {
             yield* sql`UPDATE memory_threads
               SET updated_at_ms = ${Dialect.greatest(sql)}(updated_at_ms, ${at})
               WHERE thread_id = ${input.threadId}`
@@ -276,7 +276,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
         const chunk = ids.slice(offset, offset + DELETE_MESSAGES_CHUNK_SIZE)
         const result = yield* sql`DELETE FROM memory_messages
           WHERE thread_id = ${threadId} AND ${sql.in("id", chunk)}`.raw
-        deleted += changed(result)
+        deleted += yield* DurableWriter.affectedRows(result)
       }
       return deleted
     })

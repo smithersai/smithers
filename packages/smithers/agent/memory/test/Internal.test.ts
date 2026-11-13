@@ -12,16 +12,6 @@ import * as VectorBytes from "../src/internal/VectorBytes.ts"
 import * as Namespace from "../src/Namespace.ts"
 
 describe("memory internal helpers", () => {
-  it("reads affected-row counts from SQLite and PostgreSQL results", () => {
-    expect(Store.changed({ changes: 2 })).toBe(2)
-    expect(Store.changed({ rowCount: 3 })).toBe(3)
-    expect(Store.changed({ rowsAffected: 4 })).toBe(4)
-    expect(Store.changed({ changes: undefined, rowCount: 5 })).toBe(5)
-    expect(Store.changed({ changes: "2", rowsAffected: "4" })).toBe(0)
-    expect(Store.changed(null)).toBe(0)
-    expect(Store.changed(undefined)).toBe(0)
-  })
-
   it("retains structured failures and bounds unstructured store causes", () => {
     const underlying = new Error("database unavailable")
     expect(Store.storeError("read failed")(underlying).cause).toBe(underlying)

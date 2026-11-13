@@ -140,7 +140,6 @@ describe("coverage conformance", () => {
   // 2026-11-11 for the same reason (`bde0da03c9`).
   const coverageFloorDeferred = new Set([
     "smithers",
-    "smithers/agent/memory",
     "smithers/agent/std",
     "smithers/build/build-cli",
     "smithers/build/targets",

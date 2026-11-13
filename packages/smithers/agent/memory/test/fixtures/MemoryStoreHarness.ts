@@ -1,4 +1,6 @@
+import type { DurableWriter } from "@smthrs/database"
 import { Effect } from "effect"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
@@ -12,7 +14,11 @@ export const run = <A, E>(effect: Effect.Effect<A, E, MemoryStore.MemoryStore>) 
   Effect.runPromise(effect.pipe(Effect.provide(TestMemory.layer), Effect.provide(TestClock.layer())))
 
 export const runWithDatabase = <A, E>(
-  effect: Effect.Effect<A, E, MemoryStore.MemoryStore | SqlClient.SqlClient>
+  effect: Effect.Effect<
+    A,
+    E,
+    MemoryStore.MemoryStore | SqlClient.SqlClient | DurableWriter.DurableWriter | SecureRandom.SecureRandom
+  >
 ) => Effect.runPromise(effect.pipe(Effect.provide(TestMemory.layerWithDatabase)))
 
 // Every message down a failure's cause chain, through SqlError reasons too.

@@ -64,6 +64,21 @@ const remembered = (bank: string, key: string, text: string) =>
     }))
 
 describe("WithMemory", () => {
+  it("treats an undefined collaborator list as empty on records and Markdown signatures", () => {
+    const record = { name: "unresolved", input: Schema.Unknown, output: Schema.Unknown }
+    expect(WithMemory.references(record)).toEqual([])
+    expect(WithMemory.children(record)).toEqual([])
+    expect(WithMemory.references({ ...record, flows: undefined })).toEqual([])
+    const signature = Markdown.lowerMarkdown({ name: "standalone" }, "Standalone prompt")
+    Reflect.set(signature, "flows", undefined)
+    const scoped = WithMemory.withMemory(signature, policy)
+    expect(WithMemory.references(signature)).toEqual([])
+    expect(WithMemory.references(scoped)).toEqual([])
+    expect(WithMemory.policyOf(scoped)).toEqual(policy)
+    expect(scoped.input).toBe(signature.input)
+    expect(scoped.output).toBe(signature.output)
+  })
+
   it("inherits policy through retained Markdown signatures without dropping metadata", () => {
     const child = Markdown.lowerMarkdown({ name: "child" }, "Child prompt")
     const parent = CoreFlow.withFlows(Markdown.lowerMarkdown({ name: "parent" }, "Parent prompt"), [child, "named"])

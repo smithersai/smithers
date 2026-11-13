@@ -17,85 +17,9 @@ const testCrypto = Layer.succeed(EffectDigest.Digest)(EffectDigest.Digest.of({
   }
 })).pipe(Layer.merge(SecureRandom.layerWebCrypto))
 
-interface ColumnRow {
-  readonly name: string
-  readonly type: string
-  readonly notnull: number
-  readonly pk: number
-}
-
-interface IndexRow {
-  readonly name: string
-  readonly unique: number
-}
-
 interface NameRow {
   readonly name: string
 }
-
-interface SchemaRow {
-  readonly name: string
-  readonly sql: string | null
-}
-
-/**
- * Extracts the multiset of `CHECK (...)` clauses from a table definition.
- * SQLite does not expose them through PRAGMA, and they carry the invariants
- * this package relies on, so they are compared as a sorted set of texts.
- */
-const checkClauses = (definition: string): ReadonlyArray<string> => {
-  const clauses: Array<string> = []
-  for (let index = definition.indexOf("CHECK ("); index >= 0; index = definition.indexOf("CHECK (", index + 1)) {
-    let depth = 0
-    for (let cursor = index + "CHECK ".length; cursor < definition.length; cursor++) {
-      if (definition[cursor] === "(") depth++
-      else if (definition[cursor] === ")") {
-        depth--
-        if (depth > 0) continue
-        clauses.push(definition.slice(index, cursor + 1).replaceAll(/\s+/gu, " "))
-        break
-      }
-    }
-  }
-  return clauses.sort()
-}
-
-/**
- * Describes the memory schema in a way that is insensitive to physical column
- * order and to the quoted table name a `RENAME TO` rebuild leaves behind, and
- * sensitive to everything that changes behaviour: which tables exist, their
- * columns and types, nullability, primary keys, indexes, and CHECK clauses.
- */
-const describeSchema = Effect.gen(function*() {
-  const sql = yield* Effect.service(SqlClient.SqlClient)
-  const tables = yield* sql<SchemaRow>`
-    SELECT name, sql FROM ${TestDatabase.catalog(sql)}
-    WHERE type = 'table' AND name LIKE 'memory_%'
-    ORDER BY name
-  `
-  const described: Array<string> = []
-  for (const table of tables) {
-    const columns = yield* sql<ColumnRow>`PRAGMA table_info(${sql.unsafe(table.name)})`
-    const indexes = yield* sql<IndexRow>`PRAGMA index_list(${sql.unsafe(table.name)})`
-    const indexDescriptions: Array<string> = []
-    for (const index of indexes) {
-      // An implicit index SQLite creates for a primary key or a unique
-      // constraint is already described by the column rows below.
-      if (index.name.startsWith("sqlite_autoindex_")) continue
-      const columnsInIndex = yield* sql<NameRow>`PRAGMA index_info(${sql.unsafe(index.name)})`
-      indexDescriptions.push(`${index.name}(unique=${index.unique}) ${columnsInIndex.map((row) => row.name).join(",")}`)
-    }
-    described.push([
-      `table ${table.name}`,
-      ...[...columns]
-        .map((column) => `  column ${column.name} ${column.type} notnull=${column.notnull} pk=${column.pk}`)
-        .sort(),
-      ...indexDescriptions.sort().map((value) => `  index ${value}`),
-      ...checkClauses(table.sql ?? "").map((value) => `  ${value}`)
-    ].join("\n"))
-  }
-  return described
-})
 
 describe("memory migrations", () => {
   it("upgrades the legacy global message key without losing rows", async () => {
@@ -141,6 +65,8 @@ describe("memory migrations", () => {
     )
 
     expect(result.definition).toMatch(/PRIMARY KEY\s*\(\s*thread_id\s*,\s*id\s*\)/iu)
+    expect(result.definition).toContain("CHECK (length(id) > 0)")
+    expect(result.definition).toMatch(/FOREIGN KEY\s*\(thread_id\)\s+REFERENCES memory_threads\s*\(thread_id\)/iu)
     expect(result.messages).toEqual([
       [{ threadId: "legacy-thread", id: "shared", role: "user", text: "legacy", at: 1 }],
       [{ threadId: "new-thread", id: "shared", role: "assistant", text: "new", at: 2 }]
@@ -292,7 +218,7 @@ describe("memory migrations", () => {
     expect(result.recorded).toEqual([])
   })
 
-  // A database written before migration 0005 has a `memory_facts` table with no
+  // A database written before fact tags existed has a `memory_facts` table with no
   // `tags_json` column. Opening the store over it must add the column and keep
   // the rows, not fail and not start over.
   it("adds the fact tags column to a database written before it existed", async () => {

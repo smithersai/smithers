@@ -5,6 +5,29 @@ import * as MemoryStore from "../src/MemoryStore.ts"
 import { namespace, run } from "./fixtures/MemoryStoreHarness.ts"
 
 describe("learning note lifecycle through the public SQL store", () => {
+  it("binds an already accepted note without changing its acceptance timestamp", async () => {
+    const result = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      yield* store.putNote({
+        namespace,
+        id: "accepted",
+        text: "Keep receipts",
+        tags: [],
+        provenance: {},
+        status: "pending"
+      })
+      yield* TestClock.adjust(42)
+      yield* store.setNoteStatus({ id: "accepted", status: "accepted" })
+      const accepted = yield* store.getNote({ id: "accepted" })
+      yield* TestClock.adjust(1000)
+      yield* store.setNoteStatus({ id: "accepted", status: "accepted", acceptedTodo: "T14" })
+      const bound = yield* store.getNote({ id: "accepted" })
+      return { accepted, bound }
+    }))
+    expect(result.accepted).toMatchObject({ status: "accepted", statusAtMs: 42 })
+    expect(result.bound).toEqual({ ...result.accepted, acceptedTodo: "T14" })
+  })
+
   it("timestamps dismissal once and retains immutable creation data across reopening", async () => {
     const result = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore

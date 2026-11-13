@@ -25,6 +25,10 @@
 
 ### Fixed
 
+- Memory writes no longer mistake missing driver row counts for no-op writes.
+  Unsupported result shapes now fail and roll back the transaction; safe bigint
+  counts are accepted.
+
 - Scoped `remember` examples now name a policy bank, matching the existing
   input schema. New compaction summaries stay before recent messages when
   timestamps tie, including on PostgreSQL with locale collation. Memory

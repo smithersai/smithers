@@ -66,10 +66,10 @@ export const initial = Effect.gen(function*() {
   )`
   const messageTables = Dialect.isPostgres(sql) ?
     [] :
-    yield* sql<{ readonly sql: string | null }>`SELECT sql FROM sqlite_master
+    yield* sql<{ readonly sql: string }>`SELECT sql FROM sqlite_master
     WHERE type = 'table' AND name = 'memory_messages'`
   const messageDefinition = messageTables[0]?.sql
-  if (messageDefinition !== undefined && !compositeMessagePrimaryKey.test(messageDefinition ?? "")) {
+  if (messageDefinition !== undefined && !compositeMessagePrimaryKey.test(messageDefinition)) {
     yield* sql`CREATE TABLE memory_messages_v2 (
       id TEXT NOT NULL CHECK (length(id) > 0),
       thread_id TEXT NOT NULL,
