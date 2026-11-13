@@ -27,7 +27,7 @@ bun run src/build.vibe
 pnpm exec electrobun build --env=stable
 ```
 
-Keep `VIBELANG_DESKTOP_TEST` unset for those artifacts. Test the native folder chooser, titlebar dragging, local
+Stable builds refuse `VIBELANG_DESKTOP_TEST=1` before packaging. Test the native folder chooser, titlebar dragging, local
 model selection and a real edit on the Mac. Signing and notarization require the
 lead's credentials and are separate from this Linux receipt. Nothing here deploys the app.
 
@@ -45,7 +45,9 @@ VIBELANG_DESKTOP_TEST=1 pnpm build
 pnpm e2e
 ```
 
-The test build enables a CDP port, 14509. Ordinary builds do not enable remote debugging. The local test model uses
+The test build enables a CDP port, 14509. Ordinary builds do not enable remote debugging, and stable builds reject test mode.
+Screenshots default to the Playwright output directory; `VIBELANG_DESKTOP_SCREENSHOT` and
+`VIBELANG_DESKTOP_PHONE_SCREENSHOT` override the desktop and phone screenshot paths. The local test model uses
 24509; the native app uses 44509, because another active lane occupied the assigned 4509 during development.
 
 The History page reuses the shared view and the existing no-backend `MockMythical` service, including its labelled
@@ -58,6 +60,7 @@ The SDK native fixture and the app fixture retain an advisory OS lock for their 
 bounded process teardown. This keeps their actual Electrobun resources exclusive when checks are launched together.
 Only the fixture setup budget includes that lock wait; individual browser cases retain their existing timeout.
 
+Folder access is bound to the captured selection; changing or closing that selection revokes it.
 `fs.edit` requires the exact original from `fs.read` as `before`; stale originals return false and preserve the
 person's bytes. A completed durable replay returns its original result without a second write.
 

@@ -4,7 +4,7 @@ import { expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientError } from "effect/http"
 import { LocalModels, localModelsLayer } from "../src/host/LocalModel.vibe"
 
-it.effect("rejects invalid origins before HTTP and keeps failed discovery unselected", () => effect {
+it.effect("rejects invalid origins before HTTP and sanitizes failed discovery", () => effect {
   let calls = 0
   const client = HttpClient.make(effect (request) => {
     calls++
@@ -15,29 +15,26 @@ it.effect("rejects invalid origins before HTTP and keeps failed discovery unsele
     const models = try LocalModels
     const invalid = try exit(models.models("https://elsewhere.invalid"))
     const afterInvalid = calls
-    const unselected = try exit(models.selected())
     const refused = try exit(models.select("http://localhost:11434", "unavailable"))
-    const current = try models.current()
     try Effect.try(() => {
       expect(Exit.isFailure(invalid)).toBe(true)
       expect(afterInvalid).toBe(0)
-      expect(Exit.isFailure(unselected)).toBe(true)
+      expect(models).not.toHaveProperty("selected")
+      expect(models).not.toHaveProperty("current")
       expect(Exit.isFailure(refused)).toBe(true)
       if (Exit.isFailure(refused)) expect(String(Cause.squash(refused.cause))).not.toContain("private provider detail")
       expect(calls).toBe(1)
-      expect(current).toBeNull()
     })
   }
 })
 
-it.effect("a stalled endpoint finishes discovery with a safe failure and remains unselected", () => effect {
+it.effect("a stalled endpoint finishes discovery with a safe failure", () => effect {
   const client = HttpClient.make(() => Effect.never)
   provide localModelsLayer.pipe(Layer.provide(Layer.merge(BunHost.BunCrypto.layer, Layer.succeed(HttpClient.HttpClient, client)))) {
     const models = try LocalModels
     const discovery = fork models.models("http://localhost:11434")
     try TestClock.adjust("10 seconds")
     const outcome = discovery.pollUnsafe()
-    const current = try models.current()
-    try Effect.try(() => { expect(outcome).toBeDefined(); expect(outcome !== undefined && Exit.isFailure(outcome)).toBe(true); expect(current).toBeNull() })
+    try Effect.try(() => { expect(outcome).toBeDefined(); expect(outcome !== undefined && Exit.isFailure(outcome)).toBe(true) })
   }
 })

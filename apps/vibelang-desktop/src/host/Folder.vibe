@@ -19,10 +19,6 @@ export service Folder {
   restore(info: FolderInfo): FolderInfo!FolderFailure
   bind(info: FolderInfo): BoundFolder!FolderFailure
   close(): void!!
-  current(): (FolderInfo | null)!!
-  list(): ReadonlyArray<string>!FolderFailure
-  read(name: string): string!FolderFailure
-  write(name: string, text: string): void!FolderFailure
 }
 interface Selected { readonly info: FolderInfo; readonly fs: FileSystem.FileSystem }
 
@@ -43,10 +39,10 @@ export const folderLayer = Layer.effect(Folder, effect {
       return try result
     }, `vibelang.desktop.files.${operation}`))
   }
-  effect function use(expected?: FolderInfo) {
+  effect function use(expected: FolderInfo) {
     const value = try Ref.get(selected)
     if (value === undefined) throw new FolderFailure({ code: "closed" })
-    if (expected !== undefined && (value.info.token !== expected.token || value.info.identity !== expected.identity)) throw new FolderFailure({ code: "changed" })
+    if (value.info.token !== expected.token || value.info.identity !== expected.identity) throw new FolderFailure({ code: "changed" })
     return value
   }
   effect function filename(name: string) {
@@ -61,11 +57,6 @@ export const folderLayer = Layer.effect(Folder, effect {
     const stat = try fs.stat(file).pipe(Effect.mapError(() => new FolderFailure({ code: "unavailable" })))
     if (Number(stat.size) > maxBytes) throw new FolderFailure({ code: "too-large" })
     return try fs.readFileString(file).pipe(Effect.mapError(() => new FolderFailure({ code: "unavailable" })))
-  }
-  effect function write(fs: FileSystem.FileSystem, name: string, text: string) {
-    const file = try filename(name)
-    if (new TextEncoder().encode(text).length > maxBytes) throw new FolderFailure({ code: "too-large" })
-    try fs.writeFileString(file, text).pipe(Effect.mapError(() => new FolderFailure({ code: "unavailable" })))
   }
   effect function open(root: string, previous?: FolderInfo) {
     if (!path.isAbsolute(root) || root.includes("\u0000")) throw new FolderFailure({ code: "path" })
@@ -105,9 +96,5 @@ export const folderLayer = Layer.effect(Folder, effect {
       return bound
     }),
     close: () => observed("close", Ref.set(selected, undefined)),
-    current: () => map(Ref.get(selected), (value) => value?.info ?? null),
-    list: () => observed("list", effect { return try names((try use()).fs) }),
-    read: (name: string) => observed("read", effect { return try read((try use()).fs, name) }),
-    write: (name: string, text: string) => observed("write", effect { try write((try use()).fs, name, text) }),
   }
 })

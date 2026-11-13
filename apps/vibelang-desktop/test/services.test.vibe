@@ -20,6 +20,16 @@ describe("local endpoint policy", () => {
   })
 })
 
+it.effect("exposes file access only through a captured folder selection", () => (effect {
+  const folder = try Folder
+  try Effect.try(() => {
+    expect(folder).not.toHaveProperty("write")
+    expect(folder).not.toHaveProperty("current")
+    expect(folder).not.toHaveProperty("read")
+    expect(folder).not.toHaveProperty("list")
+  })
+}).pipe(Effect.provide(folderLayer), Effect.provide(BunHost.layer)))
+
 it.effect("opens, reads, edits and closes a real folder; escapes and symlinks are refused", () => (effect {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
@@ -31,19 +41,26 @@ it.effect("opens, reads, edits and closes a real folder; escapes and symlinks ar
   provide folderLayer {
     const folder = try Folder
     const opened = try folder.open(root)
-    const before = try folder.read("hello.vibe")
-    try folder.write("hello.vibe", "after")
+    const bound = try folder.bind(opened)
+    const before = try bound.read("hello.vibe")
+    try bound.replace("hello.vibe", before, "after")
     const after = try fs.readFileString(path.join(root, "hello.vibe"))
-    const traversal = try exit(folder.read("../private"))
-    const symlink = try exit(folder.read("escape"))
+    const traversal = try exit(bound.read("../private"))
+    const symlink = try exit(bound.read("escape"))
+    const traversalEdit = try exit(bound.replace("../private", "outside", "changed"))
+    const symlinkEdit = try exit(bound.replace("escape", "outside", "changed"))
+    const outsideText = try fs.readFileString(path.join(outside, "private"))
     try folder.close()
-    const closed = try exit(folder.read("hello.vibe"))
+    const closed = try exit(bound.read("hello.vibe"))
     try Effect.try(() => {
       expect(opened.files).toBe(2)
       expect(before).toBe("before")
       expect(after).toBe("after")
       expect(Exit.isFailure(traversal)).toBe(true)
       expect(Exit.isFailure(symlink)).toBe(true)
+      expect(Exit.isFailure(traversalEdit)).toBe(true)
+      expect(Exit.isFailure(symlinkEdit)).toBe(true)
+      expect(outsideText).toBe("outside")
       expect(Exit.isFailure(closed)).toBe(true)
     })
   }
@@ -56,17 +73,15 @@ it.effect("refuses invalid folders, missing files and oversized edits without lo
   try fs.writeFileString(path.join(root, "small"), "unchanged")
   provide folderLayer {
     const folder = try Folder
-    try folder.open(root)
+    const bound = try folder.bind(try folder.open(root))
     const badRoot = try exit(folder.open("relative"))
-    const stillOpen = try folder.current()
-    const missing = try exit(folder.read("missing"))
-    const tooLarge = try exit(folder.write("small", "x".repeat(1024 * 1024 + 1)))
-    const badFile = try exit(folder.write("../escape", "no"))
-    const saved = try folder.read("small")
-    const listed = try folder.list()
+    const missing = try exit(bound.read("missing"))
+    const tooLarge = try exit(bound.replace("small", "unchanged", "x".repeat(1024 * 1024 + 1)))
+    const badFile = try exit(bound.replace("../escape", "", "no"))
+    const saved = try bound.read("small")
+    const listed = try bound.list()
     try Effect.try(() => {
       expect(Exit.isFailure(badRoot)).toBe(true)
-      expect(stillOpen?.path).toBe(root)
       expect(Exit.isFailure(missing)).toBe(true)
       expect(Exit.isFailure(tooLarge)).toBe(true)
       expect(Exit.isFailure(badFile)).toBe(true)
@@ -88,10 +103,9 @@ it.effect("revokes a captured folder when selection changes and preserves unread
     const folder = try Folder
     const first = try folder.open(a)
     const bound = try folder.bind(first)
-    try folder.open(b)
+    const second = try folder.open(b)
     const revoked = try exit(bound.replace("small", "original-a", "changed"))
-    const current = try folder.current()
-    const active = try folder.bind(current!)
+    const active = try folder.bind(second)
     const oversized = try exit(active.read("large"))
     const conflict = try exit(active.replace("small", "different", "changed"))
     const preserved = try fs.readFileString(path.join(b, "small"))

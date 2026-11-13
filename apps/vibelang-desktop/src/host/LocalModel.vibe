@@ -11,8 +11,6 @@ export service LocalModels {
   models(endpoint: string): ReadonlyArray<string>!ModelUnavailable
   select(endpoint: string, model: string): ModelInfo!ModelUnavailable
   restore(info: ModelInfo): ModelInfo!ModelUnavailable
-  current(): (ModelInfo | null)!!
-  selected(): { readonly modelId: string; readonly model: import("@smthrs/model").Model.Model; readonly route: import("@smthrs/agent").FlowEngineLike.RouteResolver }!ModelUnavailable
   resolve(info: ModelInfo): { readonly modelId: string; readonly model: import("@smthrs/model").Model.Model; readonly route: import("@smthrs/agent").FlowEngineLike.RouteResolver }!ModelUnavailable
 }
 
@@ -22,7 +20,6 @@ export const localModelsLayer = Layer.effect(LocalModels, effect {
   const client = try HttpClient.HttpClient
   const random = try SecureRandom.SecureRandom
   const timeout = try Config.withDefault(Config.Int("VIBELANG_DESKTOP_DISCOVERY_MS"), 10000)
-  const selected = try Ref.make<ModelInfo | null>(null)
   const executor = try RequestExecutor.makeWith(try orDie(Effect.try(() => RequestExecutor.fixed(client))), { maxRetries: 0 })
   effect function discover(input: string) {
     const endpoint = endpointOf(input)
@@ -58,19 +55,12 @@ export const localModelsLayer = Layer.effect(LocalModels, effect {
     if (endpoint === "") throw new ModelUnavailable({ code: "endpoint" })
     if (!(try list(endpoint)).includes(model)) throw new ModelUnavailable({ code: "model" })
     const info: ModelInfo = { endpoint, model, state: "ready", selection: selection ?? (try random.uuidV4()) }
-    try Ref.set(selected, info)
     return info
   }
   return {
     models: list,
-    current: () => Ref.get(selected),
     select: (input: string, model: string) => observed("select", select(input, model)),
     restore: (info: ModelInfo) => observed("restore", select(info.endpoint, info.model, info.selection)),
     resolve,
-    selected: effect () => {
-      const info = try Ref.get(selected)
-      if (info === null) throw new ModelUnavailable({ code: "model" })
-      return try resolve(info)
-    },
   }
 })
