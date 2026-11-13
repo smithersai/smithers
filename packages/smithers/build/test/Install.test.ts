@@ -970,13 +970,10 @@ describe("Install", () => {
           ? [lockfile, ".npmrc", ".pnpmfile.mjs", ".pnpmfile.cjs", "pnpm-workspace.yaml"]
           : [lockfile, ".npmrc"]
       )
-      // `pnpm fetch` also lays down the virtual store it hardlinks into (observed with pnpm 11.25.0:
-      // node_modules/.pnpm/ and node_modules/.modules.yaml), so the declaration names those paths too.
+      // Fetch stages pnpm's virtual store beneath its declared store.
+      // Only Link writes the project's `node_modules`.
       expect(fetch!.draft.effects.writes).toEqual([
-        { _tag: "TreeArtifact", path: `.flows/store/${manager}` },
-        ...(manager === "pnpm"
-          ? [{ _tag: "Glob", include: ["**/node_modules/.pnpm/**", "**/node_modules/.modules.yaml"] }]
-          : [])
+        { _tag: "TreeArtifact", path: `.flows/store/${manager}` }
       ])
       expect(link!.draft.effects.reads).toEqual([
         ".npmrc",

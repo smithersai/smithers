@@ -10,7 +10,7 @@ terraform {
 }
 
 provider "docker" {
-  # The default socket on Linux and on Docker Desktop for macOS. Point this at
-  # a remote daemon to run the cache somewhere else.
+  # The default socket on Linux and on Docker Desktop for macOS. Run Terraform
+  # on the daemon's machine: the module bind-mounts its local migrations directory.
   host = "unix:///var/run/docker.sock"
 }

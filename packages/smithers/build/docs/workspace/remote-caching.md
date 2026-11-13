@@ -263,7 +263,9 @@ engine. Using remote engine artifacts still means composing
 
 `terraform/` runs the service on one machine with no cloud account. The module
 starts Postgres and a Bun HTTP service on a private Docker network, publishing
-only the service port on loopback.
+only the service port on loopback. Run Terraform on the Docker daemon's machine:
+the module bind-mounts its local `migrations/` directory into Postgres for
+initialization.
 
 ```sh
 cd terraform/examples/docker

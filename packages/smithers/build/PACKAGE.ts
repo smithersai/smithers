@@ -44,7 +44,8 @@ const circular = standard.circular
 
 /**
  * The package's documentation as a file group (`docs/**`, the README, and
- * package.json), exported so the docs-site content sync in
+ * `package.json`), exported so the docs-site content sync can declare these
+ * files as inputs.
  */
 const docsFiles = standard.docsFiles
 

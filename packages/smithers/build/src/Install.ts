@@ -47,8 +47,8 @@
  *   belongs to the runtime rather than to a struct passed between steps.
  *
  * Two consequences follow. The flow no longer trampolines: the manager arrives
- * in the payload as a plan-time declaration from legacy declaration, so one round records
- * measure, exactly one fetch, and link. And the cross-round recheck is gone
+ * in the payload as a plan-time declaration, so one round records measure,
+ * exactly one fetch, and link. And the cross-round recheck is gone
  * with the second round, replaced by `verify`, which compares the host against
  * what the workspace declared rather than against an earlier measurement of the
  * same host.
@@ -185,10 +185,10 @@ export const Measure = Action.make("smithers-build/install/measure", {
   })
 
 /**
- * Populates the package-manager store. For pnpm it also writes the virtual
- * store (`node_modules/.pnpm/**` and `node_modules/.modules.yaml`), which
- * `pnpm fetch` lays down beside the content-addressed store; the declared
- * write set names both, so conflict ordering sees the overlap with Link.
+ * Populates the package-manager store. pnpm stages its virtual store and
+ * modules metadata beneath `.flows/store/pnpm/fetch/node_modules`, inside
+ * the declared store tree. Fetch leaves the project's linked `node_modules`
+ * unchanged; Link materializes that tree.
  *
  * Its key material is the measured lockfile and configuration digests,
  * reaching the key as a settled upstream
@@ -228,10 +228,7 @@ const makeFetch = <Tag extends string>(
     .annotate(Flow.EffectsDeclaration, {
       reads: [lockfile, ".npmrc", ...PackageManager.pnpmfileNames, "pnpm-workspace.yaml"],
       writes: [
-        { _tag: "TreeArtifact", path: `${PackageManager.storeRoot}/${manager}` },
-        // `pnpm fetch` also writes the virtual store (`node_modules/.pnpm`) and its
-        // `.modules.yaml` state file beside it.
-        { _tag: "Glob", include: ["**/node_modules/.pnpm/**", "**/node_modules/.modules.yaml"] }
+        { _tag: "TreeArtifact", path: `${PackageManager.storeRoot}/${manager}` }
       ],
       boundaryMode: "expected"
     })
@@ -327,12 +324,9 @@ export type InstallFlow = Flow.Flow<
 /**
  * Records measure, one fetch, and link.
  *
- * The fetch is a parameter rather than a value selected inside the body because
- * each fetch declaration carries its own requirement in its type. Selecting one
- * from a union collapses the recorded requirement to whichever branch the
- * compiler read first; passing one in keeps this helper generic over exactly one
- * requirement and lets the four call sites union at the body, which is what
- * {@link Requires} already spells.
+ * The fetch callback preserves its action requirement in `R`. The Install
+ * body supplies `FetchPnpm.call`; the helper adds the measure and link
+ * requirements to the recorded composition.
  *
  * @private
  */
