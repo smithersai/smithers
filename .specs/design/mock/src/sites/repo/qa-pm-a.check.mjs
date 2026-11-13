@@ -63,7 +63,7 @@ for(const [site,slug] of sites){
 // Exercise the live tree API, including an incomplete directory-only branch.
 const temp=mkdtempSync(join(tmpdir(),'qa-pm-a-tree-'))
 try{
- const bundle=await req('esbuild').build({stdin:{contents:`import {KNOWN_REPOS,selectRepo,tree,children} from './src/sites/repo/fixtures';export {KNOWN_REPOS,selectRepo,tree,children};`,resolveDir:root,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',nodePaths:[resolve(root,'../../../apps/app/node_modules')]})
+ const bundle=await req('esbuild').build({stdin:{contents:`import {KNOWN_REPOS,selectRepo,repo,tree,children,files} from './src/sites/repo/fixtures';export {KNOWN_REPOS,selectRepo,repo,tree,children,files};`,resolveDir:root,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',nodePaths:[resolve(root,'../../../apps/app/node_modules')]})
  const output=join(temp,'tree.cjs');writeFileSync(output,bundle.outputFiles[0].text);const api=req(output)
  for(const slug of api.KNOWN_REPOS){
   api.selectRepo(slug)
@@ -73,12 +73,11 @@ try{
   api.tree.push({path:'pm-empty',kind:'dir',sha:'test'},{path:'pm-empty/nested',kind:'dir',sha:'test'})
   check(!api.children('').some(e=>e.path==='pm-empty'),`${slug}: derivation hides incomplete directory branches`)
   api.tree.splice(-2)
-  const d=resolve(root,'src/sites/repo/fixtures/data',slug.replace('/','__'))
-  const files=JSON.parse(readFileSync(resolve(d,'files.json'),'utf8'))
+  const files=api.files
   for(const f of files)check(api.tree.find(e=>e.path===f.path)?.size===Buffer.byteLength(f.content),`${slug}/${f.path}: tree size matches blob`)
   const home=files.find(f=>f.path==='.smithers/home.json')
   if(home&&slug!=='maya/tinyhttp'){
-   const configured=JSON.parse(readFileSync(resolve(d,'repo.json'),'utf8')).config.home
+   const configured=api.repo.config.home
    for(const b of JSON.parse(home.content).blocks)check(configured.some(c=>JSON.stringify(b)===JSON.stringify(c)),`${slug}: home.json blocks drive config`)
   }
  }

@@ -180,6 +180,24 @@ for (const slug of ["smithers-canary/smithers", "effeck/effeck"]) {
   await clear()
 }
 
+/* An unknown repository never inherits the previously selected repository inbox. */
+for (const slug of ["maya/tinyhttp", "smithers-canary/smithers", "effeck/effeck", "Effect-TS/effect"]) {
+  kit.selectRepo(slug)
+  await route(`smithers.sh/${slug}`)
+  await render(h(kit.RepoFrame, { tab: "code" }, h("p", null, "Files")))
+  assert.ok(container.querySelector(".repo-frame-inbox").getAttribute("href").endsWith(`${slug}/approvals`))
+  assert.equal(kit.selectRepo("maya/not-imported"), false)
+  await route("smithers.sh/maya/not-imported")
+  const unavailableInbox = container.querySelector(".repo-frame-inbox")?.outerHTML ?? null
+  const accountAvailable = Boolean(container.querySelector(".repo-frame-avatar-button"))
+  await route(`smithers.sh/${slug}`)
+  const inboxRestored = Boolean(container.querySelector(".repo-frame-inbox"))
+  await clear()
+  assert.equal(unavailableInbox, null, `${slug}: no retained inbox on an unavailable repository`)
+  assert.ok(accountAvailable, "account controls remain available")
+  assert.ok(inboxRestored, "returning to the repository restores its inbox")
+}
+
 /* Each Code row links the commit recorded for that entry, even when history omits file details. */
 kit.selectRepo("smithers-canary/smithers")
 await route("smithers.sh/smithers-canary/smithers")

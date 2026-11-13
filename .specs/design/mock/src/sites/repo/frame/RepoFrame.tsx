@@ -235,7 +235,7 @@ export const RepoFrame = ({ tab, title, askContext, askView, children }: {
 
   const { records: runRecords } = useRunRecords(undefined, false)
   const inbox = useWaitingOnYou()
-  const waiting = flags.data === "empty" ? 0 : inbox.total
+  const waiting = !available || flags.data === "empty" ? 0 : inbox.total
   const labels: Record<TabId, ReactNode> = {
     code: "Code", issues: "Issues", pulls: "Pull requests", runs: "Runs",
     flows: "Flows", evals: repo.config.evals?.title ?? "Evals", wiki: "Wiki", docs: repo.config.docs?.title ?? "Docs", packages: "Packages", settings: "Settings"
@@ -383,16 +383,16 @@ export const RepoFrame = ({ tab, title, askContext, askView, children }: {
             </Link>
           ) : (
             <>
-              <Link
+              {available && <Link
                 className="repo-frame-inbox"
-                to={to("approvals")}
+                to={homeRoute + "/approvals"}
                 title="Waiting on you"
                 aria-label={waiting > 0 ? `${waiting} waiting on you` : "Waiting on you"}
               >
                 <Icon name="clock" />
                 <span className="repo-frame-inbox-label">Waiting on you</span>
                 {waiting > 0 && <Counter>{waiting}</Counter>}
-              </Link>
+              </Link>}
               <div className="repo-frame-avatar-menu" ref={avatarMenu}>
                 <button
                   className="repo-frame-avatar-button"

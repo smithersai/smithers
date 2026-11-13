@@ -17,7 +17,7 @@ export const Toast = () => {
     const timers = new Set<ReturnType<typeof setTimeout>>()
     const receive = (event: Event) => {
       const notice = (event as CustomEvent<Notice>).detail
-      setNotices(current => [...current.slice(-3), notice])
+      setNotices(current => [...current.slice(-2), notice])
       const timer = setTimeout(() => { setNotices(current => current.filter(item => item.id !== notice.id)); timers.delete(timer) }, 6000)
       timers.add(timer)
     }

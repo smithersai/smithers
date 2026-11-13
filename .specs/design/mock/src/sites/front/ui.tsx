@@ -28,21 +28,31 @@ export const CopyButton = ({ text, label = "Copy", copiedLabel = "Copied", prima
   text: string; label?: string; copiedLabel?: string; primary?: boolean; className?: string; initialCopied?: boolean
 }) => {
   const [copied, setCopied] = useState(initialCopied)
+  const [failed, setFailed] = useState(false)
+  const copying = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(timer.current), [])
-  const copy = () => {
-    try {
-      const write = navigator.clipboard?.writeText(text)
-      if (write !== undefined) write.catch(() => { /* permission denied: the button still acknowledges */ })
-    } catch { /* clipboard unavailable */ }
-    setCopied(true)
+  const copy = async () => {
+    if (copying.current) return
+    copying.current = true
     clearTimeout(timer.current)
-    timer.current = setTimeout(() => setCopied(false), 1500)
+    setCopied(false)
+    setFailed(false)
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard unavailable")
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      timer.current = setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setFailed(true)
+    } finally {
+      copying.current = false
+    }
   }
   return (
-    <button type="button" className={`front-btn ${primary ? "front-btn-primary" : "front-btn-secondary"} ${className}`} onClick={copy}>
-      {copied ? <IconCheck /> : label === "Copy" ? <IconCopy /> : null}
-      {copied ? copiedLabel : label}
+    <button type="button" className={`front-btn ${primary ? "front-btn-primary" : "front-btn-secondary"} ${className}`} onClick={copy} aria-live="polite">
+      {failed ? <IconX /> : copied ? <IconCheck /> : label === "Copy" ? <IconCopy /> : null}
+      {failed ? "Copy failed. Retry" : copied ? copiedLabel : label}
     </button>
   )
 }

@@ -16,7 +16,7 @@ export let BASE: string
 export let repo: Repo
 export let people: Person[]
 export let tree: TreeEntry[]
-let files: FileBlob[]
+export let files: FileBlob[]
 let blameRanges: BlameRange[]
 export let commits: Commit[]
 let omittedCommits: NonNullable<Dataset["omittedCommits"]>
