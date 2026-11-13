@@ -94,11 +94,11 @@ export schema Model {
   /** Whether the ⌘K prompt is open. */
   readonly palette: boolean
   readonly draft: string
-  readonly tutorialSession?: string
+  readonly tutorialSession: string
   readonly session: DurableText
   readonly name: string
   readonly mediaSources?: MediaSources
-  readonly failedMedia?: ReadonlyArray<string>
+  readonly failedMedia: ReadonlyArray<string>
   readonly reducedMotion: boolean
   /** How many posts this tab has sent; the next one's client id is `<session>-<sent + 1>`. */
   readonly sent: number
@@ -134,13 +134,13 @@ export schema Model {
   readonly tourError: string
   /** Shared docs/wiki pane size: in the conversation, or maximized over it. */
   readonly docs: "pane" | "max"
-  readonly sandboxPane?: "closed" | "pane" | "max"
+  readonly sandboxPane: "closed" | "pane" | "max"
   readonly sandbox?: SandboxSnapshot
-  readonly sandboxOperation?: "start" | "stop" | "command" | ""
-  readonly sandboxBusy?: boolean
+  readonly sandboxOperation: "start" | "stop" | "command" | ""
+  readonly sandboxBusy: boolean
   readonly sandboxRequest: number
-  readonly sandboxError?: string
-  readonly terminalDraft?: string
+  readonly sandboxError: string
+  readonly terminalDraft: string
   readonly minuteNotice?: string
   readonly warnedMonth?: number
   readonly wikiQuery?: string
@@ -313,7 +313,12 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory | Acti
       recoverTour: flags.resumeTour ?? false,
       tourError: "",
       docs: "pane",
+      sandboxPane: "closed",
+      sandboxOperation: "",
+      sandboxBusy: false,
       sandboxRequest: 0,
+      sandboxError: "",
+      terminalDraft: "",
       wikiSerial: 0,
       wikiEditRequest: 0,
       ...(flags.openIssues ? { issues: initialIssues } : {}),
@@ -331,14 +336,14 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
   const next = withCommands(Message.match<Update.Return<Model, Message, Factory | Actions>>(message, {
     ObservedMedia: () => ({ model }),
     LoadedMedia: ({ kind }) => ({ model, commands: [ObserveMedia({ kind, outcome: "loaded" })] }),
-    FailedMedia: ({ src, kind }) => ({ model: ModelWrite.failedMediaWrite(model, ArmDecision.failedMediaAfter(model.failedMedia ?? [], src)), commands: [ObserveMedia({ kind, outcome: "failed" })] }),
+    FailedMedia: ({ src, kind }) => ({ model: ModelWrite.failedMediaWrite(model, ArmDecision.failedMediaAfter(model.failedMedia, src)), commands: [ObserveMedia({ kind, outcome: "failed" })] }),
 
     ResolvedMode: ({ mode }) => ({ model: ModelWrite.modeWrite(model, mode), commands: [LoadAccount({})] }),
     AccountLoaded: ({ identity }) => {
       const { ledger: snapshot, ...person } = identity
       const ledger = { conversation: snapshot ?? Machine.empty, pending: [], gap: false }
       const account = accountOf(model)
-      const step = ModelDecision.accountLoaded({ id: account.identity.id, role: account.identity.role, target: account.target, error: account.error, people: account.people, epoch: account.epoch, actionsEpoch: actionsOf(model).epoch ?? 0, wikiEditRequest: model.wikiEditRequest, sandboxRequest: model.sandboxRequest }, person.id, person.login, person.role, ledger.conversation.seq)
+      const step = ModelDecision.accountLoaded({ id: account.identity.id, role: account.identity.role, target: account.target, error: account.error, people: account.people, epoch: account.epoch, actionsEpoch: actionsOf(model).epoch, wikiEditRequest: model.wikiEditRequest, sandboxRequest: model.sandboxRequest }, person.id, person.login, person.role, ledger.conversation.seq)
       const commands = [...(step.closeDialog ? [CloseRoleDialog({})] : []), ...(step.changedAccount ? [LoadActions({ flow: actionsOf(model).selected, epoch: step.actionsEpoch })] : [])]
       return {
         model: ModelWrite.accountLoadedWrite(ModelWrite.scopeWrite(model, actionsOf(model), step.changedAccount, step.actionsEpoch, step.wikiEditRequest, step.sandboxRequest), account, person, ledger, step),
@@ -363,7 +368,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const ledger = Machine.receive(account.ledger, event)
       const grant = event.type === "RoleGranted" ? event : undefined
       const step = ModelDecision.roleReceived(
-        { role: account.identity.role, target: account.target, pending: account.pending, notice: account.notice, epoch: account.epoch, from: account.from, actionsEpoch: actionsOf(model).epoch ?? 0, wikiEditRequest: model.wikiEditRequest, sandboxRequest: model.sandboxRequest },
+        { role: account.identity.role, target: account.target, pending: account.pending, notice: account.notice, epoch: account.epoch, from: account.from, actionsEpoch: actionsOf(model).epoch, wikiEditRequest: model.wikiEditRequest, sandboxRequest: model.sandboxRequest },
         { gap: ledger.gap, granted: grant !== undefined, seq: ledger.conversation.seq, previousSeq: account.ledger.conversation.seq, roles: ledger.conversation.roles.length, previousRoles: account.ledger.conversation.roles.length, mine: event.id === account.identity.id, participation: grant?.mode === "participation", person: grant?.mode === "person", peopleOpen: account.people !== "closed", ledgerRole: Machine.roleOf(ledger.conversation.roles, account.identity.id), roleName: grant === undefined ? "" : roleLabel(grant.role), name: account.members.find(person => person.id === event.id)?.login ?? event.id },
       )
       if (step.replay) return { model: ModelWrite.accountReplayWrite(model, account, Machine.resume(ledger), step.state.epoch, step.state.from) }
@@ -444,8 +449,8 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     },
     // The end never reached the agent: it still drives, so Esc comes back.
     FailedEndTour: () => recoverEndTour(model),
-    ClickedSandboxes: () => ({ model: ModelWrite.sandboxPaneWrite(model, toggleSandbox(model.sandboxPane ?? "closed")) }),
-    MaximizedSandboxes: () => ({ model: ModelWrite.sandboxPaneWrite(model, maximizeSandbox(model.sandboxPane ?? "closed")) }),
+    ClickedSandboxes: () => ({ model: ModelWrite.sandboxPaneWrite(model, toggleSandbox(model.sandboxPane)) }),
+    MaximizedSandboxes: () => ({ model: ModelWrite.sandboxPaneWrite(model, maximizeSandbox(model.sandboxPane)) }),
     StartedSandbox: () => sandboxAction(model, "start"),
     StoppedSandbox: () => sandboxAction(model, "stop"),
     UpdatedTerminal: ({ value }) => ({ model: ModelWrite.terminalDraftWrite(model, value) }),
@@ -500,26 +505,26 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const menu = TourDecision.updatedDraftMenu(value, actionsOf(model).entries.length === 0)
       return {
         model: ModelWrite.draftWrite(model, actionsOf(model), value, menu.slash),
-        ...(menu.load ? { commands: [LoadActions({ flow: "", epoch: actionsOf(model).epoch ?? 0 })] } : {}),
+        ...(menu.load ? { commands: [LoadActions({ flow: "", epoch: actionsOf(model).epoch })] } : {}),
       }
     },
-    ClickedActions: () => runActions(model, ModelDecision.clickedActions(actionScreen(model), actionsOf(model).entries.length !== 0, actionsOf(model).epoch ?? 0)),
+    ClickedActions: () => runActions(model, ModelDecision.clickedActions(actionScreen(model), actionsOf(model).entries.length !== 0, actionsOf(model).epoch)),
     MaximizedActions: () => runActions(model, ModelDecision.maximizedActions(actionScreen(model))),
-    SelectedAction: ({ name }) => runActions(model, ModelDecision.selectedAction(actionScreen(model), name, actionsOf(model).epoch ?? 0)),
+    SelectedAction: ({ name }) => runActions(model, ModelDecision.selectedAction(actionScreen(model), name, actionsOf(model).epoch)),
     SelectedActionStep: ({ key }) => ({ model: ModelWrite.actionStepWrite(model, actionsOf(model), key) }),
     SelectedRun: ({ id, flow }) => ({ model: ModelWrite.actionSelectedWrite(model, actionsOf(model), ModelDecision.selectedRun(runSelection(model), id, flow)) }),
-    LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionsLoadedWrite(model, { ...actionsOf(model), disconnected: ActionFollow.settled(actionsOf(model).disconnected ?? [], runs), stoppedFollows: ActionFollow.settled(actionsOf(model).stoppedFollows ?? [], runs) }, entries, commands, mergeRuns(actionsOf(model).runs, runs)) }),
-    FailedActions: ({ code, epoch, op }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : runActions(model, ModelDecision.failedActions(actionScreen(model), code, op ?? "load")),
+    LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch, actionsOf(model).epoch) ? { model } : ({ model: ModelWrite.actionsLoadedWrite(model, { ...actionsOf(model), disconnected: ActionFollow.settled(actionsOf(model).disconnected, runs), stoppedFollows: ActionFollow.settled(actionsOf(model).stoppedFollows, runs) }, entries, commands, mergeRuns(actionsOf(model).runs, runs)) }),
+    FailedActions: ({ code, epoch, op }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch) ? { model } : runActions(model, ModelDecision.failedActions(actionScreen(model), code, op ?? "load")),
     UpdatedActionInput: ({ value }) => runActions(model, ModelDecision.updatedActionInput(actionScreen(model), value)),
     ClickedRunAction: () => launchAction(model, actionsOf(model).selected, "button"),
-    StartedAction: ({ run, epoch }) => !ModelDecision.actionsEpochCurrent(epoch, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionStartedWrite(model, actionsOf(model), ModelDecision.followedRun(runSelection(model), run.id, run.flow), mergeRuns(actionsOf(model).runs, [run])), commands: [ClosePalette({ dock: true })] }),
-    ChangedAction: ({ run }) => ({ model: ModelWrite.actionChangedWrite(model, actionsOf(model), mergeRuns(actionsOf(model).runs, [run]), ActionFollow.settled(actionsOf(model).disconnected ?? [], [run]), ActionFollow.settled(actionsOf(model).stoppedFollows ?? [], [run])) }),
-    FollowedAction: ({ run, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: ModelWrite.actionFollowedWrite(model, actionsOf(model), mergeRuns(actionsOf(model).runs, [run]), ActionFollow.received(actionsOf(model).disconnected ?? [], run.id)) }),
-    FailedActionFollow: ({ id, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: ModelWrite.actionFollowFailedWrite(model, actionsOf(model), ActionFollow.failed(actionsOf(model).disconnected ?? [], id, actionsOf(model).runs), ActionFollow.failed(actionsOf(model).stoppedFollows ?? [], id, actionsOf(model).runs)) }),
-    ReconnectedActions: () => ({ model: ModelWrite.actionsReconnectedWrite(model, actionsOf(model), ActionFollow.reconnected(actionsOf(model).followGeneration ?? 0)) }),
+    StartedAction: ({ run, epoch }) => !ModelDecision.actionsEpochCurrent(epoch, actionsOf(model).epoch) ? { model } : ({ model: ModelWrite.actionStartedWrite(model, actionsOf(model), ModelDecision.followedRun(runSelection(model), run.id, run.flow), mergeRuns(actionsOf(model).runs, [run])), commands: [ClosePalette({ dock: true })] }),
+    ChangedAction: ({ run }) => ({ model: ModelWrite.actionChangedWrite(model, actionsOf(model), mergeRuns(actionsOf(model).runs, [run]), ActionFollow.settled(actionsOf(model).disconnected, [run]), ActionFollow.settled(actionsOf(model).stoppedFollows, [run])) }),
+    FollowedAction: ({ run, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: ModelWrite.actionFollowedWrite(model, actionsOf(model), mergeRuns(actionsOf(model).runs, [run]), ActionFollow.received(actionsOf(model).disconnected, run.id)) }),
+    FailedActionFollow: ({ id, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: ModelWrite.actionFollowFailedWrite(model, actionsOf(model), ActionFollow.failed(actionsOf(model).disconnected, id, actionsOf(model).runs), ActionFollow.failed(actionsOf(model).stoppedFollows, id, actionsOf(model).runs)) }),
+    ReconnectedActions: () => ({ model: ModelWrite.actionsReconnectedWrite(model, actionsOf(model), ActionFollow.reconnected(actionsOf(model).followGeneration)) }),
     TickedActions: ({ at }) => ({ model: ModelWrite.actionClockWrite(model, actionsOf(model), ModelDecision.actionsClock(actionsOf(model).now ?? 0, at)) }),
     ClickedCancelAction: () => ({ model: ModelWrite.actionCancelWrite(model, actionsOf(model)), commands: [CancelAction({ id: actionsOf(model).run })] }),
-    RetriedActions: () => runActions(model, ModelDecision.retriedActions(actionScreen(model), actionsOf(model).epoch ?? 0)),
+    RetriedActions: () => runActions(model, ModelDecision.retriedActions(actionScreen(model), actionsOf(model).epoch)),
     MovedSlash: ({ delta }) => {
       const menu = completions(model)
       return { model: ModelWrite.highlightWrite(model, actionsOf(model), ModelDecision.slashHighlight(actionsOf(model).highlight, delta, menu.length)) }
@@ -557,7 +562,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       return {
         model: ModelWrite.eventWrite(model, completeScreenTour(model, toured, event.type), client,
           answerAnnouncement(answer !== undefined, answer?.error ?? "", answer?.text ?? "", model.answer), plan,
-          TourDecision.minimizedSandbox(model.sandboxPane ?? "closed"),
+          TourDecision.minimizedSandbox(model.sandboxPane),
           UpdateDecision.wikiAfterEvent(event.id, model.wikiAfter !== undefined && client.conversation.entries.some(entry => entry.id === model.wikiAfter), model.wikiAfter ?? ""),
           accountOf(model)),
         commands: [
@@ -637,8 +642,8 @@ function actionScreen(model: Model): ModelDecision.ActionScreen { return ScreenR
 function runSelection(model: Model): ModelDecision.RunSelection { return ScreenRead.runSelection(actionsOf(model)) }
 function actionFollowCurrent(model: Model, epoch: number, generation: number, ids: ReadonlyArray<string>): boolean {
   const actions = actionsOf(model)
-  return ActionFollow.current(epoch, generation, actions.epoch ?? 0, actions.followGeneration ?? 0)
-    && ActionFollow.same(ids, ActionFollow.watching(actions.runs, actions.stoppedFollows ?? []))
+  return ActionFollow.current(epoch, generation, actions.epoch, actions.followGeneration)
+    && ActionFollow.same(ids, ActionFollow.watching(actions.runs, actions.stoppedFollows))
 }
 
 
@@ -672,7 +677,7 @@ function visitWiki(model: Model, page: string): WithCommands<Update.Return<Model
  * Learn more: the page becomes this tab's tour conversation and the agent takes control. A second Learn more while the
  * tour runs does nothing new.
  */
-export function walkthroughSession(model: Model) { return model.tutorialSession ?? model.session }
+export function walkthroughSession(model: Model) { return model.tutorialSession }
 function learnMore(model: Model): Update.Return<Model, Message, Factory | Actions> {
   const conversation = `demo-${walkthroughSession(model)}`
   const step = TourDecision.startedTour(ScreenRead.tourStartScreen(model), conversation)
@@ -807,7 +812,7 @@ function launchAction(model: Model, name: string, door: "button" | "slash"): Upd
   const text = door === "slash" ? splitCommand(model.draft).rest : actions.input
   return {
     model: ModelWrite.launchWrite(model, actions),
-    commands: [RunAction({ name, text, door, epoch: actions.epoch ?? 0, format: actions.commands.find((entry) => entry.name === name)!.input, ...(UpdateDecision.launchRetries(door === "button", actions.run) ? { retry: actions.run } : {}) })],
+    commands: [RunAction({ name, text, door, epoch: actions.epoch, format: actions.commands.find((entry) => entry.name === name)!.input, ...(UpdateDecision.launchRetries(door === "button", actions.run) ? { retry: actions.run } : {}) })],
   }
 }
 
@@ -1086,11 +1091,11 @@ export function subscriptions(keys: EventTarget, page?: Document) {
     value ? Option.some(Message.ScrolledTranscript(value)) : Option.none()
   return Subscription.make<Model, Message, Factory | Actions>()((entry) => ({
     actionTime: entry({ active: Schema.Boolean }, {
-      modelToDependencies: (model: Model) => ({ active: actionsOf(model).runs.some((run) => (run.state === "queued" || run.state === "running") && !(actionsOf(model).disconnected ?? []).includes(run.id)) }),
+      modelToDependencies: (model: Model) => ({ active: actionsOf(model).runs.some((run) => (run.state === "queued" || run.state === "running") && !actionsOf(model).disconnected.includes(run.id)) }),
       dependenciesToStream: ({ active }) => active ? Stream.tick("1 second").pipe(Stream.mapEffect(effect () => { const at = try Clock.currentTimeMillis; return try message(() => Message.TickedActions({ at })) })) : Stream.empty,
     }),
     actionRuns: entry({ ids: Schema.Array(Schema.String), epoch: Schema.Number, generation: Schema.Number }, {
-      modelToDependencies: (model: Model) => ({ ids: ActionFollow.watching(actionsOf(model).runs, actionsOf(model).stoppedFollows ?? []), epoch: actionsOf(model).epoch ?? 0, generation: actionsOf(model).followGeneration ?? 0 }),
+      modelToDependencies: (model: Model) => ({ ids: ActionFollow.watching(actionsOf(model).runs, actionsOf(model).stoppedFollows), epoch: actionsOf(model).epoch, generation: actionsOf(model).followGeneration }),
       dependenciesToStream: ({ ids, epoch, generation }) => ids.length === 0 ? Stream.empty : Stream.unwrap(effect {
         const actions = try Actions
         return Stream.mergeAll(ids.map((id) => actions.follow(id).pipe(
@@ -1210,7 +1215,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
           conversation: model.conversation,
           request: model.sandboxRequest,
           active: model.surface === "chat" && !model.sandboxBusy,
-          live: model.sandbox?.status === "running" || (model.sandboxPane !== undefined && model.sandboxPane !== "closed"),
+          live: model.sandbox?.status === "running" || model.sandboxPane !== "closed",
           finished: model.client.conversation.entries.filter((entry) => entry.done).length,
         }),
         dependenciesToStream: ({ conversation, request, active, live }) => {
@@ -1319,7 +1324,7 @@ export const viewTransition: Runtime.ViewTransitionConfig<Model, Message> = ({ p
 }
 
 function sandboxAction(model: Model, kind: "start" | "stop" | "command"): Update.Return<Model, Message, Factory> {
-  if (!canSandboxAction(model.sandboxBusy ?? false, kind, model.terminalDraft ?? "")) return { model }
+  if (!canSandboxAction(model.sandboxBusy, kind, model.terminalDraft)) return { model }
   const step = PaneDecision.startSandboxAction(sandboxScreen(model), kind, model.sandbox?.generation ?? 0)
   return { model: ModelWrite.sandboxWrite(model, step.state), commands: step.commands.map((command) => SandboxAction({ conversation: model.conversation, operationId: `${model.session}/sandbox/${command.request}`, request: command.request, kind: command.kind, generation: command.generation, command: command.command })) }
 }

@@ -238,7 +238,7 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
         // Before any loss: the clock ticks for the live run, and its first snapshot leaves nothing disconnected.
         const document = try (try Experimental.Document.Document).current
         const clock = (subscriptions(document, document) as unknown as Entries)["actionTime"]!
-        const { disconnected: _none, ...older } = actionsOf(model)
+        const older = { ...actionsOf(model), disconnected: [] }
         if (!same(clock.modelToDependencies(model), { active: true }) || !same(clock.modelToDependencies({ ...model, actions: older }), { active: true })) return false
         for (const state of ["running", "passed"] as const) {
           if (!same(clock.modelToDependencies({ ...model, actions: { ...older, runs: [{ ...run, state }] } }), { active: state === "running" })) return false

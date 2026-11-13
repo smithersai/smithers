@@ -16,7 +16,7 @@ it("opens Actions inside the chat, shows real flows and an honest empty state", 
 })
 it("a viewer sees the tour command and can inspect internal flows without a Run button", () => {
   scene({ update, view }, given({ ...home, surface: "chat", actions: {
-    open: true, maximized: false, selected: "vibelang/Reply", run: "", loading: false, error: "", starting: false, input: "", highlight: 0, slash: false,
+    ...initialActions, open: true, maximized: false, selected: "vibelang/Reply", run: "", loading: false, error: "", starting: false, input: "", highlight: 0, slash: false,
     entries: [registration("vibelang/Reply"), registration("vibelang/Tour")], commands: [registration("vibelang/Tour")], runs: [],
   } }),
     expect(text("No runs yet")).toExist(),

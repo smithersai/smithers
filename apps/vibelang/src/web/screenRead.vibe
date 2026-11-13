@@ -55,18 +55,18 @@ export function streamScreen(model: Model): StreamScreen {
   return { stream: model.stream, connection: model.connection, epoch: model.epoch, from: model.from }
 }
 
-/** The sandbox's screen: no pane is closed, no operation or error is empty, not busy, and no request is request 0. */
+/** The sandbox's screen: its pane, operation, busy flag, error, request and terminal draft (`init` sets each one). */
 //@ verify
-//@ ensures \result == { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "", request: model.sandboxRequest, draft: model.terminalDraft ?? "" }
+//@ ensures \result == { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane, operation: model.sandboxOperation, busy: model.sandboxBusy, error: model.sandboxError, request: model.sandboxRequest, draft: model.terminalDraft }
 export function sandboxScreen(model: Model): SandboxScreen {
-  return { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "", request: model.sandboxRequest, draft: model.terminalDraft ?? "" }
+  return { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane, operation: model.sandboxOperation, busy: model.sandboxBusy, error: model.sandboxError, request: model.sandboxRequest, draft: model.terminalDraft }
 }
 
-/** What a sandbox result reads, with the same defaults as the screen. */
+/** What a sandbox result reads: the pane, operation, busy flag and error. */
 //@ verify
-//@ ensures \result == { pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "" }
+//@ ensures \result == { pane: model.sandboxPane, operation: model.sandboxOperation, busy: model.sandboxBusy, error: model.sandboxError }
 export function sandboxResult(model: Model): SandboxResult {
-  return { pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "" }
+  return { pane: model.sandboxPane, operation: model.sandboxOperation, busy: model.sandboxBusy, error: model.sandboxError }
 }
 
 /** A waiting submission as plain data for the proved submit step; none reads as an empty save the step never sends,
@@ -92,9 +92,9 @@ export function wikiRequest(draft: WikiDraft): WikiRequest {
 /** What ending a tour reads: the tour flags (no dismissal read as not dismissed), the screen, the draft, the sandbox
  *  pane (none read as closed), whether the issues list is open, and the actions panel's slash menu and size. */
 //@ verify
-//@ ensures \result == { tour: model.tour, tourDismissed: model.tourDismissed === true, surface: model.surface, palette: model.palette, draft: model.draft, docs: model.docs, sandboxPane: model.sandboxPane ?? "closed", issuesOpen: issues.open, slash: actions.slash, maximized: actions.maximized }
+//@ ensures \result == { tour: model.tour, tourDismissed: model.tourDismissed === true, surface: model.surface, palette: model.palette, draft: model.draft, docs: model.docs, sandboxPane: model.sandboxPane, issuesOpen: issues.open, slash: actions.slash, maximized: actions.maximized }
 export function tourEndScreen(model: Model, issues: NonNullable<Model["issues"]>, actions: ActionView): TourEnd {
-  return { tour: model.tour, tourDismissed: model.tourDismissed === true, surface: model.surface, palette: model.palette, draft: model.draft, docs: model.docs, sandboxPane: model.sandboxPane ?? "closed", issuesOpen: issues.open, slash: actions.slash, maximized: actions.maximized }
+  return { tour: model.tour, tourDismissed: model.tourDismissed === true, surface: model.surface, palette: model.palette, draft: model.draft, docs: model.docs, sandboxPane: model.sandboxPane, issuesOpen: issues.open, slash: actions.slash, maximized: actions.maximized }
 }
 
 /** What Learn more reads: the tour flags (an absent one read as false), the screen, the conversation, the wiki's
@@ -109,11 +109,11 @@ export function tourStartScreen(model: Model): TourStart {
  *  sandbox pane (none is closed), the People pane, and whether an editor's submission is saving. */
 //@ verify
 //@ ensures \result.stream == model.stream && \result.epoch == model.epoch && \result.from == model.from && \result.seq == model.client.conversation.seq
-//@ ensures \result.request == (model.wikiRequest ?? 0) && \result.sandboxPane == (model.sandboxPane ?? "closed") && \result.people == account.people
+//@ ensures \result.request == (model.wikiRequest ?? 0) && \result.sandboxPane == model.sandboxPane && \result.people == account.people
 //@ ensures model.wikiEdit === undefined ==> !\result.saving
 //@ ensures model.wikiEdit !== undefined ==> \result.saving == (model.wikiEdit.submission !== undefined)
 export function wikiVisitScreen(model: Model, account: AccountState): WikiVisitScreen {
-  return { stream: model.stream, epoch: model.epoch, from: model.from, seq: model.client.conversation.seq, request: model.wikiRequest ?? 0, sandboxPane: model.sandboxPane ?? "closed", people: account.people, saving: model.wikiEdit?.submission !== undefined }
+  return { stream: model.stream, epoch: model.epoch, from: model.from, seq: model.client.conversation.seq, request: model.wikiRequest ?? 0, sandboxPane: model.sandboxPane, people: account.people, saving: model.wikiEdit?.submission !== undefined }
 }
 
 /** The page's screen: surface, palette, tour flag and error, docs size, and whether the transcript follows. */

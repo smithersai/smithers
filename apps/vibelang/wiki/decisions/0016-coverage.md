@@ -3333,8 +3333,31 @@ subscription's dependencies are exactly the guard's inputs (epoch, follow genera
 it with `Stream.switchMap` (`foldkit/dist/runtime/subscriptionFibers.js`), which interrupts the old stream when they
 change. A stale follow message exists only when the old stream queued it after the changing message was queued and
 before it was applied, an order Effect's scheduler decides and no page action sets. `test/actionFollow.test.vibe`
-keeps both arms and their `?? []` defaults.
+keeps both arms; their `?? []` defaults are deleted (session 34, below).
 
 `issueDefaultRole` waits on vl-coverage-core: the board post of 2026-11-13 17:45Z asks for `role` to be required in
 `IssuesState` (`src/core/issueSchemas.vibe`).
+
+## Blank amend tasks and fields `init` always sets (vl-coverage, session 34, 2026-11-13)
+
+**Bug: an amend with a blank task said "Needs a title."** `Run /plan {"how":"amend", …, "task":" "}` from the agent's
+door refused the blank task with `decide`'s `empty`, the refusal a plan's blank title also gets, and a refused answer
+carries no id and a run no input, so `resultText` could not tell them apart. `decide` (`src/history/mythical.vibe`)
+now refuses a blank Amend task as `no-task`; `RefusalReason` (`src/history/schemas.vibe`) admits it and
+`historyRefusal` (`src/history/flowMachine.vibe`) words it "Needs a task.", the history page's field label. The
+contracts, mutation rows `history-refusal-9` to `-12` and the new `history-read-refusal-no-task` follow. The case in
+`e2e/actions.spec.ts` "a plan the sequencer refuses says why …" fails on the old `decide` with
+`Received: "Needs a title."`.
+
+**Deleted: eleven optional fields and their fallbacks.** `init` sets `tutorialSession` and `failedMedia`, and now sets
+`sandboxPane` (`"closed"`), `sandboxOperation` and `sandboxError` (`""`), `sandboxBusy` (`false`) and `terminalDraft`
+(`""`); `initial` (`src/web/actionModel.vibe`) now sets the panel's `epoch` and `followGeneration` (0) and
+`disconnected` and `stoppedFollows` (`[]`). Every writer spreads the model or panel, so no write removes one. All
+eleven are required, and the `??` defaults that read an absent one as the value `init` now writes are gone: 33 in
+`main.vibe`, 11 in `screenRead.vibe` (and their 11 in its contracts), and one each in `view.vibe`, `sandboxView.vibe` and
+`actionView.vibe`. The defaults agreed with `init`'s values (`sandboxView` read an absent pane as `""`, which
+`sandboxPaneView` treats as closed), so no behavior changes. Tests that built the deleted states by removing a field now
+start from `init`'s values: two in `test/mainRemainder.coverage.test.vibe`, one in
+`test/mainUpdate.coverage.test.vibe`, the epoch-less panels in both, and one fuzz scenario in `fuzz/web-arms.fuzz.vibe`.
+`arm_mutations.py`'s four screen rows now mutate the field read instead of its default.
 

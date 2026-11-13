@@ -14,8 +14,6 @@ const names = (result: { readonly commands?: ReadonlyArray<{ readonly name: stri
 const signedIn = (role: "new" | "community" | "contributor" | "maintainer", id = "1") => ({ id, login: `person-${id}`, role })
 const as = (model: Model, role: "new" | "community" | "contributor" | "maintainer", id = "1"): Model => ({ ...model, account: { ...accountOf(model), identity: signedIn(role, id) } })
 
-const { failedMedia: _noFailures, ...withoutFailures } = home
-
 describe("startup", () => {
   it("names a failed sign-in, and starts clean otherwise", () => {
     expect(accountOf(init({ ...flags, signInFailed: true }).model).error).toBe("Sign-in failed. GitHub didn’t answer.")
@@ -44,7 +42,6 @@ describe("media", () => {
     const twice = update(once.model, Message.FailedMedia({ src: "b.mp4", kind: "video" }))
     expect(twice.model.failedMedia).toEqual(["a.png", "b.mp4"])
     expect(update(home, Message.LoadedMedia({ kind: "video" })).commands?.[0]).toMatchObject({ name: "ObserveMedia", args: { kind: "video", outcome: "loaded" } })
-    expect(update(withoutFailures, Message.FailedMedia({ src: "c", kind: "image" })).model.failedMedia).toEqual(["c"])
     expect(update(home, Message.ObservedMedia()).model).toBe(home)
   })
 })
@@ -434,7 +431,7 @@ describe("actions", () => {
   const tour = registration("vibelang/Tour")
   const reply = registration("vibelang/Reply")
   const open: Model = { ...chat, actions: { ...initialActions, entries: [tour], commands: [tour], selected: tour.name, epoch: 1 } }
-  const { epoch: _noEpoch, ...epochless } = open.actions!
+  const epochless = { ...open.actions!, epoch: 0 }
   const noEpoch: Model = { ...open, actions: epochless }
   const run = (state: "running" | "passed", id = "a1") => ({ id, flow: tour.name, door: "button" as const, actor: "person" as const, state, started: 0, at: 1, result: "", steps: [] })
   it("typing a slash loads the catalog only when it is empty", () => {

@@ -13,11 +13,6 @@ const chat: Model = { ...home, surface: "chat" }
 const names = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) => (result.commands ?? []).map(command => command.name)
 const asked = (over: Partial<IssueRequest> = {}): IssueRequest => ({ op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k1", ...over })
 const issue = (number: number): typeof IssueRecordSchema.Type => ({ number, githubId: number, title: "t", body: "", author: "ada", age: "2026-01-02", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [] })
-/** The model as it is before `key` was ever set. */
-function without<K extends keyof Model>(model: Model, key: K): Model {
-  const { [key]: _absent, ...rest } = model
-  return rest as Model
-}
 const open = (over: Partial<typeof initialIssues> = {}): Model => ({ ...chat, issues: { ...initialIssues, keyPrefix: "u", status: "ready", role: "maintainer", ...over } })
 const loaded = (data: Parameters<typeof Message.IssuesLoaded>[0]["data"], over: Partial<Parameters<typeof Message.IssuesLoaded>[0]> = {}) => Message.IssuesLoaded({ data, created: false, role: "maintainer", ...over })
 
@@ -150,9 +145,6 @@ describe("a role change", () => {
 })
 
 describe("a message before its part of the model exists", () => {
-  it("a sandbox pane that was never opened stays closed", () => {
-    expect(update(without(chat, "sandboxPane"), Message.MaximizedSandboxes()).model.sandboxPane).toBe(update({ ...chat, sandboxPane: "closed" }, Message.MaximizedSandboxes()).model.sandboxPane)
-  })
   it("a sandbox answer to the page's first request applies", () => {
     const fresh: Model = { ...chat, sandboxBusy: true }
     expect(update(fresh, Message.FailedSandbox({ conversation: fresh.conversation, request: 0, reason: "x" })).model).toMatchObject({ sandboxError: "x", sandboxBusy: false })
@@ -190,9 +182,8 @@ describe("docs and the wiki pane", () => {
 })
 
 describe("stale and repeated answers", () => {
-  it("an action list with no epoch of its own applies to a panel with none", () => {
-    const { epoch: _epoch, ...plain } = { ...initialActions, epoch: 1 }
-    const panel: Model = { ...chat, actions: plain }
+  it("a failure with no epoch of its own applies to the panel's first epoch", () => {
+    const panel: Model = { ...chat, actions: initialActions }
     expect(update(panel, Message.FailedActions({ code: "unavailable" })).model.actions?.error).not.toBe("")
   })
   it("the slash catalog already loaded isn't loaded again, and a stale highlight starts nothing", () => {
@@ -257,15 +248,13 @@ describe("the remaining branches a person can reach", () => {
     expect(names(result)).toEqual(["ClosePalette"])
     expect(result.model).toMatchObject({ palette: false, draft: "", sandboxPane: "pane", sandboxBusy: true })
   })
-  it("a slash command picks the highlighted action and passes epoch 0 before one exists", () => {
+  it("a slash command picks the highlighted action and passes the panel's first epoch, 0", () => {
     const entry = { name: "vibelang/Run", title: "Run", command: "/run", runnable: true, detail: "Run", least: "viewer" as const, input: "text" as const }
-    const { epoch: _epoch, ...rest } = { ...initialActions, epoch: 1 }
-    const result = update({ ...chat, draft: "/run now", actions: { ...rest, slash: true, entries: [entry], commands: [entry] } }, Message.SubmittedDraft())
+    const result = update({ ...chat, draft: "/run now", actions: { ...initialActions, slash: true, entries: [entry], commands: [entry] } }, Message.SubmittedDraft())
     expect(result.commands?.[0]).toMatchObject({ name: "RunAction", args: { name: "vibelang/Run", text: "now", door: "slash", epoch: 0 } })
   })
-  it("a role reply can carry no actions epoch", () => {
-    const { epoch: _epoch, ...rest } = { ...initialActions, epoch: 1 }
-    const panel: Model = { ...chat, draft: "", actions: rest }
+  it("a slash on the panel's first epoch loads the actions", () => {
+    const panel: Model = { ...chat, draft: "", actions: initialActions }
     expect(names(update(panel, Message.UpdatedDraft({ value: "/" })))).toEqual(["LoadActions"])
   })
 })

@@ -349,7 +349,7 @@ function palette(model: Model, h: H): Html {
 
 /** Loading videos show their native poster. A failed image or video removes its whole figure. */
 function media(model: Model, h: H, className: string, asset: StopMedia, controls = false): ReadonlyArray<Html> {
-  if (!showMedia(model.failedMedia ?? [], asset.src)) return []
+  if (!showMedia(model.failedMedia, asset.src)) return []
   const source = (src: string) => model.mediaSources?.[src] ?? src
   const choice = mediaDecision(asset.poster !== undefined, model.reducedMotion, controls)
   const failed = Message.FailedMedia({ src: asset.src, kind: choice.kind })

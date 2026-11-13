@@ -70,7 +70,7 @@ export function actionsPane(model: Model, h: H): Html {
         h.button([h.Class("vl-docs-toggle"), h.Type("button"), h.AriaLabel("Collapse Actions"), h.OnClick(Message.ClickedActions())], ["×"]),
       ]),
     ]),
-    ...((state.disconnected?.length ?? 0) > 0 ? [reconnect(h)] : []),
+    ...(state.disconnected.length > 0 ? [reconnect(h)] : []),
     h.div([h.Class("vl-act-body")], pane.body === "loading" ? [h.div([h.Class("sui-skeleton"), h.AriaLabel("Loading actions"), h.Style({ height: "32px" })], [])] : pane.body === "error" ? [
       h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], ["Couldn't load runs", h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.RetriedActions())], ["Retry"])]),
     ] : [...(pane.notice ? [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [state.error])] : []), ...(pane.body === "trace" && run ? [trace(h, run, state.now, state.step, state.disconnected)] : [

@@ -17,7 +17,7 @@ export function sandboxPane(model: Model, h: H): Html {
   const snapshot = model.sandbox
   const account = accountOf(model)
   const running = snapshot?.status === "running"
-  const pane = sandboxPaneView(model.sandboxPane ?? "", running, !!model.sandboxBusy, mayStart(snapshot?.role ?? "viewer"), snapshot?.role ?? "", model.sandboxOperation ?? "", snapshot?.remaining === 0)
+  const pane = sandboxPaneView(model.sandboxPane, running, model.sandboxBusy, mayStart(snapshot?.role ?? "viewer"), snapshot?.role ?? "", model.sandboxOperation ?? "", snapshot?.remaining === 0)
   if (!pane.open) return h.button([h.Class("vl-pane"), h.Type("button"), h.AriaLabel("Sandboxes"), h.OnClick(Message.ClickedSandboxes())], [icon(h), h.span([h.Class("vl-pane-text")], ["Sandboxes"]), ...(snapshot ? [minutes(model, h)] : []), icon(h, true)])
   const remaining = snapshot?.remaining ?? 0
   const allowance = snapshot?.allowance ?? 0

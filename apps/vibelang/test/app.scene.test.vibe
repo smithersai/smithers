@@ -27,6 +27,7 @@ const home: Model = {
   answer: "",
   announced: 0,
   connection: "",
+  tutorialSession: "s1", failedMedia: [], sandboxPane: "closed", sandboxOperation: "", sandboxBusy: false, sandboxError: "", terminalDraft: "",
   theatre: { step: 1, paused: false, sound: false, target: "splash" },
   tour: false,
   tourError: "",

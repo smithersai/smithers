@@ -4,10 +4,10 @@ import { Registered, Run } from "../actions/Actions.vibe"
 import { historyRefusal } from "../history/flowMachine.vibe"
 import { HistoryAnswer, Note, Start } from "../history/flows.vibe"
 export schema ActionView {
-  readonly epoch?: number
-  readonly followGeneration?: number
-  readonly disconnected?: ReadonlyArray<string>
-  readonly stoppedFollows?: ReadonlyArray<string>
+  readonly epoch: number
+  readonly followGeneration: number
+  readonly disconnected: ReadonlyArray<string>
+  readonly stoppedFollows: ReadonlyArray<string>
   readonly step?: string
   readonly now?: number
   readonly open: boolean
@@ -24,7 +24,7 @@ export schema ActionView {
   readonly commands: ReadonlyArray<Registered>
   readonly runs: ReadonlyArray<Run>
 }
-export const initial: ActionView = { open: false, maximized: false, selected: "", run: "", loading: false, starting: false, error: "", input: "", highlight: 0, slash: false, entries: [], commands: [], runs: [] }
+export const initial: ActionView = { epoch: 0, followGeneration: 0, disconnected: [], stoppedFollows: [], open: false, maximized: false, selected: "", run: "", loading: false, starting: false, error: "", input: "", highlight: 0, slash: false, entries: [], commands: [], runs: [] }
 /**
  * A refused write's result is its answer as JSON; a person reads the reason. Only the agent's door reaches a blank
  * lane or note (the history page disables Start and Add note while they are blank), so `empty` names the field.
