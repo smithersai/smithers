@@ -158,11 +158,15 @@ describe("BrowserRuntime.run with prepare", () => {
       const dying = worker(name, prepare)
       yield* Deferred.await(midway)
       yield* Fiber.interrupt(dying)
-      const next = worker(name, prepare)
+      const telemetry = Telemetry.make()
+      const next = worker(name, prepare, telemetry)
       const tab = yield* Engines.sharedTab(name)
       expect(yield* select(tab)).toEqual([{ epoch: 1 }])
       yield* Fiber.interrupt(next)
       expect(ran).toEqual([1, 1])
+      expect(telemetry.count(BrowserRuntime.wakes, { outcome: "unknown-flow" })).toBe(0)
+      expect(telemetry.lines("browser.runtime.wake")).toEqual([])
+      expect(telemetry.count(BrowserRuntime.preparations, { outcome: "prepared" })).toBe(1)
     }).pipe(Effect.scoped))
 
   it.live("fences every tab's statement with PrepareFailed when the preparation keeps failing, after rolling back what it left open", () =>

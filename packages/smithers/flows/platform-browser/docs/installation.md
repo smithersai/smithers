@@ -24,12 +24,12 @@ The package ships as ESM and CommonJS with TypeScript declarations, and its
 installs and builds it rather than a runtime the code needs. Its other runtime
 dependencies install with it:
 
-| Dependency                                                        | Why it is here                                                                                                |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [`@smthrs/kernel`](/api/kernel)                                   | `CommandLine.render`, which produces the line the interpreter runs, and the filesystem isolation attestation. |
-| [`@smthrs/jj`](/api/jj)                                           | The wasm-backed `Jj` service the `BrowserHost` bundle composes.                                               |
-| [`@smthrs/flows`](/api/flows) and the engine packages it composes | The durable engine `BrowserRuntime` hosts.                                                                    |
-| `@journeyapps/wa-sqlite`                                          | SQLite compiled to WebAssembly, and the OPFS VFS `BrowserSqlite` opens the store with.                        |
+| Dependency                                                        | Why it is here                                                                                                            |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [`@smthrs/kernel`](/api/kernel)                                   | `CommandLine.renderForExecution`, which produces the line the interpreter runs, and the filesystem isolation attestation. |
+| [`@smthrs/jj`](/api/jj)                                           | The wasm-backed `Jj` service the `BrowserHost` bundle composes.                                                           |
+| [`@smthrs/flows`](/api/flows) and the engine packages it composes | The durable engine `BrowserRuntime` hosts.                                                                                |
+| `@journeyapps/wa-sqlite`                                          | SQLite compiled to WebAssembly, and the OPFS VFS `BrowserSqlite` opens the store with.                                    |
 
 ## What you supply
 

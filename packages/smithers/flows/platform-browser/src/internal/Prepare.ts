@@ -135,7 +135,7 @@ export const declare = (prepare: Prepare): Declared => {
 }
 
 /**
- * Runs `prepare` on the engine in `context` as `device/prepare/<epoch>`, and
+ * Runs `prepare` on the engine in `context` as `device/prepare/v2/<epoch>`, and
  * waits for it: a run a crashed leader left unfinished resumes, and one that
  * finished, prepared or failed, answers at once from the journal. It never
  * fails: how it went is logged as `browser.runtime.prepare` and counted in

@@ -5,8 +5,9 @@
  *
  * - {@link serve} is the worker entry. The page's worker module hands it the
  *   TypeScript compiler API and a loader for TypeScript's `lib.*.d.ts`
- *   files, so this package carries no `typescript` dependency and a page
- *   that never starts the worker never loads either.
+ *   files. This package depends on `typescript` for its public types but
+ *   does not import the compiler implementation; a page that never starts
+ *   the worker never loads the compiler or its library files.
  * - {@link make} runs in the tab: it starts the worker, sends it the
  *   workspace's file list, answers the worker's reads with
  *   {@link Workspace.read}, and returns a `LanguageServer` whose answers are

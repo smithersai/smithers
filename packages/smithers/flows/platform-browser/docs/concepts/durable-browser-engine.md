@@ -28,10 +28,11 @@ transaction. A build from before the write-ahead log (1.0.0-rc.16 and earlier)
 cannot open a database left in write-ahead mode; its worker runs on memory
 until a newer build serves the device.
 
-The worker hands the build over as lazy imports, and `BrowserRuntime` imports
-the engine itself only when a worker builds one. A waiting worker loads
-neither, and a tab that imports the package's root for `BrowserEngine` or
-`SharedSqlite` loads no engine module and no wasm.
+The worker hands the SQLite build over as lazy imports, loaded only once it
+leads. `BrowserRuntime` imports the engine composition statically to preserve
+Effect Schema identity. A tab bundler can tree-shake the unused worker
+composition from a root import of `BrowserEngine` or `SharedSqlite`; the tab
+bundle carries no wasm.
 
 ## One leader per origin
 
@@ -45,7 +46,9 @@ leader's tab closes or crashes, the next worker in the queue gets the lock.
 It then:
 
 1. Opens the store. If the old worker's OPFS access handles are not released
-   yet, it opens the pool again for up to about five seconds.
+   yet, it retries `NoModificationAllowedError` for as long as they are held,
+   with a delay starting at `20 ms`, doubling up to `500 ms`. The leader holds
+   its Web Lock while waiting; cancellation ends the wait.
 2. Builds the engine and registers the flows. Registration re-arms every
    durable timer, so a sleep that came due while no tab was open fires now.
 3. Drives every unfinished run once, in the background, two at a time (see
@@ -196,7 +199,7 @@ before it answers any tab's statement, such as bringing the app's stores to
 this build's versions (`@smthrs/effect-tanstack-db`'s
 `Migrations.prepare(registry)`). After it wakes unfinished runs, the leader
 runs `prepare.run` over its own connection as the durable flow
-`device/prepare`, execution `device/prepare/<epoch>`, and waits for it; a
+`device/prepare`, execution `device/prepare/v2/<epoch>`, and waits for it; a
 tab's statement waits meanwhile.
 
 - **Once per epoch.** The next leader of the same build finds the run

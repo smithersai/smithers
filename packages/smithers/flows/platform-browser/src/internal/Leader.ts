@@ -118,6 +118,9 @@ const wake = (flows: ReadonlyMap<string, Flow.Any>) =>
       Effect.orElseSucceed(() => [])
     )
     for (const run of runs) {
+      // Prepare.run resumes the built-in preparation before the app's database is served.
+      // Keep it out of follower-callable flows and the unknown-flow diagnostic.
+      if (run.flowName === "device/prepare") continue
       const flow = flows.get(run.flowName)
       if (flow === undefined) {
         yield* Metric.update(Metric.withAttributes(wakes, { outcome: "unknown-flow" }), 1)

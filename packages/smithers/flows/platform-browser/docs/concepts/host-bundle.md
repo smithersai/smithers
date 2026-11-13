@@ -29,10 +29,10 @@ wants Effect's platform services and nothing else.
 
 `BrowserHost.layer({ bash, fs, jj })` provides all five. It is what the Smithers
 runtime needs, and it is the direct counterpart of
-[`NodeHost`](/api/platform-node) and [`BunHost`](/api/platform-bun). In a tab
-that runtime is the memory engine and the capability kernel: durable execution
-also needs the Node-only `SqlClient` and `NodeRuntime`, which no Host tag
-supplies.
+[`NodeHost`](/api/platform-node) and [`BunHost`](/api/platform-bun). Durable
+execution also needs a `SqlClient` and a runtime, which no Host tag supplies.
+[`BrowserRuntime`](./durable-browser-engine.md) composes the durable engine
+in a dedicated worker over `BrowserSqlite`'s `SqlClient` on OPFS.
 
 `BrowserHost.layer` is the module's only factory. Every backend arrives as an
 argument, so there is no `layerAt` or contained-host variant. `Crypto` is not

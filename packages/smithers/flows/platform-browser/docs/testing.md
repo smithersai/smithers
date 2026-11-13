@@ -81,10 +81,11 @@ interpreter was never called.
 ## Assert the rendered command line
 
 The line the interpreter receives is
-[`@smthrs/kernel`](/api/kernel)'s `CommandLine.render`, which is the same
-renderer a `proc:spawn` grant is checked against. Assert against the renderer
-rather than against a string literal, and a grant can never authorize a line
-different from the one that runs:
+[`@smthrs/kernel`](/api/kernel)'s `CommandLine.renderForExecution`. Assert
+against that renderer: it quotes each argument and reveals `Redacted` values
+only for execution. `CommandLine.render` instead masks protected arguments
+for display; neither display output nor the execution line is the
+`proc:spawn` capability resource, which `CommandLine.resource` builds:
 
 ```ts
 import * as CommandLine from "@smthrs/kernel/CommandLine"
@@ -93,7 +94,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 const command = ChildProcess.make("echo", ["a b", "it's"])
 
 // Quoted only where a token needs it, so argv semantics survive: echo 'a b' 'it'\''s'
-const line = CommandLine.render(command)
+const line = CommandLine.renderForExecution(command)
 ```
 
 ## Pin an error tag with a throwing backend

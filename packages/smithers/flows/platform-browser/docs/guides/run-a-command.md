@@ -130,8 +130,9 @@ The error messages, and what to change for each, are in
 ## How the command line is built
 
 A `StandardCommand` is rendered to a command line by
-[`@smthrs/kernel`](/api/kernel)'s `CommandLine.render`, which is the same
-renderer the kernel grants against. Without `shell`, the command and its
+[`@smthrs/kernel`](/api/kernel)'s `CommandLine.renderForExecution`, which
+reveals protected arguments only for execution. `CommandLine.render` masks
+those arguments for display; the kernel checks `CommandLine.resource`. Without `shell`, the command and its
 arguments are POSIX single-quoted, so a spawn keeps argv semantics and a hostile
 token cannot become syntax. With `shell`, they are joined verbatim, mirroring
 how Node hands `sh -c` an unquoted line.

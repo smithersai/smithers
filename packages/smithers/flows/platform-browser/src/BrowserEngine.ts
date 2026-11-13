@@ -33,11 +33,10 @@ import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
-import * as Option from "effect/Option"
 import * as PubSub from "effect/PubSub"
-import * as Queue from "effect/Queue"
 import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
+import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
@@ -216,7 +215,7 @@ export interface Service {
    * appears in the next read without an event of its own. A read that fails
    * emits nothing, logs `browser.engine.runs` once per run of failures, and is
    * read again after a backoff from 250 ms doubling to 5 s, or sooner on the
-   * next event or leader. The stream never fails.
+   * next event or leader. The stream never fails and completes when the engine's scope closes.
    */
   readonly runs: (
     options?: {
@@ -475,38 +474,52 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
         // Subscribed before the first read, so a change between the read and
         // the next one is not missed.
         const changes = yield* PubSub.subscribe(notices)
-        // A failed read reads again on its own: no later event may come.
-        const again = yield* Queue.unbounded<void>()
-        const failures = yield* Ref.make(0)
-        const scope = yield* Effect.scope
-        const snapshot = readWindow(options, within).pipe(
-          Effect.tap(() => Ref.set(failures, 0)),
-          Effect.map(Option.some),
-          Effect.catch((failure) =>
-            Effect.gen(function*() {
-              const failed = yield* Ref.getAndUpdate(failures, (count) => count + 1)
-              // Once per run of failures, never again until a read succeeds.
-              yield* failed > 0 ? Effect.void : Effect.logWarning("browser.engine.runs").pipe(
-                Effect.annotateLogs({
-                  outcome: "unread",
-                  "error.type": failure._tag === "@smthrs/platform-browser/RequestRefused"
-                    ? failure.error
-                    : failure.reason
-                })
-              )
-              const wait = Option.getOrThrow(RetryPolicy.nextDelay(runsBackoff, failed + 1))
-              yield* Effect.forkIn(Effect.andThen(Effect.sleep(wait), Queue.offer(again, undefined)), scope)
-              return Option.none<RunInspection.RunList>()
-            })
+        const unread = yield* Ref.make(false)
+        const retry = RetryPolicy.schedule<RequestRefused | EngineUnavailable>(runsBackoff).pipe(
+          Schedule.modifyDelay(({ duration }) =>
+            // An event or a new leader can recover the read before the policy's delay.
+            // Coalesce recovery notices through the same stream as healthy reads.
+            // Its shutdown ends normally, and the race cancels the losing wait.
+            Effect.sleep(Math.max(Duration.toMillis(duration), Duration.toMillis(every))).pipe(
+              Effect.raceFirst(
+                Stream.fromSubscription(changes).pipe(
+                  Stream.groupedWithin(Number.MAX_SAFE_INTEGER, every),
+                  Stream.take(1),
+                  Stream.runDrain
+                )
+              ),
+              Effect.as(Duration.zero)
+            )
           )
         )
+        const snapshot = readWindow(options, within)
         return Stream.concat(
           Stream.fromEffect(snapshot),
-          Stream.merge(Stream.fromSubscription(changes).pipe(Stream.as(undefined)), Stream.fromQueue(again)).pipe(
+          Stream.fromSubscription(changes).pipe(
             Stream.groupedWithin(Number.MAX_SAFE_INTEGER, every),
             Stream.mapEffect(() => snapshot)
           )
-        ).pipe(Stream.filterMap((read) => Option.isSome(read) ? Result.succeed(read.value) : Result.failVoid))
+        ).pipe(
+          Stream.tap(() => Ref.set(unread, false)),
+          Stream.tapError((failure) =>
+            Ref.getAndSet(unread, true).pipe(
+              Effect.flatMap((already) =>
+                already ? Effect.void : Effect.logWarning("browser.engine.runs").pipe(
+                  Effect.annotateLogs({
+                    outcome: "unread",
+                    "error.type": failure._tag === "@smthrs/platform-browser/RequestRefused"
+                      ? failure.error
+                      : failure.reason
+                  })
+                )
+              )
+            )
+          ),
+          // Stream.retry resets the policy after each emitted snapshot. This policy has no attempt limit.
+          Stream.retry(retry),
+          Stream.orDie,
+          Stream.interruptWhen(PubSub.awaitShutdown(notices))
+        )
       }))
 
     return BrowserEngine.of({

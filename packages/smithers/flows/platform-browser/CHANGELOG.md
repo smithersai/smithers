@@ -46,12 +46,21 @@
 - `BrowserRuntime.run` and `layerHost` take the SQLite build as lazy imports,
   `sqlite: { module, wasm }`, in place of the wasm bytes, and
   `BrowserSqlite.layerSqlite` takes `build` in place of `wasm`. The package no
-  longer imports the build or the engine eagerly: a tab that imports its root
-  loads no engine module, and an app's tab bundle emits no wasm.
+  longer imports the SQLite build eagerly. The engine composition is imported
+  statically to preserve Effect Schema identity and can be tree-shaken from a
+  tab bundle; an app's tab bundle emits no wasm.
 - The engine host's WebCrypto `Crypto` is `@smthrs/crypto`'s `WebCrypto.layer`,
   the one every host uses.
 
 ### Fixed
+
+- Run-list reads use the shared retry schedule, cancel pending waits on recovery,
+  reset the backoff after a successful read, and complete when the engine's scope
+  closes. A new leader resumes its database preparation without reporting the
+  built-in flow as unknown.
+- Browser host documentation now describes sanitized interpreter failures,
+  static engine imports, indefinite retries for held OPFS files, versioned
+  preparation executions, and protected command arguments accurately.
 
 - `PendingSnapshot.stage` returns a receipt unique to that staging. Staging a
   value equal to an earlier one no longer lets the earlier write's receipt remove

@@ -103,10 +103,10 @@ BrowserRuntime.run({
 })
 ```
 
-The package never imports the SQLite build or the engine eagerly: the worker
-hands over the build as lazy imports, and `BrowserRuntime` imports the engine
-when a worker first builds one. A tab that imports the package's root loads
-neither, and an app's tab bundle carries no wasm.
+The worker hands over the SQLite build as lazy imports, loaded only once it
+leads. `BrowserRuntime` imports the engine composition statically to preserve
+Effect Schema identity in the worker. A bundler can tree-shake the unused
+worker composition from a tab's root import, and the tab bundle carries no wasm.
 
 Every tab starts its worker and sends its requests to the leader:
 

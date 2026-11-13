@@ -102,36 +102,37 @@ and `getOutputFd` gives `Stream.empty`.
 `exitCode` and both output streams fail:
 
 ```text
-Unknown: ChildProcess.kill (wc -l notes.txt): the interpreter run was aborted
+Unknown: ChildProcess.kill: the interpreter run was aborted
 ```
 
 **Cause.** This is the designed answer, not a defect. The handle's observables
 are typed `Effect<_, PlatformError>`. Replaying the worker's interrupt through
 them would cancel the caller's own fiber, which a caller cannot tell apart from
 the whole run being cancelled by someone else, so the abort is reported as a
-value in the error channel instead. The `pathOrDescriptor` is the command line
-that was aborted.
+value in the error channel instead. The error omits `pathOrDescriptor` and
+the command line.
 
 **Fix.** `Effect.result(handle.exitCode)` returns a `Failure` with this
 `PlatformError` in `failure`, or a `Success` with the exit code in `success`.
 The abort is a typed failure; defects and fiber interruptions are not captured
 by `Effect.result`.
 
-## Unknown: a message from the interpreter, at ChildProcess.spawn
+## Unknown: the interpreter run failed, at ChildProcess.spawn
 
-**Symptom.** A run fails with the interpreter's own message:
+**Symptom.** A run fails with a fixed description:
 
 ```text
-Unknown: ChildProcess.spawn: no interpreter mounted
+Unknown: ChildProcess.spawn: the interpreter run failed
 ```
 
 **Cause.** `exec` rejected, or threw before it returned a promise. Both are
-failed runs rather than defects in this adapter, so both are wrapped as a system
-`PlatformError` with the original kept as the `cause`.
+failed runs rather than defects in this adapter. The system `PlatformError`
+omits the original error and its `cause` so interpreter messages cannot expose
+arguments or file contents.
 
-**Fix.** Read `error.reason.cause` for the interpreter's own error. A throw
-before the promise usually means the interpreter was constructed over a mount
-that is not configured yet: call `configureSingle` before `new Bash({ fs })`.
+**Fix.** Check that the interpreter's mount is configured before constructing
+it: call `configureSingle` before `new Bash({ fs })`. Diagnose the backend
+directly; `error.reason.cause` does not carry its error.
 
 ## Every command after the first one hangs
 
@@ -358,20 +359,24 @@ leader; it does not time out on its own.
 at all logs `browser.engine.worker` in the tab. Add `Effect.timeout` to a
 request whose caller cannot wait.
 
-## SqlError: Failed to open the OPFS directory
+## The leader waits for held OPFS files
 
-**Symptom.** The engine stops with this message right after a worker becomes
-leader.
+**Symptom.** The worker becomes leader but does not finish opening the store,
+and requests wait without a `SqlError`.
 
-**Cause.** Something else holds the store's OPFS files. The pool waits about
-five seconds for the previous leader's worker to release them; a context that
-holds them longer is not that worker: a second engine with the same `name`
-outside the app's lock, or a tab of another build of the app. The same message
-appears when the store is opened outside a dedicated worker, which has no
-`createSyncAccessHandle`.
+**Cause.** Another context still holds the store's OPFS access handles. The
+pool retries `NoModificationAllowedError` without an attempt or elapsed-time
+limit: the delay starts at `20 ms` and doubles up to `500 ms`. The leader
+keeps its Web Lock while waiting, until the handles are released or acquisition
+is cancelled. A held pool does not produce a five-second timeout.
 
 **Fix.** Give every engine of one origin the same `name`, open the store only
-through `BrowserRuntime.run` or `serve`, and close the tab of the other build.
+through `BrowserRuntime.run` or `serve`, and close a context holding the files
+outside that lock, such as a tab of another build.
+
+An opening failure other than `NoModificationAllowedError` fails immediately
+with `SqlError: Failed to open the OPFS directory`. Check the error's cause
+and that the store runs in a dedicated worker with `createSyncAccessHandle`.
 
 ## EngineUnavailable: worker-failed or engine-failed
 

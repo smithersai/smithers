@@ -1,7 +1,8 @@
 /**
- * The durable engine's composition in a dedicated Web Worker: everything
- * `BrowserRuntime` loads only when a worker builds an engine, so a tab that
- * imports this package from its root never loads the engine.
+ * The durable engine's composition in a dedicated Web Worker, imported
+ * statically by `BrowserRuntime` to preserve Effect Schema identity.
+ * A tab bundle can tree-shake the unused worker composition; the SQLite
+ * build is supplied separately and loaded only when a worker leads.
  *
  * @since 1.0.0
  */

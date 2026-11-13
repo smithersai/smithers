@@ -5,6 +5,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Flow, RunMetrics } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
+import * as Deferred from "effect/Deferred"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -13,6 +14,7 @@ import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
+import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import { BrowserEngine, StoragePersistence, TabChannel } from "../src/index.ts"
 import * as Protocol from "../src/internal/Protocol.ts"
@@ -382,25 +384,28 @@ describe("BrowserEngine.runs", () => {
       expect(yield* ids("1 hour")).toEqual(["window-c", "window-b", "window-old"])
     }).pipe(Effect.scoped))
 
-  it.live("reads again on its own after the leader refuses, with no event or leader to wake it, and logs the run of failures once without content", () => {
+  it.live("reads again on its own after the leader refuses, with no event or leader to wake it, resets backoff after success, and logs each run of failures once without content", () => {
     const telemetry = Telemetry.make()
     return telemetry.observed(
       Effect.gen(function*() {
         const name = Engines.name()
         const engine = yield* Engines.tab(name)
-        // A leader that refuses the first two lists and answers every later one.
+        // Two failed reads, a recovered snapshot, then another failed read and recovery.
         const stranger = yield* Effect.flatMap(TabChannel.TabChannel, (channels) => channels.open(name)).pipe(
           Effect.provide(TabChannel.layer)
         )
         const inbox = yield* stranger.subscribe
         let lists = 0
+        const attempts: Array<number> = []
+        const recovered = yield* Deferred.make<void>()
         yield* Stream.fromQueue(inbox).pipe(
           Stream.runForEach((input) => {
             const message = Protocol.decode(input)
             if (message?._tag !== "List") return Effect.void
             lists++
+            attempts.push(Date.now())
             return stranger.post(Protocol.encode(
-              lists <= 2
+              lists <= 2 || lists === 4
                 ? { _tag: "Refused", client: message.client, id: message.id, error: "@smthrs/run-store/RunStoreError" }
                 : { _tag: "Replied", client: message.client, id: message.id, result: { runs: [], cursor: null } }
             ))
@@ -410,17 +415,150 @@ describe("BrowserEngine.runs", () => {
         // It never announces itself, and nothing changes: no run event, no new leader. Only the backoff reads again,
         // 250 ms after the first refusal and 500 ms after the second.
         const started = Date.now()
-        expect(yield* engine.runs({ every: "10 millis" }).pipe(Stream.take(1), Stream.runCollect)).toEqual([
+        const reader = yield* engine.runs({ every: "10 millis" }).pipe(
+          Stream.tap(() => Deferred.succeed(recovered, undefined)),
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.forkChild
+        )
+        yield* Deferred.await(recovered)
+        expect(Date.now() - started).toBeGreaterThanOrEqual(700)
+        yield* stranger.post(Protocol.encode({ _tag: "RunChanged", executionId: "changed", eventType: "settled" }))
+        expect(yield* Fiber.join(reader)).toEqual([
+          { runs: [], cursor: null },
           { runs: [], cursor: null }
         ])
-        expect(Date.now() - started).toBeGreaterThanOrEqual(700)
-        expect(lists).toBe(3)
+        expect(lists).toBe(5)
+        const resetDelay = attempts[4]! - attempts[3]!
+        expect(resetDelay).toBeGreaterThanOrEqual(250)
+        expect(resetDelay).toBeLessThan(750)
         expect(telemetry.lines("browser.engine.runs").map((line) => line.annotations)).toEqual([
+          expect.objectContaining({ outcome: "unread", "error.type": "@smthrs/run-store/RunStoreError" }),
           expect.objectContaining({ outcome: "unread", "error.type": "@smthrs/run-store/RunStoreError" })
         ])
       }).pipe(Effect.scoped)
     )
   })
+
+  it.live.each(["Leader", "RunChanged"] as const)(
+    "cancels a pending retry after a %s notice recovers the read",
+    (notice) =>
+      Effect.gen(function*() {
+        const name = Engines.name()
+        const engine = yield* Engines.tab(name)
+        const leader = yield* Effect.flatMap(TabChannel.TabChannel, (channels) => channels.open(name)).pipe(
+          Effect.provide(TabChannel.layer)
+        )
+        const inbox = yield* leader.subscribe
+        const refused = yield* Deferred.make<void>()
+        let lists = 0
+        yield* Stream.fromQueue(inbox).pipe(
+          Stream.runForEach((input) => {
+            const message = Protocol.decode(input)
+            if (message?._tag !== "List") return Effect.void
+            lists++
+            return leader.post(Protocol.encode(
+              lists === 1
+                ? { _tag: "Refused", client: message.client, id: message.id, error: "RunStoreError" }
+                : { _tag: "Replied", client: message.client, id: message.id, result: { runs: [], cursor: null } }
+            )).pipe(Effect.andThen(Deferred.succeed(refused, undefined)))
+          }),
+          Effect.forkChild
+        )
+        let snapshots = 0
+        const reads = yield* engine.runs({ every: "10 millis" }).pipe(
+          Stream.tap(() => Effect.sync(() => snapshots++)),
+          Stream.runDrain,
+          Effect.forkChild
+        )
+        yield* Deferred.await(refused)
+        yield* leader.post(Protocol.encode(
+          notice === "Leader"
+            ? { _tag: "Leader" }
+            : { _tag: "RunChanged", executionId: "changed", eventType: "settled" }
+        ))
+        // Recovery must not wait for the old retry, and that retry must not read again later.
+        yield* Effect.sleep("100 millis")
+        expect(snapshots).toBe(1)
+        yield* Effect.sleep("300 millis")
+        expect(lists).toBe(2)
+        expect(snapshots).toBe(1)
+        yield* Fiber.interrupt(reads)
+      }).pipe(Effect.scoped)
+  )
+
+  it.live("coalesces a burst of notices during failures, then returns to backoff and cancels with its reader", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const engine = yield* Engines.tab(name)
+      const leader = yield* Effect.flatMap(TabChannel.TabChannel, (channels) => channels.open(name)).pipe(
+        Effect.provide(TabChannel.layer)
+      )
+      const inbox = yield* leader.subscribe
+      const first = yield* Deferred.make<void>()
+      const second = yield* Deferred.make<void>()
+      let lists = 0
+      yield* Stream.fromQueue(inbox).pipe(
+        Stream.runForEach((input) => {
+          const message = Protocol.decode(input)
+          if (message?._tag !== "List") return Effect.void
+          lists++
+          return leader.post(Protocol.encode({
+            _tag: "Refused",
+            client: message.client,
+            id: message.id,
+            error: "RunStoreError"
+          })).pipe(Effect.andThen(Deferred.succeed(lists === 1 ? first : second, undefined)))
+        }),
+        Effect.forkChild
+      )
+      const reader = yield* engine.runs({ every: "10 millis" }).pipe(Stream.runDrain, Effect.forkChild)
+      yield* Deferred.await(first)
+      yield* Effect.forEach(
+        Array.from({ length: 50 }),
+        () => leader.post(Protocol.encode({ _tag: "RunChanged", executionId: "changed", eventType: "settled" }))
+      )
+      yield* Deferred.await(second)
+      yield* Effect.sleep("100 millis")
+      // One coalesced recovery read failed; no queued notice may keep bypassing its backoff.
+      expect(lists).toBe(2)
+      yield* Fiber.interrupt(reader)
+      yield* Effect.sleep("600 millis")
+      expect(lists).toBe(2)
+    }).pipe(Effect.scoped))
+
+  it.live("ends a retrying reader normally when the engine scope closes", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const engineScope = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
+      const engine = yield* Engines.tab(name).pipe(Scope.provide(engineScope))
+      const leader = yield* Effect.flatMap(TabChannel.TabChannel, (channels) => channels.open(name)).pipe(
+        Effect.provide(TabChannel.layer)
+      )
+      const inbox = yield* leader.subscribe
+      const refused = yield* Deferred.make<void>()
+      yield* Stream.fromQueue(inbox).pipe(
+        Stream.runForEach((input) => {
+          const message = Protocol.decode(input)
+          if (message?._tag !== "List") return Effect.void
+          return leader.post(Protocol.encode({
+            _tag: "Refused",
+            client: message.client,
+            id: message.id,
+            error: "RunStoreError"
+          })).pipe(Effect.andThen(Deferred.succeed(refused, undefined)))
+        }),
+        Effect.forkChild
+      )
+      const reader = yield* engine.runs().pipe(Stream.runDrain, Effect.forkChild)
+      yield* Deferred.await(refused)
+      yield* Effect.sleep("20 millis")
+      yield* Scope.close(engineScope, Exit.void)
+      expect(yield* Fiber.await(reader).pipe(Effect.timeoutOption("500 millis"))).toMatchObject({
+        _tag: "Some",
+        value: Exit.void
+      })
+    }).pipe(Effect.scoped))
 
   it.live("logs an unavailable engine's reason when the tab's worker failed", () => {
     const telemetry = Telemetry.make()

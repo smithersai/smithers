@@ -64,10 +64,11 @@ wants Effect's platform services and nothing more.
   abort the interpreter through its `AbortSignal`, and every observable on the
   handle then reports a `PlatformError` naming the abort rather than interrupting
   the caller's fiber.
-- **The command line is the one a grant is checked against.** A command is
-  rendered by `@smthrs/kernel`'s `CommandLine.render` before the interpreter sees
-  it, POSIX single-quoted without `shell` so argv semantics survive, and joined
-  verbatim with `shell`.
+- **Protected arguments are revealed only for execution.** The interpreter
+  receives `@smthrs/kernel`'s `CommandLine.renderForExecution`: POSIX
+  single-quoted without `shell` so argv semantics survive, and joined verbatim
+  with `shell`. `CommandLine.render` masks protected arguments for display;
+  the kernel checks the capability resource from `CommandLine.resource`.
 - **A redirect is never followed here.** The bundle's `HttpClient` is Effect's
   fetch client with `RequestInit { redirect: "manual" }`, so the host client
   hands a redirect back rather than walking to a second origin the grant never
