@@ -697,3 +697,9 @@ def time_limit(stem, mutation, source=None):
 def wall_limit(isolated, mutation, limit):
     if isolated: return 7200
     return max(1800 if mutation else 180, limit + 60)
+
+# Both regressions have one direct postcondition; keep negative checks focused on that behavior.
+POSTCONDITIONS.update({
+    "tour-start-clears-walkthrough": ("event.TourStarted?", "event.seq_", "res.walkthrough"),
+    "gates-retain-before-review": "specificationAcceptedUnder",
+})

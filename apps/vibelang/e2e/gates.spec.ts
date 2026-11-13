@@ -44,6 +44,8 @@ test("the maintainer proposal gate and four reviewer specification gate", async 
     await row.getByRole("button", { name: "Request review" }).click()
     await expect(row.getByRole("cell").nth(3)).toHaveText("3")
     await expect(row.getByRole("cell").nth(2)).toHaveText(index < 2 ? "A" : "A-")
+    await expect(gate).toHaveText("Accepted")
+    await expect(page.getByText("Self-consistency", { exact: true })).toBeVisible()
   }
   await expect(gate).toHaveText("Accepted")
 })

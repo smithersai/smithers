@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest"
-import { specificationAccepted, specificationAcceptedUnder, reviseSpecification, reviseSpecificationUnder, recordSpecificationReview, approveVip, type Specification } from "../src/core/conversation.vibe"
+import { specificationAccepted, specificationAcceptedUnder, reviseSpecification, reviseSpecificationUnder, recordSpecificationReview, approveVip, unansweredSpecificationReview, type Specification } from "../src/core/conversation.vibe"
 import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
-import { run } from "./run.vibe"
+import { Steps, run } from "./run.vibe"
 const Seat = Schema.Struct({ approves: Schema.Boolean, grade: Schema.Literals(["A+", "A", "A-", "B+", "B", "C", "F", "", "a"]), current: Schema.Boolean, linked: Schema.Boolean })
 const Candidate = Schema.Struct({ astra: Seat, sol: Seat, fable: Seat, opus: Seat, person: Schema.Boolean, maintainer: Schema.Boolean })
 it.live("gates/four-A-minus-or-better-reviews-and-human-proposals", () => run("gates/four-A-minus-or-better-reviews-and-human-proposals", Candidate, input => {
@@ -19,3 +19,21 @@ it.live("gates/four-A-minus-or-better-reviews-and-human-proposals", () => run("g
   const approved = approveVip(vip, input.maintainer ? "maintainer" : "contributor", input.person ? "person" : "agent", "will", "2026-11-08")
   return (approved.vip === "Accepted") === (input.person && input.maintainer)
 }, undefined, { revision: "2" }))
+
+// 0027: after a complete passing panel, later edits and individual review answers retain acceptance.
+it.live("gates/retained-panel-through-reviews", () => run("gates/retained-panel-through-reviews", Steps, steps => {
+  const passed = { verdict: "LGTM" as const, grade: "A-", revision: 1, link: "#accepted" }
+  let spec: Specification = { revision: 1, text: "first", astra: passed, sol: passed, fable: passed, opus: unansweredSpecificationReview() }
+  spec = recordSpecificationReview(spec, "opus", "opus", passed)
+  const receipt = spec.accepted
+  if (receipt === undefined || !specificationAccepted(spec)) return false
+  const seats = ["astra", "sol", "fable", "opus"] as const
+  for (const [index, step] of steps.entries()) {
+    spec = reviseSpecification(spec, "revision " + index)
+    const seat = seats[step.op % 4]!
+    spec = recordSpecificationReview(spec, seat, seat, { ...passed, revision: spec.revision, verdict: step.flag ? "LGTM" : "Changes requested", grade: step.flag ? "A" : "B", link: "#review-" + index })
+    if (!specificationAccepted(spec) || spec.accepted !== receipt) return false
+    if (specificationAccepted(reviseSpecificationUnder(spec, "reset", "reset"))) return false
+  }
+  return true
+}))

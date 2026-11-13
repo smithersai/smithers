@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest"
-import { apply, empty } from "../src/core/conversation.vibe"
+import { apply, empty, tourWalkthrough } from "../src/core/conversation.vibe"
 import { decide, type Intent } from "../src/core/decide.vibe"
 import { Steps, run } from "./run.vibe"
 
@@ -20,6 +20,28 @@ it.live("walkthrough/controls", () => run("walkthrough/controls", Steps, steps =
     if (intent.type === "ResumeTour" && next.walkthrough.paused) return false
     if (intent.type === "SeekTour" && next.walkthrough.step !== intent.step) return false
     state = next
+  }
+  return true
+}))
+
+// 0014: each new tour starts at its first drive; controls cannot adopt an earlier tour's destination.
+it.live("walkthrough/repeated-tour-controls", () => run("walkthrough/repeated-tour-controls", Steps, steps => {
+  let state = empty
+  for (const [index, input] of steps.entries()) {
+    const id = "tour-" + index
+    state = apply(state, { type: "TourStarted", seq: state.seq + 1, id })
+    for (const type of ["PauseTour", "ResumeTour", "SeekTour"] as const) {
+      if (decide(state, { type, id, step: 5, at: index * 1000 }).ok) return false
+    }
+    for (const type of ["TourPaused", "TourResumed", "TourSought"] as const) {
+      state = apply(state, { type, seq: state.seq + 1, id, step: 5, at: index * 1000 })
+      if (tourWalkthrough(state) !== null) return false
+    }
+    const step = 1 + input.op % 10
+    state = apply(state, { type: "WalkthroughDriven", seq: state.seq + 1, id, step, target: "issues", at: index * 1000, duration: 15000 })
+    if (tourWalkthrough(state)?.step !== step) return false
+    if (!decide(state, { type: "PauseTour", id, at: index * 1000 }).ok) return false
+    state = apply(state, { type: "TourEnded", seq: state.seq + 1, id })
   }
   return true
 }))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { apply, empty } from "../src/core/conversation.vibe"
+import { apply, empty, tourWalkthrough } from "../src/core/conversation.vibe"
 import { decide } from "../src/core/decide.vibe"
 import { WALKTHROUGH, walkthroughStop } from "../src/core/walkthroughSteps.vibe"
 
@@ -109,4 +109,24 @@ describe("the stop at a step", () => {
     expect(walkthroughStop(Number.NEGATIVE_INFINITY)).toBe(WALKTHROUGH[0])
     expect(walkthroughStop(Number.POSITIVE_INFINITY)).toBe(WALKTHROUGH[9])
   })
+})
+
+
+it("refuses controls on a new tour until its first drive, including replayed events", () => {
+  const started = apply(empty, { type: "TourStarted", seq: 1, id: "first" })
+  const showing = apply(started, { type: "WalkthroughDriven", seq: 2, id: "first", step: 7, target: "history-nav", at: 0, duration: 10000 })
+  const ended = apply(showing, { type: "TourEnded", seq: 3, id: "first" })
+  expect(ended.walkthrough).toBe(showing.walkthrough)
+  const next = apply(ended, { type: "TourStarted", seq: 4, id: "second" })
+  expect(tourWalkthrough(next)).toBeNull()
+  for (const type of ["PauseTour", "ResumeTour", "SeekTour"] as const) {
+    expect(decide(next, { type, id: "second", step: 5, at: 1000 })).toEqual({ ok: false, refusal: "not-replying" })
+  }
+  for (const type of ["TourPaused", "TourResumed", "TourSought"] as const) {
+    const controlled = apply(next, { type, seq: 5, id: "second", step: 5, at: 1000 })
+    expect(tourWalkthrough(controlled)).toBeNull()
+  }
+  const driven = apply(next, { type: "WalkthroughDriven", seq: 5, id: "second", step: 1, target: "splash", at: 1000, duration: 7000 })
+  expect(tourWalkthrough(driven)).toMatchObject({ step: 1, target: "splash", paused: false })
+  expect(decide(driven, { type: "PauseTour", id: "second", at: 1000 }).ok).toBe(true)
 })

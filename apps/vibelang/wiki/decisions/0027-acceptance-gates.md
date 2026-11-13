@@ -107,3 +107,14 @@ process allowance is 3,600 seconds; every original assertion is still checked wi
 60-second solver limit per assertion batch. Negative-case limits remain 30 seconds and timeouts still fail.
 The gate's 29 mutations all reached actual failed Dafny obligations before this wall-budget adjustment.
 Live reviewer models remain unbound; real specification panels run in the new factory (`smithersai/lang`).
+
+## Retained acceptance receipts
+
+The specification stores its first complete passing panel separately from each seat's latest answer. The `keep`
+gate validates that immutable panel's four grades, verdicts, revision and links. An edit or any individual re-review
+cannot revoke it; the latest answers still determine whether the current revision passes the `reset` gate.
+Older snapshots without this optional receipt remain readable and capture their passing panel before an edit or
+review replaces it. An explicit `reset` revision clears both the answers and the retained panel.
+
+Regressions: `test/gates.test.vibe`, including shared-flow reviews and a schema round trip.
+Property: `fuzz/gates.fuzz.vibe`, `gates/retained-panel-through-reviews`.

@@ -1,4 +1,4 @@
-import { reviseSpecification } from "../src/core/conversation.vibe"
+import { reviseSpecification, recordSpecificationReview } from "../src/core/conversation.vibe"
 import { click, expect, given, role, scene, text } from "foldkit/scene"
 import { it } from "@effect/vitest"
 import { init, update, signedOut } from "../src/web/main.vibe"
@@ -37,4 +37,16 @@ it("shows round-6 A- grades and keeps Accepted after a specification edit", () =
     expect(text("A-")).toExist(),
     expect(text("Revision 3")).toExist(),
   )
+})
+
+it("keeps Accepted and Self-consistency after one seat reviews the new revision", () => {
+  const revised = reviseSpecification(fixtureSpecification, "Specification for another review")
+  for (const reviewer of ["astra", "sol", "fable", "opus"] as const) {
+    const specification = recordSpecificationReview(revised, reviewer, reviewer, { ...fixtureSpecification[reviewer], revision: revised.revision })
+    const data = { ...base.issues.data, specification }
+    scene({ update, view }, given({ ...base, issues: { ...base.issues, screen: "specification", data } }),
+      expect(role("status", { name: "Specification gate" })).toHaveText("Accepted"),
+      expect(text("Self-consistency")).toExist(),
+    )
+  }
 })

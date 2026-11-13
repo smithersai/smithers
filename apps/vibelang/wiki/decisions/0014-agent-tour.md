@@ -205,3 +205,12 @@ Library catalog entries: `@smthrs/flow` (journaled Actions, durable clock and de
 Mock), `@smthrs/ui-css` (existing chat). No dependency added. No deployment from this lane.
 
 The controls use the explicitly named `vibelang/tour/pause`, `vibelang/tour/resume` and `vibelang/tour/seek` flows. Malformed fractional destinations are refused and wire state uses safe integer step/time schemas. Regression tests also cover sound-on seek restarting the next voice exactly once, pause/resume retaining speech, and first-visit entry leaving an already opened Issues screen alone.
+
+## Starting another tour
+
+`TourStarted` clears the previous tour's walkthrough while preserving the conversation's entries. Pause, resume
+and seek are refused until the new tour records its first `WalkthroughDriven`; replaying a control before that
+drive cannot supply a destination. Recovery within the same running tour still restores its recorded step and hold.
+
+Regressions: `test/walkthrough.test.vibe`; property: `fuzz/walkthrough.fuzz.vibe`,
+`walkthrough/repeated-tour-controls`.

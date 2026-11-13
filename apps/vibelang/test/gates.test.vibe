@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { approveVip, specificationAccepted, specificationAcceptedUnder, reviseSpecification, reviseSpecificationUnder, recordSpecificationReview, SPEC_REVISION_POLICY, specificationReviewPasses } from "../src/core/conversation.vibe"
+import { approveVip, specificationAccepted, specificationAcceptedUnder, reviseSpecification, reviseSpecificationUnder, recordSpecificationReview, emptyIssues, unansweredSpecificationReview, type Specification, SPEC_REVISION_POLICY, specificationReviewPasses } from "../src/core/conversation.vibe"
 import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
 const review = { verdict: "LGTM" as const, grade: "A", revision: 2, link: "/review/1" }
 const spec = { revision: 2, text: "Specification", astra: review, sol: review, fable: review, opus: review }
@@ -39,7 +39,7 @@ describe("factory acceptance gates", () => {
     expect(specificationAccepted(kept)).toBe(true)
     expect(specificationAcceptedUnder(kept, "keep")).toBe(true)
     expect(specificationAcceptedUnder(kept, "reset")).toBe(false)
-    expect(specificationAcceptedUnder({ ...kept, opus: { ...kept.opus, revision: 1 } }, "keep")).toBe(false)
+    expect(specificationAcceptedUnder({ ...spec, revision: 3, opus: { ...kept.opus, revision: 1 } }, "keep")).toBe(false)
     expect(specificationAcceptedUnder({ ...spec, revision: 1 }, "keep")).toBe(false)
     expect(specificationAcceptedUnder({ ...spec, revision: 0, astra: { ...review, revision: 0 } }, "keep")).toBe(false)
   })
@@ -66,7 +66,7 @@ describe("factory acceptance gates", () => {
 
 import { makeIssueFactory } from "../src/core/IssuesFactory.vibe"
 import { SpecificationReviewers } from "../src/core/specification.vibe"
-import { IssueFailure, IssueRequest } from "../src/core/issueSchemas.vibe"
+import { IssueFailure, IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
 import { Issue } from "../src/surfaces/commands.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
@@ -127,7 +127,7 @@ it.effect("CLI and MCP request reviews through the same command and refuse VIP a
   }
 })
 
-it.effect("a host-produced B+ refuses gate 2 and A- restores it without accepting request-supplied grades", () => scoped(effect {
+it.effect("host-produced grades govern the current panel while keep retains the accepted receipt", () => scoped(effect {
   const api = try makeIssueFactory("maintainer")
   for (const reviewer of ["astra", "sol", "fable", "opus"] as const) {
     for (const grade of ["B+", "A-"]) {
@@ -135,7 +135,8 @@ it.effect("a host-produced B+ refuses gate 2 and A- restores it without acceptin
       const result = try api.act({ ...request("spec-review", `${reviewer}-${grade}`), revision: 2, reviewer }).pipe(Effect.provideService(SpecificationReviewers, provider))
       try Effect.try(() => {
         expect(result.specification![reviewer].grade).toBe(grade)
-        expect(specificationAccepted(result.specification!)).toBe(grade === "A-")
+        expect(specificationAcceptedUnder(result.specification!, "reset")).toBe(grade === "A-")
+        expect(specificationAccepted(result.specification!)).toBe(true)
       })
     }
   }
@@ -160,5 +161,63 @@ it.live("the in-chat scripted agent requests the same named-review flow", () => 
     try Stream.runDrain(factory.events("gates-chat", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished")))
     const state = try factory.issues!.read()
     try Effect.try(() => expect(state.specification!.astra).toMatchObject({ verdict: "LGTM", grade: "A", revision: 3 }))
+  }
+}))
+
+
+it("retains the accepted panel through an edit and each individual re-review", () => {
+  for (const reviewer of ["astra", "sol", "fable", "opus"] as const) {
+    const revised = reviseSpecification(spec, "Next specification")
+    const answer = { ...review, revision: revised.revision, link: "/review/next" }
+    const next = recordSpecificationReview(revised, reviewer, reviewer, answer)
+    expect(next[reviewer]).toEqual(answer)
+    expect(specificationAccepted(next)).toBe(true)
+    expect(specificationAcceptedUnder(next, "reset")).toBe(false)
+    expect(specificationAccepted(reviseSpecification(next, "Another specification"))).toBe(true)
+  }
+})
+
+it.effect("captures a complete panel once, persists it, and clears it only for reset", () => effect {
+  try Effect.try(() => {
+  let candidate: Specification = { ...spec, astra: unansweredSpecificationReview() }
+  expect(specificationAccepted(candidate)).toBe(false)
+  candidate = recordSpecificationReview(candidate, "astra", "astra", review)
+  expect(candidate.accepted).toMatchObject({ astra: review, sol: review, fable: review, opus: review })
+  const retained = candidate.accepted
+  for (const reviewer of ["astra", "sol", "fable", "opus"] as const) {
+    candidate = recordSpecificationReview(candidate, reviewer, reviewer, { ...review, verdict: "Changes requested", grade: "B" })
+    expect(candidate.accepted).toBe(retained)
+    expect(specificationAccepted(candidate)).toBe(true)
+    expect(specificationAcceptedUnder(candidate, "reset")).toBe(false)
+  }
+  const saved = Schema.decodeUnknownSync(IssuesState)(JSON.parse(JSON.stringify({ ...emptyIssues, specification: candidate })))
+  expect(saved.specification!.accepted).toEqual(retained)
+  expect(specificationAccepted(saved.specification!)).toBe(true)
+  const reset = reviseSpecificationUnder(candidate, "Reset specification", "reset")
+  expect(reset.accepted).toBeUndefined()
+  expect(specificationAccepted(reset)).toBe(false)
+  })
+})
+
+it("does not accept incomplete, mixed, unlinked or future retained panels", () => {
+  for (const over of [{ grade: "B+" }, { verdict: "Changes requested" as const }, { link: "" }, { revision: 1 }]) {
+    expect(specificationAccepted({ ...spec, accepted: { astra: review, sol: review, fable: review, opus: { ...review, ...over } } })).toBe(false)
+  }
+  const zero = { ...review, revision: 0 }
+  expect(specificationAccepted({ ...spec, accepted: { astra: zero, sol: zero, fable: zero, opus: zero } })).toBe(false)
+  expect(specificationAccepted({ ...spec, revision: 1, accepted: { astra: review, sol: review, fable: review, opus: review } })).toBe(false)
+})
+
+it.effect("keeps acceptance after every shared-flow re-review and schema round trip", () => scoped(effect {
+  const api = try makeIssueFactory("maintainer")
+  const revised = try api.act({ ...request("spec-revise", "retained-revision"), revision: 2, text: "Specification with a new revision" })
+  for (const reviewer of ["astra", "sol", "fable", "opus"] as const) {
+    const next = try api.act({ ...request("spec-review", "retained-" + reviewer), revision: 3, reviewer })
+    try Effect.try(() => {
+      expect(specificationAccepted(next.specification!)).toBe(true)
+      expect(next.specification!.accepted).toEqual(revised.specification!.accepted)
+      const decoded = Schema.decodeUnknownSync(IssuesState)(JSON.parse(JSON.stringify(next)))
+      expect(specificationAccepted(decoded.specification!)).toBe(true)
+    })
   }
 }))

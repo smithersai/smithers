@@ -1,5 +1,8 @@
 """Executable mutations of production decisions; contracts are never edited."""
 cases = [
+('src/core/conversation.vibe', 'tour-start-clears-walkthrough', 'apply', '...restarted, entries: toured', '...next, entries: toured', 'a new tour cannot adopt the previous walkthrough'),
+('src/core/conversation.vibe', 'gates-retain-before-review', 'recordSpecificationReview', '...retainSpecificationAcceptance(spec), astra: review', '...spec, astra: review', 'an individual review cannot discard a passing panel'),
+
 ('src/core/conversation.vibe', 'gates-revise-policy', 'issuePolicyAction', 'if (op === "spec-revise") return "merge"', 'if (op === "spec-revise") return "read"', 'revision writes require a maintainer'),
 ('src/core/conversation.vibe', 'gates-review-policy', 'issuePolicyAction', 'if (op === "spec-review") return "triage"', 'if (op === "spec-review") return "read"', 'review requests require Contributor'),
 ('src/core/conversation.vibe', 'gates-vip-person', 'approveVip', 'kind !== "person" || ', '', 'proposal acceptance requires person'),

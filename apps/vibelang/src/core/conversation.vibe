@@ -157,7 +157,7 @@ export const AGENT_NAME = "VibeLang agent"
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ActionRequested" && (event.id == "" || exists(i, 0 <= i && i < runsOf(conversation).length && runsOf(conversation)[i].id == event.id)) ==> \result.runs == conversation.runs
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ActionStep" ==> runsOf(\result).length == runsOf(conversation).length && forall(i, 0 <= i && i < runsOf(conversation).length ==> runsOf(\result)[i] == (runsOf(conversation)[i].id == event.id ? stepRun(runsOf(conversation)[i], event.key, event.name, event.attempt, event.state, event.at) : runsOf(conversation)[i]))
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ActionSettled" ==> runsOf(\result).length == runsOf(conversation).length && forall(i, 0 <= i && i < runsOf(conversation).length ==> runsOf(\result)[i] == (runsOf(conversation)[i].id == event.id ? settleRun(runsOf(conversation)[i], event.state, event.result, event.at) : runsOf(conversation)[i]))
-//@ ensures event.type != "WalkthroughDriven" && event.type != "TourPaused" && event.type != "TourResumed" && event.type != "TourSought" ==> \result.walkthrough == conversation.walkthrough
+//@ ensures event.type != "TourStarted" && event.type != "WalkthroughDriven" && event.type != "TourPaused" && event.type != "TourResumed" && event.type != "TourSought" ==> \result.walkthrough == conversation.walkthrough
 //@ ensures event.type == "WalkthroughDriven" && !(conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "")) ==> \result.walkthrough == conversation.walkthrough
 //@ ensures (event.type == "TourPaused" || event.type == "TourResumed" || event.type == "TourSought") && (conversation.walkthrough == undefined || !(conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == ""))) ==> \result.walkthrough == conversation.walkthrough
 //@ ensures event.seq == conversation.seq + 1 && event.type == "WalkthroughDriven" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "") && 1 <= event.step && event.step <= 10 && event.target != "" && event.duration >= 0 && event.step % 1 == 0 && event.duration % 1 == 0 ==> \result.walkthrough != undefined && (\result.walkthrough ?? drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at)) == drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at)
@@ -166,6 +166,8 @@ export const AGENT_NAME = "VibeLang agent"
 //@ ensures event.seq == conversation.seq + 1 && event.type == "TourPaused" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "") && conversation.walkthrough != undefined ==> \result.walkthrough != undefined && (\result.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0)) == controlledWalkthrough(conversation.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0), true, event.seq, event.at)
 //@ ensures event.seq == conversation.seq + 1 && event.type == "TourResumed" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "") && conversation.walkthrough != undefined ==> \result.walkthrough != undefined && (\result.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0)) == controlledWalkthrough(conversation.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0), false, event.seq, event.at)
 //@ ensures event.seq == conversation.seq + 1 && event.type == "TourSought" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "") && conversation.walkthrough != undefined && 1 <= event.step && event.step <= 11 && event.step % 1 == 0 ==> \result.walkthrough != undefined && (\result.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0)) == soughtWalkthrough(conversation.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0), event.step, event.seq, event.at)
+//@ ensures event.seq == conversation.seq + 1 && event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) ==> \result.walkthrough == undefined
+//@ ensures event.type == "TourStarted" && !(conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id)) ==> \result.walkthrough == conversation.walkthrough
 export function apply(conversation: Conversation, event: Event): Conversation {
   if (event.seq !== conversation.seq + 1) return conversation
   const next = { ...conversation, seq: event.seq }
@@ -254,7 +256,8 @@ export function apply(conversation: Conversation, event: Event): Conversation {
       if (conversation.agent === "working" || hasEntryId(conversation.entries, event.id)) return next
       const toured = [...conversation.entries, tourEntry(event.id, event.seq)]
       //@ assert !toured[conversation.entries.length].done
-      return { ...next, entries: toured, replying: event.id, agent: "working" }
+      const { walkthrough: _walkthrough, ...restarted } = next
+      return { ...restarted, entries: toured, replying: event.id, agent: "working" }
     }
     case "TourEnded": {
       // The person took control back: what the agent said stays, and the agent stops.
@@ -651,7 +654,7 @@ export function retryPost(client: Client, clientId: string): Client {
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "ActionStep" ==> runsOf(\result.conversation).length == runsOf(client.conversation).length && forall(i, 0 <= i && i < runsOf(client.conversation).length ==> runsOf(\result.conversation)[i] == (runsOf(client.conversation)[i].id == event.id ? stepRun(runsOf(client.conversation)[i], event.key, event.name, event.attempt, event.state, event.at) : runsOf(client.conversation)[i]))
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "ActionSettled" ==> runsOf(\result.conversation).length == runsOf(client.conversation).length && forall(i, 0 <= i && i < runsOf(client.conversation).length ==> runsOf(\result.conversation)[i] == (runsOf(client.conversation)[i].id == event.id ? settleRun(runsOf(client.conversation)[i], event.state, event.result, event.at) : runsOf(client.conversation)[i]))
 //@ ensures event.type != "ActionRequested" && event.type != "ActionStep" && event.type != "ActionSettled" ==> \result.conversation.runs == client.conversation.runs
-//@ ensures event.type != "WalkthroughDriven" && event.type != "TourPaused" && event.type != "TourResumed" && event.type != "TourSought" ==> \result.conversation.walkthrough == client.conversation.walkthrough
+//@ ensures event.type != "TourStarted" && event.type != "WalkthroughDriven" && event.type != "TourPaused" && event.type != "TourResumed" && event.type != "TourSought" ==> \result.conversation.walkthrough == client.conversation.walkthrough
 //@ ensures event.type == "WalkthroughDriven" && !(client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < client.conversation.entries.length && client.conversation.entries[i].id == event.id && client.conversation.entries[i].author == "agent" && client.conversation.entries[i].inReplyTo == "")) ==> \result.conversation.walkthrough == client.conversation.walkthrough
 //@ ensures (event.type == "TourPaused" || event.type == "TourResumed" || event.type == "TourSought") && (client.conversation.walkthrough == undefined || !(client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < client.conversation.entries.length && client.conversation.entries[i].id == event.id && client.conversation.entries[i].author == "agent" && client.conversation.entries[i].inReplyTo == ""))) ==> \result.conversation.walkthrough == client.conversation.walkthrough
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "WalkthroughDriven" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < client.conversation.entries.length && client.conversation.entries[i].id == event.id && client.conversation.entries[i].author == "agent" && client.conversation.entries[i].inReplyTo == "") && 1 <= event.step && event.step <= 10 && event.target != "" && event.duration >= 0 && event.step % 1 == 0 && event.duration % 1 == 0 ==> \result.conversation.walkthrough != undefined && (\result.conversation.walkthrough ?? drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at)) == drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at)
@@ -660,6 +663,8 @@ export function retryPost(client: Client, clientId: string): Client {
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "TourPaused" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < client.conversation.entries.length && client.conversation.entries[i].id == event.id && client.conversation.entries[i].author == "agent" && client.conversation.entries[i].inReplyTo == "") && client.conversation.walkthrough != undefined ==> \result.conversation.walkthrough != undefined && (\result.conversation.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0)) == controlledWalkthrough(client.conversation.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0), true, event.seq, event.at)
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "TourResumed" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < client.conversation.entries.length && client.conversation.entries[i].id == event.id && client.conversation.entries[i].author == "agent" && client.conversation.entries[i].inReplyTo == "") && client.conversation.walkthrough != undefined ==> \result.conversation.walkthrough != undefined && (\result.conversation.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0)) == controlledWalkthrough(client.conversation.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0), false, event.seq, event.at)
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "TourSought" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < client.conversation.entries.length && client.conversation.entries[i].id == event.id && client.conversation.entries[i].author == "agent" && client.conversation.entries[i].inReplyTo == "") && client.conversation.walkthrough != undefined && 1 <= event.step && event.step <= 11 && event.step % 1 == 0 ==> \result.conversation.walkthrough != undefined && (\result.conversation.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0)) == soughtWalkthrough(client.conversation.walkthrough ?? drivenWalkthrough(0, "", 0, 0, 0), event.step, event.seq, event.at)
+//@ ensures event.type == "TourStarted" && !(client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id)) ==> \result.conversation.walkthrough == client.conversation.walkthrough
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "TourStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) ==> \result.conversation.walkthrough == undefined
 export function receive(client: Client, event: Event): Client {
   const seq = client.conversation.seq
   if (event.seq <= seq) return client
@@ -986,13 +991,16 @@ export function declineVip(issue: IssueRecord): IssueRecord {
 }
 export type SpecificationReviewer = "astra" | "sol" | "fable" | "opus"
 export interface SpecificationReview { readonly verdict: "" | "LGTM" | "Changes requested"; readonly grade: string; readonly revision: number; readonly link: string }
-export interface Specification {
-  readonly revision: number
-  readonly text: string
+export interface SpecificationPanel {
   readonly astra: SpecificationReview
   readonly sol: SpecificationReview
   readonly fable: SpecificationReview
   readonly opus: SpecificationReview
+}
+export interface Specification extends SpecificationPanel {
+  readonly revision: number
+  readonly text: string
+  readonly accepted?: SpecificationPanel
 }
 /** Each answer must be an A- or better LGTM on this revision and retain its review receipt. */
 //@ verify
@@ -1010,15 +1018,17 @@ export const SPEC_REVISION_POLICY: SpecRevisionPolicy = "keep"
 /** All four named seats answered LGTM with A- or better on this one revision. */
 //@ verify
 //@ ensures \result == (specificationReviewPasses(spec.astra, revision) && specificationReviewPasses(spec.sol, revision) && specificationReviewPasses(spec.fable, revision) && specificationReviewPasses(spec.opus, revision))
-export function specificationAcceptedOn(spec: Specification, revision: number): boolean {
+export function specificationAcceptedOn(spec: SpecificationPanel, revision: number): boolean {
   return specificationReviewPasses(spec.astra, revision) && specificationReviewPasses(spec.sol, revision) && specificationReviewPasses(spec.fable, revision) && specificationReviewPasses(spec.opus, revision)
 }
 /** Gate 2 has no writable accepted bit: "reset" needs the four on the current revision, "keep" on any one revision so far. */
 //@ verify
 //@ ensures policy == "reset" ==> \result == specificationAcceptedOn(spec, spec.revision)
-//@ ensures policy != "reset" ==> \result == (spec.astra.revision > 0 && spec.astra.revision <= spec.revision && specificationAcceptedOn(spec, spec.astra.revision))
+//@ ensures policy != "reset" && spec.accepted == undefined ==> \result == (spec.astra.revision > 0 && spec.astra.revision <= spec.revision && specificationAcceptedOn(spec, spec.astra.revision))
+//@ ensures policy != "reset" && spec.accepted != undefined ==> \result == (spec.accepted.astra.revision > 0 && spec.accepted.astra.revision <= spec.revision && specificationAcceptedOn(spec.accepted, spec.accepted.astra.revision))
 export function specificationAcceptedUnder(spec: Specification, policy: SpecRevisionPolicy): boolean {
   if (policy === "reset") return specificationAcceptedOn(spec, spec.revision)
+  if (spec.accepted !== undefined) return spec.accepted.astra.revision > 0 && spec.accepted.astra.revision <= spec.revision && specificationAcceptedOn(spec.accepted, spec.accepted.astra.revision)
   return spec.astra.revision > 0 && spec.astra.revision <= spec.revision && specificationAcceptedOn(spec, spec.astra.revision)
 }
 /** Gate 2 under the project's policy. */
@@ -1029,6 +1039,17 @@ export function specificationAccepted(spec: Specification): boolean {
 //@ ensures \result.verdict == "" && \result.grade == "" && \result.revision == 0 && \result.link == ""
 export function unansweredSpecificationReview(): SpecificationReview {
   return { verdict: "", grade: "", revision: 0, link: "" }
+}
+/** Capture the first complete passing panel before any seat can replace its answer. Older snapshots have no receipt. */
+//@ verify
+//@ ensures \result.revision == spec.revision && \result.text == spec.text
+//@ ensures \result.astra == spec.astra && \result.sol == spec.sol && \result.fable == spec.fable && \result.opus == spec.opus
+//@ ensures spec.accepted != undefined ==> \result == spec
+//@ ensures specificationAcceptedUnder(\result, "keep") == specificationAcceptedUnder(spec, "keep")
+//@ ensures specificationAcceptedUnder(spec, "keep") ==> \result.accepted != undefined
+export function retainSpecificationAcceptance(spec: Specification): Specification {
+  if (spec.accepted !== undefined || !specificationAcceptedUnder(spec, "keep")) return spec
+  return { ...spec, accepted: { astra: spec.astra, sol: spec.sol, fable: spec.fable, opus: spec.opus } }
 }
 /** Content equality is a no-op; a new immutable revision clears every answer under "reset" and keeps them under "keep". */
 //@ verify
@@ -1042,7 +1063,7 @@ export function unansweredSpecificationReview(): SpecificationReview {
 //@ ensures text != spec.text && policy != "reset" && specificationAcceptedUnder(spec, policy) ==> specificationAcceptedUnder(\result, policy)
 export function reviseSpecificationUnder(spec: Specification, text: string, policy: SpecRevisionPolicy): Specification {
   if (text === spec.text) return spec
-  if (policy !== "reset") return { revision: spec.revision + 1, text, astra: spec.astra, sol: spec.sol, fable: spec.fable, opus: spec.opus }
+  if (policy !== "reset") return { ...retainSpecificationAcceptance(spec), revision: spec.revision + 1, text, astra: spec.astra, sol: spec.sol, fable: spec.fable, opus: spec.opus }
   return { revision: spec.revision + 1, text, astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
 }
 /** A new revision under the project's policy. */
@@ -1061,12 +1082,13 @@ export function reviseSpecification(spec: Specification, text: string): Specific
 //@ ensures reviewer != "sol" ==> \result.sol == spec.sol
 //@ ensures reviewer != "fable" ==> \result.fable == spec.fable
 //@ ensures reviewer != "opus" ==> \result.opus == spec.opus
+//@ ensures specificationAcceptedUnder(spec, "keep") ==> specificationAcceptedUnder(\result, "keep")
 export function recordSpecificationReview(spec: Specification, reviewer: string, principal: string, review: SpecificationReview): Specification {
   if (principal !== reviewer || review.revision !== spec.revision || review.verdict === "" || review.link === "") return spec
-  if (reviewer === "astra") return { ...spec, astra: review }
-  if (reviewer === "sol") return { ...spec, sol: review }
-  if (reviewer === "fable") return { ...spec, fable: review }
-  if (reviewer === "opus") return { ...spec, opus: review }
+  if (reviewer === "astra") return retainSpecificationAcceptance({ ...retainSpecificationAcceptance(spec), astra: review })
+  if (reviewer === "sol") return retainSpecificationAcceptance({ ...retainSpecificationAcceptance(spec), sol: review })
+  if (reviewer === "fable") return retainSpecificationAcceptance({ ...retainSpecificationAcceptance(spec), fable: review })
+  if (reviewer === "opus") return retainSpecificationAcceptance({ ...retainSpecificationAcceptance(spec), opus: review })
   return spec
 }
 

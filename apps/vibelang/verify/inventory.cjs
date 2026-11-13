@@ -419,10 +419,10 @@ const functionBoundaries = {
   "src/core/conversation.vibe:approveVip": "Only a maintainer person with nonempty identity and time can accept an in-review VIP; task and issue identity are preserved (0027).",
   "src/core/conversation.vibe:declineVip": "An in-review VIP becomes Declined and closed, preserving its task; other states are unchanged (0027).",
   "src/core/conversation.vibe:specificationReviewPasses": "Exact same-revision LGTM/A- or better with a nonempty review receipt (0027).",
-  "src/core/conversation.vibe:specificationAccepted": "Exactly the conjunction of Astra, Sol, Fable and Opus on one current revision (0027).",
+  "src/core/conversation.vibe:specificationAccepted": "The project keep policy validates the retained complete passing panel, or the latest complete panel in an older snapshot (0027).",
   "src/core/conversation.vibe:unansweredSpecificationReview": "Exact empty answer, grade, revision and link (0027).",
-  "src/core/conversation.vibe:reviseSpecification": "Changed content increments the immutable revision and resets every field of all four answers; equal content is unchanged (0027).",
-  "src/core/conversation.vibe:recordSpecificationReview": "Only the bound reviewer records their current-revision verdict and receipt; unrelated seats, revision and text are preserved (0027).",
+  "src/core/conversation.vibe:reviseSpecification": "Changed content increments the immutable revision and retains the accepted panel under keep; reset clears all answers and the panel; equal content is unchanged (0027).",
+  "src/core/conversation.vibe:recordSpecificationReview": "Only the bound reviewer records their current-revision verdict and receipt; unrelated seats, revision, text and the accepted panel are preserved (0027).",
   "src/core/issueHostDecision.vibe:reviewActions": "Exact admissibility and remaining label/close actions after a partial review; GitHub action execution is outside this decision (0022)."
 };
 const functions = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);

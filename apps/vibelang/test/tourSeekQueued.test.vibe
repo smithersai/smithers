@@ -13,7 +13,7 @@ const spend = { admit: () => succeed(false), spend: () => Effect.void }
 const model = { model: undefined, unusable: "unset" as const }
 
 describe("a seek on a tour that waits behind an ended one", () => {
-  it.live("answers, and the waiting tour plays from the sought step", () => scoped(effect {
+  it.live("refuses a control before the new drive, then seeks on the waiting tour", () => scoped(effect {
     const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
     const object = raw as unknown as Objects.Storage
     const sequencer = try Objects.conversation(object)
@@ -26,11 +26,20 @@ describe("a seek on a tour that waits behind an ended one", () => {
     for (let round = 0; round < 3; round++) {
       try Effect.timeoutOption(Objects.alarm("conv", object, sequencer, spend, model, history), "10 seconds")
     }
-    const after = (try sequencer.snapshot()).walkthrough
+    const firstDrive = (try sequencer.snapshot()).walkthrough
     try Effect.try(() => {
       expect([first, ended, second]).toEqual([null, null, null])
-      expect(sought).toEqual(Exit.succeed(null))
-      expect(atSeek?.step).toBe(6)
+      expect(sought).toEqual(Exit.succeed("not-replying"))
+      expect(atSeek).toBeUndefined()
+      expect(firstDrive?.step).toBe(1)
+    })
+    const seekAfterDrive = try Objects.controlTour("conv", object, sequencer, "seek", 6)
+    for (let round = 0; round < 3; round++) {
+      try Effect.timeoutOption(Objects.alarm("conv", object, sequencer, spend, model, history), "10 seconds")
+    }
+    const after = (try sequencer.snapshot()).walkthrough
+    try Effect.try(() => {
+      expect(seekAfterDrive).toBeNull()
       expect(after?.step).toBe(6)
       expect(after?.target).not.toBe("")
     })

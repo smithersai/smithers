@@ -14,7 +14,8 @@ export const IssueRecord = Schema.Struct({
 })
 export const SpecificationReviewer = Schema.Literals(["astra", "sol", "fable", "opus"])
 export const SpecificationReview = Schema.Struct({ review: Schema.optionalKey(Schema.String), verdict: Schema.Literals(["", "LGTM", "Changes requested"]), grade: Schema.String, revision: Seq, link: Schema.String })
-export const Specification = Schema.Struct({ revision: Seq, text: Schema.String, astra: SpecificationReview, sol: SpecificationReview, fable: SpecificationReview, opus: SpecificationReview })
+export const SpecificationPanel = Schema.Struct({ astra: SpecificationReview, sol: SpecificationReview, fable: SpecificationReview, opus: SpecificationReview })
+export const Specification = Schema.Struct({ accepted: Schema.optionalKey(SpecificationPanel), revision: Seq, text: Schema.String, astra: SpecificationReview, sol: SpecificationReview, fable: SpecificationReview, opus: SpecificationReview })
 export const SpecificationEvent = Schema.Struct({ review: Schema.optionalKey(Schema.String), revision: Seq, event: Schema.Literals(["reset", "revision", "review"]), reviewer: Schema.String, verdict: Schema.String, grade: Schema.String, link: Schema.String, at: Schema.String })
 export const IssueRequest = Schema.Struct({
   revision: Schema.optionalKey(Seq), reviewer: Schema.optionalKey(SpecificationReviewer),
