@@ -401,6 +401,48 @@ describe("the claim brake", () => {
     expect(judged.unproven?.message).toContain("no frame left to hand it back to")
   })
 
+  it.each([
+    { unresolvedDemands: 1 },
+    { narrowingDemands: 1 },
+    { failedCallDemands: 1 }
+  ])("names the answered demand when refusing an unrecorded claim with %j", async (spent) => {
+    const jev = reading({ complete: 0.1, overclaims: 0.9, invented: 0.95 })
+    const judged = await settled({
+      layer: jev.layer,
+      changes: { frame: 3, demandedFrame: 3, ...spent }
+    })
+
+    expect(jev.asked).toHaveLength(1)
+    expect(judged.demand).toBeUndefined()
+    expect(judged.observed).toMatchObject({ demanded: false, refused: true })
+    expect(judged.unproven?.code).toBe("claim_unproven")
+    expect(judged.unproven?.message).toContain("This frame answered another demand")
+    expect(judged.unproven?.message).not.toContain("no frame left")
+    expect(CompletionClaim.refusedIn(judged.unproven!.message)).toBe(claim)
+  })
+
+  it("names the exhausted frame budget even when the last frame answered another demand", async () => {
+    const judged = await settled({
+      layer: reading({ complete: 0.1, overclaims: 0.9, invented: 0.95 }).layer,
+      changes: { frame: 9, demandedFrame: 9 }
+    })
+
+    expect(judged.demand).toBeUndefined()
+    expect(judged.unproven?.code).toBe("claim_unproven")
+    expect(judged.unproven?.message).toContain("no frame left to hand it back to")
+  })
+
+  it("lets a recorded completion stand in the frame that answered another demand", async () => {
+    const judged = await settled({
+      layer: reading({ complete: 0.95, overclaims: 0.02, invented: 0.02 }).layer,
+      changes: { frame: 3, demandedFrame: 3 }
+    })
+
+    expect(judged.demand).toBeUndefined()
+    expect(judged.unproven).toBeUndefined()
+    expect(judged.observed).toMatchObject({ demanded: false, refused: false })
+  })
+
   it("asks no model about a completion unless the workflow arms the brake", async () => {
     // Will, 2026-10-14 (#3993): a model checking the work is the workflow's
     // choice. A run composed without a cap reads nothing, however the judge

@@ -250,16 +250,10 @@ export const declare = Effect.fn("flows/harness/Compaction.declare")(function*(
     return yield* new InvalidStep({ message: "The compaction marks must name every prefix segment once" })
   }
   yield* verifyExchanges(segments, marks ?? segments.map(() => "squash"))
+  // prefix() validated this length against the same immutable window.
   const replacedPrefixDigest = yield* Effect.fromResult(
     ContextWindow.prefixDigest(window, segments.length)
-  ).pipe(
-    Effect.mapError((cause) =>
-      new InvalidStep({
-        message: "The declared compaction prefix is not present in the context window",
-        cause
-      })
-    )
-  )
+  ).pipe(Effect.orDie)
   return {
     kind: "compaction" as const,
     prefixLength,
@@ -280,26 +274,17 @@ const stepMarks = (step: CompactionStep): Effect.Effect<ReadonlyArray<ContextWin
 
 /**
  * Confirms the window still carries the exact prefix a step was declared
- * against. `noun` is the only difference between the two callers: a step being
- * built reports what was *declared*, a step being replayed reports what was
- * *recorded*.
+ * against. Both callers validate the prefix length before this check.
  */
 const verifyPrefix = (
   window: ContextWindow.ContextWindow,
-  step: CompactionStep,
-  noun: "declared" | "recorded"
+  step: CompactionStep
 ): Effect.Effect<void, InvalidStep> =>
   Effect.gen(function*() {
+    // prefix() validated this length against the same immutable window.
     const actual = yield* Effect.fromResult(
       ContextWindow.prefixDigest(window, step.prefixLength)
-    ).pipe(
-      Effect.mapError((cause) =>
-        new InvalidStep({
-          message: `The ${noun} compaction prefix is not present in the context window`,
-          cause
-        })
-      )
-    )
+    ).pipe(Effect.orDie)
     if (actual !== step.replacedPrefixDigest) {
       return yield* Effect.fail(
         new InvalidStep({
@@ -326,7 +311,7 @@ export const summaryRequest = Effect.fn("flows/harness/Compaction.summaryRequest
   step: CompactionStep
 ) {
   const segments = yield* prefix(window, step.prefixLength)
-  yield* verifyPrefix(window, step, "declared")
+  yield* verifyPrefix(window, step)
   const marks = yield* stepMarks(step)
   yield* verifyExchanges(segments, marks)
   if (!marks.includes("squash")) {
@@ -369,7 +354,7 @@ export const apply = Effect.fn("flows/harness/Compaction.apply")(function*(
   recordedSummary?: ModelRequest.Message | ReadonlyArray<ModelRequest.Message>
 ) {
   const segments = yield* prefix(window, step.prefixLength)
-  yield* verifyPrefix(window, step, "recorded")
+  yield* verifyPrefix(window, step)
   const marks = yield* stepMarks(step)
   yield* verifyExchanges(segments, marks)
   if (marks.includes("squash") !== (recordedSummary !== undefined)) {
@@ -379,14 +364,8 @@ export const apply = Effect.fn("flows/harness/Compaction.apply")(function*(
         : "A compaction that squashes nothing takes no summary"
     })
   }
+  // The prefix, marks and summary presence have all been validated above.
   return yield* Effect.fromResult(
     ContextWindow.compactMarked(window, step.prefixLength, marks, recordedSummary)
-  ).pipe(
-    Effect.mapError((cause) =>
-      new InvalidStep({
-        message: "Unable to apply the recorded compaction summary",
-        cause
-      })
-    )
-  )
+  ).pipe(Effect.orDie)
 })

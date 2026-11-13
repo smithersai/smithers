@@ -34,23 +34,6 @@ const summarizer: Compaction.Summarizer = {
 
 const capacity = (total: number, contextWindow: number) => ({ total: { value: total }, contextWindow })
 
-/**
- * A window that reports its real segments for `healthyReads` reads of
- * `segments` and an empty list from then on.
- *
- * Nothing a caller can construct behaves this way: a `ContextWindow` is
- * immutable, so the internal prefix guard and the public context-window
- * combinators always agree. The failures mapped below exist for the case where
- * they do not, and this is the only way to observe that mapping.
- */
-const losesItsPrefixAfter = (healthyReads: number, self: ContextWindow): ContextWindow => {
-  let reads = 0
-  const drifting: ContextWindow = Object.create(self, {
-    segments: { get: () => (reads++ < healthyReads ? self.segments : []) }
-  })
-  return drifting
-}
-
 describe("Compaction", () => {
   it("triggers only after capacity minus the reserve", () => {
     const contextWindow = 100_000
@@ -370,14 +353,6 @@ describe("Compaction", () => {
       expect(Effect.runSync(Compaction.declare(ContextWindow.empty("model"), 1, summarizer).pipe(Effect.flip)))
         .toBeInstanceOf(Compaction.InvalidStep)
     })
-
-    it("maps a context-window failure onto InvalidStep when the prefix vanishes mid-declaration", () => {
-      const error = Effect.runSync(
-        Compaction.declare(losesItsPrefixAfter(1, window()), 1, summarizer).pipe(Effect.flip)
-      )
-      expect(error.message).toBe("The declared compaction prefix is not present in the context window")
-      expect(error.cause).toMatchObject({ code: "invalid_compaction_prefix" })
-    })
   })
 
   describe("summaryRequest", () => {
@@ -484,16 +459,6 @@ describe("Compaction", () => {
       const error = Effect.runSync(Compaction.summaryRequest(shorter, step).pipe(Effect.flip))
       expect(error.message).toBe("The declared compaction prefix is not present in the context window")
     })
-
-    it("maps a context-window failure onto InvalidStep when the prefix vanishes mid-request", () => {
-      const input = window()
-      const step = Effect.runSync(Compaction.declare(input, 1, summarizer))
-      const error = Effect.runSync(
-        Compaction.summaryRequest(losesItsPrefixAfter(1, input), step).pipe(Effect.flip)
-      )
-      expect(error.message).toBe("The declared compaction prefix is not present in the context window")
-      expect(error.cause).toMatchObject({ code: "invalid_compaction_prefix" })
-    })
   })
 
   describe("apply", () => {
@@ -557,26 +522,6 @@ describe("Compaction", () => {
       const shorter = ContextWindow.make({ modelId: "model", segments: [segment("first", 12_000)] })
       const error = Effect.runSync(Compaction.apply(shorter, step, message("s")).pipe(Effect.flip))
       expect(error.message).toBe("The declared compaction prefix is not present in the context window")
-    })
-
-    it("maps a digest failure onto InvalidStep when the prefix vanishes before the check", () => {
-      const input = window()
-      const step = Effect.runSync(Compaction.declare(input, 1, summarizer))
-      const error = Effect.runSync(
-        Compaction.apply(losesItsPrefixAfter(1, input), step, message("s")).pipe(Effect.flip)
-      )
-      expect(error.message).toBe("The recorded compaction prefix is not present in the context window")
-      expect(error.cause).toMatchObject({ code: "invalid_compaction_prefix" })
-    })
-
-    it("maps a replacement failure onto InvalidStep when the prefix vanishes after the check", () => {
-      const input = window()
-      const step = Effect.runSync(Compaction.declare(input, 1, summarizer))
-      const error = Effect.runSync(
-        Compaction.apply(losesItsPrefixAfter(2, input), step, message("s")).pipe(Effect.flip)
-      )
-      expect(error.message).toBe("Unable to apply the recorded compaction summary")
-      expect(error.cause).toMatchObject({ code: "invalid_compaction_prefix" })
     })
   })
 

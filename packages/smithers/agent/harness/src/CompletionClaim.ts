@@ -966,20 +966,23 @@ export const refusedIn = (message: string): string | undefined => {
  *
  * One code, `claim_unproven`, raised where the brake read a claim reporting a
  * command or a result the run's own record does not record, and the run has no
- * bounce left to spend: the cap is used up, or there is no frame to hand the
- * completion back to. It carries all three probabilities so the line a person
- * reads says how sure the transport was about the question that decided, and
+ * bounce left to spend: the cap is used up, there is no frame to hand the
+ * completion back to, or this frame answered another demand. It carries all
+ * three probabilities so the line a person reads says how sure the transport
+ * was about the question that decided, and
  * what the other two — which decide nothing; see the module header — said
  * beside it. `bounced` says whether the run was given a frame to prove the
- * claim in. A wave is graded from these failures the way it is graded from the
- * {@link Reading}s.
+ * claim in; `reason` names why another bounce is withheld. When omitted,
+ * `reason` preserves the explanation selected by `bounced`. A wave is graded
+ * from these failures the way it is graded from the {@link Reading}s.
  *
  * Failing rather than standing is the whole point, and it has a price: a
  * completion the transport is confidently wrong about twice costs the run its
  * answer, where under the first shape of this brake it cost one frame. That
  * price is why the verdict now rides on {@link inventedAt} and on that question
- * alone, why the run is always given one frame to answer in first when a frame
- * exists, and why the demand text says what a re-statement costs. The
+ * alone, why the run is given a frame to answer in first when a frame and a
+ * bounce remain and it is not already answering another demand, and why the
+ * demand text says what a re-statement costs. The
  * alternative is the one outcome this package may not produce: a sentence
  * nothing supports, returned as the run's final answer, with a green finish on
  * it.
@@ -987,13 +990,20 @@ export const refusedIn = (message: string): string | undefined => {
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const unproven = (found: Probabilities, bounced: boolean, claim: string): HarnessError =>
+export const unproven = (
+  found: Probabilities,
+  bounced: boolean,
+  claim: string,
+  reason: "handed_back" | "no_frame" | "answering_demand" = bounced ? "handed_back" : "no_frame"
+): HarnessError =>
   new HarnessError({
     code: "claim_unproven",
     message: `A completion reporting work this run never recorded: invented ${found.invented.toFixed(2)} (complete ${
       found.complete.toFixed(2)
     }, overclaims ${found.overclaims.toFixed(2)}, neither of which decides this). ${
-      bounced
+      reason === "answering_demand"
+        ? "This frame answered another demand, so the claim was not handed back for another frame."
+        : reason === "handed_back"
         ? "The claim was handed back for a frame and came back still unrecorded."
         : "There was no frame left to hand it back to."
     }${refusedMarker}${refused(claim)}`

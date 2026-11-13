@@ -221,8 +221,10 @@ answered something that does not decode, fails the run as
 `completion_unjudged` naming the reason, rather than standing unjudged. And a
 claim that reports a command the run never ran, or a result it never got,
 fails the run as `claim_unproven` once there is no bounce left to spend,
-either because `claimCap` is used up or because no frame remains to hand the
-completion back to. A claim the brake merely finds thin is still handed back,
+because `claimCap` is used up, no frame remains to hand the completion back
+to, or this frame already answered another demand. The failure names that
+reason; answering one demand never triggers another bounce in the same frame.
+A claim the brake merely finds thin is handed back when a bounce is available,
 and then stands, which is the 2026-09-19 change: refusing those as well killed
 about one honest run in four, and the corpus that measured it is in
 `CompletionClaim`'s header. One thin completion does not stand: where the brake

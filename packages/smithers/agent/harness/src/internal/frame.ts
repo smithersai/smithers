@@ -878,7 +878,8 @@ export const judgeCompletion = (
 ): Effect.Effect<CompletionJudgement, HarnessError.HarnessError, Evaluator.Evaluator> =>
   Effect.gen(function*() {
     const { calls, facts, workspaceDigest } = accounting
-    const room = handBackRoom(state, facts.readOnlyFrames) && state.demandedFrame !== state.frame
+    const frameLeft = handBackRoom(state, facts.readOnlyFrames)
+    const room = frameLeft && state.demandedFrame !== state.frame
     const nextFrame = state.frame + 1
     if (room) {
       const measured = measuredDemand(state, accounting, contextWindow, nextFrame, claim)
@@ -1059,7 +1060,16 @@ export const judgeCompletion = (
       // Either bounce handed the claim back: the unmoved demand spends its
       // own cap in the claim brake's place.
       unproven: refused
-        ? CompletionClaim.unproven(found, state.claimDemands + state.unmovedDemands > 0, claim)
+        ? CompletionClaim.unproven(
+          found,
+          state.claimDemands + state.unmovedDemands > 0,
+          claim,
+          state.claimDemands + state.unmovedDemands > 0
+            ? "handed_back"
+            : frameLeft
+            ? "answering_demand"
+            : "no_frame"
+        )
         : incomplete
         ? UnfinishedWork.incomplete(reading.complete, unfinished.unfinished, claim)
         : undefined,

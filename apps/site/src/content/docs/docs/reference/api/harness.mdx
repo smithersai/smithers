@@ -1926,13 +1926,16 @@ completion is read unless the flow running the agent passes a positive cap
 
 **Armed, it never goes quiet.** Every completion with a claim is read, and
 `claimCap` is the number of frames the run is _given_ to answer one, not
-the number of completions that are read. The first such claim is handed
-back with the demand prose, like any other completion demand; a claim with no
-bounce left, because the cap is spent or because no frame remains to hand it
-back to, and reading at `inventedAt` or above, fails the turn as
-`claim_unproven` through `unproven`, carrying all three probabilities. One
-below `inventedAt` stands there instead: it was handed back once, the run
-answered, and refusing the answer as well is what destroyed honest runs. A
+the number of completions that are read. A claim is handed back with the
+demand prose when the cap and a frame allow it, unless this frame already
+answered another demand. A claim with no bounce available, reading at
+`inventedAt` or above, fails the turn as `claim_unproven` through `unproven`,
+carrying all three probabilities. The failure explains whether the claim was
+already handed back, no frame remained, or this frame answered another demand. The optional
+fourth argument to `unproven` names that reason as `"handed_back"`, `"no_frame"`
+or `"answering_demand"`; existing three-argument calls keep their explanation
+from `bounced`. One below `inventedAt` stands there instead: refusing a thin
+answer as well is what destroyed honest runs. A
 claim demand clears `State.bouncedCompletion` only when the reading is one the
 brake would refuse, so the frame-budget notice cannot restore a sentence the
 brake refused and does restore one it would have let stand. The cap stopped at
