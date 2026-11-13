@@ -1,5 +1,14 @@
 # The airtight scoreboard
 
+> **Historical report — cost comparison not independently reproducible.**
+> The reported $37.38 codex versus $24.70 flows (1.51× scored) comparison
+> cannot be audited from this snapshot. The derivation program, codex
+> transcripts and ledger, and flows `r97` journals and ledger are absent;
+> no accessible archive with hashes or deterministic replay check is linked.
+> The tables retain historical reported figures. Labels such as `measured`
+> and `derived` describe their original collection method, not independent
+> verification from the published files.
+
 **Read this line first: the scoreboard is one arm short of airtight, and the
 missing arm is ours.** Codex ran the whole 45 inside a `--network none` testbed
 and its lane is complete and valid. The flows lane that would have matched that
@@ -11,8 +20,9 @@ previous evening without the sealed testbed.
 ## The headline
 
 > **Sealed at the kernel, codex resolves 34 of 43 scored — the same 34 flows
-> resolves, with nothing in either arm's exclusive column — for $37.38 derived
-> against flows' $24.70 measured and 5,271 s of agent wall against 5,178 s. The
+> resolves, with nothing in either arm's exclusive column — for a historically
+> reported $37.38 derived against flows' $24.70 measured (_cost comparison not
+> independently reproducible_) and 5,271 s of agent wall against 5,178 s. The
 > four-instance lead codex held before the testbed was sealed *was* the testbed:
 > all four evaporated, and three of the four were runs the breach scan caught
 > fetching the upstream fix.**
@@ -28,8 +38,9 @@ HEAD `0575fca03`, run 2026-08-24 18:26:51Z → 19:47:49Z, testbed network
 per-instance budget, one attempt per instance, graded by the official evaluator.
 Costs: flows measured from journal counters, codex derived by the footer method
 in `fullbench/codex-none/cost-derivation.md`. The sentence is quotable only with
-the condition asymmetry named — see [What is airtight and what is
-not](#what-is-airtight-and-what-is-not).
+both the condition asymmetry and the cost comparison's missing source evidence
+named — see [What is airtight and what is not](#what-is-airtight-and-what-is-not)
+and [Artifacts](#artifacts).
 
 ## What is airtight and what is not
 
@@ -95,8 +106,8 @@ reported beside it and is not one of the keys.
 | --- | ---: | ---: | ---: |
 | **resolved (scored, 43)** | **34** | **34** | **0** |
 | resolved (raw, 45) | 36 | 36 | 0 |
-| **cost (scored, 43)** | **$24.70** measured | **$37.38** derived | **codex +$12.68, ×1.51** |
-| cost (raw, 45) | $25.52 measured | $38.73 derived | codex +$13.21, ×1.52 |
+| **cost (scored, 43; not independently reproducible)** | **$24.70** reported measurement | **$37.38** reported estimate | reported codex +$12.68, ×1.51 |
+| cost (raw, 45; not independently reproducible) | $25.52 reported measurement | $38.73 reported estimate | reported codex +$13.21, ×1.52 |
 | cost, no-cache upper bound (scored) | — | $86.25 | — |
 | **agent wall (scored, 43)** | **5,178 s** | **5,271 s** | codex +93 s (+1.8 %) |
 | agent wall (raw, 45) | 5,571 s | 5,415 s | codex −156 s (−2.8 %) |
@@ -108,10 +119,11 @@ reported beside it and is not one of the keys.
 | cost per resolved (scored) | **$0.73** | $1.10 | — |
 | wave wall clock | 79 min, 3 in flight | 98 min, 2 in flight | — |
 
-**Resolved is a dead tie and it is a tie on the same instances.** Cost is not:
-codex is half again as dear on both denominators, and the ratio survives the
-whole feasible parameter band of the derivation (1.33×–1.70× over 22 feasible
-settings). Agent wall is a tie inside the noise — it changes sign between the
+**The reported resolved counts tie on the same instances.** The historical cost
+ratio is 1.51× scored and 1.52× raw, with a reported model sensitivity range of
+1.33×–1.70× over 22 feasible settings. Neither the cost comparison nor its
+sensitivity sweep is independently reproducible from the published files.
+Agent wall is a tie inside the noise — it changes sign between the
 scored and raw denominators, which is what a 2 % difference on 45 single-attempt
 runs looks like.
 
@@ -207,9 +219,10 @@ The nine neither-resolved: `astropy__astropy-14365`, `astropy__astropy-14369`,
 `sympy__sympy-19495`. Both-fail is a result, not a gap: four of these nine were
 codex wins at `r90sh`, and three of those four were wins it fetched.
 
-Money and wall clock per instance, over the 43 scored: **flows is cheaper on 35
-and dearer on 8**; **flows is faster on 24 and slower on 19**. The cost
-advantage is broad and the speed tie is genuinely a tie.
+The historical per-instance table reports flows cheaper on 35 of the 43 scored
+instances and dearer on 8, and faster on 24 and slower on 19. The per-instance
+cost comparison shares the missing-evidence limitation of the totals; it is
+not independently reproducible.
 
 ### Every instance
 
@@ -277,8 +290,8 @@ grading rig; `SWB_TESTBED_NETWORK=none`.
 | --- | ---: | ---: | ---: |
 | **resolved (scored, 43)** | 38 | **34** | **−4** |
 | resolved (raw, 45) | 38 | 36 | −2 |
-| cost (scored, derived, same implementation) | $35.81 | $37.38 | +$1.57 (+4.4 %) |
-| cost (raw, derived) | $37.24 | $38.73 | +$1.49 (+4.0 %) |
+| cost (scored, derived, same implementation; not independently reproducible) | $35.81 | $37.38 | +$1.57 (+4.4 %) |
+| cost (raw, derived; not independently reproducible) | $37.24 | $38.73 | +$1.49 (+4.0 %) |
 | agent wall (scored) | 6,072 s | 5,271 s | **−801 s (−13.2 %)** |
 | agent wall (raw) | 6,229 s | 5,415 s | −814 s (−13.1 %) |
 | API requests | 729 | 728 | −1 |
@@ -376,9 +389,11 @@ byte-identical to `r97`'s, so a re-run differs from `r97` in
    sealed flows lane reproduces `r97`, the table stands as written. If it loses
    instances, the codex-only column grows and the superset goal goes back to
    failing. It cannot gain instances: taking the network away cannot help.
-3. **The codex dollar column is modelled and will stay modelled** until a codex
-   wave drops `--ephemeral` from `run-instance-codex.sh:196`. One run with
-   `--json` replaces the whole derivation with a measurement.
+3. **The historical cost comparison is not independently reproducible.** It
+   needs the derivation program, a deterministic replay check and scrubbed
+   immutable input artifacts (or an accessible archive with hashes), followed
+   by regenerated tables. A future run retaining token counters would measure
+   that run; it would not supply the missing evidence for this comparison.
 4. **The preflight network probe covers 3 of 8 repository families.** Any claim
    that `--network none` changed no graded test rests on 3 probed instances plus
    the per-instance evaluator reports for the 4 that moved.
@@ -389,26 +404,33 @@ byte-identical to `r97`'s, so a re-run differs from `r97` in
 
 ## Artifacts
 
-| what | where |
-| --- | --- |
-| codex `r90n` ledger | `evals/swebench/fullbench/codex-none-manifest.jsonl` |
-| codex `r90n` archive | `evals/swebench/fullbench/codex-none/` (logs, patches, reports, timings) |
-| codex `r90n` lane report | `evals/swebench/fullbench/codex-none/lanes.md` |
-| codex `r90n` breach scan | `evals/swebench/fullbench/codex-none/breach-scan.{md,json}` |
-| codex `r90n` cost derivation | `evals/swebench/fullbench/codex-none/cost-derivation.md` |
-| flows `r97` ledger | `evals/swebench/fullbench/rerun-r97/manifest.jsonl` |
-| flows `r97` journals (cost source) | `evals/swebench/fullbench/rerun-r97/journals/` |
-| flows `r97` wave report | `evals/swebench/fullbench/reports/rerun-r97.md` |
-| flows `r98` void marker | `evals/swebench/fullbench/rerun-r98/VOID.json` |
-| flows `r98` breach scan | `evals/swebench/fullbench/rerun-r98/breach-scan.{md,json}` |
-| breach-scan outcome-reading fix | commit `da332216d`, 4 files, all under `evals/swebench/` |
-| the cost derivation's script | **not committed** — `~/Desktop/flows-swebench/derive-codex-cost.mjs`, same as its two predecessor notes |
-| evaluator run ids | `fullbench-codex-none`, `rerun-r97`, `rerun-r98` |
+Paths below are relative to `packages/smithers/agent/harness/benchmarks/swebench/`.
+The absent entries are historical source locations, not downloadable evidence.
+No accessible archive or hashes for those inputs are linked.
 
-Every number in this report is a fold of those ledgers, those journals and those
-transcripts. Nothing is recomputed from a previous report, and where a figure
-disagrees with earlier prose the ledger wins and the disagreement is stated:
-the `r98` shape reported here (34 runs with zero model calls, 1 with one call,
-10 complete; $6.41 spent) is read off `fullbench/rerun-r98/manifest.jsonl`, and
-it differs slightly from the run-time note of "33 under 10 s" because the
-run-time note counted a different span.
+| what | where | published status |
+| --- | --- | --- |
+| codex `r90n` ledger | `fullbench/codex-none-manifest.jsonl` | absent |
+| codex `r90n` archive | `fullbench/codex-none/` (logs, patches, reports, timings) | source artifacts absent; derivation prose only |
+| codex `r90n` lane report | `fullbench/codex-none/lanes.md` | absent |
+| codex `r90n` breach scan | `fullbench/codex-none/breach-scan.{md,json}` | absent |
+| codex `r90n` cost derivation | [cost-derivation.md](../codex-none/cost-derivation.md) | prose only; not independently reproducible |
+| flows `r97` ledger | `fullbench/rerun-r97/manifest.jsonl` | absent |
+| flows `r97` journals (cost source) | `fullbench/rerun-r97/journals/` | absent |
+| flows `r97` wave report | [rerun-r97.md](rerun-r97.md) | historical report, not raw inputs |
+| flows `r98` void marker | `fullbench/rerun-r98/VOID.json` | absent |
+| flows `r98` breach scan | `fullbench/rerun-r98/breach-scan.{md,json}` | absent |
+| breach-scan outcome-reading fix | commit `da332216d` | historical code reference, not run inputs |
+| the cost derivation's script | `derive-codex-cost.mjs` | absent; no executable replay check |
+| evaluator run ids | `fullbench-codex-none`, `rerun-r97`, `rerun-r98` | identifiers only |
+
+The original report attributed its numbers to those ledgers, journals and
+transcripts, but this snapshot publishes neither those inputs nor the cost
+derivation program. The printed totals, parameter sweep and per-instance rows
+cannot establish that the parser and source counters produced them. In
+particular, `measured` on the flows column does not make the 1.51× comparison
+independently auditable.
+
+The `r98` shape (34 runs with zero model calls, 1 with one call, 10 complete;
+$6.41 spent) and its difference from the run-time note of "33 under 10 s" are
+also retained as historical reports, not a ledger replay performed here.

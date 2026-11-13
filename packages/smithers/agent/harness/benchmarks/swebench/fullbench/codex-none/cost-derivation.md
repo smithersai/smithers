@@ -1,5 +1,13 @@
 # Deriving a USD cost for the sealed-testbed codex arm
 
+> **Evidence status: not independently reproducible.** The $37.38 scored
+> ($38.73 raw) codex estimate and its comparison with flows are historical
+> reported figures. This snapshot does not include the derivation program,
+> codex transcripts and ledger, flows `r97` journals and ledger, or the two
+> predecessor derivations. No accessible archive with hashes or deterministic
+> replay check is linked. The tables and parser description below cannot
+> substitute for the missing implementation and source evidence.
+
 `r90n` is `r90sh` with one variable moved — `SWB_TESTBED_NETWORK=none`, so the
 container the agent runs the project's tests in has `lo` and nothing else — and
 it prints the same single `tokens used` footer with no input/cached/output
@@ -22,7 +30,7 @@ re-argued.
 under `--ephemeral` (`run-instance-codex.sh:196`), so no rollout JSONL with a
 real token split survives.
 
-## The method is reproduced, not restated
+## Reported method and calibration
 
 Neither earlier note published its script, so this note's derivation is a third
 re-implementation, and it is calibrated by replaying it over **both** earlier
@@ -59,18 +67,16 @@ published note. Every comparison in this note is between numbers this
 implementation produced, so the residual cancels; where a published figure is
 quoted beside one of ours, the published one is named as published.
 
-**This note does not publish its script either, and that is now three notes in a
-row.** The implementation is a single 170-line ES module at
-`~/Desktop/flows-swebench/derive-codex-cost.mjs`; it takes `--logs <dir>`,
-`--chars`, `--cap`, `--system` and `--sweep`, reads nothing but the transcripts,
-and reproduces every number in this note. The parse is small enough to restate:
-split a transcript on its bare marker lines (`user`, `codex`, `exec`, `apply
-patch`, `tokens used`), drop the banner before the first `user`, count each
-block's characters at `floor(chars / 4)`, treat every `exec` and `apply patch`
-block as one tool call whose result — everything after the block's ` succeeded
-in …` / ` exited N in …` line — is capped at the tool limit, and emit one
-request's input after each tool call. Committing it under `evals/swebench/lib/`
-is the right fix and is left to whoever next touches this rig.
+**The derivation program is not published.** The original note described a
+170-line ES module, `derive-codex-cost.mjs`, taking `--logs <dir>`, `--chars`,
+`--cap`, `--system` and `--sweep`. Its reported parser splits a transcript on
+bare marker lines (`user`, `codex`, `exec`, `apply patch`, `tokens used`),
+drops the banner before the first `user`, counts block characters at
+`floor(chars / 4)`, caps each tool result, and emits a request's input after
+each tool call. This description is not an executable method: the calibration
+above records character-counting discrepancies between implementations. All
+replay and calibration results in this note are historical reports, not
+checks a reader can execute from this snapshot.
 
 The 27-cell sensitivity sweep replays too. **Twenty-five of `r90sh`'s 27 cells
 reproduce their published `infeasible` count exactly**, including every cell
@@ -276,9 +282,9 @@ The flows arm needs no modelling: `fullbench/rerun-r97/journals` records all fou
 token counters per model call, and `lib/run-cost.mjs` read over the 45 journals
 gives **$25.5223 raw (45) / $24.7018 scored (43)** — 5,474,701 input tokens of
 which 1,797,620 (32.8 %) cached, 207,940 output (98,337 of it reasoning), over
-303 model calls. That figure is independently reproduced by the ledger's own
-per-instance `cost.usd` rows to the last cent, because both come from the same
-journal projection.
+303 model calls. The original report said that the ledger's per-instance
+`cost.usd` rows agreed with the journal projection to the last cent. Neither
+input is published here, so that agreement cannot be independently checked.
 
 | arm | testbed | basis | raw (45) | scored (43) |
 | --- | --- | --- | ---: | ---: |
@@ -288,10 +294,11 @@ journal projection.
 | codex `r90sh` | `bridge` | modelled, same implementation, same parameters | $37.24 | $35.81 |
 | codex `r90s` | `bridge` | modelled, same implementation, at 4 / 10k / 3k | $30.35 | $29.24 |
 
-**Sealed codex cost about $38.73 against flows' measured $25.52 — 1.52×
-dearer.** Across the 22 feasible settings that ratio runs 1.33×–1.70×, so it
-does not turn on a parameter choice. The driver is unchanged from both earlier
-notes and the sealed testbed did not move it: codex spent 728 requests to flows'
+**Historical cost comparison, not independently reproducible:** $38.73
+modelled for codex against $25.52 reported as measured for flows, a 1.52× raw
+ratio (1.51× scored). The reported 1.33×–1.70× sensitivity range across 22
+feasible settings is also unverified without the missing program and inputs.
+The driver is unchanged from both earlier notes and the sealed testbed did not move it: codex spent 728 requests to flows'
 303 model calls, and about 1,270 derived output tokens per request against flows'
 measured 686 per call — 924,763 output tokens against 207,940, at $30/M.
 
@@ -305,11 +312,15 @@ journals counts **zero in-container fetches across all 45 runs**, and the only
 two egress commands the scan finds anywhere in the lane are `pip install Pillow`
 in `django__django-13343`.
 
-## What would falsify this
+## What independent reproduction requires
 
-Unchanged from both earlier notes: one `codex exec` run with `--json`, or
-without `--ephemeral`, prints `input_tokens` / `cached_input_tokens` /
-`output_tokens` beside the footer and replaces this derivation with a
-measurement. `run-instance-codex.sh:196` passes `--ephemeral`, which is why no
-archived run of any of the three sealed lanes can be appealed to. Dropping that
-flag on the next codex wave is the whole fix.
+Publish the derivation program and a deterministic replay check, together with
+scrubbed immutable transcripts, ledgers and flows journals, either in this
+repository or in an accessible archive with hashes. Include the predecessor
+lanes used for calibration, then regenerate the calibration, per-instance,
+sensitivity and comparison tables from those inputs. Folding the printed tables
+alone would check arithmetic, not the transcript parser or source counters.
+
+A future codex run retaining `input_tokens`, `cached_input_tokens` and
+`output_tokens` would replace modelling with measured counters for that run.
+It would not recover the missing evidence for this historical comparison.
