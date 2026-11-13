@@ -281,7 +281,7 @@ cases += [
 ('worker/workerDecision.vibe','cursor-leading-zero','cursorAccepted','return /^(?:0|[1-9][0-9]*)$/.test(raw)','return /^[0-9]+$/.test(raw)','a cursor has no leading zero'),
 ('worker/workerDecision.vibe','body-limit-account','bodyLimit','return 2048','return 4096','an account body is 2 KiB'),
 ('worker/workerDecision.vibe','body-limit-issues','bodyLimit','return 32768','return 32767','an issue body is 32 KiB'),
-('worker/workerDecision.vibe','body-limit-wiki','bodyLimit','return 4194304','return 4194305','a wiki body is 4 MiB'),
+('worker/workerDecision.vibe','body-limit-wiki','bodyLimit','return 8388608','return 4194304','a wiki body is 8 MiB'),
 ('worker/workerDecision.vibe','body-limit-tour','bodyLimit','  return 1024\n}','  return 2048\n}','a tour control is 1,024 units'),
 ('worker/workerDecision.vibe','body-within-equal','withinBodyLimit','return !(length > maximum)','return length < maximum','a body exactly at the limit is read'),
 ('worker/workerDecision.vibe','object-method-post','objectMethod','return method === "GET" || method === "POST"','return method === "GET"','an operation is a POST'),

@@ -157,18 +157,19 @@ export function cursorAccepted(raw: string, value: number): boolean {
 }
 
 /**
- * A request body's limit: account sign-in and role writes 2 KiB, issue operations 32 KiB and wiki operations 4 MiB, in
+ * A request body's limit: account sign-in and role writes 2 KiB, issue operations 32 KiB and wiki operations 8 MiB (a save carries the page twice, as base and
+ * text, and the largest page, 0018, passed 2 MB), in
  * bytes; a tour control's text 1,024 UTF-16 units.
  */
 //@ verify
 //@ ensures route == "account" ==> \result == 2048
 //@ ensures route == "issues" ==> \result == 32768
-//@ ensures route == "wiki" ==> \result == 4194304
+//@ ensures route == "wiki" ==> \result == 8388608
 //@ ensures route == "tour-control" ==> \result == 1024
 export function bodyLimit(route: "account" | "issues" | "wiki" | "tour-control"): number {
   if (route === "account") return 2048
   if (route === "issues") return 32768
-  if (route === "wiki") return 4194304
+  if (route === "wiki") return 8388608
   return 1024
 }
 

@@ -20,7 +20,7 @@ describe("small server decisions", () => {
     expect([reviewNumberText(prefix + "12", prefix), reviewNumberText(prefix + "012", prefix), reviewNumberText(prefix + "12x", prefix), reviewNumberText("https://github.com/other/repo/pull/12", prefix), reviewNumberText(prefix, prefix)]).toEqual(["12", "", "", "", ""])
   })
   it("bounds request bodies: each route's limit, the limit itself admitted, an undeclared length read through the bounded read", () => {
-    expect(["account", "issues", "wiki", "tour-control"].map((route) => bodyLimit(route as "account"))).toEqual([2048, 32768, 4194304, 1024])
+    expect(["account", "issues", "wiki", "tour-control"].map((route) => bodyLimit(route as "account"))).toEqual([2048, 32768, 8388608, 1024])
     expect([withinBodyLimit(2048, 2048), withinBodyLimit(2049, 2048), withinBodyLimit(0, 2048), withinBodyLimit(Number(undefined), 2048), withinBodyLimit(Number("12x"), 2048)]).toEqual([true, false, true, true, true])
     expect(["GET", "POST", "PUT", "DELETE", "get", ""].map(objectMethod)).toEqual([true, true, false, false, false, false])
   })
