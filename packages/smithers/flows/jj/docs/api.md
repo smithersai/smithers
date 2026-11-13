@@ -471,6 +471,10 @@ the executable authority cannot be swapped between a failed operation and a
 retry. Instantiation is lazy, and every operation runs under a single-permit
 semaphore, because the wasm instance is single-threaded mutable state.
 
+A diff uses the `Binary files … differ` summary when either side contains
+binary data or invalid UTF-8. The JSON string ABI cannot preserve arbitrary
+file bytes as text hunks, so non-UTF-8 content is never replaced with `U+FFFD`.
+
 A reactor that traps (a Rust panic, `proc_exit`, a response outside memory) is
 discarded: the shim closes every host descriptor the guest still held, and the
 next operation instantiates a fresh reactor. `layerScoped` and `makeScoped`

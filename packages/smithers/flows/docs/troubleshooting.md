@@ -103,15 +103,24 @@ called, so a bad option fails at wiring time rather than at some arbitrary later
 scope. `field` exists so an embedder can tell an empty `filename` from an empty
 `owner.hostId` without reading prose.
 
-| `field`             | What it refuses                                                                                                              |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `filename`          | An empty or non-string SQLite filename.                                                                                      |
-| `workspaceRoot`     | An empty or non-string workspace root, including `storage`'s second argument.                                                |
-| `owner.hostId`      | An empty or non-string host id, or an `options.owner` that is omitted or `null`.                                             |
-| `isAlive`           | An `isAlive` that is not a function. A function is the one option a schema cannot check.                                     |
-| `signals`           | A `signals` value that is not an array, or a name that cannot be installed.                                                  |
-| `shutdownTimeoutMs` | Anything that is not a safe integer from 0 through 2,147,483,647.                                                            |
-| `rules`             | A `rules` value that is not an array, a policy list whose members are not arrays, or a member that is not a capability rule. |
+| `field`             | What it refuses                                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `filename`          | An empty or non-string SQLite filename.                                                                                               |
+| `workspaceRoot`     | An empty or non-string workspace root, including `storage`'s second argument.                                                         |
+| `owner.hostId`      | An empty or non-string host id, or an `options.owner` that is omitted or `null`.                                                      |
+| `isAlive`           | An `isAlive` that is not a function.                                                                                                  |
+| `canExecute`        | A supplied value that is not a function.                                                                                              |
+| `canActivate`       | A supplied value that is not a function.                                                                                              |
+| `requestResume`     | A supplied value that is not a function.                                                                                              |
+| `cacheEnvironment`  | A supplied value that does not declare valid runtime layers and capability groups.                                                    |
+| `sourceRevision`    | A supplied value that is neither a function nor a non-empty string.                                                                   |
+| `privilegedJj`      | A supplied value that is not an Effect `Layer`.                                                                                       |
+| `sweep`             | A value other than `undefined`, `"process"`, or an object with a non-empty `host` execution id and an optional non-empty `flow` name. |
+| `resumeConcurrency` | A supplied value that is not a positive integer.                                                                                      |
+| `placement`         | A supplied value that is not a non-empty string.                                                                                      |
+| `signals`           | A `signals` value that is not an array, or a name that cannot be installed.                                                           |
+| `shutdownTimeoutMs` | Anything that is not a safe integer from 0 through 2,147,483,647.                                                                     |
+| `rules`             | A `rules` value that is not an array, a policy list whose members are not arrays, or a member that is not a capability rule.          |
 
 **Fix.** Correct the named field. Note that nothing was created: a refused
 configuration never opens a database, and a refused signal list never installs a
@@ -363,10 +372,10 @@ type parameters. See
 **Symptom.** A browser or edge build pulls in `node:sqlite` or
 `node:child_process`.
 
-**Fix.** Keep both out of shared code. Durable execution is tested on Node.js 22.19+ and Bun 1.4+; `engines` requires Node `>=22.19.0`. A browser can
-`NodeRuntime` and `SandboxedFlow`, or `@smthrs/platform-bun`. The
+**Cause.** A browser or edge build imports `@smthrs/platform-node`, which
+holds `NodeRuntime` and `SandboxedFlow`, or `@smthrs/platform-bun`. The
 `@smthrs/flows` root is browser- and Worker-safe; the native host packages are
-not, which is exactly why the native compositions live there.
+not, which is why the native compositions live there.
 
 **Fix.** Keep both out of shared code, and compose `Runtime` from the
 `@smthrs/flows` root over the browser or Cloudflare host instead. Durable

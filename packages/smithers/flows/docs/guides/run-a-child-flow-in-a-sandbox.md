@@ -15,14 +15,12 @@ on the wire; this guide is the wiring.
 
 The programs below run in a project set up as in the [Quickstart](../quickstart.md).
 They build a provider from a contained Node host, `NodeHost.layerContained`,
-which `@smthrs/flows` depends on but does not re-export. Add
+from `@smthrs/platform-node`. `@smthrs/flows` does not install this host package. Add
 `@smthrs/platform-node` at the version of `@smthrs/flows` you have:
 
 ```bash
 npm install @smthrs/platform-node@1.0.0-rc.18
 ```
-
-Every output block below is real output from 1.0.0-rc.6.
 
 ## Write the entry module
 

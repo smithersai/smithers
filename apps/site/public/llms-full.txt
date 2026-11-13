@@ -19381,8 +19381,8 @@ there instead of running.
 ### `Options`
 
 `owner`, `isAlive`, `canExecute`, `canActivate`, `requestResume`,
-`cacheEnvironment`, `sourceRevision`, `privilegedJj`, `sweep`, and
-`resumeConcurrency`. The
+`cacheEnvironment`, `sourceRevision`, `privilegedJj`, `sweep`,
+`resumeConcurrency`, and `placement`. The
 [`NodeRuntime` options table](/docs/reference/api/platform-node/#options) describes
 each field. `sweep` is `"process"` by default; `{ host: executionId }` is for a
 host that drives one execution per invocation and wakes it from outside. It runs
@@ -24360,6 +24360,10 @@ page hand over bytes it is still loading. Raw bytes are copied at that read, so
 the executable authority cannot be swapped between a failed operation and a
 retry. Instantiation is lazy, and every operation runs under a single-permit
 semaphore, because the wasm instance is single-threaded mutable state.
+
+A diff uses the `Binary files … differ` summary when either side contains
+binary data or invalid UTF-8. The JSON string ABI cannot preserve arbitrary
+file bytes as text hunks, so non-UTF-8 content is never replaced with `U+FFFD`.
 
 A reactor that traps (a Rust panic, `proc_exit`, a response outside memory) is
 discarded: the shim closes every host descriptor the guest still held, and the

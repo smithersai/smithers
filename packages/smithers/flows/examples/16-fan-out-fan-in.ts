@@ -103,7 +103,7 @@ export interface DiscoveredSummary {
 /**
  * Runs the gate the project declared on disk.
  *
- * Nothing below names the gate: discovery finds `flows/gate/flow.ts`, the
+ * Nothing below names the gate: discovery finds `.smithers/flows/gate/flow.ts`, the
  * bridge lowers the priority that file declares onto the node it runs the
  * module's graph under, and the plan the engine drives is the plan `main`
  * builds: the same five checks, the same bound of two, the same report.

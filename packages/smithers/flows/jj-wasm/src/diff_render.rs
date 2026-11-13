@@ -193,7 +193,13 @@ fn git_diff_within(
                 Some(_) => quote_path("b/", right_path),
                 None => "/dev/null".to_owned(),
             };
-            if left_part.content.is_binary || right_part.content.is_binary {
+            // The JSON string ABI cannot carry arbitrary bytes. A text hunk
+            // must preserve the file, never substitute replacement characters.
+            if left_part.content.is_binary
+                || right_part.content.is_binary
+                || std::str::from_utf8(&left_part.content.contents).is_err()
+                || std::str::from_utf8(&right_part.content.contents).is_err()
+            {
                 writeln!(output, "Binary files {left_label} and {right_label} differ").unwrap();
             } else {
                 writeln!(output, "--- {left_label}").unwrap();
@@ -400,8 +406,64 @@ operation.username = "flows"
     }
 
     #[test]
-    fn invalid_utf8_is_replaced_without_losing_hunk_structure() {
-        assert_eq!(hunks(b"old\n", b"\xff\n"), "@@ -1,1 +1,1 @@\n-old\n+�\n");
+    fn git_diff_uses_binary_summary_for_non_utf8_content_on_either_side() {
+        let cases: &[(&[u8], &[u8])] = &[
+            (b"", b"caf\xe9\n"),
+            (b"caf\xe9\n", b""),
+            (b"caf\xe9\n", b"caf\xe8\n"),
+            (b"caf\xe9\n", b"cafe\n"),
+            (b"cafe\n", b"caf\xe9\n"),
+            (b"\xff", b"\xfe"),
+            (b"\xe2\x82", b"\xe2\x82\xac"),
+            (b"\x82\xa0\n", b"\x82\xa2\n"),
+        ];
+        for (before, after) in cases {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("repo");
+            crate::ops::init(&root).unwrap();
+            std::fs::write(root.join("text.txt"), before).unwrap();
+            let first = crate::ops::snapshot(&root, None).unwrap();
+            std::fs::write(root.join("text.txt"), after).unwrap();
+            let second = crate::ops::snapshot(&root, None).unwrap();
+            let (store, trees) = committed_trees(&root, &[&first.commit_id, &second.commit_id]);
+            let diff = git_diff(&store, &trees[0], &trees[1]).unwrap();
+            assert!(
+                diff.ends_with("Binary files a/text.txt and b/text.txt differ\n"),
+                "{diff}"
+            );
+            assert!(!diff.contains("@@"), "{diff}");
+            assert!(!diff.contains('\u{fffd}'), "{diff}");
+        }
+    }
+
+    #[test]
+    fn git_diff_checks_utf8_beyond_the_binary_probe_and_keeps_add_delete_labels() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repo");
+        crate::ops::init(&root).unwrap();
+        let empty = crate::ops::snapshot(&root, None).unwrap();
+        let mut content = b"ascii\n".repeat(1400);
+        content.extend_from_slice(b"\xff\n");
+        std::fs::write(root.join("text.txt"), content).unwrap();
+        let added = crate::ops::snapshot(&root, None).unwrap();
+        let (store, trees) = committed_trees(&root, &[&empty.commit_id, &added.commit_id]);
+        for (before, after, summary) in [
+            (
+                &trees[0],
+                &trees[1],
+                "Binary files /dev/null and b/text.txt differ\n",
+            ),
+            (
+                &trees[1],
+                &trees[0],
+                "Binary files a/text.txt and /dev/null differ\n",
+            ),
+        ] {
+            let diff = git_diff(&store, before, after).unwrap();
+            assert!(diff.ends_with(summary), "{diff}");
+            assert!(!diff.contains("@@"), "{diff}");
+            assert!(!diff.contains('\u{fffd}'), "{diff}");
+        }
     }
 
     #[test]

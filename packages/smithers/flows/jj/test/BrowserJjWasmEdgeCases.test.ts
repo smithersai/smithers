@@ -151,6 +151,36 @@ describe.skipIf(wasmBytes === undefined)("BrowserJj edge cases over flows_jj.was
       }), { timeout })
   })
 
+  it.effect("reports non-UTF-8 files as binary without replacing their bytes", () =>
+    Effect.gen(function*() {
+      const host = freshHost()
+      const jj = yield* jjFor(host)
+      const empty = yield* jj.snapshot()
+      write(host, "text.txt", new Uint8Array([0x63, 0x61, 0x66, 0xe9, 0x0a]))
+      const first = yield* jj.snapshot()
+      write(host, "text.txt", new Uint8Array([0x63, 0x61, 0x66, 0xe8, 0x0a]))
+      const second = yield* jj.snapshot()
+      for (
+        const [from, to, summary] of [
+          [empty, first, "Binary files /dev/null and b/text.txt differ\n"],
+          [first, second, "Binary files a/text.txt and b/text.txt differ\n"],
+          [second, empty, "Binary files a/text.txt and /dev/null differ\n"]
+        ] as const
+      ) {
+        const diff = yield* jj.diff(from.commitId, to.commitId)
+        expect(diff).toContain(summary)
+        expect(diff).not.toContain("@@")
+        expect(diff).not.toContain("\uFFFD")
+      }
+      yield* jj.restore(first.commitId)
+      expect([...fsModule.readFileSync(join(host, "repo", "text.txt"))]).toEqual([0x63, 0x61, 0x66, 0xe9, 0x0a])
+      write(host, "text.txt", "café\n\uFFFD\n")
+      const utf8 = yield* jj.snapshot()
+      const textDiff = yield* jj.diff(empty.commitId, utf8.commitId)
+      expect(textDiff).toContain("+café\n+\uFFFD\n")
+      expect(textDiff).not.toContain("Binary files")
+    }), { timeout })
+
   describe("double init", () => {
     it("raw ABI init is idempotent: a second init answers ok and resets nothing", { timeout }, async () => {
       const host = freshHost()

@@ -17,7 +17,7 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
-import { NodeRuntime, TestNodeRuntime } from "@smthrs/platform-node"
+import { HostLiveness, NodeRuntime, TestNodeRuntime } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -150,9 +150,9 @@ export const directoryJj = (options: {
  * Both are provided BENEATH the engine, where the dispatch reads them, rather
  * than beside the caller.
  */
-const engine = (filename: string, hostId: string, jj: Layer.Layer<Jj.Jj>) =>
+export const engine = (filename: string, hostId: string, jj: Layer.Layer<Jj.Jj>) =>
   NodeRuntime.layer(
-    { filename, workspaceRoot: dirname(filename), owner: { hostId }, isAlive: () => Effect.succeed(false) },
+    { filename, workspaceRoot: dirname(filename), owner: { hostId }, isAlive: HostLiveness.sameHostPidProbe },
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),
     Layer.empty

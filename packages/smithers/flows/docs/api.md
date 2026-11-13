@@ -169,8 +169,8 @@ there instead of running.
 ### `Options`
 
 `owner`, `isAlive`, `canExecute`, `canActivate`, `requestResume`,
-`cacheEnvironment`, `sourceRevision`, `privilegedJj`, `sweep`, and
-`resumeConcurrency`. The
+`cacheEnvironment`, `sourceRevision`, `privilegedJj`, `sweep`,
+`resumeConcurrency`, and `placement`. The
 [`NodeRuntime` options table](../platform-node/docs/api.md#options) describes
 each field. `sweep` is `"process"` by default; `{ host: executionId }` is for a
 host that drives one execution per invocation and wakes it from outside. It runs

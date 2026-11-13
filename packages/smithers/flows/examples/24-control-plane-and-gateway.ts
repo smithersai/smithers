@@ -65,7 +65,7 @@ export const Ship = Flow.make("examples/RemoteShip", {
 /** The project whose `.smithers/flows/` directory the control plane serves. */
 export const projectRoot: string = join(dirname(fileURLToPath(import.meta.url)), "24-project")
 
-/** The name discovery derives for `flows/ship/flow.mdx` from its directory. */
+/** The name discovery derives for `.smithers/flows/ship/flow.mdx` from its directory. */
 export const discoveredFlow = "ship"
 
 /** The platform services discovery and body loading read the project through. */

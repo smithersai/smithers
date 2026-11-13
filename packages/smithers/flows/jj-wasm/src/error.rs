@@ -1,10 +1,11 @@
 //! Error type for the flows `Jj` ops and its classification onto the frozen
 //! `JjErrorCode` set.
 //!
-//! The `code` values mirror `JjErrorCode` in `packages/jj/src/Jj.ts` minus
-//! `not_installed`, which only the TypeScript side can produce (it means "no
-//! wasm module was provided"). The codes are a STABLE public contract — they
-//! round-trip through journals and step keys — so never repurpose one.
+//! This crate produces only `conflict`, `invalid_ref`, and `unknown` from
+//! `JjErrorCode` in `packages/smithers/flows/jj/src/Jj.ts`. The TypeScript
+//! adapters can produce additional codes. The codes are a STABLE public
+//! contract — they round-trip through journals and step keys — so never
+//! repurpose one.
 
 use jj_lib::working_copy::CheckoutError;
 use serde::Serialize;

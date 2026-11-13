@@ -1,13 +1,13 @@
 ---
 title: "How Smithers Flows works"
-description: "Why you can trust a step that did not run: a flow is planned before it runs, and a step is identified by what it reads. The plan, the step key, reuse across runs, the record, rewind and permissions, with output from 1.0.0-rc.9."
+description: "Why you can trust a step that did not run: a flow is planned before it runs, and a step is identified by what it reads. The plan, the step key, reuse across runs, the record, rewind and permissions."
 sidebar:
   order: 0
 ---
 
 Smithers Flows is built for backpressure: the tests, lint and checks that keep coding agents honest. That job needs a cache you can trust, a record you can rewind, and a plan you can read before anything runs.
 
-Two design decisions produce all three. A flow is planned before it runs, and a step is identified by what it reads. This page explains both, with output from the published release candidate, 1.0.0-rc.9.
+Two design decisions produce all three. A flow is planned before it runs, and a step is identified by what it reads. This page explains both.
 
 ## A flow is a plan
 
@@ -185,7 +185,7 @@ The refusal names the exact capability the step asked for. Grant that and nothin
 ## Try it
 
 ```bash
-npm i @smthrs/flows@next effect
+npm i @smthrs/platform-node@next @smthrs/flows@next effect
 ```
 
 You need Node.js 22.19 or later, and jj on your `PATH` for compensable steps. Start with the [quickstart](../quickstart.md). [Change a flow and keep the work](../guides/change-a-flow-and-keep-the-work.md) builds a flow like this one and runs the add-a-step, edit-a-step and change-the-input cases.

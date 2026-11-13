@@ -8,8 +8,7 @@ sidebar:
 A flow you already ran keeps its finished steps. Add a step and only the new
 step runs. Edit a step and it runs again, along with any later step whose input
 changes as a result. This guide builds a three-step flow, prints its plan
-without running it, then changes it four ways. Every output block below is real output from
-`@smthrs/flows` 1.0.0-rc.6.
+without running it, then changes it four ways.
 
 Reuse across runs is opt-in, per step. A step that opts in declares a key built
 from its input and the files it reads and writes, and the program declares the
@@ -33,7 +32,7 @@ Create a project:
 ```bash
 mkdir fix && cd fix
 npm init -y && npm pkg set type=module
-npm install @smthrs/flows@next effect
+npm install @smthrs/platform-node@next @smthrs/flows@next effect
 ```
 
 ## Write the flow

@@ -1,5 +1,8 @@
 import { afterAll, afterEach, expect, it } from "@effect/vitest"
+import { EngineStore } from "@smthrs/engine-store"
+import { FlowRuntime } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
+import { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import {
   cpSync,
@@ -15,7 +18,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { vi } from "vitest"
-import { cached, compensated, directoryJj } from "../../examples/21-cache-and-compensation.ts"
+import { cached, compensated, directoryJj, engine, Package } from "../../examples/21-cache-and-compensation.ts"
 
 vi.mock("node:fs", async (importOriginal) => {
   const fs = await importOriginal<typeof import("node:fs")>()
@@ -227,4 +230,51 @@ it.effect("preserves the migrated schema when replaying the fixed execution", ()
     expect(replay.result).toBe(first.result)
     expect(replay.attempts).toEqual([])
     expect(replay.workspace).toBe(first.workspace)
+  }))
+
+it.effect("does not take an expired run from an owner whose process is still alive", () =>
+  Effect.gen(function*() {
+    const f = fixture()
+    const hostId = "examples-live-owner"
+    yield* Effect.gen(function*() {
+      const flows = yield* FlowRuntime.FlowRuntime
+      const runs = yield* RunStore.RunStore
+      let executions = 0
+      yield* flows.register(Package, () =>
+        Effect.sync(() => {
+          executions++
+          return "stolen"
+        }))
+      const runId = "live-owner"
+      yield* runs.create(
+        runId,
+        JSON.stringify({
+          capabilityCeilings: [[]],
+          version: 1,
+          flowName: Package._tag,
+          payload: { target: "live-owner" }
+        })
+      )
+      const row = yield* runs.get(runId)
+      const expected = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
+      const owner = { hostId, pid: process.ppid, nonce: "other-engine" }
+      const claim = yield* runs.claim(runId, expected, owner, 0)
+      expect(claim).toEqual({ _tag: "Claimed", claimedAtMs: 0 })
+      expect(yield* runs.activate(runId, owner, 0, expected)).toEqual({ _tag: "Activated" })
+      const driven = yield* EngineStore.drive(Package, { executionId: runId, payload: { target: "live-owner" } })
+      expect(driven._tag).toBe("Parked")
+      expect(executions).toBe(0)
+      expect((yield* runs.get(runId)).owner).toEqual(owner)
+    }).pipe(
+      Effect.provide(engine(
+        join(f.root, "engine.sqlite"),
+        hostId,
+        directoryJj({
+          workspace: f.workspace,
+          snapshots: f.snapshots,
+          log: { snapshots: [], restores: [] }
+        })
+      )),
+      Effect.scoped
+    )
   }))

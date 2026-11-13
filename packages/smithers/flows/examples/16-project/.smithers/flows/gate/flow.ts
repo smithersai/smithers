@@ -2,7 +2,7 @@
  * The release gate, as a project declares it on disk.
  *
  * `16-fan-out-fan-in.ts` names its gate in code. A project names it here, in
- * `flows/<name>/flow.ts`, and the registry name is the directory: `gate`.
+ * `.smithers/flows/<name>/flow.ts`, and the registry name is the directory: `gate`.
  * Discovery reads this file's metadata without evaluating it, so what an
  * operator sees in `smthrs ls` costs one file read.
  *
