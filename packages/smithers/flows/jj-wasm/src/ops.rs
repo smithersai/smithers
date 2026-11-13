@@ -223,17 +223,139 @@ fn short_change_id(commit: &Commit) -> String {
     id
 }
 
-/// `init`: create a `SimpleBackend` repo at `root`. Idempotent — an existing
-/// workspace is loaded (validated) and left untouched, so a reloading page
-/// can call `init` unconditionally.
+/// Identifies staging workspaces created by this adapter. Unmarked paths,
+/// including user files with our staging prefix, are never removed or reused.
+const INIT_MARKER: &str = ".flows-jj-init";
+
+/// A failed load is not proof of an interrupted init. Once jj has written an
+/// operation, a head other than the synthetic root, or a working-copy checkout,
+/// leave recovery to the caller. In particular, never reset a damaged repo.
+fn is_unpublished_init(metadata: &Path) -> Result<bool, OpError> {
+    if !metadata.symlink_metadata()?.is_dir() {
+        return Ok(false);
+    }
+    if metadata.join("working_copy/checkout").try_exists()? {
+        return Ok(false);
+    }
+    let operations = metadata.join("repo/op_store/operations");
+    match std::fs::read_dir(operations) {
+        Ok(mut entries) => {
+            if entries.next().transpose()?.is_some() {
+                return Ok(false);
+            }
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err.into()),
+    }
+    let heads = metadata.join("repo/op_heads/heads");
+    match std::fs::read_dir(heads) {
+        Ok(entries) => {
+            for entry in entries {
+                let name = entry?.file_name();
+                if name != "type" && name != "0".repeat(128).as_str() {
+                    return Ok(false);
+                }
+            }
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err.into()),
+    }
+    // An external repository pointer or an unknown backend must not be reset.
+    let repo = metadata.join("repo");
+    if repo.try_exists()? && !repo.symlink_metadata()?.is_dir() {
+        return Ok(false);
+    }
+    for (path, expected) in [
+        ("repo/store/type", "simple"),
+        ("repo/op_store/type", "simple_op_store"),
+    ] {
+        match std::fs::read_to_string(metadata.join(path)) {
+            Ok(kind) if kind.trim() != expected => return Ok(false),
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Ok(true)
+}
+
+/// Init validates an existing workspace without resetting it, or initializes
+/// privately and publishes the complete metadata in one rename. Stale owned
+/// setups and pre-operation legacy metadata are retained inside .jj, where
+/// snapshots cannot accidentally track them. No user file is deleted.
 pub fn init(root: &Path) -> Result<(), OpError> {
     let settings = user_settings()?;
-    if root.join(".jj").exists() {
-        let _ = load(&settings, root)?;
-    } else {
-        std::fs::create_dir_all(root)?;
-        Workspace::init_simple(&settings, root).block_on()?;
+    std::fs::create_dir_all(root)?;
+    let metadata = root.join(".jj");
+    let interrupted = match metadata.symlink_metadata() {
+        Ok(_) => match load(&settings, root) {
+            Ok(_) => return Ok(()),
+            Err(err) => {
+                if !is_unpublished_init(&metadata)? {
+                    return Err(err);
+                }
+                true
+            }
+        },
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+        Err(err) => return Err(err.into()),
+    };
+
+    let mut stale = Vec::new();
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().starts_with(".jj.tmp-")
+            && entry.file_type()?.is_dir()
+            && entry
+                .path()
+                .join(INIT_MARKER)
+                .symlink_metadata()
+                .is_ok_and(|metadata| metadata.is_dir())
+        {
+            stale.push(entry.path());
+        }
     }
+    stale.sort();
+    let staging = (0..u64::MAX)
+        .find_map(|index| {
+            let path = root.join(format!(".jj.tmp-{index}"));
+            match std::fs::create_dir(&path) {
+                Ok(()) => Some(Ok(path)),
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => None,
+                Err(err) => Some(Err(err)),
+            }
+        })
+        .ok_or_else(|| OpError::unknown("no available init staging directory"))??;
+    // An empty directory establishes ownership atomically. A trap between
+    // creating staging and this marker leaves only an empty, unowned directory;
+    // no private file can leak into a later snapshot.
+    std::fs::create_dir(staging.join(INIT_MARKER))?;
+
+    // jj-lib requires <workspace>/.jj. Its SimpleBackend and working-copy
+    // state contain no absolute staging paths; WorkspaceStore persists ../..
+    // relative to .jj/repo, which still names root after metadata is moved.
+    {
+        Workspace::init_simple(&settings, &staging).block_on()?;
+        let _ = load(&settings, &staging)?;
+    }
+    let staged_metadata = staging.join(".jj");
+    if !stale.is_empty() {
+        let archive = staged_metadata.join("interrupted-setups");
+        std::fs::create_dir(&archive)?;
+        for (index, path) in stale.iter().enumerate() {
+            std::fs::rename(path, archive.join(index.to_string()))?;
+        }
+    }
+    if interrupted {
+        std::fs::rename(&metadata, staged_metadata.join("interrupted-init"))?;
+    }
+    // The marker stays outside published metadata. A successfully initialized
+    // child named .jj.tmp-0 therefore never masquerades as our private staging.
+    // After publication only empty directories remain outside .jj, even if
+    // cleanup traps; snapshots do not track empty directories.
+    std::fs::rename(staged_metadata, &metadata)?;
+    std::fs::remove_dir(staging.join(INIT_MARKER))?;
+    std::fs::remove_dir(staging)?;
     Ok(())
 }
 
@@ -267,7 +389,8 @@ pub fn snapshot_with_tracking(
     })
 }
 
-/// Restores the repository view while preserving remote tracking and other workspaces.
+/// Restores the repository view while preserving remote tracking; refuses
+/// operations that would change another workspace.
 pub fn op_restore(root: &Path, operation_id: &str) -> Result<(), OpError> {
     if operation_id.is_empty()
         || !operation_id

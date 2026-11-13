@@ -1,168 +1,195 @@
-import { afterAll, afterEach, describe, expect, it } from "@effect/vitest"
-import { Journal } from "@smthrs/flows"
-import { NodeRuntime } from "@smthrs/platform-node"
+import { afterAll, describe, expect, it } from "@effect/vitest"
+import { NodeHost } from "@smthrs/platform-node"
 import * as Cause from "effect/Cause"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
-import * as ChildProcess from "node:child_process"
+import * as PlatformError from "effect/PlatformError"
+import * as ChildProcess from "effect/process/ChildProcess"
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
+import * as Stream from "effect/Stream"
+import * as TestClock from "effect/testing/TestClock"
 import { spawnSync } from "node:child_process"
-import { EventEmitter } from "node:events"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { PassThrough } from "node:stream"
-import { vi } from "vitest"
-import { main } from "../../examples/37-host-containment.ts"
-
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof ChildProcess>()
-  return { ...actual, spawn: vi.fn(actual.spawn) }
-})
-
-vi.mock("@smthrs/platform-node", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@smthrs/platform-node")>()
-  return { ...actual, NodeRuntime: { ...actual.NodeRuntime, layerHost: vi.fn(actual.NodeRuntime.layerHost) } }
-})
+import { killHost, main } from "../../examples/37-host-containment.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-containment-"))
+const realSpawner = NodeHost.NodeChildProcessSpawner.layer.pipe(
+  Layer.provide(Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer))
+)
+const fault = PlatformError.systemError({
+  _tag: "Unknown",
+  module: "ChildProcessSpawner",
+  method: "stdout",
+  description: "startup failed"
+})
 
 describe("host startup cleanup", () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-    vi.mocked(ChildProcess.spawn).mockReset()
-    vi.mocked(NodeRuntime.layerHost).mockReset()
-    vi.useRealTimers()
-  })
-
-  const setup = (reaperWait: Effect.Effect<void> = Effect.void, closeOnKill = true) => {
-    const events: Array<string> = []
-    const child = Object.assign(new EventEmitter(), {
-      stdout: new PassThrough(),
-      stderr: new PassThrough(),
-      kill: vi.fn(() => {
-        events.push("kill")
-        if (closeOnKill) {
-          queueMicrotask(() => {
-            events.push("close")
-            child.emit("close", null, "SIGKILL")
-          })
-        }
-        return true
-      })
-    })
-    vi.mocked(ChildProcess.spawn).mockReturnValue(child as unknown as ChildProcess.ChildProcessWithoutNullStreams)
-    const journal = {
-      entries: () => Effect.succeed({ entries: [] })
-    } as unknown as Journal.Journal.Service
-    vi.mocked(NodeRuntime.layerHost).mockImplementation(() =>
-      Layer.effect(
-        Journal.Journal.Journal,
+  const setup = (code: string, options: {
+    readonly startupFailure?: boolean
+    readonly delayExit?: boolean
+    readonly delayReaper?: boolean
+  } = {}) =>
+    Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const killed = yield* Deferred.make<void>()
+      const finishExit = yield* Deferred.make<void>()
+      const reaping = yield* Deferred.make<void>()
+      const finishReaper = yield* Deferred.make<void>()
+      const events: Array<string> = []
+      let pid = 0
+      const spawner = Layer.effect(
+        ChildProcessSpawner.ChildProcessSpawner,
         Effect.gen(function*() {
-          events.push("reap")
-          yield* reaperWait
-          return journal
+          const real = yield* ChildProcessSpawner.ChildProcessSpawner
+          return ChildProcessSpawner.make(() =>
+            Effect.gen(function*() {
+              const child = yield* real.spawn(
+                ChildProcess.make(process.execPath, ["-e", code], { killSignal: "SIGKILL" })
+              )
+              pid = child.pid
+              const handle = ChildProcessSpawner.makeHandle({
+                ...child,
+                stdout: options.startupFailure ? Stream.fail(fault) : child.stdout,
+                kill: (signal) =>
+                  child.kill(signal).pipe(Effect.tap(() =>
+                    Effect.gen(function*() {
+                      events.push("kill")
+                      yield* Deferred.succeed(killed, undefined)
+                    })
+                  )),
+                exitCode: child.exitCode.pipe(Effect.ensuring(Effect.gen(function*() {
+                  if (options.delayExit) yield* Deferred.await(finishExit)
+                  events.push("exit")
+                })))
+              })
+              yield* Deferred.succeed(started, undefined)
+              return handle
+            })
+          )
         })
-      ) as ReturnType<typeof NodeRuntime.layerHost>
-    )
-    const fiber = Effect.runFork(main(join(directory, "fake.sqlite")))
-    return { child, events, fiber }
-  }
-
-  it("kills and reaps even when interrupted before the PID announcement", async () => {
-    const { child, events, fiber } = setup()
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    await Effect.runPromise(Fiber.interrupt(fiber))
-    expect(child.kill).toHaveBeenCalledWith("SIGKILL")
-    expect(events).toEqual(["kill", "close", "reap"])
-    expect(child.stdout.listenerCount("data")).toBe(0)
-    expect(child.stderr.listenerCount("data")).toBe(0)
-    expect(child.listenerCount("error")).toBe(0)
-    expect(child.listenerCount("close")).toBe(0)
-    child.stdout.write("12345\n")
-    expect(child.kill).toHaveBeenCalledTimes(1)
-  })
-
-  it("terminates and reaps a silent host at the startup deadline", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
-    const { child, events, fiber } = setup()
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    await vi.advanceTimersByTimeAsync(30_001)
-    // Poll first so a missing deadline fails without hanging the test itself.
-    const exit = fiber.pollUnsafe()
-    await Effect.runPromise(Fiber.interrupt(fiber))
-    expect(exit).toBeDefined()
-    expect(exit?._tag).toBe("Failure")
-    if (exit?._tag === "Failure") expect(Cause.pretty(exit.cause)).toContain("TimeoutError")
-    expect(child.kill).toHaveBeenCalledWith("SIGKILL")
-    expect(events).toEqual(["kill", "close", "reap"])
-  })
-
-  it("waits for host termination before starting the reaper on interruption", async () => {
-    const { child, events, fiber } = setup(Effect.void, false)
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    const interrupted = Effect.runPromise(Fiber.interrupt(fiber))
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    expect(events).toEqual(["kill"])
-    expect(fiber.pollUnsafe()).toBeUndefined()
-    child.emit("close", null, "SIGKILL")
-    await interrupted
-    expect(events).toEqual(["kill", "reap"])
-  })
-
-  it("reaps on a startup error", async () => {
-    const { child, events, fiber } = setup()
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    child.emit("error", new Error("startup failed"))
-    const exit = await Effect.runPromise(Fiber.await(fiber))
-    expect(exit._tag).toBe("Failure")
-    if (exit._tag === "Failure") expect(Cause.pretty(exit.cause)).toContain("startup failed")
-    expect(events).toEqual(["kill", "close", "reap"])
-  })
-
-  it("reaps when the host closes before announcing its group", async () => {
-    const { child, events, fiber } = setup()
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    child.stderr.write("startup diagnostics")
-    child.emit("close", 1, null)
-    const exit = await Effect.runPromise(Fiber.await(fiber))
-    expect(exit._tag).toBe("Failure")
-    if (exit._tag === "Failure") expect(Cause.pretty(exit.cause)).toContain("startup diagnostics")
-    expect(child.kill).not.toHaveBeenCalled()
-    expect(events).toEqual(["reap"])
-  })
-
-  it("finishes the reaper even if interrupted after the PID announcement", async () => {
-    let finishReaper!: () => void
-    const wait = new Promise<void>((resolve) => {
-      finishReaper = resolve
+      ).pipe(Layer.provide(realSpawner))
+      const reap = Effect.gen(function*() {
+        // The real process must be gone before any reaper starts.
+        expect(() => process.kill(pid, 0)).toThrow()
+        events.push("reap")
+        yield* Deferred.succeed(reaping, undefined)
+        if (options.delayReaper) yield* Deferred.await(finishReaper)
+      })
+      const fiber = yield* killHost(join(directory, "startup.sqlite"), reap).pipe(
+        Effect.scoped,
+        Effect.provide(spawner),
+        Effect.forkScoped
+      )
+      yield* Deferred.await(started)
+      return { fiber, events, killed, finishExit, reaping, finishReaper }
     })
-    const { child, events, fiber } = setup(Effect.promise(() => wait))
-    vi.spyOn(process, "kill").mockReturnValue(true)
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    child.stdout.write("12345\n")
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    expect(events).toEqual(["kill", "close", "reap"])
-    const interrupted = Effect.runPromise(Fiber.interrupt(fiber))
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    expect(fiber.pollUnsafe()).toBeUndefined()
-    finishReaper()
-    await interrupted
-    expect(child.kill).toHaveBeenCalledTimes(1)
-  })
 
-  it("reaps once on success and returns the containment observations", async () => {
-    const { child, events, fiber } = setup()
-    vi.spyOn(process, "kill").mockReturnValueOnce(true).mockImplementation(() => {
-      throw new Error("ESRCH")
-    })
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    child.stdout.write("123")
-    child.stdout.write("45\n")
-    const summary = await Effect.runPromise(Fiber.join(fiber))
-    expect(summary).toEqual({ pgid: 12345, hostStderr: "", orphaned: true, survivedTheReaper: false, hostEvents: [] })
-    expect(events).toEqual(["kill", "close", "reap"])
-  })
+  it.effect("kills and reaps even when interrupted before the PID announcement", () =>
+    Effect.gen(function*() {
+      const f = yield* setup("setInterval(() => {}, 1000)")
+      yield* Fiber.interrupt(f.fiber)
+      expect(f.events).toEqual(["kill", "exit", "reap"])
+    }))
+
+  it.effect("terminates and reaps a silent host at the startup deadline", () =>
+    Effect.gen(function*() {
+      const f = yield* setup("setInterval(() => {}, 1000)")
+      yield* TestClock.adjust("30 seconds")
+      const exit = yield* Fiber.await(f.fiber)
+      expect(exit._tag).toBe("Failure")
+      if (exit._tag === "Failure") expect(Cause.pretty(exit.cause)).toContain("TimeoutError")
+      expect(f.events).toEqual(["kill", "exit", "reap"])
+    }))
+
+  it.effect("waits for host termination before starting the reaper on interruption", () =>
+    Effect.gen(function*() {
+      const f = yield* setup("setInterval(() => {}, 1000)", { delayExit: true })
+      const interrupt = yield* Fiber.interrupt(f.fiber).pipe(Effect.forkScoped)
+      yield* Deferred.await(f.killed)
+      expect(f.events).toEqual(["kill"])
+      expect(f.fiber.pollUnsafe()).toBeUndefined()
+      yield* Deferred.succeed(f.finishExit, undefined)
+      yield* Fiber.join(interrupt)
+      expect(f.events).toEqual(["kill", "exit", "reap"])
+    }))
+
+  it.effect("runs the reaper exactly once when the spawner rejects acquisition", () =>
+    Effect.gen(function*() {
+      let reaped = 0
+      const rejected = Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make(() => Effect.fail(fault))
+      )
+      const exit = yield* killHost(
+        join(directory, "rejected.sqlite"),
+        Effect.sync(() => {
+          reaped += 1
+        })
+      ).pipe(
+        Effect.scoped,
+        Effect.provide(rejected),
+        Effect.exit
+      )
+      expect(exit._tag).toBe("Failure")
+      if (exit._tag === "Failure") expect(Cause.pretty(exit.cause)).toContain("startup failed")
+      expect(reaped).toBe(1)
+    }))
+
+  it.effect("reaps on a startup stream error", () =>
+    Effect.gen(function*() {
+      const f = yield* setup("setInterval(() => {}, 1000)", { startupFailure: true })
+      const exit = yield* Fiber.await(f.fiber)
+      expect(exit._tag).toBe("Failure")
+      if (exit._tag === "Failure") expect(Cause.pretty(exit.cause)).toContain("startup failed")
+      expect(f.events).toEqual(["kill", "exit", "reap"])
+    }))
+
+  it.effect("reaps when the host closes before announcing its group", () =>
+    Effect.gen(function*() {
+      const f = yield* setup("process.stderr.write(\"startup diagnostics\")")
+      const exit = yield* Fiber.await(f.fiber)
+      expect(exit._tag).toBe("Failure")
+      if (exit._tag === "Failure") expect(Cause.pretty(exit.cause)).toContain("startup diagnostics")
+      expect(f.events.at(-1)).toBe("reap")
+      expect(f.events).not.toContain("kill")
+    }))
+
+  it.effect("finishes the reaper even if interrupted after the PID announcement", () =>
+    Effect.gen(function*() {
+      const f = yield* setup("console.log(process.pid); setInterval(() => {}, 1000)", { delayReaper: true })
+      yield* Deferred.await(f.reaping)
+      const interrupt = yield* Fiber.interrupt(f.fiber).pipe(Effect.forkScoped)
+      expect(f.fiber.pollUnsafe()).toBeUndefined()
+      yield* Deferred.succeed(f.finishReaper, undefined)
+      yield* Fiber.join(interrupt)
+      expect(f.events.filter((event) => event === "kill")).toHaveLength(1)
+      expect(f.events.at(-1)).toBe("reap")
+    }))
+
+  it.effect("reaps once on success after reading a real announcement", () =>
+    Effect.gen(function*() {
+      const f = yield* setup(
+        "process.stdout.write(String(process.pid)); process.stdout.write(String.fromCharCode(10)); setInterval(() => {}, 1000)"
+      )
+      const result = yield* Fiber.join(f.fiber)
+      expect(result.pgid).toBeGreaterThan(0)
+      expect(result.hostStderr).toBe("")
+      expect(f.events.filter((event) => event === "kill")).toHaveLength(1)
+      expect(f.events.at(-1)).toBe("reap")
+    }))
+
+  it.effect("rejects an invalid group and still terminates the real host", () =>
+    Effect.gen(function*() {
+      const f = yield* setup("console.log(\"invalid\"); setInterval(() => {}, 1000)")
+      const exit = yield* Fiber.await(f.fiber)
+      expect(exit._tag).toBe("Failure")
+      if (exit._tag === "Failure") expect(Cause.pretty(exit.cause)).toContain("invalid group")
+      expect(f.events).toEqual(["kill", "exit", "reap"])
+    }))
 })
 
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
@@ -194,6 +221,8 @@ it("reports a host startup failure on stderr and exits unsuccessfully", () => {
   const databaseDirectory = join(directory, "database-directory")
   mkdirSync(databaseDirectory)
   const child = spawnSync(process.execPath, [
+    "--import",
+    import.meta.resolve("vibelang/register"),
     new URL("../../examples/37-host-containment-host.ts", import.meta.url).pathname,
     databaseDirectory,
     "failed-host"

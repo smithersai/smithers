@@ -1429,7 +1429,7 @@ const missingImplementationProbe = () => {
 
 describe("missing implementation compile probe", () => {
   it("removing an action's implementation makes tsc reject the execution", () => {
-    // The assertion is the `@ts-expect-error` directive above.
+    // The assertion is the `expectTypeOf(...).not.toExtend(...)` check above.
     expect(missingImplementationProbe).toBeTypeOf("function")
   })
 })

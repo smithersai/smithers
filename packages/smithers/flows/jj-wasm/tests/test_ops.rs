@@ -1,4 +1,4 @@
-//! Native integration tests for the six `Jj` contract ops, run against real
+//! Native integration tests for the eight JSON contract ops, run against real
 //! tempdir repos through jj-lib — no `jj` binary involved.
 //!
 //! Every op call constructs fresh state from disk (there is no long-lived
@@ -52,9 +52,8 @@ fn read(root: &Path, name: &str) -> String {
 }
 
 /// The description jj persisted on `change_id`, read from the repo with
-/// jj-lib. The six ops return ids and rendered text and never echo the
-/// message back, so nothing in the contract itself observes the describe
-/// step `snapshot` performs.
+/// jj-lib. Snapshot messages are journal metadata only; this independently
+/// verifies that snapshot does not describe the working-copy commit.
 fn description(root: &Path, change_id: &str) -> String {
     let mut config = StackedConfig::with_defaults();
     config.add_layer(ConfigLayer::parse(ConfigSource::User, USER_CONFIG).unwrap());
@@ -754,4 +753,132 @@ fn snapshots_respect_ignore_negation_and_keep_already_tracked_files() {
     assert_eq!(read(&root, "private.secret"), "untracked private bytes\n");
     assert_eq!(read(&root, "later.secret"), "also untracked\n");
     assert_eq!(ops::diff(&root, "@", &first.commit_id).unwrap(), "");
+}
+
+#[test]
+fn init_recovers_interrupted_first_initialization_without_losing_files() {
+    for state in ["", "repo", "repo/store", "repo/op_store/operations"] {
+        let (_temp, root) = temp_root();
+        write(&root, "user.txt", "keep user data\n");
+        fs::create_dir_all(root.join(".jj").join(state)).unwrap();
+        ops::init(&root).unwrap();
+        let saved = ops::snapshot(&root, None).unwrap();
+        ops::init(&root).unwrap();
+        assert_eq!(read(&root, "user.txt"), "keep user data\n");
+        assert_eq!(ops::snapshot(&root, None).unwrap(), saved);
+    }
+}
+
+#[test]
+fn init_preserves_history_when_workspace_loading_fails() {
+    let (_temp, root) = temp_root();
+    ops::init(&root).unwrap();
+    write(&root, "user.txt", "recorded data\n");
+    let saved = ops::snapshot(&root, None).unwrap();
+    let checkout = root.join(".jj/working_copy/checkout");
+    let bytes = fs::read(&checkout).unwrap();
+    fs::remove_file(&checkout).unwrap();
+    assert!(ops::init(&root).is_err());
+    assert!(!checkout.exists());
+    assert_eq!(read(&root, "user.txt"), "recorded data\n");
+    fs::write(&checkout, bytes).unwrap();
+    assert_eq!(ops::snapshot(&root, None).unwrap(), saved);
+}
+
+#[test]
+fn init_preserves_user_metadata_and_foreign_staging_names() {
+    let (_temp, root) = temp_root();
+    write(&root, ".jj.tmp-0", "user file");
+    fs::create_dir_all(root.join(".jj")).unwrap();
+    fs::write(root.join(".jj/user-note"), "metadata note").unwrap();
+    ops::init(&root).unwrap();
+    assert_eq!(read(&root, ".jj.tmp-0"), "user file");
+    assert_eq!(
+        read(&root, ".jj/interrupted-init/user-note"),
+        "metadata note"
+    );
+}
+
+#[test]
+fn init_archives_owned_interrupted_staging_and_keeps_workspace_paths_valid() {
+    for complete in [false, true] {
+        let (_temp, root) = temp_root();
+        let stale = root.join(".jj.tmp-0");
+        fs::create_dir_all(&stale).unwrap();
+        fs::create_dir(stale.join(".flows-jj-init")).unwrap();
+        if complete {
+            ops::init(&stale).unwrap();
+        } else {
+            fs::create_dir_all(stale.join(".jj/repo/store")).unwrap();
+        }
+        write(&root, "user.txt", "original\n");
+        ops::init(&root).unwrap();
+        assert!(!stale.exists());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
+        let archived = root.join(".jj/interrupted-setups/0");
+        assert!(archived.join(".jj/repo/store").is_dir());
+        let first = ops::snapshot(&root, None).unwrap();
+        write(&root, "user.txt", "edited\n");
+        let second = ops::snapshot(&root, None).unwrap();
+        ops::init(&root).unwrap();
+        assert_eq!(ops::snapshot(&root, None).unwrap(), second);
+        ops::restore(&root, &first.commit_id).unwrap();
+        assert_eq!(read(&root, "user.txt"), "original\n");
+        let mut config = StackedConfig::with_defaults();
+        config.add_layer(ConfigLayer::parse(ConfigSource::User, USER_CONFIG).unwrap());
+        let settings = UserSettings::from_config_and_home_dir(config, None).unwrap();
+        let workspace = Workspace::load(
+            &settings,
+            &root,
+            &default_backend_factories(),
+            &default_working_copy_factories(),
+        )
+        .unwrap();
+        assert_eq!(
+            workspace
+                .repo_loader()
+                .workspace_store()
+                .get_workspace_path(jj_lib::ref_name::WorkspaceName::DEFAULT)
+                .unwrap(),
+            Some(root.clone())
+        );
+    }
+}
+
+#[test]
+fn init_does_not_reset_an_operation_store_when_head_loading_fails() {
+    let (_temp, root) = temp_root();
+    ops::init(&root).unwrap();
+    write(&root, "history.txt", "saved history\n");
+    let saved = ops::snapshot(&root, None).unwrap();
+    let head = root
+        .join(".jj/repo/op_heads/heads")
+        .join(&saved.operation_id);
+    fs::remove_file(&head).unwrap();
+    fs::write(root.join(".jj/repo/op_heads/heads/broken-head"), "broken").unwrap();
+    assert!(ops::init(&root).is_err());
+    assert!(
+        root.join(".jj/repo/op_store/operations")
+            .join(saved.operation_id)
+            .is_file()
+    );
+    assert_eq!(read(&root, "history.txt"), "saved history\n");
+}
+
+#[test]
+fn init_preserves_independently_initialized_children_with_staging_names() {
+    for name in [".jj.tmp-project", ".jj.tmp-0"] {
+        let (_temp, root) = temp_root();
+        let child = root.join(name);
+        ops::init(&child).unwrap();
+        write(&child, "recorded.txt", "child snapshot\n");
+        let saved = ops::snapshot(&child, None).unwrap();
+        write(&child, "untracked.txt", "untracked user data\n");
+        ops::init(&root).unwrap();
+        assert!(child.join(".jj").is_dir());
+        assert_eq!(read(&child, "recorded.txt"), "child snapshot\n");
+        assert_eq!(read(&child, "untracked.txt"), "untracked user data\n");
+        ops::restore(&child, &saved.commit_id).unwrap();
+        assert_eq!(read(&child, "recorded.txt"), "child snapshot\n");
+    }
 }

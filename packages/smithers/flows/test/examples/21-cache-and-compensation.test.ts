@@ -1,34 +1,30 @@
-import { afterAll, afterEach, expect, it } from "@effect/vitest"
+import { afterAll, expect, it } from "@effect/vitest"
 import { EngineStore } from "@smthrs/engine-store"
 import { FlowRuntime } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
+import { NodeHost } from "@smthrs/platform-node"
 import { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync
-} from "node:fs"
+import * as FileSystem from "effect/FileSystem"
+import * as Layer from "effect/Layer"
+import * as PlatformError from "effect/PlatformError"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { vi } from "vitest"
 import { cached, compensated, directoryJj, engine, Package } from "../../examples/21-cache-and-compensation.ts"
 
-vi.mock("node:fs", async (importOriginal) => {
-  const fs = await importOriginal<typeof import("node:fs")>()
-  return { ...fs, cpSync: vi.fn(fs.cpSync), renameSync: vi.fn(fs.renameSync) }
-})
-
-afterEach(() => {
-  vi.mocked(cpSync).mockReset()
-  vi.mocked(renameSync).mockReset()
-})
+const failure = (method: string) =>
+  PlatformError.systemError({
+    _tag: "Unknown",
+    module: "FileSystem",
+    method,
+    description: `injected ${method} failure`
+  })
+type Fault = (fs: FileSystem.FileSystem) => FileSystem.FileSystem
+const faulty = (fault: Fault) =>
+  Layer.effect(FileSystem.FileSystem, Effect.map(FileSystem.FileSystem, fault)).pipe(
+    Layer.provide(NodeHost.NodeFileSystem.layer)
+  )
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 
@@ -87,6 +83,23 @@ it.effect("restores the pre-image before retrying a compensable step", () =>
     expect(summary.workspace).toBe("-- base\nALTER TABLE runs ADD COLUMN lane;\n")
   }))
 
+const partialCopy: Fault = (fs) => ({
+  ...fs,
+  copy: (_source, destination) =>
+    Effect.gen(function*() {
+      yield* fs.makeDirectory(destination, { recursive: true })
+      yield* fs.writeFileString(join(destination, "partial.txt"), "partial copy")
+      return yield* Effect.fail(failure("copy"))
+    })
+})
+const failedSwap = (rollback: boolean): Fault => (fs) => ({
+  ...fs,
+  rename: (source, destination) =>
+    source.endsWith("/workspace") && source.includes(".restore-") || rollback && source.endsWith("/backup")
+      ? Effect.fail(failure("rename"))
+      : fs.rename(source, destination)
+})
+
 const fixture = () => {
   const root = mkdtempSync(join(directory, "adapter-"))
   const workspace = join(root, "workspace")
@@ -94,17 +107,21 @@ const fixture = () => {
   mkdirSync(workspace)
   mkdirSync(snapshots)
   writeFileSync(join(workspace, "state.txt"), "original pre-image")
-  const layer = () => directoryJj({ workspace, snapshots, log: { snapshots: [], restores: [] } })
-  const snapshot = () =>
+  const layer = (fault?: Fault) =>
+    directoryJj(
+      { workspace, snapshots, log: { snapshots: [], restores: [] } },
+      fault === undefined ? NodeHost.NodeFileSystem.layer : faulty(fault)
+    )
+  const snapshot = (fault?: Fault) =>
     Effect.gen(function*() {
       const jj = yield* Jj.Jj
       return yield* jj.snapshot("attempt 1")
-    }).pipe(Effect.provide(layer()))
-  const restore = (id: string) =>
+    }).pipe(Effect.provide(layer(fault)))
+  const restore = (id: string, fault?: Fault) =>
     Effect.gen(function*() {
       const jj = yield* Jj.Jj
       yield* jj.restore(id as never)
-    }).pipe(Effect.provide(layer()))
+    }).pipe(Effect.provide(layer(fault)))
   return { root, workspace, snapshots, snapshot, restore }
 }
 
@@ -138,12 +155,7 @@ it.effect("a partial restore copy fails without touching the workspace", () =>
     const f = fixture()
     const saved = yield* f.snapshot()
     writeFileSync(join(f.workspace, "state.txt"), "only surviving workspace data")
-    vi.mocked(cpSync).mockImplementationOnce((_source, destination) => {
-      mkdirSync(destination, { recursive: true })
-      writeFileSync(join(String(destination), "partial.txt"), "partial copy")
-      throw new Error("injected copy failure")
-    })
-    const result = yield* Effect.exit(f.restore(saved.commitId))
+    const result = yield* Effect.exit(f.restore(saved.commitId, partialCopy))
     expect(result._tag).toBe("Failure")
     expect(readdirSync(f.workspace)).toEqual(["state.txt"])
     expect(readFileSync(join(f.workspace, "state.txt"), "utf8")).toBe("only surviving workspace data")
@@ -155,12 +167,7 @@ it.effect("a failed snapshot copy publishes nothing and preserves earlier snapsh
     const f = fixture()
     const first = yield* f.snapshot()
     writeFileSync(join(f.workspace, "state.txt"), "partially applied write")
-    vi.mocked(cpSync).mockImplementationOnce((_source, destination) => {
-      mkdirSync(destination, { recursive: true })
-      writeFileSync(join(String(destination), "partial.txt"), "partial copy")
-      throw new Error("injected copy failure")
-    })
-    const result = yield* Effect.exit(f.snapshot())
+    const result = yield* Effect.exit(f.snapshot(partialCopy))
     expect(result._tag).toBe("Failure")
     expect(readdirSync(f.snapshots)).toEqual([first.commitId])
     expect(readFileSync(join(f.workspace, "state.txt"), "utf8")).toBe("partially applied write")
@@ -173,13 +180,7 @@ it.effect("a failed staged swap rolls the original workspace back", () =>
     const f = fixture()
     const saved = yield* f.snapshot()
     writeFileSync(join(f.workspace, "state.txt"), "only surviving workspace data")
-    const fs = yield* Effect.promise(() => vi.importActual<typeof import("node:fs")>("node:fs"))
-    vi.mocked(renameSync)
-      .mockImplementationOnce(fs.renameSync)
-      .mockImplementationOnce(() => {
-        throw new Error("injected swap failure")
-      })
-    const result = yield* Effect.exit(f.restore(saved.commitId))
+    const result = yield* Effect.exit(f.restore(saved.commitId, failedSwap(false)))
     expect(result._tag).toBe("Failure")
     expect(readFileSync(join(f.workspace, "state.txt"), "utf8")).toBe("only surviving workspace data")
     expect(readdirSync(f.root).sort()).toEqual(["snapshots", "workspace"])
@@ -200,16 +201,7 @@ it.effect("retains the original backup if both the swap and rollback fail", () =
     const f = fixture()
     const saved = yield* f.snapshot()
     writeFileSync(join(f.workspace, "state.txt"), "only surviving workspace data")
-    const fs = yield* Effect.promise(() => vi.importActual<typeof import("node:fs")>("node:fs"))
-    vi.mocked(renameSync)
-      .mockImplementationOnce(fs.renameSync)
-      .mockImplementationOnce(() => {
-        throw new Error("injected swap failure")
-      })
-      .mockImplementationOnce(() => {
-        throw new Error("injected rollback failure")
-      })
-    const result = yield* Effect.exit(f.restore(saved.commitId))
+    const result = yield* Effect.exit(f.restore(saved.commitId, failedSwap(true)))
     expect(result._tag).toBe("Failure")
     const retained = readdirSync(f.root).filter((name) => name.startsWith(".restore-"))
     expect(retained).toHaveLength(1)

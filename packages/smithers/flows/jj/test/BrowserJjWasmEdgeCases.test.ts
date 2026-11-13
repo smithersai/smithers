@@ -181,6 +181,71 @@ describe.skipIf(wasmBytes === undefined)("BrowserJj edge cases over flows_jj.was
       expect(textDiff).not.toContain("Binary files")
     }), { timeout })
 
+  for (const phase of ["ownership", "metadata", "published"] as const) {
+    it.effect(
+      `recovers a trapped first init at ${phase} without publishing partial metadata or tracking scratch`,
+      () =>
+        Effect.gen(function*() {
+          const host = freshHost()
+          write(host, "kept.txt", "kept\n")
+          const real = rootedSyncFs(host)
+          let trapped = false
+          const filesystem = {
+            ...real,
+            openSync: (path: string, flags: string, mode?: number) => {
+              const fd = real.openSync(path, flags, mode)
+              if (phase === "ownership" && path.endsWith("/.flows-jj-init") && flags !== "r") {
+                real.closeSync(fd)
+                trapped = true
+                throw new Error("interrupted ownership marker before its first write")
+              }
+              return fd
+            },
+            mkdirSync: (path: string) => {
+              const result = real.mkdirSync(path)
+              if (
+                phase === "ownership" && path.endsWith("/.flows-jj-init") ||
+                phase === "metadata" && path.endsWith("/.jj/repo")
+              ) {
+                trapped = true
+                throw new Error("interrupted first init")
+              }
+              return result
+            },
+            renameSync: (source: string, destination: string) => {
+              real.renameSync(source, destination)
+              if (phase === "published" && destination === "/repo/.jj") {
+                trapped = true
+                throw new Error("interrupted after publication")
+              }
+            }
+          }
+          const first = BrowserJj.make({ wasm: module, fs: filesystem, root: "/repo" })
+          expect(yield* flip(first.snapshot())).toMatchObject({ code: "unknown" })
+          expect(trapped).toBe(true)
+          expect(fsModule.existsSync(join(host, "repo/.jj"))).toBe(phase === "published")
+          expect(read(host, "kept.txt")).toBe("kept\n")
+          if (phase === "published") {
+            expect(fsModule.readdirSync(join(host, "repo/.jj.tmp-0"))).toEqual([".flows-jj-init"])
+          }
+          const reloaded = yield* jjFor(host)
+          const saved = yield* reloaded.snapshot()
+          expect(fsModule.readdirSync(join(host, "repo")).sort()).toEqual(
+            phase === "published" ? [".jj", ".jj.tmp-0", "kept.txt"] : [".jj", "kept.txt"]
+          )
+          expect(yield* reloaded.status()).toBe(
+            `Working copy changes:\nA kept.txt\nWorking copy  (@) : ${saved.changeId}\n`
+          )
+          expect(yield* reloaded.diff(saved.commitId, "@")).toBe("")
+          write(host, "kept.txt", "edited\n")
+          yield* reloaded.restore(saved.commitId)
+          expect(read(host, "kept.txt")).toBe("kept\n")
+          expect(yield* reloaded.diff(saved.commitId, "@")).toBe("")
+        }),
+      { timeout }
+    )
+  }
+
   describe("double init", () => {
     it("raw ABI init is idempotent: a second init answers ok and resets nothing", { timeout }, async () => {
       const host = freshHost()

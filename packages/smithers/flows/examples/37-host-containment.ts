@@ -10,10 +10,13 @@
  * shutdown would not test.
  */
 import { Journal, Kernel } from "@smthrs/flows"
-import { NodeRuntime } from "@smthrs/platform-node"
+import { NodeHost, NodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
-import { spawn } from "node:child_process"
+import * as ChildProcess from "effect/process/ChildProcess"
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
+import * as Stream from "effect/Stream"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -58,87 +61,67 @@ const groupIsAlive = (pgid: number): boolean => {
  * the operating system to reap it so its pid genuinely reads as gone. Startup
  * has a 30-second deadline; scope release always terminates and reaps the host.
  */
-const killHost = (filename: string, reap: Effect.Effect<unknown>) =>
+export const killHost = (filename: string, reap: Effect.Effect<unknown>) =>
   Effect.gen(function*() {
-    // Only spawn is uninterruptible. Waiting for startup happens after the
-    // finalizer is installed, so interruption can never abandon the child.
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    // Even a rejected launch must sweep durable records from a previous host.
+    // Child cleanup is registered later and therefore runs before this reaper.
+    yield* Effect.addFinalizer(() => reap)
+    // Acquisition installs cleanup before startup becomes interruptible. The
+    // reaper runs only after the OS has reaped the host, even on interruption.
     const host = yield* Effect.acquireRelease(
-      Effect.sync(() => {
-        const child = spawn(process.execPath, [hostProgram, filename, hostId], { stdio: ["ignore", "pipe", "pipe"] })
-        const host = {
-          child,
-          closed: false,
-          stopped: new Promise<void>((resolve) => {
-            // Keep errors handled even if startup's listeners are removed by
-            // interruption before termination finishes.
-            const onError = () => {}
-            child.on("error", onError)
-            child.once("close", () => {
-              host.closed = true
-              child.off("error", onError)
-              resolve()
-            })
-          })
-        }
-        return host
-      }),
+      spawner.spawn(
+        ChildProcess.make(process.execPath, [
+          "--import",
+          import.meta.resolve("vibelang/register"),
+          hostProgram,
+          filename,
+          hostId
+        ], {
+          stdin: "ignore",
+          killSignal: "SIGKILL"
+        })
+      ),
       (host) =>
-        Effect.promise(async () => {
-          if (!host.closed) host.child.kill("SIGKILL")
-          // The ledger reaper must see a dead owner, not a host still exiting.
-          await host.stopped
-        }).pipe(Effect.ensuring(reap))
+        Effect.gen(function*() {
+          if (yield* host.isRunning) yield* host.kill({ killSignal: "SIGKILL" })
+          yield* host.exitCode.pipe(Effect.ignore)
+        }).pipe(Effect.orDie)
     )
-
-    return yield* Effect.callback<{ readonly pgid: number; readonly hostStderr: string }>((resume) => {
-      const { child } = host
-      let announced = ""
-      let stderr = ""
-      let pgid: number | undefined
-      const cleanup = () => {
-        child.stdout.off("data", onData)
-        child.stderr.off("data", onStderr)
-        child.off("error", onError)
-        child.off("close", onClose)
-      }
-      const onError = (error: Error) => {
-        cleanup()
-        resume(Effect.die(error))
-      }
-      const onData = (chunk: string) => {
-        announced += chunk
-        if (pgid === undefined && announced.includes("\n")) {
-          const announcedPgid = Number(announced.split("\n")[0])
-          if (!Number.isSafeInteger(announcedPgid) || announcedPgid <= 0) {
-            onError(new Error(`the host announced an invalid group: ${announced}`))
-            return
-          }
-          pgid = announcedPgid
-          // No handler runs for this, which is the whole point.
-          child.kill("SIGKILL")
-        }
-      }
-      const onStderr = (chunk: string) => {
-        stderr += chunk
-      }
-      const onClose = () => {
-        cleanup()
-        resume(
-          pgid === undefined
-            ? Effect.die(new Error(`the host exited before announcing a group: ${stderr}`))
-            : Effect.succeed({ pgid, hostStderr: stderr })
-        )
-      }
-      child.stdout.setEncoding("utf8")
-      child.stderr.setEncoding("utf8")
-      child.stdout.on("data", onData)
-      child.stderr.on("data", onStderr)
-      child.on("error", onError)
-      child.on("close", onClose)
-      if (host.closed) onClose()
-      return Effect.sync(cleanup)
-    }).pipe(Effect.timeout("30 seconds"), Effect.orDie)
-  })
+    let stderr = ""
+    const diagnostics = yield* host.stderr.pipe(
+      Stream.decodeText(),
+      Stream.runForEach((chunk) =>
+        Effect.sync(() => {
+          stderr += chunk
+        })
+      ),
+      Effect.orDie,
+      Effect.forkScoped
+    )
+    const announced = yield* host.stdout.pipe(
+      Stream.decodeText(),
+      Stream.splitLines,
+      Stream.take(1),
+      Stream.runCollect,
+      Effect.timeout("30 seconds"),
+      Effect.orDie
+    )
+    if (announced.length === 0) {
+      yield* host.exitCode.pipe(Effect.ignore)
+      yield* Fiber.join(diagnostics)
+      return yield* Effect.die(new Error(`the host exited before announcing a group: ${stderr}`))
+    }
+    const pgid = Number(announced[0])
+    if (!Number.isSafeInteger(pgid) || pgid <= 0) {
+      return yield* Effect.die(new Error(`the host announced an invalid group: ${announced[0]}`))
+    }
+    // No handler runs for this, which is the whole point.
+    yield* host.kill({ killSignal: "SIGKILL" }).pipe(Effect.orDie)
+    yield* host.exitCode.pipe(Effect.ignore)
+    yield* Fiber.join(diagnostics)
+    return { pgid, hostStderr: stderr }
+  }).pipe(Effect.orDie)
 
 /** Waits until `pgid` is gone, or gives up after `budgetMs`. */
 const waitForGroupExit = (pgid: number, budgetMs: number): Promise<boolean> =>
@@ -196,4 +179,6 @@ export const main = (filename: string): Effect.Effect<Summary> =>
 
     const survivedTheReaper = !(yield* Effect.promise(() => waitForGroupExit(pgid, 10_000)))
     return { pgid, hostStderr, orphaned, survivedTheReaper, hostEvents }
-  })
+  }).pipe(Effect.provide(NodeHost.NodeChildProcessSpawner.layer.pipe(
+    Layer.provide(Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer))
+  )))

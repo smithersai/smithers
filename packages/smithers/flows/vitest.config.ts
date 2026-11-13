@@ -36,8 +36,8 @@ export default defineConfig({
       // profile with every test passing (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-flows-coverage-${process.pid}`),
       include: ["src/**"],
-      // Nested packages have their own coverage gates. Absolute patterns keep
-      // checkout ancestors such as `review-harness` out of exclusion matching.
+      // Nested packages have their own coverage gates; these exclusions are
+      // relative to this package root.
       exclude: [
         "artifacts/**",
         "canonical/**",

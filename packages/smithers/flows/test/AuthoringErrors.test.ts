@@ -248,7 +248,7 @@ const unprovidedServiceProbe = () => {
 
 describe("unprovided service compile probe", () => {
   it("rejects a body that needs a service the durable harness does not provide", () => {
-    // The assertion is the `@ts-expect-error` directive above.
+    // The assertion is the `expectTypeOf(...).not.toExtend(...)` check above.
     expect(unprovidedServiceProbe).toBeTypeOf("function")
   })
 })

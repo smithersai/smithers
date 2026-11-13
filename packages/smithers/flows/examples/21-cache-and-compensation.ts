@@ -17,23 +17,14 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
-import { HostLiveness, NodeRuntime, TestNodeRuntime } from "@smthrs/platform-node"
+import { HostLiveness, NodeHost, NodeRuntime, TestNodeRuntime } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { randomUUID } from "node:crypto"
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync
-} from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 
 /** The failure the first attempt of the compensable step raises. */
@@ -66,81 +57,81 @@ const describe = (message: string | undefined): string => {
  * implementation that genuinely puts files back. Snapshots get unique IDs
  * across layers and are published only after copying completes. Restore stages
  * a complete copy before swapping the workspace, retaining a backup until the
- * swap succeeds. These synchronous operations assume one workspace writer.
+ * swap succeeds. These operations run uninterruptibly and assume one workspace writer.
  */
 export const directoryJj = (options: {
   readonly workspace: string
   readonly snapshots: string
   readonly log: { readonly snapshots: Array<string>; readonly restores: Array<string> }
-}) => {
-  const taken = new Map<string, string>()
-  return Layer.succeed(
+}, fileSystem: Layer.Layer<FileSystem.FileSystem> = NodeHost.NodeFileSystem.layer) =>
+  Layer.effect(
     Jj.Jj,
-    Jj.make({
-      snapshot: (message) =>
-        Effect.sync(() => {
-          const changeId = `snapshot-${randomUUID()}`
-          const destination = join(options.snapshots, changeId)
-          mkdirSync(options.snapshots, { recursive: true })
-          const staged = mkdtempSync(join(options.snapshots, ".snapshot-"))
-          try {
-            cpSync(options.workspace, staged, { recursive: true })
-            // Never replace a published pre-image, even on an ID collision.
-            if (existsSync(destination)) throw new Error(`Snapshot already exists: ${changeId}`)
-            renameSync(staged, destination)
-          } finally {
-            rmSync(staged, { recursive: true, force: true })
-          }
-          taken.set(changeId, describe(message))
-          options.log.snapshots.push(describe(message))
-          // Published directory snapshots are immutable; both names resolve to this pre-image.
-          return { changeId: changeId as never, commitId: changeId as never }
-        }),
-      restore: (changeId) =>
-        Effect.sync(() => {
-          const source = join(options.snapshots, changeId)
-          if (!statSync(source).isDirectory()) throw new Error(`Snapshot is not a directory: ${changeId}`)
-          const workspace = resolve(options.workspace)
-          const temporary = mkdtempSync(join(dirname(workspace), ".restore-"))
-          const staged = join(temporary, "workspace")
-          const backup = join(temporary, "backup")
-          let keepBackup = false
-          try {
-            // Copy failures can only damage staging, never the live workspace.
-            cpSync(source, staged, { recursive: true })
-            if (existsSync(workspace)) {
-              renameSync(workspace, backup)
-              keepBackup = true
-            }
-            try {
-              renameSync(staged, workspace)
-            } catch (error) {
-              if (keepBackup) {
-                renameSync(backup, workspace)
-                keepBackup = false
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const taken = new Map<string, string>()
+      return Jj.make({
+        snapshot: (message) =>
+          Effect.gen(function*() {
+            const changeId = `snapshot-${randomUUID()}`
+            const destination = join(options.snapshots, changeId)
+            yield* fs.makeDirectory(options.snapshots, { recursive: true })
+            const staged = yield* fs.makeTempDirectory({ directory: options.snapshots, prefix: ".snapshot-" })
+            yield* Effect.gen(function*() {
+              yield* fs.copy(options.workspace, staged, { overwrite: true })
+              // Never replace a published pre-image, even on an ID collision.
+              if (yield* fs.exists(destination)) {
+                return yield* Effect.die(new Error(`Snapshot already exists: ${changeId}`))
               }
-              throw error
+              yield* fs.rename(staged, destination)
+            }).pipe(Effect.ensuring(fs.remove(staged, { recursive: true, force: true }).pipe(Effect.orDie)))
+            taken.set(changeId, describe(message))
+            options.log.snapshots.push(describe(message))
+            return { changeId: changeId as never, commitId: changeId as never }
+          }).pipe(Effect.uninterruptible, Effect.orDie),
+        restore: (changeId) =>
+          Effect.gen(function*() {
+            const source = join(options.snapshots, changeId)
+            if ((yield* fs.stat(source)).type !== "Directory") {
+              return yield* Effect.die(new Error(`Snapshot is not a directory: ${changeId}`))
             }
-            keepBackup = false
-            options.log.restores.push(taken.get(changeId) ?? changeId)
-          } finally {
-            // If rollback itself fails, leave the original backup for recovery.
-            if (!keepBackup) {
-              try {
-                rmSync(temporary, { recursive: true, force: true })
-              } catch {
-                // Cleanup is best effort: the workspace is already settled.
+            const workspace = resolve(options.workspace)
+            const temporary = yield* fs.makeTempDirectory({ directory: dirname(workspace), prefix: ".restore-" })
+            const staged = join(temporary, "workspace")
+            const backup = join(temporary, "backup")
+            let keepBackup = false
+            yield* Effect.gen(function*() {
+              // Copy failures can only damage staging, never the live workspace.
+              yield* fs.copy(source, staged)
+              if (yield* fs.exists(workspace)) {
+                yield* fs.rename(workspace, backup)
+                keepBackup = true
               }
-            }
-          }
-        }),
-      diff: () => Effect.succeed(""),
-      workspaceAdd: () => Effect.void,
-      workspaceForget: () => Effect.void,
-      status: () => Effect.succeed("")
+              yield* fs.rename(staged, workspace).pipe(Effect.catch((error) =>
+                Effect.gen(function*() {
+                  if (keepBackup) {
+                    yield* fs.rename(backup, workspace)
+                    keepBackup = false
+                  }
+                  return yield* Effect.fail(error)
+                })
+              ))
+              keepBackup = false
+              options.log.restores.push(taken.get(changeId) ?? changeId)
+            }).pipe(
+              Effect.ensuring(
+                Effect.suspend(() =>
+                  keepBackup ? Effect.void : fs.remove(temporary, { recursive: true, force: true }).pipe(Effect.ignore)
+                )
+              )
+            )
+          }).pipe(Effect.uninterruptible, Effect.orDie),
+        diff: () => Effect.succeed(""),
+        workspaceAdd: () => Effect.void,
+        workspaceForget: () => Effect.void,
+        status: () => Effect.succeed("")
+      })
     })
-  )
-}
+  ).pipe(Layer.provide(fileSystem))
 
 /**
  * The engine `TestNodeRuntime` builds, plus the two things this example needs
