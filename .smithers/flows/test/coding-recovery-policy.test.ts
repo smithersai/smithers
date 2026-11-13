@@ -49,7 +49,7 @@ test("TODO shell and delivery actions explicitly declare recovery policy", () =>
           // Only local lander writes and the green-prefix advance reconcile
           // before repeating; every other crossing stays keyless until its
           // lookup provider is wired.
-          assert.equal(fields.get("idempotencyKey") !== "undefined", reconciled.has(name.text), name.text)
+          assertIdempotencyKey(fields, reconciled.has(name.text), name.text)
           expected.delete(name.text)
         }
       }
@@ -58,4 +58,24 @@ test("TODO shell and delivery actions explicitly declare recovery policy", () =>
     visit(source)
   }
   assert.deepEqual([...expected.keys()], [])
+})
+
+function assertIdempotencyKey(fields: ReadonlyMap<string, string>, reconciled: boolean, name: string) {
+  assert.ok(fields.has("idempotencyKey"), `${name}: missing idempotencyKey`)
+  assert.equal(fields.get("idempotencyKey") !== "undefined", reconciled, name)
+}
+
+test("reconciled recovery policy rejects an omitted idempotency key", () => {
+  const fields = new Map([["tier", "\"irreversible\""]])
+  assert.throws(() => assertIdempotencyKey(fields, true, "reconciled-action"), { code: "ERR_ASSERTION" })
+})
+
+test("recovery policy distinguishes disabled keys from actual key expressions", () => {
+  const disabled = new Map([["idempotencyKey", "undefined"]])
+  const keyed = new Map([["idempotencyKey", "({ candidate }) => candidate.commitId"]])
+  assert.doesNotThrow(() => assertIdempotencyKey(keyed, true, "reconciled-action"))
+  assert.throws(() => assertIdempotencyKey(disabled, true, "reconciled-action"), { code: "ERR_ASSERTION" })
+  assert.doesNotThrow(() => assertIdempotencyKey(disabled, false, "keyless-action"))
+  assert.throws(() => assertIdempotencyKey(keyed, false, "keyless-action"), { code: "ERR_ASSERTION" })
+  assert.throws(() => assertIdempotencyKey(new Map(), false, "keyless-action"), { code: "ERR_ASSERTION" })
 })
