@@ -67,6 +67,7 @@ import * as Schema from "effect/Schema"
  * `node` names the node whose admission crossed it; `payload_too_large` is a
  * plan value with more members than the bound, and `path` names the offending
  * value path; `invalid_node` is a malformed node AST. All six are fatal.
+ * `@smthrs/flow` also raises `plan_too_large` for an effect-path bound.
  *
  * @since 0.1.0
  * @category schemas

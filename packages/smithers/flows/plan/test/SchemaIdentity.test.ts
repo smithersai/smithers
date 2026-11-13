@@ -2,8 +2,8 @@
  * A schema's identity must not depend on the `effect` release the application
  * installed.
  *
- * `effect` is a peer range, and `Schema.toJsonSchemaDocument` prints a
- * different document under 4.0.4 than it did under 4.0.0-rc.115 for a quarter
+ * `effect` is pinned to 4.1.1, and `Schema.toJsonSchemaDocument` prints a
+ * different document than it did under 4.0.0-rc.115 for a quarter
  * of the schemas below. A step key derived from that document would move with
  * the dependency, and every recorded step would re-key with nothing to say an
  * upgrade did it. `Node.schemaIdentity` prints the document itself.
@@ -137,8 +137,16 @@ describe("schema identity under an effect upgrade", () => {
         const attempt = () => Node.schemaIdentity(schemas[name]!(), recording.options)
         // The emitter's refusals are this package's to reproduce word for word.
         // An earlier one is effect's own message about its own schema.
-        if (failure.stage === "emitter") expect(attempt).toThrow(expect.objectContaining({ message: failure.message }))
-        else expect(attempt).toThrow()
+        if (failure.stage === "emitter") {
+          expect(attempt).toThrow(expect.objectContaining({ message: failure.message }))
+          // An author's annotation throws its own error; emitter refusals are tagged.
+          if (name === "check/makeFilter-toJsonSchema-throws") {
+            expect(attempt).not.toThrow(Node.SchemaIdentityError)
+          } else {
+            expect(attempt).toThrow(Node.SchemaIdentityError)
+            expect(attempt).toThrow(expect.objectContaining({ _tag: "@smthrs/plan/SchemaIdentityError" }))
+          }
+        } else expect(attempt).toThrow()
       }
     )
 
@@ -367,6 +375,26 @@ describe("schema identity of a number-keyed record", () => {
 })
 
 describe("the limits of schema identity", () => {
+  it("classifies every lone-surrogate identifier without changing its refusal message", () => {
+    FastCheck.assert(
+      FastCheck.property(
+        FastCheck.integer({ min: 0xD800, max: 0xDFFF }),
+        FastCheck.constantFrom<Node.SchemaIdentityOptions>({}, closed),
+        (surrogate, options) => {
+          const schema = Schema.Struct({
+            value: Schema.String.annotate({ identifier: "name-" + String.fromCharCode(surrogate) })
+          })
+          expect(() => Node.schemaIdentity(schema, options)).toThrow(Node.SchemaIdentityError)
+          expect(() => Node.schemaIdentity(schema, options)).toThrow(expect.objectContaining({
+            _tag: "@smthrs/plan/SchemaIdentityError",
+            message: "URI malformed"
+          }))
+        }
+      ),
+      params(100)
+    )
+  })
+
   it("does not consult a toJsonSchema annotation passed to a built-in check", () => {
     // The identity of a built-in check is its id and payload. rc.115 printed
     // the annotation here; reading it would tie the identity to whatever the

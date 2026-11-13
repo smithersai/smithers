@@ -5,8 +5,9 @@
  * A call node folds what its callee accepts and produces into the material a
  * step key is derived from, and a catch node folds its filter the same way. A
  * projection that printed differently under another `effect` release would
- * re-key every recorded step in every journal at once. `effect` is a peer
- * range, so the application picks the release; the projection therefore
+ * re-key every recorded step in every journal at once. Journals written
+ * under `effect@4.0.0-rc.115`, `4.0.4` and `4.0.5` must stay derivable
+ * after the dependency pin moved to `4.1.1`; the projection therefore
  * cannot be the installed `Schema.toJsonSchemaDocument`. `effect@4.0.4`
  * already changed what that emitter prints for `Schema.Int`, `isMinLength`,
  * `isPattern`, repeated bounds, `oneOf` unions and shared definitions.
@@ -190,8 +191,13 @@ const escapeRegExp = (text: string): string => text.replace(/[/\\^$*+?.()|[\]{}]
 const unescapeToken = (token: string): string => token.replace(/~1/g, "/").replace(/~0/g, "~")
 
 /** @private */
-const definitionReference = (key: string): string =>
-  `#/$defs/${encodeURI(key.replace(/~/g, "~0").replace(/\//g, "~1")).replace(/#/g, "%23")}`
+const definitionReference = (key: string): string => {
+  try {
+    return `#/$defs/${encodeURI(key.replace(/~/g, "~0").replace(/\//g, "~1")).replace(/#/g, "%23")}`
+  } catch {
+    throw new SchemaIdentityError({ message: "URI malformed" })
+  }
+}
 
 /**
  * The JSON Pointer a URI fragment names, or `undefined` when it names none.
@@ -377,7 +383,7 @@ const empty: BuiltinCheck = () => ({})
  * fragment `effect@4.0.0-rc.115` printed for it.
  *
  * The three code-point checks did not exist under rc.115; they print what
- * `effect@4.0.4` introduced them with. The date, big integer and size checks
+ * `effect@4.0.5` introduced them with. The date, big integer and size checks
  * print nothing but still carry their own annotations, which is what the
  * empty fragment keeps.
  *
@@ -1115,8 +1121,8 @@ export const schemaIdentity = (schema: Schema.Top, options?: Options): Document 
 
 /**
  * The six built-in checks `effect` renamed after `4.0.0-rc.115`, from the id
- * a later release writes to the id rc.115 wrote. Their payloads and
- * payloads did not change. The 4.1 default annotations are projected separately.
+ * a later release writes to the id rc.115 wrote. Their payloads did not
+ * change. The 4.1 default annotations are projected separately.
  *
  * @private
  */

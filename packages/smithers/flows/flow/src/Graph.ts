@@ -991,7 +991,8 @@ export const build = (
     edges: [],
     diagnostics: [],
     operations: [],
-    envelopes: new Map()
+    envelopes: new Map(),
+    boundedEnvelopes: new Map()
   }
   const declaration = flowDeclaration(flowOrNode)
   const root = options.root ?? "root"
@@ -1041,6 +1042,8 @@ interface Builder {
    * per build rather than once per node that narrows it.
    */
   readonly envelopes: Map<Effects.Declaration, Effects.PreparedEnvelope>
+  /** Each author's declaration is bounded and copied once before matching. */
+  readonly boundedEnvelopes: Map<Effects.Declaration, Effects.Declaration>
 }
 
 /** The visit of a bare node entered as the graph's root. @private */
@@ -1208,6 +1211,19 @@ const admitEnvelope = (
   site: { readonly id: string; readonly flow: string }
 ): Effects.Declaration | undefined => {
   if (declared === undefined) return enclosing
+  let bounded = builder.boundedEnvelopes.get(declared)
+  if (bounded === undefined) {
+    bounded = Effects.boundedEffects(declared, Number.MAX_SAFE_INTEGER, () =>
+      new GraphBuildError({
+        code: "plan_too_large",
+        node: site.id,
+        path: [],
+        message: `Effect declaration at "${site.id}" exceeds ${Effects.maximumPathLength} code units per path ` +
+          `or ${Effects.maximumGlobs} patterns per read or write list. Shorten the paths or split the declaration.`
+      }))
+    builder.boundedEnvelopes.set(declared, bounded)
+  }
+  declared = bounded
   if (enclosing === undefined) return declared
   let prepared = builder.envelopes.get(enclosing)
   if (prepared === undefined) {

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Capability } from "@smthrs/capability"
 import { Action, Flow, Graph } from "@smthrs/flow"
-import { Effects, GraphBuildError } from "@smthrs/plan"
+import { Effects, GraphBuildError, Node } from "@smthrs/plan"
 import { Context, Option, Schema } from "effect"
+import * as FastCheck from "fast-check"
 
 const Touch = Action.make("envelope/touch", {
   payload: { path: Schema.String },
@@ -397,5 +398,114 @@ describe("Graph.build effect envelope", () => {
     })
 
     expect(Graph.diagnostics(Graph.build(Caller, {}))).toEqual([])
+  })
+})
+
+describe("Graph.build effect-path limits", () => {
+  const sites = ["root", "inline", "child", "handoff", "action", "bare-action"] as const
+  const lists = ["reads", "writes"] as const
+
+  /** Exercises the declaration at each public graph admission boundary. */
+  const buildAt = (site: typeof sites[number], effects: Effects.Declaration): Graph.Graph => {
+    const Leaf = Action.make("bounds/leaf", {
+      payload: {},
+      success: Schema.Number,
+      ...(site === "action" || site === "bare-action" ? { effects } : {})
+    })
+    if (site === "bare-action") return Graph.build(Leaf.call({}))
+    const Callee = Flow.make("bounds/callee", {
+      payload: {},
+      success: Schema.Number,
+      ...(site === "action" ? {} : { effects }),
+      body: () => Leaf.call({})
+    })
+    if (site === "root") return Graph.build(Callee, {})
+    const Caller = Flow.make("bounds/caller", {
+      payload: {},
+      success: Schema.Number,
+      body: () =>
+        site === "inline" ?
+          Callee.call({})
+          : site === "child" ?
+          Callee.child({})
+          : site === "handoff" ?
+          Callee.to({})
+          : Leaf.call({})
+    })
+    return Graph.build(Caller, {})
+  }
+
+  describe.each(sites)("at %s", (site) => {
+    it.each(lists)("refuses an oversized %s path before matching", (list) => {
+      const effects = envelope({ [list]: ["x".repeat(Effects.maximumPathLength + 1)] })
+      expect(() => buildAt(site, effects)).toThrow(GraphBuildError.GraphBuildError)
+      expect(() => buildAt(site, effects)).toThrow(expect.objectContaining({
+        code: "plan_too_large",
+        node: site === "root" || site === "bare-action" ? "root" : "root.flow",
+        path: []
+      }))
+    })
+
+    it.each(lists)("refuses too many %s globs before matching", (list) => {
+      const paths = Array.from({ length: Effects.maximumGlobs + 1 }, (_, i) => "files/" + i + "/*")
+      expect(() => buildAt(site, envelope({ [list]: paths }))).toThrow(expect.objectContaining({
+        code: "plan_too_large",
+        path: []
+      }))
+    })
+
+    it("admits both lists at their exact path and glob bounds", () => {
+      const paths = [
+        "x".repeat(Effects.maximumPathLength),
+        ...Array.from({ length: Effects.maximumGlobs }, (_, i) => "files/" + i + "/*")
+      ]
+      const graph = buildAt(site, envelope({ reads: paths, writes: paths, tier: "sealed" }))
+      expect(Graph.diagnostics(graph)).toEqual([])
+      expect(Graph.drafts(graph).length).toBeGreaterThan(0)
+    })
+  })
+
+  it("enforces path and pattern bounds throughout their boundary neighbourhood", () => {
+    FastCheck.assert(
+      FastCheck.property(
+        FastCheck.constantFrom(...sites),
+        FastCheck.constantFrom(...lists),
+        FastCheck.integer({ min: Effects.maximumPathLength - 2, max: Effects.maximumPathLength + 2 }),
+        FastCheck.integer({ min: Effects.maximumGlobs - 2, max: Effects.maximumGlobs + 2 }),
+        (site, list, length, count) => {
+          const paths = [
+            "x".repeat(length),
+            ...Array.from({ length: count }, (_, i) => "files/" + i + "/*")
+          ]
+          const attempt = () => buildAt(site, envelope({ [list]: paths }))
+          if (length > Effects.maximumPathLength || count > Effects.maximumGlobs) {
+            expect(attempt).toThrow(expect.objectContaining({ code: "plan_too_large" }))
+          } else {
+            expect(Graph.diagnostics(attempt())).toEqual([])
+          }
+        }
+      ),
+      { numRuns: 100, seed: 4624 }
+    )
+  })
+
+  it("admits repeated calls to a flow with a bounded effect declaration", () => {
+    const Callee = Flow.make("bounds/repeated-callee", {
+      payload: {},
+      success: Schema.Number,
+      effects: envelope({ reads: ["src/**"] }),
+      body: () => Touch.call({ path: "src/a.ts" })
+    })
+    const Caller = Flow.make("bounds/repeated-caller", {
+      payload: {},
+      success: Schema.Struct({ first: Schema.Number, second: Schema.Number }),
+      effects: envelope({ reads: ["**"] }),
+      body: () => Node.all({ first: Callee.call({}), second: Callee.call({}) })
+    })
+    const graph = Graph.build(Caller, {})
+    expect(Graph.diagnostics(graph)).toEqual([])
+    expect(Graph.drafts(graph).length).toBeGreaterThan(0)
+    expect(Graph.nodes(graph).filter((node) => node.ast._tag === "ActionCall" && node.ast.action === "envelope/touch"))
+      .toHaveLength(2)
   })
 })

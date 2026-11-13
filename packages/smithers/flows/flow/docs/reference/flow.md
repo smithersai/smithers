@@ -1194,7 +1194,7 @@ A built graph: the nodes in dependency order, the edges between them, and the re
 - **Signature:** `build(flowOrNode: Flow.Any | Node.Any, payload?: unknown, options: BuildOptions = {}): Graph`
 - **Since:** `0.1.0`
 
-Builds the graph of a flow declaration, or of a bare node, by walking the authoring tree once. Building is a pure function of the declarations and the payload, so the shape of a round is known before its first action runs. It refuses a nesting depth past its bound and a duplicate node id, because a node id is durable dispatch identity.
+Builds the graph of a flow declaration, or of a bare node, by walking the authoring tree once. Building is a pure function of the declarations and the payload, so the shape of a round is known before its first action runs. It refuses a nesting depth past its bound and a duplicate node id, because a node id is durable dispatch identity. Every declared flow or action envelope is bounded before matching, including the root flow, bare actions, and calls across execution boundaries. A path longer than `Effects.maximumPathLength` (4,096 UTF-16 code units), or more than `Effects.maximumGlobs` (128) patterns in either its read or write list, throws `GraphBuildError` with code `plan_too_large`.
 
 ### `Graph.nodes`
 
