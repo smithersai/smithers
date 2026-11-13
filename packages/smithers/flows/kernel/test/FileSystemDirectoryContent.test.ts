@@ -1,3 +1,4 @@
+import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
@@ -52,17 +53,18 @@ const volume = (kinds: Record<string, "Directory" | "File" | "Unreadable">) => {
 const run = <A>(
   effect: (fileSystem: EffectFileSystem.FileSystem) => Effect.Effect<A, unknown>,
   host: EffectFileSystem.FileSystem,
-  grants: Effect.Effect<GrantStore.Service, unknown, import("effect").Scope.Scope | Workspace.Workspace>
+  grants: Effect.Effect<GrantStore.Service, unknown, import("effect").Scope.Scope | Workspace.Workspace>,
+  windows = false
 ) =>
   Effect.gen(function*() {
     const store = yield* grants
     return yield* Effect.flatMap(EffectFileSystem.FileSystem, effect).pipe(
       Effect.provide(FileSystem.layer),
       Effect.provideService(EffectFileSystem.FileSystem, host),
-      Effect.provide(EffectPath.layer),
+      Effect.provide(windows ? NodePath.layerWin32 : EffectPath.layer),
       Effect.provideService(GrantStore.GrantStore, store)
     )
-  }).pipe(Effect.provide(Workspace.layer("/workspace")), Effect.scoped)
+  }).pipe(Effect.provide(Workspace.layer(windows ? "C:\\workspace" : "/workspace")), Effect.scoped)
 
 const withRules = (...restrictions: ReadonlyArray<Permission.Rule>) =>
   GrantStore.make({ attended: false, rules: [...workspaceRules, ...restrictions] })
@@ -191,6 +193,88 @@ describe("FileSystem directory content", () => {
         ...GrantStore.makeNoop,
         policy: Effect.fail(new Permission.GrantStoreError({ code: "store_closed" }))
       }))
+    )
+  })
+})
+
+describe("FileSystem directory content on Windows", () => {
+  const under = (...segments: ReadonlyArray<string>) => ["C:\\workspace", ...segments].join("\\")
+  const rename = (fs: EffectFileSystem.FileSystem, from: string, to: string) => fs.rename(from, to)
+  const copy = (fs: EffectFileSystem.FileSystem, from: string, to: string) => fs.copy(from, to)
+  const remove = (fs: EffectFileSystem.FileSystem, from: string) => fs.remove(from, { recursive: true })
+
+  for (
+    const scenario of [
+      { name: "rename", operation: rename, action: "fs:read", operand: "src" },
+      { name: "rename", operation: rename, action: "fs:write", operand: "src" },
+      { name: "rename", operation: rename, action: "fs:write", operand: "out" },
+      { name: "remove", operation: remove, action: "fs:write", operand: "src" },
+      { name: "copy", operation: copy, action: "fs:read", operand: "src" },
+      { name: "copy", operation: copy, action: "fs:write", operand: "out" }
+    ] as const
+  ) {
+    for (const effect of ["deny", "ask"] as const) {
+      for (const descendant of ["**", "key"]) {
+        it.effect(`refuses ${scenario.name} under a ${scenario.action} ${effect} on ${scenario.operand}\\${descendant}`, () => {
+          const { calls, host } = volume({ [under("src")]: "Directory", [under("lib")]: "Directory" })
+          return run(
+            (fileSystem) =>
+              Effect.gen(function*() {
+                expect(yield* refused(scenario.operation(fileSystem, under("src"), under("out")))).toBe(
+                  `${scenario.action} ${under(scenario.operand)}: ${contentReason}`
+                )
+                expect(calls).toEqual([])
+                // A disjoint directory still reaches the host.
+                yield* scenario.operation(fileSystem, under("lib"), under("pub"))
+                expect(calls).toEqual([
+                  scenario.name === "remove"
+                    ? `remove ${under("lib")} recursive`
+                    : `${scenario.name} ${under("lib")} ${under("pub")}`
+                ])
+              }),
+            host,
+            GrantStore.make({
+              attended: false,
+              rules: [
+                rule("fs:read", under("**")),
+                rule("fs:write", under("**")),
+                rule(scenario.action, under(scenario.operand, descendant), effect)
+              ]
+            }),
+            true
+          )
+        })
+      }
+    }
+  }
+
+  it.effect("lets a later allow covering the Windows directory supersede a content restriction", () => {
+    const { calls, host } = volume({ [under("src")]: "Directory" })
+    return run(
+      (fileSystem) =>
+        Effect.gen(function*() {
+          yield* fileSystem.rename(under("src"), under("out"))
+          yield* fileSystem.copy(under("src"), under("out"))
+          yield* fileSystem.remove(under("src"), { recursive: true })
+          expect(calls).toEqual([
+            `rename ${under("src")} ${under("out")}`,
+            `copy ${under("src")} ${under("out")}`,
+            `remove ${under("src")} recursive`
+          ])
+        }),
+      host,
+      GrantStore.make({
+        attended: false,
+        rules: [
+          rule("fs:read", under("**")),
+          rule("fs:write", under("**")),
+          rule("fs:read", under("src", "**"), "deny"),
+          rule("fs:write", under("src", "key"), "ask"),
+          rule("fs:read", under("src", "**")),
+          rule("fs:write", under("src", "**"))
+        ]
+      }),
+      true
     )
   })
 })

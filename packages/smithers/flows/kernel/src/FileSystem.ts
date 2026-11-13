@@ -1140,7 +1140,9 @@ export const layer: Layer.Layer<
             ? grants.policy.pipe(
               Effect.mapError(refuse(method, normalize(value))),
               Effect.flatMap((policy) => {
-                const restricted = operands.find(([action, resource]) => restrictsContent(policy, action, resource))
+                const restricted = operands.find(([action, resource]) =>
+                  restrictsContent(policy, action, resource, path.sep)
+                )
                 return restricted === undefined
                   ? Effect.void
                   : deny(
