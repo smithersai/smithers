@@ -212,6 +212,7 @@
     "eslint-plugin-jsdoc": "64.3.4",
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
+    "marked": "17.0.1",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.12",

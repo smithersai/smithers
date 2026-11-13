@@ -1,16 +1,12 @@
 import * as Effect from "effect/Effect"
-import { createRequire } from "node:module"
+import { marked } from "marked"
 import { describe, expect, it } from "vitest"
 import { EvalError } from "../src/EvalError.ts"
 import * as Regression from "../src/Regression.ts"
 import * as Report from "../src/Report.ts"
 import type * as Runner from "../src/Runner.ts"
+import * as Trials from "../src/Trials.ts"
 
-// Use the GFM parser already installed by the workspace's Mermaid dependency.
-const require = createRequire(import.meta.url)
-const { marked } = createRequire(require.resolve("mermaid"))("marked") as {
-  marked: { parse: (markdown: string, options: { gfm: boolean; async: false }) => string }
-}
 const html = (report: Regression.Report): string => marked.parse(Report.markdown(report), { gfm: true, async: false })
 const htmlText = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;").replaceAll(
@@ -76,7 +72,7 @@ describe("Report", () => {
     expect(Report.markdown(result)).toContain("- stderr: 0.272166")
   })
 
-  it("reads trials from a run that records no k as single-attempt statistics", async () => {
+  it.each([undefined, 1])("prints pass@1 once for repeated trials with k = %s", async (k) => {
     const base = await empty()
     const trials = {
       cases: 1,
@@ -86,10 +82,29 @@ describe("Report", () => {
       allPass: 0,
       perCase: { c: { n: 2, passes: 1, rate: 0.5, passAt1: 0.5, passAtK: 0.5, passHatK: 0.5, stderr: 0.5 } }
     }
-    const markdown = Report.markdown({ ...base, run: { ...base.run, trials } })
-    expect(markdown).toContain("- pass@1: 0.500000\n- pass@1: 0.500000\n- pass^1: 0.500000\n- stderr: 0.500000\n")
+    const markdown = Report.markdown({ ...base, run: { ...base.run, trials, k } })
+    expect(markdown).toContain("- pass@1: 0.500000\n- stderr: 0.500000\n")
+    expect(markdown.match(/- pass@1:/gu)).toHaveLength(1)
+    expect(markdown).not.toContain("pass^1")
     expect(markdown).not.toContain("pass@undefined")
     expect(markdown).not.toContain("pass^undefined")
+  })
+
+  it.each([0, 1])("omits trial statistics when each case runs at most once: %s", async (count) => {
+    const base = await empty()
+    const outcomes: Readonly<Record<string, ReadonlyArray<boolean>>> = count === 0 ? {} : { c: [true] }
+    const trials = Trials.aggregate(outcomes, 1)
+    const result = { ...base, run: { ...base.run, trials, k: 1 } }
+    expect(Report.markdown(result)).toBe(Report.markdown(base))
+    expect(Report.json(result)).toContain("\"trials\"")
+  })
+
+  it("shows trial statistics when only some cases repeat", async () => {
+    const base = await empty()
+    const trials = Trials.aggregate({ single: [true], repeated: [true, false] }, 1)
+    const markdown = Report.markdown({ ...base, run: { ...base.run, trials, k: 1 } })
+    expect(markdown).toContain("- pass@1: 0.750000\n- stderr: 0.176777\n")
+    expect(markdown).not.toContain("pass^1")
   })
 
   it("renders stable JSON and a summary-only Markdown report", async () => {

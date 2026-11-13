@@ -381,6 +381,8 @@ Builds the in-process batch runner a run scores with by default. Each job's
 scorer runs in the current process, its result is checked by the scorers
 package's own `Scorer.validate`, and a scorer that fails becomes an
 inconclusive observation naming its cause rather than failing the run.
+It uses `Scoring.runBatchCorrelated` with `ScoreStore.layerNoop`, so the
+shared scorer reason and metadata redaction and bounds also apply in process.
 `layerInline` provides it as the `Runner` service.
 
 `layerNoop` provides a batch runner that is never available. Every bound score
@@ -530,6 +532,9 @@ byte-identical JSON. Nothing redacts the embedded output.
 the summary that is not zero has a section naming its rows: the regressions
 and the nondeterminism a gate reads as red, and the case failures, missing
 observations, and inconclusive observations that leave a gate undecided.
+Trial statistics appear only when at least one case ran more than once.
+The report prints `pass@1` and `stderr`, plus `pass@k` and `pass^k` only
+when `k > 1`.
 Every cell and the suite heading value replace each control character (see
 [Baseline](#baseline)) with a space. Backslashes, pipes, backticks, asterisks,
 underscores, brackets, angle brackets, exclamation marks, hashes, tildes,

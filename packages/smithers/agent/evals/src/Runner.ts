@@ -9,10 +9,9 @@
  * @since 0.1.0
  */
 
+import { ScoreStore } from "@smthrs/scorers"
 import * as Sampling from "@smthrs/scorers/Sampling"
-import * as Scorer from "@smthrs/scorers/Scorer"
 import { ScorerError } from "@smthrs/scorers/ScorerError"
-import type * as ScoreStore from "@smthrs/scorers/ScoreStore"
 import * as ScorerRunner from "@smthrs/scorers/Scoring"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
@@ -454,32 +453,15 @@ const observationFor = (request: ScoreRequest, result: ScoreObservation, at: str
   }
 }
 
-const executeInline = (job: ScoreJob): Effect.Effect<ScoreObservation> =>
-  job.score.pipe(
-    Effect.flatMap(Scorer.validate),
-    Effect.map((result): ScoreStore.ScoreObservation => ({
-      ...job.observation,
-      kind: "score",
-      score: result.score,
-      ...(result.reason === undefined ? {} : { reason: result.reason }),
-      ...(result.meta === undefined ? {} : { meta: result.meta }),
-      at: job.at
-    })),
-    Effect.catchCause((cause) =>
-      Cause.hasInterrupts(cause)
-        ? Effect.interrupt
-        : Effect.succeed(ScorerRunner.inconclusive(job, cause))
-    )
-  )
-
 /**
  * Builds the in-process batch runner a run scores with by default.
  *
  * Each job's scorer runs in the current process, its result is checked by
  * `@smthrs/scorers`' own `Scorer.validate`, and a scorer that fails becomes an
  * inconclusive observation naming its cause rather than failing the run. It
- * honours the {@link ScoreBatchRunner} protocol, so it is also the reference
- * a custom adapter can be compared against.
+ * uses shared scoring with a no-op score store, including reason and metadata
+ * redaction and bounds. It honours the {@link ScoreBatchRunner} protocol,
+ * so it is also the reference a custom adapter can be compared against.
  *
  * @category constructors
  * @since 0.1.0
@@ -489,10 +471,9 @@ export const makeInline = (): ScoreBatchRunner => {
     jobs: ReadonlyArray<ScoreJob>,
     options?: { readonly concurrency?: number | undefined }
   ): Effect.Effect<ReadonlyArray<BatchResult>> =>
-    Effect.forEach(
-      jobs,
-      (job) => executeInline(job).pipe(Effect.map((observation) => ({ identity: job.identity, observation }))),
-      { concurrency: options?.concurrency ?? 1 }
+    ScorerRunner.runBatchCorrelated(jobs, options).pipe(
+      Effect.provide(ScoreStore.layerNoop),
+      Effect.map((results) => results.map(({ identity, observation }) => ({ identity, observation })))
     )
   return {
     runBatchCorrelated,
@@ -656,8 +637,9 @@ const scoreCorrelated = (
         return yield* Effect.fail(
           new EvalError({
             code: "scorer_protocol",
-            message:
-              `Correlated scorer batch returned duplicate identity '${result.identity}' for job ${jobIndex} at result index ${index}`,
+            message: flattenControlCharacters(
+              `Correlated scorer batch returned duplicate identity '${result.identity}' for job ${jobIndex} at result index ${index}`
+            ),
             path: `runBatchCorrelated[${index}]`
           })
         )
@@ -671,9 +653,9 @@ const scoreCorrelated = (
       return yield* Effect.fail(
         new EvalError({
           code: "scorer_protocol",
-          message: `Correlated scorer batch returned unknown identity '${
-            flattenControlCharacters(unknown.identity)
-          }' at result index ${unknown.index}; job ${missingJobIndex} identity '${missingIdentity}' is absent`,
+          message: flattenControlCharacters(
+            `Correlated scorer batch returned unknown identity '${unknown.identity}' at result index ${unknown.index}; job ${missingJobIndex} identity '${missingIdentity}' is absent`
+          ),
           path: `runBatchCorrelated[${unknown.index}]`
         })
       )

@@ -181,6 +181,9 @@ const section = (
  * gate undecided. A report that only counted them named nothing an operator
  * could act on, which is exactly the run that needs debugging.
  *
+ * Trial statistics appear only when at least one case ran more than once;
+ * pass@k and pass^k appear only for k greater than one.
+ *
  * Every cell and the suite heading value replace C0 controls and DEL with
  * spaces and escape backslashes, pipes, inline GFM syntax, raw HTML, entities,
  * and URL/email autolinks. Values are capped at 240 escaped UTF-16 code units,
@@ -198,10 +201,14 @@ export const markdown = (report: RegressionReport): string => {
     `- Missing observations: ${report.missing.length}`,
     `- Inconclusive observations: ${report.inconclusive.length}`,
     `- Failed cases: ${report.run.cases.filter((result) => result.error !== undefined).length}`,
-    ...(report.run.trials === undefined ? [] : [
+    ...(report.run.trials === undefined || !Object.values(report.run.trials.perCase).some((item) => item.n > 1) ? [] : [
       `- pass@1: ${report.run.trials.passAt1.toFixed(6)}`,
-      `- pass@${report.run.k ?? 1}: ${report.run.trials.passAtK.toFixed(6)}`,
-      `- pass^${report.run.k ?? 1}: ${report.run.trials.passHatK.toFixed(6)}`,
+      ...((report.run.k ?? 1) > 1 ?
+        [
+          `- pass@${report.run.k}: ${report.run.trials.passAtK.toFixed(6)}`,
+          `- pass^${report.run.k}: ${report.run.trials.passHatK.toFixed(6)}`
+        ] :
+        []),
       `- stderr: ${
         (Object.values(report.run.trials.perCase).reduce((sum, item) => sum + item.stderr, 0) / report.run.trials.cases)
           .toFixed(6)

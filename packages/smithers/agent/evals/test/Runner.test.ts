@@ -122,6 +122,46 @@ describe("Runner", () => {
     expect(error.message).toContain("'bad   -step'")
   })
 
+  it.each(
+    [
+      ["runId", true],
+      ["runId", false],
+      ["sampleId", true],
+      ["sampleId", false]
+    ] as const
+  )("flattens %s controls in correlated identities (duplicate: %s)", async (field, duplicate) => {
+    const hostile = "identifier\u007f\u009b\u202e"
+    const suite = await suiteOf("identity-controls", [binding], [{ name: "a", input: 1 }, { name: "b", input: 2 }])
+    let missingIdentity = ""
+    const scorer: Runner.ScoreBatchRunner = {
+      runBatch: () => Effect.die("order-only path used"),
+      runBatchCorrelated: (jobs) => {
+        missingIdentity = jobs[0]!.identity
+        const observation = (job: Runner.ScoreJob): Runner.ScoreObservation => ({
+          ...job.observation,
+          kind: "score",
+          score: 1,
+          at: job.at
+        })
+        return Effect.succeed([
+          { identity: duplicate ? jobs[0]!.identity : hostile, observation: observation(jobs[0]!) },
+          { identity: duplicate ? jobs[0]!.identity : jobs[1]!.identity, observation: observation(jobs[1]!) }
+        ])
+      }
+    }
+    const error = await failureOf(
+      Runner.run(suite, { ...runOptions, [field]: hostile, scorer }).pipe(Effect.provide(succeeding))
+    )
+    expect(error.code).toBe("scorer_protocol")
+    expect(error.path).toBe("runBatchCorrelated[" + (duplicate ? 1 : 0) + "]")
+    expect(error.message).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u)
+    const safeIdentity = missingIdentity.replace(/[\u007f\u009b\u202e]/gu, " ")
+    expect(error.message).toContain(
+      duplicate ? "duplicate identity '" + safeIdentity + "'" : "identity '" + safeIdentity + "' is absent"
+    )
+    if (!duplicate) expect(error.message).toContain("unknown identity 'identifier   '")
+  })
+
   it("sanitizes invalid timestamps in validation errors before executing cases", async () => {
     const suite = await suiteOf("unsafe-timestamp", [])
     let calls = 0
@@ -730,6 +770,32 @@ describe("Runner", () => {
     const result = await Effect.runPromise(Runner.run(suite, runOptions).pipe(Effect.provide(succeeding)))
     expect(result.observations).toHaveLength(1)
     expect(result.observations[0]).toMatchObject({ kind: "score", score: 1, reason: "exact", scorerName: "exact" })
+  })
+
+  it("uses the shared scoring bounds and redaction for both inline batch protocols", async () => {
+    const jobs: ReadonlyArray<Runner.ScoreJob> = [{
+      identity: "bounded-reason",
+      observation: { targetStepKey: "step", scorerKey: scorerFlow.scorerKey },
+      score: Effect.succeed({ score: 1, reason: "é".repeat(ScoreStore.maxReasonBytes) }),
+      at: 0
+    }, {
+      identity: "redacted-metadata",
+      observation: { targetStepKey: "step", scorerKey: scorerFlow.scorerKey },
+      score: Effect.succeed({ score: 0.5, meta: { authorization: "Bearer private-token" } }),
+      at: 1
+    }]
+    const expected = await Effect.runPromise(
+      ScorerRunner.runBatchCorrelated(jobs).pipe(Effect.provide(ScoreStore.layerNoop))
+    )
+    const inline = Runner.makeInline()
+    const correlated = await Effect.runPromise(inline.runBatchCorrelated!(jobs))
+    expect(correlated.map(({ identity, observation }) => ({ identity, observation }))).toEqual(
+      expected.map(({ identity, observation }) => ({ identity, observation }))
+    )
+    const observations = await Effect.runPromise(inline.runBatch(jobs))
+    expect(observations).toEqual(expected.map((result) => result.observation))
+    expect(observations[0]).toMatchObject({ kind: "score", reason: "é".repeat(ScoreStore.maxReasonBytes / 2) })
+    expect(JSON.stringify(observations[1])).not.toContain("private-token")
   })
 
   it("preserves a typed scorer failure code in the inline batch result", async () => {
