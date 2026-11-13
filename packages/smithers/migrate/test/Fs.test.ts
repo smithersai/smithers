@@ -129,6 +129,78 @@ describe("Fs.writeAtomic never opens a temporary name that already exists", () =
     }).pipe(Effect.provide(nodeLayer)))
 })
 
+describe("Fs.writeAtomic is durable before it succeeds", () => {
+  /** A filesystem that records every open, write, sync and rename, and can fail one sync. */
+  const traced = (fs: FileSystem.FileSystem, trace: Array<string>, failing?: "file" | "directory") => {
+    const failure = PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "sync" })
+    const io: FileSystem.FileSystem = {
+      ...fs,
+      open: (path, options) =>
+        fs.open(path, options).pipe(
+          Effect.map((handle) => {
+            const kind = options?.flag === "r" ? "directory" : "file"
+            trace.push(`open ${kind}`)
+            const sync = Effect.suspend(() => {
+              trace.push(`sync ${kind}`)
+              return failing === kind ? Effect.fail(failure) : handle.sync
+            })
+            const writeAll = (bytes: Uint8Array) =>
+              Effect.tap(handle.writeAll(bytes), () => Effect.sync(() => trace.push("write file")))
+            return Object.create(handle, { sync: { value: sync }, writeAll: { value: writeAll } }) as FileSystem.File
+          })
+        ),
+      rename: (from, to) => Effect.tap(fs.rename(from, to), () => Effect.sync(() => trace.push("rename")))
+    }
+    return { io, failure }
+  }
+
+  it.effect("syncs the temporary file before the rename and the directory after it", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      const file = join(root, "pending-unit.json")
+      const trace: Array<string> = []
+      const { io } = traced(yield* FileSystem.FileSystem, trace)
+
+      yield* Fs.writeAtomic(file, "RECORD\n").pipe(Effect.provideService(FileSystem.FileSystem, io))
+
+      expect(trace).toEqual(["open file", "write file", "sync file", "rename", "open directory", "sync directory"])
+      expect(readFileSync(file, "utf8")).toBe("RECORD\n")
+    }).pipe(Effect.provide(nodeLayer)))
+
+  it.effect("fails, and never renames, when the temporary file cannot be synced", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      const file = join(root, "pending-unit.json")
+      writeFileSync(file, "OLD\n")
+      const trace: Array<string> = []
+      const { io, failure } = traced(yield* FileSystem.FileSystem, trace, "file")
+
+      const error = yield* Effect.flip(
+        Fs.writeAtomic(file, "NEW\n").pipe(Effect.provideService(FileSystem.FileSystem, io))
+      )
+
+      expect(error).toBe(failure)
+      expect(trace).not.toContain("rename")
+      expect(readFileSync(file, "utf8")).toBe("OLD\n")
+      expect(readdirSync(root)).toEqual(["pending-unit.json"])
+    }).pipe(Effect.provide(nodeLayer)))
+
+  it.effect("fails when the directory holding the renamed file cannot be synced", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      const file = join(root, "pending-unit.json")
+      const trace: Array<string> = []
+      const { io, failure } = traced(yield* FileSystem.FileSystem, trace, "directory")
+
+      const error = yield* Effect.flip(
+        Fs.writeAtomic(file, "RECORD\n").pipe(Effect.provideService(FileSystem.FileSystem, io))
+      )
+
+      expect(error).toBe(failure)
+      expect(trace.at(-1)).toBe("sync directory")
+    }).pipe(Effect.provide(nodeLayer)))
+})
+
 describe("Fs.isStaleTemporary", () => {
   it("recognizes a leftover of a crashed atomic write and nothing else", () => {
     expect(Fs.isStaleTemporary(".report.json.tmp-1234-0")).toBe(true)

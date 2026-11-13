@@ -424,6 +424,11 @@ let atomicCounter = 0
  * project — is never opened: the writer moves on to the next counter, so only
  * the file this call created is renamed over the target.
  *
+ * The write is durable before it succeeds: the temporary file's bytes are
+ * synced before the rename, and the containing directory after it, so a
+ * caller that goes on to edit the project never does so while its recovery
+ * record is still only in the filesystem cache.
+ *
  * The caller keeps its own error mapping: this fails with the platform's
  * error, exactly as `fs.writeFileString` would.
  *
@@ -443,6 +448,7 @@ export const writeAtomic = (
       return fs.open(temporary, { flag: "wx", mode: 0o600 }).pipe(
         Effect.flatMap((handle) =>
           handle.writeAll(bytes).pipe(
+            Effect.andThen(handle.sync),
             Effect.onError(() => fs.remove(temporary, { force: true }).pipe(Effect.ignore))
           )
         ),
@@ -457,6 +463,9 @@ export const writeAtomic = (
       // the report directory refuses entries that are not the tool's own.
       Effect.onError(() => fs.remove(temporary, { force: true }).pipe(Effect.ignore))
     )
+    // The rename is durable only once the directory entry is: until then a
+    // power loss can drop the record the caller is about to rely on.
+    yield* Effect.scoped(Effect.flatMap(fs.open(path.dirname(file), { flag: "r" }), (directory) => directory.sync))
   })
 
 /**

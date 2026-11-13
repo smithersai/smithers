@@ -294,11 +294,25 @@ export const destructuredNames = (pattern: ts.ObjectBindingPattern): ReadonlyMap
   for (const element of pattern.elements) {
     if (element.dotDotDotToken !== undefined) continue
     if (element.name === undefined || !ts.isIdentifier(element.name)) continue
-    const source = element.propertyName === undefined ? element.name.text : element.propertyName.getText()
-    names.set(element.name.text, source)
+    const source = element.propertyName === undefined ? element.name.text : propertyKey(element.propertyName)
+    if (source !== undefined) names.set(element.name.text, source)
   }
   return names
 }
+
+/**
+ * The key a property name denotes, decoded from the syntax tree rather than
+ * read from its spelling: `Worktree`, `"Worktree"`, `\u0057orktree` and
+ * `["Worktree"]` all name `Worktree`. A computed name that is not a literal
+ * has no static key and yields `undefined`.
+ */
+const propertyKey = (name: ts.PropertyName): string | undefined =>
+  ts.isIdentifier(name) ? name.text : ts.isComputedPropertyName(name) ? literalKey(name.expression) : literalKey(name)
+
+const literalKey = (node: ts.Node): string | undefined =>
+  ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isNumericLiteral(node)
+    ? node.text
+    : undefined
 
 /**
  * The callee text of a call expression, `f` or `a.b`.

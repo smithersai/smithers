@@ -247,6 +247,70 @@ describe("Scan.scan over a barrel of factory bindings", () => {
     }).pipe(Effect.provide(nodeLayer)))
 })
 
+describe("Scan.scan reads a destructured factory key by the property it names", () => {
+  // `{ "Worktree": W }` binds exactly the component `{ Worktree: W }` does, so
+  // every spelling of the key has to reach the same unsafe finding.
+  const keys = ["Worktree", "\"Worktree\"", "'Worktree'", "\\u0057orktree", "[\"Worktree\"]", "[`Worktree`]"]
+
+  it.effect.each(keys)("inventories and blocks a directly destructured %s", (key) =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+      mkdirSync(join(root, ".smithers", "workflows"), { recursive: true })
+      writeFileSync(
+        join(root, ".smithers", "workflows", "lane.tsx"),
+        "import { createSmithers } from \"smthrs\"\n" +
+          `const { Workflow, smithers, ${key}: W } = createSmithers({})\n` +
+          "export default smithers(() => <Workflow name=\"lane\"><W path=\"lane\" /></Workflow>)\n"
+      )
+
+      const result = yield* Scan.scan(root)
+      const report = Scan.toReport(result, "apply", generatedAt)
+
+      expect(result.units.find((unit) => unit.id === "workflow:lane")?.unsafe).toEqual(["Worktree"])
+      expect(report.unsupported.map((entry) => entry.construct)).toContain("Worktree")
+      expect(report.exitCode).toBe(3)
+    }).pipe(Effect.provide(nodeLayer)))
+
+  it.effect.each(keys)(
+    "inventories and blocks %s re-exported through a factory module",
+    (key) =>
+      Effect.gen(function*() {
+        const root = copyFixture("jsx-single")
+        mkdirSync(join(root, ".smithers", "workflows"), { recursive: true })
+        writeFileSync(
+          join(root, ".smithers", "runtime.ts"),
+          `import { createSmithers } from "smthrs"\nexport const { Workflow, ${key}: Lane } = createSmithers({})\n`
+        )
+        writeFileSync(
+          join(root, ".smithers", "workflows", "lane.tsx"),
+          "import { Workflow, Lane } from \"../runtime\"\n" +
+            "export default () => <Workflow name=\"lane\"><Lane path=\"lane\" /></Workflow>\n"
+        )
+
+        const result = yield* Scan.scan(root)
+
+        expect(result.units.find((unit) => unit.id === "workflow:lane")?.unsafe).toEqual(["Worktree"])
+      }).pipe(Effect.provide(nodeLayer))
+  )
+
+  it.effect("binds nothing for a computed key that names no literal property", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+      mkdirSync(join(root, ".smithers", "workflows"), { recursive: true })
+      writeFileSync(
+        join(root, ".smithers", "workflows", "lane.tsx"),
+        "import { createSmithers } from \"smthrs\"\nconst key = \"Worktree\"\n" +
+          "const { Workflow, smithers, [key]: W } = createSmithers({})\n" +
+          "export default smithers(() => <Workflow name=\"lane\"><W path=\"lane\" /></Workflow>)\n"
+      )
+
+      const result = yield* Scan.scan(root)
+
+      expect(result.inventory.filter((hit) => hit.file === ".smithers/workflows/lane.tsx").map((hit) => hit.construct))
+        .not.toContain("Worktree")
+    }).pipe(Effect.provide(nodeLayer)))
+})
+
 describe("Scan.decisions merges every occurrence of a construct", () => {
   const hit = (construct: string, props: ReadonlyArray<string>): Inventory.InventoryEntry => ({
     file: "flow.tsx",
