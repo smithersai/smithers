@@ -1,6 +1,7 @@
 // The personal model contract's routing and checks, pure (src/features/personal-model/contract.ts): the order a list is
 // read in, who writes a `todo` run, and what a save may keep. The routes prove the same rules end to end
 // (worker/personal/Connections.test.ts); here every branch is on the table at once.
+import fc from "fast-check"
 import { describe, expect, test } from "vitest"
 import {
   checkSave,
@@ -74,6 +75,62 @@ describe("jevOf", () => {
 })
 
 describe("resolveTier", () => {
+  const presets = [
+    ["fast", "gpt-6-luna", "claude-haiku-4-5"],
+    ["implement", "gpt-6.1-sol", "claude-sonnet-5"],
+    ["hard", "gpt-6-astra", "claude-opus-5-5"],
+  ] as const
+
+  test.each(presets)("%s presets follow the saved connection order in both directions", (tier, openaiModel, anthropicModel) => {
+    const openai = key("o", { baseUrl: "https://api.openai.com" })
+    const anthropic = key("a", { protocol: "anthropic-messages", baseUrl: "https://api.anthropic.com" })
+    expect(resolveTier([openai, anthropic], tier)).toEqual({
+      tier, connectionId: "o", protocol: "openai-chat", modelId: openaiModel, preset: true,
+    })
+    expect(resolveTier([anthropic, openai], tier)).toEqual({
+      tier, connectionId: "a", protocol: "anthropic-messages", modelId: anthropicModel, preset: true,
+    })
+    expect(resolveTier([openai, key("later", { baseUrl: openai.baseUrl })], tier)?.connectionId).toBe("o")
+  })
+
+  test.each(presets)("%s skips connections without an active matching preset", (tier, _, anthropicModel) => {
+    const anthropic = key("a", { protocol: "anthropic-messages", baseUrl: "https://api.anthropic.com" })
+    expect(resolveTier([
+      claude(),
+      row("j", "jev"),
+      key("gateway"),
+      key("off", { baseUrl: "https://api.openai.com", active: false }),
+      key("wrong-wire", { baseUrl: "https://api.anthropic.com" }),
+      key("no-url", { baseUrl: null }),
+      anthropic,
+      key("o", { baseUrl: "https://api.openai.com" }),
+    ], tier)).toEqual({
+      tier, connectionId: "a", protocol: "anthropic-messages", modelId: anthropicModel, preset: true,
+    })
+  })
+
+  test("preset routing preserves the first active key across arbitrary saved lists", () => {
+    fc.assert(fc.property(
+      fc.constantFrom(...presets),
+      fc.array(fc.record({ openai: fc.boolean(), active: fc.boolean() }), { minLength: 1, maxLength: MAX_CONNECTIONS }),
+      ([tier, openaiModel, anthropicModel], entries) => {
+        const connections = entries.map((entry, index) => key(String(index), {
+          active: entry.active,
+          protocol: entry.openai ? "openai-chat" : "anthropic-messages",
+          baseUrl: entry.openai ? "https://api.openai.com" : "https://api.anthropic.com",
+        }))
+        const first = connections.find((connection) => connection.active)
+        expect(resolveTier(connections, tier)).toEqual(first === undefined ? undefined : {
+          tier,
+          connectionId: first.id,
+          protocol: first.protocol,
+          modelId: first.protocol === "openai-chat" ? openaiModel : anthropicModel,
+          preset: true,
+        })
+      },
+    ))
+  })
+
   test("names beat presets within a tier, and each tier's fallbacks are read in turn", () => {
     const openai = key("o", { baseUrl: "https://api.openai.com" })
     const named = key("n", { fastModel: "named" })

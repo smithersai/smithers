@@ -110,7 +110,7 @@ never include the ciphertext. Signed out, no rows.
 Each role maps to a tier ([model endpoint](model-endpoint.md#tiers)): `agent`, `renderer`, `judge` and `summary` to
 `fast`, `coding` to `implement`, `review` and `plan` to `hard`. A tier's model, `resolveTier` in
 `src/features/personal-model/contract.ts`, is for each tier of its fallbacks in turn the model the first active connection
-names for it, else the tier's first preset at an active connection's host:
+names for it, else the first active connection whose host and protocol have a preset for that tier:
 
 | Tier | Falls back to | Presets, first saved key wins |
 |---|---|---|
@@ -118,8 +118,9 @@ names for it, else the tier's first preset at an active connection's host:
 | `implement` | `hard`, then `fast` | `gpt-6.1-sol` at `api.openai.com`, `claude-sonnet-5` at `api.anthropic.com` |
 | `hard` | `implement`, then `fast` | `claude-opus-5-5` at `api.anthropic.com`, `gpt-6-astra` at `api.openai.com` |
 
-So one model saved answers every tier, and two keys on the providers' own hosts need no model named. A key at any other
-host (a gateway, a self-hosted server) needs some model named. The presets are data (`TIER_PRESETS`); no code branches
+So one model saved answers every tier, and two keys on the providers' own hosts need no model named. With no model
+named, moving a key above another changes which provider's presets answer the tiers; the table's provider order gives
+no preference. A key at any other host (a gateway, a self-hosted server) needs some model named. The presets are data (`TIER_PRESETS`); no code branches
 on a provider.
 
 ## Answering

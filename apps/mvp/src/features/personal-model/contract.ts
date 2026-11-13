@@ -236,8 +236,8 @@ const presetOn = (tier: ModelTier, connection: ModelConnection) =>
 
 /**
  * The model `tier` uses among `connections`, which are in the person's order: for each tier of its `TIER_FALLBACKS` in
- * turn, the first active connection that names a model for it, else that tier's first preset at an active connection's
- * host; `undefined` when none does.
+ * turn, the first active connection that names a model for it, else the first active connection whose host and
+ * protocol have a preset for that tier; `undefined` when none does.
  */
 export const resolveTier = (connections: ReadonlyArray<SavedConnection>, tier: ModelTier): TierModel | undefined => {
   const models = connections.filter(servesModels)
@@ -247,11 +247,9 @@ export const resolveTier = (connections: ReadonlyArray<SavedConnection>, tier: M
     if (named !== undefined) {
       return { tier: each, connectionId: named.id, protocol: named.protocol, modelId: named[field]!, preset: false }
     }
-    for (const preset of TIER_PRESETS[each]) {
-      const hosted = models.find((connection) =>
-        connection.protocol === preset.protocol && hostOf(connection.baseUrl) === preset.host
-      )
-      if (hosted !== undefined) {
+    for (const hosted of models) {
+      const preset = presetOn(each, hosted)
+      if (preset !== undefined) {
         return { tier: each, connectionId: hosted.id, protocol: preset.protocol, modelId: preset.modelId, preset: true }
       }
     }
