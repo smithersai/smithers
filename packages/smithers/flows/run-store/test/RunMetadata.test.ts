@@ -168,13 +168,26 @@ describe("run metadata", () => {
       const store = yield* RunStore.RunStore
       yield* store.create("run", "{}")
       yield* own(store, "run")
+      yield* TestClock.adjust(2_000)
       expect(
         yield* store.transitionOwned("run", owner, "running", `{"a":1}`, { cancelRequested: "absent" })
       ).toEqual({ _tag: "Transitioned" })
+      expect(yield* store.get("run")).toMatchObject({
+        status: "running",
+        owner,
+        heartbeatAtMs: 1_000,
+        stateJson: `{"a":1}`
+      })
       yield* store.requestCancel("run", 500)
       expect(
-        yield* store.transitionOwned("run", owner, "running", undefined, { cancelRequested: "absent" })
+        yield* store.transitionOwned("run", owner, "running", `{"a":2}`, { cancelRequested: "absent" })
       ).toEqual({ _tag: "GuardFailed" })
+      expect(yield* store.get("run")).toMatchObject({
+        status: "running",
+        owner,
+        heartbeatAtMs: 1_000,
+        stateJson: `{"a":1}`
+      })
     }))
 
   for (

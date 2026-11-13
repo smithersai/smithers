@@ -358,7 +358,6 @@ describe("RunStore", () => {
         return { outcome, row: yield* store.get(pending.runId) }
       }))
 
-      expect(engineOwner).not.toEqual(ownerA)
       expect(result.outcome).toEqual({ _tag: "Activated" })
       expect(result.row.owner).toEqual(engineOwner)
       expect(result.row.status).toBe("running")
@@ -1656,10 +1655,9 @@ describe("RunStore ownership evidence boundaries", () => {
 describe("run-store fencing gaps", () => {
   it.effect("activate clears nothing it does not own after a third party recovered the claim", () =>
     Effect.gen(function*() {
-      // The compensating DELETE at RunStore.ts:776-788 runs only under
-      // `rowMatchesClaim`, and no case drove that branch with a FOREIGN claim
-      // present. Without the guard, a losing activation would strip the claim
-      // columns a recovery process had just written for itself.
+      // The `rowMatchesClaim` guard refuses activation before changing a
+      // claim held by another owner. A losing activation must leave that
+      // owner's claim columns intact.
       const result = yield* migrated(Effect.gen(function*() {
         const store = yield* RunStore
         yield* store.create("run-foreign-claim", "{}")

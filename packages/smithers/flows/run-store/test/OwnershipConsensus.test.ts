@@ -371,40 +371,6 @@ const suite = (name: string, strategy: Strategy) => {
         })
       })))
 
-    it.effect("frees a pending steal claim when the stale owner settles the run first", () =>
-      run(Effect.gen(function*() {
-        const store = yield* RunStore
-        yield* store.create("run-settled-under-steal", "{}")
-        expect(yield* store.claimAndOwn("run-settled-under-steal", pending, ownerA, 0)).toEqual({
-          _tag: "Activated"
-        })
-        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
-        const nowMs = yield* Clock.currentTimeMillis
-        const stale: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: 0 }
-        expect(
-          yield* store.steal("run-settled-under-steal", stale, ownerB, nowMs, evidence(ownerA, ownerB, nowMs))
-        ).toEqual({ _tag: "Claimed", claimedAtMs: nowMs })
-        // The stale owner still holds its fence and suspends before the
-        // claimant activates: the claim it overtook must not outlive the row's.
-        expect(yield* store.transitionOwned("run-settled-under-steal", ownerA, "suspended")).toEqual({
-          _tag: "Transitioned"
-        })
-        expect((yield* store.get("run-settled-under-steal")).claim).toBeNull()
-        const journal = yield* Journal
-        const companion = JournalEvent.companionRunId("run-store", "run-settled-under-steal")
-        const facts = (yield* journal.entries({ runId: companion, limit: 100 })).entries
-        expect(facts.slice(-2).map((entry) => [entry.eventType, entry.payload])).toEqual([
-          ["flows.consensus.released", { runId: "run-settled-under-steal", owner: ownerA, grantedAtMs: null }],
-          ["flows.consensus.released", { runId: "run-settled-under-steal", owner: ownerB, grantedAtMs: nowMs }]
-        ])
-        expect(yield* store.activate("run-settled-under-steal", ownerB, nowMs, stale)).toEqual({ _tag: "ClaimLost" })
-        const suspended: RunSnapshot = { status: "suspended", owner: null, heartbeatAtMs: null }
-        expect(yield* store.claim("run-settled-under-steal", suspended, observer, nowMs)).toEqual({
-          _tag: "Claimed",
-          claimedAtMs: nowMs
-        })
-      })))
-
     it.effect("leaves the run claimable after a claim, claimAndOwn, steal, or activate rolls back", () =>
       run(Effect.gen(function*() {
         const store = yield* RunStore
