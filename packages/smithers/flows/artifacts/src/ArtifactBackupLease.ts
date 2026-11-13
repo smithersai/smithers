@@ -19,6 +19,7 @@ import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as Random from "effect/Random"
 import * as ArtifactLocks from "./internal/ArtifactLocks.ts"
+import * as ArtifactPath from "./internal/ArtifactPath.ts"
 
 import { ArtifactStoreError } from "./ArtifactStoreError.ts"
 
@@ -43,7 +44,19 @@ const gate = <A, E, R, E2>(
   directory: string,
   effect: Effect.Effect<A, E, R>,
   failure: (cause: unknown) => E2
-): Effect.Effect<A, E | E2, R> => ArtifactLocks.withDigest(fs, directory, gateName, effect, failure)
+): Effect.Effect<A, E | E2, R> =>
+  Effect.gen(function*() {
+    // The lock helper guards `.locks`, so check its objects parent before it
+    // can create that child, then recheck the parent after acquiring the gate.
+    const checkDirectory = yield* ArtifactPath.guard(fs, directory).pipe(Effect.mapError(failure))
+    return yield* ArtifactLocks.withDigest(
+      fs,
+      directory,
+      gateName,
+      checkDirectory.pipe(Effect.mapError(failure), Effect.andThen(effect)),
+      failure
+    )
+  })
 
 const activeMarker = <E>(
   fs: FileSystem.FileSystem,
@@ -52,16 +65,19 @@ const activeMarker = <E>(
 ): Effect.Effect<boolean, E> =>
   Effect.gen(function*() {
     const path = `${directory}/${markerName}`
+    const checkDirectory = yield* ArtifactPath.guard(fs, directory).pipe(Effect.mapError(failure))
     const info = yield* fs.stat(path).pipe(
       Effect.map(Option.some),
       Effect.catch((cause): Effect.Effect<Option.Option<FileSystem.File.Info>, E> =>
         isReason(cause, "NotFound") ? Effect.succeed(Option.none()) : Effect.fail(failure(cause))
       )
     )
+    yield* checkDirectory.pipe(Effect.mapError(failure))
     if (Option.isNone(info)) return false
     const modified = Option.getOrUndefined(info.value.mtime)
     const now = yield* Clock.currentTimeMillis
     if (modified === undefined || now - modified.getTime() <= staleAfterMs) return true
+    yield* checkDirectory.pipe(Effect.mapError(failure))
     yield* fs.remove(path).pipe(
       Effect.catch((cause): Effect.Effect<void, E> =>
         isReason(cause, "NotFound") ? Effect.void : Effect.fail(failure(cause))
@@ -87,7 +103,10 @@ export const withLease = <A, E, R, E2>(
   Effect.gen(function*() {
     const owner = yield* token
     const marker = `${directory}/${markerName}`
-    yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.mapError(failure))
+    const checkBeforeCreation = yield* ArtifactPath.guard(fs, directory).pipe(Effect.mapError(failure))
+    yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 }).pipe(Effect.mapError(failure))
+    yield* checkBeforeCreation.pipe(Effect.mapError(failure))
+    const checkDirectory = yield* ArtifactPath.guard(fs, directory).pipe(Effect.mapError(failure))
 
     let ownsMarker = false
     let protectedUntil = 0
@@ -100,7 +119,8 @@ export const withLease = <A, E, R, E2>(
             if (yield* activeMarker(fs, directory, failure)) return false
             const startedAt = yield* Clock.currentTimeMillis
             return yield* Effect.uninterruptible(
-              fs.writeFileString(marker, owner, { flag: "wx", mode: 0o600 }).pipe(
+              checkDirectory.pipe(
+                Effect.andThen(fs.writeFileString(marker, owner, { flag: "wx", mode: 0o600 })),
                 Effect.andThen(Effect.sync(() => {
                   ownsMarker = true
                   protectedUntil = startedAt + 50_000
@@ -153,7 +173,8 @@ export const withLease = <A, E, R, E2>(
                 yield* gate(
                   fs,
                   directory,
-                  fs.readFileString(marker).pipe(
+                  checkDirectory.pipe(
+                    Effect.andThen(fs.readFileString(marker)),
                     Effect.map(Option.some),
                     Effect.catch((cause) =>
                       isReason(cause, "NotFound") ? Effect.succeed(Option.none<string>()) : Effect.fail(cause)
@@ -175,11 +196,14 @@ export const withLease = <A, E, R, E2>(
                       }
                       return Effect.flatMap(Clock.currentTimeMillis, (now) => {
                         const timestamp = new Date(now)
-                        return fs.utimes(marker, timestamp, timestamp).pipe(Effect.tap(() =>
-                          Effect.sync(() => {
-                            protectedUntil = now + 50_000
-                          })
-                        ))
+                        return checkDirectory.pipe(
+                          Effect.andThen(fs.utimes(marker, timestamp, timestamp)),
+                          Effect.tap(() =>
+                            Effect.sync(() => {
+                              protectedUntil = now + 50_000
+                            })
+                          )
+                        )
                       })
                     }),
                     Effect.mapError(failure),
@@ -205,8 +229,11 @@ export const withLease = <A, E, R, E2>(
           ? gate(
             fs,
             directory,
-            fs.readFileString(marker).pipe(
-              Effect.flatMap((found) => found === owner ? fs.remove(marker) : Effect.void),
+            checkDirectory.pipe(
+              Effect.andThen(fs.readFileString(marker)),
+              Effect.flatMap((found) =>
+                found === owner ? checkDirectory.pipe(Effect.andThen(fs.remove(marker))) : Effect.void
+              ),
               // A backup whose heartbeat lapsed has its marker reaped by whoever
               // noticed, so `NotFound` is the ordinary end of a slow lease, not a
               // fault: there is nothing left to release and nothing left to leak.
