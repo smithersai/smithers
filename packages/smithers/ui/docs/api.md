@@ -640,9 +640,10 @@ omitting it gives the hook a private identity that cannot be reopened after
 unmount. An optional stable `owner` object scopes keys to a vault or session;
 keep it outside the component to recover drafts after remount. The default
 owner is shared by browser hooks in this module. Server renders use private
-owners. Retention is in memory, not across a page reload. Retired writes keep
-retrying; conflicts and read failures wait for reopening and `saveNow()` or `discardExternal()`. Only clean or saved retired
-machines are disposed.
+owners. Retention is in memory, not across a page reload. Failed writes stay
+idle until the next edit or explicit `saveNow()`; leaving or reopening a view
+does not retry a failure. Conflicts and read failures wait for `saveNow()` or
+`discardExternal()`. Only clean or saved retired machines are disposed.
 
 `KnowledgeGraph` is not here. It ships from
 [`@smthrs/ui/adapters/knowledge-graph`](#knowledge-graph).
@@ -708,6 +709,10 @@ seam as the rest of the library, so a host must not import
 simulation. The graph math it draws is not behind this subpath:
 `computeGraphModel`, `nodeRadius`, `folderTint`, and `neighbourSet` are on the
 base barrel, so a host can compute a graph without loading the renderer.
+
+The SVG is an accessible group containing one labeled button per note. Tab
+moves between notes; Enter or Space opens the focused note through
+`onOpenNote`. Focusing a note highlights its neighbourhood, as hovering does.
 
 Under `prefers-reduced-motion: reduce` the graph skips the animated frames and
 settles the layout in batches with an 8 ms budget checked after each tick,

@@ -143,28 +143,82 @@ describe("createAutosaveDoc", () => {
     expect(doc.getSnapshot().state).toBe("saved");
   });
 
-  test("a failed save returns to dirty and reschedules", async () => {
-    const scheduler = manualScheduler();
-    let calls = 0;
-    const doc = createAutosaveDoc({
-      initialValue: "a",
-      schedule: scheduler.schedule,
-      save: async () => {
-        calls += 1;
-        if (calls === 1) throw new Error("disk full");
-      },
-    });
-    doc.setValue("b");
-    scheduler.runAll();
-    await flushMicrotasks();
-    expect(doc.getSnapshot().state).toBe("dirty");
-    expect(scheduler.pending()).toBe(1);
+  for (const recovery of ["edit", "saveNow"] as const) {
+    test(`a failed save stays idle until ${recovery}`, async () => {
+      const scheduler = manualScheduler();
+      const cause = new Error("disk full");
+      const saved: string[] = [];
+      let reads = 0;
+      const doc = createAutosaveDoc({
+        initialValue: "a",
+        schedule: scheduler.schedule,
+        readExternal: async () => { reads++; return { content: "a" }; },
+        save: async (value) => {
+          saved.push(value);
+          if (saved.length === 1) throw cause;
+        },
+      });
+      doc.setValue("b");
+      scheduler.runAll();
+      await flushMicrotasks();
+      expect(doc.getSnapshot()).toMatchObject({
+        value: "b", state: "dirty", failure: { code: "write-failed", cause },
+      });
+      expect(scheduler.pending()).toBe(0);
+      scheduler.runAll();
+      await flushMicrotasks();
+      expect(saved).toEqual(["b"]);
+      expect(reads).toBe(1);
 
-    scheduler.runAll();
-    await flushMicrotasks();
-    expect(doc.getSnapshot().state).toBe("saved");
-    expect(calls).toBe(2);
-  });
+      if (recovery === "edit") {
+        doc.setValue("c");
+        expect(scheduler.pending()).toBe(1);
+        scheduler.runAll();
+        await flushMicrotasks();
+      } else {
+        await doc.saveNow();
+      }
+      expect(saved).toEqual(["b", recovery === "edit" ? "c" : "b"]);
+      expect(reads).toBe(2);
+      expect(doc.getSnapshot().state).toBe("saved");
+      expect(doc.getSnapshot().failure).toBeUndefined();
+      expect(scheduler.pending()).toBe(0);
+      doc.dispose();
+    });
+  }
+
+  for (const succeeds of [false, true]) {
+    test(`edits during a ${succeeds ? "successful" : "failed"} write only reschedule on success`, async () => {
+      const scheduler = manualScheduler();
+      const cause = new Error("offline");
+      const saved: string[] = [];
+      let finish!: () => void;
+      const doc = createAutosaveDoc({
+        initialValue: "a", schedule: scheduler.schedule,
+        save: async (value) => {
+          saved.push(value);
+          if (saved.length === 1) {
+            await new Promise<void>((resolve) => { finish = resolve; });
+            if (!succeeds) throw cause;
+          }
+        },
+      });
+      doc.setValue("b");
+      const saving = doc.saveNow();
+      await flushMicrotasks();
+      doc.setValue("c");
+      finish();
+      await saving;
+      expect(scheduler.pending()).toBe(succeeds ? 1 : 0);
+      scheduler.runAll();
+      await flushMicrotasks();
+      expect(saved).toEqual(succeeds ? ["b", "c"] : ["b"]);
+      expect(doc.getSnapshot().value).toBe("c");
+      expect(doc.getSnapshot().state).toBe(succeeds ? "saved" : "dirty");
+      expect(doc.getSnapshot().failure).toEqual(succeeds ? undefined : { code: "write-failed", cause });
+      doc.dispose();
+    });
+  }
 
   test("mtime conflict: a newer on-disk copy with different content refuses the save", async () => {
     const saved: string[] = [];

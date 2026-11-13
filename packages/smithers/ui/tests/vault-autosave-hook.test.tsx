@@ -359,6 +359,7 @@ describe("retired autosave drafts", () => {
         let disk = "original a";
         let api!: UseAutosaveDocResult;
         let saving: Promise<void> | undefined;
+        let writes = 0;
         function Probe({ id }: { id: string }) {
           api = useAutosaveDoc({
             resetKey: id,
@@ -371,6 +372,7 @@ describe("retired autosave drafts", () => {
               return { content: mode === "conflict" ? "external edit" : disk, mtimeMs: 1 };
             },
             save: async (value, expected) => {
+              writes++;
               expect(expected).toEqual({ content: disk, mtimeMs: 1 });
               if (id !== key) throw new Error("outgoing draft used the next document's writer");
               if (mode === "saving") await flight.promise;
@@ -403,9 +405,8 @@ describe("retired autosave drafts", () => {
         if (state === "saving") {
           await act(async () => { flight.reject(cause); await saving; });
         }
-        if (state === "dirty" || state === "write-failed" || state === "saving") {
-          expect(timer.pending.size).toBe(1);
-        }
+        expect(timer.pending.size).toBe(0);
+        if (state === "write-failed" || state === "saving") expect(writes).toBe(1);
         if (exit === "unmount") root = createRoot(container);
         await act(async () => root!.render(<Probe id={key} />));
         expect(api.value).toBe(state === "saving" ? "latest retained draft" : "retained draft");
@@ -448,16 +449,19 @@ describe("retired autosave drafts", () => {
 });
 
 for (const exit of ["switch", "unmount"] as const) {
-  test(`${exit} retries and persists in the background without reopening`, async () => {
+  test(`${exit} pauses a failed write until the draft is reopened and saved`, async () => {
     const timer = scheduler();
     let disk = "original";
     let calls = 0;
+    let reads = 0;
     let api!: UseAutosaveDocResult;
+    const cause = new Error("offline");
     function Probe({ id }: { id: string }) {
       api = useAutosaveDoc({
         resetKey: id, initialValue: disk, schedule: timer.schedule,
+        readExternal: async () => { reads++; return { content: disk }; },
         save: async (value) => {
-          if (++calls === 1) throw new Error("temporarily offline");
+          if (++calls === 1) throw cause;
           disk = value;
         },
       });
@@ -465,22 +469,27 @@ for (const exit of ["switch", "unmount"] as const) {
     }
     container = document.createElement("div");
     root = createRoot(container);
-    const key = `background:${exit}`;
+    const key = `paused:${exit}`;
     await act(async () => root!.render(<Probe id={key} />));
-    await act(async () => api.setValue("background draft"));
+    await act(async () => api.setValue("retained draft"));
     await act(async () => {
       if (exit === "switch") root!.render(<Probe id={`${key}:b`} />);
       else { root!.unmount(); root = undefined; }
     });
-    expect(timer.pending.size).toBe(1);
-    await act(async () => timer.run());
-    expect(disk).toBe("background draft");
-    expect(calls).toBe(2);
     expect(timer.pending.size).toBe(0);
+    await act(async () => timer.run());
+    expect(disk).toBe("original");
+    expect(calls).toBe(1);
+    expect(reads).toBe(1);
     if (!root) root = createRoot(container);
     await act(async () => root!.render(<Probe id={key} />));
-    expect(api.value).toBe("background draft");
-    expect(api.state).toBe("clean");
+    expect(api.value).toBe("retained draft");
+    expect(api.failure).toEqual({ code: "write-failed", cause });
+    expect(calls).toBe(1);
+    await act(async () => api.saveNow());
+    expect(disk).toBe("retained draft");
+    expect(api.state).toBe("saved");
+    expect(calls).toBe(2);
   });
 }
 

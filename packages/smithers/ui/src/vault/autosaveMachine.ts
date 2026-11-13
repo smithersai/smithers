@@ -15,8 +15,8 @@ export type AutosaveState = "clean" | "dirty" | "saving" | "saved" | "conflict";
  *   safely overwrite. This code is what distinguishes that from a real
  *   concurrent edit detected by the read, which carries no failure.
  * - `conflict`: the conditional write refused a changed external revision.
- * - `write-failed`: `save` rejected. The machine returns to `dirty` and the
- *   debounce retries, so the document is not lost, but nothing was persisted.
+ * - `write-failed`: `save` rejected. The machine stays `dirty` without a
+ *   timer; the next edit or explicit `saveNow()` can retry the retained text.
  */
 export type AutosaveFailureCode = "read-failed" | "write-failed" | "conflict";
 
@@ -229,7 +229,7 @@ export function createAutosaveDoc(options: AutosaveDocOptions): AutosaveDoc {
     if (inflight) {
       const pending = inflightDone;
       if (pending) await pending;
-      if (!disposed && (state === "dirty" || (force && state === "conflict"))) {
+      if (!disposed && ((state === "dirty" && !failure) || (force && state === "conflict"))) {
         await saveNow(force);
       }
       return;
@@ -264,13 +264,14 @@ export function createAutosaveDoc(options: AutosaveDocOptions): AutosaveDoc {
       // Still unsaved; the next edit (or saveNow retry) will attempt again.
       // The code names the write as the thing that failed, so a caller can
       // tell "not yet saved" from "tried to save and could not".
+      cancelScheduled();
       if (!disposed) emit("dirty", { code: "write-failed", cause });
     } finally {
       inflight = false;
       finishInflight();
       inflightDone = null;
     }
-    if (!disposed && state === "dirty") scheduleFlush();
+    if (!disposed && state === "dirty" && !failure) scheduleFlush();
   }
 
   return {

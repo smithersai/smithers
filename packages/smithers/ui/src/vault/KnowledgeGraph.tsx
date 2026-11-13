@@ -71,9 +71,8 @@ export type KnowledgeGraphProps = {
 
 /**
  * The Obsidian-style knowledge graph: every note a node, every wikilink an
- * edge. SVG rendering (hit-testing, hover, and accessibility for free) over a
- * d3-force simulation. d3-force is lazy-imported so the main bundle stays
- * lean; if it cannot load, a list of the vault's hub notes renders instead.
+ * edge. SVG rendering with focusable note buttons over a d3-force simulation.
+ * d3-force is lazy-imported so the main bundle stays lean; if it cannot load, a list of the vault's hub notes renders instead.
  */
 export function KnowledgeGraph({
   notes,
@@ -236,7 +235,7 @@ export function KnowledgeGraph({
         className="sui-vault-graph"
         style={{ height: heightCss }}
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        role="img"
+        role="group"
         aria-label="Vault link graph"
         onMouseDown={(e) => {
           dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
@@ -283,6 +282,19 @@ export function KnowledgeGraph({
               <g
                 key={node.id}
                 className="sui-vault-graph-node"
+                role="button"
+                tabIndex={0}
+                aria-label={node.label}
+                onFocus={() => setHover(node.id)}
+                onBlur={() => setHover(null)}
+                onMouseEnter={() => setHover(node.id)}
+                onClick={() => onOpenNote?.(node.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onOpenNote?.(node.id);
+                  }
+                }}
                 data-tint={folderTint(node.folder)}
                 {...vaultDataAttributes(nodeProps?.(node))}
                 transform={`translate(${node.x ?? 0} ${node.y ?? 0})`}
@@ -293,8 +305,6 @@ export function KnowledgeGraph({
                   strokeOpacity={dim ? 0.05 : 0.3}
                   strokeWidth={0.5}
                   style={{ cursor: "pointer" }}
-                  onMouseEnter={() => setHover(node.id)}
-                  onClick={() => onOpenNote?.(node.id)}
                 >
                   <title>{`${node.id} — ${node.in} in, ${node.out} out`}</title>
                 </circle>

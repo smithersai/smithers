@@ -36,11 +36,11 @@ let container: HTMLElement | undefined;
 let root: Root | undefined;
 let originalMatchMedia: typeof window.matchMedia | undefined;
 
-function forceReducedMotion(): void {
+function forceReducedMotion(reduced = true): void {
   originalMatchMedia ??= window.matchMedia;
   window.matchMedia = ((query: string) =>
     ({
-      matches: query === "(prefers-reduced-motion: reduce)",
+      matches: reduced && query === "(prefers-reduced-motion: reduce)",
       media: query,
       addEventListener: () => {},
       removeEventListener: () => {},
@@ -61,13 +61,13 @@ afterEach(async () => {
   }
 });
 
-async function mount(): Promise<HTMLElement> {
-  forceReducedMotion();
+async function mount(onOpenNote?: (path: string) => void, reduced = true): Promise<HTMLElement> {
+  forceReducedMotion(reduced);
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   const current = root;
-  await act(async () => current.render(<KnowledgeGraph notes={NOTES} links={LINKS} />));
+  await act(async () => current.render(<KnowledgeGraph notes={NOTES} links={LINKS} onOpenNote={onOpenNote} />));
   // The physics import resolves on a microtask; the settle is synchronous.
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -93,6 +93,65 @@ describe("KnowledgeGraph with real physics", () => {
     expect(positions).toHaveLength(NOTES.length);
     expect(positions.every((value) => value !== null && !value.includes("NaN"))).toBe(true);
     expect(positions).not.toContain("translate(0 0)");
+  });
+
+  test("animated physics publishes ticks and supports resetting the live layout", async () => {
+    const host = await mount(undefined, false);
+    const positions = () => [...host.querySelectorAll("g.sui-vault-graph-node")]
+      .map((node) => node.getAttribute("transform"));
+    const before = positions();
+    const reset = [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Reset")!;
+    await act(async () => reset.click());
+    const deadline = Date.now() + 5_000;
+    while (positions().every((value, index) => value === before[index]) && Date.now() < deadline) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    }
+    expect(positions()).not.toEqual(before);
+    expect(positions().every((value) => value !== null && !value.includes("NaN"))).toBe(true);
+  });
+
+  test("exposes labeled, focusable note buttons inside the graph group", async () => {
+    const opened: string[] = [];
+    const host = await mount((path) => opened.push(path));
+    expect(host.querySelector("svg")!.getAttribute("role")).toBe("group");
+    const nodes = [...host.querySelectorAll<SVGGElement>("g.sui-vault-graph-node")];
+    expect(nodes).toHaveLength(NOTES.length);
+    for (const [index, node] of nodes.entries()) {
+      expect(node.getAttribute("role")).toBe("button");
+      expect(node.getAttribute("tabindex")).toBe("0");
+      expect(node.getAttribute("aria-label")).toBe(NOTES[index]!.title!);
+      await act(async () => node.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+      expect(host.querySelector(".sui-vault-graph-head")!.textContent).toContain(NOTES[index]!.path);
+      const path = NOTES[index]!.path;
+      const neighbours = new Set([path, ...LINKS.flatMap((link) =>
+        link.source === path ? [link.target] : link.target === path ? [link.source] : [])]);
+      for (const [otherIndex, otherNode] of nodes.entries()) {
+        expect(otherNode.querySelector("circle")!.getAttribute("fill-opacity"))
+          .toBe(neighbours.has(NOTES[otherIndex]!.path) ? "0.9" : "0.15");
+      }
+      for (const key of ["ArrowDown", "Enter", " "]) {
+        const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+        await act(async () => node.dispatchEvent(event));
+        expect(event.defaultPrevented).toBe(key !== "ArrowDown");
+      }
+      await act(async () => node.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(host.querySelector(".sui-vault-graph-head")!.textContent).not.toContain(NOTES[index]!.path);
+    }
+    expect(opened).toEqual(NOTES.flatMap((note) => [note.path, note.path]));
+    await act(async () => nodes[0]!.dispatchEvent(new MouseEvent("mouseover", {
+      bubbles: true, relatedTarget: document.body,
+    })));
+    expect(host.querySelector(".sui-vault-graph-head")!.textContent).toContain(NOTES[0]!.path);
+    await act(async () => nodes[0]!.querySelector("circle")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(opened.at(-1)).toBe(NOTES[0]!.path);
+  });
+
+  test("keyboard activation is safe without an open callback", async () => {
+    const host = await mount();
+    const node = host.querySelector("g.sui-vault-graph-node")!;
+    for (const key of ["Enter", " "]) {
+      await act(async () => node.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })));
+    }
   });
 
   test("zoom in, zoom out and reset move the view transform and return it", async () => {

@@ -43,7 +43,7 @@ const owners = new WeakMap<object, Map<string | number | symbol, DocEntry>>();
 
 /**
  * Retain each document until its last view leaves AND all edits are persisted.
- * Failures keep their machine, callbacks and retries. A stable owner/resetKey
+ * Failures keep their machine and draft without retrying. A stable owner/resetKey
  * lets a later mount recover the draft and its failure for explicit recovery.
  */
 export function useAutosaveDoc(options: UseAutosaveDocOptions): UseAutosaveDocResult {
@@ -100,11 +100,11 @@ export function useAutosaveDoc(options: UseAutosaveDocOptions): UseAutosaveDocRe
         entry.users--;
         if (entry.users > 0) return;
         entry.retired = true;
-        const state = entry.doc.getSnapshot().state;
-        if (state === "dirty" || state === "saving") {
+        const { state, failure } = entry.doc.getSnapshot();
+        if ((state === "dirty" && !failure) || state === "saving") {
           // saveNow waits for an in-flight write and flushes any newer edits.
-          // A settled promise is not evidence of persistence: only the clean
-          // snapshot (also observed after background retries) permits release.
+          // A settled promise is not evidence of persistence: only a clean
+          // snapshot permits release. Failed drafts wait for explicit recovery.
           void entry.doc.saveNow().then(entry.releaseIfClean);
         } else {
           entry.releaseIfClean();

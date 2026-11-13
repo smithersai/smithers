@@ -36,7 +36,7 @@ const HUB_LINKS: VaultLink[] = [
 describe("KnowledgeGraph (server render)", () => {
   test("renders the SVG with one circle per note and hub-only labels", () => {
     const html = renderToStaticMarkup(<KnowledgeGraph notes={NOTES} links={HUB_LINKS} />);
-    expect(html).toContain('role="img"');
+    expect(html).toContain('role="group"');
     expect(html).toContain('aria-label="Vault link graph"');
     expect(html.match(/<circle/g)).toHaveLength(4);
     // Only the degree-6 hubs (Ada, HQ) get labels.

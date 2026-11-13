@@ -89,7 +89,7 @@ state (`AutosaveSnapshot.failure`), as `AutosaveFailure = { code, cause }`.
 | -------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
 | `conflict` | `conflict` | The backend refused the conditional write because the checked revision changed. |
 | `read-failed`  | `conflict` | `readExternal` threw. The machine fails closed, because a file it cannot read is a file it cannot safely overwrite. |
-| `write-failed` | `dirty`    | `save` rejected. The debounce retries, so the document is not lost, but nothing was persisted.                 |
+| `write-failed` | `dirty`    | `save` rejected. The draft is retained without a retry timer; edit or call `saveNow()` to try again.                 |
 
 The codes exist to make three outcomes distinguishable that used to look
 identical. A `conflict` with no failure is a real concurrent edit: someone else
@@ -105,12 +105,17 @@ without writing on mismatch. `discardExternal()` authorizes replacing the
 version just read, and still refuses an unreadable or subsequently changed
 version. The UI library cannot enforce atomicity inside a host callback.
 
-Hook retirement retains the document's text, failure, writer and scheduled
-retry until its snapshot is clean or saved. Reopening the same `resetKey` in
+A failed write cancels pending debounce work, including edits made during that
+write. Only a successful write with newer edits schedules another flush.
+Automatic retry policies belong to the host's durable flow.
+
+Hook retirement flushes pending edits and retains the document's text, failure
+and writer until its snapshot is clean or saved. A failed write stays idle,
+including after the last view unmounts. Reopening the same `resetKey` in
 the same `owner` recovers that machine. A stable owner object isolates keys
 between vaults; the default owner is module-wide in the browser. Server
-renders use private owners. Unkeyed hooks still flush and retry after unmount,
-but require a stable key to reopen unresolved conflicts.
+renders use private owners. Unkeyed hooks still flush on unmount,
+but require a stable key to reopen failed or conflicting drafts.
 Retained drafts are memory-only and do not survive a process or page restart.
 
 ## Resource limits
