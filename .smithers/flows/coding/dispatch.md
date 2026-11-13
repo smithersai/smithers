@@ -28,7 +28,6 @@ produces no receipts. The host advertises `coding-dispatch/v1` beside
   history: Array<{ role: "user" | "assistant" | "system", content: string }>
   role: string              // the seat role, e.g. "coding/dispatch"
   model?: string            // an explicit provider:model for THIS request
-  workspaceRoot: string     // must be the root this host serves
 }
 ```
 
@@ -48,11 +47,10 @@ environment, because a dispatched turn is launched by a caller that already
 knows which seat the person picked, and re-reading it from the host would make
 every turn in a workspace run as the same role.
 
-`workspaceRoot` is checked against the root this host was started on and is
-never used to reach one. A gateway request cannot move a host onto another
-tree; the field exists so a caller that addressed the wrong gateway is told
-so, as a typed `coding/Error` with code `invalid_request`, instead of having
-its turn silently run somewhere else.
+Dispatch runs in the workspace of the addressed host. Callers must select
+the gateway serving the intended workspace before starting the turn.
+`DispatchInput` has no `workspaceRoot` field, and the flow does not compare a
+request-supplied root with the host's workspace.
 
 ## Output
 
@@ -101,15 +99,7 @@ chose. A declaration that writes a constant is the same declaration it was.
 
 [coding-dispatch.test.ts](../test/coding-dispatch.test.ts) runs the flow on the
 real Flow engine with a real QuickJS cell loop and a scripted provider: it
-pins the graph (admit, one model call, observe — no plan, no checks, no second
-loop), that the request's own model is the seat that resolves, that a
+pins the two-step graph (dispatch turn, observe — no plan, no checks, no
+second loop), that the request's own model is the seat that resolves, that a
 role-only request goes through the host's role table onto the configured
-implementation model, that the window reaches the model, and that a turn
-addressed to another workspace is refused before any model call.
-
-[coding-dispatch-host.test.ts](../test/coding-dispatch-host.test.ts) drives the
-served gateway the way a remote caller does: `Plan`, `Approve` and `Run` on
-`/rpc`, then `Projection.Snapshot` on `/projections` for the run the receipt
-named. Like its sibling host tests it needs Plue's native adapter and JJ
-exporter (`PLUE_CODING_ADAPTER_SOURCE`, `PLUE_JJ_EXPORT_BINARY`) and skips
-without them.
+implementation model, and that the window reaches the model.
