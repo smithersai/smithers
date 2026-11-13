@@ -4,10 +4,12 @@
 // Each case skips, naming the variables it needs, until they are set:
 // - GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY: the Smithers GitHub App, with Issues read and write (decision 0012 question 2);
 // - GITHUB_LIVE_REPOSITORY: `owner/name` of the scratch repository the App is installed on;
-// - GITHUB_LIVE_USER_TOKEN: a `ghu_` user token of the test account (`codeplanesmithers`), for a person's own write;
-// - GITHUB_LIVE_MAINTAINER: the login of a Maintainer or Admin on the scratch repository, who enables triage there
-//   (docs/features/issues.md#triage); the triage case decides with a scripted judge, so its writes are certain, and, when
-//   CEREBRAS_API_KEY is set too, once more with the deployment's real model on the `judge` role.
+// - GITHUB_LIVE_MAINTAINER: the login of a Maintainer or Admin on the scratch repository. The agent writes only for a
+//   person sign-in knows as a Member or above there (worker/github/Write.ts), so the App's cases record them as that
+//   person, with the account id GitHub has for them, and the agent writes for them; they enable triage there too
+//   (docs/features/issues.md#triage). The triage case decides with a scripted judge, so its writes are certain, and, when
+//   CEREBRAS_API_KEY is set too, once more with the deployment's real model on the `judge` role;
+// - GITHUB_LIVE_USER_TOKEN: a `ghu_` user token of the test account (`codeplanesmithers`), for a person's own write.
 import { GitHub } from "@smthrs/integrations"
 import { HostModel } from "@smthrs/model-host"
 import { ConfigProvider, Effect, Exit, Option, Redacted } from "effect"
@@ -21,6 +23,7 @@ import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.ts"
 import { DEFAULT_API_URL, repositoryOf } from "./Config.ts"
 import * as Reconcile from "./Reconcile.ts"
+import { livePerson } from "./test/livePerson.ts"
 import * as Store from "./Store.ts"
 import { database, judgeSeat, judging, keys, reset, signedIn, sql } from "./test/fixtures.ts"
 import * as Tokens from "./Tokens.ts"
@@ -39,13 +42,13 @@ const scratch = env["GITHUB_LIVE_REPOSITORY"] ?? ""
 const refused = /^smithersai\//i.test(scratch)
 
 const appNeeds = ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY", "GITHUB_LIVE_REPOSITORY"]
-const appMissing = missing(appNeeds)
+// The agent's writes act for the Maintainer, so the App's cases and triage need them too.
+const agentNeeds = [...appNeeds, "GITHUB_LIVE_MAINTAINER"]
+const agentMissing = missing(agentNeeds)
 const userMissing = missing([...appNeeds, "GITHUB_LIVE_USER_TOKEN"])
-const triageMissing = missing([...appNeeds, "GITHUB_LIVE_MAINTAINER"])
-const modelMissing = missing([...appNeeds, "GITHUB_LIVE_MAINTAINER", "CEREBRAS_API_KEY"])
-if (appMissing.length > 0) console.warn(`The live GitHub App cases are skipped: set ${appMissing.join(", ")}.`)
+const modelMissing = missing([...agentNeeds, "CEREBRAS_API_KEY"])
+if (agentMissing.length > 0) console.warn(`The live GitHub App cases and triage are skipped: set ${agentMissing.join(", ")}.`)
 if (userMissing.length > 0) console.warn(`The live person's write is skipped: set ${userMissing.join(", ")}.`)
-if (triageMissing.length > 0) console.warn(`The live triage is skipped: set ${triageMissing.join(", ")}.`)
 if (modelMissing.length > 0) console.warn(`The live triage with the real model is skipped: set ${modelMissing.join(", ")}.`)
 if (refused) console.warn("The live GitHub cases are skipped: GITHUB_LIVE_REPOSITORY may not be a smithersai repository.")
 
@@ -71,8 +74,13 @@ const live = async () => {
 
 const admit = (write: Parameters<typeof Store.insertWrite>[0]) => runtime.runPromise(Store.insertWrite(write))
 
-describe.skipIf(appMissing.length > 0 || refused)("the real GitHub, as the App", () => {
-  test("reconciles the scratch repository, opens an issue as the App, and a webhook-style re-read finds it", async () => {
+const maintainer = env["GITHUB_LIVE_MAINTAINER"] ?? ""
+
+/** Agent writes use the App token for this recorded GitHub person, without a user-token session. */
+const actingPerson = (services: Apply.Services) => runtime.runPromise(livePerson(services, repositoryOf(scratch), maintainer))
+
+describe.skipIf(agentMissing.length > 0 || refused)("the real GitHub, as the App", () => {
+  test("reconciles the scratch repository, opens an issue as the App for the Maintainer, and a webhook-style re-read finds it", async () => {
     const repository = repositoryOf(scratch)
     const services = await live()
     const reconciled = await runFlow(Reconcile.Reconcile, { repo: scratch, requestedAtMs: Date.now() }, Reconcile.registration(services), { maxConnections: 3 })
@@ -82,7 +90,7 @@ describe.skipIf(appMissing.length > 0 || refused)("the real GitHub, as the App",
     await admit({
       id: writeId,
       repoId: repository.id,
-      actorId: "live-test",
+      actorId: await actingPerson(services),
       sessionId: null,
       via: "agent",
       payload: { op: "issue/create", title: `Smithers live test ${new Date().toISOString()}`, body: "Opened by the live test." },
@@ -129,24 +137,25 @@ describe.skipIf(userMissing.length > 0 || refused)("the real GitHub, as a person
   }, 120_000)
 })
 
-describe.skipIf(triageMissing.length > 0 || refused)("the real GitHub, triage", () => {
-  const maintainer = env["GITHUB_LIVE_MAINTAINER"] ?? ""
-
-  /** Opens a fresh issue on the scratch repository as the App, and enables triage under the Maintainer. */
+describe.skipIf(agentMissing.length > 0 || refused)("the real GitHub, triage", () => {
+  /** Opens a fresh issue on the scratch repository as the App for the Maintainer, and enables triage under them. */
   const arrange = async (services: Apply.Services, title: string, body: string) => {
     const repository = repositoryOf(scratch)
-    await runtime.runPromise(TriageStore.enable(repository.id, { actorId: "live-maintainer", login: maintainer, dailyTokens: 50_000 }))
+    const personId = await actingPerson(services)
+    await runtime.runPromise(TriageStore.enable(repository.id, { actorId: personId, login: maintainer, dailyTokens: 50_000 }))
     const writeId = crypto.randomUUID()
     await admit({
       id: writeId,
       repoId: repository.id,
-      actorId: "live-test",
+      actorId: personId,
       sessionId: null,
       via: "agent",
       payload: { op: "issue/create", title: `${title} ${new Date().toISOString()}`, body },
       payloadHash: "0".repeat(64),
     })
     const written = await runFlow(Write.Write, { writeId }, Write.registration(services), { maxConnections: 3 })
+    // The seed issue must exist before triage runs on it; a refused write would hand triage no number.
+    expect(written.exit).toEqual(Exit.succeed({ status: "done", itemNumber: expect.any(Number) }))
     return (written.exit as Exit.Success<Write.Written, never>).value.itemNumber!
   }
 

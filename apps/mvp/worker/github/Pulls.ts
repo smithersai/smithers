@@ -1,11 +1,11 @@
-import { GitHub } from "@smthrs/integrations"
-import { Clock, Effect, Option } from "effect"
+import { Core, GitHub } from "@smthrs/integrations"
+import { Clock, Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { itemId } from "../../src/features/issues/contract.ts"
 import { reviewId } from "../../src/features/pulls/contract.ts"
 import type { Repository } from "./Config.ts"
 import { type Fetched, fetchIssue, project } from "./Project.ts"
-import { markedWrite, shownBody } from "./Store.ts"
+import { commitCursor, finishSync, markedWrite, shownBody, syncState } from "./Store.ts"
 
 // Re-reading one pull request from GitHub into the projection (decision 0012 §2 and §6, docs/features/pulls.md): its
 // `items` row and comments as an issue's (GitHub numbers both in one sequence), plus its `pulls` row, its commits and its
@@ -17,6 +17,12 @@ import { markedWrite, shownBody } from "./Store.ts"
 // `base.sha` is the commit the branch pointed at when the pull request opened or changed base, and GitHub never moves
 // it after (docs/features/pulls.md#merge), so the read takes the head from the branch itself.
 
+/** Review pages per durable read; a following round resumes the committed cursor. */
+export const REVIEW_PAGES = 3
+
+/** A pull request's review cursor shares the repository's durable sync store. */
+export const reviewStream = (number: number) => `pull-reviews/${number}`
+
 /** What GitHub answered for one pull request, read at `fetchedAt` (epoch ms); `gone` when it no longer has it. */
 export type FetchedPull =
   | {
@@ -25,6 +31,8 @@ export type FetchedPull =
     readonly pull: GitHub.Pulls.PullRequest
     readonly commits: ReadonlyArray<GitHub.Pulls.PullCommit>
     readonly reviews: ReadonlyArray<GitHub.Pulls.Review>
+    /** The next review page, or null when this walk reached the end. */
+    readonly reviewsNext: string | null
     /** The base branch's head at the read; GitHub's `base.sha` when the branch is gone or its name can't be read. */
     readonly baseHead: string
     readonly fetchedAt: number
@@ -32,7 +40,7 @@ export type FetchedPull =
   | { readonly kind: "gone"; readonly fetchedAt: number }
 
 /** Reads pull request `number` of `repository`, its conversation, commits and reviews, with the client in context. */
-export const fetchPull = (repository: Repository, number: number) =>
+export const fetchPull = (repository: Repository, number: number, reviewCursor?: string | null) =>
   Effect.gen(function* () {
     const issue = yield* fetchIssue(repository, number)
     if (issue.kind === "gone") return issue satisfies FetchedPull
@@ -40,13 +48,30 @@ export const fetchPull = (repository: Repository, number: number) =>
     const pull = yield* GitHub.Pulls.getPull(repository.owner, repository.name, number)
     const baseHead = yield* baseHeadOf(repository, pull)
     const commits = yield* GitHub.Pulls.listCommits(repository.owner, repository.name, number)
-    const reviews = yield* GitHub.Pulls.listReviews(repository.owner, repository.name, number)
+    const cursor = reviewCursor === undefined
+      ? (yield* syncState(repository.id, reviewStream(number))).cursor
+      : reviewCursor
+    const client = yield* GitHub.GitHubClient.GitHubClient
+    // The SDK's cursor-returning pagination keeps each read bounded without losing the tail.
+    const reviews = yield* client.paginate(
+      cursor ?? `/repos/${GitHub.Repository.repositoryPath(repository.owner, repository.name)}/pulls/${number}/reviews`,
+      { maxPages: REVIEW_PAGES, withNext: true },
+    )
+    const decodedReviews = yield* Schema.decodeUnknownEffect(Schema.Array(GitHub.Pulls.Review))(reviews.items).pipe(
+      Effect.mapError(() => new Core.IntegrationError.IntegrationError(
+        "decode-failed", "GitHub's reviews response failed validation.", { retryable: false },
+      )),
+    )
+    yield* Effect.logInfo("github.pull.reviews").pipe(
+      Effect.annotateLogs({ repoId: repository.id, number, outcome: reviews.truncated ? "partial" : "complete", count: decodedReviews.length }),
+    )
     return {
       kind: "found",
       issue,
       pull,
       commits: commits.items,
-      reviews: reviews.items,
+      reviews: decodedReviews,
+      reviewsNext: reviews.next!,
       baseHead,
       fetchedAt,
     } satisfies FetchedPull
@@ -186,22 +211,35 @@ export const projectPull = (repository: Repository, number: number, fetched: Fet
     const id = itemId(repository.id, number)
     return yield* sql.withTransaction(Effect.gen(function* () {
       yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`
-      if (fetched.kind === "gone") return yield* project(repository, number, fetched)
-      // The commits belong to this snapshot, so reject stale snapshots before touching any child row.
-      const stale = yield* sql`
-        SELECT item_id FROM pulls WHERE item_id = ${id}
+      if (fetched.kind === "gone") {
+        const projected = yield* project(repository, number, fetched)
+        if (projected.changed > 0) yield* commitCursor(repository.id, reviewStream(number), null)
+        return projected
+      }
+      // Commit lists follow the pull snapshot; review batches have independent freshness below.
+      const stale = yield* sql<{ readonly kind: string }>`
+        SELECT 'pull' AS kind FROM pulls WHERE item_id = ${id}
           AND (source_updated_at, fetched_at) >= (${fetched.pull.updated_at}::timestamptz, ${iso(fetched.fetchedAt)}::timestamptz)
         UNION ALL
-        SELECT id FROM items WHERE id = ${id} AND deleted_at IS NOT NULL AND fetched_at >= ${iso(fetched.issue.fetchedAt)}::timestamptz
+        SELECT 'gone' AS kind FROM items WHERE id = ${id} AND deleted_at IS NOT NULL AND fetched_at >= ${iso(fetched.issue.fetchedAt)}::timestamptz
         UNION ALL
-        SELECT item_id FROM github_projection_fences WHERE item_id = ${id} AND gone_at >= ${iso(fetched.issue.fetchedAt)}::timestamptz`
-      if (stale.length > 0) return { outcome: "applied" as const, changed: 0 }
-      const projected = yield* project(repository, number, fetched.issue)
-      let changed = projected.changed
-      if (yield* upsertPull(repository.id, fetched.pull, fetched.baseHead, fetched.fetchedAt)) changed += 1
-      if (yield* replaceCommits(repository.id, number, fetched.commits)) changed += 1
+        SELECT 'gone' AS kind FROM github_projection_fences WHERE item_id = ${id} AND gone_at >= ${iso(fetched.issue.fetchedAt)}::timestamptz`
+      if (stale.some((row) => row.kind === "gone")) return { outcome: "applied" as const, changed: 0 }
+      let changed = 0
+      if (stale.length === 0) {
+        const projected = yield* project(repository, number, fetched.issue)
+        changed += projected.changed
+        if (yield* upsertPull(repository.id, fetched.pull, fetched.baseHead, fetched.fetchedAt)) changed += 1
+        if (yield* replaceCommits(repository.id, number, fetched.commits)) changed += 1
+      }
+      // Different batches contain different reviews: metadata freshness cannot discard an unseen review edit.
+      // Each review has its own fetched_at guard, while a deletion above still fences every child.
       for (const review of fetched.reviews) {
         if (yield* upsertReview(repository.id, number, review, fetched.fetchedAt)) changed += 1
+      }
+      if (stale.length === 0) {
+        yield* commitCursor(repository.id, reviewStream(number), fetched.reviewsNext)
+        yield* finishSync(repository.id, reviewStream(number), { complete: fetched.reviewsNext === null, failure: null })
       }
       return { outcome: "applied" as const, changed }
     }))
@@ -216,7 +254,11 @@ export const pullCurrent = (repoId: string, issue: { readonly number: number; re
     const sql = yield* SqlClient.SqlClient
     const rows = yield* sql`
       SELECT item_id FROM pulls
-      WHERE item_id = ${itemId(repoId, issue.number)} AND source_updated_at >= ${issue.updated_at}::timestamptz`
+      WHERE item_id = ${itemId(repoId, issue.number)} AND source_updated_at >= ${issue.updated_at}::timestamptz
+        AND NOT EXISTS (
+          SELECT 1 FROM github_sync WHERE repo_id = ${repoId} AND stream = ${reviewStream(issue.number)}
+            AND cursor IS NOT NULL
+        )`
     return rows.length > 0
   })
 

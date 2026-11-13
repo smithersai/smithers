@@ -100,3 +100,70 @@ test("a gone first observation fences an older initial pull snapshot", async () 
   expect(await commitRows()).toEqual([])
   expect(await sql(runtime, "SELECT id FROM items")).toEqual([])
 })
+
+test("a failed review cursor commit rolls back the entire pull snapshot", async () => {
+  const fetched = await snapshot()
+  await sql(runtime, "ALTER TABLE github_sync ADD CONSTRAINT reject_review_cursor CHECK (cursor IS NULL)")
+  try {
+    const result = await runtime.runPromise(Effect.result(projectPull(REPOSITORY, fetched.pull.number, {
+      ...fetched, reviewsNext: "next-review-page",
+    })))
+    expect(result._tag).toBe("Failure")
+    expect(await sql(runtime, "SELECT item_id FROM pulls")).toEqual([])
+    expect(await sql(runtime, "SELECT id FROM items")).toEqual([])
+    expect(await commitRows()).toEqual([])
+    expect(await sql(runtime, "SELECT cursor FROM github_sync")).toEqual([])
+  } finally {
+    await sql(runtime, "ALTER TABLE github_sync DROP CONSTRAINT reject_review_cursor")
+  }
+})
+
+test("a stale gone observation cannot clear a pending review cursor; a current deletion clears it", async () => {
+  const fetched = await snapshot()
+  await runtime.runPromise(projectPull(REPOSITORY, fetched.pull.number, {
+    ...fetched, fetchedAt: fetched.fetchedAt + 2000, reviewsNext: "next-review-page",
+  }))
+  await runtime.runPromise(projectPull(REPOSITORY, fetched.pull.number, { kind: "gone", fetchedAt: fetched.fetchedAt + 1000 }))
+  expect(await sql(runtime, "SELECT cursor FROM github_sync")).toEqual([{ cursor: "next-review-page" }])
+  await runtime.runPromise(projectPull(REPOSITORY, fetched.pull.number, { kind: "gone", fetchedAt: fetched.fetchedAt + 3000 }))
+  expect(await sql(runtime, "SELECT cursor FROM github_sync")).toEqual([{ cursor: null }])
+  expect(await sql(runtime, "SELECT item_id FROM pulls")).toEqual([])
+})
+
+test("a malformed review fails the read without advancing its projection or cursor", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const head = github.push("feature", { "A.md": "A" })
+  const pull = github.openPull("feature")
+  pull.reviews.push({ id: Number.NaN, login: "maya", event: "COMMENT", body: "Untrusted content", commitId: head, at: Date.now() })
+  const { services: built } = await services(runtime, github)
+  const result = await runtime.runPromise(Effect.gen(function* () {
+    const token = yield* built.tokens.forInstallation(REPOSITORY, "pulls")
+    return yield* fetchPull(REPOSITORY, pull.number).pipe(withToken(token, built.apiBaseUrl), Effect.result)
+  }).pipe(Effect.provideService(HttpClient.HttpClient, built.http), Effect.provide(built.database)))
+  expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "decode-failed" } })
+  expect(await sql(runtime, "SELECT item_id FROM pulls")).toEqual([])
+  expect(await sql(runtime, "SELECT cursor FROM github_sync")).toEqual([])
+})
+
+test("a newer metadata batch cannot discard an edit to a review covered only by an earlier batch", async () => {
+  const fetched = await snapshot()
+  const review = {
+    id: 10, node_id: "R10", user: null, body: "Original", state: "COMMENTED",
+    commit_id: fetched.pull.head.sha, submitted_at: new Date().toISOString(),
+  } as const
+  await runtime.runPromise(projectPull(REPOSITORY, fetched.pull.number, { ...fetched, reviews: [review] }))
+  const laterBatch = {
+    ...fetched, fetchedAt: fetched.fetchedAt + 2000, reviews: [{ ...review, id: 301, node_id: "R301" }],
+    commits: [{ ...fetched.commits[0]!, sha: "b".repeat(40) }],
+  }
+  await runtime.runPromise(projectPull(REPOSITORY, fetched.pull.number, laterBatch))
+  await runtime.runPromise(projectPull(REPOSITORY, fetched.pull.number, {
+    ...fetched, fetchedAt: fetched.fetchedAt + 1000, reviews: [{ ...review, body: "Edited" }], reviewsNext: "older-cursor",
+  }))
+  expect(await sql(runtime, "SELECT body FROM reviews WHERE id LIKE '%/review/10'")).toEqual([{ body: "Edited" }])
+  expect(await commitRows()).toEqual([{ sha: "b".repeat(40) }])
+  expect(await sql(runtime, "SELECT cursor FROM github_sync")).toEqual([{ cursor: null }])
+  await runtime.runPromise(projectPull(REPOSITORY, fetched.pull.number, { kind: "gone", fetchedAt: fetched.fetchedAt + 3000 }))
+  await runtime.runPromise(projectPull(REPOSITORY, fetched.pull.number, { ...fetched, reviews: [{ ...review, body: "Stale" }] }))
+  expect(await sql(runtime, "SELECT id FROM reviews")).toEqual([])
+})

@@ -10,7 +10,7 @@ import { SqlClient } from "effect/sql"
 import { HttpClient } from "effect/http"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
-import { reconcileExecutionId, SYNC_STALE_MS, writeExecutionId } from "../../src/features/issues/contract.ts"
+import { ISSUES_STREAM, reconcileExecutionId, SYNC_STALE_MS, writeExecutionId } from "../../src/features/issues/contract.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.ts"
@@ -720,7 +720,8 @@ describe("github/Reconcile", () => {
     return { ...ran, count: metrics.count }
   }
   const syncRow = async () =>
-    ((await sql(runtime, `SELECT complete, failure, synced_at IS NOT NULL AS synced, cursor IS NOT NULL AS cursored FROM github_sync`)) as unknown as Array<
+    ((await sql(runtime, `SELECT complete, failure, synced_at IS NOT NULL AS synced, cursor IS NOT NULL AS cursored
+      FROM github_sync WHERE repo_id = '${REPOSITORY.id}' AND stream = '${ISSUES_STREAM}'`)) as unknown as Array<
       { complete: boolean; failure: string | null; synced: boolean; cursored: boolean }
     >)[0]
 

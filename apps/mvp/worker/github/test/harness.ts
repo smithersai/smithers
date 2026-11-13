@@ -189,8 +189,11 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
         )
         starts.push({ flow: flow._tag, executionId: start.executionId, payload: start.payload })
         if (options.run !== true || fibers.has(start.executionId)) return
-        const flows = Context.get(yield* engineFor, FlowRuntime.FlowRuntime)
-        const run = flows.execute(flow as never, { executionId: start.executionId, payload: start.payload as never })
+        const context = yield* engineFor
+        const flows = Context.get(context, FlowRuntime.FlowRuntime)
+        const run = flows.execute(flow as never, { executionId: start.executionId, payload: start.payload as never }).pipe(
+          Effect.provide(context),
+        )
         fibers.set(start.executionId, Effect.runFork(observed(run as Effect.Effect<unknown, unknown>)))
       }),
   })
@@ -281,9 +284,9 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     count,
     snapshot: () => Effect.runSync(Metric.snapshot.pipe(Effect.provideService(Metric.MetricRegistry, registry))),
     line: (message: string) => logs.filter((log) => log.message === message),
-    /** Waits for every flow started so far to end. */
+    /** Waits for every started flow, including its continuation rounds; a failed flow fails the test. */
     settled: async () => {
-      for (const fiber of fibers.values()) await Effect.runPromise(Effect.exit(Fiber.join(fiber)))
+      for (const fiber of fibers.values()) await Effect.runPromise(Fiber.join(fiber))
     },
   }
 }

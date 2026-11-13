@@ -2,8 +2,9 @@
 // file's schema of the compose Postgres and Electric (`pnpm db:up`), with remote flows recorded or run on the Node host
 // against the scripted GitHub (worker/github/test/harness.ts): the merge write, which only a Maintainer's own press
 // admits, the pull request webhooks, the compare route, and the shapes.
-import { Effect, Option, Redacted } from "effect"
+import { Effect, Logger, Option, Redacted } from "effect"
 import { Collection } from "@smthrs/effect-tanstack-db"
+import { Logger as StructuredLogger } from "@smthrs/observability"
 import { ShapeSource } from "@smthrs/effect-electric"
 import { HttpClient } from "effect/http"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
@@ -28,10 +29,13 @@ import { refreshingSource } from "../../src/features/pulls/refresh.ts"
 import { PullsView, VIEW } from "../../src/features/pulls/schema.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"
+import { withToken } from "./Calls.ts"
 import * as Compare from "./Compare.ts"
+import * as Reconcile from "./Reconcile.ts"
+import { runFlow } from "../test/flowHost.ts"
 import * as RepoRoles from "./RepoRoles.ts"
-import { upsertPull } from "./Pulls.ts"
-import { REPOSITORY, reset, signedIn, sql } from "./test/fixtures.ts"
+import { fetchPull, projectPull, pullCurrent, REVIEW_PAGES, reviewStream, upsertPull } from "./Pulls.ts"
+import { REPOSITORY, reset, services, signedIn, sql } from "./test/fixtures.ts"
 import { app, delivery, githubHarness, member } from "./test/harness.ts"
 import { appKey, BOT_LOGIN, scriptedGitHub } from "./test/scriptedGitHub.ts"
 
@@ -185,6 +189,125 @@ describe("pull request webhooks", () => {
     await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("pull_request", payload))
     await h.settled()
     expect(await sql(runtime, `SELECT count(*)::int AS n FROM pull_commits`)).toEqual([{ n: 1 }])
+  })
+
+  test.each([300, 301, 601])("Apply projects all %i reviews across durable rounds, including a later edit beyond page three", async (count) => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const head = github.push("feature", { "A.md": "a\n" })
+    const pull = github.openPull("feature", "Add A")
+    const at = Date.now()
+    for (let index = 1; index <= count; index += 1) {
+      const newest = index === count
+      pull.reviews.push({
+        id: 1_000 + index,
+        login: newest ? "maya" : "ben",
+        event: newest ? "APPROVE" : "COMMENT",
+        body: newest ? "Ship it." : `Round ${index}.`,
+        commitId: head,
+        at: at + index * 1_000,
+      })
+    }
+    if (count === 301) {
+      let reads = 0
+      github.faults.push({
+        match: (method, path) => method === "GET" && path.endsWith("/reviews") && ++reads === 4,
+        status: 502,
+      })
+    }
+    const h = await githubHarness(runtime, { github, run: true })
+    const payload = { action: "submitted", repository: { full_name: "acme/widgets" }, pull_request: { number: pull.number } }
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("pull_request_review", payload))
+    await h.settled()
+    expect(await sql(runtime, `SELECT count(*)::int AS n FROM reviews`)).toEqual([{ n: count }])
+    expect(await sql(runtime, `SELECT author_login AS "author", state, body FROM reviews ORDER BY submitted_at DESC LIMIT 1`))
+      .toEqual([{ author: "maya", state: "APPROVED", body: "Ship it." }])
+    expect(await sql(runtime, `SELECT cursor FROM github_sync WHERE stream = 'pull-reviews/${pull.number}'`)).toEqual([{ cursor: null }])
+    // A later delivery must start a fresh walk and update a review in the tail.
+    pull.reviews[count - 1] = { ...pull.reviews[count - 1]!, event: "REQUEST_CHANGES", body: "Please revise." }
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("pull_request_review", { ...payload, action: "edited" }))
+    await h.settled()
+    expect(await sql(runtime, `SELECT state, body FROM reviews WHERE author_login = 'maya'`))
+      .toEqual([{ state: "CHANGES_REQUESTED", body: "Please revise." }])
+    expect(h.logs.filter((log) => log.message === "github.pull.reviews").map((log) => log.annotations["count"]))
+      .toEqual([...Array.from({ length: Math.ceil(count / 300) }, (_, index) => Math.min(300, count - index * 300)),
+        ...Array.from({ length: Math.ceil(count / 300) }, (_, index) => Math.min(300, count - index * 300))])
+  })
+
+  test("a review cursor commits with its projection and a fresh read resumes it after a stopped run", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const head = github.push("feature", { "A.md": "a\n" })
+    const pull = github.openPull("feature", "Add A")
+    const walked = REVIEW_PAGES * 100
+    const at = Date.now()
+    for (let index = 1; index <= walked + 1; index += 1) {
+      pull.reviews.push({ id: 1_000 + index, login: "ben", event: "COMMENT", body: `Round ${index}.`, commitId: head, at: at + index * 1_000 })
+    }
+    const { services: built } = await services(runtime, github)
+    const logs: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
+    const fetched = await runtime.runPromise(Effect.gen(function* () {
+      const token = yield* built.tokens.forInstallation(REPOSITORY, "pulls")
+      return yield* fetchPull(REPOSITORY, pull.number).pipe(withToken(token, built.apiBaseUrl))
+    }).pipe(
+      Effect.provideService(HttpClient.HttpClient, built.http),
+      Effect.provide(built.database),
+      Effect.provide(Logger.layer([Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))])),
+    ))
+    if (fetched.kind !== "found") throw new Error("missing pull")
+    expect(fetched.reviews).toHaveLength(walked)
+    expect(fetched.reviewsNext).toMatch(/page=4/)
+    await runtime.runPromise(projectPull(REPOSITORY, pull.number, fetched))
+    expect(await runtime.runPromise(pullCurrent(REPOSITORY.id, fetched.issue.issue))).toBe(false)
+    expect(await sql(runtime, `SELECT complete FROM github_sync WHERE stream = '${reviewStream(pull.number)}'`))
+      .toEqual([{ complete: false }])
+    const tail = await runtime.runPromise(Effect.gen(function* () {
+      const token = yield* built.tokens.forInstallation(REPOSITORY, "pulls")
+      return yield* fetchPull(REPOSITORY, pull.number).pipe(withToken(token, built.apiBaseUrl))
+    }).pipe(Effect.provideService(HttpClient.HttpClient, built.http), Effect.provide(built.database)))
+    if (tail.kind !== "found") throw new Error("missing pull")
+    expect(tail.reviews.map((review) => review.id)).toEqual([1_000 + walked + 1])
+    expect(tail.reviewsNext).toBeNull()
+    await runtime.runPromise(projectPull(REPOSITORY, pull.number, tail))
+    expect(await runtime.runPromise(pullCurrent(REPOSITORY.id, tail.issue.issue))).toBe(true)
+    expect(await sql(runtime, `SELECT complete FROM github_sync WHERE stream = '${reviewStream(pull.number)}'`))
+      .toEqual([{ complete: true }])
+    expect(await sql(runtime, `SELECT count(*)::int AS n FROM reviews`)).toEqual([{ n: walked + 1 }])
+    // A stale projection must not put the earlier cursor back.
+    await runtime.runPromise(projectPull(REPOSITORY, pull.number, fetched))
+    expect(await sql(runtime, `SELECT cursor FROM github_sync WHERE stream = '${reviewStream(pull.number)}'`))
+      .toEqual([{ cursor: null }])
+    // A new delivery starts at page one even if another run left a pending cursor.
+    await runtime.runPromise(projectPull(REPOSITORY, pull.number, { ...fetched, fetchedAt: tail.fetchedAt + 1 }))
+    pull.reviews[0] = { ...pull.reviews[0]!, body: "Edited while the earlier walk was stopped." }
+    const h = await githubHarness(runtime, { github, run: true })
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("pull_request_review", {
+      action: "edited", repository: { full_name: "acme/widgets" }, pull_request: { number: pull.number },
+    }))
+    await h.settled()
+    expect(await sql(runtime, `SELECT body FROM reviews WHERE id LIKE '%/review/1001'`))
+      .toEqual([{ body: "Edited while the earlier walk was stopped." }])
+    // Never a body or a login: the repository, the number and how far the read walked.
+    expect(logs.filter((log) => log.message === "github.pull.reviews").map((log) => log.annotations)).toEqual([
+      expect.objectContaining({ repoId: REPOSITORY.id, number: pull.number, outcome: "partial", count: walked }),
+    ])
+  })
+
+  test("Reconcile finishes a pull's review tail before advancing past it to a newer issue", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const head = github.push("feature", { "A.md": "a" })
+    const pull = github.openPull("feature")
+    for (let index = 1; index <= 301; index += 1) {
+      pull.reviews.push({ id: 1_000 + index, login: "maya", event: "COMMENT", body: `Round ${index}`, commitId: head, at: Date.now() + index * 1000 })
+    }
+    github.open("A newer issue", "Moves the issue-list cursor past the pull.")
+    const { services: built } = await services(runtime, github)
+    const ran = await runFlow(Reconcile.Reconcile,
+      { repo: "acme/widgets", requestedAtMs: Date.now() },
+      Reconcile.registration(built), { maxConnections: 3 },
+    )
+    expect(ran.exit).toMatchObject({ _tag: "Success", value: { outcome: "complete" } })
+    expect(await sql(runtime, "SELECT count(*)::int AS n FROM reviews")).toEqual([{ n: 301 }])
+    expect(await sql(runtime, "SELECT cursor, complete FROM github_sync WHERE stream LIKE 'pull-reviews/%'"))
+      .toEqual([{ cursor: null, complete: true }])
   })
 
   test("a pull request whose answer leaves out its base repository keeps no default branch (ruling GH-9)", async () => {

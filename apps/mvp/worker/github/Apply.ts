@@ -8,7 +8,7 @@ import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
 import { type Fetched, fetchIssue, project } from "./Project.ts"
-import { readPull } from "./Pulls.ts"
+import { fetchPull, projectPull } from "./Pulls.ts"
 import * as Store from "./Store.ts"
 import { candidates } from "./TreeScope.ts"
 import type { GitHubTokens } from "./Tokens.ts"
@@ -39,6 +39,10 @@ const ApplyRequest = {
   repo: Schema.String,
   number: Schema.Int,
   event: Schema.String,
+  /** Rows changed by earlier review-page rounds of this delivery. */
+  changed: Schema.optional(Schema.Number),
+  /** This delivery's own continuation; a new delivery starts at the first page. */
+  reviewCursor: Schema.optional(Schema.String),
 }
 
 /** What the run did to the projection. */
@@ -56,13 +60,19 @@ export const PULL_EVENTS: ReadonlySet<string> = new Set(["pull_request", "pull_r
 /** The step: re-read the subject and upsert it. */
 export const Read = Action.make("github/Apply/read", {
   payload: ApplyRequest,
-  success: Applied,
+  success: Schema.Struct({ ...Applied.fields, reviewCursor: Schema.optional(Schema.String) }),
   error: ApplyUnavailable,
   retryPolicy: APPLY_RETRY,
 })
 
 /** `github/Apply`: re-reads a webhook's subject from GitHub into Postgres. */
-export const Apply = Flow.make("github/Apply", {
+export const Apply: Flow.Flow<
+  "github/Apply",
+  Schema.Struct<typeof ApplyRequest>,
+  typeof Applied,
+  typeof ApplyUnavailable,
+  Action.Requirement<"github/Apply/read">
+> = Flow.make("github/Apply", {
   description: "Re-read the issue a GitHub webhook names, with its comments, into items and comments.",
   capabilities: ["db:write:items", "db:write:comments"],
   modelInvocable: false,
@@ -71,6 +81,13 @@ export const Apply = Flow.make("github/Apply", {
   error: ApplyUnavailable,
   body: Node.capture({ read: Read.name }, (request) =>
     Read.call(request).pipe(
+      Node.branch({
+        if: Node.capture({}, (result) => result.reviewCursor !== undefined),
+        then: Node.capture({ apply: "github/Apply", request }, (result) => Apply.to({ ...request, changed: result.changed, reviewCursor: result.reviewCursor })),
+        else: Node.capture({}, (result) => Node.map(
+          Node.succeed(result), Node.capture({}, ({ outcome, changed }) => ({ outcome, changed })),
+        )),
+      }),
       Node.catch({ onFailure: Node.capture({ applied: "unavailable" }, () => Node.succeed(UNAVAILABLE)) }),
     )),
 })
@@ -160,7 +177,14 @@ export const read = <E, R>(services: Services<E, R>) => (request: typeof Read.pa
       }
       return yield* project(repository, request.number, fetched)
     })
-    const projected = yield* (pull ? readPull(repository, request.number) : reread).pipe(
+    let reviewCursor: string | null = null
+    const rereadPull = Effect.gen(function* () {
+      // Each delivery owns its walk: another delivery may already have projected a later page.
+      const fetched = yield* fetchPull(repository, request.number, request.reviewCursor ?? null)
+      reviewCursor = fetched.kind === "found" ? fetched.reviewsNext : null
+      return yield* projectPull(repository, request.number, fetched)
+    })
+    const projected = yield* (pull ? rereadPull : reread).pipe(
       withToken(token.success, services.apiBaseUrl),
       Effect.tapError((error) =>
         Effect.logWarning("github.apply").pipe(Effect.annotateLogs({ ...fields, outcome: "failed", errorCode: codeOf(error) }))
@@ -210,7 +234,7 @@ export const read = <E, R>(services: Services<E, R>) => (request: typeof Read.pa
         ...(Option.isSome(lag) ? { lagMs: lag.value } : {}),
       }),
     )
-    return projected
+    return { ...projected, changed: projected.changed + (request.changed ?? 0), ...(reviewCursor === null ? {} : { reviewCursor }) }
   }).pipe(
     Effect.provideService(HttpClient.HttpClient, services.http),
     Effect.provide(services.database),

@@ -9,7 +9,7 @@ import type { Services } from "./Apply.ts"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
-import { pullCurrent, readPull } from "./Pulls.ts"
+import { pullCurrent, readPull, reviewStream } from "./Pulls.ts"
 import * as Store from "./Store.ts"
 
 // `github/Reconcile { repo }` (decision 0012 §3, docs/features/issues.md#reconcile): walks GitHub's change-time listing
@@ -42,6 +42,11 @@ const ReconcileRequest = {
    * before 2026-10-21 carry none and are superseded: they are the backlog the flow engine's outage left.
    */
   requestedAtMs: Schema.optional(Schema.Number),
+  /** Counts accumulated before a review continuation handed off to this round. */
+  previousPages: Schema.optional(Schema.Number),
+  previousIssues: Schema.optional(Schema.Number),
+  previousComments: Schema.optional(Schema.Number),
+  previousSkipped: Schema.optional(Schema.Number),
 }
 
 /** How the walk ended, and what it changed. */
@@ -61,13 +66,19 @@ const SUPERSEDED: Reconciled = { outcome: "superseded", pages: 0, issues: 0, com
 /** The step: walk the listing from the cursor. */
 export const Walk = Action.make("github/Reconcile/walk", {
   payload: ReconcileRequest,
-  success: Reconciled,
+  success: Schema.Struct({ ...Reconciled.fields, reviewsPending: Schema.optional(Schema.Boolean) }),
   error: ReconcileUnavailable,
   retryPolicy: RECONCILE_RETRY,
 })
 
 /** `github/Reconcile`: brings a repository's issues, pull requests and comments up to date with GitHub. */
-export const Reconcile = Flow.make("github/Reconcile", {
+export const Reconcile: Flow.Flow<
+  "github/Reconcile",
+  Schema.Struct<typeof ReconcileRequest>,
+  typeof Reconciled,
+  typeof ReconcileUnavailable,
+  Action.Requirement<"github/Reconcile/walk">
+> = Flow.make("github/Reconcile", {
   description: "Walk a repository's issues and comments on GitHub by change time into items, comments and pulls.",
   capabilities: ["db:write:items", "db:write:comments", "db:write:pulls", "db:write:github_sync"],
   modelInvocable: false,
@@ -76,6 +87,16 @@ export const Reconcile = Flow.make("github/Reconcile", {
   error: ReconcileUnavailable,
   body: Node.capture({ walk: Walk.name }, (request) =>
     Walk.call(request).pipe(
+      Node.branch({
+        if: Node.capture({}, (result) => result.reviewsPending === true),
+        then: Node.capture({ reconcile: "github/Reconcile", request }, (result) => Reconcile.to({
+          ...request, previousPages: result.pages, previousIssues: result.issues,
+          previousComments: result.comments, previousSkipped: result.skipped,
+        })),
+        else: Node.capture({}, (result) => Node.map(Node.succeed(result), Node.capture({},
+          ({ outcome, pages, issues, comments, skipped }) => ({ outcome, pages, issues, comments, skipped }),
+        ))),
+      }),
       Node.catch({ onFailure: Node.capture({ reconciled: "unavailable" }, () => Node.succeed(UNAVAILABLE)) }),
     )),
 })
@@ -125,7 +146,12 @@ export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGE
       )
     }
     const before = yield* Store.syncState(repository.id, ISSUES_STREAM)
-    const counts = { pages: 0, issues: 0, comments: 0, skipped: 0 }
+    const counts = {
+      pages: request.previousPages ?? 0, issues: request.previousIssues ?? 0,
+      comments: request.previousComments ?? 0, skipped: request.previousSkipped ?? 0,
+    }
+    const firstPage = counts.pages
+    let reviewsPending = false
     const walked = yield* Effect.gen(function* () {
       const client = yield* GitHub.GitHubClient.GitHubClient
       // Whether the repository is public decides who may read its rows without signing in (worker/github/Api.ts).
@@ -145,7 +171,7 @@ export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGE
         stream: ISSUES_STREAM,
       })
       let cursor = before.cursor
-      while (counts.pages < pagesPerWalk) {
+      while (counts.pages - firstPage < pagesPerWalk) {
         const page = yield* adapter.changes(cursor)
         counts.pages += 1
         for (const record of page.records) {
@@ -162,6 +188,11 @@ export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGE
               if (yield* Store.upsertIssue(repository.id, issue.value, record.retrievedAtMs)) counts.issues += 1
               if (record.kind === "pull-request" && !(yield* pullCurrent(repository.id, issue.value))) {
                 yield* readPull(repository, issue.value.number)
+                if ((yield* Store.syncState(repository.id, reviewStream(issue.value.number))).cursor !== null) {
+                  // Keep this listing page until the pull's durable review walk finishes.
+                  reviewsPending = true
+                  return "partial" as const
+                }
               }
             }
           }
@@ -174,10 +205,13 @@ export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGE
     }).pipe(withToken(token.success, services.apiBaseUrl), Effect.result)
     // After the first walk, a row a reconcile had to change is one a webhook should have delivered.
     if (before.syncedAt !== null) {
-      yield* Metric.update(Metric.withAttributes(Metrics.reconcileChanged, { kind: "issue" }), counts.issues)
-      yield* Metric.update(Metric.withAttributes(Metrics.reconcileChanged, { kind: "comment" }), counts.comments)
+      yield* Metric.update(Metric.withAttributes(Metrics.reconcileChanged, { kind: "issue" }), counts.issues - (request.previousIssues ?? 0))
+      yield* Metric.update(Metric.withAttributes(Metrics.reconcileChanged, { kind: "comment" }), counts.comments - (request.previousComments ?? 0))
     }
-    if (walked._tag === "Success") return yield* finished({ outcome: walked.success, ...counts }, null)
+    if (walked._tag === "Success") return {
+      ...yield* finished({ outcome: walked.success, ...counts }, null),
+      ...(reviewsPending ? { reviewsPending: true } : {}),
+    }
     const classified = classify(walked.failure)
     if (classified.kind === "refused") {
       return yield* finished({ outcome: "refused", ...counts }, `github_${classified.status}`)

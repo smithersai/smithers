@@ -213,11 +213,12 @@ describe("github/Relations", () => {
 })
 
 describe("github/Apply refreshes a changed issue's parents", () => {
-  const apply = async (github: ScriptedGitHub, number: number, options: { readonly mayAct?: (id: string) => boolean; readonly fail?: boolean } = {}) => {
+  const apply = async (github: ScriptedGitHub, number: number, options: { readonly mayAct?: (id: string) => boolean; readonly fail?: boolean; readonly allowedRepositories?: ReadonlyArray<string> } = {}) => {
     const started: Array<{ deliveryId: string; repo: string; number: number; event: string }> = []
     const { services: value } = await services(runtime, github, options.mayAct === undefined ? {} : { mayAct: options.mayAct })
     const exit = await Effect.runPromiseExit(Apply.read({
       ...value,
+      ...(options.allowedRepositories === undefined ? {} : { allowedRepositories: options.allowedRepositories }),
       startApply: (request) => options.fail === true ? Effect.fail("host down") : Effect.sync(() => void started.push(request)),
     })({ deliveryId: "d1", repo: "acme/widgets", number, event: "sub_issues" }))
     return { exit, started }
@@ -250,6 +251,60 @@ describe("github/Apply refreshes a changed issue's parents", () => {
     expect((await apply(github, 2)).started).toEqual([of(1)])
     github.setParent(2, { owner: "acme", name: "elsewhere", number: 9 })
     expect((await apply(github, 2, { mayAct: (id) => id !== "github/acme/elsewhere" })).started).toEqual([of(1)])
+  })
+
+  test("a deleted issue without a parent starts no parent refresh", async () => {
+    const github = scriptedGitHub()
+    github.open("An independent issue", null)
+    await apply(github, 1)
+    github.remove(1)
+    const result = await apply(github, 1)
+    expect(result.exit).toMatchObject({ _tag: "Success", value: { outcome: "tombstoned" } })
+    expect(result.started).toEqual([])
+    expect(await edges()).toEqual([])
+  })
+
+  test("an unreadable parent reply preserves the known parent when the child's state changes", async () => {
+    const github = scriptedGitHub()
+    github.open("Parent", null)
+    github.open("Child", null)
+    ofGitHub(github, 2, 1)
+    await apply(github, 2)
+    // A self-parent reply is unreadable; it cannot replace the previously observed edge.
+    github.setParent(2, { owner: "acme", name: "widgets", number: 2 })
+    github.issues.get(2)!.state = "closed"
+    github.issues.get(2)!.updatedAt = github.now + 5_000
+    expect((await apply(github, 2)).started).toEqual([of(1)])
+    expect(await edges()).toEqual([{ child: `${REPO}#2`, parent: `${REPO}#1` }])
+    expect(await sql(runtime, "SELECT state FROM items WHERE number = 2")).toEqual([{ state: "closed" }])
+  })
+
+  test("a recorded parent refresh needs no optional repository configuration", async () => {
+    const github = scriptedGitHub()
+    github.open("Parent", null)
+    github.open("Child", null)
+    ofGitHub(github, 2, 1)
+    const { services: value } = await services(runtime, github)
+    const started: Array<{ repo: string; number: number }> = []
+    const minimal: Apply.Services = {
+      database: value.database, tokens: value.tokens, http: value.http, apiBaseUrl: value.apiBaseUrl,
+      appLogin: value.appLogin, mayAct: value.mayAct,
+      startApply: (request) => Effect.sync(() => void started.push({ repo: request.repo, number: request.number })),
+    }
+    await run(Apply.read(minimal)({ deliveryId: "recorded-parent", repo: "acme/widgets", number: 2, event: "issues" }))
+    expect(started).toEqual([{ repo: "acme/widgets", number: 1 }])
+    expect(await edges()).toEqual([{ child: `${REPO}#2`, parent: `${REPO}#1` }])
+  })
+
+  test("an explicitly configured repository can receive a parent refresh", async () => {
+    const github = scriptedGitHub()
+    github.open("Child", null)
+    github.setParent(1, { owner: "acme", name: "other", number: 9 })
+    const result = await apply(github, 1, { allowedRepositories: ["github/acme/other"] })
+    expect(result.started).toEqual([{
+      deliveryId: "d1:github/acme/other#9", repo: "acme/other", number: 9, event: "sub_issues",
+    }])
+    expect(await edges()).toEqual([{ child: `${REPO}#1`, parent: "github/acme/other#9" }])
   })
 
   test("a child GitHub no longer has starts its old parent and loses its edge", async () => {
