@@ -715,7 +715,8 @@ export const collectGitDiffs = (data: (typeof Attr.Data)["Type"]): ReadonlyArray
  * Nested targets encode as their own recursive identity record, declared
  * inputs and references as their frozen data, and object keys sort so the
  * encoding is order-independent. Functions and symbols have no canonical
- * encoding and collapse to one marker; a cyclic value is a construction-time
+ * encoding and collapse to one marker. Ordinary records carry an object tag
+ * so they cannot impersonate scalar tags; a cyclic value is a construction-time
  * impossibility for schema-validated attrs and fails loudly.
  */
 const canonicalize = (value: unknown, seen: Set<object>): unknown => {
@@ -731,22 +732,19 @@ const canonicalize = (value: unknown, seen: Set<object>): unknown => {
       $target: metadata.target
     }
   }
-  if (
-    typeof value === "function" ||
-    typeof value === "symbol" ||
-    typeof value === "bigint" ||
-    value === undefined
-  ) return "$unencodable"
+  if (typeof value === "bigint") return { $bigint: String(value) }
+  if (value === undefined) return { $undefined: true }
+  if (typeof value === "function" || typeof value === "symbol") return { $unencodable: true }
   if (typeof value !== "object" || value === null) return value
   if (seen.has(value)) throw new Error("agent gate identity cannot encode a cyclic attr value")
   seen.add(value)
   try {
     if (Array.isArray(value)) return value.map((entry) => canonicalize(entry, seen))
-    const output: Record<string, unknown> = {}
+    const output = Object.create(null) as Record<string, unknown>
     for (const key of Object.getOwnPropertyNames(value).sort()) {
       output[key] = canonicalize((value as Record<string, unknown>)[key], seen)
     }
-    return output
+    return { $object: output }
   } finally {
     seen.delete(value)
   }

@@ -31,6 +31,7 @@ import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
 import { Process } from "./internal/Process.ts"
 import { SandboxHost } from "./internal/SandboxHost.ts"
+import { SecretProxyHost } from "./internal/SecretProxyHost.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Secret from "./Secret.ts"
 import * as SecretProxy from "./SecretProxy.ts"
@@ -1459,10 +1460,11 @@ const withSecretEnvironment = <A, E>(
       stderr: tail(`${what}: ${failureMessage(cause)}`)
     })
   return Effect.acquireUseRelease(
-    Effect.tryPromise({
-      try: () => SecretProxy.startProxy(vault),
-      catch: proxyFailed("the secret substitution proxy did not start")
-    }),
+    Effect.flatMap(SecretProxyHost, (host) =>
+      Effect.tryPromise({
+        try: () => (host ?? SecretProxy).startProxy(vault),
+        catch: proxyFailed("the secret substitution proxy did not start")
+      })),
     (proxy) =>
       Effect.flatMap(
         Effect.tryPromise({

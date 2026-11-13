@@ -702,15 +702,13 @@ describe("parseWorkflow", () => {
     expect(skipped).not.toBe(source)
     expect(missingRequiredJobs(parseWorkflow(skipped), required)).toEqual(["browser (conditional)"])
     // The gate pinned to that job goes with it.
-    expect(
-      missingGates(parseWorkflow(skipped), [
-        {
-          name: "browser contract",
-          command: "pnpm exec smithers-build test '//scripts:browserContract'",
-          job: "browser"
-        }
-      ]).map((gate) => gate.name)
-    ).toEqual(["browser contract"])
+    const gate = [{
+      name: "browser contract",
+      command: "pnpm exec smthrs test '//packages/repo-targets:webBundleContract'",
+      job: "browser"
+    }]
+    expect(missingGates(parseWorkflow(source), gate)).toEqual([])
+    expect(missingGates(parseWorkflow(skipped), gate).map((gate) => gate.name)).toEqual(["browser contract"])
   })
 
   /**

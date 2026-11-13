@@ -3,6 +3,7 @@
  * started, a budget that ran out, a child that was signalled, a tool that
  * exited non-zero, and a generated file that could not be read at all.
  */
+import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
@@ -12,7 +13,13 @@ import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as CiToolchain from "../src/CiToolchain.ts"
 import * as Exec from "../src/Exec.ts"
+import * as ExecSandbox from "../src/ExecSandbox.ts"
 import * as GeneratedFile from "../src/GeneratedFile.ts"
+import { Process } from "../src/internal/Process.ts"
+import { SandboxHost } from "../src/internal/SandboxHost.ts"
+import { SecretProxyHost } from "../src/internal/SecretProxyHost.ts"
+import * as Secret from "../src/Secret.ts"
+import * as SecretProxy from "../src/SecretProxy.ts"
 
 let root: string
 
@@ -24,8 +31,10 @@ afterEach(async () => {
   await Fs.rm(root, { recursive: true, force: true })
 })
 
-const failureOf = async (value: Exec.Payload): Promise<Exec.ExecError> => {
-  const exit = await Effect.runPromiseExit(Exec.run({ workspaceRoot: root }, value))
+const failureOf = async (value: Exec.Payload): Promise<Exec.ExecError> =>
+  errorOf(await Effect.runPromiseExit(Exec.run({ workspaceRoot: root }, value)))
+
+const errorOf = (exit: Exit.Exit<Exec.Result, Exec.ExecError>): Exec.ExecError => {
   if (Exit.isSuccess(exit)) throw new Error("expected the run to fail")
   const rendered = JSON.stringify(exit.cause)
   const parsed = JSON.parse(rendered) as { readonly reasons?: ReadonlyArray<{ readonly error: Exec.ExecError }> }
@@ -48,6 +57,93 @@ describe("Exec failure codes", () => {
   it("reports invalid_payload for a payload the action refuses", async () => {
     const error = await failureOf(payload({ cwd: "../outside" }))
     expect(error.code).toBe("invalid_payload")
+  })
+
+  it.each(["start", "origin"] as const)("reports secret_proxy_failed when the proxy cannot %s", async (stage) => {
+    let closed = 0
+    let spawned = 0
+    const value = payload({
+      env: { API: Secret.SecretOrigin("https://example.test") },
+      secrets: [Secret.HttpSecret(Secret.Secret("PROXY_TEST_TOKEN"), ["https://example.test"])]
+    })
+    const error = errorOf(
+      await Effect.runPromiseExit(
+        Exec.run({ workspaceRoot: root }, value).pipe(
+          Effect.provideService(SecretProxyHost, {
+            startProxy: async (vault) => {
+              if (stage === "start") throw new Error("proxy startup failed")
+              const proxy = await SecretProxy.startProxy(vault)
+              return {
+                ...proxy,
+                originFor: async () => {
+                  throw new Error("origin binding failed")
+                },
+                close: async () => {
+                  closed++
+                  await proxy.close()
+                }
+              }
+            }
+          }),
+          Effect.provideService(Process, {
+            spawn: (options) => {
+              spawned++
+              return ScopedProcess.spawn(options)
+            },
+            status: ScopedProcess.status
+          })
+        )
+      )
+    )
+    expect(error.code).toBe("secret_proxy_failed")
+    expect(error.stderr).toContain(stage === "start" ? "did not start" : "could not bind a brokered origin")
+    expect(error.argv).toEqual(value.argv)
+    expect(error.cwd).toBe(value.cwd)
+    expect(spawned).toBe(0)
+    expect(closed).toBe(stage === "start" ? 0 : 1)
+  })
+
+  it("refuses Docker with declared secrets before starting a proxy or spawning", async () => {
+    let spawned = 0
+    let started = 0
+    const error = errorOf(
+      await Effect.runPromiseExit(
+        Exec.run(
+          {
+            workspaceRoot: root,
+            sandbox: { policy: {}, reads: [], writes: [], mechanism: { _tag: "SandboxDocker", image: "fixture" } }
+          },
+          payload({
+            env: { API: Secret.SecretOrigin("https://example.test") },
+            secrets: [Secret.HttpSecret(Secret.Secret("DOCKER_TEST_TOKEN"), ["https://example.test"])]
+          })
+        ).pipe(
+          Effect.provideService(SandboxHost, {
+            ...ExecSandbox.host(),
+            platform: "linux",
+            executable: () => "/bin/docker"
+          }),
+          Effect.provideService(SecretProxyHost, {
+            startProxy: (vault) => {
+              started++
+              return SecretProxy.startProxy(vault)
+            }
+          }),
+          Effect.provideService(Process, {
+            spawn: (options) => {
+              spawned++
+              return ScopedProcess.spawn(options)
+            },
+            status: ScopedProcess.status
+          })
+        )
+      )
+    )
+    expect(error.code).toBe("sandbox_unenforceable")
+    expect(error.stderr).toContain("docker mechanism cannot reach the loopback secret proxy")
+    expect(error.stderr).toContain("native mechanism")
+    expect(started).toBe(0)
+    expect(spawned).toBe(0)
   })
 
   it("reports spawn_failed for an executable that is not there", async () => {

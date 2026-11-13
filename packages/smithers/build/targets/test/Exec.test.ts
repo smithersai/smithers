@@ -608,19 +608,29 @@ describe("run", () => {
   it("refuses to substitute a cache directory that is a link out of the workspace", async () => {
     await Fs.symlink(outside, NodePath.join(root, ".flows"))
 
-    const exit = await run(
-      { workspaceRoot: root, cacheDirectory: ".flows" },
-      payload(["node", "-e", "0", Exec.cacheDirectoryToken])
+    const error = await failed(
+      payload([
+        process.execPath,
+        "-e",
+        "require('node:fs').writeFileSync(require('node:path').join(process.argv[1], 'escaped.txt'), 'escaped')",
+        Exec.cacheDirectoryToken
+      ]),
+      { workspaceRoot: root, cacheDirectory: ".flows" }
     )
 
-    expect(Exit.isFailure(exit)).toBe(true)
+    expect(error.code).toBe("invalid_payload")
+    expect(error.stderr).toContain("leaves the workspace")
     expect(await Fs.readdir(outside)).toEqual([])
   })
 
   it("refuses a working directory that leaves the workspace", async () => {
     await Fs.symlink(outside, NodePath.join(root, "linked"))
-    const exit = await run({ workspaceRoot: root }, payload(["node", "-e", "0"], "linked"))
-    expect(Exit.isFailure(exit)).toBe(true)
+    const error = await failed(
+      payload([process.execPath, "-e", "require('node:fs').writeFileSync('escaped.txt', 'escaped')"], "linked")
+    )
+    expect(error.code).toBe("invalid_payload")
+    expect(error.stderr).toContain("leaves the workspace")
+    expect(await Fs.readdir(outside)).toEqual([])
   })
 
   it("reports the refusal with the unsubstituted argv", async () => {

@@ -399,14 +399,24 @@ it("rejects a cache path whose normalized multibyte segments exceed the total by
 it("refuses a guarded Cargo declaration with missing attrs", () => {
   expect(() => S.Cargo.Build(undefined as never)).toThrow()
 })
-it("keys unencodable scalar attrs consistently and refuses cyclic gate identities", () => {
+it("distinguishes encodable scalar attrs and refuses cyclic gate identities", () => {
   const rule = Target.make("IdentityBoundary", {
     kinds: ["build"],
     attrs: Schema.Struct({ value: Schema.Unknown }),
     implementation: () => Node.succeed(undefined)
   })
-  const hashes = [undefined, 1n, Symbol("value"), () => 1].map((value) => Agent.targetIdentity(rule({ value })))
-  expect(new Set(hashes).size).toBe(1)
+  const identity = (value: unknown) => Agent.targetIdentity(rule({ value }))
+  const hashes = [undefined, 1n, 2n, "$unencodable"].map(identity)
+  expect(new Set(hashes).size).toBe(4)
+  expect(identity(1n)).toBe(identity(BigInt("1")))
+  expect(identity(1n)).not.toBe(identity({ $bigint: "1" }))
+  expect(identity(undefined)).not.toBe(identity({ $undefined: true }))
+  expect(identity(Symbol("value"))).not.toBe(identity({ $unencodable: true }))
+  expect(identity({ $bigint: "1" })).not.toBe(identity({ $object: { $bigint: "1" } }))
+  expect(identity({ nested: [1n, undefined] })).not.toBe(identity({ nested: [{ $bigint: "1" }, { $undefined: true }] }))
+  expect(identity(JSON.parse("{\"__proto__\":1}"))).not.toBe(identity({}))
+  expect(identity(Symbol("value"))).toBe(identity(() => 1))
+  expect(hashes).not.toContain(identity(Symbol("value")))
   const cyclic: Record<string, unknown> = {}
   cyclic.self = cyclic
   expect(() => Agent.targetIdentity(rule({ value: cyclic }))).toThrow(/cyclic attr value/)

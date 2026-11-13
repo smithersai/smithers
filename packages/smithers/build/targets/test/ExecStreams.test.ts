@@ -419,6 +419,7 @@ describe("payload and environment boundary", () => {
       ...override
     } as Exec.Payload
     const error = await failed(value)
+    expect(error.code).toBe("invalid_payload")
     expect(error.exitCode).toBe(-1)
     await expect(Fs.stat(marker)).rejects.toMatchObject({ code: "ENOENT" })
   })
