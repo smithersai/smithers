@@ -8,15 +8,16 @@ runtime.
 
 **Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan/docs
 
-The persisted plan: a keyed action graph, its append-only store, its diff, and
-the step-key compiler that gives every node its identity.
+The plan: a keyed action graph, its diff, and the step-key compiler that gives
+every node its identity.
 
 `@smthrs/plan` turns a description of work into one durable value. It compiles
 declared steps into a graph in which every node carries a content key derived
-from what that node declares, records that graph in a SQLite store that only
-ever grows, and compares two graphs to say exactly what changed. It runs
-nothing itself: it performs no I/O beyond the database, and driving a compiled
-plan is a scheduler's job, such as
+from what that node declares, grows that graph without rewriting a node, and
+compares two graphs to say exactly what changed. It runs nothing itself and
+performs no I/O at all. Persisting a plan is
+[`@smthrs/plan-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs);
+driving one is a scheduler's job, such as
 [`@smthrs/engine-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/docs)'s `PlanScheduler`.
 
 Reach for it when you are building a scheduler, a cache, or an approval flow

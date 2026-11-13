@@ -104,10 +104,29 @@ identically.
 
 **What to change.** Return data from `toJSON`, not the object itself.
 
+### graph_too_deep
+
+**What happened.** In this package, eagerly nested `Node.branch` or `Node.catch` arm builders
+exceeded `Node.maximumArmDepth` (`512`). Arms are constructed before graph
+walking and run-time evaluation. A run-time predicate cannot stop a builder
+that keeps constructing another arm. The message starts with
+`Node arm recursion needs a plan-time bound`.
+
+The graph walks in [`@smthrs/flow`](../../flow/docs/troubleshooting.md) and
+[`@smthrs/core`](../../core/docs/troubleshooting.md) also raise this code for
+topology beyond `Graph.maximumGraphDepth` (`1_000`). Their troubleshooting
+pages cover splitting that topology with child boundaries or trampoline
+handoffs.
+
+**What to change.** Bound recursive arm construction at plan time, for example
+with a payload-derived round count, and return a terminal node when that count
+is reached. For repetition that cannot be bounded within this depth, use a
+flow boundary rather than nesting more arms.
+
 ### The codes this package does not raise
 
 `GraphBuildErrorCode` also carries `recursion_requires_boundary`,
-`placement_requires_boundary`, `graph_too_deep`, `duplicate_node`,
+`placement_requires_boundary`, `duplicate_node`,
 `payload_too_deep`, `unstable_callback`, `effect_outside_envelope`,
 `effect_mode_widening`, `effect_tier_widening`, and
 `capability_outside_grant`. Those come from

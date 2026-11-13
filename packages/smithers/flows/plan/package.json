@@ -6,7 +6,7 @@
   "smthrs": {
     "group": "engine"
   },
-  "description": "The persisted flows plan: a keyed action graph, its append-only store, and its diff",
+  "description": "The flows plan: a keyed action graph, its step-key compiler, and its diff",
   "homepage": "https://github.com/smithersai/smithers",
   "repository": {
     "type": "git",

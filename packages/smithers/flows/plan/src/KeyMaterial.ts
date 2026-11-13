@@ -28,7 +28,7 @@ import * as Effects from "./Effects.ts"
  *
  * - `Literal` hashes `value` inline.
  * - `Ref` consumes the value at `path` inside node `from`'s result.
- * - `Pending` consumes node `from`'s whole result.
+ * - `Pending` orders this node after `from` and consumes no value.
  *
  * @since 0.1.0
  * @category schemas

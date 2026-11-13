@@ -33901,6 +33901,14 @@ descendant, including inline-flow bodies. This changes compiled keys/digests
 for previously under-ordered nested sequences; re-plan affected work rather
 than substituting the new graph into an already approved execution.
 
+### Node.maximumArmDepth
+
+```ts
+const maximumArmDepth: 512
+```
+
+The maximum number of eagerly nested arm builders shared by `Node.branch` and `Node.catch`. Building an arm beyond this depth throws `GraphBuildError` with code `graph_too_deep` before graph walking, leaving native stack headroom for a typed refusal. Bound recursive arm construction at plan time; a run-time predicate cannot stop it.
+
 ### Node.BranchOptions
 
 ```ts
@@ -34470,7 +34478,7 @@ Attaches a policy to any declaration that carries annotations, answering a new o
 
 [src/Repetition.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/Repetition.ts)
 
-The one bounded-repetition ceiling vocabulary. [`@smthrs/flow`](/docs/reference/api/flow/)'s `Poll.make` takes it as `onTimeout`, for the attempt a poll gives up on, and [`@smthrs/patterns`](/docs/reference/api/patterns/)' `Loop` takes it as `onMaxReached`, for the iteration a loop gives up on.
+The one bounded-repetition ceiling vocabulary. [`@smthrs/flow`](/docs/reference/api/flow/)'s `Poll.make` takes it as `onTimeout`, for the attempt a poll gives up on, and [`@smthrs/patterns`](/docs/reference/api/patterns/)' `Optimizer` takes it as `onMaxReached`, for the iteration a search gives up on.
 
 ### Repetition.AtCeiling
 
@@ -34528,7 +34536,7 @@ class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smthrs/pla
 | `payload_too_large`           | one plan value expands to more members than the bound                                          |
 | `invalid_node`                | a malformed node AST                                                                           |
 
-`GraphBuildErrorCode` is a closed schema literal, so a caller may switch on it and a new refusal is a deliberate addition rather than a new free-form string. This package raises `planned_value_computed`, `invalid_all_member`, `invalid_join`, `invalid_continuation`, `invalid_priority`, `invalid_payload`, and `cyclic_payload`. [`@smthrs/flow`](/docs/reference/api/flow/)'s graph walk raises `recursion_requires_boundary`, `placement_requires_boundary`, `payload_too_deep`, `graph_too_deep`, `duplicate_node`, `unstable_callback`, and the four effect-authority codes. [`@smthrs/core`](/docs/reference/api/core/)'s graph builder raises the last six, plus `payload_too_deep`, `graph_too_deep`, `duplicate_node`, `invalid_payload`, and the four effect-authority codes; it uses this error rather than a second class of its own. `unstable_callback` is raised when `Graph.build` runs with `callbackIdentity: "stable"` and a callback carries no `Node.capture` declaration; declare its complete inert captures, including the version of any imported implementation, so the callback keys by content instead of by process.
+`GraphBuildErrorCode` is a closed schema literal, so a caller may switch on it and a new refusal is a deliberate addition rather than a new free-form string. This package raises `planned_value_computed`, `invalid_all_member`, `invalid_join`, `invalid_continuation`, `invalid_priority`, `invalid_payload`, `cyclic_payload`, and `graph_too_deep`. [`@smthrs/flow`](/docs/reference/api/flow/)'s graph walk raises `recursion_requires_boundary`, `placement_requires_boundary`, `payload_too_deep`, `graph_too_deep`, `duplicate_node`, `unstable_callback`, and the four effect-authority codes. [`@smthrs/core`](/docs/reference/api/core/)'s graph builder raises the last six, plus `payload_too_deep`, `graph_too_deep`, `duplicate_node`, `invalid_payload`, and the four effect-authority codes; it uses this error rather than a second class of its own. `unstable_callback` is raised when `Graph.build` runs with `callbackIdentity: "stable"` and a callback carries no `Node.capture` declaration; declare its complete inert captures, including the version of any imported implementation, so the callback keys by content instead of by process.
 
 The four effect-authority codes are recorded while a walk checks every
 declaration against the envelope enclosing it, using the narrowing rule
