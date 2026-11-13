@@ -1,0 +1,32 @@
+import { expect, it } from "@effect/vitest"
+import { receiptOf } from "../src/receipts.vibe"
+
+const tool = { id: "call", conversation: "home", reply: "reply", operation: "fs.edit", path: "file.vibe", before: "", after: "" }
+it("keeps small diffs exact, trims shared context and visibly bounds large replacements and search results", () => {
+  expect(receiptOf({ ...tool, before: "old", after: "new" }, 128)).toEqual({ ...tool, before: "old", after: "new" })
+  const before = "a".repeat(500000) + "old" + "z".repeat(500000)
+  const after = "a".repeat(500000) + "new" + "z".repeat(500000)
+  const compact = receiptOf({ ...tool, before, after }, 8192)
+  expect(compact.before).toContain("old")
+  expect(compact.after).toContain("new")
+  expect(compact.before.length).toBeLessThan(200)
+  expect(compact.after.length).toBeLessThan(200)
+  for (const operation of ["fs.edit", "fs.search"]) {
+    const bounded = receiptOf({ ...tool, operation, before: "x".repeat(1000), after: "y".repeat(1000) }, 128)
+    expect(bounded.before).toHaveLength(128)
+    expect(bounded.after).toHaveLength(128)
+    expect(bounded.after.endsWith("\n…")).toBe(true)
+  }
+  expect(receiptOf({ ...tool, before: "same", after: "same" }, 128).after).toBe("same")
+  expect(receiptOf({ ...tool, after: "added" }, 128).after).toBe("added")
+  expect(receiptOf({ ...tool, before: "removed" }, 128).after).toBe("")
+})
+
+it.effect("fuzzes bounded receipt text without changing its call identity or metadata", () => effect {
+  const checked = try Arbitrary.checkEffect(Arbitrary.schema(Schema.Struct({ before: Schema.String, after: Schema.String })), (text) => {
+    const receipt = receiptOf({ ...tool, ...text }, 128)
+    return receipt.before.length <= 128 && receipt.after.length <= 128 &&
+      receipt.id === tool.id && receipt.path === tool.path && receipt.conversation === tool.conversation
+  }, { runs: 1000 })
+  try Effect.try(() => expect(Arbitrary.formatCheckFailure(checked)).toBeUndefined())
+})

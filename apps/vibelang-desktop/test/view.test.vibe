@@ -88,3 +88,21 @@ it("a late local session cannot replace a newer Mock identity", () => {
   const late = update(model, Message.AccountLoaded({ identity: { id: "", login: "", role: "viewer", available: false } })).model
   expect(late.account?.identity).toEqual(account.identity)
 })
+
+it("requests only the visible conversation and ignores a late receipt snapshot from another conversation", () => {
+  const started = init({ session: "desktop", name: "Guest", mode: "mock" })
+  expect(started.commands?.[0]?.args).toEqual({ conversation: started.model.conversation })
+  const receipt = { conversation: "other", reply: "reply", operation: "fs.edit", path: "file", before: "old", after: "new" }
+  const stale = update(started.model, Message.Snapshot({ conversation: "other", state: { ...started.model.desktop, tools: [receipt] } }))
+  expect(stale.model).toBe(started.model)
+  const current = update(started.model, Message.Snapshot({ conversation: started.model.conversation, state: started.model.desktop }))
+  expect(current.commands ?? []).toHaveLength(0)
+})
+
+it("clears the prior conversation's receipts immediately when leaving the tour for a local model", () => {
+  const receipt = { conversation: "tour-desktop", reply: "reply", operation: "fs.edit", path: "file", before: "old", after: "new" }
+  const model = { ...initial(), conversation: "tour-desktop", desktop: { ...initial().desktop, tools: [receipt] } }
+  const selected = update(model, Message.Select({ model: "local" })).model
+  expect(selected.conversation).toBe("home")
+  expect(selected.desktop.tools).toEqual([])
+})

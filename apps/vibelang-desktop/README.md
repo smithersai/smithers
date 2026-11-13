@@ -60,3 +60,10 @@ Only the fixture setup budget includes that lock wait; individual browser cases 
 
 `fs.edit` requires the exact original from `fs.read` as `before`; stale originals return false and preserve the
 person's bytes. A completed durable replay returns its original result without a second write.
+
+Tool receipts live beside each conversation log in `tools-<conversation>.json`, separately from `settings.json`.
+Edit receipts contain the changed span with short surrounding context; each text field is limited to 8,192
+characters by default (`VIBELANG_DESKTOP_RECEIPT_CHARS`, clamped to 128–65,536). Omitted text is marked `…`.
+Search receipt text uses the same limit. The state endpoint includes receipts only for its `conversation` query.
+Full edit originals remain in `edit-intents.json` until the reply settles and its receipt is archived, preserving crash recovery.
+Startup migrates older settings and reclaims completed intents for replies with persisted completion or failure events. Uncertain edits keep their originals for recovery.

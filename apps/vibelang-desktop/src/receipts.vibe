@@ -1,0 +1,20 @@
+import type { ToolReceipt } from "./protocol.vibe"
+
+// Receipts are display excerpts. Exact originals belong only to the active write-ahead intent.
+function excerpt(text: string, limit: number) {
+  return text.length <= limit ? text : text.slice(0, limit - 2) + "\n…"
+}
+export function receiptOf(receipt: ToolReceipt, limit: number): ToolReceipt {
+  if (receipt.operation !== "fs.edit") return { ...receipt, before: excerpt(receipt.before, limit), after: excerpt(receipt.after, limit) }
+  const { before, after } = receipt
+  let start = 0
+  while (start < before.length && start < after.length && before[start] === after[start]) start++
+  let suffix = 0
+  while (suffix < before.length - start && suffix < after.length - start && before[before.length - suffix - 1] === after[after.length - suffix - 1]) suffix++
+  const from = Math.max(0, start - 80)
+  const changed = (text: string) => {
+    const to = Math.min(text.length, text.length - suffix + 80)
+    return excerpt((from > 0 ? "…\n" : "") + text.slice(from, to) + (to < text.length ? "\n…" : ""), limit)
+  }
+  return { ...receipt, before: changed(before), after: changed(after) }
+}

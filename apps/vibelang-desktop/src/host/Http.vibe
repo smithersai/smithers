@@ -35,7 +35,7 @@ effect function handle(origin: string, assets: string, launch: string) {
     return try HttpServerResponse.redirect("/", { status: 303, headers: { "cache-control": "no-store" } }).pipe(HttpServerResponse.setCookie(LAUNCH_COOKIE, launch, { httpOnly: true, sameSite: "strict", path: "/" }), Effect.orDie)
   }
   if ((url.pathname.startsWith("/desktop/") || url.pathname.startsWith("/api/")) && !launched(request.cookies[LAUNCH_COOKIE], launch)) return json({ error: "launch" }, 403)
-  if (url.pathname === "/desktop/state" && request.method === "GET") return json(try desktop.snapshot())
+  if (url.pathname === "/desktop/state" && request.method === "GET") return json(try desktop.snapshot(url.searchParams.get("conversation") ?? undefined))
   if (url.pathname === "/desktop/models" && request.method === "GET") {
     const listed = desktop.models(url.searchParams.get("endpoint") ?? "") catch () => undefined
     return listed === undefined ? json({ error: "Model unavailable" }, 503) : json({ models: listed })

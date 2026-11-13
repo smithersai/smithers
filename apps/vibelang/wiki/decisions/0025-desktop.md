@@ -88,3 +88,11 @@ Reused tools awaiting Will's VL-5 review: VibeLang/Vite, VibeLang-unplugin/esbui
 Playwright, at the monorepo versions already listed in 0008. Electrobun itself is the explicit VL-6 approval.
 No additional runtime library choice is introduced; `vibelang-runtime` 0.0.12 is also required by the new SDK `.vibe`
 modules, at the same version as the existing app and SDK packages.
+
+Tool history is stored per conversation beside its event log; settings contain only folder and model choices.
+The state endpoint reads only the requested conversation's receipts, and the view rejects receipts arriving after
+a conversation switch. Edit receipts retain a bounded changed span and short context rather than complete files;
+search receipt text is bounded too. Exact edit originals remain in a separate write-ahead file until tool calls
+return, their receipt is archived and their reply settles. Startup migrates older settings idempotently and
+archives completed recovery intents before reclaiming those whose reply has a durable terminal event.
+Confirmed refusals discard their intents; uncertain filesystem outcomes retain their originals for recovery.

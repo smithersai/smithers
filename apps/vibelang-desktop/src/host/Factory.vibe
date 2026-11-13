@@ -20,10 +20,11 @@ import { LocalModels, ModelInfo, ModelUnavailable } from "./LocalModel.vibe"
 
 import { choiceCurrent, editAllowed } from "../policy.vibe"
 import { Snapshot, ToolReceipt } from "../protocol.vibe"
+import { receiptOf } from "../receipts.vibe"
 export { Snapshot } from "../protocol.vibe"
 export service Desktop {
   external(url: string): void!Unavailable
-  snapshot(): Snapshot!!
+  snapshot(conversation?: string): Snapshot!!
   change(operation: "open" | "close" | "model" | "mock", endpoint?: string, model?: string): Snapshot!Unavailable
   models(endpoint: string): ReadonlyArray<string>!Unavailable
 }
@@ -70,6 +71,8 @@ export const registration = Layer.effectContext(effect {
   const roomGate = try Semaphore.make(1)
   const settingsGate = try Semaphore.make(1)
   const settingsFile = path.join(preferences.directory, "settings.json")
+  const intentsFile = path.join(preferences.directory, "edit-intents.json")
+  const receiptLimit = Math.min(65536, Math.max(128, try Config.withDefault(Config.Int("VIBELANG_DESKTOP_RECEIPT_CHARS"), 8192)))
   // Rename can reach the disk before the data it names: sync the file, rename, then sync the directory.
   effect function sync(name: string) {
     try scoped(effect { const file = try fs.open(name, { flag: "r" }); try file.sync }).pipe(Effect.orDie)
@@ -97,19 +100,56 @@ export const registration = Layer.effectContext(effect {
   const opened = saved.folder === null ? null : (folder.restore(saved.folder) catch () => null)
   // Failed providers stay failed until the person explicitly chooses again.
   const selected = saved.mock || saved.model === null || saved.model.state !== "ready" ? saved.model : (models.restore(saved.model) catch () => ({ ...saved.model!, state: "failed" as const }))
-  try Ref.set(state, { ...saved, folder: opened, model: selected })
-  try Ref.set(edits, storedState.edits)
+  try Ref.set(state, { ...saved, folder: opened, model: selected, tools: [] })
+  const pending = try load(intentsFile, Schema.fromJsonString(Schema.Array(EditIntent)), [])
+  try Ref.set(edits, [...storedState.edits.filter((intent) => !pending.some((item) => item.key === intent.key)), ...pending])
+  effect function saveEdits() { try publish(intentsFile, JSON.stringify(try Ref.get(edits))) }
+  const conversationFile = (conversation: string) => path.join(preferences.directory, `conversation-${encodeURIComponent(conversation)}.json`)
+  const receiptsFile = (conversation: string) => path.join(preferences.directory, `tools-${encodeURIComponent(conversation)}.json`)
+  effect function receipts(conversation: string) {
+    return try load(receiptsFile(conversation), Schema.fromJsonString(Schema.Array(ToolReceipt)), [])
+  }
+  effect function record(receipt: ToolReceipt) {
+    const bounded = receiptOf(receipt, receiptLimit)
+    const previous = try receipts(receipt.conversation)
+    const same = (item: ToolReceipt) => bounded.id === undefined ? JSON.stringify(item) === JSON.stringify(bounded) : item.id === bounded.id
+    try publish(receiptsFile(receipt.conversation), JSON.stringify([...previous.filter((item) => !same(item)), bounded]))
+  }
   effect function save() {
     const snapshot = try Ref.get(state)
-    const intents = try Ref.get(edits)
-    try publish(settingsFile, JSON.stringify({ snapshot, edits: intents }))
+    try publish(settingsFile, JSON.stringify({ snapshot, edits: [] }))
     return snapshot
+  }
+  // Publish the new records first. Repeating an interrupted migration deduplicates by call identity.
+  if (saved.tools.length > 0 || storedState.edits.length > 0) {
+    for (const receipt of saved.tools) try record(receipt)
+    for (const intent of storedState.edits) if (intent.done) try record(intent.receipt)
+    try saveEdits()
+    try save()
+  }
+  // A terminal conversation event proves the tool calls returned, even if the process
+  // stopped before its cleanup action. Never discard the original of an unfinished reply.
+  const outstanding: Array<EditIntent> = []
+  const terminal = new Map<string, ReadonlyArray<Event>>()
+  for (const intent of try Ref.get(edits)) {
+    let events = terminal.get(intent.receipt.conversation)
+    if (events === undefined) {
+      events = try load(conversationFile(intent.receipt.conversation), Log, [])
+      terminal.set(intent.receipt.conversation, events)
+    }
+    const settled = events.some((event) => (event.type === "ReplyFinished" || event.type === "ReplyFailed") && event.id === intent.receipt.reply)
+    if (intent.done && settled) try record(intent.receipt)
+    else outstanding.push(intent)
+  }
+  if (outstanding.length !== (try Ref.get(edits)).length) {
+    try Ref.set(edits, outstanding)
+    try saveEdits()
   }
   effect function room(conversation: string): Sequencer.Sequencer!! {
     return try Semaphore.withPermits(roomGate, 1)(effect {
       const previous = rooms.get(conversation)
       if (previous !== undefined) return previous
-      const filename = path.join(preferences.directory, `conversation-${encodeURIComponent(conversation)}.json`)
+      const filename = conversationFile(conversation)
       const seq = try Sequencer.make({
         read: () => load(filename, Log, []),
         write: effect (event: Event) => { try publish(filename, JSON.stringify([...(try load(filename, Log, [])), event])) },
@@ -136,8 +176,7 @@ export const registration = Layer.effectContext(effect {
       const summary = `${result.matches.length} ${result.matches.length === 1 ? "match" : "matches"} · ${files} ${files === 1 ? "file" : "files"}${result.truncated ? " · limited" : ""}`
       try Semaphore.withPermits(settingsGate, 1)(effect {
         const receipt = { id: key, conversation, reply, operation: "fs.search", model, path: input.query, before: summary, after: result.matches.map((match) => `${match.file}:${match.line}: ${match.text}`).join("\n") + (result.notice === undefined ? "" : `\n${result.notice}`) }
-        try Ref.update(state, (value) => ({ ...value, tools: [...value.tools.filter((tool) => tool.id !== key), receipt] }))
-        try save()
+        try record(receipt)
       })
       return result
     }
@@ -146,8 +185,12 @@ export const registration = Layer.effectContext(effect {
     const writeHandler = (input: { path: string; before: string; text: string }, call: Cell.Call) => Semaphore.withPermits(settingsGate, 1)(effect {
       const key = JSON.stringify(call.identity)
       let intent = (try Ref.get(edits)).find((item) => item.key === key)
+      const resuming = intent !== undefined
       if (intent !== undefined && (intent.folder.token !== captured?.token || intent.receipt.path !== input.path || intent.receipt.before !== input.before || intent.receipt.after !== input.text)) throw new FolderFailure({ code: "changed" })
-      if (intent?.done === true) return true
+      if (intent?.done === true) {
+        try record(intent.receipt)
+        return true
+      }
       const access = try bound()
       if (intent === undefined) {
         // A failed read is a refusal, never permission to overwrite an unknown original.
@@ -161,14 +204,23 @@ export const registration = Layer.effectContext(effect {
         intent = { key, folder: captured!, done: false, receipt: { id: key, conversation, reply, operation: "fs.edit", model, path: input.path, before, after: input.text } }
         try Ref.update(edits, (values) => [...values, intent!])
         // Write-ahead receipt: after a crash an applied edit retains its original diff.
-        try save()
+        try saveEdits()
       }
       if (intent.folder.token !== captured?.token || intent.receipt.path !== input.path || intent.receipt.after !== input.text) throw new FolderFailure({ code: "changed" })
-      try access.replace(input.path, intent.receipt.before, intent.receipt.after)
+      access.replace(input.path, intent.receipt.before, intent.receipt.after) catch effect (error) => {
+        // A refusal proves only that this attempt did not write. An earlier attempt may
+        // have renamed the file before a crash, so replay retains its original.
+        if (!resuming && error.code !== "uncertain") {
+          try Ref.update(edits, (values) => values.filter((item) => item.key !== key))
+          try saveEdits()
+        }
+        throw error
+      }
       const completed = intent
-      try Ref.update(state, (value) => ({ ...value, tools: [...value.tools, completed.receipt] }))
       try Ref.update(edits, (values) => values.map((item) => item.key === key ? { ...item, done: true } : item))
-      try save()
+      // The completed intent retains the original if archiving fails after replacement.
+      try saveEdits()
+      try record(completed.receipt)
       return true
     })
     return try orDie(Effect.try(() => FlowBinding.source("local", [
@@ -221,6 +273,18 @@ export const registration = Layer.effectContext(effect {
       try Effect.logInfo("vibelang.desktop.reply").pipe(Effect.annotateLogs({ outcome: Exit.isSuccess(outcome) ? "done" : "failed" }))
       try Metric.update(Metric.counter("vibelang_desktop_replies", { incremental: true }), 1)
     } })
+    // Tool calls have returned and the reply has a durable terminal receipt.
+    // Keep full originals only until this point, including across an interrupted call.
+    try Action.make({ name: "vibelang/desktop/reply/cleanup", execute: Semaphore.withPermits(settingsGate, 1)(effect {
+      const pending = try Ref.get(edits)
+      const completed = pending.filter((intent) => intent.done && intent.receipt.conversation === payload.conversation && intent.receipt.reply === reply)
+      for (const intent of completed) try record(intent.receipt)
+      const remaining = pending.filter((intent) => !completed.includes(intent))
+      if (remaining.length !== pending.length) {
+        try Ref.set(edits, remaining)
+        try saveEdits()
+      }
+    }) })
     return null
   })
   try engine.register(Post, (payload) => effect {
@@ -262,7 +326,9 @@ export const registration = Layer.effectContext(effect {
   effect function id() { return `desktop/${try Clock.currentTimeMillis}/${try random.uuidV4()}` }
   const desktop: Desktop.Shape = {
     external: effect (url) => { try engine.execute(External, { executionId: try id(), payload: { url } }).pipe(Effect.orDie) },
-    snapshot: () => Ref.get(state),
+    snapshot: (conversation) => Semaphore.withPermits(settingsGate, 1)(effect {
+      return { ...(try Ref.get(state)), tools: conversation === undefined || conversation === "" ? [] : (try receipts(conversation)) }
+    }),
     change: effect (operation, endpoint = "", model = "") => { try engine.execute(Change, { executionId: try id(), payload: { operation, endpoint, model } }).pipe(Effect.orDie); return try Ref.get(state) },
     models: (endpoint) => effect { return try engine.execute(Models, { executionId: try id(), payload: { endpoint } }).pipe(Effect.orDie) },
   }

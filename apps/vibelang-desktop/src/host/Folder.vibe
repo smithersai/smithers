@@ -7,7 +7,7 @@ import { relativeFile } from "../policy.vibe"
 import { FolderInfo } from "../protocol.vibe"
 export { FolderInfo } from "../protocol.vibe"
 
-export schema error FolderFailure { code: "closed" | "path" | "unavailable" | "too-large" | "changed" }
+export schema error FolderFailure { code: "closed" | "path" | "unavailable" | "too-large" | "changed" | "uncertain" }
 export interface BoundFolder {
   search(query: string): Grep.Output!FolderFailure
   list(): ReadonlyArray<string>!FolderFailure
@@ -99,7 +99,7 @@ export const folderLayer = Layer.effect(Folder, effect {
           if (current === after) return
           if (current !== before) throw new FolderFailure({ code: "changed" })
           if (new TextEncoder().encode(after).length > maxBytes) throw new FolderFailure({ code: "too-large" })
-          try BunFileSystem.replaceFileString(fs, name, before, after).pipe(Effect.provideService(SecureRandom.SecureRandom, random), Effect.provideService(Path.Path, path), Effect.mapError(() => new FolderFailure({ code: "changed" })))
+          try BunFileSystem.replaceFileString(fs, name, before, after).pipe(Effect.provideService(SecureRandom.SecureRandom, random), Effect.provideService(Path.Path, path), Effect.mapError(() => new FolderFailure({ code: "uncertain" })))
         }),
       }
       return bound

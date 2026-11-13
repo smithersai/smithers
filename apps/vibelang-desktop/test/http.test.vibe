@@ -15,7 +15,7 @@ it.effect("admits only the window that presented this launch's secret", () => (e
   const calls: Array<string> = []
   const desktop = Layer.succeed(Desktop, {
     external: effect (url) => { calls.push(`external ${url}`) },
-    snapshot: effect () => { calls.push("snapshot"); return empty },
+    snapshot: effect (conversation) => { calls.push(`snapshot ${conversation}`); return empty },
     change: effect (operation, endpoint) => { calls.push(`change ${operation} ${endpoint}`); return empty },
     models: effect (endpoint) => { calls.push(`models ${endpoint}`); return [] },
   })
@@ -42,6 +42,7 @@ it.effect("admits only the window that presented this launch's secret", () => (e
     const launched = try send(`/desktop/launch?key=${launch}`)
     const cookie = launched.headers.get("set-cookie") ?? ""
     const admitted = try send("/desktop/state", { cookie: cookie.split(";")[0]! })
+    const scoped = try send("/desktop/state?conversation=a%2Fb", { cookie: cookie.split(";")[0]! })
     const changed = try send("/desktop/change", { method: "POST", cookie: cookie.split(";")[0]!, body: JSON.stringify({ operation: "mock" }) })
     try Effect.try(() => {
       expect([state.status, model.status, external.status, conversation.status, guessed.status, wrongKey.status, noKey.status]).toEqual([403, 403, 403, 403, 403, 403, 403])
@@ -53,7 +54,8 @@ it.effect("admits only the window that presented this launch's secret", () => (e
       expect(cookie).toContain("SameSite=Strict")
       expect(admitted.status).toBe(200)
       expect(changed.status).toBe(200)
-      expect(calls).toEqual(["snapshot", "change mock undefined"])
+      expect(scoped.status).toBe(200)
+      expect(calls).toEqual(["snapshot undefined", "snapshot a/b", "change mock undefined"])
     })
   }
 }).pipe(Effect.provide(BunHost.layer), Effect.scoped))

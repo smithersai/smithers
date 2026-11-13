@@ -5,6 +5,7 @@ import { BunHost } from "@smthrs/platform-bun"
 import { HttpClient } from "effect/http"
 import { Factory } from "../../vibelang/src/core/Factory.vibe"
 import { Desktop, Preferences, registration } from "../src/host/Factory.vibe"
+import { replyIdOf } from "../../vibelang/src/core/flows.vibe"
 import { folderLayer } from "../src/host/Folder.vibe"
 import { localModelsLayer } from "../src/host/LocalModel.vibe"
 
@@ -70,5 +71,113 @@ it.effect("sets an undecodable conversation aside; it still reads and takes the 
     expect(read.entries).toEqual([])
     expect(aside).toHaveLength(1)
     expect(JSON.parse(log)).toEqual(expect.arrayContaining([expect.objectContaining({ clientId: "first", text: "hello" })]))
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("migrates legacy full-file receipts out of settings before the next preference save", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = try fs.makeTempDirectoryScoped()
+  const settings = path.join(directory, "settings.json")
+  const receipt = { id: "edit-1", conversation: "home", reply: "reply-1", operation: "fs.edit", model: "local", path: "large.vibe", before: "x".repeat(500 * 1024) + "old", after: "x".repeat(500 * 1024) + "new" }
+  try fs.writeFileString(settings, JSON.stringify({ snapshot: { ...initial, tools: [receipt] }, edits: [] }))
+  const { desktop } = try start(directory, [])
+  const state = try desktop.snapshot()
+  try desktop.change("mock")
+  const saved = try fs.readFileString(settings)
+  try Effect.try(() => {
+    expect(state.tools.length).toBe(0)
+    expect(saved.length).toBeLessThan(2048)
+    expect(JSON.parse(saved)).toEqual({ snapshot: initial, edits: [] })
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("partitions migrated receipts, deduplicates interrupted migration and retains only unfinished recovery intents", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = try fs.makeTempDirectoryScoped()
+  const folder = { path: "project", files: 1, token: "folder-token", identity: "folder-identity" }
+  const tool = (id: string, conversation: string) => ({ id, conversation, reply: "reply", operation: "fs.edit", path: "file.vibe", before: "prefix".repeat(100000) + "old", after: "prefix".repeat(100000) + "new" })
+  const a = tool("a", "a/b")
+  const b = tool("b", "other")
+  const old = { snapshot: { ...initial, tools: [a, b] }, edits: [{ key: "a", folder, receipt: a, done: true }, { key: "b", folder, receipt: b, done: false }] }
+  const settings = path.join(directory, "settings.json")
+  try fs.writeFileString(settings, JSON.stringify(old))
+  try fs.writeFileString(path.join(directory, "conversation-a%2Fb.json"), JSON.stringify([{ type: "ReplyFinished", seq: 1, id: "reply" }]))
+  const first = try start(directory, [])
+  const aTools = (try first.desktop.snapshot("a/b")).tools
+  const bTools = (try first.desktop.snapshot("other")).tools
+  const recovery = try fs.readFileString(path.join(directory, "edit-intents.json"))
+  // Simulate stopping after the new files were published but before settings was replaced.
+  try fs.writeFileString(settings, JSON.stringify(old))
+  const operations: Array<string> = []
+  const second = try start(directory, operations)
+  const replayed = (try second.desktop.snapshot("a/b")).tools
+  operations.length = 0
+  try second.desktop.snapshot("other")
+  try second.desktop.change("mock")
+  try Effect.try(() => {
+    expect(aTools).toHaveLength(1)
+    expect(bTools.map((receipt) => receipt.id)).toEqual(["b"])
+    expect(aTools[0]?.before).toContain("old")
+    expect(aTools[0]?.after).toContain("new")
+    expect(JSON.stringify(aTools).length).toBeLessThan(2000)
+    expect(replayed).toEqual(aTools)
+    expect(JSON.parse(recovery).map((intent: { key: string }) => intent.key)).toEqual(["b"])
+    expect(JSON.parse(recovery)[0].receipt.before).toBe(b.before)
+    expect(operations.some((operation) => operation.includes("tools-") || operation.includes("edit-intents"))).toBe(false)
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("drops a reply's recovery intents only after its durable reply has settled", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = try fs.makeTempDirectoryScoped()
+  const reply = replyIdOf("m1")
+  const folder = { path: "project", files: 1, token: "token", identity: "identity" }
+  const receipt = { id: "edit", conversation: "home", reply, operation: "fs.edit", path: "file.vibe", before: "old", after: "new" }
+  try fs.writeFileString(path.join(directory, "settings.json"), JSON.stringify({ snapshot: initial, edits: [{ key: "edit", folder, receipt, done: true }] }))
+  const before = try scoped(effect {
+    const { factory } = try start(directory, [])
+    const saved = try fs.readFileString(path.join(directory, "edit-intents.json"))
+    try factory.post("home", "post", "Ada", "hello")
+    try factory.events("home", 0).pipe(Stream.filter((event) => event.type === "ReplyFinished"), Stream.take(1), Stream.runDrain)
+    return saved
+  })
+  // Restart after closing the first host, including the window before its cleanup action.
+  const restarted = try start(directory, [])
+  const after = try fs.readFileString(path.join(directory, "edit-intents.json"))
+  const tools = (try restarted.desktop.snapshot("home")).tools
+  try Effect.try(() => {
+    expect(JSON.parse(before)).toHaveLength(1)
+    expect(JSON.parse(after)).toEqual([])
+    expect(tools).toEqual([receipt])
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("retains an applied edit's original through an archive failure and reconciles it before reclaiming the intent", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = try fs.makeTempDirectoryScoped()
+  const project = try fs.makeTempDirectoryScoped()
+  const receipt = { id: "edit", conversation: "home", reply: "reply", operation: "fs.edit", path: "file.vibe", before: "old", after: "new" }
+  const intent = { key: "edit", done: true, folder: { path: project, files: 1, token: "token", identity: "identity" }, receipt }
+  // The persisted boundary after replacement, before the receipt has been archived.
+  try fs.writeFileString(path.join(project, "file.vibe"), receipt.after)
+  try fs.writeFileString(path.join(directory, "edit-intents.json"), JSON.stringify([intent]))
+  try fs.writeFileString(path.join(directory, "conversation-home.json"), JSON.stringify([{ type: "ReplyFailed", seq: 1, id: "reply", reason: "Unavailable" }]))
+  const faulty: FileSystem.FileSystem = { ...fs, writeFileString: (name, text, options) => name.endsWith("tools-home.json.new") ? Effect.die("Injected archive failure") : fs.writeFileString(name, text, options) }
+  const failed = try exit(scoped(effect { provide FileSystem.FileSystem = faulty { return try start(directory, []) } }))
+  const retained = try fs.readFileString(path.join(directory, "edit-intents.json"))
+  const restarted = try start(directory, [])
+  const reclaimed = try fs.readFileString(path.join(directory, "edit-intents.json"))
+  const tools = (try restarted.desktop.snapshot("home")).tools
+  const actual = try fs.readFileString(path.join(project, "file.vibe"))
+  try Effect.try(() => {
+    expect(Exit.isFailure(failed)).toBe(true)
+    expect(JSON.parse(retained)).toEqual([intent])
+    expect(JSON.parse(reclaimed)).toEqual([])
+    expect(tools).toEqual([receipt])
+    expect(actual).toBe("new")
   })
 }).pipe(Effect.provide(BunHost.layer), Effect.scoped))

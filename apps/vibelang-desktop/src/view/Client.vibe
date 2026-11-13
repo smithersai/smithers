@@ -7,7 +7,7 @@ import { Snapshot, type Operation } from "../protocol.vibe"
 
 export service DesktopClient {
   external(url: string): void!Unavailable
-  snapshot(): Snapshot!Unavailable
+  snapshot(conversation?: string): Snapshot!Unavailable
   change(operation: Operation, endpoint?: string, model?: string): Snapshot!Unavailable
   models(endpoint: string): ReadonlyArray<string>!Unavailable
 }
@@ -21,8 +21,8 @@ export function clientLayer(origin: string, forcedMock: boolean) {
     const local = Context.get(try Layer.buildWithScope(LiveFactory(origin).pipe(Layer.provide(http)), scope), Factory)
     let mocked = true
     const backend = (conversation: string) => forcedMock || mocked || conversation.startsWith("tour-") ? mock : local
-    effect function snapshot() {
-      const response = try client.get(`${origin}/desktop/state`).pipe(Effect.mapError(() => new Unavailable({ reason: "Desktop unavailable" })))
+    effect function snapshot(conversation?: string) {
+      const response = try client.get(`${origin}/desktop/state${conversation === undefined ? "" : `?conversation=${encodeURIComponent(conversation)}`}`).pipe(Effect.mapError(() => new Unavailable({ reason: "Desktop unavailable" })))
       const state = try HttpClientResponse.schemaBodyJson(Snapshot)(response).pipe(Effect.mapError(() => new Unavailable({ reason: "Desktop unavailable" })))
       mocked = state.mock
       return forcedMock ? { ...state, mock: true } : state
