@@ -148,7 +148,8 @@ not yet key material.
 
 | Target                                        | Cacheable                                                        |
 | --------------------------------------------- | ---------------------------------------------------------------- |
-| `DocsParity`, `Filegroup`, `PackageJsonCheck` | Always; each is a bounded in-process check over declared content |
+| `DocsParity`, `Filegroup` | Always; each is a bounded in-process check over declared content |
+| `PackageJsonCheck` | Only with no generated fields; generated-field checks consult host-local state |
 | `GithubCiGen`                                 | In `check` mode; never in `write` mode                           |
 | `ToolBuild`, `NodeTest`                       | Only when the declaration sets `cache: true`                     |
 | Rules the executor runs natively              | As their rule policy says; `Shell.Test` caches in `execute` mode |

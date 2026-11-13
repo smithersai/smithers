@@ -608,6 +608,8 @@ The tsup tool declares one flat output tree and does not request declarations, s
 The generation digest includes the source path listing, so adding or removing a source changes it; editing source bytes does not.
 `PackageJsonCheck` always checks, even when declared with `mode: "write"` or `mode: "refresh"`.
 It never writes the manifest or calls a model. Use `PackageJsonWrite` for those modes.
+Checks with `generated` fields always execute because they consult host-local cached answers.
+A package inherits its template license unless it declares one; `MIT` applies only when neither supplies a license.
 
 ## Shell, tools, Node, and bundling
 

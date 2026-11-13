@@ -219,7 +219,8 @@ const workflowInputs = (attrs) => attrs.mode === "write" ? [] : [Input.file(attr
 
 ```ts
 const neverCache = false
-const pureCheck = true // DocsParity, Filegroup, PackageJsonCheck
+const pureCheck = true // DocsParity, Filegroup
+const packageJsonCache = (attrs) => attrs.generated.length === 0
 const githubCache = (attrs) => attrs.mode !== "write"
 const toolBuildCache = (attrs) => attrs.cache // caller's explicit choice
 ```

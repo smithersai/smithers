@@ -109,7 +109,7 @@ or pull-request operations. Use an implemented publication tool or CI job.
 | `Overlay`                | NodeArtifact      | build              | yes       | no               | package executor |
 | `Owners.Codeowners`      | Owners            | build, lint        | no        | no               | package executor |
 | `Owners.Tree`            | Owners            | build, lint        | no        | no               | package executor |
-| `PackageJsonCheck`       | PackageJson       | lint               | yes       | no               | flow body        |
+| `PackageJsonCheck`       | PackageJson       | lint               | attrs     | no               | flow body        |
 | `PackageJsonWrite`       | PackageJson       | run                | no        | no               | flow body        |
 | `PackageLint`            | PackageLint       | lint               | no        | no               | flow body        |
 | `PnpmWorkspace`          | PnpmWorkspaceFile | build, lint        | no        | yes              | flow body        |
@@ -144,3 +144,6 @@ one value for each key.
 `Skills.InstallPayload`: the library, the agents and the selection. Its `deps`
 order the graph and never cross the durable boundary, because a durable payload
 must have a JSON codec and a target reference has none (VIP-44).
+
+`PackageJsonCheck` caches only when `generated` is empty. Generated-field checks
+consult host-local field-cache state and always execute.

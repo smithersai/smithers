@@ -465,6 +465,64 @@ describe("template merge", () => {
     })
   })
 
+  it.each([
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "LGPL-3.0-only",
+    "GPL-2.0-only",
+    "GPL-3.0-only",
+    "AGPL-3.0-only",
+    "Unlicense",
+    "CC0-1.0",
+    "UNLICENSED"
+  ])("inherits the template's %s license when the package omits it", (license) => {
+    const template = PackageJsonTemplate.make({ license })
+    const declaration = PackageJson({ name: "widget", version: "0.1.0", template, license: undefined })
+    expect(declaration.fields["license"]).toBe(license)
+    expect(JSON.parse(render(manifest(declaration, [])))).toMatchObject({ license })
+    expect(template.fields["license"]).toBe(license)
+  })
+
+  it("defaults to MIT only when neither declaration supplies a license", () => {
+    const template = PackageJsonTemplate.make({ author: "Widget authors" })
+    expect(PackageJson({ name: "widget", version: "0.1.0", template }).fields["license"]).toBe("MIT")
+    expect(template.fields).not.toHaveProperty("license")
+  })
+
+  it("validates the merged license and allows an explicit package override", () => {
+    const template = PackageJsonTemplate.make({ license: "unsupported-license" })
+    expect(() => PackageJson({ name: "widget", version: "0.1.0", template })).toThrow(/unsupported license/)
+    expect(PackageJson({ name: "widget", version: "0.1.0", template, license: "ISC" }).fields["license"])
+      .toBe("ISC")
+    expect(() => PackageJson({ name: "widget", version: "0.1.0", license: "unsupported-license" as never }))
+      .toThrow(/unsupported license/)
+  })
+
+  it.each(["EPL-2.0", null])("preserves the unvalidated fields.license escape hatch: %j", (license) => {
+    const template = PackageJsonTemplate.make({ license: "Apache-2.0" })
+    const declaration = PackageJson({
+      name: "widget",
+      version: "0.1.0",
+      license: "ISC",
+      template,
+      fields: { license }
+    })
+    expect(declaration.fields["license"]).toBe(license)
+    expect(JSON.parse(render(manifest(declaration, [])))).toMatchObject({ license })
+    expect(() =>
+      PackageJson({
+        name: "widget",
+        version: "0.1.0",
+        license: "unsupported-license" as never,
+        fields: { license }
+      })
+    ).toThrow(/unsupported license/)
+  })
+
   it("replaces arrays wholesale and descends into plain objects", () => {
     expect(merge({ files: ["a", "b"] }, { files: ["c"] })).toEqual({ files: ["c"] })
     expect(merge({ engines: { node: "22", bun: "1" } }, { engines: { node: "24" } })).toEqual({
@@ -905,6 +963,38 @@ describe("target synthesis", () => {
       expect(metadata.cacheable).toBe(false)
     }
     expect((Target.metadata(expanded.refresh).attrs as { mode: string }).mode).toBe("refresh")
+  })
+
+  it.each(
+    [
+      { description: generated },
+      { keywords: generated },
+      { description: generated, keywords: generated }
+    ] as const
+  )("keeps generated-field checks out of the result cache: %j", (fields) => {
+    const expanded = targets(
+      PackageJson({ name: "widget", version: "0.1.0", ...fields }),
+      "packages/widget",
+      labeller([])
+    )
+    const check = Target.metadata(expanded.check)
+    expect(check.cacheable).toBe(false)
+    expect(check.forKind("lint").cacheable).toBe(false)
+    expect(check.inputs).toContainEqual(Input.file("//packages/widget/package.json"))
+    expect(check.inputs).toContainEqual(Input.file("//packages/widget/README.md"))
+    expect(check.inputs).toContainEqual(Input.glob("//packages/widget/src/**/*.ts"))
+    for (const mode of ["check", "write", "refresh"] as const) {
+      const direct = PackageJsonCheck({
+        output: "//package.json",
+        fields: payload().fields,
+        generated: ["description"],
+        readme: null,
+        sources: null,
+        mode
+      })
+      expect(Target.metadata(direct).cacheable).toBe(false)
+      expect(Target.metadata(direct).forKind("lint").cacheable).toBe(false)
+    }
   })
 
   it.each(["write", "refresh"] as const)("coerces %s to check in lint metadata", (mode) => {

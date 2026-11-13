@@ -43,7 +43,8 @@ The declaration above becomes `packageJsonCheck`, `packageJsonWrite`, and
 - `name` is required and validated as a lowercase npm package name.
 - `version` is required and is a literal string for now. Version sourcing will
   become configurable separately.
-- `license` is a common SPDX literal and defaults to `MIT`.
+- `license` is a common SPDX literal. A package license overrides the template;
+  when neither supplies one, it defaults to `MIT`. The merged modeled value is validated.
 - `description` and `keywords` accept literals or `generated`.
 - `scripts` maps script names to imported target objects. During workspace
   analysis, each target must resolve to a graph label and support `build`,
@@ -55,7 +56,8 @@ The declaration above becomes `packageJsonCheck`, `packageJsonWrite`, and
   instead of producing guessed paths.
 - `fields` passes through fields not modeled yet. Dependency and package-manager
   fields are rejected because the package manager owns them and they remain in
-  the checked-in manifest.
+  the checked-in manifest. As an escape hatch, `fields.license` overrides the
+  modeled license without validation for identifiers outside the common set.
 
 ## Templates and merge semantics
 
@@ -73,13 +75,15 @@ fields such as license, author, engines, and the standard `test` and
 
 | Target suffix | Kind   | Cacheable | Effect                                                           |
 | ------------- | ------ | --------- | ---------------------------------------------------------------- |
-| `Check`       | `lint` | Yes       | Regenerates in memory and fails with a field-level drift report. |
+| `Check`       | `lint` | Literal fields only | Regenerates in memory and fails with a field-level drift report. |
 | `Write`       | `run`  | No        | Rewrites the checked-in manifest.                                |
 | `Refresh`     | `run`  | No        | Refreshes generated prose, caches it, and rewrites the manifest. |
 
-The check target declares the checked-in manifest as an input. CI therefore
-runs a cacheable, non-mutating comparison. Write and refresh are explicit
-source-tree mutations and can never return a cache hit.
+The check target declares the checked-in manifest as an input. Checks with no
+`generated` fields are cacheable. Generated-field checks also consult the
+host-local field cache, so they always execute rather than reuse a result from
+another host. Write and refresh are explicit source-tree mutations and can
+never return a cache hit.
 
 ## Generated description and keywords
 

@@ -90,7 +90,7 @@ export const License = Schema.Literals([
 export type License = typeof License.Type
 
 /**
- * The license a declaration carries when it does not name one.
+ * The license used when neither the package nor its template names one.
  *
  * @category constants
  * @since 0.1.0
@@ -225,6 +225,11 @@ const safeExactLabel = /^\/\/[A-Za-z0-9_@+=,./-]*:[A-Za-z0-9_@+=,.-]+$/
 const invalidManifestText = /[\u0000-\u001f\u007f]/
 
 const isLicense = Schema.is(License)
+
+const assertLicense = (name: string, value: unknown): License => {
+  if (!isLicense(value)) throw new Error(`PackageJson: ${name} declares an unsupported license`)
+  return value
+}
 const isEngine = Schema.is(Engine)
 /** The accepted engines, spelled the way the refusal reads them back. */
 const acceptedEngines = Engine.literals.join(" or ")
@@ -1116,10 +1121,12 @@ const implementation = (
 /**
  * Regenerates a package manifest in memory and fails on drift.
  *
- * This is the `lint` half of the pair. It is cacheable and it never touches the
- * working tree. The checked-in manifest is a declared input, so editing it
- * re-keys the target, and a drift failure names the fields that differ rather
- * than reporting that a file changed. Following aspect_bazel_lib's
+ * This is the `lint` half of the pair. It never touches the working tree.
+ * Literal-only checks are cacheable; generated fields consult host-local cached
+ * answers, so their checks must run on each host. The checked-in manifest is a
+ * declared input, so editing it re-keys a cacheable target. A drift failure names
+ * the fields that differ rather than reporting that a file changed. Following
+ * aspect_bazel_lib's
  * `write_source_files`, the checking form is the one CI runs and the writing
  * form is a separate target a person invokes.
  *
@@ -1130,7 +1137,7 @@ export const PackageJsonCheck = Target.make("PackageJsonCheck", {
   attrs: Attrs,
   kinds: ["lint"],
   error: Schema.Union([WriteFileError, DriftError]),
-  cache: true,
+  cache: (attrs) => attrs.generated.length === 0,
   inputs: (attrs) => [Input.file(`//${resolveOutputPath(attrs.output)}`)],
   attrsForKind: (kind, attrs) => kind === "lint" ? { ...attrs, mode: "check" as const } : attrs,
   implementation: (attrs, context) => implementation({ ...attrs, mode: "check" }, context)
@@ -1372,14 +1379,14 @@ export const PackageJson = (options: Options): Declaration => {
   const safe = copyPackageOptions(options)
   const name = assertPackageName(safe["name"] as string)
   const version = assertVersion(name, safe["version"])
-  const license = safe["license"] ?? defaultLicense
-  if (!isLicense(license)) throw new Error(`PackageJson: ${name} declares an unsupported license`)
+  if (safe["license"] !== undefined) assertLicense(name, safe["license"])
   // A null prototype keeps a declared `__proto__` field an own data property.
   const fields = Object.create(null) as Record<string, unknown>
   fields["name"] = name
   fields["version"] = version
-  fields["license"] = license
+  if (safe["license"] !== undefined) fields["license"] = safe["license"]
   const generated: Array<GeneratedField> = []
+  let customLicense = false
   if (safe["description"] !== undefined) {
     if (isGenerated(safe["description"])) generated.push("description")
     else fields["description"] = assertLiteralDescription(safe["description"])
@@ -1396,6 +1403,7 @@ export const PackageJson = (options: Options): Declaration => {
         throw new Error(`PackageJson(${name}) fields declares modeled field ${JSON.stringify(key)} twice`)
       }
     }
+    customLicense = Object.hasOwn(declared, "license")
     Object.assign(fields, declared)
   }
   const template = safe["template"]
@@ -1414,6 +1422,9 @@ export const PackageJson = (options: Options): Declaration => {
     throw new TypeError("PackageJson sources must be an Input.Glob")
   }
   const merged = template === undefined ? fields : merge(template.fields, fields)
+  if (!customLicense) {
+    merged["license"] = assertLicense(name, merged["license"] ?? defaultLicense)
+  }
   const declaration: Declaration = {
     [TypeId]: TypeId,
     output: resolveOutputPath(output),
