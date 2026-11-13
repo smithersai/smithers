@@ -130,7 +130,7 @@ it.effect("refuses an operation outside the grant before touching GitHub", () =>
   const outcome = try f.call("perform", { ...create, repository: "smithersai/secret" })
   try Effect.try(() => { expect(outcome).toBe("forbidden"); expect(f.world.calls).toEqual([]) })
 })
-it.effect("refuses a repository whose immutable id changed", () => effect {
+it.effect("matches a granted repository name case-insensitively", () => effect {
   const world: World = { calls: [], revoked: [], refreshes: 0 }
   const f = try fixture(world)
   const outcome = try f.call("perform", { ...create, repository: "SmithersAI/Vibelang", title: "renamed" }, "9".repeat(64))

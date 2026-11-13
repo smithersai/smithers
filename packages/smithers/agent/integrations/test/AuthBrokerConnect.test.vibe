@@ -57,6 +57,7 @@ it.effect("connect stops at a smithers.sh consent page with no token in the URL 
     expect(f.location).not.toMatch(/private/)
     expect(page.html).toContain("vibelang.smithers.sh")
     expect(page.html).toContain("ada")
+    expect(page.html).toContain(`name="consent" value="${f.consent}"`)
     expect(page.html).not.toMatch(/private/)
     expect(f.installed).toEqual([])
     expect(f.revoked).toEqual([])
@@ -117,13 +118,12 @@ it.effect("consent is bound to the browser that started it, reads without consum
     expect(f.installed).toEqual([])
   })
 })
-it.effect("the consent page escapes what it shows and stores a token pair with no refresh token", () => effect {
-  const f = try fixture()
-  const location = try f.broker.callback(f.state, "code", f.start.cookie)
-  const consent = new URL(location).searchParams.get("consent")!
-  const browser = try f.broker.consentCookie(consent)
-  const page = try f.broker.consentPage(consent, browser)
-  try Effect.try(() => expect(page.html).toContain(`value="${consent}"`))
+it.effect("the consent page escapes the site, login, and consent id", () => effect {
+  const html = Broker.consentHtml(`site<&>"'`, `login<&>"'`, `consent<&>"'`)
+  try Effect.try(() => {
+    expect(html).toContain('name="consent" value="consent&#60;&#38;&#62;&#34;&#39;"')
+    expect(html).toContain("Connect site&#60;&#38;&#62;&#34;&#39; to GitHub as @login&#60;&#38;&#62;&#34;&#39;?")
+  })
 })
 const route = effect (broker: ReturnType<typeof durable>, path: string, init: { readonly method?: "GET" | "POST"; readonly headers?: Record<string, string>; readonly body?: string }) => {
   const request = HttpClientRequest.make(init.method ?? "GET")("https://smithers.sh" + path).pipe(HttpClientRequest.setHeaders(init.headers ?? {}), (value) => init.body === undefined ? value : HttpClientRequest.bodyText(value, init.body, "application/x-www-form-urlencoded"))
