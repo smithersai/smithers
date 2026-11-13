@@ -527,6 +527,18 @@ of `surfaces/every-command` or `signin/steered` takes 10 to 30 seconds, so they 
 timeout); `actions/live-client`, `actions/mock-steered` and `signin/session-files` declare 10 to 15 seconds. `pnpm fuzz`
 takes a few minutes longer.
 
+A floor sized on one box still fails on a slower one. On 2026-11-12 two cfbox runs of `pnpm fuzz:coverage` at
+`9fb56e70` (seeds 20261270 and 20261271) failed `issues/steered-host`, and the second also `signin/steered` and
+`surfaces/every-command`, with `NoExecution` at 60 seconds: each replayed its one saved failure (`regressions: 1`)
+and the deadline passed before the first fresh execution. Five earlier runs passed the same targets in 60 to 88
+seconds. One `issues/steered-host` execution runs all 13 scenarios in about 20 seconds on nyc-01 (`delegated` 7.5 s,
+`validations` 3.7 s). So `run` now judges the property, not the box: when a target's saved failures all replayed and
+passed but no fresh execution started, it runs once more with `executions: 1`, replaying only saved inputs, and the
+receipt and the `vibelang.fuzz.target` log say `oneMore: true`. A finding or `FUZZ_EXECUTIONS` keeps the first report,
+and a target with nothing to replay still fails on zero executions. `FUZZ_CORPUS` moves both stores to one directory
+for the test (`test/fuzzGate.test.vibe`: a 50 ms replay against a 1 ms budget; with the extra run removed it fails
+with the box's `NoExecution`).
+
 ### Product findings fixed
 
 | Finding | Target | Fix and regression |

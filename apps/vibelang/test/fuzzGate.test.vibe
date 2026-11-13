@@ -28,7 +28,7 @@ it.live("run passes a target that executed, and FUZZ_EXECUTIONS=0 replays withou
 effect function receipt(name: string) {
   provide NodeServices.layer {
     const text = try (try FileSystem.FileSystem).readFileString(`fuzz-results/${name}.json`)
-    return try Effect.try(() => JSON.parse(text) as { readonly budget: number; readonly elapsedMs: number; readonly stats: { readonly executions: number } })
+    return try Effect.try(() => JSON.parse(text) as { readonly budget: number; readonly elapsedMs: number; readonly oneMore: boolean; readonly stats: { readonly executions: number; readonly regressions: number } })
   }
 }
 
@@ -41,4 +41,32 @@ it.live("a target's minimum budget outlasts a shorter FUZZ_BUDGET, and a longer 
   expect(floored.stats.executions).toBeGreaterThan(0)
   try run("gate/floor", Schema.Int, (n) => Number.isInteger(n), undefined, { minimum: "400 millis" }).pipe(config({ FUZZ_BUDGET: "600 millis", FUZZ_SEED: "1" }))
   expect((try receipt("gate--floor")).budget).toBe(600)
+}, 30_000)
+
+// A slow box can spend the whole budget replaying saved failures; the target still executes once, so the gate judges
+// the property and not the box (0015). The first run saves a failure; the second replays it for 50 ms of a 1 ms budget.
+it.live("a target whose saved-failure replay outlasts its budget executes once more and passes", () => effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const corpus = try fs.makeTempDirectory()
+    let failing = true
+    const property = (n: number) => effect {
+      if (failing) return false
+      try sleep("50 millis")
+      return Number.isInteger(n)
+    }
+    const values = { FUZZ_SEED: "1", FUZZ_CORPUS: corpus }
+    const saved = try Effect.result(run("gate/slow-replay", Schema.Int, property).pipe(config({ ...values, FUZZ_BUDGET: "200 millis" })))
+    expect(saved._tag).toBe("Failure")
+    failing = false
+    try run("gate/slow-replay", Schema.Int, property).pipe(config({ ...values, FUZZ_BUDGET: "1 millis" }))
+    const fed = try receipt("gate--slow-replay")
+    expect(fed.oneMore).toBe(true)
+    expect(fed.stats.regressions).toBe(1)
+    expect(fed.stats.executions).toBe(1)
+    // Without a saved failure to replay, the budget alone decides and no extra run happens.
+    try run("gate/fed", Schema.Int, (n) => Number.isInteger(n)).pipe(config({ ...values, FUZZ_BUDGET: "200 millis" }))
+    expect((try receipt("gate--fed")).oneMore).toBe(false)
+    try fs.remove(corpus, { recursive: true })
+  }
 }, 30_000)
