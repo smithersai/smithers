@@ -1861,6 +1861,11 @@ const makeCommands = (config: RuntimeConfig) =>
       async run(context) {
         const reporter = reporterFor(context, config)
         try {
+          if (context.options.resultsFile !== undefined && !context.options.once) {
+            throw new CommandRefused({
+              message: "--results-file requires --once in watch; choose a new file for each run"
+            })
+          }
           const index = await openPackageIndex(context.options, config)
           const ignored = [cacheDirectoryOf(index, context.options)]
           for (const row of index.targets()) {
@@ -1884,7 +1889,14 @@ const makeCommands = (config: RuntimeConfig) =>
             ...(context.options.includeExclusive ? ["--include-exclusive"] : []),
             ...(context.options.jobs === undefined ? [] : ["--jobs", String(context.options.jobs)]),
             ...(context.options.cache ? [] : ["--no-cache"]),
-            ...(context.options.cacheDir === undefined ? [] : ["--cache-dir", context.options.cacheDir])
+            ...(context.options.cacheDir === undefined ? [] : ["--cache-dir", context.options.cacheDir]),
+            ...(context.options.knownRed === undefined
+              ? []
+              : ["--known-red", NodePath.resolve(context.options.workspace, context.options.knownRed)]),
+            ...(context.options.failFast ? ["--fail-fast"] : []),
+            ...(context.options.resultsFile === undefined
+              ? []
+              : ["--results-file", NodePath.resolve(context.options.workspace, context.options.resultsFile)])
           ]
           const streams = terminalsOf(config)
           // Every cycle is a fresh build CLI; it asks this process's approval store.

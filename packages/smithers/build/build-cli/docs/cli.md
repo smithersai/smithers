@@ -719,7 +719,10 @@ an empty selection.
 and replans after a change. It ignores `.git`, `node_modules`, cache state, and
 declared outputs. It also rescans the workspace every second, so an edit the
 file-system notifier drops still starts a cycle. `--debounce-ms` defaults to
-200 with a minimum of 20; `--once` performs one cycle. Watch is deliberately unavailable through MCP.
+200 with a minimum of 20; `--once` performs one cycle. Each cycle uses
+`--known-red` and `--fail-fast`. `--results-file` requires `--once`: a results
+file must be new for each run. Relative `--known-red` and `--results-file`
+paths resolve against `--workspace`. Watch is deliberately unavailable through MCP.
 
 On POSIX, stopping a cycle sends SIGTERM to its process group, escalates to
 SIGKILL after five seconds if any member survives, and waits for the group to

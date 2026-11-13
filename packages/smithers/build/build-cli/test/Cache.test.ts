@@ -15,6 +15,8 @@ import {
   sanitizeKey
 } from "../src/Cache.ts"
 
+import * as Diagnostic from "../src/Diagnostic.ts"
+
 let root: string
 let server: Http.Server
 let endpoint: string
@@ -83,6 +85,22 @@ afterEach(async () => {
 })
 
 describe("openCache", () => {
+  it.each([
+    [7, "must be a string"],
+    ["x".repeat(8193), "must be bounded well-formed text"],
+    ["https://example.invalid/\ud800", "must be bounded well-formed text"],
+    ["not a URL", "must be an absolute URL"],
+    ["http://example.invalid", "must use HTTPS (HTTP is allowed only on loopback)"],
+    ["https://user:secret@example.invalid", "must not contain credentials"],
+    ["https://example.invalid?token=secret", "must not contain a query or fragment"],
+    ["https://example.invalid#fragment", "must not contain a query or fragment"]
+  ])("reports invalid cache endpoint (%#) as a configuration error", async (endpoint, expected) => {
+    const cause = await openCache({ workspaceRoot: root, endpoint: endpoint as never }).catch((cause: unknown) => cause)
+    expect(cause).toBeInstanceOf(Error)
+    expect(Diagnostic.report(cause, { verbose: false })).toBe("remote cache endpoint " + expected)
+    await expect(Fs.stat(NodePath.join(root, ".flows"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
   it("hashes ill-formed JavaScript keys without UTF-8 replacement collisions", () => {
     expect(sanitizeKey("\ud800")).not.toBe(sanitizeKey("\ufffd"))
     expect(sanitizeKey("\ud800")).not.toBe(sanitizeKey("\udc00"))

@@ -1130,31 +1130,42 @@ interface NormalizedOpenCacheOptions {
   readonly io: CacheIo
 }
 
+/** A rejected cache setting with a diagnostic the operator can act on. */
+class CacheConfigurationError extends Data.TaggedError("smithers-build/CacheConfigurationError")<{
+  readonly message: string
+}> {
+  constructor(message: string) {
+    super({ message })
+  }
+}
+
 const normalizeEndpoint = (value: unknown): string | undefined => {
   if (value === undefined) return undefined
-  if (typeof value !== "string") throw new TypeError("remote cache endpoint must be a string")
-  if (value.length > 8 * 1024) throw new TypeError("remote cache endpoint must be bounded well-formed text")
+  if (typeof value !== "string") throw new CacheConfigurationError("remote cache endpoint must be a string")
+  if (value.length > 8 * 1024) {
+    throw new CacheConfigurationError("remote cache endpoint must be bounded well-formed text")
+  }
   const trimmed = value.trim()
   if (trimmed === "") return undefined
   if (trimmed.length > 8 * 1024 || !isWellFormedText(trimmed)) {
-    throw new TypeError("remote cache endpoint must be bounded well-formed text")
+    throw new CacheConfigurationError("remote cache endpoint must be bounded well-formed text")
   }
   let endpoint: URL
   try {
     endpoint = new URL(trimmed)
   } catch {
-    throw new TypeError("remote cache endpoint must be an absolute URL")
+    throw new CacheConfigurationError("remote cache endpoint must be an absolute URL")
   }
   const loopback = endpoint.hostname === "localhost" || endpoint.hostname === "127.0.0.1" ||
     endpoint.hostname === "[::1]"
   if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && loopback)) {
-    throw new TypeError("remote cache endpoint must use HTTPS (HTTP is allowed only on loopback)")
+    throw new CacheConfigurationError("remote cache endpoint must use HTTPS (HTTP is allowed only on loopback)")
   }
   if (endpoint.username !== "" || endpoint.password !== "") {
-    throw new TypeError("remote cache endpoint must not contain credentials")
+    throw new CacheConfigurationError("remote cache endpoint must not contain credentials")
   }
   if (endpoint.search !== "" || endpoint.hash !== "") {
-    throw new TypeError("remote cache endpoint must not contain a query or fragment")
+    throw new CacheConfigurationError("remote cache endpoint must not contain a query or fragment")
   }
   return endpoint.href.replace(/\/+$/, "")
 }
@@ -1218,7 +1229,7 @@ export const normalizePublishNamespace = (
 ): string | undefined => {
   if (value === undefined) return undefined
   if (typeof value !== "string" || !namespaceName.test(value)) {
-    throw new TypeError(
+    throw new CacheConfigurationError(
       `${what} must be 1 to 64 characters of letters, digits, dots, underscores, and dashes, ` +
         "starting with a letter or digit"
     )

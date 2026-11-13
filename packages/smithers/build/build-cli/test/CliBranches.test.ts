@@ -228,6 +228,129 @@ export const Package = S.Package({ targets: { ${
     ])
   }, 120_000)
 
+  it.each(["relative", "absolute", "nested"])(
+    "forwards %s known-red and results paths into a real watch child",
+    async (kind) => {
+      const root = await packageFixture()
+      await write(root, "known red.json", JSON.stringify({ entries: [] }))
+      const baseline = await jsonCommand(root, [
+        "test",
+        "//:bad",
+        "--no-cache",
+        "--verbose",
+        "--known-red",
+        "known red.json",
+        "--results-file",
+        "baseline.json"
+      ])
+      expect(baseline.exitCode).toBe(1)
+      expect(baseline.stderr).toContain("command failed (exit 1): /bin/sh -c false")
+      const failureDigest = baseline.stderr.match(/observed failure: \/\/:bad (sha256:[a-f0-9]{64})/)?.[1]
+      expect(failureDigest, baseline.envelope + baseline.stderr).toBeDefined()
+      await write(
+        root,
+        "known red.json",
+        JSON.stringify({
+          entries: [{
+            label: "//:bad",
+            owner: "maintainer",
+            reason: "reviewed fixture failure",
+            issue: "https://github.com/smithersai/smithers/issues/1",
+            expires: "2999-01-01",
+            failureDigest
+          }]
+        })
+      )
+      const workspace = kind === "nested" ? NodePath.join(root, "nested") : root
+      await Fs.mkdir(workspace, { recursive: true })
+      const path = (name: string) =>
+        kind === "absolute"
+          ? NodePath.join(root, name)
+          : NodePath.relative(workspace, NodePath.join(root, name))
+      const result = await jsonCommand(workspace, [
+        "watch",
+        "test",
+        "//:bad",
+        "--once",
+        "--no-cache",
+        "--known-red",
+        path("known red.json"),
+        "--results-file",
+        path("out/watch results.json")
+      ])
+      expect(result.exitCode, result.envelope + result.stderr).toBe(0)
+      expect(result.data).toMatchObject({ cycles: 1, exitCode: 0 })
+      expect(JSON.parse(await Fs.readFile(NodePath.join(root, "out/watch results.json"), "utf8"))).toMatchObject({
+        ok: true,
+        results: [{ label: "//:bad", status: "failed" }]
+      })
+    }
+  )
+
+  it.each([false, true])("forwards watch fail-fast (%s) into a real execution child", async (failFast) => {
+    const root = await packageFixture("false")
+    const result = await jsonCommand(root, [
+      "watch",
+      "test",
+      "//:bad",
+      "//:good",
+      "--once",
+      "--no-cache",
+      "--verbose",
+      "--jobs",
+      "1",
+      ...(failFast ? ["--fail-fast"] : []),
+      "--results-file",
+      "watch.json"
+    ])
+    expect(result.exitCode).toBe(1)
+    const receipt = JSON.parse(await Fs.readFile(NodePath.join(root, "watch.json"), "utf8"))
+    expect(receipt.ok).toBe(false)
+    expect(receipt.results.map((row: { readonly label: string }) => row.label).sort()).toEqual(["//:bad", "//:good"])
+    expect(
+      receipt.results.filter((row: { readonly status: string }) => row.status === "failed"),
+      result.envelope + result.stderr
+    ).toHaveLength(failFast ? 1 : 2)
+    expect(receipt.results.filter((row: { readonly status: string }) => row.status === "cancelled"))
+      .toHaveLength(failFast ? 1 : 0)
+  })
+
+  it("refuses a watch results file without --once before opening the workspace", async () => {
+    const root = await packageFixture()
+    let opened = 0
+    const result = await jsonCommand(root, ["watch", "test", "//:good", "--results-file", "watch.json"], (config) => ({
+      ...config,
+      services: Layer.succeed(CliServices, {
+        ...cliServicesLive,
+        findWorkspaceRoot: () => {
+          opened++
+          return Effect.fail(new Error("workspace should not be opened"))
+        }
+      })
+    }))
+    expect(result.exitCode).toBe(1)
+    expect(result.envelope).toContain("--results-file requires --once in watch")
+    expect(opened).toBe(0)
+    await expect(Fs.stat(NodePath.join(root, "watch.json"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  it("reports an invalid cache namespace as a configuration error through the CLI", async () => {
+    const root = await packageFixture()
+    const result = await jsonCommand(root, ["test", "//:good"], (config) => ({
+      ...config,
+      cacheUrl: "http://127.0.0.1:1",
+      cacheToken: "fixture-cache-token",
+      environment: { ...config.environment, SMITHERS_CACHE_NAMESPACE: "pr 12" }
+    }))
+    expect(result.exitCode).toBe(1)
+    expect(result.envelope).toContain(
+      "SMITHERS_CACHE_NAMESPACE must be 1 to 64 characters of letters, digits, dots, underscores, and dashes, " +
+        "starting with a letter or digit"
+    )
+    expect(result.envelope).not.toContain("Not your fault")
+    expect(result.envelope).not.toContain("Diagnostics:")
+  })
+
   it("degrades a real refused public-cache connection without exposing its read credential", async () => {
     const root = await packageFixture()
     const workspace = await Fs.readFile(NodePath.join(root, "WORKSPACE.ts"), "utf8")
