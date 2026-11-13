@@ -53,6 +53,9 @@
 
 ### Fixed
 
+- `PendingSnapshot.stage` returns a receipt unique to that staging. Staging a
+  value equal to an earlier one no longer lets the earlier write's receipt remove
+  the newer input.
 - An app that compiles this package from source, such as one importing
   `BrowserRuntime` through a workspace link, type-checks: the package's
   `imports` field maps `#access-handle-pool-vfs` to `@journeyapps/wa-sqlite`'s

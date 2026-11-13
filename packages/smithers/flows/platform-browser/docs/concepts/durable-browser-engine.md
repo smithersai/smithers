@@ -373,8 +373,9 @@ the unused worker composition from a tab importing BrowserEngine or SharedSqlite
 
 At an input boundary, `PendingSnapshot.make(storage, key)` can stage a pending
 value synchronously in tab-scoped session storage. Restore with the consumer's
-schema and acknowledge only after its durable write receipt. Acknowledging an
-older token never removes a newer value. Clear snapshots when their owner signs
+schema and acknowledge only after its durable write receipt. Every staging has
+its own token, even for an equal value, and acknowledging an older token never
+removes a newer value. Clear snapshots when their owner signs
 out; storage refusal returns no snapshot without failing the input handler.
 
 For private input, pass an owner callback as make's third argument. Unverified

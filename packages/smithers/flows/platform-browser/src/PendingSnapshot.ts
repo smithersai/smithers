@@ -40,8 +40,10 @@ export const make = (storage: Storage, key: string, owner?: () => string | undef
     try {
       const scope = owner?.()
       if (owner !== undefined && scope === undefined) return undefined
-      const token = JSON.stringify(owner === undefined ? value : { owner: scope, value })
-      if (token === undefined) return undefined
+      const json = JSON.stringify(owner === undefined ? value : { owner: scope, value })
+      if (json === undefined) return undefined
+      // The versioned receipt distinguishes equal stagings without changing the value JSON.
+      const token = `v1:${crypto.randomUUID()}:${json}`
       storage.setItem(key, token)
       return token
     } catch {
@@ -52,7 +54,8 @@ export const make = (storage: Storage, key: string, owner?: () => string | undef
     try {
       const token = storage.getItem(key)
       if (token === null) return undefined
-      const parsed: unknown = JSON.parse(token)
+      const json = token.startsWith("v1:") ? token.slice(token.indexOf(":", 3) + 1) : token
+      const parsed: unknown = JSON.parse(json)
       if (owner === undefined) return { token, value: parsed }
       const scope = owner()
       if (

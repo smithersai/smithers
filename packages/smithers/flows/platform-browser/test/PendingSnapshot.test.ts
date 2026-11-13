@@ -73,3 +73,88 @@ describe("owner-scoped PendingSnapshot", () => {
     }
   })
 })
+
+describe.each([false, true])("PendingSnapshot receipts (owner-scoped: %s)", (scoped) => {
+  const owner = scoped ? () => "person" : undefined
+
+  it("keeps the latest equal input through older receipts and reloads", () => {
+    const host = storage()
+    const firstService = PendingSnapshot.make(host, "tab", owner)
+    const first = firstService.stage({ text: "a" })!
+    const middle = firstService.stage({ text: "ab" })!
+    const reloaded = PendingSnapshot.make(host, "tab", owner)
+    const latest = reloaded.stage({ text: "a" })!
+
+    firstService.acknowledge(first)
+    expect(reloaded.read()).toEqual({ token: latest, value: { text: "a" } })
+    firstService.acknowledge(middle)
+    expect(reloaded.read()).toEqual({ token: latest, value: { text: "a" } })
+    expect(new Set([first, middle, latest]).size).toBe(3)
+    reloaded.acknowledge(latest)
+    expect(firstService.read()).toBeUndefined()
+  })
+
+  it.each([null, false, 0, "", ["a"], { text: "a" }].map((value) => ({ value })))(
+    "distinguishes consecutive equal stagings of $value",
+    ({ value }) => {
+      const host = storage()
+      const firstService = PendingSnapshot.make(host, "tab", owner)
+      const first = firstService.stage(value)!
+      const reloaded = PendingSnapshot.make(host, "tab", owner)
+      const latest = reloaded.stage(value)!
+      firstService.acknowledge(first)
+      expect(reloaded.read()).toEqual({ token: latest, value })
+      expect(latest).not.toBe(first)
+      reloaded.acknowledge(latest)
+      expect(firstService.read()).toBeUndefined()
+    }
+  )
+
+  it("restores and acknowledges snapshots written before versioned receipts", () => {
+    const host = storage()
+    const value = { text: "a" }
+    const legacy = JSON.stringify(scoped ? { owner: "person", value } : value)
+    host.setItem("tab", legacy)
+    const service = PendingSnapshot.make(host, "tab", owner)
+    expect(service.read()).toEqual({ token: legacy, value })
+    service.acknowledge(legacy)
+    expect(service.read()).toBeUndefined()
+
+    host.setItem("tab", legacy)
+    const latest = service.stage(value)!
+    service.acknowledge(legacy)
+    expect(service.read()).toEqual({ token: latest, value })
+  })
+
+  it("serializes the value once with its original JSON key", () => {
+    const keys: Array<string> = []
+    const value = {
+      toJSON: (key: string) => {
+        keys.push(key)
+        return { text: "a" }
+      }
+    }
+    const service = PendingSnapshot.make(storage(), "tab", owner)
+    const token = service.stage(value)!
+    expect(keys).toEqual([scoped ? "value" : ""])
+    expect(service.read()).toEqual({ token, value: { text: "a" } })
+  })
+})
+
+describe("PendingSnapshot storage format", () => {
+  it.each([null, 1, "text", { receipt: "existing", value: "input" }, { owner: "existing", value: "input" }])(
+    "preserves legacy unscoped JSON %j",
+    (value) => {
+      const host = storage()
+      const token = JSON.stringify(value)
+      host.setItem("tab", token)
+      expect(PendingSnapshot.make(host, "tab").read()).toEqual({ token, value })
+    }
+  )
+
+  it.each(["v1:missing-json", "v1:receipt:broken JSON"])("ignores malformed versioned storage %s", (value) => {
+    const host = storage()
+    host.setItem("tab", value)
+    expect(PendingSnapshot.make(host, "tab").read()).toBeUndefined()
+  })
+})
