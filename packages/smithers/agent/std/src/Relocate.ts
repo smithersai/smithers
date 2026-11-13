@@ -91,6 +91,48 @@ const contained = (path: string): string | undefined => {
   return parts.join("/")
 }
 
+type Prepared =
+  | Exclude<Relocation, { readonly _tag: "Relocated" }>
+  | {
+    readonly _tag: "Ready"
+    readonly rule: { readonly field: string; readonly kind: "cwd" | "path" }
+    readonly record: Record<string, Schema.Json>
+    readonly path: string
+  }
+
+/** Validates the input and keeps the reader's normalized relative path. */
+const prepare = (flow: string, input: Schema.Json): Prepared => {
+  const rule = located[flow]
+  if (rule === undefined) return { _tag: "UnsupportedFlow" }
+  const record = input !== null && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, Schema.Json>
+    : {}
+  const declared = record[rule.field]
+  if (rule.kind === "cwd" || declared === undefined) return { _tag: "Ready", rule, record, path: "" }
+  if (typeof declared !== "string") return { _tag: "UnsupportedFlow" }
+  if (declared.startsWith("/")) return { _tag: "AbsolutePath", path: declared }
+  const path = contained(declared)
+  return path === undefined
+    ? { _tag: "OutsideTree", path: declared }
+    : { _tag: "Ready", rule, record, path }
+}
+
+/**
+ * Refuses unsupported flows and invalid reader paths before a checkpoint is
+ * materialized. Shell command paths still require the materialized roots and
+ * are checked by {@link relocate}.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const precheck = (
+  flow: string,
+  input: Schema.Json
+): Exclude<Relocation, { readonly _tag: "Relocated" }> | undefined => {
+  const prepared = prepare(flow, input)
+  return prepared._tag === "Ready" ? undefined : prepared
+}
+
 /**
  * The part of `declared` that names a place inside `root`, or `undefined` when
  * it names somewhere the checkpoint does not hold a copy of.
@@ -182,11 +224,9 @@ export const relocate = (
   input: Schema.Json,
   materialized: Materialized
 ): Relocation => {
-  const rule = located[flow]
-  if (rule === undefined) return { _tag: "UnsupportedFlow" }
-  const record = input !== null && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, Schema.Json>
-    : {}
+  const prepared = prepare(flow, input)
+  if (prepared._tag !== "Ready") return prepared
+  const { rule, record, path } = prepared
   const declared = record[rule.field]
   if (rule.kind === "cwd") {
     // A container call is given the path the container will resolve; a host
@@ -208,10 +248,5 @@ export const relocate = (
     }
   }
   const relative = materialized.host.slice(withoutTrailingSlash(materialized.root).length + 1)
-  if (declared === undefined) return { _tag: "Relocated", input: { ...record, [rule.field]: relative } }
-  if (typeof declared !== "string") return { _tag: "UnsupportedFlow" }
-  if (declared.startsWith("/")) return { _tag: "AbsolutePath", path: declared }
-  const kept = contained(declared)
-  if (kept === undefined) return { _tag: "OutsideTree", path: declared }
-  return { _tag: "Relocated", input: { ...record, [rule.field]: kept === "" ? relative : `${relative}/${kept}` } }
+  return { _tag: "Relocated", input: { ...record, [rule.field]: path === "" ? relative : `${relative}/${path}` } }
 }

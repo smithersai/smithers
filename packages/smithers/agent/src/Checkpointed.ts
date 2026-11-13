@@ -95,6 +95,17 @@ export const outside = (flow: string, path: string): Cell.CallResult =>
     `Flow ${flow} was given ${path}, which climbs back out of the checkpoint into the live tree, so nothing ran. A path taken at a checkpoint is relative to the repository root and stays inside it. Name it that way, or drop at to read the live tree on purpose.`
   )
 
+/** Maps both early input refusals and checkout-dependent shell refusals. */
+const relocationRefusal = (
+  flow: string,
+  result: Exclude<Checkpoints.Relocation, { readonly _tag: "Relocated" }>
+): Cell.CallResult =>
+  result._tag === "UnsupportedFlow"
+    ? unsupported(flow)
+    : result._tag === "AbsolutePath"
+    ? absolute(flow, result.path)
+    : outside(flow, result.path)
+
 /**
  * Runs one cell call against the checkpoint it names, or against the live tree
  * when it names none.
@@ -110,11 +121,11 @@ export const checkpointed = (
   run: (call: Cell.Call): Effect.Effect<Cell.CallResult, HarnessError> => {
     const at = call.at
     if (at === undefined) return runner.run(call)
+    const checked = Checkpoints.precheck(call.flowName, call.input)
+    if (checked !== undefined) return Effect.succeed(relocationRefusal(call.flowName, checked))
     return store.materialize(at, (materialized) => {
       const relocated = Checkpoints.relocate(call.flowName, call.input, materialized)
-      if (relocated._tag === "UnsupportedFlow") return Effect.succeed(unsupported(call.flowName))
-      if (relocated._tag === "AbsolutePath") return Effect.succeed(absolute(call.flowName, relocated.path))
-      if (relocated._tag === "OutsideTree") return Effect.succeed(outside(call.flowName, relocated.path))
+      if (relocated._tag !== "Relocated") return Effect.succeed(relocationRefusal(call.flowName, relocated))
       // The journaled call keeps the input the cell wrote and the `at` that
       // says which tree; only the input handed to the flow is rewritten. A
       // reader of the journal sees the question, not the scratch path this

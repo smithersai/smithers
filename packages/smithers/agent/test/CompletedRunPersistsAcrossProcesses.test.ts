@@ -20,15 +20,17 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
  * with `node:sqlite` because the pin is about what the next process finds.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { Control, ControlLive, type ControlRuntime, type ControlSchema, SqlControlRuntime } from "@smthrs/control"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
+import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as Jj from "@smthrs/jj"
-import { Migrations, SqlJournal } from "@smthrs/journal"
+import { Journal, JournalEvent, Migrations, SqlJournal } from "@smthrs/journal"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -38,13 +40,13 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
-import { Context, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Context, Deferred, Effect, Layer, Option, Schema, Stream } from "effect"
 import { mkdtempSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentSession from "../src/AgentSession.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
@@ -174,8 +176,17 @@ const controlStores = (filename: string) =>
 
 const notes: Array<string> = []
 
-/** One process's worth of composition over one `.flows` directory, as `NodeControl` composes it. */
-const host = (root: string, owner: Ownership.OwnerId, engineHost: string, onSweep?: () => void) => {
+/**
+ * One process over the same durable storage and engine layers as the native
+ * host. The lower-level composition injects the state decorator before engine
+ * construction; it does not cover NodeRuntime.layer's logging and phase spans.
+ */
+const host = (
+  root: string,
+  owner: Ownership.OwnerId,
+  engineHost: string,
+  onSweep: Effect.Effect<void> = Effect.void
+) => {
   const registration = AgentSession.layer({
     quotaPolicy: Safety.quotaPolicy,
     budget: Safety.budget,
@@ -200,30 +211,29 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, onSwee
       )
     )
   )
-  const engine = NodeRuntime.layer(
-    {
-      filename: join(root, "engine.db"),
-      workspaceRoot: root,
-      owner: { hostId: engineHost },
-      isAlive: () => Effect.succeed(false)
-    },
-    StepBoundary.layer,
-    WorkspaceSandbox.layerFileSystem(),
-    registration
-  ).pipe(
-    Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]),
-    Layer.tap((context) =>
-      Effect.sync(() => {
-        if (onSweep === undefined) return
-        const state = Context.get(context, DurableEngineState.DurableEngineState)
-        const staleRunningRuns = state.staleRunningRuns
-        // This query runs after the released-row sweep has handled its candidates.
-        // Count completed queries, not just elapsed heartbeat intervals.
-        vi.spyOn(state, "staleRunningRuns").mockImplementation((...args) =>
-          staleRunningRuns(...args).pipe(Effect.tap(() => Effect.sync(onSweep)))
-        )
-      })
-    )
+  // Inject a decorator before the engine captures its services. The real SQL
+  // state remains unchanged and every operation still reaches it.
+  const state = Layer.effect(DurableEngineState.DurableEngineState)(
+    Effect.map(DurableEngineState.DurableEngineState, (real) => ({
+      ...real,
+      staleRunningRuns: (...args: Parameters<typeof real.staleRunningRuns>) =>
+        real.staleRunningRuns(...args).pipe(Effect.tap(() => onSweep))
+    }))
+  ).pipe(Layer.provideMerge(NodeRuntime.storage(join(root, "engine.db"), root)))
+  const execution = Layer.merge(StepBoundary.layer, WorkspaceSandbox.layerFileSystem()).pipe(
+    Layer.provideMerge(state)
+  )
+  const engine = registration.pipe(
+    Layer.provideMerge(
+      EngineStore.layer({
+        owner: { hostId: engineHost },
+        journalSource: `${engineHost}-engine`,
+        isAlive: () => Effect.succeed(false),
+        deferRecovery: true
+      }).pipe(Layer.provideMerge(execution))
+    ),
+    Layer.tap((context) => Context.get(context, EngineStore.Driver).reportRecovery),
+    Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, NodePath.layer, jj])
   )
   return ControlLive.layer.pipe(
     Layer.provide(engine),
@@ -241,7 +251,6 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, onSwee
 const roots = new Set<string>()
 
 afterEach(async () => {
-  vi.restoreAllMocks()
   calls.length = 0
   notes.length = 0
   await Promise.all([...roots].map((root) => rm(root, { recursive: true, force: true })))
@@ -356,44 +365,41 @@ const awaitCompletionEvent = (runId: string) =>
   })
 
 /**
- * Holds a second composition open over the same files long enough for every
- * reclaim tick to have its chance at the run, and stops early if one takes it.
- * The launching process's claim predates the baseline and is not a reclaim.
+ * Follows the engine journal until the terminal row's transaction commits.
+ * A fresh reader also replays a decision committed before it subscribed.
  */
-const watchForReclaim = (root: string, runId: string, decisionCountBeforeRestart: number, ticks = 60) =>
+const terminalEngineRow = (root: string, runId: string, afterSequence?: JournalEvent.Seq) =>
   Effect.gen(function*() {
-    for (let tick = 0; tick < ticks; tick++) {
-      const decisions = readDecisions(root, runId).slice(decisionCountBeforeRestart)
-      if (decisions.includes("claimed-and-activated") || decisions.includes("stolen-and-activated")) return
-      yield* Effect.sleep("100 millis")
-    }
+    const journal = yield* Journal.Journal
+    yield* journal.stream({
+      runId: JournalEvent.RunId.make(runId),
+      ...(afterSequence === undefined ? {} : { afterSequence })
+    }).pipe(
+      Stream.filter((entry) =>
+        entry.eventType === "flows.engine.run-decision" &&
+        typeof entry.payload === "object" && entry.payload !== null &&
+        "decision" in entry.payload && entry.payload.decision === "transitioned" &&
+        "status" in entry.payload && ["completed", "failed", "cancelled"].includes(String(entry.payload.status))
+      ),
+      Stream.take(1),
+      Stream.runDrain
+    )
+    return readRun(root, "engine.db", runId)
   })
 
-/**
- * Holds a composition open until the engine row is terminal, or for the
- * whole window. A reclaimed row passes through `running`; closing its owner
- * at that point interrupts the terminal write and releases the row again.
- * The released-row sweep ticks once per
- * `Ownership.heartbeatInterval`, so this is several ticks' worth of chances.
- */
-const holdUntilSettled = (root: string, runId: string, ticks = 60) =>
-  Effect.gen(function*() {
-    for (let tick = 0; tick < ticks; tick++) {
-      if (["completed", "failed", "cancelled"].includes(readRun(root, "engine.db", runId)?.status ?? "")) return
-      yield* Effect.sleep("100 millis")
-    }
-  })
-
-/** Reads the engine row for a second after the launching composition is gone. */
-const settledEngineRow = async (root: string, runId: string): Promise<RunRow | undefined> => {
-  let row = readRun(root, "engine.db", runId)
-  for (let attempt = 0; attempt < 20; attempt++) {
-    if (row?.status === "completed") return row
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    row = readRun(root, "engine.db", runId)
-  }
-  return row
-}
+/** Reads the committed engine decision independently of the launching process. */
+const settledEngineRow = (root: string, runId: string, afterSequence?: JournalEvent.Seq): Promise<RunRow | undefined> =>
+  Effect.runPromise(
+    terminalEngineRow(root, runId, afterSequence).pipe(
+      Effect.provide(
+        NodeRuntime.storage(join(root, "engine.db"), root).pipe(
+          Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer])
+        )
+      ),
+      Effect.scoped,
+      Effect.orDie
+    )
+  )
 
 describe("a run the control plane reported completed", () => {
   it("has a terminal engine row when the launching process is gone, with no interrupt-released decision", async () => {
@@ -434,17 +440,22 @@ describe("a run the control plane reported completed", () => {
     const turnsAfterFirst = countTurns(root, runId)
     const decisionsAfterFirst = readDecisions(root, runId)
     let successorSweeps = 0
+    const swept = Deferred.makeUnsafe<void>()
+    const onSweep = Effect.gen(function*() {
+      successorSweeps++
+      if (successorSweeps >= 3) yield* Deferred.succeed(swept, undefined)
+    })
 
     await Effect.runPromise(
-      watchForReclaim(root, runId, decisionsAfterFirst.length).pipe(
-        Effect.provide(host(root, secondOwner, "completed-persist-second", () => successorSweeps++)),
+      Deferred.await(swept).pipe(
+        Effect.provide(host(root, secondOwner, "completed-persist-second", onSweep)),
         Effect.scoped,
         Effect.orDie
       )
     )
 
     // The launching process's own claim is the only one this run ever gets.
-    expect(successorSweeps).toBeGreaterThan(0)
+    expect(successorSweeps).toBeGreaterThanOrEqual(3)
     expect(decisionsAfterFirst).toEqual(["created", "claimed-and-activated", "resumed", "transitioned"])
     expect(readDecisions(root, runId)).toEqual(decisionsAfterFirst)
     expect(countTurns(root, runId)).toBe(turnsAfterFirst)
@@ -478,13 +489,28 @@ describe("a released engine row whose control row is already terminal", () => {
     await settledEngineRow(root, runId)
     const turnsAfterFirst = countTurns(root, runId)
 
+    const beforeCrash = await Effect.runPromise(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        const entries = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 1000 })
+        return entries.entries.at(-1)!.seq
+      }).pipe(
+        Effect.provide(
+          NodeRuntime.storage(join(root, "engine.db"), root).pipe(
+            Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer])
+          )
+        ),
+        Effect.scoped
+      )
+    )
+
     // The crash, written straight onto the row.
     releaseEngineRow(root, runId)
     expect(readRun(root, "engine.db", runId)?.status).toBe("suspended")
     expect(readRun(root, "control.db", runId)?.status).toBe("completed")
 
     await Effect.runPromise(
-      holdUntilSettled(root, runId).pipe(
+      Effect.promise(() => settledEngineRow(root, runId, beforeCrash)).pipe(
         Effect.provide(host(root, secondOwner, "completed-persist-second")),
         Effect.scoped,
         Effect.orDie

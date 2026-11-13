@@ -6869,7 +6869,8 @@ policy: it accumulates usage and refuses nothing. A latency budget bounds when
 a call may start, not how long one may take; cutting a call off is
 `Agent.Options.modelCallMs`, a different budget. Its zero is the run's first
 budget question and is durable, so a park or restart does not grant the run the
-whole interval again. The ceiling counts active time only: time the run spends
+whole interval again. A zero ceiling refuses the first call, including an
+evaluator reading, unless `onExceeded: "warn"` permits it. The ceiling counts active time only: time the run spends
 suspended on an approval, a question, or a budget raise is recorded durably and
 subtracted, including across a process restart. That includes a native module
 execution suspended on a `HumanTask`, an approval, or a timer.
@@ -8430,7 +8431,9 @@ has a `Checkpoints` store, and with `unpinned` when it does not. A composition
 that pins nothing is still wrapped: a call carrying an `at` must never quietly
 read the live tree instead, so `unpinned` refuses it with
 `checkpoint_unavailable`. A store that cannot hand the tree back is also a
-catchable `checkpoint_unavailable` refusal, not a failed run.
+catchable `checkpoint_unavailable` refusal, not a failed run. When a store is configured,
+unsupported flows and invalid reader paths are refused with `checkpoint_unsupported`
+before any checkout, even if the store cannot materialize the named checkpoint.
 
 ### Checkpointed.unpinnedFact
 
@@ -43776,26 +43779,27 @@ How the project under test runs its suite, declared once by the host.
 
 Pinned trees, and the scratch checkouts a call runs against.
 
-| Export             | Type                                                                                          | Meaning                                                          |
-| ------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `Checkpoints`      | interface and `Context.Service` tag                                                           | `{ capture, materialize }`.                                      |
-| `Snapshot`         | `Schema.Class`                                                                                | `{ id, ref }`, identified as `@smthrs/std/Checkpoints/Snapshot`. |
-| `Materialized`     | interface                                                                                     | `id`, `host`, `guest`, `root`, `guestRoot`.                      |
-| `baseId`           | `"base"`                                                                                      | The id naming the tree the run opened on.                        |
-| `scratchDirectory` | `".flows-checkpoints"`                                                                        | Where a checkpoint is materialized, relative to the root.        |
-| `configSection`    | `"flows-checkpoint"`                                                                          | The git-config section minted checkpoints are recorded under.    |
-| `make`             | `(service: Checkpoints) => Checkpoints`                                                       |                                                                  |
-| `unavailable`      | `(id: string) => StdError`                                                                    | The refusal a host that pins nothing answers with.               |
-| `makeNoop`         | `() => Checkpoints`                                                                           | Fails both calls with `unavailable`.                             |
-| `layerNoop`        | `Layer<Checkpoints>`                                                                          |                                                                  |
-| `GitOptions`       | interface                                                                                     | `root`, `cwd?`, `baseRef?`.                                      |
-| `makeGit`          | `(options: GitOptions) => Effect<Checkpoints, never, ChildProcessSpawner>`                    |                                                                  |
-| `layerGit`         | `(options: GitOptions) => Layer<Checkpoints, never, ChildProcessSpawner>`                     |                                                                  |
-| `ContainerOptions` | interface                                                                                     | `container`, `cwd?`.                                             |
-| `makeContainer`    | `(options: ContainerOptions) => Effect<Checkpoints, never, ChildProcessSpawner \| Container>` | Runs git inside the container `bash` runs in.                    |
-| `layerContainer`   | `(options: ContainerOptions) => Layer<Checkpoints, never, ChildProcessSpawner \| Container>`  |                                                                  |
-| `Relocation`       | tagged union                                                                                  | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`.   |
-| `relocate`         | `(flow: string, input: Json, materialized: Materialized) => Relocation`                       | Rewrites one call's input onto a checkpoint.                     |
+| Export             | Type                                                                                          | Meaning                                                             |
+| ------------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `Checkpoints`      | interface and `Context.Service` tag                                                           | `{ capture, materialize }`.                                         |
+| `Snapshot`         | `Schema.Class`                                                                                | `{ id, ref }`, identified as `@smthrs/std/Checkpoints/Snapshot`.    |
+| `Materialized`     | interface                                                                                     | `id`, `host`, `guest`, `root`, `guestRoot`.                         |
+| `baseId`           | `"base"`                                                                                      | The id naming the tree the run opened on.                           |
+| `scratchDirectory` | `".flows-checkpoints"`                                                                        | Where a checkpoint is materialized, relative to the root.           |
+| `configSection`    | `"flows-checkpoint"`                                                                          | The git-config section minted checkpoints are recorded under.       |
+| `make`             | `(service: Checkpoints) => Checkpoints`                                                       |                                                                     |
+| `unavailable`      | `(id: string) => StdError`                                                                    | The refusal a host that pins nothing answers with.                  |
+| `makeNoop`         | `() => Checkpoints`                                                                           | Fails both calls with `unavailable`.                                |
+| `layerNoop`        | `Layer<Checkpoints>`                                                                          |                                                                     |
+| `GitOptions`       | interface                                                                                     | `root`, `cwd?`, `baseRef?`.                                         |
+| `makeGit`          | `(options: GitOptions) => Effect<Checkpoints, never, ChildProcessSpawner>`                    |                                                                     |
+| `layerGit`         | `(options: GitOptions) => Layer<Checkpoints, never, ChildProcessSpawner>`                     |                                                                     |
+| `ContainerOptions` | interface                                                                                     | `container`, `cwd?`.                                                |
+| `makeContainer`    | `(options: ContainerOptions) => Effect<Checkpoints, never, ChildProcessSpawner \| Container>` | Runs git inside the container `bash` runs in.                       |
+| `layerContainer`   | `(options: ContainerOptions) => Layer<Checkpoints, never, ChildProcessSpawner \| Container>`  |                                                                     |
+| `Relocation`       | tagged union                                                                                  | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`.      |
+| `precheck`         | `(flow: string, input: Json) => Exclude<Relocation, { _tag: "Relocated" }> \| undefined`      | Refuses unsupported flows and invalid reader paths before checkout. |
+| `relocate`         | `(flow: string, input: Json, materialized: Materialized) => Relocation`                       | Rewrites one call's input onto a checkpoint.                        |
 
 `capture(id)` returns a `Snapshot`. `materialize(id, use)` is scoped: it hands
 the tree to `use` and removes the checkout however that effect ends. Host git
@@ -43843,15 +43847,19 @@ keeps outside the mount.
 
 What can be pointed at a checkpoint, and what cannot.
 
-| Export       | Type                                                                    | Meaning                                                        |
-| ------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `Relocation` | tagged union                                                            | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`. |
-| `relocate`   | `(flow: string, input: Json, materialized: Materialized) => Relocation` | Rewrites one call's input onto a checkpoint.                   |
+| Export       | Type                                                                                     | Meaning                                                             |
+| ------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `Relocation` | tagged union                                                                             | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`.      |
+| `precheck`   | `(flow: string, input: Json) => Exclude<Relocation, { _tag: "Relocated" }> \| undefined` | Refuses unsupported flows and invalid reader paths before checkout. |
+| `relocate`   | `(flow: string, input: Json, materialized: Materialized) => Relocation`                  | Rewrites one call's input onto a checkpoint.                        |
 
 `relocate` knows the field each supported flow names a location in: `cwd` for
 `bash`, `path` for `read` and `ls`, `root` for `grep` and `glob`. Every other
-flow answers `UnsupportedFlow`. Both names are re-exported from `Checkpoints`,
-which is how the harness reaches them.
+flow answers `UnsupportedFlow`. `precheck` returns that refusal, `AbsolutePath`,
+or `OutsideTree` without needing a checkout, and returns `undefined` when
+materialization may proceed. Shell command checks still need the materialized
+roots and remain in `relocate`. These exports are also available from
+`Checkpoints`, which is how the harness reaches them.
 
 ## LanguageServer
 

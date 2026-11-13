@@ -261,7 +261,7 @@ const loop = (options: {
       Effect.provideService(Steering.Source, options.steering ?? Steering.makeNoop()),
       Effect.provideService(EngineLike.EngineLike, options.engine?.(port) ?? port)
     )
-    return events.map((event) => event._tag)
+    return events
   }).pipe(Effect.provide(Safety.layer))
 
 describe("the cell loop on the durable engine", () => {
@@ -316,7 +316,9 @@ describe("the cell loop on the durable engine", () => {
       loop({ model: cellModel(providerCalls), calls: runner(executed, { value: true }) })
     )
 
-    const tags = outcome._tag === "completed" ? outcome.value as ReadonlyArray<string> : []
+    const tags = outcome._tag === "completed"
+      ? (outcome.value as ReadonlyArray<AgentEvent.AgentEvent>).map((event) => event._tag)
+      : []
     expect(tags.filter((tag) => tag === "cell-call-started")).toHaveLength(2)
     expect(tags).toContain("resolved")
     // Two boundaries, each recorded under its own identity.
@@ -350,7 +352,9 @@ describe("the cell loop on the durable engine", () => {
       { resume: true }
     )
     expect(outcome._tag).toBe("completed")
-    const tags = outcome._tag === "completed" ? outcome.value as ReadonlyArray<string> : []
+    const tags = outcome._tag === "completed"
+      ? (outcome.value as ReadonlyArray<AgentEvent.AgentEvent>).map((event) => event._tag)
+      : []
     expect(tags).toContain("resolved")
     expect(executed).toEqual(["fs/list", "fs/write", "fs/write"])
     expect(providerCalls).toEqual(["test-model"])
@@ -447,7 +451,38 @@ describe("the cell loop on the durable engine", () => {
       { resume: true }
     )
 
-    expect(parked).toEqual(straight)
+    expect(straight._tag).toBe("completed")
+    expect(parked._tag).toBe("completed")
+    if (straight._tag !== "completed" || parked._tag !== "completed") throw new Error("cell did not complete")
+    expect((parked.value as ReadonlyArray<AgentEvent.AgentEvent>).map((event) => event._tag))
+      .toEqual((straight.value as ReadonlyArray<AgentEvent.AgentEvent>).map((event) => event._tag))
+    // Settlement timing is observational; the values, identities, applied
+    // transition and final assistant message must survive replay exactly.
+    const replayed = (value: unknown) =>
+      (value as ReadonlyArray<AgentEvent.AgentEvent>).flatMap((event): ReadonlyArray<unknown> =>
+        event._tag === "cell-call-settled"
+          ? [{ _tag: event._tag, flowName: event.flowName, identity: event.identity, result: event.result }]
+          : event._tag === "transition-applied" || event._tag === "resolved"
+          ? [event]
+          : []
+      )
+    const expected = replayed(straight.value)
+    expect(expected).toHaveLength(4)
+    expect(expected).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        _tag: "cell-call-settled",
+        flowName: "fs/list",
+        result: expect.objectContaining({ value: ["alpha.md"] })
+      }),
+      expect.objectContaining({
+        _tag: "cell-call-settled",
+        flowName: "fs/write",
+        result: expect.objectContaining({ value: "wrote alpha.md" })
+      }),
+      expect.objectContaining({ _tag: "transition-applied" }),
+      expect.objectContaining({ _tag: "resolved" })
+    ]))
+    expect(replayed(parked.value)).toEqual(expected)
   })
 
   it("journals the turn-boundary steering drain and replays it after a park", async () => {
@@ -547,7 +582,9 @@ describe("the cell loop on the durable engine", () => {
 
     expect(outcome._tag).toBe("completed")
     expect(requests).toHaveLength(2)
-    const replayedTags = outcome._tag === "completed" ? outcome.value as ReadonlyArray<string> : []
+    const replayedTags = outcome._tag === "completed"
+      ? (outcome.value as ReadonlyArray<AgentEvent.AgentEvent>).map((event) => event._tag)
+      : []
     expect(replayedTags).toContain("compaction-settled")
     const mainText =
       requests[1]?.messages.flatMap((message) =>

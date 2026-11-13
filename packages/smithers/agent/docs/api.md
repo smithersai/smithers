@@ -1349,7 +1349,8 @@ policy: it accumulates usage and refuses nothing. A latency budget bounds when
 a call may start, not how long one may take; cutting a call off is
 `Agent.Options.modelCallMs`, a different budget. Its zero is the run's first
 budget question and is durable, so a park or restart does not grant the run the
-whole interval again. The ceiling counts active time only: time the run spends
+whole interval again. A zero ceiling refuses the first call, including an
+evaluator reading, unless `onExceeded: "warn"` permits it. The ceiling counts active time only: time the run spends
 suspended on an approval, a question, or a budget raise is recorded durably and
 subtracted, including across a process restart. That includes a native module
 execution suspended on a `HumanTask`, an approval, or a timer.
@@ -2910,7 +2911,9 @@ has a `Checkpoints` store, and with `unpinned` when it does not. A composition
 that pins nothing is still wrapped: a call carrying an `at` must never quietly
 read the live tree instead, so `unpinned` refuses it with
 `checkpoint_unavailable`. A store that cannot hand the tree back is also a
-catchable `checkpoint_unavailable` refusal, not a failed run.
+catchable `checkpoint_unavailable` refusal, not a failed run. When a store is configured,
+unsupported flows and invalid reader paths are refused with `checkpoint_unsupported`
+before any checkout, even if the store cannot materialize the named checkpoint.
 
 ### Checkpointed.unpinnedFact
 

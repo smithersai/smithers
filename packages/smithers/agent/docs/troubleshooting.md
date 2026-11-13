@@ -214,7 +214,9 @@ run is refused whether or not that run exists. Treat returned child ids as opaqu
 **What happened.** A cell call named a checkpoint and could not run against
 one: the flow names what it touches rather than where it runs, the path was
 absolute or climbed out of the tree with `..`, the store could not check the
-tree out, or the host pins no trees at all.
+tree out, or the host pins no trees at all. Unsupported flows and invalid
+reader paths produce `checkpoint_unsupported` before checkout; a missing
+checkpoint does not change that refusal.
 
 **What to change.** The refusal messages name the remedy: take the reading with
 a shell call at the same checkpoint, name the path relative to the repository

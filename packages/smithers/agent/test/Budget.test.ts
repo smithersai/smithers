@@ -2994,26 +2994,32 @@ describe("a per-day cap across runs", () => {
 
   it("keeps both accumulators across a restart", async () => {
     const ledger = Budget.memoryLedger()
-    const policy = { tokens: { max: 1_000 }, daily: { max: 1_500 } } as const
+    const policy = { tokens: { max: 1_000 }, daily: { max: 900 } } as const
     const restarted = await Effect.runPromise(
       Effect.gen(function*() {
+        yield* TestClock.setTime(Date.parse("2026-01-02T12:00:00Z"))
         const first = yield* Budget.make(policy, { ledger })
         yield* inRun("run-a", first.record("a1", { totalTokens: 600 }))
         yield* inRun("run-b", first.record("b1", { totalTokens: 300 }))
         const second = yield* Budget.make(policy, { ledger })
+        // Raise the daily cap so it does not hide the recovered per-run ceiling.
+        const raisedDay = yield* Budget.make({ ...policy, daily: { max: 1_500 } }, { ledger })
         return {
+          day: yield* ledger.total("2026-01-02"),
           runA: yield* inRun("run-a", second.usage),
-          // run-a's own ceiling (600 + next 600 > 1000) and the day's (900 + 600 > 1500) both refuse.
-          refusedRun: yield* inRun("run-a", second.check("a2")),
+          refusedRun: yield* inRun("run-a", raisedDay.check("a2")),
+          // The recovered day is exhausted even for a run with no earlier calls.
           refusedDay: yield* inRun("run-c", second.check("c1"))
         }
-      })
+      }).pipe(Effect.provide(TestClock.layer()))
     )
     expect(restarted.runA.tokens).toBe(600)
     expect(restarted.refusedRun).toMatchObject({ _tag: "refuse", exceeded: { scope: "tokens", used: 600 } })
-    expect(restarted.refusedDay._tag).toBe("proceed")
-    const day = await Effect.runPromise(ledger.total(new Date().toISOString().slice(0, 10)))
-    expect(day).toBe(900)
+    expect(restarted.refusedDay).toMatchObject({
+      _tag: "refuse",
+      exceeded: { scope: "daily", used: 900, max: 900 }
+    })
+    expect(restarted.day).toBe(900)
   })
 
   it("resumes once the cap is raised, replaying counted steps for free", async () => {

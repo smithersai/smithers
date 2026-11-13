@@ -113,11 +113,13 @@ describe("Checkpointed.checkpointed", () => {
 
   it("refuses a flow that names what it touches rather than where it runs", async () => {
     const seen: Array<Cell.Call> = []
+    const asked: Array<string> = []
     const result = await run(
-      Checkpointed.checkpointed(store([]), recording(seen)),
+      Checkpointed.checkpointed(store(asked), recording(seen)),
       call("apply_patch", { input: "*** Begin Patch" }, "base")
     )
 
+    expect(asked).toEqual([])
     expect(seen).toEqual([])
     expect(result.code).toBe("checkpoint_unsupported")
     expect(result.message).toContain("Nothing ran")
@@ -125,11 +127,13 @@ describe("Checkpointed.checkpointed", () => {
 
   it("refuses an absolute path rather than guessing which prefix names the tree", async () => {
     const seen: Array<Cell.Call> = []
+    const asked: Array<string> = []
     const result = await run(
-      Checkpointed.checkpointed(store([]), recording(seen)),
+      Checkpointed.checkpointed(store(asked), recording(seen)),
       call("read", { path: "/testbed/mod.py" }, "base")
     )
 
+    expect(asked).toEqual([])
     expect(seen).toEqual([])
     expect(result.code).toBe("checkpoint_unsupported")
     expect(result.message).toContain("/testbed/mod.py")
@@ -143,16 +147,51 @@ describe("Checkpointed.checkpointed", () => {
     // under the checkpoint the cell named, and the call key folds that in, so
     // the live reading would replay as a pinned one for the rest of the run.
     const seen: Array<Cell.Call> = []
+    const asked: Array<string> = []
     const result = await run(
-      Checkpointed.checkpointed(store([]), recording(seen)),
+      Checkpointed.checkpointed(store(asked), recording(seen)),
       call("read", { path: "../../mod.py" }, "cp-1-0")
     )
 
+    expect(asked).toEqual([])
     expect(seen).toEqual([])
     expect(result.outcome).toBe("failure")
     expect(result.code).toBe("checkpoint_unsupported")
     expect(result.message).toContain("../../mod.py")
     expect(result.message).toContain("climbs back out of the checkpoint")
+  })
+
+  for (
+    const [flow, input] of [
+      ["apply_patch", { input: "*** Begin Patch" }],
+      ["read", { path: "/absolute.txt" }],
+      ["ls", { path: "../outside" }],
+      ["grep", { root: "../outside" }],
+      ["glob", { root: "/absolute" }]
+    ] as const
+  ) {
+    it(`refuses invalid ${flow} input even when the checkpoint is unavailable`, async () => {
+      const seen: Array<Cell.Call> = []
+      const result = await run(
+        Checkpointed.checkpointed(broken("no such ref"), recording(seen)),
+        call(flow, input, "missing")
+      )
+      expect(result.code).toBe("checkpoint_unsupported")
+      expect(seen).toEqual([])
+    })
+  }
+
+  it("checks shell commands against the roots returned by checkout", async () => {
+    const asked: Array<string> = []
+    const seen: Array<Cell.Call> = []
+    const result = await run(
+      Checkpointed.checkpointed(store(asked), recording(seen)),
+      call("bash", { command: "cat /work/repo/live.txt" }, "base")
+    )
+    expect(asked).toEqual(["base"])
+    expect(seen).toEqual([])
+    expect(result.code).toBe("checkpoint_unsupported")
+    expect(result.message).toContain("/work/repo/live.txt")
   })
 
   it("keeps the subdirectory a shell call named, on the side of the mount it named it from", async () => {

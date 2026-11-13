@@ -68,7 +68,8 @@ before each call); what makes it trustworthy is where its numbers come from.
 - **Admission reserves a soft projection.** `reserve` atomically accounts for
   actual spend plus every in-flight forecast. The largest observed call sets
   the forecast; until a positive cost is known, one call holds the full token
-  allowance. Zero refuses new calls unless `warn` permits them. Recording usage
+  allowance. Zero token, USD, and latency ceilings refuse the first call and
+  evaluator readings unless `warn` permits them. Recording usage
   replaces the forecast, and closing the call's scope releases its reservation.
   The first call is not free and a forecast is not a provider billing cap:
   admitted calls can cost more than estimated. All concurrent calls of a run

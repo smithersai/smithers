@@ -35,6 +35,38 @@ const rewritten = (flow: string, input: Schema.Json): Schema.Json => {
   return relocation.input
 }
 
+describe("precheck", () => {
+  it("refuses unsupported flows without a materialized tree", () => {
+    expect(Relocate.precheck("apply_patch", {})).toEqual({ _tag: "UnsupportedFlow" })
+  })
+
+  for (const [flow, field] of [["read", "path"], ["ls", "path"], ["grep", "root"], ["glob", "root"]] as const) {
+    it(`validates ${flow} paths before checkout`, () => {
+      for (const path of ["/absolute/file", "/"]) {
+        expect(Relocate.precheck(flow, { [field]: path })).toEqual({ _tag: "AbsolutePath", path })
+      }
+      for (const path of ["../outside", "a/../../outside", "./../"]) {
+        expect(Relocate.precheck(flow, { [field]: path })).toEqual({ _tag: "OutsideTree", path })
+      }
+      for (const path of [null, 1, true, [], {}]) {
+        expect(Relocate.precheck(flow, { [field]: path })).toEqual({ _tag: "UnsupportedFlow" })
+      }
+      for (const path of ["", ".", "file", "a/../file", "a/.."]) {
+        expect(Relocate.precheck(flow, { [field]: path })).toBeUndefined()
+      }
+      for (const input of [{}, null, [], "file"]) {
+        expect(Relocate.precheck(flow, input)).toBeUndefined()
+      }
+    })
+  }
+
+  it("leaves shell command checks to relocation with the real roots", () => {
+    const input = { command: "cat /work/repo/file" }
+    expect(Relocate.precheck("bash", input)).toBeUndefined()
+    expect(Relocate.relocate("bash", input, materialized)).toEqual({ _tag: "OutsideTree", path: "/work/repo/file" })
+  })
+})
+
 describe("relocate", () => {
   it("points a shell call at the checkpoint's own directory", () => {
     expect(Relocate.relocate("bash", { mode: "unhermetic", command: "bin/test" }, materialized)).toEqual({

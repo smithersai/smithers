@@ -1,4 +1,5 @@
 import { Effect, Layer, Result } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"
 
@@ -43,10 +44,32 @@ describe("budget configuration", () => {
     })
   }
 
-  it("accepts zero ceilings, fractional milliseconds, and an empty reporting policy", async () => {
+  for (const scope of ["tokens", "latency", "usd"] as const) {
+    for (const method of ["check", "reserve", "admitReading"] as const) {
+      for (const onExceeded of ["fail", "skip-remaining", "warn"] as const) {
+        it(`enforces a zero ${scope} ceiling for ${method} with ${onExceeded}`, async () => {
+          await Effect.runPromise(
+            Effect.gen(function*() {
+              const policy: Budget.Policy = scope === "latency"
+                ? { latency: { maxMillis: 0, onExceeded } }
+                : scope === "tokens"
+                ? { tokens: { max: 0, onExceeded } }
+                : { usd: { max: 0, onExceeded } }
+              const budget = yield* Budget.make(policy)
+              const verdict = yield* Effect.scoped(budget[method]("first"))
+              expect(verdict).toMatchObject({
+                _tag: onExceeded === "warn" ? "warn" : "refuse",
+                exceeded: { scope, max: 0, used: 0, onExceeded }
+              })
+            }).pipe(Effect.provide(TestClock.layer()))
+          )
+        })
+      }
+    }
+  }
+
+  it("accepts fractional milliseconds and an empty reporting policy", async () => {
     await Effect.runPromise(Effect.gen(function*() {
-      const zero = yield* Budget.make({ tokens: { max: 0 }, latency: { maxMillis: 0 } })
-      expect((yield* Effect.scoped(zero.reserve("first")))._tag).toBe("refuse")
       yield* Budget.make({ latency: { maxMillis: 0.5 } }, { maxRuns: 1, recoveryEntries: 1 })
       const reporting = yield* Budget.make({})
       expect((yield* Effect.scoped(reporting.reserve("first")))._tag).toBe("proceed")
