@@ -50,6 +50,22 @@ describe("resolveArgv", () => {
     expect(argv[4]).toBe("dev")
   })
 
+  it("leaves version metadata empty on a tagged commit", async () => {
+    git("tag", "v1.2.3")
+    expect(await StampExec.resolveArgv(root, [StampExec.token("versionMeta", Stamp.versionMeta)])).toEqual([""])
+  })
+
+  it("propagates a failed version metadata read instead of marking it dev", async () => {
+    await Fs.rm(NodePath.join(root, ".git"), { recursive: true })
+    await expect(StampExec.resolveArgv(root, [StampExec.token("versionMeta", Stamp.versionMeta)]))
+      .rejects.toThrow("workspace has no local .git")
+  })
+
+  it.each([123, null])("rejects a non-object token payload: %j", async (payload) => {
+    const token = `{smthrs:stamp:${Buffer.from(JSON.stringify(payload)).toString("base64url")}}`
+    await expect(StampExec.resolveArgv(root, [token])).rejects.toThrow("invalid build stamp token")
+  })
+
   it("passes a literal value through and leaves unrelated argv untouched", async () => {
     const argv = await StampExec.resolveArgv(root, ["--flag", `-X=${StampExec.token("literal", "1.2.3")}`])
     expect(argv).toEqual(["--flag", "-X=1.2.3"])
@@ -65,6 +81,11 @@ describe("resolveArgv", () => {
   it("fails on a stamp name it does not know rather than stamping empty text", async () => {
     const token = Stamp.token("future", { _tag: "Stamp", name: "future" })
     await expect(StampExec.resolveArgv(root, [token])).rejects.toThrow(/unknown build stamp: "future"/)
+  })
+
+  it("refuses a public stamp without a string name", async () => {
+    const token = Stamp.token("bogus", { _tag: "Stamp", name: 123 })
+    await expect(StampExec.resolveArgv(root, [token])).rejects.toThrow(/unknown build stamp: "123"/)
   })
 
   /**
@@ -88,10 +109,13 @@ describe("resolveArgv", () => {
     expect(argv[0]).toBe("-X=v1.0-$&")
   })
 
-  it("refuses a payload that is neither a literal nor a public stamp", async () => {
-    const token = Stamp.token("bogus", { _tag: "NotAStamp" })
-    await expect(StampExec.resolveArgv(root, [token])).rejects.toThrow(/only public stamps and literals/)
-  })
+  it.each([123, null, { _tag: "NotAStamp" }])(
+    "refuses a value that is neither a literal nor a public stamp: %j",
+    async (value) => {
+      const token = Stamp.token("bogus", value)
+      await expect(StampExec.resolveArgv(root, [token])).rejects.toThrow(/only public stamps and literals/)
+    }
+  )
 })
 
 describe("pinning stamps for an approved revision", () => {

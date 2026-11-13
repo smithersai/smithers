@@ -43,7 +43,8 @@ export default defineConfig({
         branches: 91.16,
         functions: 96.61,
         lines: 96.84,
-        statements: 95.57
+        statements: 95.57,
+        "src/StampExec.ts": { branches: 100, functions: 100, lines: 100, statements: 100 }
       }
     }
   }

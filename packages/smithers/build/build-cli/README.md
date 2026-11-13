@@ -82,7 +82,8 @@ Append `--fsModuleCache` to reuse transforms between runs. Coverage floors
 remain enabled at the measured baseline: statements `95.57%`, branches `91.16%`,
 functions `96.61%`, and lines `96.84%`. The conformance gate prevents a lower
 floor or weaker file override; add behavioral cases and raise these floors
-toward `100%`. Execution tests start real child CLIs and create temporary
+toward `100%`. Late stamp resolution (`src/StampExec.ts`) requires `100%`
+for every metric. Execution tests start real child CLIs and create temporary
 repositories outside this checkout, so cold process startup is part of their
 wall-clock cost. Linux execution fixtures also require `bubblewrap` on PATH.
 Install the pinned Rust toolchain for native executable fixtures.

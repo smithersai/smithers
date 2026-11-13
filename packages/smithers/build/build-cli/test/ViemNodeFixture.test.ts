@@ -18,7 +18,7 @@ describe("verbatim viem Node-only PACKAGE.ts fixture", () => {
     expect(rules).toContain("Generate")
   })
 
-  it("graphs with exactly data/gates/services edges and zero warnings", async () => {
+  it("graphs the fixture's data dependencies with zero warnings", async () => {
     const result = await serve(fixture, ["graph", "//...", "--format", "json"])
     expect(result.exitCode, result.output).toBe(0)
     const graph = JSON.parse(result.output) as {
@@ -26,6 +26,7 @@ describe("verbatim viem Node-only PACKAGE.ts fixture", () => {
       readonly warnings: ReadonlyArray<unknown>
     }
     expect(graph.warnings).toEqual([])
-    expect(graph.edges.every((edge) => ["data", "gates", "services"].includes(edge.kind))).toBe(true)
+    expect(graph.edges.length).toBeGreaterThanOrEqual(40)
+    expect([...new Set(graph.edges.map((edge) => edge.kind))]).toEqual(["data"])
   })
 })

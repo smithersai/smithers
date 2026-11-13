@@ -39,16 +39,25 @@ export default {
         (_, index) => `export const action${index} = (value) => {\n  return value ? "accepted" : "refused"\n}`
       ).join("\n")
     )
-    const run = async (count: number) => {
+    const run = async (count: number, completeStamp?: boolean) => {
+      if (completeStamp !== undefined) {
+        await Fs.writeFile(
+          Path.join(root, "src/StampExec.ts"),
+          "export const metadata = (tagged) => tagged ? \"\" : \"dev\""
+        )
+      }
       await Fs.writeFile(
         Path.join(root, "probe.test.js"),
         `import { expect, it } from "vitest"
 import * as probe from "./src/probe.js"
+${completeStamp === undefined ? "" : "import { metadata } from \"./src/StampExec.ts\""}
 it("exercises both outcomes of every admitted action", () => {
   for (let index = 0; index < ${count}; index++) {
     expect(probe["action" + index](true)).toBe("accepted")
     expect(probe["action" + index](false)).toBe("refused")
   }
+  ${completeStamp === undefined ? "" : "expect(metadata(false)).toBe(\"dev\")"}
+  ${completeStamp === true ? "expect(metadata(true)).toBe(\"\")" : ""}
 })
 `
       )
@@ -77,6 +86,16 @@ it("exercises both outcomes of every admitted action", () => {
     const complete = await run(32)
     expect(complete.code, complete.output).toBe(0)
     expect(complete.output).toContain("1 passed")
+    // Every global probe is fully covered, but one stamp branch is missing.
+    // The stamp-specific 100% floor must fail independently of the global floors.
+    const incompleteStamp = await run(32, false)
+    expect(incompleteStamp.code, incompleteStamp.output).toBe(1)
+    expect(incompleteStamp.output).toContain("Coverage for branches")
+    expect(incompleteStamp.output).toContain("\"src/StampExec.ts\" threshold (100%)")
+    expect(incompleteStamp.output).not.toContain("global threshold")
+    const completeStamp = await run(32, true)
+    expect(completeStamp.code, completeStamp.output).toBe(0)
+    expect(completeStamp.output).toContain("1 passed")
   } finally {
     await Fs.rm(root, { recursive: true, force: true })
   }

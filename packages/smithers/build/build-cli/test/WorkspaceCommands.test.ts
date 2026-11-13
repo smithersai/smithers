@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
+import { promisify } from "node:util"
 import { afterAll, describe, expect, it } from "vitest"
 import * as Affected from "../src/Affected.ts"
 import * as Cache from "../src/Cache.ts"
@@ -198,26 +200,35 @@ describe("watch", () => {
     expect(output).toContain("//lib:srcs")
   })
 
-  it("cancels an idle watcher without leaving its event loop alive", async () => {
+  it("cancels an idle watcher without leaving its event loop alive", async ({ signal }) => {
     const root = await fixture()
-    const controller = new AbortController()
-    let seen = false
-    const result = await Watch.run({
-      root,
-      args: ["target", "//lib:srcs", "--plan"],
-      ignored: [".flows"],
-      debounceMs: 20,
-      once: false,
-      signal: controller.signal,
-      stdout: () => {
-        if (!seen) {
-          seen = true
-          setTimeout(() => controller.abort(), 100)
-        }
-      },
-      stderr: () => {}
-    })
-    expect(result.stopped).toBe(true)
+    const script = `
+      import { run } from ${JSON.stringify(new URL("../src/Watch.ts", import.meta.url).href)}
+      const controller = new AbortController()
+      const result = await run({
+        root: process.argv[1],
+        args: ["target", "//lib:srcs", "--plan"],
+        ignored: [".flows"],
+        debounceMs: 20,
+        once: false,
+        signal: controller.signal,
+        cycleCompleted: () => setImmediate(() => controller.abort()),
+        stdout: () => {},
+        stderr: (text) => process.stderr.write(text)
+      })
+      process.stdout.write(JSON.stringify(result))
+    `
+    // No process.exit: the child must close its notifier and rescan timer to
+    // exit naturally. Killing a leaking child at the deadline fails the test.
+    const result = await promisify(execFile)(process.execPath, [
+      "--import",
+      import.meta.resolve("vibelang/register"),
+      "--input-type=module",
+      "-e",
+      script,
+      root
+    ], { signal, timeout: 60_000 })
+    expect(JSON.parse(result.stdout), result.stderr).toEqual({ cycles: 1, exitCode: 0, stopped: true })
   })
 
   it("restarts with a fresh declaration graph after an edit", async () => {

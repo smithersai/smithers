@@ -10,6 +10,10 @@ sidebar:
 `stamp` map uses to record where a build came from. A stamp may also be a
 public literal string.
 
+`S.Stamp.versionMeta` resolves to an empty string when a tag points at the
+current commit, or `"dev"` when no tag does. A failed repository read fails
+the target rather than substituting `"dev"`.
+
 They resolve immediately before the child process spawns, after the content key
 is complete. That ordering is the point: a commit hash and a build time change
 on every commit, and keying on them would make every build a miss. The split

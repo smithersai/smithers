@@ -558,8 +558,14 @@ describe("coverage conformance", () => {
     const coverage = block(source, "coverage")
     const pinned = block(coverage ?? "", "thresholds")
     assert.notEqual(pinned, null)
-    assert.doesNotMatch(pinned!, /[{}]/, "build-cli coverage must not carry file overrides")
-    const values = [...pinned!.matchAll(/\b(branches|functions|lines|statements):\s*(\d+(?:\.\d+)?)/g)]
+    // A file can graduate to complete coverage without weakening the global
+    // baseline. No partial, missing-category or glob override is admitted.
+    const global = pinned!.replace(
+      /"src\/[\w/.-]+\.(?:ts|vibe|js)":\s*{\s*branches:\s*100,\s*functions:\s*100,\s*lines:\s*100,\s*statements:\s*100\s*,?\s*}\s*,?/g,
+      ""
+    )
+    assert.doesNotMatch(global, /[{}]/, "build-cli file overrides must require every metric at 100%")
+    const values = [...global.matchAll(/\b(branches|functions|lines|statements):\s*(\d+(?:\.\d+)?)/g)]
     assert.equal(values.length, 4)
     for (const [category, minimum] of Object.entries(buildCliBaseline)) {
       const matches = values.filter((value) => value[1] === category)
@@ -567,7 +573,7 @@ describe("coverage conformance", () => {
       const value = Number(matches[0]![2])
       assert.ok(value >= minimum && value <= 100, `build-cli ${category} coverage must be at least ${minimum}%`)
     }
-    assert.equal(pinned!.replace(/\b(?:branches|functions|lines|statements):\s*\d+(?:\.\d+)?\s*,?/g, "").trim(), "")
+    assert.equal(global.replace(/\b(?:branches|functions|lines|statements):\s*\d+(?:\.\d+)?\s*,?/g, "").trim(), "")
     assertCoverageDenominator("smithers/build/build-cli", source)
   }
 
@@ -575,12 +581,26 @@ describe("coverage conformance", () => {
     assertBuildCliCoverageFloor(configs.find((config) => config.name === "smithers/build/build-cli")!.source)
   })
 
-  it("rejects build-cli floor regressions, missing categories and file overrides", () => {
+  it("rejects build-cli floor regressions, missing categories and incomplete file overrides", () => {
     const source = `coverage: { enabled: true, provider: "v8", include: ["src/**"], thresholds: {
       branches: 91.16, functions: 96.61, lines: 96.84, statements: 95.57
     } }`
     assertBuildCliCoverageFloor(source)
     assertBuildCliCoverageFloor(source.replace(/91.16|96.61|96.84|95.57/g, "100"))
+    const override = '"src/StampExec.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },'
+    assertBuildCliCoverageFloor(source.replace("thresholds: {", `thresholds: { ${override}`))
+    for (const metric of ["branches", "functions", "lines", "statements"]) {
+      for (const value of [0, 99.99, 100.01]) {
+        assert.throws(() =>
+          assertBuildCliCoverageFloor(
+            source.replace("thresholds: {", `thresholds: { ${override.replace(`${metric}: 100`, `${metric}: ${value}`)}`)
+          )
+        )
+      }
+      assert.throws(() =>
+        assertBuildCliCoverageFloor(source.replace("thresholds: {", `thresholds: { ${override.replace(`${metric}: 100`, "")}`))
+      )
+    }
     for (const [category, minimum] of Object.entries(buildCliBaseline)) {
       const pattern = new RegExp(`\\b${category}:\\s*\\d+(?:\\.\\d+)?`)
       for (const value of [minimum - 0.01, minimum - 1, 0, 100.01]) {
