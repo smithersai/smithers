@@ -155,3 +155,36 @@ export function driveRewakes(tag: string): boolean {
 export function cursorAccepted(raw: string, value: number): boolean {
   return /^(?:0|[1-9][0-9]*)$/.test(raw) && value <= 9007199254740991
 }
+
+/**
+ * A request body's limit: account sign-in and role writes 2 KiB, issue operations 32 KiB and wiki operations 4 MiB, in
+ * bytes; a tour control's text 1,024 UTF-16 units.
+ */
+//@ verify
+//@ ensures route == "account" ==> \result == 2048
+//@ ensures route == "issues" ==> \result == 32768
+//@ ensures route == "wiki" ==> \result == 4194304
+//@ ensures route == "tour-control" ==> \result == 1024
+export function bodyLimit(route: "account" | "issues" | "wiki" | "tour-control"): number {
+  if (route === "account") return 2048
+  if (route === "issues") return 32768
+  if (route === "wiki") return 4194304
+  return 1024
+}
+
+/**
+ * A body is read only when its length is not over the limit. An absent or unparsable `content-length` (`NaN`) is not
+ * over it: such a body is read through the bounded read, which refuses the excess.
+ */
+//@ verify
+//@ ensures \result == !(length > maximum)
+export function withinBodyLimit(length: number, maximum: number): boolean {
+  return !(length > maximum)
+}
+
+/** The issues and wiki objects answer GET (a read) and POST (an operation); any other method is 405. */
+//@ verify
+//@ ensures \result == (method == "GET" || method == "POST")
+export function objectMethod(method: string): boolean {
+  return method === "GET" || method === "POST"
+}

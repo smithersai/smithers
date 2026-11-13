@@ -9,7 +9,7 @@ function scan(folder) {
     e.isDirectory() ? scan(path.join(folder,e.name)) : e.name.endsWith('.vibe') ? [path.join(folder,e.name)] : []);
 }
 const shellBoundaries = {
-  "worker/Accounts.vibe": "Calls the proved accountsDecision (0018, lane vl-proveall2 worker batch): openOperation (only reading runs without a signed-in person, in the issues and wiki gates; 0018 third-lane batch 43), mayConnect (an agent session never holds or makes a GitHub connection; batch 45), writeOriginAdmitted (writes only from the site; the handoff page's same-site callback post), sameSiteRequest (issue, wiki and role routes), secretsAccepted and originAccepted (configuration), accountRoute (each route by path and method), connectRefused and connectReturn (the Connect query and where it returns), brokerStateAccepted, brokerPendingAccepted, connectConfirmed and callbackAccepted (finishing a sign-in or Connect), unexpired and pruned (session, delegation and pending-row expiry), personId (GitHub ids), grantNeedsAuthority and grantUnchanged, bootstrapGrant, failureAnswer, stepOutcome, and sandboxOriginAdmitted with admittedRole (sandboxPrincipal); the cookie is the proved presentedSession. Host boundaries: Config reads, URL parsing, cookie signing and verification, the cipher, Schema decoding, storage, clocks, Number.isSafeInteger, the bounded body reads (size, 3-second timeout, Option tags), Semaphores, the journaled Mutation flow, the sequencer's grants and roles, and the GitHub and broker calls.",
+  "worker/Accounts.vibe": "Calls the proved accountsDecision (0018, lane vl-proveall2 worker batch): openOperation (only reading runs without a signed-in person, in the issues and wiki gates; 0018 third-lane batch 43), mayConnect (an agent session never holds or makes a GitHub connection; batch 45), writeOriginAdmitted (writes only from the site; the handoff page's same-site callback post), sameSiteRequest (issue, wiki and role routes), secretsAccepted and originAccepted (configuration), accountRoute (each route by path and method), connectRefused and connectReturn (the Connect query and where it returns), brokerStateAccepted, brokerPendingAccepted, connectConfirmed and callbackAccepted (finishing a sign-in or Connect), unexpired and pruned (session, delegation and pending-row expiry), personId (GitHub ids), grantNeedsAuthority and grantUnchanged, bootstrapGrant, failureAnswer, stepOutcome, and sandboxOriginAdmitted with admittedRole (sandboxPrincipal), and the proved bodyLimit and withinBodyLimit (workerDecision, 0018 third-lane batch 46: a sign-in or role body over 2 KiB is refused); the cookie is the proved presentedSession. Host boundaries: Config reads, URL parsing, cookie signing and verification, the cipher, Schema decoding, storage, clocks, Number.isSafeInteger, the bounded body reads (size, 3-second timeout, Option tags), Semaphores, the journaled Mutation flow, the sequencer's grants and roles, and the GitHub and broker calls.",
   "worker/accountObject.vibe": "Calls the proved ownerRefused and signedInAndAllowed (accountsDecision), mayStart (sandboxPolicy), and gatewayChoice, executionKind, serialized and leaseRunning (sandboxWorkerDecision). Host boundaries: the object namespace and machine calls, the stored owner, the Semaphore gate, the alarm armed before work, the error-tag mapping to Refused or Unavailable, and a policy failure read as not admitted.",
   "worker/ActionIdentity.vibe": "An admitted principal keeps its role, others act as viewers (the proved admittedRole, accountsDecision); the signed-in check and the policy call short-circuit inside Effect and stay in the shell. trustedOf reads ctx.props by typeof (unknown values), never a request body or header. postName (roles.vibe) names the person.",
   "worker/ActionDirectory.vibe": "Calls the proved startConflict and cancelFlow (actionsDecision), indexedRun, matchingFlow and sameRun (actionHostDecision), isReplyChild (actionRunDecision) and the catalog's allowed and registration. Host boundaries: JSON.stringify of the stored and requested runs, the newest-first sort (sort-membership.ts), storage, concurrent reads, the journaled RequestAction and CancelAction flows, the identity-conflict defect test and its log and counter.",
@@ -82,7 +82,7 @@ const shellBoundaries = {
   'src/web/historyStartup.vibe': 'Calls proved startupDecision preference and authoritative role-list/default choices; live, the session read and the grants followed through Accounts (0019) carry the role the proved signedRole applies. Storage, URL parsing, HTTP, resource loading and Foldkit execution remain host boundaries.',
   'src/web/modeSwitch.vibe': 'Calls the proved opposite-mode, mode name and label choices; HtmlBuilder rendering and native navigation remain host boundaries.',
   'src/web/backend.vibe': 'Health choice calls proved liveHealth; deadlines, cancellation and layer loading remain runtime behavior.',
-  'worker/Http.vibe': 'Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries.',
+  'worker/Http.vibe': 'Body-length admission uses protocolDecision, and a tour control\u2019s 1,024-unit text the proved bodyLimit and withinBodyLimit (workerDecision, 0018 third-lane batch 46); URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries.',
   'worker/Budget.vibe': 'Admission and settlement run the proved reserve/settle kernel inside the semaphore, so concurrent admissions cannot pass the limit; each runs only when the proved reserveAdmissible or settleAdmissible, exactly the kernel\'s precondition, holds (0018 third-lane batch 42). The semaphore itself, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts); the workerd suite exercises twenty concurrent admissions.',
   'worker/CallBudget.vibe': 'Runtime provider boundary: each physical invocation reserves independently; durable receipts reconcile usable final usage or the ceiling, including reissues and UTC rollover. SDK replay, UUIDs, Date, receipt codecs and RPC remain runtime boundaries. Behavioral regressions and adapter mutations cover these connections; the integer bound is proved in budgetDecision.vibe.',
   'src/core/sandboxMeter.vibe': 'Each interval\'s accrual and month rollover is the proved meterStep (sandboxDecision.vibe). UTC month boundaries (Date.UTC), bucket storage and the interval loop\'s termination remain host boundaries.',
@@ -316,7 +316,7 @@ const functionBoundaries = {
   "worker/ActionRuns.vibe:callerOf": "Wiring: the caller the door identified, read at its current role each time a step asks. Nothing to decide.",
   "worker/ActionRuns.vibe:read": "Wiring: decodes the sequencer's runs. Nothing to decide.",
   "src/core/MockAccounts.vibe:make": "Calls the proved self-grant rule (mockFactoryDecision selfGrant: only a signed-in person's own grant skips the roles gate), fixture logins, and the replay cursor and live tail the mock factory uses (afterCursor, replayedTo, liveEvent). Grants, authorization and roles are decide, apply and roleOf, proved in decide.vibe and conversation.vibe. Not proved: Refs, the lock, the engine and PubSub; they are tested.",
-  "worker/Wiki.vibe:serveWiki": "Calls the proved request-key admission (issueHostDecision requestKey) and refusal status (issueHostDecision wikiRefusalStatus). The URL path, method, content length and JSON body decoding stay runtime boundaries.",
+  "worker/Wiki.vibe:serveWiki": "Calls the proved objectMethod (GET or POST), bodyLimit and withinBodyLimit (4 MiB; workerDecision, 0018 third-lane batch 46), request-key admission (issueHostDecision requestKey) and refusal status (issueHostDecision wikiRefusalStatus). The URL path, Number, the bounded read and JSON body decoding stay runtime boundaries.",
   "worker/Wiki.vibe:wikiWriteKey": "Wiring: a SHA-256 of the write's identifying fields. Nothing to decide.",
   "worker/Wiki.vibe:publicWiki": "Wiring: serveWiki with no signed-in person, through the public reads client when given. Nothing to decide.",
   "src/core/wiki.vibe:wikiPath": "Calls the proved designs alias, page lookup and link (wikiPageDecision pageIdOf, pageIndex, wikiHref). The path normalization and section-name regexps stay boundaries (regexp.ts).",
@@ -337,7 +337,7 @@ const functionBoundaries = {
   "src/core/MockFactory.vibe:cryptoOf": "Wiring: a supplied Digest, else the platform's Web Crypto. Nothing to decide.",
   "worker/Issues.vibe:issueFailureOf": "Calls the proved refusalReason and carriesCode for a delegation refusal (a key conflict is invalid; an unknown or unavailable broker carries its retry code), and the proved failureReason and carriesCode for a GitHub failure (issueHostDecision, 0018 third-lane batch 40). Host boundaries: reading the broker reason off an unknown error (refusalOf) and the untyped details fields.",
   "worker/Issues.vibe:githubHost": "Calls the proved issueWriteRefusal (0018 third-lane batch 41: title, missing, incomplete, empty and closed, in that order, before any write), agent refusal (flowPolicyDecision), task and VIP reading, assignee choice label and login, timeline text and unwritten mark (issueHostDecision). Not proved: GitHub paging and decoding, the VIP marker regexp, the parent URL parse (Number), assignee order (localeCompare), the case-insensitive assignee check (toLowerCase), and the order of writes; they are tested.",
-  "worker/Issues.vibe:serveIssues": "Calls the proved request-key admission and refusal status (issueHostDecision requestKey, refusalStatus). The URL path, content-length and JSON body decoding stay runtime boundaries.",
+  "worker/Issues.vibe:serveIssues": "Calls the proved objectMethod (GET or POST), bodyLimit and withinBodyLimit (32 KiB; workerDecision, 0018 third-lane batch 46), request-key admission and refusal status (issueHostDecision requestKey, refusalStatus). The URL path, Number, the bounded read and JSON body decoding stay runtime boundaries.",
   "worker/Issues.vibe:executeIssues": "Calls the proved request-key admission, agent refusal (flowPolicyDecision), receipt-gated Accepted projection, advancing revision, resumable operations and resume status (issueHostDecision). Not proved: engine polling and recovery, run inspection, the stored-payload comparison and storage I/O; they are tested.",
   "src/web/main.vibe:runAccount": "Its Model is the proved writeAccount (modelWrite.vibe): exactly the step's state over the Schema Model, every other field unchanged. Command construction (accountCommand) is property-tested in test/translation.property.test.vibe.",
   "src/web/main.vibe:accountCommand": "Translation: each proved account command becomes the Foldkit command of that name and arguments, checked for every variant by test/translation.property.test.vibe.",
@@ -504,9 +504,17 @@ function inventorySource(file, source) {
   }
   function markedAt(start) { return annotationAt(start, VERIFY); }
   function postconditionAt(start) { return annotationAt(start, /^[ \t]*\/\/@[ \t]*ensures\b/); }
-  function walk(node, parent, parents = [], provedParent = false) {
+  // Each row's own `if` and conditional tests, with the plain names they call: verify/branches.cjs reads them. Not
+  // enumerable, so the table and row fixtures are unchanged.
+  const calledNames = node => (node.type === 'CallExpression' && node.callee?.type === 'Identifier' ? [node.callee.name] : [])
+    .concat(children(node).flatMap(calledNames));
+  function walk(node, parent, parents = [], provedParent = false, owner = undefined) {
     let next = parents;
     let proved = provedParent;
+    if (owner && (node.type === 'IfStatement' || node.type === 'ConditionalExpression') && node.test?.range) {
+      owner.branches.push({ line: source.slice(0, node.range[0]).split('\n').length,
+        test: source.slice(node.test.range[0], node.test.range[1]).replace(/\s+/g, ' '), calls: calledNames(node.test) });
+    }
     if (functions.has(node.type) && node.body) {
       // ESTree ranges index the ORIGINAL JavaScript string (UTF-16). Projection
       // mappings instead use UTF-8 bytes and include generated $gen wrappers.
@@ -535,11 +543,13 @@ function inventorySource(file, source) {
         || (proved ? 'Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`).' : undefined) || (category === 'wiring'
         ? 'Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision.'
         : 'Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof.');
-      rows.push({ file: rel, line, label, category, why, proof: parents.length === 0 ? proved : false,
-        lemma: parents.length === 0 && proved === 'contract' && lemmaBody(node, name) });
+      owner = { file: rel, line, label, category, why, proof: parents.length === 0 ? proved : false,
+        lemma: parents.length === 0 && proved === 'contract' && lemmaBody(node, name) };
+      Object.defineProperty(owner, 'branches', { value: [], enumerable: false });
+      rows.push(owner);
       next = [...parents, name];
     }
-    for (const child of children(node)) walk(child, node, next, proved);
+    for (const child of children(node)) walk(child, node, next, proved, owner);
   }
   walk(result.ast);
   return rows;

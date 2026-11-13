@@ -1,5 +1,5 @@
 import { sandboxRequest, signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
-import { cursorAccepted } from "./workerDecision.vibe"
+import { bodyLimit, cursorAccepted, withinBodyLimit } from "./workerDecision.vibe"
 import { validTourStep } from "../src/core/clientProtocolDecision.vibe"
 import { validBodyLength, validWriteLength, writeStatus } from "../src/core/protocolDecision.vibe"
 
@@ -102,7 +102,7 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
   }
   if (route.kind === "tour-control") {
     const text = request.text catch () => ""
-    if (text.length > 1024) return json({ error: "body size" }, 413)
+    if (!withinBodyLimit(text.length, bodyLimit("tour-control"))) return json({ error: "body size" }, 413)
     const body = Schema.decodeUnknownEffect(Schema.fromJsonString(TourControlBody))(text) catch () => undefined
     if (body === undefined || !validTourStep(body.step, 11)) return json({ error: "body" }, 400)
     const refusal = conversations.controlTour === undefined ? "not-replying" : try conversations.controlTour(route.conversation, body.action, body.step)

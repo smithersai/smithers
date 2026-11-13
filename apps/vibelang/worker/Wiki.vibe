@@ -21,6 +21,7 @@ import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 import { carriesCode, failureReason, refusalReason, requestKey, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
 import { editable } from "../src/core/wikiPageDecision.vibe"
+import { bodyLimit, objectMethod, withinBodyLimit } from "./workerDecision.vibe"
 
 export service WikiAuthority {
   current(): (Principal | undefined)!WikiFailure
@@ -191,11 +192,11 @@ export effect function serveWiki(hostId: string, storage: Storage, repo: WikiRep
   const url = new URL(request.url, "https://wiki.invalid")
   if (!url.pathname.startsWith("/api/wiki")) return HttpServerResponse.empty({ status: 404 })
   const authority = try WikiAuthority
-  if (request.method !== "GET" && request.method !== "POST") return HttpServerResponse.empty({ status: 405 })
-  if (Number(request.headers["content-length"]) > 4_194_304) return HttpServerResponse.jsonUnsafe({ reason: "invalid" }, { status: 413 })
+  if (!objectMethod(request.method)) return HttpServerResponse.empty({ status: 405 })
+  if (!withinBodyLimit(Number(request.headers["content-length"]), bodyLimit("wiki"))) return HttpServerResponse.jsonUnsafe({ reason: "invalid" }, { status: 413 })
   const body = request.method === "GET"
     ? { op: "read", page: url.searchParams.get("page") ?? "index", base: "", text: "", key: `read-${try effect { return try (try SecureRandom.SecureRandom).uuidV4() }.pipe(Effect.provide(SecureRandom.layerWebCrypto))}` }
-    : (request.json.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(4_194_304)), Effect.timeout("3 seconds")) catch () => undefined)
+    : (request.json.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(bodyLimit("wiki"))), Effect.timeout("3 seconds")) catch () => undefined)
   const input = Schema.decodeUnknownOption(WikiRequest)(body)
   if (Option.isNone(input) || !requestKey(input.value.key)) return HttpServerResponse.jsonUnsafe({ reason: "invalid" }, { status: 400 })
   const result = try Effect.result(executeWiki(hostId, storage, input.value, repo))

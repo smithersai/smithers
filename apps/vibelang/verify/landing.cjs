@@ -6,10 +6,11 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { inventorySource, sourceFiles, withTable, decision } = require('./inventory.cjs');
+const { branchFacts, record } = require('./branches.cjs');
 const app = path.resolve(__dirname, '..');
 
 /** Every reason the tree may not land. A contract needs a mutant unless it is a lemma or restates its table. */
-function refusals({ rows, decisionText, cases, staleCases = [] }) {
+function refusals({ rows, decisionText, cases, staleCases = [], branchRecord }) {
   const refused = [];
   for (const row of rows) {
     if (row.why.startsWith('Not yet proved')) refused.push(`not proved: ${row.file}:${row.line} ${row.label}`);
@@ -21,6 +22,7 @@ function refusals({ rows, decisionText, cases, staleCases = [] }) {
     if (!mutated.has(`${row.file}:${row.label}`)) refused.push(`no mutant: ${row.file}:${row.line} ${row.label}`);
   }
   for (const line of staleCases) refused.push(`stale mutation: ${line}`);
+  if (branchRecord !== undefined) refused.push(...branchFacts(rows, branchRecord).refused);
   return refused;
 }
 
@@ -42,7 +44,7 @@ function mutationFacts() {
 /** The facts for the tree on disk. */
 function treeFacts() {
   const rows = sourceFiles().flatMap(file => inventorySource(file, fs.readFileSync(file, 'utf8')));
-  return { rows, decisionText: fs.readFileSync(decision, 'utf8'), ...mutationFacts() };
+  return { rows, decisionText: fs.readFileSync(decision, 'utf8'), branchRecord: fs.readFileSync(record, 'utf8'), ...mutationFacts() };
 }
 
 function main() {
@@ -51,8 +53,9 @@ function main() {
   const refused = refusals(facts);
   const contracts = facts.rows.filter(row => row.proof === 'contract').length;
   // Counts only: no source text, names or paths beyond the refused rows themselves.
+  const branches = branchFacts(facts.rows, facts.branchRecord);
   console.log(`landing check: ${facts.rows.length} rows, ${contracts} contracts, ${facts.cases.length} mutation cases, `
-    + `${refused.length} refused, ${Date.now() - started} ms`);
+    + `${branches.branches} shell branches (${branches.open} open), ${refused.length} refused, ${Date.now() - started} ms`);
   if (refused.length) { console.error(refused.join('\n')); process.exitCode = 1; }
 }
 module.exports = { refusals, treeFacts };

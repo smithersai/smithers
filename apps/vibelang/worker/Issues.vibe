@@ -19,7 +19,7 @@ import { carriesCode, choiceLabel, issueWriteRefusal, refusalReason, choiceLogin
 import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 import { personId } from "./accountsDecision.vibe"
-import { reviewNumberText } from "./workerDecision.vibe"
+import { bodyLimit, objectMethod, reviewNumberText, withinBodyLimit } from "./workerDecision.vibe"
 
 /** `kind: "agent"` marks a device sign-in (decision 0028); agents never approve, accept, decline or merge. */
 export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly connection?: Connection; readonly kind?: "person" | "agent" }
@@ -283,9 +283,9 @@ export effect function serveIssues(hostId: string, storage: Storage, repo: Repos
   if (!new URL(request.url, "https://issues.invalid").pathname.startsWith("/api/issues")) return HttpServerResponse.empty({ status: 404 })
   const authority = try IssueAuthority
   const actor = try authority.current()
-  if (request.method !== "GET" && request.method !== "POST") return HttpServerResponse.empty({ status: 405 })
-  if (Number(request.headers["content-length"]) > 32_768) return HttpServerResponse.jsonUnsafe({ reason: "invalid" }, { status: 413 })
-  const body = request.method === "GET" ? { op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: `read-${try Clock.currentTimeMillis}` } : (request.json.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(32_768)), Effect.timeout("3 seconds")) catch () => undefined)
+  if (!objectMethod(request.method)) return HttpServerResponse.empty({ status: 405 })
+  if (!withinBodyLimit(Number(request.headers["content-length"]), bodyLimit("issues"))) return HttpServerResponse.jsonUnsafe({ reason: "invalid" }, { status: 413 })
+  const body = request.method === "GET" ? { op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: `read-${try Clock.currentTimeMillis}` } : (request.json.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(bodyLimit("issues"))), Effect.timeout("3 seconds")) catch () => undefined)
   const input = Schema.decodeUnknownOption(IssueRequest)(body)
   if (Option.isNone(input) || !requestKey(input.value.key)) return HttpServerResponse.jsonUnsafe({ reason: "invalid" }, { status: 400 })
   const payload = input.value

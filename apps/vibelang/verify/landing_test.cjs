@@ -3,6 +3,7 @@ const path = require('node:path');
 const { test } = require('node:test');
 const { inventorySource, withTable } = require('./inventory.cjs');
 const { refusals, treeFacts } = require('./landing.cjs');
+const { branchFacts, rewritten } = require('./branches.cjs');
 const app = path.resolve(__dirname, '..');
 const fixture = path.join(app, 'worker/landingFixture.vibe');
 const EMPTY = '# Fixture\n<!-- inventory:start -->\n<!-- inventory:end -->\n';
@@ -46,11 +47,43 @@ test('a mutation case whose source moved is refused', () => {
     ['stale mutation: gone: missing function gone in worker/x.vibe']);
 });
 
+test('a new branch in a shell row is refused until it is proved or recorded with a reason', () => {
+  const shell = '// Fixture.\nexport function pick(role: string, n: number) {\n  if (role === "maintainer") return n\n  return n > 2 ? 1 : 0\n}\n';
+  const rows = inventorySource(fixture, shell);
+  assert.deepEqual(branchFacts(rows, '').refused.map(line => line.split(': prove')[0]), [
+    'unrecorded branch: worker/landingFixture.vibe:3 pick', 'unrecorded branch: worker/landingFixture.vibe:4 pick']);
+  const recorded = 'worker/landingFixture.vibe\tpick\trole === "maintainer"\tOpen: the maintainer rule\n'
+    + 'worker/landingFixture.vibe\tpick\tn > 2\tHost boundary: the fixture\n';
+  assert.deepEqual(branchFacts(rows, recorded), { refused: [], branches: 2, open: 1, stale: [] });
+  // A second copy of a recorded condition is a new branch; a record with no reason is refused.
+  const twice = shell.replace('return n > 2', 'if (n > 2) return 2\n  return n > 2');
+  assert.equal(branchFacts(inventorySource(fixture, twice), recorded).refused.length, 1);
+  assert.deepEqual(branchFacts(rows, recorded.replace('\tHost boundary: the fixture', '')).refused, ['branch record with no reason: worker/landingFixture.vibe\tpick\tn > 2']);
+  // A condition that calls a proved function is not a shell branch; its record goes stale and --prune drops it.
+  const proved = '//@ verify\n//@ ensures \\result == (role == "maintainer")\nexport function maintains(role: string): boolean {\n  return role === "maintainer"\n}\n'
+    + shell.replace('role === "maintainer"', 'maintains(role)');
+  const after = inventorySource(fixture, proved);
+  assert.deepEqual(branchFacts(after, recorded), { refused: [], branches: 1, open: 0, stale: ['worker/landingFixture.vibe\tpick\trole === "maintainer"'] });
+  assert.equal(rewritten(after, recorded).split('\n').filter(line => line && !line.startsWith('#')).length, 1);
+  // Moving a callback changes its label's line, not its record; views in src/web are out of scope.
+  const callback = '// Fixture.\nexport const f = (xs: number[]) => xs.map(x => x > 1 ? x : 0)\n';
+  const k = 'worker/landingFixture.vibe\tf/callback\tx > 1\tOpen: fixture\n';
+  assert.deepEqual(branchFacts(inventorySource(fixture, '\n\n' + callback), k).refused, []);
+  assert.deepEqual(branchFacts(inventorySource(path.join(app, 'src/web/landingFixture.vibe'), shell), '').branches, 0);
+});
+
 // One read of the real tree (about 15 s): the inventory of every source, decision 0018 and mutations.py's cases.
 const tree = treeFacts();
 
 test('the tree on disk lands: no unproved row, a current 0018, a mutant for every contract, no stale case', () => {
   assert.deepEqual(refusals(tree), []);
+});
+
+test('adding a branch to a real shell row is refused', () => {
+  const shell = tree.rows.find(row => row.file === 'worker/Accounts.vibe' && row.category === 'effectful shell');
+  const extra = Object.defineProperty({ ...shell }, 'branches', { value: [...shell.branches, { line: 1, test: 'role === "owner"', calls: [] }] });
+  const rows = tree.rows.map(row => row === shell ? extra : row);
+  assert.deepEqual(refusals({ ...tree, rows }).map(line => line.split(': prove')[0]), [`unrecorded branch: worker/Accounts.vibe:1 ${shell.label.replace(/@\d+/g, '')}`]);
 });
 
 test('adding an unproved decision to the real tree is refused', () => {

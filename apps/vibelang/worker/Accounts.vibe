@@ -20,6 +20,7 @@ import { Identity, viewer, Denied, type Policy } from "../src/core/roles.vibe"
 import { type Storage, postExecutionId, EXECUTION_RETENTION } from "./Objects.vibe"
 import * as Sequencer from "./Sequencer.vibe"
 import { afterOf, eventStream } from "./Http.vibe"
+import { bodyLimit, withinBodyLimit } from "./workerDecision.vibe"
 import { logOver } from "./ObjectStorage.vibe"
 import { accountRoute, bootstrapGrant, mayConnect, openOperation, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
 
@@ -453,8 +454,8 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       }
       if ((url.pathname === "/api/auth/device" || url.pathname === CALLBACK) && request.method === "POST") {
         if (url.origin !== setup.origin || !writeOriginAdmitted(request.method, request.headers.origin, setup.origin, url.pathname, request.headers["sec-fetch-site"])) return json({ error: "origin" }, 403)
-        if (Number(request.headers["content-length"]) > 2048) return json({ error: "body size" }, 413)
-        const bounded = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(2048)), Effect.timeoutOption("3 seconds"))
+        if (!withinBodyLimit(Number(request.headers["content-length"]), bodyLimit("account"))) return json({ error: "body size" }, 413)
+        const bounded = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(bodyLimit("account"))), Effect.timeoutOption("3 seconds"))
         const read = bounded catch () => undefined
         if (read === undefined) return json({ error: "body size" }, 413)
         if (Option.isNone(read)) return json({ error: "body timeout" }, 408)
@@ -464,8 +465,8 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
         if (!sameSiteRequest(url.origin, setup.origin, request.method, request.headers.origin)) return json({ error: "origin" }, 403)
         const actor = try Semaphore.withPermits(lock, 1)(current(presented(request)))
         if (actor.id === "") return json({ refusal: "forbidden" }, 403)
-        if (Number(request.headers["content-length"]) > 2048) return json({ error: "body size" }, 413)
-        const bounded = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(2048)), Effect.timeoutOption("3 seconds"))
+        if (!withinBodyLimit(Number(request.headers["content-length"]), bodyLimit("account"))) return json({ error: "body size" }, 413)
+        const bounded = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(bodyLimit("account"))), Effect.timeoutOption("3 seconds"))
         const read = bounded catch () => undefined
         if (read === undefined) return json({ error: "body size" }, 413)
         if (Option.isNone(read)) return json({ error: "body timeout" }, 408)
