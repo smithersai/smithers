@@ -31,6 +31,15 @@ describe("what the published docs say about installing 1.0", () => {
   const pages = ["../README.md", "../docs/README.md", "../docs/notice.md", "../docs/troubleshooting.md"]
   const tag = (JSON.parse(read("../package.json")) as { publishConfig: { tag: string } }).publishConfig.tag
 
+  it("documents Node, Bun and native executables as TUI alternatives", () => {
+    const introduction = read("../README.md").split("\n\n").find((paragraph) => paragraph.includes("`npx smthrs tui`"))
+
+    expect(introduction).toContain("Node 26.4 or later")
+    expect(introduction).toContain("[Bun](https://bun.sh)")
+    expect(introduction).toContain("native TUI executable")
+    expect(introduction).not.toMatch(/requires \[Bun\]/)
+  })
+
   it("never tells a reader the packages are missing from npm", () => {
     for (const page of pages) {
       expect(read(page), page).not.toMatch(/not on npm|not (?:yet )?published|installable notice yet/i)

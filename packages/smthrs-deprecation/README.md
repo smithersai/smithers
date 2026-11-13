@@ -5,7 +5,8 @@ Release candidate scope, host requirements and compatibility review are defined 
 **Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smthrs-deprecation/docs
 
 `npx smthrs <verb>` runs the Smithers CLI (`@smthrs/cli`). `npx smthrs tui`
-opens the terminal coding agent; it requires [Bun](https://bun.sh).
+opens the terminal coding agent. It supports Node 26.4 or later, [Bun](https://bun.sh),
+or an installed native TUI executable.
 
 As a library, `smthrs@1.0` is a migration notice, not a runtime. An
 import that reaches it throws:
