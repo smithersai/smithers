@@ -59,6 +59,14 @@ export const Package = Smithers.Package({
 
 ## Build system: `Github.Workflow`
 
+Package-level `Cron` declarations project into `cron-<name>.yml` workflows.
+Every generated Cron job uses the `CiGen` workflows' shared `Github.Setup`
+after checkout, including its remote-cache inputs. When the workspace CLI runs
+through a package manager, at least one declared workflow must name a setup;
+otherwise generation refuses with `missing_setup`. A workspace using the bare
+CLI can omit the setup.
+
+
 `PACKAGE.ts` workspaces declare a file set rather than the BUILD-era job table.
 `Github.Workflow` describes one workflow, `Github.Setup` describes the shared
 composite setup action used by target-derived jobs, and `Github.CiGen` owns the

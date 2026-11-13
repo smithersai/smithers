@@ -607,7 +607,9 @@ pnpm exec smithers-build git-hooks --write
 
 Drift is a red exit that names each drifting file and its status, like every
 other generated file. `--write` installs the rendered scripts and reports what
-it wrote.
+it wrote. A generated script for a removed binding is reported as `stale`;
+`--write` removes it. Unbound handwritten hooks, backups, and unsupported hook
+names are preserved.
 
 ## Inspection and maintenance
 

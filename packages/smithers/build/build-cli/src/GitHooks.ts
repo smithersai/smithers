@@ -276,8 +276,24 @@ const resolveHooksDirectory = async (root: string): Promise<string> => {
   }
 }
 
+/** Finds generated scripts for supported hook events whose bindings were removed. */
+const unboundGeneratedHooks = async (
+  hooksDirectory: string,
+  rendered: ReadonlyArray<{ readonly file: string }>
+): Promise<ReadonlyArray<string>> => {
+  const files: Array<string> = []
+  for (const name of hookNames) {
+    const file = hookFiles[name]
+    if (rendered.some((hook) => hook.file === file)) continue
+    const existing = await Fs.readFile(NodePath.join(hooksDirectory, file), "utf8").catch(() => undefined)
+    if (existing?.split("\n")[1] === generatedHeader) files.push(file)
+  }
+  return files
+}
+
 /**
  * Byte-compares the rendered hook scripts against Git's active hooks directory.
+ * Reports obsolete generated scripts for unbound events as stale.
  *
  * @category checking
  * @since 0.1.0
@@ -298,6 +314,9 @@ export const check = async (
     }
     entries.push({ file: hook.file, status })
   }
+  for (const file of await unboundGeneratedHooks(hooksDirectory, rendered)) {
+    entries.push({ file, status: "stale" })
+  }
   return { clean: entries.every((entry) => entry.status === "clean"), entries }
 }
 
@@ -309,6 +328,8 @@ export const check = async (
  * outside the repository, is a typed refusal. An existing hook this module
  * did not generate is copied privately and atomically renamed to `<hook>.bak`
  * before it is replaced, without following an existing backup link.
+ * Generated scripts for removed bindings are deleted; handwritten unbound
+ * hooks, unsupported hook names, and backups are left in place.
  *
  * @category writing
  * @since 0.1.0
@@ -345,6 +366,16 @@ export const install = async (
       )
     }
     wrote.push(hook.file)
+  }
+  for (const file of await unboundGeneratedHooks(hooksDirectory, rendered)) {
+    try {
+      await Fs.unlink(NodePath.join(hooksDirectory, file))
+    } catch (cause) {
+      throw new GitHooksError(
+        "write_failed",
+        `${file} could not be removed: ${cause instanceof Error ? cause.message : String(cause)}`
+      )
+    }
   }
   return { wrote }
 }

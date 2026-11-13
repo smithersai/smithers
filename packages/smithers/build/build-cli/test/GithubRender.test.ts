@@ -1097,3 +1097,111 @@ describe("the generated setup action never interpolates an input into bash", () 
     expect(script).not.toContain("echo \"SMITHERS_CACHE_URL=")
   })
 })
+
+describe("Cron setup", () => {
+  const renderCron = (
+    workspace: typeof unitWorkspace,
+    setup: Target.AnyTarget | undefined
+  ): GithubRender.CiRender => {
+    const refresh = S.Shell.Test({ shell: "true" })
+    const run = S.Shell.Test({ shell: "true" })
+    const cron = S.Cron({ schedule: "0 6 * * 1", refresh: [refresh], run: [run] })
+    const workflow = S.Github.Workflow({
+      name: "verify",
+      on: { pullRequest: true },
+      ...(setup === undefined ? {} : { setup }),
+      run: [run]
+    })
+    const ciGen = S.Github.CiGen({ workflows: [workflow] })
+    const rows = [
+      { target: ciGen, label: "//.github:ci" },
+      { target: cron, label: "//:weekly" },
+      { target: refresh, label: "//:refresh" },
+      { target: run, label: "//:verify" }
+    ]
+    return GithubRender.render({
+      ciGen,
+      workspace,
+      resolve: {
+        labelOf: (target) => rows.find((row) => row.target === target)?.label,
+        targets: () => rows
+      },
+      packageDir: ".github"
+    })
+  }
+
+  it.each(
+    [
+      ["pnpm", unitWorkspace],
+      ["yarn", {
+        ...unitWorkspace,
+        packageManager: S.PackageManager.Yarn({
+          manifest: S.file("//package.json"),
+          lockfile: S.file("//yarn.lock")
+        })
+      }],
+      ["bun", {
+        ...unitWorkspace,
+        runtime: S.Runtime.Bun({ version: "1.4.0" }),
+        packageManager: S.PackageManager.BunPackages({
+          runtime: S.Runtime.Bun({ version: "1.4.0" })
+        })
+      }]
+    ] as const
+  )("sets up every %s Cron job before running its label", (manager, workspace) => {
+    const setup = S.Github.Setup({
+      cacheUrl: S.Secret("CACHE_URL"),
+      cacheToken: S.Secret("CACHE_READ_TOKEN")
+    })
+    const rendered = renderCron(workspace, setup)
+    const scheduled = rendered.files.find((file) => file.path === "workflows/cron-weekly.yml")!
+    const parsed = yaml.parse(scheduled.content) as {
+      readonly jobs: Readonly<
+        Record<string, {
+          readonly steps: ReadonlyArray<{
+            readonly uses?: string
+            readonly run?: string
+            readonly with?: Readonly<Record<string, string>>
+          }>
+        }>
+      >
+    }
+    expect(Object.values(parsed.jobs)).toHaveLength(2)
+    for (const job of Object.values(parsed.jobs)) {
+      expect(job.steps).toHaveLength(3)
+      expect(job.steps[0]!.uses).toMatch(/^actions\/checkout@/)
+      expect(job.steps[1]).toEqual({
+        uses: "./.github/actions/setup",
+        with: {
+          "cache-url": "${{ secrets.CACHE_URL }}",
+          "cache-token": "${{ secrets.CACHE_READ_TOKEN }}"
+        }
+      })
+      expect(job.steps[2]!.run).toMatch(new RegExp(`^${manager} (?:exec|x) smithers-build '`))
+    }
+    expect(rendered.files.find((file) => file.path === "actions/setup/action.yml")!.content)
+      .toContain(`${manager} install --frozen-lockfile`)
+  })
+
+  it("refuses a Cron without shared setup when the CLI needs a package manager", () => {
+    expect(() => renderCron(unitWorkspace, undefined)).toThrowError(
+      expect.objectContaining({
+        _tag: "smithers-build/GithubRenderError",
+        code: "missing_setup",
+        message: expect.stringContaining("//:weekly")
+      })
+    )
+  })
+
+  it("keeps bare CLI Cron generation available without a JavaScript toolchain", () => {
+    const workspace = S.Workspace("bare", {
+      repository: "git+https://example.invalid/bare.git",
+      cache: S.Cache({ directory: ".flows" })
+    })
+    const rendered = renderCron(workspace, undefined)
+    const scheduled = rendered.files.find((file) => file.path === "workflows/cron-weekly.yml")!.content
+    expect(scheduled).toContain("smithers-build '//:verify'")
+    expect(scheduled).not.toContain("actions/setup")
+    expect(rendered.files.some((file) => file.path === "actions/setup/action.yml")).toBe(false)
+  })
+})

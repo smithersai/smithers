@@ -36,9 +36,14 @@ const size = S.Size.Budgets({ manifest })
 const digestBuild = S.Shell.Build({ shell: "mkdir -p digest && printf hi > digest/a.txt", outDirs: ["digest"] })
 const digest = S.Test({ expect: S.Files.digest(digestBuild), toBe: S.file("//digest-baseline.json") })
 const cron = S.Cron({ schedule: "0 6 * * 1", run: [gate] })
-const ci = S.Github.Ci({
-  workflows: { test: { on: { pullRequest: true }, run: gate } },
-  changes: [".github/workflows/**"]
+const ci = S.Github.CiGen({
+  workflows: [S.Github.Workflow({
+    name: "test",
+    on: { pullRequest: true },
+    setup: S.Github.Setup({}),
+    run: [gate]
+  })],
+  changes: [".github/workflows/**", "actions/setup/**"]
 })
 const overlayBase = S.Filegroup({ srcs: [S.file("//overlay/base.txt")] })
 const overlay = S.Overlay({ base: overlayBase, replace: { "overlay/base.txt": S.file("//overlay/replacement.txt") } })
@@ -406,8 +411,11 @@ describe("Node lane package execution", () => {
     expect(drift.logs).toContain("drift in generated GitHub files")
     expect((await serve(root, ["//:ci", "--write"])).exitCode).toBe(0)
     expect((await serve(root, ["//:ci"])).exitCode).toBe(0)
-    expect(await Fs.readFile(NodePath.join(root, ".github/workflows/cron-cron.yml"), "utf8"))
-      .toContain("cron: \"0 6 * * 1\"")
+    const scheduled = await Fs.readFile(NodePath.join(root, ".github/workflows/cron-cron.yml"), "utf8")
+    expect(scheduled).toContain("cron: \"0 6 * * 1\"")
+    expect(scheduled).toMatch(/- uses: \.\/+actions\/setup\n/)
+    expect(await Fs.readFile(NodePath.join(root, "actions/setup/action.yml"), "utf8"))
+      .toContain("pnpm install --frozen-lockfile")
     expect((await serve(root, ["//:overlay"])).exitCode).toBe(0)
   })
 

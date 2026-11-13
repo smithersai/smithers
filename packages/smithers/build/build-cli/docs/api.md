@@ -716,6 +716,9 @@ directory does not exist yet. Both operations refuse external destinations
 before reading or writing hook files. Each script runs
 `smthrs '<label>'`, the bare-label form, so the label's flavor-implied verb runs.
 `install` copies an existing hook it did not generate to `<hook>.bak` first.
+For supported events with no binding, `check` reports scripts bearing the generated
+header as `stale`, and `install` removes them. Unbound handwritten hooks,
+backups, and unsupported hook names are preserved.
 
 | Export              | Signature                                                                             | What it is                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
@@ -741,6 +744,11 @@ Run labels must match `GitHooks.labelPattern`: `//`, a package path using
 ASCII letters, digits, `.`, `_`, `/`, or `-`, then `:` and a nonempty target name
 using ASCII letters, digits, `.`, `_`, or `-`. Invalid run labels raise
 `GithubRenderError` with code `invalid_label` before shell command rendering.
+
+Projected `Cron` jobs use the `CiGen` workflows' shared `Github.Setup`,
+including its cache inputs. A workspace that runs its CLI through a package
+manager must name that setup on a declared workflow; otherwise Cron rendering
+raises `missing_setup`. Workspaces using the bare CLI can omit it.
 
 | Export                | Signature                                                          | What it is                                                                                    |
 | --------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |

@@ -549,3 +549,61 @@ describe("hooks directory resolution failures", () => {
     }
   )
 })
+
+describe("removed hook bindings", () => {
+  it.each(GitHooks.hookNames)("reports and removes an obsolete generated %s hook", async (name) => {
+    const root = await temporaryRoot()
+    NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate", root])
+    const previous = GitHooks.render({ [name]: "//:old" })
+    await GitHooks.install(root, previous)
+    const hook = NodePath.join(root, ".git/hooks", GitHooks.hookFiles[name])
+    await Fs.appendFile(hook, "# local edit\n")
+    const backup = `${hook}.bak`
+    await Fs.writeFile(backup, "keep backup")
+
+    expect(await GitHooks.check(root, [])).toEqual({
+      clean: false,
+      entries: [{ file: GitHooks.hookFiles[name], status: "stale" }]
+    })
+    expect(await Fs.readFile(hook, "utf8")).toContain("//:old")
+    expect(await GitHooks.install(root, [])).toEqual({ wrote: [] })
+    await expect(Fs.stat(hook)).rejects.toMatchObject({ code: "ENOENT" })
+    expect(await Fs.readFile(backup, "utf8")).toBe("keep backup")
+    expect(await GitHooks.check(root, [])).toEqual({ clean: true, entries: [] })
+    expect(await GitHooks.install(root, [])).toEqual({ wrote: [] })
+  })
+
+  it("retains bound hooks, handwritten unbound hooks, and other generated hook names", async () => {
+    const root = await temporaryRoot()
+    NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate", root])
+    await GitHooks.install(
+      root,
+      GitHooks.render({
+        preCommit: "//:current",
+        prePush: "//:old"
+      })
+    )
+    const hooks = NodePath.join(root, ".git/hooks")
+    const handwritten = "#!/bin/sh\necho handwritten\n"
+    await Fs.writeFile(NodePath.join(hooks, "post-commit"), handwritten)
+    const unrelated = await Fs.readFile(NodePath.join(hooks, "pre-push"), "utf8")
+    await Fs.writeFile(NodePath.join(hooks, "applypatch-msg"), unrelated)
+    const current = GitHooks.render({ preCommit: "//:current" })
+
+    expect(await GitHooks.check(root, current)).toEqual({
+      clean: false,
+      entries: [
+        { file: "pre-commit", status: "clean" },
+        { file: "pre-push", status: "stale" }
+      ]
+    })
+    expect(await GitHooks.install(root, current)).toEqual({ wrote: ["pre-commit"] })
+    expect(await GitHooks.check(root, current)).toEqual({
+      clean: true,
+      entries: [{ file: "pre-commit", status: "clean" }]
+    })
+    expect(await Fs.readFile(NodePath.join(hooks, "post-commit"), "utf8")).toBe(handwritten)
+    expect(await Fs.readFile(NodePath.join(hooks, "applypatch-msg"), "utf8")).toBe(unrelated)
+    await expect(Fs.stat(NodePath.join(hooks, "pre-push"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+})

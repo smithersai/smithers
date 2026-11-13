@@ -45,6 +45,7 @@ export type ErrorCode =
   | "invalid_workflow_name"
   | "duplicate_workflow_name"
   | "multiple_setups"
+  | "missing_setup"
   | "unlabeled_run_target"
   | "invalid_label"
   | "duplicate_job_id"
@@ -832,6 +833,14 @@ export const render = (options: {
   // GitHub schedule workflow; no second scheduler or executor path exists.
   for (const row of options.resolve.targets?.() ?? []) {
     if (Target.metadata(row.target).target !== "Cron") continue
+    const setup = setupTarget === undefined ? undefined : GithubTarget.setupAttrsOf(setupTarget)
+    if (setup === undefined && toolchain.store !== undefined) {
+      throw new GithubRenderError(
+        "missing_setup",
+        `Cron ${row.label} needs a shared Github.Setup to install the workspace toolchain; ` +
+          "declare setup on a Github.Workflow in this CiGen"
+      )
+    }
     const cron = CronTarget.attrsOf(row.target)
     const key = row.label.slice(row.label.lastIndexOf(":") + 1)
     const name = `cron-${key}`
@@ -857,7 +866,7 @@ export const render = (options: {
         options.packageDir,
         GithubTarget.WorkflowAttrs.make({ name, on: { schedule: [cron.schedule] }, run }),
         runs,
-        undefined,
+        setup,
         toolchain
       )
     })
