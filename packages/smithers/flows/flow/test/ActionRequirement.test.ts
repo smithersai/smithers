@@ -155,13 +155,21 @@ describe("a flow carries what its body requires", () => {
       Layer.provideMerge(layerMemory)
     )
 
-    // Never invoked: the assertion is that this expression does not compile.
+    // Describing the effect is valid; running it still requires the implementation.
     const unimplemented = () =>
       Paying.execute({ cents: 100 }, { executionId: "unimplemented" }).pipe(
         Effect.provide(engineOnly)
       )
 
-    expectTypeOf(unimplemented).toBeFunction()
+    expectTypeOf<Effect.Services<ReturnType<typeof unimplemented>>>().toEqualTypeOf<
+      EffectDigest.Digest | SecureRandom.SecureRandom | ChargeNeeded
+    >()
+    const afterCrypto = () => withCrypto(unimplemented())
+    expectTypeOf<Effect.Services<ReturnType<typeof afterCrypto>>>().toEqualTypeOf<ChargeNeeded>()
+    expectTypeOf(() => {
+      // @ts-expect-error Providing cryptography still leaves the action implementation missing.
+      return Effect.runPromise(afterCrypto())
+    }).returns.toEqualTypeOf<Promise<number>>()
   })
 
   it.effect("has the requirement erased by the action's own layer", () =>

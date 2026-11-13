@@ -7,6 +7,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Interpreter, SpanFailure } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Schema, Stream, Tracer } from "effect"
+import * as fc from "fast-check"
 import { effect } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
 
@@ -70,6 +71,62 @@ describe("SpanFailure.exit", () => {
     ])
   })
 
+  it.each(["", `Refused ${sentinel}`, `Refused\n${sentinel}`, "A".repeat(201), "Refusé"])(
+    "withholds an invalid tag %j from failures and defects",
+    (_tag) => {
+      const value = { _tag, code: "rate_limited", message: sentinel }
+      const typed = Object.assign(new TypeError(sentinel), value)
+      const result = SpanFailure.exit(Exit.failCause(Cause.fromReasons<unknown>([
+        Cause.makeFailReason(value),
+        Cause.makeDieReason(value),
+        Cause.makeFailReason(typed),
+        Cause.makeDieReason(typed)
+      ])))
+      expect(Exit.isFailure(result)).toBe(true)
+      if (Exit.isFailure(result)) {
+        const errors = Cause.prettyErrors(result.cause)
+        expect(errors.map((error) => error.name)).toEqual(["Error", "Error", "TypeError", "TypeError"])
+        expect(errors.map((error) => error.message)).toEqual(Array(4).fill("redacted"))
+        expect(errors.map((error) => error.stack)).toEqual([
+          "Error: redacted",
+          "Error: redacted",
+          "TypeError: redacted",
+          "TypeError: redacted"
+        ])
+      }
+      expect(value._tag).toBe(_tag)
+      expect(typed.message).toBe(sentinel)
+    }
+  )
+
+  it.each(["A", "A".repeat(200), "0_@$./:-"])("preserves a bounded identifier tag %j", (_tag) => {
+    const value = { _tag, code: "rate_limited", message: sentinel }
+    expect(failed(Cause.fromReasons([Cause.makeFailReason(value), Cause.makeDieReason(value)]))).toEqual([
+      `${_tag}: rate_limited`,
+      `${_tag}: rate_limited`
+    ])
+  })
+
+  it("exports only bounded identifier tags across arbitrary strings", () => {
+    const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_@$./:-"
+    const tags = fc.oneof(
+      fc.string({ maxLength: 250 }),
+      fc.array(fc.constantFrom(...characters), { minLength: 1, maxLength: 205 }).map((parts) => parts.join(""))
+    )
+    fc.assert(
+      fc.property(tags, (_tag) => {
+        const valid = _tag.length >= 1 && _tag.length <= 200 && [..._tag].every((char) => characters.includes(char))
+        const expected = valid ? `${_tag}: rate_limited` : "Error: redacted"
+        const value = { _tag, code: "rate_limited", message: sentinel }
+        expect(failed(Cause.fromReasons([Cause.makeFailReason(value), Cause.makeDieReason(value)]))).toEqual([
+          expected,
+          expected
+        ])
+      }),
+      { numRuns: 200 }
+    )
+  })
+
   it("passes a success, an interruption and a stand-in through unchanged", () => {
     expect(SpanFailure.exit(Exit.succeed(1))).toEqual(Exit.succeed(1))
     const interrupted = Exit.failCause(Cause.interrupt(3))
@@ -106,6 +163,19 @@ describe("SpanFailure tracing", () => {
       // Wrapping a withholding tracer again returns it unchanged.
       const outer = SpanFailure.tracer(tracer)
       expect(SpanFailure.tracer(outer)).toBe(outer)
+    }))
+
+  it.effect("withholds foreign tags from native span exports while preserving the caller's failure", () =>
+    Effect.gen(function*() {
+      const { ended, stacks, tracer } = recording()
+      const failure = { _tag: `Provider refused ${sentinel}`, code: "rate_limited", message: sentinel }
+      const exits = yield* Effect.all([
+        Effect.exit(SpanFailure.effect(Effect.withSpan(Effect.fail(failure), "foreign-failure"))),
+        Effect.exit(SpanFailure.effect(Effect.withSpan(Effect.die(failure), "foreign-defect")))
+      ]).pipe(Effect.provideService(Tracer.Tracer, tracer))
+      for (const name of ["foreign-failure", "foreign-defect"]) expect(ended(name)).toEqual(["Error: redacted"])
+      expect(stacks()).not.toContain(sentinel)
+      for (const exit of exits) expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure)
     }))
 
   it.effect("withholds one span's failure and leaves the spans inside it as traced", () =>

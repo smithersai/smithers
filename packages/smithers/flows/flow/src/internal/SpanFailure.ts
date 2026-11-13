@@ -6,10 +6,10 @@
  * message is often someone else's text: a model provider's error can quote a
  * prompt or a credential, and a defect carries its own message and stack. A
  * span that ends through {@link tracer} or {@link withSpan} gives the exporter
- * a stand-in for each failure instead: the failure's tag, or else its class
- * name, and its `code` when the failure is tagged and the code is a lowercase
- * token. A stand-in's stack is that one line plus the source locations Effect
- * recorded for the span, never the original's.
+ * a stand-in for each failure instead: the failure's bounded identifier tag,
+ * or else its class name, and its `code` when the failure is tagged and the
+ * code is a lowercase token. A stand-in's stack is that one line plus the
+ * source locations Effect recorded for the span, never the original's.
  *
  * Only the span's copy changes. The failure itself reaches the caller as it
  * was raised, so a caller still reads the original message and branches on
@@ -30,6 +30,9 @@ class Withheld extends Error {}
 /** A class name such as `TypeError`. Anything else could be text, and is not exported. */
 const className = /^[A-Za-z_$][\w$]*$/
 
+/** The same bounded identifier pattern used for interpreter defect tags. */
+const defectTag = /^[A-Za-z0-9_@$./:-]{1,200}$/
+
 /** A code such as `rate_limited`: a schema literal, never free text. */
 const token = /^[a-z][a-z0-9_]{0,63}$/
 
@@ -45,7 +48,8 @@ const fieldOf = (value: unknown, field: "_tag" | "code"): string | undefined => 
  */
 const standIn = (value: unknown): Error => {
   if (value instanceof Withheld) return value
-  const tag = fieldOf(value, "_tag")
+  const rawTag = fieldOf(value, "_tag")
+  const tag = rawTag !== undefined && defectTag.test(rawTag) ? rawTag : undefined
   const name = tag ?? (value instanceof Error && className.test(value.name) ? value.name : "Error")
   const code = tag === undefined ? undefined : fieldOf(value, "code")
   const message = code !== undefined && token.test(code) ? code : "redacted"
