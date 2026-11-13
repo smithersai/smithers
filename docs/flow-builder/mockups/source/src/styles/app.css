@@ -436,24 +436,10 @@ code, kbd { font-family: var(--font-mono); font-size: 0.92em; }
   font-size: 10.5px;
 }
 
-/* ── inspector ──────────────────────────────────────────────────────── */
+/* ── shared node details ────────────────────────────────────────────── */
 
-.inspector {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  width: 336px;
-  min-height: 0;
-  border-left: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: -18px 0 40px rgb(var(--shadow-rgb) / 12%);
-  animation: slide 240ms var(--ease-current) both;
-}
 @keyframes slide { from { transform: translateX(18px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-.inspector-head { display: flex; align-items: flex-start; gap: 10px; padding: 14px 12px 12px 14px; border-bottom: 1px solid var(--border); }
-.inspector-head div { flex: 1; min-width: 0; }
-.inspector-head h2 { margin: 0; font-size: var(--fs-small); font-weight: 600; }
-.inspector-head code { color: var(--text-faint); font-size: 11px; }
 .inspector-glyph {
   display: grid;
   place-items: center;
@@ -483,24 +469,6 @@ code, kbd { font-family: var(--font-mono); font-size: 0.92em; }
 .icon-btn-solid { background: var(--brand); color: var(--inverse-text); }
 .icon-btn-solid:hover { background: color-mix(in srgb, var(--brand) 86%, var(--text)); color: var(--inverse-text); }
 
-.inspector-scroll { overflow-y: auto; padding: 14px; scrollbar-width: thin; }
-.inspector-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 15px; }
-
-.inspector-block { margin-bottom: 17px; }
-.inspector-block h3 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 7px;
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.inspector-block h3 svg { width: 12px; height: 12px; }
-
 .ports { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .ports li {
   display: flex;
@@ -515,7 +483,6 @@ code, kbd { font-family: var(--font-mono); font-size: 0.92em; }
 }
 .port-name { color: var(--text); }
 .port-type { flex: 1; color: var(--text-faint); }
-.port-type[data-tone="danger"] { color: color-mix(in srgb, var(--danger) 80%, var(--text-faint)); }
 .port-ref { color: var(--brand); }
 .port-literal { color: var(--success); }
 
@@ -526,14 +493,6 @@ code, kbd { font-family: var(--font-mono); font-size: 0.92em; }
 .keyline code[data-stale="true"] { color: var(--text-faint); text-decoration: line-through; }
 .keyline code[data-fresh="true"] { background: var(--warning-soft); color: var(--warning); text-decoration: none; }
 .keyline span { color: var(--text-faint); }
-
-.inspector-note { margin: 7px 0 0; color: var(--text-muted); font-size: 11.5px; }
-
-.settlement { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 11.5px; }
-.settlement span { color: var(--text-faint); }
-.settlement strong { font-family: var(--font-mono); font-weight: 500; text-align: right; }
-
-.inspector-notes { display: flex; flex-direction: column; gap: 7px; margin: 0; padding: 0 0 0 14px; color: var(--text-muted); font-size: 11.5px; }
 
 .inspector-foot { display: flex; gap: 7px; padding: 12px 14px; border-top: 1px solid var(--border); }
 .inspector-foot .btn { flex: 1; padding: 0 8px; font-size: 11.5px; }
@@ -606,7 +565,6 @@ code, kbd { font-family: var(--font-mono); font-size: 0.92em; }
 
 @media (max-width: 1180px) {
   .split { grid-template-columns: minmax(310px, 33fr) 67fr; }
-  .inspector { width: 296px; }
   .act-blurb { display: none; }
 }
 

@@ -210,3 +210,33 @@ test("human questions belong to the selected node and absent evidence has no tab
   assert.equal(await page.getByRole("tab", { name: "Question", exact: true }).count(), 0)
   assert.doesNotMatch(await page.locator(".drawer").innerText(), /approve-change|Land a failing test/)
 })
+
+test("the drawer retains shared detail styles after retiring the Inspector", async (t) => {
+  const page = await open(t)
+  await scrub(page, "Re-key preview")
+  await page.locator(".drawer").waitFor()
+  const style = (selector, property) => page.locator(selector).first().evaluate((element, name) => getComputedStyle(element)[name], property)
+
+  assert.equal(await style(".drawer", "display"), "grid")
+  assert.equal(await style(".drawer", "animationName"), "slide")
+  assert.equal(await page.evaluate(() => Array.from(document.styleSheets).some((sheet) => Array.from(sheet.cssRules).some((rule) => rule.type === CSSRule.KEYFRAMES_RULE && rule.name === "slide"))), true)
+  assert.equal(await style(".inspector-glyph", "width"), "28px")
+  assert.equal(await style(".inspector-foot", "display"), "flex")
+  assert.equal(await style(".inspector-foot .btn", "fontSize"), "11.5px")
+  assert.equal(await style(".drawer .icon-btn", "display"), "grid")
+
+  await page.getByRole("tab", { name: "Input", exact: true }).click()
+  assert.equal(await style(".ports", "display"), "flex")
+  assert.equal(await style(".port-type", "flexGrow"), "1")
+  assert.equal(await style(".inspector-effects", "fontSize"), "11px")
+  await page.getByRole("tab", { name: "Key", exact: true }).click()
+  assert.equal(await style(".keyline", "display"), "flex")
+  assert.equal(await style(".keyline code", "paddingLeft"), "7px")
+
+  await page.getByRole("button", { name: "Maximize", exact: true }).click()
+  assert.equal(await page.locator(".drawer").getAttribute("data-max"), "true")
+  await page.getByRole("button", { name: "Restore", exact: true }).click()
+  assert.equal(await page.locator(".drawer").getAttribute("data-max"), null)
+  await page.getByRole("button", { name: "Close", exact: true }).click()
+  await noDrawer(page)
+})
