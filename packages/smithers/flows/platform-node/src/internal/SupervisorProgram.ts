@@ -195,8 +195,8 @@ const force = () => {
   complete();
 };
 const stop = (options = {}) => {
-  // The first explicit stop owns its signal and deadline, including after EOF
-  // or target exit. Only natural cleanup can accept the host's fast shortcut.
+  // Once stopping begins, keep its signal and deadline. Only natural cleanup
+  // can accept the host's fast shortcut; later explicit stops are ignored.
   if (stopping && (explicitStop || !options.fast)) return;
   const signal = options.killSignal ?? config?.killSignal ?? 'SIGTERM';
   // A target's exit cannot shorten a captured escaped child's grace period.

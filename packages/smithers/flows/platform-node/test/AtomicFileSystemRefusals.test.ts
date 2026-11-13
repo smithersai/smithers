@@ -122,7 +122,6 @@ describe("audit probes", () => {
       )
       // Either outcome is contractual as long as it is a typed failure or a
       // success, never a defect or a hung/killed helper.
-      expect(result._tag === "Success" || result._tag === "Failure").toBe(true)
       if (result._tag === "Failure") {
         expect(String(result.cause)).toContain("PlatformError")
       }
@@ -136,15 +135,10 @@ describe("audit probes", () => {
       yield* Effect.promise(() => symlink(join(container, "gone"), join(root, "dangling")))
       const result = yield* run(
         root,
-        Effect.exit(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.exists(join(root, "dangling"))))
+        Effect.flip(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.exists(join(root, "dangling"))))
       )
-      // Fail-closed is acceptable; returning true would not be. A plain false is
-      // also acceptable (the entry is not an addressable file).
-      if (result._tag === "Success") {
-        expect(result.value).toBe(false)
-      } else {
-        expect(String(result.cause)).toContain("PlatformError")
-      }
+      expect(result._tag).toBe("PlatformError")
+      expect(result.reason._tag).toBe("PermissionDenied")
     }))
 
   it.live("keeps rename inside the boundary when the destination parent is a symlink", () =>

@@ -54,8 +54,8 @@ const fatalUtf8 = new TextDecoder("utf-8", { fatal: true })
  * descriptor-relative POSIX. `EFBIG` and `ENXIO` are how it reports a payload
  * over the documented limit and a write-only open of a reader-less FIFO.
  * `EPROTO` is a framing failure and stays fail-closed. `EOPNOTSUPP` is the
- * same number as `ENOTSUP` on Linux, where which of the two names Python
- * reports for it is an implementation detail.
+ * same number as `ENOTSUP` on Linux; both names map to the same typed
+ * refusal.
  */
 const reasons: Record<string, PlatformError.SystemErrorTag | undefined> = {
   EACCES: "PermissionDenied",

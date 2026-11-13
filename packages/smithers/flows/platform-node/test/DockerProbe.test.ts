@@ -18,7 +18,9 @@ it("terminates and joins a Docker probe that ignores SIGTERM, reporting its dead
     `const { writeFileSync } = require("node:fs");\n`
       + `process.on("SIGTERM", () => writeFileSync(${JSON.stringify(term)}, "ignored"));\n`
       + `require("node:net").createServer().listen(0, "127.0.0.1", () => {\n`
-      + `  writeFileSync(${JSON.stringify(ready)}, JSON.stringify({ pid: process.pid, node: process.execPath }));\n`
+      + `  writeFileSync(${
+        JSON.stringify(ready)
+      }, JSON.stringify({ pid: process.pid, node: process.execPath, args: process.argv.slice(2) }));\n`
       + `});\n`,
     { mode: 0o755 }
   )
@@ -60,8 +62,9 @@ it("terminates and joins a Docker probe that ignores SIGTERM, reporting its dead
       child.once("close", (code, signal) => resolve({ code, signal }))
     })
     expect(existsSync(ready), stderr).toBe(true)
-    const fixture = JSON.parse(readFileSync(ready, "utf8")) as { pid: number; node: string }
+    const fixture = JSON.parse(readFileSync(ready, "utf8")) as { pid: number; node: string; args: Array<string> }
     expect(fixture.node).toBe(process.execPath)
+    expect(fixture.args).toEqual(["info"])
     expect(() => process.kill(fixture.pid, 0)).toThrowError(expect.objectContaining({ code: "ESRCH" }))
     expect(watchdog, `SIGTERM ignored: ${existsSync(term)}; ${stderr}`).toBe(false)
     expect(result, stderr).toEqual({ code: 0, signal: null })

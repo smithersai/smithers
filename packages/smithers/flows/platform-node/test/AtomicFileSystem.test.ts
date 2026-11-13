@@ -1740,11 +1740,11 @@ describe("Node atomic filesystem", () => {
     }), 30_000)
 
   /**
-   * The pending brace work is bounded before it can consume one Python frame
-   * per group. This pattern is exactly at the documented 4096-character cap,
+   * The Rust helper bounds pending brace work to 64 alternatives.
+   * This pattern is exactly at the documented 4096-character cap,
    * so it must be rejected as caller input rather than as a boundary failure.
    */
-  it.live("refuses brace expansion before pending work reaches Python's recursion limit", () =>
+  it.live("refuses brace expansion that exceeds the helper's pending-work limit", () =>
     Effect.gen(function*() {
       const root = yield* Effect.promise(async () => realpath(await temporaryDirectory()))
       const info = yield* Effect.promise(() => lstat(root, { bigint: true }))
@@ -1966,7 +1966,7 @@ describe("Node atomic filesystem", () => {
     }))
 
   /**
-   * The helper crosses the seconds-to-milliseconds boundary in Python before
+   * The Rust helper converts filesystem timestamps to milliseconds before
    * the adapter builds a `Date`; the mode parity above says nothing about
    * whether it landed on the right instant, or in the right field. Distinct
    * whole-second atime and mtime set through `utimes` make a swap or a

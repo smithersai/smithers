@@ -132,10 +132,11 @@ describe("ContainedSpawner", () => {
           return { live, pid: handle.pid as number, after: ledger.live }
         })
       ).pipe(
-        Effect.flatMap((result) => Effect.map(result.after, (after) => ({ ...result, settled: after }))),
-        Effect.scoped
+        Effect.scoped,
+        Effect.flatMap((result) => Effect.map(result.after, (after) => ({ ...result, settled: after })))
       )
 
+      expect(observed.settled).toEqual([])
       expect(observed.live).toHaveLength(1)
       expect(observed.live[0]).toMatchObject({
         pid: observed.pid,
