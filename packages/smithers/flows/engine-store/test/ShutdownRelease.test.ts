@@ -1,3 +1,4 @@
+import { HostLiveness } from "@smthrs/platform-node"
 import { executeAndDrain } from "./ExecuteAndDrain.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 /**
@@ -117,7 +118,7 @@ describe("shutdown releases instead of cancelling (issue #26)", () => {
           const driver = yield* RunDriver.make({
             owner: firstOwner,
             journalSource: "shutdown-boundary-first",
-            isAlive: Ownership.sameHostPidProbe,
+            isAlive: HostLiveness.sameHostPidProbe,
             engine: boundary === "activated" ? barrier : Effect.succeed(fakeEngine),
             // The existing observation hook runs uninterruptibly. Queue the
             // interrupt there; it is delivered immediately after that finalizer.
@@ -152,7 +153,7 @@ describe("shutdown releases instead of cancelling (issue #26)", () => {
           const replacement = yield* RunDriver.make({
             owner: { ...firstOwner, nonce: "replacement" },
             journalSource: "shutdown-boundary-replacement",
-            isAlive: Ownership.sameHostPidProbe,
+            isAlive: HostLiveness.sameHostPidProbe,
             engine: Effect.succeed(fakeEngine)
           })
           yield* replacement.register(TestFlow, () => Effect.succeed("resumed"))

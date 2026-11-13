@@ -72,7 +72,8 @@ already expired.
 claimant, and the instant, it produces `LivenessEvidence` or `undefined` for
 `steal`, `claimAndOwn`, and `recoverClaim` to verify.
 
-The package ships three checks.
+The portable package ships lease and single-incarnation checks; Node PID
+checks live in `@smthrs/platform-node`.
 
 `Ownership.leaseLiveness(staleAfter?)` is the default and the honest floor: an
 owner is alive for as long as its persisted heartbeat is younger than the
@@ -80,19 +81,19 @@ cutoff, and gone once it is not. It is the weakest answer, and the one every
 host can give. A fresh process with no application code at all can reclaim a
 hard-killed owner's runs once the lease it stopped renewing expires.
 
-`Ownership.sameHostPidProbe` asks the operating system instead. It is what a
+`HostLiveness.sameHostPidProbe` asks the operating system instead. It is what a
 Node host hands the engine, so this snippet also installs
 [`@smthrs/platform-node`](/api/platform-node), whose `NodeRuntime` is that host:
 
 ```ts
-import type { NodeRuntime } from "@smthrs/platform-node"
+import { HostLiveness, type NodeRuntime } from "@smthrs/platform-node"
 import { Ownership } from "@smthrs/run-store"
 
 const options: NodeRuntime.Options = {
   filename: ".smithers/smithers.db",
   workspaceRoot: "/srv/workspace",
   owner: { hostId: "host-a" },
-  isAlive: Ownership.sameHostPidProbe
+  isAlive: HostLiveness.sameHostPidProbe
 }
 ```
 

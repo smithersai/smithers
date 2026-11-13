@@ -82,7 +82,7 @@ application code at all.
 
 A deployment that knows more supplies its own check and refuses the takeover
 for longer. A `process.kill(pid, 0)` probe is one such check;
-`Ownership.sameHostPidProbe` is the shipped version. Guard any pid read with
+`HostLiveness.sameHostPidProbe` is the shipped version. Guard any pid read with
 `Ownership.sameHostIncarnation`, because a pid names a process only inside its
 own host's namespace. A supplied check receives the recorded owner and a
 `LivenessContext` of `{ claimant, heartbeatAtMs, nowMs }`.

@@ -2,6 +2,8 @@
  * Uses the catalog's @smthrs/flow and @smthrs/platform-node entries.
  * No credential, network, subprocess or filesystem action is dispatched.
  */
+
+import { HostLiveness } from "@smthrs/platform-node"
 import { installEffectResolution } from "@smthrs/build-cli/effect-resolution"
 installEffectResolution()
 
@@ -30,7 +32,7 @@ if (!durableEngine) {
       [name, () => Effect.die(`benchmark unexpectedly called jj.${name}`)])
   )))
   durableEngine = (filename, hostId) => NodeRuntime.layer(
-    { filename, workspaceRoot: filename.slice(0, filename.lastIndexOf("/")), owner: { hostId }, isAlive: Ownership.sameHostPidProbe },
+    { filename, workspaceRoot: filename.slice(0, filename.lastIndexOf("/")), owner: { hostId }, isAlive: HostLiveness.sameHostPidProbe },
     StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), Layer.empty
   ).pipe(Layer.provideMerge(unusedJj), Layer.provideMerge(NodeHost.NodeCrypto.layer), Layer.provideMerge(AtomicFileSystem.layer))
 }

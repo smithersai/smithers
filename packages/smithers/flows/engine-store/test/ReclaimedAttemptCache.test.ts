@@ -176,7 +176,7 @@ const survive = <A>(
     // The pid probe on the real process table: the child's pid is gone, so
     // its expired lease admits the steal, and the survivor's own runs stay
     // its own however far the test clock runs ahead of their heartbeats.
-    isAlive: Ownership.sameHostPidProbe
+    isAlive: HostLiveness.sameHostPidProbe
   }
 ) => {
   const ran: Ran = { plan: [], test: [] }

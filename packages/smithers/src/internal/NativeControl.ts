@@ -2,6 +2,8 @@
  * @since 1.0.0
  */
 
+import { HostLiveness } from "@smthrs/platform-node"
+
 import type * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
@@ -72,7 +74,7 @@ import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import * as ExecutionSnapshot from "@smthrs/registry/ExecutionSnapshot"
 import * as Registry from "@smthrs/registry/Registry"
-import { type AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
+import { type AttemptStore, RunStore } from "@smthrs/run-store"
 import { ContainerSandbox, Sandbox as Machine } from "@smthrs/sandbox"
 import * as Bash from "@smthrs/std/Bash"
 import * as Checkpoints from "@smthrs/std/Checkpoints"
@@ -1189,7 +1191,7 @@ export const make = (
       ? SqlControlRuntime.layer({
         ...authorization,
         owner,
-        isAlive: Ownership.sameHostPidProbe,
+        isAlive: HostLiveness.sameHostPidProbe,
         engineVersion: packageVersion
       }).pipe(
         Layer.provide([stores, native.crypto]),
@@ -1308,7 +1310,7 @@ export const make = (
             engineVersion: packageVersion,
             // A run whose host was killed mid-run is taken over by the host
             // whose engine re-drives it, once the dead owner's lease expires.
-            isAlive: Ownership.sameHostPidProbe,
+            isAlive: HostLiveness.sameHostPidProbe,
             loadFlows: () =>
               registryService.list().pipe(
                 Effect.map((discovered) => {
@@ -2317,7 +2319,7 @@ export const make = (
         // 30 seconds after any heartbeat stall. The probe asks the process
         // table instead, and answers only about this host: a run recorded on
         // another host is left to the lease, which `RunStore.steal` verifies.
-        isAlive: Ownership.sameHostPidProbe,
+        isAlive: HostLiveness.sameHostPidProbe,
         canExecute: (row) => canExecute(row.runId),
         canActivate: (row) => Effect.suspend(() => activationAdmission?.(row.runId) ?? Effect.succeed(false)),
         requestResume,

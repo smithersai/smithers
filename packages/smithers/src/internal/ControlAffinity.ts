@@ -3,6 +3,8 @@
  * @since 1.0.0
  */
 
+import { HostLiveness } from "@smthrs/platform-node"
+
 import { RunState } from "@smthrs/engine-store/RunState"
 import { Ownership, type RunStore } from "@smthrs/run-store"
 import { Cause, Clock, Duration, Effect, Option, Schema } from "effect"
@@ -28,7 +30,7 @@ const decodeOwner = Schema.decodeUnknownOption(Schema.fromJsonString(Ownership.O
  * @private
  */
 export const make =
-  ({ runs, engineRuns, claimant, canRetryReleased, isAlive = Ownership.sameHostPidProbe }: Options) =>
+  ({ runs, engineRuns, claimant, canRetryReleased, isAlive = HostLiveness.sameHostPidProbe }: Options) =>
   (runId: string): Effect.Effect<boolean> =>
     Effect.gen(function*() {
       const readControl = (id: string) =>

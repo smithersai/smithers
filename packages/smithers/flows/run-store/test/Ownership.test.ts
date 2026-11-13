@@ -16,9 +16,6 @@ import * as Consensus from "@smthrs/journal/Consensus"
 import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber, Logger, References } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import { spawn } from "node:child_process"
-import { once } from "node:events"
-import { vi } from "vitest"
 import * as Migrations from "../src/Migrations.ts"
 import {
   heartbeatInterval,
@@ -29,7 +26,6 @@ import {
   type LivenessEvidence,
   type OwnerId,
   sameHostIncarnation,
-  sameHostPidProbe,
   singleIncarnationLiveness
 } from "../src/Ownership.ts"
 import { type RunRow, type RunSnapshot, RunStore } from "../src/RunStore.ts"
@@ -189,137 +185,6 @@ describe("lease-expired evidence", () => {
       }))
 
       expect(result._tag).toBe("LivenessUnconfirmed")
-    }))
-})
-
-/**
- * B-09: every in-repo composition answered `isAlive: () => Effect.succeed(false)`,
- * so two engine processes over one `.flows/engine.db` steal each other's
- * running rows `heartbeatStaleAfter` after any heartbeat stall — a stop-the-world
- * GC pause, a swapped-out process, a slow disk. Only the evidence SCHEMA for a
- * pid probe existed; nothing in the repository ever called `process.kill`.
- *
- * The probe is the Node hosts' liveness check. It answers about a pid only when
- * the recorded owner and the claimant name the same host, because `owner.pid`
- * names a process in the claimant's own process namespace and nowhere else.
- */
-describe("sameHostPidProbe", () => {
-  /** This test process's own identity, which is the one live pid a case can count on. */
-  const self: OwnerId = { hostId: "probe-host", pid: process.pid, nonce: "self" }
-  const claimant: OwnerId = { hostId: "probe-host", pid: process.pid, nonce: "claimant" }
-
-  it.effect("treats ESRCH as the sole proof that a same-host process is gone", () =>
-    Effect.gen(function*() {
-      const cases = [
-        { name: "normal return", thrown: undefined, alive: true },
-        { name: "ESRCH", thrown: { code: "ESRCH" }, alive: false },
-        { name: "EPERM", thrown: { code: "EPERM" }, alive: true },
-        { name: "EACCES", thrown: { code: "EACCES" }, alive: true },
-        { name: "EINVAL", thrown: { code: "EINVAL" }, alive: true },
-        { name: "unrecognized throw", thrown: "boom", alive: true }
-      ] as const
-
-      for (const probeCase of cases) {
-        const kill = vi.spyOn(process, "kill").mockImplementation(
-          (() => {
-            if (probeCase.thrown !== undefined) throw probeCase.thrown
-            return true
-          }) as typeof process.kill
-        )
-        try {
-          expect(
-            yield* sameHostPidProbe(self, { claimant, heartbeatAtMs: 0, nowMs: 1 }),
-            probeCase.name
-          ).toBe(probeCase.alive)
-          expect(kill).toHaveBeenCalledOnce()
-        } finally {
-          kill.mockRestore()
-        }
-      }
-    }))
-
-  it.effect("does not call process.kill for a cross-host owner", () =>
-    Effect.gen(function*() {
-      const kill = vi.spyOn(process, "kill").mockImplementation((() => true) as typeof process.kill)
-      try {
-        const elsewhere: OwnerId = { hostId: "other-host", pid: process.pid, nonce: "remote" }
-        expect(yield* sameHostPidProbe(elsewhere, { claimant, heartbeatAtMs: 0, nowMs: 1 })).toBe(false)
-        expect(kill).not.toHaveBeenCalled()
-      } finally {
-        kill.mockRestore()
-      }
-    }))
-
-  it.effect("fails closed without signaling an invalid or synthetic pid", () =>
-    Effect.gen(function*() {
-      const kill = vi.spyOn(process, "kill").mockImplementation((() => true) as typeof process.kill)
-      try {
-        for (const pid of [0, -1, 1.5, Number.NaN]) {
-          const invalid = { hostId: "probe-host", pid, nonce: "invalid" } as OwnerId
-          expect(yield* sameHostPidProbe(invalid, { claimant, heartbeatAtMs: 0, nowMs: 1 })).toBe(true)
-        }
-        expect(kill).not.toHaveBeenCalled()
-      } finally {
-        kill.mockRestore()
-      }
-    }))
-
-  it.effect("reports a live pid on the claimant's own host as alive", () =>
-    Effect.gen(function*() {
-      expect(yield* sameHostPidProbe(self, { claimant, heartbeatAtMs: 0, nowMs: 1 })).toBe(true)
-    }))
-
-  /**
-   * The documented limit of asking a pid: an owner recorded by a PREVIOUS
-   * incarnation of this same process — or by a second engine composed inside
-   * it — differs from the claimant only by `nonce`, and the process it names
-   * is this one. It is therefore always alive, and its row is never stolen
-   * while the process lives. Reading it as dead is not the alternative: two
-   * engines in one process are the shape this check exists to arbitrate, and
-   * that reading would let each steal the other's live runs. An embedded host
-   * that re-creates its engine in place keeps `leaseLiveness`, whose timeout
-   * does expire.
-   */
-  it.effect("cannot tell a previous incarnation in this process from the claimant", () =>
-    Effect.gen(function*() {
-      const previous: OwnerId = { hostId: "probe-host", pid: process.pid, nonce: "previous-incarnation" }
-      expect(yield* sameHostPidProbe(previous, { claimant, heartbeatAtMs: 0, nowMs: 1 })).toBe(true)
-    }))
-
-  it.effect("reports a pid that has exited as gone", () =>
-    Effect.gen(function*() {
-      // A real process, really reaped: `exit` has fired, so the pid names
-      // nothing by the time it is probed.
-      const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" })
-      yield* Effect.promise(() => once(child, "exit"))
-      const dead: OwnerId = { hostId: "probe-host", pid: child.pid as number, nonce: "dead" }
-      expect(yield* sameHostPidProbe(dead, { claimant, heartbeatAtMs: 0, nowMs: 1 })).toBe(false)
-    }))
-
-  it.effect("never inspects a pid recorded by another host", () =>
-    Effect.gen(function*() {
-      // The pid is this very process, so a probe that ignored the host
-      // relation would answer `true` about a process on a machine it cannot
-      // see. The lease is the only evidence that crosses hosts.
-      const elsewhere: OwnerId = { hostId: "other-host", pid: process.pid, nonce: "remote" }
-      expect(yield* sameHostPidProbe(elsewhere, { claimant, heartbeatAtMs: 0, nowMs: 1 })).toBe(false)
-    }))
-
-  it.effect("treats a refused signal as a live process", () =>
-    Effect.gen(function*() {
-      // EPERM is the one failure that proves the process EXISTS: the signal
-      // was refused, not undeliverable. Stubbed because a pid this user may
-      // not signal is not something a test can conjure portably.
-      const kill = process.kill
-      const refused = Object.assign(new Error("operation not permitted"), { code: "EPERM" })
-      process.kill = (() => {
-        throw refused
-      }) as typeof process.kill
-      try {
-        expect(yield* sameHostPidProbe(self, { claimant, heartbeatAtMs: 0, nowMs: 1 })).toBe(true)
-      } finally {
-        process.kill = kill
-      }
     }))
 })
 

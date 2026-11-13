@@ -14,11 +14,12 @@
  * @since 1.0.0
  */
 
+import * as HostLiveness from "./HostLiveness.ts"
+
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Jj } from "@smthrs/kernel"
-import { Ownership } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { dirname } from "node:path"
@@ -59,7 +60,7 @@ export const stubJj = Layer.succeed(
  * nothing composed this way ever reached the cache.
  *
  * `isAlive` is the liveness probe the store consults before stealing a run
- * from a stale owner. `Ownership.sameHostPidProbe` asks this machine's process
+ * from a stale owner. `HostLiveness.sameHostPidProbe` asks this machine's process
  * table, so a second process over the same file cannot take a run out of a
  * live one; a run recorded on another host is left to the lease. A stub that
  * returns `false` without asking is the one thing a real deployment must not
@@ -98,7 +99,7 @@ export const durableEngine = (filename: string, hostId: string) =>
       filename,
       workspaceRoot: dirname(filename),
       owner: { hostId },
-      isAlive: Ownership.sameHostPidProbe
+      isAlive: HostLiveness.sameHostPidProbe
     },
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),

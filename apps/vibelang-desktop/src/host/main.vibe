@@ -1,6 +1,5 @@
 // The desktop's sole process boundary: native window, Effect HTTP server and SQLite runtime on this machine.
 import { BunDesktop, BunFileSystem, BunHost, BunRuntime, BunServer } from "@smthrs/platform-bun"
-import { Ownership } from "@smthrs/run-store"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { SecureRandom } from "effect/crypto"
 import { HttpServer } from "effect/http"
@@ -23,7 +22,7 @@ export effect function main() {
   const preferences = Layer.succeed(Preferences, { directory, openExternal: (url: string) => window.openExternal(url).pipe(Effect.mapError(() => new Unavailable({ reason: "Browser unavailable" }))), chooseDirectory: () => window.chooseDirectory().pipe(Effect.mapError(() => new Unavailable({ reason: "Folder picker unavailable" }))) })
   const services = Layer.mergeAll(folderLayer, localModelsLayer, preferences)
   const registered = registration.pipe(Layer.provide(services))
-  const runtime = BunRuntime.layer({ filename: path.join(directory, "flows.sqlite"), workspaceRoot: directory, owner: { hostId: "vibelang-desktop" }, isAlive: Ownership.sameHostPidProbe }, StepBoundary.layerUnsupported, WorkspaceSandbox.layerUnsupported, registered)
+  const runtime = BunRuntime.layer({ filename: path.join(directory, "flows.sqlite"), workspaceRoot: directory, owner: { hostId: "vibelang-desktop" }, isAlive: BunHost.HostLiveness.sameHostPidProbe }, StepBoundary.layerUnsupported, WorkspaceSandbox.layerUnsupported, registered)
   try Effect.logInfo("vibelang.desktop.runtime")
   provide runtime, BunServer.layer(port) {
     const server = try HttpServer.HttpServer

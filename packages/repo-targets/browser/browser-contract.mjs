@@ -166,11 +166,6 @@ export const KNOWN_HOST_ACCESS = [
     reason: "reads process.platform and process.env for a child's environment"
   },
   {
-    module: "packages/smithers/flows/run-store/src/Ownership.ts",
-    kinds: ["ambient-global"],
-    reason: "sameHostPidProbe calls process.kill(pid, 0)"
-  },
-  {
     module: "packages/smithers/flows/sandbox/src/ContainerSandbox/existing.ts",
     kinds: ["ambient-global"],
     reason: "reads process.env for the transport's environment"

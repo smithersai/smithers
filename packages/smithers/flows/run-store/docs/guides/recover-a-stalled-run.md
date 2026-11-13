@@ -50,7 +50,7 @@ const probeFrom = (
 
 The `kind` has to match the host relation or the store refuses it: a pid probe
 means nothing across hosts, and an unreachability judgment means nothing on the
-owner's own machine. `Ownership.sameHostPidProbe` is the check to pass on a Node
+owner's own machine. `HostLiveness.sameHostPidProbe` is the check to pass on a Node
 host; `Ownership.leaseLiveness()` is the floor every host can give.
 
 ## Steal a stale running row, then activate it
@@ -149,14 +149,14 @@ default: a check that answers "gone" without asking steals runs out of live
 processes.
 
 ```ts
-import type { NodeRuntime } from "@smthrs/platform-node"
+import { HostLiveness, type NodeRuntime } from "@smthrs/platform-node"
 import { Ownership } from "@smthrs/run-store"
 
 const options: NodeRuntime.Options = {
   filename: ".smithers/smithers.db",
   workspaceRoot: "/srv/workspace",
   owner: { hostId: "host-a" },
-  isAlive: Ownership.sameHostPidProbe
+  isAlive: HostLiveness.sameHostPidProbe
 }
 ```
 

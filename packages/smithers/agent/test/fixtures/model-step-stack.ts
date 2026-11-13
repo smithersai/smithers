@@ -13,8 +13,7 @@ import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Model, ModelEvent, ModelRequest, Route } from "@smthrs/model"
 import { Node } from "@smthrs/plan"
-import { NodeHost, NodeRuntime } from "@smthrs/platform-node"
-import { Ownership } from "@smthrs/run-store"
+import { HostLiveness, NodeHost, NodeRuntime } from "@smthrs/platform-node"
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -89,7 +88,7 @@ export const runtime = (options: {
       filename: `${postgres.url}?schema=${options.schema}`,
       workspaceRoot: options.workspaceRoot,
       owner: { hostId: options.hostId },
-      isAlive: Ownership.sameHostPidProbe
+      isAlive: HostLiveness.sameHostPidProbe
     },
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),

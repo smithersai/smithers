@@ -1,7 +1,7 @@
 /**
  * What the local CLI answers when it finds a run owned by somebody else.
  *
- * `layerExecutor` declares `isAlive: Ownership.sameHostPidProbe`, so the
+ * `layerExecutor` declares `isAlive: HostLiveness.sameHostPidProbe`, so the
  * arbitration is a real question about a real process: a `running` row whose
  * lease expired is reclaimed only when the recorded pid is gone from this
  * host's process table. That answer is only observable through the engine's

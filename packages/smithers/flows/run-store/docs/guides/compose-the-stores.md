@@ -93,6 +93,10 @@ const attempts = AttemptStore.layerWith({
   progress and report `Upserted`. A terminal attempt stays immutable in both
   modes.
 
+Application writes using `RunStore.owned(sql, fence, { inProgressStates })`
+must pass the same `inProgressStates` as this store. The SQL fence defaults to
+`["running"]`; an empty list refuses every application write.
+
 All three are validated, detached, and frozen when the store is built, so an
 invalid policy fails at composition time with `AttemptStoreError`.
 

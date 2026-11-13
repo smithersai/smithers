@@ -5,6 +5,8 @@
  * @since 1.0.0
  */
 
+import { HostLiveness } from "@smthrs/platform-node"
+
 import { Control as ControlService, ControlSchema } from "@smthrs/control"
 import { Ownership } from "@smthrs/run-store"
 import { Effect, Schema } from "effect"
@@ -153,7 +155,7 @@ const unclaimed = (run: ControlSchema.RunSummary, now: number): Effect.Effect<bo
   try {
     const owner = Schema.decodeUnknownSync(Ownership.OwnerId)(JSON.parse(run.ownerId))
     if (owner.hostId !== statusObserver.hostId) return Effect.succeed(false)
-    return Ownership.sameHostPidProbe(owner, {
+    return HostLiveness.sameHostPidProbe(owner, {
       claimant: statusObserver,
       heartbeatAtMs: null,
       nowMs: now

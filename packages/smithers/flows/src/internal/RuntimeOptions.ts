@@ -16,7 +16,7 @@ import * as Schema from "effect/Schema"
  * `isAlive` is intentionally required, and a stub is not an answer: a check
  * that returns `false` without asking says "that owner is gone" about an owner
  * it never looked at, and the engine steals runs out of live processes on the
- * strength of it. A single-machine host passes `Ownership.sameHostPidProbe`,
+ * strength of it. A single-machine host passes `HostLiveness.sameHostPidProbe`,
  * which asks this machine's process table; a multi-process deployment answers
  * from its supervisor or lease system instead.
  *

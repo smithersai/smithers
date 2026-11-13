@@ -40,12 +40,13 @@ lease loses the compare-and-swap.
 database runs on one host, ask that host:
 
 ```ts
+import { HostLiveness } from "@smthrs/platform-node"
 import { Ownership } from "@smthrs/run-store"
 
 const engine = EngineStore.layer({
   owner: { hostId: "worker-a" },
   journalSource: "worker-a-engine",
-  isAlive: Ownership.sameHostPidProbe
+  isAlive: HostLiveness.sameHostPidProbe
 })
 ```
 

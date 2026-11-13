@@ -70,6 +70,17 @@ const securityReview = Smithers.SecurityReview({
   include: ["src/**"],
   checks: [
     {
+      id: "pid-probe-scope",
+      title: "PID liveness probes inspect only valid pids on the selected host",
+      threat: "A foreign or invalid pid probes an unrelated local process or treats uncertainty as death.",
+      lookFor: [
+        "A signal other than 0, or a pid that is not a positive safe integer.",
+        "Probing an owner whose host differs from the configured host or claimant host.",
+        "An error other than ESRCH treated as proof of death, or implicit cross-host policy."
+      ],
+      paths: ["src/HostLiveness.ts"]
+    },
+    {
       id: "atomic-helper-provenance",
       title: "The atomic filesystem helper executed is never one the confined workspace supplied",
       threat:

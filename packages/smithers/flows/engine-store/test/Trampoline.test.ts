@@ -760,26 +760,25 @@ describe("a durable lineage", () => {
               JSON.stringify({ capabilityCeilings: [[]], version: 1, flowName: Counter._tag, payload: rootPayload }),
               { lineageId: testCase.name, roundOrdinal: 0 }
             )
-            yield* testCase.metadata === undefined
-              ? store.create(
-                successor,
-                JSON.stringify({
-                  capabilityCeilings: [[]],
-                  version: 1,
-                  flowName: Counter._tag,
-                  payload: successorPayload
-                })
-              )
-              : store.create(
-                successor,
-                JSON.stringify({
-                  capabilityCeilings: [[]],
-                  version: 1,
-                  flowName: Counter._tag,
-                  payload: successorPayload
-                }),
-                testCase.metadata
-              )
+            yield* store.create(
+              successor,
+              JSON.stringify({
+                capabilityCeilings: [[]],
+                version: 1,
+                flowName: Counter._tag,
+                payload: successorPayload
+              })
+            )
+            const metadata: RunStore.CreateOptions | undefined = testCase.metadata
+            if (metadata !== undefined) {
+              // Model legacy or externally corrupted metadata that new admission refuses.
+              const sql = yield* SqlClient.SqlClient
+              yield* sql`UPDATE flows_runs SET
+                parent_run_id = ${metadata.parentRunId ?? null},
+                lineage_id = ${metadata.lineageId ?? null},
+                round_ordinal = ${metadata.roundOrdinal ?? null}
+                WHERE run_id = ${successor}`
+            }
 
             const exit = yield* Counter.execute({ value: 0, target: 2 }, {
               executionId: testCase.name

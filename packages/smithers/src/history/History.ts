@@ -14,8 +14,8 @@ import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import { Journal, SqlJournal } from "@smthrs/journal"
 import type { Entry, RunId, Seq } from "@smthrs/journal/JournalEvent"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import { NodeRuntime } from "@smthrs/platform-node"
-import { Ownership, RunStore } from "@smthrs/run-store"
+import { HostLiveness, NodeRuntime } from "@smthrs/platform-node"
+import { RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import { EffectBoundary, ReadOnlyTimeTravel, SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import { forkWorkspaceName, type Position } from "@smthrs/time-travel/TimeTravel"
@@ -114,7 +114,7 @@ const writerLayer = (root: string, workspace: string) => {
         )
     }
   })).pipe(Layer.provideMerge(persistent))
-  return TimeTravel.layerWith({ isAlive: Ownership.sameHostPidProbe }).pipe(
+  return TimeTravel.layerWith({ isAlive: HostLiveness.sameHostPidProbe }).pipe(
     Layer.provideMerge(stores),
     Layer.provide(NodeJj.layerAt(workspace)),
     Layer.provide(NodeServices.layer),

@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import type { Ownership } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 
 /**
@@ -56,6 +57,10 @@ export interface Options {
    * signalable.
    */
   readonly signal?: ((pid: number, signal: 0) => void) | undefined
+  /** A foreign owner stays alive by default; `lease` leaves takeover to the expired lease. */
+  readonly crossHostPolicy?: "alive" | "lease" | undefined
+  /** An earlier nonce under the claimant's pid is reclaimed by default; `probe` checks that pid instead. */
+  readonly samePidPolicy?: "reclaim" | "probe" | undefined
 }
 
 const signalable = (send: (pid: number, signal: 0) => void, pid: number): boolean => {
@@ -98,24 +103,15 @@ const signalable = (send: (pid: number, signal: 0) => void, pid: number): boolea
  * A multi-process deployment with a supervisor or a lease system knows better
  * than any pid probe and should answer from that instead.
  *
- * `@smthrs/run-store`'s `Ownership.sameHostPidProbe` fills the same
- * `LivenessCheck`. Both probes use the same `ESRCH`-only death rule.
+ * `crossHostPolicy: "lease"` returns `false` for a foreign host without
+ * probing its pid, leaving takeover to the store's expired-lease check.
+ * `samePidPolicy: "probe"` keeps an earlier nonce under the claimant's pid
+ * alive while that process exists, for compositions with two engines in one
+ * process. {@link sameHostPidProbe} selects both policies and takes the host
+ * identity from the claimant rather than from configuration.
+ * Invalid pids are never signalled and count as alive.
+ * Both probes use the same `ESRCH`-only death rule.
  * `EPERM`, `EINVAL`, and unknown signal errors preserve liveness.
- *
- * The cross-host policy differs. `sameHostPidProbe` compares the owner's
- * `hostId` with `context.claimant.hostId` and returns `false` for a foreign
- * host, leaving the expired lease to govern reclaiming the run. This probe
- * compares with the configured `hostId` and returns `true` for a foreign
- * host, so a permanently dead foreign host's runs wait for an operator.
- *
- * Which answer a deployment gets depends on the entry point it used:
- * `@smthrs/flows`' `NodeRuntime` defaults to this function, while
- * `@smthrs/cli`'s `NodeControl` passes `sameHostPidProbe`. The returned
- * function is structurally an `Ownership.LivenessCheck`. It reads
- * `context.claimant` only to recognize an earlier incarnation under the
- * claimant's own pid; host identity always comes from the configured
- * `hostId`. Pick the probe for its cross-host policy and source of host
- * identity.
  *
  * @category constructors
  * @since 0.1.0
@@ -127,10 +123,12 @@ export const isAlive = (
     process.kill(pid, signal)
   })
   return (owner, context) =>
-    Effect.sync(() =>
-      owner.hostId !== options.hostId ||
-      (!earlierIncarnation(owner, context?.claimant) && signalable(send, owner.pid))
-    )
+    Effect.sync(() => {
+      if (owner.hostId !== options.hostId) return options.crossHostPolicy !== "lease"
+      if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0) return true
+      if (options.samePidPolicy !== "probe" && earlierIncarnation(owner, context?.claimant)) return false
+      return signalable(send, owner.pid)
+    })
 }
 
 const earlierIncarnation = (owner: Owner, claimant: Owner | undefined): boolean =>
@@ -138,3 +136,22 @@ const earlierIncarnation = (owner: Owner, claimant: Owner | undefined): boolean 
   owner.hostId === claimant.hostId &&
   owner.pid === claimant.pid &&
   owner.nonce !== claimant.nonce
+
+/**
+ * Liveness for engines sharing a host or a process. Only `ESRCH` proves a
+ * valid same-host pid dead; every other signal result counts as alive. The
+ * claimant's own pid is probed even when its nonce differs. Foreign pids are
+ * never probed: `false` leaves takeover to the store's expired-lease check.
+ * Pid reuse can delay recovery while the replacement process exists.
+ *
+ * Replaces `Ownership.sameHostPidProbe` from `@smthrs/run-store`.
+ *
+ * @category ownership
+ * @since 1.0.0
+ */
+export const sameHostPidProbe: Ownership.LivenessCheck = (owner, context) =>
+  isAlive({
+    hostId: context.claimant.hostId,
+    crossHostPolicy: "lease",
+    samePidPolicy: "probe"
+  })(owner, context)

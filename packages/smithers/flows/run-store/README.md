@@ -127,9 +127,9 @@ ownership unchanged.
 
 ## Public API
 
-The root entry typechecks without Node ambient declarations. The existing
-`Ownership.sameHostPidProbe` host access remains listed in the library catalog;
-only `ESRCH` proves a same-host process has exited.
+The root entry typechecks without Node ambient declarations and performs no
+process probing. Node hosts import `HostLiveness.sameHostPidProbe` from
+`@smthrs/platform-node`; only `ESRCH` proves a same-host process has exited.
 
 The root exports each module as a namespace, and each is also importable from
 the matching `@smthrs/run-store/*` subpath. The
@@ -139,7 +139,7 @@ the matching `@smthrs/run-store/*` subpath. The
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RunStore`        | The run lifecycle: create, read, cancel, the six claim operations, heartbeat, and owned transitions, with `layer` over `SqlConsensus` and `layerWith` over an injected strategy. |
 | `AttemptStore`    | Fenced step attempts: start, heartbeat with a checkpoint, finish, patch, and read, with its policy options.                                                                      |
-| `Ownership`       | `OwnerId` and `LivenessEvidence` from the journal, fail-closed pid probing, the lease checks, and the heartbeat supervision loop.                                                |
+| `Ownership`       | `OwnerId` and `LivenessEvidence` from the journal, the lease checks, and the heartbeat supervision loop.                                                                         |
 | `RunStoreMetrics` | `flows_run_claims`, `flows_run_heartbeats`, and `flows_run_transitions`, attributed by operation and outcome.                                                                    |
 | `Migrations`      | The `flows_runs` and `flows_attempts` migration set, and the runner and layer that install the journal's set ahead of it.                                                        |
 

@@ -306,13 +306,16 @@ interface Fence {
 }
 interface OwnedOptions {
   readonly schema?: string | undefined
+  readonly inProgressStates?: ReadonlyArray<string> | undefined
 }
 const owned: (sql: SqlClient.SqlClient, fence: Fence, options?: OwnedOptions) => Fragment
 ```
 
 A boolean SQL condition that holds only while the fence is current: the run is
 `running` under exactly the fenced owner, and the fenced attempt row in
-`flows_attempts` is still `running`. An action adds it to its own `UPDATE` or
+`flows_attempts` belongs to `inProgressStates` (default `["running"]`). Pass
+exactly the policy used by `AttemptStore.layerWith`; an empty list admits no
+attempt. An action adds it to its own `UPDATE` or
 `DELETE`, so a write from an owner that lost the run to a takeover, or from an
 attempt that has since settled, changes no row. Read the affected row count to
 tell a refused write from a successful one.
@@ -419,7 +422,11 @@ interface CreateOptions {
 carries. It is a column rather than a state field because ancestry is walked in
 SQL, and it is a foreign key, so the parent must exist. `lineageId` and
 `roundOrdinal` name the trampoline lineage; both absent reads back as round 0 of
-a lineage of one.
+a lineage of one. Joining an existing lineage requires its root row to exist,
+`parentRunId` to be a member of that lineage, and `roundOrdinal` to exceed every
+member's ordinal, counting a root without lineage columns as round 0. The
+checks and insert share one serialized transaction; invalid admission fails
+with `invalid_run` and writes no row.
 
 #### TransitionGuard
 
@@ -829,18 +836,6 @@ The default check and the honest floor: an owner is alive while its persisted
 heartbeat is younger than `staleAfter`, which defaults to `heartbeatStaleAfter`.
 An owner with no recorded heartbeat is reported gone.
 
-### sameHostPidProbe
-
-```ts
-const sameHostPidProbe: LivenessCheck
-```
-
-Asks this machine's process table with `process.kill(pid, 0)`, which sends no
-signal. Only `ESRCH` is read as death; `EPERM`, any other error, and a pid that
-is not a positive safe integer are read as life. A recorded owner on another host
-is never probed and answers `false`, so the expired lease decides instead of
-stranding that host's runs forever. Node hosts only.
-
 ### singleIncarnationLiveness
 
 ```ts
@@ -852,7 +847,7 @@ or a browser engine in the worker that holds its origin's Web Lock. An owner
 with the claimant's host id and another `pid` or `nonce` is an earlier
 incarnation, and answers `false` however fresh its lease. Every other owner,
 the claimant included, is judged by `leaseLiveness()`. Two Node engines over
-one database can share a host id, so Node hosts use `sameHostPidProbe`.
+one database can share a host id, so Node hosts use `HostLiveness.sameHostPidProbe` from `@smthrs/platform-node`.
 
 ### heartbeatLoop
 

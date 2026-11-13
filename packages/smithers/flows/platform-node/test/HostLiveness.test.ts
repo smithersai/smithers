@@ -8,7 +8,10 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import type * as OwnerId from "@smthrs/journal/OwnerId"
+import { Ownership } from "@smthrs/run-store"
 import { Effect } from "effect"
+import { spawn } from "node:child_process"
+import { once } from "node:events"
 import * as HostLiveness from "../src/HostLiveness.ts"
 
 /** Throws the way `process.kill` does for one errno. */
@@ -145,5 +148,57 @@ describe("HostLiveness.isAlive", () => {
 
       expect(yield* HostLiveness.isAlive({ hostId: "engine" })(accepted)).toBe(true)
       expect(yield* HostLiveness.isAlive({ hostId: "other" })(accepted)).toBe(true)
+    }))
+})
+
+describe("host PID probe policy", () => {
+  it("exports the PID probe only from the host package", () => {
+    expect(Ownership).not.toHaveProperty("sameHostPidProbe")
+    expect(HostLiveness.sameHostPidProbe).toBeTypeOf("function")
+  })
+
+  it.effect("makes cross-host and same-pid policies explicit without probing foreign pids", () =>
+    Effect.gen(function*() {
+      const claimant = { hostId: "local", pid: 123, nonce: "new" }
+      for (const crossHostPolicy of ["alive", "lease"] as const) {
+        for (const samePidPolicy of ["reclaim", "probe"] as const) {
+          const probed: Array<number> = []
+          const check = HostLiveness.isAlive({
+            hostId: "local",
+            crossHostPolicy,
+            samePidPolicy,
+            signal: (pid, signal) => {
+              expect(signal).toBe(0)
+              probed.push(pid)
+            }
+          })
+          expect(yield* check({ hostId: "foreign", pid: 123 }, { claimant })).toBe(crossHostPolicy === "alive")
+          expect(probed).toEqual([])
+          expect(yield* check({ ...claimant, nonce: "old" }, { claimant })).toBe(samePidPolicy === "probe")
+          expect(probed).toEqual(samePidPolicy === "probe" ? [123] : [])
+        }
+      }
+    }))
+
+  it.effect("never signals invalid pids", () =>
+    Effect.gen(function*() {
+      const probed: Array<number> = []
+      const check = HostLiveness.isAlive({ hostId: "local", signal: (pid) => void probed.push(pid) })
+      for (const pid of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+        expect(yield* check({ hostId: "local", pid })).toBe(true)
+      }
+      expect(probed).toEqual([])
+    }))
+
+  it.effect("preserves the claimant-host probe's lease and same-process behavior", () =>
+    Effect.gen(function*() {
+      const claimant = { hostId: "local", pid: process.pid, nonce: "new" }
+      const context = { claimant, heartbeatAtMs: 0, nowMs: 1 }
+      expect(yield* HostLiveness.sameHostPidProbe({ ...claimant, nonce: "old" }, context)).toBe(true)
+      expect(yield* HostLiveness.sameHostPidProbe({ ...claimant, hostId: "foreign" }, context)).toBe(false)
+      expect(yield* HostLiveness.sameHostPidProbe({ ...claimant, pid: 0 }, context)).toBe(true)
+      const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" })
+      yield* Effect.promise(() => once(child, "exit"))
+      expect(yield* HostLiveness.sameHostPidProbe({ ...claimant, pid: child.pid! }, context)).toBe(false)
     }))
 })

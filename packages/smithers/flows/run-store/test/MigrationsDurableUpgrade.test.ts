@@ -102,10 +102,16 @@ describe("run-store durable migration upgrade", () => {
                 yield* attempts.get({ runId: "legacy-run", stepKeyDigest: "legacy-step", attempt: 0 })
               )
 
-              yield* runs.create("lineage-round-one", "{}", { lineageId: "durable-lineage", roundOrdinal: 1 })
+              yield* runs.create("durable-lineage", "{}")
+              yield* runs.create("lineage-round-one", "{}", {
+                lineageId: "durable-lineage",
+                parentRunId: "durable-lineage",
+                roundOrdinal: 1
+              })
               const duplicateLineage = yield* Effect.exit(
                 runs.create("lineage-round-one-duplicate", "{}", {
                   lineageId: "durable-lineage",
+                  parentRunId: "durable-lineage",
                   roundOrdinal: 1
                 })
               )

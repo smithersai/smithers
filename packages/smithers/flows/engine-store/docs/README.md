@@ -43,12 +43,13 @@ Build the engine layer with an owner identity and a journal source:
 
 ```ts
 import { EngineStore } from "@smthrs/engine-store"
+import { HostLiveness } from "@smthrs/platform-node"
 import { Ownership } from "@smthrs/run-store"
 
 const engine = EngineStore.layer({
   owner: { hostId: "worker-a" },
   journalSource: "worker-a",
-  isAlive: Ownership.sameHostPidProbe
+  isAlive: HostLiveness.sameHostPidProbe
 })
 ```
 

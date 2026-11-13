@@ -4,6 +4,8 @@
  * @since 1.0.0
  */
 
+import { HostLiveness } from "@smthrs/platform-node"
+
 import { Control, type ControlSchema } from "@smthrs/control"
 import { Ownership } from "@smthrs/run-store"
 import { Clock, Effect, Schema, Stream } from "effect"
@@ -23,7 +25,9 @@ const orphaned = (run: ControlSchema.RunSummary): Effect.Effect<boolean> => {
     // here; unreadable/unknown owners likewise retain the committed-state wait.
     if (!Ownership.sameHostIncarnation(owner, observer)) return Effect.succeed(false)
     return Clock.currentTimeMillis.pipe(
-      Effect.flatMap((nowMs) => Ownership.sameHostPidProbe(owner, { claimant: observer, heartbeatAtMs: null, nowMs })),
+      Effect.flatMap((nowMs) =>
+        HostLiveness.sameHostPidProbe(owner, { claimant: observer, heartbeatAtMs: null, nowMs })
+      ),
       Effect.map((alive) => !alive)
     )
   } catch {

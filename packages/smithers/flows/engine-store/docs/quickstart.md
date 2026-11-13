@@ -102,7 +102,7 @@ sealed flow does not take a snapshot, so it does not invoke the `jj` binary:
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { EngineStore, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
-import { NodeHost } from "@smthrs/platform-node"
+import { HostLiveness, NodeHost } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Ownership } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
@@ -111,7 +111,7 @@ const engine = (filename: string, root: string, hostId: string) =>
   EngineStore.layer({
     owner: { hostId },
     journalSource: `${hostId}-engine`,
-    isAlive: Ownership.sameHostPidProbe
+    isAlive: HostLiveness.sameHostPidProbe
   }).pipe(
     Layer.provideMerge(
       Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), NodeHost.layer)
@@ -129,7 +129,7 @@ the workspace while it writes.
 resolve the workspace root with it, so a Windows drive root confines correctly.
 
 `isAlive` is the liveness arbitration this engine applies before stealing a run
-from a stale owner. `Ownership.sameHostPidProbe` asks this machine's process
+from a stale owner. `HostLiveness.sameHostPidProbe` asks this machine's process
 table, so a second process over the same file cannot take a run out of a live
 one. Omit it and the lease alone decides. See
 [Reclaim runs from a dead host](./guides/reclaim-runs-from-a-dead-host.md).
@@ -226,7 +226,7 @@ import {
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { SqlJournal } from "@smthrs/journal"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { NodeHost } from "@smthrs/platform-node"
+import { HostLiveness, NodeHost } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
@@ -268,7 +268,7 @@ const engine = (filename: string, root: string, hostId: string) =>
   EngineStore.layer({
     owner: { hostId },
     journalSource: `${hostId}-engine`,
-    isAlive: Ownership.sameHostPidProbe
+    isAlive: HostLiveness.sameHostPidProbe
   }).pipe(
     Layer.provideMerge(Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), NodeHost.layer)),
     Layer.provideMerge(stores(filename, root)),

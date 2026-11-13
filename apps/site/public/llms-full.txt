@@ -36795,9 +36795,17 @@ the current platform.
 it takes a run whose recorded owner it is not: an owner on a different host reads
 as alive, an owner with the claimant's own pid and another nonce is an earlier
 incarnation and reads as dead, and any other owner on this host reads as alive
-exactly while its pid is signalable. `@smthrs/run-store`'s `Ownership.sameHostPidProbe` answers the same
-question differently for a foreign host, and the two are not interchangeable;
-the JSDoc on `isAlive` names both inputs on which they disagree.
+exactly while its pid is signalable. Only `ESRCH` proves death; invalid pids
+and every other signal error count as alive. `Options.crossHostPolicy` is
+`"alive" | "lease"` (default `"alive"`); `Options.samePidPolicy` is
+`"reclaim" | "probe"` (default `"reclaim"`).
+
+`HostLiveness.sameHostPidProbe: Ownership.LivenessCheck` uses that same
+implementation with `crossHostPolicy: "lease"` and `samePidPolicy: "probe"`,
+and takes the host id from `context.claimant`. Foreign pids are never probed;
+`false` leaves takeover to the expired lease. The claimant's own pid remains
+alive while the process exists, even under a different nonce. This replaces
+`Ownership.sameHostPidProbe` from `@smthrs/run-store`.
 
 `ProcessReaper.reap` kills the process groups a crashed incarnation of the same
 `hostId` abandoned. It signals a record only when every guard holds: the numbers
@@ -36998,7 +37006,7 @@ flow file actions; the database path is trusted host configuration.
 | `sourceRevision`   | `string \| (() => string \| undefined)`            | Optional. The revision of the tree this host read its flows out of, which every recorded graph page carries beside the declaration sites, so a reader opens the declared file at that revision and not at whatever is on disk. A host that only learns the answer after this call declares a reader instead of a string; it is asked once per recorded page, and an answer that is not a revision records nothing. Absent by default. |
 | `sweep`            | `"process" \| { host: string }` (optional)         | Who wakes this runtime's runs. `"process"`, the default, is what a native host is. See [`Runtime.Options`](/docs/reference/api/flows/#options).                                                                                                                                                                                                                                                                                                |
 
-`Ownership.sameHostPidProbe` from [`@smthrs/run-store`](/docs/reference/api/run-store/) probes
+`HostLiveness.sameHostPidProbe` probes
 the process table only for the claim context's host (`context.claimant.hostId`).
 It returns `false` (treated as dead) for an owner on another host, allowing
 takeover once that owner's lease has expired. A fresh heartbeat still blocks
@@ -40646,13 +40654,16 @@ interface Fence {
 }
 interface OwnedOptions {
   readonly schema?: string | undefined
+  readonly inProgressStates?: ReadonlyArray<string> | undefined
 }
 const owned: (sql: SqlClient.SqlClient, fence: Fence, options?: OwnedOptions) => Fragment
 ```
 
 A boolean SQL condition that holds only while the fence is current: the run is
 `running` under exactly the fenced owner, and the fenced attempt row in
-`flows_attempts` is still `running`. An action adds it to its own `UPDATE` or
+`flows_attempts` belongs to `inProgressStates` (default `["running"]`). Pass
+exactly the policy used by `AttemptStore.layerWith`; an empty list admits no
+attempt. An action adds it to its own `UPDATE` or
 `DELETE`, so a write from an owner that lost the run to a takeover, or from an
 attempt that has since settled, changes no row. Read the affected row count to
 tell a refused write from a successful one.
@@ -40759,7 +40770,11 @@ interface CreateOptions {
 carries. It is a column rather than a state field because ancestry is walked in
 SQL, and it is a foreign key, so the parent must exist. `lineageId` and
 `roundOrdinal` name the trampoline lineage; both absent reads back as round 0 of
-a lineage of one.
+a lineage of one. Joining an existing lineage requires its root row to exist,
+`parentRunId` to be a member of that lineage, and `roundOrdinal` to exceed every
+member's ordinal, counting a root without lineage columns as round 0. The
+checks and insert share one serialized transaction; invalid admission fails
+with `invalid_run` and writes no row.
 
 #### TransitionGuard
 
@@ -41169,18 +41184,6 @@ The default check and the honest floor: an owner is alive while its persisted
 heartbeat is younger than `staleAfter`, which defaults to `heartbeatStaleAfter`.
 An owner with no recorded heartbeat is reported gone.
 
-### sameHostPidProbe
-
-```ts
-const sameHostPidProbe: LivenessCheck
-```
-
-Asks this machine's process table with `process.kill(pid, 0)`, which sends no
-signal. Only `ESRCH` is read as death; `EPERM`, any other error, and a pid that
-is not a positive safe integer are read as life. A recorded owner on another host
-is never probed and answers `false`, so the expired lease decides instead of
-stranding that host's runs forever. Node hosts only.
-
 ### singleIncarnationLiveness
 
 ```ts
@@ -41192,7 +41195,7 @@ or a browser engine in the worker that holds its origin's Web Lock. An owner
 with the claimant's host id and another `pid` or `nonce` is an earlier
 incarnation, and answers `false` however fresh its lease. Every other owner,
 the claimant included, is judged by `leaseLiveness()`. Two Node engines over
-one database can share a host id, so Node hosts use `sameHostPidProbe`.
+one database can share a host id, so Node hosts use `HostLiveness.sameHostPidProbe` from `@smthrs/platform-node`.
 
 ### heartbeatLoop
 

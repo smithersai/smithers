@@ -1,9 +1,9 @@
+import { HostLiveness } from "@smthrs/platform-node"
 // The counter is test instrumentation; sealed actions use the existing boundary
 // test adapter because no checkout files are read or produced by this fixture.
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Action, Flow } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
-import { Ownership } from "@smthrs/run-store"
 import { Cause, Clock, Effect, Layer, Schema } from "effect"
 import { Consensus } from "@smthrs/journal/Consensus"
 import * as SqlConsensus from "@smthrs/journal/SqlConsensus"
@@ -56,7 +56,7 @@ try {
   const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const engine = yield* EngineStore.make({
       owner: { hostId: "cache-permit-process" }, journalSource: "cache-permit-process",
-      isAlive: Ownership.sameHostPidProbe
+      isAlive: HostLiveness.sameHostPidProbe
     })
     yield* engine.register(flow, () => action)
     process.stdout.write("ready\n")

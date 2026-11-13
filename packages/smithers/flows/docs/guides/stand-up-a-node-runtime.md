@@ -84,8 +84,8 @@ answer. A check that returns `false` without asking says "that owner is gone"
 about an owner it never looked at, and the engine will steal runs out of live
 processes on the strength of it.
 
-- A single-machine host passes `Ownership.sameHostPidProbe` from
-  [`@smthrs/run-store`](../../run-store/docs/api.md), which asks this machine's process
+- A single-machine host passes `HostLiveness.sameHostPidProbe` from
+  [`@smthrs/platform-node`](../../platform-node/docs/api.md), which asks this machine's process
   table for owners on the same host. For a foreign host it returns `false`
   without probing a PID, leaving the expired lease to decide takeover.
   `RunStore.steal` still requires the lease to have expired.
@@ -106,7 +106,7 @@ over a plain `NodeFileSystem.layer` it fails to build with `host_unavailable`.
 
 ```ts
 import { EngineStore, RunStore } from "@smthrs/flows"
-import { NodeRuntime } from "@smthrs/platform-node"
+import { HostLiveness, NodeRuntime } from "@smthrs/platform-node"
 
 const { StepBoundary, WorkspaceSandbox } = EngineStore
 const { Ownership } = RunStore
@@ -116,7 +116,7 @@ const engine = NodeRuntime.layer(
     filename,
     workspaceRoot,
     owner: { hostId: "worker-1" },
-    isAlive: Ownership.sameHostPidProbe
+    isAlive: HostLiveness.sameHostPidProbe
   },
   StepBoundary.layer,
   WorkspaceSandbox.layerFileSystem(),

@@ -153,87 +153,6 @@ export const leaseLiveness = (
     )
 }
 
-/**
- * The Node hosts' liveness check: does the owner's process still exist?
- *
- * {@link leaseLiveness} is the honest floor — every host can read a persisted
- * heartbeat — but it is only a timeout, so two engine processes over one
- * database steal each other's running rows `heartbeatStaleAfter` after any
- * heartbeat stall: a stop-the-world pause, a swapped-out process, a disk that
- * blocked longer than the window. This answers the question the lease is
- * standing in for, by asking the operating system whether the recorded pid is
- * still there.
- *
- * `process.kill(pid, 0)` sends no signal; it performs only the delivery
- * checks. Three answers matter:
- *
- * - It returns: the process exists and is signalable. The owner is alive.
- * - It throws `ESRCH`: no such process exists. This is the sole death answer,
- *   so the owner is gone.
- * - It throws anything else, including `EPERM`, `EINVAL`, or an unrecognized
- *   value: the owner is treated as alive because an unknown answer is not
- *   death.
- *
- * This `ESRCH`-only death rule deliberately aligns with
- * `@smthrs/platform-node`'s `HostLiveness`.
- *
- * A pid is only meaningful inside one process namespace, so a recorded owner
- * on another host is never probed: the answer is `false` and the arbitration
- * falls back to the evidence that does cross hosts — the expired lease, which
- * `RunStore.steal` verifies for itself. The engine consults this check only
- * for a run whose lease has ALREADY expired, so answering `false` here does
- * not weaken anything; it declines to add evidence.
- *
- * Node hosts only. This module bundles for a browser because it imports no
- * `node:` built-in, but a browser has no process table to ask. Its engine runs
- * one incarnation per origin, so `@smthrs/platform-browser`'s `BrowserRuntime`
- * uses {@link singleIncarnationLiveness}, as a Cloudflare Durable Object does.
- *
- * `@smthrs/platform-node`'s `HostLiveness.isAlive` asks the same question of
- * the same process table and differs in one deliberate place: it answers
- * `true` for an owner on another host, which refuses the steal outright, while
- * this check answers `false` and lets the expired lease decide. The difference
- * matters after a host dies for good — under the refusing answer its runs are
- * never reclaimed by anyone, because no other machine can ever produce
- * evidence about its pids.
- *
- * Two limits are inherent to asking a pid, and they bound what reclaim can
- * promise. `HostLiveness.isAlive` shares the second. It answers the first
- * differently: an owner with the claimant's own pid and another nonce is an
- * earlier incarnation, and it reads as dead there.
- *
- * - An owner recorded with the CLAIMANT'S OWN pid is always alive. A previous
- *   incarnation of this process, or a second engine composed inside it, differs
- *   from the claimant only by `nonce`, and the process it names is this one.
- *   Such a row is never stolen while the process lives, so an embedded host
- *   that re-creates its engine in place should keep {@link leaseLiveness},
- *   whose timeout does expire. Reading same-pid-different-nonce as death is
- *   not the alternative: it would let two engines in one process — the exact
- *   shape this check exists to arbitrate — steal each other's live runs.
- * - A pid the operating system has REUSED reports the unrelated process that
- *   now holds it. The dead owner's row stays refused for as long as that
- *   process lives, which delays reclaim rather than breaking it: the row is
- *   still `running` under an expired lease, and the next probe after the pid
- *   is free reclaims it.
- *
- * @since 0.1.0
- * @category ownership
- */
-export const sameHostPidProbe: LivenessCheck = (expectedOwner, context) =>
-  Effect.sync(() => {
-    if (!sameHostIncarnation(expectedOwner, context.claimant)) return false
-    if (!Number.isSafeInteger(expectedOwner.pid) || expectedOwner.pid <= 0) return true
-    try {
-      // This known host adapter must not require Node's ambient declarations
-      // merely to typecheck a portable consumer of the root entry.
-      const hostProcess: { readonly kill: (pid: number, signal: 0) => boolean } = Reflect.get(globalThis, "process")
-      hostProcess.kill(expectedOwner.pid, 0)
-      return true
-    } catch (error) {
-      return (error as { readonly code?: string | undefined } | null)?.code !== "ESRCH"
-    }
-  })
-
 const lease = leaseLiveness()
 
 /**
@@ -248,7 +167,8 @@ const lease = leaseLiveness()
  * claimant included, is judged by {@link leaseLiveness} alone.
  *
  * Two Node engines over one database can share a host id and both be alive,
- * so a Node host uses {@link sameHostPidProbe} instead.
+ * so a Node host uses `HostLiveness.sameHostPidProbe` from
+ * `@smthrs/platform-node` instead.
  *
  * @since 1.0.0-rc.16
  * @category ownership

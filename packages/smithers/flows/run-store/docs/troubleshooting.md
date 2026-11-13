@@ -38,6 +38,9 @@ written. The cause names the field and what was wrong with it. The common ones:
 - **An identifier that is not durable text.** Run ids, step key digests, lineage
   ids, owner host ids and nonces, and attempt state names must be non-empty, at
   most 1,024 UTF-16 units, free of NUL, and free of lone surrogates.
+- **An invalid lineage admission.** Joining a lineage requires an existing
+  root, a `parentRunId` in that lineage, and a `roundOrdinal` greater than
+  every existing member's. A root without lineage metadata counts as round 0.
 - **`toStatus: "pending"`.** Only restoration of a temporarily activated pending
   snapshot is allowed: supply `{ restorePending: true }` and the unchanged
   `stateJson`. A changed state returns `GuardFailed`.
@@ -83,7 +86,9 @@ exist, since `flows_runs.parent_run_id` and `flows_attempts.run_id` are both
 foreign keys.
 
 **What to change.** Create the parent run first, or drop the `parentRunId`
-option. A lineage is ordinary metadata; the ancestry edge is not.
+option for an independent run. Joining a lineage also validates its root,
+parent membership, and increasing round, and reports `invalid_run` when those
+checks fail.
 
 ## not_found_row
 
@@ -184,7 +189,7 @@ overrides that cutoff.
 
 **What to change.** Wait for the lease to expire. If the delay is the problem,
 the answer is a liveness check that can say more than the lease, not a shorter
-window: `Ownership.sameHostPidProbe` asks the operating system. One trap comes
+window: `HostLiveness.sameHostPidProbe` asks the operating system. One trap comes
 with it: an owner recorded under the claimant's own pid always probes as alive,
 so an embedded host that re-creates its engine in the same process should keep
 `Ownership.leaseLiveness`, whose timeout does expire.

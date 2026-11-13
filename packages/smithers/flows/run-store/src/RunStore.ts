@@ -252,7 +252,9 @@ export interface RunRow extends RunSnapshot {
  *
  * `lineageId` and `roundOrdinal` are the trampoline pair: which lineage a run
  * is a round of, and which round. Both absent — the ordinary case — means the
- * run is a lineage of one, and is read back as round 0 of itself.
+ * run is a lineage of one, and is read back as round 0 of itself. Joining an
+ * existing lineage requires its root row, a parent in that lineage, and an
+ * ordinal greater than every member's (including the implicit round 0).
  *
  * @since 0.1.0
  * @category models
@@ -1272,12 +1274,18 @@ export interface OwnedOptions {
    * Absent, the table names are unqualified.
    */
   readonly schema?: string | undefined
+  /**
+   * The attempt states that still admit writes. Must match the policy passed
+   * to `AttemptStore.layerWith`; defaults to `["running"]`. An empty list
+   * admits no attempt.
+   */
+  readonly inProgressStates?: ReadonlyArray<string> | undefined
 }
 
 /**
  * A boolean SQL condition that holds only while `fence` is current: its run is
- * `running` under exactly the fenced owner, and its attempt row is still
- * `running`.
+ * `running` under exactly the fenced owner, and its attempt row is in one of
+ * `options.inProgressStates` (default `["running"]`).
  *
  * An action implementation adds it to its own `UPDATE` or `DELETE`, so a write
  * from an owner that lost the run to a takeover, or from an attempt that has
@@ -1313,7 +1321,7 @@ export const owned = (sql: SqlClient.SqlClient, fence: Fence, options: OwnedOpti
       AND fence_run.owner_nonce = ${fence.owner.nonce}
       AND fence_attempt.step_key_digest = ${fence.stepKeyDigest}
       AND fence_attempt.attempt = ${fence.attempt}
-      AND fence_attempt.state = 'running'
+      AND ${sql.in("fence_attempt.state", [...(options.inProgressStates ?? ["running"])])}
     ${Dialect.isPostgres(sql) ? sql.literal("FOR SHARE") : sql.literal("")}
   )`
 }
@@ -1403,10 +1411,37 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
           })
           yield* Effect.annotateCurrentSpan({ runId })
           const createdAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-          yield* writeRun(
+          yield* write(
             "create",
-            runId,
-            sql`
+            Effect.gen(function*() {
+              if (lineageId !== null && lineageId !== runId) {
+                // Recreating a recorded round must still reach the INSERT's
+                // duplicate-id constraint, which engine admission handles.
+                const admitted = yield* sql`
+                  SELECT run_id FROM flows_runs
+                  WHERE run_id = ${runId} OR (
+                    run_id = ${lineageId}
+                    AND (lineage_id IS NULL OR lineage_id = ${lineageId})
+                    AND EXISTS (
+                      SELECT 1 FROM flows_runs
+                      WHERE run_id = ${parentRunId} AND ${lineageMembership(sql, lineageId)}
+                    )
+                    AND ${roundOrdinal} > (
+                      SELECT MAX(COALESCE(round_ordinal, 0)) FROM flows_runs
+                      WHERE ${lineageMembership(sql, lineageId)}
+                    )
+                  )
+                  LIMIT 1
+                `
+                if (admitted.length !== 1) {
+                  return yield* Effect.fail(invalidRunError(
+                    "create",
+                    "lineageId",
+                    "requires an existing root, a member parent, and an increasing round"
+                  ))
+                }
+              }
+              yield* sql`
             INSERT INTO flows_runs (
               run_id,
               status,
@@ -1444,7 +1479,11 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
               ${roundOrdinal},
               ${stateJson}
             )
-          `.pipe(Effect.asVoid)
+          `
+            }),
+            // Admission reads other run partitions; serialize it against all
+            // writers so concurrent rounds cannot pass the same maximum.
+            lineageId !== null && lineageId !== runId ? undefined : runId
           )
         }).pipe(
           Effect.as({ _tag: "Success" } as const),

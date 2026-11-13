@@ -179,6 +179,7 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
+    "@effect/sql-pg": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",

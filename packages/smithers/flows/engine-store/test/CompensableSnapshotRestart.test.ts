@@ -11,11 +11,13 @@
  * case SIGKILLs a real child process mid-attempt instead, so the survivor
  * steals a row still `running` under a dead owner.
  */
+
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
+import { HostLiveness } from "@smthrs/platform-node"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -191,7 +193,7 @@ describe("durable compensable snapshot handle after a hard kill", () => {
         yield* TestClock.setTime((killed.heartbeatAtMs ?? 0) + expiry)
 
         // The pid probe on the real process table: the child's pid is gone.
-        const engine = yield* makeEngine(Ownership.sameHostPidProbe)
+        const engine = yield* makeEngine(HostLiveness.sameHostPidProbe)
         yield* engine.register(RestartFlow, () => scriptedAction(`${executionId}-action`, ["succeed"], dispatches))
         yield* engine.execute(RestartFlow, { executionId, payload: {} })
         return { row: yield* runs.get(executionId) }

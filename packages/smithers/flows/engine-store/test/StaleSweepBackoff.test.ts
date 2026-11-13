@@ -1,3 +1,4 @@
+import { HostLiveness } from "@smthrs/platform-node"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * B-04: what the stale-running sweep costs when the owners are alive.
@@ -590,7 +591,7 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
  * in the repository answered `isAlive: () => Effect.succeed(false)`, which
  * made that the guaranteed outcome rather than the unlucky one.
  *
- * `Ownership.sameHostPidProbe` is the evidence the lease was standing in for.
+ * `HostLiveness.sameHostPidProbe` is the evidence the lease was standing in for.
  * These cases compose two real drivers over one real database and one real
  * child process, and take the arbitration both ways: refused while the pid is
  * alive, granted once it has exited.
@@ -626,7 +627,7 @@ describe("two drivers over one database arbitrate by pid (B-09)", () => {
           journalSource: "stale-sweep-backoff",
           // The production Node check, not a stub: the answer comes from the
           // operating system's process table.
-          isAlive: Ownership.sameHostPidProbe,
+          isAlive: HostLiveness.sameHostPidProbe,
           engine: Effect.succeed(fakeEngine)
         }).pipe(
           Effect.provideService(DurableEngineState.DurableEngineState, delayed),

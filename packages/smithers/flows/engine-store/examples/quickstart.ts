@@ -26,9 +26,9 @@ import {
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { SqlJournal } from "@smthrs/journal"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { NodeHost } from "@smthrs/platform-node"
+import { HostLiveness, NodeHost } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
-import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
+import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -72,7 +72,7 @@ const engine = (filename: string, root: string, hostId: string) =>
   EngineStore.layer({
     owner: { hostId },
     journalSource: `${hostId}-engine`,
-    isAlive: Ownership.sameHostPidProbe
+    isAlive: HostLiveness.sameHostPidProbe
   }).pipe(
     Layer.provideMerge(
       Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), NodeHost.layer)

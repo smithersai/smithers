@@ -102,6 +102,61 @@ const fencedWrite = (
   )
 
 describe("RunStore.owned", () => {
+  it.effect("uses the attempt store's configured in-progress states for application writes", () =>
+    Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const runs = yield* RunStore.RunStore
+      const attempts = yield* AttemptStore.AttemptStore
+      yield* createMessages(sql, "configured_fence")
+      yield* sql`INSERT INTO configured_fence (id, text) VALUES ('m1', 'initial')`
+      yield* runs.create("configured", "{}")
+      yield* own("configured", ownerA)
+      yield* attempts.put({
+        runId: "configured",
+        stepKeyDigest: digest,
+        attempt: 1,
+        state: "executing",
+        startedAtMs: yield* Clock.currentTimeMillis,
+        meta: {}
+      }, ownerA)
+      const current = fence("configured", 1, ownerA)
+      const options = { inProgressStates: ["executing", "retrying"] }
+      expect(yield* fencedWrite(sql, "configured_fence", "m1", "default", current)).toBe(0)
+      expect(yield* fencedWrite(sql, "configured_fence", "m1", "active", current, options)).toBe(1)
+      expect(yield* fencedWrite(sql, "configured_fence", "m1", "empty", current, { inProgressStates: [] })).toBe(0)
+      expect(yield* fencedWrite(sql, "configured_fence", "m1", "stale", fence("configured", 1, ownerB), options))
+        .toBe(0)
+      yield* attempts.put({
+        runId: "configured",
+        stepKeyDigest: digest,
+        attempt: 1,
+        state: "retrying",
+        startedAtMs: yield* Clock.currentTimeMillis,
+        meta: {}
+      }, ownerA)
+      expect(yield* fencedWrite(sql, "configured_fence", "m1", "retry", current, options)).toBe(1)
+      yield* attempts.finish({
+        runId: "configured",
+        stepKeyDigest: digest,
+        attempt: 1,
+        state: "completed",
+        finishedAtMs: yield* Clock.currentTimeMillis
+      }, ownerA)
+      expect(yield* fencedWrite(sql, "configured_fence", "m1", "late", current, options)).toBe(0)
+      expect(yield* readText(sql, "configured_fence", "m1")).toBe("retry")
+    }).pipe(
+      Effect.provide(Layer.mergeAll(
+        RunStore.layer,
+        AttemptStore.layerWith({
+          inProgressStates: ["executing", "retrying"],
+          putMode: "upsert"
+        })
+      )),
+      Effect.provide(Migrations.layer),
+      Effect.provide(TestDatabase.layer),
+      Effect.provide(TestClock.layer())
+    ))
+
   it.effect("admits a write only while its owner holds the run and its attempt is running", () =>
     stores(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient

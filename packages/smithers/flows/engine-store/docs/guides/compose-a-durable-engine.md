@@ -53,12 +53,13 @@ captured when the store is built and re-provided onto that fiber.
 
 ```ts
 import { EngineStore } from "@smthrs/engine-store"
+import { HostLiveness } from "@smthrs/platform-node"
 import { Ownership } from "@smthrs/run-store"
 
 const engine = EngineStore.layer({
   owner: { hostId: "worker-a" },
   journalSource: "worker-a-engine",
-  isAlive: Ownership.sameHostPidProbe
+  isAlive: HostLiveness.sameHostPidProbe
 })
 ```
 

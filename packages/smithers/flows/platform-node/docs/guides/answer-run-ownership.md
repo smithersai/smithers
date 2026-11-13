@@ -1,6 +1,6 @@
 ---
 title: "Answer whether a run owner is alive"
-description: "Wire HostLiveness.isAlive as the probe the engine consults before it steals a run, understand why the rule errs toward alive, and know where the sibling implementation disagrees."
+description: "Wire HostLiveness.isAlive as the probe the engine consults before it steals a run, understand why the rule errs toward alive, and choose explicit cross-host and same-pid policies."
 ---
 
 A durable run records the owner that holds it: a `hostId` and a pid. When
@@ -65,32 +65,34 @@ A multi-process deployment with a supervisor or a lease system knows better
 than any pid probe, and should answer from that instead. `isAlive` is one
 implementation of a slot, not a fixed policy.
 
-## Know where the sibling disagrees
+## Choose the policy
 
-`@smthrs/run-store`'s `Ownership.sameHostPidProbe` fills the same
-`LivenessCheck`. Both probes use the same `ESRCH`-only death rule.
-`EPERM`, `EINVAL`, and unknown signal errors preserve liveness.
+Both entry points use one signal-0 implementation.
+Both probes use the same `ESRCH`-only death rule.
+`EPERM`, `EINVAL`, and unknown signal errors preserve liveness. `isAlive` accepts
+`crossHostPolicy: "alive" | "lease"` and `samePidPolicy: "reclaim" | "probe"`.
+The defaults preserve foreign owners and reclaim an earlier nonce under the
+claimant's own pid. Invalid pids are never signalled and count as alive.
 
-The signal-error rows describe valid same-host pids:
+`HostLiveness.sameHostPidProbe` selects `crossHostPolicy: "lease"` and
+`samePidPolicy: "probe"`, taking the local host id from `context.claimant`.
+It replaces the former `Ownership.sameHostPidProbe` export from
+`@smthrs/run-store`:
 
-| Input                                            | `HostLiveness.isAlive` | `Ownership.sameHostPidProbe` |
-| ------------------------------------------------ | ---------------------- | ---------------------------- |
-| signal error `ESRCH`                             | dead                   | dead                         |
-| signal error `EPERM`, `EINVAL`, or unknown error | alive                  | alive                        |
-| owner on a different `hostId`                    | alive                  | defer to expired lease       |
-| claimant's own pid, another nonce                | dead                   | alive                        |
+```ts
+import { HostLiveness } from "@smthrs/platform-node"
 
-`sameHostPidProbe` returns `false` for a foreign host without probing its pid.
-The engine consults it after lease expiry, and the store verifies the expired
-lease before allowing a steal. `HostLiveness.isAlive` returns `true` for a
-foreign host, so runs on a permanently dead host wait for an operator.
+const isAlive = HostLiveness.sameHostPidProbe
+```
 
-Which answer a deployment gets depends on the entry point it used:
-This package's `NodeRuntime` defaults to this function, while
-[`@smthrs/cli`](/api/cli)'s `NodeControl` passes `sameHostPidProbe`.
+| Input                                            | Default `isAlive({ hostId })` | `sameHostPidProbe`     |
+| ------------------------------------------------ | ----------------------------- | ---------------------- |
+| signal error `ESRCH`                             | dead                          | dead                   |
+| signal error `EPERM`, `EINVAL`, or unknown error | alive                         | alive                  |
+| owner on a different `hostId`                    | alive                         | defer to expired lease |
+| claimant's own pid, another nonce                | dead                          | probe the pid          |
 
-`HostLiveness.isAlive` compares with its configured `hostId` and reads the
-`context` argument of `Ownership.LivenessCheck` only to recognize an earlier
-incarnation under the claimant's own pid. `sameHostPidProbe` compares with
-`context.claimant.hostId`. Pick the probe for its cross-host policy and
-source of host identity.
+The engine consults liveness after lease expiry, and the store verifies the
+expired lease before allowing a steal. `NodeRuntime` defaults to `isAlive`,
+while the CLI selects `sameHostPidProbe`. Choose the policy and source of host
+identity that match the deployment.

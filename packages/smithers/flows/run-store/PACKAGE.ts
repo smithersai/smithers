@@ -99,17 +99,6 @@ const securityReview = Smithers.SecurityReview({
       paths: ["src/RunStore.ts", "src/Heartbeat.ts", "src/Ownership.ts"]
     },
     {
-      id: "pid-probe-scope",
-      title: "The pid liveness probe only issues signal-0 checks on the claimant's own host",
-      threat: "A forged or cross-host owner record makes the host signal or misjudge an unrelated local process.",
-      lookFor: [
-        "process.kill called with a signal other than 0, or with a pid that is not a positive safe integer.",
-        "sameHostPidProbe probing a pid whose owner hostId differs from the claimant's hostId.",
-        "An error other than ESRCH treated as proof of death."
-      ],
-      paths: ["src/Ownership.ts"]
-    },
-    {
       id: "json-admission-bounds",
       title: "Persisted and read-back JSON passes bounded admission before use",
       threat:

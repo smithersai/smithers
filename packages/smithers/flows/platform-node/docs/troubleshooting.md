@@ -85,7 +85,7 @@ owner record rather than weakening the probe. See
 For a valid same-host pid, signal errors do not distinguish the probes.
 
 `HostLiveness.isAlive` compares the owner's host with its configured `hostId`
-and reports foreign owners as alive. `Ownership.sameHostPidProbe` compares
+and reports foreign owners as alive. `HostLiveness.sameHostPidProbe` compares
 with `context.claimant.hostId` and returns `false` for a foreign owner without
 probing its pid. The engine consults it after lease expiry, and the store
 verifies that expiry before allowing a steal.

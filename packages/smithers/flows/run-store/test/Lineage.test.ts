@@ -41,11 +41,15 @@ const settledHistory = (store: RunStore.Service, sql: SqlClient.SqlClient, linea
   Effect.gen(function*() {
     const state = JSON.stringify({ text: "x".repeat(4096) })
     for (let ordinal = 0; ordinal < rounds; ordinal++) {
-      yield* store.create(`${lineageId}-${ordinal}`, state, { lineageId, roundOrdinal: ordinal })
+      yield* store.create(`${lineageId}-${ordinal}`, state, {
+        lineageId: `${lineageId}-0`,
+        roundOrdinal: ordinal,
+        ...(ordinal === 0 ? {} : { parentRunId: `${lineageId}-${ordinal - 1}` })
+      })
     }
     yield* sql`
       UPDATE flows_runs SET status = 'completed', started_at_ms = created_at_ms, finished_at_ms = created_at_ms
-      WHERE lineage_id = ${lineageId} AND round_ordinal < ${rounds - 1}
+      WHERE lineage_id = ${`${lineageId}-0`} AND round_ordinal < ${rounds - 1}
     `
   })
 
@@ -141,8 +145,13 @@ describe("logical run rounds", () => {
   it.effect("excludes a same-named run that belongs to an independent lineage", () =>
     Effect.gen(function*() {
       const store = yield* RunStore.RunStore
-      yield* store.create("shared-name", "{}", { lineageId: "independent-lineage", roundOrdinal: 0 })
-      yield* store.create("target", "{}", { lineageId: "shared-name", roundOrdinal: 0 })
+      const sql = yield* SqlClient.SqlClient
+      // Read legacy malformed rows defensively; new admissions reject this shape.
+      yield* store.create("shared-name", "{}")
+      yield* store.create("target", "{}")
+      yield* sql`UPDATE flows_runs SET lineage_id = 'independent-lineage', round_ordinal = 0
+        WHERE run_id = 'shared-name'`
+      yield* sql`UPDATE flows_runs SET lineage_id = 'shared-name', round_ordinal = 0 WHERE run_id = 'target'`
       expect((yield* store.lineage("target")).map((row) => row.runId)).toEqual(["target"])
       expect((yield* store.lineage("shared-name")).map((row) => row.runId)).toEqual(["shared-name"])
       expect(yield* store.requestCancelLineage("target", 100)).toEqual({ _tag: "CancelRequested", requestedAtMs: 100 })
@@ -195,8 +204,8 @@ describe("logical run rounds", () => {
     Effect.gen(function*() {
       const store = yield* RunStore.RunStore
       const sql = yield* SqlClient.SqlClient
-      yield* store.create("live-0", "{}", { lineageId: "live", roundOrdinal: 0 })
-      yield* store.create("live-1", "{}", { lineageId: "live", roundOrdinal: 1, parentRunId: "live-0" })
+      yield* store.create("live-0", "{}", { lineageId: "live-0", roundOrdinal: 0 })
+      yield* store.create("live-1", "{}", { lineageId: "live-0", roundOrdinal: 1, parentRunId: "live-0" })
       expect(yield* store.requestCancel("live-0", 50)).toEqual({ _tag: "CancelRequested", requestedAtMs: 50 })
       yield* sql`
         UPDATE flows_runs SET status = 'cancelled', started_at_ms = created_at_ms, finished_at_ms = created_at_ms

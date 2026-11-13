@@ -452,9 +452,17 @@ the current platform.
 it takes a run whose recorded owner it is not: an owner on a different host reads
 as alive, an owner with the claimant's own pid and another nonce is an earlier
 incarnation and reads as dead, and any other owner on this host reads as alive
-exactly while its pid is signalable. `@smthrs/run-store`'s `Ownership.sameHostPidProbe` answers the same
-question differently for a foreign host, and the two are not interchangeable;
-the JSDoc on `isAlive` names both inputs on which they disagree.
+exactly while its pid is signalable. Only `ESRCH` proves death; invalid pids
+and every other signal error count as alive. `Options.crossHostPolicy` is
+`"alive" | "lease"` (default `"alive"`); `Options.samePidPolicy` is
+`"reclaim" | "probe"` (default `"reclaim"`).
+
+`HostLiveness.sameHostPidProbe: Ownership.LivenessCheck` uses that same
+implementation with `crossHostPolicy: "lease"` and `samePidPolicy: "probe"`,
+and takes the host id from `context.claimant`. Foreign pids are never probed;
+`false` leaves takeover to the expired lease. The claimant's own pid remains
+alive while the process exists, even under a different nonce. This replaces
+`Ownership.sameHostPidProbe` from `@smthrs/run-store`.
 
 `ProcessReaper.reap` kills the process groups a crashed incarnation of the same
 `hostId` abandoned. It signals a record only when every guard holds: the numbers
@@ -655,7 +663,7 @@ flow file actions; the database path is trusted host configuration.
 | `sourceRevision`   | `string \| (() => string \| undefined)`            | Optional. The revision of the tree this host read its flows out of, which every recorded graph page carries beside the declaration sites, so a reader opens the declared file at that revision and not at whatever is on disk. A host that only learns the answer after this call declares a reader instead of a string; it is asked once per recorded page, and an answer that is not a revision records nothing. Absent by default. |
 | `sweep`            | `"process" \| { host: string }` (optional)         | Who wakes this runtime's runs. `"process"`, the default, is what a native host is. See [`Runtime.Options`](../../docs/api.md#options).                                                                                                                                                                                                                                                                                                |
 
-`Ownership.sameHostPidProbe` from [`@smthrs/run-store`](../../run-store/docs/api.md) probes
+`HostLiveness.sameHostPidProbe` probes
 the process table only for the claim context's host (`context.claimant.hostId`).
 It returns `false` (treated as dead) for an owner on another host, allowing
 takeover once that owner's lease has expired. A fresh heartbeat still blocks

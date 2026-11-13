@@ -5900,6 +5900,9 @@ importers:
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
+      '@effect/sql-pg':
+        specifier: 4.1.1
+        version: 4.1.1(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(vitest@5.0.0)
