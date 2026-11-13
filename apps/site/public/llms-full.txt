@@ -15417,7 +15417,8 @@ The service tag. `yield* DurableWriter.DurableWriter` resolves the writer.
 ```ts
 interface Service {
   readonly write: <A, E, R>(
-    effect: Effect.Effect<A, E, R>
+    effect: Effect.Effect<A, E, R>,
+    options?: WriteOptions | undefined
   ) => Effect.Effect<A, Exclude<E, SqlError.SqlError> | DatabaseError, R>
 }
 ```
@@ -15426,23 +15427,55 @@ interface Service {
 and widens the error channel with `DatabaseError`. Every `SqlError` in a failed
 cause is normalized to a `DatabaseError` on the way out.
 
-Two guarantees are contract rather than implementation detail:
+The guarantees are contract rather than implementation detail:
 
-- **Serialization.** Two concurrent `write` transactions are mutually
-  serialized. They may not both commit results computed from snapshots that
-  exclude each other's writes.
+- **Serialization.** Writes to the same `partition` commit one at a time;
+  writes to different partitions may commit concurrently. A write that names
+  none commits alone, excluding every other writer. Within that boundary, two
+  writes may not both commit results computed from snapshots that exclude
+  each other's writes.
 - **Acquisition.** Outermost writes sharing one writer queue for its permit
   before entering SQL, at the caller's own interruptibility. An interruptible
   caller cancelled or timed out while queued acquires nothing; a caller that
   masked interruption keeps waiting, so a finalizer's cleanup write still
   commits.
 - **Nesting.** A `write` inside the client's open transaction joins it as a
-  savepoint and does not retry. Only the outermost `write` retries, replaying
-  the whole transaction body verbatim against committed state. Its
+  savepoint and does not retry. PostgreSQL skips the savepoint for a `readOnly`
+  body. Only the outermost `write` retries, replaying the whole transaction
+  body verbatim against committed state. Its
   classification follows `cause` chains, so a nested store's domain error that
   preserves `cause` still keeps the outermost transaction replaying.
 
 See [the write boundary](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/write-boundary.md).
+
+### WriteOptions
+
+```ts
+interface WriteOptions {
+  readonly readOnly?: boolean | undefined
+  readonly partition?: string | undefined
+}
+```
+
+Options for one `write`, separate from the retry options passed to `make` or
+`layer`.
+
+`partition` names the rows the write reads for decisions or changes, such as
+one run's id. Name one only when those rows belong to that partition; a graph
+walk or a write deciding from rows across runs names none. Shared rows are
+safe only when every partition changes them through a self-contained
+statement, such as a trigger incrementing a counter, whose row lock orders
+those writes through `COMMIT`. A nested write names its own partition; it does
+not inherit its parent's. PostgreSQL takes any additional locks the
+transaction needs. SQLite and other single-writer clients ignore partitions.
+See [Run writer locks](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/decisions/0001-run-writer-locks.md).
+
+`readOnly` declares that the body only reads. On PostgreSQL, nested in an
+open transaction, it still takes its lock but skips the savepoint. This is a
+caller promise, not a read-only database mode: on PostgreSQL a SQL error can
+abort the enclosing transaction, as it would outside a savepoint. SQLite
+ignores this option and keeps its savepoints. Outermost writes still open a
+transaction.
 
 ### afterCommit
 
@@ -15656,17 +15689,27 @@ interface MigrationSet {
   readonly namespace: string
   readonly idOffset: number
   readonly migrations: Readonly<Record<string, Effect.Effect<void, unknown, SqlClient.SqlClient>>>
+  readonly previousNames?: Readonly<Record<string, ReadonlyArray<string>>>
+  readonly immediateTriggers?: ReadonlyArray<Dialect.DeferredTrigger>
 }
 ```
 
 One package's migrations, namespaced so they cannot collide with another
 package's.
 
-| Field        | Meaning                                                                                                                                           |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `namespace`  | Prefixes every migration name in the ledger. Unique among the sets composed together.                                                             |
-| `idOffset`   | A non-negative safe integer multiple of `idBlock`, unique among the sets composed together. Lifts the set's local ids into the block it reserves. |
-| `migrations` | Keyed `<localId>_<name>`, with the local id in `0..idBlock - 1`.                                                                                  |
+| Field               | Meaning                                                                                                                                                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `namespace`         | Prefixes every migration name in the ledger. Unique among the sets composed together.                                                                                                                                                       |
+| `idOffset`          | A non-negative safe integer multiple of `idBlock`, unique among the sets composed together. Lifts the set's local ids into the block it reserves.                                                                                           |
+| `migrations`        | Keyed `<localId>_<name>`, with the local id in `0..idBlock - 1`.                                                                                                                                                                            |
+| `previousNames`     | Optional exact former names of equivalent migrations, keyed by current migration key, without the namespace prefix. Use only after verifying the historical schema; changed behavior needs a new id. Existing ledger rows keep their names. |
+| `immediateTriggers` | Optional owned `Dialect.DeferredTrigger` definitions whose constraint checks run at statement end during every migration in the pass, across all sets. PostgreSQL only; other constraints retain their modes.                               |
+
+`immediateTriggers` switches only triggers that exist when each migration
+starts. A migration, id zero included, that creates a deferred trigger and then
+writes and alters its table must switch the mode itself or split the work into
+two migrations. Otherwise PostgreSQL can reject the alteration with `55006`
+(`pending trigger events`).
 
 ### loader
 
@@ -15776,9 +15819,11 @@ the write's first attempt to holding the lock, across every wait that ran out
 and every backoff between them. A writable `PostgresDatabase`
 client records one observation per transaction it begins: each outermost
 `DurableWriter.write` and each `withTransaction`. Read-only clients, statements
-outside a transaction, and SQLite record nothing. Writes to one schema commit
-one at a time, so a rising wait means that schema's write rate is at the lock's
-ceiling; see [the writer lock](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/sqlite-only.md#the-writer-lock).
+outside a transaction, and SQLite record nothing. Writes to one partition
+commit one at a time, while different partitions may commit concurrently; a
+write that names none commits alone on its schema. A rising wait shows
+contention for those locks; see
+[the writer lock](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/sqlite-only.md#the-writer-lock).
 
 ### connectionWait
 

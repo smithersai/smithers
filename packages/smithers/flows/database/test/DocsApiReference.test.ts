@@ -25,10 +25,25 @@ const documented = (page: string, name: string): string => {
   return fence!.replace(/^ts\n/u, "").trim()
 }
 
+/** Compare declarations without documentation comments or formatting. */
+const declarationText = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\s+/gu, "")
+
 // The reference page is what a store author copies from. It listed
 // afterCommit with one parameter, hiding the owning client that stops a
 // nested write to another database from publishing this database's update.
 describe("docs/api.md", () => {
+  it.each([
+    ["Service", "DurableWriter"],
+    ["WriteOptions", "DurableWriter"],
+    ["MigrationSet", "Migrations"]
+  ])("documents the complete %s interface", (name, module) => {
+    const source = read("../src/" + module + ".ts")
+    const declaration = source.match(new RegExp("export interface " + name + " \\{[\\s\\S]*?\\n\\}", "u"))?.[0]
+    expect(declaration, "src declares " + name).toBeDefined()
+    expect(declarationText(documented(read("../docs/api.md"), name!))).toBe(
+      declarationText(declaration!.replace(/^export /u, ""))
+    )
+  })
   it("documents every afterCommit parameter", () => {
     const signature = documented(read("../docs/api.md"), "afterCommit")
     const parameters = declared(read("../src/internal/CommitScope.ts"), "afterCommit")

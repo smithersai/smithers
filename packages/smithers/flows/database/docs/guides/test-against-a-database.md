@@ -49,8 +49,9 @@ turns on cross-connection behavior needs a file.
 ## Use a file when connections are the subject
 
 Two `NodeDatabase.layer` builds over one temporary file give you two real
-connections. Set a short `busyTimeout` so a contended attempt fails fast rather
-than waiting the default out:
+connections. Writable Node clients default to a `busyTimeout` of `0`, so
+contended attempts fail immediately and the writer retries cooperatively.
+Set a small nonzero timeout only when the test needs a synchronous lock wait:
 
 ```ts
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"

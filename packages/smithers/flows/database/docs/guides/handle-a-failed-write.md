@@ -1,6 +1,6 @@
 ---
 title: "Handle a failed write"
-description: "Branch on the five DatabaseError codes, keep a domain error retryable, tune or exhaust the retry budget, and watch write contention through the retry counter."
+description: "Branch on the six DatabaseError codes, keep a domain error retryable, tune or exhaust the retry budget, and watch write contention through the retry counter."
 sidebar:
   order: 3
 ---

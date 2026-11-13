@@ -19,9 +19,17 @@ the ancestor graph inside one `write`, and its safety argument holds only under
 serialized writers.
 
 - SQLite satisfies the contract with its single-writer transaction lock.
-- PostgreSQL must run write transactions at `SERIALIZABLE` and retry `40001`.
-  Plain `READ COMMITTED` does not satisfy the contract, and adopting it
-  silently reintroduces the cycle race.
+- The shipped PostgreSQL adapter uses `READ COMMITTED` with
+  transaction-scoped advisory locks taken before any read. An implementation
+  could instead use `SERIALIZABLE` and retry `40001`; plain `READ COMMITTED`
+  without writer locking does not satisfy the contract.
+
+A write may name a `partition`: it serializes against writes to that partition
+and writes that name none, while different partitions may commit concurrently.
+A write deciding from rows across partitions must name none. PostgreSQL takes
+the schema lock shared and the partition lock exclusively for a partitioned
+write, or the schema lock exclusively for an unpartitioned write. See
+[Run writer locks](../decisions/0001-run-writer-locks.md).
 
 **Your errors must reach the classifier.** The retry policy recognizes SQLite
 codes, the Postgres SQLSTATEs `40001`, `40P01`, and `55P03`, and the canonical

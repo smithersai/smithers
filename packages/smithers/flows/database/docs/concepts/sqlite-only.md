@@ -144,9 +144,11 @@ isolation level and `READ WRITE` or `READ ONLY` mode:
 
 The schema is set per transaction rather than written into every statement
 because the stores and their migrations name tables without a schema, and
-`Dialect.tables` and `Dialect.columns` read `current_schema()`. Named prepared
-statements stay on: Hyperdrive supports them, and PgBouncer does with
-`max_prepared_statements` above zero.
+`Dialect.tables` and `Dialect.columns` read `current_schema()`. Every statement
+is sent unnamed (`prepare: false`): named statements are session state, and
+Hyperdrive drops the connection when the driver's 100-statement cache closes
+a named statement. See
+[the connection failure](../troubleshooting.md#connection-closed-behind-hyperdrive-after-about-100-statements).
 
 The `pgbouncer` service in `apps/mvp/docker-compose.yml` (127.0.0.1:54322) is
 PgBouncer 1.25 in transaction mode with four server connections, resetting each

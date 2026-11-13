@@ -1,12 +1,12 @@
 ---
 title: "@smthrs/database"
-description: "One transaction boundary for SQL writes in an Effect application: bounded replay of lock conflicts, five stable failure codes, an affected-row count that works on any driver, and a migration ladder several packages can share."
+description: "One transaction boundary for SQL writes in an Effect application: bounded replay of lock conflicts, six stable failure codes, an affected-row count that works on any driver, and a migration ladder several packages can share."
 ---
 
 `@smthrs/database` gives an Effect application one place to write to SQL. Every
 write goes through `DurableWriter.write`, which runs it inside a transaction,
 replays it when the database reports a transient lock conflict, and normalizes
-whatever comes back into five stable failure codes. Beside the writer,
+whatever comes back into six stable failure codes. Beside the writer,
 `Migrations` composes the migration sets of several independent packages into
 one ordered pass over one database.
 

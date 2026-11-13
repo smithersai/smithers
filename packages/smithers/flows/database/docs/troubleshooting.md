@@ -11,14 +11,16 @@ then read the cause.
 These arrive as defects from `NodeDatabase.layer`, carrying
 `UnsupportedDatabase`. Narrow them with `isUnsupportedDatabase`.
 
-### `1.0.0-rc.18 runs the durable engine on Node.js >=22.19.0 only`
+### `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=22.19.0`
 
 **Code:** `unsupported_runtime`.
 
 **Cause:** `process.versions.bun` is set. The check runs before the file is
 touched, so nothing about your database path is implicated.
 
-**Fix:** run the durable engine on Node.js 22.19.0 or later. There is no flag.
+**Fix:** under Bun, use `BunDatabase.layer` from
+`@smthrs/database/bun/BunDatabase`. Use `NodeDatabase.layer` on Node.js
+22.19.0 or later.
 
 ### `<path> is not a Smithers 1.0 database (1.0.0-rc.18 does not load a 0.x smithers.db)`
 

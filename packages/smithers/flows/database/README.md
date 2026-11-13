@@ -11,7 +11,7 @@ runtime.
 One transaction boundary for SQL writes in an Effect application. Every write
 goes through `DurableWriter.write`, which runs it inside a transaction, replays
 it when the database reports a transient lock conflict, and normalizes whatever
-comes back into five stable failure codes. Beside the writer, `Migrations`
+comes back into six stable failure codes. Beside the writer, `Migrations`
 composes the migration sets of several independent packages into one ordered
 pass over one database.
 
