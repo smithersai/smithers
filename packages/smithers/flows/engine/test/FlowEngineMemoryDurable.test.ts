@@ -28,12 +28,12 @@ const pollSuspended = <A, E, R>(
 ) =>
   Effect.gen(function*() {
     let result = yield* poll
-    for (let i = 0; i < 20 && Option.isNone(result); i++) {
+    for (let i = 0; i < 20 && (Option.isNone(result) || result.value._tag !== "Suspended"); i++) {
       yield* Effect.yieldNow
       yield* TestClock.adjust("1 milli")
       result = yield* poll
     }
-    return result
+    return Option.isSome(result) && result.value._tag === "Suspended" ? result : Option.none()
   })
 
 const pollComplete = <A, E, R>(
@@ -48,6 +48,26 @@ const pollComplete = <A, E, R>(
     }
     return result
   })
+
+describe("pollSuspended", () => {
+  effect("waits past a non-matching settlement until the execution suspends", () =>
+    Effect.gen(function*() {
+      let polls = 0
+      const poll = Effect.sync(() =>
+        Option.some<Flow.Result<string, never>>(
+          polls++ === 0 ? new Flow.Complete({ exit: Exit.succeed("early") }) : new Flow.Suspended({})
+        )
+      )
+      const result = yield* pollSuspended(poll)
+      expect(Option.isSome(result) && result.value._tag).toBe("Suspended")
+    }))
+
+  effect("does not report completion as suspension when the polling budget expires", () =>
+    Effect.gen(function*() {
+      const result = yield* pollSuspended(Effect.succeedSome(new Flow.Complete({ exit: Exit.succeed("done") })))
+      expect(result).toEqual(Option.none())
+    }))
+})
 
 describe("action dispatch interruption", () => {
   effect("does not replay a cancelled dispatch into another run sharing a cache key", () =>
@@ -168,7 +188,8 @@ describe("FlowEngine.layerMemory durable waits", () => {
   effect("records a deferred result once and resumes the parked execution", () =>
     Effect.gen(function*() {
       const executionId = yield* Parked.execute({ id: "wake" }, { discard: true })
-      expect(Option.isSome(yield* pollSuspended(Parked.poll(executionId)))).toBe(true)
+      const parked = yield* pollSuspended(Parked.poll(executionId))
+      expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
 
       const token = DurableDeferred.tokenFromExecutionId(gate, { flow: Parked, executionId })
       yield* DurableDeferred.succeed(gate, { token, value: "first" })
@@ -188,11 +209,13 @@ describe("FlowEngine.layerMemory durable waits", () => {
   effect("interrupting a parked execution drives it to a terminal result", () =>
     Effect.gen(function*() {
       const executionId = yield* Parked.execute({ id: "cancel" }, { discard: true })
-      expect(Option.isSome(yield* pollSuspended(Parked.poll(executionId)))).toBe(true)
+      const parked = yield* pollSuspended(Parked.poll(executionId))
+      expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
       yield* Parked.interrupt(executionId)
-      yield* Effect.yieldNow
-      const polled = yield* Parked.poll(executionId)
-      expect(Option.isSome(polled)).toBe(true)
+      const polled = yield* pollComplete(Parked.poll(executionId))
+      expect(Option.isSome(polled) && polled.value._tag).toBe("Complete")
+      const exit = Option.isSome(polled) && polled.value._tag === "Complete" ? polled.value.exit : undefined
+      expect(exit !== undefined && Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true)
     }).pipe(Effect.provide(ParkedLayer)))
 
   effect("resuming or interrupting an unknown execution is a no-op", () =>
@@ -225,7 +248,8 @@ describe("FlowEngine.layerMemory durable waits", () => {
               return yield* Flow.suspend(instance)
             }))
           yield* engine.execute(Fleeting, { executionId: "fleeting-run", payload: { id: "x" }, discard: true })
-          expect(Option.isSome(yield* pollSuspended(engine.poll(Fleeting, "fleeting-run")))).toBe(true)
+          const parked = yield* pollSuspended(engine.poll(Fleeting, "fleeting-run"))
+          expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
         })
       )
       // Every registration of the tag is closed: the wake is a no-op and the
@@ -336,7 +360,8 @@ describe("FlowEngine.layerMemory durable waits", () => {
           discard: true
         })
         yield* Deferred.await(entered)
-        expect(Option.isSome(yield* pollSuspended(engine.poll(Mutable, started)))).toBe(true)
+        const parked = yield* pollSuspended(engine.poll(Mutable, started))
+        expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
         input.nested.value = "caller-mutated"
         input.values.push("caller-mutated")
         yield* engine.resume(Mutable, started)
@@ -436,7 +461,8 @@ describe("FlowEngine.layerMemory durable waits", () => {
             return yield* Flow.suspend(instance)
           }))
         yield* engine.execute(Waiting, { executionId: "waiting-cas", payload: {}, discard: true })
-        expect(Option.isSome(yield* pollSuspended(engine.poll(Waiting, "waiting-cas")))).toBe(true)
+        const parked = yield* pollSuspended(engine.poll(Waiting, "waiting-cas"))
+        expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
 
         const complete = (overrides: Partial<{
           readonly flowName: string
@@ -459,7 +485,8 @@ describe("FlowEngine.layerMemory durable waits", () => {
         expect(yield* complete({ reason: "event" })).toBe("NotWaiting")
         expect(yield* complete({ token: "attempt-2" })).toBe("NotWaiting")
         expect(yield* complete()).toBe("Completed")
-        expect(Option.isSome(yield* pollSuspended(engine.poll(Waiting, "waiting-cas")))).toBe(true)
+        const stillParked = yield* pollSuspended(engine.poll(Waiting, "waiting-cas"))
+        expect(Option.isSome(stillParked) && stillParked.value._tag).toBe("Suspended")
         expect(yield* complete({ value: "second" })).toBe("Existing")
 
         const recorded = yield* engine.deferredResult(gate).pipe(
@@ -749,7 +776,8 @@ describe("FlowEngine.layerMemory resume and wake contract", () => {
 
         // Cancelled: the parked wait was overtaken by an interrupt.
         yield* engine.execute(Annotated, { executionId: "cancelled", payload: { mode: "cancelled" }, discard: true })
-        expect(Option.isSome(yield* pollSuspended(engine.poll(Annotated, "cancelled")))).toBe(true)
+        const parked = yield* pollSuspended(engine.poll(Annotated, "cancelled"))
+        expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
         yield* engine.interrupt(Annotated, "cancelled")
         const cancelled = yield* pollComplete(engine.poll(Annotated, "cancelled"))
         expect(Option.isSome(cancelled) && cancelled.value._tag).toBe("Complete")
@@ -763,7 +791,8 @@ describe("FlowEngine.layerMemory resume and wake contract", () => {
       const executionId = "wake-caller"
       const caller = yield* Parked.execute({ id: executionId }, { executionId }).pipe(Effect.forkChild)
       yield* settle
-      expect(Option.isSome(yield* pollSuspended(Parked.poll(executionId)))).toBe(true)
+      const parked = yield* pollSuspended(Parked.poll(executionId))
+      expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
       // The caller climbs the default suspended backoff ladder to its 30 s
       // rung while the run stays parked.
       for (let second = 0; second < 60; second++) {
@@ -793,7 +822,8 @@ describe("FlowEngine.layerMemory resume and wake contract", () => {
       yield* settle
       const second = yield* Parked.execute({ id: executionId }, { executionId }).pipe(Effect.forkChild)
       yield* settle
-      expect(Option.isSome(yield* pollSuspended(Parked.poll(executionId)))).toBe(true)
+      const parked = yield* pollSuspended(Parked.poll(executionId))
+      expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
       expect(first.pollUnsafe()).toBeUndefined()
       expect(second.pollUnsafe()).toBeUndefined()
 

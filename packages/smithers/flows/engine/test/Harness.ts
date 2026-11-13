@@ -17,7 +17,7 @@ export const liveEffect = (
   body: () => Effect.Effect<void, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>
 ) => it.live(name, () => withCrypto(body()))
 
-/** Polls a result until the predicate holds, bounded by `turns` scheduler turns. */
+/** Polls for a matching result; returns `None` if `turns` scheduler turns expire first. */
 export const pollUntil = <A, E, R>(
   poll: Effect.Effect<Option.Option<Flow.Result<A, E>>, FlowRuntime.FlowExecutionNotFound, R>,
   predicate: (result: Flow.Result<A, E>) => boolean,
@@ -29,5 +29,5 @@ export const pollUntil = <A, E, R>(
       yield* Effect.yieldNow
       result = yield* poll
     }
-    return result
+    return Option.isSome(result) && predicate(result.value) ? result : Option.none()
   })

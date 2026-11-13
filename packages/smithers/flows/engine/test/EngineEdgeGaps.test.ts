@@ -1,15 +1,10 @@
-import { describe, expect, it } from "@effect/vitest"
+import { describe, expect } from "@effect/vitest"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy, StepIdentity } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Option, Result, Schema } from "effect"
-import type * as EffectDigest from "effect/crypto/Digest"
 import { FlowEngine } from "../src/index.ts"
-import { runSync, withCrypto } from "./Crypto.ts"
+import { runSync } from "./Crypto.ts"
 import { effect, liveEffect } from "./Harness.ts"
 
-/**
- * The same wiring on the live clock, for cases that wait on the real elapsed
- * time a retry or resume policy schedules rather than driving `TestClock`.
- */
 describe("Action.retry outside a flow", () => {
   effect("still advances CurrentAttempt when no engine dispatch fills the ordinal slot", () => {
     // Outside a flow no engine dispatch ever fills the slot (allocation is

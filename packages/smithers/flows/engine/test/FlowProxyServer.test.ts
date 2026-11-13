@@ -262,6 +262,10 @@ describe("FlowProxyServer.layerRpcHandlers", () => {
 
       expect([first, repeat]).toEqual([42, 42])
       expect(calls()).toBe(1)
+      // A different payload derives a different identity even when the client id repeats.
+      const other = yield* client["Proxy/Echo"]({ payload: { value: 10 }, executionId: "ignore-this-id" })
+      expect(other).toBe(11)
+      expect(calls()).toBe(2)
       expect(observed).toEqual([
         {
           flowTag: "Proxy/Echo",
@@ -274,6 +278,12 @@ describe("FlowProxyServer.layerRpcHandlers", () => {
           operation: "execute",
           clientValue: "ignore-repeat-id",
           payload: { value: 41 }
+        },
+        {
+          flowTag: "Proxy/Echo",
+          operation: "execute",
+          clientValue: "ignore-this-id",
+          payload: { value: 10 }
         }
       ])
     }).pipe(
@@ -479,29 +489,6 @@ describe("FlowProxyServer.layerRpcHandlers", () => {
       )
     )
   })
-
-  effect(
-    "derives the execution identity from the flow's idempotency key when the server scope chooses derivation",
-    () => {
-      const { calls, layer } = makeLayer((value) => Effect.succeed(value + 1))
-      return Effect.gen(function*() {
-        const client = yield* RpcTest.makeClient(FlowProxy.toRpcGroup(flows))
-        const first = yield* client["Proxy/Echo"]({ payload: { value: 41 }, executionId: "ignore-repeat-id" })
-        const repeat = yield* client["Proxy/Echo"]({ payload: { value: 41 }, executionId: "ignore-repeat-id" })
-        expect([first, repeat]).toEqual([42, 42])
-        // Echo declares `idempotencyKey: String(value)`, so both requests
-        // derive one identity and the second replays instead of re-running.
-        expect(calls()).toBe(1)
-        // A different payload derives a different identity and runs.
-        expect(yield* client["Proxy/Echo"]({ payload: { value: 10 }, executionId: "ignore-other-id" })).toBe(11)
-        expect(calls()).toBe(2)
-      }).pipe(
-        Effect.provide(
-          FlowProxyServer.layerRpcHandlers(flows, { executionId: () => undefined }).pipe(Layer.provide(layer))
-        )
-      )
-    }
-  )
 
   effect("resume with an unknown execution id is a no-op and an empty id is rejected", () => {
     const { calls, layer } = makeLayer((value) => Effect.succeed(value))
@@ -1064,7 +1051,7 @@ describe("FlowProxyServer.layerHttpApi", () => {
   }
 
   it("rejects a body that needs a service its layer does not provide (#2704)", () => {
-    // The assertion is the `@ts-expect-error` directive above.
+    // The assertion is the `expectTypeOf` above, checked by the typecheck.
     expect(unprovidedServiceProbe).toBeTypeOf("function")
   })
 })

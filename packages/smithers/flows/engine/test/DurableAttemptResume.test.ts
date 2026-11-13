@@ -13,14 +13,9 @@ import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Effect, Exit, Layer, Logger, Option, Schema } from "effect"
 import { FlowEngine } from "../src/index.ts"
-import { withCrypto } from "./Crypto.ts"
 import { effect, liveEffect } from "./Harness.ts"
 import { scriptedEngine } from "./ScriptedEngine.ts"
 
-/**
- * The same wiring on the live clock, for cases that wait on the real elapsed
- * time a retry or resume policy schedules rather than driving `TestClock`.
- */
 const flow = Flow.make("AttemptResume/flow", {
   payload: { id: Schema.String },
   success: Schema.Number,
@@ -226,7 +221,7 @@ const unprovidedServiceProbe = () => {
 
 describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {
   it("rejects a body that needs a service its layer does not provide", () => {
-    // The assertion is the `@ts-expect-error` directive above.
+    // The assertion is the `expectTypeOf` above, checked by the typecheck.
     expect(unprovidedServiceProbe).toBeTypeOf("function")
   })
 })

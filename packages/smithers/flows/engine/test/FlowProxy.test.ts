@@ -1,12 +1,14 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Effect, Fiber, Layer, Option, Schema } from "effect"
+import { Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { FlowEngine, FlowProxy } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
+import { layerDurable, makeLog } from "./DurableLogEngine.ts"
+import { pollUntil } from "./Harness.ts"
 
 const effect = (
   name: string,
@@ -131,6 +133,7 @@ describe("FlowProxy", () => {
       payload: { id: Schema.String },
       success: Schema.Number,
       idempotencyKey: ({ id }) => id,
+      suspendedRetryPolicy: RetryPolicy.make({ initialMs: 1000, factor: 1, maxMs: 1000 }),
       body: (payload) => suspendedActionDeclaration.call(payload)
     })
     const layer = Layer.mergeAll(
@@ -139,15 +142,30 @@ describe("FlowProxy", () => {
     ).pipe(
       Layer.provideMerge(Action.layerImplementations)
     ).pipe(
-      Layer.provideMerge(FlowEngine.layerMemory)
+      // This driver has no resume signal, so the caller must use the polling fallback.
+      Layer.provideMerge(layerDurable(makeLog()))
     )
     return Effect.gen(function*() {
       const running = yield* suspended.execute({ id: "one" }, { executionId: "suspended" }).pipe(Effect.forkChild)
-      yield* Effect.yieldNow
-      yield* TestClock.adjust("1 second")
+      const parked = yield* pollUntil(
+        suspended.poll("suspended").pipe(
+          Effect.catchTag("@smthrs/flow/FlowExecutionNotFound", () => Effect.succeedNone)
+        ),
+        (result) => result._tag === "Suspended",
+        { turns: 100 }
+      )
+      expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
+      yield* TestClock.adjust("0 millis")
+      expect(running.pollUnsafe()).toBeUndefined()
+
+      const token = DurableDeferred.tokenFromExecutionId(signal, { flow: suspended, executionId: "suspended" })
+      yield* DurableDeferred.succeed(signal, { token, value: 42 })
+      yield* TestClock.adjust("999 millis")
+      expect(running.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust("1 milli")
+      expect(yield* Fiber.join(running)).toBe(42)
       const result = yield* suspended.poll("suspended")
-      expect(Option.isSome(result)).toBe(true)
-      yield* Fiber.interrupt(running)
+      expect(Option.isSome(result) && result.value._tag === "Complete" && result.value.exit).toEqual(Exit.succeed(42))
     }).pipe(Effect.provide(layer))
   })
 })

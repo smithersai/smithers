@@ -1,17 +1,10 @@
-import { describe, expect, it } from "@effect/vitest"
+import { describe, expect } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Deferred, Effect, Exit, Layer, Option, Schema } from "effect"
-import type * as EffectDigest from "effect/crypto/Digest"
 import { FlowEngine } from "../src/index.ts"
-import { withCrypto } from "./Crypto.ts"
 import { effect, pollUntil } from "./Harness.ts"
 
-/**
- * Polls a result until the predicate holds, under a bound: a run that stops
- * settling fails on the assertion after the bound rather than spinning into
- * the suite's timeout, which reports no diagnosis.
- */
 describe("memory engine execution surface", () => {
   effect("dies when executing a flow that was never registered", () => {
     const flow = Flow.make("Memory/unregistered", {
@@ -1178,7 +1171,7 @@ describe("flow definition surface", () => {
     })
   })
 
-  effect("executionId requires an ambient source when the flow has no idempotency key", () => {
+  effect("executionId mints a fresh id per call by default and uses a provided source", () => {
     const flow = Flow.make("Memory/no-key", {
       payload: { id: Schema.String },
       success: Schema.Void,

@@ -130,7 +130,7 @@ describe("public execute identity conflict (#3371)", () => {
                 (value) => value._tag === (status === "suspended" ? "Suspended" : "Complete"),
                 { turns: 100 }
               )
-              expect(Option.isSome(result)).toBe(true)
+              expect(Option.isSome(result) && result.value._tag).toBe(status === "suspended" ? "Suspended" : "Complete")
             }
             const request = (field === "flow" ? other : flow).execute(
               { value: field === "payload" ? 2 : 1 },

@@ -1,17 +1,11 @@
-import { describe, expect, it } from "@effect/vitest"
+import { describe, expect } from "@effect/vitest"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
-import type * as EffectDigest from "effect/crypto/Digest"
 import { FlowEngine } from "../src/index.ts"
-import { withCrypto } from "./Crypto.ts"
 import { effect, liveEffect, pollUntil } from "./Harness.ts"
 import { scriptedEngine } from "./ScriptedEngine.ts"
 
-/**
- * The same wiring on the live clock, for cases that wait on the real elapsed
- * time a retry or resume policy schedules rather than driving `TestClock`.
- */
 const isSuspended = (result: Flow.Result<any, any>) => result._tag === "Suspended"
 const isComplete = (result: Flow.Result<any, any>) => result._tag === "Complete"
 
@@ -50,7 +44,7 @@ describe("action suspension", () => {
     return Effect.gen(function*() {
       yield* flow.execute({ id: "x" }, { executionId: "run-action-gate", discard: true })
       const suspended = yield* pollUntil(flow.poll("run-action-gate"), isSuspended, { turns: 200 })
-      expect(Option.isSome(suspended)).toBe(true)
+      expect(Option.isSome(suspended) && suspended.value._tag).toBe("Suspended")
       expect(bodyRuns).toBe(1)
 
       const token = DurableDeferred.tokenFromExecutionId(Gate, {
@@ -116,9 +110,10 @@ describe("child flow suspension and interruption", () => {
     return Effect.gen(function*() {
       yield* parent.execute({ id: "x" }, { executionId: "parent-gated", discard: true })
       const suspended = yield* pollUntil(parent.poll("parent-gated"), isSuspended, { turns: 200 })
-      expect(Option.isSome(suspended)).toBe(true)
+      expect(Option.isSome(suspended) && suspended.value._tag).toBe("Suspended")
       // the child's suspension propagated: the parent is parked, not failed
-      expect(Option.isSome(yield* pollUntil(child.poll("child-gated"), isSuspended, { turns: 200 }))).toBe(true)
+      const childSuspended = yield* pollUntil(child.poll("child-gated"), isSuspended, { turns: 200 })
+      expect(Option.isSome(childSuspended) && childSuspended.value._tag).toBe("Suspended")
 
       const token = DurableDeferred.tokenFromExecutionId(Gate, {
         flow: child,

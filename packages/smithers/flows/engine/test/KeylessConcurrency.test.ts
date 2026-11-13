@@ -251,7 +251,7 @@ const unprovidedServiceProbe = () => {
 
 describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {
   it("rejects a body that needs a service its layer does not provide", () => {
-    // The assertion is the `@ts-expect-error` directive above.
+    // The assertion is the `expectTypeOf` above, checked by the typecheck.
     expect(unprovidedServiceProbe).toBeTypeOf("function")
   })
 })
