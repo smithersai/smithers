@@ -1719,6 +1719,11 @@ persistent realm behaves like a notebook: a name declared again rebinds
 instead of dying on redeclaration. Nothing here executes anything, and the
 only outcome is a rejection the model is asked to fix in this frame.
 
+`validate(cell, parse?)` accepts a parser with Babel's signature, defaulting to
+`@babel/parser`'s `parse`. The supplied parser receives the cell source and
+parser options; a thrown failure becomes a `compile_failed` rejection with its
+diagnostic.
+
 ## UnmovedTree
 
 `import * as UnmovedTree from "@smthrs/harness/UnmovedTree"`

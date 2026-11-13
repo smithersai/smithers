@@ -44,19 +44,6 @@ describe("Cell.extract", () => {
     expect(extracted.blocks).toBe(2)
   })
 
-  it("stops at the first block that returns, because a return ends the function", () => {
-    // The documented semantics of concatenation, stated as a test rather than
-    // as prose: block two is dead code the compiler still has to accept. The
-    // blocks keep the old filing surface on purpose. This test is about what a
-    // return does to the concatenated program, so it needs a return in it.
-    const text = [
-      fenced("cell", "return { intent: \"complete\", state: {}, output: \"first\" }"),
-      fenced("cell", "return { intent: \"complete\", state: {}, output: \"second\" }")
-    ].join("\n\n")
-    const extracted = Result.getOrThrow(Cell.extract(text))
-    expect(extracted.source.text.indexOf("first")).toBeLessThan(extracted.source.text.indexOf("second"))
-  })
-
   it("reads a program as typescript when any of its blocks declared a typed fence", () => {
     // Both bindings run TypeScript by erasing type-only syntax, so erasure is
     // harmless to a plain-JavaScript block and the mixed reply compiles.

@@ -25,7 +25,7 @@
  * @since 0.1.0
  */
 
-import { parse } from "@babel/parser"
+import { parse as babelParse } from "@babel/parser"
 import * as Syntax from "@babel/types"
 import { transform } from "sucrase"
 import * as Cell from "./Cell.ts"
@@ -120,7 +120,7 @@ const located = (text: string, cause: unknown): string => {
   return `line ${at.line}, column ${at.column + 1}: ${message}${line === "" ? "" : `\n  ${line}`}`
 }
 
-const parseCell = (text: string, typescript = false) =>
+const parseCell = (text: string, typescript = false, parse: typeof babelParse = babelParse) =>
   parse(text, {
     sourceType: "script",
     plugins: typescript ? ["typescript"] : [],
@@ -300,15 +300,18 @@ export const normalize = (compiled: string): string => {
  * declaration of a name the realm owns, and normalizes the top-level
  * declarations the realm has to be able to re-run.
  *
+ * The optional parser defaults to Babel and receives the source and parser
+ * options. A parser failure becomes a compile rejection.
+ *
  * @category conversions
  * @since 0.1.0
  * @slop
  */
-export const validate = (cell: Cell.Source): Validation => {
+export const validate = (cell: Cell.Source, parse: typeof babelParse = babelParse): Validation => {
   const isTypeScript = cell.language === "typescript"
   const refuse = (rejected: Cell.Rejected): Validation => ({ rejected, compiled: undefined })
   try {
-    const parsed = parseCell(cell.text, isTypeScript)
+    const parsed = parseCell(cell.text, isTypeScript, parse)
     const moduleUse = moduleSyntax(parsed)
     if (moduleUse !== undefined) {
       return refuse(
