@@ -11,10 +11,10 @@ import * as Exit from "effect/Exit"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as Compose from "../src/Compose.ts"
 
-vi.mock("node:fs/promises", async (original) => ({ ...await original<typeof Fs>() }))
+import { PublicationFileSystem } from "../src/internal/PublicationFileSystem.ts"
 
 let root: string
 let outside: string
@@ -30,7 +30,7 @@ afterEach(async () => {
 })
 
 /** Runs a generator that is a `node -e` program, in check mode. */
-const check = (program: string, changes: ReadonlyArray<string>) =>
+const check = (program: string, changes: ReadonlyArray<string>, io: typeof Fs = Fs) =>
   Effect.runPromiseExit(
     Compose.checkGenerator({ workspaceRoot: root }, {
       run: {
@@ -42,7 +42,7 @@ const check = (program: string, changes: ReadonlyArray<string>) =>
         timeoutMs: 30_000
       },
       changes: [...changes]
-    } as never)
+    } as never).pipe(Effect.provideService(PublicationFileSystem, io))
   )
 
 describe("check-mode rollback", () => {
@@ -106,23 +106,21 @@ describe("check-mode rollback", () => {
 
     const open = Fs.open
     // Model Windows' unsupported directory fchmod while keeping real handles.
-    const refused = vi.spyOn(Fs, "open").mockImplementation(async (...args) => {
-      const handle = await open(...args)
-      const chmod = handle.chmod.bind(handle)
-      handle.chmod = async (mode) => {
-        if ((await handle.stat()).isDirectory()) {
-          throw Object.assign(new Error("directory fchmod denied"), { code: "EPERM" })
+    const io: typeof Fs = {
+      ...Fs,
+      open: async (...args) => {
+        const handle = await open(...args)
+        const chmod = handle.chmod.bind(handle)
+        handle.chmod = async (mode) => {
+          if ((await handle.stat()).isDirectory()) {
+            throw Object.assign(new Error("directory fchmod denied"), { code: "EPERM" })
+          }
+          return chmod(mode)
         }
-        return chmod(mode)
+        return handle
       }
-      return handle
-    })
-    let exit
-    try {
-      exit = await check("require('node:fs').rmSync('out', { recursive: true })", ["out"])
-    } finally {
-      refused.mockRestore()
     }
+    const exit = await check("require('node:fs').rmSync('out', { recursive: true })", ["out"], io)
 
     expect(Exit.isFailure(exit)).toBe(true)
     expect(JSON.stringify(exit)).toContain("out")

@@ -12,12 +12,12 @@ import { constants as NodeFsConstants } from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
-vi.mock("node:fs/promises", async (original) => ({ ...await original<typeof Fs>() }))
 import * as Compose from "../src/Compose.ts"
 import * as Filegroup from "../src/Filegroup.ts"
 import * as Input from "../src/Input.ts"
+import { PublicationFileSystem } from "../src/internal/PublicationFileSystem.ts"
 import * as Reference from "../src/Reference.ts"
 import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"
@@ -250,7 +250,6 @@ describe("file-set checks", () => {
 describe("generator backup recovery and bounds", () => {
   const temporary: Array<string> = []
   afterEach(async () => {
-    vi.restoreAllMocks()
     await Promise.all(temporary.splice(0).map((path) => Fs.rm(path, { recursive: true, force: true })))
   })
   const directory = async () => {
@@ -258,18 +257,28 @@ describe("generator backup recovery and bounds", () => {
     temporary.push(root)
     return root
   }
-  const check = (root: string, program: string, changes = ["out"], snapshotLimits = {}) =>
-    Effect.runPromiseExit(Compose.checkGenerator({ workspaceRoot: root, snapshotLimits }, {
-      run: {
-        argv: [process.execPath, "-e", program],
-        cwd: ".",
-        env: {},
-        secrets: [],
-        expectedExitCodes: [0],
-        timeoutMs: 30_000
-      },
-      changes
-    } as never))
+  const backupIo = (backups: Array<string>): typeof Fs => ({
+    ...Fs,
+    mkdtemp: (async (...args: Parameters<typeof Fs.mkdtemp>) => {
+      const backup = await Fs.mkdtemp(...args)
+      backups.push(String(backup))
+      return backup
+    }) as typeof Fs.mkdtemp
+  })
+  const check = (root: string, program: string, changes = ["out"], snapshotLimits = {}, io: typeof Fs = Fs) =>
+    Effect.runPromiseExit(
+      Compose.checkGenerator({ workspaceRoot: root, snapshotLimits }, {
+        run: {
+          argv: [process.execPath, "-e", program],
+          cwd: ".",
+          env: {},
+          secrets: [],
+          expectedExitCodes: [0],
+          timeoutMs: 30_000
+        },
+        changes
+      } as never).pipe(Effect.provideService(PublicationFileSystem, io))
+    )
 
   it.each(["file", "symlink"])("restores a declared directory replaced by a %s", async (kind) => {
     const root = await directory()
@@ -302,21 +311,24 @@ describe("generator backup recovery and bounds", () => {
     const open = Fs.open
     let active = 0
     let peak = 0
-    vi.spyOn(Fs, "open").mockImplementation(async (...args) => {
-      const handle = await open(...args)
-      active += 1
-      peak = Math.max(peak, active)
-      const close = handle.close.bind(handle)
-      vi.spyOn(handle, "close").mockImplementation(async () => {
-        try {
-          await close()
-        } finally {
-          active -= 1
+    const io: typeof Fs = {
+      ...Fs,
+      open: async (...args) => {
+        const handle = await open(...args)
+        active += 1
+        peak = Math.max(peak, active)
+        const close = handle.close.bind(handle)
+        handle.close = async () => {
+          try {
+            await close()
+          } finally {
+            active -= 1
+          }
         }
-      })
-      return handle
-    })
-    expect(Exit.isSuccess(await check(root, "void 0"))).toBe(true)
+        return handle
+      }
+    }
+    expect(Exit.isSuccess(await check(root, "void 0", ["out"], {}, io))).toBe(true)
     expect(active).toBe(0)
     expect(peak).toBeLessThanOrEqual(16)
   })
@@ -388,24 +400,29 @@ describe("generator backup recovery and bounds", () => {
       const path = NodePath.join(root, "out")
       await Fs.writeFile(path, "keep")
       const open = Fs.open
-      vi.spyOn(Fs, "open").mockImplementation(async (...args) => {
-        const handle = await open(...args)
-        if (args[0] === path) {
-          const stat = handle.stat.bind(handle)
-          let reads = 0
-          vi.spyOn(handle, "stat").mockImplementation(async () => {
-            const info = await stat()
-            reads++
-            if (fault === "non-file") info.isFile = () => false
-            if (fault.startsWith("growing")) info.size = 0
-            if (fault === "changed-after-read" && reads > 1) info.mtimeMs++
-            return info
-          })
+      const io: typeof Fs = {
+        ...Fs,
+        open: async (...args) => {
+          const handle = await open(...args)
+          if (args[0] === path) {
+            const stat = handle.stat.bind(handle)
+            let reads = 0
+            handle.stat = new Proxy(stat, {
+              apply: async (target, receiver, args) => {
+                const info = await Reflect.apply(target, receiver, args)
+                reads++
+                if (fault === "non-file") info.isFile = () => false
+                if (fault.startsWith("growing")) info.size = typeof info.size === "bigint" ? 0n : 0
+                if (fault === "changed-after-read" && reads > 1) info.mtimeMs++
+                return info
+              }
+            })
+          }
+          return handle
         }
-        return handle
-      })
+      }
       const limits = fault === "growing-file" ? { fileBytes: 2 } : fault === "growing-total" ? { totalBytes: 2 } : {}
-      const result = await check(root, "require('node:fs').writeFileSync('ran','yes')", ["out"], limits)
+      const result = await check(root, "require('node:fs').writeFileSync('ran','yes')", ["out"], limits, io)
       expect(Exit.isFailure(result)).toBe(true)
       expect(JSON.stringify(result)).toContain(fault.startsWith("growing") ? "byte limit" : "changed while")
       await expect(Fs.stat(NodePath.join(root, "ran"))).rejects.toThrow()
@@ -417,13 +434,18 @@ describe("generator backup recovery and bounds", () => {
     const root = await directory()
     await Fs.mkdir(NodePath.join(root, "out/parent"), { recursive: true })
     const lstat = Fs.lstat
-    vi.spyOn(Fs, "lstat").mockImplementation(async (...args) => {
-      if (args[0] === NodePath.join(root, failingPath)) {
-        throw Object.assign(new Error("inspection denied"), { code: "EACCES" })
-      }
-      return lstat(...args)
-    })
-    const result = await check(root, "void 0", [failingPath === "out" ? "out" : "out/parent/file"])
+    const io: typeof Fs = {
+      ...Fs,
+      lstat: new Proxy(lstat, {
+        apply: (target, receiver, args) => {
+          if (args[0] === NodePath.join(root, failingPath)) {
+            throw Object.assign(new Error("inspection denied"), { code: "EACCES" })
+          }
+          return Reflect.apply(target, receiver, args)
+        }
+      })
+    }
+    const result = await check(root, "void 0", [failingPath === "out" ? "out" : "out/parent/file"], {}, io)
     expect(Exit.isFailure(result)).toBe(true)
     expect(JSON.stringify(result)).toContain("inspection denied")
   })
@@ -450,19 +472,25 @@ describe("generator backup recovery and bounds", () => {
     await Fs.writeFile(original, "irreplaceable bytes")
     await Fs.chmod(original, 0o640)
     const originalMode = (await Fs.stat(original)).mode & 0o777
-    const mkdtemp = vi.spyOn(Fs, "mkdtemp")
+    const backups: Array<string> = []
     const open = Fs.open
-    vi.spyOn(Fs, "open").mockImplementation(async (...args) => {
-      if (args[0] === original && typeof args[1] === "number" && (args[1] & NodeFsConstants.O_WRONLY) !== 0) {
-        throw new Error("injected restore failure")
+    const io: typeof Fs = {
+      ...backupIo(backups),
+      open: async (...args) => {
+        if (args[0] === original && typeof args[1] === "number" && (args[1] & NodeFsConstants.O_WRONLY) !== 0) {
+          throw new Error("injected restore failure")
+        }
+        return open(...args)
       }
-      return open(...args)
-    })
+    }
     const exit = await check(
       root,
-      "const fs = require('node:fs'); fs.rmSync('out', { recursive: true }); fs.writeFileSync('out', 'replacement')"
+      "const fs = require('node:fs'); fs.rmSync('out', { recursive: true }); fs.writeFileSync('out', 'replacement')",
+      ["out"],
+      {},
+      io
     )
-    const backup = await mkdtemp.mock.results[0]!.value as string
+    const backup = backups[0]!
     temporary.push(backup)
     expect(Exit.isFailure(exit)).toBe(true)
     const message = Exit.isFailure(exit) ? Cause.pretty(exit.cause) : ""
@@ -481,9 +509,15 @@ describe("generator backup recovery and bounds", () => {
     await Fs.mkdir(NodePath.join(root, "out"))
     const bytes = Buffer.alloc(3 * 64 * 1024 + 7, 0xab)
     await Fs.writeFile(NodePath.join(root, "out/binary"), bytes)
-    const mkdtemp = vi.spyOn(Fs, "mkdtemp")
-    const exit = await check(root, "require('node:fs').writeFileSync('out/binary', 'changed')")
-    const backup = await mkdtemp.mock.results[0]!.value as string
+    const backups: Array<string> = []
+    const exit = await check(
+      root,
+      "require('node:fs').writeFileSync('out/binary', 'changed')",
+      ["out"],
+      {},
+      backupIo(backups)
+    )
+    const backup = backups[0]!
     temporary.push(backup)
     expect(Exit.isFailure(exit)).toBe(true)
     expect(JSON.stringify(exit)).toContain("text preview limited")
@@ -495,9 +529,9 @@ describe("generator backup recovery and bounds", () => {
     const root = await directory()
     await Fs.mkdir(NodePath.join(root, "out"))
     for (let index = 0; index < 40; index++) await Fs.writeFile(NodePath.join(root, `out/${index}`), "four")
-    const mkdtemp = vi.spyOn(Fs, "mkdtemp")
-    const exit = await check(root, "void 0", ["out"], { totalBytes: 7 })
-    const backup = await mkdtemp.mock.results[0]!.value as string
+    const backups: Array<string> = []
+    const exit = await check(root, "void 0", ["out"], { totalBytes: 7 }, backupIo(backups))
+    const backup = backups[0]!
     temporary.push(backup)
     expect(Exit.isFailure(exit)).toBe(true)
     expect(JSON.stringify(exit)).toContain("aggregate byte limit")

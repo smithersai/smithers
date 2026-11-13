@@ -13,13 +13,14 @@ export const packageManager = Smithers.PackageManager.Pnpm({ version: "11.21.0",
 
 const docs = Smithers.TypedocDocs({
   packageManager,
-  sources: [Smithers.glob("packages/*/src/**/*.ts")],
+  sources: [Smithers.glob("src/**/*.ts")],
   deps: [],
-  tsconfig: Smithers.file("//tsconfig.json"),
+  tsconfig: Smithers.file("tsconfig.json"),
   config: Smithers.file("//typedoc.json"),
-  entryPoints: [Smithers.file("//packages/greeter/src/index.ts")],
-  outDir: "//docs/api",
-  plugin: ["typedoc-plugin-markdown"]
+  entryPoints: [Smithers.file("src/index.ts")],
+  outDir: "docs/api",
+  plugin: ["typedoc-plugin-markdown"],
+  cwd: "packages/greeter"
 })
 
 export const Package = Smithers.Package({
@@ -39,8 +40,7 @@ export const Package = Smithers.Package({
 | `entryPoints`    | `Array<Input.File>`             | required | Entry point declarations passed as positional arguments.                                   |
 | `outDir`         | `string`                        | required | Output directory passed as `--out`.                                                        |
 | `plugin`         | `Array<string>`                 | required | Plugin package names, each passed as `--plugin`.                                           |
-
-There is no `cwd` attribute. The run always happens at the workspace root.
+| `cwd`            | `string`                        | `"."`    | Workspace-relative directory the runner starts in and output capture reads from.           |
 
 ## Command
 
@@ -52,34 +52,34 @@ pnpm exec typedoc --out <outDir> --tsconfig <tsconfig.path> \
   [--options <config.path>] [--plugin <name>]... <entryPoints...>
 ```
 
-Because the run happens at the workspace root, a leading `//` is stripped from
-`outDir`, `tsconfig.path`, `config.path`, and every entry point before it reaches
-argv. Write workspace-rooted paths and they resolve correctly.
+The run starts in `cwd`. Package-relative input paths stay relative to that
+directory; workspace-rooted `//` inputs are rendered relative to `cwd`.
+`outDir` is a relative output directory under `cwd`; it cannot use `//`.
 
 ## Inputs
 
-Collected from the attrs: every declaration in `sources`, plus `tsconfig`, plus
-`config` when it is not `null`.
+Collected from the attrs: every declaration in `sources`, `tsconfig`, every
+`entryPoints` declaration, and `config` when it is not `null`.
 
 ## Outputs
 
-None captured. The target declares no output paths, so success carries only the run
-summary. `outDir` is key material and a command-line argument.
+The output-capture action requires `outDir` to exist under `cwd` and records
+its deterministic digest. A successful TypeDoc exit alone is insufficient.
 
 ## Channels
 
-| Channel | Type             |
-| ------- | ---------------- |
-| Success | `Exec.Result`    |
-| Error   | `Exec.ExecError` |
+| Channel | Type                   |
+| ------- | ---------------------- |
+| Success | `ToolBuild.Outputs`    |
+| Error   | `ToolBuild.BuildError` |
 
 ## Status
 
-|           |                                                  |
-| --------- | ------------------------------------------------ |
-| Kinds     | `build`                                          |
-| Cacheable | Never; generated output restoration is not wired |
-| Executes  | Yes, through `ExecLive`                          |
+|           |                                                             |
+| --------- | ----------------------------------------------------------- |
+| Kinds     | `build`                                                     |
+| Cacheable | Never; generated output restoration is not wired            |
+| Executes  | Yes, through exec and output-capture action implementations |
 
 ## See also
 

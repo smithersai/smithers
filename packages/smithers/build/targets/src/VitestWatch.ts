@@ -31,8 +31,10 @@ export const Attrs = Schema.Struct({
   cwd: Schema.NonEmptyString.pipe(
     Schema.withConstructorDefault(Effect.succeed("."))
   ),
-  /** Maximum run time in milliseconds. Defaults to twenty minutes. */
-  timeoutMs: Exec.TimeoutMs.pipe(Schema.withConstructorDefault(Effect.succeed(1_200_000)))
+  /** Maximum session duration in milliseconds. Unbounded by default. */
+  timeoutMs: Schema.Union([Exec.TimeoutMs, Schema.Literal("unbounded")]).pipe(
+    Schema.withConstructorDefault(Effect.succeed("unbounded" as const))
+  )
 })
 
 /**

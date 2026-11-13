@@ -157,12 +157,12 @@ describe("Vitest coverage and watch deadlines", () => {
     thresholds: { branches: 0, functions: 0, lines: 0, statements: 0 }
   } as const
   const cases = [
-    ["VitestCoverage", (timeoutMs?: number) =>
+    ["VitestCoverage", 1_200_000, (timeoutMs?: number) =>
       VitestCoverage({
         ...coverageAttrs,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       })],
-    ["VitestWatch", (timeoutMs?: number) =>
+    ["VitestWatch", "unbounded", (timeoutMs?: number) =>
       VitestWatch({
         tests: vitestAttrs.tests,
         sources: vitestAttrs.sources,
@@ -174,11 +174,24 @@ describe("Vitest coverage and watch deadlines", () => {
       })]
   ] as const
 
-  it.each(cases)("%s defaults to twenty minutes", (_, make) => {
-    expect(plannedCalls(make())[0]?.payload["timeoutMs"]).toBe(1_200_000)
+  it.each(cases)("%s uses its session deadline by default", (_, deadline, make) => {
+    expect(plannedCalls(make())[0]?.payload["timeoutMs"]).toBe(deadline)
   })
 
-  it.each(cases)("%s forwards an explicit deadline", (_, make) => {
+  it("accepts an explicit unbounded watch session", () => {
+    const watch = VitestWatch({
+      tests: vitestAttrs.tests,
+      sources: vitestAttrs.sources,
+      deps: vitestAttrs.deps,
+      config: null,
+      environment: "node",
+      packageManager,
+      timeoutMs: "unbounded"
+    })
+    expect(plannedCalls(watch)[0]?.payload["timeoutMs"]).toBe("unbounded")
+  })
+
+  it.each(cases)("%s forwards an explicit deadline", (_, _deadline, make) => {
     expect(plannedCalls(make(2_400_000))[0]?.payload["timeoutMs"]).toBe(2_400_000)
   })
 })

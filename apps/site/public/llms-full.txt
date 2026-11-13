@@ -3962,7 +3962,7 @@ const watch = S.VitestWatch({
   deps: [lib],
   config: S.file("vitest.config.ts"),
   environment: "node",
-  timeoutMs: 1_200_000
+  timeoutMs: "unbounded"
 })
 
 const biome = S.BiomeCheck({
@@ -4049,7 +4049,8 @@ const typedoc = S.TypedocDocs({
   config: S.file("typedoc.json"),
   entryPoints: [entry],
   outDir: "docs/api",
-  plugin: []
+  plugin: [],
+  cwd: "."
 })
 const published = S.Npm.Published({ manifest: packageJsonFile })
 const apiCompatibility = S.Api.Compat({

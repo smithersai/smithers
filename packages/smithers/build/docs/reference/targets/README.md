@@ -140,11 +140,10 @@ These modules are not targets. They are documented elsewhere.
 - **`cwd`** is the workspace-relative directory the tool starts in. It defaults
   to `"."`, the workspace root. Package-level targets pass their own directory.
   [Dev](dev.md) declares `cwd` without a default, so it is required there.
-  [TypedocDocs](typedoc-docs.md), [Changesets](changesets.md),
-  [NpmPublish](npm-publish.md), [JsrPublish](jsr-publish.md), and
-  [PnpmWorkspace](pnpm-workspace.md) declare no `cwd` at all. `TypedocDocs` and
-  `Changesets` run at the workspace root, the publish targets run in the directory
-  of their declared manifest, and `PnpmWorkspace` generates its file at the
+  [Changesets](changesets.md), [NpmPublish](npm-publish.md),
+  [JsrPublish](jsr-publish.md), and [PnpmWorkspace](pnpm-workspace.md) declare
+  no `cwd` at all. `Changesets` runs at the workspace root, the publish targets
+  run in the directory of their declared manifest, and `PnpmWorkspace` generates its file at the
   workspace root.
 - **Tools resolve through `PackageManager.exec`** of the declared package
   manager, so the manager is declared key material rather than a hardcoded

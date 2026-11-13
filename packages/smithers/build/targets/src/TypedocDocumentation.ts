@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
@@ -16,7 +17,8 @@ import { BuildError, captureOutputs, Outputs } from "./ToolBuild.ts"
  *
  * `sources`, `tsconfig`, `config`, and `entryPoints` are declared inputs.
  * `outDir` stays a string because it declares an output path rather than
- * referencing a file the target reads.
+ * referencing a file the target reads. Paths resolve from `cwd`, which defaults
+ * to the workspace root; `//` inputs remain workspace-rooted.
  *
  * @category schemas
  * @since 0.1.0
@@ -29,7 +31,8 @@ export const Attrs = Schema.Struct({
   config: Schema.NullOr(Input.File),
   entryPoints: Schema.Array(Input.File),
   outDir: Schema.NonEmptyString,
-  plugin: Schema.Array(Schema.NonEmptyString)
+  plugin: Schema.Array(Schema.NonEmptyString),
+  cwd: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(".")))
 })
 
 /**
@@ -43,7 +46,7 @@ export type Attrs = typeof Attrs.Type
 /**
  * Plans TypeDoc generation into the declared documentation directory.
  *
- * The body plans one `pnpm exec typedoc` run at the workspace root through
+ * The body plans one `pnpm exec typedoc` run in `cwd` through
  * the shared sealed exec action: the declared tsconfig, the optional TypeDoc
  * options file, every plugin, and the entry points land on argv, and `--out`
  * points at `outDir`. Key material contains source, tsconfig, and TypeDoc
@@ -64,18 +67,18 @@ export const TypedocDocs = Target.make("TypedocDocs", {
   kinds: ["build"],
   success: Outputs,
   error: BuildError,
-  outputs: (attrs) => ({ cwd: ".", paths: [attrs.outDir] }),
+  outputs: (attrs) => ({ cwd: attrs.cwd, paths: [attrs.outDir] }),
   implementation: (attrs) => {
     const argv: Array<string> = PackageManager.exec(attrs.packageManager, [
       "typedoc",
       "--out",
-      Input.rootRelative(".", attrs.outDir),
+      attrs.outDir,
       "--tsconfig",
-      Input.rootRelative(".", attrs.tsconfig.path)
+      Input.rootRelative(attrs.cwd, attrs.tsconfig.path)
     ])
-    if (attrs.config !== null) argv.push("--options", Input.rootRelative(".", attrs.config.path))
+    if (attrs.config !== null) argv.push("--options", Input.rootRelative(attrs.cwd, attrs.config.path))
     for (const plugin of attrs.plugin) argv.push("--plugin", plugin)
-    for (const entry of attrs.entryPoints) argv.push(Input.rootRelative(".", entry.path))
-    return captureOutputs(Exec.runTool({ cwd: ".", argv }), ".", [attrs.outDir])
+    for (const entry of attrs.entryPoints) argv.push(Input.rootRelative(attrs.cwd, entry.path))
+    return captureOutputs(Exec.runTool({ cwd: attrs.cwd, argv }), attrs.cwd, [attrs.outDir])
   }
 })

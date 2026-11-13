@@ -187,6 +187,12 @@ from its completed batches; a completed run is never reused, and an unchanged
 rerun reviews everything again. Unexpected defects also mark the run as failed,
 with a generic diagnostic that omits private failure details.
 
+Record writes flush their temporary file before replacement and the collection
+directory afterward on POSIX hosts, including the store entry for a new
+collection. Listing skips stray filenames, malformed JSON, and records
+that disappear or cannot be read. Symbolic links and record identity changes
+remain errors.
+
 Each finding has a stable fingerprint from its file, check and flagged line
 text, so moving the line keeps it. A stored finding whose source line is absent
 fails with a typed `LlmReviewError` in the `store` phase. A finding the same owner and policy no

@@ -862,3 +862,159 @@ describe("legacy saved review compatibility (#3206)", () => {
     }
   )
 })
+
+describe("private record durability and collection recovery", () => {
+  const name = (key: string) => `findings/${key.repeat(64)}.json`
+
+  it.each(["first", "replacement", "retry"])("flushes record bytes and each new directory entry: %s write", (kind) => {
+    const directory = PrivateStore.ensure(store)
+    if (kind === "replacement") PrivateStore.write(directory, name("a"), { revision: 0 })
+    if (kind === "retry") {
+      expect(() =>
+        PrivateStore.write(directory, name("a"), { revision: 0 }, {
+          ...NodeFs,
+          fsyncSync: () => {
+            throw new Error("interrupted first write")
+          }
+        })
+      ).toThrow("interrupted first write")
+    }
+    const operations: Array<string> = []
+    const opened = new Map<number, NodeFs.PathLike>()
+    const io: typeof NodeFs = {
+      ...NodeFs,
+      openSync: (path, flags, mode) => {
+        const fd = NodeFs.openSync(path, flags, mode)
+        opened.set(fd, path)
+        return fd
+      },
+      fsyncSync: (fd) => {
+        operations.push(
+          NodeFs.fstatSync(fd).isDirectory() ? opened.get(fd) === directory ? "store" : "collection" : "file"
+        )
+        NodeFs.fsyncSync(fd)
+      },
+      renameSync: (from, to) => {
+        operations.push("rename")
+        NodeFs.renameSync(from, to)
+      }
+    }
+    PrivateStore.write(directory, name("a"), { revision: 1 }, io)
+    expect(operations).toEqual(
+      process.platform === "win32"
+        ? ["file", "rename"]
+        : ["file", "rename", "collection", "store"]
+    )
+    expect(PrivateStore.read(directory, name("a"))).toEqual({ revision: 1 })
+    expect(NodeFs.statSync(Path.join(directory, name("a"))).mode & 0o777)
+      .toBe(process.platform === "win32" ? 0o666 : 0o600)
+  })
+
+  it("preserves files it did not create when temporary-file acquisition fails", () => {
+    const directory = PrivateStore.ensure(store)
+    const failure = new Error("temporary acquisition denied")
+    let removals = 0
+    expect(() =>
+      PrivateStore.write(directory, name("a"), {}, {
+        ...NodeFs,
+        openSync: () => {
+          throw failure
+        },
+        rmSync: () => {
+          removals++
+        }
+      })
+    ).toThrow(failure)
+    expect(removals).toBe(0)
+  })
+
+  it.each(["write", "file-sync", "rename", ...(process.platform === "win32" ? [] : ["directory-sync"])])(
+    "closes handles and cleans temporary files after %s failure",
+    (stage) => {
+      const directory = PrivateStore.ensure(store)
+      PrivateStore.write(directory, name("a"), { revision: 1 })
+      const opened = new Set<number>()
+      const failure = new Error(`injected ${stage} failure`)
+      const io: typeof NodeFs = {
+        ...NodeFs,
+        openSync: (...args) => {
+          const fd = NodeFs.openSync(...args)
+          opened.add(fd)
+          return fd
+        },
+        closeSync: (fd) => {
+          NodeFs.closeSync(fd)
+          opened.delete(fd)
+        },
+        writeFileSync: (...args) => {
+          if (stage === "write") throw failure
+          return NodeFs.writeFileSync(...args)
+        },
+        fsyncSync: (fd) => {
+          if (stage === (NodeFs.fstatSync(fd).isDirectory() ? "directory-sync" : "file-sync")) throw failure
+          NodeFs.fsyncSync(fd)
+        },
+        renameSync: (...args) => {
+          if (stage === "rename") throw failure
+          NodeFs.renameSync(...args)
+        }
+      }
+      expect(() => PrivateStore.write(directory, name("a"), { revision: 2 }, io)).toThrow(failure)
+      expect(opened.size).toBe(0)
+      expect(NodeFs.readdirSync(Path.join(directory, "findings"))).toEqual([Path.basename(name("a"))])
+      expect(PrivateStore.read(directory, name("a"))).toEqual({ revision: stage === "directory-sync" ? 2 : 1 })
+    }
+  )
+
+  it.each(["", "{", "not json"])("lists valid records despite damaged JSON: %j", (contents) => {
+    const directory = PrivateStore.ensure(store)
+    PrivateStore.write(directory, name("a"), { order: 1 })
+    PrivateStore.write(directory, name("c"), { order: 3 })
+    NodeFs.writeFileSync(Path.join(directory, name("b")), contents)
+    NodeFs.writeFileSync(Path.join(directory, "findings/notes.json"), "{}")
+    NodeFs.writeFileSync(Path.join(directory, "findings/incomplete.tmp"), "{}")
+    expect(PrivateStore.list(directory, "findings")).toEqual([{ order: 1 }, { order: 3 }])
+  })
+
+  it.each(["ENOENT", "EACCES", "EPERM"].flatMap((code) => ["open", "read"].map((stage) => [code, stage])))(
+    "omits an unavailable record without an undefined entry: %s at %s",
+    (code, stage) => {
+      const directory = PrivateStore.ensure(store)
+      PrivateStore.write(directory, name("a"), { kept: true })
+      PrivateStore.write(directory, name("b"), { removed: true })
+      const io: typeof NodeFs = {
+        ...NodeFs,
+        openSync: (path, flags, mode) => {
+          if (stage === "open" && path === Path.join(directory, name("b"))) {
+            throw Object.assign(new Error("record unavailable"), { code })
+          }
+          return NodeFs.openSync(path, flags, mode)
+        },
+        readFileSync: new Proxy(NodeFs.readFileSync, {
+          apply: (target, receiver, args) => {
+            if (stage === "read") throw Object.assign(new Error("record unavailable"), { code })
+            return Reflect.apply(target, receiver, args)
+          }
+        })
+      }
+      expect(PrivateStore.list(directory, "findings", io)).toEqual(stage === "read" ? [] : [{ kept: true }])
+    }
+  )
+
+  it("preserves unexpected read failures and refuses linked records", () => {
+    const directory = PrivateStore.ensure(store)
+    PrivateStore.write(directory, name("a"), { kept: true })
+    const failure = new Error("storage failure")
+    expect(() =>
+      PrivateStore.list(directory, "findings", {
+        ...NodeFs,
+        readFileSync: () => {
+          throw failure
+        }
+      })
+    ).toThrow(failure)
+    NodeFs.unlinkSync(Path.join(directory, name("a")))
+    NodeFs.symlinkSync(Path.join(root, "src/a.ts"), Path.join(directory, name("a")))
+    expect(() => PrivateStore.list(directory, "findings")).toThrow("not a regular file")
+  })
+})

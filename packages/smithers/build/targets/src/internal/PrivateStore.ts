@@ -1,6 +1,6 @@
 /**
  * A private directory of JSON records: owner-only permissions, no symbolic
- * links, and atomic replacement of every record.
+ * links, and flushed, atomic replacement of every record.
  * @since 1.0.0
  */
 
@@ -47,7 +47,8 @@ const recordPath = (directory: string, name: string): string => {
 }
 
 /**
- * Atomically replaces one record, readable only by its owner.
+ * Atomically replaces one record, readable only by its owner. Flushes its
+ * bytes before replacement and its directory afterward on POSIX hosts.
  * @category store
  * @since 1.0.0
  */
@@ -55,8 +56,29 @@ export const write = (directory: string, name: string, value: unknown, io: typeo
   const path = recordPath(directory, name)
   privateDirectory(NodePath.dirname(path), io)
   const temporary = `${path}.${randomBytes(8).toString("hex")}.tmp`
-  io.writeFileSync(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600, flag: "wx" })
-  io.renameSync(temporary, path)
+  const descriptor = io.openSync(temporary, "wx", 0o600)
+  try {
+    try {
+      io.writeFileSync(descriptor, `${JSON.stringify(value)}\n`)
+      io.fsyncSync(descriptor)
+    } finally {
+      io.closeSync(descriptor)
+    }
+    io.renameSync(temporary, path)
+    // Windows cannot open directory descriptors for fsync.
+    if (process.platform !== "win32") {
+      for (const parent of [NodePath.dirname(path), directory]) {
+        const handle = io.openSync(parent, io.constants.O_RDONLY | io.constants.O_DIRECTORY)
+        try {
+          io.fsyncSync(handle)
+        } finally {
+          io.closeSync(handle)
+        }
+      }
+    }
+  } finally {
+    io.rmSync(temporary, { force: true })
+  }
 }
 
 /** One refusal for every way an opened record can fail its identity check. */
@@ -98,14 +120,28 @@ export const read = (directory: string, name: string, io: typeof NodeFs = NodeFs
 }
 
 /**
- * Reads every record in one collection, in name order.
+ * Reads available records in name order. Stray filenames, malformed JSON and
+ * missing or permission-denied records are absent; unsafe identities still fail.
  * @category store
  * @since 1.0.0
  */
 export const list = (directory: string, name: string, io: typeof NodeFs = NodeFs): ReadonlyArray<unknown> => {
   const path = collection(directory, name, io)
   if (path === undefined) return []
-  return io.readdirSync(path).filter((entry) => entry.endsWith(".json")).sort().map((entry) =>
-    read(directory, `${name}/${entry}`, io)
-  )
+  const records: Array<unknown> = []
+  for (const entry of io.readdirSync(path).sort()) {
+    const record = `${name}/${entry}`
+    if (!recordName.test(record)) continue
+    try {
+      const value = read(directory, record, io)
+      if (value !== undefined) records.push(value)
+    } catch (cause) {
+      const error = cause as NodeJS.ErrnoException
+      const code = (error.cause as NodeJS.ErrnoException | undefined)?.code ?? error.code
+      // Corrupt or unavailable records are misses; confinement and storage
+      // failures must still reach the caller.
+      if (!(cause instanceof SyntaxError) && code !== "EACCES" && code !== "EPERM" && code !== "ENOENT") throw cause
+    }
+  }
+  return records
 }

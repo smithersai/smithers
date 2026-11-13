@@ -355,6 +355,39 @@ describe("TsBuild", () => {
 })
 
 describe("TypedocDocs", () => {
+  it.each(["package-relative", "workspace-rooted"])("resolves %s inputs and outputs from its cwd", (kind) => {
+    const path = (value: string) => Input.file(kind === "package-relative" ? value : `//packages/example/${value}`)
+    const target = TypedocDocs({
+      packageManager,
+      sources: [Input.glob("src/**/*.ts")],
+      deps: [],
+      tsconfig: path("tsconfig.json"),
+      config: Input.file("//typedoc.json"),
+      entryPoints: [path("src/index.ts")],
+      plugin: [],
+      outDir: "docs/api",
+      cwd: "packages/example"
+    })
+    const calls = plannedCalls(target)
+    expect(calls[0]?.payload).toMatchObject({
+      cwd: "packages/example",
+      argv: [
+        "pnpm",
+        "exec",
+        "typedoc",
+        "--out",
+        "docs/api",
+        "--tsconfig",
+        "tsconfig.json",
+        "--options",
+        "../../typedoc.json",
+        "src/index.ts"
+      ]
+    })
+    expect(calls[1]?.payload).toMatchObject({ cwd: "packages/example", paths: ["docs/api"] })
+    expect(Target.metadata(target).outputs).toEqual({ cwd: "packages/example", paths: ["docs/api"] })
+  })
+
   it("renders every declared path from the workspace root", () => {
     const argv = plannedArgv(TypedocDocs({
       packageManager,

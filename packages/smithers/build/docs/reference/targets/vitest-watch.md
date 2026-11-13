@@ -26,15 +26,16 @@ export const Package = Smithers.Package({
 
 ## Attributes
 
-| Name             | Type                            | Default  | Description                                                                                |
-| ---------------- | ------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
-| `packageManager` | `PackageManager.PackageManager` | required | The declared package manager the tool runs through; its name and version are key material. |
-| `tests`          | `Array<Input.Declared>`         | required | Test file declarations. Startup key material only.                                         |
-| `sources`        | `Array<Input.Declared>`         | required | Source declarations. Startup key material only.                                            |
-| `deps`           | `Array<Target.Target>`          | required | Dependency targets.                                                                        |
-| `config`         | `Input.File \| null`            | required | The Vitest config, or `null` to pass no `--config`.                                        |
-| `environment`    | `string`                        | required | The Vitest environment.                                                                    |
-| `cwd`            | `string`                        | `"."`    | Workspace-relative directory the runner starts in.                                         |
+| Name             | Type                            | Default       | Description                                                                                |
+| ---------------- | ------------------------------- | ------------- | ------------------------------------------------------------------------------------------ |
+| `packageManager` | `PackageManager.PackageManager` | required      | The declared package manager the tool runs through; its name and version are key material. |
+| `tests`          | `Array<Input.Declared>`         | required      | Test file declarations. Startup key material only.                                         |
+| `sources`        | `Array<Input.Declared>`         | required      | Source declarations. Startup key material only.                                            |
+| `deps`           | `Array<Target.Target>`          | required      | Dependency targets.                                                                        |
+| `config`         | `Input.File \| null`            | required      | The Vitest config, or `null` to pass no `--config`.                                        |
+| `environment`    | `string`                        | required      | The Vitest environment.                                                                    |
+| `cwd`            | `string`                        | `"."`         | Workspace-relative directory the runner starts in.                                         |
+| `timeoutMs`      | `number \| "unbounded"`         | `"unbounded"` | Optional maximum session duration in milliseconds.                                         |
 
 ## Command
 
@@ -46,7 +47,8 @@ pnpm exec vitest watch [--config <config.path>] --environment <environment>
 ```
 
 The spawn is a pass-through. The node succeeds when the session exits cleanly,
-and interrupting the fiber kills the process.
+and interrupting the fiber kills the process. There is no session deadline by
+default. Set `timeoutMs` explicitly to bound a session.
 
 ## Inputs
 
