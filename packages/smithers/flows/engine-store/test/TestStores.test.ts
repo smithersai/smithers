@@ -15,6 +15,7 @@ import { Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as TestStores from "../src/test/TestStores.ts"
 import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
+import { tempDirectory } from "./TempDirectory.ts"
 
 describe("TestStores", () => {
   for (const named of [false, true]) {
@@ -129,30 +130,30 @@ describe("TestStores", () => {
     }))
 })
 
-it("reopens a named database with the same migrated state", async () => {
-  if (!process.env.SMITHERS_TEST_PG_URL) return
-  const filename = PersistentDatabase.filename(":memory:")
-  const check = Effect.gen(function*() {
-    const sql = yield* SqlClient
-    return yield* sql<{ name: string }>`SELECT name FROM flows_migrations ORDER BY migration_id`
-  }).pipe(Effect.provide(TestStores.databaseAt(filename)))
-  try {
-    const first = await Effect.runPromise(check)
+it.effect("reopens a named database with the same migrated state", () =>
+  Effect.gen(function*() {
+    expect.assertions(2)
+    const directory = yield* tempDirectory("engine-store-reopen-")
+    const filename = yield* PersistentDatabase.scoped(`${directory}/store.db`)
+    const check = Effect.gen(function*() {
+      const sql = yield* SqlClient
+      return yield* sql<{ name: string }>`SELECT name FROM flows_migrations ORDER BY migration_id`
+    }).pipe(Effect.provide(TestStores.databaseAt(filename)), Effect.scoped)
+    const first = yield* check
     expect(first.length).toBeGreaterThan(0)
-    expect(await Effect.runPromise(check)).toEqual(first)
-    // A URL without a schema delegates to the adapter's documented default.
-    const url = new URL(filename)
-    url.searchParams.delete("schema")
-    const defaultSchema = await Effect.runPromise(
-      Effect.gen(function*() {
-        const sql = yield* SqlClient
-        return yield* sql<{ schema: string }>`SELECT current_schema() AS schema`
-      }).pipe(Effect.provide(TestStores.databaseAt(url.toString())))
-    )
-    expect(defaultSchema[0]?.schema).toBe("smithers_flows")
-  } finally {
-    await PersistentDatabase.remove(filename)
-  }
+    expect(yield* check).toEqual(first)
+  }).pipe(Effect.scoped))
+
+it.skipIf(!process.env.SMITHERS_TEST_PG_URL)("uses the default schema for a PostgreSQL URL", async () => {
+  const url = new URL(process.env.SMITHERS_TEST_PG_URL!)
+  url.searchParams.delete("schema")
+  const defaultSchema = await Effect.runPromise(
+    Effect.gen(function*() {
+      const sql = yield* SqlClient
+      return yield* sql<{ schema: string }>`SELECT current_schema() AS schema`
+    }).pipe(Effect.provide(TestStores.databaseAt(url.toString())))
+  )
+  expect(defaultSchema[0]?.schema).toBe("smithers_flows")
 })
 
 describe("storage matrix selection", () => {
