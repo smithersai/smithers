@@ -25,8 +25,11 @@ import type * as ServiceSupervisor from "./ServiceSupervisor.ts"
  * @category planning
  * @since 0.1.0
  */
-export const resolveAnvil = async (probes: HostProbes.HostProbes = HostProbes.none()) => {
-  const path = PackageTree.findOnPath("anvil")
+export const resolveAnvil = async (
+  probes: HostProbes.HostProbes = HostProbes.none(),
+  environment?: Readonly<Record<string, string | undefined>> | undefined
+) => {
+  const path = PackageTree.findOnPath("anvil", environment)
   if (path === undefined) {
     return {
       ok: false as const,
@@ -34,7 +37,10 @@ export const resolveAnvil = async (probes: HostProbes.HostProbes = HostProbes.no
       identity: { tag: "Anvil", absent: true }
     }
   }
-  const probe = await probes.once(["anvil", path, ["--version"], "ambient"], () => PackageTree.probeVersion(path))
+  const probe = await probes.once(
+    ["anvil", path, ["--version"], HostProbes.environmentKey(environment)],
+    () => PackageTree.probeVersion(path, { environment })
+  )
   return { ok: true as const, path, identity: { tag: "Anvil", path, probe } }
 }
 
@@ -49,8 +55,9 @@ export const serviceSpec = async (options: {
   readonly cwd: string
   readonly attrs: (typeof Anvil.ForkAttrs)["Type"]
   readonly probes?: HostProbes.HostProbes | undefined
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
 }): Promise<ServiceSupervisor.ServiceSpec | { readonly error: string }> => {
-  const tool = await resolveAnvil(options.probes)
+  const tool = await resolveAnvil(options.probes, options.environment)
   if (!tool.ok) return { error: tool.refusal }
   const forkUrlIndex = 6
   const argv: Array<string> = [

@@ -564,7 +564,7 @@ verdicts. From `@smthrs/build-cli/AgentSession`.
 | `EnvelopeSchema`        | Schema                                                                                               | The one JSON object every session must answer with.          |
 | `parseEnvelope`         | `(text: string) => SessionEnvelope`                                                                  | Parses one answer into a normalized envelope.                |
 | `makeCliSessionFactory` | `(options: CliSessionOptions) => SessionFactory`                                                     | A factory over the real `claude` and `codex` CLIs.           |
-| `CliSessionOptions`     | `{ workspaceRoot; agents; executables?; timeoutMs?; sensitiveEnv? }`                                 | What that factory needs.                                     |
+| `CliSessionOptions`     | `{ workspaceRoot; agents; executables?; timeoutMs?; sensitiveEnv?; environment? }`                   | What that factory needs.                                     |
 | `ConcreteAgent`         | `{ name: string; engine: "claude" \| "codex"; model: string }`                                       | One spawnable agent after pool expansion.                    |
 | `resolveAgents`         | `(agents, ref) => ReadonlyArray<ConcreteAgent>`                                                      | Resolves a selector into the ordered agents a session tries. |
 | `agentIdentityOf`       | `(resolved: ReadonlyArray<ConcreteAgent>) => string`                                                 | The key-material identity of one resolved agent list.        |
@@ -598,6 +598,12 @@ If any selected pool member uses Codex, server names must match
 | `PrOpener`                 | `{ open(candidate) => Effect<string, AgentSessionError> }`                | Opens an accepted candidate as a pull request.                                             |
 | `unavailablePrOpener`      | `PrOpener`                                                                | A typed refusal naming the integration point.                                              |
 
+`CliSessionOptions.environment` and `AgentRuntime.environment` select the child
+environment, including `PATH`. They default to the host environment. Each
+`sensitiveEnv` name is removed before spawning; diff expansion accepts the same
+`environment` and `sensitiveEnv` fields in its fourth argument. Cache credentials
+and Node injection hooks are always removed.
+
 Standalone verdict keys are versioned. They include the rendered prompt (with
 payload values, declared write-set, data file names and rendered contents), diff,
 agent identity, execution mode, gate identities, MCP declarations, and candidate
@@ -627,19 +633,19 @@ callers must serialize concurrent workspace directory mutations with commits.
 
 ### Running a target
 
-| Export                | Signature                                                                                                                           | What it is                                                                        |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `AgentRuntime`        | `{ workspaceRoot; sessions; writeSets; gates; verdicts; payloadValues?; dataFiles?; prOpener?; gitTimeoutMs?; mcpProbeTimeoutMs? }` | Everything one agent-target execution needs.                                      |
-| `runAgentLint`        | `(runtime, payload) => Effect<LintReport, LintError>`                                                                               | Executes one `Agent.Lint` payload.                                                |
-| `runAgentDiff`        | `(runtime, payload) => Effect<DiffResult, DiffError>`                                                                               | Payload decode, MCP precheck, bounded candidate and gate rounds, verdict caching. |
-| `runAgentPr`          | `(runtime, payload) => Effect<PrResult, PrError>`                                                                                   | The same loop, then the PR settle through `PrOpener`.                             |
-| `AgentLintLive`       | `(runtime: AgentRuntime) => Layer`                                                                                                  | Implements the `smithers-build/agent-lint` action.                                |
-| `AgentDiffLive`       | `(runtime: AgentRuntime) => Layer`                                                                                                  | Implements `smithers-build/agent-diff`.                                           |
-| `AgentPrLive`         | `(runtime: AgentRuntime) => Layer`                                                                                                  | Implements `smithers-build/agent-pr`.                                             |
-| `decodePayloadValues` | `(spec, values) => Effect<Readonly<Record<string, string>>, AgentNeedsInput>`                                                       | Validates `--input` values against the declared spec.                             |
-| `expandDiffSlice`     | `(workspaceRoot, diffs, timeoutMs?) => Effect<DiffSlice, AgentSessionError>`                                                        | Expands a target's `gitDiff` declarations into its data slice.                    |
-| `DiffSlice`           | `{ files; patch; digest }`                                                                                                          | One expanded diff slice.                                                          |
-| `renderDataFiles`     | `(workspaceRoot, files) => Effect<string, AgentSessionError>`                                                                       | Renders the `=== FILES ===` section of a prompt.                                  |
+| Export                | Signature                                                                                                                                                        | What it is                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `AgentRuntime`        | `{ workspaceRoot; sessions; writeSets; gates; verdicts; payloadValues?; dataFiles?; prOpener?; gitTimeoutMs?; mcpProbeTimeoutMs?; environment?; sensitiveEnv? }` | Everything one agent-target execution needs.                                      |
+| `runAgentLint`        | `(runtime, payload) => Effect<LintReport, LintError>`                                                                                                            | Executes one `Agent.Lint` payload.                                                |
+| `runAgentDiff`        | `(runtime, payload) => Effect<DiffResult, DiffError>`                                                                                                            | Payload decode, MCP precheck, bounded candidate and gate rounds, verdict caching. |
+| `runAgentPr`          | `(runtime, payload) => Effect<PrResult, PrError>`                                                                                                                | The same loop, then the PR settle through `PrOpener`.                             |
+| `AgentLintLive`       | `(runtime: AgentRuntime) => Layer`                                                                                                                               | Implements the `smithers-build/agent-lint` action.                                |
+| `AgentDiffLive`       | `(runtime: AgentRuntime) => Layer`                                                                                                                               | Implements `smithers-build/agent-diff`.                                           |
+| `AgentPrLive`         | `(runtime: AgentRuntime) => Layer`                                                                                                                               | Implements `smithers-build/agent-pr`.                                             |
+| `decodePayloadValues` | `(spec, values) => Effect<Readonly<Record<string, string>>, AgentNeedsInput>`                                                                                    | Validates `--input` values against the declared spec.                             |
+| `expandDiffSlice`     | `(workspaceRoot, diffs, timeoutMs?, options?) => Effect<DiffSlice, AgentSessionError>`                                                                           | Expands a target's `gitDiff` declarations into its data slice.                    |
+| `DiffSlice`           | `{ files; patch; digest }`                                                                                                                                       | One expanded diff slice.                                                          |
+| `renderDataFiles`     | `(workspaceRoot, files) => Effect<string, AgentSessionError>`                                                                                                    | Renders the `=== FILES ===` section of a prompt.                                  |
 
 ### Limits
 
@@ -740,21 +746,21 @@ For supported events with no binding, `check` reports scripts bearing the genera
 header as `stale`, and `install` removes them. Unbound handwritten hooks,
 backups, and unsupported hook names are preserved.
 
-| Export              | Signature                                                                             | What it is                                                                        |
-| ------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `resolveHookLabels` | `(workspace, resolve: LabelResolver) => Readonly<Partial<Record<HookName, string>>>`  | Resolves the workspace bindings to labels.                                        |
-| `render`            | `(bindings) => ReadonlyArray<{ file: string; content: string }>`                      | The deterministic hook script set.                                                |
-| `check`             | `(root, rendered) => Promise<{ clean: boolean; entries: ReadonlyArray<CheckEntry> }>` | Byte-compares against the hooks directory resolved by Git.                        |
-| `install`           | `(root, rendered) => Promise<{ wrote: ReadonlyArray<string> }>`                       | Installs the rendered scripts.                                                    |
-| `CheckEntry`        | `{ file: string; status: "clean" \| "stale" \| "missing" }`                           | One hook file's classification.                                                   |
-| `labelPattern`      | `RegExp`                                                                              | The shell-safe label grammar shared with `GithubRender`.                          |
-| `hookNames`         | `readonly ["preCommit", "postCommit", "prePush", "postMerge"]`                        | The workspace hook events, in render order.                                       |
-| `HookName`          | `(typeof hookNames)[number]`                                                          | One hook event.                                                                   |
-| `hookFiles`         | `Readonly<Record<HookName, string>>`                                                  | The git hook file each event installs to.                                         |
-| `LabelResolver`     | `{ labelOf(target): string \| undefined }`                                            | The one fact rendering needs from the index.                                      |
-| `GitHooksError`     | class carrying `code`                                                                 | One typed refusal.                                                                |
-| `isGitHooksError`   | `(value: unknown) => value is GitHooksError`                                          | Guard.                                                                            |
-| `ErrorCode`         | union                                                                                 | `unlabeled_hook_target`, `invalid_label`, `not_a_git_repository`, `write_failed`. |
+| Export              | Signature                                                                             | What it is                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `resolveHookLabels` | `(workspace, resolve: LabelResolver) => Readonly<Partial<Record<HookName, string>>>`  | Resolves the workspace bindings to labels.                                                                         |
+| `render`            | `(bindings) => ReadonlyArray<{ file: string; content: string }>`                      | The deterministic hook script set.                                                                                 |
+| `check`             | `(root, rendered) => Promise<{ clean: boolean; entries: ReadonlyArray<CheckEntry> }>` | Byte-compares against the hooks directory resolved by Git.                                                         |
+| `install`           | `(root, rendered) => Promise<{ wrote: ReadonlyArray<string> }>`                       | Installs the rendered scripts.                                                                                     |
+| `CheckEntry`        | `{ file: string; status: "clean" \| "stale" \| "missing" }`                           | One hook file's classification.                                                                                    |
+| `labelPattern`      | `RegExp`                                                                              | The shell-safe label grammar shared with `GithubRender`.                                                           |
+| `hookNames`         | `readonly ["preCommit", "postCommit", "prePush", "postMerge"]`                        | The workspace hook events, in render order.                                                                        |
+| `HookName`          | `(typeof hookNames)[number]`                                                          | One hook event.                                                                                                    |
+| `hookFiles`         | `Readonly<Record<HookName, string>>`                                                  | The git hook file each event installs to.                                                                          |
+| `LabelResolver`     | `{ labelOf(target): string \| undefined }`                                            | The one fact rendering needs from the index.                                                                       |
+| `GitHooksError`     | class carrying `code`                                                                 | One typed refusal.                                                                                                 |
+| `isGitHooksError`   | `(value: unknown) => value is GitHooksError`                                          | Guard.                                                                                                             |
+| `ErrorCode`         | union                                                                                 | `unlabeled_hook_target`, `invalid_label`, `not_a_git_repository`, `hooks_path_outside_repository`, `write_failed`. |
 
 ## GithubRender
 
@@ -902,32 +908,32 @@ Every one of these is importable as `@smthrs/build-cli/<Module>`. The barrel
 leaves them out because a host reaches them through the modules above rather
 than driving them directly.
 
-| Module                                                                                                                     | What it holds                                                                                                            |
-| -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `Cli`                                                                                                                      | `makeCli`, `cli`, `normalizeArgv`, `RuntimeConfig`.                                                                      |
-| `Positionals`                                                                                                              | `guard`, `surplus`, and `unconsumed`: every command refuses positionals it does not consume.                             |
-| `KnownRed`                                                                                                                 | The known-red list: `parse`, `read`, `blocks`, `judge`, `describe`, `fingerprint`, `today`.                              |
-| `effect-resolution`                                                                                                        | The single-instance Effect resolver the process entry installs.                                                          |
-| `CacheAdmin`                                                                                                               | Local action-cache inspection and retention: `directory`, `entries`, `inspect`, `parseSize`, `remove`, `CacheSizeError`. |
-| `OutputStream`                                                                                                             | Bounded, redacted live views of subprocess output.                                                                       |
-| `Entry`                                                                                                                    | `Host` and `main`.                                                                                                       |
-| `engine`                                                                                                                   | The install adapter and its layers.                                                                                      |
-| `Cache`                                                                                                                    | The result cache and the content-addressed store.                                                                        |
-| `PackageDiscovery`, `PackageLoader`, `PackageIndex`                                                                        | Discovery, declaration loading, and the validated index.                                                                 |
-| `PackageExec`                                                                                                              | The build executor: plan, execute, run.                                                                                  |
-| `PackageTree`                                                                                                              | Write-set confinement, the gitignored census, and the ceilings.                                                          |
-| `Executor`                                                                                                                 | `Summary`, `TargetReport`, `mergePlans`, `describeFailure`.                                                              |
-| `Owners`                                                                                                                   | Ownership resolution and the generated `CODEOWNERS` and `OWNERS` files.                                                  |
-| `GraphOutput`                                                                                                              | Text-tree and Mermaid rendering of a graph.                                                                              |
-| `Diagnostic`                                                                                                               | Bounded rendering of a failure into text.                                                                                |
-| `Ansi`                                                                                                                     | Palette selection and the environment it reads.                                                                          |
-| `RepoResolution`                                                                                                           | Resolving a `Repo.Target` through a child CLI.                                                                           |
-| `WorkspaceLoader`, `WorkspaceToolchain`                                                                                    | Reading the workspace declaration and its toolchain.                                                                     |
-| `TargetExecution`                                                                                                          | The per-target execution boundary.                                                                                       |
-| `Environment`                                                                                                              | The ambient environment a run reads.                                                                                     |
-| `PackageError`                                                                                                             | The typed discovery and index refusals.                                                                                  |
-| `MarkdownCodeBlocks`                                                                                                       | The `Markdown.CodeBlocks` rule implementation.                                                                           |
-| `DockerExec`, `FetchExec`, `FoundryExec`, `GitSubmoduleExec`, `GoExec`, `NixExec`, `OverlayExec`, `StampExec`, `AnvilExec` | One rule family's execution each.                                                                                        |
+| Module                                                                                                                     | What it holds                                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `Cli`                                                                                                                      | `makeCli`, `cli`, `normalizeArgv`, `RuntimeConfig`.                                                                        |
+| `Positionals`                                                                                                              | `guard`, `surplus`, and `unconsumed` reject surplus arguments; `hasGlobalFlag` distinguishes explicit flags from defaults. |
+| `KnownRed`                                                                                                                 | The known-red list: `parse`, `read`, `blocks`, `judge`, `describe`, `fingerprint`, `today`.                                |
+| `effect-resolution`                                                                                                        | The single-instance Effect resolver the process entry installs.                                                            |
+| `CacheAdmin`                                                                                                               | Local action-cache inspection and retention: `directory`, `entries`, `inspect`, `parseSize`, `remove`, `CacheSizeError`.   |
+| `OutputStream`                                                                                                             | Bounded, redacted live views of subprocess output.                                                                         |
+| `Entry`                                                                                                                    | `Host` and `main`.                                                                                                         |
+| `engine`                                                                                                                   | The install adapter and its layers.                                                                                        |
+| `Cache`                                                                                                                    | The result cache and the content-addressed store.                                                                          |
+| `PackageDiscovery`, `PackageLoader`, `PackageIndex`                                                                        | Discovery, declaration loading, and the validated index.                                                                   |
+| `PackageExec`                                                                                                              | The build executor: plan, execute, run.                                                                                    |
+| `PackageTree`                                                                                                              | Write-set confinement, the gitignored census, and the ceilings.                                                            |
+| `Executor`                                                                                                                 | `Summary`, `TargetReport`, `mergePlans`, `describeFailure`.                                                                |
+| `Owners`                                                                                                                   | Ownership resolution and the generated `CODEOWNERS` and `OWNERS` files.                                                    |
+| `GraphOutput`                                                                                                              | Text-tree and Mermaid rendering of a graph.                                                                                |
+| `Diagnostic`                                                                                                               | Bounded rendering of a failure into text.                                                                                  |
+| `Ansi`                                                                                                                     | Palette selection and the environment it reads.                                                                            |
+| `RepoResolution`                                                                                                           | Resolving a `Repo.Target` through a child CLI.                                                                             |
+| `WorkspaceLoader`, `WorkspaceToolchain`                                                                                    | Reading the workspace declaration and its toolchain.                                                                       |
+| `TargetExecution`                                                                                                          | The per-target execution boundary.                                                                                         |
+| `Environment`                                                                                                              | The ambient environment a run reads.                                                                                       |
+| `PackageError`                                                                                                             | The typed discovery and index refusals.                                                                                    |
+| `MarkdownCodeBlocks`                                                                                                       | The `Markdown.CodeBlocks` rule implementation.                                                                             |
+| `DockerExec`, `FetchExec`, `FoundryExec`, `GitSubmoduleExec`, `GoExec`, `NixExec`, `OverlayExec`, `StampExec`, `AnvilExec` | One rule family's execution each.                                                                                          |
 
 `OverlayExec.apply` confines replacement sources and destinations to the canonical
 scratch root. It refuses destination directory symlinks, dangling destination

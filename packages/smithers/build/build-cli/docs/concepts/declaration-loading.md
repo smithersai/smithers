@@ -31,13 +31,11 @@ shared runtime across tsx evaluation namespaces. Those hooks also retain the
 existing dependency-free bootstrap behavior; removing them requires a separate
 change to the evaluation lifetime and bootstrap contract.
 
-## Scaffolding and installation
+## Installation
 
-Scaffold into an empty directory, then install the workspace's dependencies
-before evaluating declarations. A globally installed CLI does not supply a
-workspace-local runtime contract merely because its versions match. Prefer
-`pnpm exec smithers-build` after installation. Check an `init`-generated manifest before installing, because `init` can
-create a manifest without dependency declarations.
+Install the workspace's dependencies before evaluating declarations. A globally
+installed CLI does not supply a workspace-local runtime contract merely because
+its versions match. Prefer `pnpm exec smithers-build` after installation.
 
 ## Module formats and CommonJS callers
 

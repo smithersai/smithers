@@ -1268,11 +1268,21 @@ export const executeEffect = (
         if (serveNode.lane?.kind === "anvil-fork") {
           const key = treeRoot === root ? label : `${label} @ ${treeRoot}`
           const attrs = serveNode.lane.attrs
+          const ambient = options.environment ?? process.env
+          const nix = serveNode.nixEnvironment
           return yield* joined(() =>
             services.anvilService({
               label: key,
               cwd: Exec.resolveWorkspacePath(treeRoot, serveNode.cwd),
-              attrs
+              attrs,
+              environment: Workspace.withheldEnvironment(
+                nix === undefined ? ambient : {
+                  ...ambient,
+                  ...nix.variables,
+                  PATH: nix.path.join(NodePath.delimiter)
+                },
+                options.remoteCache?.credentials
+              )
             })
           )
         }
@@ -1865,7 +1875,7 @@ export const executeEffect = (
     let baseSessions: AgentSession.SessionFactory | undefined
     const sessionsOf = (): AgentSession.SessionFactory => {
       baseSessions ??= services.sessions(
-        { workspaceRoot: root, agents: index.workspace.agents, sensitiveEnv: credentialNames },
+        { workspaceRoot: root, agents: index.workspace.agents, environment, sensitiveEnv: credentialNames },
         environment
       )
       return baseSessions
@@ -2312,6 +2322,8 @@ export const executeEffect = (
         const writeSets = treeWriteSetApplier(node, payload.changes)
         const runtime: AgentSession.AgentRuntime = {
           workspaceRoot: root,
+          environment,
+          sensitiveEnv: credentialNames,
           sessions: counted.factory,
           writeSets,
           gates: loopGateRunner(node, labelByKey),
@@ -3227,6 +3239,8 @@ export const executeEffect = (
               const counted = countedSessions(sessionsOf())
               const runtime: AgentSession.AgentRuntime = {
                 workspaceRoot: root,
+                environment,
+                sensitiveEnv: credentialNames,
                 sessions: counted.factory,
                 writeSets: treeWriteSetApplier(node, payload.fixes),
                 gates: AgentSession.unavailableGateRunner,

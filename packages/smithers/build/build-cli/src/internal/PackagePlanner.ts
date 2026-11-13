@@ -2313,8 +2313,12 @@ const visit = async (
   }
 
   if (rule === "Anvil.Fork") {
-    const resolved = await AnvilExec.resolveAnvil(context.hostProbes)
-    toolchain.push(resolved.identity)
+    const resolved = await AnvilExec.resolveAnvil(context.hostProbes, context.environment)
+    toolchain.push(
+      resolved.ok
+        ? { resolution: resolved.identity, binary: await binaryIdentity(toolContext, resolved.path) }
+        : resolved.identity
+    )
     if (!resolved.ok) noteRefusal(resolved.refusal)
   }
 

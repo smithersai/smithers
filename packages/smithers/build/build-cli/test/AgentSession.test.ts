@@ -10,6 +10,7 @@ import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as AgentFake from "../src/AgentFake.ts"
 import * as AgentSession from "../src/AgentSession.ts"
+import * as PackageTree from "../src/PackageTree.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
 
 let root: string
@@ -1849,5 +1850,80 @@ describe("atomic candidate publication", () => {
     )
     expect(result).toMatchObject({ _tag: "Failure", failure: { phase: "cache" } })
     expect((await Fs.readdir(NodePath.join(root, "verdicts"))).sort()).toEqual(["key.json", "unrelated.tmp"])
+  })
+})
+
+describe("injected child environments", () => {
+  it.each(["claude", "codex"] as const)(
+    "resolves %s from the injected PATH and withholds credentials",
+    async (engine) => {
+      const environment = Object.freeze({
+        PATH: [root, NodePath.dirname(process.execPath)].join(NodePath.delimiter),
+        TOOL_TAG: "injected",
+        SMITHERS_CACHE_URL: "fixture-endpoint",
+        SMITHERS_CACHE_TOKEN: "fixture-token",
+        SMITHERS_CACHE_WRITE_TOKEN: "fixture-write-token",
+        NODE_OPTIONS: "--invalid-injection",
+        NODE_PATH: "invalid-injection"
+      })
+      const program = "#!/usr/bin/env node\nprocess.stdin.resume(); process.stdin.on(\"end\", () => {\n" +
+        "const note = JSON.stringify({ tag: process.env.TOOL_TAG, blocked: Object.keys(process.env).filter(k => " +
+        "[\"SMITHERS_CACHE_URL\", \"SMITHERS_CACHE_TOKEN\", \"SMITHERS_CACHE_WRITE_TOKEN\", \"NODE_OPTIONS\", \"NODE_PATH\"].includes(k)) });\n" +
+        (engine === "claude"
+          ? "console.log(JSON.stringify({ result: JSON.stringify({ note }) }));\n"
+          : "console.log(JSON.stringify({ type: \"item.completed\", item: { type: \"agent_message\", text: JSON.stringify({ note }) } }));\n") +
+        "});\n"
+      await writeExecutable(NodePath.join(root, "review-" + engine), program)
+      const factory = AgentSession.makeCliSessionFactory({
+        workspaceRoot: root,
+        agents: AgentTarget.Agents({
+          default: engine === "claude" ? AgentTarget.ClaudeCode({ model: "m" }) : AgentTarget.Codex({ model: "m" })
+        }),
+        executables: { [engine]: "review-" + engine },
+        timeoutMs: 2000,
+        environment,
+        sensitiveEnv: ["SMITHERS_CACHE_WRITE_TOKEN"]
+      })
+      const session = await Effect.runPromise(factory.open(undefined))
+      const answer = await Effect.runPromise(session.run({ purpose: "lint", prompt: "inspect" }))
+      expect(JSON.parse(answer.note!)).toEqual({ tag: "injected", blocked: [] })
+      expect(environment.SMITHERS_CACHE_WRITE_TOKEN).toBe("fixture-write-token")
+    }
+  )
+  it("withholds credentials from every diff child, including added-line and patch batches", async () => {
+    const actualGit = PackageTree.findOnPath("git")!
+    const trace = NodePath.join(root, "git-env.jsonl")
+    await writeExecutable(
+      NodePath.join(root, "git"),
+      "#!/usr/bin/env node\n" +
+        "require(\"node:fs\").appendFileSync(" + JSON.stringify(trace) +
+        ", JSON.stringify({ tag: process.env.TOOL_TAG, blocked: Object.keys(process.env).filter(k => " +
+        "[\"SMITHERS_CACHE_URL\", \"SMITHERS_CACHE_TOKEN\", \"SMITHERS_CACHE_WRITE_TOKEN\", \"NODE_OPTIONS\", \"NODE_PATH\", \"GIT_DIR\"].includes(k)) }) + \"\\n\");\n" +
+        "require(\"node:child_process\").execFileSync(" + JSON.stringify(actualGit) +
+        ", process.argv.slice(2), { stdio: \"inherit\" });\n"
+    )
+    await write("src/a.ts", "export const a = 1\n// TODO review\n")
+    const environment = {
+      PATH: [root, NodePath.dirname(process.execPath)].join(NodePath.delimiter),
+      TOOL_TAG: "diff",
+      SMITHERS_CACHE_URL: "fixture",
+      SMITHERS_CACHE_TOKEN: "fixture",
+      SMITHERS_CACHE_WRITE_TOKEN: "fixture",
+      NODE_OPTIONS: "--invalid-injection",
+      NODE_PATH: "invalid",
+      GIT_DIR: "invalid"
+    }
+    const slice = await Effect.runPromise(AgentSession.expandDiffSlice(
+      root,
+      [
+        Input.gitDiff({ base: "HEAD", paths: ["src/**"], addedLines: "TODO" })
+      ],
+      undefined,
+      { environment, sensitiveEnv: ["SMITHERS_CACHE_WRITE_TOKEN"] }
+    ))
+    expect(slice.files).toEqual(["src/a.ts"])
+    expect(slice.patch).toContain("TODO review")
+    expect((await Fs.readFile(trace, "utf8")).trim().split("\n").map((row) => JSON.parse(row)))
+      .toEqual(Array.from({ length: 3 }, () => ({ tag: "diff", blocked: [] })))
   })
 })

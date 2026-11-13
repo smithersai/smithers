@@ -254,3 +254,31 @@ describe("HTTP command requests", () => {
     expect(calls).toBe(1)
   })
 })
+
+describe("explicit global flags", () => {
+  it.each([
+    { argv: [], supplied: false },
+    { argv: ["--audience", "auto"], supplied: true },
+    { argv: ["--audience=auto"], supplied: true },
+    { argv: ["--", "--audience", "auto"], supplied: false }
+  ])("distinguishes defaults from flags in $argv", async ({ argv, supplied }) => {
+    const globals = z.object({ audience: z.enum(["auto", "human", "agent"]).default("auto") })
+    let observed: boolean | undefined
+    const cli = Positionals.guard(
+      Incur.create("fixture", { globals }).command("capture", {
+        args: z.object({ tail: z.array(z.string()).optional() }),
+        run: () => ({ ok: true })
+      }),
+      globals
+    )
+    expect(Positionals.hasGlobalFlag("audience")).toBe(false)
+    await cli.serve(["capture", ...argv], {
+      stdout: () => {
+        observed = Positionals.hasGlobalFlag("audience")
+      },
+      exit: () => {}
+    })
+    expect(observed).toBe(supplied)
+    expect(Positionals.hasGlobalFlag("audience")).toBe(false)
+  })
+})

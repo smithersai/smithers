@@ -665,7 +665,9 @@ cache. `targets` lists the available target surface and defaults to `//...`.
 
 `affected` accepts `build`, `test`, `lint`, `docs`, `run`, or `ci`.
 It compares `--base` (default `HEAD`) with `--head`, or with the working tree
-and untracked files when `--head` is absent. Repeatable `--files` bypasses Git
+and untracked files when `--head` is absent. Paths are relative to the workspace
+root; a workspace nested inside a repository ignores changes outside that root.
+Repeatable `--files` bypasses Git
 discovery, and `--list` explains the selection without executing it. Unknown
 or ambient inputs conservatively select the graph, and so does a changed
 declaration: a `PACKAGE.ts` or `PACKAGE.vibe`, or any workspace module one
@@ -675,7 +677,10 @@ as a `PACKAGE.ts` does, so its edit is never confined to the package that holds
 it. For a workspace package imported by name, its entry module's source directory
 is global too, including newly added files. `--list` reports these paths in `globalInputs`. Any change selects every
 uncacheable target and its dependents, because only a cache key declares
-complete inputs.
+complete inputs. Lockfiles select the graph: `pnpm-lock.yaml`,
+`package-lock.json`, `yarn.lock`, `bun.lock`, `bun.lockb`, `Cargo.lock`,
+`flake.lock`, `go.sum`, and names ending in `.lock`. Other filenames containing
+`lock`, such as `clock.ts`, follow their declared inputs.
 
 `--list` adds `reasonDetails` beside each target's changed-path `reasons`.
 Native `Shell.Build`, `Shell.Test`, and `Shell.Run` omit the `package`
@@ -772,7 +777,6 @@ A structured failure carries a code alongside its message.
 | `targets_failed`                                                                                                         | An executed graph went red. The message counts failures and skips. |
 | `build_failed`, `test_failed`, `lint_failed`, `docs_failed`, `review_failed`, `run_failed`, `ci_failed`, `target_failed` | The command threw before or during execution.                      |
 | `install_failed`                                                                                                         | Install planning or execution failed.                              |
-| `create_app_failed`                                                                                                      | The scaffold refused or failed.                                    |
 | `query_failed`, `index_failed`, `graph_failed`, `owners_failed`                                                          | The workspace could not be read, or the expression was rejected.   |
 | `git_hooks_failed`                                                                                                       | Rendering or installing the hooks failed.                          |
 | `git_hooks_drift`                                                                                                        | Checked hooks differ from the declaration.                         |

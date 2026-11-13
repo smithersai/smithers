@@ -389,3 +389,32 @@ describe("programmatic output documentation", () => {
     expect(page).not.toContain("--limit 1..10000")
   })
 })
+
+describe("build CLI reference accuracy", () => {
+  it.each(["README.md", "docs/README.md"])("%s links to existing guides", (path) => {
+    const directory = NodePath.dirname(NodePath.join(import.meta.dirname, "..", path))
+    for (const match of readPage(path).matchAll(/\]\((\.\/[^)#]+)(?:#[^)]*)?\)/g)) {
+      expect(Fs.existsSync(NodePath.resolve(directory, match[1]!)), `${path}: ${match[1]}`).toBe(true)
+    }
+  })
+  it("describes installation without a nonexistent scaffold command", () => {
+    expect(readPage("docs/cli.md")).not.toContain("create_app_failed")
+    expect(readPage("docs/concepts/declaration-loading.md")).not.toMatch(/Scaffold into|init\x60-generated/)
+  })
+  it("lists every GitHooks error code in the error-code row", () => {
+    const source = readPage("src/GitHooks.ts")
+    const start = source.indexOf("export type ErrorCode")
+    const codes = source.slice(start, source.indexOf("/**", start))
+    const row = readPage("docs/api.md").split("## GitHooks")[1]!.split("\n").find((line) =>
+      /\| \x60ErrorCode\x60/.test(line)
+    )!
+    for (const match of codes.matchAll(/"([a-z_]+)"/g)) expect(row).toContain(`\x60${match[1]}\x60`)
+  })
+  it("records evidence for every marker in the registry", () => {
+    const registry = readPage("docs/reference/agent-detection.md")
+    for (const match of readPage("src/Audience.ts").matchAll(/variable: "([A-Z_]+)"/g)) {
+      expect(registry).toContain(match[1]!)
+    }
+    expect(registry).toContain("project-and-state.md")
+  })
+})

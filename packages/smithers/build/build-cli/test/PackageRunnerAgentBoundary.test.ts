@@ -1,3 +1,4 @@
+import { Smithers as S } from "@smthrs/targets"
 import * as AgentTarget from "@smthrs/targets/AgentTarget"
 import * as Exec from "@smthrs/targets/Exec"
 import { Context, Effect } from "effect"
@@ -5,8 +6,12 @@ import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, expect, it } from "vitest"
 import * as AgentFake from "../src/AgentFake.ts"
+import * as AgentSession from "../src/AgentSession.ts"
+import * as AnvilExec from "../src/AnvilExec.ts"
 import { executeEffect, ExecutionServices, executionServicesLive } from "../src/internal/PackageRunner.ts"
 import * as PackageExec from "../src/PackageExec.ts"
+import * as PackageTree from "../src/PackageTree.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 import { runnerFixture as fixture } from "./helpers/PackageRunnerFixture.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -331,6 +336,139 @@ describe("candidate service identities", () => {
     expect(labels).toHaveLength(1)
     expect(labels[0]).toMatch(/^\/\/:server @ /)
     expect(result.ok).toBe(false)
+    expect(result.results[0]?.error).toContain("service host unavailable")
+  })
+})
+
+describe("agent child environment propagation", () => {
+  it.each(["Lint", "Diff"] as const)(
+    "passes the invocation environment to Agent.%s sessions and diff children",
+    async (flavor) => {
+      const { root, options } = await fixture(
+        `
+const command = S.Agent.${flavor}({
+  prompt: S.file("//prompt.md"),
+  data: [S.gitDiff({ base: "HEAD", paths: ["src/**"], addedLines: "TODO" })],
+  ${flavor === "Lint" ? "fixes: [\"src/**\"]" : "changes: [\"src/**\"], gates: [], maxRounds: 1"}
+})
+export const Package = S.Package({ targets: { command } })
+`,
+        { "prompt.md": "Inspect the diff.", "src/input.ts": "export const value = 1\n" }
+      )
+      await write(root, "src/input.ts", "export const value = 1\n// TODO review\n")
+      const trace = Path.join(root, "child-env.jsonl")
+      const record = "require(\"node:fs\").appendFileSync(" + JSON.stringify(trace) +
+        ", JSON.stringify({ tag: process.env.TOOL_TAG, blocked: Object.keys(process.env).filter(k => " +
+        "[\"SMITHERS_CACHE_URL\", \"SMITHERS_CACHE_TOKEN\", \"DECLARED_WRITE_TOKEN\"].includes(k)) }) + \"\\n\");\n"
+      await writeExecutable(
+        Path.join(root, "git"),
+        "#!/usr/bin/env node\n" + record +
+          "require(\"node:child_process\").execFileSync(" + JSON.stringify(PackageTree.findOnPath("git")!) +
+          ", process.argv.slice(2), { stdio: \"inherit\" });\n"
+      )
+      await writeExecutable(
+        Path.join(root, "review-claude"),
+        "#!/usr/bin/env node\n" +
+          "process.stdin.resume(); process.stdin.on(\"end\", () => {\n" + record +
+          "console.log(JSON.stringify({ result: JSON.stringify({ findings: [], edits: [] }) }));\n});\n"
+      )
+      const environment = {
+        ...process.env,
+        PATH: [root, Path.dirname(process.execPath), process.env.PATH ?? ""].join(Path.delimiter),
+        TOOL_TAG: "invocation",
+        DECLARED_WRITE_TOKEN: "fixture-secret",
+        SMITHERS_CACHE_TOKEN: "fixture-cache"
+      }
+      const runOptions = {
+        ...options,
+        environment,
+        readCache: false,
+        remoteCache: {
+          endpoint: "https://cache.example.invalid",
+          enabled: false,
+          credentials: { _tag: "shared" as const, tokenEnv: "DECLARED_WRITE_TOKEN" },
+          readToken: () => undefined,
+          writeToken: () => undefined,
+          publishNamespace: undefined
+        }
+      }
+      const plan = await PackageExec.plan(runOptions)
+      const result = await Effect.runPromise(
+        executeEffect(plan, runOptions).pipe(
+          Effect.provideService(ExecutionServices, {
+            ...executionServicesLive,
+            sessions: (settings) =>
+              AgentSession.makeCliSessionFactory({
+                ...settings,
+                agents: AgentTarget.Agents({ default: AgentTarget.ClaudeCode({ model: "fixture" }) }),
+                executables: { claude: "review-claude" },
+                timeoutMs: 2000
+              })
+          })
+        )
+      )
+      expect(result.ok, JSON.stringify(result)).toBe(true)
+      const observations = (await Fs.readFile(trace, "utf8")).trim().split("\n").map((line) => JSON.parse(line))
+      expect(observations).toEqual(Array.from({ length: 4 }, () => ({ tag: "invocation", blocked: [] })))
+    }
+  )
+})
+
+describe("Anvil service environment", () => {
+  it.each([false, true])("uses the planned closure rather than the host PATH (host tool=%s)", async (hostTool) => {
+    const { root, options, plan } = await fixture(diffTarget("[]", "[gate]"), { "prompt.md": "Inspect." })
+    const closure = Path.join(root, "closure")
+    const host = Path.join(root, "host")
+    const source = "#!/usr/bin/env node\nconsole.log(\"anvil 1.0.0\")\n"
+    const closureTool = await writeExecutable(Path.join(closure, "anvil"), source)
+    if (hostTool) await writeExecutable(Path.join(host, "anvil"), source)
+    const nodes = new Map(plan.nodes)
+    const gate = nodes.get("//:gate")!
+    nodes.set(gate.label, { ...gate, serviceDeps: ["//:server"] } as unknown as PackageExec.PackageNode)
+    nodes.set("//:server", {
+      ...gate,
+      label: "//:server",
+      rule: "Anvil.Fork",
+      lane: {
+        kind: "anvil-fork",
+        attrs: { forkUrl: S.Secret("RPC"), forkBlockNumber: "latest", port: 8545 }
+      },
+      nixEnvironment: {
+        storePath: closure,
+        hash: "closure",
+        closure: [closure],
+        path: [closure, Path.dirname(process.execPath)],
+        variables: { TOOL_TAG: "closure" }
+      }
+    } as unknown as PackageExec.PackageNode)
+    const selected: Array<string> = []
+    const scripted = AgentFake.makeScriptedSessionFactory({ responses: [{ findings: [], edits: [] }] })
+    const result = await Effect.runPromise(
+      executeEffect({ ...plan, nodes }, {
+        ...options,
+        environment: { PATH: host, TOOL_TAG: "host", CACHE_WRITE_SECRET: "fixture-secret" },
+        remoteCache: {
+          endpoint: "https://cache.example.invalid",
+          enabled: false,
+          credentials: { _tag: "shared", tokenEnv: "CACHE_WRITE_SECRET" },
+          readToken: () => undefined,
+          writeToken: () => undefined,
+          publishNamespace: undefined
+        }
+      }).pipe(Effect.provideService(ExecutionServices, {
+        ...executionServicesLive,
+        sessions: () => scripted,
+        anvilService: async (settings) => {
+          expect(settings.environment).toMatchObject({ TOOL_TAG: "closure" })
+          expect(settings.environment).not.toHaveProperty("CACHE_WRITE_SECRET")
+          const spec = await AnvilExec.serviceSpec(settings)
+          selected.push("error" in spec ? spec.error : spec.argv[0])
+          return Effect.runPromise(Effect.fail(new Error("service host unavailable")))
+        }
+      }))
+    )
+    expect(result.ok).toBe(false)
+    expect(selected).toEqual([closureTool])
     expect(result.results[0]?.error).toContain("service host unavailable")
   })
 })

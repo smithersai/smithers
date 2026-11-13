@@ -8,8 +8,9 @@
  * `UNEXPECTED_ARGUMENT` error before its handler runs.
  *
  * wevm/incur#231 ("reject unexpected positional arguments") proposed this in
- * incur itself and was never merged. Delete this module once incur rejects
- * surplus positionals on its own.
+ * incur itself and was never merged. Retire the surplus-argument guard once
+ * incur rejects them itself, preserving the invocation tracking and
+ * {@link hasGlobalFlag} used by presentation policy.
  *
  * @since 0.1.0
  */
@@ -36,6 +37,23 @@ interface Invocation {
 }
 
 const invocations = new AsyncLocalStorage<Invocation>()
+
+/**
+ * Whether this invocation supplied a long global flag before its argument fence.
+ * Pass the literal flag spelling without `--`, such as `cache-dir`, rather
+ * than a camelCase schema key. Schema defaults do not count as explicit input.
+ * Outside a guarded invocation, no flag is supplied.
+ *
+ * @category parsing
+ * @since 0.1.0
+ */
+export const hasGlobalFlag = (name: string): boolean => {
+  const invocation = invocations.getStore()
+  if (invocation === undefined) return false
+  const fence = invocation.argv.indexOf("--")
+  const args = fence < 0 ? invocation.argv : invocation.argv.slice(0, fence)
+  return args.some((arg) => arg === `--${name}` || arg.startsWith(`--${name}=`))
+}
 
 /** incur's own switches, which it removes before resolving a command. */
 const builtinSwitches = new Set([

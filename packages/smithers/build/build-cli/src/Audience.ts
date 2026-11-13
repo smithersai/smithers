@@ -106,9 +106,8 @@ export const resolve = (options: Options = {}): Policy => {
       ).map((marker) => marker.harness)
     )
   ]
-  const override = options.audience !== undefined && options.audience !== "auto"
-    ? options.audience
-    : mode(env["SMITHERS_AUDIENCE"])
+  const environmentMode = mode(env["SMITHERS_AUDIENCE"])
+  const override = options.audience ?? environmentMode
   const ci = enabled(env["CI"]) || enabled(env["CONTINUOUS_INTEGRATION"]) || enabled(env["BUILD_NUMBER"]) ||
     enabled(env["GITHUB_ACTIONS"]) || enabled(env["TF_BUILD"])
   const terminal = stderr && (stdin || stdout)

@@ -96,16 +96,26 @@ export const changedPaths = async (root: string, options: {
   const base = await revision(options.base)
   const paths = options.head === undefined
     ? [
-      ...await gitPaths(["diff", "--name-only", "--no-renames", "-z", base, "--"]),
+      ...await gitPaths(["diff", "--relative", "--name-only", "--no-renames", "-z", base, "--"]),
       ...await gitPaths(["ls-files", "--others", "--exclude-standard", "-z"])
     ]
-    : await gitPaths(["diff", "--name-only", "--no-renames", "-z", base, await revision(options.head), "--"])
+    : await gitPaths([
+      "diff",
+      "--relative",
+      "--name-only",
+      "--no-renames",
+      "-z",
+      base,
+      await revision(options.head),
+      "--"
+    ])
   return [...new Set(paths)].sort()
 }
 
 const globalPath = (path: string): boolean =>
   !path.includes("/") || path.startsWith(".smithers/") || Input.isDeclarationFileName(Path.posix.basename(path)) ||
-  /(^|\/)(?:[^/]*lock[^/]*|package\.json|tsconfig[^/]*\.json|\.npmrc|\.yarnrc[^/]*|\.gitignore)$/.test(path)
+  /(^|\/)(?:pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|flake\.lock|go\.sum|[^/]*\.lock|package\.json|tsconfig[^/]*\.json|\.npmrc|\.yarnrc[^/]*|\.gitignore)$/
+    .test(path)
 
 const ambientInput = (input: Input.Declared): boolean => input._tag === "GitDiff" || input._tag === "PnpmWorkspace"
 

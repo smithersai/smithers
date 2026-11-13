@@ -334,14 +334,15 @@ const policyFor = (context: Presentation, config: RuntimeConfig): Audience.Polic
   const base = config.presentation
   const { stdout, stderr } = terminalsOf(config)
   const protocol = context.agent && context.formatExplicit && Object.keys(context.globals).length === 0
-  const override = context.globals.audience === "human" || context.globals.audience === "agent"
+  const override = context.globals.audience === "human" || context.globals.audience === "agent" ||
+      (context.globals.audience === "auto" && Positionals.hasGlobalFlag("audience"))
     ? context.globals.audience
     : undefined
   const policy = Audience.resolve({
     env: environmentOf(config),
     stdout: stdout.isTTY,
     stderr: stderr.isTTY,
-    audience: override ?? base?.audience ?? "auto",
+    audience: override ?? base?.audience,
     mcp: protocol || base?.source === "mcp",
     silent: context.globals.silent === true || (override === undefined && base?.progress === "silent"),
     verbose: context.options?.verbose === true || (base?.audience === "agent" && base.progress !== "silent"),

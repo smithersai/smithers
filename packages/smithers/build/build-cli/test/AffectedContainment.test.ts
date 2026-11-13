@@ -48,7 +48,7 @@ describe.skipIf(process.platform === "win32")("affected contained git", () => {
       .toEqual([
         ["rev-parse", "--verify", "--end-of-options", "--untrusted^{commit}"],
         ["rev-parse", "--verify", "--end-of-options", "topic^{commit}"],
-        ["diff", "--name-only", "--no-renames", "-z", "aaaa", "bbbb", "--"]
+        ["diff", "--relative", "--name-only", "--no-renames", "-z", "aaaa", "bbbb", "--"]
       ])
   })
 
@@ -58,7 +58,7 @@ describe.skipIf(process.platform === "win32")("affected contained git", () => {
     expect((await Fs.readFile(join(root, "argv.jsonl"), "utf8")).trim().split("\n").map((row) => JSON.parse(row)))
       .toEqual([
         ["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"],
-        ["diff", "--name-only", "--no-renames", "-z", "aaaa", "--"],
+        ["diff", "--relative", "--name-only", "--no-renames", "-z", "aaaa", "--"],
         ["ls-files", "--others", "--exclude-standard", "-z"]
       ])
   })

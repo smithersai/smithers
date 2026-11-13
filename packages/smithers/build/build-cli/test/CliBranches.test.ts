@@ -1508,3 +1508,38 @@ describe("PACKAGE.ts branches", () => {
     expect(unknown.envelope).toContain("//:missing")
   })
 })
+
+describe("embedded audience overrides", () => {
+  it.each([
+    { name: "environment agent", mode: "agent", flags: [] as Array<string>, harness: false, quiet: true },
+    { name: "explicit auto", mode: "agent", flags: ["--audience", "auto"], harness: false, quiet: false },
+    { name: "auto with harness", mode: "human", flags: ["--audience=auto"], harness: true, quiet: true }
+  ])("honors $name without a supplied presentation policy", async ({ mode, flags, harness, quiet }) => {
+    const root = await packageFixture()
+    const result = await serve(root, ["//:good", "--ui", "plain", ...flags], true, (config) => ({
+      ...config,
+      environment: { SMITHERS_AUDIENCE: mode, ...(harness ? { CLAUDECODE: "1" } : {}) }
+    }))
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toBe("")
+    if (quiet) {
+      expect(result.stderr).toBe("")
+      expect(result.envelope).toContain("ok: true")
+    } else {
+      expect(result.stderr).toContain("//:good")
+    }
+  })
+})
+
+it("retains the default audience in extension command contexts", async () => {
+  let observed: Audience.Mode | undefined
+  const cli = makeCli({ environment: {} }).command("extension", {
+    run: (context) => {
+      const audience: Audience.Mode = context.globals.audience
+      observed = audience
+      return { audience: audience.toUpperCase() }
+    }
+  })
+  await cli.serve(["extension", "--json"], { stdout: () => {}, exit: () => {} })
+  expect(observed).toBe("auto")
+})

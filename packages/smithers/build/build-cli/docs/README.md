@@ -150,8 +150,7 @@ helps choose a verb and pattern for a task.
 - Guides: [select the targets a command runs](./guides/select-targets.md),
   [inspect a workspace without running it](./guides/inspect-a-workspace.md),
   [share results through a remote cache](./guides/share-a-remote-cache.md),
-  [run CI on other machines](./guides/run-ci-on-other-machines.md),
-  [scaffold an app](./guides/scaffold-an-app.md), and
+  [run CI on other machines](./guides/run-ci-on-other-machines.md), and
   [embed the CLI in another program](./guides/embed-the-cli.md).
 - Concepts: [the invocation pipeline](./concepts/invocation.md),
   [workspace discovery](./concepts/discovery.md),

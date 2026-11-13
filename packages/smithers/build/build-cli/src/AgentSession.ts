@@ -48,6 +48,7 @@ import { createHash, randomBytes } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
+import * as Environment from "./Environment.ts"
 import { FilePublicationHost, type filePublicationHostLive } from "./internal/FilePublicationHost.ts"
 import { optionalOpenFlag } from "./internal/Fs.ts"
 import { gitPathspecBatches } from "./internal/GitPathspecBatches.ts"
@@ -296,8 +297,12 @@ const subprocessError = (error: PlatformError.PlatformError): Error =>
   error.cause instanceof Error ? error.cause : new Error(error.reason.description ?? error.message, { cause: error })
 
 /** Builds the subprocess environment while withholding injection hooks. */
-const spawnEnvironment = (sensitiveEnv: ReadonlyArray<string>, git: boolean): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = { ...process.env }
+const spawnEnvironment = (
+  sensitiveEnv: ReadonlyArray<string>,
+  git: boolean,
+  environment: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
+): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = { ...environment }
   delete env["NODE_OPTIONS"]
   delete env["NODE_PATH"]
   delete env["SMITHERS_CACHE_URL"]
@@ -322,6 +327,7 @@ interface SpawnOptions {
   readonly stdoutBytes: number
   readonly timeoutMs: number
   readonly sensitiveEnv: ReadonlyArray<string>
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   readonly git: boolean
 }
 
@@ -342,7 +348,7 @@ const spawnText = (
       command: executable,
       args,
       cwd,
-      env: spawnEnvironment(options.sensitiveEnv, options.git),
+      env: spawnEnvironment(options.sensitiveEnv, options.git, options.environment),
       stdin: options.stdin === undefined ? "ignore" : "pipe",
       killSignal: "SIGKILL",
       forceKillAfter: 0,
@@ -576,6 +582,7 @@ export interface CliSessionOptions {
   readonly executables?: { readonly claude?: string; readonly codex?: string } | undefined
   readonly timeoutMs?: number | undefined
   readonly sensitiveEnv?: ReadonlyArray<string> | undefined
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
 }
 
 /**
@@ -623,6 +630,7 @@ export const makeCliSessionFactory = (options: CliSessionOptions): SessionFactor
                   stdoutBytes: maximumSessionOutputBytes,
                   timeoutMs: options.timeoutMs ?? defaultSessionTimeoutMs,
                   sensitiveEnv: options.sensitiveEnv ?? [],
+                  environment: options.environment,
                   git: false
                 }
               ).pipe(
@@ -671,12 +679,14 @@ export interface DiffSlice {
 const runGit = (
   workspaceRoot: string,
   args: ReadonlyArray<string>,
-  timeoutMs: number
+  timeoutMs: number,
+  options: Pick<CliSessionOptions, "environment" | "sensitiveEnv">
 ): Effect.Effect<string, AgentTarget.AgentSessionError> =>
   spawnText(workspaceRoot, "git", ["-c", "core.fsmonitor=false", ...args], {
     stdoutBytes: maximumGitOutputBytes,
     timeoutMs,
-    sensitiveEnv: [],
+    sensitiveEnv: options.sensitiveEnv ?? [],
+    environment: options.environment,
     git: true
   }).pipe(
     Effect.mapError((error) => sessionError("diff", error)),
@@ -692,13 +702,14 @@ const runGitWithPaths = (
   workspaceRoot: string,
   args: ReadonlyArray<string>,
   paths: ReadonlyArray<string>,
-  timeoutMs: number
+  timeoutMs: number,
+  options: Pick<CliSessionOptions, "environment" | "sensitiveEnv">
 ): Effect.Effect<string, AgentTarget.AgentSessionError> =>
   Effect.gen(function*() {
     const parts: Array<string> = []
     let bytes = 0
     for (const batch of gitPathspecBatches(paths)) {
-      const part = yield* runGit(workspaceRoot, [...args, "--", ...batch], timeoutMs)
+      const part = yield* runGit(workspaceRoot, [...args, "--", ...batch], timeoutMs, options)
       bytes += Buffer.byteLength(part, "utf8")
       if (bytes > maximumGitOutputBytes) {
         return yield* Effect.fail(
@@ -812,25 +823,31 @@ const filesWithMatchingAddedLines = (
 export const expandDiffSlice = (
   workspaceRoot: string,
   diffs: ReadonlyArray<Input.GitDiff>,
-  timeoutMs: number = defaultGitTimeoutMs
+  timeoutMs: number = defaultGitTimeoutMs,
+  options: Pick<CliSessionOptions, "environment" | "sensitiveEnv"> = {}
 ): Effect.Effect<DiffSlice, AgentTarget.AgentSessionError> =>
   Effect.gen(function*() {
     const union = new Map<string, string>()
     for (const diff of diffs) {
       const filter = diff.added === undefined ? [] : ["--diff-filter=A"]
       const globs = diff.added ?? diff.paths
-      const listed = yield* runGit(workspaceRoot, [
-        "diff",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--no-renames",
-        "--name-only",
-        "-z",
-        ...filter,
-        "--end-of-options",
-        diff.base,
-        "--"
-      ], timeoutMs)
+      const listed = yield* runGit(
+        workspaceRoot,
+        [
+          "diff",
+          "--no-ext-diff",
+          "--no-textconv",
+          "--no-renames",
+          "--name-only",
+          "-z",
+          ...filter,
+          "--end-of-options",
+          diff.base,
+          "--"
+        ],
+        timeoutMs,
+        options
+      )
       let files = nulPaths(listed)
       if (globs !== undefined) files = files.filter((path) => matchesAny(path, globs))
       if (diff.addedLines !== undefined && files.length > 0) {
@@ -850,7 +867,8 @@ export const expandDiffSlice = (
             diff.base
           ],
           files,
-          timeoutMs
+          timeoutMs,
+          options
         )
         const matched = yield* Effect.try({
           try: () => filesWithMatchingAddedLines(zero, pattern, new Set(files)),
@@ -881,7 +899,8 @@ export const expandDiffSlice = (
           base
         ],
         group.sort(),
-        timeoutMs
+        timeoutMs,
+        options
       )
       parts.push(patch)
     }
@@ -1339,6 +1358,8 @@ export interface AgentRuntime {
   readonly dataFiles?: ReadonlyArray<string> | undefined
   readonly prOpener?: PrOpener | undefined
   readonly gitTimeoutMs?: number | undefined
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  readonly sensitiveEnv?: ReadonlyArray<string> | undefined
   readonly mcpProbeTimeoutMs?: number | undefined
 }
 
@@ -1655,7 +1676,7 @@ export const runAgentLint = (
         )
       )
     }
-    const slice = yield* expandDiffSlice(runtime.workspaceRoot, payload.diffs, runtime.gitTimeoutMs)
+    const slice = yield* expandDiffSlice(runtime.workspaceRoot, payload.diffs, runtime.gitTimeoutMs, runtime)
     if (slice.files.length === 0) {
       return { vacuous: true, note: vacuousNote, files: [], findings: [], fixed: [] }
     }
@@ -1753,7 +1774,7 @@ const runCandidateLoop = (
   Effect.gen(function*() {
     const values = yield* decodePayloadValues(payload.payloadSpec, runtime.payloadValues ?? {})
     yield* precheckMcp(payload.mcp, runtime.mcpProbeTimeoutMs)
-    const slice = yield* expandDiffSlice(runtime.workspaceRoot, payload.diffs, runtime.gitTimeoutMs)
+    const slice = yield* expandDiffSlice(runtime.workspaceRoot, payload.diffs, runtime.gitTimeoutMs, runtime)
     if (payload.diffs.length > 0 && slice.files.length === 0) {
       return { vacuous: true, rounds: 0, diff: "", edits: [], gateReport: [] }
     }

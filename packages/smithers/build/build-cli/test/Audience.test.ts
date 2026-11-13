@@ -226,3 +226,31 @@ describe("presentation argument boundaries", () => {
     expect(Audience.fromArguments(["--", "--format=jsonl"], { ...terminal, env: {} }).structured).toBe(false)
   })
 })
+
+describe("explicit audience precedence", () => {
+  it.each(["human", "agent"] as const)("uses detection for explicit auto over env %s", (value) => {
+    expect(Audience.fromArguments(["test", "--audience", "auto"], {
+      ...terminal,
+      env: { SMITHERS_AUDIENCE: value }
+    })).toMatchObject({ audience: "human", source: "terminal" })
+    expect(Audience.fromArguments(["--audience=auto"], {
+      ...terminal,
+      env: { SMITHERS_AUDIENCE: value, CLAUDECODE: "1" }
+    })).toMatchObject({ audience: "agent", source: "harness" })
+  })
+  it.each(["auto", "human", "agent"] as const)("validates an invalid variable before flag %s", (audience) => {
+    expect(() =>
+      Audience.resolve({
+        ...terminal,
+        audience,
+        env: { SMITHERS_AUDIENCE: "invalid" }
+      })
+    ).toThrow("SMITHERS_AUDIENCE must be auto, human, or agent")
+    expect(() =>
+      Audience.fromArguments(["--audience", audience], {
+        ...terminal,
+        env: { SMITHERS_AUDIENCE: "invalid" }
+      })
+    ).toThrow("SMITHERS_AUDIENCE must be auto, human, or agent")
+  })
+})
