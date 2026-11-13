@@ -29,8 +29,11 @@ import * as TreeFingerprint from "../src/TreeFingerprint.ts"
 import * as WorkspaceLists from "../src/TreeFingerprint.ts"
 
 /** Runs the measurement script in `cwd` with the host's `sh`, the way a container would. */
-const measure = (cwd: string): TreeFingerprint.Measurement | undefined => {
-  const result = spawnSync("sh", ["-c", TreeFingerprint.script()], { cwd, encoding: "utf8" })
+const measure = (
+  cwd: string,
+  options: Parameters<typeof TreeFingerprint.script>[0] = {}
+): TreeFingerprint.Measurement | undefined => {
+  const result = spawnSync("sh", ["-c", TreeFingerprint.script(options)], { cwd, encoding: "utf8" })
   return result.status === 0 ? TreeFingerprint.parse(result.stdout) : undefined
 }
 
@@ -47,9 +50,45 @@ describe("TreeFingerprint.script", () => {
   it("prunes every directory and suffix the host walk prunes", () => {
     const script = TreeFingerprint.script()
     for (const name of WorkspaceLists.defaultPrune) expect(script).toContain(`-name '${name}'`)
-    for (const suffix of WorkspaceLists.defaultIgnoreSuffixes) expect(script).toContain(`! -name '*${suffix}'`)
+    for (const suffix of WorkspaceLists.defaultIgnoreSuffixes) expect(script).toContain(`-name '*${suffix}'`)
     expect(script).toContain(`head -n ${TreeFingerprint.maxPaths + 1}`)
     expect(script).toContain("cksum")
+  })
+
+  it.skipIf(!hostCanMeasure)("ignores suffix directories at every depth while measuring source neighbours", () => {
+    const root = mkdtempSync(join(tmpdir(), "tree-fingerprint-"))
+    try {
+      write(root, "src/source.py", "source", 1_700_000_000)
+      write(root, "src/target", "ignored name")
+      const before = measure(root)
+      for (const suffix of TreeFingerprint.defaultIgnoreSuffixes) {
+        write(root, `pkg${suffix}/SOURCES.txt`, "generated")
+        write(root, `src/pkg${suffix}/nested/metadata`, "generated")
+        write(root, `src/artifact${suffix}`, "generated")
+      }
+      expect(measure(root)).toEqual(before)
+      write(root, "src/pkg.egg-info/SOURCES.txt", "rewritten metadata")
+      expect(TreeFingerprint.moved(before, measure(root))).toBe(false)
+      write(root, "src/pkg.egg-info.py", "source", 1_700_000_000)
+      const after = measure(root)
+      expect(after?.paths).toBe(2)
+      expect(TreeFingerprint.moved(before, after)).toBe(true)
+      expect(measure(root, { ignoreSuffixes: [] })?.paths).toBe(30)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(!hostCanMeasure)("applies custom suffixes to directories and files", () => {
+    const root = mkdtempSync(join(tmpdir(), "tree-fingerprint-"))
+    try {
+      write(root, "src/kept", "source")
+      write(root, "cache.generated/nested/file", "derived")
+      write(root, "src/file.generated", "derived")
+      expect(measure(root, { ignoreSuffixes: [".generated"] })?.paths).toBe(1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it.skipIf(hostCanMeasure)("exits non-zero on a host whose stat cannot list, never an empty measurement", () => {

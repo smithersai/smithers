@@ -156,6 +156,7 @@ const checkout = (path: string, commit: string) => {
   const name = path.slice(path.lastIndexOf("/") + 1)
   return [
     init,
+    "chmod 700 -- <shadow>",
     `sh -c ${measureScript} sh /work/repo/.flows-checkpoints <shadow> /work ${cacheRoot}`,
     `sh -c set -eC; mkdir -- "$2" "$2/.git" "$2/.git/objects" "$2/.git/objects/info" "$2/.git/refs"; printf '%s\\n' "$3" > "$2/.git/HEAD"; printf '%s\\n' "$4" > "$2/.git/objects/info/alternates"; printf '%s' "$5" > "$2/.git/config" sh <shadow> <shadow>/${name} ${commit} ../../../../.git/objects [core]\n\trepositoryformatversion = 0\n\tbare = false\n`,
     `${shadow} --work-tree=<shadow>/${name} ${guarded} read-tree --reset -u ${commit}`,
@@ -259,6 +260,7 @@ describe("Checkpoints.makeGit capture", () => {
     expect(lines(spawns)).toEqual([
       ...bound,
       init,
+      "chmod 700 -- <shadow>",
       `${workspace} rev-parse --verify --quiet HEAD^{commit}`,
       // The copy takes the index's modification time before its bytes (#3431).
       "sh -c set -C; if [ -e \"$1\" ]; then : > \"$2.at\" && touch -r \"$1\" -- \"$2.at\" && cat -- \"$1\" > \"$2\" && "
@@ -749,6 +751,17 @@ describe("Checkpoints.makeGit host faults", () => {
 
     expect(failureOf(exit)).toMatchObject({ code: "command_failed", message: "Could not create a shadow repository: " })
     expect(lines(spawns).slice(-2)).toEqual([init, "rm -rf -- <shadow>"])
+  })
+
+  it("refuses an insecure shadow and removes it before any tree can be staged", async () => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
+      const checkpoints = yield* store(spawns, [["chmod 700 --", { exitCode: 1 }]])
+      return yield* checkpoints.capture("cp-0-0")
+    })))
+    expect(failureOf(exit)).toMatchObject({ code: "command_failed", message: "Could not secure a shadow repository: " })
+    expect(lines(spawns).slice(-3)).toEqual([init, "chmod 700 -- <shadow>", "rm -rf -- <shadow>"])
+    expect(lines(spawns).some((line) => line.includes("stash create"))).toBe(false)
   })
 
   it("says so when git could not point the shadow at HEAD, and records nothing", async () => {

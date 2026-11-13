@@ -490,8 +490,8 @@ it composes.
 | `truncated`   | boolean          | Whether the rendered body exceeded the display budget.         |
 | `notice`      | string, optional | The truncation disclosure.                                     |
 
-Follows up to 10 redirects, dropping `authorization` and `cookie` when the
-origin changes. Fails with `invalid_input`, `timeout`,
+Follows up to 10 redirects. The flow supplies only an `accept` header for the
+requested format; its input does not accept custom headers. Fails with `invalid_input`, `timeout`,
 `unsupported_content_type` for a body that is not text, JSON, or XML,
 `response_too_large` past 5 MiB, or `request_failed`, including when the
 redirect limit is exceeded.

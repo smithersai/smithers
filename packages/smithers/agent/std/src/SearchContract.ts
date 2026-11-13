@@ -36,9 +36,9 @@ export const validatePattern = (pattern: string, fixedStrings: boolean): StdErro
   if (pattern.length > 4096) return invalidPattern(pattern, "patterns must not exceed 4096 bytes")
   if (!/^[\x20-\x7e]*$/.test(pattern)) return invalidPattern(pattern, "patterns must contain printable ASCII only")
   if (fixedStrings) return undefined
-  if (pattern.includes("(?")) return invalidPattern(pattern, "special groups and lookaround are not supported")
   let inClass = false
   let classCharacters = 0
+  let classNegated = false
   for (let index = 0; index < pattern.length; index++) {
     const character = pattern[index]
     if (character === "\\") {
@@ -50,12 +50,16 @@ export const validatePattern = (pattern: string, fixedStrings: boolean): StdErro
       if (inClass) classCharacters++
       continue
     }
+    if (character === "(" && !inClass && pattern[index + 1] === "?") {
+      return invalidPattern(pattern, "special groups and lookaround are not supported")
+    }
     if (character === "[" && inClass) {
       return invalidPattern(pattern, "nested and named character classes are not supported")
     }
     if (character === "[") {
       inClass = true
       classCharacters = 0
+      classNegated = pattern[index + 1] === "^"
       continue
     }
     if (character === "{" && !inClass) {
@@ -68,7 +72,7 @@ export const validatePattern = (pattern: string, fixedStrings: boolean): StdErro
       }
     }
     if (character === "]" && inClass) {
-      if (classCharacters === 0 || (classCharacters === 1 && pattern[index - 1] === "^")) {
+      if (classCharacters === 0 || (classCharacters === 1 && classNegated)) {
         return invalidPattern(pattern, "empty character classes are not supported")
       }
       inClass = false

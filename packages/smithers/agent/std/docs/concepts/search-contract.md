@@ -54,7 +54,8 @@ and JavaScript's `RegExp`, so both peers compile the same pattern to the same
 meaning. A pattern is rejected with `invalid_pattern` when it:
 
 - contains anything outside printable ASCII, or exceeds 4,096 bytes;
-- opens a special group with `(?`, which covers lookaround and named groups;
+- opens a special group with an unescaped `(?` outside a character class,
+  which covers lookaround and named groups;
 - escapes an alphanumeric, which covers backreferences, shorthand classes such
   as `\d`, and encoded escapes;
 - nests a character class, leaves one empty, or uses a class set operation
@@ -62,6 +63,10 @@ meaning. A pattern is rejected with `invalid_pattern` when it:
 - names a counted repetition above 1,000;
 - exceeds 128 nested groups or 8,192 compiled states after repetition expansion;
 - fails to compile as a JavaScript regular expression.
+
+Escaped punctuation stays literal: `print\(?x` matches an optional literal
+parenthesis, and `[\^]` matches a caret. Neither opens a special group or an
+empty character class.
 
 `fixedStrings: true` skips the grammar entirely except for the ASCII and length
 checks, because a literal is escaped rather than compiled.

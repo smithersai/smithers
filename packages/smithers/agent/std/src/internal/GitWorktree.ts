@@ -14,7 +14,8 @@
  *
  * So the git that records and checks out trees runs against a **shadow**
  * `GIT_DIR`: a bare repository this module creates under the host's temporary
- * directory for one operation and deletes afterwards. Its config, hooks and
+ * directory for one operation and deletes afterwards. The directory is made
+ * owner-only before any workspace data is staged. Its config, hooks and
  * `info/attributes` are the ones `git init --template=` writes, which is none.
  * `GIT_CONFIG_NOSYSTEM` and `GIT_CONFIG_GLOBAL=/dev/null` drop the host's own
  * config files too, so the only settings are the ones on the command line.
@@ -325,6 +326,10 @@ const withShadow = <A, E, R>(
           )
           if (created.exitCode !== 0) {
             return yield* Effect.fail(failed(`Could not create a shadow repository: ${created.stderr.trim()}`))
+          }
+          const secured = yield* run("chmod", ["700", "--", path])
+          if (secured.exitCode !== 0) {
+            return yield* Effect.fail(failed(`Could not secure a shadow repository: ${secured.stderr.trim()}`))
           }
           return yield* use(shadowOf(repository, path))
         }),

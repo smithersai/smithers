@@ -110,8 +110,9 @@ arrived.
 
 Five behaviors are worth knowing:
 
-- Up to 10 redirects are followed, and `page.url` is where it ended. Crossing an
-  origin drops the `authorization` and `cookie` headers.
+- Up to 10 redirects are followed, and `page.url` is where it ended. The flow
+  supplies only an `accept` header selected by `format`; its input does not
+  accept custom headers.
 - A content type that is not `text/*` and carries neither `json` nor `xml` fails
   with `unsupported_content_type`. This flow renders text, not binaries.
 - `timeout` is in seconds, defaults to 30, and is capped at 120. It bounds the

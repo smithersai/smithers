@@ -160,14 +160,13 @@ export const script = (options: {
   readonly prune?: ReadonlyArray<string> | undefined
   readonly ignoreSuffixes?: ReadonlyArray<string> | undefined
 } = {}): string => {
-  const prune = (options.prune ?? defaultPrune).map((name) => `-name ${quoted(name)}`).join(" -o ")
-  const skipped = (options.ignoreSuffixes ?? defaultIgnoreSuffixes)
-    .map((suffix) => `! -name ${quoted(`*${suffix}`)}`)
-    .join(" ")
+  const suffixes = options.ignoreSuffixes ?? defaultIgnoreSuffixes
+  const prune = [...(options.prune ?? defaultPrune), ...suffixes.map((suffix) => `*${suffix}`)]
+    .map((name) => `-name ${quoted(name)}`).join(" -o ")
   return [
     "set -f",
     "command -v find >/dev/null 2>&1 && stat -c '%s %Y %n' . >/dev/null 2>&1 || exit 1",
-    `L=$(find . -xdev \\( ${prune} \\) -prune -o -type f ${skipped} -exec stat -c '%s %Y %n' {} + 2>/dev/null | LC_ALL=C sort | head -n ${
+    `L=$(find . -xdev \\( ${prune} \\) -prune -o -type f -exec stat -c '%s %Y %n' {} + 2>/dev/null | LC_ALL=C sort | head -n ${
       maxPaths + 1
     })`,
     `printf '%s' "$L" | cksum`,

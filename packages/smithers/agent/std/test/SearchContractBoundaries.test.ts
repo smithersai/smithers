@@ -27,6 +27,24 @@ const syntaxCases = [
 ] as const
 
 describe("SearchContract author-facing refusal and ignore diagnostics", () => {
+  it.each([
+    [String.raw`print\(?x`, "print(x", "printz"],
+    [String.raw`[\^]`, "^", "x"],
+    [String.raw`[^\^]`, "x", "^"],
+    ["[(?]", "(", "x"],
+    [String.raw`\(\?`, "(?", "x"]
+  ])("accepts literal punctuation in %s", (pattern, matching, other) => {
+    expect(SearchContract.validatePattern(pattern, false)).toBeUndefined()
+    const expression = SearchContract.expression(pattern, false, false)
+    expect(expression.test(matching)).toBe(true)
+    expect(expression.test(other)).toBe(false)
+  })
+
+  it("rejects a special group after an escaped backslash", () => {
+    expect(SearchContract.validatePattern(String.raw`\\(?=a)`, false)?.message)
+      .toContain("special groups and lookaround are not supported")
+  })
+
   it("rejects a trailing regex escape while retaining it in fixed-string searches", () => {
     expect(() => SearchContract.expression("\\", false, false)).toThrow(SyntaxError)
     const literal = SearchContract.expression("\\", true, false)

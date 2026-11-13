@@ -179,20 +179,15 @@ export const paths = (patch: string): ReadonlyArray<string> | undefined => {
   ]
 }
 
-/**
- * The one sentence a model sees for a failure this handler did not design.
- * The raw failure goes to the log, never into the tool result.
- */
-const unknownFailureSentence = "Something went wrong on our side. Not your fault."
-
-const unknownFailure = (error: unknown, path?: string): Effect.Effect<never, StdError.StdError> =>
+/** A real applier failure stays private in the tool result and visible in diagnostics. */
+const unknownFailure = (error: unknown, path: string): Effect.Effect<never, StdError.StdError> =>
   Effect.logError("apply_patch failed unexpectedly", error).pipe(
     Effect.andThen(Effect.fail(
-      new StdError.StdError(
-        path === undefined
-          ? { code: "command_failed", message: unknownFailureSentence }
-          : { code: "command_failed", message: unknownFailureSentence, path }
-      )
+      new StdError.StdError({
+        code: "command_failed",
+        message: "Something went wrong on our side. Not your fault.",
+        path
+      })
     ))
   )
 
@@ -212,15 +207,14 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
   const fileSystem = yield* FileSystem.FileSystem
   const path = yield* Path.Path
 
-  let parsed: ApplyPatchText.ParsedPatch
-  try {
-    parsed = ApplyPatchText.parsePatch(input.input)
-  } catch (error) {
-    if (error instanceof ApplyPatchText.ParseError) {
-      return yield* Effect.fail(new StdError.StdError({ code: "invalid_input", message: error.message }))
-    }
-    return yield* unknownFailure(error)
-  }
+  const parsed = yield* Effect.try({
+    try: () => ApplyPatchText.parsePatch(input.input),
+    catch: (error) =>
+      new StdError.StdError({
+        code: "invalid_input",
+        message: (error as ApplyPatchText.ParseError).message
+      })
+  })
 
   // Every update hunk is derived from the file as it is on disk, so two
   // sections naming one path both start from the same original and the second

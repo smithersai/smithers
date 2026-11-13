@@ -3,7 +3,7 @@ import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Effect, PlatformError } from "effect"
 import * as Redacted from "effect/Redacted"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
@@ -103,3 +103,31 @@ it("commit resolution reports Git startup failure without trying another ref and
 
 const plainWord = (value: string | Redacted.Redacted<string>): string =>
   Redacted.isRedacted(value) ? Redacted.value(value) : value
+
+it.skipIf(process.platform === "win32")(
+  "keeps shadow trees private before a checkpoint or baseline can stage files",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "std-private-shadow-"))
+    let staged: string | undefined
+    try {
+      await Effect.runPromise(
+        GitWorktree.withShadow({
+          root,
+          toplevel: root,
+          common: join(root, ".git"),
+          index: join(root, ".git/index"),
+          objectFormat: "sha1",
+          settings: []
+        }, (shadow) =>
+          Effect.sync(() => {
+            staged = shadow.path
+            expect(statSync(shadow.path).mode & 0o777).toBe(0o700)
+          })).pipe(Effect.provide(NodeServices.layer))
+      )
+      expect(staged).toBeDefined()
+      expect(existsSync(staged!)).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+)

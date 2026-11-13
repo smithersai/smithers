@@ -127,7 +127,7 @@ export const run = Effect.fn("WebFetch.run")(function*(
     )
   }
   const client = guarded(yield* HttpClient.HttpClient, false)
-  let headers: Readonly<Record<string, string>> = {
+  const headers: Readonly<Record<string, string>> = {
     accept: input.format === "html" ? "text/html, text/plain;q=0.8" : "text/markdown, text/plain, text/html;q=0.8"
   }
   for (let redirect = 0; redirect <= maxRedirects; redirect++) {
@@ -142,13 +142,6 @@ export const run = Effect.fn("WebFetch.run")(function*(
       if (next === undefined) {
         return yield* Effect.fail(
           error("invalid_input", "Redirect target must use http or https without user information", location)
-        )
-      }
-      if (next.origin !== url.origin) {
-        headers = Object.fromEntries(
-          Object.entries(headers).filter(([key]) =>
-            key.toLowerCase() !== "authorization" && key.toLowerCase() !== "cookie"
-          )
         )
       }
       url = next

@@ -385,7 +385,9 @@ Pinned trees, and the scratch checkouts a call runs against.
 the tree to `use` and removes the checkout however that effect ends. Host git
 never runs with the workspace's `.git` as its `GIT_DIR`: it records and checks
 out through a temporary shadow repository that shares only the workspace's
-objects, with host config files switched off. A hook, `core.fsmonitor` command,
+objects, with host config files switched off. The shadow directory has mode
+`0700` before workspace data is staged, so other local users cannot read its
+checkpoint or baseline tree. A hook, `core.fsmonitor` command,
 filter driver or `info/attributes` entry written into the workspace's `.git`
 therefore does not run on the host. The workspace is still read for refs, its
 index, its config file (as a file) and a few `core.*` hashing settings. A
