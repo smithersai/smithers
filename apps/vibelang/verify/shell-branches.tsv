@@ -300,38 +300,23 @@ src/surfaces/session.vibe	activeSession	Option.isSome(configured) && Redacted.va
 src/surfaces/session.vibe	readPending	pending.expiresAt <= (try Clock.currentTimeMillis)	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/session.vibe	settingsDir	Option.isNone(home) || home.value === ""	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/session.vibe	settingsDir	Option.isSome(xdg) && xdg.value !== ""	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/signin.vibe	answered	status === "declined" || status === "expired"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	clientIdOf	response.status !== 200	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	output	mock	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	output	mock	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	output	status === "signed-in"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	output	status === "signed-in"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	pollPending	(try Clock.currentTimeMillis) < flow.nextPollAt	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	refusal	status === "declined"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	refusal	status === "expired"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	safeSettings/callback	error instanceof SignInFailed	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	settle	answer.status !== "authorized"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	settle	answer.status === "denied"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	settle	answer.status === "expired"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	settle	answer.status === "slowDown"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	settle	response.status !== 200	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signIn	!input.wait	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signIn	!input.wait || result === "signed-in"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signIn	factory.mode === "mock"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signIn	result === "signed-in" || result === "started"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signIn	status !== "signed-in"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signIn	status === "declined" || status === "expired"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signIn	status === "signed-in"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signOutSurface	factory.mode === "mock"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signOutSurface/callback	factory.mode === "mock"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signOutSurface/callback/callback	factory.mode === "live" && stored !== undefined && stored.cookie !== ""	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signOutSurface/callback/callback	factory.mode === "mock"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signOutSurface/callback/callback	response.status !== 204	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	startLogin	parsed.origin !== origin || (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)))	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	startLogin	pending !== undefined && pending.origin === origin	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	startLogin	response.status === 200 && Option.isSome(identity) && identity.value.id !== "" && identity.value.agent === true	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	startLogin	stored !== undefined && stored.origin === origin && stored.cookie !== ""	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	startLogin/callback	error.reason === "misconfigured"	Open: signin.vibe (non-view src/ scope)
+src/surfaces/signin.vibe	output	mock	Forwards: mock mode reads the fixture session file and has no pending flow
+src/surfaces/signin.vibe	output	mock	Forwards: mock mode reads the fixture session file and has no pending flow
+src/surfaces/signin.vibe	safeSettings/callback	error instanceof SignInFailed	Variant test: a SignInFailed passes through; any other settings failure becomes one sentence
+src/surfaces/signin.vibe	settle	answer.status !== "authorized"	Variant dispatch: GitHub's DevicePoll status picks its arm (denied, expired, pending or slowDown, authorized), and TypeScript narrows each; the interval is the proved pollInterval
+src/surfaces/signin.vibe	settle	answer.status === "denied"	Variant dispatch: GitHub's DevicePoll status picks its arm (denied, expired, pending or slowDown, authorized), and TypeScript narrows each; the interval is the proved pollInterval
+src/surfaces/signin.vibe	settle	answer.status === "expired"	Variant dispatch: GitHub's DevicePoll status picks its arm (denied, expired, pending or slowDown, authorized), and TypeScript narrows each; the interval is the proved pollInterval
+src/surfaces/signin.vibe	settle	answer.status === "slowDown"	Variant dispatch: GitHub's DevicePoll status picks its arm (denied, expired, pending or slowDown, authorized), and TypeScript narrows each; the interval is the proved pollInterval
+src/surfaces/signin.vibe	signIn	!input.wait	Variant dispatch on the session operation's Status, which the proved startLogin and poll decisions produce; `wait` is the caller's option (the CLI waits, MCP answers at once)
+src/surfaces/signin.vibe	signIn	!input.wait || result === "signed-in"	Variant dispatch on the session operation's Status, which the proved startLogin and poll decisions produce; `wait` is the caller's option (the CLI waits, MCP answers at once)
+src/surfaces/signin.vibe	signIn	factory.mode === "mock"	Variant dispatch on the Factory's mode: mock mode signs in and out as the fixture person (VL-13)
+src/surfaces/signin.vibe	signIn	result === "signed-in" || result === "started"	Variant dispatch on the session operation's Status, which the proved startLogin and poll decisions produce; `wait` is the caller's option (the CLI waits, MCP answers at once)
+src/surfaces/signin.vibe	signIn	status !== "signed-in"	Variant dispatch on the session operation's Status, which the proved startLogin and poll decisions produce; `wait` is the caller's option (the CLI waits, MCP answers at once)
+src/surfaces/signin.vibe	signIn	status === "signed-in"	Variant dispatch on the session operation's Status, which the proved startLogin and poll decisions produce; `wait` is the caller's option (the CLI waits, MCP answers at once)
+src/surfaces/signin.vibe	signOutSurface	factory.mode === "mock"	Variant dispatch on the Factory's mode: mock mode signs in and out as the fixture person (VL-13)
+src/surfaces/signin.vibe	signOutSurface/callback	factory.mode === "mock"	Variant dispatch on the Factory's mode: mock mode signs in and out as the fixture person (VL-13)
+src/surfaces/signin.vibe	signOutSurface/callback/callback	factory.mode === "mock"	Variant dispatch on the Factory's mode: mock mode signs in and out as the fixture person (VL-13)
+src/surfaces/signin.vibe	startLogin/callback	error.reason === "misconfigured"	Variant dispatch on GitHubRefused's reason: a misconfigured device flow names the factory
 worker/accountObject.vibe	accountObject/callback/call	!answer.ok	Unreviewed: recorded by the 2026-11-13 audit
 worker/accountObject.vibe	gatewayOf/request	!answer.ok	Unreviewed: recorded by the 2026-11-13 audit
 worker/accountObject.vibe	gatewayOf/request	choice === "forbidden"	Unreviewed: recorded by the 2026-11-13 audit

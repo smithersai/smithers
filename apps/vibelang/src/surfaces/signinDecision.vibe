@@ -1,0 +1,99 @@
+// Sign-in's decisions for `login` and `logout` (0028; 0018 third-lane batch 49), for signin.vibe. The caller keeps
+// URL parsing, HTTP, Schema decoding, the settings files, clocks and GitHub's device flow.
+
+/** A factory origin is already an origin, and signs in over https, or over http only on this machine. */
+//@ verify
+//@ ensures \result == (parsedOrigin == origin && (protocol == "https:" || (protocol == "http:" && (hostname == "localhost" || hostname == "127.0.0.1" || hostname == "[::1]"))))
+export function factoryOriginAccepted(origin: string, parsedOrigin: string, protocol: string, hostname: string): boolean {
+  if (parsedOrigin !== origin) return false
+  if (protocol === "https:") return true
+  return protocol === "http:" && (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]")
+}
+
+/** A stored session is checked with the server only for this origin, and only when it holds a cookie. */
+//@ verify
+//@ ensures \result == (storedOrigin == origin && cookie != "")
+export function storedSessionUsable(storedOrigin: string, origin: string, cookie: string): boolean {
+  return storedOrigin === origin && cookie !== ""
+}
+
+/** The server confirms an agent session: 200, a person's nonempty id, and the agent mark. */
+//@ verify
+//@ ensures \result == (status == 200 && id != "" && agent)
+export function agentSessionConfirmed(status: number, id: string, agent: boolean): boolean {
+  return status === 200 && id !== "" && agent
+}
+
+/** A pending device flow resumes only at the origin it started at. */
+//@ verify
+//@ ensures \result == (pendingOrigin == origin)
+export function pendingResumes(pendingOrigin: string, origin: string): boolean {
+  return pendingOrigin === origin
+}
+
+/** GitHub's interval holds across processes and MCP calls: no poll before `nextPollAt`. */
+//@ verify
+//@ ensures \result == (now >= nextPollAt)
+export function pollDue(now: number, nextPollAt: number): boolean {
+  return now >= nextPollAt
+}
+
+/** After a slow-down the interval grows by 5 seconds, or to GitHub's offer when that is larger; otherwise it stands. */
+//@ verify
+//@ ensures slowDown ==> \result == (current + 5 >= offered ? current + 5 : offered)
+//@ ensures !slowDown ==> \result == current
+export function pollInterval(slowDown: boolean, current: number, offered: number): number {
+  if (!slowDown) return current
+  return current + 5 >= offered ? current + 5 : offered
+}
+
+/** A poll the person declined, or whose grant expired, ends the sign-in with their answer. */
+//@ verify
+//@ ensures \result == (status == "declined" || status == "expired")
+export function answerRefused(status: string): boolean {
+  return status === "declined" || status === "expired"
+}
+
+/** The answer a refusal reports: declined and expired stand; any other end of a wait is a failure. */
+//@ verify
+//@ ensures status == "declined" ==> \result == "declined"
+//@ ensures status == "expired" ==> \result == "expired"
+//@ ensures status != "declined" && status != "expired" ==> \result == "failed"
+export function refusalOf(status: string): "declined" | "expired" | "failed" {
+  if (status === "declined") return "declined"
+  if (status === "expired") return "expired"
+  return "failed"
+}
+
+/** One sentence per answer; "Sign-in failed." only for a failure that is neither. */
+//@ verify
+//@ ensures status == "declined" ==> \result == "Sign-in declined."
+//@ ensures status == "expired" ==> \result == "Sign-in expired."
+//@ ensures status != "declined" && status != "expired" ==> \result == "Sign-in failed."
+export function refusalMessage(status: string): string {
+  if (status === "declined") return "Sign-in declined."
+  if (status === "expired") return "Sign-in expired."
+  return "Sign-in failed."
+}
+
+/** Only an answer that is not yet signed in offers the person's code. */
+//@ verify
+//@ ensures \result == (status != "signed-in")
+export function offersCode(status: string): boolean {
+  return status !== "signed-in"
+}
+
+/** The status each sign-in call accepts: the device route and the session grant answer 200; a sign-out 204. */
+//@ verify
+//@ ensures step == "sign-out" ==> \result == (status == 204)
+//@ ensures step != "sign-out" ==> \result == (status == 200)
+export function signInAnswered(step: "route" | "session" | "sign-out", status: number): boolean {
+  return step === "sign-out" ? status === 204 : status === 200
+}
+
+/** Logout revokes the remote session only for a live factory and a stored cookie; mock mode signs out its fixture. */
+//@ verify
+//@ ensures \result == (live && cookie != "")
+export function revokesRemote(live: boolean, cookie: string): boolean {
+  return live && cookie !== ""
+}

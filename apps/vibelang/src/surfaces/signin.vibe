@@ -8,6 +8,7 @@ import type { GitHub } from "@smthrs/integrations"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Factory } from "../core/Factory.vibe"
 import { factoryUrl } from "./backend.vibe"
+import { agentSessionConfirmed, answerRefused, factoryOriginAccepted, offersCode, pendingResumes, pollDue, pollInterval, refusalMessage, refusalOf, revokesRemote, signInAnswered, storedSessionUsable } from "./signinDecision.vibe"
 import { readMockSession, writeMockSession, removeMockSession, activeSession, readPending, readSession, removePending, removeSession, writePending, writeSession, type PendingDevice } from "./session.vibe"
 
 /** The sign-in calls' transport: never follows a redirect, so a moved endpoint can't receive the device grant. */
@@ -41,7 +42,7 @@ effect function githubAuth(clientId: string) {
 effect function clientIdOf(origin: string) {
   const client = try HttpClient.HttpClient
   const response = try Effect.mapError(client.get(origin + "/api/auth/device"), () => new SignInFailed({ message: `Sign-in at ${origin} can't be reached.` }))
-  if (response.status !== 200) throw new SignInFailed({ message: `Sign-in isn't available at ${origin}.` })
+  if (!signInAnswered("route", response.status)) throw new SignInFailed({ message: `Sign-in isn't available at ${origin}.` })
   const body = try Effect.mapError(response.json, () => new SignInFailed({ message: `Sign-in at ${origin} can't be understood.` }))
   const decoded = Schema.decodeUnknownOption(DeviceRoute)(body)
   if (Option.isNone(decoded)) throw new SignInFailed({ message: `Sign-in at ${origin} can't be understood.` })
@@ -55,12 +56,12 @@ effect function poll(auth: GitHub.Auth.GitHubAuth["Service"], flow: PendingDevic
 
 /** The person's answer as one sentence; "Sign-in failed." only for a failure that is neither. */
 function refusal(status: "declined" | "expired" | "failed") {
-  return new SignInFailed({ message: status === "declined" ? "Sign-in declined." : status === "expired" ? "Sign-in expired." : "Sign-in failed." })
+  return new SignInFailed({ message: refusalMessage(status) })
 }
 
 /** A poll's status, failing with the person's answer when they declined or the grant expired. */
 effect function answered(status: Status) {
-  if (status === "declined" || status === "expired") throw refusal(status)
+  if (answerRefused(status)) throw refusal(refusalOf(status))
   return status
 }
 
@@ -75,7 +76,7 @@ effect function settle(flow: PendingDevice, origin: string, answer: GitHub.Auth.
     return "expired" as const
   }
   if (answer.status !== "authorized") {
-    const interval = answer.status === "slowDown" ? Math.max(flow.intervalSeconds + 5, answer.intervalSeconds ?? 0) : flow.intervalSeconds
+    const interval = pollInterval(answer.status === "slowDown", flow.intervalSeconds, answer.status === "slowDown" ? answer.intervalSeconds ?? 0 : 0)
     try writePending({ ...flow, intervalSeconds: interval, nextPollAt: (try Clock.currentTimeMillis) + interval * 1000 })
     return "pending" as const
   }
@@ -84,7 +85,7 @@ effect function settle(flow: PendingDevice, origin: string, answer: GitHub.Auth.
     HttpClientRequest.setHeader("origin", origin),
     HttpClientRequest.bodyJsonUnsafe({ token: Redacted.value(answer.tokens.accessToken) }),
   )), () => new SignInFailed({ message: `Sign-in at ${origin} can't be reached.` }))
-  if (response.status !== 200) throw new SignInFailed({ message: `Sign-in at ${origin} was refused.` })
+  if (!signInAnswered("session", response.status)) throw new SignInFailed({ message: `Sign-in at ${origin} was refused.` })
   const body = try Effect.mapError(response.json, () => new SignInFailed({ message: `Sign-in at ${origin} can't be understood.` }))
   const decoded = Schema.decodeUnknownOption(DeviceSession)(body)
   if (Option.isNone(decoded)) throw new SignInFailed({ message: `Sign-in at ${origin} can't be understood.` })
@@ -97,8 +98,8 @@ effect function settle(flow: PendingDevice, origin: string, answer: GitHub.Auth.
 effect function output(status: "started" | "pending" | "signed-in", mock = false) {
   const stored = mock ? try readMockSession() : try readSession()
   const pending = mock ? undefined : try readPending()
-  const offered = status === "signed-in" ? undefined : pending
-  return { status, login: status === "signed-in" ? stored?.login ?? "" : "", userCode: offered?.userCode ?? "", verificationUri: offered?.verificationUri ?? "" } satisfies LoginOutput
+  const offered = offersCode(status) ? pending : undefined
+  return { status, login: offersCode(status) ? "" : stored?.login ?? "", userCode: offered?.userCode ?? "", verificationUri: offered?.verificationUri ?? "" } satisfies LoginOutput
 }
 
 /** `login`: the CLI waits by default; MCP returns the code immediately and finishes on a subsequent call. */
@@ -126,7 +127,7 @@ export effect function signIn(input: LoginInput) {
     if (pending === undefined) throw new SignInFailed({ message: "Sign-in expired." })
     try Console.error(`Open ${pending.verificationUri} and enter ${pending.userCode}.`)
     const status = try Effect.mapError(waitForSignIn(safeSettings(scoped(pollPending()))), () => refusal("failed"))
-    if (status !== "signed-in") throw refusal(status === "declined" || status === "expired" ? status : "failed")
+    if (status !== "signed-in") throw refusal(refusalOf(status))
     return try output("signed-in")
   }
 }
@@ -142,18 +143,18 @@ effect function safeSettings<A, E, R>(program: A!E!R) {
 effect function startLogin() {
   const origin = (try factoryUrl).replace(/\/+$/, "")
   const parsed = try Effect.mapError(Effect.try(() => new URL(origin)), () => new SignInFailed({ message: "Invalid factory origin." }))
-  if (parsed.origin !== origin || (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)))) throw new SignInFailed({ message: "Invalid factory origin." })
+  if (!factoryOriginAccepted(origin, parsed.origin, parsed.protocol, parsed.hostname)) throw new SignInFailed({ message: "Invalid factory origin." })
   const client = try HttpClient.HttpClient
   const stored = try safeSettings(readSession())
-  if (stored !== undefined && stored.origin === origin && stored.cookie !== "") {
+  if (stored !== undefined && storedSessionUsable(stored.origin, origin, stored.cookie)) {
     const response = try Effect.mapError(client.execute(HttpClientRequest.get(origin + "/api/auth/session").pipe(HttpClientRequest.setHeader("cookie", stored.cookie))), () => new SignInFailed({ message: "Sign-in can't be reached." }))
     const body = response.json catch () => undefined
     const identity = Schema.decodeUnknownOption(Schema.Struct({ id: Schema.String, agent: Schema.optional(Schema.Boolean) }))(body)
-    if (response.status === 200 && Option.isSome(identity) && identity.value.id !== "" && identity.value.agent === true) return "signed-in" as const
+    if (Option.isSome(identity) && agentSessionConfirmed(response.status, identity.value.id, identity.value.agent === true)) return "signed-in" as const
     try safeSettings(removeSession())
   }
   const pending = try safeSettings(readPending())
-  if (pending !== undefined && pending.origin === origin) return "pending" as const
+  if (pending !== undefined && pendingResumes(pending.origin, origin)) return "pending" as const
   const clientId = try clientIdOf(origin)
   const auth = try githubAuth(clientId)
   const started = try Effect.mapError(auth.deviceCode(), error => new SignInFailed({ message: error.reason === "misconfigured" ? `Device sign-in is off for ${origin}.` : "GitHub refused the device sign-in." }))
@@ -170,7 +171,7 @@ effect function startLogin() {
 effect function pollPending() {
   const flow = try readPending()
   if (flow === undefined) return "expired" as const
-  if ((try Clock.currentTimeMillis) < flow.nextPollAt) return "pending" as const
+  if (!pollDue(try Clock.currentTimeMillis, flow.nextPollAt)) return "pending" as const
   const auth = try githubAuth(flow.clientId)
   return try settle(flow, flow.origin, try poll(auth, flow))
 }
@@ -187,13 +188,13 @@ export effect function signOutSurface() {
   }
   try sessionOperation("logout", safeSettings(effect {
     const revoked = try exit(ensuring(effect {
-      if (factory.mode === "live" && stored !== undefined && stored.cookie !== "") {
+      if (stored !== undefined && revokesRemote(factory.mode === "live", stored.cookie)) {
         provide FetchLive {
           const client = try HttpClient.HttpClient
           const response = try Effect.mapError(client.execute(HttpClientRequest.post(stored.origin + "/api/auth/sign-out").pipe(
             HttpClientRequest.setHeader("origin", stored.origin), HttpClientRequest.setHeader("cookie", stored.cookie),
           )), () => new SignInFailed({ message: "Sign-out couldn't reach the factory." }))
-          if (response.status !== 204) throw new SignInFailed({ message: "Sign-out was refused." })
+          if (!signInAnswered("sign-out", response.status)) throw new SignInFailed({ message: "Sign-out was refused." })
         }
       }
       if (factory.mode === "mock") try Effect.mapError(factory.accounts.signOut(), () => new SignInFailed({ message: "Sign-out failed." }))

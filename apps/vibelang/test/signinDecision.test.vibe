@@ -1,0 +1,31 @@
+import { describe, expect, it } from "@effect/vitest"
+import { agentSessionConfirmed, answerRefused, factoryOriginAccepted, offersCode, pendingResumes, pollDue, pollInterval, refusalMessage, refusalOf, revokesRemote, signInAnswered, storedSessionUsable } from "../src/surfaces/signinDecision.vibe"
+
+const parts = (origin: string) => { const url = new URL(origin); return [url.origin, url.protocol, url.hostname] as const }
+
+describe("sign-in decisions", () => {
+  it("accepts an https origin, or http on this machine, written as an origin", () => {
+    const accepted = (origin: string) => factoryOriginAccepted(origin, ...parts(origin))
+    expect(["https://vibe.example", "http://localhost:4532", "http://127.0.0.1:8787", "http://[::1]:8787"].map(accepted)).toEqual([true, true, true, true])
+    expect(["http://vibe.example", "http://[::2]:1", "https://vibe.example/path", "https://VIBE.example", "ftp://localhost"].map(accepted)).toEqual([false, false, false, false, false])
+  })
+  it("reuses a stored session or pending flow only at its origin, and confirms only an agent session", () => {
+    expect([storedSessionUsable("https://a", "https://a", "c"), storedSessionUsable("https://a", "https://a", ""), storedSessionUsable("https://b", "https://a", "c")]).toEqual([true, false, false])
+    expect([agentSessionConfirmed(200, "1", true), agentSessionConfirmed(200, "1", false), agentSessionConfirmed(200, "", true), agentSessionConfirmed(401, "1", true)]).toEqual([true, false, false, false])
+    expect([pendingResumes("https://a", "https://a"), pendingResumes("https://b", "https://a")]).toEqual([true, false])
+  })
+  it("polls at the interval, growing it after a slow-down", () => {
+    expect([pollDue(999, 1000), pollDue(1000, 1000), pollDue(1001, 1000)]).toEqual([false, true, true])
+    expect([pollInterval(false, 5, 30), pollInterval(true, 5, 0), pollInterval(true, 5, 30), pollInterval(true, 30, 10)]).toEqual([5, 10, 30, 35])
+  })
+  it("reports the person's answer in one sentence", () => {
+    expect(["declined", "expired", "failed", "pending"].map(answerRefused)).toEqual([true, true, false, false])
+    expect(["declined", "expired", "failed", "signed-out"].map(refusalOf)).toEqual(["declined", "expired", "failed", "failed"])
+    expect(["declined", "expired", "failed"].map(refusalMessage)).toEqual(["Sign-in declined.", "Sign-in expired.", "Sign-in failed."])
+    expect(["started", "pending", "signed-in"].map(offersCode)).toEqual([true, true, false])
+  })
+  it("accepts each call's status, and revokes only a live stored session", () => {
+    expect([signInAnswered("route", 200), signInAnswered("session", 201), signInAnswered("sign-out", 204), signInAnswered("sign-out", 200)]).toEqual([true, false, true, false])
+    expect([revokesRemote(true, "c"), revokesRemote(true, ""), revokesRemote(false, "c")]).toEqual([true, false, false])
+  })
+})
