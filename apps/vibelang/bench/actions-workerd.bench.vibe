@@ -10,6 +10,11 @@ import type { Run } from "../src/actions/Actions.vibe"
 import { serveApi, type Served } from "../test/support/workerd.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
+/** The same assertion checks the responses and the changed-status controls below. */
+effect function assertRefusals(cases: ReadonlyArray<readonly [number, number]>) {
+  try Effect.try(() => expect(cases.map(([actual]) => actual)).toEqual(cases.map(([, expected]) => expected)))
+}
+
 const origin = "https://factory.example"
 const accountEnv = {
   VIBELANG_ORIGIN: origin, VIBELANG_INITIAL_MAINTAINER_ID: "1", GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
@@ -142,13 +147,18 @@ it("workerd actions API over LiveActions and signed sessions", async ({ bench })
           cases.push([(await runPromise(call(client, api, "DELETE", "/api/actions/runs/a-nope", person, undefined, ""))).status, 404])
           cases.push([(await runPromise(call(client, api, "POST", "/api/actions/runs/a-nope/rerun", person, { id: `a-z-${stamp}` }, ""))).status, 404])
           cases.push([(await runPromise(call(client, api, "POST", "/api/actions/runs", person, { id: postId, flow: "vibelang/Post", input: { text: "Different" }, door: "button" }, ""))).status, 409])
-          expect(cases.map(([, status]) => status)).toEqual([400, 403, 403, 404, 404, 404, 409])
+          await runPromise(assertRefusals(cases))
+          // Every refusal must notice an accidentally successful response, independently of the other rows.
+          for (let index = 0; index < cases.length; index++) {
+            const changed = cases.map(([actual, expected], row) => [row === index ? 200 : actual, expected] as const)
+            expect((await runPromise(Effect.result(assertRefusals(changed))))._tag).toBe("Failure")
+          }
           const foreign = await runPromise(call(client, api, "GET", "/api/actions", person, undefined, "https://other.example"))
           expect(foreign.status).toBe(200)
           const foreignWrite = await runPromise(call(client, api, "POST", "/api/actions/runs", person, { id: `a-w-${stamp}`, flow: "vibelang/Tour", input: {}, door: "button" }, "https://other.example"))
           expect(foreignWrite.status).toBe(403)
         }))
-        try artifact("workerd-actions", "Vitest built-in bench; real local workerd API Worker with the deterministic model service: LiveActions list/commands/start/cancel/follow/runs/read/rerun/slash and its typed failures, then signed sessions run Post and History Plan to settlement; decode the real History result, require one matching retained commit, replay the exact request and require unchanged readback, with the input/authority/conflict/not-found matrix and cross-origin refusal.", ["Flow/adapter overhead over local workerd, no WAN or production contention; model replies are deterministic HTTP fixtures. Three samples per command on one served instance."], try tryPromise(() => result.run(slow)))
+        try artifact("workerd-actions", "Vitest built-in bench; real local workerd API Worker with the deterministic model service: LiveActions list/commands/start/cancel/follow/runs/read/rerun/slash and its typed failures, then signed sessions run Post and History Plan to settlement; decode the real History result, require one matching retained commit, replay the exact request and require unchanged readback, with actual-versus-expected input/authority/conflict/not-found statuses, one changed-to-200 negative control per matrix row and cross-origin refusal.", ["Flow/adapter overhead over local workerd, no WAN or production contention; model replies are deterministic HTTP fixtures. Three samples per command on one served instance."], try tryPromise(() => result.run(slow)))
       }
     }
   }))

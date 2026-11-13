@@ -9,6 +9,7 @@ interface State { readonly id: { toString(): string }; readonly storage: Storage
 interface Env { readonly [name: string]: unknown }
 
 export class ProjectAccounts {
+  exchangeCalls = 0
   readonly setup: Promise<Accounts.Setup | undefined>
   readonly service: Promise<Effect.Success<ReturnType<typeof Accounts.make>> | undefined>
   constructor(readonly state: State, readonly env: Env) {
@@ -17,8 +18,14 @@ export class ProjectAccounts {
     )))
     this.service = this.setup.then(async setup => {
       if (setup === undefined) return undefined
+      // The fault fixture deliberately selects Accounts.make's direct OAuth configuration. Hosted sign-in uses
+      // the broker instead, so keeping its descriptor would refuse sign-in before this injected exchange runs.
+      const { broker: _broker, ...direct } = setup
       const configured = env.ACCOUNT_FAULT === "exchange" ? {
-        ...setup, github: { ...setup.github, exchange: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" })) },
+        ...direct, github: { ...setup.github, exchange: effect () => {
+          this.exchangeCalls++
+          throw new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" })
+        } },
       } : env.ACCOUNT_DEVICE_FIXTURE === "1" ? {
         // The device flow's GitHub, fixed by the suite: `device-token-<id>` is that person's access token.
         ...setup, github: { ...setup.github, user: (token: Redacted.Redacted<string>) => {
@@ -51,6 +58,14 @@ export class ProjectAccounts {
     if (service === undefined || setup === undefined) return HttpServerResponse.toWeb(await runPromise(
       (url.pathname === "/api/issues" ? publicIssues(this.state.id.toString(), this.state.storage) : Accounts.disabled()).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, incoming)),
     ))
+    if (url.pathname === "/__fixture/oauth") {
+      // Counts only: no state, session identifiers, verifier, token or cookie leaves storage through this route.
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({
+        exchangeCalls: this.exchangeCalls,
+        pending: (await this.state.storage.list({ prefix: "sign-in/" })).size,
+        sessions: (await this.state.storage.list({ prefix: "session/" })).size,
+      }))
+    }
     // Only this unshipped test host can issue a fixture session; the live callback owns issuance.
     if (url.pathname === "/__fixture/issue") {
       const id = url.searchParams.get("id") ?? "2"

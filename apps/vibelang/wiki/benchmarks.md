@@ -6,6 +6,19 @@ Vitest built-in benchmarks assert correctness inside timing. Short callbacks use
 
 Current hosted-broker receipt: **5,827/7,036 src/worker statement-start lines (82.82%)**, production parent `ca292c70`; strict gate red for 95 files. [Current coverage](#resumed-source-profile-measurement-2026-11-09) and [corrected timing roster](#complete-corrected-local-timing-roster) follow the historical receipts. No src/worker line is excluded. Historical timing without explicit runner classification does not establish isolated unwarmed execution; the real-runner regression and correction are in 0017.
 
+## Correctness qualification for account and action observations
+
+Issue [#5338](https://github.com/smithersai/smithers/issues/5338) invalidates the earlier OAuth exchange-failure and
+actions-refusal claims below: the account workload never reached exchange, and the actions matrix compared its
+expected column. Earlier timing rows and quoted artifact methods are retained as historical records, not
+verification of those behaviors. Their benchmark source revisions are not relabeled.
+
+The corrected actions workload checks actual statuses and rejects a `200` substitution in every refusal row.
+Account workloads distinguish disabled configuration, missing broker configuration, and an explicit direct OAuth
+fault fixture with real pending PKCE state and callback. The latter verifies exactly one injected exchange,
+failure redirect, consumed state, cleared cookie, replay refusal, unchanged session count and prior-session
+preservation. It makes no claim about deployed broker or Connect latency. See [decision 0017](decisions/0017-benchmarks.md#refusal-and-oauth-benchmark-assertions).
+
 ## Earlier local validated workloads
 
 | Suite | Callback | Mean ms | Samples | Callbacks/s | Replay events/s | Method |

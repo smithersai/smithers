@@ -1023,3 +1023,18 @@ The public-wiki benchmark now checks actual owner-scoped draft persistence and b
 it no longer requires the removed `wiki/page/index` storage. The original failed oracle and corrected passing
 checks are separate receipts. Only source-identical benchmark Node maps join, by position; control coverage is
 disabled and the passing map is checked unchanged. The local evidence is held constant for the live comparison.
+
+## Refusal and OAuth benchmark assertions
+
+Issue [#5338](https://github.com/smithersai/smithers/issues/5338) found that the workerd actions matrix read its
+expected column and the exchange-failure workload stopped at missing broker configuration. Compare actual response
+statuses with the expected column, and require the same assertion to reject a `200` substitution at each row.
+
+Keep missing broker configuration as `workerd-account-missing-broker`. The separate
+`workerd-account-exchange-failure` workload selects the account service's existing direct OAuth configuration only
+in the unshipped fault host. It uses real PKCE state, cookie signatures, SQLite storage and journaled HTTP routes
+with an injected failing Effect exchange. Counts-only readback establishes one exchange, consumed pending state,
+unchanged stored-session count and no exchange on replay. Assert the failure redirect, deleted state cookie,
+absent new session cookie, anonymous readback and preservation of the prior session. This measures neither the
+hosted broker nor Connect. Correct artifact methods describe these distinct paths; earlier receipts do not
+establish the claimed exchange-failure or actions-refusal behavior.

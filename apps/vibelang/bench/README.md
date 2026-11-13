@@ -43,3 +43,11 @@ it makes no GitHub mutation. The second checks deployed read responses and retai
 content is unavailable. It is currently red for the deployed issues endpoint. Neither requests a model.
 The draft Budget failure benchmark intentionally waits through the production two-minute retry policy; its
 single observation measures whole failure latency, including that wait. See 0017 and the benchmark wiki.
+
+The workerd actions refusal matrix compares each HTTP status with its expected status; changing any single actual
+status to `200` must fail the same assertion. Account faults are separate workloads: disabled configuration, missing
+broker configuration, and direct OAuth exchange failure. The last uses the unshipped host's direct OAuth setup,
+real pending PKCE state and callback, and a failing Effect exchange. It checks exchange count, failure redirect,
+cookie deletion, consumed state, replay refusal, no new session and preservation of the prior signed session.
+It does not measure the deployed broker or credential connection. Earlier exchange-failure and actions-refusal
+claims were not established by their assertions; their timing receipts do not validate those behaviors.

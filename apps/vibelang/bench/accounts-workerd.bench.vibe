@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { it, expect } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { SESSION } from "../src/core/accountCookies.vibe"
 import { serveApi } from "../test/support/workerd.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
@@ -68,9 +69,10 @@ it("workerd signed sessions and current project-role authorization", { timeout: 
   }))
 })
 
-it("workerd disabled sign-in and injected OAuth exchange failure", async ({ bench }) => {
+it("workerd disabled sign-in, missing broker and injected OAuth exchange failure", async ({ bench }) => {
   await runPromise(scoped(effect {
     const disabled = try acquireRelease(serveApi(), (api) => promise(api.dispose))
+    const missingBroker = try acquireRelease(serveApi(setup), (api) => promise(api.dispose))
     const faulty = try acquireRelease(serveApi({ ...setup, ACCOUNT_FAULT: "exchange" }), (api) => promise(api.dispose))
     provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
       const client = try HttpClient.HttpClient
@@ -80,22 +82,68 @@ it("workerd disabled sign-in and injected OAuth exchange failure", async ({ benc
         expect((await runPromise(request(client, disabled.origin, "/api/roles", "", { id: "1", role: "maintainer" }))).status).toBe(503)
       }))
       let faultIdentity = 2000
-      const failureCase = try Effect.try(() => workload(bench, "workerd-account-exchange-failure", "async", async () => {
-        const unavailable = await runPromise(request(client, faulty.origin, "/api/auth/sign-in"))
+      const missingBrokerCase = try Effect.try(() => workload(bench, "workerd-account-missing-broker", "async", async () => {
+        const unavailable = await runPromise(request(client, missingBroker.origin, "/api/auth/sign-in"))
         expect(unavailable.status).toBe(503)
         expect(await runPromise(unavailable.json)).toEqual({ error: "sign-in unavailable" })
-        const device = await runPromise(request(client, faulty.origin, "/api/auth/device"))
+        const device = await runPromise(request(client, missingBroker.origin, "/api/auth/device"))
         expect(device.status).toBe(200)
         expect(await runPromise(device.json)).toEqual({ clientId: setup.GITHUB_CLIENT_ID })
+        const id = String(faultIdentity++)
+        const issued = await runPromise(request(client, missingBroker.origin, `/__fixture/issue?id=${id}&login=benchmark`))
+        expect(issued.status).toBe(200)
+        const personal = Schema.decodeUnknownSync(Schema.Struct({ cookie: Schema.String }))(await runPromise(issued.json)).cookie
+        expect(await runPromise((await runPromise(request(client, missingBroker.origin, "/api/auth/session"))).json)).toEqual({ id: "", login: "", role: "viewer", available: false })
+        expect(await runPromise((await runPromise(request(client, missingBroker.origin, "/api/auth/session", personal))).json)).toMatchObject({ id, login: "benchmark", role: "new", available: false })
+      }))
+      const failureCase = try Effect.try(() => workload(bench, "workerd-account-exchange-failure", "async", async () => {
         const id = String(faultIdentity++)
         const issued = await runPromise(request(client, faulty.origin, `/__fixture/issue?id=${id}&login=benchmark`))
         expect(issued.status).toBe(200)
         const personal = Schema.decodeUnknownSync(Schema.Struct({ cookie: Schema.String }))(await runPromise(issued.json)).cookie
-        expect(await runPromise((await runPromise(request(client, faulty.origin, "/api/auth/session"))).json)).toEqual({ id: "", login: "", role: "viewer", available: false })
-        expect(await runPromise((await runPromise(request(client, faulty.origin, "/api/auth/session", personal))).json)).toMatchObject({ id, login: "benchmark", role: "new", available: false })
+        const session = async (cookie = "") => await runPromise((await runPromise(request(client, faulty.origin, "/api/auth/session", cookie))).json)
+        const counts = async () => Schema.decodeUnknownSync(Schema.Struct({ exchangeCalls: Schema.Number, pending: Schema.Number, sessions: Schema.Number }))(await runPromise((await runPromise(request(client, faulty.origin, "/__fixture/oauth"))).json))
+        const before = await counts()
+        const prior = await session(personal)
+        expect(prior).toMatchObject({ id, login: "benchmark", role: "new" })
+        expect(before.pending).toBe(0)
+
+        const start = await runPromise(request(client, faulty.origin, "/api/auth/sign-in", personal))
+        expect(start.status).toBe(302)
+        const location = new URL(start.headers["location"] ?? "")
+        expect(location.origin).toBe("https://github.com")
+        expect(location.searchParams.get("code_challenge_method")).toBe("S256")
+        expect(location.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/)
+        expect(location.searchParams.get("redirect_uri")).toBe(configuredOrigin + "/api/auth/callback")
+        const state = location.searchParams.get("state") ?? ""
+        expect(state).not.toBe("")
+        const stateCookie = start.cookies.cookies["__Host-vibelang-sign-in"]
+        expect(stateCookie).toBeDefined()
+        expect(start.cookies.cookies[SESSION]).toBeUndefined()
+        expect(await counts()).toEqual({ ...before, pending: 1 })
+
+        const callbackPath = `/api/auth/callback?state=${encodeURIComponent(state)}&code=fixture-code`
+        const cookies = `${personal}; __Host-vibelang-sign-in=${stateCookie?.value ?? ""}`
+        const failed = await runPromise(request(client, faulty.origin, callbackPath, cookies))
+        expect(failed.status).toBe(302)
+        expect(failed.headers["location"]).toBe(configuredOrigin + "/?sign-in=failed")
+        const cleared = failed.cookies.cookies["__Host-vibelang-sign-in"]
+        expect(cleared?.value).toBe("")
+        expect(cleared?.options?.maxAge).toEqual(Duration.seconds(0))
+        expect(failed.cookies.cookies[SESSION]).toBeUndefined()
+        const after = { ...before, exchangeCalls: before.exchangeCalls + 1 }
+        expect(await counts()).toEqual(after)
+        // Replay the original valid cookie, as though a browser ignored the deletion.
+        const replay = await runPromise(request(client, faulty.origin, callbackPath, cookies))
+        expect(replay.status).toBe(400)
+        expect(await runPromise(replay.json)).toEqual({ error: "sign-in" })
+        expect(replay.cookies.cookies[SESSION]).toBeUndefined()
+        expect(await counts()).toEqual(after)
+        expect(await session()).toEqual({ id: "", login: "", role: "viewer", available: true })
+        expect(await session(personal)).toEqual(prior)
       }))
-      const results = [try tryPromise(() => disabledCase.run(slow)), try tryPromise(() => failureCase.run(slow))]
-      try artifact("accounts-workerd-faults", "Vitest built-in bench; actual account configuration/router and journaled sign-in/callback flows in local workerd. Three samples each: missing configuration stays viewer/503; configured device route remains usable while missing broker configuration refuses browser sign-in; a real signed fixture person connects credentials with PKCE, then an injected faulty Effect GitHub exchange yields a visible failure redirect, consumed state/refused replay, cleared state cookie and no new session cookie. Original person session survives. Redirect following disabled. Startup excluded; crypto/storage/requests/assertions included.", ["The production GitHub service is replaced only by the existing host's explicit failing Effect service. No request interception, GitHub request, real login or successful provider exchange. Synthetic secrets/cookies remain in memory and are omitted from artifacts."], results)
+      const results = [try tryPromise(() => disabledCase.run(slow)), try tryPromise(() => missingBrokerCase.run(slow)), try tryPromise(() => failureCase.run(slow))]
+      try artifact("accounts-workerd-faults", "Vitest built-in bench; real account router and journaled account flows in local workerd. Three samples each: disabled sign-in stays viewer/503; missing broker configuration refuses browser sign-in while device configuration and fixture sessions remain usable; a separate direct OAuth fault fixture issues a prior session, starts real PKCE sign-in and follows its callback into the injected exchange failure. Check exactly one exchange, failure redirect, consumed pending state, replay refusal without another exchange, cleared state cookie, no new session cookie or stored session, unchanged prior session and anonymous readback. Redirect following disabled. Startup excluded; crypto/storage/requests/assertions included.", ["The unshipped fault host selects Accounts.make's direct OAuth configuration and injects a failing Effect GitHub exchange; it does not measure the deployed broker or Connect flow, successful OAuth/consent, GitHub latency or real credentials. Prior sessions use real signatures and storage through fixture issuance. Only counts are exposed for exchange/state/session readback; synthetic secret/cookie values are omitted from artifacts."], results)
     }
   }))
 })
