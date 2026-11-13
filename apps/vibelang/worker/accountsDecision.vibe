@@ -266,3 +266,10 @@ export function ownerRefused(owner: string, saved: string | undefined): boolean 
 export function openOperation(op: string): boolean {
   return op === "read"
 }
+
+/** Whether a session may hold or make a person's GitHub connection: never an agent's (device) session. */
+//@ verify
+//@ ensures \result == !agent
+export function mayConnect(agent: boolean): boolean {
+  return !agent
+}

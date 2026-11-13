@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import {
   accountRoute, admittedRole, bootstrapGrant, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed,
-  connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, openOperation, originAccepted, ownerRefused, personId,
+  connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, mayConnect, openOperation, originAccepted, ownerRefused, personId,
   pruned, resumableOp, resumeToken, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, signedInAndAllowed, stepOutcome,
   unexpired, writeOriginAdmitted,
 } from "../worker/accountsDecision.vibe"
@@ -10,6 +10,9 @@ const SITE = "https://vibelang.example"
 const CALLBACK = "/api/auth/callback"
 
 describe("the account host's admission decisions", () => {
+  it("never lets an agent session hold or make a GitHub connection", () => {
+    expect([mayConnect(true), mayConnect(false)]).toEqual([false, true])
+  })
   it("opens only reading to a person who is not signed in; every write and a draft need sign-in", () => {
     expect(["read", "draft", "new", "comment", "propose", "save", "accept", "spec-revise", ""].filter(openOperation)).toEqual(["read"])
   })

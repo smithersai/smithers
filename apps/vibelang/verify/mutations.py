@@ -221,6 +221,8 @@ cases += [
 ('worker/accountsDecision.vibe','account-open-only','openOperation','return op === "read"','return op !== "comment"','only reading is open'),
 ('worker/workerDecision.vibe','cursor-leading-zero','cursorAccepted','return /^(?:0|[1-9][0-9]*)$/.test(raw)','return /^[0-9]+$/.test(raw)','a cursor has no leading zero'),
 ('worker/workerDecision.vibe','cursor-safe','cursorAccepted','value <= 9007199254740991','value <= 9007199254740992','a cursor is a safe integer'),
+('worker/accountsDecision.vibe','account-agent-connects','mayConnect','return !agent','return true','an agent session never connects'),
+('worker/accountsDecision.vibe','account-person-connects','mayConnect','return !agent','return false','a person may connect'),
 ('worker/mainLogDecision.vibe','lc-ancestry-starts','ancestryShas','ancestry.add(starts[i]!)','ancestry.add(starts[0]!)','every start is in the ancestry'),
 ]
 cases += web_cases

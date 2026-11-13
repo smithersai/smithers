@@ -21,7 +21,7 @@ import { type Storage, postExecutionId, EXECUTION_RETENTION } from "./Objects.vi
 import * as Sequencer from "./Sequencer.vibe"
 import { afterOf, eventStream } from "./Http.vibe"
 import { logOver } from "./ObjectStorage.vibe"
-import { accountRoute, bootstrapGrant, openOperation, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
+import { accountRoute, bootstrapGrant, mayConnect, openOperation, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
 
 export const CALLBACK = "/api/auth/callback"
 /** Alchemy preserves the original origin; loopback hosts use an unprefixed cookie over HTTP. */
@@ -182,7 +182,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
     current: effect (signed: string | undefined) => {
       const live = try session(signed)
       if (live === undefined) return undefined
-      const raw = live.value.agent === true ? undefined : try get(connectionKey(live.value.id))
+      const raw = mayConnect(live.value.agent === true) ? try get(connectionKey(live.value.id)) : undefined
       const stored = Schema.decodeUnknownOption(StoredConnection)(raw)
       const connection: Connection | undefined = Option.isSome(stored) && unexpired(stored.value.expires, try Clock.currentTimeMillis) ? { person: stored.value.person, delegation: stored.value.delegation } : undefined
       const principal: Principal = { id: live.value.id, login: live.value.login, role: try sequencer.role(live.value.id), ...(connection === undefined ? {} : { connection }), ...(live.value.agent === true ? { kind: "agent" as const } : {}) }
@@ -270,7 +270,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       const live = try session(presented(request))
       if (live === undefined) return json({ error: "sign-in" }, 401)
       // Device sessions remain agents through every role/credential check.
-      if (live.value.agent === true) return json({ error: "agent" }, 403)
+      if (!mayConnect(live.value.agent === true)) return json({ error: "agent" }, 403)
       const wikiPage = url.searchParams.get("wiki-page") ?? undefined
       const resumeOp = url.searchParams.get("resume-op") ?? undefined
       const resumeKey = url.searchParams.get("resume-key") ?? undefined
