@@ -130,16 +130,13 @@ in the [API reference](https://github.com/smithersai/smithers/blob/main/packages
   `maxObservations`, `offset` walks a long history, and `before` is an exclusive
   upper `at` filter. All three must be safe integers in range or the call fails
   naming the value.
-- **`submit`** does not wait for the scorer to run, but it backpressures once
-  `capacity` queued jobs are outstanding, so it is not safe on a
-  latency-critical path. `capacity` defaults to 1024 and `concurrency` to 1; a
-  value that is not a positive safe integer is coerced to the default rather
-  than rejected.
 - **A store failure never fails a batch.** It is logged as a warning, so
   `runBatch`'s result records what each scorer answered, not what was persisted.
 - **`Binding` retains `context` and `groundTruth` by reference.** Scoring runs
   later, so pass values that do not change.
-- **Nothing prunes** `flows_scores` or `flows_score_jobs`.
+- **Nothing prunes automatically.** Call `ScoreStore.prune({ olderThan })` to
+  delete old observations and job claims. A pruned claim no longer suppresses a
+  duplicate, so prune only past the oldest job the host may still replay.
 
 ## License
 

@@ -54,6 +54,26 @@ const listed = (path: string): ReadonlyArray<string> =>
   [...read(path).matchAll(/^\| `(\w+)` *\| /gmu)].map(([, name]) => name!)
 
 describe("documentation", () => {
+  it("documents awaited batches and explicit retention through the store", () => {
+    const readme = read("../README.md")
+    expect(readme).not.toContain("**`submit`**")
+    expect(readme).not.toContain("`capacity`")
+    for (const path of ["../README.md", "../docs/durability.md", "../docs/troubleshooting.md"]) {
+      const page = read(path).replace(/\s+/g, " ")
+      expect(page).toContain("ScoreStore.prune({ olderThan })")
+      expect(page).toContain("automatically")
+      expect(page).not.toContain("A stored row is permanent")
+      expect(page).not.toContain("delete outside this package")
+    }
+    expect(read("../docs/durability.md").replace(/\s+/g, " "))
+      .toContain("A pruned claim no longer suppresses a duplicate")
+    for (
+      const path of ["../docs/README.md", "../docs/guides/record-a-score-once.md", "../docs/guides/read-scores-back.md"]
+    ) {
+      expect(read(path).replace(/\s+/g, " ")).not.toContain("never prunes")
+    }
+  })
+
   it("requires a shared selection for paired scorer comparisons", async () => {
     const sampling = { ratio: 0.5, seed: "same" }
     const decisions = await Promise.all(["judge-a", "judge-b"].map((id) => {

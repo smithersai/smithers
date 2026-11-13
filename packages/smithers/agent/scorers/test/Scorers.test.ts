@@ -1,6 +1,6 @@
 import { ProviderError } from "@smthrs/sandbox/RemoteChildProcessSpawner"
 import type { Session } from "@smthrs/sandbox/Sandbox"
-import { Deferred, Effect, Exit, Fiber, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Scorers from "../src/Scorers.ts"
 import * as ScoreStore from "../src/ScoreStore.ts"
@@ -35,7 +35,8 @@ describe("built-in scorers", () => {
     expect(await Effect.runPromise(scorer.score(input(" ", "")))).toMatchObject({ score: 1 })
     expect(await Effect.runPromise(scorer.score(input("AB", "A B")))).toMatchObject({ score: 0 })
     expect(await Effect.runPromise(scorer.score(input("a b", "A B")))).toMatchObject({ score: 0 })
-    expect(Exit.isFailure(await Effect.runPromiseExit(scorer.score(input(42, "42"))))).toBe(true)
+    expect(await Effect.runPromise(Effect.flip(scorer.score(input(42, "42")))))
+      .toMatchObject({ code: "inconclusive" })
     expect(await Effect.runPromise(Scorers.contains().score(input("prefix value suffix", "value")))).toEqual({
       score: 1
     })
@@ -72,7 +73,8 @@ describe("built-in scorers", () => {
   })
   it("refuses malformed/truncated/non-text diffs and invalid budgets", async () => {
     for (const value of ["not a diff", "@@ -1 +1 @@\n-x\n+y", "--- a/a\n+++ b/a\n@@ -2,2 +2 @@\n-x\n+y\n", 4]) {
-      expect(Exit.isFailure(await Effect.runPromiseExit(Scorers.diffSize({ max: 1 }).score(input(value))))).toBe(true)
+      expect(await Effect.runPromise(Effect.flip(Scorers.diffSize({ max: 1 }).score(input(value)))))
+        .toMatchObject({ code: "inconclusive" })
     }
     for (const max of [-1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
       expect(() => Scorers.diffSize({ max })).toThrow()
@@ -159,7 +161,10 @@ describe("built-in scorers", () => {
       "--- a/a\n+++ b/a\n@@ -1 +0,0 @@\n+added\n"
     ]
     for (const output of fixtures) {
-      expect(Exit.isFailure(await Effect.runPromiseExit(Scorers.diffSize({ max: 10 }).score(input(output))))).toBe(true)
+      for (const scorer of [Scorers.diffSize({ max: 10 }), Scorers.touchedFiles({ max: 10 })]) {
+        expect(await Effect.runPromise(Effect.flip(scorer.score(input(output)))))
+          .toMatchObject({ code: "inconclusive" })
+      }
     }
   })
 })
@@ -170,9 +175,8 @@ describe("testsPass sandbox boundary", () => {
       const sandbox = {
         spawn: () => Effect.succeed({ exitCode: Effect.succeed(exitCode), stdout: Stream.empty, stderr: Stream.empty })
       }
-      expect(
-        Exit.isFailure(await Effect.runPromiseExit(Scorers.testsPass({ command: "test", sandbox }).score(input(null))))
-      ).toBe(true)
+      expect(await Effect.runPromise(Effect.flip(Scorers.testsPass({ command: "test", sandbox }).score(input(null)))))
+        .toMatchObject({ code: "inconclusive" })
     }
     const failure = new ProviderError({ code: "unavailable", message: "lost output transport" })
     for (const channel of ["stdout", "stderr"] as const) {
@@ -185,9 +189,8 @@ describe("testsPass sandbox boundary", () => {
             [channel]: Stream.fail(failure)
           })
       }
-      expect(
-        Exit.isFailure(await Effect.runPromiseExit(Scorers.testsPass({ command: "test", sandbox }).score(input(null))))
-      ).toBe(true)
+      expect(await Effect.runPromise(Effect.flip(Scorers.testsPass({ command: "test", sandbox }).score(input(null)))))
+        .toMatchObject({ code: "inconclusive" })
     }
   })
   it("executes the exact declared command, drains both streams and distinguishes exit zero from exit one", async () => {
@@ -267,6 +270,11 @@ describe("testsPass sandbox boundary", () => {
         return yield* Fiber.await(fiber)
       }))
       expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.hasInterrupts(exit.cause)).toBe(cancel)
+        expect(Cause.hasDies(exit.cause)).toBe(false)
+        if (!cancel) expect(Cause.squash(exit.cause)).toMatchObject({ code: "inconclusive" })
+      }
       expect(released).toBe(true)
     }
   })

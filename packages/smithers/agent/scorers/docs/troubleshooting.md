@@ -224,10 +224,11 @@ aggregator) or a top-level module subpath. See
 
 ## The score tables keep growing
 
-**What happened.** Nothing prunes `flows_scores` or `flows_score_jobs`. There
-is no garbage collection path and no automatic expiry.
+**What happened.** Nothing prunes `flows_scores` or `flows_score_jobs`
+automatically.
 
-**What to change.** A deployment that scores every step of a long-running flow
-owns that growth. Bound what you score with a
-[sampling policy](./concepts/sampling.md), and delete outside this package when
-you need retention. See [Durability](./durability.md#retention).
+**What to change.** Call `ScoreStore.prune({ olderThan })` to delete old
+observations and job claims. A pruned claim no longer suppresses a duplicate,
+so prune only past the oldest job the host may still replay. Bound what you
+score with a [sampling policy](./concepts/sampling.md). See
+[Durability](./durability.md#retention).

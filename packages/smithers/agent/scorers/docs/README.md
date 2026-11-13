@@ -166,6 +166,6 @@ Every export of every namespace, with signatures and bounds, is on the
   [replay-stable sampling](./concepts/sampling.md), and
   [observations](./concepts/observations.md).
 - [Durability](./durability.md): what the store guarantees across a restart,
-  what it refuses to persist, and what it never prunes.
+  what it refuses to persist, and explicit retention.
 - [Troubleshooting](./troubleshooting.md): each failure code, its cause, and
   the fix.

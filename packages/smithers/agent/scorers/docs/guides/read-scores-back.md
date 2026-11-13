@@ -103,4 +103,4 @@ it. The rules a row must satisfy are listed in
 ## Next
 
 - [Observations](../concepts/observations.md): what each kind of row means.
-- [Durability](../durability.md): retention, and what the store never prunes.
+- [Durability](../durability.md): how to prune old observations and job claims.

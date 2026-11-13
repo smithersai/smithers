@@ -42910,8 +42910,8 @@ transaction. `observations(targetStepKey, scorerKey?, page?)` reads a bounded
 page ordered by `(at, insertion)`. `aggregate(targetStepKey, scorerKey?)`
 reports `{count, mean, min, inconclusive}` over that target, or `undefined`
 when it has no observations of either kind.
-`prune({ olderThan })` deletes observations whose `at`, and job claims whose
-creation time, is older than the cutoff and answers `{ observations, jobs }`.
+`prune({ olderThan })` deletes observations and job claims whose observation
+`at` is older than the cutoff and answers `{ observations, jobs }`.
 Nothing else deletes from the store, so a host that scores live runs should
 call it on a schedule. A pruned claim no longer suppresses a duplicate, so
 prune only past the oldest job the host may still replay.

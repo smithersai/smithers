@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
 import * as Logger from "effect/Logger"
 import { describe, expect, it } from "vitest"
 import { ScorerError } from "../src/ScorerError.ts"
@@ -175,11 +175,41 @@ describe("Scoring", () => {
     expect(sink.seen).toEqual([])
   })
 
-  it("coerces concurrency that is not a positive safe integer", async () => {
-    const sink = recorder()
-    const output = await withRunner(sink.store, (runner) => runner.runBatch([job()], { concurrency: -5 }))
-    expect(output).toHaveLength(1)
-  })
+  it.each([undefined, -5, 0, 1.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    "runs sequentially when concurrency is %s",
+    async (concurrency) => {
+      const sink = recorder()
+      const events: Array<string> = []
+      const output = await withRunner(sink.store, (runner) =>
+        Effect.gen(function*() {
+          const started = yield* Deferred.make<void>()
+          const release = yield* Deferred.make<void>()
+          const first = Effect.gen(function*() {
+            events.push("first started")
+            yield* Deferred.succeed(started, undefined)
+            yield* Deferred.await(release)
+            events.push("first finished")
+            return { score: 0.25 }
+          })
+          const second = Effect.sync(() => {
+            events.push("second started")
+            return { score: 0.75 }
+          })
+          const fiber = yield* Effect.forkChild(runner.runBatch([
+            job({ identity: "first", score: first }),
+            job({ identity: "second", score: second })
+          ], { concurrency }))
+          yield* Deferred.await(started)
+          yield* Effect.yieldNow
+          expect(events).toEqual(["first started"])
+          yield* Deferred.succeed(release, undefined)
+          return yield* Fiber.join(fiber)
+        }))
+      expect(events).toEqual(["first started", "first finished", "second started"])
+      expect(output).toMatchObject([{ kind: "score", score: 0.25 }, { kind: "score", score: 0.75 }])
+      expect(sink.seen.map(({ identity }) => identity)).toEqual(["first", "second"])
+    }
+  )
 
   describe("inconclusive", () => {
     it("carries a scorer error's own code", () => {

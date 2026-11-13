@@ -99,5 +99,5 @@ it: it appends without a claim, and the store keeps every row. See
 
 - [Read scores back](./read-scores-back.md): page a long history and aggregate
   it.
-- [Durability](../durability.md): what the store refuses to persist, and what
-  it never prunes.
+- [Durability](../durability.md): what the store refuses to persist, and how
+  to prune old observations and job claims.

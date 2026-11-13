@@ -199,8 +199,8 @@ export interface Service {
     scorerKey?: string | undefined
   ) => Effect.Effect<Aggregate | undefined, ScorerError>
   /**
-   * Deletes observations whose `at` and job claims whose creation time are
-   * older than `olderThan`, answering how many of each it removed. Nothing
+   * Deletes observations and job claims whose observation `at` is older
+   * than `olderThan`, answering how many of each it removed. Nothing
    * else deletes from the store, so a host that never calls this keeps every
    * observation and claim forever. A pruned claim no longer suppresses a
    * duplicate, so prune only past the oldest job a host may still replay.

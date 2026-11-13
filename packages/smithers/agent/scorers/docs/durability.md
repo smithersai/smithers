@@ -1,6 +1,6 @@
 ---
 title: "Durability"
-description: "What the score store guarantees across a restart: the rows it refuses, how a job claim stays atomic, how a long history pages, and what nothing prunes."
+description: "What the score store guarantees across a restart: the rows it refuses, how a job claim stays atomic, how a long history pages, and how to prune old observations and job claims."
 ---
 
 `SqlScoreStore.layer` runs this package's migrations when it is built and then
@@ -151,12 +151,16 @@ target has no observations of either kind.
 
 ## Retention
 
-Nothing prunes `flows_scores` or `flows_score_jobs`; there is no `gc` path for
-them and no automatic expiry. A stored row is permanent, which is why `reason`
-and `meta` are redacted on the way in rather than at each reader. A deployment that scores every step of a
-long-running flow owns that growth. Both tables are keyed by strings the caller
-supplies, so bounding identity and key length is the caller's job as well as
-this package's.
+Nothing prunes `flows_scores` or `flows_score_jobs` automatically. Call
+`ScoreStore.prune({ olderThan })` to delete observations and job claims whose
+observation `at` is older than the cutoff. It returns
+`{ observations, jobs }`, the number of rows deleted from each table.
+
+A pruned claim no longer suppresses a duplicate, so prune only past the oldest
+job the host may still replay. The host owns the retention policy and schedule.
+`reason` and `meta` are redacted before storage because rows remain readable
+until explicitly pruned. Both tables are keyed by strings the caller supplies,
+so bounding identity and key length is the caller's job as well as this package's.
 
 ## See also
 
