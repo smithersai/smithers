@@ -1,6 +1,6 @@
 ---
 title: Navigation completion and call bounds
-status: completed
+status: done
 area: navigation
 owner: codex
 updated: 2026-10-21

@@ -1,6 +1,6 @@
 ---
 title: Deny unconfirmed repository references in issue import plans
-status: review
+status: in-progress
 area: issues
 owner: Codex (importer outcomes A/B)
 updated: 2026-11-05

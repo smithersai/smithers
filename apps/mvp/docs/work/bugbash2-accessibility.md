@@ -1,6 +1,6 @@
 ---
 title: Round two accessibility and keyboard navigation
-status: in-review
+status: in-progress
 area: accessibility
 owner: bb2-a11y
 updated: 2026-10-27

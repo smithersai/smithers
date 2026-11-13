@@ -1,6 +1,6 @@
 ---
 title: Production bug bash navigation chrome
-status: in-review
+status: in-progress
 area: frontend
 owner: bb-chrome
 updated: 2026-10-26

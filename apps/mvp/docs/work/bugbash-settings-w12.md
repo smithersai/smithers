@@ -1,6 +1,6 @@
 ---
 title: Settings bug bash W12
-status: in-review
+status: in-progress
 area: settings
 owner: bb2-settings
 updated: 2026-10-26

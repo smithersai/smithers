@@ -1,6 +1,6 @@
 ---
 title: Bring the held device privacy stack to ready-to-land
-status: review
+status: in-progress
 area: local-first
 owner: Codex
 updated: 2026-11-05

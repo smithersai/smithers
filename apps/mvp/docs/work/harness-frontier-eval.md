@@ -1,6 +1,6 @@
 ---
 title: Smithers harness on the frontier-harness-eval benchmark
-status: parked
+status: blocked
 area: sdk
 owner: Fable lead session 2eeda18e (since 2026-11-10)
 updated: 2026-11-12

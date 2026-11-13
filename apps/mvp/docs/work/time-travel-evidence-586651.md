@@ -1,6 +1,6 @@
 ---
 title: Time-travel boundary and store evidence
-status: completed
+status: done
 area: sdk
 owner: codex
 updated: 2026-10-21

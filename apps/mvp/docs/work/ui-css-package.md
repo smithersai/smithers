@@ -1,6 +1,6 @@
 ---
 title: Framework-free Smithers component CSS
-status: implemented
+status: in-progress
 area: ui
 owner: Codex vl-uicss
 updated: 2026-11-07

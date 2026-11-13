@@ -1,6 +1,6 @@
 ---
 title: Rework once serialization recovery
-status: completed
+status: done
 area: flow
 owner: codex-fix-amend-d847d43b-081245
 updated: 2026-10-22

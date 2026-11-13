@@ -1,6 +1,6 @@
 ---
 title: Browser filesystem stat validation and operation snapshots
-status: completed
+status: done
 area: platform-browser
 owner: codex
 updated: 2026-10-21

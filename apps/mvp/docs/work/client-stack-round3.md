@@ -1,6 +1,6 @@
 ---
 title: Client stack round-3 recovery findings
-status: in-review
+status: in-progress
 area: local-first
 owner: Codex GPT-6.1 Sol
 updated: 2026-11-02

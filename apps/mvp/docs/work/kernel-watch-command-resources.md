@@ -1,6 +1,6 @@
 ---
 title: Kernel watch options and command authorization
-status: completed
+status: done
 area: kernel
 owner: codex
 updated: 2026-11-13

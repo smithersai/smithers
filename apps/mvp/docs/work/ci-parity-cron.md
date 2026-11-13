@@ -1,6 +1,6 @@
 ---
 title: CI parity: scheduled flows
-status: review
+status: in-progress
 area: sdk
 owner: none
 updated: 2026-11-10

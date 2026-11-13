@@ -8,6 +8,7 @@
  * @since 1.0.0
  */
 import { Smithers } from "@smthrs/targets"
+import { Package as mvpPackage } from "../mvp/PACKAGE.ts"
 
 const cwd = "apps/maintainer-site"
 
@@ -31,7 +32,7 @@ const sources = [
 const test = Smithers.NodeTest({
   runner: Smithers.testSuite(["markdown.test.mjs", "test/*.test.mjs"]),
   srcs: sources,
-  deps: [],
+  deps: [mvpPackage.workNotes],
   cwd
 })
 

@@ -1,6 +1,6 @@
 ---
 title: Chat component regression fixes
-status: complete
+status: done
 area: ui
 owner: codex-mini-ui-chat-476629
 updated: 2026-10-21

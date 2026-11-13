@@ -1,6 +1,6 @@
 ---
 title: Home read and action lifecycle regressions
-status: completed
+status: done
 area: home
 owner: codex
 updated: 2026-10-21

@@ -1,6 +1,6 @@
 ---
 title: Release pg admission after gate clients exit
-status: awaiting-review
+status: in-progress
 area: tooling
 owner: Codex (pg stop recovery hotfix)
 updated: 2026-11-05

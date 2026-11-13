@@ -1,6 +1,6 @@
 ---
 title: A backup provider for the hosted model (parked)
-status: parked
+status: blocked
 area: model
 owner: model-path builder
 updated: 2026-10-25 13:33 PDT

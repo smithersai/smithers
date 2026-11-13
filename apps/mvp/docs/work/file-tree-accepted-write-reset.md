@@ -1,6 +1,6 @@
 ---
 title: Retry an accepted issue write after a transport failure
-status: review
+status: in-progress
 area: flows
 owner: codex-smmredact
 updated: 2026-11-04

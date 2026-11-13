@@ -1,6 +1,6 @@
 ---
 title: Conversation view initialization and navigation ordering
-status: completed
+status: done
 area: views
 owner: codex
 updated: 2026-10-21

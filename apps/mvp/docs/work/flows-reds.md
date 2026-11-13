@@ -1,6 +1,6 @@
 ---
 title: Burn down flows and database reds on main
-status: completed
+status: done
 area: sdk
 owner: codex-flows-reds
 updated: 2026-10-22

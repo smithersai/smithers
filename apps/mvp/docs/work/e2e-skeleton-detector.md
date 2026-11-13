@@ -1,6 +1,6 @@
 ---
 title: Detect painted skeletons in no-loading assertions
-status: complete
+status: done
 area: app
 owner: Codex proofskel
 updated: 2026-11-04

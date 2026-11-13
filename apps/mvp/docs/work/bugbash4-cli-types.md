@@ -1,6 +1,6 @@
 ---
 title: Strict declarations in published CLI dependencies
-status: needs-decision
+status: blocked
 area: sdk
 owner: bb4-docs
 updated: 2026-10-27

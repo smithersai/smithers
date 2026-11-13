@@ -1,6 +1,6 @@
 ---
 title: Publish as the person
-status: in-review
+status: in-progress
 area: github
 owner: codex-publish-as-person
 updated: 2026-10-26

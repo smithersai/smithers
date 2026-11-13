@@ -1,6 +1,6 @@
 ---
 title: AUTH-8 conversations and clone cap
-status: in-review
+status: in-progress
 area: auth
 owner: auth-fix2 (Codex)
 updated: 2026-10-28

@@ -1,6 +1,6 @@
 ---
 title: TUI signed-in identity
-status: complete
+status: done
 area: tui
 owner: Codex sm-b06
 updated: 2026-11-05

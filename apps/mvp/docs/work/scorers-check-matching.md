@@ -1,6 +1,6 @@
 ---
 title: Literal check markers and Markdown links
-status: completed
+status: done
 area: sdk
 owner: codex
 updated: 2026-11-12

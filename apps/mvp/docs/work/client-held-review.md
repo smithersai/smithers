@@ -1,6 +1,6 @@
 ---
 title: Client held-write and sign-out review fixes
-status: in-review
+status: in-progress
 area: client
 owner: Codex GPT-6.1 Sol
 updated: 2026-11-02

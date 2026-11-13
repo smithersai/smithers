@@ -1,6 +1,6 @@
 ---
 title: File tree outage recovery and durable failure causes
-status: review
+status: in-progress
 area: flows
 owner: codex-ftretry-recovery
 updated: 2026-11-04

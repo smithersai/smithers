@@ -1,6 +1,6 @@
 ---
 title: CLI run activity, progress, and usage regressions
-status: completed
+status: done
 area: cli
 owner: codex
 updated: 2026-10-21

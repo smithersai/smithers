@@ -1,6 +1,6 @@
 ---
 title: RPC path and persisted card decoding regressions
-status: completed
+status: done
 area: sdk
 owner: codex-mini-fix-packages-rpc-src-894259
 updated: 2026-10-21

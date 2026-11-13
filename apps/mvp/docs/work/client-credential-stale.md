@@ -1,6 +1,6 @@
 ---
 title: Hold queued writes for stale credentials
-status: in-review
+status: in-progress
 area: local-first
 owner: Codex GPT-6.1 Sol
 updated: 2026-11-03

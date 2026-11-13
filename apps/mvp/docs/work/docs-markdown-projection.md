@@ -1,6 +1,6 @@
 ---
 title: Preserve Markdown code and screenshot captions
-status: completed
+status: done
 area: site
 owner: Codex
 updated: 2026-11-12

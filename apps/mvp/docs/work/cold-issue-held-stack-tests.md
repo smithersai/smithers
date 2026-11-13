@@ -1,6 +1,6 @@
 ---
 title: Held cold issue stack fixture and pending-screen coverage
-status: in-review
+status: in-progress
 area: app
 owner: Codex GPT-6.1 Sol
 updated: 2026-11-04

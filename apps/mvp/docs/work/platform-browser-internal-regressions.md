@@ -1,6 +1,6 @@
 ---
 title: Platform browser internal regressions
-status: completed
+status: done
 area: sdk
 owner: codex-platform-browser-851768
 updated: 2026-10-21

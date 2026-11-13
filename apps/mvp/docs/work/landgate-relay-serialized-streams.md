@@ -1,6 +1,6 @@
 ---
 title: Relay serializes cfbox streams beyond the land-gate bound
-status: planned
+status: todo
 area: tooling
 owner: Will (issue filing)
 updated: 2026-11-05

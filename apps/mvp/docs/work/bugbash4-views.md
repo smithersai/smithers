@@ -1,6 +1,6 @@
 ---
 title: Bug bash 4 — review and view recovery
-status: ready-for-landing
+status: in-progress
 area: views
 owner: codex-bb4-views
 updated: 2026-10-27

@@ -115,6 +115,14 @@ const AREAS = ["app", "sdk", "infra", "design", "process"]
 const statusLabel = (status) => ({ todo: "To do", "in-progress": "In progress" })[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
 const isWork = (path) => path.startsWith(WORK_DIR) && !path.slice(WORK_DIR.length).includes("/")
 
+// Reject unsupported values before publishing a board with misleading columns or counts.
+// Notes without a status retain the existing warning below.
+for (const [path, { data }] of front) {
+  if (isWork(path) && data && "status" in data && (typeof data.status !== "string" || !STATUSES.includes(data.status))) {
+    throw new Error(`work note ${path}: status ${JSON.stringify(data.status)} is not one of ${STATUSES.join(", ")}`)
+  }
+}
+
 // The properties table a note's front matter renders as, and the notes its `links` point to.
 const PROPERTY_ORDER = ["status", "area", "owner", "updated", "links"]
 function properties(data, resolver) {

@@ -1,6 +1,6 @@
 ---
 title: HTTPS development startup lifecycle
-status: completed
+status: done
 area: dev
 owner: codex
 updated: 2026-10-21

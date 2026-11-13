@@ -1,6 +1,6 @@
 ---
 title: Native repository and filesystem correctness
-status: completed
+status: done
 area: repo
 owner: codex
 updated: 2026-11-12

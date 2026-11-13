@@ -1,6 +1,6 @@
 ---
 title: Repository home defaults to the highest role, with switching down
-status: in-review
+status: in-progress
 area: app
 owner: vibelang-factory builder (Claude Opus)
 updated: 2026-10-22 04:05 PDT

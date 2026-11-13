@@ -1,6 +1,6 @@
 ---
 title: Control channel behavioral coverage
-status: completed
+status: done
 area: control
 owner: codex
 updated: 2026-11-13

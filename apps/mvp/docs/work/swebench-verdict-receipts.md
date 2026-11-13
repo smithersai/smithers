@@ -1,6 +1,6 @@
 ---
 title: Preserve benchmark verdict receipts
-status: completed
+status: done
 area: benchmarks
 owner: codex
 updated: 2026-11-11

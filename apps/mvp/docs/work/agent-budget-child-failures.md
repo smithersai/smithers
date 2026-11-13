@@ -1,6 +1,6 @@
 ---
 title: Budget accounting and child failure sanitization
-status: completed
+status: done
 area: agent
 owner: codex-fix-packages-smithers-agent-src-475638
 updated: 2026-10-21

@@ -1,6 +1,6 @@
 ---
 title: Platform Node Linux coverage failures
-status: completed
+status: done
 area: platform-node
 owner: codex-platform-node-reds
 updated: 2026-10-22

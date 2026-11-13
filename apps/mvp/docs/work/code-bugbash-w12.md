@@ -1,6 +1,6 @@
 ---
 title: Code browsing round two
-status: in-review
+status: in-progress
 area: repo
 owner: bb2-code
 updated: 2026-10-27

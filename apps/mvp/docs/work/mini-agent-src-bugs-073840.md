@@ -1,6 +1,6 @@
 ---
 title: Agent quota and host-port boundary regressions
-status: complete
+status: done
 area: sdk/agent
 owner: codex-mini-fix-073840
 updated: 2026-10-21

@@ -1,6 +1,6 @@
 ---
 title: Registry resource, lockfile identity and pack validation fixes
-status: completed
+status: done
 area: registry
 owner: codex-mini-451826
 updated: 2026-10-22

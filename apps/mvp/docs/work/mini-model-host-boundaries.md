@@ -1,6 +1,6 @@
 ---
 title: Model host diagnostic and callback boundaries
-status: completed
+status: done
 area: sdk
 owner: codex-mini-899176
 updated: 2026-10-21

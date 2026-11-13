@@ -1,6 +1,6 @@
 ---
 title: Rebase and squash the feed stack for the receipt gate
-status: in-review
+status: in-progress
 area: auth
 owner: codex-feed-gate
 updated: 2026-11-03

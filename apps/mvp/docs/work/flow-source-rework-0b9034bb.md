@@ -1,6 +1,6 @@
 ---
 title: Rework flow source regressions on durable item execution
-status: complete
+status: done
 area: flow
 owner: codex
 updated: 2026-10-21

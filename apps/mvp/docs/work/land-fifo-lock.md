@@ -1,6 +1,6 @@
 ---
 title: Serialize land validation with a bounded FIFO lease
-status: completed
+status: done
 area: devx
 owner: codex-landlock-finish
 updated: 2026-11-04

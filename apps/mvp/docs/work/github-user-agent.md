@@ -1,6 +1,6 @@
 ---
 title: GitHub User-Agent on every Worker request
-status: review
+status: in-progress
 area: github
 owner: codex
 updated: 2026-11-03

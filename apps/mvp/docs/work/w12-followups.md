@@ -1,6 +1,6 @@
 ---
 title: W12 production followups
-status: in-review
+status: in-progress
 area: app
 owner: codex-w12-followups
 updated: 2026-10-27

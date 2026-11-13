@@ -1,6 +1,6 @@
 ---
 title: Durable queue validation and diagnostics
-status: complete
+status: done
 area: flow
 owner: codex-fix-packages-smithers-flows-flow-src-486957
 updated: 2026-10-21

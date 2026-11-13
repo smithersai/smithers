@@ -1,6 +1,6 @@
 ---
 title: Gateway run-trace corrections
-status: complete
+status: done
 area: gateway
 owner: Codex
 updated: 2026-11-13

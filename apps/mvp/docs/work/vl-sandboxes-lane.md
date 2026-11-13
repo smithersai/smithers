@@ -1,6 +1,6 @@
 ---
 title: VibeLang sandbox minutes (brick 6)
-status: implemented, live activation gated
+status: blocked
 area: vibelang
 owner: Codex vl-sandboxes
 updated: 2026-11-08

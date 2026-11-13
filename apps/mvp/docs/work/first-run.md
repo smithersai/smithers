@@ -1,6 +1,6 @@
 ---
 title: First run
-status: in-review
+status: in-progress
 area: chat
 owner: first-run
 updated: 2026-10-27

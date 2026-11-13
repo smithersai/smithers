@@ -1,6 +1,6 @@
 ---
 title: Preserve Responses stream errors with null codes
-status: completed
+status: done
 area: model
 owner: codex
 updated: 2026-11-12

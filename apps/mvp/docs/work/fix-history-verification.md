@@ -1,6 +1,6 @@
 ---
 title: History copy isolation and verification regressions
-status: completed
+status: done
 area: history
 owner: codex
 updated: 2026-10-21

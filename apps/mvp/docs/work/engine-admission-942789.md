@@ -1,6 +1,6 @@
 ---
 title: In-memory engine admission and action cancellation
-status: completed
+status: done
 area: flows
 owner: codex-fix-942789
 updated: 2026-10-21

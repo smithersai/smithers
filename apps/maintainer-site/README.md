@@ -74,7 +74,7 @@ Set `MAINTAINER_SITE_GIFS` or `MAINTAINER_SITE_OUT` to read GIFs from or write t
 
 - Relative links between notes open in the site; links to other repository files open the local file; a link to a missing file is red.
 - `[[name]]` links a note by path, title or file name.
-- A note's front matter (`---` `key: value` lines) shows as a properties table under its title; a `links` list counts toward backlinks and the graph. The build warns about unparsable lines and a work note's unknown status or area.
+- A note's front matter (`---` `key: value` lines) shows as a properties table under its title; a `links` list counts toward backlinks and the graph. The build rejects unsupported work-note status values before replacing the site. Finished work uses `done`; `complete` and `completed` are invalid. An empty status is invalid too. Unparsable lines, absent status fields and unknown areas remain warnings.
 - `/` focuses search. In search, ↑ and ↓ pick a result and Enter opens it. In the large GIF view, ← and → step through flows.
 
 ## Files

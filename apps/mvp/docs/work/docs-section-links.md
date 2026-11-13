@@ -1,6 +1,6 @@
 ---
 title: Preserve docs section destinations
-status: completed
+status: done
 area: app
 owner: Codex
 updated: 2026-11-12

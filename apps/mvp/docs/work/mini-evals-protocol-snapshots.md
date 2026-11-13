@@ -1,6 +1,6 @@
 ---
 title: Validate eval scorer batches and suite snapshots
-status: completed
+status: done
 area: sdk
 owner: Codex mini/fix-packages-smithers-agent-evals-src-453475
 updated: 2026-10-22

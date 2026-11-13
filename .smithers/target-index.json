@@ -46033,7 +46033,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/mvp:workNotes"
+    ],
     "source": {
       "file": "apps/maintainer-site/PACKAGE.ts"
     }
@@ -46969,6 +46971,26 @@
       {
         "kind": "file",
         "path": ".smithers/factory.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/mvp/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/mvp:workNotes",
+    "package": "apps/mvp",
+    "name": "workNotes",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/mvp/docs/work/*.md",
+        "exclude": []
       }
     ],
     "outputs": [],

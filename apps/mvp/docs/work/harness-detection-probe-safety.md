@@ -1,6 +1,6 @@
 ---
 title: Harness detection probe and account safety
-status: completed
+status: done
 area: agent
 owner: codex
 updated: 2026-11-11

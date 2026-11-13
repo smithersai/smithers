@@ -1,6 +1,6 @@
 ---
 title: Bind rewind commit evidence to its journal generation
-status: completed
+status: done
 area: sdk
 owner: codex-sol
 updated: 2026-10-21

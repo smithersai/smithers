@@ -1,6 +1,6 @@
 ---
 title: W12 chat bug bash
-status: in-review
+status: in-progress
 area: chat
 owner: bb2-chat
 updated: 2026-10-27

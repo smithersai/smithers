@@ -1,6 +1,6 @@
 ---
 title: E2E fault services and shared feed ownership
-status: complete
+status: done
 area: testing
 owner: Codex
 updated: 2026-11-12

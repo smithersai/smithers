@@ -1,6 +1,6 @@
 ---
 title: Shell bug bash 26 October
-status: in-review
+status: in-progress
 area: shell
 owner: bb-shell
 updated: 2026-10-26

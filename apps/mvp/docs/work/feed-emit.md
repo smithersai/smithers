@@ -1,6 +1,6 @@
 ---
 title: Authorize the feed at emission
-status: in-review
+status: in-progress
 area: auth
 owner: codex-feed-emit
 updated: 2026-11-03

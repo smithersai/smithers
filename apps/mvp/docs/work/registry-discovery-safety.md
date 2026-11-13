@@ -1,6 +1,6 @@
 ---
 title: Registry discovery safety
-status: completed
+status: done
 area: registry
 owner: codex-mini-483815
 updated: 2026-10-21

@@ -1,6 +1,6 @@
 ---
 title: Jev opening memory and skill selection
-status: complete
+status: done
 area: agent
 owner: Codex jev-memory
 updated: 2026-10-21

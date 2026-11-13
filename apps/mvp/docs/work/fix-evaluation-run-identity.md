@@ -1,6 +1,6 @@
 ---
 title: Evaluation run identity safety
-status: completed
+status: done
 area: cli
 owner: codex-fix-evaluation-929603
 updated: 2026-10-21

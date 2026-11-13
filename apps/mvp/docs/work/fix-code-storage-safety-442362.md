@@ -1,6 +1,6 @@
 ---
 title: Code Storage error and read safety
-status: completed
+status: done
 area: effect-code-storage
 owner: codex-fix-442362
 updated: 2026-10-21

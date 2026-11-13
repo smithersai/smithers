@@ -1,6 +1,6 @@
 ---
 title: Machine and scoped token diagnostic redaction
-status: review
+status: in-progress
 area: sdk
 owner: codex-smmredact
 updated: 2026-11-04

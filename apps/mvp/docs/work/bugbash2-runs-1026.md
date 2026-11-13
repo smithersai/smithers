@@ -1,6 +1,6 @@
 ---
 title: Run inspection bug bash round two
-status: in-review
+status: in-progress
 area: runs
 owner: Codex bb2-runs
 updated: 2026-10-27

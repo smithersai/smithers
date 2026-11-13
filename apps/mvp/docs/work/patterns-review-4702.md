@@ -1,6 +1,6 @@
 ---
 title: Align Supervisor retry payloads and pattern contract tests
-status: completed
+status: done
 area: sdk
 owner: Codex
 updated: 2026-11-13

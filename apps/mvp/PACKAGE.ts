@@ -19,6 +19,12 @@ import { Smithers } from "@smthrs/targets"
 
 const cwd = "apps/mvp"
 
+/** Work-board metadata read by the maintainer site's validation suite. */
+const workNotes = Smithers.Filegroup({
+  srcs: [Smithers.glob("docs/work/*.md")],
+  cwd
+})
+
 /** The deployment entrypoint and its relative source import graph, read by the docs routing gate. */
 const deploymentSources = Smithers.Filegroup({
   srcs: [Smithers.glob("**/*.{ts,tsx,vibe}")],
@@ -852,6 +858,7 @@ const testStack = Smithers.Shell.Test({
 export const Package = Smithers.Package({
   targets: {
     deploymentSources,
+    workNotes,
     issueFileTreeSources,
     workerIoLintTests,
     failureLintTests,

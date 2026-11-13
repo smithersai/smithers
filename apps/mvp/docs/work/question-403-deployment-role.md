@@ -1,6 +1,6 @@
 ---
 title: Preserve deployment roles when repository visibility is unavailable
-status: in-review
+status: in-progress
 area: auth
 owner: claude-question-403
 updated: 2026-11-03

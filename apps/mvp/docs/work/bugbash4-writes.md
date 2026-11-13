@@ -1,6 +1,6 @@
 ---
 title: Bug bash 4 write admission and progress
-status: in-review
+status: in-progress
 area: issues
 owner: bb4-writes
 updated: 2026-10-27

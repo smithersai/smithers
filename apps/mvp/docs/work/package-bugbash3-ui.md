@@ -1,6 +1,6 @@
 ---
 title: Package bug bash round 3 UI
-status: in-review
+status: in-progress
 area: sdk-ui
 owner: bb3-ui
 updated: 2026-10-27

@@ -1,6 +1,6 @@
 ---
 title: Control boundary validation and defect redaction
-status: completed
+status: done
 area: control
 owner: codex
 updated: 2026-10-22

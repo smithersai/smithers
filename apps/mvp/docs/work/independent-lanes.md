@@ -1,6 +1,6 @@
 ---
 title: Independent lanes (G2 slice S4)
-status: in-review
+status: in-progress
 area: todos
 owner: claude-s4-lanes
 updated: 2026-10-31

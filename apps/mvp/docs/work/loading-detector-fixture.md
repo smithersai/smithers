@@ -1,6 +1,6 @@
 ---
 title: Use the shared error-checking test for the loading detector
-status: complete
+status: done
 area: app
 owner: Codex GPT-6.1 Sol
 updated: 2026-11-04
