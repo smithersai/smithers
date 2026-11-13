@@ -30,5 +30,5 @@ whose components and theme tokens it builds on.
 
 ```sh
 pnpm test    # bun test --isolate test, at 100% line and function coverage
-pnpm check   # tsc --noEmit
+pnpm check   # vibelang -p tsconfig.json --noEmit
 ```

@@ -65,7 +65,9 @@ const unitTests = Smithers.NodeTest({
     Smithers.glob("//packages/smithers/ui/repo-view/test/**/*.tsx"),
     Smithers.glob("//packages/smithers/ui/repo-view/test/**/*.snap"),
     // test/docs-contracts.test.ts holds the docs' examples and stated contracts to the code.
-    Smithers.glob("//packages/smithers/ui/repo-view/docs/**/*.md")
+    Smithers.glob("//packages/smithers/ui/repo-view/docs/**/*.md"),
+    Smithers.file("README.md"),
+    Smithers.file("package.json")
   ],
   deps: [uiSources],
   cwd

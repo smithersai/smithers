@@ -398,6 +398,63 @@ describe("SymbolsPane", () => {
     expect(closed).toBe(2);
   });
 
+  test.each(["definitions", "references"] as const)("%s on the same line remain separate when results change", async (section) => {
+    const opened: Array<RepoViewLocation> = [];
+    const first = { path: "src/a.ts", line: 2, text: "add(add(1, 2), 3)" };
+    const second = { ...first };
+    const later = { path: "src/a.ts", line: 3, text: "add(4, 5)" };
+    const view = (locations: ReadonlyArray<typeof first>) => (
+      <SymbolsPane
+        path="src/a.ts"
+        symbol={{ name: "add", definitions: [], references: [], [section]: locations }}
+        href={href}
+        onOpen={(location) => opened.push(location)}
+        onClose={() => {}}
+      />
+    );
+    const expectRows = (locations: ReadonlyArray<typeof first>) => {
+      expect(rows().map((row) => row.querySelector("code")!.textContent)).toEqual(locations.map((place) => place.text));
+      expect(rows().map((row) => row.getAttribute("href"))).toEqual(locations.map((place) => href({ kind: "blob", path: place.path, line: place.line })));
+    };
+    await mount(view([first, second, later]));
+    expectRows([first, second, later]);
+    await rerender(view([later, first, second]));
+    expectRows([later, first, second]);
+    for (const row of rows()) await act(async () => row.click());
+    expect(opened).toEqual([later, first, second].map(({ path, line }) => ({ kind: "blob", path, line })));
+    await rerender(view([second]));
+    expectRows([second]);
+    await rerender(view([]));
+    expectRows([]);
+  });
+
+  test("outline entries with the same name and line survive reordering and filtering", async () => {
+    const first = { name: "add", kind: "fn", line: 2, depth: 0 };
+    const second = { name: "add", kind: "method", line: 2, depth: 1 };
+    const later = { name: "extra", kind: "fn", line: 3, depth: 0 };
+    const opened: Array<RepoViewLocation> = [];
+    const view = (outline: ReadonlyArray<typeof first>) => (
+      <SymbolsPane path="src/a.ts" outline={outline} href={href} onOpen={(location) => opened.push(location)} onClose={() => {}} />
+    );
+    await mount(view([first, second, later]));
+    expect(rows().map((row) => row.textContent)).toEqual(["fnadd", "methodadd", "fnextra"]);
+    await rerender(view([later, second, first]));
+    expect(rows().map((row) => row.textContent)).toEqual(["fnextra", "methodadd", "fnadd"]);
+    expect(rows().map((row) => row.getAttribute("href"))).toEqual([
+      "/x/blob/src/a.ts?L=3", "/x/blob/src/a.ts?L=2", "/x/blob/src/a.ts?L=2",
+    ]);
+    for (const row of rows()) await act(async () => row.click());
+    expect(opened).toEqual([3, 2, 2].map((line) => ({ kind: "blob", path: "src/a.ts", line })));
+    const filter = container!.querySelector<HTMLInputElement>('input[aria-label="Filter symbols"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(filter, "extra");
+      filter.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(rows().map((row) => row.textContent)).toEqual(["fnextra"]);
+    await rerender(view([]));
+    expect(rows()).toEqual([]);
+  });
+
   test("references still loading show no count and no rows", async () => {
     await mount(
       <SymbolsPane path="src/a.ts" symbol={{ name: "add", definitions: undefined, references: undefined }} href={href} onOpen={() => {}} onClose={() => {}} />,

@@ -99,8 +99,8 @@ export function SymbolsPane({ path, symbol, outline, href, onOpen, onClose, clas
             {file}
             <span>{places.length}</span>
           </div>
-          {places.map((place) =>
-            row({ kind: "blob", path: place.path, line: place.line }, place.line, place.text, `${place.path}:${place.line}`)
+          {places.map((place, index) =>
+            row({ kind: "blob", path: place.path, line: place.line }, place.line, place.text, `${place.path}:${place.line}:${index}`)
           )}
         </div>
       ))}
@@ -137,9 +137,9 @@ export function SymbolsPane({ path, symbol, outline, href, onOpen, onClose, clas
               onChange={(event) => setFilter(event.target.value)}
             />
             <nav className="sui-symbols-outline" aria-label="Outline">
-              {shown.map((item) => (
+              {shown.map((item, index) => (
                 <a
-                  key={`${item.name}:${item.line}`}
+                  key={`${item.name}:${item.line}:${index}`}
                   className="sui-symbols-row sui-symbols-outline-row"
                   data-slot="symbols-row"
                   style={{ paddingInlineStart: `${12 + item.depth * 14}px` }}

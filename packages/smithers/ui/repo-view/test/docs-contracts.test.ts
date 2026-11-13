@@ -8,6 +8,17 @@ const guide = readDoc("guides/use-the-repository-views.md");
 const diffReference = readDoc("api.md").split("## Pierre diff view")[1]!.split("## Markdown editor")[0]!;
 
 describe("documented view contracts", () => {
+  test("the development check command names the compiler the package runs", () => {
+    const readme = readFileSync(join(import.meta.dir, "../README.md"), "utf8");
+    const manifest = JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf8"));
+    expect(readme).toContain(`pnpm check   # ${manifest.scripts.check}`);
+  });
+
+  test("the copyable ready tree type includes directories known without their files", () => {
+    const tree = readDoc("api.md").split("type RepoViewTree =")[1]!.split("type RepoViewFile =")[0]!;
+    expect(tree).toContain('state: "ready"; paths: ReadonlyArray<string>; directories?: ReadonlyArray<string>; truncated?: boolean');
+  });
+
   test("the lazy DiffSurface module supplies React.lazy's default export", () => {
     const examples = [...guide.matchAll(/```tsx\n([\s\S]*?)```/g)].map((match) => match[1]!);
     const loader = examples.find((example) => example.includes('import("./DiffSurface")'))!;

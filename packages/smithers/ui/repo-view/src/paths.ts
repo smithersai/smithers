@@ -132,13 +132,13 @@ const decode = (segment: string): string | undefined => {
 /**
  * Resolves a link written in the document at `from` against the repository,
  * the way GitHub does: relative to the document's directory, or to the root
- * when it starts with `/`. A link with a scheme, a protocol-relative link, a
- * bare `#anchor` and a link that climbs above the root resolve to nothing:
- * the browser follows those itself. A path naming a directory (one the files
- * sit under, one of `folders`, known without their files, or any path written
- * with a trailing `/`) opens the tree; any other path opens as a file, so a
- * broken link shows "not found" in the view rather than the browser resolving
- * it against the app's own URL.
+ * when it starts with `/`. Links with a scheme, protocol-relative links,
+ * bare `#anchor`s, paths that climb above the root and paths with an
+ * undecodable segment resolve to nothing: the browser follows them itself.
+ * Of the remaining paths, one naming a directory (one the files sit under,
+ * one of `folders`, known without their files, or any path written with a
+ * trailing `/`) opens the tree; any other opens as a file, so a missing file
+ * shows "not found" in the view.
  */
 export function resolveLink(
   from: string,

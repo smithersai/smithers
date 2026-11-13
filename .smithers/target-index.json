@@ -89806,6 +89806,14 @@
         "kind": "glob",
         "pattern": "packages/smithers/ui/repo-view/docs/**/*.md",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/repo-view/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/repo-view/package.json"
       }
     ],
     "outputs": [],

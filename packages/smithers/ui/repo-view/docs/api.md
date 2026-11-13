@@ -33,7 +33,7 @@ server render; a view then finds the marked sheet and adds nothing.
 type RepoViewLocation = { kind: "tree" | "blob"; path: string; line?: number; lineEnd?: number }
 type RepoViewTree =
   | { state: "loading" }
-  | { state: "ready"; paths: ReadonlyArray<string>; truncated?: boolean }
+  | { state: "ready"; paths: ReadonlyArray<string>; directories?: ReadonlyArray<string>; truncated?: boolean }
   | { state: "failed"; message: ReactNode }
 type RepoViewFile =
   | { state: "loading" }
