@@ -4,6 +4,10 @@ apps/mvp/bench/cerebras-load/results/2026-10-21T02-04-32.000Z/
 
 Stopped: errors_above_20_percent. Charged token upper bound: 234458; estimated USD 0.24773.
 
+## Burst observations
+
+These burst observations do not establish sustained throughput.
+
 | Concurrent | Requests/s | OK / 429 / other | TTFT p50/p95/p99 ms | Total p50/p95/p99 ms | Output tok/s | Est. USD |
 |---:|---:|---:|---|---|---:|---:|
 | 1 | 0.7 | 1 / 0 / 0 | 681.3/681.3/681.3 | 1011.1/1011.1/1011.1 | 180.1 | 0.0018 |
@@ -25,7 +29,7 @@ Stopped: errors_above_20_percent. Charged token upper bound: 234458; estimated U
 
 Run from the repository root: `zsh -lc 'source ~/.zshrc >/dev/null 2>&1; node apps/mvp/bench/cerebras-load/run.ts'`. Offline checks: `node --test apps/mvp/bench/cerebras-load/stats.test.ts`. Each run writes raw.json, append-only requests.jsonl and journal.sqlite in a unique results directory. SDK route: HostModel.layerConfig(CHAT_MODEL, the endpoint default), openai-chat through @smthrs/model; every probe is an @smthrs/flow action recorded by the Node SQLite engine. No HTTP request is hand-written. Fetch only observes an allowlist of rate-limit headers. Provider error bodies, prompts, output and credentials are never recorded.
 
-Closed-loop workers, concurrency 1/10/25/50/100/200, 60 seconds admitting requests at each level, then drain (45-second request deadline). Immediately replace each completed request; no retry. Stop escalating when combined errors exceed 20%. 95% synthetic chat context ~1.5k input tokens, 5% ~7k; actual provider usage retained; maxTokens 256. The measured final ramp sets reasoningEffort none through the SDK so the 256-token cap produces chat text; TTFT is first text (or thinking, if emitted) delta. Initial default-reasoning calibrations had no decoded token deltas and are excluded from the final ramp. Total latency and TTFT are successful calls only; failures retain their individual latency in raw evidence. Aggregate output tok/s includes reasoning, over the full step including drain. Decode tok/s p50 is separately retained; a short output and client buffering limit its accuracy.
+Closed-loop workers, concurrency 1/10/25/50/100/200, 1-second admission windows at each level, followed by drain (45-second request deadline). Immediately replace each completed request; no retry. Stop escalating when combined errors exceed 20%. 95% synthetic chat context ~1.5k input tokens, 5% ~7k; actual provider usage retained; maxTokens 256. The measured final ramp sets reasoningEffort none through the SDK so the 256-token cap produces chat text; TTFT is first text (or thinking, if emitted) delta. Initial default-reasoning calibrations had no decoded token deltas and are excluded from the final ramp. Total latency and TTFT are successful calls only; failures retain their individual latency in raw evidence. Aggregate output tok/s includes reasoning, over the full step including drain. Decode tok/s p50 is separately retained; a short output and client buffering limit its accuracy.
 
 Before every dispatch reserve UTF-8 prompt bytes + 128 input tokens and 256 output tokens at $0.99/$1.49 per million input/output. Admission refuses any reservation crossing 2M tokens or $5, including in-flight requests. Complete usage settles reservations; clean 4xx refusals charge zero; unknown usage retains the upper bound. This is an estimated API cost cap, not a billing guarantee. Source: [SDK pricing table](../../../../../../packages/smithers/agent/model/src/internal/prices.generated.ts), [Cerebras pricing](https://www.cerebras.ai/pricing).
 
