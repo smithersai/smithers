@@ -138,7 +138,10 @@ frontmatter field cannot smuggle text into your logs. Both `parseSkill` and
 failures, including unresolved aliases, forward aliases, and exceeded alias
 expansion limits. Conversion exceptions use a fixed message without source
 text or the raw exception message. YAML's alias expansion protection stays
-enabled.
+enabled. Every YAML mapping key at every depth must be a scalar string.
+Collection keys and alias keys return
+`skill_invalid_frontmatter` before conversion. YAML parsing and conversion emit
+no host warnings.
 
 | Code                          | Cause                                                       |
 | ----------------------------- | ----------------------------------------------------------- |

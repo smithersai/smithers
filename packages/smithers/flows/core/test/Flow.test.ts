@@ -1,7 +1,6 @@
 import { Flow as Durable } from "@smthrs/flow"
 import * as Context from "effect/Context"
 import * as Option from "effect/Option"
-import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as Annotations from "../src/Annotations.ts"
 import * as Flow from "../src/Flow.ts"
@@ -78,39 +77,8 @@ describe("Flow combinators", () => {
   })
 })
 
-it("retains frozen signature payload adaptation and annotation overrides", async () => {
-  const { build } = await import("../src/internal/Signature.ts")
-  const { Graph } = await import("@smthrs/flow")
-  const { Node } = await import("@smthrs/plan")
+it("retains annotation overrides on lowered signatures", () => {
   const base = Markdown.lowerMarkdown({ name: "frozen" }, "Prompt")
-  const make = (input: Schema.Top, body: any) =>
-    build({
-      ...base,
-      input,
-      output: Schema.String,
-      error: Schema.Never,
-      body,
-      annotations: Annotations.empty
-    })
-  const captured = Node.capture({}, (text: string) => Node.succeed(text))
-  for (const body of [captured, (text: string) => Node.succeed(text)]) {
-    const scalar = make(Schema.String, body)
-    const copy = Flow.within(scalar, Placement.local())
-    expect(copy.action).toBeUndefined()
-    expect(Graph.nodes(Graph.build(copy.call("written"))).find((node) => node.kind === "Succeed")?.payload)
-      .toBe("written")
-    if (body === captured) {
-      expect(Node.functionIdentity(copy.flow.body)).toEqual(Node.functionIdentity(scalar.flow.body))
-    } else expect(Node.functionIdentity(copy.flow.body).algorithm).toBe("sha256-source-ephemeral/v4")
-  }
-  const struct = make(Schema.Struct({ text: Schema.String }), ({ text }: { text: string }) => Node.succeed(text))
-  expect(Graph.nodes(Graph.build(struct.call({ text: "direct" }))).map((node) => node.kind)).toEqual([
-    "Succeed",
-    "FlowCall"
-  ])
-  const scalarAction = make(Schema.String, undefined)
-  expect(Graph.nodes(Graph.build(scalarAction.call("wrapped"))).find((node) => node.kind === "ActionCall")?.payload)
-    .toEqual({ input: "wrapped" })
   const narrowed = Flow.annotate(base, Durable.Capabilities, [])
   expect(narrowed.capabilities).toEqual([])
   const envelope = { reads: [], writes: [], mode: "hermetic", onConflict: "fail", tier: "sealed" } as const

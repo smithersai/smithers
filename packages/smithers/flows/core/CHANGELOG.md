@@ -4,6 +4,9 @@
 
 ### Removed
 
+- Removed unreachable authored-body and scalar-input adapters from the private
+  Markdown signature builder and corrected their documentation.
+
 - Removed the object-form `Flow.make(options)` and `Flow.MakeOptions` under
   [RELEASE_SUPPORT.md (MVP compatibility changes)](../../../../RELEASE_SUPPORT.md#mvp-compatibility-changes).
   Replace executable declarations with `Flow.make("tag", { payload, success, body })`
@@ -44,6 +47,8 @@
 
 ### Fixed
 
+- Skill frontmatter now refuses non-scalar YAML mapping keys at every depth
+  without writing key text to host warnings.
 - Fixed `Markdown.lowerMarkdown`, which dropped an explicit `capabilities: []`,
   so a flow declared with no authority inherited the calling flow's whole
   grant, and which lowered a `placement` outside `sandbox`, `remote`, `client`

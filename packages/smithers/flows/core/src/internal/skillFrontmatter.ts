@@ -9,7 +9,7 @@
  */
 
 import * as Result from "effect/Result"
-import { isMap, parseDocument } from "yaml"
+import { isMap, isScalar, parseDocument, visit } from "yaml"
 
 const openingFence = /^(?:\uFEFF)?---(?:\r?\n|$)/
 const closingFence = /^---[ \t]*(?=\r?\n|$)/m
@@ -90,7 +90,8 @@ export const split = (text: string): { readonly frontmatter: string | undefined;
  * parsing preserves scalar strings while accepting unmodified third-party
  * frontmatter, including folded and literal block scalars. A mapping at any
  * depth that uses the reserved key `__proto__`, `constructor`, or `prototype`
- * is refused, as is an alias that refers back to its own anchor.
+ * is refused, as is an alias that refers back to its own anchor. Every mapping
+ * key must be a scalar string; parsing and conversion emit no host warnings.
  *
  * @since 0.0.0
  * @category parsing
@@ -101,7 +102,8 @@ export const parse = (frontmatter: string): Result.Result<Record<string, unknown
   try {
     const document = parseDocument(frontmatter, {
       schema: "failsafe",
-      uniqueKeys: true
+      uniqueKeys: true,
+      logLevel: "silent"
     })
 
     if (document.errors.length > 0) {
@@ -109,6 +111,22 @@ export const parse = (frontmatter: string): Result.Result<Record<string, unknown
     }
     if (!isMap(document.contents)) {
       return Result.fail("Skill frontmatter must be a YAML mapping")
+    }
+
+    // Inspect the syntax tree before conversion can stringify collection keys.
+    // Visiting aliases does not expand them, so the conversion guard still owns
+    // alias limits and recursive values.
+    let invalidKey = false
+    visit(document, {
+      Pair: (_, pair) => {
+        if (!isScalar(pair.key)) {
+          invalidKey = true
+          return visit.BREAK
+        }
+      }
+    })
+    if (invalidKey) {
+      return Result.fail("Skill frontmatter mapping keys must be scalar strings")
     }
 
     value = document.toJS()

@@ -276,7 +276,6 @@ export const lowerMarkdown = (
   const flow = build({
     error: Schema.Never,
     annotations: Annotations.empty,
-    body: undefined,
     name: frontmatter.name,
     description: frontmatter.description,
     input,

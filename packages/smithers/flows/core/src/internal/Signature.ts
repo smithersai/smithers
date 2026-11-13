@@ -11,11 +11,11 @@ import { dual, identity } from "effect/Function"
 import * as Option from "effect/Option"
 import { type Pipeable, pipeArguments } from "effect/Pipeable"
 import * as Predicate from "effect/Predicate"
-import * as Schema from "effect/Schema"
+import type * as Schema from "effect/Schema"
 import type * as Types from "effect/Types"
 import * as Annotations from "../Annotations.ts"
 import type * as Effects from "../Effects.ts"
-import * as Node from "../Node.ts"
+import type * as Node from "../Node.ts"
 import type * as Placement from "../Placement.ts"
 import type * as Limits from "./Limits.ts"
 
@@ -59,19 +59,12 @@ export type Seat = string & {}
 export type Reference = Any | string
 
 /**
- * The struct payload a declared `input` schema becomes.
- *
- * `@smthrs/flow` requires a struct payload, and a signature may declare any
- * schema, so a non-struct input travels as the one field `input`.
- * {@link Flow.call} takes the declared shape and wraps it, so an author never
- * writes the wrapper.
+ * The struct payload retained by a Markdown signature.
  *
  * @category models
  * @since 1.0.0
  */
-export type Payload<I extends Schema.Top> =
-  & (I extends Durable.AnyStructSchema ? I : Schema.Struct<{ readonly input: I }>)
-  & Durable.AnyStructSchema
+export type Payload<I extends Schema.Top> = I & Durable.AnyStructSchema
 
 /**
  * A schema-described flow signature.
@@ -97,7 +90,7 @@ export interface Flow<
   /** The declared name, which is the tag of the flow and of the action. */
   readonly name: string
   readonly description: string | undefined
-  /** The input schema as DECLARED, before {@link Payload} wraps a non-struct. */
+  /** The declared struct input schema. */
   readonly input: I
   readonly output: O
   readonly error: Err
@@ -154,9 +147,9 @@ export interface Flow<
    */
   readonly flow: Durable.Flow<string, Payload<I>, O, Err, Requires>
   /**
-   * The declared action a host implements with `toLayer`, on a signature that
-   * declared no body. A signature with a body carries `undefined`: its body IS
-   * the implementation.
+   * The declared action a host implements with `toLayer`. Markdown lowering
+   * always supplies it; the optional type remains for compatibility with
+   * existing signature consumers.
    */
   readonly action: Action.Declared<string, Payload<I>, O, Err, Requires> | undefined
   /**
@@ -225,12 +218,11 @@ export type Error<F> = F extends { readonly error: infer Err extends Schema.Top 
 interface Options<
   I extends Schema.Top,
   O extends Schema.Top,
-  Err extends Schema.Top,
-  Requires
+  Err extends Schema.Top
 > {
   readonly name: string
   readonly description: string | undefined
-  readonly input: I
+  readonly input: Payload<I>
   readonly output: O
   readonly error: Err
   /**
@@ -256,25 +248,16 @@ interface Options<
    * annotation a caller put on top of it.
    */
   readonly annotations: Context.Context<never>
-  readonly body:
-    | ((input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>)
-    | undefined
   /** The original native declarations whose diagnostic source locations survive a rebuild. */
   readonly original?: { readonly flow: object; readonly action: object | undefined } | undefined
 }
 
 /** The options each built signature was built from, for the combinators. */
-const built = new WeakMap<object, Options<Schema.Top, Schema.Top, Schema.Top, unknown>>()
+const built = new WeakMap<object, Options<Schema.Top, Schema.Top, Schema.Top>>()
 
 const optionsOf = <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
   self: Flow<I, O, Err, Requires>
-): Options<I, O, Err, Requires> => built.get(self) as unknown as Options<I, O, Err, Requires>
-
-/** Whether a schema is the struct `@smthrs/flow` requires of a payload. */
-const isStruct = (schema: Schema.Top): schema is Durable.AnyStructSchema => Predicate.hasProperty(schema, "fields")
-
-const payloadOf = <I extends Schema.Top>(input: I): Payload<I> =>
-  (isStruct(input) ? input : Schema.Struct({ input })) as Payload<I>
+): Options<I, O, Err> => built.get(self) as unknown as Options<I, O, Err>
 
 /**
  * The tier a signature's action dispatches under.
@@ -288,7 +271,7 @@ const tierOf = (effects: Effects.Declaration | undefined): Action.Tier => effect
 
 /**
  * Builds a signature from Markdown-lowered options: annotated capabilities and
- * effects override the declared ones, and a signature without a body becomes the
+ * effects override the declared ones. Its struct input is the payload of the
  * action a host implements later.
  *
  * @since 1.0.0
@@ -300,10 +283,8 @@ export const build = <
   Err extends Schema.Top,
   Requires = Action.Requirement<string>
 >(
-  options: Options<I, O, Err, Requires>
+  options: Options<I, O, Err>
 ): Flow<I, O, Err, Requires> => {
-  const payload = payloadOf(options.input)
-  const wrapped = isStruct(options.input)
   // Capabilities is a Context.Reference: getOption supplies its default even
   // when no value was annotated. Only an explicitly stored value overrides
   // the author's declaration.
@@ -319,7 +300,7 @@ export const build = <
     () => options.effects
   )
   const declared = {
-    payload,
+    payload: options.input,
     ...(options.description === undefined ? {} : { description: options.description }),
     ...(capabilities === undefined ? {} : { capabilities }),
     ...(effects === undefined ? {} : { effects }),
@@ -327,46 +308,20 @@ export const build = <
     error: options.error,
     annotations: options.annotations
   }
-  const body = options.body
-  // A signature without a body IS the action a host implements later; the flow
-  // beside it exists because a declared capability ceiling is read off a Flow,
-  // and because a caller splices one node either way.
-  const action = body === undefined
-    ? Action.make(options.name, {
-      ...declared,
-      declaredFrom: options.original?.action,
-      tier: tierOf(effects)
-    }) as unknown as Action.Declared<
-      string,
-      Payload<I>,
-      O,
-      Err,
-      Requires
-    >
-    : undefined
-  type NativeBody = (payload: Payload<I>["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>
-  let nativeBody: NativeBody
-  if (body === undefined) {
-    nativeBody = (payloadValue) => action!.call(payloadValue as never)
-  } else if (wrapped) {
-    nativeBody = body
-  } else {
-    const adapter: NativeBody = (payloadValue) => body((payloadValue as { readonly input: I["Type"] }).input)
-    const bodyIdentity = Node.functionIdentity(body)
-    // The adapter adds no author behavior. A captured body already names all
-    // of its semantics; carry that identity through the wrapping operation.
-    // An uncaptured body must keep failing the native stable-callback policy.
-    nativeBody = bodyIdentity.algorithm === "sha256-source-captures/v5"
-      ? Node.capture({ body: bodyIdentity }, adapter)
-      : adapter
-  }
+  // Markdown signatures declare the action a host implements later. The flow
+  // carries its capability ceiling and splices that action into the plan.
+  const action = Action.make(options.name, {
+    ...declared,
+    declaredFrom: options.original?.action,
+    tier: tierOf(effects)
+  }) as unknown as Action.Declared<string, Payload<I>, O, Err, Requires>
   const flow = Durable.make(options.name, {
     ...declared,
     ...(options.modelInvocable === undefined ? {} : { modelInvocable: options.modelInvocable }),
     ...(options.budget === undefined ? {} : { budget: options.budget }),
     ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
     declaredFrom: options.original?.flow,
-    body: nativeBody
+    body: (payloadValue) => action.call(payloadValue as never)
   }) as unknown as Durable.Flow<string, Payload<I>, O, Err, Requires>
   const self: Flow<I, O, Err, Requires> = {
     [TypeId]: {
@@ -389,7 +344,7 @@ export const build = <
     annotations: flow.annotations,
     flow,
     action,
-    call: (input: I["~type.make.in"]) => flow.call((wrapped ? input : { input }) as never),
+    call: (input: I["~type.make.in"]) => flow.call(input as never),
     pipe() {
       // eslint-disable-next-line prefer-rest-params
       return pipeArguments(this, arguments)
@@ -433,7 +388,7 @@ export const within: {
   placement: Placement.Placement
 ): Flow<I, O, Err, Requires> => {
   const options = optionsOf(self)
-  return build({
+  return build<I, O, Err, Requires>({
     ...options,
     annotations: Annotations.add(options.annotations, Annotations.Placement, placement)
   })
@@ -471,7 +426,7 @@ export const annotate: {
   value: S
 ): Flow<I, O, Err, Requires> => {
   const options = optionsOf(self)
-  return build({
+  return build<I, O, Err, Requires>({
     ...options,
     annotations: Annotations.add(options.annotations, key, value)
   })
@@ -481,7 +436,7 @@ export const annotate: {
  * Replaces the collaborators a flow declares, returning a fresh flow.
  *
  * Everything else comes across unchanged: name, schemas, capabilities,
- * effects, body, and annotations. That is what lets a decorator rewrite a flow
+ * effects and annotations. That is what lets a decorator rewrite a flow
  * tree without dropping the metadata a host reads back, such as a placement or
  * a lane.
  *
@@ -502,7 +457,7 @@ export const withFlows: {
   self: Flow<I, O, Err, Requires>,
   flows: ReadonlyArray<Reference>
 ): Flow<I, O, Err, Requires> =>
-  build({
+  build<I, O, Err, Requires>({
     ...optionsOf(self),
     flows: [...flows]
   }))

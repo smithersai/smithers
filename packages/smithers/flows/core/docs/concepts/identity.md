@@ -82,11 +82,11 @@ const scale = Node.capture({ factor }, function(value: number) {
 })
 ```
 
-Core preserves an authored captured body's identity when lowering it, including
-the adapter for a scalar input. Uncaptured author bodies and generated
-action-only wrappers remain process-local. The latter need the low-level
-`Interpreter.layer` policy or an explicit `callbackIdentity: "process-local"`;
-the canonical stable policy does not infer their implementation semantics.
+Markdown lowering generates action-only wrappers with process-local body identities.
+They need the low-level `Interpreter.layer` policy or an explicit
+`callbackIdentity: "process-local"`; the canonical stable policy does not infer
+their implementation semantics. Author captured bodies through `@smthrs/flow`'s
+`Flow.make`.
 
 Read this as a promise: "this function's behavior is determined by its source
 and by these values". Nothing checks that the promise is true, so a captured

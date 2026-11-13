@@ -66,10 +66,10 @@ interface Flow<
 
 `flow` is the `@smthrs/flow` flow the signature IS: hand it to `Graph.build`,
 to an `Interpreter`, or to a registry that checks that package's type id.
-`action` is the declaration a host implements with `toLayer`, and it is
-`undefined` exactly when the signature declared a `body`. `annotations` is the
-bag both carry, with the declared `capabilities` and `effects` already lowered
-into it.
+`action` is the declaration a host implements with `toLayer`. Markdown
+lowering always supplies that declaration. `annotations` is the bag both carry,
+with the declared `capabilities` and `effects` already lowered into it.
+The optional `action` type is retained for compatibility with existing signatures.
 
 `budget` and `sandbox` are the limits `Markdown.lowerMarkdown` copied from the
 frontmatter. A declared `modelInvocable` and `deadline` live on the native flow,
@@ -88,14 +88,11 @@ is per tag and still refuses.
 ### Flow.Payload
 
 ```ts
-type Payload<I extends Schema.Top> =
-  & (I extends DurableFlow.AnyStructSchema ? I : Schema.Struct<{ readonly input: I }>)
-  & DurableFlow.AnyStructSchema
+type Payload<I extends Schema.Top> = I & DurableFlow.AnyStructSchema
 ```
 
-The struct payload a declared `input` becomes. `@smthrs/flow` requires a struct
-payload, so a non-struct input travels as the one field `input`. `call` takes
-the declared shape and wraps it, so an author never writes the wrapper.
+The struct payload retained by a Markdown signature. Lowering uses
+`{ args: string }`, and `call` forwards that shape unchanged.
 
 ### Flow value: call
 
@@ -471,7 +468,9 @@ interface SkillDocument extends SkillFrontmatter {
 `allowedTools` is the specification's space-separated `allowed-tools` scalar
 split into tool names. `extra` holds every other field, including the validated
 optional `license`, `compatibility`, and `metadata`, as a frozen
-null-prototype record.
+null-prototype record. Every YAML mapping key, including keys in nested
+extra fields, must be a scalar string. Collection and alias keys return `skill_invalid_frontmatter` before conversion; the parser emits no
+host warnings.
 
 ### Markdown.validateSkillFrontmatter
 

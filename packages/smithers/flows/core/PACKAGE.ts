@@ -44,6 +44,7 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "The author of a third-party SKILL.md exhausts the loading host's memory or CPU, or pollutes object prototypes in the process that lowers the skill.",
       lookFor: [
+        "YAML conversion emitting host warnings or stringifying a non-scalar mapping key before validation.",
         "parseDocument called with a schema other than \"failsafe\", or with maxAliasCount raised or disabled, so tags or alias expansion reach toJS.",
         "Parsed mappings copied onto an ordinary object or with Object.assign instead of Object.defineProperty on an Object.create(null) record, letting a __proto__ key set a prototype.",
         "An exception or parser message that is returned without the catch or the summarizeIssue truncation, so frontmatter source text reaches a caller log.",
@@ -95,7 +96,6 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A flow author changes a body's behavior while keeping its step key, so a cached or approved result from the old body is replayed for the new one.",
       lookFor: [
-        "The non-struct input adapter in build carrying a captured body identity when the body is not captured with sha256-source-captures/v5.",
         "Digest.canonical or Digest.digest diverging from @smthrs/crypto digestSync or RFC 8785 canonical bytes.",
         "KeyMaterial placing nodeId or other graph-local names into hashed material."
       ],

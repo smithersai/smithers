@@ -1,4 +1,5 @@
 import * as Result from "effect/Result"
+import { setImmediate } from "node:timers/promises"
 import { describe, expect, it } from "vitest"
 import * as Markdown from "../src/Markdown.ts"
 
@@ -243,6 +244,53 @@ describe("Skill", () => {
 
   it("fails malformed frontmatter without throwing", () => {
     expect(errorCode("---\nname: 'pdf\ndescription: Extract files\n---\nPrompt")).toBe("skill_invalid_frontmatter")
+  })
+
+  describe.each(["parseSkill", "lowerSkill"] as const)("%s YAML mapping keys", (entrypoint) => {
+    it.each([
+      ["a sequence key", ["? [sk-live-SECRETVALUE]", ": value"]],
+      ["a mapping key", ["? { sk-live-SECRETVALUE: value }", ": value"]],
+      ["a nested sequence key", ["extra:", "  ? [sk-live-SECRETVALUE]", "  : value"]],
+      ["a key inside a sequence", ["extra:", "  - ? [sk-live-SECRETVALUE]", "    : value"]],
+      ["an aliased collection key", ["extra: &key [sk-live-SECRETVALUE]", "? *key", ": value"]],
+      ["an aliased scalar key", ["extra: &key sk-live-SECRETVALUE", "? *key", ": value"]]
+    ])("refuses %s without emitting host warnings", async (_, fields) => {
+      const warnings: Array<string> = []
+      const onWarning = (warning: Error) => {
+        warnings.push(warning.message)
+      }
+      process.on("warning", onWarning)
+      try {
+        const result: Result.Result<unknown, Markdown.MarkdownError> = Markdown[entrypoint](
+          document(["name: example", "description: Example", ...fields])
+        )
+        // Node emits warnings on the next turn; observe the real host boundary.
+        await setImmediate()
+        expect(warnings).toEqual([])
+        expect(result).toMatchObject({
+          _tag: "Failure",
+          failure: {
+            code: "skill_invalid_frontmatter",
+            message: "Skill frontmatter mapping keys must be scalar strings"
+          }
+        })
+      } finally {
+        process.off("warning", onWarning)
+      }
+    })
+  })
+
+  it("accepts scalar string keys at every depth", () => {
+    const skill = parse(document([
+      "name: example",
+      "description: Example",
+      "'': empty",
+      "extra:",
+      "  - '42': value",
+      "    'null': text"
+    ]))
+    expect(skill.extra[""]).toBe("empty")
+    expect(skill.extra.extra).toEqual([{ "42": "value", "null": "text" }])
   })
 
   it("redacts source text from bounded YAML parser diagnostics", () => {
