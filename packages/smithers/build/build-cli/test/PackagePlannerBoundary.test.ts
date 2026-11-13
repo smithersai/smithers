@@ -1424,6 +1424,63 @@ describe("real Git patch limits", () => {
   })
 })
 
+describe("Nix workspace version validation", () => {
+  it("preserves the real resolver's typed failure when Nix is absent", async () => {
+    const { options } = await fixture(
+      "export const Package=S.Package({targets:{command:S.Filegroup({srcs:[]})}})",
+      {},
+      "environment:S.Nix.Environment({file:S.file('//environment.nix')}),"
+    )
+    await expect(PackageExec.plan({ ...options, environment: { PATH: "" } })).rejects.toMatchObject({
+      code: "nix_absent"
+    })
+  })
+
+  it.each(["runtime mismatch", "manager mismatch", "manager absent", "yarn mismatch", "yarn absent"] as const)(
+    "refuses a resolved closure with a %s before planning even a filegroup",
+    async (fault) => {
+      const { root, options } = await fixture(
+        "export const Package=S.Package({targets:{command:S.Filegroup({srcs:[]})}})",
+        {},
+        "environment:S.Nix.Environment({file:S.file('//environment.nix')})," +
+          (fault.startsWith("yarn")
+            ? "packageManager:S.PackageManager.Yarn({manifest:packageJson,lockfile:S.file('//yarn.lock'),version:'4.7.0'}),"
+            : ""),
+        true,
+        fault === "runtime mismatch" ? "S.Runtime.Node({version:'>=999.0.0'})" : undefined
+      )
+      const bin = Path.join(root, "bin")
+      await Fs.mkdir(bin)
+      await Fs.symlink(process.execPath, Path.join(bin, "node"))
+      if (fault.endsWith("mismatch") && fault !== "runtime mismatch") {
+        await Fs.symlink(process.execPath, Path.join(bin, fault.startsWith("yarn") ? "yarn" : "pnpm"))
+      }
+      const failedClosure = {
+        storePath: root,
+        hash: root,
+        path: [bin],
+        variables: {},
+        closure: [root],
+        nix: { executable: "nix", version: "unavailable" },
+        system: "x86_64-linux",
+        inputs: []
+      }
+      const services = {
+        ...planningServicesLive,
+        resolveNixEnvironment: () => Effect.succeed(failedClosure)
+      }
+      await expect(
+        Effect.runPromise(planEffect(options).pipe(Effect.provideService(PlanningServices, services)))
+      ).rejects.toMatchObject({
+        code: fault.endsWith("absent") ? "nix_tool_absent" : "nix_version_mismatch",
+        message: expect.stringContaining(
+          fault === "runtime mismatch" ? "node" : fault.startsWith("yarn") ? "yarn" : "pnpm"
+        )
+      })
+    }
+  )
+})
+
 describe.runIf(onPath("nix"))("real Nix environment planning", () => {
   it("binds the actual evaluated environment and runs its selected shell", async () => {
     const { root, options } = await fixture(

@@ -158,7 +158,8 @@ const runProcess = (
   argv: readonly [string, ...Array<string>],
   env: Readonly<Record<string, string | undefined>>,
   signal: AbortSignal | undefined,
-  processes: RepositoryProcess.Services
+  processes: RepositoryProcess.Services,
+  timeoutMs = processes.timeoutMs ?? 60_000
 ): Promise<ProcessResult> =>
   new Promise((resolve, reject) => {
     const [command, ...args] = argv
@@ -170,6 +171,7 @@ const runProcess = (
     const finish = (operation: () => void): void => {
       if (settled) return
       settled = true
+      clearTimeout(timeout)
       signal?.removeEventListener("abort", abort)
       operation()
     }
@@ -187,6 +189,10 @@ const runProcess = (
       }
       target.push(chunk)
     }
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL")
+      finish(() => reject(new Error(`child process ${[command, ...args].join(" ")} timed out after ${timeoutMs} ms`)))
+    }, timeoutMs)
     child.stdout.on("data", append(stdout))
     child.stderr.on("data", append(stderr))
     child.on("error", (cause) => finish(() => reject(cause)))

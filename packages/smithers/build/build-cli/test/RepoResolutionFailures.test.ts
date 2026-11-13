@@ -28,7 +28,12 @@ const index = {
   root: "/parent",
   workspace: { repos: { child: LocalRepository.make("repos/child") } }
 } as unknown as RepoResolution.Resolver["index"]
-const makeResolver = () => RepoResolution.Resolver.make(index, { KEEP: "1" }, host.services)
+const makeResolver = () =>
+  RepoResolution.Resolver.make(index, { KEEP: "1" }, {
+    spawn: host.services.spawn,
+    killGroup: host.services.killGroup,
+    output: host.services.output
+  })
 const resolution: RepoResolution.Resolution = {
   repoName: "child",
   repoPath: "repos/child",
@@ -184,6 +189,16 @@ describe("child repository queries", () => {
       .toMatch(/could not query.*ENOENT/)
   })
 
+  it("kills a stalled query at its deadline and names the command in the refusal", async () => {
+    const resolver = RepoResolution.Resolver.make(index, {}, { ...host.services, timeoutMs: 1000 })
+    const pending = RepoResolution.resolve(resolver, RepoTarget.Target("child", "//:test"))
+    const child = await host.ready()
+    expect((await pending).refusal).toContain("query //:test")
+    expect((await pending).refusal).toContain("timed out after 1000 ms")
+    await host.closes[0]
+    expect(child.signalCode).toBe("SIGKILL")
+  })
+
   it("kills a real query on abort", async () => {
     const controller = new AbortController()
     const pending = RepoResolution.resolve(makeResolver(), RepoTarget.Target("child", "//:test"), controller.signal)
@@ -255,6 +270,23 @@ describe("child repository git state", () => {
       await rejected
     }
   })
+  it.each(["HEAD", "status"] as const)("kills a stalled %s probe at its deadline", async (phase) => {
+    const resolver = RepoResolution.Resolver.make(index, {}, { ...host.services, timeoutMs: 1000 })
+    const pending = RepoResolution.gitState(resolver, local)
+    const rejected = expect(pending).rejects.toThrow(
+      new RegExp((phase === "HEAD" ? "rev-parse HEAD" : "status --porcelain") + ".*timed out after 1000 ms")
+    )
+    if (phase === "status") {
+      await host.write("stdout", "abc\n")
+      await host.finish()
+    }
+    const childIndex = phase === "HEAD" ? 0 : 1
+    const child = await host.ready(childIndex)
+    await rejected
+    await host.closes[childIndex]
+    expect(child.signalCode).toBe("SIGKILL")
+  })
+
   it("does not inspect the parent checkout when the child has no marker", async () => {
     expect(await RepoResolution.gitState(makeResolver(), resolution)).toEqual({ head: "", dirty: true, status: "" })
     expect(host.requests).toEqual([])

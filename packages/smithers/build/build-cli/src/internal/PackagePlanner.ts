@@ -345,6 +345,9 @@ interface PlanContext {
  * @since 1.0.0
  */
 export interface PlanningServices {
+  readonly resolveNixEnvironment: (
+    options: Parameters<typeof NixExec.resolveEnvironment>[0]
+  ) => Effect.Effect<NixExec.ResolvedEnvironment, unknown>
   readonly readCrateManifest: (path: string) => Effect.Effect<string, unknown>
 }
 /** Real plan-time host operations.
@@ -352,6 +355,8 @@ export interface PlanningServices {
  * @since 1.0.0
  */
 export const planningServicesLive: PlanningServices = {
+  resolveNixEnvironment: (options) =>
+    Effect.tryPromise({ try: () => NixExec.resolveEnvironment(options), catch: (cause) => cause }),
   readCrateManifest: (path) => Effect.promise(() => Fs.readFile(path, "utf8"))
 }
 /** Invocation-local planning host services.
@@ -3968,7 +3973,6 @@ const planWithServices = async (
     if (!rootModes.has(row.label)) rootModes.set(row.label, rootMode(Target.metadata(row.target).target, options))
   }
   const workspace = index.workspace
-  const workspaceToolchain = await WorkspaceToolchain.resolve(workspace, { root: index.root, signal: options.signal })
   const lockfilePath = (workspace.packageManager as
     | { readonly lockfile?: { readonly path?: unknown } }
     | undefined)?.lockfile?.path
@@ -3988,14 +3992,22 @@ const planWithServices = async (
   const nixDeclaration = WorkspaceDeclaration.nixEnvironment(workspace)
   const nixEnvironment = nixDeclaration === undefined
     ? undefined
-    : await NixExec.resolveEnvironment({
+    : await Effect.runPromise(services.resolveNixEnvironment({
       root: index.root,
       declaration: nixDeclaration,
       cacheDirectory: options.cacheDirectory,
       environment: hostEnvironment,
       signal: options.signal,
       log
+    }))
+  const workspaceToolchain = await WorkspaceToolchain.resolve(workspace, {
+    root: index.root,
+    signal: options.signal,
+    ...(nixEnvironment === undefined ? {} : {
+      verifyTool: (tool) =>
+        NixExec.assertToolVersion(nixEnvironment, tool, { root: index.root, signal: options.signal })
     })
+  })
   // An invocation that plans several verbs passes one index to all of them
   // and saves it itself; a lone plan loads and saves its own.
   const digests = options.digests ?? await DigestIndexFile.load(index.root, options.cacheDirectory, log)

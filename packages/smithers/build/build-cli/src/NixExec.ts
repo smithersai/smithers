@@ -23,6 +23,7 @@
  * @since 0.1.0
  */
 
+import * as RuntimeService from "@smthrs/build/Runtime"
 import type * as Exec from "@smthrs/targets/Exec"
 import * as Input from "@smthrs/targets/Input"
 import * as Nix from "@smthrs/targets/Nix"
@@ -474,31 +475,18 @@ export const hostEnvironmentWith = (
 export const layer = (resolved: ResolvedEnvironment): string => `nix:${resolved.hash}`
 
 /** Parses a version out of `--version` output: the first `x.y.z` it contains. */
-const parseVersion = (text: string): string | undefined => /(\d+)\.(\d+)\.(\d+)/.exec(text)?.[0]
-
-const compareVersions = (left: string, right: string): number => {
-  const a = left.split(".").map(Number)
-  const b = right.split(".").map(Number)
-  for (let index = 0; index < 3; index += 1) {
-    const difference = (a[index] ?? 0) - (b[index] ?? 0)
-    if (difference !== 0) return difference
-  }
-  return 0
-}
+const parseVersion = (text: string): string | undefined =>
+  /\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z.-]+)?/.exec(text)?.[0]
 
 /**
- * Reports whether a measured version satisfies a declared requirement of the
- * two forms declarations use: `>=x.y.z`, or an exact `x.y.z`.
+ * Reports whether a measured version satisfies the workspace's exact version
+ * or single-comparator requirement, using the runtime verifier's rules.
  *
  * @category accessors
  * @since 0.1.0
  */
-export const satisfies = (measured: string, requirement: string): boolean => {
-  const trimmed = requirement.trim()
-  if (trimmed === "" || trimmed === ">=0.0.0") return true
-  if (trimmed.startsWith(">=")) return compareVersions(measured, trimmed.slice(2).trim()) >= 0
-  return compareVersions(measured, trimmed) === 0
-}
+export const satisfies = (measured: string, requirement: string): boolean =>
+  requirement.trim() === "" || RuntimeService.satisfies(requirement, measured) === true
 
 const measured = new Map<string, Promise<string>>()
 

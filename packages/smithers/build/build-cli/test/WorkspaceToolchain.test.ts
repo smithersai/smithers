@@ -130,6 +130,52 @@ const assertTypecheckPlan = (toolchain: WorkspaceToolchain.WorkspaceToolchain): 
 }
 
 describe("resolving workspace manifest declarations", () => {
+  it.each([undefined, "4.7.0"])("verifies Yarn independently of legacy lowering (explicit=%s)", async (version) => {
+    const root = await directory()
+    const text = JSON.stringify({ packageManager: "yarn@4.6.0" })
+    await Fs.writeFile(Path.join(root, "package.json"), text)
+    const seen: Array<{ name: string; requirement: string }> = []
+    const workspace = workspaceOf({
+      packageManager: S.PackageManager.Yarn({
+        manifest: S.file("//package.json"),
+        lockfile: S.file("//yarn.lock"),
+        ...(version === undefined ? {} : { version })
+      })
+    })
+    const resolved = await WorkspaceToolchain.resolve(workspace, {
+      root,
+      verifyTool: async (tool) => {
+        seen.push(tool)
+      }
+    })
+    expect(resolved.packageManager).toBeUndefined()
+    expect(seen).toEqual([{ name: "yarn", executable: "yarn", requirement: version ?? "4.6.0" }])
+    expect(resolved.manifestDigests).toEqual([{ path: "package.json", digest: Input.digestText(text) }])
+  })
+
+  it("verifies a manifest manager even when no runtime can lower it", async () => {
+    const root = await directory()
+    await Fs.writeFile(Path.join(root, "package.json"), "{\"packageManager\":\"pnpm@11.25.0\"}")
+    const failure = new Error("manager version refused")
+    const seen: string[] = []
+    await expect(WorkspaceToolchain.resolve(
+      workspaceOf({
+        packageManager: S.PackageManager.Pnpm({
+          manifest: S.file("//package.json"),
+          lockfile: S.file("//pnpm-lock.yaml")
+        })
+      }),
+      {
+        root,
+        verifyTool: async (tool) => {
+          seen.push(tool.name)
+          throw failure
+        }
+      }
+    )).rejects.toBe(failure)
+    expect(seen).toEqual(["pnpm"])
+  })
+
   it("derives both requirements from the same measured manifest and passes the real target schema", async () => {
     const root = await directory()
     const text = JSON.stringify({ engines: { node: ">=26.4.0" }, packageManager: "pnpm@11.25.0" })

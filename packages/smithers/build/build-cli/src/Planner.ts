@@ -129,13 +129,6 @@ export interface Plan {
 export const EXECUTION_FORMAT = 5
 
 /**
- * Orders strings by UTF-16 code unit. `localeCompare` answers differently
- * under different host locales and ICU versions, which would let one target
- * hash to different cache keys on different machines; code-unit order is the
- * same everywhere.
- */
-
-/**
  * One value in key material could not be encoded injectively.
  *
  * The encoder never guesses. Material it cannot represent without losing the
@@ -898,5 +891,3 @@ export const attrsValue = (
     seen.delete(value)
   }
 }
-
-/** Targets whose execution resolves a package-manager and runtime layer. */

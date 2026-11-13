@@ -140,14 +140,25 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * Resolves declared toolchain manifests within the workspace before keying.
  * Each bounded, validated text read supplies both the requirement and its
  * digest, so an intervening second read cannot key different manifest bytes.
- * No package manager or runtime is installed or executed while resolving.
+ * No tool is installed. The optional verifier checks the resolved requirements;
+ * without it, no package manager or runtime is executed while resolving.
  *
  * @category constructors
  * @since 1.0.0
  */
 export const resolve = async (
   workspace: WorkspaceDeclaration.WorkspaceDeclaration,
-  options: { readonly root: string; readonly signal?: AbortSignal | undefined }
+  options: {
+    readonly root: string
+    readonly signal?: AbortSignal | undefined
+    readonly verifyTool?:
+      | ((tool: {
+        readonly name: string
+        readonly executable?: string | undefined
+        readonly requirement: string
+      }) => Promise<unknown>)
+      | undefined
+  }
 ): Promise<ResolvedWorkspaceToolchain> => {
   options.signal?.throwIfAborted()
   const manifests = new Map<string, { readonly contents: Record<string, unknown>; readonly digest: string }>()
@@ -184,22 +195,35 @@ export const resolve = async (
     })
   }
   let packageManager = managerOf(workspace, runtime)
-  if (PackageManager.isPnpmDeclaration(workspace.packageManager)) {
-    const declared = workspace.packageManager
+  let modernManager: { readonly name: string; readonly executable: string; readonly version: string } | undefined
+  const declared = workspace.packageManager
+  if (
+    PackageManager.isPnpmDeclaration(declared) ||
+    (options.verifyTool !== undefined && PackageManager.isYarnDeclaration(declared))
+  ) {
+    const name = PackageManager.isYarnDeclaration(declared) ? "yarn" : "pnpm"
     const manifest = await readManifest(declared.manifest)
     const pin = manifest["packageManager"]
-    const manifestVersion = typeof pin === "string" && pin.startsWith("pnpm@") ? pin.slice(5) : undefined
+    const prefix = name + "@"
+    const manifestVersion = typeof pin === "string" && pin.startsWith(prefix) ? pin.slice(prefix.length) : undefined
     if (declared.version === undefined && manifestVersion === undefined) {
-      throw new Error("workspace toolchain manifest packageManager must declare pnpm@<version>")
+      throw new Error(`workspace toolchain manifest packageManager must declare ${name}@<version>`)
     }
-    const version = requirement(declared.version ?? manifestVersion, "pnpm version")
-    if (runtime !== undefined) {
+    const version = requirement(declared.version ?? manifestVersion, name + " version")
+    modernManager = { name, executable: name, version }
+    if (name === "pnpm" && runtime !== undefined) {
       packageManager = PackageManager.ResolvedPnpmPackageManager.make({
         name: "pnpm",
         version,
         executable: "pnpm",
         runtime
       })
+    }
+  }
+  if (options.verifyTool !== undefined) {
+    for (const tool of [runtime, modernManager ?? packageManager, packageManager?.runtime]) {
+      if (tool === undefined) continue
+      await options.verifyTool({ name: tool.name, executable: tool.executable, requirement: tool.version })
     }
   }
   options.signal?.throwIfAborted()

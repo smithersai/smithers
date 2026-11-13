@@ -19,6 +19,8 @@ export type Child = ChildProcessByStdio<null, Readable, Readable>
  * @since 1.0.0
  */
 export interface Services {
+  /** Deadline for plan-time queries and repository-state probes. */
+  readonly timeoutMs?: number | undefined
   readonly spawn: (command: string, args: ReadonlyArray<string>, options: SpawnOptions) => Effect.Effect<Child, unknown>
   readonly killGroup: (pid: number) => Effect.Effect<void, unknown>
   readonly output: (stream: "stdout" | "stderr", text: string) => void
@@ -31,6 +33,7 @@ export interface Services {
 export const make = (
   terminal: { readonly stdout: Pick<Writable, "write">; readonly stderr: Pick<Writable, "write"> } = process
 ): Services => ({
+  timeoutMs: 60_000,
   spawn: (command, args, options) =>
     Effect.try({
       try: () => spawn(command, [...args], { ...options, stdio: ["ignore", "pipe", "pipe"] }),

@@ -802,6 +802,8 @@ version probe. Execution also withholds these names from `Git.Commit` git
 commands and hooks, and from both `Memory.Retain` ref resolution and the
 `smithers memory` subprocess.
 
+Child-repository queries and commit/status probes have a 60-second deadline.
+A query that times out refuses its parent target and names the command.
 Git commit commands and both memory subprocesses have a 60-second deadline.
 Plan-time `go list` has a 60-second deadline; fallback `nix develop` tool
 resolution has a five-minute deadline. Each receives the run's abort signal.

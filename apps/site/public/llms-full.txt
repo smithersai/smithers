@@ -10482,13 +10482,13 @@ Bundler targets, run through the workspace's own bundler. From
 
 Workspace declaration resolution, from `@smthrs/build-cli/WorkspaceToolchain`.
 
-| Export                                   | Contract                                                                                        |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `WorkspaceToolchain`                     | The resolved `runtime` and `packageManager`, either of which may be absent.                     |
-| `ResolvedWorkspaceToolchain`             | A `WorkspaceToolchain` with sorted `manifestDigests: ReadonlyArray<Input.FileDigest>`.          |
-| `of(workspace)`                          | Reads literal declarations without I/O; leaves manifest-derived requirements unresolved.        |
-| `resolve(workspace, { root, signal? })`  | Returns `Promise<ResolvedWorkspaceToolchain>` after resolving declared manifests within `root`. |
-| `fill(workspaceAttrs, attrs, toolchain)` | Fills only named, omitted attrs; preserves explicit target declarations.                        |
+| Export                                               | Contract                                                                                        |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `WorkspaceToolchain`                                 | The resolved `runtime` and `packageManager`, either of which may be absent.                     |
+| `ResolvedWorkspaceToolchain`                         | A `WorkspaceToolchain` with sorted `manifestDigests: ReadonlyArray<Input.FileDigest>`.          |
+| `of(workspace)`                                      | Reads literal declarations without I/O; leaves manifest-derived requirements unresolved.        |
+| `resolve(workspace, { root, signal?, verifyTool? })` | Returns `Promise<ResolvedWorkspaceToolchain>` after resolving declared manifests within `root`. |
+| `fill(workspaceAttrs, attrs, toolchain)`             | Fills only named, omitted attrs; preserves explicit target declarations.                        |
 
 `resolve` reads `engines.node` and the pnpm `packageManager` pin from declared
 manifests. An explicit pnpm version wins while its manifest is still read and
@@ -10496,7 +10496,13 @@ measured. Each manifest is bounded at 1 MiB, decoded as strict UTF-8, and must b
 a JSON object inside the workspace. The same validated text supplies both its
 requirements and digest; equivalent paths are read once per resolution. Missing
 or invalid pins, unsupported version syntax, path escapes, and cancellation
-refuse resolution. No tool is installed or executed by this resolver.
+refuse resolution. No tool is installed. Without a verifier, no tool is executed.
+
+An optional `verifyTool` callback receives each resolved runtime and
+package-manager requirement as `{ name, executable, requirement }` and may reject
+resolution. With this verifier, Yarn pins are also read from the manifest or
+explicit version. A declared Nix environment uses it to check the closure's
+tools before target planning.
 
 From `@smthrs/build-cli/engine`, `TargetToolchain` carries the tools one
 action-backed target uses. `targetToolchain(target, attrs)` selects them from

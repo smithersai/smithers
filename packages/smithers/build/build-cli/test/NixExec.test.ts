@@ -211,6 +211,16 @@ ${body}
 const probeTool = { name: "probe", requirement: ">=22.19.0" }
 
 describe.skipIf(process.platform === "win32")("NixExec.assertToolVersion recovery", () => {
+  it("keeps prerelease and build identity in a real version probe", async () => {
+    const resolved = await versionEnvironment("console.log(\"22.20.1-canary.2+build.7\")")
+    await expect(
+      NixExec.assertToolVersion(resolved, { name: "probe", requirement: "22.20.1-canary.2+build.7" }, { root })
+    ).resolves.toBe("22.20.1-canary.2+build.7")
+    await expect(
+      NixExec.assertToolVersion(resolved, { name: "probe", requirement: "22.20.1" }, { root })
+    ).rejects.toMatchObject({ code: "nix_version_mismatch" })
+  })
+
   it.each([
     ["nonzero exit", "console.error(\"unavailable\"); process.exit(1)"],
     ["invalid output", "console.log(\"unavailable\")"]
@@ -310,6 +320,13 @@ describe("NixExec pure helpers", () => {
     expect(NixExec.satisfies("11.21.0", "11.21.0")).toBe(true)
     expect(NixExec.satisfies("11.21.1", "11.21.0")).toBe(false)
     expect(NixExec.satisfies("0.0.1", ">=0.0.0")).toBe(true)
+    expect(NixExec.satisfies("26.5.0", ">=22")).toBe(true)
+    expect(NixExec.satisfies("26.5.0", "<27")).toBe(true)
+    expect(NixExec.satisfies("27.0.0", "<27")).toBe(false)
+    expect(NixExec.satisfies("26.5.0", "<=26.5.0")).toBe(true)
+    expect(NixExec.satisfies("26.5.0", ">26.5.0")).toBe(false)
+    expect(NixExec.satisfies("26.5.0", "=26.5.0")).toBe(true)
+    expect(NixExec.satisfies("26.5.0", "")).toBe(true)
   })
 
   it("names the host system the way a flake does", () => {
