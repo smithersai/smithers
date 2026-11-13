@@ -83,8 +83,8 @@ const shellBoundaries = {
   'src/web/modeSwitch.vibe': 'Calls the proved opposite-mode, mode name and label choices; HtmlBuilder rendering and native navigation remain host boundaries.',
   'src/web/backend.vibe': 'Health choice calls proved liveHealth; deadlines, cancellation and layer loading remain runtime behavior.',
   'worker/Http.vibe': 'Body-length admission uses protocolDecision, and a tour control\u2019s 1,024-unit text the proved bodyLimit and withinBodyLimit (workerDecision, 0018 third-lane batch 46); URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries.',
-  'worker/Budget.vibe': 'Admission and settlement run the proved reserve/settle kernel inside the semaphore, so concurrent admissions cannot pass the limit; each runs only when the proved reserveAdmissible or settleAdmissible, exactly the kernel\'s precondition, holds (0018 third-lane batch 42). The semaphore itself, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts); the workerd suite exercises twenty concurrent admissions.',
-  'worker/CallBudget.vibe': 'Runtime provider boundary: each physical invocation reserves independently; durable receipts reconcile usable final usage or the ceiling, including reissues and UTC rollover. SDK replay, UUIDs, Date, receipt codecs and RPC remain runtime boundaries. Behavioral regressions and adapter mutations cover these connections; the integer bound is proved in budgetDecision.vibe.',
+  'worker/Budget.vibe': 'Admission and settlement run the proved reserve/settle kernel inside the semaphore, so concurrent admissions cannot pass the limit; each runs only when the proved reserveAdmissible or settleAdmissible, exactly the kernel\'s precondition, holds (0018 third-lane batch 42). The proved writesReservation (a reservation is written once), admitOutcome (the outcome label) and usableCount (a reported count is charged only when it rounds to a nonnegative safe integer) decide the rest (batch 47). The semaphore itself, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts); the workerd suite exercises twenty concurrent admissions.',
+  'worker/CallBudget.vibe': 'Runtime provider boundary: each physical invocation reserves independently; durable receipts reconcile usable final usage or the ceiling, including reissues and UTC rollover. SDK replay, UUIDs, Date, receipt codecs and RPC remain runtime boundaries. Behavioral regressions and adapter mutations cover these connections; the integer bound is proved in budgetDecision.vibe, and a call\'s usable ceiling (a positive safe maxTokens whose sum with the input allowance is safe) by callCeilingUsable (0018 third-lane batch 47).',
   'src/core/sandboxMeter.vibe': 'Each interval\'s accrual and month rollover is the proved meterStep (sandboxDecision.vibe). UTC month boundaries (Date.UTC), bucket storage and the interval loop\'s termination remain host boundaries.',
   'src/core/flows.vibe': 'Tour threads active/ready/one-speaker/terminal state; terminal-event and reading-time policies call flowDecision; unanswered source order and conversation guards call conversation. Private visit/hold counters use proved exact BigInt increments; first-visit, paused-wait, requested seek and reading-clock step choices are proved. Full optional restored-cursor composition, Flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
   "worker/Sequencer.vibe": "Calls proved conversation/append/start decisions, retained-log replay, ordered model-context selection, the proved sequencerDecision attempt, restart count, finish plan (the reply ends as exactly the model text), settle step, tour speech and entry lookup, and the followDecision replay cut. Stored events are decoded before replay. Locking, log writes before publish, PubSub delivery, event ids from numbers and the read snapshot Set (readonly-set.ts) remain runtime boundaries.",
@@ -504,16 +504,37 @@ function inventorySource(file, source) {
   }
   function markedAt(start) { return annotationAt(start, VERIFY); }
   function postconditionAt(start) { return annotationAt(start, /^[ \t]*\/\/@[ \t]*ensures\b/); }
-  // Each row's own `if` and conditional tests, with the plain names they call: verify/branches.cjs reads them. Not
-  // enumerable, so the table and row fixtures are unchanged.
+  // Each row's own `if` and conditional tests, split into operands at `&&`, `||` and `!`, with the plain names each
+  // calls and the name a bare flag reads; and each `const` name with the names its value calls. verify/branches.cjs
+  // reads them. Not enumerable, so the table and row fixtures are unchanged.
   const calledNames = node => (node.type === 'CallExpression' && node.callee?.type === 'Identifier' ? [node.callee.name] : [])
     .concat(children(node).flatMap(calledNames));
+  const operands = node => node.type === 'LogicalExpression' && node.operator !== '??' ? [...operands(node.left), ...operands(node.right)]
+    : node.type === 'UnaryExpression' && node.operator === '!' ? operands(node.argument) : [node];
+  // A presence or variant test, or a host type guard: whether a value is there, which variant it is, or whether a
+  // number is an integer. The audit found no decision of its own in these (0018, "Decisions in shell rows").
+  const absent = node => (node?.type === 'Literal' && node.value === null) || (node?.type === 'Identifier' && node.name === 'undefined');
+  const tagRead = node => node?.type === 'ChainExpression' ? tagRead(node.expression)
+    : node?.type === 'MemberExpression' && !node.computed && node.property?.name === '_tag';
+  const text = node => node?.type === 'Literal' && typeof node.value === 'string';
+  const GUARDS = new Set(['Option.isSome', 'Option.isNone', 'Exit.isSuccess', 'Exit.isFailure', 'Either.isLeft', 'Either.isRight',
+    'Result.isSuccess', 'Result.isFailure', 'Array.isArray', 'Number.isSafeInteger', 'Number.isInteger', 'Number.isFinite']);
+  const neutral = node => (node.type === 'BinaryExpression' && ['===', '!==', '==', '!='].includes(node.operator)
+      && (absent(node.left) || absent(node.right) || ((tagRead(node.left) || tagRead(node.right)
+        || (node.left.type === 'UnaryExpression' && node.left.operator === 'typeof')) && (text(node.left) || text(node.right)))))
+    || (node.type === 'CallExpression' && GUARDS.has(memberPath(node.callee)?.join('.')));
+  const flagName = node => node.type === 'Identifier' ? node.name
+    : node.type === 'MemberExpression' && !node.computed ? flagName(node.object) : node.type === 'ChainExpression' ? flagName(node.expression) : undefined;
   function walk(node, parent, parents = [], provedParent = false, owner = undefined) {
     let next = parents;
     let proved = provedParent;
     if (owner && (node.type === 'IfStatement' || node.type === 'ConditionalExpression') && node.test?.range) {
       owner.branches.push({ line: source.slice(0, node.range[0]).split('\n').length,
-        test: source.slice(node.test.range[0], node.test.range[1]).replace(/\s+/g, ' '), calls: calledNames(node.test) });
+        test: source.slice(node.test.range[0], node.test.range[1]).replace(/\s+/g, ' '),
+        operands: operands(node.test).map(operand => ({ calls: calledNames(operand), flag: flagName(operand), neutral: neutral(operand) })) });
+    }
+    if (owner && node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && node.init) {
+      owner.bindings.push({ name: node.id.name, calls: calledNames(node.init) });
     }
     if (functions.has(node.type) && node.body) {
       // ESTree ranges index the ORIGINAL JavaScript string (UTF-16). Projection
@@ -546,6 +567,7 @@ function inventorySource(file, source) {
       owner = { file: rel, line, label, category, why, proof: parents.length === 0 ? proved : false,
         lemma: parents.length === 0 && proved === 'contract' && lemmaBody(node, name) };
       Object.defineProperty(owner, 'branches', { value: [], enumerable: false });
+      Object.defineProperty(owner, 'bindings', { value: [], enumerable: false });
       rows.push(owner);
       next = [...parents, name];
     }

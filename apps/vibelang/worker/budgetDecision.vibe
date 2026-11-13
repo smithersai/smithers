@@ -82,3 +82,41 @@ export function canCharge(spent: number, used: number): boolean {
 export function chargeKeyOf(host: string, reply: string): string {
   return host + ":" + reply
 }
+
+/** Admission writes a reservation once: when it admits a call that holds none. A repeated admission reads its hold. */
+//@ verify
+//@ ensures \result == (admitted && held == 0)
+export function writesReservation(admitted: boolean, held: number): boolean {
+  return admitted && held === 0
+}
+
+/** An admission's outcome: a new reservation, one already held, a reply already charged, or a refusal. */
+//@ verify
+//@ ensures admitted && held == 0 ==> \result == "reserved"
+//@ ensures admitted && held != 0 ==> \result == "held"
+//@ ensures !admitted && recorded ==> \result == "charged"
+//@ ensures !admitted && !recorded ==> \result == "refused"
+export function admitOutcome(admitted: boolean, held: number, recorded: boolean): "reserved" | "held" | "charged" | "refused" {
+  if (admitted) return held === 0 ? "reserved" : "held"
+  return recorded ? "charged" : "refused"
+}
+
+/**
+ * A reported token count is charged only when the provider reported it and it rounds to a nonnegative safe integer
+ * (`safe` is the caller's `Number.isSafeInteger`); otherwise the settlement charges the ceiling.
+ */
+//@ verify
+//@ ensures \result == (reported && safe && rounded >= 0)
+export function usableCount(reported: boolean, safe: boolean, rounded: number): boolean {
+  return reported && safe && rounded >= 0
+}
+
+/**
+ * A model call's ceiling is usable when its `maxTokens` is a positive safe integer and the input allowance plus it is
+ * safe (`safe` and `sumSafe` are the caller's `Number.isSafeInteger`); otherwise the call fails before any reservation.
+ */
+//@ verify
+//@ ensures \result == (safe && maximum > 0 && sumSafe)
+export function callCeilingUsable(safe: boolean, maximum: number, sumSafe: boolean): boolean {
+  return safe && maximum > 0 && sumSafe
+}

@@ -3,7 +3,7 @@ const path = require('node:path');
 const { test } = require('node:test');
 const { inventorySource, withTable } = require('./inventory.cjs');
 const { refusals, treeFacts } = require('./landing.cjs');
-const { branchFacts, rewritten } = require('./branches.cjs');
+const { branchFacts, rewritten, shellBranches } = require('./branches.cjs');
 const app = path.resolve(__dirname, '..');
 const fixture = path.join(app, 'worker/landingFixture.vibe');
 const EMPTY = '# Fixture\n<!-- inventory:start -->\n<!-- inventory:end -->\n';
@@ -65,6 +65,13 @@ test('a new branch in a shell row is refused until it is proved or recorded with
   const after = inventorySource(fixture, proved);
   assert.deepEqual(branchFacts(after, recorded), { refused: [], branches: 1, open: 0, stale: ['worker/landingFixture.vibe\tpick\trole === "maintainer"'] });
   assert.equal(rewritten(after, recorded).split('\n').filter(line => line && !line.startsWith('#')).length, 1);
+  // Each operand counts: a proved call beside an unproved comparison leaves a branch; a flag bound to a proved call does not.
+  const mixed = proved.replace('if (maintains(role))', 'if (maintains(role) && n > 1)')
+    .replace('return n > 2 ? 1 : 0', 'const lead = maintains(role)\n  return !lead ? 1 : 0');
+  assert.deepEqual(shellBranches(inventorySource(fixture, mixed)).map(branch => branch.test), ['maintains(role) && n > 1']);
+  // Presence, variant and host type tests decide nothing of their own; beside one, a comparison is still a branch.
+  const guards = '// Fixture.\nexport function g(x: { _tag: string } | undefined, n: number) {\n  if (x === undefined || x._tag === "A" || !Number.isSafeInteger(n)) return 0\n  return typeof n === "number" && n > 1 ? 1 : 0\n}\n';
+  assert.deepEqual(shellBranches(inventorySource(fixture, guards)).map(branch => branch.test), ['typeof n === "number" && n > 1']);
   // Moving a callback changes its label's line, not its record; views in src/web are out of scope.
   const callback = '// Fixture.\nexport const f = (xs: number[]) => xs.map(x => x > 1 ? x : 0)\n';
   const k = 'worker/landingFixture.vibe\tf/callback\tx > 1\tOpen: fixture\n';
@@ -81,7 +88,8 @@ test('the tree on disk lands: no unproved row, a current 0018, a mutant for ever
 
 test('adding a branch to a real shell row is refused', () => {
   const shell = tree.rows.find(row => row.file === 'worker/Accounts.vibe' && row.category === 'effectful shell');
-  const extra = Object.defineProperty({ ...shell }, 'branches', { value: [...shell.branches, { line: 1, test: 'role === "owner"', calls: [] }] });
+  const extra = Object.defineProperty({ ...shell }, 'branches', { value: [...shell.branches, { line: 1, test: 'role === "owner"', operands: [{ calls: [], neutral: false }] }] });
+  Object.defineProperty(extra, 'bindings', { value: shell.bindings });
   const rows = tree.rows.map(row => row === shell ? extra : row);
   assert.deepEqual(refusals({ ...tree, rows }).map(line => line.split(': prove')[0]), [`unrecorded branch: worker/Accounts.vibe:1 ${shell.label.replace(/@\d+/g, '')}`]);
 });

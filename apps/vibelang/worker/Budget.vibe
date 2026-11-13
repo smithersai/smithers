@@ -5,7 +5,7 @@
 // charges never pass the limit by more than `over`, the charges beyond a call's own ceiling (decision 0018). Nothing
 // here records what anyone asked.
 
-import { canCharge, reserve, reserveAdmissible, settle, settleAdmissible } from "./budgetDecision.vibe"
+import { admitOutcome, canCharge, reserve, reserveAdmissible, settle, settleAdmissible, usableCount, writesReservation } from "./budgetDecision.vibe"
 
 /** The ledger's storage: numbers under keys, several written at once. */
 export interface Ledger {
@@ -61,8 +61,8 @@ export effect function make(ledger: Ledger, limit: number) {
           try invalid()
         }
         const result = reserve(spent, reserved, held, ceiling, limit, over, recorded)
-        if (result.admitted && held === 0) try ledger.write({ [RESERVED]: result.reserved, [holdKey(reply)]: result.held })
-        const outcome = result.admitted ? (held === 0 ? "reserved" : "held") : recorded ? "charged" : "refused"
+        if (writesReservation(result.admitted, held)) try ledger.write({ [RESERVED]: result.reserved, [holdKey(reply)]: result.held })
+        const outcome = admitOutcome(result.admitted, held, recorded)
         try Metric.update(Metric.withAttributes(admissions, { outcome }), 1)
         try Effect.logInfo("vibelang.budget.admit").pipe(Effect.annotateLogs({ outcome, spent, reserved: result.reserved, ceiling, limit }))
         return result.admitted
@@ -78,7 +78,7 @@ export effect function make(ledger: Ledger, limit: number) {
         const recorded = (try ledger.read(replyKey(reply))) !== undefined
         const held = (try ledger.read(holdKey(reply))) ?? 0
         const rounded = Number.isFinite(used) ? Math.round(used) : -1
-        const usable = reported && Number.isSafeInteger(rounded) && rounded >= 0
+        const usable = usableCount(reported, Number.isSafeInteger(rounded), rounded)
         const charged = usable ? rounded : 0
         if (!Number.isSafeInteger(ceiling) || !Number.isSafeInteger(held) || !settleAdmissible(spent, reserved, over, held, charged, ceiling)) {
           try invalid()

@@ -1,5 +1,8 @@
 // Branches in shell rows (decision 0018, "Decisions in shell rows"): an `if` or conditional inside a row that is not
-// proved, whose condition calls no proved function, outside the view markup in src/web/. A shell row's reason covers
+// proved, outside the view markup in src/web/, with an operand (split at `&&`, `||` and `!`) that neither calls a
+// proved function, nor is a flag read from a `const` whose value calls one (in its row or an enclosing row), nor is a
+// presence or variant test or a host type guard (`=== undefined`, `null`, `_tag`, `typeof`, `Option.isSome`,
+// `Exit.isSuccess`, `Number.isSafeInteger` and the like; inventory.cjs `neutral`). A shell row's reason covers
 // the whole row, so a new branch would inherit it unseen; the landing check refuses a branch that
 // verify/shell-branches.tsv does not record with a reason. A reason starting "Open:" is a decision still to prove.
 const fs = require('node:fs');
@@ -13,12 +16,18 @@ const inScope = file => !file.startsWith('src/web/');
 const stable = label => label.replace(/@\d+/g, '');
 const key = ({ file, label, test }) => `${file}\t${stable(label)}\t${test}`;
 
-/** Branches in shell rows whose condition calls no proved function. */
+/** Branches in shell rows with an operand no proved function decides. */
 function shellBranches(rows) {
   const proved = new Set(rows.filter(row => row.proof).map(row => row.label));
-  return rows.filter(row => row.category !== 'proved' && inScope(row.file) && row.branches)
-    .flatMap(row => row.branches.filter(branch => !branch.calls.some(name => proved.has(name)))
-      .map(branch => ({ file: row.file, line: branch.line, label: row.label, test: branch.test })));
+  const callsProved = calls => calls.some(name => proved.has(name));
+  const decidedFlags = row => new Set(rows.filter(other => other.file === row.file && other.bindings
+    && (other.label === row.label || row.label.startsWith(other.label + '/')))
+    .flatMap(other => other.bindings.filter(binding => callsProved(binding.calls)).map(binding => binding.name)));
+  return rows.filter(row => row.category !== 'proved' && inScope(row.file) && row.branches).flatMap(row => {
+    const flags = decidedFlags(row);
+    return row.branches.filter(branch => !branch.operands.every(operand => operand.neutral || callsProved(operand.calls) || flags.has(operand.flag)))
+      .map(branch => ({ file: row.file, line: branch.line, label: row.label, test: branch.test }));
+  });
 }
 
 /** The record's lines as { key, reason }; comments and blank lines skipped. */

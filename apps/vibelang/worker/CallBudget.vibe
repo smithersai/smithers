@@ -2,6 +2,7 @@
 import { Budget } from "@smthrs/agent"
 import { HarnessError } from "@smthrs/harness"
 import { Clock, Effect, Schema } from "effect"
+import { callCeilingUsable } from "./budgetDecision.vibe"
 import { SecureRandom } from "effect/crypto"
 
 interface Ledger {
@@ -41,7 +42,7 @@ export function callBudget(meter: Budget.Service, ledger: Ledger, parent: string
       // take over its reservation, once; the final run charge is then an idempotent no-op.
       yield* steady(ledger.spend(admittedDay, parent, 0, true, parentCeiling))
       const maximum = request.params.maxTokens
-      if (maximum === undefined || !Number.isSafeInteger(maximum) || maximum <= 0 || !Number.isSafeInteger(INPUT_CEILING + maximum)) {
+      if (maximum === undefined || !callCeilingUsable(Number.isSafeInteger(maximum), maximum, Number.isSafeInteger(INPUT_CEILING + maximum))) {
         return yield* Effect.fail(new HarnessError.HarnessError({ code: "engine_failed", message: "The model call has no usable ceiling" }))
       }
       const ceiling = INPUT_CEILING + maximum

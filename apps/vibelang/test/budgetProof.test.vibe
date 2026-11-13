@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { make, OVER, RESERVED, SPENT, type Ledger } from "../worker/Budget.vibe"
-import { reserveAdmissible, settleAdmissible } from "../worker/budgetDecision.vibe"
+import { admitOutcome, callCeilingUsable, reserveAdmissible, settleAdmissible, usableCount, writesReservation } from "../worker/budgetDecision.vibe"
 
 // A real in-memory ledger; the budget owns the semaphore and all accounting.
 effect function ledger() {
@@ -115,4 +115,11 @@ it.effect("the final safe charge is exact and its replay ignores oversized telem
     expect(admitted).toBe(false)
     expect(saved).toMatchObject({ spent: Number.MAX_SAFE_INTEGER - 3, "reply/first": Number.MAX_SAFE_INTEGER - 4, "reply/last": 1 })
   })
+})
+
+it("writes a reservation once, labels each admission, and charges a reported count only when it is usable", () => {
+  expect([writesReservation(true, 0), writesReservation(true, 7), writesReservation(false, 0)]).toEqual([true, false, false])
+  expect([admitOutcome(true, 0, false), admitOutcome(true, 7, false), admitOutcome(false, 0, true), admitOutcome(false, 0, false)]).toEqual(["reserved", "held", "charged", "refused"])
+  expect([usableCount(true, true, 0), usableCount(true, true, -1), usableCount(false, true, 5), usableCount(true, false, 5)]).toEqual([true, false, false, false])
+  expect([callCeilingUsable(true, 1, true), callCeilingUsable(true, 0, true), callCeilingUsable(false, 1, true), callCeilingUsable(true, 1, false)]).toEqual([true, false, false, false])
 })

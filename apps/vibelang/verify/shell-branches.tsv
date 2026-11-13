@@ -4,7 +4,6 @@ scripts/agent-context.vibe	main	step === "stale"	Unreviewed: recorded by the 202
 scripts/agent-context.vibe	main	step === "write"	Unreviewed: recorded by the 2026-11-13 audit
 scripts/fuzz-preflight.vibe	preflight	!(try fs.exists(path.join(root, ".smithers/flows/node_modules", name, "package.json")))	Unreviewed: recorded by the 2026-11-13 audit
 scripts/mythical-seed-program.vibe	entriesOf	line.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
-scripts/mythical-seed-program.vibe	entriesOf	value !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 scripts/mythical-seed-program.vibe	log/callback	line === ""	Unreviewed: recorded by the 2026-11-13 audit
 scripts/mythical-seed-program.vibe	log/callback	Number(status) !== 0	Unreviewed: recorded by the 2026-11-13 audit
 scripts/mythical-seed-program.vibe	main	refused.length > 0	Unreviewed: recorded by the 2026-11-13 audit
@@ -24,37 +23,21 @@ src/actions/catalog.vibe	registration	name === SandboxStop._tag	Unreviewed: reco
 src/actions/catalog.vibe	registration	name === Start._tag	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/catalog.vibe	registration	name === Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/catalog.vibe	registration	name === Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/execution.vibe	prepare	input !== null && typeof input === "object" && !Array.isArray(input)	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/execution.vibe	prepareHistory	!isHistory(invocation)	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/LiveActions.vibe	LiveActions/callback/command	at < 0	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/LiveActions.vibe	LiveActions/callback/command	kind === "parse"	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/LiveActions.vibe	LiveActions/callback/command	kind === "text"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/LiveActions.vibe	LiveActions/callback/follow/callback/callback	run === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/actions/LiveActions.vibe	LiveActions/callback/request	body === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/actions/LiveActions.vibe	LiveActions/callback/request	method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/LiveActions.vibe	LiveActions/callback/request	method === "POST"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback	principal.role !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/actions/MockActions.vibe	MockActions/callback/authorize	!allowed(person.role, entry)	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/MockActions.vibe	MockActions/callback/authorize	entry.least === "viewer"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/authorize	factory.policy !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/actions/MockActions.vibe	MockActions/callback/command	entry === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
+src/actions/MockActions.vibe	MockActions/callback/command	entry.command === command && (authorize(entry.name) catch () => undefined) !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/MockActions.vibe	MockActions/callback/command	kind === "parse"	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/MockActions.vibe	MockActions/callback/command	kind === "text"	Unreviewed: recorded by the 2026-11-13 audit
 src/actions/MockActions.vibe	MockActions/callback/commands	!entry.runnable	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/commands	admitted !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/actions/MockActions.vibe	MockActions/callback/read	run === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/actions/MockActions.vibe	MockActions/callback/record/callback	!decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/rerun	previous === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/actions/MockActions.vibe	MockActions/callback/run	Exit.isSuccess(result)	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/start	input !== null && typeof input === "object" && !Array.isArray(input)	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/start	scope.state._tag === "Closed"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/flows.vibe	beginTour	try (try Tours).running(tour)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/flows.vibe	openDocs	opened	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	openDocs	page === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/flows.vibe	openDocs	page === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/flows.vibe	openWiki/callback	opened	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	openWiki/callback	path === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/flows.vibe	openWiki/callback	path === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/flows.vibe	readingMillis	text.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
 src/core/flows.vibe	say	said	Unreviewed: recorded by the 2026-11-13 audit
 src/core/flows.vibe	say	words === ""	Unreviewed: recorded by the 2026-11-13 audit
@@ -64,14 +47,7 @@ src/core/flows.vibe	walk	!(Continuation.firstTourVisit(visit) && restored !== nu
 src/core/flows.vibe	walk	Continuation.firstTourVisit(visit) && restored !== null && restored.target !== ""	Unreviewed: recorded by the 2026-11-13 audit
 src/core/flows.vibe	walk	Continuation.tourWait(state.paused) === "control"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/flows.vibe	walk	control.action === "seek"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk	next === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/flows.vibe	walk/callback	saved === null || saved.paused	Unreviewed: recorded by the 2026-11-13 audit
-src/core/issueFlows.vibe	authorizeIssue/callback	!allowed	Unreviewed: recorded by the 2026-11-13 audit
-src/core/issueFlows.vibe	authorizeIssue/callback	allowed	Unreviewed: recorded by the 2026-11-13 audit
-src/core/issueFlows.vibe	callback/callback/callback/callback	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/issueFlows.vibe	callback/callback/callback/callback	result._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/IssuesFactory.vibe	fixtureHost/perform/callback	creating	Unreviewed: recorded by the 2026-11-13 audit
-src/core/IssuesFactory.vibe	fixtureHost/perform/callback	creating	Unreviewed: recorded by the 2026-11-13 audit
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	index < 0	Unreviewed: recorded by the 2026-11-13 audit
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	refused !== ""	Unreviewed: recorded by the 2026-11-13 audit
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	route === "draft"	Unreviewed: recorded by the 2026-11-13 audit
@@ -80,15 +56,9 @@ src/core/IssuesFactory.vibe	fixtureHost/perform/callback	route === "invalid"	Unr
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	route === "read"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	route === "specification"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	selected === 0	Unreviewed: recorded by the 2026-11-13 audit
-src/core/IssuesFactory.vibe	fixtureHost/perform/callback	vip	Unreviewed: recorded by the 2026-11-13 audit
-src/core/IssuesFactory.vibe	fixtureHost/perform/callback	vip	Unreviewed: recorded by the 2026-11-13 audit
-src/core/IssuesFactory.vibe	fixtureHost/perform/callback	vip	Unreviewed: recorded by the 2026-11-13 audit
-src/core/IssuesFactory.vibe	fixtureHost/perform/callback	vip	Unreviewed: recorded by the 2026-11-13 audit
 src/core/IssuesFactory.vibe	makeIssueFactory/act	!Schema.is(IssueRequest)(request)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	cause.reasons.length === 1	Unreviewed: recorded by the 2026-11-13 audit
-src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	error._tag === "IssueFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Unreviewed: recorded by the 2026-11-13 audit
-src/core/IssuesFactory.vibe	personOf	typeof identity === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/LiveAccounts.vibe	make/get	answer === "denied"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveAccounts.vibe	make/get	answer === "unavailable"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveAccounts.vibe	make/post	answer === "denied"	Unreviewed: recorded by the 2026-11-13 audit
@@ -100,57 +70,27 @@ src/core/LiveFactory.vibe	LiveFactory/callback/sandbox	response.status !== 200	U
 src/core/LiveFactory.vibe	LiveFactory/callback/sandboxCommand	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveFactory.vibe	LiveFactory/callback/startSandbox	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 src/core/LiveFactory.vibe	LiveFactory/callback/stopSandbox	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveFactory.vibe	pathOf	path === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/LiveFactory.vibe	sandboxRefusal	refusal.reason === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/LiveFactory.vibe	sandboxRefusal	response.status !== 403 && response.status !== 409	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveIssues.vibe	liveIssues/call	Option.isSome(failure)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveIssues.vibe	liveIssues/call	request === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/LiveWiki.vibe	liveWiki/answer	Option.isSome(failure)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockAccounts.vibe	make/authorize	!result.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockAccounts.vibe	make/callback/callback	!decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockAccounts.vibe	make/callback/callback	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockAccounts.vibe	make/choose	id === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/MockAccounts.vibe	make/choose	role !== "new"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockAccounts.vibe	make/choose	role === "viewer"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockAccounts.vibe	make/current	id === ""	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockAccounts.vibe	make/current	try Ref.get(agent)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockAccounts.vibe	make/grant	refused !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/MockAccounts.vibe	make/participated	id !== ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockAccounts.vibe	make/signInAgent	maintainer === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/MockFactory.vibe	cryptoOf	Option.isSome(given)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback	role !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/MockFactory.vibe	mockFactoryFor/callback/answer	index === posts.length	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	mockFactoryFor/callback/answer	tour !== "" && !dispatched.has(`tour/${tour}`)	Unreviewed: recorded by the 2026-11-13 audit
+src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	!Schema.is(TourControlBody)({ action, step }) || !validTourStep(step, 11)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	action === "resume"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/MockFactory.vibe	mockFactoryFor/callback/endTour	refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/MockFactory.vibe	mockFactoryFor/callback/issuesForPerson/callback	api === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/MockFactory.vibe	mockFactoryFor/callback/issuesForPerson/callback/callback	person.agent === true	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback	existing !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback	restored.agent === "working" && !isTouring(restored, restored.replying)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback	retained.length < journaled.length	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback	retained.length > 0	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback	scope.state._tag === "Closed"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	action === "seek"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/end	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/record	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/record	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/say	entry?.text	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/start	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/wake	tour !== ""	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	mockFactoryFor/callback/openWiki	!opened	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/post	refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/MockFactory.vibe	mockFactoryFor/callback/read	room === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/MockFactory.vibe	mockFactoryFor/callback/recorder/callback/callback	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/recorder/callback/callback	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/recorder/callback/callback/callback	!step.decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/sandboxForOwner/callback	service === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/MockFactory.vibe	mockFactoryFor/callback/tour	refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/MockFactory.vibe	mockFactoryFor/callback/wikiForPerson/callback	api === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/MockFactory.vibe	mockFactoryFor/callback/wikiForPerson/callback/callback	person.agent === true	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	scripted	actions !== undefined && requested !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/MockFactory.vibe	scripted	completed === 3	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	scripted	kind === "history"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	scripted	kind === "issue"	Unreviewed: recorded by the 2026-11-13 audit
@@ -159,30 +99,19 @@ src/core/MockFactory.vibe	scripted	kind === "specification"	Unreviewed: recorded
 src/core/MockFactory.vibe	scripted	kind === "wiki"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	scripted	outcome === "failed"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	scripted	outcome === "forbidden"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	scripted	page !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/MockFactory.vibe	scripted	page !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/MockFactory.vibe	scripted	page !== undefined && /\bdraft\b/i.test(prompt)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	scripted	prompt === "Split #38 into three children, linked under it."	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	scripted	prompt.startsWith("File an issue:")	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	scripted	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/MockFactory.vibe	scripted	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/MockFactory.vibe	scripted	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/MockFactory.vibe	scripted/callback	!(try ownsReply())	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	scripted/callback	!decision.ok	Unreviewed: recorded by the 2026-11-13 audit
 src/core/MockFactory.vibe	scripted/callback	error.reason === "forbidden"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/mockReplies.vibe	historyReply	open.length === 0	Unreviewed: recorded by the 2026-11-13 audit
 src/core/mockReplies.vibe	mockReply	index < 0	Unreviewed: recorded by the 2026-11-13 audit
 src/core/routes.vibe	routeOf	!pathname.startsWith(CONVERSATIONS)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/routes.vibe	routeOf	kind === ""	Unreviewed: recorded by the 2026-11-13 audit
 src/core/routes.vibe	routeOf	parts.length > 2	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxHost.vibe	failureReason	typeof error !== "object" || error === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/sandboxHost.vibe	failureReason	typeof tagged._tag === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/sandboxHost.vibe	failureReason	typeof tagged.reason === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/sandboxHost.vibe	generationOf	typeof value === "number"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/sandboxHost.vibe	makeSandboxHost/admit	admission !== "pending"	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/admit	admission === "generation-overflow"	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/admit	admission === "running"	Open: sandboxHost.vibe (non-view src/ scope)
-src/core/sandboxHost.vibe	makeSandboxHost/admit	old !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/sandboxHost.vibe	makeSandboxHost/admit	replay === "operation-conflict"	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/admit	replay === "replay-refused"	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/admit	request.kind === "start"	Open: sandboxHost.vibe (non-view src/ scope)
@@ -190,40 +119,25 @@ src/core/sandboxHost.vibe	makeSandboxHost/arm	kind === "meter"	Open: sandboxHost
 src/core/sandboxHost.vibe	makeSandboxHost/arm	kind === "retry"	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/command	admitted.type === "receipt"	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/command/callback	admitted.type === "pending"	Open: sandboxHost.vibe (non-view src/ scope)
-src/core/sandboxHost.vibe	makeSandboxHost/command/callback/callback	existing !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/sandboxHost.vibe	makeSandboxHost/command/callback/callback	refusal === ""	Open: sandboxHost.vibe (non-view src/ scope)
-src/core/sandboxHost.vibe	makeSandboxHost/command/callback/callback	result._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/sandboxHost.vibe	makeSandboxHost/complete	recorded !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/sandboxHost.vibe	makeSandboxHost/complete	started._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/sandboxHost.vibe	makeSandboxHost/complete	step === "cancel-start"	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/complete	step === "cancel-start" && reason !== undefined	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/complete	step === "start"	Open: sandboxHost.vibe (non-view src/ scope)
-src/core/sandboxHost.vibe	makeSandboxHost/current	next.pending !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/sandboxHost.vibe	makeSandboxHost/current	recovery === "complete"	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/current	recovery === "drop-start"	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/emergency	!box.running	Open: sandboxHost.vibe (non-view src/ scope)
-src/core/sandboxHost.vibe	makeSandboxHost/emergency	receipt._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/sandboxHost.vibe	makeSandboxHost/load/callback	saved !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/sandboxHost.vibe	makeSandboxHost/metered	!alive	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	makeSandboxHost/run	admitted.type === "receipt"	Open: sandboxHost.vibe (non-view src/ scope)
-src/core/sandboxHost.vibe	makeSandboxHost/transition	!decision.ok	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	observed/callback/callback	outcome === "done"	Open: sandboxHost.vibe (non-view src/ scope)
 src/core/sandboxHost.vibe	observed/callback/callback	outcome === "done"	Open: sandboxHost.vibe (non-view src/ scope)
-src/core/sandboxHost.vibe	outputOf	typeof value === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(ledger.usedMilliseconds) || ledger.usedMilliseconds < 0 || !Number.isSafeInteger(allowance) || allowance < 0	Unreviewed: recorded by the 2026-11-13 audit
 src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(now) || now < 0 || !Number.isFinite(nextMonth(now)) || !Number.isSafeInteger(ledger.lastMeteredAt) || ledger.lastMeteredAt < 0 || !Number.isFinite(nextMonth(ledger.lastMeteredAt))	Unreviewed: recorded by the 2026-11-13 audit
 src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(prior) || prior < 0	Unreviewed: recorded by the 2026-11-13 audit
 src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(count * elapsed) || count * elapsed > Number.MAX_SAFE_INTEGER - used	Unreviewed: recorded by the 2026-11-13 audit
 src/core/sandboxMeter.vibe	millisecondOf	!Number.isFinite(milliseconds) || milliseconds < 0 || milliseconds > 8640000000000000	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMeter.vibe	millisecondOf	!Number.isFinite(nextMonth(instant))	Unreviewed: recorded by the 2026-11-13 audit
 src/core/sandboxMeter.vibe	snapshotOf	box?.running	Unreviewed: recorded by the 2026-11-13 audit
 src/core/sandboxMock.vibe	makeMockSandboxes/callback	at === null || at > (try Clock.currentTimeMillis)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMock.vibe	makeMockSandboxes/sandbox/callback	error._tag === "Refused" || error._tag === "Unavailable"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/sandboxMock.vibe	makeMockSandboxes/sandboxCommand/callback	error._tag === "Refused" || error._tag === "Unavailable"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/sandboxMock.vibe	makeMockSandboxes/startSandbox/callback	error._tag === "Refused" || error._tag === "Unavailable"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/sandboxMock.vibe	makeMockSandboxes/stopSandbox/callback	error._tag === "Refused" || error._tag === "Unavailable"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/sandboxMock.vibe	makeMockSandboxes/write/callback	receipt	Unreviewed: recorded by the 2026-11-13 audit
 src/core/sandboxMock.vibe	memoryMachines/command	kind === "echo"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/sandboxMock.vibe	memoryMachines/command	kind === "ls"	Unreviewed: recorded by the 2026-11-13 audit
@@ -233,47 +147,32 @@ src/core/sandboxMock.vibe	memoryMachines/command	kind === "read"	Unreviewed: rec
 src/core/sandboxMock.vibe	memoryMachines/command	kind === "write"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/sandboxMock.vibe	memoryMachines/command	outputs.has(key)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/sandboxMock.vibe	memoryMachines/start/callback	!disk.has(id)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/specification.vibe	performSpecification	answer === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/specification.vibe	performSpecification	refusal !== ""	Unreviewed: recorded by the 2026-11-13 audit
 src/core/specification.vibe	performSpecification	revise	Unreviewed: recorded by the 2026-11-13 audit
 src/core/specification.vibe	performSpecification	source === "provider" && Option.isSome(provider)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/specification.vibe	performSpecification	source === "scripted"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/specification.vibe	requestedSpecificationReview	!/review.*specification|specification.*review/i.test(prompt)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/specification.vibe	requestedSpecificationReview	reviewer === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/specification.vibe	revisedSpecificationState	next === spec	Unreviewed: recorded by the 2026-11-13 audit
 src/core/toolRefusal.vibe	toolRefusal	field === "code"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/toolRefusal.vibe	toolRefusal	field === "reason"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/toolRefusal.vibe	toolRefusal	field === "refusal"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/toolRefusal.vibe	toolRefusal	field === "unavailable"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/toolRefusal.vibe	toolRefusal	typeof error !== "object" || error === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/toolRefusal.vibe	toolRefusal	typeof failure._tag === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/walkthroughSteps.vibe	walkthroughStop	Number.isNaN(step)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/wiki.vibe	wikiPage	base.startsWith("/wiki/")	Unreviewed: recorded by the 2026-11-13 audit
 src/core/wiki.vibe	wikiPage	index < 0	Unreviewed: recorded by the 2026-11-13 audit
 src/core/WikiFactory.vibe	fixtureSource	index < 0	Unreviewed: recorded by the 2026-11-13 audit
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	!instance.executionId.startsWith(`wiki/${person.id || "public"}/`)	Unreviewed: recorded by the 2026-11-13 audit
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	before.pages.some((page) => page.id === request.page)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	existing !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	existing.page !== request.page || existing.base !== request.base || existing.text !== request.text	Unreviewed: recorded by the 2026-11-13 audit
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "draft"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "read"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	verdict === "invalid" || verdict === "missing" || verdict === "empty" || verdict === "conflict"	Unreviewed: recorded by the 2026-11-13 audit
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	verdict === "missing"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback/withDraft	draft === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/WikiFactory.vibe	makeWikiFactory/act/callback	cause.reasons.length === 1	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag === "@smthrs/flow/StoreUnavailable"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag === "WikiFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag.endsWith("ExecutionIdentityConflict")	Unreviewed: recorded by the 2026-11-13 audit
 src/core/WikiFactory.vibe	makeWikiFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Unreviewed: recorded by the 2026-11-13 audit
 src/core/WikiFactory.vibe	personOf	identity === "maintainer"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	personOf	typeof identity === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/wikiFlows.vibe	authorizeWiki/callback	!allowed	Unreviewed: recorded by the 2026-11-13 audit
-src/core/wikiFlows.vibe	authorizeWiki/callback	allowed	Unreviewed: recorded by the 2026-11-13 audit
-src/core/wikiFlows.vibe	callback/callback/callback/callback	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/core/wikiFlows.vibe	callback/callback/callback/callback	result._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/core/wikiIndex.vibe	requestedWiki	decision < 0	Unreviewed: recorded by the 2026-11-13 audit
-src/core/wikiPage.vibe	pageFields	decision	Unreviewed: recorded by the 2026-11-13 audit
-src/core/wikiPage.vibe	pageFields	decision	Unreviewed: recorded by the 2026-11-13 audit
 src/core/wikiPage.vibe	pageFields	heading === ""	Unreviewed: recorded by the 2026-11-13 audit
 src/core/wikiPage.vibe	pageFields	rulingsAt < 0	Unreviewed: recorded by the 2026-11-13 audit
 src/core/wire.vibe	conversationPath	conversation.length === 0 || conversation.length > MAX_CONVERSATION	Unreviewed: recorded by the 2026-11-13 audit
@@ -286,8 +185,6 @@ src/history/export.vibe	check	manifest.mythical === candidate.mythical && manife
 src/history/export.vibe	check	parent === ""	Open: export.vibe (non-view src/ scope)
 src/history/export.vibe	check	parent === ""	Open: export.vibe (non-view src/ scope)
 src/history/export.vibe	check	published.manifest === ""	Open: export.vibe (non-view src/ scope)
-src/history/export.vibe	check	refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/export.vibe	check	refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/export.vibe	check	refusal === null && parent !== candidate.mythical	Open: export.vibe (non-view src/ scope)
 src/history/export.vibe	check	source === ""	Open: export.vibe (non-view src/ scope)
 src/history/export.vibe	guarded/updateRefs	refused.length === 0	Open: export.vibe (non-view src/ scope)
@@ -304,37 +201,22 @@ src/history/export.vibe	prepare	plan.needs.length > 0	Open: export.vibe (non-vie
 src/history/export.vibe	prepare	plan.needs.length > pace.reads	Open: export.vibe (non-view src/ scope)
 src/history/export.vibe	prepare	plan.pending.length > pace.writes	Open: export.vibe (non-view src/ scope)
 src/history/export.vibe	publish/callback	move.before === ""	Open: export.vibe (non-view src/ scope)
-src/history/export.vibe	readManifest	entry === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/export.vibe	readPublished	notesTree === ""	Open: export.vibe (non-view src/ scope)
 src/history/export.vibe	readPublished	refs.manifest === ""	Open: export.vibe (non-view src/ scope)
 src/history/export.vibe	readPublished	refs.notes === ""	Open: export.vibe (non-view src/ scope)
 src/history/export.vibe	section	lines.length === 0	Open: export.vibe (non-view src/ scope)
-src/history/flows.vibe	authorizer/callback/callback	caller.current === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/flows.vibe	finish	checked.refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/flows.vibe	finish	observed.refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/flows.vibe	finish	outcome === "conflict"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/flows.vibe	finish	outcome === "published"	Unreviewed: recorded by the 2026-11-13 audit
-src/history/flows.vibe	foldCommits	answer.refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/flows.vibe	foldCommits	count === 0	Unreviewed: recorded by the 2026-11-13 audit
 src/history/flows.vibe	loadBootstrap	loaded	Unreviewed: recorded by the 2026-11-13 audit
-src/history/flows.vibe	readMain	commits === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/flows.vibe	runExport	prepared.refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/flows.vibe	runExport/callback	history.commits.length === 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/flows.vibe	runExport/callback/callback	done === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/LiveMythical.vibe	LiveMythical/callback/events/callback	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/history/LiveMythical.vibe	LiveMythical/callback/page	path === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/LiveMythical.vibe	LiveMythical/callback/page	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/history/LiveMythical.vibe	LiveMythical/callback/write	operation !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/LiveMythical.vibe	LiveMythical/callback/write	outcome === "accepted"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/LiveMythical.vibe	LiveMythical/callback/write	outcome === "refused"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/MockMythical.vibe	MockMythical	seed === seeded	Unreviewed: recorded by the 2026-11-13 audit
-src/history/MockMythical.vibe	MockMythical/callback	current === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/MockMythical.vibe	MockMythical/callback/executionId	operation === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/MockMythical.vibe	MockMythical/callback/executionId	operation === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/MockMythical.vibe	mockRepository/readCommit	real === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/MockMythical.vibe	mockRepository/readCommit	source === "kept" && kept !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 src/history/MockMythical.vibe	mockRepository/readCommit	source === "memory" || real === undefined	Unreviewed: recorded by the 2026-11-13 audit
-src/history/MythicalHistory.vibe	settled	answer.refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/pages.vibe	matchesOf	needle === ""	Unreviewed: recorded by the 2026-11-13 audit
 src/history/publish.vibe	batch	history.commits.length === 0	Unreviewed: recorded by the 2026-11-13 audit
 src/history/publish.vibe	batch	plan.needs.length > read.length	Unreviewed: recorded by the 2026-11-13 audit
@@ -342,33 +224,24 @@ src/history/publish.vibe	batch	read.length > 0	Unreviewed: recorded by the 2026-
 src/history/publish.vibe	batch	skip.has(each.oid)	Unreviewed: recorded by the 2026-11-13 audit
 src/history/publish.vibe	batchStep/callback	answer.needs > 0	Unreviewed: recorded by the 2026-11-13 audit
 src/history/publish.vibe	batchStep/callback	answer.remaining > 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	batchStep/callback/callback	error.retryAfterMillis === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/publish.vibe	pacedExport	answered.empty	Unreviewed: recorded by the 2026-11-13 audit
 src/history/publish.vibe	pacedExport	answered.needs === 0 && answered.remaining === 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	pacedExport	begun.refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/publish.vibe	pacedExport	typeof answered === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/publish.vibe	runPublish	answer.written > 0	Unreviewed: recorded by the 2026-11-13 audit
 src/history/publish.vibe	runPublish	read.available	Unreviewed: recorded by the 2026-11-13 audit
 src/history/routes.vibe	historyRouteOf	kind !== "read"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/routes.vibe	historyRouteOf	kind === "events"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/routes.vibe	historyRouteOf	kind === "write" && write !== ""	Unreviewed: recorded by the 2026-11-13 audit
-src/history/routes.vibe	historyRouteOf	page === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/seed.vibe	clip	text.length <= max	Open: seed.vibe (non-view src/ scope)
 src/history/seed.vibe	evidenceOf	step === "start"	Open: seed.vibe (non-view src/ scope)
 src/history/seed.vibe	evidenceOf	step === "wrap"	Open: seed.vibe (non-view src/ scope)
-src/history/seed.vibe	replay	decision.ok	Open: seed.vibe (non-view src/ scope)
 src/history/seed.vibe	seedOf	!byTitle.has(title)	Open: seed.vibe (non-view src/ scope)
 src/history/seed.vibe	seedOf	!list.includes(entry)	Open: seed.vibe (non-view src/ scope)
 src/history/seed.vibe	seedOf	!members.has(area)	Open: seed.vibe (non-view src/ scope)
 src/history/seed.vibe	seedOf	attempt.reason === ""	Open: seed.vibe (non-view src/ scope)
-src/history/seed.vibe	seedOf	entry !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/seed.vibe	seedOf	entry !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/seed.vibe	seedOf	entry.gate === ""	Open: seed.vibe (non-view src/ scope)
-src/history/seed.vibe	seedOf	group === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/seed.vibe	seedOf	join === "entry"	Open: seed.vibe (non-view src/ scope)
 src/history/seed.vibe	seedOf	join === "previous"	Open: seed.vibe (non-view src/ scope)
 src/history/seed.vibe	seedOf	join === "reverted"	Open: seed.vibe (non-view src/ scope)
-src/history/seed.vibe	seedOf	last === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/seed.vibe	seedOf	step !== commit.sha	Open: seed.vibe (non-view src/ scope)
 src/history/seed.vibe	seedOf	use === "landed"	Open: seed.vibe (non-view src/ scope)
 src/history/seed.vibe	seedOf	use === "skip"	Open: seed.vibe (non-view src/ scope)
@@ -380,22 +253,16 @@ src/history/seed.vibe	wholeSentences	endsSentence(trimmed)	Open: seed.vibe (non-
 src/history/seed.vibe	wholeSentences	trimmed === ""	Open: seed.vibe (non-view src/ scope)
 src/history/Sequencer.vibe	answered	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
 src/history/Sequencer.vibe	answered	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	make/current	known !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/Sequencer.vibe	make/current	stored.base === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/history/Sequencer.vibe	make/fold/callback	appended.refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/Sequencer.vibe	make/fold/callback	commit.sha === ""	Unreviewed: recorded by the 2026-11-13 audit
 src/history/Sequencer.vibe	make/fold/callback	commit.sha.length > MAX_ID || commit.change.length > MAX_ID	Unreviewed: recorded by the 2026-11-13 audit
 src/history/Sequencer.vibe	make/fold/callback	epic === ""	Unreviewed: recorded by the 2026-11-13 audit
 src/history/Sequencer.vibe	make/fold/callback	into === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	make/fold/callback	opened.refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/Sequencer.vibe	make/fold/callback	refusal !== ""	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	make/plan/callback	opened.refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/Sequencer.vibe	make/plan/callback	step === "amend"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/Sequencer.vibe	make/plan/callback	step === "empty" || step === "too-long"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/Sequencer.vibe	make/plan/callback	step === "insert"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/Sequencer.vibe	make/plan/callback	step === "open-epic"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/Sequencer.vibe	make/record	!decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/history/tools.vibe	answered/callback	error._tag === "Refused"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/history/tools.vibe	show/callback	{	Unreviewed: recorded by the 2026-11-13 audit
 src/history/tools.vibe	show/callback	when { what: "commit"	Unreviewed: recorded by the 2026-11-13 audit
 src/history/tools.vibe	show/callback	when { what: "epic"	Unreviewed: recorded by the 2026-11-13 audit
@@ -405,13 +272,9 @@ src/surfaces/backend.vibe	backend	probe	Unreviewed: recorded by the 2026-11-13 a
 src/surfaces/backend.vibe	callback	stored?.origin === "mock"	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/backend.vibe	callback/callback	!("ledger" in identity)	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/backend.vibe	callback/callback	identity.agent === true	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/backend.vibe	liveBackend/callback	Option.isSome(explicit)	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/backend.vibe	liveBackend/callback	probe	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/backend.vibe	personClient	Option.isNone(decoded) || decoded.value.origin !== origin || !validSessionCookie(origin, decoded.value.cookie)	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/backend.vibe	personClient	session === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/surfaces/backend.vibe	withStoredSession	stored === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/surfaces/cli-entry.vibe	main	(try cli(args, Option.getOrUndefined(environment))) !== 0	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/cli.vibe	cli/callback	error._tag === "ShowHelp"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/surfaces/cli.vibe	cli/callback	failure === "printed"	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/commands.vibe	ask	outcome === "ended"	Open: commands.vibe (non-view src/ scope)
 src/surfaces/commands.vibe	ask	outcome === "failed"	Open: commands.vibe (non-view src/ scope)
@@ -419,56 +282,31 @@ src/surfaces/commands.vibe	ask/callback	event.type === "Posted"	Open: commands.v
 src/surfaces/commands.vibe	ask/callback	event.type === "ReplyDelta"	Open: commands.vibe (non-view src/ scope)
 src/surfaces/commands.vibe	ask/callback	event.type === "ReplyFailed"	Open: commands.vibe (non-view src/ scope)
 src/surfaces/commands.vibe	ask/callback	event.type === "ReplyStarted"	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	callback	carries.recovery	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	callback	carries.resume	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	callback	carries.resumeRecovery	Open: commands.vibe (non-view src/ scope)
 src/surfaces/commands.vibe	callback	input.op === "read"	Open: commands.vibe (non-view src/ scope)
 src/surfaces/commands.vibe	callback	input.recovery === ""	Open: commands.vibe (non-view src/ scope)
 src/surfaces/commands.vibe	callback	input.wait	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	callback	Option.isSome(final)	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	callback	output.commit === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/surfaces/commands.vibe	callback	output.commits.length === 0	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	callback	output.draft === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/surfaces/commands.vibe	callback	output.entries.length === 0	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	callback	output.review === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/surfaces/commands.vibe	callback	output.signedOut	Open: commands.vibe (non-view src/ scope)
 src/surfaces/commands.vibe	callback	output.status === "signed-in"	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	callback	result.draft === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/surfaces/commands.vibe	callback/callback	i.task === ""	Open: commands.vibe (non-view src/ scope)
 src/surfaces/commands.vibe	callback/callback	i.vip === ""	Open: commands.vibe (non-view src/ scope)
 src/surfaces/commands.vibe	define/render	json	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	define/run/callback	error._tag === "ActionFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/surfaces/commands.vibe	define/run/callback	error._tag === "CommandError"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/surfaces/commands.vibe	define/run/callback	error._tag === "Refused"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/surfaces/commands.vibe	define/run/callback	error._tag === "Unavailable"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/surfaces/commands.vibe	define/run/callback	error._tag === "Unavailable" || error._tag === "Refused" || error._tag === "ActionFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/surfaces/commands.vibe	showHistory	page !== undefined && page.commit === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/surfaces/commands.vibe	showHistory	reads.commit	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	showHistory	reads.epic	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	showHistory	reads.search	Open: commands.vibe (non-view src/ scope)
 src/surfaces/commands.vibe	signInError	error instanceof SignInFailed	Open: commands.vibe (non-view src/ scope)
-src/surfaces/commands.vibe	summaryOf	found === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/surfaces/mcp.vibe	mcp/callback	report === "message" && Result.isSuccess(failure)	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/mcp.vibe	mcp/callback	report === "none"	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/session.vibe	activeSession	!validSessionCookie(decoded.origin, decoded.cookie)	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/session.vibe	activeSession	Option.isSome(configured) && Redacted.value(configured.value) !== ""	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/session.vibe	readJson	Option.isNone(decoded)	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/session.vibe	readJson	parsed === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/surfaces/session.vibe	readJson	text === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-src/surfaces/session.vibe	readPending	pending === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/surfaces/session.vibe	readPending	pending.expiresAt <= (try Clock.currentTimeMillis)	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/session.vibe	settingsDir	Option.isNone(home) || home.value === ""	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/session.vibe	settingsDir	Option.isSome(xdg) && xdg.value !== ""	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/sessionFlow.vibe	observe/callback/callback	Exit.isSuccess(result)	Unreviewed: recorded by the 2026-11-13 audit
 src/surfaces/signin.vibe	answered	status === "declined" || status === "expired"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	clientIdOf	Option.isNone(decoded)	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	clientIdOf	response.status !== 200	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	output	mock	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	output	mock	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	output	status === "signed-in"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	output	status === "signed-in"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	pollPending	(try Clock.currentTimeMillis) < flow.nextPollAt	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	pollPending	flow === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/surfaces/signin.vibe	refusal	status === "declined"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	refusal	status === "expired"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	safeSettings/callback	error instanceof SignInFailed	Open: signin.vibe (non-view src/ scope)
@@ -476,18 +314,15 @@ src/surfaces/signin.vibe	settle	answer.status !== "authorized"	Open: signin.vibe
 src/surfaces/signin.vibe	settle	answer.status === "denied"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	settle	answer.status === "expired"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	settle	answer.status === "slowDown"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	settle	Option.isNone(decoded)	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	settle	response.status !== 200	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	signIn	!input.wait	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	signIn	!input.wait || result === "signed-in"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	signIn	factory.mode === "mock"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signIn	pending === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 src/surfaces/signin.vibe	signIn	result === "signed-in" || result === "started"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	signIn	status !== "signed-in"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	signIn	status === "declined" || status === "expired"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	signIn	status === "signed-in"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	signOutSurface	factory.mode === "mock"	Open: signin.vibe (non-view src/ scope)
-src/surfaces/signin.vibe	signOutSurface/callback	Exit.isFailure(revoked)	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	signOutSurface/callback	factory.mode === "mock"	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	signOutSurface/callback/callback	factory.mode === "live" && stored !== undefined && stored.cookie !== ""	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	signOutSurface/callback/callback	factory.mode === "mock"	Open: signin.vibe (non-view src/ scope)
@@ -498,48 +333,22 @@ src/surfaces/signin.vibe	startLogin	response.status === 200 && Option.isSome(ide
 src/surfaces/signin.vibe	startLogin	stored !== undefined && stored.origin === origin && stored.cookie !== ""	Open: signin.vibe (non-view src/ scope)
 src/surfaces/signin.vibe	startLogin/callback	error.reason === "misconfigured"	Open: signin.vibe (non-view src/ scope)
 worker/accountObject.vibe	accountObject/callback/call	!answer.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/accountObject.vibe	accountObject/callback/run/callback	error._tag === "Refused"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/accountObject.vibe	accountObject/callback/run/callback	saved === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/accountObject.vibe	accountObject/callback/run/callback	typeof answer === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/accountObject.vibe	gatewayOf/request	!answer.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/accountObject.vibe	gatewayOf/request	answer.reason === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/accountObject.vibe	gatewayOf/request	choice === "forbidden"	Unreviewed: recorded by the 2026-11-13 audit
 worker/accountObject.vibe	gatewayOf/request	choice === "signed-out-read"	Unreviewed: recorded by the 2026-11-13 audit
 worker/accountObject.vibe	identityFromPolicy/request	admitted	Unreviewed: recorded by the 2026-11-13 audit
 worker/accountObject.vibe	identityFromPolicy/role	admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make	(try get("migrated/connect-v1")) === undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make	setup.broker?.secret === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make	setup.broker?.secret === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make	setup.broker?.secret === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make	setup.broker.localDevelopment === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Accounts.vibe	make/authorize	!(try sequencer.allows(actor, action))	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback	(url.pathname === "/api/auth/device" || url.pathname === CALLBACK) && request.method === "POST"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback	actor.id === ""	Open: the signed-out principal (an empty actor id)
-worker/Accounts.vibe	make/callback	Option.isNone(read)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/callback	Option.isNone(read)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/callback	read === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/callback	read === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
+worker/Accounts.vibe	make/callback	url.origin !== setup.origin || !writeOriginAdmitted(request.method, request.headers.origin, setup.origin, url.pathname, request.headers["sec-fetch-site"])	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback	url.pathname === "/api/issues"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback	url.pathname === "/api/roles" && request.method === "POST"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback	url.pathname === "/api/wiki"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/callback/authorize	actor === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/callback/authorize	actor === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Accounts.vibe	make/callback/callback/callback	answer === "callback-post"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/callback/callback/callback	answer === "redirect"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/callback/lost	live !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/callback/lost	live !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/current	connection === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/current	live === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/current	live === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/current	live === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Accounts.vibe	make/current	live.value.agent === true	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/current	live.value.agent === true	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/delegated	delegate === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/draftWiki	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/draftWiki	result.failure._tag === "WikiFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle	!permitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/handle	!permitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/handle	after === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Accounts.vibe	make/handle	route === "broker-callback"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/handle	route === "callback"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/handle	route === "connect"	Unreviewed: recorded by the 2026-11-13 audit
@@ -554,44 +363,16 @@ worker/Accounts.vibe	make/handle	route === "role-events"	Unreviewed: recorded by
 worker/Accounts.vibe	make/handle	route === "session"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/handle	route === "sign-in"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/handle	route === "sign-out"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/handle	setup.appSlug === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Accounts.vibe	make/handle	url.origin !== setup.origin	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/handle/callback	!permitted	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/handle/callback	"session" in pending	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/handle/callback	body === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	body === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	broker !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	broker === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	broker === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	live !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	live === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	live === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	Option.isSome(verified)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/handle/callback	Option.isSome(verified)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/handle/callback	person === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	principal?.connection !== undefined && delegate !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Accounts.vibe	make/handle/callback	setup.broker !== undefined && broker === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Accounts.vibe	make/mutation/callback/callback	result !== null && typeof result === "object" && "status" in result	Unreviewed: recorded by the 2026-11-13 audit
 worker/Accounts.vibe	make/participation/callback	actor.id !== ""	Open: the signed-out principal (an empty actor id)
-worker/Accounts.vibe	make/pruneExpired	typeof expires === "number"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Accounts.vibe	make/readResponse	method !== "GET"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	make/session	Option.isNone(verified)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	readSetup	Option.isNone(apiBase)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	readSetup	Option.isNone(appSlug)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	readSetup	Option.isNone(brokerSecret)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	readSetup	Option.isNone(id) || Option.isNone(secret) || Option.isNone(signing) || Option.isNone(encryption) || Option.isNone(origin) || Option.isNone(initial)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Accounts.vibe	readSetup	validated === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionDirectory.vibe	directory/cancel	!allowed(currentRole, registration(parent))	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionDirectory.vibe	directory/cancel	request === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionDirectory.vibe	directory/cancel	run === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionDirectory.vibe	directory/rerun	original === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionDirectory.vibe	directory/root	parent === id || (try runs.request(id, true)) !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionDirectory.vibe	directory/root	request?.flow === "vibelang/Post"	Open: run lifecycle
-worker/ActionDirectory.vibe	directory/root	typeof stored === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionDirectory.vibe	directory/submit	!allowed(currentRole, registration(request.flow))	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionDirectory.vibe	directory/submit	(reserved !== undefined && reserved !== request.id) || (try runs.request(child, true)) !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionDirectory.vibe	directory/submit	original === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionDirectory.vibe	directory/submit	request.flow === "vibelang/Post"	Open: run lifecycle
 worker/ActionDirectory.vibe	directory/submit	routed !== request.id	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionDirectory.vibe	directory/submit/callback/callback	cause.reasons.length === 1	Open: run lifecycle
@@ -599,56 +380,29 @@ worker/ActionDirectory.vibe	directory/submit/callback/callback	reason?.defect in
 worker/ActionDirectory.vibe	directory/submit/callback/callback	request.flow === "vibelang/Post"	Open: run lifecycle
 worker/ActionIdentity.vibe	fromAccounts/request	admitted	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionIdentity.vibe	fromAccounts/request	person.agent === true	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionIdentity.vibe	fromAccounts/request	trusted !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionIdentity.vibe	fromAccounts/role	owner === "" || !(try accounts.allowed(owner, "action"))	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionIdentity.vibe	trustedOf	typeof owner === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionIdentity.vibe	trustedOf	typeof props.actionName === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionRuns.vibe	alarm	active !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionRuns.vibe	alarm	engineFailed && intent !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	alarm	Exit.isFailure(result)	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	alarm	Exit.isSuccess(result)	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	alarm	intent === undefined || result.value._tag === "Retrying"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionRuns.vibe	alarm	Option.isSome(receipt) && receipt.value._tag === "Complete"	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	alarm	outcome._tag === "Settled"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionRuns.vibe	alarm	rawIntent === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionRuns.vibe	alarm	request === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionRuns.vibe	alarm	request.flow !== Tour._tag && request.flow !== Post._tag	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	alarm	request.flow === Post._tag && done	Open: run lifecycle
+worker/ActionRuns.vibe	alarm	request.flow === Tour._tag && tourSettles(done, failed)	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	alarm	run.actor === "agent"	Open: run lifecycle
 worker/ActionRuns.vibe	cancel	!allowed(try authority.role(owner), registration(child ? Post._tag : run.flow))	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	cancel	active !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionRuns.vibe	cancel	child	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	cancel	child	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	cancel	refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionRuns.vibe	cancel	run === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionRuns.vibe	cancel	run.flow === Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	make/admit	!permitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	make/admit	active !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionRuns.vibe	start	!allowed(try authority.role(request.owner ?? ""), registration(request.flow))	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	start	accepted	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	start	existing !== undefined && conversational	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	start	Exit.isSuccess(answer)	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	start	isHistory(valid)	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	start	previous !== undefined && JSON.stringify(previous) !== JSON.stringify(request)	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	start	refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionRuns.vibe	start	request.flow === Post._tag	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	start	request.flow === Post._tag && typeof raw.text === "string"	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	start	request.flow === Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	start	request.flow === Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	start	request.input !== null && typeof request.input === "object" && !Array.isArray(request.input)	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	start	valid === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionRuns.vibe	traced/callback/callback	child	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionRuns.vibe	traced/callback/callback	child	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionRuns.vibe	traced/callback/callback	event === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionsHttp.vibe	boundedBody	Option.isNone(read)	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionsHttp.vibe	boundedBody	read === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionsHttp.vibe	handle	!allowed(principal.role, entry)	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionsHttp.vibe	handle	found === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionsHttp.vibe	handle	raw.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionsHttp.vibe	handle	raw.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-worker/ActionsHttp.vibe	handle	refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionsHttp.vibe	handle	refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ActionsHttp.vibe	handle	refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ActionsHttp.vibe	handle	route === "commands"	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionsHttp.vibe	handle	route === "flows"	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionsHttp.vibe	handle	route === "runs"	Unreviewed: recorded by the 2026-11-13 audit
@@ -657,125 +411,62 @@ worker/ActionsHttp.vibe	handle	step === "cancel"	Unreviewed: recorded by the 202
 worker/ActionsHttp.vibe	handle	step === "events"	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionsHttp.vibe	handle	step === "read"	Unreviewed: recorded by the 2026-11-13 audit
 worker/ActionsHttp.vibe	handle	step === "rerun"	Unreviewed: recorded by the 2026-11-13 audit
-worker/apiObjects.vibe	accountsBody/callback	setup === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/apiObjects.vibe	accountsBody/callback	setup === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/apiObjects.vibe	accountsBody/callback/callback	route === "issues"	Unreviewed: recorded by the 2026-11-13 audit
 worker/apiObjects.vibe	accountsBody/callback/callback	route === "wiki"	Unreviewed: recorded by the 2026-11-13 audit
 worker/apiObjects.vibe	actionIndexBody/callback/request	exact === true	Unreviewed: recorded by the 2026-11-13 audit
 worker/apiObjects.vibe	apiFetch/callback	healthUrl.pathname === "/api/health/objects" && incoming.method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
-worker/apiObjects.vibe	apiFetch/callback/inspect/callback	result._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/apiObjects.vibe	apiFetch/callback/inspect/callback	result._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/apiObjects.vibe	conversationBody/callback/alarm/callback	entrypoint === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/apiObjects.vibe	conversationBody/callback/alarm/callback	pending >= 0	Unreviewed: recorded by the 2026-11-13 audit
-worker/apiObjects.vibe	conversationBody/callback/alarm/callback/draft	refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/apiObjects.vibe	historyBody/callback/callback	exporter !== off	Unreviewed: recorded by the 2026-11-13 audit
 worker/apiObjects.vibe	sandboxIdentityOf/request	admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/apiObjects.vibe	sandboxIdentityOf/request	trusted !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/apiObjects.vibe	sandboxIdentityOf/role	allowed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Budget.vibe	make/admit/callback	held === 0	Open: the budget’s write-once reservation, outcome label and usable count
-worker/Budget.vibe	make/admit/callback	recorded	Open: the budget’s write-once reservation, outcome label and usable count
-worker/Budget.vibe	make/admit/callback	result.admitted	Open: the budget’s write-once reservation, outcome label and usable count
-worker/Budget.vibe	make/admit/callback	result.admitted && held === 0	Open: the budget’s write-once reservation, outcome label and usable count
-worker/Budget.vibe	make/spend/callback	!result.write	Unreviewed: recorded by the 2026-11-13 audit
-worker/Budget.vibe	make/spend/callback	Number.isFinite(used)	Open: the budget’s write-once reservation, outcome label and usable count
-worker/Budget.vibe	make/spend/callback	recorded	Unreviewed: recorded by the 2026-11-13 audit
-worker/Budget.vibe	make/spend/callback	result.over > over	Unreviewed: recorded by the 2026-11-13 audit
-worker/Budget.vibe	make/spend/callback	usable	Open: the budget’s write-once reservation, outcome label and usable count
-worker/CallBudget.vibe	callBudget	ledger.checkpoint === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/CallBudget.vibe	callBudget/callback/callback	usable	Open: a model call’s usable count
-worker/CallBudget.vibe	callBudget/recordCall/callback	usable	Open: a model call’s usable count
-worker/CallBudget.vibe	callBudget/reserveCall/callback	!admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/CallBudget.vibe	callBudget/reserveCall/callback	maximum === undefined || !Number.isSafeInteger(maximum) || maximum <= 0 || !Number.isSafeInteger(INPUT_CEILING + maximum)	Unreviewed: recorded by the 2026-11-13 audit
-worker/GitHubDelegate.vibe	asPerson/callback	connection !== undefined && Option.isSome(delegate)	Unreviewed: recorded by the 2026-11-13 audit
-worker/GitHubDelegate.vibe	asPerson/callback	Option.isSome(reads)	Unreviewed: recorded by the 2026-11-13 audit
-worker/GitHubDelegate.vibe	refusalOf	candidate?._tag === "@smthrs/integrations/DelegationRefused"	Unreviewed: recorded by the 2026-11-13 audit
-worker/GitHubDelegate.vibe	refusalOf	candidate?.details === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/HistoryExport.vibe	exporterOf	api === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/HistoryExport.vibe	exporterOf	target === null || token === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/HistoryObject.vibe	readerOver/written	answer.refusal !== null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/HistoryObject.vibe	storeOver/load	typeof count === "number"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/HistoryObject.vibe	write	operation === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
+worker/Budget.vibe	make/spend/callback	recorded	Forwards: for a recorded reply the proved settle leaves charges, overshoot and receipt unchanged (added 0), so only the reservation and hold are written
+worker/Budget.vibe	make/spend/callback	result.over > over	Metric only: the overshoot counter; no ledger write
+worker/CallBudget.vibe	callBudget/callback/callback	usable	Forwards: the proved settle charges the ceiling when the count is not usable, so the 0 passed then is never charged
+worker/CallBudget.vibe	callBudget/recordCall/callback	usable	Forwards: the proved settle charges the ceiling when the count is not usable, so the 0 passed then is never charged
+worker/CallBudget.vibe	callBudget/reserveCall/callback	!admitted	Forwards: Budget.admit returns the proved reserve’s admission
 worker/HistoryObject.vibe	write/callback	name === "export"	Unreviewed: recorded by the 2026-11-13 audit
 worker/HistoryObject.vibe	write/callback	name === "fold"	Unreviewed: recorded by the 2026-11-13 audit
 worker/HistoryObject.vibe	write/callback	name === "note"	Unreviewed: recorded by the 2026-11-13 audit
 worker/HistoryObject.vibe	write/callback	name === "plan"	Unreviewed: recorded by the 2026-11-13 audit
 worker/HistoryObject.vibe	write/callback	name === "start"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Http.vibe	afterOf	raw === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Http.vibe	answer	after === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Http.vibe	answer	body === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Http.vibe	answer	body === undefined || body.name.length > MAX_NAME	Unreviewed: recorded by the 2026-11-13 audit
-worker/Http.vibe	answer	conversations.controlTour === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Http.vibe	answer	refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Http.vibe	answer	refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Http.vibe	answer	refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Http.vibe	answer	refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Http.vibe	answer	route.kind === "post"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answer	route.kind === "read"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answer	route.kind === "tour-control"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answer	route.kind === "tour"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answer	route.kind === "tour" || route.kind === "end-tour"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answer	route.kind === "wiki"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Http.vibe	answerHistory	afterOf(url) === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Http.vibe	answerHistory	body === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Http.vibe	answerHistory	route.kind !== "history-write"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answerHistory	route.kind === "history-events"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	answerHistory	text === ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Http.vibe	answerHistory	text === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Http.vibe	answerHistory	written.refusal === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Http.vibe	answerHistory/callback	error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Http.vibe	handle	actions === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Http.vibe	handle	commit === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Http.vibe	handle	history !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Http.vibe	handle	url.pathname === "/api/actions" || url.pathname.startsWith("/api/actions/")	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	handle	url.pathname === HEALTH_PATH	Unreviewed: recorded by the 2026-11-13 audit
 worker/Http.vibe	handle	url.pathname.startsWith("/api/sandboxes/")	Unreviewed: recorded by the 2026-11-13 audit
-worker/Http.vibe	handleConversations	route === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Http.vibe	handleConversations	url.pathname === HEALTH_PATH	Unreviewed: recorded by the 2026-11-13 audit
 worker/index.vibe	fetch	route !== "fetch"	Unreviewed: recorded by the 2026-11-13 audit
 worker/index.vibe	fetch	route === "api" && env.API !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/index.vibe	fetch	route === "health"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues	authority.authorize !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	executeIssues	failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues	Option.isSome(injected)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/admitted	typeof known === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	executeIssues/callback	!known	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	executeIssues/callback	!observed.fresh && !failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	actor === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	executeIssues/callback	completed?._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	executeIssues/callback	completed?._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	executeIssues/callback	error._tag === "IssueFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	executeIssues/callback	failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	found._tag === "Failure" && found.failure._tag === "@smthrs/engine-store/RunNotFound"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	found._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	Option.isSome(receipt) && receipt.value._tag === "Complete"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	executeIssues/callback	original.op === "read" && original.resumeKey !== undefined && original.resumeOp !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	original.resumeRecovery === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	executeIssues/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/callback	step === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	executeIssues/callback	typeof previous === "number" && Number.isSafeInteger(previous)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/perform	raw === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	executeIssues/perform	request.op === "accept" && current !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	executeIssues/perform	request.op === "spec-revise" || request.op === "spec-review"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	executeIssues/perform/callback	item.number === request.number	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	executeIssues/perform/callback	receipt.approvedAt === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	executeIssues/perform/callback	vip !== "Accepted" || receipt === undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform	authority.authorize !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	githubHost/perform	first._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	githubHost/perform	first.failure.reason !== "connect"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform	request.op === "read" && actor?.connection !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	!observed.items.some(issue => issue.number === made.number && issue.vip !== "")	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	!plan.allowed	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	actor === undefined || request.key === ""	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	approved.vip !== "Accepted"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	committing	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	committing && (login.trim() === "" || !before.assignees.some(choice => choice.login.toLowerCase() === login.toLowerCase()))	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	observed.stale === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	githubHost/perform/callback	Option.isNone(writer)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	plan.close	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback	plan.label	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	request.op !== "draft" && actor.connection === undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	request.op === "accept"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	request.op === "accept"	Unreviewed: recorded by the 2026-11-13 audit
@@ -790,88 +481,56 @@ worker/Issues.vibe	githubHost/perform/callback	request.op === "read"	Unreviewed:
 worker/Issues.vibe	githubHost/perform/callback	request.op === "split"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	target.assignee === ""	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/callback	writeRefusal !== ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback/callback	authority.authorize !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	githubHost/perform/callback/callback	current.connection === undefined || Option.isNone(delegate)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/callback/callback	Option.isNone(head)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/perform/run/callback	error._tag === "IssueFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
+worker/Issues.vibe	githubHost/perform/callback/callback	current === undefined || current.id !== actor.id || !issuePermission(current.role, request.op)	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/perform/run/callback	failure.reason === "connect" && authority.lost !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/read	action !== ""	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/read	at === -1	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/read	comments.truncated	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/read	cursor !== null && pages >= 50	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	i.pull_request !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	githubHost/read	number === i.number	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/read	number === i.number && vip !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/read	number > 0	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	Number.isSafeInteger(parent)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	observe === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	githubHost/read	own._tag === "Failure" && issueFailureOf(own.failure).reason !== "missing"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	own._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	githubHost/read	parentUrl.startsWith(prefix)	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/read	review.user !== null && !reviewers.includes(review.user.login)	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/read	reviews.truncated	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	githubHost/read	vip === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	githubHost/read/callback	a === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	githubHost/read/callback	a.login === repo.agent	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	githubHost/read/callback	b.login === repo.agent	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	issueFailureOf	refusal !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	issueFailureOf	typeof details?.retryAfterMillis === "number"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	issueFailureOf	typeof status === "number"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	publicIssues	reads === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	serveIssues	!new URL(request.url, "https://issues.invalid").pathname.startsWith("/api/issues")	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	serveIssues	actor !== undefined && accepted !== undefined && (payload.op === "new" || payload.op === "comment")	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	serveIssues	request.method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Issues.vibe	serveIssues	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Issues.vibe	serveIssues	result.failure._tag === "IssueFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Issues.vibe	serveIssues	result.failure._tag === "IssueFailure" && result.failure.unwritten === true	Unreviewed: recorded by the 2026-11-13 audit
 worker/Issues.vibe	verifiedVip	tail === "" || !Number.isSafeInteger(number)	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	!(try box.running)	Open: machine lifecycle
-worker/machineObject.vibe	machineObject/callback/apply	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/machineObject.vibe	machineObject/callback/apply	admission.ok	Unreviewed: recorded by the 2026-11-13 audit
+worker/machineObject.vibe	machineObject/callback/apply	!currentRunning(generation, previous.generation, previous.phase) || !(try box.running)	Unreviewed: recorded by the 2026-11-13 audit
+worker/machineObject.vibe	machineObject/callback/apply	checkpointPhase(previous.phase) && (try box.running)	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	kind === "command"	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	kind === "lease"	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	kind === "start"	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	kind === "status"	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	kind === "stop"	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	setup !== 0	Open: machine lifecycle
-worker/machineObject.vibe	machineObject/callback/apply	snapshot === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/machineObject.vibe	machineObject/callback/apply	try box.running	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply	try box.running	Unreviewed: recorded by the 2026-11-13 audit
+worker/machineObject.vibe	machineObject/callback/apply/callback	!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)	Unreviewed: recorded by the 2026-11-13 audit
+worker/machineObject.vibe	machineObject/callback/apply/callback	!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)	Unreviewed: recorded by the 2026-11-13 audit
 worker/machineObject.vibe	machineObject/callback/apply/callback	answer.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/machineObject.vibe	machineObject/callback/apply/callback	prior !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/MainLog.vibe	githubMain/since	found !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Objects.vibe	controlTour	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Objects.vibe	controlTour	action === "resume"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Objects.vibe	controlTour/callback	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Objects.vibe	controlTour/callback	action === "resume"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	dispatcher/start	current === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Objects.vibe	dispatcher/start	scan.phase !== "attempt"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	dispatcher/start	scan.started	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	dispatcher/start	scan.started	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	dispatcher/tour	(try promise(() => storage.get(dispatchedKey(executionId)))) !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/Objects.vibe	dispatcher/tour	started	Unreviewed: recorded by the 2026-11-13 audit
 worker/Objects.vibe	dispatcher/tour	started	Unreviewed: recorded by the 2026-11-13 audit
 worker/Objects.vibe	executionResult/callback	intent.flow === Reply._tag	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	existingReceipt/callback/callback	cancelled === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Objects.vibe	openWiki	opened	Unreviewed: recorded by the 2026-11-13 audit
 worker/Objects.vibe	post	!Schema.is(PostBody)({ clientId, name, text })	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	post	owner === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Objects.vibe	tour	held !== undefined && unanswered(try sequencer.snapshot()).length > 0	Unreviewed: recorded by the 2026-11-13 audit
 worker/Objects.vibe	wakeTour	intent.flow !== Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
-worker/Objects.vibe	wakeTour	raw === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Objects.vibe	wakeTour	state !== undefined && (Option.isNone(state) || state.value._tag === "Suspended")	Unreviewed: recorded by the 2026-11-13 audit
-worker/ObjectStartup.vibe	make/callback/callback	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ObjectStartup.vibe	make/callback/callback	result._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ObjectStartup.vibe	make/callback/callback	result._tag === "Success" || !Deferred.doneUnsafe(pending, fail(new ObjectStartupFailed({ objectClass, objectId, codeVersion })))	Unreviewed: recorded by the 2026-11-13 audit
 worker/ObjectStartup.vibe	make/get	member === "fetch"	Unreviewed: recorded by the 2026-11-13 audit
 worker/ObjectStartup.vibe	make/get	member === "health"	Unreviewed: recorded by the 2026-11-13 audit
 worker/ObjectStartup.vibe	make/get	member === "none" || typeof property !== "string"	Unreviewed: recorded by the 2026-11-13 audit
-worker/ObjectStartup.vibe	make/get	typeof property === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ObjectStartup.vibe	make/health/callback	patience !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ObjectStartup.vibe	step/callback	steps._tag === "None"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ObjectStorage.vibe	ledgerOver/read	typeof value === "number"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/PublicReads.vibe	publicReads	setup === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/PublicReads.vibe	readSetup	Option.isNone(origin) || Option.isNone(secret)	Unreviewed: recorded by the 2026-11-13 audit
 worker/Reply.vibe	agentOf/resolve	id === AGENT_SEAT	Unreviewed: recorded by the 2026-11-13 audit
 worker/Reply.vibe	answer/callback	answered === "busy"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Reply.vibe	answer/callback	Cause.hasInterrupts(cause)	Unreviewed: recorded by the 2026-11-13 audit
@@ -880,35 +539,20 @@ worker/Reply.vibe	answer/callback	when { _tag: "Failed"	Unreviewed: recorded by 
 worker/Reply.vibe	compose	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
 worker/Reply.vibe	compose	disposition === "answered"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Reply.vibe	compose	disposition === "empty"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	Exit.isFailure(answered)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	Exit.isFailure(answered)	Unreviewed: recorded by the 2026-11-13 audit
 worker/Reply.vibe	compose	Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	Exit.isSuccess(answered)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	failure === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Reply.vibe	compose	failure instanceof HarnessError.HarnessError && typeof failure.cause === "object" && failure.cause !== null && "_tag" in failure.cause && failure.cause._tag === "vibelang/DailyBudgetExceeded"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Reply.vibe	compose	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	model === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Reply.vibe	compose	progress.usageValid	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	compose	typeof rawText === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Reply.vibe	fold	event.delta.type === "text-delta"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	fold	event.usage.totalTokens === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Reply.vibe	promptOf	form === "asked"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Reply.vibe	promptOf	form === "none" || asked === undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/Reply.vibe	respond/callback	!next.text.startsWith(shown)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	respond/callback	event === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Reply.vibe	respond/callback	next.text === shown	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	run	tools.actions === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Reply.vibe	tagOf	typeof error !== "object" || error === null || !("_tag" in error)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Reply.vibe	tagOf	typeof tag === "string"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ReplyAccounting.vibe	alarm	existing !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ReplyAccounting.vibe	alarm	intent !== undefined && settled !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/ReplyAccounting.vibe	alarm	raw === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/ReplyAccounting.vibe	alarm	receipts.length > 0	Unreviewed: recorded by the 2026-11-13 audit
 worker/ReplyAccounting.vibe	alarm	step === "return"	Unreviewed: recorded by the 2026-11-13 audit
 worker/ReplyAccounting.vibe	alarm	step === "rewake-return"	Unreviewed: recorded by the 2026-11-13 audit
 worker/ReplyAccounting.vibe	tracked/admit	admitted	Unreviewed: recorded by the 2026-11-13 audit
-worker/ReplyAccounting.vibe	tracked/checkpoint	pending !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/SandboxAccounts.vibe	gatewayWithAccounts/callback	Option.isNone(image)	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxBenchmark.vibe	benchmarkFetch/callback	answer === "forbidden"	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxBenchmark.vibe	benchmarkFetch/callback	answer === "method"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sandboxes.vibe	execute	kind === "command"	Unreviewed: recorded by the 2026-11-13 audit
@@ -917,15 +561,11 @@ worker/Sandboxes.vibe	execute	kind === "start"	Unreviewed: recorded by the 2026-
 worker/Sandboxes.vibe	execute	kind === "start"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sandboxes.vibe	execute	kind === "stop"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sandboxes.vibe	execute	kind === "stop"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sandboxes.vibe	open/alarm	at === null	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Sandboxes.vibe	open/hold/callback	count === 0	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sandboxes.vibe	open/read	!rows[0]	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sandboxes.vibe	open/receipt	!rows[0]	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sandboxes.vibe	open/write/callback/callback	receipt	Unreviewed: recorded by the 2026-11-13 audit
 worker/SandboxHttp.vibe	sandboxRequest	!match	Unreviewed: recorded by the 2026-11-13 audit
-worker/SandboxHttp.vibe	sandboxRequest/callback	body === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/SandboxHttp.vibe	sandboxRequest/callback	error._tag === "Refused"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/SandboxHttp.vibe	sandboxRequest/callback	error.reason === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/SandboxHttp.vibe	sandboxRequest/callback	verb === "not-found" || action === undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/SandboxHttp.vibe	sandboxRequest/callback	verb === "read"	Unreviewed: recorded by the 2026-11-13 audit
 worker/SandboxHttp.vibe	sandboxRequest/callback	write === "command-missing" || body.command === undefined	Unreviewed: recorded by the 2026-11-13 audit
@@ -935,105 +575,56 @@ worker/SandboxHttp.vibe	sandboxRequest/callback	write === "stop"	Unreviewed: rec
 worker/sandboxProbeContainer.vibe	normalizeCall	shape === "as-is"	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeContainer.vibe	normalizeCall	shape === "duration"	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeContainer.vibe	probeBox	mode === "passthrough"	Unreviewed: recorded by the 2026-11-13 audit
-worker/sandboxProbeContainer.vibe	probeBox/onCall	slot.kept	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	direct	!admitted(owner, try Clock.currentTimeMillis)	Unreviewed: recorded by the 2026-11-13 audit
-worker/sandboxProbeFetch.vibe	direct	answer === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/sandboxProbeFetch.vibe	direct	Option.isNone(body)	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	leaseClamped/getByName/apply	kind !== "lease"	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	probeFetch/callback	!(try authorized(token, request.headers["authorization"]))	Unreviewed: recorded by the 2026-11-13 audit
-worker/sandboxProbeFetch.vibe	probeFetch/callback	answer === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/sandboxProbeFetch.vibe	probeFetch/callback	route === "container"	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	probeFetch/callback	route === "machine"	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	probeFetch/callback	route === "not-found"	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	probeFetch/callback	route === "sandbox"	Unreviewed: recorded by the 2026-11-13 audit
-worker/sandboxProbeFetch.vibe	recorded	calls === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/sandboxProbeFetch.vibe	sweep	admitted(owner, now)	Unreviewed: recorded by the 2026-11-13 audit
 worker/sandboxProbeFetch.vibe	sweep	read.ok && read.snapshot.status === "running"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sequencer.vibe	entryOf	at < 0	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sequencer.vibe	make/controlTour/callback	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sequencer.vibe	make/controlTour/callback	action === "seek"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/controlTour/callback	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/endTour	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/ensureDispatched	dispatch === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Sequencer.vibe	make/ensureDispatched	posts.length > 0	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sequencer.vibe	make/ensureDispatched	tour !== ""	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sequencer.vibe	make/finish/callback	plan.append !== ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/finish/callback	plan.restart	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sequencer.vibe	make/follow/callback	replay.length === 0	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/grant/callback	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/post	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
 worker/Sequencer.vibe	make/record	!decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/settle/callback	step.records	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/start/callback	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/startTour	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-worker/Sequencer.vibe	make/state	current !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/SpecificationReviewers.vibe	callback/review	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
 worker/SpecificationReviewers.vibe	callback/review	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
-worker/SpecificationReviewers.vibe	callback/review	model === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/SpecificationReviewers.vibe	callback/review	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/SpecificationReviewers.vibe	specificationModels	Option.isSome(configured)	Unreviewed: recorded by the 2026-11-13 audit
 worker/SubmissionBase.vibe	submissionBase	step === "decode"	Unreviewed: recorded by the 2026-11-13 audit
 worker/SubmissionBase.vibe	submissionBase	step === "observe" || storage === undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/SubmissionBase.vibe	submissionBase	storage !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/VipDraft.vibe	callback/draft	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
 worker/VipDraft.vibe	callback/draft	!agent.available	Unreviewed: recorded by the 2026-11-13 audit
 worker/VipDraft.vibe	callback/draft	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
-worker/VipDraft.vibe	callback/draft	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/VipDraft.vibe	callback/run	model === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/VipDraft.vibe	callback/run	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Wiki.vibe	executeWiki	authority.authorize !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Wiki.vibe	executeWiki	failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	executeWiki	Option.isSome(injected)	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	executeWiki/callback	!known	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	executeWiki/callback	!observed.fresh && !failed	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	executeWiki/callback	error._tag === "WikiFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Wiki.vibe	executeWiki/callback	failed	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	executeWiki/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	executeWiki/callback	step === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Wiki.vibe	githubWikiHost/loadDraft	storage === undefined || person === ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform	authority.authorize !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Wiki.vibe	githubWikiHost/perform	first._tag === "Success"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Wiki.vibe	githubWikiHost/perform	first.failure.reason !== "connect"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform	path === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Wiki.vibe	githubWikiHost/perform	request.op === "read" && actor?.connection !== undefined	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	githubWikiHost/perform/callback	!authored || !changed	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	githubWikiHost/perform/callback	actor === undefined || request.key === ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	actor.connection === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Wiki.vibe	githubWikiHost/perform/callback	draft === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Wiki.vibe	githubWikiHost/perform/callback	observed.stale === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Wiki.vibe	githubWikiHost/perform/callback	Option.isNone(writer)	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.base !== current.text	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "draft"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "read"	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.text === current.text	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.text.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.text.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback	storage !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Wiki.vibe	githubWikiHost/perform/callback	storage !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Wiki.vibe	githubWikiHost/perform/callback	storage !== undefined && retained?.text === request.text	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback/callback	authority.authorize !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Wiki.vibe	githubWikiHost/perform/callback/callback	current.connection === undefined || Option.isNone(delegate)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/callback/callback	Option.isNone(head)	Unreviewed: recorded by the 2026-11-13 audit
+worker/Wiki.vibe	githubWikiHost/perform/callback/callback	current === undefined || current.id !== actor.id || !wikiPermission(current.role, request.op) || !wikiSubmissionAllowed(request.op, current.kind ?? "person")	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	githubWikiHost/perform/callback/callback	pinned.text !== request.base	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	githubWikiHost/perform/callback/callback	storage !== undefined && !touched	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/perform/run/callback	error._tag === "WikiFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Wiki.vibe	githubWikiHost/perform/run/callback	failure.reason === "connect" && authority.lost !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	githubWikiHost/readSource	Option.isNone(file)	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	publicWiki	reads === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Wiki.vibe	serveWiki	!url.pathname.startsWith("/api/wiki")	Unreviewed: recorded by the 2026-11-13 audit
 worker/Wiki.vibe	serveWiki	request.method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	serveWiki	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Wiki.vibe	serveWiki	result.failure._tag === "WikiFailure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/Wiki.vibe	serveWiki	result.failure._tag === "WikiFailure" && result.failure.unwritten === true	Unreviewed: recorded by the 2026-11-13 audit
-worker/Wiki.vibe	wikiFailureOf	refusal !== undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Wiki.vibe	wikiFailureOf	typeof details?.retryAfterMillis === "number"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/Wiki.vibe	wikiFailureOf	typeof status === "number"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
 worker/WikiDraft.vibe	callback/draft	!admission.admitted	Unreviewed: recorded by the 2026-11-13 audit
 worker/WikiDraft.vibe	callback/draft	!agent.available	Unreviewed: recorded by the 2026-11-13 audit
 worker/WikiDraft.vibe	callback/draft	meter.ledgerUnavailable()	Unreviewed: recorded by the 2026-11-13 audit
-worker/WikiDraft.vibe	callback/draft	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/WikiDraft.vibe	callback/run	model === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/WikiDraft.vibe	callback/run	result._tag === "Failure"	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
-worker/WikiTools.vibe	wikiTools	drafting === undefined	Absence or tag test: whether a value is present, or which variant it is; no decision of its own
