@@ -78,7 +78,11 @@ const ingest = (
     )
   )
 
-/** Never called; tsc checks it (#2704). */
+/**
+ * Type-only regression (#2704), checked by the package's `check` target with
+ * `vibelang -p tsconfig.test.json --noEmit`. This probe is never called:
+ * `expectTypeOf` checks that an unprovided Control service prevents execution.
+ */
 const unprovidedServiceProbe = () => {
   const body = Effect.flatMap(Channels.Channels, (channels) => channels.register(signedChannel()))
   const missing = body.pipe(Effect.provide(Channels.layerMemory))
@@ -172,13 +176,6 @@ const ISSUE_BODY = JSON.stringify({
 // This is the requirement the 0.x end-to-end fault case `case17-webhook-bad-signature`
 // pinned against the deleted gateway. The gateway is gone; the requirement is
 // not, so it is re-pinned here against the channel that replaced it.
-describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {
-  it("rejects a Channels layer whose control provider was removed", () => {
-    // The assertion is the `@ts-expect-error` directive above.
-    expect(unprovidedServiceProbe).toBeTypeOf("function")
-  })
-})
-
 describe("case 17: a WebhookChannel bound with the sha256 verifier rejects a bad signature", () => {
   it("refuses a sha256= signature computed with a different secret", async () => {
     const calls: Array<string> = []

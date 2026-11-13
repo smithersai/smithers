@@ -31,9 +31,10 @@ export default defineConfig({
       // when a case closes; never lower them.
       //
       // The numbers carry no slack, so any new uncovered branch fails the
-      // gate. Only the three `test/*Live.test.ts` suites change the figures,
-      // and only upward: they execute more of `src` when a credential is
-      // present, and `include` fixes the denominator whether they run or not.
+      // gate. The optional suites execute more of `src` when enabled:
+      // `test/GitHubLive.test.ts` uses `GITHUB_TOKEN` or `SMITHERS_GITHUB_TOKEN`;
+      // `test/Proposals.public.test.vibe` uses `GITHUB_PUBLIC_TESTS`.
+      // `include` fixes the denominator whether they run or not.
       //
       // The one shortfall is `core/SourceStore.ts:930`, the PostgreSQL arm of
       // the text search. The database matrix (`pnpm coverage`, the package's
