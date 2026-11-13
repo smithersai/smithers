@@ -19,9 +19,34 @@ export error NoExecution {
 const executions = Metric.counter("vibelang_fuzz_executions", { incremental: true })
 
 /**
+ * Seeded executions every target runs whatever its budget: at the suite's fixed seed they are the same inputs on every
+ * box, so the lines they reach never depend on how loaded the host is (0015, "A seeded floor").
+ */
+export const FLOOR = 32
+
+/**
+ * Targets whose one execution takes seconds, at the executions they ran within their budget in `fuzz2-full19`
+ * (2026-11-13): a floor of 32 would add up to 20 minutes each. Lines past these floors have chosen inputs.
+ */
+export const FLOORS: Readonly<Record<string, number>> = {
+  "accounts/broker-sequences": 2, "issues/steered-host": 2, "wiki/steered-host": 2, "surfaces/cli-rejects-garbage": 2,
+  "surfaces/history-cli-arguments": 2, "signin/steered-wait-refusals": 3, "signin/steered-waits": 3, "api-objects/world": 3,
+  "history/startup": 3, "actions/live-client": 3, "surfaces/history-mcp-arguments": 3, "accounts/broker-site": 3,
+  "mock/factory-edges": 3, "actions/run-answers": 3, "reply/answers": 3, "web/startup": 4, "surfaces/mcp-arguments": 4,
+  "surfaces/cli-arguments": 4, "objects/steered-host": 4, "vip/writer": 4, "surfaces/command-registry": 4,
+  "web/native-runtime": 4, "mock/agent-and-machine": 4, "actions/held-replies": 4, "browser/history-navigation-and-work": 4,
+  "surfaces/process-edges": 5, "actions/steered-runs": 5, "signin/session-files": 5, "issues/http-surface": 5,
+  "history/publisher": 5, "browser/first-visit-tour": 5, "browser/random-interactions": 5, "signin/steered": 6,
+  "accounts/worker-lifecycle": 6, "mock/room-isolation": 6, "browser/accounts-and-authority": 6, "scripts/agent-context": 7,
+  "actions/history-host": 10, "actions/mock-sign-out-mid-run": 10, "actions/object-lifecycles": 11,
+  "mock/scripted-actions": 12, "surfaces/every-command": 19,
+}
+
+/**
  * Every target has its own wall budget; corpus replay happens on every invocation.
  * `chosen` inputs run once per invocation, before the search, whatever the seed and budget: an arm a full run must
- * reach gets one, so the gate never depends on a draw (0015).
+ * reach gets one, so the gate never depends on a draw (0015). The search then runs at least the target's floor of
+ * seeded executions past its budget; `FUZZ_FLOOR_ONLY=1` runs exactly the floor, which is what every run covers.
  */
 export effect function run<S extends Schema.Constraint>(
   name: string,
@@ -38,7 +63,9 @@ export effect function run<S extends Schema.Constraint>(
       // The deadline also covers replaying saved failures; a target whose replay outlasts a short budget declares a floor (0015).
       const budget = options?.minimum === undefined ? configured : Duration.max(configured, Duration.fromInputUnsafe(options.minimum))
       const seed = try Config.withDefault(Config.String("FUZZ_SEED"), "20261107")
-      const limit = try Config.option(Config.Int("FUZZ_EXECUTIONS"))
+      const floor = FLOORS[name] ?? FLOOR
+      const floorOnly = try Config.withDefault(Config.Boolean("FUZZ_FLOOR_ONLY"), false)
+      const limit = floorOnly ? Option.some(floor) : try Config.option(Config.Int("FUZZ_EXECUTIONS"))
       const path = try Path.Path
       const directory = path.resolve("fuzz")
       // FUZZ_CORPUS moves both stores under one directory (the gate's own tests); unset, they are the checked-in failures and the local input cache.
@@ -59,20 +86,16 @@ export effect function run<S extends Schema.Constraint>(
       if (chosen.length > 0) try Effect.logInfo("vibelang.fuzz.chosen").pipe(Effect.annotateLogs({ target: name, inputs: chosen.length }))
       const target = try Effect.try(() => Fuzz.target(schema, judge, { id: name, revision: options?.revision ?? "1", ...(options?.codec === undefined ? {} : { codec: options.codec }) }))
       const searched = { seed, maxShrinks: name.startsWith("browser/") ? 16 : 64, ...(execution === undefined ? {} : { execution }) }
-      const first = try Fuzz.runTarget(target, { duration: budget, ...searched, ...(Option.isSome(limit) ? { executions: limit.value } : {}) }).pipe(Effect.provideService(Fuzz.Corpus, store))
-      // The deadline covers the replay of saved failures, so a slow box can spend the whole budget replaying them and
-      // start no fresh execution (0015). Those replays passed; one more run skips them and executes once, so the gate
-      // below judges the property and not the box. FUZZ_EXECUTIONS and a finding keep the first report.
-      const oneMore = first._tag === "Passed" && first.stats.executions === 0 && Option.isNone(limit)
-      const inputsOnly: Fuzz.Store = { load: (id) => store.load(id).pipe(Effect.map((entries) => entries.filter((entry) => entry.kind === "Input"))), save: store.save }
-      const report = oneMore ? try Fuzz.runTarget(target, { ...searched, executions: 1 }).pipe(Effect.provideService(Fuzz.Corpus, inputsOnly)) : first
+      // The deadline covers the replay of saved failures too, so a slow box could spend it all replaying them; the
+      // floor still runs (0015). FUZZ_EXECUTIONS caps it, as `executions: 0` does for the replay-only mode.
+      const report = try Fuzz.runTarget(target, { duration: budget, minExecutions: floor, ...searched, ...(Option.isSome(limit) ? { executions: limit.value } : {}) }).pipe(Effect.provideService(Fuzz.Corpus, store))
       const ended = try Clock.currentTimeMillis
       try Metric.update(Metric.withAttributes(executions, { target: name }), report.stats.executions)
-      try Effect.logInfo("vibelang.fuzz.target").pipe(Effect.annotateLogs({ target: name, outcome: report._tag, executions: report.stats.executions, regressions: first.stats.regressions, stoppedBy: report.stats.stoppedBy, oneMore }))
+      try Effect.logInfo("vibelang.fuzz.target").pipe(Effect.annotateLogs({ target: name, outcome: report._tag, executions: report.stats.executions, regressions: report.stats.regressions, stoppedBy: report.stats.stoppedBy, floor }))
       const fs = try FileSystem.FileSystem
       const receipts = path.resolve("fuzz-results")
       try fs.makeDirectory(receipts, { recursive: true })
-      try fs.writeFileString(path.join(receipts, name.replaceAll("/", "--") + ".json"), JSON.stringify({ target: name, seed, budget: Duration.toMillis(budget), outcome: report._tag, began, ended, elapsedMs: ended - began, oneMore, stats: { ...report.stats, regressions: first.stats.regressions } }))
+      try fs.writeFileString(path.join(receipts, name.replaceAll("/", "--") + ".json"), JSON.stringify({ target: name, seed, budget: Duration.toMillis(budget), outcome: report._tag, began, ended, elapsedMs: ended - began, floor, stats: report.stats }))
       const finding = try Effect.try(() => Fuzz.formatReport(report))
       if (finding !== undefined) throw new Finding({ report: finding })
       try gate(name, budget, limit, report.stats)

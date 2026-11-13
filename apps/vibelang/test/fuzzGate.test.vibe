@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { expect, it } from "@effect/vitest"
-import { gate, run } from "../fuzz/run.vibe"
+import { FLOOR, FLOORS, gate, run } from "../fuzz/run.vibe"
 
 const config = (values: Record<string, string>) => Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values)))
 
@@ -28,7 +28,7 @@ it.live("run passes a target that executed, and FUZZ_EXECUTIONS=0 replays withou
 effect function receipt(name: string) {
   provide NodeServices.layer {
     const text = try (try FileSystem.FileSystem).readFileString(`fuzz-results/${name}.json`)
-    return try Effect.try(() => JSON.parse(text) as { readonly budget: number; readonly elapsedMs: number; readonly oneMore: boolean; readonly stats: { readonly executions: number; readonly regressions: number } })
+    return try Effect.try(() => JSON.parse(text) as { readonly budget: number; readonly elapsedMs: number; readonly floor: number; readonly stats: { readonly executions: number; readonly regressions: number } })
   }
 }
 
@@ -43,9 +43,10 @@ it.live("a target's minimum budget outlasts a shorter FUZZ_BUDGET, and a longer 
   expect((try receipt("gate--floor")).budget).toBe(600)
 }, 30_000)
 
-// A slow box can spend the whole budget replaying saved failures; the target still executes once, so the gate judges
-// the property and not the box (0015). The first run saves a failure; the second replays it for 50 ms of a 1 ms budget.
-it.live("a target whose saved-failure replay outlasts its budget executes once more and passes", () => effect {
+// A slow box can spend the whole budget replaying saved failures; the target still runs its floor of seeded executions,
+// so the gate judges the property and not the box (0015). The first run saves a failure; the second replays it for
+// 50 ms of a 1 ms budget, then runs the floor at 50 ms each.
+it.live("a target whose saved-failure replay outlasts its budget still runs its floor and passes", () => effect {
   provide NodeServices.layer {
     const fs = try FileSystem.FileSystem
     const corpus = try fs.makeTempDirectory()
@@ -61,12 +62,36 @@ it.live("a target whose saved-failure replay outlasts its budget executes once m
     failing = false
     try run("gate/slow-replay", Schema.Int, property).pipe(config({ ...values, FUZZ_BUDGET: "1 millis" }))
     const fed = try receipt("gate--slow-replay")
-    expect(fed.oneMore).toBe(true)
+    expect(fed.floor).toBe(FLOOR)
     expect(fed.stats.regressions).toBe(1)
-    expect(fed.stats.executions).toBe(1)
-    // Without a saved failure to replay, the budget alone decides and no extra run happens.
+    expect(fed.stats.executions).toBe(FLOOR)
+    // A fast target passes its floor within the budget, and the budget decides how far past it the search goes.
     try run("gate/fed", Schema.Int, (n) => Number.isInteger(n)).pipe(config({ ...values, FUZZ_BUDGET: "200 millis" }))
-    expect((try receipt("gate--fed")).oneMore).toBe(false)
+    expect((try receipt("gate--fed")).stats.executions).toBeGreaterThan(FLOOR)
     try fs.remove(corpus, { recursive: true })
+  }
+}, 30_000)
+
+// The floor's inputs are the seed's first executions, so a target's seeded floor covers the same values on any box with
+// an empty input cache (a fresh checkout), and FUZZ_FLOOR_ONLY=1 runs exactly that floor: a slow target's own, or the suite's.
+it.live("FUZZ_FLOOR_ONLY runs a target's floor and no more, the same values for the same seed", () => effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const fresh = effect () => ({ FUZZ_BUDGET: "1 millis", FUZZ_SEED: "7", FUZZ_FLOOR_ONLY: "true", FUZZ_CORPUS: try fs.makeTempDirectory() })
+    const seen: Array<Array<number>> = []
+    for (const round of [0, 1]) {
+      const values: Array<number> = []
+      seen.push(values)
+      const settings = try fresh()
+      try run("gate/floor-only", Schema.Int, (n) => { values.push(n); return true }).pipe(config(settings))
+      expect((try receipt("gate--floor-only")).stats.executions).toBe(FLOOR)
+      try fs.remove(settings.FUZZ_CORPUS, { recursive: true })
+    }
+    expect(seen[0]!.length).toBe(FLOOR)
+    expect(seen[1]).toEqual(seen[0])
+    const settings = try fresh()
+    try run("issues/steered-host", Schema.Int, (n) => Number.isInteger(n)).pipe(config(settings))
+    expect((try receipt("issues--steered-host")).stats.executions).toBe(FLOORS["issues/steered-host"])
+    try fs.remove(settings.FUZZ_CORPUS, { recursive: true })
   }
 }, 30_000)
