@@ -142,6 +142,48 @@ it.effect("lowers an agent step to the host's agent action with the prompt rende
     const unoffered = yield* Effect.result(run({ ...input, allowedActions: [] }))
     expect(unoffered._tag === "Failure" && unoffered.failure.code).toBe("action_not_allowed")
   }))
+it.effect("executes escaped instruction modules beyond the old source transport limit", () =>
+  Effect.gen(function*() {
+    const instructions = "\"\\\n".repeat(21_000)
+    const declaration = `const instructions = [\n${
+      instructions.split("\n").map((line) => `  ${JSON.stringify(line)},`).join("\n")
+    }\n].join('\\n');`
+    const expanded = agent.replace("const instructions = ['Say ready.', 'Then stop.'].join('\\n');", declaration)
+    expect(new TextEncoder().encode(JSON.stringify(expanded)).length).toBeGreaterThan(256 * 1024)
+    const result = yield* run({
+      source: expanded,
+      expectedTag: "ready",
+      payload: { input: "" },
+      allowedActions: [RealmFlow.agentAction]
+    })
+    expect(result).toMatchObject({ _tag: "Action", payload: { prompt: instructions } })
+  }))
+it.effect("retains JSON-expanded legacy instructions through plan records and host output", () =>
+  Effect.gen(function*() {
+    const instructions = "\u0001".repeat(50_000)
+    const expanded = agent.replace(
+      "const instructions = ['Say ready.', 'Then stop.'].join('\\n');",
+      `const instructions = ${JSON.stringify(instructions)};`
+    )
+    expect(new TextEncoder().encode(JSON.stringify(instructions)).length).toBeGreaterThan(256 * 1024)
+    const result = yield* run({
+      source: expanded,
+      expectedTag: "ready",
+      payload: { input: "" },
+      allowedActions: [RealmFlow.agentAction]
+    })
+    expect(result).toMatchObject({ _tag: "Action", payload: { prompt: instructions } })
+    if (result._tag !== "Action") throw new Error("Expected an agent step")
+    expect(
+      yield* run({
+        source: expanded,
+        expectedTag: "ready",
+        payload: { input: "" },
+        allowedActions: [RealmFlow.agentAction],
+        receipts: [{ ...result, outcome: { _tag: "Success", value: "Done." } }]
+      })
+    ).toEqual({ _tag: "Complete", value: "Done." })
+  }))
 it.effect("refuses an agent step with host options, no prompt, a blank seat, or a prompt that isn't text", () =>
   Effect.gen(function*() {
     const input = { expectedTag: "ready", payload: { input: "" }, allowedActions: [RealmFlow.agentAction] }
@@ -212,7 +254,7 @@ it.effect("keeps bundle internals private, denies dynamic imports, and resets gl
 it.effect("bounds infinite computation and source size with sanitized errors", () =>
   Effect.gen(function*() {
     const input = { expectedTag: "x", payload: {}, allowedActions: [] }
-    for (const source of ["while (true) {}", " ".repeat(262145), "//" + "😀".repeat(70000)]) {
+    for (const source of ["while (true) {}", " ".repeat(4 * 1024 * 1024), "//" + "😀".repeat(1024 * 1024)]) {
       const result = yield* Effect.result(run({ ...input, source }))
       expect(result._tag).toBe("Failure")
       if (result._tag === "Failure") expect(result.failure.code).toBe("limit_exceeded")

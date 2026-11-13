@@ -246,6 +246,8 @@ A migration runs while older Workers still serve, and a rollback brings them bac
 
 ### Hyperdrive and the Workers
 
+`alchemy dev` preserves `sslmode=require`, `verify-ca` and `verify-full` on both database bindings. It refuses `sslrootcert` before constructing either binding because the development connection cannot express a CA file. Refusal diagnostics contain no credentials or URL.
+
 `pnpm run deploy` creates or updates:
 - the `ChatDatabase` Hyperdrive config, whose origin is the project's direct host, with its query cache off so an answer's history sees the latest writes;
 - ChatApi, bound to Hyperdrive, with Workers Logs and Traces persisted. It has no Cron Trigger: nothing answers on the server;

@@ -170,7 +170,8 @@ export const version = digestSync(JSON.stringify({
     stackBytes: QuickJSLifecycle.stackBytes,
     milliseconds: 1000,
     interrupts: 2000,
-    bytes: 256 * 1024
+    sourceBytes: 4 * 1024 * 1024,
+    bytes: 512 * 1024
   }
 }))
 
@@ -191,7 +192,7 @@ export const step = (input: Input): Effect.Effect<Result, RealmFlowError, QuickJ
     return yield* Effect.try({
       try: () => {
         if (QuickJSLifecycle.isQuarantined(module)) throw new RealmFlowError({ code: "runtime_failed" })
-        if (BoundedJson.encodedStringBytes(input.source, 256 * 1024) === undefined) {
+        if (BoundedJson.encodedStringBytes(input.source, 4 * 1024 * 1024) === undefined) {
           throw new RealmFlowError({ code: "limit_exceeded" })
         }
         const compiled = transform(input.source, { transforms: ["typescript", "imports"], filePath: "flow.ts" }).code
@@ -236,7 +237,7 @@ result = __run(exports.default, JSON.parse(${
             })); }
 catch (error) { if (__refusal === undefined) throw error; }
 if (__refusal !== undefined) return JSON.stringify({ _tag: 'Refused', code: __refusal });
-const output = JSON.stringify(result); if (new TextEncoder().encode(output).byteLength > 262144) throw Error('output_limit'); return output; })()`
+const output = JSON.stringify(result); if (new TextEncoder().encode(output).byteLength > 524288) throw Error('output_limit'); return output; })()`
           )
           // Evaluate once: getString above crosses only the bounded JSON output.
           // Only the realm's trusted code records a refusal, and only with its closed codes.

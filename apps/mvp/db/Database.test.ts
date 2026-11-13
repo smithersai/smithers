@@ -17,6 +17,18 @@ beforeAll(() => runtime.runPromise(Effect.void))
 afterAll(() => runtime.dispose())
 
 describe("hyperdrive", () => {
+  test.each(["verify-ca", "verify-full"])("preserves %s for Hyperdrive development connections", (mode) => {
+    expect(Database.hyperdrive(Redacted.make(`postgresql://app:password@db.example.com/app?sslmode=${mode}`)).sslmode)
+      .toBe(mode)
+  })
+
+  test.each(["require", "verify-ca", "verify-full"])("refuses a CA file the dev binding cannot preserve: %s", (mode) => {
+    const url = Redacted.make(
+      `postgresql://private-user:private-password@db.example.com/private-db?sslmode=${mode}&sslrootcert=private-ca.pem`,
+    )
+    expect(() => Database.hyperdrive(url)).toThrow("Hyperdrive dev cannot preserve DATABASE_URL CA settings")
+  })
+
   test("splits DATABASE_URL into Hyperdrive's origin, URL-decoded, and asks for TLS when the URL does", () => {
     const { origin, sslmode } = Database.hyperdrive(
       Redacted.make("postgresql://app%40team:p%2Fss%20word@db.example.com/my%20db?sslmode=require"),

@@ -49,7 +49,7 @@ export const readSource = (text: string, name: string): Read => {
  * - `calls`: its `flows` are at most `MAX_CALLS`, each one `allowed`, never a `flow/` or `run/` act;
  * - `model`: absent, or the endpoint's role `agent`, never a provider's model id; and no placement of its own, because
  *   where a person's flow runs is the host's to decide (./source.ts);
- * - `size`: 64 KiB at most.
+ * - `size`: 512 KiB at most.
  */
 export const checkSource = (text: string, name: string, allowed: ReadonlyArray<string>): ReadonlyArray<DraftCheck> => {
   const read = readSource(text, name)

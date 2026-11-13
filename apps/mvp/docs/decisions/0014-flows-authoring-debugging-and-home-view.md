@@ -2,6 +2,11 @@
 
 Status: amended by Will's ruling on Q1 (FLOW-2). Built: authoring a person's flows (decision 3), run pages (6), the run acts (9) and a repository's home (10) ([flows](../features/flows.md), [runs](../features/runs.md), [home](../features/home.md)). Not built: the QuickJS realm flow host for hand-edited code, a repository's flows (`flow_bindings`, `flow/refresh`, `flow/propose`) and Try ([your own flows](../features/flows.md#your-own-flows)). Design panel: Opus as lead and merger, and Sol; 2026-10-20. §1, §2 and Q1 amended 2026-10-20 by Will's ruling on Q1: one flow model, below. It answers the last item of Will's 2026-10-20 list: "ability to create a repositories own home view is important. Stuff related to flows debugging flows creting flows which wasn't listed is another one." It builds on [0002](0002-local-first.md) (the outbox), [0003](0003-flows-and-the-agent.md) (the registry and parity), [0004](0004-agent-ui-codemode-and-rendering.md) (views, the presentation realm, the frame and forms), [0005](0005-sandboxes-secrets-and-the-forge.md) (sandboxes), [0007](0007-roles-and-tags.md) (roles), [0008](0008-auth.md) (actors), [0009](0009-notifications-and-live-work.md) (`runs` rows and run acts) and [0011](0011-the-agent-runs-in-the-browser.md) (the browser engine). Decisions 0012 (the git flow) and 0013 (the branch workspace) are designed beside it. Opus and Sol designed independently; the [appendix](#appendix-opus-sol-and-final-compared) compares them point by point, and Will's one question is at the end.
 
+The personal-flow storage limits below are amended to 512 KiB for source and
+4 MiB for serialized draft files and request bodies. This retains instructions
+that grow during legacy conversion; the current bounds are documented in
+[flows](../features/flows.md#your-own-flows).
+
 ## Decision
 
 1. **Everything is a flow, and there is one flow model: `Flow.make` from `@smthrs/flow`.** Will, 2026-10-20, answering Q1: "No everything is a flow this ruling is clear prompt flows are just a type of code flow". A flow drafted from a prompt is not a second kind stored another way. It is flow source, a typed `Flow.make("<name>", { ... })` module with its payload, success, error and body, written by the system, so it reads, edits, versions and runs like any other flow and can grow into hand-written code.

@@ -65,8 +65,8 @@ export const DRAFT_ID_NAMESPACE = "e26f87c1-9c9b-4016-8fd7-1f01cea1a54b"
 /** What a person asks `flow/new` for: 1 to 4,096 characters. */
 export const MAX_REQUEST_CHARS = 4096
 
-/** A flow's source, and a draft's files in all: 64 KiB. */
-export const MAX_SOURCE_BYTES = 64 * 1024
+/** A flow's source, and a draft's files in all: 512 KiB, including converted legacy instructions. */
+export const MAX_SOURCE_BYTES = 512 * 1024
 
 /** Questions one round may ask. */
 export const MAX_QUESTIONS = 5
@@ -80,8 +80,8 @@ export const MAX_INPUT_CHARS = 8000
 /** The flows a person's flow may list in `flows:`. */
 export const MAX_CALLS = 20
 
-/** The largest body the flows and drafts routes read: the files plus room for the rest. */
-export const MAX_FLOWS_BODY_BYTES = 80 * 1024
+/** The largest flows or drafts body: six-byte JSON escapes for all source bytes, plus the round's metadata. */
+export const MAX_FLOWS_BODY_BYTES = 4 * 1024 * 1024
 
 /** How a draft round ends, and the states before and after. */
 export const DRAFT_STATUSES = ["drafting", "needs_you", "ready", "failed", "saved", "proposed"] as const

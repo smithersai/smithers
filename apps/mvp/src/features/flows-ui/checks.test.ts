@@ -111,7 +111,7 @@ describe("checkSource", () => {
     expect(failures(`"use sandbox"\n${renderSource(notes)}`)).toEqual(["model:placement"])
   })
 
-  test("parses: metadata the registry can't project; size: over 64 KiB", () => {
+  test("parses: metadata the registry can't project; size: over 512 KiB", () => {
     const unprojectable = renderSource(notes).replace("  capabilities: [],", "  capabilities: granted,")
     expect(failures(unprojectable)).toEqual(["parses:unsupported_module_metadata"])
     const big = renderSource({ ...notes, instructions: "x".repeat(MAX_SOURCE_BYTES) })

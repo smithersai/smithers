@@ -7,7 +7,7 @@ import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import { SqlClient, Statement } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import { MAX_SOURCE_BYTES } from "../src/features/flows-ui/contract.ts"
+import { MAX_FLOWS_BODY_BYTES, MAX_SOURCE_BYTES } from "../src/features/flows-ui/contract.ts"
 import type { DraftWrite } from "../src/features/flows-ui/schema.ts"
 import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "./Actor.ts"
@@ -181,7 +181,7 @@ describe("drafts", () => {
     expect((await send(h, "PUT", `/api/flow-drafts/${draftId}`)).status).toBe(405)
   })
 
-  test("a round that doesn't decode is 400, and one past 64 KiB of files is 413", async () => {
+  test("a round that doesn't decode is 400, and one past 512 KiB of files is 413", async () => {
     const h = await open()
     const draftId = crypto.randomUUID()
     expect(await json(await writeRound(h, draftId, "{"))).toEqual([400, { code: "invalid" }])
@@ -189,11 +189,28 @@ describe("drafts", () => {
     const huge = "x".repeat(MAX_SOURCE_BYTES + 1)
     expect(await json(await writeRound(h, draftId, round("notes", { files: [{ path: SOURCE_PATH, text: huge }] }))))
       .toEqual([413, { code: "too_large" }])
-    expect(await json(await writeRound(h, draftId, JSON.stringify({ pad: "x".repeat(81 * 1024) }))))
+    expect(await json(await writeRound(h, draftId, JSON.stringify({ pad: "x".repeat(MAX_FLOWS_BODY_BYTES + 1) }))))
       .toEqual([413, { code: "too_large" }])
     // Malformed UTF-8 is no round at all.
     expect(await json(await h.fetch(`/api/flow-drafts/${draftId}`, { method: "POST", body: new Uint8Array([0xff, 0xfe, 0x7b]) })))
       .toEqual([400, { code: "invalid" }])
+  })
+
+  test("a converted quote-heavy flow can be drafted, saved, read and edited within the expanded limits", async () => {
+    const h = await open()
+    const draftId = crypto.randomUUID()
+    const source = renderSource({
+      name: "notes", description: "D.", flows: [], instructions: '"'.repeat(35_000),
+    })
+    const files = [{ path: SOURCE_PATH, text: source }]
+    expect((await writeRound(h, draftId, round("notes", { files }))).status).toBe(200)
+    expect((await send(h, "POST", "/api/flows/save", { ...saving(draftId, "notes", source), description: "D." })).status)
+      .toBe(200)
+    expect((await json(await send(h, "GET", "/api/flows/source?name=notes")))[1]).toMatchObject({ source, revision: 1 })
+    const edited = source + "// Kept.\n"
+    expect((await send(h, "POST", "/api/flows/write", { ...writing("notes", 1, edited), description: "D." })).status)
+      .toBe(200)
+    expect((await json(await send(h, "GET", "/api/flows/source?name=notes")))[1]).toMatchObject({ source: edited, revision: 2 })
   })
 
   test("a saved draft never changes", async () => {

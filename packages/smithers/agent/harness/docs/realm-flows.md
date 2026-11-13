@@ -61,8 +61,9 @@ global intrinsic bindings are immutable. Repository code cannot replace JSON
 transport, collection methods, receipt checks, or the SDK's public functions.
 
 Each evaluation is limited to 64 MiB of QuickJS heap, a 128 KiB QuickJS stack,
-one second and 2,000 interpreter interrupt polls. Source, emitted node records
-and serialized output are bounded to 256 KiB; exceeding any bound refuses with
+one second and 2,000 interpreter interrupt polls. Source is bounded to 4 MiB in its JSON-encoded form, including quotes and escapes,
+so converted instruction modules fit. Emitted node records and serialized output
+are bounded to 512 KiB, including the JSON escapes of legacy instructions; exceeding any bound refuses with
 `limit_exceeded`. Errors expose only a refusal code (`invalid_source`,
 `execution_failed`, `limit_exceeded`, `runtime_failed`, `forbidden_import` or
 `action_not_allowed`);

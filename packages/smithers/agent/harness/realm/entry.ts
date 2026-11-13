@@ -124,7 +124,7 @@ __publish({
           return (record: unknown) =>
             Effect.sync(() => {
               recordBytes += new TextEncoder().encode(JSON.stringify(record)).byteLength
-              if (recordBytes > 262144) throw new Error("plan_limit")
+              if (recordBytes > 524288) throw new Error("plan_limit")
             })
         }
         if (key === "nodeRecordBytes") return undefined
