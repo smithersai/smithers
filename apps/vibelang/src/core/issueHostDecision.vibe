@@ -67,6 +67,33 @@ export function refusalReason(refusal: string): string {
   return refusal === "key_conflict" ? "invalid" : refusal
 }
 
+/**
+ * The refusal a GitHub issue write meets before it writes anything, or "" for none. A new, split or proposed issue
+ * needs a title; a split needs the issue it splits; a proposal needs its summary, example and prior art. Every other
+ * write needs its issue; a comment needs text; a commitment needs an open issue. Blankness (`trim`) is the caller's.
+ */
+//@ verify
+//@ ensures (op == "new" || op == "split" || op == "propose") && titleBlank ==> \result == "title"
+//@ ensures op == "new" && !titleBlank ==> \result == ""
+//@ ensures op == "split" && !titleBlank ==> \result == (known ? "" : "missing")
+//@ ensures op == "propose" && !titleBlank ==> \result == (detailsBlank ? "incomplete" : "")
+//@ ensures op != "new" && op != "split" && op != "propose" && !known ==> \result == "missing"
+//@ ensures op == "comment" && known ==> \result == (textBlank ? "empty" : "")
+//@ ensures op == "commit" && known ==> \result == (open ? "" : "closed")
+//@ ensures op != "new" && op != "split" && op != "propose" && op != "comment" && op != "commit" && known ==> \result == ""
+export function issueWriteRefusal(op: string, titleBlank: boolean, detailsBlank: boolean, textBlank: boolean, known: boolean, open: boolean): string {
+  if (op === "new" || op === "split" || op === "propose") {
+    if (titleBlank) return "title"
+    if (op === "split" && !known) return "missing"
+    if (op === "propose" && detailsBlank) return "incomplete"
+    return ""
+  }
+  if (!known) return "missing"
+  if (op === "comment" && textBlank) return "empty"
+  if (op === "commit" && !open) return "closed"
+  return ""
+}
+
 /** Whether a refusal is the request's own fault, answered 400. */
 //@ verify
 //@ ensures \result == (reason == "title" || reason == "incomplete" || reason == "assignee" || reason == "empty" || reason == "tree" || reason == "invalid" || reason == "review" || reason == "closed" || reason == "fork" || reason == "install")

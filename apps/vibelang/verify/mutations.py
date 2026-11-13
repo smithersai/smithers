@@ -205,6 +205,12 @@ cases += [
 ('src/web/wikiViewDecision.vibe','lc-wiki-status-class','wikiStatusClass','status === "Accepted" ? "sui-badge sui-badge-success"','status === "Accepted" ? "sui-badge sui-badge-outline"','an accepted page has the success badge'),
 ('src/core/issueHostDecision.vibe','refusal-conflict-invalid','refusalReason','refusal === "key_conflict" ? "invalid" : refusal','refusal === "key_conflict" ? refusal : refusal','a key conflict is the request\'s own fault'),
 ('src/core/issueHostDecision.vibe','refusal-keeps-reason','refusalReason','refusal === "key_conflict" ? "invalid" : refusal','refusal === "key_conflict" ? "invalid" : "unavailable"','any other refusal keeps its own reason'),
+('src/core/issueHostDecision.vibe','issue-write-title-propose','issueWriteRefusal','if (op === "new" || op === "split" || op === "propose") {\n    if (titleBlank) return "title"','if (op === "new" || op === "split" || op === "propose") {\n    if (titleBlank && op !== "propose") return "title"','a proposal needs a title'),
+('src/core/issueHostDecision.vibe','issue-write-split-missing','issueWriteRefusal','if (op === "split" && !known) return "missing"','if (op === "split" && known) return "missing"','a split needs the issue it splits'),
+('src/core/issueHostDecision.vibe','issue-write-incomplete','issueWriteRefusal','if (op === "propose" && detailsBlank) return "incomplete"','if (op === "propose" && textBlank) return "incomplete"','a proposal needs its example and prior art too'),
+('src/core/issueHostDecision.vibe','issue-write-missing','issueWriteRefusal','  if (!known) return "missing"\n  if (op === "comment"','  if (!known && op !== "link") return "missing"\n  if (op === "comment"','every other write needs its issue'),
+('src/core/issueHostDecision.vibe','issue-write-empty','issueWriteRefusal','if (op === "comment" && textBlank) return "empty"','if (op === "comment" && titleBlank) return "empty"','a comment needs text'),
+('src/core/issueHostDecision.vibe','issue-write-closed','issueWriteRefusal','if (op === "commit" && !open) return "closed"','if (op === "uncommit" && !open) return "closed"','a commitment needs an open issue'),
 ('worker/mainLogDecision.vibe','lc-ancestry-starts','ancestryShas','ancestry.add(starts[i]!)','ancestry.add(starts[0]!)','every start is in the ancestry'),
 ]
 cases += web_cases

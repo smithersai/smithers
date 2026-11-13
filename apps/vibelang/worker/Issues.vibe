@@ -15,7 +15,7 @@ import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/co
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { agentRefused } from "../src/core/flowPolicyDecision.vibe"
-import { carriesCode, choiceLabel, refusalReason, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, reviewActions, timelineText, unwritten, vipDocumentMatches, vipState } from "../src/core/issueHostDecision.vibe"
+import { carriesCode, choiceLabel, issueWriteRefusal, refusalReason, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, reviewActions, timelineText, unwritten, vipDocumentMatches, vipState } from "../src/core/issueHostDecision.vibe"
 import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 import { personId } from "./accountsDecision.vibe"
@@ -191,9 +191,9 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
         }
         const before = try read(request.number)
         const issue = before.items.find((i) => i.number === request.number)
-        if (["new", "split", "propose"].includes(request.op) && request.title.trim() === "") throw new IssueFailure({ reason: "title" })
+        const writeRefusal = issueWriteRefusal(request.op, request.title.trim() === "", [request.text, request.example, request.prior].some((s) => s.trim() === ""), request.text.trim() === "", issue !== undefined, issue?.state === "open")
+        if (writeRefusal !== "") throw new IssueFailure({ reason: writeRefusal })
         if (request.op === "new" || request.op === "split") {
-          if (request.op === "split" && issue === undefined) throw new IssueFailure({ reason: "missing" })
           const made = try Action.once("issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body: request.text, since: try admitted() }), { key: try key("issue") })
           if (request.op === "split") {
             const current = try GitHub.IssueChanges.get(repo.owner, repo.name, made.number!)
@@ -202,7 +202,6 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           return { ...(try read(made.number!)), selected: made.number! }
         }
         if (request.op === "propose") {
-          if ([request.text, request.example, request.prior].some((s) => s.trim() === "")) throw new IssueFailure({ reason: "incomplete" })
           // The person's fork owns the change; smithers.sh derives and verifies it from their login (decision 0165).
           const base = try submissionBase(storage, try issueExecutionId(actor.id, request.op, request.key), effect () => {
             const upstream = try Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) }))
@@ -225,16 +224,14 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           if (!observed.items.some(issue => issue.number === made.number && issue.vip !== "")) throw new IssueFailure({ reason: "unavailable", code: "unavailable" })
           return { ...observed, selected: made.number! }
         }
-        if (issue === undefined) throw new IssueFailure({ reason: "missing" })
+        if (issue === undefined) throw new IssueFailure({ reason: "missing" }) // Narrows the type; issueWriteRefusal refused it already.
         if (request.op === "comment") {
-          if (request.text.trim() === "") throw new IssueFailure({ reason: "empty" })
           try Action.once("comment", permitted({ kind: "comment.create", repository, number: issue.number, body: request.text.trim() }), { key: try key("comment") })
         } else if (request.op === "link") {
           if (!canLinkIssues(before.items, issue.number, request.parent)) throw new IssueFailure({ reason: "tree" })
           if (issue.parent !== request.parent) try written("link", { kind: "issue.link", repository, parent: request.parent, childNumber: issue.number })
         } else if (request.op === "commit" || request.op === "uncommit") {
           const committing = request.op === "commit"
-          if (committing && issue.state !== "open") throw new IssueFailure({ reason: "closed" })
           const login = choiceLogin(request.assignee, repo.agent)
           if (committing && (login.trim() === "" || !before.assignees.some(choice => choice.login.toLowerCase() === login.toLowerCase()))) throw new IssueFailure({ reason: "assignee" })
           const target = setCommitment(issue, login, committing)
