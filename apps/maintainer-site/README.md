@@ -14,13 +14,13 @@ One item fills the screen, highest priority first: a decision, a question, a cod
 
 A recording (`{ "type": "video", "path": "….mp4", "chapters": "….chapters.json" }`; the file is `apps/mvp`'s `{ title, feature, name, line, status, theme, chapters }`, with `chapters` `[{ "t": seconds, "label": "step" }]`, or that bare list) plays in the review player: a timeline with a tick and a label per chapter, the current one lit; click one to seek. `space` plays or pauses, `←` `→` skip 2 s, `,` `.` step a frame, `[` `]` jump between chapters, `<` `>` set the speed from 0.5× to 2×, `0` goes back to the start. Typing a note pauses the recording and starts the note with its moment, such as `[02:14 Save] `. GIFs play as before.
 
-A Markdown file in `media` (`.md`, or `"type": "md"`) reads like a README on GitHub: `markdown.mjs` renders it on the server, with links and images resolved beside the file through the file endpoint, and the page colours its code blocks. Links open in a new tab, `#anchors` scroll the page, `j` `k` scroll, and `o` shows the raw source.
+A Markdown file in `media` (`.md`, or `"type": "md"`) reads like a README on GitHub: `markdown.mjs` renders it on the server, with links and images resolved beside the file through the file endpoint, and the page colours its code blocks. Links open in a new tab, `#anchors` scroll the page, `j` `k` scroll, and `o` shows the raw source. Attachment buttons open the selected file; `o` continues cycling through the source and attachments.
 
 A TypeScript or JavaScript slice has three reading tools, each a key and a button. `c` hides comments, whole lines and blocks, and comments beside code; the code closes up, every line keeps its file number, and the choice stays in the browser. `z` folds every function, method, class and object body and every statement block of six lines or more, and `Z` unfolds them all. A chevron in the gutter folds one body, and a folded body reads as its first line, `{ … }`, and its line count; click the dots to open it. `O` opens the outline: the slice's declarations, members and Effect.gen's named steps (`const user = yield* …`) in file order, nested. Type to filter, `↑` `↓` to pick, and `Enter` or a click to jump; the line opens out of any fold and is marked. A `path:42` reference in the guide links to its line the same way, past hidden comments and folds. The ranges come from TypeScript's own parser on the server (`outline.mjs`), never regular expressions, so `//` in a string or a regular expression stays code.
 
 `g` marks a note as applying to every item of the item's kind (zoom, a missing timeline): a badge shows while composing, the answer records `"scope": "all"` and the kind, and a toast confirms it. Undo restores the note and its scope.
 
-A verify item with `before: { media, note, stamp }` and `after: { media }` shows before and after: two recordings side by side on one timeline (the old one follows to the same chapter and offset, and opens on Will's first stamped note, pinned where he made it), two designs or images side by side, or a diff for code with his `L42:` notes on the old lines. `b` cycles both, before and after. Without `before.media`, the after recording plays alone with the note pinned at its stamp. The curator keeps old media in `queue/before/<id>/`.
+A verify item with `before: { media, note, stamp }` and `after: { media }` shows before and after: two recordings side by side on one timeline (the old one follows to the same chapter and offset, and opens on Will's first stamped note, pinned where he made it), two designs or images side by side, or a diff for code with his `L42:` notes on the old lines. Annotated lines and three lines of context stay visible even in unchanged parts of the file. `b` cycles both, before and after. Without `before.media`, the after recording plays alone with the note pinned at its stamp. The curator keeps old media in `queue/before/<id>/`.
 
 | File | Owner | Role |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ The server also serves the built site at `/`. Set `PORT`, `QUEUE_DIR`, `MAINTAIN
 
 ```sh
 pnpm --filter @smthrs/maintainer-site test         # renderer, server and outline tests
-pnpm --filter @smthrs/maintainer-site test:queue   # drives the queue by keyboard in Chromium; writes screenshots/queue-*.png
+pnpm --filter @smthrs/maintainer-site test:queue   # checks attachment selection and review-note context, then drives the queue by keyboard in Chromium; writes screenshots/queue-*.png
 pnpm --filter @smthrs/maintainer-site test:code    # the code tools (comments, folds, outline) by key and click in Chromium
 ```
 

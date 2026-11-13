@@ -1001,8 +1001,8 @@
     let removed = 0
     const rows = []
     const CONTEXT = 3
-    const changed = ops.map((op) => op[0] !== "=")
-    const near = (index) => changed.slice(Math.max(0, index - CONTEXT), index + CONTEXT + 1).some(Boolean)
+    const anchors = ops.map(([kind, i]) => kind !== "=" || pinned.has(i + a.from))
+    const near = (index) => anchors.slice(Math.max(0, index - CONTEXT), index + CONTEXT + 1).some(Boolean)
     for (let index = 0; index < ops.length; index++) {
       const [kind, i, j] = ops[index]
       if (kind === "=" && !near(index)) {
@@ -1564,7 +1564,8 @@
     const link = target.closest("[data-link]")
     if (link && card?.contains(link)) {
       linkIndex = Number(link.dataset.link) + (sourceOf(current) ? 1 : 0)
-      return openViewer(current.links[linkIndex].path, current.links[linkIndex].label)
+      const selected = linkList()[linkIndex]
+      return openViewer(selected.path, selected.label)
     }
     // A line number starts a note about that line.
     const line = target.closest(".q-ln")
