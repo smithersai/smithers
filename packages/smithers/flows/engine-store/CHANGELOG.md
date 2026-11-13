@@ -32,6 +32,8 @@
 
 ### Fixed
 
+- Long-running flows no longer load historical state payloads for lineage lifecycle decisions; these reads now use validated metadata.
+
 - A step answered from the shared cache records a succeeded attempt with the
   cached result, so a later drive of the same run replays it instead of asking
   the cache again. When the shared row was evicted, swept, or refused in

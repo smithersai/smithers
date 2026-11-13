@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- Long-running flows no longer load historical state payloads for lineage lifecycle decisions; these reads now use validated metadata.
+
 - A read of a run whose state has not changed no longer parses and walks the
   state again. `get`, `latestRound` and `lineage` validated `state_json` on
   every call: two parses and one bounded walk of the whole tree, 8 to 12 ms for

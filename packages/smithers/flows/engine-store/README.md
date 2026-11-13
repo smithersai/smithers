@@ -98,6 +98,11 @@ cache stores, and the artifact tier over one file.
   when you run a retention or garbage-collection pass, never on a schedule you
   did not set.
 
+Lifecycle reads use the run store's metadata-only lineage projection, so
+historical executable states and journal payloads are not loaded to enumerate
+rounds or decide cancellation. The creating child's exit policy is read from
+that child's state when needed. Membership and ownership rules are unchanged.
+
 Every durable write is one transaction. A lifecycle event is written inside the
 same transaction that carries the state transition it describes: the attempt
 row with its start and finish records, the run-row compare-and-set with its

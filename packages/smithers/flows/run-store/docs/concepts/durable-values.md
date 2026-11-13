@@ -30,6 +30,17 @@ The copy is frozen, so what was validated is what gets written. Stored rows are
 validated again on the way out: a row edited by something other than these
 stores fails with `decode_failed` rather than being handed back as state.
 
+## Metadata reads do not load executable state
+
+`RunStore.lineage(id, { includeState: false })` returns validated lifecycle
+metadata without selecting `state_json`. It cannot expose executable state,
+and a large history adds no JSON parsing or boundary walks to that read.
+The engine uses this projection for lineage membership, cancellation and
+parent-child lifecycle decisions, fetching one creating round's state when
+it needs the child's exit policy. Default `lineage`, `get` and `latestRound`
+still validate the executable state they return, including a value written
+by another process.
+
 ## The bounds are on shape, not on size
 
 Run state, metadata, errors, and outcomes have no byte ceiling, on purpose.

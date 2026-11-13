@@ -1640,8 +1640,9 @@ const endChild = (
     // The edge belongs to the creating round. Its ownership policy
     // survives the child's handoffs; do not infer it from a later
     // round written by a version that omitted onParentExit.
-    // A nonempty lineage read includes its requested member.
-    if ((yield* exitPolicyOf(rounds.find((round) => round.runId === childId)!)) === "detach") {
+    // Fetch only the creating round's executable state. The other rounds'
+    // lifecycle metadata does not require decoding their historical payloads.
+    if ((yield* exitPolicyOf(yield* driver.store.get(childId))) === "detach") {
       exits.detached.push(childId)
       return []
     }

@@ -40498,7 +40498,11 @@ such run, and with `decode_failed` when the row breaks the durable invariants.
 #### lineage and latestRound
 
 ```ts
-const lineage: (runId: string) => Effect<ReadonlyArray<RunRow>, RunStoreError>
+function lineage(runId: string): Effect<ReadonlyArray<RunRow>, RunStoreError>
+function lineage(
+  runId: string,
+  options: { readonly includeState: false }
+): Effect<ReadonlyArray<RunMetadata>, RunStoreError>
 const latestRound: (runId: string) => Effect<RunRow, RunStoreError>
 ```
 
@@ -40510,6 +40514,17 @@ whose own ID equals the lineage ID joins only when its lineage columns are
 null or it explicitly names that lineage, so a same-named run in an
 independent lineage is excluded.
 Fork ancestry in `parentRunId` does not join otherwise independent lineages.
+
+Pass `{ includeState: false }` for lifecycle decisions that need only metadata.
+An options record must have an own enumerable data property `includeState` equal
+to `false`; malformed options fail with `invalid_run` before SQL executes.
+Accessors are never evaluated.
+The SQL projection omits `state_json`, so it neither transfers nor validates
+historical payloads. Membership, ordering and metadata validation are unchanged.
+Metadata work still grows with the number of rounds returned; JSON payload work
+is zero, including the first read. Default calls still return and validate state.
+The `RunStore.lineage` span records `includeState` and the returned `rows` count,
+without payload text.
 These are individual snapshot reads; compose several reads with the owning
 database transaction when they must describe one coherent state.
 
@@ -40790,10 +40805,10 @@ copies them, so a `RunRow` from `get` passes directly as `expected`. Other own
 data fields are ignored. A non-plain prototype, an enumerable accessor on any
 key, or a missing or inherited required field is refused as invalid input.
 
-#### RunRow
+#### RunMetadata and RunRow
 
 ```ts
-interface RunRow extends RunSnapshot {
+interface RunMetadata extends RunSnapshot {
   readonly runId: string
   readonly createdAtMs: number
   readonly startedAtMs: number | null
@@ -40804,6 +40819,9 @@ interface RunRow extends RunSnapshot {
   readonly cancelRequestedAtMs: number | null
   readonly lineageId?: string | null | undefined
   readonly roundOrdinal?: number | null | undefined
+}
+
+interface RunRow extends RunMetadata {
   readonly stateJson: string
 }
 ```

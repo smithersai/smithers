@@ -214,12 +214,12 @@ export interface RunSnapshot {
 }
 
 /**
- * A decoded row in `flows_runs`.
+ * Run lifecycle metadata, without executable state.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @category models
  */
-export interface RunRow extends RunSnapshot {
+export interface RunMetadata extends RunSnapshot {
   readonly runId: string
   readonly createdAtMs: number
   readonly startedAtMs: number | null
@@ -240,6 +240,15 @@ export interface RunRow extends RunSnapshot {
    */
   readonly lineageId?: string | null | undefined
   readonly roundOrdinal?: number | null | undefined
+}
+
+/**
+ * A decoded run row including its executable state.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export interface RunRow extends RunMetadata {
   readonly stateJson: string
 }
 
@@ -493,7 +502,11 @@ export interface Service {
    * Fork ancestry alone does not join lineages. This is a snapshot read;
    * callers making lifecycle decisions must hold their shared write transaction.
    */
-  readonly lineage: (runId: string) => Effect.Effect<ReadonlyArray<RunRow>, RunStoreError>
+  readonly lineage: {
+    (runId: string): Effect.Effect<ReadonlyArray<RunRow>, RunStoreError>
+    /** Omits state from SQL and decoding; lifecycle callers need only metadata. */
+    (runId: string, options: { readonly includeState: false }): Effect.Effect<ReadonlyArray<RunMetadata>, RunStoreError>
+  }
   /** Reads only the highest persisted round; fails with not_found_row for an unknown ID. */
   readonly latestRound: (runId: string) => Effect.Effect<RunRow, RunStoreError>
   /** Records an unfenced cancellation request that later guarded transitions observe. */
@@ -658,7 +671,7 @@ const heartbeatStaleAfterMs = Duration.toMillis(heartbeatStaleAfter)
 const heartbeatSkewAllowanceMs = Duration.toMillis(heartbeatSkewAllowance)
 const terminalStatuses: ReadonlySet<RunStatus> = new Set(["completed", "failed", "cancelled"])
 
-const DatabaseRunRow = Schema.Struct({
+const DatabaseRunMetadata = Schema.Struct({
   runId: durableIdentifier,
   status: RunStatus,
   createdAtMs: NonNegativeSafeInt,
@@ -675,7 +688,11 @@ const DatabaseRunRow = Schema.Struct({
   parentRunId: Schema.NullOr(durableIdentifier),
   cancelRequestedAtMs: Schema.NullOr(NonNegativeSafeInt),
   lineageId: Schema.NullOr(durableIdentifier),
-  roundOrdinal: Schema.NullOr(NonNegativeSafeInt),
+  roundOrdinal: Schema.NullOr(NonNegativeSafeInt)
+})
+
+const DatabaseRunRow = Schema.Struct({
+  ...DatabaseRunMetadata.fields,
   stateJson: Schema.String
 })
 
@@ -875,6 +892,16 @@ const snapshotState = (
     )
 }
 
+const snapshotLineageOptions = (input: unknown): Effect.Effect<boolean, RunStoreError> =>
+  Effect.suspend(() => {
+    if (input === undefined) return Effect.succeed(true)
+    const fields = inertRecord(input, new Set(["includeState"]))
+    if (fields === undefined || fields.includeState !== false) {
+      return Effect.fail(invalidRunError("lineage", "options", "must be an inert data record with includeState false"))
+    }
+    return Effect.succeed(false)
+  })
+
 const snapshotCreateOptions = (
   input: unknown
 ): Effect.Effect<
@@ -1050,15 +1077,31 @@ const rowOwnedBy = (row: DatabaseRunRow, owner: OwnerId): boolean =>
 const claimColumnsFree = (row: DatabaseRunRow): boolean =>
   row.claimHostId === null && row.claimPid === null && row.claimNonce === null && row.claimedAtMs === null
 
-const decodeRunRow = (method: string, runId: string, input: unknown): Effect.Effect<RunRow, RunStoreError> =>
-  Schema.decodeUnknownEffect(DatabaseRunRow)(input).pipe(
+function decodeRunRow(method: string, runId: string, input: unknown): Effect.Effect<RunRow, RunStoreError>
+function decodeRunRow(
+  method: string,
+  runId: string,
+  input: unknown,
+  includeState: false
+): Effect.Effect<RunMetadata, RunStoreError>
+function decodeRunRow(
+  method: string,
+  runId: string,
+  input: unknown,
+  includeState = true
+): Effect.Effect<RunMetadata, RunStoreError> {
+  const decoded = includeState
+    ? Schema.decodeUnknownEffect(DatabaseRunRow)(input)
+    : Schema.decodeUnknownEffect(DatabaseRunMetadata)(input)
+  return decoded.pipe(
     Effect.mapError(() =>
       runStoreError(method, "decode_failed", "could not decode flows_runs row", { runId, stage: "row-schema" })
     ),
     Effect.flatMap((row) => {
       const owner = ownerFromColumns(row.ownerHostId, row.ownerPid, row.ownerNonce)
       const claim = ownerFromColumns(row.claimHostId, row.claimPid, row.claimNonce)
-      const admittedState = stateAdmission(row.stateJson)
+      const state = "stateJson" in row ? row as DatabaseRunRow : undefined
+      const stateValid = state === undefined || stateAdmission(state.stateJson).ok
       const invalidOwner = owner === undefined ||
         (owner === null && row.heartbeatAtMs !== null) ||
         (owner !== null && row.heartbeatAtMs === null) ||
@@ -1066,7 +1109,7 @@ const decodeRunRow = (method: string, runId: string, input: unknown): Effect.Eff
       const invalidClaim = claim === undefined ||
         (claim === null && row.claimedAtMs !== null) ||
         (claim !== null && row.claimedAtMs === null)
-      if (invalidOwner || invalidClaim || !admittedState.ok) {
+      if (invalidOwner || invalidClaim || !stateValid) {
         // The cause is published to logs, spans, and telemetry. Executable
         // state may carry credentials, so report only the invariants read here.
         return Effect.fail(
@@ -1077,7 +1120,7 @@ const decodeRunRow = (method: string, runId: string, input: unknown): Effect.Eff
             claimedAtMs: row.claimedAtMs,
             hasClaimColumns: row.claimHostId !== null || row.claimPid !== null || row.claimNonce !== null,
             hasOwnerColumns: row.ownerHostId !== null || row.ownerPid !== null || row.ownerNonce !== null,
-            stateJsonValid: isJsonString(row.stateJson)
+            ...(state === undefined ? {} : { stateJsonValid: isJsonString(state.stateJson) })
           })
         )
       }
@@ -1095,10 +1138,11 @@ const decodeRunRow = (method: string, runId: string, input: unknown): Effect.Eff
         cancelRequestedAtMs: row.cancelRequestedAtMs,
         lineageId: row.lineageId,
         roundOrdinal: row.roundOrdinal,
-        stateJson: row.stateJson
+        ...(state === undefined ? {} : { stateJson: state.stateJson })
       }))
     })
   )
+}
 
 /**
  * Rows that belong to the logical run containing `runId`: every round that
@@ -1163,7 +1207,12 @@ const classifyCancellationMiss = (
     return outcome
   })
 
-const selectRun = (sql: SqlClient.SqlClient, runId: string, mode: "single" | "lineage" | "latest" = "single") =>
+const selectRun = (
+  sql: SqlClient.SqlClient,
+  runId: string,
+  mode: "single" | "lineage" | "latest" = "single",
+  includeState = true
+) =>
   sql<DatabaseRunRow>`
     SELECT
       run_id AS "runId",
@@ -1182,8 +1231,8 @@ const selectRun = (sql: SqlClient.SqlClient, runId: string, mode: "single" | "li
       parent_run_id AS "parentRunId",
       cancel_requested_at_ms AS "cancelRequestedAtMs",
       lineage_id AS "lineageId",
-      round_ordinal AS "roundOrdinal",
-      state_json AS "stateJson"
+      round_ordinal AS "roundOrdinal"
+      ${includeState ? sql`, state_json AS "stateJson"` : sql``}
     FROM flows_runs
     WHERE ${
     mode === "latest"
@@ -1508,14 +1557,35 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
       }).pipe(observeExit)
     )
 
-    const lineage = Effect.fn("RunStore.lineage")((runIdInput: string) =>
+    const readLineage = Effect.fn("RunStore.lineage")((
+      runIdInput: string,
+      optionsInput?: { readonly includeState: false }
+    ) =>
       Effect.gen(function*() {
         const runId = yield* snapshotRunId("lineage", runIdInput)
-        yield* Effect.annotateCurrentSpan({ runId })
-        const rows = yield* read("lineage", selectRun(sql, runId, "lineage"))
-        return yield* Effect.forEach(rows, (row) => decodeRunRow("lineage", row.runId, row))
+        const includeState = yield* snapshotLineageOptions(optionsInput)
+        yield* Effect.annotateCurrentSpan({ runId, includeState })
+        const rows = yield* read("lineage", selectRun(sql, runId, "lineage", includeState))
+        yield* Effect.annotateCurrentSpan({ rows: rows.length })
+        return yield* Effect.forEach(
+          rows,
+          (row) =>
+            includeState ? decodeRunRow("lineage", row.runId, row) : decodeRunRow("lineage", row.runId, row, false)
+        )
       }).pipe(observeExit)
     )
+
+    function lineage(runId: string): Effect.Effect<ReadonlyArray<RunRow>, RunStoreError>
+    function lineage(
+      runId: string,
+      options: { readonly includeState: false }
+    ): Effect.Effect<ReadonlyArray<RunMetadata>, RunStoreError>
+    function lineage(
+      runId: string,
+      options?: { readonly includeState: false }
+    ): Effect.Effect<ReadonlyArray<RunMetadata>, RunStoreError> {
+      return readLineage(runId, options)
+    }
 
     const latestRound = Effect.fn("RunStore.latestRound")((runIdInput: string) =>
       Effect.gen(function*() {

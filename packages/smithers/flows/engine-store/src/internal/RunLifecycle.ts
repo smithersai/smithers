@@ -18,7 +18,7 @@ import type * as DurableEngineState from "../DurableEngineState.ts"
  * @since 1.0.0
  */
 export const make = (store: RunStore.Service, state: DurableEngineState.Service) => {
-  const rounds = (runId: string) => store.lineage(runId)
+  const rounds = (runId: string) => store.lineage(runId, { includeState: false })
 
   /** All other rounds and linked descendants, including earlier-round children. */
   const descendants = (runId: string): Effect.Effect<ReadonlyArray<string>, RunStore.RunStoreError> =>

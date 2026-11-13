@@ -80,12 +80,13 @@ describe("execution observation compatibility", () => {
           const flowName = "\u0004".repeat(1024)
           const waitingReason = "\u0005".repeat(1024)
           const ids = ["\u0001".repeat(1023) + "a", "\u0001".repeat(1023) + "b"]
-          yield* runs.create(parentRunId, state)
+          yield* runs.create(lineageId, state)
+          yield* runs.create(parentRunId, state, { parentRunId: lineageId, lineageId, roundOrdinal: 1 })
           for (const [roundOrdinal, id] of ids.entries()) {
             yield* runs.create(id, JSON.stringify({ version: 1, flowName, payload: {} }), {
               parentRunId,
               lineageId,
-              roundOrdinal
+              roundOrdinal: roundOrdinal + 2
             })
             yield* sql`UPDATE flows_runs SET waiting_reason = ${waitingReason} WHERE run_id = ${id}`
           }

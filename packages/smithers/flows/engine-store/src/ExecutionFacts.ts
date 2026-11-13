@@ -108,7 +108,7 @@ export const make = (options: Options) => {
     }))
   const requestCancelLineage = (executionId: string, at: number) =>
     transactState(Effect.gen(function*() {
-      const before = yield* options.runs.lineage(executionId)
+      const before = yield* options.runs.lineage(executionId, { includeState: false })
       const outcome = yield* options.runs.requestCancelLineage(executionId, at)
       if (outcome._tag === "CancelRequested") {
         // The set update excludes terminal/already-requested rows. Record exactly

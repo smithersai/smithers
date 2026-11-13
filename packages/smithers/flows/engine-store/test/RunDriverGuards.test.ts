@@ -187,7 +187,7 @@ describe("RunDriver guards", () => {
           executionId: "joins-lineage",
           payload: {},
           discard: true,
-          round: { ...FlowEngine.Round.initial("opens-lineage"), ordinal: 1 }
+          round: { ...FlowEngine.Round.initial("opens-lineage"), ordinal: 1, previousExecutionId: "opens-lineage" }
         })
         return yield* Metric.snapshot
       }))).pipe(Effect.provideService(Metric.MetricRegistry, new Map()))
@@ -201,7 +201,11 @@ describe("RunDriver guards", () => {
         const driver = yield* makeDriver()
         yield* driver.register(GuardFlow, () => Effect.succeed("driven"))
         yield* store.create("first-round", stateJson({ origin }), { lineageId: "first-round", roundOrdinal: 0 })
-        yield* store.create("later-round", stateJson({ origin }), { lineageId: "first-round", roundOrdinal: 1 })
+        yield* store.create("later-round", stateJson({ origin }), {
+          parentRunId: "first-round",
+          lineageId: "first-round",
+          roundOrdinal: 1
+        })
         yield* driver.resume(GuardFlow, "first-round")
         yield* driver.resume(GuardFlow, "later-round")
         expect((yield* store.get("later-round")).status).toBe("completed")

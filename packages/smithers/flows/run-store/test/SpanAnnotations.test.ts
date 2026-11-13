@@ -44,6 +44,8 @@ describe("SpanAnnotations", () => {
         const store = yield* RunStore
         yield* store.create("run-span", "{}")
         yield* store.get("run-span")
+        yield* store.lineage("run-span")
+        yield* store.lineage("run-span", { includeState: false })
       }).pipe(Effect.provideService(Tracer.Tracer, tracer))
     )
 
@@ -53,6 +55,10 @@ describe("SpanAnnotations", () => {
     const getSpan = spans.find((span) => span.name === "RunStore.get")
     expect(getSpan).toBeDefined()
     expect(getSpan!.attributes.get("runId")).toBe("run-span")
+    const lineageSpans = spans.filter((span) => span.name === "RunStore.lineage")
+    expect(lineageSpans.map((span) => [span.attributes.get("includeState"), span.attributes.get("rows")]))
+      .toEqual([[true, 1], [false, 1]])
+    for (const span of lineageSpans) expect(span.attributes.has("stateJson")).toBe(false)
   })
 
   it("closes create, get, and requestCancel spans with an outcome", async () => {
