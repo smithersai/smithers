@@ -7,6 +7,13 @@ async function chat(page: import("@playwright/test").Page) {
   await page.getByRole("dialog").getByRole("textbox", { name: "Message" }).fill("Hello")
   await page.getByRole("dialog").getByRole("button", { name: "Send", exact: true }).click()
   await expect(page.getByRole("button", { name: "Expand Actions", exact: true })).toBeVisible()
+  // The agent answers "Hello" first; a command typed while it is answering is refused as busy.
+  await expect(page.getByText("Answering", { exact: true })).toHaveCount(0)
+}
+/** Visits as a maintainer and waits until the page holds that role, so the agent's next run is the maintainer's. */
+async function asMaintainer(page: import("@playwright/test").Page) {
+  await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+  await expect(page.locator(".vl-nav-role")).toHaveText("Maintainer")
 }
 test("registered actions, an empty run list, a button start, live trace, cancel and minimize", async ({ page }) => {
   await chat(page)
@@ -77,6 +84,32 @@ test("a history note the scripted agent requests is signed as the agent's", asyn
   await expect(result).toContainText("(agent)")
 })
 
+test("the agent reads an epic, a later page of it, a commit and a search, each with or without its fields", async ({ page }) => {
+  // src/history/tools.vibe `requestOf` and `show`: the epic and search pages, and an absent id, from or query read as
+  // "", 0 and "" (no epic, the first page, no matches). One run per fresh page.
+  test.setTimeout(90_000)
+  const cases: ReadonlyArray<readonly [object, ReadonlyArray<string>]> = [
+    [{ what: "epic", id: "e1" }, ['"epic":"e1"', '"from":0']],
+    [{ what: "epic", id: "e1", from: 1 }, ['"epic":"e1"', '"from":1']],
+    [{ what: "epic" }, ['"epic":""', '"total":0']],
+    [{ what: "commit" }, ['"commit":null']],
+    [{ what: "search", query: "m1" }, ['"query":"m1"', '"id":"m1"']],
+    [{ what: "search" }, ['"query":""', '"commits":[]']],
+  ]
+  for (const [input, parts] of cases) {
+    await chat(page)
+    await asMaintainer(page)
+    const message = page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })
+    await message.fill(`Run /history ${JSON.stringify(input)}`)
+    await message.press("Enter")
+    const show = page.getByRole("button", { name: /Open show run/ })
+    await expect(show).toContainText("Passed")
+    await show.click()
+    const result = page.getByRole("region", { name: "Actions", exact: true }).getByLabel("Result", { exact: true })
+    for (const part of parts) await expect(result).toContainText(part)
+  }
+})
+
 test("the agent runs each history and sandbox command a maintainer may run", async ({ page }) => {
   // One run of each kind the action host prepares and executes (src/actions/execution.vibe), through the agent's door.
   test.setTimeout(90_000)
@@ -112,7 +145,7 @@ test("a history write the sequencer refuses says why in its run", async ({ page 
   ]
   for (const [text, card, words] of refused) {
     await chat(page)
-    await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+    await asMaintainer(page)
     const input = page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })
     await input.fill(text)
     await input.press("Enter")
@@ -138,9 +171,9 @@ test("a plan the sequencer refuses says why, and one inserted before a commit is
     [plan({ how: "amend", epic: "", target: "m1", title: "", task: " " }), "Needs a task."],
     [plan({ how: "insert", epic: "", target: "m1" }), /"id":"m\d+","refusal":null/],
   ]
-  for (const [text, words] of cases) {
+  for (const [text, words] of cases) await test.step(text, async () => {
     await chat(page)
-    await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+    await asMaintainer(page)
     const input = page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })
     await input.fill(text)
     await input.press("Enter")
@@ -148,7 +181,7 @@ test("a plan the sequencer refuses says why, and one inserted before a commit is
     await expect(run).toHaveCount(1)
     await run.click()
     await expect(page.getByRole("region", { name: "Actions", exact: true }).getByLabel("Result", { exact: true })).toHaveText(words)
-  }
+  })
 })
 
 test.describe("local real-engine action faults and role views", () => {

@@ -3361,3 +3361,19 @@ start from `init`'s values: two in `test/mainRemainder.coverage.test.vibe`, one 
 `test/mainUpdate.coverage.test.vibe`, the epoch-less panels in both, and one fuzz scenario in `fuzz/web-arms.fuzz.vibe`.
 `arm_mutations.py`'s four screen rows now mutate the field read instead of its default.
 
+**The agent's history reads.** `e2e/actions.spec.ts` "the agent reads an epic, a later page of it, a commit and a
+search …" runs `Run /history` six times: an epic with and without `from`, an epic and a commit with no `id`, and a
+search with and without `query`. It reaches `src/history/tools.vibe` `requestOf`'s `epic` and `search` arms and the
+defaults of an absent `id`, `from` and `query`, and `show`'s `epic` and `search` matches.
+
+### `src/history/mythical.vibe` `apply`'s skip arms the browser does not reach
+
+`apply` (158-212) returns the history unchanged for an event out of sequence or one whose guard fails (a blank title,
+an unknown epic, a commit in the wrong state). In the browser, `apply` runs only through `replayEvent`: in the
+Sequencer's `recordedHistory` on the event `decideWithinCapacity` just accepted, and in `replayHistory` over the mock's
+memory store, which holds only events `record` appended after that acceptance. `decide`'s proved contracts give each
+accepted event `seq == history.seq + 1` and the fields its type's guard requires (for example an accepted Amend has a
+nonblank task, names a landed commit and that commit has no task), so no event the browser applies takes a skip arm.
+A skip needs a journal written by something other than `decide`: `test/mythicalEdges.coverage.test.vibe` replays one
+and covers every skip arm.
+
