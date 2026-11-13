@@ -1343,7 +1343,9 @@ a guarded spawner without it refuses execution.
 | `verification`       | Absent                 | Confines a project's own toolchain instead of one agent command; see below.             |
 
 Linux needs `bwrap`; macOS needs `/usr/bin/sandbox-exec`. An installed mechanism
-that fails to start never falls back to unconfined execution. A shell request
+that fails to start never falls back to unconfined execution. The explicit
+`unconfined` fallback returns the original command without checking write paths,
+including symbolic links; symlinked writes are refused when a mechanism is present. A shell request
 runs inside the wrapper, including its redirections and subprocesses. Streams,
 exit codes, and cancellation retain Effect's process contract.
 

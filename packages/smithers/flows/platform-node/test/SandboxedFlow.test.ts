@@ -49,7 +49,6 @@ import {
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { inspect } from "node:util"
-import { vi } from "vitest"
 import * as Guest from "../src/internal/SandboxedFlowGuest.ts"
 import * as NodeHost from "../src/NodeHost.ts"
 import * as SandboxedFlow from "../src/SandboxedFlow.ts"
@@ -57,8 +56,6 @@ import { changed, patchedPaths, repository } from "./fixtures/repository.ts"
 import * as childEntry from "./fixtures/sandboxed-child.ts"
 import * as pureEntry from "./fixtures/sandboxed-pure.ts"
 import * as vibeEntry from "./fixtures/vibe-entry/flow.vibe"
-
-vi.mock("effect/Stream", { spy: true })
 
 const { ProviderError } = RemoteChildProcessSpawner
 const { Editor, Failing, Filler, Inspector, Sleeper, Sum, Writer } = childEntry
@@ -899,9 +896,8 @@ describe("sandbox limit boundaries", () => {
       }), 60_000)
   }
 
-  it.live("drains noisy streams without a whole-output string collector", () =>
+  it.live("drains noisy streams and bounds retained failure diagnostics", () =>
     Effect.gen(function*() {
-      const collector = vi.spyOn(Stream, "mkString").mockClear()
       let drained = 0
       const bytes = new TextEncoder().encode("x".repeat(16_384))
       const noise = Stream.fromIterable(Array.from({ length: 256 }, () => bytes)).pipe(
@@ -911,24 +907,19 @@ describe("sandbox limit boundaries", () => {
           })
         )
       )
-      try {
-        const guest = yield* limitedGuest({ noise, failure: "noisy failure" })
-        const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
-          provider: guest.provider,
-          session: "noisy",
-          entry: pure
-        }))
-        expect(failure.code).toBe("flow_failed")
-        // The shared line redactor never shows a line past its bound, only its marker.
-        expect(failure.message).toContain(
-          `stdout: ${Redaction.omittedLine}; stderr: ${Redaction.omittedLine}`
-        )
-        expect(failure.message.length).toBeLessThan(8400)
-        expect(drained).toBe(512)
-        expect(collector).not.toHaveBeenCalled()
-      } finally {
-        collector.mockRestore()
-      }
+      const guest = yield* limitedGuest({ noise, failure: "noisy failure" })
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "noisy",
+        entry: pure
+      }))
+      expect(failure.code).toBe("flow_failed")
+      // The shared line redactor never shows a line past its bound, only its marker.
+      expect(failure.message).toContain(
+        `stdout: ${Redaction.omittedLine}; stderr: ${Redaction.omittedLine}`
+      )
+      expect(failure.message.length).toBeLessThan(8400)
+      expect(drained).toBe(512)
     }), 60_000)
 })
 

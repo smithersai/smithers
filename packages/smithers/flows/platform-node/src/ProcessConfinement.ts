@@ -18,7 +18,8 @@
  * runs that the profile would not have confined, or runs it unconfined with
  * a warning, the way every host did before this seam existed. A write set
  * the mechanism cannot enforce safely, a symbolic link below the workspace
- * root, is always refused.
+ * root, is refused whenever a mechanism is present. The explicit unconfined
+ * fallback returns the original command without checking or preparing its writes.
  *
  * {@link Options.verification} is the second kind of run this module
  * confines: a project's own install, typecheck, and test commands, which

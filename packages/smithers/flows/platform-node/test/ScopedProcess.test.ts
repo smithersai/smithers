@@ -8,24 +8,9 @@ import { randomUUID } from "node:crypto"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { vi } from "vitest"
 import * as PipedProcess from "../src/internal/PipedProcess.ts"
-import { targetPidOf } from "../src/internal/ProcessSupervisor.ts"
-import * as ProcessReaper from "../src/ProcessReaper.ts"
+import { Services } from "../src/internal/ScopedProcessServices.ts"
 import * as ScopedProcess from "../src/ScopedProcess.ts"
-
-vi.mock("../src/ProcessReaper.ts", async (original) => {
-  const actual = await original<typeof import("../src/ProcessReaper.ts")>()
-  return { ...actual, processLifecycle: vi.fn(actual.processLifecycle) }
-})
-vi.mock("../src/internal/PipedProcess.ts", async (original) => {
-  const actual = await original<typeof import("../src/internal/PipedProcess.ts")>()
-  return { ...actual, spawn: vi.fn(actual.spawn) }
-})
-vi.mock("../src/internal/ProcessSupervisor.ts", async (original) => {
-  const actual = await original<typeof import("../src/internal/ProcessSupervisor.ts")>()
-  return { ...actual, targetPidOf: vi.fn(actual.targetPidOf) }
-})
 
 const text = (stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>) =>
   stream.pipe(Stream.decodeText(), Stream.mkString)
@@ -202,10 +187,11 @@ describe("scoped transient processes", () => {
 
   it.live("cleans a refused target before returning to an outer scope that remains open", () =>
     Effect.gen(function*() {
-      const original = vi.mocked(ProcessReaper.processLifecycle).getMockImplementation()!
+      const services = Services.defaultValue()
+      const original = services.lifecycle
       let ownerPid = 0
       let ownerPath = ""
-      vi.mocked(ProcessReaper.processLifecycle).mockImplementationOnce((command, spawn) =>
+      services.lifecycle = (command, spawn) =>
         original(command, (prepared) =>
           spawn(prepared).pipe(Effect.tap((handle) =>
             Effect.sync(() => {
@@ -213,13 +199,14 @@ describe("scoped transient processes", () => {
               ownerPath = prepared.args.map(plainWord).at(-2) ?? ""
             })
           )))
-      )
       try {
         yield* Effect.scoped(Effect.gen(function*() {
-          const refused = yield* Effect.exit(ScopedProcess.spawn({
-            command: join(tmpdir(), `missing-scoped-target-${randomUUID()}`),
-            forceKillAfter: 80
-          }))
+          const refused = yield* Effect.exit(
+            ScopedProcess.spawn({
+              command: join(tmpdir(), `missing-scoped-target-${randomUUID()}`),
+              forceKillAfter: 80
+            }).pipe(Effect.provideService(Services, services))
+          )
           expect(Exit.isFailure(refused)).toBe(true)
           if (Exit.isFailure(refused)) expect(String(refused.cause)).toContain("NotFound")
           if (process.platform !== "win32") {
@@ -241,7 +228,8 @@ describe("scoped transient processes", () => {
     Effect.gen(function*() {
       let activated = false
       let released = false
-      vi.mocked(ProcessReaper.processLifecycle).mockImplementationOnce(() =>
+      const services = Services.defaultValue()
+      services.lifecycle = () =>
         Effect.gen(function*() {
           yield* Effect.addFinalizer(() =>
             Effect.sync(() => {
@@ -256,50 +244,53 @@ describe("scoped transient processes", () => {
             settled: Effect.succeed(true)
           }
         })
-      )
-      const platform = Object.getOwnPropertyDescriptor(process, "platform")!
-      Object.defineProperty(process, "platform", { value: "linux" })
-      try {
-        yield* Effect.scoped(Effect.gen(function*() {
-          const result = yield* Effect.exit(ScopedProcess.spawn({ command: "literal" }))
-          expect(Exit.isFailure(result)).toBe(true)
-          if (Exit.isFailure(result)) expect(String(result.cause)).toContain("did not identify its target")
-          expect(activated).toBe(true)
-          expect(released).toBe(true)
-        }))
-      } finally {
-        Object.defineProperty(process, "platform", platform)
-      }
+      yield* Effect.scoped(Effect.gen(function*() {
+        const result = yield* Effect.exit(
+          ScopedProcess.spawn({ command: "literal" }).pipe(Effect.provideService(Services, services))
+        )
+        expect(Exit.isFailure(result)).toBe(true)
+        if (Exit.isFailure(result)) expect(String(result.cause)).toContain("did not identify its target")
+        expect(activated).toBe(true)
+        expect(released).toBe(true)
+      }))
     }))
 
-  it.effect("keeps Windows verbatim arguments on the target and requests mapped owner pipes", () =>
+  it.live("keeps verbatim target arguments and requests mapped owner pipes", () =>
     Effect.gen(function*() {
-      const handle = fakeHandle()
-      const raw = vi.mocked(PipedProcess.spawn)
-      raw.mockReturnValueOnce(Effect.succeed(handle))
-      vi.mocked(targetPidOf).mockReturnValueOnce(900_102)
-      vi.mocked(ProcessReaper.processLifecycle).mockImplementationOnce((command, spawn) =>
-        Effect.map(spawn(command), (handle) => ({ handle, activate: Effect.void, settled: Effect.succeed(true) }))
-      )
-      const platform = Object.getOwnPropertyDescriptor(process, "platform")!
-      Object.defineProperty(process, "platform", { value: "win32" })
-      try {
-        const result = yield* Effect.scoped(ScopedProcess.spawn({
-          command: "cmd.exe",
-          args: ["/d", "/s", "/c", "\"literal argument\""],
-          windowsVerbatimArguments: true
-        }))
-        expect(result.targetPid).toBe(900_102)
-        expect(raw.mock.calls.at(-1)?.[1]).toBe(false)
-        expect(raw.mock.calls.at(-1)?.[2]).toBe(true)
-        expect(raw.mock.calls.at(-1)?.[0]).toMatchObject({
-          command: "cmd.exe",
-          args: ["/d", "/s", "/c", "\"literal argument\""],
-          options: { detached: false, stdin: "ignore", windowsVerbatimArguments: true }
-        })
-      } finally {
-        Object.defineProperty(process, "platform", platform)
+      const services = Services.defaultValue()
+      const spawn = services.spawn
+      const lifecycle = services.lifecycle
+      let mapped: boolean | undefined
+      let declared: unknown
+      services.lifecycle = (command, spawn) => {
+        declared = command
+        return lifecycle(command, spawn)
       }
+      services.spawn = (command, detached, mapStandard) => {
+        mapped = mapStandard
+        expect(detached).toBe(false)
+        return spawn(command, detached, mapStandard)
+      }
+      const script = "process.stdout.write(process.argv[1])"
+      const literal = "literal argument é🙂"
+      const args = [script, literal].map((value) => process.platform === "win32" ? JSON.stringify(value) : value)
+      const result = yield* Effect.scoped(
+        Effect.gen(function*() {
+          const handle = yield* ScopedProcess.spawn({
+            command: process.execPath,
+            args: ["-e", ...args],
+            windowsVerbatimArguments: true
+          })
+          return yield* Effect.all([text(handle.stdout), ScopedProcess.status(handle)], { concurrency: "unbounded" })
+        }).pipe(Effect.provideService(Services, services))
+      )
+      expect(result).toEqual([literal, { code: 0, signal: null }])
+      expect(declared).toMatchObject({
+        command: process.execPath,
+        args: ["-e", ...args],
+        options: { windowsVerbatimArguments: true, detached: process.platform !== "win32", stdin: "ignore" }
+      })
+      expect(mapped).toBe(true)
     }))
 })
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import * as Redacted from "effect/Redacted"
@@ -60,7 +60,153 @@ const beatOf = (path: string): { readonly token: string; readonly pid: number; r
   }
 }
 
+/** Cleanup always verifies the fixture identity before signalling its numeric pid. */
+const stopOwnedFixture = (
+  owner: { readonly pid: number; readonly path: string } | undefined,
+  target: number | undefined,
+  token: string
+) =>
+  Effect.promise(async () => {
+    if (owner !== undefined && commandOf(owner.pid).includes(owner.path)) {
+      try {
+        process.kill(-owner.pid, "SIGKILL")
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "ESRCH") throw cause
+      }
+    }
+    if (target !== undefined && commandOf(target).includes(token)) {
+      try {
+        process.kill(target, "SIGKILL")
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "ESRCH") throw cause
+      }
+    }
+    if (owner !== undefined) expect(await waitForExit(owner.pid, 5000)).toBe(true)
+    if (target !== undefined) expect(await waitForExit(target, 5000)).toBe(true)
+  })
+
 describe.skipIf(process.platform === "win32")("prepared POSIX process contract", () => {
+  it.live("retains a real owner's cleanup failure when its process-table service refuses observation", () =>
+    Effect.gen(function*() {
+      const token = randomUUID()
+      let owned: { readonly pid: number; readonly path: string } | undefined
+      let target: number | undefined
+      const ledger = yield* ProcessLedger.makeMemory({ hostId: "owner-observation-failure", ownerPid: process.pid })
+      const lifecycle = (
+        command: ChildProcess.StandardCommand,
+        spawn: Parameters<typeof ProcessReaper.processLifecycle>[1]
+      ) =>
+        ProcessReaper.processLifecycle(command, (owner) => {
+          const args = [...owner.args.map(plainWord)]
+          const index = args.indexOf("-e") + 1
+          // Only the owner's observation dependency fails. Its actual protocol,
+          // target, guardian, signal delivery and cleanup all still execute.
+          args[index] = "const nativeFs = require('node:fs'); const readDirectory = nativeFs.readdirSync;" +
+            "nativeFs.readdirSync = function(path, ...args) { if (path === '/proc') throw Object.assign(new Error('observation denied'), {code:'EACCES'}); return readDirectory.call(this,path,...args); };" +
+            "const nativeCp = require('node:child_process'); const query = nativeCp.spawnSync;" +
+            "nativeCp.spawnSync = function(file,...args) { if (file === '/bin/ps') return {status:1,signal:null}; return query.call(this,file,...args); };\n" +
+            args[index]
+          return spawn(ChildProcess.make(owner.command, args, owner.options)).pipe(Effect.tap((handle) =>
+            Effect.sync(() => {
+              owned = { pid: handle.pid, path: owner.args.map(plainWord).at(-2)! }
+            })
+          ))
+        })
+      try {
+        let cleanup: Exit.Exit<void, unknown> | undefined
+        let ready: unknown
+        const outcome = yield* Effect.gen(function*() {
+          const spawner = yield* ChildProcessSpawner
+          const handle = yield* spawner.spawn(ChildProcess.make(process.execPath, [
+            "-e",
+            "process.stdout.write('ready\\n');setInterval(()=>{},1000)",
+            token
+          ], { forceKillAfter: 20 }))
+          target = targetPidOf(handle)
+          ready = yield* handle.stdout.pipe(Stream.decodeText(), Stream.splitLines, Stream.runHead)
+          cleanup = yield* Effect.exit(handle.kill())
+        }).pipe(
+          Effect.provide(ContainedSpawner.layer({}, lifecycle).pipe(Layer.provide(layers))),
+          Effect.provideService(ProcessLedger.ProcessLedger, ledger),
+          Effect.scoped,
+          Effect.exit
+        )
+        expect(ready).toEqual(Option.some("ready"))
+        expect(Exit.isFailure(outcome)).toBe(true)
+        expect(cleanup).toBeDefined()
+        expect(Exit.isFailure(cleanup!)).toBe(true)
+        if (cleanup !== undefined && Exit.isFailure(cleanup)) {
+          expect(Cause.squash(cleanup.cause)).toMatchObject({
+            reason: {
+              cause: {
+                code: "cleanup_unverified",
+                cause: {
+                  cleanupFailed: true,
+                  fault: { type: "cleanup_error", reason: "descendant_observation_unavailable" }
+                }
+              }
+            }
+          })
+        }
+        expect(yield* ledger.live).toHaveLength(1)
+      } finally {
+        yield* stopOwnedFixture(owned, target, token)
+      }
+    }).pipe(Effect.provide(layers), Effect.scoped))
+
+  it.live("bounds a real owner whose request service refuses stop and retains its ledger entry", () =>
+    Effect.gen(function*() {
+      const token = randomUUID()
+      let ownerPid: number | undefined
+      let ownerPath = ""
+      const ledger = yield* ProcessLedger.makeMemory({ hostId: "unresponsive-native-owner", ownerPid: process.pid })
+      let target: number | undefined
+      const lifecycle = (
+        command: ChildProcess.StandardCommand,
+        spawn: Parameters<typeof ProcessReaper.processLifecycle>[1]
+      ) =>
+        ProcessReaper.processLifecycle(command, (owner) => {
+          const args = [...owner.args.map(plainWord)]
+          const index = args.indexOf("-e") + 1
+          // A faulty Effect spawner supplies the real program with a request
+          // service that stops delivering only stop frames, after activation.
+          args[index] =
+            "const socketPrototype = require('node:net').Socket.prototype; const emit = socketPrototype.emit;" +
+            "socketPrototype.emit = function(event, ...args) { if (event === 'data' && String(args[0]).includes('\\\"type\\\":\\\"stop\\\"')) return true; return emit.call(this,event,...args); };\n" +
+            args[index]
+          return spawn(ChildProcess.make(owner.command, args, owner.options)).pipe(Effect.tap((handle) =>
+            Effect.sync(() => {
+              ownerPid = handle.pid
+              ownerPath = owner.args.map(plainWord).at(-2)!
+            })
+          ))
+        })
+      try {
+        const outcome = yield* Effect.gen(function*() {
+          const spawner = yield* ChildProcessSpawner
+          const handle = yield* spawner.spawn(ChildProcess.make(process.execPath, [
+            "-e",
+            "process.stdout.write('ready\\n');setInterval(()=>{},1000)",
+            token
+          ], { forceKillAfter: 20 }))
+          target = targetPidOf(handle)
+          yield* handle.stdout.pipe(Stream.decodeText(), Stream.splitLines, Stream.runHead)
+          return yield* handle.kill()
+        }).pipe(
+          Effect.provide(ContainedSpawner.layer({}, lifecycle).pipe(Layer.provide(layers))),
+          Effect.provideService(ProcessLedger.ProcessLedger, ledger),
+          Effect.scoped,
+          Effect.exit
+        )
+        expect(Exit.isFailure(outcome)).toBe(true)
+        if (Exit.isFailure(outcome)) expect(String(outcome.cause)).toContain("Process supervisor kill timed out")
+        expect(yield* ledger.live).toHaveLength(1)
+        expect(ownerPid).toBeGreaterThan(1)
+      } finally {
+        yield* stopOwnedFixture(ownerPid === undefined ? undefined : { pid: ownerPid, path: ownerPath }, target, token)
+      }
+    }).pipe(Effect.provide(layers), Effect.scoped))
+
   it.live("preserves opaque arguments and environment across the prepared owner protocol", () =>
     Effect.gen(function*() {
       const raw = yield* ChildProcessSpawner
@@ -122,11 +268,13 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
       const installed = yield* Deferred.make<void>()
       const owner = yield* Effect.gen(function*() {
         yield* scopedSpy(() => vi.spyOn(Control.prototype, "write"))
-        return yield* Deferred.succeed(installed, undefined)
+        yield* Deferred.succeed(installed, undefined)
         return yield* Effect.never
       }).pipe(Effect.scoped, Effect.forkChild)
       yield* Deferred.await(installed)
       expect(vi.isMockFunction(Control.prototype.write)).toBe(true)
+      yield* Effect.yieldNow
+      expect(owner.pollUnsafe()).toBeUndefined()
       yield* Fiber.interrupt(owner)
       expect(Control.prototype.write).toBe(original)
       expect(vi.isMockFunction(Control.prototype.write)).toBe(false)

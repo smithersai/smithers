@@ -60,11 +60,12 @@ import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildPr
 import { spawnSync } from "node:child_process"
 import { uptime } from "node:os"
 import { parse, win32 } from "node:path"
-import { packageRoot, resolveDefaultExecutable } from "./internal/AtomicFileSystemExecutable.ts"
-import { usableExecutable } from "./internal/AtomicFileSystemTransport.ts"
 import * as PipedProcess from "./internal/PipedProcess.ts"
 import * as ProcessCleanup from "./internal/ProcessCleanup.ts"
+import { groupVacant as nativeGroupVacant, liveness, posixSystemFrom } from "./internal/ProcessNative.ts"
 import * as ProcSnapshot from "./internal/ProcSnapshot.ts"
+import { psGroupSnapshot as readPsSnapshot } from "./internal/PsSnapshot.ts"
+import { windowsIdentity } from "./internal/WindowsIdentity.ts"
 
 /**
  * What the operating system can say about a pid.
@@ -144,21 +145,6 @@ export interface System {
   readonly killTree: (record: ProcessLedger.ProcessRecord) => KillOutcome
 }
 
-const errorCode = (cause: unknown): string | undefined => (cause as { readonly code?: string } | null)?.code
-
-const liveness = (pid: number): Liveness => {
-  try {
-    // Signal 0 delivers nothing; it only asks whether the pid is signalable.
-    process.kill(pid, 0)
-    return "alive"
-  } catch (cause) {
-    // ESRCH is the only answer that means gone. EPERM means the process
-    // exists and belongs to another user; anything else is a question this
-    // host could not ask, and both keep the record rather than kill on it.
-    return errorCode(cause) === "ESRCH" ? "dead" : "unknown"
-  }
-}
-
 const bootedAtMs = (): number => Date.now() - Math.round(uptime() * 1000)
 
 /**
@@ -215,38 +201,12 @@ const windowsRoot = (): string => {
  */
 const taskkillExecutable = (): string => win32.join(windowsRoot(), "System32", "taskkill.exe")
 
-/** A live-release probe has its own short bound within the shutdown deadline. */
-const cleanupProbeTimeoutMs = 2000
-
 /**
  * One fixed-path snapshot supplies group membership, start identities and our
  * own group together. Only numeric fields and C-locale lstart are read; command
  * text and the caller's PATH never influence signal authority.
  */
-const psGroupSnapshot = (pgid: number): ProcessCleanup.Snapshot | undefined => {
-  const result = spawnSync(defaultPsExecutable, ["-A", "-o", "pid=,pgid=,stat=,lstart="], {
-    encoding: "utf8",
-    timeout: cleanupProbeTimeoutMs,
-    killSignal: "SIGKILL",
-    env: { LC_ALL: "C", TZ: "UTC", PATH: "/usr/bin:/bin" }
-  })
-  if (result.error !== undefined || result.signal !== null || result.status !== 0) return undefined
-  let own: number | undefined
-  const members: Array<ProcessCleanup.Member> = []
-  for (const line of result.stdout.trim().split("\n")) {
-    const match = /^\s*([0-9]+)\s+([0-9]+)\s+(\S+)\s+(.+)$/.exec(line)
-    if (match === null) return undefined
-    const pid = Number(match[1])
-    const group = Number(match[2])
-    if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(group)) return undefined
-    if (pid === process.pid) own = group
-    if (group !== pgid) continue
-    const started = Date.parse(`${match[4]!} UTC`)
-    if (Number.isNaN(started)) return undefined
-    members.push({ pid, startedAtMs: started, zombie: match[3]!.startsWith("Z") })
-  }
-  return own === undefined || own <= 0 ? undefined : { ownGroup: own, members }
-}
+const psGroupSnapshot = readPsSnapshot(defaultPsExecutable)
 
 /**
  * The observation the supervisor polls, from the source that platform has.
@@ -282,16 +242,7 @@ export const groupSnapshotFor = (platform: string): (pgid: number) => ProcessCle
  * @category constructors
  * @since 1.0.0
  */
-export const groupVacant = (pgid: number): boolean => {
-  // kill(0) and kill(-1) address the caller's group and every process.
-  if (!Number.isSafeInteger(pgid) || pgid <= 1) return false
-  try {
-    process.kill(-pgid, 0)
-    return false
-  } catch (cause) {
-    return errorCode(cause) === "ESRCH"
-  }
-}
+export const groupVacant = (pgid: number): boolean => nativeGroupVacant(pgid)
 
 /**
  * Live cleanup for Node and Bun contained spawners.
@@ -435,24 +386,6 @@ export interface SystemOptions {
 }
 
 /**
- * Whether a durable record names a POSIX process group this host may signal.
- *
- * `process.kill(-pgid, ...)` turns the stored number into a target directly, so
- * every value that is not a real foreign group has to be refused before it gets
- * there: `0` signals THIS process's group, a negative value stops naming a
- * group at all and names a single pid, and a `pgid` that differs from `pid`
- * describes a child that does not lead the group it claims —
- * `ContainedSpawner.groupOf` writes `pgid === pid` for every detached POSIX
- * child, so anything else is a record no writer in this repository produced.
- */
-const refusePosixTarget = (record: ProcessLedger.ProcessRecord): Refusal | undefined => {
-  if (record.pgid === null) return "no-group"
-  if (!Number.isSafeInteger(record.pid) || record.pid <= 1) return "invalid-record"
-  if (!Number.isSafeInteger(record.pgid) || record.pgid <= 1) return "invalid-record"
-  return record.pgid === record.pid ? undefined : "invalid-record"
-}
-
-/**
  * Whether a durable record names a Windows process tree this host may signal.
  *
  * Windows has no process groups, so `ContainedSpawner.groupOf` records `null`
@@ -524,43 +457,6 @@ export const procSystemWith = (options?: ProcSystemOptions): System => {
   }, options?.ownerPid ?? process.pid)
 }
 
-/** The POSIX kill path over whichever probes the platform answers with. */
-const posixSystemFrom = (
-  probes: Pick<System, "startedAtMs" | "ownGroup" | "bootedAtMs">,
-  ownerPid: number
-): System => {
-  const readOwnGroup = probes.ownGroup
-  return {
-    isAlive: liveness,
-    startedAtMs: probes.startedAtMs,
-    ownGroup: readOwnGroup,
-    bootedAtMs: probes.bootedAtMs,
-    refuseTarget: refusePosixTarget,
-    killTree: (record) => {
-      // Repeated here and not only in `refuse`: this function is exported, and
-      // the negation below is the one place a stored number becomes a signal.
-      if (refusePosixTarget(record) !== undefined) return "failed"
-      // The host's own identity, repeated for the same reason. `refuse` holds
-      // one `ownGroup` reading for the whole sweep; a caller that reaches this
-      // function directly has made no such reading, and `process.kill(-pgid)`
-      // does not care which way the number arrived. A group that cannot be
-      // read is a comparison that did not happen, so nothing is signalled.
-      if (record.pid === ownerPid || record.pgid === ownerPid) return "failed"
-      const group = readOwnGroup()
-      if (group === null || record.pid === group || record.pgid === group) return "failed"
-      try {
-        process.kill(-(record.pgid as number), "SIGKILL")
-        return "signalled"
-      } catch (cause) {
-        // The group settled between the liveness check and the signal: the end
-        // state is the one that was wanted. Anything else is a kill that did NOT
-        // happen, and saying so is what gets the record tried again.
-        return errorCode(cause) === "ESRCH" ? "already-gone" : "failed"
-      }
-    }
-  }
-}
-
 /**
  * Reaping on a POSIX host: one `SIGKILL` to the abandoned process group, with
  * the identity probe at {@link defaultPsExecutable}.
@@ -579,32 +475,7 @@ export const posixSystem: System = posixSystemWith()
  */
 export const windowsSystemWith = (options?: SystemOptions): System => {
   const ownerPid = options?.ownerPid ?? process.pid
-  const startedAtMs = (pid: number): StartTime => {
-    if (!Number.isSafeInteger(pid) || pid <= 1 || pid > 0xffff_ffff) return { _tag: "unavailable" }
-    try {
-      const configured = options?.processExecutable ?? process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
-      const executable = configured === undefined
-        ? resolveDefaultExecutable(packageRoot, undefined)
-        : usableExecutable(configured, undefined)
-      const result = spawnSync(executable, ["--process-info", String(pid)], {
-        cwd: parse(process.execPath).root,
-        env: {},
-        encoding: "utf8",
-        timeout: psTimeoutMs,
-        killSignal: "SIGKILL",
-        maxBuffer: 4096
-      })
-      if (result.error !== undefined || result.signal !== null || result.status !== 0) return { _tag: "unavailable" }
-      const value = JSON.parse(result.stdout) as { readonly status?: unknown; readonly startedAtMs?: unknown } | null
-      if (value?.status === "gone") return { _tag: "gone" }
-      return value?.status === "started" && typeof value.startedAtMs === "number" &&
-          Number.isSafeInteger(value.startedAtMs) && value.startedAtMs >= 0
-        ? { _tag: "started", startedAtMs: value.startedAtMs }
-        : { _tag: "unavailable" }
-    } catch {
-      return { _tag: "unavailable" }
-    }
-  }
+  const startedAtMs = windowsIdentity(options)
   return {
     isAlive: liveness,
     startedAtMs,

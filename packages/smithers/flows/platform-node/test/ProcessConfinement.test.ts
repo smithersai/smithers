@@ -324,7 +324,7 @@ describe("native ProcessConfinement", () => {
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
   })
 
-  it("refuses symlink writes even when missing mechanisms may fall back", async () => {
+  it("refuses symlink writes when a mechanism is present, even with fallback enabled", async () => {
     const f = fixture()
     const outside = NodePath.join(f.base, "outside")
     NodeFs.mkdirSync(outside)
@@ -336,6 +336,29 @@ describe("native ProcessConfinement", () => {
       )
     ))
     expect(failure).toMatchObject({ reason: { _tag: "PermissionDenied" } })
+    expect(NodeFs.readdirSync(outside)).toEqual([])
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
+  it("warns and preserves symlink writes when the explicit fallback has no mechanism", async () => {
+    const f = fixture()
+    const outside = NodePath.join(f.base, "outside")
+    NodeFs.mkdirSync(outside)
+    NodeFs.symlinkSync(outside, NodePath.join(f.workspaceRoot, "out"), "dir")
+    const command = ChildProcess.make("fixture")
+    const logs: Array<unknown> = []
+    const service = ProcessConfinement.make({
+      ...f,
+      unavailable: "unconfined",
+      host: { ...f.host, executable: () => undefined }
+    })
+    const result = await run(
+      service.confine(command, { ...f.profile, writes: ["out/missing"] }).pipe(
+        Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((event) => logs.push(event.message))]))
+      )
+    )
+    expect(result).toBe(command)
+    expect(JSON.stringify(logs)).toContain("Running unconfined")
     expect(NodeFs.readdirSync(outside)).toEqual([])
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
   })

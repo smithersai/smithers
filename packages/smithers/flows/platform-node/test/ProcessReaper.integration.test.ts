@@ -245,18 +245,6 @@ const spyLedger = (orphans: ReadonlyArray<ProcessLedger.ProcessRecord>) => {
   return { service, skipped, reaped }
 }
 
-/** Runs `body` with one scripted executable shadowing `command` on PATH. */
-const withShim = <A>(name: string, command: string, script: string, body: () => A): A => {
-  const bin = shimBin(name, command, script)
-  const previous = process.env["PATH"]
-  process.env["PATH"] = `${bin}:${previous ?? ""}`
-  try {
-    return body()
-  } finally {
-    process.env["PATH"] = previous
-  }
-}
-
 describe("ProcessReaper", () => {
   it.live("kills a group a dead incarnation abandoned and journals the reaping", () =>
     Effect.gen(function*() {

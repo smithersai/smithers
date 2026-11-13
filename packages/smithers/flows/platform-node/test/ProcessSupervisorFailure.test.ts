@@ -6,40 +6,13 @@ import type * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, ExitCode, make, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import * as Redacted from "effect/Redacted"
-import { EventEmitter, once } from "node:events"
+import { once } from "node:events"
 import * as Fs from "node:fs"
 import * as Net from "node:net"
 import { parse } from "node:path"
 import * as Tls from "node:tls"
-import { vi } from "vitest"
 import * as Cleanup from "../src/internal/ProcessCleanup.ts"
 import * as Supervisor from "../src/internal/ProcessSupervisor.ts"
-import { resolveJobExecutable, WindowsProcessJob } from "../src/internal/WindowsProcessJob.ts"
-
-vi.mock(
-  "../src/internal/WindowsProcessJob.ts",
-  () => ({ WindowsProcessJob: vi.fn(), resolveJobExecutable: vi.fn(() => "/trusted/job-helper") })
-)
-
-vi.mock("node:fs", async (original) => {
-  const actual = await original<typeof import("node:fs")>()
-  return {
-    ...actual,
-    mkdtempSync: vi.fn(actual.mkdtempSync),
-    chmodSync: vi.fn(actual.chmodSync),
-    rmSync: vi.fn(actual.rmSync)
-  }
-})
-vi.mock("node:net", async (original) => {
-  const actual = await original<typeof import("node:net")>()
-  return { ...actual, createServer: vi.fn(actual.createServer), createConnection: vi.fn(actual.createConnection) }
-})
-
-vi.mock("node:tls", async (original) => {
-  const actual = await original<typeof import("node:tls")>()
-  return { ...actual, createServer: vi.fn(actual.createServer) }
-})
-const serverFactory = (process.platform === "win32" ? Tls.createServer : Net.createServer) as typeof Net.createServer
 
 const promise = <A>() => {
   let resolve!: (value: A) => void
@@ -110,8 +83,10 @@ const fixture = (settings: Settings = {}) => {
     owner.resolve(ExitCode(0))
     if (jobCreated && settings.job !== "held-settlement") jobSettled.resolve()
   }
-  if (settings.platform === "win32") {
-    vi.mocked(WindowsProcessJob).mockImplementation(function(pid, created, executable) {
+  const services = {
+    ...Supervisor.Services.defaultValue(),
+    jobExecutable: () => "/trusted/job-helper",
+    job: (pid: number, created: unknown, executable: string) => {
       expect(pid).toBe(900_001)
       expect(created).toBe("123456789012345678")
       expect(executable).toBe("/trusted/job-helper")
@@ -132,8 +107,8 @@ const fixture = (settings: Settings = {}) => {
           peer?.end()
         },
         reference: (value: boolean) => jobReferences.push(value)
-      } as unknown as WindowsProcessJob
-    })
+      }
+    }
   }
   const send = (message: unknown) => peer?.write(JSON.stringify(message) + "\n")
   let drained = false
@@ -262,6 +237,7 @@ const fixture = (settings: Settings = {}) => {
       })
     })
   return {
+    services,
     jobAttached: jobAttached.promise,
     releaseJob: () => jobReady.resolve(),
     releaseSettlement: () => jobSettled.resolve(),
@@ -328,6 +304,7 @@ const run = async (
         ))
       ),
       Effect.provideService(ProcessLedger.ProcessLedger, ledger),
+      Effect.provideService(Supervisor.Services, host.services),
       startupBudgetMs === undefined
         ? (effect) => effect
         : Effect.provideService(Supervisor.StartupBudget, startupBudgetMs),
@@ -342,58 +319,31 @@ const run = async (
 }
 
 describe("failed process preparation", () => {
-  it("uses private filesystem sockets on POSIX and preserves request write failures", async () => {
-    // No OS resources are allocated: exercise the POSIX transport contract on
-    // every host, including Windows, whose real transport is authenticated TLS.
-    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
-    const servers = Array.from({ length: 2 }, () => {
-      const server = new EventEmitter()
-      return Object.assign(server, {
-        listen: vi.fn((_path: string, ready: () => void) => ready()),
-        close: vi.fn(),
-        unref: vi.fn()
-      })
-    })
-    const socket = new Net.Socket()
-    const cause = new Error("request write refused")
-    const write = vi.spyOn(socket, "write").mockImplementation((_data, callback: unknown) => {
-      if (typeof callback !== "function") throw new Error("Missing write callback")
-      callback(cause)
-      return false
-    })
-    vi.mocked(Fs.mkdtempSync).mockReturnValueOnce("/tmp/sm-p-contract")
-    vi.mocked(Fs.chmodSync).mockImplementationOnce(() => {})
-    vi.mocked(Fs.rmSync).mockImplementationOnce(() => {})
-    for (const server of servers) {
-      vi.mocked(Net.createServer).mockReturnValueOnce(server as unknown as Net.Server)
+  it.skipIf(process.platform === "win32")(
+    "uses private filesystem sockets and refuses a closed request channel",
+    async () => {
+      const control = new Supervisor.Control()
+      try {
+        await control.listening
+        expect(Fs.statSync(control.directory).mode & 0o777).toBe(0o700)
+        expect(Fs.statSync(control.path).isSocket()).toBe(true)
+        expect(Fs.statSync(control.requestPath).isSocket()).toBe(true)
+        expect(control.environment()).toEqual({})
+        const peer = control.connect()
+        const requests = control.connect(true)
+        await bounded(Promise.all([once(peer, "connect"), once(requests, "connect")]))
+        // Real sockets reach the actual control callbacks before write is tested.
+        while (control.requestSocket === undefined) await new Promise((resolve) => setTimeout(resolve, 1))
+        control.disconnect()
+        await expect(control.write({ type: "stop" })).rejects.toMatchObject({ code: "control_channel_closed" })
+        peer.destroy()
+        requests.destroy()
+      } finally {
+        control.dispose()
+      }
+      expect(Fs.existsSync(control.directory)).toBe(false)
     }
-    vi.mocked(Net.createConnection).mockReturnValueOnce(socket).mockReturnValueOnce(socket)
-    let control: Supervisor.Control | undefined
-    try {
-      Object.defineProperty(process, "platform", { value: "darwin", configurable: true })
-      control = new Supervisor.Control()
-      await control.listening
-      expect(Fs.mkdtempSync).toHaveBeenLastCalledWith("/tmp/sm-p-")
-      expect(Fs.chmodSync).toHaveBeenLastCalledWith(control.directory, 0o700)
-      expect(servers[0]!.listen).toHaveBeenCalledWith(control.path, expect.any(Function))
-      expect(servers[1]!.listen).toHaveBeenCalledWith(control.requestPath, expect.any(Function))
-      expect(control.environment()).toEqual({})
-      expect(control.connect()).toBe(socket)
-      expect(Net.createConnection).toHaveBeenLastCalledWith(control.path)
-      expect(control.connect(true)).toBe(socket)
-      expect(Net.createConnection).toHaveBeenLastCalledWith(control.requestPath)
-      control.requestSocket = socket
-      await expect(control.write({ type: "stop" })).rejects.toBe(cause)
-      expect(write).toHaveBeenCalledWith("{\"type\":\"stop\"}\n", expect.any(Function))
-    } finally {
-      Object.defineProperty(process, "platform", platform)
-      control?.dispose()
-      socket.destroy()
-      write.mockRestore()
-    }
-    expect(servers.every((server) => server.close.mock.calls.length === 1)).toBe(true)
-    expect(Fs.rmSync).toHaveBeenLastCalledWith("/tmp/sm-p-contract", { recursive: true, force: true })
-  })
+  )
 
   it.each([false, true])("preserves explicit environment values with extendEnv=%s", async (extendEnv) => {
     const host = fixture()
@@ -456,43 +406,35 @@ describe("failed process preparation", () => {
     }
   })
 
-  it("refuses an unavailable Node SEA module before allocating or spawning an owner", async () => {
+  it("refuses an unavailable runtime description before allocating or spawning an owner", async () => {
     const cause = new Error("the Node SEA module could not load")
-    const bun = Object.getOwnPropertyDescriptor(process.versions, "bun")
-    Object.defineProperty(process.versions, "bun", { value: undefined, configurable: true })
-    vi.doMock("node:sea", () => {
-      throw cause
-    })
     const host = fixture()
+    host.services.runtime = Supervisor.runtimeDescription({ bun: false, main: "" }, () => Promise.reject(cause))
     try {
       const result = await run(host)
       expect(Exit.isFailure(result.outcome)).toBe(true)
       if (Exit.isFailure(result.outcome)) {
         expect(Cause.hasDies(result.outcome.cause)).toBe(false)
-        const error = Cause.squash(result.outcome.cause)
-        expect(error).toMatchObject({ _tag: "PlatformError", reason: { method: "spawn" } })
-        // Vitest wraps a rejected module factory in its import error. That
-        // exact rejection stays attached to the typed preparation failure.
-        expect(error).toHaveProperty("cause.cause", cause)
+        expect(Cause.squash(result.outcome.cause)).toMatchObject({
+          _tag: "PlatformError",
+          reason: { method: "spawn", cause }
+        })
       }
       expect(host.commands).toEqual([])
       expect(host.paths).toEqual([])
       expect(result.live).toEqual([])
     } finally {
       host.dispose()
-      vi.doUnmock("node:sea")
-      if (bun === undefined) Reflect.deleteProperty(process.versions, "bun")
-      else Object.defineProperty(process.versions, "bun", bun)
     }
   })
 
-  it("selects Bun bootstrap flags without importing Node SEA or changing the target configuration", async () => {
-    const bun = Object.getOwnPropertyDescriptor(process.versions, "bun")
-    Object.defineProperty(process.versions, "bun", { value: "1.4.1-test-seam", configurable: true })
-    vi.doMock("node:sea", () => {
-      throw new Error("the Bun bootstrap must not import Node SEA")
-    })
+  it("selects Bun bootstrap flags without changing the target configuration", async () => {
     const host = fixture()
+    let imported = false
+    host.services.runtime = Supervisor.runtimeDescription({ bun: true, main: "" }, () => {
+      imported = true
+      return Promise.reject(new Error("Bun must not import Node SEA"))
+    })
     try {
       const result = await run(host)
       expect(Exit.isSuccess(result.outcome)).toBe(true)
@@ -508,12 +450,10 @@ describe("failed process preparation", () => {
         args: ["original argument"]
       })
       expect(result.live).toEqual([])
+      expect(imported).toBe(false)
       expect(host.rawKills).toBe(0)
     } finally {
       host.dispose()
-      vi.doUnmock("node:sea")
-      if (bun === undefined) Reflect.deleteProperty(process.versions, "bun")
-      else Object.defineProperty(process.versions, "bun", bun)
     }
   })
 
@@ -673,51 +613,78 @@ describe("failed process preparation", () => {
     }
   })
 
-  for (const step of ["directory", "permissions", "server", "request-server", "listening"] as const) {
-    it(`maps a ${step} failure into the typed channel and removes any owned directory`, async () => {
-      const cause = Object.assign(new Error(`${step} denied`), { code: "EACCES" })
-      if (step === "directory") {
-        vi.mocked(Fs.mkdtempSync).mockImplementationOnce(() => {
-          throw cause
-        })
-      }
-      if (step === "permissions") {
-        vi.mocked(Fs.chmodSync).mockImplementationOnce(() => {
-          throw cause
-        })
-      }
-      if (step === "request-server") {
-        vi.mocked(serverFactory).mockImplementationOnce(vi.mocked(serverFactory).getMockImplementation()!)
-      }
-      if (step === "server" || step === "request-server") {
-        vi.mocked(serverFactory).mockImplementationOnce(() => {
-          throw cause
-        })
-      }
-      if (step === "listening") {
-        const server = serverFactory()
-        vi.spyOn(server, "listen").mockImplementation(() => {
-          queueMicrotask(() => server.emit("error", cause))
-          return server
-        })
-        vi.mocked(serverFactory).mockReturnValueOnce(server)
-      }
-      const spawn = vi.fn(() => Effect.die("raw spawn must not run"))
-      const outcome = await Effect.runPromise(
-        Supervisor.prepare({ platform: "darwin", snapshot: () => undefined, vacant: () => false }, Cleanup.policy)(
-          ChildProcess.make("literal"),
-          spawn
-        ).pipe(Effect.scoped, Effect.exit)
+  for (const transport of ["native", "tls"] as const) {
+    for (const step of ["directory", "permissions", "server", "request-server", "listening"] as const) {
+      it.skipIf(process.platform === "win32" && transport === "native")(
+        "maps a " + transport + " " + step + " failure into the typed channel and removes any owned directory",
+        async () => {
+          const cause = Object.assign(new Error(step + " denied"), { code: "EACCES" })
+          let directory: string | undefined
+          let allocations = 0
+          const allocate = <S extends Net.Server>(create: () => S): S => {
+            allocations++
+            if (step === "server" || step === "request-server" && allocations === 2) throw cause
+            const server = create()
+            if (step === "listening" && allocations === 1) {
+              // Both transports bind a real server to a missing parent.
+              const listen = server.listen.bind(server)
+              server.listen = ((...args: Array<unknown>) =>
+                listen(directory + "/missing/socket", args.at(-1) as () => void)) as typeof server.listen
+            }
+            return server
+          }
+          const native: Supervisor.ControlNative = {
+            ...Supervisor.controlNative,
+            mkdtemp: ((prefix: string) => {
+              if (step === "directory") throw cause
+              directory = Fs.mkdtempSync(prefix)
+              return directory
+            }) as typeof Fs.mkdtempSync,
+            chmod: (...args) => {
+              if (step === "permissions") throw cause
+              return Fs.chmodSync(...args)
+            },
+            server: ((...args: Parameters<typeof Net.createServer>) =>
+              allocate(() =>
+                Net.createServer(...args)
+              )) as typeof Net.createServer,
+            tlsServer: ((...args: Parameters<typeof Tls.createServer>) =>
+              allocate(() => Tls.createServer(...args))) as typeof Tls.createServer
+          }
+          let spawned = false
+          const outcome = await Effect.runPromise(
+            Supervisor.prepare({ platform: "darwin", snapshot: () => undefined, vacant: () => false }, Cleanup.policy)(
+              ChildProcess.make("literal"),
+              () =>
+                Effect.sync(() => {
+                  spawned = true
+                }).pipe(Effect.andThen(Effect.die("raw spawn must not run")))
+            ).pipe(
+              Effect.provideService(Supervisor.Services, {
+                ...Supervisor.Services.defaultValue(),
+                control: (_transport, startup) => new Supervisor.Control(transport, startup, native)
+              }),
+              Effect.scoped,
+              Effect.exit
+            )
+          )
+          expect(Exit.isFailure(outcome)).toBe(true)
+          if (Exit.isFailure(outcome)) {
+            expect(Cause.hasDies(outcome.cause)).toBe(false)
+            const error = Cause.squash(outcome.cause)
+            // Containers and native hosts can report either failed path lookup
+            // or denied bind access. Both must remain typed and leave no owner.
+            if (step === "listening") {
+              expect(error).toMatchObject({
+                reason: { _tag: expect.stringMatching(/^(NotFound|PermissionDenied)$/), method: "spawn" }
+              })
+            } else expect(String(outcome.cause)).toContain("PermissionDenied")
+          }
+          expect(spawned).toBe(false)
+          if (directory !== undefined) expect(Fs.existsSync(directory)).toBe(false)
+        }
       )
-      expect(Exit.isFailure(outcome)).toBe(true)
-      if (Exit.isFailure(outcome)) {
-        expect(Cause.hasDies(outcome.cause)).toBe(false)
-        expect(String(outcome.cause)).toContain("PermissionDenied")
-      }
-      expect(spawn).not.toHaveBeenCalled()
-      const directory = vi.mocked(Fs.mkdtempSync).mock.results.at(-1)
-      if (directory?.type === "return") expect(Fs.existsSync(directory.value)).toBe(false)
-    })
+    }
   }
 })
 
@@ -798,17 +765,19 @@ describe("failed process shutdown", () => {
 
   it("disconnects a failed cleanup receipt write and waits for native job settlement", async () => {
     const host = fixture({ platform: "win32" })
-    const original = Supervisor.Control.prototype.write
     const refused = promise<void>()
-    const write = vi.spyOn(Supervisor.Control.prototype, "write").mockImplementation(
-      function(this: Supervisor.Control, message) {
+    host.services.control = (transport, startup) => {
+      const control = new Supervisor.Control(transport, startup)
+      const write = control.write.bind(control)
+      control.write = (message) => {
         if (typeof message === "object" && message !== null && "type" in message && message.type === "cleanup_ack") {
           refused.resolve()
           return Promise.reject(new Error("the cleanup receipt write failed"))
         }
-        return original.call(this, message)
+        return write(message)
       }
-    )
+      return control
+    }
     try {
       const result = await run(host, () =>
         Effect.promise(async () => {
@@ -819,24 +788,25 @@ describe("failed process shutdown", () => {
       expect(result.live).toEqual([])
       expect(host.rawKills).toBe(0)
     } finally {
-      write.mockRestore()
       host.dispose()
     }
   })
 
   it("disconnects after an owner-only natural-exit fast-stop write fails and verifies cleanup", async () => {
     const host = fixture({ snapshot: "owner" })
-    const original = Supervisor.Control.prototype.write
     const rejected: Array<unknown> = []
-    const write = vi.spyOn(Supervisor.Control.prototype, "write").mockImplementation(
-      function(this: Supervisor.Control, message) {
+    host.services.control = (transport, startup) => {
+      const control = new Supervisor.Control(transport, startup)
+      const write = control.write.bind(control)
+      control.write = (message) => {
         if (typeof message === "object" && message !== null && "fast" in message && message.fast === true) {
           rejected.push(message)
           return Promise.reject(new Error("the fast-stop write failed"))
         }
-        return original.call(this, message)
+        return write(message)
       }
-    )
+      return control
+    }
     try {
       const result = await run(host, (handle) =>
         Effect.gen(function*() {
@@ -852,7 +822,6 @@ describe("failed process shutdown", () => {
       expect(host.rawKills).toBe(0)
       expect(host.unrefs).toBe(0)
     } finally {
-      write.mockRestore()
       host.dispose()
     }
   })
@@ -961,6 +930,12 @@ describe("failed process shutdown", () => {
 })
 
 describe("Windows job ownership", () => {
+  it("keeps the real job's creation-identity guard before allocating a native child", () => {
+    const services = Supervisor.Services.defaultValue()
+    expect(() => services.job(process.pid, undefined, process.execPath))
+      .toThrow("Windows process owner has no exact creation identity")
+  })
+
   it("completes native settlement after an explicit kill is interrupted", async () => {
     const host = fixture({ platform: "win32", job: "held-settlement" })
     let interruptFinished = false
@@ -986,10 +961,10 @@ describe("Windows job ownership", () => {
   })
 
   it("refuses an unavailable native helper before creating an owner", async () => {
-    vi.mocked(resolveJobExecutable).mockImplementationOnce(() => {
-      throw new Error("missing native helper")
-    })
     const host = fixture({ platform: "win32" })
+    host.services.jobExecutable = () => {
+      throw new Error("missing native helper")
+    }
     const result = await run(host)
     expect(Exit.isFailure(result.outcome)).toBe(true)
     expect(host.commands).toEqual([])

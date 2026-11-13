@@ -25,8 +25,8 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
 })
 
 /**
- * The native host suites run real processes and inject faults as
- * parameters; module mocks and stubbed globals prove behaviour against a double.
+ * Host boundary suites run real processes and inject faults as parameters;
+ * module mocks and stubbed globals prove behaviour against a double.
  *
  * @since 1.0.0
  * @category lint
@@ -41,10 +41,21 @@ const importRules = ImportRules({
       "test/NativeProcessOptions.test.ts",
       "test/PipedProcess.test.ts",
       "test/EgressHttpClient.test.ts",
-      "test/NodeRuntime.test.ts"
+      "test/NodeRuntime.test.ts",
+      "test/ProcessSupervisorFailure.test.ts",
+      "test/ProcessLifecycleProbe.test.ts",
+      "test/ProcessReaper.test.ts",
+      "test/ScopedProcess.test.ts",
+      "test/SandboxedFlow.test.ts"
     ],
     callees: ["vi.mock", "vi.doMock", "vi.spyOn", "vi.stubGlobal", "vi.fn", "vi.hoisted", "jest.mock"],
     because: "TEST-2/TEST-7: no mocks; unhappy paths inject a faulty seam, happy paths run the real helper."
+  }, {
+    kind: "forbidCalls",
+    files: ["src/SandboxedFlow.ts"],
+    callees: ["*.mkString", "*.runCollect"],
+    includeReferences: true,
+    because: "Guest output is untrusted and unbounded; drain it incrementally without a whole-output collector."
   }]
 })
 
@@ -146,6 +157,9 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/ProcessReaper.ts",
+        "src/internal/ProcessNative.ts",
+        "src/internal/PsSnapshot.ts",
+        "src/internal/WindowsIdentity.ts",
         "src/internal/ProcessSupervisor.ts",
         "src/internal/SupervisorProgram.ts",
         "src/internal/WindowsProcessJob.ts",
@@ -177,6 +191,9 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/ProcessReaper.ts",
+        "src/internal/ProcessNative.ts",
+        "src/internal/PsSnapshot.ts",
+        "src/internal/WindowsIdentity.ts",
         "src/HostLiveness.ts",
         "src/internal/ProcSnapshot.ts",
         "src/internal/ProcessCleanup.ts",

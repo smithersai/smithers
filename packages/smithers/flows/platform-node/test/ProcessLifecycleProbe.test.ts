@@ -1,92 +1,82 @@
-import { spawnSync } from "node:child_process"
-import { afterEach, describe, expect, it, vi } from "vitest"
-import type * as Cleanup from "../src/internal/ProcessCleanup.ts"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { describe, expect, it } from "vitest"
+import { psGroupSnapshot } from "../src/internal/PsSnapshot.ts"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
-
-const captured = vi.hoisted(() => ({ system: undefined as Cleanup.System | undefined }))
-vi.mock("../src/internal/ProcessCleanup.ts", () => ({
-  lifecycle: (system: Cleanup.System) => {
-    captured.system = system
-    return () => undefined
-  }
-}))
-
-vi.mock("node:child_process", async (original) => ({
-  ...await original<typeof import("node:child_process")>(),
-  spawnSync: vi.fn()
-}))
-afterEach(() => vi.restoreAllMocks())
 
 const target = 4321
 const start = "Sat Sep  5 12:00:00 2026"
-const own = `${process.pid} 77 S ${start}`
-const member = `${target} ${target} S ${start}`
-const answer = (stdout: string, extra: Record<string, unknown> = {}) =>
-  ({
-    pid: 888,
-    output: [null, stdout, ""],
-    stdout,
-    stderr: "",
-    status: 0,
-    signal: null,
-    ...extra
-  }) as unknown as ReturnType<typeof spawnSync>
+const own = process.pid + " 77 S " + start
+const member = target + " " + target + " S " + start
 
-/**
- * The `ps` reader, asked for by name rather than taken from `process.platform`.
- *
- * Linux reads the process table out of `/proc` and never spawns `ps` at all,
- * so a suite that probed the platform's own reader would inject a `spawnSync`
- * fault nothing on that host consults, and the refusals below would go
- * unexercised on the only runner where the wiring differs. Naming a POSIX
- * platform pins the reader under test on every host; the test after them pins
- * the wiring, which is the part that varies.
- */
-const snapshot = ProcessReaper.groupSnapshotFor("darwin")
-
-describe("live process identity probe", () => {
-  it("wires the `ps` reader everywhere but Linux, which reads the kernel instead", () => {
-    expect(captured.system!.snapshot === snapshot).toBe(process.platform !== "linux")
+describe.skipIf(process.platform === "win32")("live process identity probe", () => {
+  it("selects the kernel reader only on Linux", () => {
+    expect(ProcessReaper.groupSnapshotFor("darwin")).toBe(ProcessReaper.groupSnapshotFor("freebsd"))
+    expect(ProcessReaper.groupSnapshotFor("linux")).not.toBe(ProcessReaper.groupSnapshotFor("darwin"))
+    expect(ProcessReaper.groupSnapshotFor(process.platform)(process.pid)).toBeDefined()
   })
 
   for (
-    const [name, output] of [
-      ["spawn error", answer("", { error: new Error("ENOENT") })],
-      ["probe killed", answer("", { signal: "SIGKILL" })],
-      ["probe failed", answer("", { status: 1 })],
-      ["malformed row", answer(`${own}\ninvalid`)],
-      ["unsafe pid", answer(`${own}\n999999999999999999 ${target} S ${start}`)],
-      ["unsafe group", answer(`${own}\n${target} 999999999999999999 S ${start}`)],
-      ["invalid start time", answer(`${own}\n${target} ${target} S unknown`)],
-      ["missing own identity", answer(member)],
-      ["invalid own group", answer(`${process.pid} 0 S ${start}\n${member}`)],
-      ["empty table", answer("")]
+    const [name, text, status] of [
+      ["probe failed", "", 1],
+      ["malformed row", own + "\ninvalid", 0],
+      ["unsafe pid", own + "\n999999999999999999 " + target + " S " + start, 0],
+      ["unsafe group", own + "\n" + target + " 999999999999999999 S " + start, 0],
+      ["invalid start time", own + "\n" + target + " " + target + " S unknown", 0],
+      ["missing own identity", member, 0],
+      ["invalid own group", process.pid + " 0 S " + start + "\n" + member, 0],
+      ["empty table", "", 0]
     ] as const
   ) {
-    it(`refuses an unanswered identity check: ${name}`, async () => {
-      vi.mocked(spawnSync).mockReturnValue(output)
-      const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
-      expect(snapshot(target)).toBeUndefined()
-      expect(kill).not.toHaveBeenCalled()
-      expect(spawnSync).toHaveBeenCalledWith("/bin/ps", ["-A", "-o", "pid=,pgid=,stat=,lstart="], {
-        encoding: "utf8",
-        timeout: 2_000,
-        killSignal: "SIGKILL",
-        env: { LC_ALL: "C", TZ: "UTC", PATH: "/usr/bin:/bin" }
-      })
+    it("refuses an unanswered identity check: " + name, () => {
+      withProbe(text, status, (executable) => expect(psGroupSnapshot(executable)(target)).toBeUndefined())
     })
   }
 
-  it("reads the owner and all group identities without signalling", () => {
-    vi.mocked(spawnSync).mockReturnValue(answer(`${own}\n${member}\n4322 ${target} Z ${start}`))
-    const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
-    expect(snapshot(target)).toEqual({
-      ownGroup: 77,
-      members: [
-        { pid: target, startedAtMs: Date.UTC(2026, 8, 5, 12), zombie: false },
-        { pid: 4322, startedAtMs: Date.UTC(2026, 8, 5, 12), zombie: true }
-      ]
+  it("refuses an executable that is missing or killed", () => {
+    expect(psGroupSnapshot(join(tmpdir(), "missing-smithers-probe", "ps"))(target)).toBeUndefined()
+    withProbe("", 0, (executable) => {
+      writeFileSync(executable, "#!/bin/sh\nkill -KILL $$\n", { mode: 0o755 })
+      expect(psGroupSnapshot(executable)(target)).toBeUndefined()
     })
-    expect(kill).not.toHaveBeenCalled()
+  })
+
+  it("reads group identities through the configured executable with the pinned environment", () => {
+    withProbe(own + "\n" + member + "\n4322 " + target + " Z " + start, 0, (executable) => {
+      expect(psGroupSnapshot(executable)(target)).toEqual({
+        ownGroup: 77,
+        members: [
+          { pid: target, startedAtMs: Date.UTC(2026, 8, 5, 12), zombie: false },
+          { pid: 4322, startedAtMs: Date.UTC(2026, 8, 5, 12), zombie: true }
+        ]
+      })
+      const request = JSON.parse(readFileSync(executable + ".request", "utf8"))
+      delete request.env.__CF_USER_TEXT_ENCODING
+      expect(request).toEqual({
+        args: ["-A", "-o", "pid=,pgid=,stat=,lstart="],
+        env: { LC_ALL: "C", TZ: "UTC", PATH: "/usr/bin:/bin" }
+      })
+    })
   })
 })
+
+/** A real fixed-path process with a controlled reply, never a PATH substitution. */
+const withProbe = (stdout: string, status: number, use: (executable: string) => void) => {
+  const directory = mkdtempSync(join(tmpdir(), "process-probe-"))
+  const executable = join(directory, "ps")
+  try {
+    writeFileSync(
+      executable,
+      "#!" + process.execPath + "\n" +
+        "const fs = require(\"node:fs\");" +
+        "fs.writeFileSync(__filename + \".request\", JSON.stringify({ args: process.argv.slice(2), env: process.env }));" +
+        "process.stdout.write(" + JSON.stringify(stdout) + ");" +
+        "process.exitCode = " + status + ";\n",
+      { mode: 0o755 }
+    )
+    use(executable)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}

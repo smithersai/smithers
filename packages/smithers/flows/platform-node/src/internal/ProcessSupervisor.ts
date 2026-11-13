@@ -259,6 +259,31 @@ export const connectOwner = (path: string, environment: Readonly<Record<string, 
 }
 
 /**
+ * Native channel allocation. Faults replace one operation on one control,
+ * without changing Node's module bindings or another owner's resources.
+ * @private
+ * @since 1.0.0
+ */
+export interface ControlNative {
+  readonly mkdtemp: typeof mkdtempSync
+  readonly chmod: typeof chmodSync
+  readonly server: typeof createServer
+  readonly tlsServer: typeof Tls.createServer
+}
+
+/**
+ * The real channel operations.
+ * @private
+ * @since 1.0.0
+ */
+export const controlNative: ControlNative = {
+  mkdtemp: mkdtempSync,
+  chmod: chmodSync,
+  server: createServer,
+  tlsServer: Tls.createServer
+}
+
+/**
  * Kept separate from Effect scopes so native socket callbacks only settle
  * promises; none can start an unowned fiber or signal an observed process id.
  * @private
@@ -300,16 +325,22 @@ export class Control {
   private withdrawn = false
 
   private readonly startup: number
+  private readonly native: ControlNative
 
-  constructor(transport: "native" | "tls" = "native", startup = startupMs) {
+  constructor(
+    transport: "native" | "tls" = "native",
+    startup = startupMs,
+    native: ControlNative = controlNative
+  ) {
     this.startup = startup
+    this.native = native
     this.key = transport === "tls" || process.platform === "win32" ? randomBytes(32) : undefined
-    this.directory = mkdtempSync(this.key === undefined ? "/tmp/sm-p-" : join(tmpdir(), "sm-p-"))
+    this.directory = native.mkdtemp(this.key === undefined ? "/tmp/sm-p-" : join(tmpdir(), "sm-p-"))
     this.path = `${this.directory}/s`
     this.requestPath = `${this.directory}/r`
     const servers: Array<ReturnType<typeof createServer>> = []
     try {
-      chmodSync(this.directory, 0o700)
+      native.chmod(this.directory, 0o700)
       this.server = this.makeServer((socket) => this.accept(socket))
       servers.push(this.server)
       this.requestServer = this.makeServer((socket) => this.acceptRequests(socket))
@@ -334,8 +365,8 @@ export class Control {
   }
 
   private makeServer(accept: (socket: Socket) => void): ReturnType<typeof createServer> {
-    if (this.key === undefined) return createServer(accept)
-    const server = Tls.createServer({
+    if (this.key === undefined) return this.native.server(accept)
+    const server = this.native.tlsServer({
       ...tlsOptions,
       handshakeTimeout: this.startup,
       pskCallback: (_socket, identity) => identity === "smithers-owner" ? this.key! : null
@@ -549,6 +580,64 @@ export class Control {
 }
 
 /**
+ * Describes a runtime through its native loader; a failed loader remains a
+ * typed spawn refusal before any owner is allocated.
+ * @private
+ * @since 1.0.0
+ */
+export const runtimeDescription = (
+  runtime: { readonly bun: boolean; readonly main: string },
+  loadSea: () => Promise<{ readonly isSea: () => boolean }> = () => import("node:sea")
+) =>
+  Effect.gen(function*() {
+    const sea = runtime.bun ? false : (yield* Effect.tryPromise({
+      try: loadSea,
+      catch: (cause) => failure("spawn", process.execPath, cause)
+    })).isSea()
+    return { ...runtime, sea }
+  })
+
+/**
+ * Private host dependencies used by one preparation. Production defaults always
+ * create the real channel and native job; tests inject faults through Effect.
+ * @private
+ * @since 1.0.0
+ */
+export interface Services {
+  readonly control: (transport: "native" | "tls", startup: number) => Control
+  readonly jobExecutable: () => string
+  readonly job: (pid: number, created: unknown, executable: string) => {
+    readonly ready: Pick<WindowsProcessJob["ready"], "promise">
+    readonly settled: Pick<WindowsProcessJob["settled"], "promise">
+    readonly stop: WindowsProcessJob["stop"]
+    readonly reference: WindowsProcessJob["reference"]
+  }
+  readonly runtime: Effect.Effect<
+    { readonly bun: boolean; readonly sea: boolean; readonly main: string },
+    PlatformError.PlatformError
+  >
+}
+
+/**
+ * Real native services, scoped by the caller's Effect context.
+ * @private
+ * @since 1.0.0
+ */
+export const Services = Context.Reference<Services>("@smthrs/platform-node/ProcessSupervisor/Services", {
+  defaultValue: () => ({
+    control: (transport, startup) => new Control(transport, startup),
+    jobExecutable: resolveJobExecutable,
+    job: (pid, created, executable) => new WindowsProcessJob(pid, created, executable),
+    runtime: Effect.suspend(() =>
+      runtimeDescription({
+        bun: process.versions.bun !== undefined,
+        main: (globalThis as { readonly Bun?: { readonly main?: string } }).Bun?.main ?? ""
+      })
+    )
+  })
+})
+
+/**
  * Prepare a private, independently bounded process owner before target launch.
  * @private
  * @since 1.0.0
@@ -567,27 +656,19 @@ export const prepare = (
     const startup = yield* StartupBudget
     const activation = (yield* ActivationBudget) ?? startup
     const initial = yield* policy(command.options)
-    const bun = process.versions.bun !== undefined
-    const sea = bun ? false : (yield* Effect.tryPromise({
-      try: () => import("node:sea"),
-      catch: (cause) => failure("spawn", process.execPath, cause)
-    })).isSea()
-    const bootstrap = yield* bootstrapArguments({
-      bun,
-      sea,
-      main: (globalThis as { readonly Bun?: { readonly main?: string } }).Bun?.main ?? ""
-    })
+    const services = yield* Services
+    const bootstrap = yield* bootstrapArguments(yield* services.runtime)
     const windows = system.platform === "win32"
     const grouped = !windows && (command.options.detached ?? true)
     const jobExecutable = windows ?
       yield* Effect.try({
-        try: resolveJobExecutable,
+        try: services.jobExecutable,
         catch: (cause) => failure("spawn", command.command, cause)
       }) :
       undefined
     const control = yield* Effect.acquireRelease(
       Effect.try({
-        try: () => new Control(transport, startup),
+        try: () => services.control(transport, startup),
         catch: (cause) => failure("spawn", command.command, cause)
       }),
       (control) => Effect.sync(() => control.dispose())
@@ -617,7 +698,7 @@ export const prepare = (
       forceKillAfter: initial.graceMs
     }))
     yield* Effect.exit(raw.exitCode).pipe(Effect.andThen(Effect.sync(() => control.rawEnded())), Effect.forkScoped)
-    let job: WindowsProcessJob | undefined
+    let job: ReturnType<Services["job"]> | undefined
     let settled = false
     let referenced = true
     let reref: Effect.Effect<void, PlatformError.PlatformError> = Effect.void
@@ -786,7 +867,7 @@ export const prepare = (
     })
     if (windows) {
       job = yield* Effect.try({
-        try: () => new WindowsProcessJob(raw.pid, control.ownerCreation, jobExecutable!),
+        try: () => services.job(raw.pid, control.ownerCreation, jobExecutable!),
         catch: (cause) => failure("spawn", command.command, cause)
       })
       yield* bounded(wait(job.ready.promise, "spawn", command.command), startup, "spawn", command.command)

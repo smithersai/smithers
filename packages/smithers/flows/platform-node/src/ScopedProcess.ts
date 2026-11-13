@@ -10,8 +10,8 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
 import * as PipedProcess from "./internal/PipedProcess.ts"
-import { ActivationBudget, StartupBudget, targetPidOf } from "./internal/ProcessSupervisor.ts"
-import * as ProcessReaper from "./ProcessReaper.ts"
+import { ActivationBudget, StartupBudget } from "./internal/ProcessSupervisor.ts"
+import { Services } from "./internal/ScopedProcessServices.ts"
 
 /**
  * One command's literal argv, environment, pipes and termination policy.
@@ -75,6 +75,7 @@ export const spawn = (
 ): Effect.Effect<Handle, PlatformError.PlatformError, Scope.Scope> =>
   Effect.uninterruptibleMask((restore) =>
     Effect.gen(function*() {
+      const services = yield* Services
       const scope = yield* Scope.fork(yield* Scope.Scope)
       const command = ChildProcess.make(options.command, [...options.args ?? []], {
         cwd: options.cwd,
@@ -92,12 +93,12 @@ export const spawn = (
       })
       return yield* restore(
         Effect.gen(function*() {
-          const prepared = yield* ProcessReaper.processLifecycle(
+          const prepared = yield* services.lifecycle(
             command,
-            (command) => PipedProcess.spawn(command, false, true)
+            (command) => services.spawn(command, false, true)
           )
           yield* prepared.activate
-          const targetPid = targetPidOf(prepared.handle)
+          const targetPid = services.targetPid(prepared.handle)
           if (targetPid === undefined) {
             return yield* Effect.fail(
               PipedProcess.failure("spawn", new Error("The supervisor did not identify its target"))

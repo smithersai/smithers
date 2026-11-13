@@ -11,6 +11,7 @@
  */
 import { Effect, Exit, Scope } from "effect"
 import { execFileSync } from "node:child_process"
+import { X509Certificate } from "node:crypto"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { createSecureServer, type Http2SecureServer, type ServerHttp2Stream } from "node:http2"
 import type { AddressInfo } from "node:net"
@@ -21,6 +22,7 @@ import { describe, expect, it } from "vitest"
 import * as EgressHttpClient from "../src/EgressHttpClient.ts"
 
 /** A self-signed certificate for `localhost` and `127.0.0.1`, or the reason there is none. */
+let certificateUnavailable: string | undefined
 const certificate = (() => {
   const dir = mkdtempSync(join(tmpdir(), "provider-fetch-"))
   try {
@@ -44,7 +46,11 @@ const certificate = (() => {
       join(dir, "cert.pem")
     ], { stdio: "ignore" })
     return { key: readFileSync(join(dir, "key.pem")), cert: readFileSync(join(dir, "cert.pem")) }
-  } catch {
+  } catch (cause) {
+    const code = (cause as NodeJS.ErrnoException).code
+    certificateUnavailable = code === "ENOENT"
+      ? "openssl is not installed"
+      : "openssl could not create the loopback certificate"
     return undefined
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -72,7 +78,26 @@ const listen = async (cert: { readonly key: Buffer; readonly cert: Buffer }, fai
 
 const direct = { HTTPS_PROXY: "", HTTP_PROXY: "", NO_PROXY: "" }
 
-describe("EgressHttpClient.providerFetch (needs openssl)", () => {
+it(
+  certificate === undefined
+    ? "TLS cases are skipped because " + certificateUnavailable
+    : "generates a TLS certificate for the loopback origin",
+  () => {
+    if (certificate === undefined) {
+      expect(certificateUnavailable).toMatch(/^openssl (is not installed|could not create the loopback certificate)$/)
+      return
+    }
+    const identity = new X509Certificate(certificate.cert)
+    expect(identity.checkHost("localhost")).toBe("localhost")
+    expect(identity.checkIP("127.0.0.1")).toBe("127.0.0.1")
+  }
+)
+
+const providerSuite = certificate === undefined
+  ? "EgressHttpClient.providerFetch (skipped: " + certificateUnavailable + ")"
+  : "EgressHttpClient.providerFetch"
+
+describe.skipIf(certificate === undefined)(providerSuite, () => {
   it("speaks HTTP/1.1 to an origin that offers HTTP/2, and answers its body", () =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       const origin = yield* Effect.acquireRelease(

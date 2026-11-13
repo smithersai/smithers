@@ -1,18 +1,14 @@
 import { ProcessLedger } from "@smthrs/kernel"
 import { Effect, Layer } from "effect"
-import NativeMutable, { execFileSync, spawn } from "node:child_process"
+import { execFileSync, spawn, spawnSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { syncBuiltinESMExports } from "node:module"
 import { tmpdir } from "node:os"
 import { join, parse } from "node:path"
-import { describe, expect, it, vi } from "vitest"
-import { resolveDefaultExecutable } from "../src/internal/AtomicFileSystemExecutable.ts"
+import { describe, expect, it } from "vitest"
+import { usableExecutable } from "../src/internal/AtomicFileSystemTransport.ts"
+import { groupVacant, posixSystemFrom } from "../src/internal/ProcessNative.ts"
+import { windowsIdentity } from "../src/internal/WindowsIdentity.ts"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
-
-vi.mock("../src/internal/AtomicFileSystemExecutable.ts", async (original) => {
-  const module = await original<typeof import("../src/internal/AtomicFileSystemExecutable.ts")>()
-  return { ...module, resolveDefaultExecutable: vi.fn(module.resolveDefaultExecutable) }
-})
 
 describe.skipIf(process.platform === "win32")("ProcessReaper start-time timezone", () => {
   it.each(["UTC", "Pacific/Honolulu", "America/New_York"])(
@@ -152,40 +148,24 @@ describe("ProcessReaper.groupVacant", () => {
     }
   )
 
-  it("distinguishes a populated group from ESRCH without native signals", () => {
-    const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
-    try {
-      expect(ProcessReaper.groupVacant(4242)).toBe(false)
-      kill.mockImplementation(() => {
-        throw Object.assign(new Error("gone"), { code: "ESRCH" })
-      })
-      expect(ProcessReaper.groupVacant(4242)).toBe(true)
-      expect(kill).toHaveBeenCalledWith(-4242, 0)
-    } finally {
-      kill.mockRestore()
-    }
-  })
-
   it("never addresses the caller's group or every process", () => {
-    const kill = vi.spyOn(process, "kill")
-    try {
-      for (const pgid of [1, 0, -5, 1.5, Number.NaN]) expect(ProcessReaper.groupVacant(pgid)).toBe(false)
-      expect(kill).not.toHaveBeenCalled()
-    } finally {
-      kill.mockRestore()
+    const signals: Array<number> = []
+    const kill: typeof process.kill = (pid) => {
+      signals.push(pid)
+      return true
     }
+    for (const pgid of [1, 0, -5, 1.5, Number.NaN]) expect(groupVacant(pgid, kill)).toBe(false)
+    expect(signals).toEqual([])
   })
 
-  it("treats another user's member or an unknown error as not vacant", () => {
-    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
-      throw Object.assign(new Error("operation not permitted"), { code: "EPERM" })
-    })
-    try {
-      expect(ProcessReaper.groupVacant(4242)).toBe(false)
-      expect(kill).toHaveBeenCalledWith(-4242, 0)
-    } finally {
-      kill.mockRestore()
+  it.each(["ESRCH", "EPERM", "EINVAL"])("keeps every signal failure except ESRCH occupied (%s)", (code) => {
+    const signals: Array<unknown> = []
+    const kill: typeof process.kill = (pid, signal) => {
+      signals.push([pid, signal])
+      throw Object.assign(new Error(code), { code })
     }
+    expect(groupVacant(4242, kill)).toBe(code === "ESRCH")
+    expect(signals).toEqual([[-4242, 0]])
   })
 })
 
@@ -231,124 +211,142 @@ describe("ProcessReaper over an unreadable ledger history", () => {
 })
 
 describe("Windows native process identity", () => {
-  it("queries a trusted executable with bounded output and no inherited environment", () => {
-    const query = vi.spyOn(NativeMutable, "spawnSync").mockReturnValue({
+  it.skipIf(process.platform === "win32")(
+    "runs the trusted executable with bounded output and no inherited environment",
+    () => {
+      const directory = mkdtempSync(join(tmpdir(), "windows-identity-query-"))
+      const executable = join(directory, "identity")
+      try {
+        writeFileSync(
+          executable,
+          "#!" + process.execPath + "\n" +
+            "require(\"node:fs\").writeFileSync(__filename+\".request\",JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),env:process.env}));" +
+            "console.log(JSON.stringify(process.argv[3] === \"4243\" ? {status:\"gone\"} : {status:\"started\",startedAtMs:123456}));",
+          { mode: 0o755 }
+        )
+        expect(ProcessReaper.windowsSystemWith({ processExecutable: executable }).startedAtMs(4242)).toEqual({
+          _tag: "started",
+          startedAtMs: 123456
+        })
+        const request = JSON.parse(readFileSync(executable + ".request", "utf8"))
+        delete request.env.__CF_USER_TEXT_ENCODING
+        expect(request).toEqual({
+          args: ["--process-info", "4242"],
+          cwd: parse(process.execPath).root,
+          env: {}
+        })
+        expect(ProcessReaper.windowsSystemWith({ processExecutable: executable }).startedAtMs(4243)).toEqual({
+          _tag: "gone"
+        })
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+  )
+
+  it("keeps malformed, denied, interrupted and refused queries unavailable", () => {
+    const calls: Array<unknown> = []
+    let answer: ReturnType<typeof spawnSync> = {
       pid: 100,
       output: [],
-      stdout: JSON.stringify({ status: "started", startedAtMs: 123456 }),
+      stdout: "{}",
       stderr: "",
       status: 0,
       signal: null
-    })
-    syncBuiltinESMExports()
-    try {
-      const system = ProcessReaper.windowsSystemWith({ processExecutable: process.execPath })
-      expect(system.startedAtMs(4242)).toEqual({ _tag: "started", startedAtMs: 123456 })
-      expect(query).toHaveBeenCalledWith(expect.any(String), ["--process-info", "4242"], {
-        cwd: parse(process.execPath).root,
-        env: {},
-        encoding: "utf8",
-        timeout: 5000,
-        killSignal: "SIGKILL",
-        maxBuffer: 4096
-      })
-      query.mockReturnValueOnce({
-        pid: 100,
-        output: [],
-        stdout: "{\"status\":\"gone\"}",
-        stderr: "",
-        status: 0,
-        signal: null
-      })
-      expect(system.startedAtMs(4242)).toEqual({ _tag: "gone" })
-      const previous = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
-      delete process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
-      vi.mocked(resolveDefaultExecutable).mockReturnValueOnce(process.execPath)
-      try {
-        expect(ProcessReaper.windowsSystemWith().startedAtMs(4242)).toEqual({ _tag: "started", startedAtMs: 123456 })
-        expect(resolveDefaultExecutable).toHaveBeenCalledWith(expect.any(String), undefined)
-      } finally {
-        if (previous === undefined) delete process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
-        else process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY = previous
-      }
-      query.mockClear()
-      for (const pid of [0, 1, -1, 1.5, NaN, Infinity, 0x1_0000_0000]) {
-        expect(system.startedAtMs(pid)).toEqual({ _tag: "unavailable" })
-      }
-      expect(query).not.toHaveBeenCalled()
-    } finally {
-      query.mockRestore()
-      syncBuiltinESMExports()
     }
+    let refusal: Error | undefined
+    const read = windowsIdentity({ processExecutable: process.execPath }, {
+      usableExecutable,
+      configuredExecutable: () => undefined,
+      resolveDefaultExecutable: () => {
+        throw new Error("unconfigured helper")
+      },
+      spawnSync: ((...args: Parameters<typeof spawnSync>) => {
+        calls.push(args)
+        if (refusal !== undefined) throw refusal
+        return answer
+      }) as typeof spawnSync
+    })
+    for (
+      const stdout of [
+        "invalid",
+        "null",
+        "[]",
+        "{}",
+        "{\"status\":\"unknown\"}",
+        "{\"status\":\"started\"}",
+        "{\"status\":\"started\",\"startedAtMs\":\"1\"}",
+        "{\"status\":\"started\",\"startedAtMs\":-1}",
+        "{\"status\":\"started\",\"startedAtMs\":1.5}",
+        "{\"status\":\"started\",\"startedAtMs\":9007199254740992}"
+      ]
+    ) {
+      answer = { ...answer, stdout }
+      expect(read(4242)).toEqual({ _tag: "unavailable" })
+    }
+    for (
+      const result of [
+        { ...answer, error: new Error("denied") },
+        { ...answer, signal: "SIGKILL" as const },
+        { ...answer, status: 1 }
+      ]
+    ) {
+      answer = result
+      expect(read(4242)).toEqual({ _tag: "unavailable" })
+    }
+    refusal = new Error("spawn refused")
+    expect(read(4242)).toEqual({ _tag: "unavailable" })
+    const before = calls.length
+    for (const pid of [0, 1, -1, 1.5, NaN, Infinity, 0x1_0000_0000]) {
+      expect(read(pid)).toEqual({ _tag: "unavailable" })
+    }
+    expect(calls).toHaveLength(before)
+    expect(calls[0]).toEqual([expect.any(String), ["--process-info", "4242"], {
+      cwd: parse(process.execPath).root,
+      env: {},
+      encoding: "utf8",
+      timeout: 5000,
+      killSignal: "SIGKILL",
+      maxBuffer: 4096
+    }])
+    const relative = windowsIdentity({ processExecutable: "relative-helper" })
+    expect(relative(4242)).toEqual({ _tag: "unavailable" })
   })
 
-  it("keeps identity unavailable for denied, interrupted, or malformed queries", () => {
-    const query = vi.spyOn(NativeMutable, "spawnSync")
-    syncBuiltinESMExports()
-    try {
-      const system = ProcessReaper.windowsSystemWith({ processExecutable: process.execPath })
-      const reply = { pid: 100, output: [], stdout: "{}", stderr: "", status: 0, signal: null }
-      for (
-        const stdout of [
-          "invalid",
-          "null",
-          "[]",
-          "{}",
-          "{\"status\":\"unknown\"}",
-          "{\"status\":\"started\"}",
-          "{\"status\":\"started\",\"startedAtMs\":\"1\"}",
-          "{\"status\":\"started\",\"startedAtMs\":-1}",
-          "{\"status\":\"started\",\"startedAtMs\":1.5}",
-          "{\"status\":\"started\",\"startedAtMs\":9007199254740992}"
-        ]
-      ) {
-        query.mockReturnValueOnce({ ...reply, stdout })
-        expect(system.startedAtMs(4242)).toEqual({ _tag: "unavailable" })
+  it("keeps a missing default helper unavailable", () => {
+    const read = windowsIdentity(undefined, {
+      spawnSync,
+      usableExecutable,
+      configuredExecutable: () => undefined,
+      resolveDefaultExecutable: () => {
+        throw new Error("missing packaged helper")
       }
-      for (
-        const result of [{ ...reply, error: new Error("denied") }, { ...reply, signal: "SIGKILL" as const }, {
-          ...reply,
-          status: 1
-        }]
-      ) {
-        query.mockReturnValueOnce(result)
-        expect(system.startedAtMs(4242)).toEqual({ _tag: "unavailable" })
-      }
-      query.mockImplementationOnce(() => {
-        throw new Error("spawn refused")
-      })
-      expect(system.startedAtMs(4242)).toEqual({ _tag: "unavailable" })
-      query.mockClear()
-      expect(ProcessReaper.windowsSystemWith({ processExecutable: "relative-helper" }).startedAtMs(4242)).toEqual({
-        _tag: "unavailable"
-      })
-      expect(query).not.toHaveBeenCalled()
-    } finally {
-      query.mockRestore()
-      syncBuiltinESMExports()
-    }
+    })
+    expect(read(4242)).toEqual({ _tag: "unavailable" })
   })
 })
 
 describe("POSIX signal results through the native seam", () => {
-  it("parses a successful POSIX timestamp on every host", () => {
-    const query = vi.spyOn(NativeMutable, "spawnSync").mockReturnValue({
-      pid: 100,
-      output: [],
-      stdout: "Sat Sep  5 12:00:00 2026",
-      stderr: "",
-      status: 0,
-      signal: null
-    })
-    syncBuiltinESMExports()
+  it.skipIf(process.platform === "win32").each(
+    [
+      ["valid", "Sat Sep  5 12:00:00 2026", { _tag: "started", startedAtMs: Date.UTC(2026, 8, 5, 12) }],
+      ["malformed", "not-a-time", { _tag: "unavailable" }]
+    ] as const
+  )("reads a %s start time from the selected executable", (_name, printed, expected) => {
+    const directory = mkdtempSync(join(tmpdir(), "posix-date-probe-"))
+    const executable = join(directory, "ps")
     try {
-      expect(ProcessReaper.posixSystem.startedAtMs(900001)).toEqual({
-        _tag: "started",
-        startedAtMs: Date.UTC(2026, 8, 5, 12)
-      })
+      writeFileSync(
+        executable,
+        "#!" + process.execPath + "\nprocess.stdout.write(" + JSON.stringify(printed + "\n") + ")\n",
+        {
+          mode: 0o755
+        }
+      )
+      expect(execFileSync(executable, { encoding: "utf8" })).toBe(printed + "\n")
+      expect(ProcessReaper.posixSystemWith({ psExecutable: executable }).startedAtMs(process.pid)).toEqual(expected)
     } finally {
-      query.mockRestore()
-      syncBuiltinESMExports()
+      rmSync(directory, { recursive: true, force: true })
     }
   })
 
@@ -362,7 +360,11 @@ describe("POSIX signal results through the native seam", () => {
       commandDigest: "probe",
       [field]: 77
     }
-    const killTree = vi.fn(() => "signalled" as const)
+    const killed: Array<number> = []
+    const killTree = (record: ProcessLedger.ProcessRecord) => {
+      killed.push(record.pid)
+      return "signalled" as const
+    }
     const ledger: ProcessLedger.Service = {
       record: () => Effect.die("unused"),
       release: () => Effect.void,
@@ -378,50 +380,40 @@ describe("POSIX signal results through the native seam", () => {
       }).pipe(Effect.provideService(ProcessLedger.ProcessLedger, ledger))
     )
     expect(result).toEqual([{ record, killed: false, refusal: "own-group" }])
-    expect(killTree).not.toHaveBeenCalled()
+    expect(killed).toEqual([])
   })
 
-  it("preserves unknown liveness and failed group signals", () => {
-    const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
-    const query = vi.spyOn(NativeMutable, "spawnSync").mockReturnValue({
-      pid: 100,
-      output: [],
-      stdout: "77",
-      stderr: "",
-      status: 0,
-      signal: null
-    })
-    syncBuiltinESMExports()
-    try {
-      const system = ProcessReaper.posixSystemWith({ ownerPid: 900002 })
-      const record: ProcessLedger.ProcessRecord = {
-        pid: 900001,
-        pgid: 900001,
-        hostId: "probe",
-        ownerPid: 900003,
-        startedAtMs: 1,
-        commandDigest: "probe"
-      }
-      expect(system.isAlive(record.pid)).toBe("alive")
-      expect(system.killTree(record)).toBe("signalled")
-      expect(kill).toHaveBeenLastCalledWith(-record.pid, "SIGKILL")
-      for (
-        const [code, alive, outcome] of [
-          ["ESRCH", "dead", "already-gone"],
-          ["EPERM", "unknown", "failed"],
-          ["EINVAL", "unknown", "failed"]
-        ] as const
-      ) {
-        kill.mockImplementation(() => {
-          throw Object.assign(new Error(code), { code })
-        })
-        expect(system.isAlive(record.pid)).toBe(alive)
-        expect(system.killTree(record)).toBe(outcome)
-      }
-    } finally {
-      kill.mockRestore()
-      query.mockRestore()
-      syncBuiltinESMExports()
+  it.each(
+    [
+      ["ESRCH", "dead", "already-gone"],
+      ["EPERM", "unknown", "failed"],
+      ["EINVAL", "unknown", "failed"]
+    ] as const
+  )("preserves unknown liveness and failed group signals (%s)", (code, alive, outcome) => {
+    const signals: Array<unknown> = []
+    const kill: typeof process.kill = (pid, signal) => {
+      signals.push([pid, signal])
+      throw Object.assign(new Error(code), { code })
     }
+    const system = posixSystemFrom(
+      {
+        ownGroup: () => 77,
+        bootedAtMs: () => 0,
+        startedAtMs: () => ({ _tag: "unavailable" })
+      },
+      900002,
+      kill
+    )
+    const record: ProcessLedger.ProcessRecord = {
+      pid: 900001,
+      pgid: 900001,
+      hostId: "probe",
+      ownerPid: 900003,
+      startedAtMs: 1,
+      commandDigest: "probe"
+    }
+    expect(system.isAlive(record.pid)).toBe(alive)
+    expect(system.killTree(record)).toBe(outcome)
+    expect(signals).toEqual([[record.pid, 0], [-record.pid, "SIGKILL"]])
   })
 })
