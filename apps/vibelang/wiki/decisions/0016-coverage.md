@@ -215,6 +215,14 @@ one is missing in the other). It closes `sandboxDecision`'s comparisons against 
 running sandboxes. `runningCountPrefix` (4 arms) is called only by contracts; it becomes a `spec function` when a
 compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`).
 
+**An end sent twice** (`fault=end-twice`, `e2e/core-end-twice.spec.ts`, session 7). The transport sends the first tour
+end twice, as a client that resends an end whose answer it lost. The mock's sequencer refuses the second (`decide`'s
+`EndTour` with no tour running); the page reads that refusal as the tour already ended, gives the person control, and
+the next question is answered. Two other `decide` refusals of a person's request never reach `decide` from a page:
+`OpenPane` with no page (the mock's `openWiki` and the Worker refuse a page outside the wiki first, `wikiPath`) and
+`SeekTour` past the last step (the mock and the Worker answer 400 first, `validTourStep`). The guards keep `decide`
+total for its proof; the unit and fuzz suites reach them.
+
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
 
 The lead's two decisions: move `decide`'s non-blank guarantee into the outline's schema, and make the session type

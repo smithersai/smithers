@@ -10,7 +10,7 @@ import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
 import { faultyMachines, machineFault, type MachineFault } from "./faultyMachines.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "forged" | "held-details" | "held-actions" | MachineFault
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | MachineFault
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -96,6 +96,8 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * `post-empty` loses the first post's text on the way, and the mock's sequencer refuses it as empty; `post-duplicate`,
  * `post-not-replying` and `post-full` refuse the first post with that refusal, as the sequencer answers another
  * client's post.
+ * `end-twice` sends the first tour end twice, as a client that resends an end whose answer it lost: the mock's sequencer
+ * (decide.vibe) refuses the second, and the page reads that refusal as the tour already ended.
  * `held-details` runs live mode and holds the first issue's details read until the next details read has answered,
  * then fails it: a failure that arrives after the person has moved to another issue.
  * `forged` inserts events that break the conversation's rules into the home and tour conversations (forgedEvents.vibe).
@@ -217,6 +219,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         try base.controlTour(conversation, action, step)
       },
       endTour: effect (conversation) => {
+        if (first("end-twice")) try base.endTour(conversation)
         if (fault === "end-tour-unavailable" && !observation.faulted) {
           observation.faulted = true
           throw new Unavailable({ reason: "Factory closed" })
