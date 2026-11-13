@@ -12,6 +12,11 @@
 
 ### Fixed
 
+- `SandboxMerge.apply` reports `base_not_found` when a failed fetch leaves
+  the work's base absent, including repositories without remotes. The original
+  fetch failure remains available in `MergeError.cause`; lock contention
+  remains retryable.
+
 - `CommandSandbox` `acquire` fails with what the transport printed when the
   transport could not run the guest probe, such as an `ssh` that cannot reach
   the machine or cannot be started: `unavailable` with "`<name>` could not be

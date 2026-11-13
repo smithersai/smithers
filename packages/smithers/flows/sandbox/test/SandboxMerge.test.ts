@@ -11,7 +11,8 @@ import {
 } from "@smthrs/jj/node/NodeJj"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Fiber, FileSystem, Layer } from "effect"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import {
   chmodSync,
   existsSync,
@@ -628,7 +629,8 @@ PATH=${quote(saved ?? "/usr/bin:/bin")} exec ${quote(real)} "$@"
         })
       )
       const wrongRemote = yield* Effect.flip(apply(work, { repository: clone, fetch: ["--remote", "nowhere"] }))
-      expect(wrongRemote.reason).toBe("vcs_failed")
+      expect(wrongRemote.reason).toBe("base_not_found")
+      expect(wrongRemote.cause).toMatchObject({ reason: "vcs_failed" })
       const outcome = yield* apply(work, { repository: clone, fetch: ["--remote", "origin"] })
       expect(outcome._tag).toBe("Merged")
     }))
@@ -638,12 +640,82 @@ PATH=${quote(saved ?? "/usr/bin:/bin")} exec ${quote(real)} "$@"
       const repo = hostRepository(fresh(), { "a.txt": "a\n" })
       const elsewhere = hostRepository(fresh(), { "a.txt": "elsewhere\n" })
       const work = yield* workOn(elsewhere.path, { "a.txt": "edit\n" })
-      // A repository without remotes fetches nothing; the base is still missing.
+      // A repository without remotes cannot fetch the missing base.
       const error = yield* Effect.flip(apply(work, { repository: repo.path, fetch: [] }))
-      expect(error.reason).toBe("vcs_failed")
+      expect(error.reason).toBe("base_not_found")
+      expect(error.message).toBe(`the work's base ${work.base} is not in ${repo.path}`)
+      expect(error.cause).toMatchObject({ reason: "vcs_failed" })
+      expect((error.cause as SandboxMerge.MergeError).message).toContain("No git remotes to fetch from")
+      expect(bookmarks(repo.path)).not.toContain("smithers-sandbox/")
       const unfetched = yield* Effect.flip(apply(work, { repository: repo.path, fetch: false }))
       expect(unfetched.reason).toBe("base_not_found")
     }))
+
+  for (const scenario of ["missing", "lock", "fetched", "lookup"] as const) {
+    it.effect(`keeps fetch failure evidence when the base is ${scenario}`, () =>
+      Effect.gen(function*() {
+        const dir = fresh()
+        const upstream = hostRepository(dir, { "a.txt": "a\n" }, "upstream")
+        host(dir, `jj git clone --quiet --colocate ${quote(upstream.path)} clone`)
+        const clone = join(dir, "clone")
+        advanceMain(upstream.path, { "a.txt": "upstream\n" })
+        const work = yield* workOn(upstream.path, { "new.txt": "captured\n" })
+        const spawner = yield* ChildProcessSpawner.pipe(Effect.provide(rawPlatform))
+        const message = scenario === "lock"
+          ? "cannot lock ref 'refs/remotes/origin/main': File exists"
+          : "fetch transport failed"
+        let failedFetch = false
+        // Inject only the failed transport; all repository reads and mutations use real jj.
+        const faulty = makeSpawner((command) =>
+          Effect.gen(function*() {
+            if (command._tag === "StandardCommand" && command.command === "jj") {
+              if (command.args.includes("fetch")) {
+                if (scenario === "fetched") {
+                  yield* Effect.scoped(Effect.gen(function*() {
+                    const handle = yield* spawner.spawn(command)
+                    expect(yield* handle.exitCode).toBe(0)
+                  }))
+                }
+                failedFetch = true
+                return yield* spawner.spawn(ChildProcess.make("sh", [
+                  "-c",
+                  "printf \"%s\\n\" \"$1\" >&2; exit 1",
+                  "fetch-failure",
+                  message
+                ]))
+              }
+              if (scenario === "lookup" && failedFetch && command.args.includes(`present(${work.base})`)) {
+                return yield* spawner.spawn(ChildProcess.make("sh", ["-c", "echo 'lookup failed' >&2; exit 1"]))
+              }
+            }
+            return yield* spawner.spawn(command)
+          })
+        )
+        const error = yield* Effect.flip(
+          SandboxMerge.apply(work, {
+            repository: clone,
+            onto: "main",
+            message: "sandbox work",
+            key: keyOf(work)
+          }).pipe(
+            Effect.provideService(ChildProcessSpawner, faulty),
+            Effect.provide(Layer.merge(rawPlatform, layerRepositoryMutation))
+          )
+        )
+        expect(failedFetch).toBe(true)
+        expect(error.reason).toBe(scenario === "missing" ? "base_not_found" : "vcs_failed")
+        if (scenario === "missing") {
+          expect(error.message).toBe(`the work's base ${work.base} is not in ${clone}`)
+          expect(error.cause).toMatchObject({ reason: "vcs_failed" })
+          expect((error.cause as SandboxMerge.MergeError).message).toContain(message)
+        } else {
+          expect(error.message).toContain(scenario === "lookup" ? "lookup failed" : message)
+        }
+        const change = yield* SandboxMerge.changeIdOf(keyOf(work))
+        expect(commitsOf(clone, change)).toEqual([])
+        expect(bookmarks(clone)).not.toContain("smithers-sandbox/")
+      }))
+  }
 
   it.effect("refuses a base that is not a full commit id before it reaches jj or git", () =>
     Effect.gen(function*() {

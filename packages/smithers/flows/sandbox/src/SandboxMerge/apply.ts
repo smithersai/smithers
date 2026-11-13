@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 
-import { RepositoryMutation } from "@smthrs/jj"
+import { isGitLockContention, RepositoryMutation } from "@smthrs/jj"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -162,7 +162,19 @@ export const apply = <E = never, R = never>(
           && (yield* single(repository, `change_id(${change})`)).length === 0
           && (yield* single(repository, work.base)).length === 0
         ) {
-          yield* repository.jj(["git", "fetch", ...(options.fetch ?? [])])
+          yield* repository.jj(["git", "fetch", ...(options.fetch ?? [])]).pipe(
+            Effect.catchTag("@smthrs/sandbox/SandboxMerge/MergeError", (cause) =>
+              Effect.gen(function*() {
+                // Contention remains retryable by the durable apply action.
+                if (isGitLockContention(cause)) return yield* cause
+                if ((yield* single(repository, work.base)).length > 0) return yield* cause
+                return yield* new MergeError({
+                  reason: "base_not_found",
+                  message: `the work's base ${work.base} is not in ${options.repository}`,
+                  cause
+                })
+              }))
+          )
         }
         return yield* mutation.run(
           "sandbox apply",

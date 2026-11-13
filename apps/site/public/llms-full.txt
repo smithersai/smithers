@@ -42198,6 +42198,12 @@ The acquisition deadline does not bound a custom resolver's effects.
 the full `JjError`, including its code and nested `lock_timeout` cause. Host
 adapter loading is lazy and shared through one memoized, typed loader.
 
+If a fetch fails and a fresh lookup confirms the base is still absent,
+`apply` returns `base_not_found` with the fetch failure in `cause`. This
+includes repositories without remotes. Fetch lock contention remains
+`vcs_failed` so the durable action can retry it. A failed lookup or a failed
+fetch that did obtain the base also remains `vcs_failed`.
+
 | `MergeError.reason`   | Cause                                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------------------------- |
 | `base_not_found`      | the work's base is not a full commit id, or is not in the repository even after the configured fetch |
