@@ -3,7 +3,7 @@
  */
 
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
-import { Cause, Data, Effect, Exit, Stream } from "effect"
+import { Cause, Context, Data, Effect, Exit, Option, Stream } from "effect"
 import * as Fs from "node:fs"
 import * as NodePath from "node:path"
 
@@ -20,6 +20,15 @@ export class ProcessError extends Data.TaggedError("smithers-build/ProcessError"
     super({ code, message, ...(cause === undefined ? {} : { cause }) })
   }
 }
+
+/**
+ * Scoped command creation; fault layers may retain real spawning and fail cleanup.
+ * @private
+ * @since 0.1.0
+ */
+export class ProcessSpawner extends Context.Service<ProcessSpawner, {
+  readonly spawn: typeof ScopedProcess.spawn
+}>()("smithers-build/ContainedProcess/ProcessSpawner") {}
 
 const graceMs = 5000
 
@@ -53,6 +62,10 @@ export const runEffect = (options: Omit<Options, "signal">): Effect.Effect<numbe
   Effect.suspend(() => {
     let cleanupFailure: unknown
     const program = Effect.gen(function*() {
+      const spawner = Option.getOrElse(
+        yield* Effect.serviceOption(ProcessSpawner),
+        () => ({ spawn: ScopedProcess.spawn })
+      )
       const handle = yield* Effect.uninterruptibleMask(() =>
         Effect.gen(function*() {
           const nodeModule = yield* Effect.try(() =>
@@ -60,7 +73,7 @@ export const runEffect = (options: Omit<Options, "signal">): Effect.Effect<numbe
             /\.(?:mjs|cjs|js)$/.test(options.command) &&
             Fs.statSync(options.command, { throwIfNoEntry: false })?.isFile() === true
           )
-          const handle = yield* ScopedProcess.spawn({
+          const handle = yield* spawner.spawn({
             command: nodeModule ? process.execPath : options.command,
             args: nodeModule ? [options.command, ...options.args] : options.args,
             cwd: options.cwd,

@@ -57,6 +57,15 @@ platform and parent-crash limits. Workspace rescan failures that are not
 `Error` instances carry `PackageError` with code `watch_refresh_failed`
 and preserve the original `cause`.
 
+`Watch.run` accepts optional `services`: the Effect service value constructed
+by `Watch.makeServices()`. Its `notifier` acquires filesystem notifications and
+returns a close function, `digest` reads the relevant workspace tree, and
+`processRunner` executes a contained command. The defaults use real files and
+processes. `Watch.makeServices({ entry })` selects another JavaScript entry
+while keeping that same containment. Supply faulty service implementations
+to exercise lost notifications, read errors or process failures without
+replacing platform modules.
+
 Trusted review refuses duplicate or inconsistent index labels with the tagged
 `smithers-build/ReviewRefused` error and code `invalid_index_labels`. A proposed
 policy projection exceeding the review file limit uses the same tag with code

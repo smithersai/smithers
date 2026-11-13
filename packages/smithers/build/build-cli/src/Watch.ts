@@ -2,7 +2,7 @@
  * @since 0.1.0
  */
 
-import { Cause, Effect, Exit, Queue, Stream } from "effect"
+import { Cause, Context, Effect, Exit, FiberSet, Queue, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { watch } from "node:fs"
 import { lstat, readdir } from "node:fs/promises"
@@ -11,11 +11,60 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import * as ContainedProcess from "./internal/ContainedProcess.ts"
 import { PackageError } from "./PackageError.ts"
 
+/**
+ * Watch's notifier, workspace reader and contained command executor.
+ * Faults can be supplied without replacing platform modules.
+ * @category services
+ * @since 0.1.0
+ */
+export class Services extends Context.Service<Services, {
+  readonly notifier: (
+    root: string,
+    changed: (filename: string | null) => void,
+    failed: (error: Error) => void
+  ) => Effect.Effect<() => void, Error>
+  readonly digest: (root: string, relevant: (path: string) => boolean) => Effect.Effect<string, unknown>
+  readonly processRunner: typeof ContainedProcess.runEffect
+}>()("smithers-build/Watch/Services") {}
+
+/**
+ * Real filesystem notifications, tree digests and contained processes.
+ * An alternate entry runs through the same process containment as the CLI.
+ * @category constructors
+ * @since 0.1.0
+ */
+export const makeServices = (options: { readonly entry?: string } = {}): Services["Service"] => ({
+  notifier: (root, changed, failed) =>
+    Effect.try({
+      try: () => {
+        const watcher = watch(root, { recursive: true }, (_event, filename) => {
+          changed(filename === null ? null : filename.toString())
+        }).on("error", failed)
+        return () => watcher.close()
+      },
+      catch: (cause) => cause instanceof Error ? cause : new Error("filesystem watch failed", { cause })
+    }),
+  digest: (root, relevant) =>
+    Effect.tryPromise({
+      try: () => digest(root, relevant),
+      catch: (cause) => cause
+    }),
+  processRunner: (command) =>
+    Effect.suspend(() => {
+      // Resolve lazily: a refused initial digest must not launch a command.
+      const manifest = createRequire(import.meta.url).resolve("@smthrs/build-cli/package.json")
+      const entry = options.entry ?? fileURLToPath(new URL("./src/main.js", pathToFileURL(manifest)))
+      return ContainedProcess.runEffect({ ...command, args: [entry, ...command.args] })
+    })
+})
+
 /** Runs fresh CLI processes until interrupted, cancelling stale work when an input changes.
  * @category execution
  * @since 0.1.0
  */
 export const run = async (options: {
+  /** Defaults to the real notifier, tree digest and contained process runner. */
+  readonly services?: Services["Service"] | undefined
   readonly root: string
   readonly args: ReadonlyArray<string>
   readonly ignored: ReadonlyArray<string>
@@ -36,10 +85,6 @@ export const run = async (options: {
     | undefined
 }) => {
   options.signal?.throwIfAborted()
-  // The package bootstrap installs declaration identity hooks before importing
-  // any command modules, both in a checkout and in a compiled distribution.
-  const manifest = createRequire(import.meta.url).resolve("@smthrs/build-cli/package.json")
-  const entry = fileURLToPath(new URL("./src/main.js", pathToFileURL(manifest)))
   const ignored = [".git", "node_modules", ...options.ignored].map((path) =>
     path.replaceAll("\\", "/").replace(/\/$/, "")
   )
@@ -61,49 +106,54 @@ export const run = async (options: {
   // every change observed until then. Those changes must not replace it again.
   let observed = 0
   let covered = 0
-  const recordBaseline = Effect.suspend(() => {
-    const since = observed
-    return Effect.tryPromise({
-      try: () => digest(options.root, relevant),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new PackageError("watch_refresh_failed", "workspace rescan failed", { cause })
-    }).pipe(Effect.map((tree) => {
-      baseline = tree
-      baselineObserved = since
-    }))
-  })
-  const cycle = Effect.suspend(() => {
-    if (failure !== undefined) return Effect.fail(failure)
-    return options.once ? launch : Effect.andThen(recordBaseline, launch)
-  })
-  const launch = Effect.suspend(() => {
-    const number = ++cycles
-    let output = ""
-    return ContainedProcess.runEffect({
-      command: process.execPath,
-      args: [entry, ...options.args, "--workspace", options.root],
-      cwd: options.root,
-      environment: options.environment,
-      stdout: (text) => {
-        if (options.cycleCompleted !== undefined) output = `${output}${text}`.slice(-16 * 1024)
-        options.stdout(text)
-      },
-      stderr: options.stderr
-    }).pipe(Effect.onExit((exit) =>
-      Effect.sync(() => {
-        exitCode = Exit.isSuccess(exit) ? exit.value : 1
-        if (Exit.isFailure(exit)) {
-          if (Cause.hasInterruptsOnly(exit.cause)) covered = observed
-          else failure = Cause.squash(exit.cause)
-        }
-        options.cycleCompleted?.({ number, exitCode, output })
-      })
-    ))
-  })
-  const changes = Stream.callback<number, Error>((queue) =>
-    Effect.acquireRelease(
-      Effect.try({
-        try: () => {
+  const program = Effect.gen(function*() {
+    const services = yield* Services
+    const recordBaseline = Effect.suspend(() => {
+      const since = observed
+      return services.digest(options.root, relevant).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof Error
+            ? cause
+            : new PackageError("watch_refresh_failed", "workspace rescan failed", { cause })
+        ),
+        Effect.map((tree) => {
+          baseline = tree
+          baselineObserved = since
+        })
+      )
+    })
+    const cycle = Effect.suspend(() => {
+      if (failure !== undefined) return Effect.fail(failure)
+      return options.once ? launch : Effect.andThen(recordBaseline, launch)
+    })
+    const launch = Effect.suspend(() => {
+      const number = ++cycles
+      let output = ""
+      return services.processRunner({
+        command: process.execPath,
+        args: [...options.args, "--workspace", options.root],
+        cwd: options.root,
+        environment: options.environment,
+        stdout: (text) => {
+          if (options.cycleCompleted !== undefined) output = `${output}${text}`.slice(-16 * 1024)
+          options.stdout(text)
+        },
+        stderr: options.stderr
+      }).pipe(Effect.onExit((exit) =>
+        Effect.sync(() => {
+          exitCode = Exit.isSuccess(exit) ? exit.value : 1
+          if (Exit.isFailure(exit)) {
+            if (Cause.hasInterruptsOnly(exit.cause)) covered = observed
+            else failure = Cause.squash(exit.cause)
+          }
+          options.cycleCompleted?.({ number, exitCode, output })
+        })
+      ))
+    })
+    const changes = Stream.callback<number, unknown>((queue) =>
+      Effect.acquireRelease(
+        Effect.gen(function*() {
+          const runScan = yield* FiberSet.makeRuntime()
           let closed = false
           let scanning = false
           let again = false
@@ -117,52 +167,57 @@ export const run = async (options: {
             }
             scanning = true
             const expected = baseline
-            digest(options.root, relevant).then(
-              (tree) => {
-                if (!closed && tree !== expected && baseline === expected && observed === baselineObserved) {
-                  Queue.offerUnsafe(queue, ++observed)
-                }
-              },
-              (error) => {
-                if (!closed) Queue.failCauseUnsafe(queue, Cause.fail(error))
-              }
-            ).finally(() => {
-              scanning = false
-              if (again) {
-                again = false
-                rescan()
-              }
-            })
+            runScan(
+              services.digest(options.root, relevant).pipe(
+                Effect.matchCause({
+                  onFailure: (cause) => {
+                    if (!closed) Queue.failCauseUnsafe(queue, cause)
+                  },
+                  onSuccess: (tree) => {
+                    if (!closed && tree !== expected && baseline === expected && observed === baselineObserved) {
+                      Queue.offerUnsafe(queue, ++observed)
+                    }
+                  }
+                }),
+                Effect.ensuring(Effect.sync(() => {
+                  scanning = false
+                  if (again) {
+                    again = false
+                    rescan()
+                  }
+                }))
+              )
+            )
           }
-          const timer = setInterval(rescan, options.rescanMs ?? 1000)
-          const watcher = watch(options.root, { recursive: true }, (_event, filename) => {
+          const close = yield* services.notifier(options.root, (filename) => {
             // A notification without a name says only that something changed.
             if (filename === null) return rescan()
-            const path = filename.toString().replaceAll("\\", "/")
+            const path = filename.replaceAll("\\", "/")
             if (relevant(path)) Queue.offerUnsafe(queue, ++observed)
-          }).on("error", (error) => {
+          }, (error) => {
             Queue.failCauseUnsafe(queue, Cause.fail(error))
           })
+          const timer = setInterval(rescan, options.rescanMs ?? 1000)
           return () => {
             closed = true
             clearInterval(timer)
-            watcher.close()
+            close()
           }
-        },
-        catch: (cause) => cause instanceof Error ? cause : new Error("filesystem watch failed", { cause })
-      }),
-      (close) => Effect.sync(close)
-    ), { bufferSize: 1, strategy: "sliding" }).pipe(
-      Stream.debounce(options.debounceMs),
-      Stream.filter((change) => change > covered),
-      Stream.prepend([0])
-    )
-  const result = await Effect.runPromiseExit(
-    (options.once ? Stream.make(0) : changes).pipe(
+        }),
+        (close) => Effect.sync(close)
+      ), { bufferSize: 1, strategy: "sliding" }).pipe(
+        Stream.debounce(options.debounceMs),
+        Stream.filter((change) => change > covered),
+        Stream.prepend([0])
+      )
+    return yield* (options.once ? Stream.make(0) : changes).pipe(
       Stream.switchMap(() => Stream.fromEffect(cycle), { bufferSize: 1 }),
       Stream.runDrain,
       Effect.scoped
-    ),
+    )
+  })
+  const result = await Effect.runPromiseExit(
+    program.pipe(Effect.provideService(Services, options.services ?? makeServices())),
     { signal: options.signal }
   )
   if (failure !== undefined) throw failure

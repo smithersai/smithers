@@ -12,23 +12,25 @@ const helpers = Smithers.glob("test/helpers/**/*.ts")
 /** Runnable examples; `test/examples.test.ts` imports and runs each one. */
 const examples = Smithers.glob("examples/**/*.ts")
 
-/** Cache regressions exercise real files and public execution boundaries. */
+/** Tests use real dependencies; faults enter through Effect services. */
 const importRules = ImportRules({
   cwd: "packages/smithers/build/build-cli",
   rules: [{
     kind: "forbidCalls",
-    files: ["test/FilegroupCache.test.ts", "test/ValueTargetsCli.test.ts"],
+    files: ["test/**/*.test.ts"],
     callees: [
       "vi.mock",
       "vi.doMock",
       "vi.spyOn",
       "vi.stubGlobal",
-      "jest.mock",
-      "setTimeout",
-      "*.sleep",
-      "*.waitForTimeout"
+      "jest.mock"
     ],
-    because: "TEST-2/TEST-7: cache regressions use real files and execution receipts, never mocks or fixed sleeps."
+    because: "TEST-2/TEST-7: tests use real dependencies and inject faults through Effect services."
+  }, {
+    kind: "forbidCalls",
+    files: ["test/FilegroupCache.test.ts", "test/ValueTargetsCli.test.ts"],
+    callees: ["setTimeout", "*.sleep", "*.waitForTimeout"],
+    because: "TEST-2/TEST-7: cache regressions use execution receipts, never fixed sleeps."
   }]
 })
 
