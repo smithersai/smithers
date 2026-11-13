@@ -2,7 +2,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 // Deep reviewed and polished by a human on 2026-08-10.
 
 import { describe, expect, it } from "@effect/vitest"
-import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import { effect } from "./Harness.ts"
@@ -150,10 +150,6 @@ describe("Flow execution identities", () => {
       expect(executionId).toBe("ambient-id")
     }).pipe(Effect.provide(AnonymousLayer), Effect.provide(fixed("ambient-id"))))
 
-  // A host installs this source, so a hostile or careless one is a wiring
-  // mistake rather than caller input. The port does not second-guess it, and
-  // these two cases record what a bad source actually costs instead of
-  // leaving it undocumented.
   effect("runs under an empty id when the host source mints one", () =>
     Effect.gen(function*() {
       const executionId = yield* Anonymous.execute({ value: "empty" }, { discard: true })
@@ -161,29 +157,20 @@ describe("Flow execution identities", () => {
     }).pipe(Effect.provide(AnonymousLayer), Effect.provide(fixed(""))))
 
   effect(
-    "collapses two flows onto one execution when the host source names one id for both",
+    "refuses a host source reusing another flow's execution id",
     () =>
       Effect.gen(function*() {
-        // The settled cost of a bad source, pinned rather than left to be
-        // discovered in production: the runtime addresses an execution by its
-        // id, so a source that answers every flow with one id makes the SECOND
-        // flow replay the FIRST one's recorded result instead of running. A
-        // source installed with `layerExecutionIds` must therefore scope the id
-        // to something that actually separates the work, and the flow tag is
-        // part of what the opt-in `derived` source hashes for this reason.
-        //
-        // This pins the cost, NOT a settled design. `FlowRuntime`'s port
-        // addresses an execution by id alone, while `WaitFor.action`'s token
-        // path compares the flow name AND the execution id
-        // (`src/WaitFor.ts`), so the two surfaces already disagree about what
-        // identifies a run. Whether the engine should key an execution by
-        // (flow, executionId) is an open question for `@smthrs/engine` and
-        // `@smthrs/engine-store`, which own the record this test only reads
-        // through the memory fixture. If that changes, this expectation turns
-        // red on purpose: replace it with the two ids the new keying produces
-        // rather than restoring the collapse.
         expect(yield* Anonymous.execute({ value: "left" })).toBe("left")
-        expect(yield* Twin.execute({ value: "right" })).toBe("left")
+        const failure = yield* Effect.flip(Twin.execute({ value: "right" }))
+        expect(failure).toBeInstanceOf(FlowRuntime.ExecutionIdentityConflict)
+        expect(failure).toMatchObject({
+          code: "execution_identity_conflict",
+          executionId: "collided-id",
+          field: "flow",
+          expected: Anonymous._tag,
+          actual: Twin._tag
+        })
+        expect(yield* Anonymous.execute({ value: "left" })).toBe("left")
       }).pipe(
         Effect.provide(
           layerWired(

@@ -469,8 +469,8 @@ describe("the interpreter drives a child boundary as a real execution", () => {
       )
 
       // The child's suspension travelled: the parent is parked, not failed.
-      expect(Option.isSome(settled.parked)).toBe(true)
-      expect(Option.isSome(settled.childParked)).toBe(true)
+      expect(Option.isSome(settled.parked) && settled.parked.value._tag).toBe("Suspended")
+      expect(Option.isSome(settled.childParked) && settled.childParked.value._tag).toBe("Suspended")
       expect(
         Option.isSome(settled.done) && settled.done.value._tag === "Complete" &&
           Exit.isSuccess(settled.done.value.exit) && settled.done.value.exit.value

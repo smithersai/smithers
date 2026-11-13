@@ -328,7 +328,7 @@ describe("concurrent action bookkeeping", () => {
         (result) => result._tag === "Suspended",
         { turns: 200 }
       )
-      expect(Option.isSome(suspended)).toBe(true)
+      expect(Option.isSome(suspended) && suspended.value._tag).toBe("Suspended")
       if (Option.isSome(suspended) && suspended.value._tag === "Suspended") {
         const cause = String(suspended.value.cause)
         expect(cause).toContain("first-boom")
@@ -401,7 +401,7 @@ describe("suspension while siblings are still running", () => {
         (result) => result._tag === "Suspended",
         { turns: 200 }
       )
-      expect(Option.isSome(suspended)).toBe(true)
+      expect(Option.isSome(suspended) && suspended.value._tag).toBe("Suspended")
       if (Option.isSome(suspended) && suspended.value._tag === "Suspended") {
         expect(String(suspended.value.cause)).toContain("gate-closed")
       }

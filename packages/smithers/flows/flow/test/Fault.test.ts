@@ -106,12 +106,28 @@ describe("the flow's own rows", () => {
     expect(Fault.of(new Action.InfraInterrupt({})))
       .toEqual({ class: "infra", tag: "@smthrs/flow/InfraInterrupt/infra_interrupt" })
     const rounds = { flowName: "f", lineageId: "l", maxRounds: 3, roundOrdinal: 4, message: "loop" }
-    expect(Fault.of(new Flow.MaxRoundsExceeded(rounds)).class).toBe("bug")
+    const exceeded = new Flow.MaxRoundsExceeded(rounds)
+    expect(Fault.of(exceeded)).toEqual({
+      class: "bug",
+      tag: "@smthrs/flow/MaxRoundsExceeded/max_rounds_exceeded"
+    })
+    expect(Fault.registered().has(exceeded._tag)).toBe(true)
     const failed = (code: "rejected" | "timeout" | "request_invalid") =>
       new HumanTask.HumanTaskFailed({ code, task: "t", attempts: 1, rejections: [], message: "m" })
     expect(Fault.of(failed("rejected"))).toEqual({ class: "user", tag: "@smthrs/flow/HumanTaskFailed/rejected" })
     expect(Fault.of(failed("timeout")).class).toBe("factory")
-    expect(Fault.of(failed("request_invalid")).class).toBe("bug")
+    const invalid = failed("request_invalid")
+    expect(Fault.of(invalid)).toEqual({ class: "bug", tag: "@smthrs/flow/HumanTaskFailed/request_invalid" })
+    expect(Fault.registered().has(invalid._tag)).toBe(true)
+    // A missing code also defaults to bug. Re-registering the exact table
+    // proves the request_invalid row exists without changing the registry.
+    expect(() =>
+      Fault.register(invalid._tag, {
+        rejected: "user",
+        timeout: "factory",
+        request_invalid: "bug"
+      })
+    ).not.toThrow()
     expect(Fault.of(new ExternalJob.Again({ message: "replacement needed" })).class).toBe("dependency")
     expect(Fault.of(
       new Flow.DeadlineExceeded({

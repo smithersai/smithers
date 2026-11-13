@@ -204,6 +204,17 @@ const makeRuntime = (durable: MemoryState) =>
       parent: string | undefined
     ) {
       let state = executions.get(executionId)
+      if (state && state.instance.flow._tag !== flow._tag) {
+        return yield* Effect.die(
+          new FlowRuntime.ExecutionIdentityConflict({
+            executionId,
+            field: "flow",
+            expected: state.instance.flow._tag,
+            actual: flow._tag,
+            message: `Execution ${executionId} already belongs to flow ${state.instance.flow._tag}`
+          })
+        )
+      }
       if (!state) {
         const entry = flows.get(flow._tag)
         if (!entry) return yield* Effect.die(`Flow ${flow._tag} is not registered`)
