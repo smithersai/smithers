@@ -43,7 +43,7 @@ it.live("decisions/host-rules", () => run("decisions/host-rules", Input, (input)
     : input.event === "assigned" ? (known ? "assigned ada" : "") : input.event === "unassigned" ? (known ? "unassigned ada" : "") : input.event === "closed" ? "closed this issue" : input.event === "reopened" ? "reopened this issue" : ""
   if (text !== timeline) return false
   if (requestKey(input.key) !== /^[A-Za-z0-9-]{1,100}$/.test(input.key)) return false
-  // Sandbox ledgers: a count of running entries, distinct identities, and the refusals before any accounting.
+  // Sandbox ledgers: a count of running entries, distinct identities, and each refusal of a start or stop.
   const entries: ReadonlyArray<SandboxEntry> = input.entries
   const end = input.a % (entries.length + 1)
   if (runningCountPrefix(entries, end) !== entries.slice(0, end).filter((entry) => entry.running).length) return false
@@ -51,12 +51,10 @@ it.live("decisions/host-rules", () => run("decisions/host-rules", Input, (input)
   const valid = entries.every((entry, i) => entry.id !== "" && entry.conversation !== "" && entries.slice(0, i).every((other) => other.id !== entry.id && other.conversation !== entry.conversation))
   if (validSandboxes(entries) !== valid) return false
   const ledger = { ...emptySandboxLedger("p1", "contributor", input.b * 60_000, 0, 0), usedMilliseconds: input.a * 60_000, sandboxes: valid ? entries : [] }
-  const intent = { type: op === "new" ? "start" as const : op === "link" ? "stop" as const : "meter" as const, owner: open ? "p1" : "p2", role: "contributor" as const, allowanceMilliseconds: input.b * 60_000,
-    conversation: textBlank ? "" : "c1", sandboxId: titleBlank ? "" : "s9", operationId: "o1", now: 0, month: 0 }
+  const intent = { type: op === "new" ? "start" as const : "stop" as const, conversation: "c1", sandboxId: titleBlank ? "" : "s9", operationId: "o1" }
   const decision = decideSandbox(ledger, intent)
-  if (intent.type !== "meter" && intent.conversation === "") { if (decision.ok || decision.refusal !== "invalid") return false }
-  else if (intent.owner !== "p1") { if (decision.ok || decision.refusal !== "forbidden") return false }
-  else if (intent.type === "start" && input.a >= input.b) { if (decision.ok || decision.refusal !== "out-of-minutes") return false }
+  if (!decision.ok && decision.state !== ledger) return false
+  if (intent.type === "start" && input.a >= input.b) { if (decision.ok || decision.refusal !== "out-of-minutes") return false }
   else if (intent.type === "stop" && !ledger.sandboxes.some((entry) => entry.conversation === "c1" && entry.running)) { if (decision.ok || decision.refusal !== "stopped") return false }
   else if (intent.type === "start" && !ledger.sandboxes.some((entry) => entry.conversation === "c1") && (titleBlank || ledger.sandboxes.some((entry) => entry.id === "s9"))) { if (decision.ok || decision.refusal !== "invalid") return false }
   // The day's ledger charges inside the safe integers only; one conversation's key is its host and reply.

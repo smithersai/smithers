@@ -227,6 +227,22 @@ one is missing in the other). It closes `sandboxDecision`'s comparisons against 
 running sandboxes. `runningCountPrefix` (4 arms) is called only by contracts; it becomes a `spec function` when a
 compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`).
 
+**`decideSandbox` decides only starts and stops** (session 8, planned on the board 2026-11-13 19:45Z, no objection).
+Its one caller, `sandboxHost` `transition`, passed the ledger's own owner, role, allowance, month and meter clock
+(`now: ledger.lastMeteredAt`), and `intentType` yields only `start` or `stop`. `admit` refuses an empty conversation
+before a pending operation exists (`sandboxConversation`), and the host's own stops name a ledger entry, whose
+conversation `validSandboxes` keeps nonempty. So no input reached four parts: the owner refusal, the empty-conversation
+refusal, the `meter` intent and the clock charge (elapsed time was always 0). The meter is `sandboxMeter.meter`.
+`SandboxIntent` is now `type`, `conversation`, `sandboxId` and `operationId`; the decision reads role and allowance
+from the ledger, charges nothing, and every refusal returns the ledger unchanged. Its contract says that directly
+(`!\result.ok ==> \result.state == ledger`, accepted state keeps `usedMilliseconds` and `lastMeteredAt`). Mutation
+rows: 10 deleted with the code (`sandbox-owner-admission`, `sandbox-refusal-precedence`, `sandbox-meter-elapsed`,
+`sandbox-highwater`, `sandbox-conversation-admission`, `sandbox-meter-owner`, `-role`, `-allowance`, `-month`,
+`-usage`), 4 re-anchored on the refusals that remain, and 2 added (`sandbox-refusal-forbidden-ledger`,
+`sandbox-no-charge`). The unit test of a meter intent's high-water mark is deleted; `test/sandboxMeter.test.vibe`
+covers the meter's own. `fuzz/sandbox.fuzz.vibe` `sandbox/decision-sequences` now draws a role and a metered usage
+instead of owners and clock steps, and has no saved corpus.
+
 **An end sent twice** (`fault=end-twice`, `e2e/core-end-twice.spec.ts`, session 7). The transport sends the first tour
 end twice, as a client that resends an end whose answer it lost. The mock's sequencer refuses the second (`decide`'s
 `EndTour` with no tour running); the page reads that refusal as the tour already ended, gives the person control, and

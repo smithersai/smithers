@@ -5,7 +5,7 @@ const entries = Array.from({ length: 20000 }, (_, index) => ({ id: `box-${index}
 const initial: SandboxLedger = { owner: "u", role: "contributor", allowanceMilliseconds: 60000, month: 1, lastMeteredAt: 0, usedMilliseconds: 0, sequence: 0, sandboxes: entries, lastOperationId: "", lastRefusal: "" }
 
 it("starts an existing sandbox beyond the native call-stack depth without changing other entries", () => {
-  const result = decideSandbox(initial, { type: "start", owner: "u", role: "contributor", allowanceMilliseconds: 60000, month: 1, now: 0, conversation: "room-19999", sandboxId: "ignored", operationId: "start-last" })
+  const result = decideSandbox(initial, { type: "start", conversation: "room-19999", sandboxId: "ignored", operationId: "start-last" })
   expect(result.ok).toBe(true)
   if (result.ok) {
     expect(result.event.state.sandboxes.length).toBe(entries.length)

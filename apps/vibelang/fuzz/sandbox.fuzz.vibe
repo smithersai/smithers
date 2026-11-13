@@ -67,21 +67,21 @@ it.live("sandbox/factory-role-replay-and-files", () => run("sandbox/factory-role
   }
 }))
 
-const Step = Schema.Struct({ type: Schema.Literals(["start", "stop", "meter"]), role: Role, id: Int, delta: Delta, owned: Schema.Boolean, duplicate: Schema.Boolean })
-it.live("sandbox/decision-sequences", () => run("sandbox/decision-sequences", Schema.Array(Step).check(Schema.isMaxLength(48)), (steps) => {
-  let ledger = Decision.emptySandboxLedger("owner", "contributor", 500, 0, 0)
+// Starts and stops on a ledger the meter has already charged (`used`); the meter's own sequences are above.
+const Step = Schema.Struct({ type: Schema.Literals(["start", "stop"]), id: Int, duplicate: Schema.Boolean })
+const Sequence = Schema.Struct({ role: Role, used: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 500 })), steps: Schema.Array(Step).check(Schema.isMaxLength(48)) })
+it.live("sandbox/decision-sequences", () => run("sandbox/decision-sequences", Sequence, ({ role, used, steps }) => {
+  let ledger = { ...Decision.emptySandboxLedger("owner", role, 500, 0, 0), usedMilliseconds: used }
   let replay = ledger
-  let clock = 0
   for (const [at, step] of steps.entries()) {
-    clock = Math.max(0, clock + step.delta)
-    const intent = { type: step.type, owner: step.owned ? "owner" : "other", role: step.role, allowanceMilliseconds: 500, conversation: `c${step.id}`, sandboxId: `s${step.id}`, operationId: step.duplicate ? ledger.lastOperationId : `op${at}`, now: clock, month: 0 }
+    const intent = { type: step.type, conversation: `c${step.id}`, sandboxId: `s${step.id}`, operationId: step.duplicate ? ledger.lastOperationId : `op${at}` }
     const result = Decision.decideSandbox(ledger, intent)
     if (result.ok) {
-      if (result.event.sequence !== ledger.sequence + 1) return false
+      if (result.event.sequence !== ledger.sequence + 1 || result.event.state.usedMilliseconds !== used) return false
       ledger = Decision.applySandbox(ledger, result.event)
       replay = Decision.applySandbox(replay, result.event)
       if (!same(Decision.applySandbox(ledger, result.event), ledger)) return false
-    }
+    } else if (!same(result.state, ledger)) return false
     if (!same(ledger, replay) || ledger.owner !== "owner" || ledger.usedMilliseconds < 0 || !Decision.validSandboxes(ledger.sandboxes)) return false
     if (Decision.remainingMilliseconds(ledger.allowanceMilliseconds, ledger.usedMilliseconds) < 0) return false
     if (Decision.runningCount(ledger.sandboxes) !== ledger.sandboxes.filter((box) => box.running).length) return false

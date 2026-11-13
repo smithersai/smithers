@@ -34,18 +34,12 @@ it.effect("keeps partial usage after stopping and refuses a start at exact exhau
     sandboxes: [{ id: "box", conversation: "home", running: true }],
   }
   const partial = try meter(running, {}, start + 9144, allowance)
-  const stop = decideSandbox(partial.ledger, {
-    type: "stop", owner: "person", role: "contributor", allowanceMilliseconds: allowance,
-    conversation: "home", sandboxId: "box", operationId: "stop-home", now: start + 9144, month: running.month,
-  })
+  const stop = decideSandbox(partial.ledger, { type: "stop", conversation: "home", sandboxId: "box", operationId: "stop-home" })
   try Effect.try(() => expect(stop.ok).toBe(true))
   const stopped = stop.ok ? applySandbox(partial.ledger, stop.event) : stop.state
   const later = try meter(stopped, partial.months, start + 120000, allowance)
   const exhausted = try meter(running, {}, start + allowance, allowance)
-  const decision = decideSandbox(exhausted.ledger, {
-    type: "start", owner: "person", role: "contributor", allowanceMilliseconds: allowance,
-    conversation: "other", sandboxId: "other-box", operationId: "start-other", now: start + allowance, month: running.month,
-  })
+  const decision = decideSandbox(exhausted.ledger, { type: "start", conversation: "other", sandboxId: "other-box", operationId: "start-other" })
   try Effect.try(() => {
     expect(later.ledger.usedMilliseconds).toBe(9144)
     expect(remainingMilliseconds(allowance, later.ledger.usedMilliseconds)).toBe(35990856)

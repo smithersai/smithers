@@ -38,32 +38,6 @@ describe("verified sandbox policy kernel", () => {
     expect(elapsedMilliseconds(500, 501)).toBe(1)
     expect(elapsedMilliseconds(0, 9007199254740991)).toBe(9007199254740991)
   })
-
-  it("keeps the meter high-water mark across clock rollback", () => {
-    const initial: SandboxLedger = {
-      owner: "mock-user", role: "contributor", allowanceMilliseconds: 36000, month: 1,
-      lastMeteredAt: 100, usedMilliseconds: 0, sequence: 0,
-      sandboxes: [{ id: "box-1", conversation: "room-1", running: true }],
-      lastOperationId: "", lastRefusal: "",
-    }
-    const rolledBack = decideSandbox(initial, {
-      type: "meter", owner: "mock-user", role: "contributor", allowanceMilliseconds: 36000,
-      conversation: "room-1", sandboxId: "box-1", operationId: "meter-90", now: 90, month: 1,
-    })
-    expect(rolledBack.ok).toBe(true)
-    if (rolledBack.ok) {
-      expect(rolledBack.event.state.lastMeteredAt).toBe(100)
-      const advanced = decideSandbox(rolledBack.event.state, {
-        type: "meter", owner: "mock-user", role: "contributor", allowanceMilliseconds: 36000,
-        conversation: "room-1", sandboxId: "box-1", operationId: "meter-110", now: 110, month: 1,
-      })
-      expect(advanced.ok).toBe(true)
-      if (advanced.ok) {
-        expect(advanced.event.state.lastMeteredAt).toBe(110)
-        expect(advanced.event.state.usedMilliseconds).toBe(10)
-      }
-    }
-  })
 })
 
 it("rejects malformed negative-usage events", () => {

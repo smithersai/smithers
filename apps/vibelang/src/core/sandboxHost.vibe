@@ -114,7 +114,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
   }
   effect function transition(state: SandboxState, pending: Pending, now: number) {
     if (!Number.isSafeInteger(state.ledger.sequence) || !safeRoom(state.ledger.sequence)) throw new Unavailable({ reason: "sequence-overflow" })
-    const decision = decideSandbox(state.ledger, { type: intentType(pending.kind), owner: state.ledger.owner, role: state.ledger.role, allowanceMilliseconds: state.ledger.allowanceMilliseconds, conversation: pending.conversation, sandboxId: firstSandbox(state.ledger.sandboxes.length) ? "sturdy-goggles" : `quiet-otter-${state.ledger.sandboxes.length}`, operationId: pending.operationId, now: state.ledger.lastMeteredAt, month: state.ledger.month })
+    const decision = decideSandbox(state.ledger, { type: intentType(pending.kind), conversation: pending.conversation, sandboxId: firstSandbox(state.ledger.sandboxes.length) ? "sturdy-goggles" : `quiet-otter-${state.ledger.sandboxes.length}`, operationId: pending.operationId })
     if (!decision.ok) return state
     return { ...state, ledger: applySandbox(state.ledger, decision.event) }
   }

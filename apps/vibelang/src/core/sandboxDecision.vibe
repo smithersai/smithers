@@ -163,16 +163,12 @@ export interface SandboxLedger {
   readonly lastRefusal: string
 }
 
+/** A start or stop in one conversation. The caller is the ledger's owner; metering is `sandboxMeter.meter`. */
 export interface SandboxIntent {
-  readonly type: "start" | "stop" | "meter"
-  readonly owner: string
-  readonly role: Role
-  readonly allowanceMilliseconds: number
+  readonly type: "start" | "stop"
   readonly conversation: string
   readonly sandboxId: string
   readonly operationId: string
-  readonly now: number
-  readonly month: number
 }
 
 export interface SandboxEvent {
@@ -241,78 +237,47 @@ function sandboxIndex(entries: ReadonlyArray<SandboxEntry>, conversation: string
   return -1
 }
 
-/** The sole decision function for mock and Cloudflare sandbox ledger transitions. */
+/**
+ * The sole decision function for mock and Cloudflare sandbox ledger starts and stops. Its caller (`sandboxHost`) is the
+ * ledger's owner, has refused an empty conversation, and has metered the ledger to now, so a decision charges nothing
+ * and every refusal leaves the ledger as it was.
+ */
 //@ verify
 //@ requires 0 <= ledger.sequence && ledger.sequence < 9007199254740991
 //@ requires 0 <= ledger.usedMilliseconds && ledger.usedMilliseconds <= 9007199254740991
 //@ requires ledger.sandboxes.length <= 1000000
-//@ requires 0 <= ledger.lastMeteredAt && ledger.lastMeteredAt <= 9007199254740991
-//@ requires intent.month == ledger.month
 //@ requires 0 <= ledger.allowanceMilliseconds && ledger.allowanceMilliseconds <= 9007199254740991
-//@ requires 0 <= intent.now && intent.now <= 9007199254740991
-//@ requires runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now) <= 9007199254740991 - ledger.usedMilliseconds
-//@ requires 0 <= intent.allowanceMilliseconds && intent.allowanceMilliseconds <= 9007199254740991
-//@ ensures \result.ok ==> \result.event.state.owner == ledger.owner
-//@ ensures \result.ok ==> \result.event.state.sequence == ledger.sequence + 1
-//@ ensures \result.ok ==> \result.event.state.usedMilliseconds == ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now)
-//@ ensures \result.ok ==> \result.event.state.usedMilliseconds >= 0
-//@ ensures \result.ok ==> \result.event.state.lastMeteredAt >= ledger.lastMeteredAt
-//@ ensures \result.ok && intent.type == "start" ==> mayStart(intent.role)
-//@ ensures \result.ok ==> \result.event.state.month == ledger.month
-//@ ensures !\result.ok ==> \result.state.owner == ledger.owner
-//@ ensures \result.ok == (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role)) && (intent.type == "meter" || (!(intent.type == "start" && intent.allowanceMilliseconds <= (ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now))) && !(intent.type == "stop" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) && ledger.sandboxes[i].running))) && !(!(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) && (intent.sandboxId == "" || exists(i, 0 <= i && i < ledger.sandboxes.length && (ledger.sandboxes[i].id == intent.sandboxId || ledger.sandboxes[i].conversation == intent.conversation)))))))
-//@ ensures (intent.type != "meter" && intent.conversation == "") ==> !\result.ok && \result.refusal == "invalid" && \result.state == ledger
-//@ ensures !(intent.type != "meter" && intent.conversation == "") && (intent.owner != ledger.owner || (intent.type == "start" && !mayStart(intent.role))) ==> !\result.ok && \result.refusal == "forbidden" && \result.state == ledger
-//@ ensures !(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role)) && intent.type != "meter" && (intent.type == "start" && intent.allowanceMilliseconds <= (ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now))) ==> !\result.ok && \result.refusal == "out-of-minutes"
-//@ ensures !(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role)) && intent.type != "meter" && !(intent.type == "start" && intent.allowanceMilliseconds <= (ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now))) && (intent.type == "stop" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) && ledger.sandboxes[i].running))) ==> !\result.ok && \result.refusal == "stopped"
-//@ ensures !(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role)) && intent.type != "meter" && !(intent.type == "start" && intent.allowanceMilliseconds <= (ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now))) && !(intent.type == "stop" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) && ledger.sandboxes[i].running))) && (!(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) && (intent.sandboxId == "" || exists(i, 0 <= i && i < ledger.sandboxes.length && (ledger.sandboxes[i].id == intent.sandboxId || ledger.sandboxes[i].conversation == intent.conversation)))) ==> !\result.ok && \result.refusal == "invalid"
+//@ ensures !\result.ok ==> \result.state == ledger
+//@ ensures \result.ok == (!(intent.type == "start" && !mayStart(ledger.role)) && !(intent.type == "start" && ledger.allowanceMilliseconds <= ledger.usedMilliseconds) && !(intent.type == "stop" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) && ledger.sandboxes[i].running))) && !(!(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) && (intent.sandboxId == "" || exists(i, 0 <= i && i < ledger.sandboxes.length && (ledger.sandboxes[i].id == intent.sandboxId || ledger.sandboxes[i].conversation == intent.conversation)))))
+//@ ensures (intent.type == "start" && !mayStart(ledger.role)) ==> !\result.ok && \result.refusal == "forbidden"
+//@ ensures !(intent.type == "start" && !mayStart(ledger.role)) && (intent.type == "start" && ledger.allowanceMilliseconds <= ledger.usedMilliseconds) ==> !\result.ok && \result.refusal == "out-of-minutes"
+//@ ensures !(intent.type == "start" && !mayStart(ledger.role)) && !(intent.type == "start" && ledger.allowanceMilliseconds <= ledger.usedMilliseconds) && (intent.type == "stop" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) && ledger.sandboxes[i].running))) ==> !\result.ok && \result.refusal == "stopped"
+//@ ensures !(intent.type == "start" && !mayStart(ledger.role)) && !(intent.type == "start" && ledger.allowanceMilliseconds <= ledger.usedMilliseconds) && !(intent.type == "stop" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) && ledger.sandboxes[i].running))) && (!(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) && (intent.sandboxId == "" || exists(i, 0 <= i && i < ledger.sandboxes.length && (ledger.sandboxes[i].id == intent.sandboxId || ledger.sandboxes[i].conversation == intent.conversation)))) ==> !\result.ok && \result.refusal == "invalid"
 //@ ensures \result.ok ==> \result.event.sequence == ledger.sequence + 1 && \result.event.operationId == intent.operationId
-//@ ensures \result.ok ==> \result.event.state.role == intent.role && \result.event.state.allowanceMilliseconds == intent.allowanceMilliseconds
-//@ ensures \result.ok ==> \result.event.state.lastOperationId == intent.operationId && \result.event.state.lastRefusal == ""
-//@ ensures \result.ok ==> \result.event.state.lastMeteredAt == (intent.now > ledger.lastMeteredAt ? intent.now : ledger.lastMeteredAt)
-//@ ensures \result.ok && intent.type == "meter" ==> \result.event.state.sandboxes == ledger.sandboxes
-//@ ensures \result.ok && intent.type != "meter" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes.length == ledger.sandboxes.length + 1
-//@ ensures \result.ok && intent.type != "meter" && (exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes.length == ledger.sandboxes.length
-//@ ensures \result.ok && intent.type != "meter" ==> forall(i, 0 <= i && i < ledger.sandboxes.length && !(0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation)) ==> \result.event.state.sandboxes[i] == ledger.sandboxes[i])
-//@ ensures \result.ok && intent.type != "meter" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes[ledger.sandboxes.length].conversation == intent.conversation && \result.event.state.sandboxes[ledger.sandboxes.length].running == (intent.type == "start")
-//@ ensures \result.ok && intent.type != "meter" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes[ledger.sandboxes.length].id == intent.sandboxId
-//@ ensures \result.ok && intent.type != "meter" ==> forall(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) ==> \result.event.state.sandboxes[i].conversation == intent.conversation && \result.event.state.sandboxes[i].running == (intent.type == "start"))
-//@ ensures \result.ok && intent.type != "meter" ==> forall(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) ==> \result.event.state.sandboxes[i].id == ledger.sandboxes[i].id)
-//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.owner == ledger.owner
-//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.role == intent.role
-//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.allowanceMilliseconds == intent.allowanceMilliseconds
-//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.month == ledger.month
-//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.lastMeteredAt == (intent.now > ledger.lastMeteredAt ? intent.now : ledger.lastMeteredAt)
-//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.usedMilliseconds == (ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now))
-//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.sequence == ledger.sequence
-//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.sandboxes == ledger.sandboxes
-//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.lastOperationId == ledger.lastOperationId
-//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.lastRefusal == ledger.lastRefusal
+//@ ensures \result.ok ==> \result.event.state.owner == ledger.owner && \result.event.state.role == ledger.role && \result.event.state.allowanceMilliseconds == ledger.allowanceMilliseconds
+//@ ensures \result.ok ==> \result.event.state.month == ledger.month && \result.event.state.lastMeteredAt == ledger.lastMeteredAt && \result.event.state.usedMilliseconds == ledger.usedMilliseconds
+//@ ensures \result.ok ==> \result.event.state.sequence == ledger.sequence + 1 && \result.event.state.lastOperationId == intent.operationId && \result.event.state.lastRefusal == ""
+//@ ensures \result.ok && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes.length == ledger.sandboxes.length + 1
+//@ ensures \result.ok && (exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes.length == ledger.sandboxes.length
+//@ ensures \result.ok ==> forall(i, 0 <= i && i < ledger.sandboxes.length && !(0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation)) ==> \result.event.state.sandboxes[i] == ledger.sandboxes[i])
+//@ ensures \result.ok && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes[ledger.sandboxes.length].conversation == intent.conversation && \result.event.state.sandboxes[ledger.sandboxes.length].running == (intent.type == "start")
+//@ ensures \result.ok && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes[ledger.sandboxes.length].id == intent.sandboxId
+//@ ensures \result.ok ==> forall(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) ==> \result.event.state.sandboxes[i].conversation == intent.conversation && \result.event.state.sandboxes[i].running == (intent.type == "start"))
+//@ ensures \result.ok ==> forall(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) ==> \result.event.state.sandboxes[i].id == ledger.sandboxes[i].id)
 export function decideSandbox(ledger: SandboxLedger, intent: SandboxIntent): SandboxDecision {
-  if (intent.type !== "meter" && intent.conversation === "") return { ok: false, refusal: "invalid", state: ledger }
-  if (intent.owner !== ledger.owner) return { ok: false, refusal: "forbidden", state: ledger }
-  if (intent.type === "start" && !mayStart(intent.role)) return { ok: false, refusal: "forbidden", state: ledger }
-  const elapsed = elapsedMilliseconds(ledger.lastMeteredAt, intent.now)
-  const count = runningCount(ledger.sandboxes)
-  const added = intervalUsageMilliseconds(count, elapsed)
-  const used = accumulateUsageMilliseconds(ledger.usedMilliseconds, added)
-  const allowance = intent.allowanceMilliseconds
-  let sandboxes = ledger.sandboxes
-  const highWater = intent.now > ledger.lastMeteredAt ? intent.now : ledger.lastMeteredAt
-  let metered = { ...ledger, role: intent.role, allowanceMilliseconds: allowance, month: intent.month, lastMeteredAt: highWater, usedMilliseconds: used, sandboxes }
-  metered = { ...metered, sandboxes }
-  if (intent.type === "meter") return { ok: true, event: { sequence: ledger.sequence + 1, operationId: intent.operationId, state: { ...metered, sequence: ledger.sequence + 1, lastOperationId: intent.operationId, lastRefusal: "" } } }
-  if (intent.type === "start" && remainingMilliseconds(allowance, used) === 0) return { ok: false, refusal: "out-of-minutes", state: metered }
+  if (intent.type === "start" && !mayStart(ledger.role)) return { ok: false, refusal: "forbidden", state: ledger }
+  if (intent.type === "start" && remainingMilliseconds(ledger.allowanceMilliseconds, ledger.usedMilliseconds) === 0) return { ok: false, refusal: "out-of-minutes", state: ledger }
+  const sandboxes = ledger.sandboxes
   const currentIndex = sandboxIndex(sandboxes, intent.conversation)
-  if (intent.type === "stop" && (currentIndex < 0 || !sandboxes[currentIndex]!.running)) return { ok: false, refusal: "stopped", state: metered }
-  if (currentIndex < 0 && (intent.sandboxId === "" || !distinctFrom(sandboxes, intent.sandboxId, intent.conversation, sandboxes.length))) return { ok: false, refusal: "invalid", state: metered }
+  if (intent.type === "stop" && (currentIndex < 0 || !sandboxes[currentIndex]!.running)) return { ok: false, refusal: "stopped", state: ledger }
+  if (currentIndex < 0 && (intent.sandboxId === "" || !distinctFrom(sandboxes, intent.sandboxId, intent.conversation, sandboxes.length))) return { ok: false, refusal: "invalid", state: ledger }
   const replacement: SandboxEntry = {
     id: currentIndex < 0 ? intent.sandboxId : sandboxes[currentIndex]!.id,
     conversation: intent.conversation,
     running: intent.type === "start",
   }
   const nextSandboxes = replaceSandbox(sandboxes, currentIndex, replacement)
-  const next = { ...metered, sequence: ledger.sequence + 1, sandboxes: nextSandboxes, lastOperationId: intent.operationId, lastRefusal: "" }
+  const next = { ...ledger, sequence: ledger.sequence + 1, sandboxes: nextSandboxes, lastOperationId: intent.operationId, lastRefusal: "" }
   return { ok: true, event: { sequence: next.sequence, operationId: intent.operationId, state: next } }
 }
 
