@@ -267,3 +267,32 @@ test("sync authorization docs check the key name before the signature", () => {
     assert.ok(lookup >= 0 && lookup < source.indexOf("yield* shareSigner.verifyClaims"))
   }
 })
+
+test("model executor README lists every shipped member", () => {
+  const dir = "packages/smithers/agent/model"
+  const source = read(`${dir}/src/RequestExecutor.ts`)
+  const names = [...new Set([...source.matchAll(/^export (?:const|class|interface|type|function) (\w+)/gm)].map((match) => match[1]))]
+  assert.ok(names.length > 0)
+  const block = read(`${dir}/README.md`).split("- **`RequestExecutor`**:")[1]?.split("\n- **")[0]
+  assert.ok(block, "RequestExecutor has a README entry")
+  const documented = [...block.matchAll(/`(\w+)`/g)].map((match) => match[1])
+  assert.deepEqual(documented.sort(), names.sort())
+})
+
+test("model executor options document both retry and response-start bounds", () => {
+  const dir = "packages/smithers/agent/model"
+  const source = read(`${dir}/src/RequestExecutor.ts`)
+  const options = source.match(/^export interface MakeOptions \{([\s\S]*?)^\}/m)?.[1]
+  assert.ok(options, "MakeOptions remains public")
+  const fields = [...options.matchAll(/^  readonly (\w+)\?:/gm)].map((match) => match[1])
+  assert.ok(fields.length > 0)
+  const chapter = reference(dir).split("## `RequestExecutor`")[1]?.split("\n## ")[0]
+  assert.ok(chapter, "RequestExecutor has a reference chapter")
+  const row = chapter.split("\n").find((line) => line.startsWith("| `MakeOptions`"))
+  assert.ok(row, "MakeOptions has a reference row")
+  for (const field of fields) assert.ok(row.includes(`${field}?`), `MakeOptions documents ${field}`)
+  const defaultMs = source.match(/^export const defaultResponseStartMs = ([\d_]+)/m)?.[1]
+  assert.ok(defaultMs, "the response-start default remains public")
+  assert.ok(row.includes("`defaultResponseStartMs`"))
+  assert.ok(row.includes(defaultMs), "MakeOptions states the shipped response-start default")
+})
