@@ -72,9 +72,13 @@ Actions: `actions` lists; `run <flow> --input '<json>' [--wait]` starts;
 Internal flows cannot run.
 
 Specification: `issue spec-revise --revision <current> --text '<spec>' --key <id>`
-clears reviews. `issue spec-review --revision <current> --reviewer
-astra|sol|fable|opus --key <id>` requests one. Four current LGTM/A answers accept
-it. VIP Accept/Decline are human-only.
+keeps the four reviews and acceptance when the text changes.
+`issue spec-review --revision <current> --reviewer astra|sol|fable|opus --key <id>`
+requests one. A new panel needs four LGTM reviews graded A- or better on the
+same revision, each with a review receipt. A full panel runs again for a release;
+automated checks keep accepted specifications self-consistent between releases.
+See [decision 0027](../../wiki/decisions/0027-acceptance-gates.md).
+VIP Accept/Decline are human-only.
 
 Wiki: `wiki read|draft --page <id>` uses shared flows. Link
 `[Review it](#wiki-draft-PAGE)` for review. Only Contributors/Maintainers edit;
