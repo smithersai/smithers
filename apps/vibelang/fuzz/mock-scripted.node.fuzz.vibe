@@ -10,6 +10,7 @@ import { AgentActions } from "../src/actions/agent.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 import { apply, empty } from "../src/core/conversation.vibe"
+import { replyIdOf } from "../src/core/flows.vibe"
 import { run, Int, STEERED_FLOOR } from "./run.vibe"
 
 const PROMPTS = {
@@ -81,6 +82,33 @@ it.live("mock/scripted-actions", () => run("mock/scripted-actions", Input, ({ wa
       if (reply.error !== "") throw new Refuted({ check: 26 })
       if (!expected(kind, reply.text, role === "maintainer", role === "viewer", role === "contributor" || role === "maintainer")) throw new Refuted({ check: 1000 * (Object.keys(PROMPTS).indexOf(kind) + 1) + 27 })
     }
+  }
+  return try signedOutCommand(room)
+}, undefined, { minimum: STEERED_FLOOR }), 300_000)
+
+/**
+ * A maintainer's slash command whose poster signed out before the reply ran: the post waits behind a running tour, the
+ * maintainer signs out, the tour ends, and the reply requests nothing on their behalf ("Action unavailable.").
+ */
+effect function signedOutCommand(room: number) {
+  const actions = Context.get(try Layer.build(MockActions({ role: "maintainer", actor: "agent" }).pipe(Layer.provide(MockFactory))), Actions)
+  provide mockFactoryFor("maintainer"), AgentActions = { actions } {
+    const factory = try Factory
+    const conversation = `signed-out-${room}`
+    try factory.tour(conversation)
+    const driven = try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil((event) => event.type === "WalkthroughDriven"), Stream.timeout("20 seconds")))
+    if (!Array.from(driven).some((event) => event.type === "WalkthroughDriven")) throw new Refuted({ check: 30 })
+    try factory.post(conversation, "s", "Guest", PROMPTS.action)
+    const post = (try factory.read(conversation, 0)).entries.find((entry) => entry.clientId === "s")
+    if (post === undefined) throw new Refuted({ check: 31 })
+    try factory.accounts.signOut()
+    try factory.endTour(conversation)
+    const events = Array.from(try Stream.runCollect(factory.events(conversation, 0).pipe(
+      Stream.takeUntil((event) => (event.type === "ReplyFinished" || event.type === "ReplyFailed") && event.id === replyIdOf(post.id)),
+      Stream.timeout("20 seconds"),
+    )))
+    const reply = events.reduce(apply, empty).entries.find((entry) => entry.author === "agent" && entry.inReplyTo === post.id)
+    if (reply?.done !== true || reply.text !== "Action unavailable." || events.some((event) => event.type === "ActionRequested")) throw new Refuted({ check: 32 })
     return true
   }
-}, undefined, { minimum: STEERED_FLOOR }), 300_000)
+}

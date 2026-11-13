@@ -1,6 +1,7 @@
 // The mock Factory's room edges (src/core/MockFactory.vibe) that the scripted targets reach only by chance: a journal
 // retained mid-reply or with an unanswered post, tour controls outside the protocol, with no tour and on a running one,
-// a post behind a running tour, a tour asked for right after a post, and calls after the Factory's scope closed.
+// a post behind a running tour, a tour asked for right after a post, calls after the Factory's scope closed, and a
+// journal numbered out of order.
 // Oracle: a known wiki page opens and an unknown one is refused as empty; a reply cut off by a reload fails in words and the next post is answered; a retained post is answered; a
 // malformed control is Unavailable and a control with no tour is Refused, both writing nothing; every control on a
 // driven walkthrough answers; a post behind a tour, or contended by one, is answered once the tour ends; a closed
@@ -51,6 +52,12 @@ it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, st
       { type: "ReplyDelta", seq: 3, id: replyIdOf("m1"), text: text === "" ? "Half" : text },
     ],
     "unanswered": [{ type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "install" }],
+    // A journal an older or broken writer numbered out of order: one number repeated, one skipped.
+    "renumbered": [
+      { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "install" },
+      { type: "Posted", seq: 1, id: "m2", clientId: "b", name: "Ada", text: text === "" ? "again" : text },
+      { type: "Posted", seq: 3, id: "m3", clientId: "c", name: "Ada", text: "later" },
+    ],
   })
   provide mockFactoryFor().pipe(Layer.provide(retained)) {
     const factory = try Factory
@@ -73,6 +80,15 @@ it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, st
     // A retained post nobody answered is answered once the room opens.
     try settled(factory, "unanswered", "m1")
     if ((try reply(factory, "unanswered", "m1"))?.done !== true) throw new Refuted({ check: 5 })
+
+    // A renumbered journal keeps only the events a replay applies, counts the rest, and answers the kept post.
+    const trimmed = Metric.counter("vibelang_mock_trimmed_journal_events", { description: "Retained journal events a restore dropped: numbered out of order", incremental: true })
+    const dropped = (try Metric.value(trimmed)).count
+    try settled(factory, "renumbered", "m1")
+    const restored = try factory.read("renumbered", 0)
+    if ((try Metric.value(trimmed)).count - dropped !== 2 || restored.entries.some((entry) => entry.id === "m2" || entry.id === "m3")) throw new Refuted({ check: 14 })
+    const numbers = Array.from(try Stream.runCollect(factory.events("renumbered", 0).pipe(Stream.take(restored.seq), Stream.timeout("20 seconds")))).map((event) => event.seq)
+    if (numbers.some((seq, index) => seq !== index + 1)) throw new Refuted({ check: 15 })
 
     // A control outside the protocol is Unavailable; one with no tour is Refused; neither writes an event.
     const room = `controls-${step}`

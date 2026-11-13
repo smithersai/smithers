@@ -187,7 +187,13 @@ function issuesWikiReplies(input: typeof Replies.Type) {
   }
 }
 
-it.live("clients/issues-wiki-replies", () => run("clients/issues-wiki-replies", Replies, issuesWikiReplies))
+it.live("clients/issues-wiki-replies", () => run("clients/issues-wiki-replies", Replies, (input) => effect {
+  // Every execution: each call over a 200 whose body is not JSON, and one that is JSON but not a state, is `protocol`.
+  for (const op of [0, 1, 2, 3]) for (const body of ["not-json", "other-json"] as const) {
+    if (!(try issuesWikiReplies({ ...input, op, transport: false, status: 200, body }))) return false
+  }
+  return try issuesWikiReplies(input)
+}))
 
 /** Health answers that the live agent is up; every other request fails in transport: a faulty live backend. */
 const liveDown = HttpClient.make((request) => request.url.endsWith("/api/health")

@@ -308,6 +308,13 @@ it.live("reply/answers", () => run("reply/answers", ReplyInput, (input) => scope
     const refused = try replyOver(scriptsOf({ ...input, kind: "answer" }), physicalLedger(physical))
     if (refused.finished.length !== 0 || refused.failed[0] !== REASONS.budget) return false
   }
+  // Every execution: a start the conversation refuses (a duplicate dispatch) composes nothing and admits nothing.
+  if (!(try answered({ ...input, start: "refused" }))) return false
+  return try answered(input)
+})))
+
+/** One reply to the drawn `input`, held to the rules of `reply/answers`. */
+effect function answered(input: typeof ReplyInput.Type) {
   const log = { finished: [] as Array<string>, failed: [] as Array<string>, appended: new Map<number, string>(), restarts: 0, starts: 0 }
   const { log: charges, spend } = ledger(input.admission)
   const replies: Replies.Shape = {
@@ -341,7 +348,7 @@ it.live("reply/answers", () => run("reply/answers", ReplyInput, (input) => scope
     return input.text.startsWith(shown)
   }
   return log.finished.length === 0 && Object.values(REASONS).includes(log.failed[0] as never)
-})))
+}
 
 const OtherSeat = AgentAction.make("vibelang/fuzz/other-seat", { payload: {}, output: Schema.String, seat: "other", profile: "conversation", system: [], prompt: () => "", maxFrames: 1 })
 

@@ -1757,7 +1757,9 @@ turned into a defect.
 Finding in the suite itself: `fuzz/run.vibe` set `References.MinimumLogLevel` to `"Warning"`, which is not an Effect
 level (`"Warn"`), so no log at any level reached a logger under fuzzing, and no target could observe one. TypeScript
 accepts it because `Effect.provideService` infers the service type from both arguments; a direct `LogLevel` annotation
-rejects it. Fixed to `"Warn"`.
+rejects it. Fixed to `"Warn"`, with no console logger: `fuzz2-full13` printed every warning, 28,833 of them from
+`vibelang.sandbox` alone, which doubled the log and added about 340 s. A target that observes logs provides its own
+logger (`capturedLogs`), which replaces the empty one.
 
 Session 15's three surviving mutants, each now caught:
 
@@ -1773,6 +1775,18 @@ Session 15's three surviving mutants, each now caught:
 - `worker/ActionDirectory.vibe` 82, a Post whose reply id names a stored run: `start-conflicts` starts a reply id's
   run, removes its route key (as a run stored before route keys existed, which `root` already reads), and requires
   the Post to answer 409. Removing the run-request term answers 202.
+
+`fuzz2-full13` (`playwright` box, job `3a88ed79e59d7e0687299966`, base `4ce616cb`, 2,196 s, exit 1 on thresholds
+only): 104 fuzz files and 5 browser tests passed; 23 lines missed in scope. Chosen cases for 8 of them, each with its
+mutant caught:
+
+| Lines | Target | Case | Mutant |
+| --- | --- | --- | --- |
+| `MockFactory.vibe` 138 | `mock/scripted-actions` | a maintainer posts `run /history` behind a running tour and signs out before it ends: the reply says "Action unavailable." and requests nothing | the poster check removed |
+| `MockFactory.vibe` 310-311 | `mock/factory-edges` | a journal with one number repeated and one skipped: the room keeps the applied events, counts 2 dropped, numbers its events from 1 without a gap, and answers the kept post | the count removed; the whole journal kept |
+| `Reply.vibe` 384-385 | `reply/answers` | a start the conversation refuses, every execution (the target runs about 7 executions in 5 s, so the draw missed it) | the refusal composes |
+| `Issues.vibe` 365 | `issues/journaled-writes` | a malformed recovery key, every execution, writing nothing | the key check removed |
+| `LiveIssues.vibe` 14, `LiveWiki.vibe` 15 | `clients/issues-wiki-replies` | each of the four calls over a 200 that is not JSON and one that is not a state | `protocol` answered as `unavailable`, in each client |
 
 ## Complete browser sources and settled history receipts
 

@@ -41,6 +41,11 @@ const journaledWrites = (input: typeof Write.Type) => effect {
   const first = try execute(request)
   if (first._tag === "Failure" && first.failure._tag !== "IssueFailure") throw new Finding({ report: "a write failed untyped" })
   const writes = fake.writes
+  // Every execution: a malformed recovery key is refused before the write runs again (an agent's review is refused
+  // before its input is read), so it writes nothing.
+  const refused = try execute({ ...request, recovery: "bad recovery!" })
+  const refusedAs = input.agent && (input.op === "accept") ? "forbidden" : "invalid"
+  if (reasonOf(refused) !== refusedAs || fake.writes !== writes) throw new Finding({ report: `a malformed recovery key answered ${reasonOf(refused)}` })
   switch (input.then) {
     case "replay": {
       const again = try execute(request)
@@ -74,10 +79,7 @@ const journaledWrites = (input: typeof Write.Type) => effect {
       break
     }
     case "bad-recovery": {
-      const refused = try execute({ ...request, recovery: "bad recovery!" })
-      // An agent's review is refused before its input is read.
-      const refusedAs = input.agent && (input.op === "accept") ? "forbidden" : "invalid"
-      if (reasonOf(refused) !== refusedAs) throw new Finding({ report: `a malformed recovery key answered ${reasonOf(refused)}` })
+      // Checked above, every execution.
       break
     }
     default: {
