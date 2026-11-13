@@ -7,13 +7,14 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import { budgetObject, sandboxIdentityOf } from "../worker/apiObjects.vibe"
 import { accountRoute } from "../src/core/protocolDecision.vibe"
 import { Post, Tour } from "../src/core/flows.vibe"
+import { replyChildId } from "../src/core/actionRunDecision.vibe"
 import { KINDS, ORIGIN, runtime, withAbsentGitHub, world, type Agent, type Kind } from "../test/support/apiWorld.vibe"
 import { run, same, Finding, Int, TextOrBoundary } from "./run.vibe"
 
 const OPS = ["sign-in", "session", "post", "read", "events", "wiki", "tour", "tour-control", "end-tour", "history", "history-write",
   "history-events", "actions", "commands", "runs", "start", "run", "run-events", "alarm", "run-alarm", "rerun", "cancel", "orphan-alarm",
   "issues", "wiki-page", "roles", "sandbox", "health", "identity", "draft", "participation", "role", "object-events", "direct-post", "restart",
-  "health-objects", "fault"] as const
+  "health-objects", "fault", "start-conflicts"] as const
 const Step = Schema.Struct({
   op: Schema.Literals(OPS),
   room: Int, pick: Int, text: TextOrBoundary,
@@ -54,6 +55,8 @@ const WALK: ReadonlyArray<Step> = [
   step("rerun", { room: 1 }), step("cancel", { room: 1 }),
   // A person's post recorded with no owner (an older writer) is answered as a guest's.
   step("direct-post", { room: 2, pick: 7 }), step("alarm", { room: 2 }),
+  // Starts that collide with an existing run's id or a Post's reply id.
+  step("start-conflicts"),
   // The accounts binding lost after an action run's alarm checked its owner twice (four calls): the agent's wiki draft,
   // its fifth, is refused as unavailable.
   ...(["unbound-later", "faulty-later"] as const).flatMap((mode, at) => [
@@ -233,6 +236,19 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
           const startup = body.objects[HEALTH_CLASS[kind]]?.startup
           if (startup === undefined || (startup === "unreachable") !== (fault !== "ok")) throw new Finding({ report: `health-objects: ${HEALTH_CLASS[kind]} ${startup} while ${fault}` })
         }
+        return
+      }
+      case "start-conflicts": {
+        // The same request again joins its run; a different request under that id, a Post's reply id started as its
+        // own run, and a Post whose reply id already names another run are conflicts.
+        const start = (id: string, flow: string, input: unknown) => ask(step, { method: "POST", path: "/api/actions/runs", body: JSON.stringify({ id, flow, input, door: "button" }) })
+        const first = try start("ab1", Post._tag, { text: "one" })
+        if (first === undefined || first.status !== 202 || !healthy()) return
+        const statuses = [
+          try start("ab1", Post._tag, { text: "one" }), try start("ab1", Post._tag, { text: "two" }), try start(replyChildId("ab1"), Post._tag, { text: "one" }),
+          try start(replyChildId("ab2"), Tour._tag, {}), try start("ab2", Post._tag, { text: "one" }),
+        ].map((answer) => answer?.status ?? 0).join(",")
+        if (statuses !== "202,409,409,202,409") throw new Finding({ report: `start-conflicts: ${statuses}` })
         return
       }
       case "sign-in": {
