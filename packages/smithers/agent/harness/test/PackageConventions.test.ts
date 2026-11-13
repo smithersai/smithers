@@ -90,17 +90,23 @@ describe("package conventions", () => {
     expect(Number(seconds) * 1000).toBe(Sandbox.defaultLimits.callMs)
   })
 
-  it("documents every root-only namespace", () => {
+  it("documents every root-only namespace against both package export maps", () => {
     const root = join(srcDir, "..")
-    const readme = readFileSync(join(root, "README.md"), "utf8")
-    const { exports } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
+    const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+      exports: Record<string, unknown>
+      publishConfig: { exports: Record<string, unknown> }
+    }
     const index = readFileSync(join(srcDir, "index.ts"), "utf8")
-    const rootOnly = [...index.matchAll(/export \* as (\w+) from/g)]
-      .map((match) => match[1]!)
-      .filter((name) => !exports[`./${name}`])
-    const exceptions = readme.match(/except (.+?), which are on the root only/)?.[1] ?? ""
-    const documented = [...exceptions.matchAll(/`(\w+)`/g)].map((match) => match[1]!)
-    expect(documented.sort()).toEqual(rootOnly.sort())
+    const names = [...index.matchAll(/export \* as (\w+) from/g)].map((match) => match[1]!)
+    expect(names.length).toBeGreaterThan(0)
+    for (const page of ["README.md", "docs/reference.md"]) {
+      const docs = readFileSync(join(root, page), "utf8").replace(/\s+/g, " ")
+      const exceptions = docs.match(/except ([^.]+?), which are on the root only/)?.[1] ?? ""
+      const documented = [...exceptions.matchAll(/`(\w+)`/g)].map((match) => match[1]!).sort()
+      for (const exports of [manifest.exports, manifest.publishConfig.exports]) {
+        expect(documented, page).toEqual(names.filter((name) => !Object.hasOwn(exports, `./${name}`)).sort())
+      }
+    }
   })
 
   it("links README repository examples to existing files", () => {

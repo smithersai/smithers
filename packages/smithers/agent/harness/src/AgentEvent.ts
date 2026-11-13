@@ -204,12 +204,13 @@ export class DisciplineArmed extends Schema.TaggedClass<DisciplineArmed>(
    * Completions this run may have bounced for a claim its own record does not
    * support; zero disarms.
    *
-   * Journaled with the other completion caps, and it says less than they do on
-   * its own: the control it arms is also a no-op wherever no `Evaluator` is
-   * bound, so an armed cap and no `claim-demanded` event anywhere in a run
-   * means either that nothing was asked or that everything asked came back
-   * inside the thresholds. Defaulted so journals written before this control
-   * existed decode unchanged. See `CompletionClaim`.
+   * Journaled with the other completion caps. An armed cap does not guarantee
+   * a `claim-demanded` event: an empty task or claim skips the reading, as does
+   * a measured demand that takes the completion first. A reading that cannot be judged fails the
+   * turn as `completion_unjudged`, including when no `Evaluator` is bound.
+   * Successful readings emit `claim-demanded` even within the thresholds.
+   * Defaulted so journals written before this control existed decode unchanged.
+   * See `CompletionClaim`.
    */
   claimCap: Schema.Number.pipe(
     Schema.withConstructorDefault(Effect.succeed(0)),

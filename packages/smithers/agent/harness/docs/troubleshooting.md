@@ -89,10 +89,9 @@ codes, from `Cell.CallFailureCode`:
 | `flow_failed`            | The flow itself failed; the default when nothing classified the failure.                                      | Read `error.message`: the flow says what went wrong, and it is usually fixable in the same cell.        |
 | `flow_withheld`          | The run-start relevance reading withheld the flow; the call restores it.                                      | Reissue the call in the next cell; `ctx.flows` lists the flow there.                                    |
 
-**The same interrupted call runs twice.** A call the `callMs` ceiling
-interrupted settled nowhere, so a re-executed frame issues it to the host
-again and is then handed the recorded timeout. The cell's branch is stable
-either way; what the run pays for twice is the interrupted call. See
+**A recorded timeout stays timed out on replay.** A recorded timeout is replayed
+without issuing the host call again. The cell follows its original timeout
+branch even if the host would now answer immediately. See
 [durability](./api.md#durability).
 
 ## The run fails or stops

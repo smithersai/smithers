@@ -65,7 +65,7 @@ The controller also keeps the script itself, for the one host that needs it. A f
 
 Every `ctx.call` inside a cell is its own keyed, journaled, permission-gated boundary at the tier the flow declares, so a cell is never one opaque activity. That is what makes a crash or a permission park mid-cell recoverable: the cell source re-executes from the top, boundaries that already settled replay their recorded values, and execution reaches the parked call deterministically.
 
-One case is bounded rather than free: a call the `callMs` ceiling interrupted settled nowhere, so a re-executed frame issues it to the host again and is then handed the recorded timeout. The cell's branch is stable either way; what the run pays for twice is the interrupted call. [Durability](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/api.md#durability) says why the call cannot move inside the record that would suppress it.
+The harness records a `callMs` timeout returned to the cell as the call's settlement. A recorded timeout is replayed without issuing the host call again. The cell takes the same branch on re-execution. See [durability](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/api.md#durability).
 
 ## Flows are the only capability primitive
 

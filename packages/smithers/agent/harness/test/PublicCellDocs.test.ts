@@ -11,6 +11,37 @@ const source = (name: string) => readFileSync(new URL(`../src/${name}.ts`, impor
 const comments = (name: string) => source(name).match(/\/\*\*[\s\S]*?\*\//g) ?? []
 
 describe("public cell documentation", () => {
+  it.each([
+    "README.md",
+    "docs/api.md",
+    "docs/troubleshooting.md",
+    "docs/guides/drive-the-loop.md"
+  ])("documents recorded timeout replay without host dispatch in %s", (page) => {
+    const docs = readFileSync(new URL(`../${page}`, import.meta.url), "utf8").replace(/\s+/g, " ")
+    expect(docs).toContain("A recorded timeout is replayed without issuing the host call again.")
+    expect(docs).not.toMatch(/settle[ds] nowhere|pays for twice|same interrupted call runs twice/i)
+  })
+
+  it("distinguishes recorded timeouts from guard parks and unfinished attempts", () => {
+    const docs = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8")
+      .split("## Durability")[1]!.split("\n## ")[0]!.replace(/\s+/g, " ")
+    expect(docs).toContain("A host guard can instead park on timeout before a settlement is recorded")
+    expect(docs).toContain("continuing that known park authorizes another call attempt")
+    expect(docs).toContain("`EngineLike.recoverCall`")
+    expect(docs).toContain("without host recovery the harness fails with `engine_failed`")
+  })
+
+  it("documents an armed claim cap failing closed when no evaluator can judge", () => {
+    const docs = comments("AgentEvent").find((comment) =>
+      comment.includes("Completions this run may have bounced for a claim")
+    )!
+    expect(docs).not.toContain("no-op")
+    expect(docs).toContain("empty task or claim")
+    expect(docs).toContain("a measured demand that takes the completion first")
+    expect(docs).toContain("completion_unjudged")
+    expect(docs).toContain("no `Evaluator` is bound")
+  })
+
   it("documents the unmoved-tree exception to claimCap-independent demands", () => {
     const defaults = comments("CellTurn").find((comment) =>
       comment.includes("Default number of frames a run is given to prove a claim")

@@ -158,10 +158,10 @@ Two members carry the loop's determinism, so their contracts bear repeating:
 - **`call` owns durability.** `Cell.CallIdentity` folds the session, frame,
   cell digest, ordinal, declaration digest, and layer set into one key.
   Re-executing a cell after a crash or a park reaches the same ordinal with
-  the same declaration, so a settled boundary replays and an unsettled one
-  executes. One case is bounded rather than free: a call the `callMs` ceiling
-  interrupted settled nowhere, so a re-executed frame issues it to the host
-  again and is then handed the recorded timeout. See
+  the same declaration, so a settled boundary replays. An unsettled call needs
+  a known park or host recovery before it can execute again. A `callMs` timeout
+  returned to the cell is recorded as a settlement. A recorded timeout is
+  replayed without issuing the host call again. See
   [durability](../api.md#durability) in the API reference.
 - **`record` is the controller's only read of the world.** The controller's
   state is rebuilt by re-execution, so a read that bypasses a record is a

@@ -125,14 +125,17 @@ bypasses a record is a replay divergence and, downstream of one, a duplicate
 irreversible effect. `(name, identity)` together form the record key: two
 records in one frame may share an identity as long as their names differ.
 
-One call is deliberately not covered by that guarantee. `EngineLike.call` is
-where a cell reaches a durable wait, and a `Flow.suspend` raised inside an
-enclosing activity suspends that activity's attempt rather than the run, so the
-call is issued first and its settlement is recorded after. A call the `callMs`
-ceiling interrupted therefore settles nowhere, and a re-executed frame issues it
-again on the host. The cell's branch is stable either way, because the recorded
-settlement is what the replayed frame is handed; what the run pays for twice is
-the interrupted call itself.
+`EngineLike.call` runs outside the settlement record so a `Flow.suspend` can
+park the run rather than an enclosing activity's attempt. A call that returns,
+including a `callMs` timeout returned to the cell, has its settlement recorded
+afterwards. A recorded timeout is replayed without issuing the host call again.
+The replayed cell follows the same branch as the original frame.
+
+A host guard can instead park on timeout before a settlement is recorded;
+continuing that known park authorizes another call attempt. An interrupted
+attempt with neither a settlement nor a known park requires
+`EngineLike.recoverCall` before it can execute again; without host recovery
+the harness fails with `engine_failed` rather than silently reissuing it.
 
 ## Limits
 

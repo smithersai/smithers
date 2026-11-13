@@ -10,7 +10,8 @@ the [API reference](./api.md); this page is the lookup table.
 The root barrel `@smthrs/harness` re-exports every module below as a
 namespace, except `QuickJSSandbox`, which is imported from its own subpath
 because it carries an embedded WebAssembly build. Every module is also
-importable as `@smthrs/harness/<Module>`.
+importable as `@smthrs/harness/<Module>`, except `DoneText`, `QuickJSVariant`,
+`RealmFlow` and `QuickJSLifecycle`, which are on the root only.
 
 | Module | Public exports | Description |
 | --- | --- | --- |
