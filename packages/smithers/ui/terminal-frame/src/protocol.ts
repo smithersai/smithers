@@ -3,9 +3,9 @@
  *
  * | Method | Direction | What it carries |
  * | --- | --- | --- |
- * | `terminal/initialize` | frame to page, window message | `{ nonce }`; the answer carries `{ theme, colors, readOnly }` and transfers a `MessagePort` |
+ * | `terminal/initialize` | frame to page, window message | `{ nonce }`; the answer carries `{ theme, colors, readOnly, screenReaderMode }` and transfers a `MessagePort` |
  * | `terminal/output` | page to frame | `{ bytes }`: the shell's output |
- * | `terminal/options` | page to frame | `{ theme, colors, readOnly }` after any of them changes |
+ * | `terminal/options` | page to frame | `{ theme, colors, readOnly, screenReaderMode }` after any of them changes |
  * | `terminal/focus` | page to frame | `{}`: focus the terminal |
  * | `terminal/input` | frame to page | `{ data }`: what the person typed, never while read-only |
  * | `terminal/resize` | frame to page | `{ cols, rows }` after a fit that changed them |
@@ -58,10 +58,10 @@ export const isWebUrl = (url: string): boolean => {
   return protocol === "http:" || protocol === "https:";
 };
 
-const urlPattern = /https?:\/\/[^\s"'<>`]+/g;
+const urlPattern = /https?:\/\/[^\s"'<>`]+/gi;
 
-/** The web links in one line of terminal text, with the column each starts at. */
-export const linksIn = (line: string): Array<{ readonly start: number; readonly url: string }> =>
+/** The web links in one line of terminal text, with the column each starts at; labels may opt out of the navigation length limit. */
+export const linksIn = (line: string, maxLength = maxUrlLength): Array<{ readonly start: number; readonly url: string }> =>
   Array.from(line.matchAll(urlPattern), (match) => {
     let url = match[0];
     // Remove sentence punctuation and closing delimiters supplied by the surrounding text.
@@ -73,7 +73,7 @@ export const linksIn = (line: string): Array<{ readonly start: number; readonly 
       url = url.slice(0, -1);
     }
     return { start: match.index, url };
-  }).filter(({ url }) => isWebUrl(url));
+  }).filter(({ url }) => url.length <= maxLength && URL.canParse(url));
 
 /** Whether a key event is one of the page's shortcuts: ⌘K or Ctrl+K, with or without Shift. */
 export const isPageKey = (event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey">): boolean =>

@@ -11,6 +11,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { build } from "esbuild";
+import vibelang from "vibelang-unplugin/esbuild";
 import { join } from "node:path";
 import { type Browser, chromium, type Frame, type Page } from "playwright";
 
@@ -23,6 +24,7 @@ describe("terminal-frame browser probes", () => {
     const result = await build({
       entryPoints: [join(import.meta.dir, "fixtures/terminal-host.tsx")],
       bundle: true,
+      plugins: [vibelang({ tsconfig: join(import.meta.dir, "../tsconfig.json") })],
       write: false,
       format: "iife",
       platform: "browser",
@@ -42,6 +44,7 @@ describe("terminal-frame browser probes", () => {
     "\x1b[38;2;255;0;0mtruecolor\x1b[0m plain\r\n",
     "https://example.test/plain is a link\r\n",
     "\x1b]8;;https://example.test/osc8\x07osc8 link\x1b]8;;\x07\r\n",
+    "\x1b]8;;https://attacker.test/device\x07https://github.com/login/device\x1b]8;;\x07\r\n",
   ].join("");
 
   interface Opened {
@@ -51,7 +54,7 @@ describe("terminal-frame browser probes", () => {
     readonly violations: Array<string>;
   }
 
-  const open = async (probe: { readonly readOnly: boolean }): Promise<Opened> => {
+  const open = async (probe: { readonly readOnly: boolean; readonly screenReaderMode?: boolean; readonly width?: number; readonly output?: string }): Promise<Opened> => {
     const page = await browser.newPage();
     const leaks: Array<string> = [];
     const violations: Array<string> = [];
@@ -64,7 +67,7 @@ describe("terminal-frame browser probes", () => {
         await route.fulfill({
           contentType: "text/html",
           body: `<!doctype html><html><body><div id="app"></div><script>window.probe = ${
-            JSON.stringify({ ...probe, output }).replace(/</g, "\\u003c")
+            JSON.stringify({ ...probe, output: probe.output ?? output }).replace(/</g, "\\u003c")
           }</script><script src="/host.js"></script></body></html>`,
         });
       } else if (url === `${origin}/host.js`) {
@@ -147,6 +150,123 @@ describe("terminal-frame browser probes", () => {
       await page.keyboard.press("Control+k");
       await logged(page, "window.log.keys.length === 1");
       expect((await log(page)).inputs).toEqual([]);
+      await page.close();
+    }, 60_000);
+
+
+    test("Tab and Shift+Tab enter and leave a read-only terminal", async () => {
+      const { frame, page } = await open({ readOnly: true });
+      await page.locator("#before-terminal").focus();
+      await page.keyboard.press("Tab");
+      expect(await frame.locator("textarea").evaluate((node) => node === document.activeElement)).toBe(true);
+      await page.keyboard.press("Tab");
+      expect(await page.locator("#after-terminal").evaluate((node) => node === document.activeElement)).toBe(true);
+      await page.keyboard.press("Shift+Tab");
+      expect(await frame.locator("textarea").evaluate((node) => node === document.activeElement)).toBe(true);
+      await page.keyboard.press("Shift+Tab");
+      expect(await page.locator("#before-terminal").evaluate((node) => node === document.activeElement)).toBe(true);
+      expect((await log(page)).inputs).toEqual([]);
+      await page.close();
+    }, 60_000);
+
+    test("a writable terminal keeps shell Tab and can release focus with Ctrl+Shift+M", async () => {
+      const { page } = await open({ readOnly: false });
+      await page.evaluate(() => window.focusTerminal());
+      await page.keyboard.press("Tab");
+      await logged(page, "window.log.inputs.length === 1");
+      expect((await log(page)).inputs).toEqual(["\t"]);
+      await page.keyboard.press("Control+Shift+m");
+      await page.keyboard.press("Tab");
+      expect(await page.locator("#after-terminal").evaluate((node) => node === document.activeElement)).toBe(true);
+      expect((await log(page)).inputs).toEqual(["\t"]);
+      await page.close();
+    }, 60_000);
+
+    test("screen-reader mode exposes shell output in the accessibility tree", async () => {
+      const { frame, page } = await open({ readOnly: true, screenReaderMode: true });
+      expect(await frame.locator(".xterm-accessibility").count()).toBe(1);
+      await until(async () => (await frame.locator(".xterm-accessibility").textContent())?.includes("truecolor"));
+      const accessible = await frame.locator("body").ariaSnapshot();
+      expect(accessible).toContain("truecolor");
+      expect(accessible).toContain("osc8 link");
+      await page.close();
+    }, 60_000);
+
+    test("a misleading OSC 8 URL shows its target and needs a second click there", async () => {
+      const { frame, page, leaks, violations } = await open({ readOnly: true });
+      const box = (await frame.locator(".xterm-rows > div", { hasText: "https://github.com/login/device" }).boundingBox())!;
+      await page.mouse.move(box.x + 30, box.y + box.height / 2);
+      await until(() => frame.evaluate(() => document.querySelector(".xterm-screen.xterm-cursor-pointer") !== null));
+      const strip = frame.locator("[data-smithers-terminal-link]");
+      expect(await strip.innerText()).toBe("https://attacker.test/device");
+      expect(await strip.isVisible()).toBe(true);
+      await page.mouse.click(box.x + 30, box.y + box.height / 2);
+      expect((await log(page)).links).toEqual([]);
+      await strip.click();
+      await logged(page, "window.log.links.length === 1");
+      expect((await log(page)).links).toEqual([{ url: "https://attacker.test/device", active: true }]);
+      expect(leaks).toEqual([]);
+      expect(violations).toEqual([]);
+      await page.close();
+    }, 60_000);
+
+
+    test.each(["https", "HTTPS", "hTtPs"])("a wrapped OSC 8 %s continuation still requires destination confirmation", async (scheme) => {
+      const lines = output.replace("https://github.com/login/device", `${scheme}://github.com/login/device`);
+      const { frame, page } = await open({ readOnly: true, width: 160, output: lines });
+      const row = frame.locator(".xterm-rows > div", { hasText: "/login/device" });
+      expect(await row.innerText()).not.toContain("https://");
+      const box = (await row.boundingBox())!;
+      await page.mouse.move(box.x + 30, box.y + box.height / 2);
+      await until(() => frame.evaluate(() => document.querySelector(".xterm-screen.xterm-cursor-pointer") !== null));
+      await page.mouse.click(box.x + 30, box.y + box.height / 2);
+      expect((await log(page)).links).toEqual([]);
+      const strip = frame.locator("[data-smithers-terminal-link]");
+      expect(await strip.innerText()).toBe("https://attacker.test/device");
+      expect(await strip.evaluate((node) => node === document.activeElement)).toBe(true);
+      await page.keyboard.press("Enter");
+      await logged(page, "window.log.links.length === 1");
+      expect((await log(page)).links).toEqual([{ url: "https://attacker.test/device", active: true }]);
+      await page.close();
+    }, 60_000);
+
+
+    test("a long destination preview lets the person click a bottom-row link", async () => {
+      const target = "https://example.test/" + "a".repeat(180);
+      const lines = output + `\x1b[999;1H\x1b]8;;${target}\x07open link\x1b]8;;\x07`;
+      const { frame, page } = await open({ readOnly: false, output: lines });
+      const box = (await frame.locator(".xterm-rows > div", { hasText: "open" }).boundingBox())!;
+      await page.mouse.move(box.x + 30, box.y + box.height / 2);
+      await until(() => frame.evaluate(() => document.querySelector(".xterm-screen.xterm-cursor-pointer") !== null));
+      await page.mouse.click(box.x + 30, box.y + box.height / 2);
+      await logged(page, "window.log.links.length === 1");
+      expect((await log(page)).links).toEqual([{ url: target, active: true }]);
+      await page.close();
+    }, 60_000);
+
+    test("a pending destination survives a resting pointer, and a double-click's second click never confirms it", async () => {
+      const lines = output + "\x1b[999;1H\x1b]8;;https://attacker.test/device\x07https://github.com/bottom\x1b]8;;\x07";
+      const { frame, page } = await open({ readOnly: true, output: lines });
+      const box = (await frame.locator(".xterm-rows > div", { hasText: "https://github.com/bottom" }).boundingBox())!;
+      await page.mouse.move(box.x + 30, box.y + box.height / 2);
+      await until(() => frame.evaluate(() => document.querySelector(".xterm-screen.xterm-cursor-pointer") !== null));
+      await page.mouse.click(box.x + 30, box.y + box.height / 2);
+      const strip = frame.locator("[data-smithers-terminal-link]");
+      await until(() => strip.isVisible());
+      // xterm renders, and hovers the link under the resting pointer again, within this pause.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(await strip.isEnabled()).toBe(true);
+      expect(await strip.innerText()).toBe("https://attacker.test/device");
+      // The second click of a double-click that began on the link, landing on the strip.
+      const target = (await strip.boundingBox())!;
+      await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2);
+      await page.mouse.down({ clickCount: 2 });
+      await page.mouse.up({ clickCount: 2 });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect((await log(page)).links).toEqual([]);
+      await strip.click();
+      await logged(page, "window.log.links.length === 1");
+      expect((await log(page)).links).toEqual([{ url: "https://attacker.test/device", active: true }]);
       await page.close();
     }, 60_000);
 

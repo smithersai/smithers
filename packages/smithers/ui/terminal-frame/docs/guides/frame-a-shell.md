@@ -43,8 +43,16 @@ session: it reconnects, drops keystrokes typed while offline, and keeps only
 the latest size.
 
 `readOnly` shows someone else's shell: the frame takes no input and the page
-drops any that arrives. ⌘K and Ctrl+K reach `onKey` and never the shell. A
-clicked link reaches `onLink`, or opens in a new tab with no opener by default.
+drops any that arrives. `Tab` and `Shift+Tab` leave a read-only terminal.
+In a writable terminal, `Ctrl+Shift+M` toggles whether those keys move focus
+or reach the shell. Set `screenReaderMode={true}` when the person needs
+accessible output rows and announcements.
+
+⌘K and Ctrl+K reach `onKey` and never the shell. Hover a link to see its
+full destination at the bottom of the frame. An OSC 8 link whose URL label
+names a different host needs a second click on that destination to open.
+A confirmed link reaches `onLink`, or opens in a new tab with no opener
+by default.
 
 ## Related
 

@@ -9,7 +9,7 @@ import { TerminalFrame, type TerminalFrameHandle, type TerminalFrameKey } from "
 
 declare global {
   interface Window {
-    probe: { readonly output: string; readonly readOnly: boolean };
+    probe: { readonly output: string; readonly readOnly: boolean; readonly screenReaderMode?: boolean; readonly width?: number };
     log: {
       inputs: Array<string>;
       sizes: Array<[number, number]>;
@@ -27,12 +27,15 @@ window.focusTerminal = () => handle.current?.focus();
 const app = document.getElementById("app");
 if (app !== null) {
   createRoot(app).render(
+    <>
+    <button id="before-terminal">Before</button>
     <TerminalFrame
       ref={handle}
       title="Probe terminal"
       theme="light"
       readOnly={window.probe.readOnly}
-      style={{ height: 300, width: 800 }}
+      screenReaderMode={window.probe.screenReaderMode}
+      style={{ height: 300, width: window.probe.width ?? 800 }}
       stream={(write) => {
         write.output(window.probe.output);
         return () => {};
@@ -45,6 +48,8 @@ if (app !== null) {
           url,
           active: (navigator as { userActivation?: { isActive: boolean } }).userActivation?.isActive,
         })}
-    />,
+    />
+    <button id="after-terminal">After</button>
+    </>,
   );
 }

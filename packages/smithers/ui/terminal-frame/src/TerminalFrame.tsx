@@ -38,6 +38,8 @@ export type TerminalFrameProps = Omit<ComponentProps<"div">, "children" | "title
   theme: TerminalFrameTheme;
   /** Watch only: xterm's `disableStdin` is set, and no input reaches `onInput`. */
   readOnly?: boolean | undefined;
+  /** Expose terminal output through xterm's accessible rows and live region. Defaults to false. */
+  screenReaderMode?: boolean | undefined;
   /** Called each time the frame connects; the returned teardown runs when it goes. */
   stream: TerminalFrameStream;
   /** What the person typed, and the terminal's own replies. Never called while `readOnly`. */
@@ -87,6 +89,7 @@ export function TerminalFrame({
   title,
   theme,
   readOnly = false,
+  screenReaderMode = false,
   stream,
   onInput,
   onResize,
@@ -102,7 +105,7 @@ export function TerminalFrame({
   const visible = useNearScreen(host);
   const frame = useRef<HTMLIFrameElement>(null);
   const colors = themeRegistry[useResolvedPalette()].terminal[theme];
-  const options = useMemo(() => ({ theme, colors, readOnly }), [theme, colors, readOnly]);
+  const options = useMemo(() => ({ theme, colors, readOnly, screenReaderMode }), [theme, colors, readOnly, screenReaderMode]);
   const latest = useRef({ options, stream, onInput, onResize, onKey, onLink });
   latest.current = { options, stream, onInput, onResize, onKey, onLink };
   const port = useRef<MessagePort | undefined>(undefined);

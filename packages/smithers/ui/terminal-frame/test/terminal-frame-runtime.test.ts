@@ -304,3 +304,189 @@ describe("the terminal frame runtime", () => {
     expect(of(received, "terminal/link")).toEqual([{ url }]);
   });
 });
+
+describe("terminal access and link destinations", () => {
+  test("read-only Tab and Shift+Tab keep browser focus navigation, including after access changes", async () => {
+    const opened = frame();
+    const { port, term, received } = await connect(opened, { ...result, readOnly: true });
+    for (const shiftKey of [false, true]) {
+      expect(press(opened, { key: "Tab", keyCode: 9, shiftKey }).defaultPrevented).toBe(false);
+    }
+    port.postMessage({ method: "terminal/options", params: { readOnly: false } });
+    await waitFor(() => !term.options.disableStdin);
+    expect(press(opened, { key: "Tab", keyCode: 9 }).defaultPrevented).toBe(true);
+    await waitFor(() => of(received, "terminal/input").length === 1);
+    expect(of(received, "terminal/input")).toEqual([{ data: "\t" }]);
+  });
+
+  test("Ctrl+Shift+M toggles Tab focus navigation without reaching the shell", async () => {
+    const opened = frame();
+    const { received } = await connect(opened);
+    for (const type of ["keydown", "keyup"]) {
+      opened.document.querySelector("textarea")!.dispatchEvent(new opened.window.KeyboardEvent(type, {
+        key: "M", keyCode: 77, ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true,
+      }) as never);
+    }
+    for (const shiftKey of [false, true]) {
+      expect(press(opened, { key: "Tab", keyCode: 9, shiftKey }).defaultPrevented).toBe(false);
+    }
+    // Holding the toggle cannot toggle back on repeated keydown.
+    press(opened, { key: "M", keyCode: 77, ctrlKey: true, shiftKey: true, repeat: true });
+    expect(press(opened, { key: "Tab", keyCode: 9 }).defaultPrevented).toBe(false);
+    press(opened, { key: "m", keyCode: 77, ctrlKey: true, shiftKey: true });
+    expect(press(opened, { key: "Tab", keyCode: 9 }).defaultPrevented).toBe(true);
+    await waitFor(() => of(received, "terminal/input").length > 0);
+    expect(of(received, "terminal/input")).toEqual([{ data: "\t" }]);
+  });
+
+  test("screen-reader output follows the initial option and later changes, ignoring invalid values", async () => {
+    const opened = frame();
+    const { term, port } = await connect(opened, { ...result, screenReaderMode: true });
+    expect(term.options.screenReaderMode).toBe(true);
+    expect(opened.document.querySelector(".xterm-accessibility")).not.toBeNull();
+    port.postMessage({ method: "terminal/options", params: { screenReaderMode: false } });
+    await waitFor(() => !term.options.screenReaderMode);
+    expect(opened.document.querySelector(".xterm-accessibility")).toBeNull();
+    port.postMessage({ method: "terminal/options", params: { screenReaderMode: "yes" } });
+    port.postMessage({ method: "terminal/focus", params: {} });
+    await waitFor(() => opened.document.activeElement?.localName === "textarea");
+    expect(term.options.screenReaderMode).toBe(false);
+  });
+
+  test("OSC 8 hover shows the full destination as text and leave hides it", async () => {
+    const opened = frame();
+    const { term } = await connect(opened);
+    const handler = term.given.linkHandler!;
+    const range = { start: { x: 1, y: 1 }, end: { x: 2, y: 1 } };
+    const target = "https://example.test/<img>?q=hello";
+    handler.hover!(click(opened), target, range);
+    const strip = opened.document.querySelector<HTMLButtonElement>("[data-smithers-terminal-link]")!;
+    expect(strip.hidden).toBe(false);
+    expect(strip.textContent).toBe(target);
+    expect(strip.querySelector("img")).toBeNull();
+    expect(strip.disabled).toBe(true);
+    handler.leave!(click(opened), target, range);
+    expect(strip.hidden).toBe(true);
+    handler.hover!(click(opened), "javascript:alert(1)", range);
+    expect(strip.hidden).toBe(true);
+  });
+
+  test("a misleading OSC 8 URL needs a trusted second click on its actual destination", async () => {
+    const opened = frame();
+    const { term, received } = await connect(opened);
+    const visible = "https://github.com/login/device";
+    const target = "https://attacker.test/device";
+    await write(term, visible);
+    const range = { start: { x: 1, y: 1 }, end: { x: visible.length, y: 1 } };
+    const handler = term.given.linkHandler!;
+    handler.activate(click(opened), target, range);
+    term.resize(90, 25);
+    await waitFor(() => of(received, "terminal/resize").length === 2);
+    expect(of(received, "terminal/link")).toEqual([]);
+    const strip = opened.document.querySelector<HTMLButtonElement>("[data-smithers-terminal-link]")!;
+    expect(strip.hidden).toBe(false);
+    expect(strip.textContent).toBe(target);
+    expect(strip.disabled).toBe(false);
+    handler.leave!(click(opened), target, range);
+    expect(strip.hidden).toBe(false);
+    // xterm hovers the link under a resting pointer again after a render.
+    handler.hover!(click(opened), target, range);
+    expect(strip.disabled).toBe(false);
+    strip.click();
+    term.resize(91, 25);
+    await waitFor(() => of(received, "terminal/resize").length === 3);
+    expect(of(received, "terminal/link")).toEqual([]);
+    // The second click of a double-click is trusted, and still confirms nothing.
+    const second = new opened.window.MouseEvent("click", { detail: 2 });
+    Object.defineProperty(second, "isTrusted", { value: true });
+    strip.dispatchEvent(second);
+    term.resize(92, 25);
+    await waitFor(() => of(received, "terminal/resize").length === 4);
+    expect(of(received, "terminal/link")).toEqual([]);
+    const confirm = new opened.window.MouseEvent("click");
+    Object.defineProperty(confirm, "isTrusted", { value: true });
+    strip.dispatchEvent(confirm);
+    await waitFor(() => of(received, "terminal/link").length === 1);
+    expect(of(received, "terminal/link")).toEqual([{ url: target }]);
+    expect(strip.hidden).toBe(true);
+  });
+
+  test("hovering another link withdraws a pending confirmation", async () => {
+    const opened = frame();
+    const { term, received } = await connect(opened);
+    const visible = "https://github.com/login/device";
+    await write(term, visible);
+    const range = { start: { x: 1, y: 1 }, end: { x: visible.length, y: 1 } };
+    const handler = term.given.linkHandler!;
+    handler.activate(click(opened), "https://attacker.test/device", range);
+    const strip = opened.document.querySelector<HTMLButtonElement>("[data-smithers-terminal-link]")!;
+    expect(strip.disabled).toBe(false);
+    handler.hover!(click(opened), "https://example.test/other", range);
+    expect(strip.textContent).toBe("https://example.test/other");
+    expect(strip.disabled).toBe(true);
+    const confirm = new opened.window.MouseEvent("click");
+    Object.defineProperty(confirm, "isTrusted", { value: true });
+    strip.dispatchEvent(confirm);
+    term.resize(90, 25);
+    await waitFor(() => of(received, "terminal/resize").length === 2);
+    expect(of(received, "terminal/link")).toEqual([]);
+  });
+
+  test("same-host URL labels open normally and plain URL previews show and clear", async () => {
+    const opened = frame();
+    const { term, received } = await connect(opened);
+    const visible = "https://example.test/label";
+    const target = "https://example.test/target";
+    await write(term, visible);
+    const range = { start: { x: 1, y: 1 }, end: { x: visible.length, y: 1 } };
+    term.given.linkHandler!.activate(click(opened), target, range);
+    await waitFor(() => of(received, "terminal/link").length === 1);
+    expect(of(received, "terminal/link")).toEqual([{ url: target }]);
+    const link = (await linksAt(term, 1))![0]!;
+    link.hover!(click(opened), link.text);
+    const strip = opened.document.querySelector<HTMLButtonElement>("[data-smithers-terminal-link]")!;
+    expect(strip.textContent).toBe(visible);
+    expect(strip.hidden).toBe(false);
+    link.leave!(click(opened), link.text);
+    expect(strip.hidden).toBe(true);
+  });
+
+  test.each(["https", "HTTPS", "hTtPs"])("a wrapped OSC 8 %s label is checked from its continuation row", async (scheme) => {
+    const opened = frame();
+    const { term, received } = await connect(opened);
+    term.resize(20, 24);
+    const visible = `${scheme}://trusted.test/a-long-path`;
+    await write(term, visible);
+    // xterm supplies only the clicked physical row, even when an OSC 8 label wraps.
+    const range = { start: { x: 1, y: 2 }, end: { x: visible.length - 20, y: 2 } };
+    term.given.linkHandler!.activate(click(opened), "https://other.test/path", range);
+    term.resize(21, 24);
+    await waitFor(() => of(received, "terminal/resize").length >= 3);
+    expect(of(received, "terminal/link")).toEqual([]);
+    expect(opened.document.querySelector("[data-smithers-terminal-link]")!.textContent).toBe("https://other.test/path");
+  });
+});
+
+test.each(["", "界 ", "prefix "])("long wrapped URL labels after %s still require confirmation", async (prefix) => {
+  const opened = frame();
+  const { term, received } = await connect(opened);
+  term.resize(40, 24);
+  await write(term, prefix + "HTTPS://trusted.test/" + "a".repeat(2100));
+  const range = { start: { x: 1, y: 2 }, end: { x: 40, y: 2 } };
+  term.given.linkHandler!.activate(click(opened), "https://other.test/path", range);
+  term.resize(41, 24);
+  await waitFor(() => of(received, "terminal/resize").length >= 3);
+  expect(of(received, "terminal/link")).toEqual([]);
+  expect(opened.document.querySelector("[data-smithers-terminal-link]")!.textContent).toBe("https://other.test/path");
+});
+
+test("a URL beside an ordinary OSC 8 label does not require confirmation", async () => {
+  const opened = frame();
+  const { term, received } = await connect(opened);
+  const prefix = "https://trusted.test/ ";
+  await write(term, prefix + "open");
+  const range = { start: { x: prefix.length + 1, y: 1 }, end: { x: prefix.length + 4, y: 1 } };
+  term.given.linkHandler!.activate(click(opened), "https://other.test/path", range);
+  await waitFor(() => of(received, "terminal/link").length === 1);
+  expect(of(received, "terminal/link")).toEqual([{ url: "https://other.test/path" }]);
+});

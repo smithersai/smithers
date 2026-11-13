@@ -179,13 +179,13 @@ describe("TerminalFrame frames the terminal", () => {
 
 describe("TerminalFrame's handshake", () => {
   test("answers its own frame's initialize with the options and a port, then streams", async () => {
-    const rendered = await render({ readOnly: true });
+    const rendered = await render({ readOnly: true, screenReaderMode: true });
     const { posted } = await handshake();
     expect(posted).toHaveLength(1);
     expect(posted[0]!.message).toEqual({
       jsonrpc: "2.0",
       id: "smithers-terminal",
-      result: { theme: "light", colors: light, readOnly: true },
+      result: { theme: "light", colors: light, readOnly: true, screenReaderMode: true },
     });
     expect(posted[0]!.transfer).toHaveLength(1);
     expect(rendered.writers).toHaveLength(1);
@@ -317,10 +317,12 @@ describe("TerminalFrame sends the frame", () => {
     await rendered.rerender({ theme: "dark" });
     await rendered.rerender({ theme: "dark" });
     await rendered.rerender({ theme: "dark", readOnly: true });
+    await rendered.rerender({ theme: "dark", readOnly: true, screenReaderMode: true });
     await act(async () => tick());
     expect(received).toEqual([
-      { jsonrpc: "2.0", method: "terminal/options", params: { theme: "dark", colors: themeRegistry.paper.terminal.dark, readOnly: false } },
-      { jsonrpc: "2.0", method: "terminal/options", params: { theme: "dark", colors: themeRegistry.paper.terminal.dark, readOnly: true } },
+      { jsonrpc: "2.0", method: "terminal/options", params: { theme: "dark", colors: themeRegistry.paper.terminal.dark, readOnly: false, screenReaderMode: false } },
+      { jsonrpc: "2.0", method: "terminal/options", params: { theme: "dark", colors: themeRegistry.paper.terminal.dark, readOnly: true, screenReaderMode: false } },
+      { jsonrpc: "2.0", method: "terminal/options", params: { theme: "dark", colors: themeRegistry.paper.terminal.dark, readOnly: true, screenReaderMode: true } },
     ]);
   });
 
