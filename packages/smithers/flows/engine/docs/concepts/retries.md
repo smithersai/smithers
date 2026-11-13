@@ -43,7 +43,7 @@ answers are possible:
 - A usable time. The budget is measured from the true first attempt.
 - `Option.none()`, meaning no attempt row survives, usually because retention
   pruning removed them. The engine falls back to the current clock and logs a
-  warning, because turning benign pruning into spurious run failures is worse
+  `Debug` message, because turning benign pruning into spurious run failures is worse
   than granting a fresh window.
 - A time that is not finite, or is in the future. The engine logs a warning and
   starts the budget now.

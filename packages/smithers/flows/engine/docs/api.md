@@ -5,8 +5,10 @@ sidebar:
   order: 1
 ---
 
-`@smthrs/engine` exports three namespaces from its root, each also importable
-from `@smthrs/engine/<Namespace>`:
+`@smthrs/engine` exports six namespaces: `FlowEngine`, `Hosts`,
+`PlacedAction`, `FlowProxy`, `FlowProxyServer`, and `StepTrace`. All except
+`StepTrace` also resolve from their matching `@smthrs/engine/<Namespace>`
+subpath; `StepTrace` is available through the root only:
 
 | Import                           | Source                                                                                                                             | Platform |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------- |
@@ -14,6 +16,12 @@ from `@smthrs/engine/<Namespace>`:
 | `@smthrs/engine/FlowEngine`      | [src/FlowEngine/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/src/FlowEngine/index.ts) | any      |
 | `@smthrs/engine/FlowProxy`       | [src/FlowProxy.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/src/FlowProxy.ts)               | any      |
 | `@smthrs/engine/FlowProxyServer` | [src/FlowProxyServer.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/src/FlowProxyServer.ts)   | any      |
+
+`@smthrs/engine/Hosts` resolves to `src/Hosts.ts`,
+`@smthrs/engine/PlacedAction` to `src/PlacedAction.ts`, and
+`@smthrs/engine/index` to the same root module. `Hosts` supplies the injected
+host registry; `PlacedAction` runs an action on its declared host; `StepTrace`
+supplies portable observations for live run views.
 
 The service tag `FlowRuntime`, the `FlowInstance` service, `annotateWaiting`,
 and `FlowCycleDetected` live in [`@smthrs/flow`](/api/flow). What this package
@@ -189,8 +197,11 @@ through `n - 1`. See [Trampoline rounds](./concepts/trampoline-rounds.md).
 
 `FlowEngine.FlowNotRegistered`, `FlowEngine.SuspendedResumeGaveUp`, and
 `FlowEngine.SnapshotBoundaryRequired` are engine exports raised as defects.
-`FlowRuntime.ExecutionIdentityConflict` is exported by `@smthrs/flow`, not by
-`@smthrs/engine`. Its historical tag remains
+`FlowEngine.ExecutionIdentityConflict` re-exports the same class as
+`FlowRuntime.ExecutionIdentityConflict` from `@smthrs/flow`.
+`FlowEngine.capabilityConflict(executionId, status = "unknown")` constructs
+that refusal with `field: "capabilities"` when a caller cannot cover the
+execution's admitted capability ceiling. Its historical tag remains
 `@smthrs/engine/ExecutionIdentityConflict`. The durable driver returns this
 identity refusal as a typed failure; `FlowEngine.layerMemory` raises it as a
 defect. The codes are `flow_not_registered`, `execution_identity_conflict`,

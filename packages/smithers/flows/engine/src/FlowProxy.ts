@@ -3,8 +3,8 @@
  *
  * Given one or more `Flow` values, `toRpcGroup` creates the RPC definitions
  * for clients and servers, while `toHttpApiGroup` creates HTTP POST endpoints
- * that can be mounted in an API. Each flow gets execute, discard, and
- * resume operations, so callers can start a flow or resume a suspended run
+ * that can be mounted in an API. Each flow gets execute, discard, resume,
+ * and interrupt operations, so callers can start, resume, or cancel a run
  * by `executionId` without importing the flow handler directly.
  *
  * @since 0.1.0

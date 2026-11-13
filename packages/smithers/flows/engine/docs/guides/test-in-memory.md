@@ -85,7 +85,8 @@ reallocated.
 Only settled action results are cached. An interrupted dispatch leaves no
 cached result, so a later dispatch executes the action again, including after
 a deferred wake or in another run sharing the same cache key. In-flight
-joiners receive the interrupted dispatch's exit.
+joiners retry admission after the owner is interrupted; a surviving joiner
+executes the action again and receives its own result.
 
 ## Drive a park deterministically
 

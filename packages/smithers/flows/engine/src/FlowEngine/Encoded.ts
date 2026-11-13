@@ -264,7 +264,7 @@ export interface Encoded {
    * example a retention job pruned every attempt). The engine then falls
    * back to the current clock — restarting the budget rather than failing
    * the run, because turning benign retention pruning into spurious
-   * failures is worse than granting a fresh window — and logs a warning so
+   * failures is worse than granting a fresh window — and logs at Debug level so
    * the restarted budget is observable (issue #69). Drivers are expected to
    * keep `Option.some` as long as any attempt row survives, using the
    * earliest surviving row when attempt 1 itself was pruned.

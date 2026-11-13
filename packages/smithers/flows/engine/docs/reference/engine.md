@@ -1,13 +1,13 @@
 ---
 title: "Export reference"
-description: "Every export of @smthrs/engine one at a time: FlowEngine, FlowProxy, and FlowProxyServer, each with its full type, its defaults, and its field tables."
+description: "Entry points and namespaces of @smthrs/engine, with runtime and transport signatures, defaults, and field tables."
 area: api
 order: 20
 ---
 
 The package implements `FlowRuntime`, the port `@smthrs/flow` declares, over a low-level `Encoded` seam, and derives RPC and HTTP transports from flow declarations.
 
-This page is the long form: one entry per export, with the full type and every field. [API reference](../api.md) is the short tour of the same surface, grouped by what each export is for.
+This page lists the entry points and namespaces, followed by runtime and transport signatures and fields. [API reference](../api.md) is the short tour of the same surface, grouped by what each export is for.
 
 ## Install
 
@@ -25,6 +25,9 @@ Each subpath in the package `exports` map resolves to one source module:
 | -------------------------------- | ------------------------- | -------- |
 | `@smthrs/engine`                 | `src/index.ts`            | any      |
 | `@smthrs/engine/FlowEngine`      | `src/FlowEngine/index.ts` | any      |
+| `@smthrs/engine/Hosts`           | `src/Hosts.ts`            | any      |
+| `@smthrs/engine/PlacedAction`    | `src/PlacedAction.ts`     | any      |
+| `@smthrs/engine/index`           | `src/index.ts`            | any      |
 | `@smthrs/engine/FlowProxy`       | `src/FlowProxy.ts`        | any      |
 | `@smthrs/engine/FlowProxyServer` | `src/FlowProxyServer.ts`  | any      |
 
@@ -32,13 +35,16 @@ Each subpath in the package `exports` map resolves to one source module:
 
 ## Namespaces
 
-The root re-exports three namespaces, in this order:
+The root re-exports six namespaces, in this order. `StepTrace` is available through the root only; it has no direct subpath:
 
-| Namespace         | Summary                          |
-| ----------------- | -------------------------------- |
-| `FlowEngine`      | Flow execution services.         |
-| `FlowProxy`       | Client-side flow proxies.        |
-| `FlowProxyServer` | Server-side flow proxy handling. |
+| Namespace         | Summary                                                 |
+| ----------------- | ------------------------------------------------------- |
+| `FlowEngine`      | Flow execution services.                                |
+| `Hosts`           | The injected table that says where a placed flow runs.  |
+| `PlacedAction`    | Runs one action's body on the host its placement names. |
+| `FlowProxy`       | Client-side flow proxies.                               |
+| `FlowProxyServer` | Server-side flow proxy handling.                        |
+| `StepTrace`       | Portable step observations for live run views.          |
 
 ## FlowEngine
 
@@ -121,7 +127,7 @@ interpreter refuses a node that cannot fit alone before recording any page.
 
 `actionReplayKey` chooses the key a dispatch replays under. It receives `derive(executionId, runScoped)`, the dispatch's key under the current encoding, and `legacy(executionId, runScoped)`, its keys under every older key encoding that differ from the current one, newest first and each once. A store answers a fork's copied attempt key, or an older encoding's key when this run recorded under it, so a record an earlier engine wrote replays instead of running again. Without it, every dispatch takes the current key.
 
-`actionRetryOrigin` returns the persisted start time of the first surviving attempt for `key`, so a `RetryPolicy.expirationMs` bound survives park, resume, and process death. `Option.none()` means no attempt row survives, and the engine then falls back to the current clock and logs a warning. `actionLatestAttempt` returns the highest persisted attempt number for `key`, so the attempt counter resumes from the persisted sequence rather than from `1`.
+`actionRetryOrigin` returns the persisted start time of the first surviving attempt for `key`, so a `RetryPolicy.expirationMs` bound survives park, resume, and process death. `Option.none()` means no attempt row survives, and the engine then falls back to the current clock and logs at `Debug` level. `actionLatestAttempt` returns the highest persisted attempt number for `key`, so the attempt counter resumes from the persisted sequence rather than from `1`.
 
 `actionSnapshot` returns the earliest persisted pre-attempt handle for a compensable key. A present handle may itself be null or undefined. Keep it across unfinished attempts and process restarts. The associated `ActionExecuteOptions.snapshot` effect must run only for actual execution, never for a journal hit or joined dispatch.
 
@@ -147,12 +153,20 @@ The refusal a compensable action raises when it is admitted with no snapshot bou
 
 The refusal raised when a flow operation names a declaration this engine has not registered. Both `layerMemory` on `execute` and `makeUnsafe` on an unresolvable handoff target raise it as a defect.
 
-### `FlowRuntime.ExecutionIdentityConflict` (`@smthrs/flow`)
+### `FlowEngine.ExecutionIdentityConflict`
 
 - **Type:** `class ExecutionIdentityConflict extends Schema.TaggedError<ExecutionIdentityConflict>()("@smthrs/engine/ExecutionIdentityConflict", { code, executionId, field, expected, actual, status, message })`
 - **Since:** `1.0.0`
 
-This class belongs to `@smthrs/flow`'s `FlowRuntime` namespace; it is not an engine export. Its historical tag still names `@smthrs/engine`. The refusal is raised when a caller reuses an execution id for different persisted run identity. `field` is `"flow"`, `"payload"`, `"lineage"`, `"round"`, or `"parent"`. Answering would attach the caller to a run or trampoline round it did not name. `layerMemory` raises it as a defect on `execute` and on a `deferredDone` addressed to the wrong flow; the durable driver returns it as a typed failure when an existing run row disagrees with the requested flow, encoded payload, lineage, round, or predecessor.
+This is the same class as `FlowRuntime.ExecutionIdentityConflict` from `@smthrs/flow`, re-exported by `FlowEngine`. Its historical tag still names `@smthrs/engine`. The refusal is raised when a caller reuses an execution id for different persisted run identity. `field` is `"flow"`, `"payload"`, `"lineage"`, `"round"`, `"parent"`, or `"capabilities"`. Answering would attach the caller to a run or trampoline round it did not name. `layerMemory` raises it as a defect on `execute` and on a `deferredDone` addressed to the wrong flow; the durable driver returns it as a typed failure when an existing run row disagrees with the requested flow, encoded payload, lineage, round, or predecessor.
+
+### `FlowEngine.capabilityConflict`
+
+- **Signature:** `capabilityConflict(executionId: string, status: ExecutionIdentityConflict["status"] = "unknown"): ExecutionIdentityConflict`
+- **Default:** `status` is `"unknown"`.
+- **Since:** `1.0.0`
+
+Constructs an `ExecutionIdentityConflict` with `field: "capabilities"` when a caller's capability ceiling cannot cover the execution's admitted authority. Both drivers use this constructor.
 
 ### `FlowEngine.keyEncodings`
 
@@ -309,10 +323,10 @@ The refusal thrown before HTTP proxy construction when a flow tag is ill-formed 
 
 ### `FlowProxy.OperationAddresses`
 
-- **Type:** `interface OperationAddresses { readonly execute: string; readonly discard: string; readonly resume: string }`
+- **Type:** `interface OperationAddresses { readonly execute: string; readonly discard: string; readonly resume: string; readonly interrupt: string }`
 - **Since:** `1.0.0`
 
-The three wire operation names one flow owns.
+The four wire operation names one flow owns.
 
 ### `FlowProxy.operationAddresses`
 
@@ -320,7 +334,7 @@ The three wire operation names one flow owns.
 - **Default:** `prefix` is `""`.
 - **Since:** `1.0.0`
 
-Derives the operation names shared by proxy definitions and server handlers. The names are `` `${prefix}${tag}` ``, `` `${prefix}${tag}Discard` ``, and `` `${prefix}${tag}Resume` ``. Every group builder and server layer in the package derives from this function, so the client and server sides cannot disagree on a name.
+Derives the operation names shared by proxy definitions and server handlers. The names are `` `${prefix}${tag}` ``, `` `${prefix}${tag}Discard` ``, `` `${prefix}${tag}Resume` ``, and `` `${prefix}${tag}Interrupt` ``. Every group builder and server layer in the package derives from this function, so the client and server sides cannot disagree on a name.
 
 ### `FlowProxy.assertNoCollisions`
 
@@ -338,14 +352,14 @@ Refuses a flow set whose generated operation names are ambiguous. It throws `Flo
 - **Since:** `0.1.0`
 - **Related:** `FlowProxyServer.layerRpcHandlers`, `FlowProxy.ConvertRpcs`
 
-Derives an `RpcGroup` from a list of flows, giving every flow execute, discard, and resume operations. The execute RPC carries the flow's `successSchema` and `errorSchema`; the discard and resume RPCs carry neither. Each RPC merges the flow's own annotations.
+Derives an `RpcGroup` from a list of flows, giving every flow execute, discard, resume, and interrupt operations. The execute RPC carries the flow's `successSchema` and combines its `errorSchema` with `FlowRuntime.ExecutionIdentityConflict`. Discard also declares `ExecutionIdentityConflict`; interrupt declares `FlowRuntime.CancelRequestFailed`. Resume has no typed error. Each operation other than execute succeeds with `void`. Each RPC merges the flow's own annotations.
 
 ### `FlowProxy.ConvertRpcs`
 
-- **Type:** ``type ConvertRpcs<Flows extends Flow.Any, Prefix extends string> = Flows extends Flow.Flow<infer _Name, infer _Payload, infer _Success, infer _Error, infer _Requires> ? Rpc.Rpc<`${Prefix}${_Name}`, ExecutePayload<_Payload>, _Success, _Error> | Rpc.Rpc<`${Prefix}${_Name}Discard`, ExecutePayload<_Payload>> | Rpc.Rpc<`${Prefix}${_Name}Resume`, typeof ResumePayload> : never``
+- **Type:** ``type ConvertRpcs<Flows extends Flow.Any, Prefix extends string> = Flows extends Flow.Flow< infer _Name, infer _Payload, infer _Success, infer _Error, infer _Requires > ? | Rpc.Rpc< `${Prefix}${_Name}`, ExecutePayload<_Payload>, _Success, Schema.Union<[_Error, typeof FlowRuntime.ExecutionIdentityConflict]> > | Rpc.Rpc< `${Prefix}${_Name}Discard`, ExecutePayload<_Payload>, typeof Schema.Void, typeof FlowRuntime.ExecutionIdentityConflict > | Rpc.Rpc<`${Prefix}${_Name}Resume`, typeof ResumePayload> | Rpc.Rpc<`${Prefix}${_Name}Interrupt`, typeof ResumePayload, typeof Schema.Void, typeof CancelRequestFailed> : never``
 - **Since:** `0.1.0`
 
-The RPC definitions generated for one flow's execute, discard, and resume operations. The internal payload schemas require `executionId` to contain 1 to 4,096 well-formed UTF-16 code units; execute and discard also carry the flow payload.
+The RPC definitions generated for one flow's execute, discard, resume, and interrupt operations. The internal payload schemas require `executionId` to contain 1 to 4,096 well-formed UTF-16 code units; execute and discard also carry the flow payload.
 
 ### `FlowProxy.toHttpApiGroup`
 
@@ -353,14 +367,14 @@ The RPC definitions generated for one flow's execute, discard, and resume operat
 - **Since:** `0.1.0`
 - **Related:** `FlowProxyServer.layerHttpApi`, `FlowProxy.ConvertHttpApi`
 
-Derives an `HttpApiGroup` from a list of flows. Each flow gets three POST endpoints, at `/<encoded tag>`, `/<encoded tag>/discard`, and `/<encoded tag>/resume`. The tag encoding is the literal `flow-` followed by each UTF-16 code unit of the tag as four lowercase hex digits. One flow is therefore one URL-safe segment that preserves case, reserved characters, and Unicode normalization. This function takes no `prefix`, unlike `toRpcGroup`.
+Derives an `HttpApiGroup` from a list of flows. Each flow gets four POST endpoints, at `/<encoded tag>`, `/<encoded tag>/discard`, `/<encoded tag>/resume`, and `/<encoded tag>/interrupt`. The tag encoding is the literal `flow-` followed by each UTF-16 code unit of the tag as four lowercase hex digits. One flow is therefore one URL-safe segment that preserves case, reserved characters, and Unicode normalization. This function takes no `prefix`, unlike `toRpcGroup`.
 
 ### `FlowProxy.ConvertHttpApi`
 
-- **Type:** ``type ConvertHttpApi<Flows extends Flow.Any> = Flows extends Flow.Flow<infer _Name, infer _Payload, infer _Success, infer _Error, infer _Requires> ? HttpApiEndpoint.HttpApiEndpoint<_Name, "POST", `/${string}`, never, never, ExecutePayload<_Payload>, never, _Success, _Error> | HttpApiEndpoint.HttpApiEndpoint<`${_Name}Discard`, "POST", `/${string}/discard`, never, never, ExecutePayload<_Payload>> | HttpApiEndpoint.HttpApiEndpoint<`${_Name}Resume`, "POST", `/${string}/resume`, never, never, typeof ResumePayload> : never``
+- **Type:** ``type ConvertHttpApi<Flows extends Flow.Any> = Flows extends Flow.Flow< infer _Name, infer _Payload, infer _Success, infer _Error, infer _Requires > ? | HttpApiEndpoint.HttpApiEndpoint< _Name, "POST", `/${string}`, never, never, ExecutePayload<_Payload>, never, _Success, Schema.Union<[_Error, typeof FlowRuntime.ExecutionIdentityConflict]> > | HttpApiEndpoint.HttpApiEndpoint< `${_Name}Discard`, "POST", `/${string}/discard`, never, never, ExecutePayload<_Payload>, never, typeof Schema.Void, typeof FlowRuntime.ExecutionIdentityConflict > | HttpApiEndpoint.HttpApiEndpoint< `${_Name}Resume`, "POST", `/${string}/resume`, never, never, typeof ResumePayload > | HttpApiEndpoint.HttpApiEndpoint< `${_Name}Interrupt`, "POST", `/${string}/interrupt`, never, never, typeof ResumePayload, never, typeof Schema.Void, typeof CancelRequestFailed > : never``
 - **Since:** `0.1.0`
 
-The HTTP endpoints generated for one flow's execute, discard, and resume operations. The path is typed as `` `/${string}` `` because the concrete segment is derived from the flow tag at run time.
+The HTTP endpoints generated for one flow's execute, discard, resume, and interrupt operations. The path is typed as `` `/${string}` `` because the concrete segment is derived from the flow tag at run time.
 
 ## FlowProxyServer
 
@@ -373,10 +387,10 @@ A defect leaving a proxy handler is replaced with this refusal. `code` is `"flow
 
 ### `FlowProxyServer.ExecutionIdScope`
 
-- **Type:** `interface ExecutionIdScope { (input: { readonly flow: Flow.Any; readonly operation: "execute" \| "discard" \| "resume"; readonly clientValue: string \| undefined; readonly payload: unknown }): string \| undefined }`
+- **Type:** `interface ExecutionIdScope { (input: { readonly flow: Flow.Any; readonly operation: "execute" \| "discard" \| "resume" \| "interrupt"; readonly clientValue: string \| undefined; readonly payload: unknown }): string \| undefined }`
 - **Since:** `1.0.0`
 
-The hook that rewrites a caller-supplied execution id before it reaches the engine, so a multi-tenant server namespaces client identity in one place. The server calls it once inside each execute, discard, or resume handler. Execute and discard inputs include the decoded flow payload; resume inputs use `undefined`, because a resume request carries only an execution id. Returning `undefined` for execute or discard selects the flow's idempotency key or ambient execution-id source. Returning `undefined` for resume refuses the request with a `Flow.ExecutionIdRequired` defect, because passing the client value through would let a client resume across the namespace the scope confines it to. Without the option, every client value passes through unchanged. An implementation must be pure, must return for every input, and must return a string for every resume, and it receives no request-scoped service.
+The hook that rewrites a caller-supplied execution id before it reaches the engine, so a multi-tenant server namespaces client identity in one place. The server calls it once inside each execute, discard, resume, or interrupt handler. Execute and discard inputs include the decoded flow payload; resume and interrupt inputs use `undefined`, because those requests carry only an execution id. Returning `undefined` for execute or discard selects the flow's idempotency key or ambient execution-id source. Returning `undefined` for resume or interrupt refuses the request with a `Flow.ExecutionIdRequired` defect, because passing the client value through would let a client resume or cancel across the namespace the scope confines it to. Without the option, every client value passes through unchanged. An implementation must be pure, must return for every input, and must return a string for every resume and interrupt, and it receives no request-scoped service.
 
 ### `FlowProxyServer.layerHttpApi`
 
@@ -384,7 +398,7 @@ The hook that rewrites a caller-supplied execution id before it reaches the engi
 - **Since:** `0.1.0`
 - **Related:** `FlowProxy.toHttpApiGroup`, `FlowProxyServer.ExecutionIdScope`
 
-Creates handlers for a flow HTTP API group, wiring execute, discard, and resume endpoints to the supplied flows. The layer drives the served bodies, so it requires what those bodies require: `Flow.Requirements` of every flow, on top of the schema services `Flow.RequirementsHandler` names. A forgotten `Action.toLayer` is a compile error here. Each handler logs a defect from a served body through `Effect.logError`, annotated with `module: "FlowProxyServer"` and the wire operation name.
+Creates handlers for a flow HTTP API group, wiring execute, discard, resume, and interrupt endpoints to the supplied flows. The layer drives the served bodies, so it requires what those bodies require: `Flow.Requirements` of every flow, on top of the schema services `Flow.RequirementsHandler` names. A forgotten `Action.toLayer` is a compile error here. Each handler logs a defect from a served body through `Effect.logError`, annotated with `module: "FlowProxyServer"` and the wire operation name.
 
 ### `FlowProxyServer.layerRpcHandlers`
 
@@ -393,14 +407,14 @@ Creates handlers for a flow HTTP API group, wiring execute, discard, and resume 
 - **Since:** `0.1.0`
 - **Related:** `FlowProxy.toRpcGroup`, `FlowProxyServer.ExecutionIdScope`
 
-Creates RPC handlers for the supplied flows, wiring execute, discard, and resume RPCs to flow operations. Pass the same `prefix` given to `FlowProxy.toRpcGroup`, because the handler keys are derived from it. The requirements and the defect logging match `layerHttpApi`.
+Creates RPC handlers for the supplied flows, wiring execute, discard, resume, and interrupt RPCs to flow operations. Pass the same `prefix` given to `FlowProxy.toRpcGroup`, because the handler keys are derived from it. The requirements and the defect logging match `layerHttpApi`.
 
 ### `FlowProxyServer.RpcHandlers`
 
-- **Type:** ``type RpcHandlers<Flows extends Flow.Any, Prefix extends string> = Flows extends Flow.Flow<infer _Name, infer _Payload, infer _Success, infer _Error, infer _Requires> ? Rpc.Handler<`${Prefix}${_Name}`> | Rpc.Handler<`${Prefix}${_Name}Discard`> | Rpc.Handler<`${Prefix}${_Name}Resume`> : never``
+- **Type:** ``type RpcHandlers<Flows extends Flow.Any, Prefix extends string> = Flows extends Flow.Flow< infer _Name, infer _Payload, infer _Success, infer _Error, infer _Requires > ? | Rpc.Handler<`${Prefix}${_Name}`> | Rpc.Handler<`${Prefix}${_Name}Discard`> | Rpc.Handler<`${Prefix}${_Name}Resume`> | Rpc.Handler<`${Prefix}${_Name}Interrupt`> : never``
 - **Since:** `0.1.0`
 
-The union of RPC handler services required to serve one flow's generated execute, discard, and resume RPCs.
+The union of RPC handler services required to serve one flow's generated execute, discard, resume, and interrupt RPCs.
 
 ## Errors
 

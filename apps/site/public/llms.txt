@@ -33,7 +33,7 @@
 
 - [Library API](https://smithers.sh/docs/reference/api/): Published package API references, with contributor links for workspace-private libraries.
 - [@smthrs/flow](https://smithers.sh/docs/reference/api/flow/): What @smthrs/flow exports: the flow, action, runtime-port, and durable-primitive namespaces, with types and defaults from source.
-- [Export reference](https://smithers.sh/docs/reference/api/engine/): Every export of @smthrs/engine one at a time: FlowEngine, FlowProxy, and FlowProxyServer, each with its full type, its defaults, and its field tables.
+- [Export reference](https://smithers.sh/docs/reference/api/engine/): Entry points and namespaces of @smthrs/engine, with runtime and transport signatures, defaults, and field tables.
 - [Smithers API cheat sheet](https://smithers.sh/docs/reference/api/cheat-sheet/): The complete top-level Smithers API used in WORKSPACE.ts and PACKAGE.ts, shown through examples.
 - [@smthrs/targets](https://smithers.sh/docs/reference/api/targets/): What @smthrs/targets exports: the Smithers namespace of workspace declarations, catalog rules, macros, actions, and errors, with types from source.
 - [@smthrs/agent](https://smithers.sh/docs/reference/api/agent/): The Smithers agent: the production agent loop composed on the durable engine, plus the two adapters that run it, AgentSession for control-plane runs and AgentAction for typed workflow steps

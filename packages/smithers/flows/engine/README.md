@@ -90,8 +90,11 @@ calls `Compile` a second time.
 
 ## Public API
 
-The root exports these namespaces, also available from matching
-`@smthrs/engine/*` subpaths. The flow-authoring namespaces live in
+The root exports `FlowEngine`, `Hosts`, `PlacedAction`, `FlowProxy`,
+`FlowProxyServer`, and `StepTrace`. All except `StepTrace` also resolve from
+matching `@smthrs/engine/*` subpaths. `Hosts` supplies the host registry,
+`PlacedAction` executes an action on its declared host, and `StepTrace`
+supplies observations for live run views. The flow-authoring namespaces live in
 [`@smthrs/flow`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/flow/docs).
 
 | Namespace         | What it is                                                                                                                                                                                                                 |

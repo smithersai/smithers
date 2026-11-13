@@ -60,14 +60,21 @@ ships no implementation, because snapshotting a workspace is a host concern.
 
 ## Import forms
 
-The exports map resolves four subpaths and nothing deeper:
+The exports map resolves these public module entry points:
 
-| Import                           | Source                               |
-| -------------------------------- | ------------------------------------ |
-| `@smthrs/engine`                 | `src/index.ts`, the three namespaces |
-| `@smthrs/engine/FlowEngine`      | `src/FlowEngine/index.ts`            |
-| `@smthrs/engine/FlowProxy`       | `src/FlowProxy.ts`                   |
-| `@smthrs/engine/FlowProxyServer` | `src/FlowProxyServer.ts`             |
+| Import                           | Source                             |
+| -------------------------------- | ---------------------------------- |
+| `@smthrs/engine`                 | `src/index.ts`, the six namespaces |
+| `@smthrs/engine/FlowEngine`      | `src/FlowEngine/index.ts`          |
+| `@smthrs/engine/FlowProxy`       | `src/FlowProxy.ts`                 |
+| `@smthrs/engine/FlowProxyServer` | `src/FlowProxyServer.ts`           |
+
+The map also resolves `@smthrs/engine/Hosts` to `src/Hosts.ts`,
+`@smthrs/engine/PlacedAction` to `src/PlacedAction.ts`, and
+`@smthrs/engine/index` to `src/index.ts`. The six root namespaces are
+`FlowEngine`, `Hosts`, `PlacedAction`, `FlowProxy`, `FlowProxyServer`, and
+`StepTrace`; `StepTrace` has no direct subpath. Package metadata resolves
+through `@smthrs/engine/package.json`.
 
 `./FlowEngine/*`, `./internal/*`, and `./*/index` are `null` in the map, so
 `@smthrs/engine/FlowEngine/make` does not resolve. Both forms below are the

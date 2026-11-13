@@ -4,16 +4,12 @@ import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { DerivedKey } from "@smthrs/keys"
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Schedule, Schema, Scope, Tracer } from "effect"
-import type * as EffectDigest from "effect/crypto/Digest"
+import * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
-import * as SchemaRepresentation from "effect/SchemaRepresentation"
-import { vi } from "vitest"
 import { actionKey } from "../src/FlowEngine/ActionKey.ts"
 import { FlowEngine } from "../src/index.ts"
-import { withCrypto } from "./Crypto.ts"
+import { key, withCrypto } from "./Crypto.ts"
 import { effect } from "./Harness.ts"
-
-vi.mock("effect/SchemaRepresentation", { spy: true })
 
 const hostFlow = Flow.make("ActionKeys/host", {
   payload: { id: Schema.String },
@@ -193,16 +189,25 @@ describe("action execution keys", () => {
           idempotencyKey: "row",
           execute: Effect.succeed({ value: "ok" })
         })
-      const representation = vi.spyOn(SchemaRepresentation, "toRepresentation")
-      try {
+      const real = yield* EffectDigest.Digest
+      let calls = 0
+      const counted = Layer.succeed(EffectDigest.Digest, {
+        ...real,
+        digest: (algorithm, input) =>
+          Effect.suspend(() => {
+            calls++
+            return real.digest(algorithm, input)
+          })
+      })
+      yield* Effect.gen(function*() {
         const first = yield* actionKey(make(), "run", 1, undefined, "scope")
-        const calls = representation.mock.calls.length
-        expect(calls).toBeGreaterThan(0)
+        const firstCalls = calls
+        expect(firstCalls).toBeGreaterThan(1)
         expect(yield* actionKey(make(), "run", 2, undefined, "scope")).toBe(first)
-        expect(representation.mock.calls.length).toBe(calls)
-      } finally {
-        representation.mockRestore()
-      }
+        // The repeated dispatch still hashes the key, but reuses the
+        // declaration digest shared by these immutable schema ASTs.
+        expect(calls - firstCalls).toBe(firstCalls - 1)
+      }).pipe(Effect.provide(counted))
     }))
 
   effect("does not create a named actionKey span on repeated dispatch", () => {
@@ -496,60 +501,63 @@ describe("action execution keys", () => {
     }
   )
 
-  effect(
-    "overrides a caller-pinned stale hermetic with the metadata descriptor so the read-set change still misses (issue #83)",
-    () => {
-      // Issue #57's mechanism is spread order alone: the descriptor derived
-      // from `action.metadata` must win over a `boundary` the caller
-      // pinned inside the object-form identity. This is the
-      // caller-supplies case the #57 test never covered — a refactor that
-      // spread the caller's field last (`{ boundary, ...identity }`) would
-      // freeze the key on the pinned digest and restore the #25 stale-replay
-      // bypass.
-      let executions = 0
-      const identity = { operation: "sealed/pinned-hermetic" }
-      const build = (digest: string) =>
-        Action.make({
-          name: "ActionKeys/pinned-hermetic",
-          success: Schema.Number,
-          idempotencyKey: identity,
-          metadata: {
-            readSet: [{ path: "src/input.ts", digest }],
-            writeSet: ["out/artifact"],
-            boundaryMode: "hard"
-          },
-          execute: Effect.sync(() => ++executions)
+  for (const pinned of ["frozen", "descriptor-digest"] as const) {
+    effect(
+      `keeps the metadata boundary in the key when the caller pins a ${pinned} boundary (issue #83)`,
+      () => {
+        // Caller-owned input is nested separately from the metadata boundary.
+        // Neither an arbitrary string nor the original descriptor's real digest
+        // may mask a change to that metadata.
+        let executions = 0
+        const boundary = pinned === "frozen" ? "frozen" : key({
+          readSet: [{ path: "src/input.ts", digest: "d1" }],
+          writeSet: ["out/artifact"],
+          boundaryMode: "hard"
         })
-      const flowActionDeclaration = Action.make("ActionKeys/pinned-hermetic-invalidation/action", {
-        payload: { run: Schema.String },
-        success: Schema.Number
-      })
-      const flow = Flow.make("ActionKeys/pinned-hermetic-invalidation", {
-        payload: { run: Schema.String },
-        success: Schema.Number,
-        body: (payload) => flowActionDeclaration.call(payload)
-      })
-      const layer = Layer.mergeAll(
-        flowActionDeclaration.toLayer(() =>
-          Effect.gen(function*() {
-            // The pinned "frozen" digest never enters the key: same metadata
-            // digest replays, the changed digest re-executes.
-            yield* build("d1")
-            yield* build("d1")
-            return yield* build("d2")
+        const identity = { operation: "sealed/pinned-hermetic", boundary }
+        const build = (digest: string) =>
+          Action.make({
+            name: "ActionKeys/pinned-hermetic",
+            success: Schema.Number,
+            idempotencyKey: identity,
+            metadata: {
+              readSet: [{ path: "src/input.ts", digest }],
+              writeSet: ["out/artifact"],
+              boundaryMode: "hard"
+            },
+            execute: Effect.sync(() => ++executions)
           })
-        ),
-        Interpreter.layer(flow)
-      ).pipe(
-        Layer.provideMerge(Action.layerImplementations)
-      ).pipe(Layer.provideMerge(FlowEngine.layerMemory))
+        const flowActionDeclaration = Action.make("ActionKeys/pinned-hermetic-invalidation/action", {
+          payload: { run: Schema.String },
+          success: Schema.Number
+        })
+        const flow = Flow.make("ActionKeys/pinned-hermetic-invalidation", {
+          payload: { run: Schema.String },
+          success: Schema.Number,
+          body: (payload) => flowActionDeclaration.call(payload)
+        })
+        const layer = Layer.mergeAll(
+          flowActionDeclaration.toLayer(() =>
+            Effect.gen(function*() {
+              expect(yield* build("d1")).toBe(1)
+              expect(yield* build("d1")).toBe(1)
+              const changed = yield* build("d2")
+              expect(changed).toBe(2)
+              return changed
+            })
+          ),
+          Interpreter.layer(flow)
+        ).pipe(
+          Layer.provideMerge(Action.layerImplementations)
+        ).pipe(Layer.provideMerge(FlowEngine.layerMemory))
 
-      return Effect.gen(function*() {
-        expect(yield* flow.execute({ run: "one" }, { executionId: "run-pinned-hermetic" })).toBe(2)
-        expect(executions).toBe(2)
-      }).pipe(Effect.provide(layer))
-    }
-  )
+        return Effect.gen(function*() {
+          expect(yield* flow.execute({ run: "one" }, { executionId: "run-pinned-hermetic" })).toBe(2)
+          expect(executions).toBe(2)
+        }).pipe(Effect.provide(layer))
+      }
+    )
+  }
 
   effect("folds the declared schemas into string idempotency keys so a schema change misses (issue #120)", () => {
     // The step-key spec requires the content body to be the *compiled

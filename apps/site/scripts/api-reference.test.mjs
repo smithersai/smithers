@@ -21,12 +21,73 @@ const members = (pkg, module, names) => {
   }
 }
 
-test("engine refusals identify flow-owned typed identity conflicts", () => {
+test("engine refusals identify flow-owned identity conflicts re-exported by the engine", () => {
   for (const path of ["docs/api.md", "docs/reference/engine.md"]) {
     const docs = read(`${flows}engine/${path}`)
     assert.ok(docs.includes("FlowRuntime.ExecutionIdentityConflict"), `${path}: owner must be @smthrs/flow`)
-    assert.doesNotMatch(docs, /### `FlowEngine\.ExecutionIdentityConflict`|engine raises them as defects/)
+    assert.ok(docs.includes("FlowEngine.ExecutionIdentityConflict"), `${path}: re-export must be documented`)
+    assert.ok(docs.includes("capabilityConflict"), `${path}: capability refusal constructor must be documented`)
+    assert.doesNotMatch(docs, /not an engine export|not by\s+`@smthrs\/engine`|engine raises them as defects/)
     assert.match(docs, /typed/)
+  }
+})
+
+test("engine references cover the root namespaces and resolvable module entry points", () => {
+  const root = read(`${flows}engine/src/index.ts`)
+  const namespaces = [...root.matchAll(/export \* as (\w+) from/g)].map((match) => match[1])
+  const manifest = JSON.parse(read(`${flows}engine/package.json`))
+  for (const path of ["docs/api.md", "docs/reference/engine.md", "docs/installation.md"]) {
+    const docs = read(`${flows}engine/${path}`)
+    for (const namespace of namespaces) {
+      assert.ok(docs.includes(`\`${namespace}\``), `${path}: missing namespace ${namespace}`)
+    }
+    for (const [entry, target] of Object.entries(manifest.exports)) {
+      if (target === null || entry === "./package.json") continue
+      const specifier = entry === "." ? manifest.name : `${manifest.name}/${entry.slice(2)}`
+      assert.ok(docs.includes(`\`${specifier}\``), `${path}: missing entry point ${specifier}`)
+    }
+    assert.doesNotMatch(docs, /three namespaces|four subpaths/)
+  }
+})
+
+test("engine transport reference includes interrupt in each operation surface", () => {
+  const docs = read(`${flows}engine/docs/reference/engine.md`)
+  for (const member of [
+    "FlowProxy.OperationAddresses", "FlowProxy.operationAddresses", "FlowProxy.toRpcGroup",
+    "FlowProxy.ConvertRpcs", "FlowProxy.toHttpApiGroup", "FlowProxy.ConvertHttpApi",
+    "FlowProxyServer.ExecutionIdScope", "FlowProxyServer.RpcHandlers"
+  ]) {
+    const section = docs.split(`### \`${member}\``)[1]?.split(/\n## /)[0]?.split(/\n### /)[0]
+    assert.match(section ?? "", /interrupt/i, `${member}: missing interrupt`)
+  }
+  for (const [module, name] of [
+    ["FlowProxy", "ConvertRpcs"], ["FlowProxy", "ConvertHttpApi"], ["FlowProxyServer", "RpcHandlers"]
+  ]) {
+    const source = read(`${flows}engine/src/${module}.ts`)
+    const declaration = source.match(new RegExp(`export type ${name}\\b[\\s\\S]*?:\\s*never`))?.[0]
+    assert.ok(declaration, `${module}.${name}: source declaration exists`)
+    const section = docs.split(`### \`${module}.${name}\``)[1]?.split(/\n###? /)[0]
+    const documented = section?.match(/- \*\*Type:\*\* `+(.*?)`+\n/)?.[1]
+    assert.equal(
+      documented?.replace(/\s/g, ""),
+      declaration.replace(/^export /, "").replace(/\s/g, ""),
+      `${module}.${name}: reference type matches the exported union`
+    )
+  }
+  const scope = read(`${flows}engine/docs/guides/namespace-execution-ids.md`)
+  assert.ok(scope.includes('`"interrupt"`'))
+  assert.match(scope, /resume and interrupt/)
+})
+
+test("engine guides describe surviving admission and missing retry origins", () => {
+  const admission = read(`${flows}engine/docs/guides/test-in-memory.md`)
+  assert.match(admission, /joiners retry admission/)
+  assert.doesNotMatch(admission, /joiners receive the interrupted dispatch's exit/)
+  for (const path of [
+    "docs/concepts/retries.md", "docs/guides/implement-the-encoded-seam.md",
+    "docs/reference/engine.md", "src/FlowEngine/Encoded.ts"
+  ]) {
+    assert.match(read(`${flows}engine/${path}`), /Debug/, `${path}: missing retry origins log at Debug`)
   }
 })
 
