@@ -5,51 +5,49 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { Readable } from "node:stream"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import { main } from "../src/cli/Entry.ts"
 import { type Host, repoFromRemote, resolveRepo } from "../src/commands/Open.ts"
 import { ask } from "../src/internal/backend/AgentDocs.ts"
 import { auth } from "../src/internal/backend/Auth.ts"
-import { APIError, Client, object } from "../src/internal/backend/Client.ts"
+import { Client, object } from "../src/internal/backend/Client.ts"
 import * as HostService from "../src/internal/backend/HostService.ts"
 import { local } from "../src/internal/backend/Local.ts"
 import { misc } from "../src/internal/backend/Misc.ts"
 import { gitAuth, repositories } from "../src/internal/backend/Repositories.ts"
 import { stacks } from "../src/internal/backend/Stack.ts"
 import { resolveID, workspaces } from "../src/internal/backend/Workspaces.ts"
+import { backendFixture } from "./support/backend-fixture.ts"
 import { spawnNodeSync } from "./support/node-child.ts"
 
 const dirs: string[] = []
 const cwd = process.cwd()
+const stdin = Object.getOwnPropertyDescriptor(process, "stdin")!
 afterEach(async () => {
   process.chdir(cwd)
+  Object.defineProperty(process, "stdin", stdin)
+  for (const fixture of fixtures.splice(0).reverse()) await fixture.close()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   for (const path of dirs.splice(0)) await rm(path, { recursive: true, force: true })
 })
+const fixtures: Array<Awaited<ReturnType<typeof backendFixture>>> = []
 const fixture = async (env: Record<string, string> = {}) => {
-  const home = await mkdtemp(join(tmpdir(), "one-cli-commands-"))
-  dirs.push(home)
-  const exit = vi.fn()
-  const c = new Client({
-    environment: {
-      HOME: home,
-      XDG_CONFIG_HOME: home,
-      XDG_CACHE_HOME: home,
-      SMITHERS_AUTH_FILE: join(home, "auth.json"),
-      SMITHERS_API_ORIGIN: "https://api.example.test",
-      SMITHERS_TOKEN: "session-secret",
-      SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
-      ...env
-    },
-    exit
-  })
-  const request = vi.spyOn(c, "request").mockResolvedValue({})
-  const exec = vi.spyOn(c, "exec").mockResolvedValue("")
-  return { c, home, request, exec, exit }
+  const result = await backendFixture(env)
+  fixtures.push(result)
+  return result
 }
-const apiError = (status: number) => new APIError(status, { message: "failed" }, "GET", "/test", new Headers())
+const checkout = async (c: Client, home: string) => {
+  const upstream = join(home, "upstream")
+  await c.exec("jj", ["git", "init", "--no-colocate", home])
+  await c.exec("jj", ["git", "init", "--no-colocate", upstream])
+  const remote = await c.exec("jj", ["--repository", upstream, "git", "root"])
+  process.chdir(home)
+  await c.exec("jj", ["git", "remote", "add", "origin", remote])
+}
+const apiError = (status: number) => ({ status, body: { message: "failed" } })
 const options = { repo: "owner/repo" }
 
 const homeFixture = async (
@@ -536,47 +534,48 @@ describe("repository selection and transfer", () => {
     "clones %s without interpreting it as an API slug",
     async (repo) => {
       const { c, exec, request } = await fixture()
-      exec.mockImplementation(async (command) => {
+      exec.handle(async (command) => {
         if (command === "jj") throw new Error("no jj")
         return ""
       })
       expect(await repositories["repo clone"]!(c, { repo }, { directory: "copy", "clone-arg": ["--depth=1"] }))
         .toMatchObject({ directory: "copy", tool: "git" })
-      expect(exec).toHaveBeenLastCalledWith("git", ["clone", repo, "copy", "--depth=1"], {})
-      expect(request).not.toHaveBeenCalled()
+      expect(exec.calls.at(-1)).toEqual(["git", ["clone", repo, "copy", "--depth=1"], {}])
+      expect(request.calls).toHaveLength(0)
     }
   )
   it.each(["https", "ssh"])("clones a backend slug using %s", async (protocol) => {
-    const { c, exec } = await fixture()
+    const { c, exec, origin } = await fixture()
+    exec.respond("")
     await repositories["repo clone"]!(c, { repo: "owner/repo" }, { protocol })
-    expect(exec).toHaveBeenCalledWith("jj", [
+    expect(exec.calls).toContainEqual(["jj", [
       "git",
       "clone",
-      protocol === "ssh" ? "git@ssh.example.test:owner/repo.git" : "https://api.example.test/owner/repo.git",
+      protocol === "ssh" ? "git@ssh.127.0.0.1:owner/repo.git" : origin + "/owner/repo.git",
       "repo"
-    ], protocol === "https" ? gitAuth("https://api.example.test", "session-secret") : {})
+    ], protocol === "https" ? gitAuth(origin, "session-secret") : {}])
   })
   it.each(["../bad", ".hidden", "a.lock", "a..b", "bad name"])(
     "rejects unsafe ref %s before launching git",
     async (name) => {
       const { c, exec } = await fixture()
       await expect(repositories["repo push"]!(c, {}, { ...options, name })).rejects.toThrow("ref")
-      expect(exec).not.toHaveBeenCalled()
+      expect(exec.calls).toHaveLength(0)
     }
   )
   it.each([false, true])("uses a lease and scoped environment for a git push (delete=%s)", async (del) => {
     const { c, exec, request } = await fixture()
-    exec.mockImplementation(async (command, args) => {
+    exec.handle(async (command, args) => {
       if (command === "jj") throw new Error("not jj")
       if (args.includes("--absolute-git-dir")) return "/tmp/repo/.git"
       if (args.includes("HEAD^{commit}")) return "newcommit"
       if (args.includes("ls-remote")) return "oldcommit\trefs/smithers/users/7/head"
       return ""
     })
-    request.mockImplementation(async (_method, path) => path === "/api/user" ? { id: 7 } : { expires_at: "tomorrow" })
+    request.handle(async (_method, path) => path === "/api/user" ? { id: 7 } : { expires_at: "tomorrow" })
     const result = await repositories["repo push"]!(c, {}, { ...options, delete: del })
     expect(result).toMatchObject(del ? { deleted: true } : { updated: true, commit: "newcommit" })
-    const push = exec.mock.calls.find(([, args]) => args.includes("push"))!
+    const push = exec.calls.find(([, args]) => args.includes("push"))!
     expect(push[1]).toContain("--force-with-lease=refs/smithers/users/7/head:oldcommit")
     expect(push[1]).toContain(del ? ":refs/smithers/users/7/head" : "newcommit:refs/smithers/users/7/head")
     expect(JSON.stringify(push[1])).not.toContain("session-secret")
@@ -587,14 +586,14 @@ describe("repository selection and transfer", () => {
   })
   it("refuses publishing a jj working copy into a public repository", async () => {
     const { c, exec, request } = await fixture()
-    exec.mockResolvedValue("commit")
-    request.mockResolvedValue({ is_public: true })
+    exec.respond("commit")
+    request.respond({ is_public: true })
     await expect(repositories["repo push"]!(c, {}, { ...options, "working-copy": true })).rejects.toThrow("public")
-    expect(exec.mock.calls.some(([, args]) => args.includes("push"))).toBe(false)
+    expect(exec.calls.some(([, args]) => args.includes("push"))).toBe(false)
   })
   it("writes the current cache declaration once into PACKAGE.ts", async () => {
     const { c, home, request } = await fixture()
-    request.mockResolvedValue({ token: "smithers_cachero_public", endpoint: "https://cache.test" })
+    request.respond({ token: "smithers_cachero_public", endpoint: "https://cache.test" })
     expect(await repositories["cache connect"]!(c, {}, { ...options, workspace: home })).toMatchObject({
       changed: true
     })
@@ -604,11 +603,11 @@ describe("repository selection and transfer", () => {
     expect(await repositories["cache connect"]!(c, {}, { ...options, workspace: home })).toMatchObject({
       changed: false
     })
-    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.calls).toHaveLength(1)
   })
   it("emits cache setup that typechecks against the public targets entry", async () => {
     const { c, home, request } = await fixture()
-    request.mockResolvedValue({ token: "smithers_cachero_public" })
+    request.respond({ token: "smithers_cachero_public" })
     await repositories["cache connect"]!(c, {}, { ...options, workspace: home })
     const file = join(home, "PACKAGE.ts")
     const content = await readFile(file, "utf8")
@@ -654,7 +653,7 @@ describe("repository selection and transfer", () => {
   })
   it("appends cache setup to the standard named Smithers import without replacing existing targets", async () => {
     const { c, home, request } = await fixture()
-    request.mockResolvedValue({ token: "smithers_cachero_public" })
+    request.respond({ token: "smithers_cachero_public" })
     const file = join(home, "PACKAGE.ts")
     const existing = "import { Smithers } from \"@smthrs/targets\"\nexport const existing = 1\n"
     await writeFile(file, existing)
@@ -666,11 +665,11 @@ describe("repository selection and transfer", () => {
     expect(await repositories["cache connect"]!(c, {}, { ...options, workspace: home })).toMatchObject({
       changed: false
     })
-    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.calls).toHaveLength(1)
   })
   it("previews cache setup without writing a file", async () => {
     const { c, home, request } = await fixture()
-    request.mockResolvedValue({ token: "smithers_cachero_public" })
+    request.respond({ token: "smithers_cachero_public" })
     expect(await repositories["cache connect"]!(c, {}, { ...options, workspace: home, write: false })).toMatchObject({
       changed: false
     })
@@ -690,7 +689,7 @@ describe("repository selection and transfer", () => {
 describe("one-login authentication", () => {
   it("logs in from stdin and exposes only metadata", async () => {
     const { c } = await fixture({ SMITHERS_TOKEN: "" })
-    vi.spyOn(c, "stdin").mockResolvedValue("new-secret")
+    Object.defineProperty(process, "stdin", { configurable: true, value: Readable.from(["new-secret"]) })
     expect(await auth["auth login"]!(c, {}, { "with-token": true })).toMatchObject({ status: "logged_in" })
     expect((await c.session.require())?.token).toBe("new-secret")
     expect(JSON.stringify(await auth["auth token"]!(c, {}, {}))).not.toContain("new-secret")
@@ -709,20 +708,20 @@ describe("one-login authentication", () => {
   })
   it("reports the effective credential's stored kind and via, never the token (#3537)", async () => {
     const { c, request } = await fixture()
-    request.mockResolvedValue({ login: "ben", credential_kind: "delegated", via: "terminal" })
+    request.respond({ login: "ben", credential_kind: "delegated", via: "terminal" })
     const status = await auth["auth status"]!(c, {}, {})
     expect(status).toMatchObject({ logged_in: true, username: "ben", credential_kind: "delegated", via: "terminal" })
     expect(JSON.stringify(status)).not.toContain("token\":\"")
-    request.mockResolvedValue({ login: "ben" })
+    request.respond({ login: "ben" })
     expect(await auth["auth status"]!(c, {}, {})).not.toHaveProperty("credential_kind")
   })
   it.each([401, 403, 503])("keeps status honest on HTTP %s", async (code) => {
-    const { c, request, exit } = await fixture()
-    request.mockRejectedValue(apiError(code))
+    const { c, request, exits } = await fixture()
+    request.status(code)
     expect(await auth["auth status"]!(c, {}, {})).toMatchObject(
       code === 503 ? { verified: false, logged_in: true } : { logged_in: false }
     )
-    if (code !== 503) expect(exit).toHaveBeenCalledWith(1)
+    if (code !== 503) expect(exits).toContain(1)
   })
   it.each([
     {
@@ -737,29 +736,28 @@ describe("one-login authentication", () => {
   ])("refuses Codex connection without consuming local credentials (%j)", async (credentials) => {
     const { c, home, request } = await fixture()
     if (credentials !== undefined) await writeFile(join(home, "auth.json"), JSON.stringify(credentials))
-    const protect = vi.spyOn(c, "protect")
     await expect(auth["auth connect"]!(c, { provider: "codex" }, { "config-dir": home, label: "laptop" })).rejects
       .toMatchObject({
         fault: "user",
         code: "not_signed_in",
         message: "Run `codex login --device-auth` on the workspace; Codex subscriptions are never sent to a workspace"
       })
-    expect(request).not.toHaveBeenCalled()
-    expect(protect).not.toHaveBeenCalledWith("local-access-secret")
-    expect(protect).not.toHaveBeenCalledWith("local-refresh-secret")
-    expect(protect).not.toHaveBeenCalledWith("local-id-secret")
+    expect(request.calls).toHaveLength(0)
+    expect(c.redact("local-access-secret local-refresh-secret local-id-secret")).toBe(
+      "local-access-secret local-refresh-secret local-id-secret"
+    )
   })
   it("accepts an Anthropic API key and never a Claude subscription token (#2777)", async () => {
     const { c, home, request } = await fixture()
-    vi.spyOn(c, "stdin").mockResolvedValue("Here is sk-ant-api03-key")
+    Object.defineProperty(process, "stdin", { configurable: true, value: Readable.from(["Here is sk-ant-api03-key"]) })
     await auth["auth connect"]!(c, { provider: "claude" }, { "api-key": true })
-    expect(request).toHaveBeenCalledWith(
+    expect(request.calls).toContainEqual([
       "POST",
       "/api/user/provider-connections",
       expect.objectContaining({ provider: "claude", kind: "api_key", access_token: "sk-ant-api03-key" })
-    )
-    request.mockClear()
-    vi.spyOn(c, "stdin").mockResolvedValue("sk-ant-oat01-subscription")
+    ])
+    request.clear()
+    Object.defineProperty(process, "stdin", { configurable: true, value: Readable.from(["sk-ant-oat01-subscription"]) })
     await expect(auth["auth connect"]!(c, { provider: "claude" }, { "api-key": true })).rejects.toThrow("API key")
     // The local Claude login is never read, so nothing can forward it.
     await writeFile(
@@ -771,13 +769,13 @@ describe("one-login authentication", () => {
     await expect(auth["auth connect"]!(c, { provider: "claude" }, { "config-dir": home })).rejects.toThrow(
       "never stored"
     )
-    expect(request).not.toHaveBeenCalled()
+    expect(request.calls).toHaveLength(0)
     for (const command of ["login", "logout", "push", "status", "token"]) {
       expect(auth[`auth claude ${command}`]).toBeUndefined()
     }
   })
   it("does not reuse host-only legacy credentials at another port", async () => {
-    const { c, home } = await fixture({ SMITHERS_TOKEN: "" })
+    const { c, home } = await fixture({ SMITHERS_TOKEN: "", SMITHERS_API_ORIGIN: "https://api.example.test" })
     c.session.saveConfig({ api_origin: "https://api.example.test" })
     await writeFile(join(home, "auth.json"), JSON.stringify({ host: "example.test", token: "legacy-secret" }))
     expect((await c.session.resolve())?.token).toBe("legacy-secret")
@@ -798,30 +796,34 @@ describe("configuration and agent conversations", () => {
   })
   it.each(["run", "chat"])("sends %s to the existing conversation API", async (action) => {
     const { c, request } = await fixture()
-    request.mockResolvedValue({ id: "conversation" })
+    request.respond({ id: "conversation" })
     await misc[`agent ${action}`]!(c, { id: "conversation", prompt: "Fix it", message: "Continue" }, options)
-    expect(request).toHaveBeenLastCalledWith("POST", "/api/repos/owner/repo/agent/sessions/conversation/messages", {
+    expect(request.calls.at(-1)).toEqual(["POST", "/api/repos/owner/repo/agent/sessions/conversation/messages", {
       role: "user",
       parts: [{ type: "text", content: action === "run" ? "Fix it" : "Continue" }],
       agent_provider: "smithers",
       agent_transport: "workflow"
-    })
+    }])
   })
   it.each(["list", "view"])("reads %s through the same conversation API", async (action) => {
     const { c, request } = await fixture()
     await misc[`agent session ${action}`]!(c, { id: "conversation" }, options)
-    expect(request.mock.calls[0]![1]).toContain("/agent/sessions")
+    expect(request.calls[0]![1]).toContain("/agent/sessions")
   })
   it("refreshes, conditionally reuses, and falls back to cached docs", async () => {
-    const { c, exec, request } = await fixture({ SMITHERS_AGENT_DOCS_URL: "https://docs.example.test/reference" })
-    exec.mockResolvedValue("checkout")
-    request.mockResolvedValue({ login: "owner" })
-    const fetch = vi.fn().mockResolvedValueOnce(
-      new Response("# Issues\nUse smithers issue list to find issues.\n# Login\nSign in with smithers auth login.", {
-        headers: { etag: "v1" }
-      })
-    ).mockResolvedValueOnce(new Response(null, { status: 304 })).mockRejectedValueOnce(new Error("offline"))
-    vi.stubGlobal("fetch", fetch)
+    const f = await fixture()
+    const { c, exec, request, origin, environment, documents } = f
+    environment.SMITHERS_AGENT_DOCS_URL = origin + "/docs/reference"
+    exec.respond("checkout")
+    request.respond({ login: "owner" })
+    f.document(() =>
+      documents.length === 1
+        ? {
+          text: "# Issues\nUse smithers issue list to find issues.\n# Login\nSign in with smithers auth login.",
+          headers: { etag: "v1" }
+        }
+        : { status: documents.length === 2 ? 304 : 503 }
+    )
     const first = object(await ask(c, { prompt: "issues" }, options))
     expect(first.docs_status).toMatchObject({ source: "network", status: "fresh" })
     expect(first.response).toContain("smithers issue list")
@@ -829,56 +831,52 @@ describe("configuration and agent conversations", () => {
       source: "cache",
       status: "fresh"
     })
-    expect(fetch.mock.calls[1]![1].headers).toEqual({ "if-none-match": "v1" })
+    expect(documents[1]!.headers["if-none-match"]).toBe("v1")
     expect(object(await ask(c, { prompt: "issues" }, options)).docs_status).toMatchObject({
       source: "cache",
       status: "stale"
     })
   })
   it("fetches a changed docs URL unconditionally instead of reusing the old URL's validators", async () => {
-    const first = await fixture({ SMITHERS_AGENT_DOCS_URL: "https://docs.example.test/first" })
-    first.exec.mockResolvedValue("checkout")
-    first.request.mockResolvedValue({ login: "owner" })
-    // Both resources carry the same validators, so a conditional request to either answers 304.
-    const fetch = vi.fn(async (url: string, init: RequestInit) =>
-      Object.keys(init.headers ?? {}).length
-        ? new Response(null, { status: 304 })
-        : new Response(`# Docs\nServed from ${url}.`, {
+    const f = await fixture()
+    const { c, exec, request, origin, environment, documents } = f
+    exec.respond("checkout")
+    request.respond({ login: "owner" })
+    f.document((req) =>
+      req.headers["if-none-match"] || req.headers["if-modified-since"]
+        ? { status: 304 }
+        : {
+          text: `# Docs\nServed from ${origin}${req.url}.`,
           headers: { etag: "v1", "last-modified": "Mon, 01 Jan 2024 00:00:00 GMT" }
-        })
+        }
     )
-    vi.stubGlobal("fetch", fetch)
-    expect(object(await ask(first.c, { prompt: "docs" }, options)).docs_status).toMatchObject({
+    environment.SMITHERS_AGENT_DOCS_URL = origin + "/docs/first"
+    expect(object(await ask(c, { prompt: "docs" }, options)).docs_status).toMatchObject({
       source: "network",
       status: "fresh"
     })
-    const second = await fixture({
-      SMITHERS_AGENT_DOCS_URL: "https://docs.example.test/second",
-      XDG_CACHE_HOME: first.home
-    })
-    second.exec.mockResolvedValue("checkout")
-    second.request.mockResolvedValue({ login: "owner" })
-    const result = object(await ask(second.c, { prompt: "docs" }, options))
-    expect(fetch.mock.calls[1]![0]).toBe("https://docs.example.test/second")
-    expect(fetch.mock.calls[1]![1].headers).toEqual({})
+    environment.SMITHERS_AGENT_DOCS_URL = origin + "/docs/second"
+    const result = object(await ask(c, { prompt: "docs" }, options))
+    expect(documents[1]!.path).toBe("/docs/second")
+    expect(documents[1]!.headers["if-none-match"]).toBeUndefined()
+    expect(documents[1]!.headers["if-modified-since"]).toBeUndefined()
     expect(result.docs_status).toMatchObject({
-      url: "https://docs.example.test/second",
+      url: origin + "/docs/second",
       source: "network",
       status: "fresh"
     })
-    expect(result.response).toContain("docs.example.test/second")
+    expect(result.response).toContain("/docs/second")
   })
   it("returns offline context without making signed-out summary fail", async () => {
-    const { c, exec, exit } = await fixture({ SMITHERS_TOKEN: "" })
-    exec.mockImplementation(() => {
+    const { c, exec, exits, received, documents } = await fixture({ SMITHERS_TOKEN: "" })
+    exec.handle(() => {
       throw new Error("no checkout")
     })
-    const fetch = vi.fn()
-    vi.stubGlobal("fetch", fetch)
     const result = object(await ask(c, {}, options))
     expect(object(result.repo_context).auth).toMatchObject({ loggedIn: false })
-    expect(exit).not.toHaveBeenCalled()
-    expect(fetch).not.toHaveBeenCalled()
+    expect(exits).toEqual([])
+    expect(received).toEqual([])
+    expect(documents).toEqual([])
   })
 })
 
@@ -888,27 +886,71 @@ describe("workspace selection and local changes", () => {
     status: "running"
   }]].map((boxes) => ({ boxes })))("selects or creates a box from $boxes", async ({ boxes }) => {
     const { c, request } = await fixture()
-    request.mockResolvedValueOnce(boxes).mockResolvedValueOnce({ id: "new" })
+    request.enqueue(boxes).enqueue({ id: "new" })
     expect(await resolveID(c, {}, options)).toBe(boxes.length ? boxes.at(-1)!.id : "new")
     expect(await resolveID(c, { id: "explicit" }, options)).toBe("explicit")
   })
-  it("waits for a real running receipt", async () => {
-    const { c, request } = await fixture({ SMITHERS_WORKSPACE_CREATE_POLL_INTERVAL_MS: "1" })
-    request.mockResolvedValueOnce({ id: "box" }).mockResolvedValueOnce({ id: "box", status: "creating" })
-      .mockResolvedValueOnce({ id: "box", status: "running" })
-    expect(await workspaces["workspace create"]!(c, {}, { ...options, wait: true })).toMatchObject({
-      status: "running"
+  it("waits for an authenticated running receipt from the backend", async () => {
+    const f = await fixture({ SMITHERS_TOKEN: "", SMITHERS_WORKSPACE_CREATE_POLL_INTERVAL_MS: "1" })
+    await f.save()
+    let status = "creating", polls = 0, settled = false
+    let observed!: () => void, release!: () => void
+    const pending = new Promise<void>((done) => {
+      observed = done
     })
-    expect(request).toHaveBeenCalledTimes(3)
+    const running = new Promise<void>((done) => {
+      release = done
+    })
+    f.request.handle(async (method, path) => {
+      if (method === "POST" && path === "/api/repos/owner/repo/workspaces") return { id: "box" }
+      if (method !== "GET" || path !== "/api/repos/owner/repo/workspaces/box") throw new Error("Unexpected request")
+      polls++
+      if (polls === 1) {
+        observed()
+        return { id: "box", status }
+      }
+      await running
+      return { id: "box", status }
+    })
+    const created = workspaces["workspace create"]!(f.c, {}, { ...options, wait: true }).then((value) => {
+      settled = true
+      return value
+    })
+    await pending
+    expect(settled).toBe(false)
+    status = "running"
+    release()
+    expect(await created).toMatchObject({ id: "box", status: "running" })
+    expect(polls).toBe(2)
+    expect(f.received).toEqual([
+      {
+        method: "POST",
+        path: "/api/repos/owner/repo/workspaces",
+        authorization: "token session-secret",
+        body: expect.any(Object)
+      },
+      {
+        method: "GET",
+        path: "/api/repos/owner/repo/workspaces/box",
+        authorization: "token session-secret",
+        body: undefined
+      },
+      {
+        method: "GET",
+        path: "/api/repos/owner/repo/workspaces/box",
+        authorization: "token session-secret",
+        body: undefined
+      }
+    ])
   })
   it("renders persisted box details even when SSH is not ready", async () => {
     const { c, request } = await fixture()
-    request.mockResolvedValueOnce({
+    request.enqueue({
       id: "box",
       status: "running",
       ssh_host: "guest",
       created_at: new Date(Date.now() - 7200000).toISOString()
-    }).mockRejectedValueOnce(apiError(503))
+    }).enqueue(apiError(503))
     expect(await workspaces["workspace view"]!(c, { id: "box" }, options)).toMatchObject({
       ssh: { host: "guest", command: "ssh guest" },
       uptime: "2h 0m"
@@ -916,7 +958,7 @@ describe("workspace selection and local changes", () => {
   })
   it("parses jj revisions, changes, bookmarks, and conflicts", async () => {
     const { c, exec } = await fixture()
-    exec.mockImplementation(async (_command, args) =>
+    exec.handle(async (_command, args) =>
       args[0] === "diff"
         ? "M changed.ts\nC {changed.ts => copy.ts}\n"
         : args[0] === "file"
@@ -933,7 +975,11 @@ describe("workspace selection and local changes", () => {
       change_id: "change",
       conflicts: ["conflict.ts"]
     })
-    expect(exec).toHaveBeenCalledWith("jj", ["file", "list", "-r", "change", "-T", "if(conflict, path ++ \"\\n\")"])
+    expect(exec.calls).toContainEqual([
+      "jj",
+      ["file", "list", "-r", "change", "-T", "if(conflict, path ++ \"\\n\")"],
+      {}
+    ])
     expect(await local["bookmark list"]!(c, {}, {})).toEqual([{
       name: "main",
       target_change_id: "change",
@@ -947,39 +993,42 @@ describe("workspace selection and local changes", () => {
 describe("stack lifecycle", () => {
   const changes = [{ change_id: "abcdefgh", position: 0, pr_number: 7, branch_name: "smithers/abcdefgh" }]
   it.each(["status", "sync", "land", "unsubmit"])("handles an absent active stack for %s", async (action) => {
-    const { c, request } = await fixture()
-    request.mockRejectedValue(apiError(404))
+    const { c, home, request } = await fixture()
+    if (action === "sync") {
+      await checkout(c, home)
+    }
+    request.status(404)
     expect(await stacks[`stack ${action}`]!(c, {}, options)).toMatchObject(
       action === "status" ? { state: "inactive" } : { stack_deleted: false }
     )
   })
   it("submits local changes and persists the resulting PR mapping", async () => {
     const { c, exec, request } = await fixture()
-    exec.mockImplementation(async (_command, args) =>
+    exec.handle(async (_command, args) =>
       args.includes("log") ? args.at(-1)!.startsWith("change_id") ? "abcdefgh\tcommit" : "Fix bug\n\nDetails" : ""
     )
-    request.mockImplementation(async (_method, path, body) =>
+    request.handle(async (_method, path, body) =>
       path.endsWith("/github-proxy")
         ? object(body).method === "POST" ? { number: 7, state: "open", html_url: "https://github.test/pr/7" } : {}
         : { id: "stack" }
     )
     expect(await stacks["stack submit"]!(c, {}, options)).toMatchObject({ pr_numbers: [7], stack_id: "stack" })
-    expect(request).toHaveBeenLastCalledWith(
+    expect(request.calls.at(-1)).toEqual([
       "POST",
       "/api/repos/owner/repo/stacks/active",
       expect.objectContaining({
         target_ref: "main",
         changes: [expect.objectContaining({ change_id: "abcdefgh", pr_number: 7 })]
       })
-    )
-    expect(exec.mock.calls.some(([, args]) => args.includes("push"))).toBe(true)
+    ])
+    expect(exec.calls.some(([, args]) => args.includes("push"))).toBe(true)
   })
   it.each(["success", "failure", "pending"])("refreshes authoritative stack checks (%s)", async (status) => {
     const { c, exec, request } = await fixture()
-    exec.mockImplementation(() => {
+    exec.handle(() => {
       throw new Error("no checkout")
     })
-    request.mockImplementation(async (_method, path, body) => {
+    request.handle(async (_method, path, body) => {
       if (!path.endsWith("/github-proxy")) return { id: "stack", changes }
       const target = String(object(body).path).split("?")[0]!
       if (target.endsWith("check-runs")) {
@@ -1003,8 +1052,9 @@ describe("stack lifecycle", () => {
     ])
   })
   it("lands only after fresh checks and removes the completed stack", async () => {
-    const { c, request } = await fixture()
-    request.mockImplementation(async (_method, path, body) => {
+    const { c, home, request } = await fixture()
+    await checkout(c, home)
+    request.handle(async (_method, path, body) => {
       if (!path.endsWith("/github-proxy")) return { id: "stack", changes }
       const target = String(object(body).path).split("?")[0]!
       if (target.endsWith("check-runs")) return { check_runs: [{ status: "completed", conclusion: "success" }] }
@@ -1016,18 +1066,18 @@ describe("stack lifecycle", () => {
       stack_deleted: true,
       landed: [expect.objectContaining({ pr_number: 7 })]
     })
-    expect(request).toHaveBeenLastCalledWith("DELETE", "/api/repos/owner/repo/stacks/active?target_ref=main")
+    expect(request.calls.at(-1)).toEqual(["DELETE", "/api/repos/owner/repo/stacks/active?target_ref=main"])
   })
   it("closes submitted PRs and removes their branches", async () => {
     const { c, request } = await fixture()
-    request.mockImplementation(async (_method, path) =>
+    request.handle(async (_method, path) =>
       path.endsWith("/github-proxy") ? { state: "open" } : { id: "stack", changes }
     )
     expect(await stacks["stack unsubmit"]!(c, {}, options)).toMatchObject({
       stack_deleted: true,
       prs: [{ pr_number: 7, status: "closed" }]
     })
-    expect(request.mock.calls.some(([, , body]) => object(body).method === "DELETE")).toBe(true)
+    expect(request.calls.some(([, , body]) => object(body).method === "DELETE")).toBe(true)
   })
 })
 
@@ -1246,10 +1296,11 @@ describe("local host service commands", () => {
 
 describe("delegated laptop login", () => {
   it("runs the registered login --agent command and saves issuer metadata", async () => {
-    const { c, home } = await fixture({ SMITHERS_TOKEN: "" })
+    const f = await fixture({ SMITHERS_TOKEN: "" })
+    const { c, home } = f
     let submitted!: Promise<Response>
-    vi.spyOn(Client.prototype, "exec").mockImplementation(async (_command, args) => {
-      const launched = new URL(args.at(-1)!)
+    f.browser(async (url) => {
+      const launched = new URL(url)
       expect(launched.origin).toBe("https://install.example.test")
       expect(launched.searchParams.get("agent")).toBe("claude-code")
       const callback = `http://127.0.0.1:${launched.searchParams.get("callback_port")}/callback`
@@ -1265,7 +1316,7 @@ describe("delegated laptop login", () => {
           expires_at: "2099-01-01T00:00:00Z"
         })
       })
-      return ""
+      await submitted
     })
     const exit = vi.fn(), write = vi.fn()
     await makeCli({ environment: c.env, exit, stdout: { write, isTTY: false, columns: 80 } }).serve(
@@ -1274,6 +1325,7 @@ describe("delegated laptop login", () => {
     )
     expect(exit).not.toHaveBeenCalledWith(1)
     expect((await submitted).status).toBe(200)
+    await f.browserDone()
     const saved = JSON.parse(await readFile(join(home, "auth.json"), "utf8"))
     expect(JSON.stringify(saved)).toContain("claude-code")
     expect(JSON.stringify(saved)).toContain("delegated")
@@ -1284,7 +1336,7 @@ describe("delegated laptop login", () => {
     async (agent) => {
       const { c, exec } = await fixture()
       await expect(auth["auth login"]!(c, {}, { agent })).rejects.toThrow("Invalid external agent")
-      expect(exec).not.toHaveBeenCalled()
+      expect(exec.calls).toHaveLength(0)
     }
   )
 })

@@ -40,6 +40,11 @@ export interface Repository {
   readonly read: (path: string) => string | undefined
   /** The entry names of a project-relative directory; empty when it is not one. */
   readonly list: (path: string) => ReadonlyArray<string>
+  /** Entry metadata, when available, keeps inventories from reading bodies or following directory cycles. */
+  readonly stat?: (path: string) =>
+    | { readonly type: "file" }
+    | { readonly type: "directory"; readonly identity: string }
+    | undefined
 }
 
 /**
@@ -469,6 +474,43 @@ const machineEvidence = (repository: Repository): MachineRecipe => {
 }
 
 /**
+ * The registry's path-named discovery contract, projected to entry paths only:
+ * module entries precede markdown, nested flows remain visible, host-owned and
+ * hidden directories are skipped, and aliases and depth cannot loop the scan.
+ * See agent/registry/docs/concepts/sources.md.
+ */
+const existingFlows = (repository: Repository): Array<string> => {
+  const flows: Array<string> = []
+  const visited = new Set<string>()
+  const visit = (directory: string, depth: number): void => {
+    if (depth > 32) return
+    const info = repository.stat?.(directory)
+    if (repository.stat !== undefined && info?.type !== "directory") return
+    const identity = info?.type === "directory" ? info.identity : directory
+    if (visited.has(identity)) return
+    visited.add(identity)
+    const entries = repository.list(directory)
+    if (depth > 0) {
+      const selected = ["flow.ts", "flow.vibe", "flow.mdx", "SKILL.md"].find((entry) =>
+        entries.includes(entry) && (repository.stat === undefined
+          ? repository.exists(`${directory}/${entry}`)
+          : repository.stat(`${directory}/${entry}`)?.type === "file")
+      )
+      if (selected !== undefined) flows.push(`${directory}/${selected}`)
+    }
+    for (const entry of [...entries].sort()) {
+      if (
+        entry === "node_modules" || entry.startsWith(".") ||
+        (depth === 0 && (entry === "channels" || entry === "connections"))
+      ) continue
+      visit(`${directory}/${entry}`, depth + 1)
+    }
+  }
+  visit(projectFlowsDirectory, 0)
+  return flows.sort()
+}
+
+/**
  * Reads the facts every check consults, once.
  *
  * @category constructors
@@ -511,8 +553,7 @@ export const evidence = (repository: Repository): Evidence => {
     ...workflows,
     ...[".gitlab-ci.yml", ".circleci/config.yml", "Jenkinsfile"].filter((file) => repository.exists(file))
   ]
-  const flows = repository.list(projectFlowsDirectory).map((name) => `${projectFlowsDirectory}/${name}/flow.mdx`)
-    .filter((file) => repository.exists(file))
+  const flows = existingFlows(repository)
   const git = repository.exists(".git")
   const gitConfig = git ? repository.read(".git/config") : undefined
   const github = (gitConfig !== undefined && gitConfig.includes("github.com")) || repository.exists(".github")
@@ -772,6 +813,18 @@ export const repository = (root: string): Repository => ({
       return undefined
     }
   },
+  stat: (path) => {
+    try {
+      const info = statSync(join(root, path))
+      return info.isDirectory()
+        ? { type: "directory", identity: `${info.dev}:${info.ino}` }
+        : info.isFile()
+        ? { type: "file" }
+        : undefined
+    } catch {
+      return undefined
+    }
+  },
   list: (path) => {
     try {
       const full = join(root, path)
@@ -796,6 +849,12 @@ export const memoryRepository = (root: string, files: Readonly<Record<string, st
   const isDirectory = (path: string): boolean => paths.some((file) => file.startsWith(`${path}/`))
   return {
     root,
+    stat: (path) =>
+      Object.hasOwn(files, path)
+        ? { type: "file" }
+        : isDirectory(path)
+        ? { type: "directory", identity: path }
+        : undefined,
     exists: (path) => Object.hasOwn(files, path) || isDirectory(path),
     read: (path) => (Object.hasOwn(files, path) ? files[path] : undefined),
     list: (path) =>

@@ -488,6 +488,13 @@ implement the one the operator picks.
 | `suggestionDocument`, `seatDocument`       |                                                          | The `--json` documents for one suggestion and the chosen seat.                                  |
 | `introLine`, `streamLabel`, `wroteNote`    |                                                          | The three human lines.                                                                          |
 
+The brief inventories existing flows under `.smithers/flows/`, including nested
+directories, without evaluating their modules. Each directory selects `flow.ts`,
+`flow.vibe`, `flow.mdx`, then `SKILL.md` in that order, matching registry
+discovery. Hidden directories, `node_modules`, and the root's `channels` and
+`connections` directories are skipped. Directory aliases and cycles are
+visited once; traversal stops after 32 directory segments.
+
 The implementation writes under the project root and never commits: the grant
 store denies `.git/` and `.flows/`, and there is no process-spawn grant at all.
 

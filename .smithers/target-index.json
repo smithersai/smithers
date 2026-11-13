@@ -92159,6 +92159,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/test/support/backend-fixture.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/test/temporaryEnvironment.ts"
       },
       {

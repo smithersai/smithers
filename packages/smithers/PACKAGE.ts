@@ -211,6 +211,7 @@ const test = Smithers.Shell.Test({
     Smithers.file("test/support/cli-sequencer.ts"),
     Smithers.file("test/support/node-child.ts"),
     Smithers.file("test/support/bin.ts"),
+    Smithers.file("test/support/backend-fixture.ts"),
     Smithers.file("test/temporaryEnvironment.ts"),
     Smithers.file("test/fixtures/cli-exit-observer.ts"),
     Smithers.file("test/fixtures/run-event-orphan-writer.ts"),
