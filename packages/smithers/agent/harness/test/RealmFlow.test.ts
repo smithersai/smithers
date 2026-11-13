@@ -1,7 +1,9 @@
 import { expect, it } from "@effect/vitest"
+import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
 import { Fault } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
-import { RealmFlow } from "../src/index.ts"
+import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
+import { QuickJSLifecycle, QuickJSVariant, RealmFlow } from "../src/index.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 
 const source = `import { Flow, Action } from '@smthrs/flow';
@@ -358,3 +360,81 @@ it.each(
     tag: `RealmFlowError/${code}`
   })
 })
+
+// Inject host faults through Variant; execution and disposal still use real WASM.
+const lifecycleVariant = () => {
+  const state = { allocated: 0, evaluated: 0, contextsDisposed: 0, runtimesDisposed: 0, hostFailure: false }
+  const base = singlefile as unknown as QuickJSSyncVariant
+  const variant: QuickJSSyncVariant = {
+    ...base,
+    importFFI: async () => {
+      const FFI = await base.importFFI()
+      return class extends FFI {
+        constructor(...args: ConstructorParameters<typeof FFI>) {
+          super(...args)
+          const allocate = this.QTS_NewRuntime
+          const evaluate = this.QTS_Eval
+          const freeContext = this.QTS_FreeContext
+          const freeRuntime = this.QTS_FreeRuntime
+          this.QTS_NewRuntime = () => {
+            state.allocated++
+            return allocate()
+          }
+          this.QTS_Eval = (...args) => {
+            state.evaluated++
+            if (state.hostFailure) throw new RangeError("private-host-evaluation-failure")
+            return evaluate(...args)
+          }
+          this.QTS_FreeContext = (...args) => {
+            state.contextsDisposed++
+            return freeContext(...args)
+          }
+          this.QTS_FreeRuntime = (...args) => {
+            state.runtimesDisposed++
+            return freeRuntime(...args)
+          }
+        }
+      }
+    }
+  }
+  return { state, variant }
+}
+
+it.effect("refuses runtimes quarantined by another consumer of the compiled module", () =>
+  Effect.gen(function*() {
+    const { state, variant } = lifecycleVariant()
+    const input = { source, payload: { value: 4 }, expectedTag: "example", allowedActions: ["read"] }
+    const module = yield* QuickJSVariant.compiledModule.pipe(Effect.provide(QuickJSVariant.layerVariant(variant)))
+    QuickJSLifecycle.abandon(module)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = yield* Effect.result(
+        RealmFlow.step(input).pipe(Effect.provide(QuickJSVariant.layerVariant(variant)))
+      )
+      expect(result).toMatchObject({ _tag: "Failure", failure: { code: "runtime_failed" } })
+    }
+    expect(state).toEqual({
+      allocated: 0,
+      evaluated: 0,
+      contextsDisposed: 0,
+      runtimesDisposed: 0,
+      hostFailure: false
+    })
+  }))
+
+it.effect("quarantines host evaluation failures without disposing unsafe runtimes", () =>
+  Effect.gen(function*() {
+    const { state, variant } = lifecycleVariant()
+    const input = { source, payload: { value: 4 }, expectedTag: "example", allowedActions: ["read"] }
+    const evaluate = () => RealmFlow.step(input).pipe(Effect.provide(QuickJSVariant.layerVariant(variant)))
+    expect(yield* evaluate()).toMatchObject({ _tag: "Action", name: "read" })
+    expect(state).toMatchObject({ allocated: 1, evaluated: 1, contextsDisposed: 1, runtimesDisposed: 1 })
+    state.hostFailure = true
+    const result = yield* Effect.result(evaluate())
+    expect(result).toMatchObject({ _tag: "Failure", failure: { code: "runtime_failed" } })
+    expect(JSON.stringify(result)).not.toContain("private-host-evaluation-failure")
+    const module = yield* QuickJSVariant.compiledModule.pipe(Effect.provide(QuickJSVariant.layerVariant(variant)))
+    expect(QuickJSLifecycle.isQuarantined(module)).toBe(true)
+    state.hostFailure = false
+    expect(yield* Effect.result(evaluate())).toMatchObject({ _tag: "Failure", failure: { code: "runtime_failed" } })
+    expect(state).toMatchObject({ allocated: 2, evaluated: 2, contextsDisposed: 1, runtimesDisposed: 1 })
+  }))

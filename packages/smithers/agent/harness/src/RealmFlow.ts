@@ -190,6 +190,7 @@ export const step = (input: Input): Effect.Effect<Result, RealmFlowError, QuickJ
     const clock = yield* Clock.Clock
     return yield* Effect.try({
       try: () => {
+        if (QuickJSLifecycle.isQuarantined(module)) throw new RealmFlowError({ code: "runtime_failed" })
         if (BoundedJson.encodedStringBytes(input.source, 256 * 1024) === undefined) {
           throw new RealmFlowError({ code: "limit_exceeded" })
         }
@@ -205,9 +206,18 @@ export const step = (input: Input): Effect.Effect<Result, RealmFlowError, QuickJ
           return limited
         })
         const context = runtime.newContext()
+        let abandoned = false
         try {
           const evaluate = (code: string): string => {
-            const evaluated = context.evalCode(code)
+            let evaluated: ReturnType<typeof context.evalCode>
+            try {
+              evaluated = context.evalCode(code)
+            } catch {
+              // A host throw can leave WASM unsafe to dispose, including its context.
+              abandoned = true
+              QuickJSLifecycle.abandon(module)
+              throw new RealmFlowError({ code: "runtime_failed" })
+            }
             if (evaluated.error !== undefined) {
               evaluated.error.dispose()
               throw new RealmFlowError({ code: limited ? "limit_exceeded" : "execution_failed" })
@@ -234,8 +244,10 @@ const output = JSON.stringify(result); if (new TextEncoder().encode(output).byte
           if (parsed._tag === "Refused") throw new RealmFlowError({ code: parsed.code })
           return parsed
         } finally {
-          context.dispose()
-          runtime.dispose()
+          if (!abandoned) {
+            context.dispose()
+            runtime.dispose()
+          }
         }
       },
       catch: (error) => error instanceof RealmFlowError ? error : new RealmFlowError({ code: "invalid_source" })
