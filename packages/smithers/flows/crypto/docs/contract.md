@@ -157,7 +157,14 @@ resolving explicit local bindings. Local shadowing and minifier binding renames 
 unrecognized outer bindings still use first-use numbering. This uses an
 explicit list, independent of which globals the current host installs.
 
-This correction changes `resumeDigest` for callbacks reading these globals.
+A prefix update (`++` or `--`) after a line break following an `if`, `while`,
+`for`, `for await` or `with` head remains that statement's body. An explicit
+empty body (`;`) changes the shape and `resumeDigest`. After a real operand,
+the same line break still ends the expression statement. A `do...while` tail
+also keeps its statement boundary when its semicolon is omitted.
+
+These corrections change `resumeDigest` for callbacks reading these globals
+or using a prefix update after a statement head across a line break.
 The exact-source `digest` is unchanged. Persisted identities are not rewritten:
 an unchanged exact-source identity can still match, but a resume relying on
 an old normalized identity can be refused as `plan_changed`. Keep the old

@@ -500,7 +500,7 @@ describe("sourceShape: tokens", () => {
     expect(sourceShape("e => { e++\nf }")).toBe("$0 => { $0 ++ $f0 }")
     expect(sourceShape("e => [e,\n--f]")).toBe("$0 => [ $0 , -- $f0 ]")
     expect(sourceShape("e => { if (e)\n--e; e[0]\n--e; 'a'\n++e; `b`\n--e; this\n++e; e++\n++e; {}\n++e }")).toBe(
-      "$0 => { if ( $0 ) ; -- $0 ; $0 [ 0 ] ; -- $0 ; 'a' ; ++ $0 ; `b` ; -- $0 ; this ; ++ $0 ; $0 ++ ; ++ $0 ; { } ; ++ $0 }"
+      "$0 => { if ( $0 ) -- $0 ; $0 [ 0 ] ; -- $0 ; 'a' ; ++ $0 ; `b` ; -- $0 ; this ; ++ $0 ; $0 ++ ; ++ $0 ; { } ; ++ $0 }"
     )
     expect(sourceShape("e => { return\n++e; f(`a${\n++e}`) }")).toBe("$0 => { return ; ++ $0 ; $f0 ( `a${ ++ $0 }` ) }")
     expect(sourceShape("e => {\u2028return\u2029e\r\n}")).toBe("$0 => { return ; $0 }")
@@ -532,6 +532,12 @@ describe("sourceShape: tokens", () => {
         "class",
         "class A",
         "catch (",
+        "do",
+        "do x",
+        "do {} while",
+        "do {} while (",
+        "do {} while [x]",
+        "do {} while (]",
         "for",
         "for (let",
         "let",
@@ -557,6 +563,174 @@ describe("sourceShape: tokens", () => {
   it("stops following nested statements past a bound, still renaming every token", () => {
     const nested = `${"if (t) ".repeat(300)}f(t)`
     expect(sourceShape(`e => { for (let t of e) ${nested}; return t }`)).toContain("return $1 }")
+  })
+})
+
+describe("sourceShape: prefix updates after statement heads", () => {
+  it.each(["++", "--"])("distinguishes conditional %s from an empty if body", (operator) => {
+    const conditional = Function(`return (v, x) => { if (v)\n${operator}x; return x }`)() as (
+      v: boolean,
+      x: number
+    ) => number
+    const unconditional = Function(`return (v, x) => { if (v);\n${operator}x; return x }`)() as typeof conditional
+    expect(conditional(false, 0)).toBe(0)
+    expect(unconditional(false, 0)).toBe(operator === "++" ? 1 : -1)
+    expect(conditional(true, 0)).toBe(unconditional(true, 0))
+    expect(sourceShape(conditional.toString())).not.toBe(sourceShape(unconditional.toString()))
+    expect(functionIdentity(conditional).resumeDigest).not.toBe(functionIdentity(unconditional).resumeDigest)
+  })
+
+  it.each([
+    "if (v)",
+    "if ((Boolean(v)))",
+    "if (v) if (v)",
+    "if (v) while ((v))",
+    "while (v) if ((v))",
+    "do ; while (v) while (v)",
+    "do x\nwhile (v)\nwhile (v)",
+    "do if (v) x++\nwhile (v) x++\nwhile (v)",
+    "for (; v;)",
+    "for (const item of v)",
+    "for await (const item of v)",
+    "for /* head */ await /* iterable */ (const item of v)",
+    "with (v)"
+  ])("keeps the prefix update as the body of %s", (head) => {
+    for (const operator of ["++", "--"]) {
+      for (const gap of ["\n", "\r\n", "\u2028", "\u2029", "/*\n*/", "// gap\n"]) {
+        const source = `async (v, x) => { ${head}${gap}${operator}x; return x }`
+        const inline = `async (v, x) => { ${head} ${operator}x; return x }`
+        const empty = `async (v, x) => { ${head};${gap}${operator}x; return x }`
+        // Parse the real callbacks without executing loops or reading free names.
+        const callback = Function(`return ${source}`)() as () => unknown
+        const changed = Function(`return ${empty}`)() as () => unknown
+        expect(sourceShape(callback.toString())).toBe(sourceShape(inline))
+        expect(sourceShape(callback.toString())).not.toBe(sourceShape(changed.toString()))
+        expect(functionIdentity(callback).resumeDigest).not.toBe(functionIdentity(changed).resumeDigest)
+      }
+    }
+  })
+
+  it.each([
+    "x",
+    "(x)",
+    "Number(x)",
+    "v[0]",
+    "v.if(x)",
+    "v?.if(x)",
+    "v.while(x)",
+    "v?.for(x)",
+    "v.with(x)"
+  ])("retains the operand ASI boundary after %s", (operand) => {
+    for (const operator of ["++", "--"]) {
+      const source = `(v, x) => { ${operand}\n${operator}x; return x }`
+      const explicit = `(v, x) => { ${operand};\n${operator}x; return x }`
+      const callback = Function(`return ${source}`)() as () => unknown
+      const equivalent = Function(`return ${explicit}`)() as () => unknown
+      expect(sourceShape(callback.toString())).toBe(sourceShape(equivalent.toString()))
+      expect(functionIdentity(callback).resumeDigest).toBe(functionIdentity(equivalent).resumeDigest)
+    }
+  })
+
+  it.each([
+    "do {} while (v)",
+    "do ; while (v)",
+    "do x++; while (v)",
+    "do x++\nwhile (v)",
+    "do if (v) x++\nwhile (v)",
+    "do if (v) x++\nelse x--\nwhile (v)",
+    "do if (v) x++\nelse while (v) x--\nwhile (v)",
+    "do while (v) x++\nwhile (v)",
+    "do for (; v;) x++\nwhile (v)",
+    "do label: if (v) x++\nwhile (v)",
+    "do do x++\nwhile (v)\nwhile (v)",
+    "do do {} while (v); while (v)",
+    "do x.while(v)\nwhile (v)",
+    "do x?.while(v)\nwhile (v)",
+    "do x.else(v)\nwhile (v)",
+    "do x?.else(v)\nwhile (v)"
+  ])("retains ASI after the do-while tail in %s", (body) => {
+    for (const operator of ["++", "--"]) {
+      for (const gap of ["\n", "/*\n*/"]) {
+        const source = `(v, x) => { ${body}${gap}${operator}x; return x }`
+        const explicit = `(v, x) => { ${body};${gap}${operator}x; return x }`
+        const callback = Function(`return ${source}`)() as () => unknown
+        const equivalent = Function(`return ${explicit}`)() as () => unknown
+        expect(sourceShape(callback.toString())).toBe(sourceShape(equivalent.toString()))
+        expect(functionIdentity(callback).resumeDigest).toBe(functionIdentity(equivalent).resumeDigest)
+      }
+    }
+  })
+
+  it.each([255, 256, 257, 258, 1024])("retains do-while tail ASI after %s nested statement heads", (depth) => {
+    for (const operator of ["++", "--"]) {
+      const body = `do ${"if (v) ".repeat(depth)}x++; while (v)`
+      const source = `(v, x) => { ${body}\n${operator}x; return x }`
+      const explicit = `(v, x) => { ${body};\n${operator}x; return x }`
+      const callback = Function(`return ${source}`)() as (v: boolean, x: number) => number
+      const equivalent = Function(`return ${explicit}`)() as typeof callback
+      expect(callback(false, 0)).toBe(equivalent(false, 0))
+      expect(sourceShape(callback.toString())).toBe(sourceShape(equivalent.toString()))
+      expect(functionIdentity(callback).resumeDigest).toBe(functionIdentity(equivalent).resumeDigest)
+    }
+  })
+
+  it("preserves implicit do-while semicolons under generated nested statements", () => {
+    FastCheck.assert(
+      FastCheck.property(
+        FastCheck.constantFrom("++", "--"),
+        FastCheck.constantFrom("\n", "\r\n", "\u2028", "\u2029", "/*\n*/", "// gap\n"),
+        FastCheck.array(FastCheck.constantFrom("if", "while", "for", "do", "block"), { maxLength: 8 }),
+        (operator, gap, wrappers) => {
+          let body = `x${operator}`
+          for (const wrapper of wrappers) {
+            if (wrapper === "do") body = `do ${body}${gap}while (v)`
+            else if (wrapper === "block") body = `{ ${body} }`
+            else body = `${wrapper === "for" ? "for (; v;)" : `${wrapper} (v)`}${gap}${body}`
+          }
+          const source = `(v, x) => { do ${body}${gap}while (v)${gap}${operator}x; return x }`
+          const explicit = `(v, x) => { do ${body}${gap}while (v);${gap}${operator}x; return x }`
+          const callback = Function(`return ${source}`)() as (v: boolean, x: number) => number
+          const equivalent = Function(`return ${explicit}`)() as typeof callback
+          expect(callback(false, 0)).toBe(equivalent(false, 0))
+          expect(sourceShape(callback.toString())).toBe(sourceShape(equivalent.toString()))
+          expect(functionIdentity(callback).resumeDigest).toBe(functionIdentity(equivalent).resumeDigest)
+        }
+      ),
+      {
+        numRuns: Number(process.env.FC_NUM_RUNS ?? 100),
+        ...(process.env.FC_SEED === undefined ? {} : { seed: Number(process.env.FC_SEED) })
+      }
+    )
+  })
+
+  it("preserves conditional update behavior under nested heads, line breaks and binding renames", () => {
+    FastCheck.assert(
+      FastCheck.property(
+        FastCheck.constantFrom("++", "--"),
+        FastCheck.constantFrom("\n", "\r\n", "\u2028", "\u2029", "/*\n*/", "// gap\n"),
+        FastCheck.integer({ min: 1, max: 8 }),
+        FastCheck.integer({ min: 0, max: 5 }),
+        FastCheck.integer({ min: -1000, max: 1000 }),
+        (operator, gap, heads, depth, initial) => {
+          const head = `if (${"(".repeat(depth)}v${")".repeat(depth)}) `.repeat(heads).trimEnd()
+          const source = `(v, x) => { ${head}${gap}${operator}x; return x }`
+          const empty = `(v, x) => { ${head};${gap}${operator}x; return x }`
+          const conditional = Function(`return ${source}`)() as (v: boolean, x: number) => number
+          const unconditional = Function(`return ${empty}`)() as typeof conditional
+          expect(conditional(false, initial)).toBe(initial)
+          expect(unconditional(false, initial)).toBe(initial + (operator === "++" ? 1 : -1))
+          expect(sourceShape(source)).not.toBe(sourceShape(empty))
+          expect(functionIdentity(conditional).resumeDigest).not.toBe(functionIdentity(unconditional).resumeDigest)
+          expect(sourceShape(source)).toBe(
+            sourceShape(source.replaceAll(/\bv\b/g, "ready").replaceAll(/\bx\b/g, "value"))
+          )
+        }
+      ),
+      {
+        numRuns: Number(process.env.FC_NUM_RUNS ?? 100),
+        ...(process.env.FC_SEED === undefined ? {} : { seed: Number(process.env.FC_SEED) })
+      }
+    )
   })
 })
 

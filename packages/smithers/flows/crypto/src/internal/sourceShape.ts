@@ -331,6 +331,8 @@ interface Token {
   readonly text: string
   /** A line terminator comes between this token and the one before it. */
   readonly newline: boolean
+  /** Closes a statement head rather than an operand. */
+  readonly statementHead: boolean
 }
 
 const idStart = /[$_\p{ID_Start}]/u
@@ -489,7 +491,7 @@ const tokenize = (source: string): ReadonlyArray<Token> => {
       )
     }
     afterStatementHead = kind === "punctuator" && text === ")" && parentheses.pop() === true
-    tokens.push({ kind, text, newline })
+    tokens.push({ kind, text, newline, statementHead: afterStatementHead })
     newline = false
     index = end
   }
@@ -673,7 +675,7 @@ export const sourceShape = (source: string): string => {
    * `stops` (a `:` only past every `?`), or a closer of an enclosing group.
    * Groups inside are skipped whole.
    */
-  const until = (start: number, stops: ReadonlySet<string>, limit = count): number => {
+  const until = (start: number, stops: ReadonlySet<string>, limit = count, doBody = false): number => {
     let index = start
     let conditionals = 0
     while (index < limit) {
@@ -689,6 +691,10 @@ export const sourceShape = (source: string): string => {
       ) {
         return index
       }
+      if (
+        doBody && (word(index, "while") || word(index, "else")) &&
+        !is(index - 1, ".") && !is(index - 1, "?.")
+      ) return index
       if (is(index, "?")) conditionals++
       else if (is(index, ":") && conditionals > 0) conditionals--
       else if (token.kind === "punctuator" && stops.has(token.text)) return index
@@ -697,37 +703,66 @@ export const sourceShape = (source: string): string => {
     return Math.min(index, limit)
   }
 
-  /** The last token of the statement that starts at `start`. */
-  const statementEnd = (start: number, depth: number): number => {
-    const token = tokens[start]
-    if (token === undefined || depth > 256) return last
-    if (is(start, "{")) return after(start) - 1
-    if (token.kind === "name") {
-      switch (token.text) {
-        case "if": {
-          const end = statementEnd(after(start + 1), depth + 1)
-          return word(end + 1, "else") ? statementEnd(end + 2, depth + 1) : end
+  /** The last token of a statement; a do body also ends before its tail or an enclosing else. */
+  const statementEnd = (start: number, depth: number, doBody = false): number => {
+    // Continuations avoid recursive stack limits when recognizing a do-while tail.
+    const pending: Array<{ kind: "if" | "do"; depth: number; doBody: boolean }> = []
+    statement: while (true) {
+      const token = tokens[start]
+      let end: number
+      if (token === undefined || (!doBody && depth > 256)) end = last
+      else if (is(start, "{")) end = after(start) - 1
+      else {
+        switch (token.kind === "name" ? token.text : "") {
+          case "if":
+            pending.push({ kind: "if", depth, doBody })
+            start = after(start + 1)
+            depth++
+            continue
+          case "for":
+          case "while":
+          case "with":
+            start = after(word(start + 1, "await") ? start + 2 : start + 1)
+            depth++
+            continue
+          case "do":
+            pending.push({ kind: "do", depth, doBody })
+            start++
+            depth++
+            continue
+          case "try":
+            end = after(start + 1) - 1
+            if (word(end + 1, "catch")) end = after(is(end + 2, "(") ? after(end + 2) : end + 2) - 1
+            if (word(end + 1, "finally")) end = after(end + 2) - 1
+            break
+          case "switch":
+            end = after(after(start + 1)) - 1
+            break
+          default:
+            if (token.kind === "name" && is(start + 1, ":")) {
+              start += 2
+              depth++
+              continue
+            }
+            end = until(start, statementStops, count, doBody)
+            if (!is(end, ";")) end--
         }
-        case "for":
-        case "while":
-        case "with":
-          return statementEnd(after(word(start + 1, "await") ? start + 2 : start + 1), depth + 1)
-        case "do": {
-          const close = after(statementEnd(start + 1, depth + 1) + 2) - 1
-          return is(close + 1, ";") ? close + 1 : close
-        }
-        case "try": {
-          let end = after(start + 1) - 1
-          if (word(end + 1, "catch")) end = after(is(end + 2, "(") ? after(end + 2) : end + 2) - 1
-          return word(end + 1, "finally") ? after(end + 2) - 1 : end
-        }
-        case "switch":
-          return after(after(start + 1)) - 1
       }
-      if (is(start + 1, ":")) return statementEnd(start + 2, depth + 1)
+      while (pending.length > 0) {
+        const parent = pending.pop()!
+        depth = parent.depth
+        doBody = parent.doBody
+        if (parent.kind === "do") {
+          const close = after(end + 2) - 1
+          end = is(close + 1, ";") ? close + 1 : close
+        } else if (word(end + 1, "else")) {
+          start = end + 2
+          depth++
+          continue statement
+        }
+      }
+      return end
     }
-    const end = until(start, statementStops)
-    return is(end, ";") ? end : end - 1
   }
 
   const root: Scope = { parent: undefined, names: undefined, end: last, function: true }
@@ -743,6 +778,8 @@ export const sourceShape = (source: string): string => {
   const bodies = new Set<number>()
   // The `[` of a computed member key.
   const computed = new Set<number>()
+  // A do-while tail ends a statement even when its semicolon is omitted.
+  const doWhileEnds = new Set<number>()
 
   const declare = (index: number, target: Scope): void => {
     const name = tokens[index]!.text
@@ -876,6 +913,12 @@ export const sourceShape = (source: string): string => {
           bodies.add(body)
         }
         return
+      case "do": {
+        const tail = statementEnd(index + 1, 0, true) + 1
+        const close = pair[tail + 1]!
+        if (word(tail, "while") && is(tail + 1, "(") && close >= 0 && is(close, ")")) doWhileEnds.add(close)
+        return
+      }
       case "for": {
         const start = word(index + 1, "await") ? index + 2 : index + 1
         if (!is(start, "(")) return
@@ -940,7 +983,8 @@ export const sourceShape = (source: string): string => {
     if (
       token.newline && previous !== undefined &&
       ((previous.kind === "name" && restricted.has(previous.text)) ||
-        ((token.text === "++" || token.text === "--") && endsOperand(previous)))
+        ((token.text === "++" || token.text === "--") && endsOperand(previous) &&
+          (!previous.statementHead || doWhileEnds.has(index - 1))))
     ) shape.push(";")
     if (
       top.kind === "class" && !top.key && top.conditionals === 0 && token.newline && ended && startsMember(token) &&
