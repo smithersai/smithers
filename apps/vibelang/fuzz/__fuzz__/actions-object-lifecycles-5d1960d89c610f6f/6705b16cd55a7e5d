@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 10
+bias 4
+null-prototype false
+key 274418192
+tape Ysjf6sh5EbAgP24yakQUhlcT8UXr1sn2Olgr_naV_bFhtHZsuM7xOCzPqFKEumgUq_5lo00K3hGUSw7GtX-M4bk-2bl49Zcy8_Pnpzi0lWMnk-aI9WHuoP0sB8NPjQjMRqmRwAeF0CPkJjt889thQIzoQkXjF3IU3uJj6A-_ZSPrVN-D0swVS0iat5Ssmy-P8_OHqc2YBAJ5Owh89BezLtSrHzryaCMCeWFsL_d5PNaxHKxLgqY6AFQtae0
+schedule-key 266158651
+schedule 
+signature "ReturnedFalse"
+path 2.5.4.9.4.4
+codec "json"
+value "[{\"op\":\"alarm\",\"id\":2,\"flow\":0,\"well\":false,\"role\":\"maintainer\"},{\"op\":\"cancel\",\"id\":18,\"flow\":0,\"well\":false,\"role\":\"community\"}]"
+# ReturnedFalse
+# [{"op":"alarm","id":2,"flow":0,"well":false,"role":"maintainer"},{"op":"cancel","id":18,"flow":0,"well":false,"role":"community"}]

@@ -67,7 +67,8 @@ it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Inpu
           const answer = try w.directory.cancel(id, op.role, w.person.id)
           if (answer !== null && !refusals.includes(answer)) return false
           // A start refused after recording its request leaves a terminal failed row, so the rows decide, not the start's answer.
-          const recorded = (try Runs.read((try w.object(id)).sequencer)).some((row) => row.id === id)
+          // The rows are the recorded route's: a Post's generated `-reply` child lives in its root's object (0023).
+          const recorded = (try Runs.read((try w.object(try w.directory.root(id))).sequencer)).some((row) => row.id === id)
           if (recorded === (answer === "not-found")) return false
         }
         if (op.op === "alarm" && used.has(id)) {
