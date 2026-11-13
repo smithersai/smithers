@@ -591,8 +591,12 @@ describe.runIf(process.env.SMITHERS_CLAUDE_CODE_SMOKE === "1")("ClaudeCode again
       text:
         "You drive a JavaScript runtime one cell at a time. Reply with exactly one fenced ```cell block holding the next cell's program, and nothing else. Each user message after the first reports what the last cell returned."
     })]
-    const turn = (messages: ReadonlyArray<ModelRequest.Message>) =>
-      run(seat, request(messages, { system, cacheKey: sessionId })).then(settled)
+    const usages: Array<ModelEvent.ModelEvent> = []
+    const turn = async (messages: ReadonlyArray<ModelRequest.Message>) => {
+      const events = await run(seat, request(messages, { system, cacheKey: sessionId }))
+      usages.push(...events.filter((event) => event.type === "usage"))
+      return settled(events)
+    }
     const opening = [user("Compute 1 + 1 in one cell. After it returns, run a cell that returns 'done'.")]
     const one = await turn(opening)
     const afterOne = [...opening, one, user("The cell returned 2.")]
@@ -610,5 +614,10 @@ describe.runIf(process.env.SMITHERS_CLAUDE_CODE_SMOKE === "1")("ClaudeCode again
     expect(texts[0]).toContain("1 + 1")
     expect(texts[1]).toContain("done")
     expect(texts[2]).toContain("steered")
+    // The real Claude Code says how much of each turn's output was thinking.
+    expect(usages).toHaveLength(3)
+    for (const usage of usages) {
+      expect(usage).toMatchObject({ outputTokens: expect.any(Number), reasoningTokens: expect.any(Number) })
+    }
   })
 })
