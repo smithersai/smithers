@@ -73,7 +73,8 @@ const whenAborted = (signal: AbortSignal) =>
  * the branch's id once it is ready. Nobody signed in, as sign-in's row says, it shows sign in without running
  * `branch/track`, which ChatApi would refuse. The browser offline before `branch/track` answers, it answers none at
  * once and shows `offline`; once the browser is back online, the route opens again (`BranchRoute`), unless `signal`,
- * the navigation's, was aborted: a newer navigation took over, or the page closed.
+ * the navigation's, was aborted: a newer navigation took over, or the page closed. Cancelling also releases a wait
+ * on `branch/track` without interrupting its run in the tab's scope or changing the newer navigation's page.
  */
 export const open = (owner: string, repo: string, ref: string, signal?: AbortSignal) =>
   Effect.gen(function* () {
@@ -119,15 +120,16 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
       })
     yield* setCurrent({ owner, repo, name: ref, status: "tracking", ...empty })
     yield* Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "tracking" }))
+    // Cancellation releases both waits; `stillCurrent` settles it as superseded.
+    const released = signal === undefined
+      ? connectionIs("offline")
+      : Effect.raceFirst(connectionIs("offline"), whenAborted(signal))
     // A file's loader can start before sign-in's first answer. Keep the route
     // usable offline, but never interpret loading as permission to track.
-    yield* Effect.raceFirst(identityReady, signal === undefined
-      ? connectionIs("offline")
-      : Effect.raceFirst(connectionIs("offline"), whenAborted(signal)))
+    yield* Effect.raceFirst(identityReady, released)
     yield* stillCurrent
     if (yield* signedOut) return yield* refused("sign_in")
-    // The run goes on in the tab's scope whether or not this page still waits: offline, it spends its retries as any
-    // run does, and settles.
+    // The run goes on in the tab's scope whether the page went offline or its navigation was cancelled.
     const tracking = yield* Effect.forkIn(
       Effect.result(
         (yield* FlowDispatch).dispatch(
@@ -142,9 +144,9 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
     )
     const answered = yield* Effect.raceFirst(
       Effect.map(Fiber.join(tracking), Option.some),
-      Effect.as(connectionIs("offline"), Option.none()),
+      Effect.as(released, Option.none()),
     )
-    // The tab moved on while the branch was tracked (another branch's page, or home): the answer isn't this page's.
+    // A superseded or cancelled navigation must not change the current page.
     yield* stillCurrent
     if (Option.isNone(answered)) {
       yield* Effect.ignore(conversations.restored)

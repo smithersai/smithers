@@ -403,6 +403,41 @@ describe("opening a branch", () => {
     expect(reopened).toBe(1)
   }, WITHIN)
 
+  test("cancelling the navigation while the branch is tracked online settles the page at once, and the run goes on", async () => {
+    const tab = await open()
+    const chat = await tab.runtime.runPromise(Effect.service(Chat))
+    chat.queries.connection.startSyncImmediate()
+    // GitHub holds its answer, as a slow server or engine would, and the browser stays online: nothing else ends the
+    // wait.
+    const release = tab.api.branches.github.hold()
+    const abandoned = new AbortController()
+    const opening = tab.actions.open("octo", "hello", "feature/one", abandoned.signal)
+    try {
+      await until(() => expect(tab.api.branches.github.seen).toHaveLength(1))
+      expect(tab.current()).toMatchObject({ name: "feature/one", status: "tracking", branchId: null })
+
+      expect(chat.queries.connection.toArray[0]?.status).toBe("up")
+
+      // A newer navigation took the page over: the open settles at once, abandoned, and sets nothing of the page.
+      abandoned.abort()
+      await until(() => expect(tab.reopens("abandoned")).toBe(1))
+      expect(await opening).toBeUndefined()
+      expect(chat.queries.connection.toArray[0]?.status).toBe("up")
+      expect(tab.current()).toMatchObject({ name: "feature/one", status: "tracking", branchId: null })
+      expect(tab.opened("offline")).toBe(0)
+      expect(tab.place()).toBeNull()
+    } finally {
+      release()
+      await opening
+    }
+
+    // The run went on in the tab's scope: GitHub's answer tracks the branch, and shows it nowhere.
+    await until(() => expect(tab.dispatched()).toBe(1))
+    expect(await tab.rows()).toEqual([{ name: "feature/one", mode: "open" }, HOME])
+    expect(tab.opened("ready")).toBe(0)
+    expect(tab.place()).toBeNull()
+  }, WITHIN)
+
   test("a tab whose engine can't run fails to open the branch, and keeps the home conversation", async () => {
     const tab = await open({ host: nodeDevice({ engineWorker: failingWorker }) })
     await tab.runtime.runPromise(tab.cache.restored)

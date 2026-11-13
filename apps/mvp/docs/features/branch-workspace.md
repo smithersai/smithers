@@ -63,7 +63,7 @@ The transcript owns the page’s one named `Conversation` landmark, both here an
 | `400`, `413` | not a repository's name, not a branch name git accepts, or a body over 2 KiB |
 | `503 unavailable` | the forge or Postgres didn't answer; the step tries again for 30 s |
 
-A page waits for sign-in's first answer before running `branch/track`; a visitor shows sign in without sending the member-only request. Going offline or cancelling the navigation releases that wait (`src/features/branch/identity.ts`).
+A page waits for sign-in's first answer before running `branch/track`; a visitor shows sign in without sending the member-only request. Going offline or cancelling the navigation releases that wait (`src/features/branch/identity.ts`). Cancelling while `branch/track` runs also releases the page's wait immediately and counts it as `abandoned`, even while online. The run continues in the tab's scope; its late answer cannot change the current page.
 
 The repository's default branch is recorded `locked` (decision 0007 §5) and is the team's; every other tracked branch is `open` and belongs to the Member who tracked it first (`branches.created_by`).
 
