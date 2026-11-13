@@ -16,7 +16,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { mapMarkdownProse } from "./docs-text.mjs"
+import { mapInlineProse, splitMarkdownCodeBlocks } from "./docs-text.mjs"
 
 const site = resolve(import.meta.dirname, "..")
 const root = resolve(site, "../..")
@@ -36,7 +36,6 @@ const SLUG = "[a-z0-9]+(?:-[a-z0-9]+)*"
 const SLUG_ONLY = new RegExp(`^${SLUG}$`)
 const PAGE_LINK = new RegExp(`^(?:\\./)?(${SLUG})\\.md(#[^\\s)]*)?$`)
 const BLOCK_IMAGE = new RegExp(`^([ \\t]*)!\\[((?:[^\\]\\\\]|\\\\.)+)\\]\\(images/(${SLUG})\\.webp\\)[ \\t]*$`)
-const FENCE = /(^[ \t]*```[^\n]*\n[\s\S]*?^[ \t]*```[ \t]*$)/m
 
 /**
  * Pages the site publishes beside the app's: Install joins the self-host
@@ -118,12 +117,13 @@ const unescape = (text) => text.replace(/\\([!-/:-@[-`{-~])/g, "$1")
 
 /**
  * Rewrites a page body for one destination. A block image on its own line
- * becomes `image(alt, id, indent)`; a sibling page link (`flows.md#anchor`)
+ * becomes `image(alt, id, indent)` with its Markdown alt escapes;
+ * a sibling page link (`flows.md#anchor`)
  * becomes `page(slug, hash)`. Fragments, web links and code stay as written,
  * and any other relative link is left for check-docs to reject.
  */
 export function rewrite(markdown, { image, page }) {
-  const parts = markdown.split(FENCE)
+  const parts = splitMarkdownCodeBlocks(markdown)
   return parts.map((part, index) => {
     if (index % 2 === 1) return part
     // An HTML block runs to the next blank line, so each image gets one on
@@ -136,10 +136,10 @@ export function rewrite(markdown, { image, page }) {
       const shot = BLOCK_IMAGE.exec(line)
       if (!shot) return void lines.push(line)
       if (lines.length > 0 && lines.at(-1).trim() !== "") lines.push("")
-      lines.push(...image(unescape(shot[2]), shot[3], shot[1]).split("\n"))
+      lines.push(...image(shot[2], shot[3], shot[1]).split("\n"))
       if (at + 1 < source.length && !blank(source[at + 1], at + 2 === source.length)) lines.push("")
     })
-    return mapMarkdownProse(lines.join("\n"), (prose) =>
+    return mapInlineProse(lines.join("\n"), (prose) =>
       prose.replace(/(!?)\[([^\]]*)\]\(([^)\s]+)\)/g, (link, bang, label, target) => {
         const sibling = bang ? undefined : PAGE_LINK.exec(target)
         return sibling ? `[${label}](${page(sibling[1], sibling[2] ?? "")})` : link
@@ -154,7 +154,7 @@ export const siteBody = (markdown) =>
     image: (alt, id, indent) => [
       `<figure class="docs-shot">`,
       ...[["light", "dark"], ["dark", "light"]].map(([variant, hidden]) =>
-        `<img src="/images/docs/${id}.${variant}.webp" alt="${attribute(alt)}" width="${SHOT.width}" height="${SHOT.height}" loading="lazy" decoding="async" class="${hidden}:sl-hidden" />`),
+        `<img src="/images/docs/${id}.${variant}.webp" alt="${attribute(unescape(alt))}" width="${SHOT.width}" height="${SHOT.height}" loading="lazy" decoding="async" class="${hidden}:sl-hidden" />`),
       `</figure>`
     ].map((line) => indent + line).join("\n")
   })

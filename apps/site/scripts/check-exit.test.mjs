@@ -28,6 +28,7 @@ const copyPackageRoster = (root) => {
   copy(root, "pnpm-workspace.yaml")
   copy(root, "apps/site/scripts/package-doc-links.mjs")
   symlinkSync(join(repo, "node_modules"), join(root, "node_modules"), "dir")
+  symlinkSync(join(site, "node_modules"), join(root, "apps/site/node_modules"), "dir")
 }
 const check = (root, script) =>
   spawnSync(process.execPath, [join(root, "apps/site/scripts", script), "--check"], { encoding: "utf8", stdio: "pipe" })

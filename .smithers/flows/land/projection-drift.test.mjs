@@ -34,6 +34,7 @@ test("landing projection refuses stale docs and API declarations before issuing 
     mkdirSync(dirname(join(root, path)), { recursive: true })
     copyFileSync(join(repo, path), join(root, path))
   }
+  symlinkSync(join(repo, "apps/site/node_modules"), join(root, "apps/site/node_modules"), "dir")
   write("package.json", JSON.stringify({ name: "landing-drift-fixture", private: true, type: "module", packageManager: "pnpm@11.25.0" }))
   write("pnpm-workspace.yaml", 'verifyDepsBeforeRun: false\npackages:\n  - "packages/example"\n')
   write("packages/example/package.json", JSON.stringify({ name: "@smthrs/example", version: "1.0.0", type: "module", publishConfig: { access: "public", exports: { ".": "./dist/esm/index.js" } } }))

@@ -3,11 +3,12 @@
 // run against a temporary tree.
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
+import { fromMarkdown } from "mdast-util-from-markdown"
 import { copyBody, markdownCopy, parsePage, parseToc, sidebar, siteBody, sitePage } from "./sync-app-docs.mjs"
 
 const site = join(dirname(fileURLToPath(import.meta.url)), "..")
@@ -61,7 +62,7 @@ test("a block screenshot becomes a framed light and dark pair, each shown in its
     assert.equal(siteBody(text), text)
   }
   assert.equal(copyBody("![Home \\[beta\\]](images/repo-home.webp)\nNext.\n"),
-    "![Home [beta]](https://smithers.sh/images/docs/repo-home.light.webp)\n\nNext.\n")
+    "![Home \\[beta\\]](https://smithers.sh/images/docs/repo-home.light.webp)\n\nNext.\n")
 })
 
 test("the site page carries its source, summary and Markdown copy; the copy opens with the title", () => {
@@ -118,6 +119,7 @@ test("the script writes, checks and retires its files in a copied tree", (t) => 
   const root = mkdtempSync(join(tmpdir(), "sync-app-docs-"))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   for (const name of ["sync-app-docs.mjs", "docs-text.mjs"]) cpSync(join(site, "scripts", name), join(root, "apps/site/scripts", name))
+  symlinkSync(join(site, "node_modules"), join(root, "apps/site/node_modules"), "dir")
   const put = (path, text) => {
     mkdirSync(dirname(join(root, path)), { recursive: true })
     writeFileSync(join(root, path), text)
@@ -162,4 +164,105 @@ test("the script writes, checks and retires its files in a copied tree", (t) => 
   assert.equal(existsSync(join(root, "apps/site/src/content/docs/docs/installation.mdx")), true, "pages the projection did not write stay")
   assert.equal(read("apps/site/public/docs/reference/cli.md"), "# CLI reference\n", "another projection's copy stays")
   assert.equal(run("--check").status, 0)
+})
+
+
+test("both docs formats preserve fenced links and screenshot examples verbatim", () => {
+  const tick = String.fromCharCode(96)
+  for (const marker of ["~", tick]) {
+    for (const length of [3, 4, 5, 8]) {
+      for (const indent of ["", "   "]) {
+        const fence = marker.repeat(length)
+        const code = [
+          indent + fence + "md",
+          "[Flows](flows.md)",
+          "![Home](images/repo-home.webp)",
+          marker.repeat(length - 1),
+          "[Flows](flows.md)",
+          "![Home](images/repo-home.webp)",
+          (marker === "~" ? tick : "~").repeat(length),
+          "[Flows](flows.md)",
+          "![Home](images/repo-home.webp)",
+          fence + " not a closing fence",
+          fence + "\u00a0",
+          "    " + fence,
+          "\t" + fence,
+          "[Flows](flows.md)",
+          "![Home](images/repo-home.webp)",
+          indent + marker.repeat(length + 1) + "\t"
+        ].join("\n")
+        for (const [body, link] of [[siteBody, "/docs/flows/"], [copyBody, "https://smithers.sh/docs/flows/"]]) {
+          assert.equal(body("[Flows](flows.md)\n" + code + "\n[Flows](flows.md)\n"),
+            "[Flows](" + link + ")\n" + code + "\n[Flows](" + link + ")\n")
+          const unclosed = fence + "md\n[Flows](flows.md)\n![Home](images/repo-home.webp)"
+          assert.equal(body(unclosed), unclosed)
+        }
+      }
+    }
+  }
+})
+
+test("a screenshot directly before a tilde or longer fence gets a separating blank line", () => {
+  for (const fence of ["~~~", String.fromCharCode(96).repeat(4)]) {
+    const code = fence + "md\n![Home](images/repo-home.webp)\n" + fence + "\n"
+    assert.equal(siteBody("![Home](images/repo-home.webp)\n" + code),
+      siteBody("![Home](images/repo-home.webp)\n") + "\n" + code)
+    assert.equal(copyBody("![Home](images/repo-home.webp)\n" + code),
+      "![Home](https://smithers.sh/images/docs/repo-home.light.webp)\n\n" + code)
+  }
+})
+
+test("Markdown screenshot alt escapes survive copying and decode only for HTML", () => {
+  const alts = [
+    ["Use \\] here", "Use ] here"],
+    ["Use \\[ here", "Use [ here"],
+    ["Use \\\\ here", "Use \\ here"],
+    ["Use \\\\\\] here", "Use \\] here"],
+    ["Home \\[beta\\]", "Home [beta]"],
+    ["Use \\*literal\\* \\& \\<tag\\> \\\"quote\\\"", "Use *literal* &amp; &lt;tag&gt; &quot;quote&quot;"]
+  ]
+  for (const [markdownAlt, htmlAlt] of alts) {
+    const input = "![" + markdownAlt + "](images/repo-home.webp)\n"
+    assert.equal(copyBody(input), "![" + markdownAlt + "](https://smithers.sh/images/docs/repo-home.light.webp)\n")
+    const image = fromMarkdown(copyBody(input)).children[0].children[0]
+    assert.equal(image.type, "image")
+    assert.equal(image.alt, fromMarkdown(input).children[0].children[0].alt)
+    assert.equal(image.url, "https://smithers.sh/images/docs/repo-home.light.webp")
+    assert.equal(siteBody(input), [
+      '<figure class="docs-shot">',
+      ...[["light", "dark"], ["dark", "light"]].map(([variant, hidden]) =>
+        '<img src="/images/docs/repo-home.' + variant + '.webp" alt="' + htmlAlt +
+        '" width="1440" height="900" loading="lazy" decoding="async" class="' + hidden + ':sl-hidden" />'),
+      "</figure>",
+      ""
+    ].join("\n"))
+  }
+})
+
+
+test("code blocks nested in containers and indented code remain literal in both docs formats", () => {
+  const tick = String.fromCharCode(96)
+  for (const fence of ["~~~", tick.repeat(3), tick.repeat(4)]) {
+    for (const [prefix, indent] of [["1. Example\n\n", "    "], ["- Example\n\n", "  "], ["", "> "]]) {
+      const code = prefix + [
+        fence + "md",
+        "[Flows](flows.md)",
+        "![Home](images/repo-home.webp)",
+        fence
+      ].map((line) => indent + line).join("\n") + "\n"
+      assert.equal(siteBody(code), code)
+      assert.equal(copyBody(code), code)
+    }
+  }
+  const code = "    [Flows](flows.md)\n    ![Home](images/repo-home.webp)\n"
+  assert.equal(siteBody(code), code)
+  assert.equal(copyBody(code), code)
+})
+
+
+test("links after a list's code block still publish as list prose", () => {
+  const code = "1. Example\n\n    ~~~txt\n    code\n    ~~~\n\n"
+  const source = code + "    [Flows](flows.md)\n"
+  assert.equal(siteBody(source), code + "    [Flows](/docs/flows/)\n")
+  assert.equal(copyBody(source), code + "    [Flows](https://smithers.sh/docs/flows/)\n")
 })

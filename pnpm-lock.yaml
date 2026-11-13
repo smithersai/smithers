@@ -826,6 +826,9 @@ importers:
       effect:
         specifier: 4.1.1
         version: 4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)
+      mdast-util-from-markdown:
+        specifier: 2.0.3
+        version: 2.0.3(supports-color@10.2.2)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3

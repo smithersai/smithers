@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -24,6 +24,7 @@ test("API and LLM generators preserve inline HTML-comment code", () => {
       const path = `apps/site/scripts/${script}`
       put(path, readFileSync(join(repo, path), "utf8"))
     }
+    symlinkSync(join(repo, "apps/site/node_modules"), join(root, "apps/site/node_modules"), "dir")
     put("packages/repo-targets/scripts/workspace-packages.mjs", 'export const libraryPackages = () => [{ name: "@smthrs/integrations", dir: "packages/integrations", manifest: {} }]\n')
     put("apps/site/scripts/package-doc-links.mjs", 'export const outputRelFor = (value) => value; export const routeFor = (value) => value\n')
     put("packages/integrations/package.json", JSON.stringify({ name: "@smthrs/integrations", description: "Integrations", publishConfig: { access: "public" } }))

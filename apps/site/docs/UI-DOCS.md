@@ -26,7 +26,7 @@ node apps/site/scripts/gen-cli-reference.mjs
 node apps/site/scripts/generate-llms.mjs
 ```
 
-Screenshots publish at `/images/docs/<id>.light.webp` and `.dark.webp` straight from `apps/site/docs/app/images`: `scripts/app-docs-integration.mjs` serves them in `astro dev` and copies them into the build. A page shows one with a block image, `![Alt text](images/<id>.webp)`; the projection renders both variants in a framed figure, and Starlight's `light:sl-hidden` and `dark:sl-hidden` classes show the one that matches the theme.
+Screenshots publish at `/images/docs/<id>.light.webp` and `.dark.webp` straight from `apps/site/docs/app/images`: `scripts/app-docs-integration.mjs` serves them in `astro dev` and copies them into the build. A page shows one with a block image, `![Alt text](images/<id>.webp)`; the projection renders both variants in a framed figure, and Starlight's `light:sl-hidden` and `dark:sl-hidden` classes show the one that matches the theme. The Markdown copy keeps alt-text escapes intact. Fenced code examples stay verbatim in both projections, including tilde fences and longer fences containing shorter ones.
 
 Keep Will's generated description unchanged. `generate-project-copy.mjs` refreshes its marker block from `src/data/project.json`; the README copy belongs to Will.
 
