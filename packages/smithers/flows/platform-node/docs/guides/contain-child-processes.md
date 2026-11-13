@@ -69,9 +69,9 @@ cleans up its owned group; use the handle's `kill`, never an external signal
 to its numeric pid. Failed or unverified cleanup fails close and retains the
 record.
 
-A smaller host composition can use `ProcessReaper.layerSpawner` with a ledger
-and an underlying runtime spawner. This factory includes the native adapter
-whose pipe listeners remain alive through cancellation. Custom platform
+A smaller host composition can use `ProcessReaper.layerSpawner` with only a
+ledger. This factory builds its own native adapter on every platform, with
+pipe listeners that remain alive through cancellation. Custom platform
 authors can pass a lifecycle to `ContainedSpawner.layer` directly. Compose
 the permission decorator above containment so it checks the original command
 before preparation.
@@ -136,4 +136,4 @@ supervisor stops its owned group without requiring a new host. A subsequent
 host with the same `hostId` and durable journal reconciles retained records.
 Read any refusal instead of treating a skipped signal as a successful reap.
 The [process containment](../concepts/process-containment.md) page describes
-`detached: false`, deliberately escaped sessions, and unsupported hosts.
+`detached: false`, deliberately escaped sessions, and platform-specific cleanup guarantees.

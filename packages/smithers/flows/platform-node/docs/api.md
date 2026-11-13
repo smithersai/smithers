@@ -46,7 +46,7 @@ commands use, and fails that operation with `JjError` `not_installed` or
 | ------------------------------- | --------------------------------------------------------------------- |
 | Node.js >=22.19.0               | the minimum this package's `engines` field declares                   |
 | the `smithers-jj-export` helper | `AtomicFileSystem` runs every guarded filesystem operation through it |
-| a POSIX host                    | Windows has none of those primitives and is unsupported               |
+| macOS, Linux, or Windows x64    | a matching native helper must be available                            |
 
 The helper is a real prerequisite, not a soft one, and it fails LATE by
 design. `NodeHost.layer` builds cleanly on a host without it, because the
@@ -204,14 +204,14 @@ type SpawnerOptions = Omit<ContainedSpawner.Options, "platform">
 
 const layerSpawner: (
   options?: SpawnerOptions
-) => Layer.Layer<ChildProcessSpawner, never, ChildProcessSpawner | ProcessLedger>
+) => Layer.Layer<ChildProcessSpawner, never, ProcessLedger>
 ```
 
-Provides a contained spawner without the complete Node or Bun host. Supply a
-`ProcessLedger` and the underlying runtime spawner. On POSIX this factory uses
-the platform's prepared native adapter, whose pipe error listeners live until
-their descriptors close, including writes interrupted by owner loss. On
-Windows it retains the supplied raw runtime spawner. The platform always comes
+Provides a contained spawner without the complete Node or Bun host. Supply only a
+`ProcessLedger`; the factory builds its own native adapter on every platform.
+Its pipe error listeners live until their descriptors close, including writes
+interrupted by owner loss. POSIX owners enforce a process-group cleanup deadline;
+Windows owners join a native job before activation. The platform always comes
 from `process.platform`; `graceMs` defaults to 2,000 milliseconds.
 
 The adapter supports the standard command's stdin/stdout/stderr options and
@@ -252,7 +252,7 @@ the target: group cleanup is explicitly disabled. Explicit stopping of a live
 grouped target also attempts a revalidated ancestry sweep for descendants that
 moved to other groups. That positive-PID sweep is best effort; automatic
 cleanup after natural exit does not promise to reclaim deliberately escaped
-sessions. Windows remains unsupported best effort.
+sessions. Windows owners use a native job for live cleanup.
 
 The supervisor starts the current Node or Bun runtime. Compiled Bun
 applications and Node single-executable applications are refused before target
@@ -453,8 +453,9 @@ the current platform.
 it takes a run whose recorded owner it is not: an owner on a different host reads
 as alive, an owner with the claimant's own pid and another nonce is an earlier
 incarnation and reads as dead, and any other owner on this host reads as alive
-exactly while its pid is signalable. Only `ESRCH` proves death; invalid pids
-and every other signal error count as alive. `Options.crossHostPolicy` is
+unless the pid probe proves it absent. Both probes use the same `ESRCH`-only
+death rule. `EPERM`, `EINVAL`, and unknown signal errors preserve liveness.
+Invalid pids also count as alive. `Options.crossHostPolicy` is
 `"alive" | "lease"` (default `"alive"`); `Options.samePidPolicy` is
 `"reclaim" | "probe"` (default `"reclaim"`).
 
@@ -504,11 +505,13 @@ a later incarnation cannot answer differently is final.
 | `identity-mismatch`   | yes     |
 | `kill-failed`         | no      |
 
-Windows reaping is unsupported best-effort. Windows is an unsupported platform
-and `AtomicFileSystem` fails every operation closed there, but
-`systemFor("win32")` still reaches `taskkill /T /F` through the sweep rather than
-retiring every record unsignalled, because a feature that appears to work
-partially is worse than one that says what it does.
+On Windows, `systemFor("win32")` asks the native helper's `--process-info`
+probe for the pid's creation time. An unavailable identity refuses cleanup;
+a missing pid retires the record as `process-gone`. The host's own pid is
+refused as `own-group`. Verified records are cleaned up with
+`%SystemRoot%\System32\taskkill.exe /T /F`; Windows uses process trees
+rather than POSIX groups. Guarded filesystem operations use the packaged
+Windows x64 helper, just as POSIX hosts use their matching helper.
 
 ## Conformance
 

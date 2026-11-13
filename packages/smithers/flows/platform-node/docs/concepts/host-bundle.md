@@ -1,6 +1,6 @@
 ---
 title: "The host bundle"
-description: "Why the Host surface is a closed set of five tags, which of them this package composes and which it implements, and why there is no shell service, no HTTP wrapper, and no Windows support."
+description: "Why the Host surface is a closed set of five tags, which of them this package composes and which it implements, and how the native filesystem and process adapters differ across platforms."
 sidebar:
   order: 1
 ---
@@ -18,7 +18,7 @@ decorates each of the five with a permission check, so a program that reaches
 the machine has to go through a tag the kernel is watching. A sixth capability
 smuggled in beside them would be authority nobody checked.
 
-Three of the five tags are Effect's own, from `effect/FileSystem`,
+Four of the five tags are Effect's own, from `effect/FileSystem`,
 `effect/Path`, and `effect/process/ChildProcessSpawner` and
 `effect/http/HttpClient`. Smithers provides implementations of them
 rather than wrappers around them, so an ordinary Effect program runs on a
@@ -112,12 +112,13 @@ installs none, so every hop stays a separate request. That is what lets the
 kernel check `net:get` and `net:post` against the host of every URL a request
 actually reaches, redirect targets included.
 
-**There is no Windows support.** `AtomicFileSystem` needs `O_NOFOLLOW`,
-`O_DIRECTORY`, and `dir_fd`, none of which Windows has, so every filesystem
-call fails closed there. `ProcessReaper` still reaches `taskkill /T /F` through
-`systemFor("win32")` rather than retiring every record unsignalled, because a
-reaper that silently discarded records would be worse than one that says what
-it does. Treat it as unsupported best-effort.
+**Native adapters differ across platforms.** `AtomicFileSystem` uses the
+packaged native helper, including the Windows x64 executable. Missing or
+unusable helpers fail guarded operations closed on every platform.
+`ProcessReaper` reads Linux identities from `/proc`, uses `ps` on other POSIX
+hosts, and asks the native helper's `--process-info` probe on Windows.
+Windows cleanup uses `taskkill /T /F` after verifying the recorded identity
+and refusing the host's own pid.
 
 **There is no path-based fallback.** A host with no usable `smithers-jj-export` helper fails
 every guarded filesystem call with `PermissionDenied`. The adapter never

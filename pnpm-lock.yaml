@@ -5823,24 +5823,15 @@ importers:
       '@smthrs/std':
         specifier: 1.0.0-rc.18
         version: link:../../agent/std
-      '@types/ws':
-        specifier: 8.18.2
-        version: 8.18.2
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
-      redis:
-        specifier: 6.2.1
-        version: 6.2.1(@opentelemetry/api@1.9.1)
       undici:
         specifier: 8.12.4
         version: 8.12.4
       vibelang-unplugin:
         specifier: 0.0.12
         version: 0.0.12(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-      ws:
-        specifier: 8.22.0
-        version: 8.22.0
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2

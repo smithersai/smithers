@@ -5,6 +5,7 @@ describe("HostLiveness signal-error documentation", () => {
   for (
     const path of [
       "../src/HostLiveness.ts",
+      "../docs/api.md",
       "../docs/guides/answer-run-ownership.md",
       "../docs/troubleshooting.md"
     ]

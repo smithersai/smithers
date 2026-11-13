@@ -634,13 +634,6 @@ export const windowsSystemWith = (options?: SystemOptions): System => {
 /**
  * Reaping on Windows, which has no process groups: `taskkill /T /F` by pid.
  *
- * **Windows is outside the 1.0.0-rc.0 support contract**
- * (`docs/pages/installation.md`). Full Windows process containment remains
- * under verification. It is kept — and reachable through {@link reap} rather than only
- * by calling it directly — because a reaper that silently retired every win32
- * record would be the "excluded feature that appears to work partially" the
- * release policy forbids. Treat it as unsupported best-effort.
- *
  * The packaged native helper reads creation time from a pinned process handle.
  * A missing helper, malformed reply, or denied query keeps the durable record
  * for retry. Windows has no process groups, so own-group refusal uses the pid.

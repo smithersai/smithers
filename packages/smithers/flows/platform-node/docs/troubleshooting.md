@@ -52,15 +52,15 @@ fails fast instead of buffering without bound.
 **Fix.** Narrow the pattern, or root it at a deeper directory. See
 [match files with a glob pattern](./guides/match-files-with-glob.md).
 
-## Every filesystem call fails on Windows
+## Guarded filesystem calls fail on Windows
 
-**Cause.** This is intended. Windows is an unsupported platform, and
-`AtomicFileSystem` fails every filesystem call closed there rather than
-half-working.
+**Cause.** Windows x64 uses the packaged `smithers-jj-export.exe` helper.
+A missing, unusable, or refused helper fails guarded operations closed, as it
+does on POSIX; Windows does not unconditionally reject filesystem operations.
 
-**Fix.** Run the durable engine on a supported platform. There is no flag to
-enable a partial Windows path: a filesystem that confines some operations and
-not others is worse than one that says it confines none.
+**Fix.** Check the helper's availability and any configured executable override.
+See [configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
+Do not replace guarded operations with unchecked path-based calls.
 
 ## A run's owner reads as alive when the process is gone
 
@@ -127,22 +127,24 @@ record describing a live process.
 **Cause.** The three negative answers are distinct because they authorize
 different decisions. `gone` is evidence: the pid does not exist, so the record
 describes nothing and is retired unsignalled. `unavailable` is the absence of
-evidence: `ps` is missing, unanswerable, or printed something unrecognized.
+evidence: Linux `/proc` data is unreadable or malformed, the POSIX `ps`
+probe cannot answer, or the Windows native helper cannot verify the pid.
 
 **Fix.** Only `gone` may retire a record. `unavailable` must not, or a host
-without `ps` would retire every record it holds.
+without readable process identities would retire every record it holds.
 
 ## Reaping on Windows is weaker
 
-**Cause.** Windows has no process groups and no `lstart`, so two guards cannot
-be answered: the identity check falls back to boot-time comparison alone, and
-there is no own-group refusal to make. The path runs
-`%SystemRoot%\System32\taskkill.exe /T /F` by pid, by absolute path with an
-inert working directory, so a `taskkill.exe` planted in the host's directory
-never runs.
+**Cause.** Windows uses process trees rather than POSIX groups for crash
+recovery. The native helper's `--process-info` probe verifies the pid's creation
+time; an unavailable identity refuses cleanup, and the host's own pid is
+refused as `own-group`. The cleanup path runs
+`%SystemRoot%\System32\taskkill.exe /T /F` by absolute path with an inert
+working directory, so a `taskkill.exe` planted in the host's directory never runs.
+Live containment instead assigns the child to a native job before activation.
 
-**Fix.** Nothing, and do not rely on it. Windows is unsupported; this path is
-best-effort so that a win32 record is not silently retired as if reaped.
+**Fix.** Inspect the sweep's refusal and restore the native helper when identity
+verification is unavailable. An unanswered identity check never authorizes a kill.
 
 ## permission_denied: Language server program is inside the workspace
 

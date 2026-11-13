@@ -114,15 +114,16 @@ these holds:
 
 ## No evidence never authorizes a kill
 
-Two of those guards are questions put to `ps`: this process's own group, and
-when the recorded pid started. Either can go unanswered on a host with no
-usable `ps`.
+Two of those guards are identity questions: this process's own group, and
+when the recorded pid started. Linux answers them from `/proc` for both live
+cleanup and crash recovery, so it needs no `ps` binary. Other POSIX hosts use
+`ps`. Either source can be unreadable or return malformed data.
 
 An unanswered guard refuses. A guard that did not run is not a guard that
 passed, so a record whose identity could not be verified is kept rather than
 signalled.
 
-The probe is deliberately unhelpful to anyone trying to fool it. It runs
+The POSIX `ps` probe is deliberately unhelpful to anyone trying to fool it. It runs
 `/bin/ps` by absolute path, never a `PATH` lookup, under `LC_ALL=C` and `TZ=UTC`
 in a minimal environment, with a five-second `SIGKILL` deadline. Start times
 are parsed explicitly as UTC, independent of the host runtime's timezone.
@@ -130,8 +131,7 @@ Live cleanup on Linux instead reads group membership, start times, and zombie
 state directly from `/proc`, so it works without `procps`. Missing processes
 are skipped; unreadable or malformed data leaves cleanup unverified. Other
 POSIX hosts use `/bin/ps` for live cleanup with the same timezone and parsing.
-The crash-recovery sweep still uses the `ps` probes described here.
-The probe reads the
+The `ps` probe reads the
 `pgid` column as one run of decimal digits and nothing else: `Number.parseInt`
 reads a prefix, so `"12 34"`, `"12abc"`, and `"0x10"` would each become a
 number that is not this host's group, silently pass the own-group comparison,
@@ -177,11 +177,13 @@ the nearest second.
 
 ## Windows
 
-Windows has no `lstart` and no process groups, so two guards cannot be answered
-there: the identity check falls back to the boot-time comparison alone, and
-there is no own-group refusal to make. `taskkill /T /F` walks the tree down
-from the recorded pid instead. This is a documented weaker guarantee on an
-unsupported platform, not an oversight.
+Windows has no POSIX process groups. The native helper's `--process-info`
+probe reports the pid's creation time, its absence, or an unavailable identity.
+The reaper compares that creation time with the ledger and refuses an
+unavailable identity as `identity-unverified`. A record naming the host's own
+pid is refused as `own-group`. Once the guards pass, `taskkill /T /F` walks
+the tree down from the recorded pid. Live containment uses a native job;
+crash recovery uses this verified process-tree cleanup.
 
 ## Next
 

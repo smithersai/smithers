@@ -25,7 +25,8 @@
  * `AtomicFileSystem` is `NodeHost`'s filesystem slot. It executes operations
  * through the packaged `smithers-jj-export --atomic-fs` helper, selected by
  * `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` or `layerWith({ executable })`.
- * A missing helper fails guarded operations closed. Windows is unsupported.
+ * The helper ships for macOS, Linux, and Windows x64. A missing helper fails
+ * guarded operations closed.
  *
  * `NodeRuntime` runs durable flows on Node: `NodeRuntime.layerHost` opens the
  * engine's SQLite file or PostgreSQL database, guards flow bodies on this

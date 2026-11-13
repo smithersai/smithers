@@ -200,11 +200,8 @@
     "@smthrs/run-store": "1.0.0-rc.18",
     "@smthrs/sandbox": "1.0.0-rc.18",
     "@smthrs/std": "1.0.0-rc.18",
-    "@types/ws": "8.18.2",
     "esbuild": "0.28.2",
-    "redis": "6.2.1",
     "undici": "8.12.4",
-    "ws": "8.22.0",
     "vibelang-unplugin": "0.0.12"
   },
   "peerDependencies": {

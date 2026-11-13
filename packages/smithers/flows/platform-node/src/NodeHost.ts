@@ -127,7 +127,7 @@ const absoluteRoot = (root: string): Effect.Effect<string, NodeHostError> =>
 
 /**
  * Stable implementation identities for the raw bundle's five Host slots.
- * Contained POSIX factories replace its spawner with {@link ProcessReaper.layerSpawner}.
+ * Contained factories replace its spawner with {@link ProcessReaper.layerSpawner}.
  * @category models
  * @since 1.0.0-rc.0
  */
@@ -227,10 +227,7 @@ export const layerAt = (repositoryRoot: string): Layer.Layer<NodeHost, NodeHostE
 export const layerContained = (
   options?: ContainedOptions
 ): Layer.Layer<NodeHost, never, ProcessLedger.ProcessLedger> => {
-  const spawner = Layer.provide(
-    ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),
-    Layer.provide(NodeChildProcessSpawner.layer, platform)
-  )
+  const spawner = ProcessReaper.layerSpawner({ graceMs: options?.graceMs })
   return Layer.mergeAll(
     ProcessConfinement.layer(),
     platform,
@@ -256,10 +253,7 @@ export const layerContainedAt = (
   options?: ContainedOptions
 ): Layer.Layer<NodeHost, NodeHostError, ProcessLedger.ProcessLedger> =>
   Layer.unwrap(Effect.map(absoluteRoot(repositoryRoot), (root) => {
-    const spawner = Layer.provide(
-      ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),
-      Layer.provide(NodeChildProcessSpawner.layer, platform)
-    )
+    const spawner = ProcessReaper.layerSpawner({ graceMs: options?.graceMs })
     return Layer.mergeAll(
       ProcessConfinement.layer(),
       platform,

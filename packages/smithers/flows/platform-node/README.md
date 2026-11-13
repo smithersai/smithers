@@ -155,8 +155,10 @@ not need a second dependency for the digest.
 effect and cancellation is fiber interruption, not an `AbortSignal`.
 
 **There is no HTTP service.** An outgoing request is Effect's `HttpClient`,
-provided here as `NodeHttpClient.layerUndici`. Undici installs no redirect
-interceptor, so every hop stays a separate, checkable request.
+provided here as `EgressHttpClient.layer(process.env)`. It honors the egress
+proxy named by `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`, using a direct
+Undici pool when none is configured. Undici installs no redirect interceptor,
+so every hop stays a separate, checkable request.
 
 Both are what lets [`@smthrs/kernel`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/kernel/docs) check
 `proc:spawn` against the rendered command line before any process starts, and

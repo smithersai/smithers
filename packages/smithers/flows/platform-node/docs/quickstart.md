@@ -15,7 +15,7 @@ Each step below is TypeScript; the
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later, on a POSIX host.
+- Node.js 22.19.0 or later, on macOS, Linux, or Windows x64.
 - A project with the packages installed:
   `npm install @smthrs/platform-node@next @smthrs/kernel@next effect`. The
   package ships the `smithers-jj-export` helper the filesystem runs.

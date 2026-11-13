@@ -13,6 +13,63 @@ const installation = readFileSync(new URL("../docs/installation.md", import.meta
 const quickstart = readFileSync(new URL("../docs/quickstart.md", import.meta.url), "utf8")
 
 describe("NodeHost prerequisite documentation", () => {
+  it("documents the contained spawner as a complete native adapter requiring only a ledger", () => {
+    const api = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8")
+    const guide = readFileSync(new URL("../docs/guides/contain-child-processes.md", import.meta.url), "utf8")
+    const section = api.split("## ProcessReaper.layerSpawner")[1]?.split("## ")[0] ?? ""
+    expect(section).toContain("Layer.Layer<ChildProcessSpawner, never, ProcessLedger>")
+    expect(section).not.toContain("underlying runtime spawner")
+    expect(section).not.toContain("supplied raw runtime spawner")
+    expect(guide).not.toContain("underlying runtime spawner")
+    expect(section).toContain("Windows")
+    expect(section).toContain("native job")
+  })
+
+  it("documents the bundle's egress-aware HTTP client", () => {
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
+    expect(readme).toContain("EgressHttpClient.layer(process.env)")
+    expect(readme).not.toContain("provided here as `NodeHttpClient.layerUndici`")
+  })
+
+  it("describes all four Effect host tags and the Linux crash-recovery probe", () => {
+    const host = readFileSync(new URL("../docs/concepts/host-bundle.md", import.meta.url), "utf8")
+    const containment = readFileSync(new URL("../docs/concepts/process-containment.md", import.meta.url), "utf8")
+    expect(host).toContain("Four of the five tags are Effect's own")
+    expect(containment.replace(/\s+/g, " ")).toContain(
+      "Linux answers them from `/proc` for both live cleanup and crash recovery"
+    )
+  })
+
+  it("documents native Windows filesystem and process identity support consistently", () => {
+    for (
+      const path of [
+        "../docs/api.md",
+        "../docs/concepts/host-bundle.md",
+        "../docs/troubleshooting.md",
+        "../docs/installation.md",
+        "../docs/quickstart.md",
+        "../src/ProcessReaper.ts",
+        "../src/index.ts"
+      ]
+    ) {
+      const text = readFileSync(new URL(path, import.meta.url), "utf8")
+      expect(text).not.toMatch(
+        /Windows is (?:an )?unsupported|no Windows support|Every filesystem call fails on Windows/
+      )
+      expect(text).not.toContain("Treat it as unsupported best-effort")
+      expect(text).not.toContain("every filesystem call fails closed there")
+      expect(text).not.toContain("AtomicFileSystem` fails every operation closed there")
+    }
+    for (const path of ["../docs/concepts/process-containment.md", "../docs/troubleshooting.md"]) {
+      const text = readFileSync(new URL(path, import.meta.url), "utf8")
+      expect(text).toContain("`--process-info`")
+      expect(text).toContain("`own-group`")
+      expect(text).not.toContain("boot-time comparison alone")
+      expect(text).not.toContain("no own-group refusal")
+      expect(text).not.toContain("sweep still uses the `ps`")
+    }
+  })
+
   it("requires supported jj for Jj operations, not to build a host bundle", () => {
     const requirements = installation.split("## Host requirements")[1]?.split("###")[0]
     const row = requirements?.split("\n").find((line) => line.includes("jj") && line.includes("0.39.0"))
@@ -30,6 +87,7 @@ describe("NodeHost prerequisite documentation", () => {
 
   it("does not list jj as a prerequisite of the quickstart, which never calls Jj", () => {
     const prerequisites = quickstart.split("## Prerequisites")[1]?.split("## ")[0]
+    expect(prerequisites).not.toContain("on a POSIX host")
     expect(prerequisites).not.toMatch(/\bjj\b(?!-export)/)
     expect(quickstart).not.toMatch(/\bJj\b/)
   })
