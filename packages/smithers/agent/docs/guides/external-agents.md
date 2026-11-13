@@ -94,7 +94,7 @@ its host can show the session live. `Transcript.prepare` makes one update ready
 to leave the runner: it drops the agent's slash commands and configuration
 options, scrubs every string, and bounds the result to
 `Transcript.MAX_EVENT_BYTES`, splitting a long message and cutting any other
-long string.
+long string, never through a surrogate pair.
 
 ```ts
 import { Transcript } from "@smthrs/agent"

@@ -47,6 +47,16 @@
 
 ### Fixed
 
+- `Transcript.prepare` never parts a surrogate pair: a message it splits into
+  chunks, or a string it cuts, ends on a whole character. A message over 16 KiB
+  with emoji or other astral characters used to be split, or cut, between a
+  high and a low surrogate, so a chunk shown or UTF-8-encoded on its own ended
+  in U+FFFD and the chunks' bytes no longer added up to the message (#4969).
+- A structured-output rejection is journaled once. Its
+  `flows.agent.structured-output-rejected.v1` record is written inside the
+  sealed step that counts the rejection, so a run resumed after a park replays
+  it instead of adding one more record for the same rejection on every
+  re-entry (#4969).
 - The transcript scrubber redacts every GitHub token kind (`ghp_`, `gho_`,
   `ghu_`, `ghs_`, `ghr_`, `github_pat_`) and `Basic` credentials. It used to
   redact only `ghp_` and `github_pat_`, so an agent that printed an OAuth,

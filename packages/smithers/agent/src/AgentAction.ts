@@ -501,7 +501,7 @@ const checkCorrections = (corrections: number, subject: string): void => {
  */
 export const structuredOutputRejectedEvent = "flows.agent.structured-output-rejected.v1"
 
-/** The recorded steps that count structured-output refusals once; suffixed by what they count. */
+/** The recorded steps that journal and count structured-output refusals once; suffixed by what they count. */
 const structuredOutputCountActivityName = "agent/structured-output-count"
 
 /** The recorded step that decides one park, so a replay waits the same deadline; suffixed by the session. */
@@ -1054,17 +1054,22 @@ export const implement = <
             })
 
           /**
-           * Advances `metric` once per `name`: a sealed step, so a body that
-           * re-enters after a resume replays the count instead of adding it
-           * again. The same-session verdict needs none; it is recorded by the
-           * harness and only runs live.
+           * Writes `evidence` and advances `metric` once per `name`: a sealed
+           * step, so a body that re-enters after a resume replays the record
+           * and the count instead of writing and adding them again. The
+           * same-session verdict needs none; it is recorded by the harness and
+           * only runs live.
            */
-          const countOnce = (name: string, metric: Metric.Counter<number>) =>
+          const countOnce = (
+            name: string,
+            metric: Metric.Counter<number>,
+            evidence: Effect.Effect<void> = Effect.void
+          ) =>
             Action.make({
               name: `${structuredOutputCountActivityName}/${name}`,
               success: Schema.Null,
               tier: "sealed",
-              execute: Metric.update(metric, 1).pipe(Effect.as(null))
+              execute: evidence.pipe(Effect.andThen(Metric.update(metric, 1)), Effect.as(null))
             }).pipe(Effect.asVoid)
 
           /**
@@ -1134,10 +1139,10 @@ export const implement = <
               Effect.flatMap(({ output, value }) =>
                 StructuredOutput.decode(options.output, output, { corrections: limit, limit }, value).pipe(
                   Effect.tapError((failure) =>
-                    rejected(failure, limit).pipe(
-                      Effect.andThen(
-                        countOnce(`rejected/${root}#repair`, ObservabilityMetric.structuredOutputRejections)
-                      )
+                    countOnce(
+                      `rejected/${root}#repair`,
+                      ObservabilityMetric.structuredOutputRejections,
+                      rejected(failure, limit)
                     )
                   )
                 )
@@ -1173,10 +1178,11 @@ export const implement = <
                 const used = spent + corrected
                 return StructuredOutput.decode(options.output, output, { corrections: used, limit }, value).pipe(
                   Effect.catchTag("/harness/StructuredOutputFailure", (failure) =>
-                    rejected(failure, used).pipe(
-                      Effect.andThen(
-                        countOnce(`rejected/${root}#${used}`, ObservabilityMetric.structuredOutputRejections)
-                      ),
+                    countOnce(
+                      `rejected/${root}#${used}`,
+                      ObservabilityMetric.structuredOutputRejections,
+                      rejected(failure, used)
+                    ).pipe(
                       Effect.andThen(
                         used >= limit
                           ? repair(failure).pipe(

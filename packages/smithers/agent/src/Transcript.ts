@@ -194,16 +194,35 @@ const mapStrings = (value: unknown, map: (text: string) => string): unknown => {
 
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length
 
-/** `text` split into pieces of at most `size` characters. */
+/**
+ * Where to end a piece of `text` meant to end at `end`: one unit earlier when
+ * `end` would part a surrogate pair, so no piece ends with a lone high
+ * surrogate or begins with a lone low one. The callers' `size` is at least
+ * two, so a piece always moves on.
+ */
+const boundary = (text: string, end: number) => {
+  if (end >= text.length) return text.length
+  const unit = text.charCodeAt(end - 1)
+  return unit >= 0xd800 && unit <= 0xdbff ? end - 1 : end
+}
+
+/** `text` split into pieces of at most `size` characters, none parting a surrogate pair. */
 const pieces = (text: string, size: number) => {
   const out: Array<string> = []
-  for (let at = 0; at < text.length; at += size) out.push(text.slice(at, at + size))
+  for (let at = 0; at < text.length;) {
+    const end = boundary(text, at + size)
+    out.push(text.slice(at, end))
+    at = end
+  }
   return out
 }
 
-/** `update` with every string longer than `size` characters cut to it. */
+/** `update` with every string longer than `size` characters cut to it, never through a surrogate pair. */
 const cut = (update: Record<string, unknown>, size: number) =>
-  mapStrings(update, (text) => text.length > size ? text.slice(0, size) + CUT : text) as Record<string, unknown>
+  mapStrings(
+    update,
+    (text) => text.length > size ? text.slice(0, boundary(text, size)) + CUT : text
+  ) as Record<string, unknown>
 
 /**
  * One update made ready to leave the runner: none for a {@link DROPPED_KINDS}

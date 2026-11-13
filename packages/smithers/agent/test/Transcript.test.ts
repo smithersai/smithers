@@ -6,6 +6,8 @@ import * as Transcript from "../src/Transcript.ts"
 
 const size = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length
 const shapes = () => Transcript.scrubber()
+/** Whether `text` has no lone surrogate: UTF-8 encoding it loses nothing. */
+const wellFormed = (text: string) => !/\p{Surrogate}/u.test(text)
 
 describe("Transcript", () => {
   it("scrubs known values longest first, then credential shapes", () => {
@@ -69,6 +71,21 @@ describe("Transcript", () => {
     expect(events.map((event) => (event.update.content as { text: string }).text).join("")).toBe(text)
   })
 
+  it.each(["😀", "\u{10000}", "\u{10ffff}"])("keeps %s whole when splitting a message", (character) => {
+    const text = "a" + character.repeat(5000)
+    const events = Transcript.prepare("agent_message_chunk", {
+      sessionUpdate: "agent_message_chunk",
+      messageId: "m1",
+      content: { type: "text", text }
+    }, shapes())
+    expect(events.length).toBeGreaterThan(1)
+    const chunks = events.map((event) => (event.update.content as { text: string }).text)
+    for (const chunk of chunks) expect(wellFormed(chunk)).toBe(true)
+    for (const event of events) expect(size(event.update)).toBeLessThanOrEqual(Transcript.MAX_EVENT_BYTES)
+    expect(chunks.join("")).toBe(text)
+    expect(chunks.map((chunk) => new TextDecoder().decode(new TextEncoder().encode(chunk))).join("")).toBe(text)
+  })
+
   it("cuts the long strings of any other update to fit, marking each cut", () => {
     const [event] = Transcript.prepare("tool_call_update", {
       sessionUpdate: "tool_call_update",
@@ -80,6 +97,21 @@ describe("Transcript", () => {
     expect(output.stdout.endsWith(Transcript.CUT)).toBe(true)
     expect(output.stderr).toBe("short")
     expect(event!.update.toolCallId).toBe("t1")
+  })
+
+  it.each(["😀", "\u{10000}", "\u{10ffff}"])("keeps %s whole when cutting a string", (character) => {
+    const text = "a" + character.repeat(20_000)
+    const [event] = Transcript.prepare("tool_call_update", {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "t1",
+      rawOutput: { stdout: text }
+    }, shapes())
+    expect(size(event!.update)).toBeLessThanOrEqual(Transcript.MAX_EVENT_BYTES)
+    const { stdout } = event!.update.rawOutput as { stdout: string }
+    expect(stdout.endsWith(Transcript.CUT)).toBe(true)
+    expect(wellFormed(stdout)).toBe(true)
+    expect(stdout.length).toBeGreaterThan(Transcript.CUT.length)
+    expect(text.startsWith(stdout.slice(0, -Transcript.CUT.length))).toBe(true)
   })
 
   it("replaces an update that no cut can bound with a marker", () => {

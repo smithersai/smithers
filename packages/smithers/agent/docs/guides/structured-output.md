@@ -87,7 +87,9 @@ way are distinguishable without the answers themselves being journaled.
 The record is evidence, not a decision. Nothing in the ladder reads it back,
 compaction may drop it, and a composition without a journal, such as the
 reference memory engine or a test, writes nothing and behaves the same
-otherwise.
+otherwise. It is written inside the sealed step that counts the rejection, so a
+run resumed after a park replays that step and the trail keeps one record per
+rejection.
 
 ## Reading the ladder back
 

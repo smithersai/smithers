@@ -27,7 +27,7 @@ ACP agent ─ session/update ─▶ scrub, bound, number
 - **Scrubbed.** Every string is scrubbed before it is spooled: the profile's `secretEnv` values and its `prestart`
   environment, then `sk-` and `sess-` keys, `Bearer` and `Basic` credentials, GitHub tokens of every kind (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`), three-part JWTs and email addresses.
 - **Bounded.** An event is at most 16 KiB as JSON. A longer message is split into several chunks of the same message;
-  any other long string is cut, ending `…[cut]`. A job's spool holds at most 64 MiB; past it, one
+  any other long string is cut, ending `…[cut]`. Neither parts a surrogate pair. A job's spool holds at most 64 MiB; past it, one
   `_smithers/truncated` event.
 - **Spooled.** Each event is written to `<stateDir>/spool/<key hash>.jsonl` (`0600`) before it is sent. While the agent
   works, the runner posts what the host hasn't acknowledged: at most once a second, at most 64 KiB a request, and at

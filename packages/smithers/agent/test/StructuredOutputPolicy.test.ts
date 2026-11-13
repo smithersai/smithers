@@ -846,22 +846,16 @@ describe("a correction ladder interrupted mid-flight", () => {
     // settled step was re-admitted.
     expect(observed.after.attempts.slice(0, observed.before.attempts.length))
       .toEqual(observed.before.attempts)
-    // The rejection record is evidence, not a decision. It is emitted outside
-    // any sealed step, so every re-entry of the body writes attempt 0's again
-    // and the count is the engine's business, not this policy's. What the
-    // policy owns is the ordinal and the budget: the ladder never restarts
-    // past correction 0, and the limit stays the one the composition set.
+    // The rejection record and its count are one sealed step, so the resumed
+    // body replays the ask's rejection instead of journaling attempt 0 again:
+    // the trail holds one record per rejection, and the resume added none,
+    // since the correction it re-issued was accepted. The ladder never
+    // restarts past correction 0, and the limit stays the one the composition
+    // set.
     expect(observed.before.rejections.map((record) => (record as { readonly attempt: number }).attempt))
       .toEqual([0])
-    expect(observed.after.rejections.length).toBeGreaterThan(observed.before.rejections.length)
-    // The counter is a decision, unlike the record: the resumed body replays
-    // the sealed count of the ask's rejection instead of adding it again.
+    expect(observed.after.rejections).toEqual(observed.before.rejections)
     expect((await Effect.runPromise(rejections)).count - counted).toBe(1)
-    expect(
-      observed.after.rejections.every((record) =>
-        (record as { readonly attempt: number; readonly limit: number }).attempt === 0 &&
-        (record as { readonly attempt: number; readonly limit: number }).limit === 1
-      )
-    ).toBe(true)
+    expect(observed.after.rejections.map((record) => (record as { readonly limit: number }).limit)).toEqual([1])
   })
 })

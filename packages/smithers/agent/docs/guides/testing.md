@@ -57,10 +57,11 @@ The policies leave a trail a test can read:
 
 - A settled correction ladder replays whole and pays the provider nothing:
   count the scripted model's calls to prove the refusal was never re-issued.
-- Each rejection writes a `flows.agent.structured-output-rejected.v1` record on
-  the journal's lossy channel, when the composition has a journal. A
-  composition without one writes nothing and behaves the same otherwise, so a
-  test may omit the journal entirely.
+- Each rejection writes one `flows.agent.structured-output-rejected.v1` record
+  on the journal's lossy channel, when the composition has a journal, and a
+  resumed run replays it rather than writing it again. A composition without a
+  journal writes nothing and behaves the same otherwise, so a test may omit the
+  journal entirely.
 - `Budget.usageOf(runId)` reads one run's `{ tokens, calls, largestCall }` from
   its live accumulator or its durable records.
 
