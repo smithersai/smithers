@@ -1,10 +1,9 @@
-import { createRequire } from "node:module";
-const { chromium } = createRequire("/Users/williamcory/smithers-builders/vl-mono/apps/vibelang/package.json")("@playwright/test");
-import { pathToFileURL } from "node:url";
+import { chromium } from "@playwright/test";
+import { fileURLToPath } from "node:url";
 import { mkdirSync } from "node:fs";
 
-const dir = "/Users/williamcory/smithers-builders/vl-designs/media";
-mkdirSync(`${dir}/shots`, { recursive: true });
+const dir = fileURLToPath(new URL("./", import.meta.url));
+mkdirSync(`${dir}shots`, { recursive: true });
 
 const screens = [
   ["s-map", "map", {}],
@@ -26,7 +25,7 @@ const browser = await chromium.launch({ args: ["--autoplay-policy=no-user-gestur
 for (const [id, name, opts] of screens) {
   for (const [label, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]]) {
     const page = await browser.newPage({ viewport: { width, height } });
-    await page.goto(pathToFileURL(`${dir}/index.html`).href);
+    await page.goto(new URL("./index.html", import.meta.url).href);
     await page.selectOption("#d-screen", id);
     if (opts.state) await page.selectOption("#d-state", opts.state);
     if (opts.video != null) {
@@ -35,7 +34,7 @@ for (const [id, name, opts] of screens) {
       }, opts.video);
     }
     await page.waitForTimeout(400);
-    await page.screenshot({ path: `${dir}/shots/${name}-${label}.png`, fullPage: false });
+    await page.screenshot({ path: `${dir}shots/${name}-${label}.png`, fullPage: false });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     if (overflow > 0) console.log(`H-OVERFLOW ${name}-${label}: ${overflow}px`);
     await page.close();

@@ -22,3 +22,21 @@ From this directory, run `sh media/build.sh` or `node desktop/build.mjs`.
 The media builder writes a temporary file beside `index.html` and replaces the page only after every input succeeds;
 missing CSS or markup leaves the last good page intact. The desktop builder reads its inputs before writing.
 `pnpm test:designs` from the app directory checks both rebuilds byte for byte and checks missing inputs.
+
+## Regenerating screenshots
+
+After installing the app's workspace dependencies, run these commands from the app directory:
+
+```sh
+pnpm exec playwright install chromium
+node wiki/designs/issues/shots.mjs
+node wiki/designs/media/shots.mjs
+node wiki/designs/desktop/shots.mjs
+```
+
+Each script loads its sibling `index.html` and resolves the existing `@playwright/test` dependency through the package
+graph, independent of the working directory. Issues and media write PNGs under their own `shots/`; desktop writes
+PNGs beside its page. Desktop accepts a comma-separated screen filter, such as `node wiki/designs/desktop/shots.mjs chat,error`.
+
+`pnpm test:design-shots` runs the screenshot commands in relocated copies with real Chromium. It checks every output
+name and viewport, confirms edits to the sibling page appear on regeneration, and checks desktop screen filtering.

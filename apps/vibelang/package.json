@@ -10,6 +10,7 @@
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "pnpm wiki:build && vibelang -p tsconfig.json --noEmit && vibelang -p worker/tsconfig.json --noEmit",
     "test:designs": "node --test wiki/designs/build.test.mjs",
+    "test:design-shots": "node --test wiki/designs/shots.test.mjs",
     "test": "pnpm test:designs && pnpm build:surfaces && pnpm build:scripts && vitest run",
     "test:sandboxes-live": "vitest run --mode sandboxes-live",
     "record:model": "pnpm build:surfaces && pnpm build:scripts && VIBE_MODEL=record vitest run test/model.recorded.test.vibe",
