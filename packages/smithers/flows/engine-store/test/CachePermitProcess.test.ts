@@ -61,7 +61,7 @@ it.each([false, true])("serializes cache bodies across processes (dead owner: %s
     second.child.stdin.write("release\n")
     await second.wait("ready\n")
     if (!crash) {
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      await second.wait("permit-waiting\n")
       expect(await readFile(counter, "utf8")).toBe("first\n")
       first.child.stdin.write("release\n")
       await first.wait("result:result\n")

@@ -1,6 +1,7 @@
 import js from "@eslint/js"
 import importPlugin from "eslint-plugin-import"
 import unicorn from "eslint-plugin-unicorn"
+import { relative, sep } from "node:path"
 import tseslint from "typescript-eslint"
 import {
   ambientAuthority,
@@ -10,6 +11,42 @@ import {
   uninstalledSafety
 } from "../../../../eslint.invariants.js"
 import { jsdocConvention } from "../../../../eslint.jsdoc.js"
+
+// Keep the remaining defensive exclusions explicit and bounded. An identical
+// pragma copied in the same file must consume a second approval and fail.
+const approvedCoverageIgnores = {
+  "src/PlanScheduler.ts": [
+    "v8 ignore next 3 -- verified plans have serializable material, admission resolves every dependency, and successful upstream values already crossed durable serialization; key derivation still exposes its honest failure channel",
+    "v8 ignore next 7 -- unreachable while the invariants above hold"
+  ],
+  "src/internal/ActionPersistence.ts": [
+    "v8 ignore next 3 -- A non-proxy Array always has an own data-property uint32 length.",
+    "v8 ignore next -- A key returned by Reflect.ownKeys exists on a non-proxy object.",
+    "v8 ignore next -- The typeof switch covers every JavaScript value category."
+  ]
+}
+const noNewCoverageIgnores = {
+  meta: { type: "problem", schema: [] },
+  create(context) {
+    return {
+      Program() {
+        const path = relative(import.meta.dirname, context.filename).split(sep).join("/")
+        const remaining = [...(approvedCoverageIgnores[path] ?? [])]
+        for (const comment of context.sourceCode.getAllComments()) {
+          if (!/\b(?:v8|c8|istanbul)\s+ignore\b/.test(comment.value)) continue
+          const index = remaining.indexOf(comment.value.trim())
+          if (index >= 0) remaining.splice(index, 1)
+          else {
+            context.report({
+              loc: comment.loc,
+              message: "Cover the production branch; new or widened coverage exclusions are forbidden."
+            })
+          }
+        }
+      }
+    }
+  }
+}
 
 export default tseslint.config(
   {
@@ -37,9 +74,11 @@ export default tseslint.config(
       }
     },
     plugins: {
-      unicorn
+      unicorn,
+      coverage: { rules: { "no-new-ignores": noNewCoverageIgnores } }
     },
     rules: {
+      "coverage/no-new-ignores": "error",
       "@typescript-eslint/array-type": ["error", { default: "generic", readonly: "generic" }],
       "@typescript-eslint/consistent-type-imports": ["error", { fixStyle: "inline-type-imports" }],
       "@typescript-eslint/no-explicit-any": "off",

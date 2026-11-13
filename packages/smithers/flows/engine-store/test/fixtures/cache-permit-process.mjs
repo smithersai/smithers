@@ -18,7 +18,17 @@ import * as TestStores from "../../src/test/TestStores.ts"
 // self-interruption, so a failed process leaves its renewal cause in stderr.
 const consensus = Layer.effect(Consensus, Effect.map(SqlConsensus.make, (strategy) => ({
   ...strategy,
-  withPermit: (...args) => strategy.withPermit(...args).pipe(
+  withPermit: (key, owner, isAlive, effect) => strategy.withPermit(
+    key, owner,
+    (held, observation) => isAlive(held, observation).pipe(
+      // This probe follows the real SQL lease read. A live holder proves
+      // the second process reached permit contention before release.
+      Effect.tap((alive) => Effect.sync(() => {
+        if (alive) process.stdout.write("permit-waiting\n")
+      }))
+    ),
+    effect
+  ).pipe(
     Effect.onError((cause) => Effect.sync(() => process.stderr.write(`permit-failed:${Cause.pretty(cause)}\n`)))
   )
 })))

@@ -75028,6 +75028,23 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/engine-store/eslint.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "eslint.invariants.js"
+      },
+      {
+        "kind": "file",
+        "path": "eslint.jsdoc.js"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/engine-store/test/fixtures/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.mjs"
       },
       {

@@ -20,15 +20,12 @@ export default defineConfig({
     // `node:test` rather than with Vitest. Naming the include keeps each
     // runner to the files it owns.
     include: ["test/**/*.test.{ts,vibe}"],
-    // Vitest's 5 s default is a wall-clock budget, but no suite in this repo
-    // asserts on elapsed time — each is bounded by an explicit iteration,
-    // cycle, or completion count. The real gate runs those counts under v8
-    // coverage instrumentation across parallel workers, where cases that
-    // finish in well under a second in isolation have been measured 6-12x
-    // slower; that machine-load multiplier, not the workload, is what put
-    // correct suites over the default wall. Raise the budget instead of
-    // trimming the workload, and keep it FINITE so a genuine hang still
-    // fails the run rather than hanging the gate forever.
+    // Coverage instrumentation and filesystem contention need a finite outer
+    // budget above Vitest's 5 s default. This does not scale inner wall-clock
+    // limits: UnresolvedActionSettles uses a 20 s Effect timeout, examples
+    // allow 45 s per child process, and CachePermitProcess allows 30 s for
+    // progress markers. Those deadlines bound hangs; cache serialization is
+    // proved by observing a live SQL permit holder before releasing it.
     testTimeout: 60_000,
     hookTimeout: 60_000,
     // The package has several real-filesystem integration suites. Letting
@@ -52,7 +49,10 @@ export default defineConfig({
       // under test/ (e.g. test/contract/DurableEngineStateContract.ts)
       // dilute the denominator and give src regressions slack (issue #51).
       include: ["src/**"],
-      // The complete src tree, including barrel modules, is fully covered.
+      // The report includes the complete src tree, including barrel modules.
+      // These thresholds apply after five defensive v8 exclusions (15 lines)
+      // in PlanScheduler and ActionPersistence. The package ESLint rule
+      // coverage/no-new-ignores rejects new, duplicated or widened pragmas.
       thresholds: {
         branches: 100,
         functions: 100,

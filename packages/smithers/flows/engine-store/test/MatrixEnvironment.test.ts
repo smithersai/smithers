@@ -19,9 +19,15 @@ const old = BuildAndCheckTypeScriptPackage({
 })
 const actual = Target.metadata(Package.test)
 const previous = Target.metadata(old.test)
-// The matrix target is the stock package test plus the tested examples (test/examples.test.ts runs them).
+// The matrix adds the tested examples, coverage-lint configuration and process fixtures to the stock inputs.
 const srcs = [...previous.attrs.srcs]
 srcs.splice(2, 0, Smithers.glob("examples/**/*.ts"))
+srcs.splice(5, 0,
+  Smithers.file("eslint.config.js"),
+  Smithers.file("//eslint.invariants.js"),
+  Smithers.file("//eslint.jsdoc.js"),
+  Smithers.glob("test/fixtures/**/*.mjs")
+)
 assert.deepEqual({ ...actual.attrs, env: {}, deps: [] }, { ...previous.attrs, srcs, deps: [] })
 assert.deepEqual(actual.attrs.deps, [Package.lib])
 assert.deepEqual(actual.dependencies, [Package.lib])
@@ -62,7 +68,7 @@ const check = (url?: string, name = "SMITHERS_TEST_PG_URL") =>
 describe("canonical PostgreSQL matrix configuration", () => {
   it("keeps the stock disposable-server declaration when no external URL is supplied", () => {
     const result = check()
-    expect(result.status).toBe(0)
+    expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toBe("matrix environment qualified\n")
   })
 
@@ -72,7 +78,7 @@ describe("canonical PostgreSQL matrix configuration", () => {
     "postgresql://matrix-owner@localhost:55492/another?connect_timeout=2&sslmode=require"
   ])("declares a credential-free connection while preserving every existing test input: %s", (url) => {
     const result = check(url)
-    expect(result.status).toBe(0)
+    expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toBe("matrix environment qualified\n")
   })
 
@@ -80,7 +86,7 @@ describe("canonical PostgreSQL matrix configuration", () => {
     "declares %s and refuses credentials without exposing them",
     (name) => {
       const allowed = check("postgres://owner@localhost:55493/postgres", name)
-      expect(allowed.status).toBe(0)
+      expect(allowed.status, allowed.stderr).toBe(0)
       expect(allowed.stdout).toBe("matrix environment qualified\n")
       const refused = check("postgres://owner:private-fixture-marker@localhost/postgres", name)
       expect(refused.status).not.toBe(0)
