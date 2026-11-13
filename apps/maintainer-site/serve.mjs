@@ -9,7 +9,7 @@
 // Environment: PORT (4747), QUEUE_DIR (./queue), MAINTAINER_SITE_REPO (the repository root),
 // MAINTAINER_SITE_GIFS (~/Desktop/smithers-mvp/gifs), MAINTAINER_SITE_VIDEOS (~/Desktop/smithers-mvp/videos),
 // MAINTAINER_SITE_OUT (~/Desktop/smithers-maintainer).
-import { closeSync, createReadStream, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, watch, writeSync } from "node:fs"
+import { closeSync, constants, createReadStream, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, readSync, realpathSync, statSync, watch, writeSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { createServer } from "node:http"
 import { homedir } from "node:os"
@@ -75,9 +75,13 @@ const TYPES = {
 }
 const isBinary = (buffer) => buffer.subarray(0, 8192).includes(0)
 
-// Resolves a requested path to a real file under one of the roots, or returns { status, error }.
+// Opens a checked file under the roots, or returns { status, error }. The caller owns the returned fd.
 export function resolveFile(requested, roots) {
   if (typeof requested !== "string" || requested === "" || requested.includes("\0")) return { status: 400, error: "path required" }
+  if (process.platform !== "linux" && process.platform !== "darwin")
+    return { status: 403, error: "refused: secure file reads unavailable" }
+  // Snapshot lazy root paths once for this authorization.
+  roots = roots.map(({ path, real }) => ({ path, real }))
   const expanded = requested.startsWith("~/") ? join(homedir(), requested.slice(2)) : requested
   const candidates = isAbsolute(expanded) ? [resolve(expanded)] : [resolve(roots[0].path, expanded)]
   const target = candidates[0]
@@ -98,10 +102,41 @@ export function resolveFile(requested, roots) {
   if (!root) return { status: 403, error: "refused: outside the allowed roots" }
   const refusal = refusalFor(relative(root.real, real).split(sep))
   if (refusal) return { status: 403, error: refusal }
-  const stat = statSync(real)
-  if (!stat.isFile()) return { status: 404, error: "not a file" }
-  if (stat.size > MAX_FILE) return { status: 413, error: "too large" }
-  return { real, size: stat.size }
+  let fd
+  try {
+    // Do not follow a symlink swapped in after realpath, including before the identity check.
+    const checked = lstatSync(real)
+    if (checked.isSymbolicLink()) return { status: 403, error: "refused: file changed" }
+    if (!checked.isFile()) return { status: 404, error: "not a file" }
+    if (checked.size > MAX_FILE) return { status: 413, error: "too large" }
+    // Darwin's O_NOFOLLOW_ANY rejects a symlink in any component of the canonical path.
+    // Node does not expose this flag; its value is defined in Darwin's sys/fcntl.h.
+    const noFollowAny = process.platform === "darwin" ? 0x20000000 : 0
+    fd = openSync(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK | noFollowAny)
+    const stat = fstatSync(fd)
+    if (!stat.isFile() || stat.dev !== checked.dev || stat.ino !== checked.ino)
+      return { status: 403, error: "refused: file changed" }
+    if (stat.size > MAX_FILE) return { status: 413, error: "too large" }
+    if (process.platform === "linux") {
+      // Inspect the held inode's kernel path, not a pathname that an ancestor swap can redirect.
+      const opened = readlinkSync(`/proc/self/fd/${fd}`)
+      if (!isAbsolute(opened) || opened.endsWith(" (deleted)"))
+        return { status: 403, error: "refused: file changed" }
+      const openedRoot = roots.find((root) => opened === root.real || opened.startsWith(root.real + sep))
+      if (!openedRoot) return { status: 403, error: "refused: outside the allowed roots" }
+      const openedRefusal = refusalFor(relative(openedRoot.real, opened).split(sep))
+      if (openedRefusal) return { status: 403, error: openedRefusal }
+    }
+    const found = { real, fd, stat, size: stat.size }
+    fd = undefined
+    return found
+  } catch (error) {
+    return error.code === "ENOENT" || error.code === "ENOTDIR"
+      ? { status: 404, error: "not found" }
+      : { status: 403, error: "refused: file changed or unreadable" }
+  } finally {
+    if (fd !== undefined) closeSync(fd)
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -260,16 +295,15 @@ export function startServer(options = {}) {
     return { queue, answers, stacks, last, visible, at }
   }
 
-  // Outlines by real path, kept while the file's mtime and size hold.
+  // Outlines by real path and the checked descriptor's identity and change times.
   const outlines = new Map()
-  const outline = async (real) => {
+  const outline = async ({ real, fd, stat }) => {
     if (!OUTLINE_EXT.has(extname(real).toLowerCase())) return { supported: false }
-    const stat = statSync(real)
-    const key = `${stat.mtimeMs}:${stat.size}`
+    const key = `${stat.dev}:${stat.ino}:${stat.ctimeMs}:${stat.mtimeMs}:${stat.size}`
     const held = outlines.get(real)
     if (held?.key === key) return held.outline
     const ts = await loadTypeScript()
-    const result = { supported: true, ...outlineOf(ts, readFileSync(real, "utf8"), real) }
+    const result = { supported: true, ...outlineOf(ts, readFileSync(fd, "utf8"), real) }
     outlines.delete(real)
     outlines.set(real, { key, outline: result })
     if (outlines.size > OUTLINE_CACHE) outlines.delete(outlines.keys().next().value)
@@ -364,46 +398,48 @@ export function startServer(options = {}) {
     send(response, 200, body, type, extraHeaders)
   }
   // A file from the allowed roots, streamed, with byte ranges so a video can seek.
-  const sendRange = (request, response, file, size, extraHeaders) => {
-    const ext = extname(file).toLowerCase()
-    let type = TYPES[ext]
-    if (!type) {
-      const head = Buffer.alloc(Math.min(size, 8192))
-      const fd = openSync(file, "r")
-      try {
+  const sendRange = (request, response, { real, fd, size }, extraHeaders) => {
+    let streaming = false
+    try {
+      const ext = extname(real).toLowerCase()
+      let type = TYPES[ext]
+      if (!type) {
+        const head = Buffer.alloc(Math.min(size, 8192))
         readSync(fd, head, 0, head.length, 0)
-      } finally {
-        closeSync(fd)
+        type = isBinary(head) ? "application/octet-stream" : "text/plain; charset=utf-8"
       }
-      type = isBinary(head) ? "application/octet-stream" : "text/plain; charset=utf-8"
+      const headers = { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Accept-Ranges": "bytes", ...extraHeaders }
+      let start = 0
+      let end = size - 1
+      let status = 200
+      const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers.range ?? "").trim())
+      if (range && (range[1] !== "" || range[2] !== "")) {
+        if (range[1] === "") {
+          // A suffix: the last N bytes.
+          start = Math.max(0, size - Number(range[2]))
+        } else {
+          start = Number(range[1])
+          if (range[2] !== "") end = Math.min(end, Number(range[2]))
+        }
+        if (start >= size || start > end) {
+          response.writeHead(416, { ...headers, "Content-Range": `bytes */${size}`, "Content-Length": 0 })
+          return response.end()
+        }
+        status = 206
+        headers["Content-Range"] = `bytes ${start}-${end}/${size}`
+      }
+      headers["Content-Length"] = size === 0 ? 0 : end - start + 1
+      response.writeHead(status, headers)
+      if (request.method === "HEAD" || size === 0) return response.end()
+      const stream = createReadStream(null, { fd, start, end })
+      streaming = true
+      stream.on("error", () => response.destroy())
+      response.on("close", () => stream.destroy())
+      stream.pipe(response)
+    } finally {
+      // A stream owns and closes its descriptor. All responses without one close it here.
+      if (!streaming) closeSync(fd)
     }
-    const headers = { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Accept-Ranges": "bytes", ...extraHeaders }
-    let start = 0
-    let end = size - 1
-    let status = 200
-    const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers.range ?? "").trim())
-    if (range && (range[1] !== "" || range[2] !== "")) {
-      if (range[1] === "") {
-        // A suffix: the last N bytes.
-        start = Math.max(0, size - Number(range[2]))
-      } else {
-        start = Number(range[1])
-        if (range[2] !== "") end = Math.min(end, Number(range[2]))
-      }
-      if (start >= size || start > end) {
-        response.writeHead(416, { ...headers, "Content-Range": `bytes */${size}`, "Content-Length": 0 })
-        return response.end()
-      }
-      status = 206
-      headers["Content-Range"] = `bytes ${start}-${end}/${size}`
-    }
-    headers["Content-Length"] = size === 0 ? 0 : end - start + 1
-    response.writeHead(status, headers)
-    if (request.method === "HEAD" || size === 0) return response.end()
-    const stream = createReadStream(file, { start, end })
-    stream.on("error", () => response.destroy())
-    response.on("close", () => stream.destroy())
-    stream.pipe(response)
   }
   const staticUnder = (response, base, path) => {
     const target = resolve(base, `.${path}`)
@@ -542,12 +578,16 @@ export function startServer(options = {}) {
       const found = resolveFile(requested, roots)
       if (found.error) return send(response, found.status, { error: found.error })
       // A design renders in a sandboxed frame; opened directly, the page is sandboxed too.
-      return sendRange(request, response, found.real, found.size, { "Content-Security-Policy": "sandbox allow-scripts" })
+      return sendRange(request, response, found, { "Content-Security-Policy": "sandbox allow-scripts" })
     }
     if (path === "/api/markdown") {
       const found = resolveFile(url.searchParams.get("path"), roots)
       if (found.error) return send(response, found.status, { error: found.error })
-      return send(response, 200, renderDocument(found.real, roots[0].real))
+      try {
+        return send(response, 200, renderDocument(found.real, roots[0].real, found.fd))
+      } finally {
+        closeSync(found.fd)
+      }
     }
     if (path === "/api/outline") {
       const recorded = recordedFile(url)
@@ -557,7 +597,11 @@ export function startServer(options = {}) {
         : { supported: false })
       const found = resolveFile(url.searchParams.get("path"), roots)
       if (found.error) return send(response, found.status, { error: found.error })
-      return send(response, 200, await outline(found.real))
+      try {
+        return send(response, 200, await outline(found))
+      } finally {
+        closeSync(found.fd)
+      }
     }
     if (path === "/queue" || path === "/queue/") return sendFile(response, join(clientDir, "queue.html"))
     if (path.startsWith("/queue/")) {
@@ -597,7 +641,7 @@ export function startServer(options = {}) {
 
 // A Markdown file as a page, the way a README renders: links and images resolve beside the file and go through
 // /api/file, so its refusals hold; raw HTML is sanitized by markdown.mjs.
-export function renderDocument(file, repoReal) {
+export function renderDocument(file, repoReal, source = file) {
   const dir = dirname(file)
   const external = (href) => /^[a-z][a-z0-9+.-]*:|^\/\//i.test(href)
   const target = (href) => {
@@ -610,7 +654,7 @@ export function renderDocument(file, repoReal) {
     const inRepo = relative(repoReal, absolute)
     return { path: inRepo && !inRepo.startsWith("..") && !isAbsolute(inRepo) ? inRepo.split(sep).join("/") : absolute, anchor: hash < 0 ? "" : href.slice(hash) }
   }
-  const { html, title } = renderMarkdown(readFileSync(file, "utf8"), {
+  const { html, title } = renderMarkdown(readFileSync(source, "utf8"), {
     link(href) {
       if (href.startsWith("#")) return { href }
       if (external(href)) {

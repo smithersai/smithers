@@ -28,14 +28,14 @@ A verify item with `before: { media, note, stamp }` and `after: { media }` shows
 | `queue/coverage.json` | the curator | The code slices and whether Will has reviewed them; the header shows the share of lines reviewed |
 | `queue/answers.jsonl` | `serve.mjs` | Will's answers, one fsynced line each, append-only; `undo` is an appended record |
 
-The server has no dependencies and binds to 127.0.0.1. It refuses another host name and another site's `Origin`.
+The server runs on macOS or Linux (with procfs available); file reads fail closed on other hosts. It has no dependencies and binds to 127.0.0.1. It refuses another host name and another site's `Origin`.
 
 | Endpoint | Returns |
 | --- | --- |
 | `GET /api/queue` | The items, minus those answered (until the curator re-adds them with a newer `addedAt`) or snoozed with `later` in the last 24 hours |
 | `GET /api/events` | A server-sent `queue` event when `queue.json`, `coverage.json` or `answers.jsonl` changes, or a snooze ends |
 | `POST /api/answer` | Appends an answer: `{ itemId, action, option?, scope?, text, revision, commit, addedAt }`, the last three naming the version Will opened; the server stamps `at`, `revision`, `title`, and with `scope: "all"` the item's `kind`. If the curator replaced the item since, it refuses with 409 and the queued version, and the page shows that version |
-| `GET /api/file?path=…` | A file under the repository, `~/Desktop/smithers-mvp/gifs`, `~/Desktop/smithers-mvp/videos` or `queue/before`, read-only, with byte ranges so a video can seek. Refuses paths and symlinks that leave those roots, `.git`, `.jj`, `node_modules`, `.env*` and secret names. `/api/file/<path>` serves the same file so a design's relative styles load |
+| `GET /api/file?path=…` | A file under the repository, `~/Desktop/smithers-mvp/gifs`, `~/Desktop/smithers-mvp/videos` or `queue/before`, read-only, with byte ranges so a video can seek. Refuses paths and symlinks that leave those roots, `.git`, `.jj`, `node_modules`, `.env*` and secret names. Reads, byte ranges, Markdown and outlines use the checked file descriptor, so replacing the file path cannot redirect a response. `/api/file/<path>` serves the same file so a design's relative styles load |
 | `GET /api/outline?path=…` | A TypeScript or JavaScript file's `{ supported, comments: { lines, inline }, folds, symbols }`, with the file endpoint's roots and refusals; lines 1-based, columns 0-based; `{ supported: false }` for other files. TypeScript loads from the workspace on the first request, and each outline is cached until the file changes |
 | `GET /api/markdown?path=…` | A Markdown file rendered to HTML, `{ html, title }`, with the file endpoint's roots and refusals |
 | `GET /api/stats` | Answers today, remaining by kind, and coverage |

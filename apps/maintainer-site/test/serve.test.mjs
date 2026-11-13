@@ -2,13 +2,15 @@
 //
 //   node --test apps/maintainer-site/test/serve.test.mjs
 import assert from "node:assert/strict"
-import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { closeSync, copyFileSync, fstatSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs"
+import { once } from "node:events"
+import { Worker } from "node:worker_threads"
 import { request } from "node:http"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, relative } from "node:path"
 import { after, before, describe, test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { VERSION_FIELDS, coveragePercent, readAnswers, refusalFor, replay, startServer } from "../serve.mjs"
+import { VERSION_FIELDS, coveragePercent, readAnswers, refusalFor, renderDocument, replay, resolveFile, startServer } from "../serve.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, "fixtures")
@@ -462,6 +464,138 @@ describe("GET /api/file", () => {
     assert.equal((await file("link-in.ts")).status, 200)
   })
 
+
+  test("a resolved file keeps its checked bytes when its path becomes an outside symlink", () => {
+    const path = join(repo, "checked.md")
+    writeFileSync(path, "# Allowed document\n")
+    const found = resolveFile(path, [{ path: repo, real: realpathSync(repo) }])
+    try {
+      renameSync(path, path + ".old")
+      symlinkSync(join(dirname(repo), "outside/secret.txt"), path)
+      // Exercise the read the endpoint makes after resolution, including Markdown's link base.
+      assert.equal(readFileSync(found.fd ?? found.real, "utf8"), "# Allowed document\n")
+    } finally {
+      if (found.fd !== undefined) closeSync(found.fd)
+      rmSync(path, { force: true })
+      rmSync(path + ".old", { force: true })
+    }
+  })
+
+  test("Markdown renders the checked descriptor after the source path is replaced", () => {
+    const path = join(repo, "checked-render.md")
+    writeFileSync(path, "# Allowed document\n[Code](src/shape-stream.ts)\n")
+    const found = resolveFile(path, [{ path: repo, real: realpathSync(repo) }])
+    try {
+      renameSync(path, path + ".old")
+      symlinkSync(join(dirname(repo), "outside/secret.txt"), path)
+      const rendered = renderDocument(found.real, repo, found.fd)
+      assert.equal(rendered.title, "Allowed document")
+      assert.match(rendered.html, /src%2Fshape-stream\.ts/)
+      assert.doesNotMatch(rendered.html, /outside the roots/)
+    } finally {
+      if (found.fd !== undefined) closeSync(found.fd)
+      rmSync(path, { force: true })
+      rmSync(path + ".old", { force: true })
+    }
+  })
+
+
+  for (const replacement of ["file", "directory", "secret-directory"])
+    test(`file, Markdown and outline responses reject a concurrently replaced ${replacement}`, async () => {
+      const folder = join(repo, `racing-${replacement}`)
+      const path = replacement === "file" ? folder + ".ts" : join(folder, "source.ts")
+      const outsideFolder = replacement === "secret-directory"
+        ? join(repo, ".ssh/racing")
+        : join(dirname(repo), "outside", replacement)
+      mkdirSync(outsideFolder, { recursive: true })
+      mkdirSync(dirname(path), { recursive: true })
+      const outside = join(outsideFolder, "source.ts")
+      const allowed = "export const allowed = 1\n"
+      writeFileSync(path, allowed)
+      writeFileSync(outside, "export const PRIVATE_OUTSIDE_BYTES = 1\n")
+      const stop = new SharedArrayBuffer(8)
+      const state = new Int32Array(stop)
+      const worker = new Worker(`
+        const { writeFileSync, symlinkSync, renameSync, unlinkSync } = require("node:fs")
+        const { parentPort, workerData } = require("node:worker_threads")
+        const { path, folder, outside, outsideFolder, replacement, allowed, stop } = workerData
+        const state = new Int32Array(stop)
+        parentPort.postMessage("ready")
+        while (!Atomics.load(state, 0)) {
+          if (replacement === "file") {
+            writeFileSync(path + ".next", allowed)
+            renameSync(path + ".next", path)
+            symlinkSync(outside, path + ".next")
+            renameSync(path + ".next", path)
+          } else {
+            renameSync(folder, folder + ".held")
+            symlinkSync(outsideFolder, folder, "dir")
+            unlinkSync(folder)
+            renameSync(folder + ".held", folder)
+          }
+          Atomics.add(state, 1, 1)
+        }
+      `, { eval: true, workerData: { path, folder, outside, outsideFolder, replacement, allowed, stop } })
+      const exited = once(worker, "exit")
+      try {
+        await once(worker, "message")
+        for (const endpoint of ["/api/file?path=", "/api/file/", "/api/markdown?path=", "/api/outline?path="]) {
+          for (let attempt = 0; attempt < 150; attempt++) {
+            const response = await call(endpoint + encodeURIComponent(relative(repo, path)))
+            assert.doesNotMatch(response.text, /PRIVATE_OUTSIDE_BYTES/, `${endpoint} attempt ${attempt}`)
+            assert.ok([200, 403, 404].includes(response.status), `${endpoint} returned ${response.status}: ${response.text}`)
+            if (response.status === 200 && endpoint.startsWith("/api/file")) assert.equal(response.text, allowed)
+          }
+        }
+        assert.ok(Atomics.load(state, 1) > 0, "the worker actually replaced the path")
+      } finally {
+        Atomics.store(state, 0, 1)
+        await exited
+        rmSync(path, { force: true })
+        rmSync(path + ".next", { force: true })
+        rmSync(folder, { recursive: true, force: true })
+        rmSync(outsideFolder, { recursive: true, force: true })
+      }
+    })
+
+  test("empty files and oversized files retain their responses", async () => {
+    const path = join(repo, "sized.txt")
+    writeFileSync(path, "")
+    assert.equal((await file("sized.txt")).text, "")
+    assert.equal((await file("sized.txt")).status, 200)
+    truncateSync(path, 64 * 1024 * 1024 + 1)
+    assert.equal((await file("sized.txt")).status, 413)
+    rmSync(path)
+  })
+
+  test("file descriptors close after HEAD, empty files, invalid ranges, Markdown and outlines", async () => {
+    const path = join(repo, "descriptor.ts")
+    writeFileSync(path, "export const descriptor = 1\n")
+    const identity = resolveFile(path, [{ path: repo, real: realpathSync(repo) }])
+    const checked = identity.fd === undefined ? null : fstatSync(identity.fd)
+    if (identity.fd !== undefined) closeSync(identity.fd)
+    // Compare this fixture's inode across live descriptors, without counting concurrent sockets.
+    const descriptors = process.platform === "linux" ? "/proc/self/fd" : "/dev/fd"
+    const count = () => readdirSync(descriptors).filter((fd) => {
+      try {
+        const stat = fstatSync(Number(fd))
+        return checked && stat.dev === checked.dev && stat.ino === checked.ino
+      } catch { return false }
+    }).length
+    const before = count()
+    for (let attempt = 0; attempt < 10; attempt++) {
+      assert.equal((await call("/api/file?path=descriptor.ts", { method: "HEAD" })).status, 200)
+      assert.equal((await call("/api/file?path=descriptor.ts", { headers: { range: "bytes=999-" } })).status, 416)
+      assert.equal((await call("/api/markdown?path=descriptor.ts")).status, 200)
+      assert.equal((await call("/api/outline?path=descriptor.ts")).status, 200)
+      assert.equal((await call("/api/outline?path=src/shape-stream.css")).status, 200)
+    }
+    writeFileSync(path, "")
+    assert.equal((await file("descriptor.ts")).status, 200)
+    assert.equal(count(), before, "no descriptor remains held by a completed response")
+    rmSync(path)
+  })
+
   test("serves source code whose name mentions a secret", async () => {
     assert.equal((await file("src/Secret.ts")).status, 200)
   })
@@ -565,6 +699,24 @@ describe("GET /api/outline", () => {
     const again = (await outline("src/changing.ts")).json
     assert.deepEqual(again.symbols.map((symbol) => symbol.name), ["a", "b"])
     assert.deepEqual(again.comments.lines, [[1, 1]])
+  })
+
+
+  test("replacing a file with the same size and mtime invalidates its cached outline", async () => {
+    const path = join(repo, "src/replaced.ts")
+    writeFileSync(path, "export const first = 1\n")
+    // A whole-second timestamp survives a round trip through utimes on every host.
+    const stamp = new Date("2026-01-01T00:00:00Z")
+    utimesSync(path, stamp, stamp)
+    assert.deepEqual((await outline("src/replaced.ts")).json.symbols.map((symbol) => symbol.name), ["first"])
+    const before = statSync(path)
+    writeFileSync(path + ".next", "export const other = 1\n")
+    utimesSync(path + ".next", stamp, stamp)
+    renameSync(path + ".next", path)
+    assert.equal(statSync(path).size, before.size)
+    assert.equal(statSync(path).mtimeMs, before.mtimeMs)
+    assert.deepEqual((await outline("src/replaced.ts")).json.symbols.map((symbol) => symbol.name), ["other"])
+    rmSync(path)
   })
 
   test("says a file it cannot parse is unsupported", async () => {
