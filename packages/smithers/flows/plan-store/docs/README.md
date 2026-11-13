@@ -87,7 +87,7 @@ naming the approved shape while `digest` has moved on.
 
 | Module       | Role                                                                 |
 | ------------ | -------------------------------------------------------------------- |
-| `PlanStore`  | `record`, `append`, `get`, their outcomes, and the five error codes. |
+| `PlanStore`  | `record`, `append`, `get`, their outcomes, and the four error codes. |
 | `Migrations` | The namespaced migration set that creates the three plan tables.     |
 
 The [API reference](./api.md) documents every export.

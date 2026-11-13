@@ -29,6 +29,7 @@ import * as Layer from "effect/Layer"
 import { initial } from "./internal/migrations/0001_initial.ts"
 import { appendOnlyHardening } from "./internal/migrations/0002_append_only_hardening.ts"
 import { forwardOnlyIdentity } from "./internal/migrations/0003_forward_only_identity.ts"
+import { removeRedundantIndex } from "./internal/migrations/0004_remove_redundant_index.ts"
 
 /**
  * The plan store's namespaced migration set, for composition with the other
@@ -44,7 +45,8 @@ export const set: DatabaseMigrations.MigrationSet = {
   migrations: {
     "0001_initial": initial,
     "0002_append_only_hardening": appendOnlyHardening,
-    "0003_forward_only_identity": forwardOnlyIdentity
+    "0003_forward_only_identity": forwardOnlyIdentity,
+    "0004_remove_redundant_index": removeRedundantIndex
   }
 }
 

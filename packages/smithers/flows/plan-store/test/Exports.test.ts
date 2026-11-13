@@ -6,7 +6,12 @@ import { describe, expect, it } from "vitest"
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url))
 
-const steps = ["0001_initial", "0002_append_only_hardening", "0003_forward_only_identity"] as const
+const steps = [
+  "0001_initial",
+  "0002_append_only_hardening",
+  "0003_forward_only_identity",
+  "0004_remove_redundant_index"
+] as const
 
 /** The raw step modules, at the internal location and at the location they once shipped from. */
 const rawSpecifiers = steps.flatMap((step) => [

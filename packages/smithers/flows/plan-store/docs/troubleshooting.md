@@ -56,6 +56,9 @@ never be removed.
 
 `constraint` also covers a SQL uniqueness or constraint violation, including the
 `(plan_id, ordinal)` uniqueness that keeps recorded node order deterministic.
+An invalid `createdAtMs` passed to `record` also raises `constraint` with the
+message `plan persistence failed`. Pass a nonnegative safe integer; negative,
+fractional, nonfinite, and unsafe integer timestamps are refused by SQL.
 
 ### decode_failed
 
@@ -76,12 +79,17 @@ violation: the file is locked, the disk is full, the connection dropped.
 **What to change.** Read `cause`, which carries the underlying error. This is an
 infrastructure failure, not a contract violation.
 
-## SQLite raises "a plan only grows"
+## SQLite raises an append-only or forward-only error
 
-**What happened.** A caller tried to rewrite plan history: an UPDATE or DELETE
-of a node or edge row, a DELETE of a plan row, or an UPDATE of a plan row that
-would change its id, flow, base digest, or creation time, or move its generation
-backwards.
+**What happened.** A caller tried to rewrite plan history. The trigger message
+identifies the refused statement:
+
+| Message                           | Refused statement                                                                                                     |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `flows_plan_nodes is append-only` | `UPDATE` or `DELETE` of a node row.                                                                                   |
+| `flows_plan_edges is append-only` | `UPDATE` or `DELETE` of an edge row.                                                                                  |
+| `flows_plans is append-only`      | `DELETE` of a plan row.                                                                                               |
+| `a plan only grows`               | `UPDATE` of a plan row that changes its id, flow, base digest, or creation time, or does not increase its generation. |
 
 **What to change.** Grow the plan instead. `Plan.append` plus
 `PlanStore.append` is the only supported way to add to a recorded plan, and

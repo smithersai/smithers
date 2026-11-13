@@ -94,8 +94,8 @@ export interface Service {
    * @param plan - Compiled generation-zero plan whose base digest equals its digest.
    * @param createdAtMs - Creation time in milliseconds, a nonnegative safe integer.
    * @returns An Effect yielding the first-writer-wins recording outcome.
-   * Fails with `invalid_plan` for invalid input, `decode_failed` for corrupt
-   * existing content, `constraint` for rejected SQL rows, or
+   * Fails with `invalid_plan` for an invalid plan, `decode_failed` for corrupt
+   * existing content, `constraint` for an invalid `createdAtMs` or rejected SQL rows, or
    * `persistence_failed` for other database failures.
    * @since 0.1.0
    */

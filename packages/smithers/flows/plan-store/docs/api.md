@@ -96,7 +96,7 @@ interface Service {
 }
 ```
 
-`createdAtMs` comes from the caller's clock. Constructing the store requires `EffectDigest.Digest` alongside SQL and the durable writer; individual operations use that captured implementation.
+`createdAtMs` comes from the caller's clock and must be a nonnegative safe integer. SQL rejects an invalid timestamp with `constraint`, not `invalid_plan`. Constructing the store requires `EffectDigest.Digest` alongside SQL and the durable writer; individual operations use that captured implementation.
 
 ### PlanStore.RecordResult
 
@@ -186,8 +186,9 @@ const layer: Layer.Layer<never, ..., SqlClient.SqlClient>
 
 Append-only is enforced in SQL rather than by convention.
 
-| Step                         | What it does                                                                                                                                                                    |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0001_initial`               | Creates the three tables, the `flows_plan_nodes_order` index, and triggers that raise on any UPDATE or DELETE of a node or edge row and on any backward move of a plan row.     |
-| `0002_append_only_hardening` | Forbids deleting a plan row, extends the forward-only trigger to pin `flow` and `created_at_ms`, and makes `(plan_id, ordinal)` unique so recorded node order is deterministic. |
-| `0003_forward_only_identity` | Recreates the forward-only trigger with `plan_id` pinned, so a forward UPDATE cannot rename a plan and strand its immortal node and edge rows under the old id.                 |
+| Step                          | What it does                                                                                                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0001_initial`                | Creates the three tables, the `flows_plan_nodes_order` index, and triggers that raise on any UPDATE or DELETE of a node or edge row and on any backward move of a plan row.     |
+| `0002_append_only_hardening`  | Forbids deleting a plan row, extends the forward-only trigger to pin `flow` and `created_at_ms`, and makes `(plan_id, ordinal)` unique so recorded node order is deterministic. |
+| `0003_forward_only_identity`  | Recreates the forward-only trigger with `plan_id` pinned, so a forward UPDATE cannot rename a plan and strand its immortal node and edge rows under the old id.                 |
+| `0004_remove_redundant_index` | Drops `flows_plan_nodes_order`; the unique `flows_plan_nodes_ordinal` index still serves ordered reads and enforces `(plan_id, ordinal)` uniqueness.                            |
