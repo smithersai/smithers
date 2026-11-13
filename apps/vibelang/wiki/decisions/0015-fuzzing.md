@@ -1856,6 +1856,13 @@ here does that for the sandbox classes, which need a Container binding. The call
 `worker/benchmarkCounters.vibe`'s `withCounters`, passed by name, so the constructors hold only Alchemy wiring that
 plan time runs, and the fuzz and unit suites run the counter export itself.
 
+`fuzz2-full18` (`playwright` box, job `1adf020082d50cfc4d24a655`, `main` at `ab536db0` plus the `file:` source fix
+that landed as `bbbdcdd1`, 2,784 s, exit 1 on thresholds only): 104 fuzz files and 5 browser tests passed. Each of
+`full15`'s nine lines ran. In scope, 9 statement lines missed. Six are in code changed in the hour before the run by
+the proof lane's batches 40 to 45: `Accounts` 370-371 (an undecodable grant body) and `Issues` 152, 227, 257, 286.
+Three were reached by `full15` and missed this draw: `conversation` 810, `accountObject` 40 and `apiObjects` 153.
+The fuzz gate is not done.
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the
