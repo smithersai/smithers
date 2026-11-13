@@ -10,11 +10,10 @@
  * screen and the report can never disagree about a rate, or about a budget the
  * driver spliced through the shell as text.
  */
-import { summarise } from "../fullbench-report.mjs"
+import { scoredRateText, summarise } from "../fullbench-report.mjs"
 import { formatMoney as money } from "./format-money.mjs"
 import { read } from "./fullbench-manifest.mjs"
 
-const percent = (value) => `${(value * 100).toFixed(1)}%`
 const iso = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString().replace(".000", "") : "—")
 
 const duration = (seconds) => {
@@ -60,10 +59,7 @@ out.push(
   `  resolved   ${summary.resolved}   unresolved ${summary.unresolved}   empty ${summary.emptyPatch}   `
     + `eval error ${summary.evalErrors}   failed ${summary.failed}`
 )
-out.push(
-  `  rate       ${percent(summary.rate.point)}  `
-    + `(95% Wilson ${percent(summary.rate.low)}–${percent(summary.rate.high)}, n=${summary.graded})`
-)
+out.push(`  rate       ${scoredRateText(summary)}`)
 out.push("")
 out.push(
   `  spent      ${money(summary.spentUsd)} of ${money(summary.header.budgetUsd)}   `

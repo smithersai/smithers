@@ -335,10 +335,12 @@ export const renderReport = (summary) => {
   lines.push(`| not started | ${summary.remaining - summary.inFlight - summary.failed} | |`)
   lines.push("")
   lines.push(
-    summary.graded === 0
+    summary.scoredGraded === 0
       // A rate over nothing is not 0%, and printing it as one is how a report
       // that has graded nothing gets quoted as having graded a failure.
-      ? "**No instance has been graded yet**, so there is no rate to report."
+      ? summary.graded === 0
+        ? "**No instance has been graded yet**, so there is no rate to report."
+        : `**No scored instances**, so there is no rate to report (0 scored of ${summary.graded} run).`
       : summary.excluded.length === 0
       ? `**Resolve rate ${percent(summary.rate.point)}** `
         + `(95% Wilson ${percent(summary.rate.low)}–${percent(summary.rate.high)}, n=${summary.graded}).`
@@ -480,6 +482,22 @@ export const renderReport = (summary) => {
 }
 
 /**
+ * The scored rate with its population and every excluded instance.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const scoredRateText = (summary) => {
+  const population = `${summary.scoredGraded} scored of ${summary.graded} run`
+  const excluded = summary.excluded.length === 0
+    ? ""
+    : `; excluded: ${summary.excluded.map((row) => row.id).join(", ")}`
+  if (summary.scoredGraded === 0) return `No scored instances; no rate (${population}${excluded})`
+  const rate = summary.scoredRate
+  return `${percent(rate.point)} (95% Wilson ${percent(rate.low)}–${percent(rate.high)}; ${population}${excluded})`
+}
+
+/**
  * One row for the append-only checkpoint log.
  *
  * @category conversions
@@ -489,8 +507,8 @@ export const renderCheckpoint = (summary) => {
   const cells = [
     iso(summary.now),
     `${summary.graded}/${summary.total}`,
-    String(summary.resolved),
-    `${percent(summary.rate.point)} (${percent(summary.rate.low)}–${percent(summary.rate.high)})`,
+    String(summary.scoredResolved),
+    scoredRateText(summary),
     money(summary.meanUsd),
     money(summary.spentUsd),
     money(summary.projectedUsd),
@@ -507,7 +525,7 @@ const CHECKPOINT_HEADER = [
   "The rate carries a 95% Wilson interval; the projection assumes the mean cost so far holds for",
   "the rest, and the finish estimate is the observed throughput including every stop and wait.",
   "",
-  "| at | graded | resolved | resolve rate (95% CI) | mean $/attempt | spent | projected total | finish (observed) | disk free |",
+  "| at | graded | scored resolved | scored resolve rate (95% CI; scored/raw population) | mean $/attempt | spent | projected total | finish (observed) | disk free |",
   "| --- | --- | ---: | --- | ---: | ---: | ---: | --- | ---: |",
   ""
 ].join("\n")

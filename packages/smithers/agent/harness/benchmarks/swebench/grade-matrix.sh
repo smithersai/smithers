@@ -61,11 +61,14 @@ SELECTED="$ARTIFACT_ROOT/selected"
 
 select_candidates() {
   echo "== selecting, from journals and patches only"
-  mkdir -p "$SELECTED"
+  SELECTION="$(mktemp -d "$ARTIFACT_ROOT/.selection-XXXXXX")" || return 1
+  trap 'rm -rf -- "$SELECTION"' EXIT
+  mkdir "$SELECTION/current" || return 1
   for ID in $IDS; do
     node "$S/select-candidate.mjs" "$ID" --journals "$JOURNAL_ROOT" --patches "$PATCH_ROOT" \
-      --out "$SELECTED" || STATUS=$?
+      --out "$SELECTION/current" || return $?
   done
+  node "$S/lib/publish-selection.mjs" "$SELECTION" "$SELECTED" || return $?
 }
 
 grade_rounds() {
@@ -83,12 +86,12 @@ grade_selected() {
 }
 
 case "$GROUP" in
-  select) select_candidates ;;
-  selected) select_candidates; grade_selected ;;
+  select) select_candidates || exit $? ;;
+  selected) select_candidates || exit $?; grade_selected ;;
   flows) grade_rounds flows ;;
   codex) grade_rounds codex ;;
   all)
-    select_candidates
+    select_candidates || exit $?
     grade_rounds flows
     grade_rounds codex
     grade_selected

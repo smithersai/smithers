@@ -44,13 +44,13 @@
 # the seeded draw, the same order the benchmark itself runs in, so the phases
 # cannot silently depend on an order the driver does not actually use:
 #
-#   1st drawn  busybox      pulled, extracted through the rig's extraction lock,
+#   1st drawn  busybox      privately tagged, extracted through the rig's extraction lock,
 #                           then deleted
-#   2nd drawn  hello-world  pulled, empty patch, deleted
+#   2nd drawn  hello-world  privately tagged, empty patch, deleted
 #   3rd drawn  alpine       already local, pinned, and still here at the end —
 #                           the stand-in for the five images the 5x5 matrix
 #                           needs kept warm
-#   4th drawn  busybox      never pulled: the disk gate stops it first
+#   4th drawn  busybox      absent private tag: the disk gate stops it first
 #
 # Spends no model tokens. Needs docker and about 10 MB of pulls.
 set -eu
@@ -61,7 +61,15 @@ FB2="$TMP/fullbench2"
 LEDGER="$TMP/ledger.txt"
 MAIN_IDS="stubfull__one stubfull__two stubfull__three stubfull__four"
 CRASH_IDS="stubcrash__one stubcrash__two stubcrash__three"
-ALL_IDS="$MAIN_IDS $CRASH_IDS"
+# Artifact and Docker names belong to this invocation, even when an operator
+# already exported an artifact root for a different benchmark.
+export SWB_ARTIFACT_ROOT="$TMP/artifacts"
+mkdir -p "$SWB_ARTIFACT_ROOT"
+IMAGE_PREFIX="swebench-dryrun"
+IMAGE_TAG="${TMP##*/}"
+BUSYBOX="$IMAGE_PREFIX:$IMAGE_TAG-busybox"
+HELLO="$IMAGE_PREFIX:$IMAGE_TAG-hello-world"
+ALPINE="$IMAGE_PREFIX:$IMAGE_TAG-alpine"
 . "$S/lib/owned-processes.sh"
 
 cleanup() {
@@ -74,12 +82,7 @@ cleanup() {
   # unconditional `rmdir` that used to be here would hand that wave's live
   # extraction to a second one.
   "$S/lib/lock.sh" reconcile "$S/.extract-lock" >/dev/null 2>&1 || true
-  for ID in $ALL_IDS; do
-    rm -rf "$S/work/${ID}-r90" "$S/journals/${ID}-r90"
-    rm -f "$S/patches/${ID}-r90.patch" "$S/patches/${ID}-r90.patch.untracked" \
-      "$S/timings/${ID}-r90.json" "$S/logs-agent/${ID}-r90".*
-  done
-  docker rmi -f busybox:latest hello-world:latest >/dev/null 2>&1 || true
+  docker rmi -f "$BUSYBOX" "$HELLO" "$ALPINE" >/dev/null 2>&1 || true
   # SWB_DRYRUN_KEEP=1 leaves the temp directory — the manifest, the report, the
   # progress log and every driver log — for reading after a failure.
   if [ "${SWB_DRYRUN_KEEP:-0}" = "1" ]; then
@@ -90,12 +93,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# alpine is the disk probe's image and this dry run's stand-in for a pinned
-# benchmark image. Without it the "kept" assertion would be vacuous.
-if ! docker image inspect alpine:latest >/dev/null 2>&1; then
-  docker pull alpine:latest >/dev/null 2>&1 || { echo "dryrun: could not pull alpine"; exit 1; }
-fi
-docker rmi -f busybox:latest hello-world:latest >/dev/null 2>&1 || true
+# Shared source tags are read or pulled, never removed. Only private aliases
+# reach the driver's deletion path. Re-seed a private alias before a later
+# crash phase needs the image again.
+seed_image() {
+  local source="$1" target="$2"
+  if ! docker image inspect "$source:latest" >/dev/null 2>&1; then
+    docker pull "$source:latest" >/dev/null 2>&1 || {
+      echo "dryrun: could not pull $source"; return 1;
+    }
+  fi
+  docker tag "$source:latest" "$target"
+}
+seed_image alpine "$ALPINE"
+seed_image busybox "$BUSYBOX"
+seed_image hello-world "$HELLO"
+export SWB_DISK_PROBE_IMAGE="$ALPINE"
 
 mkdir -p "$FB" "$TMP/eval-logs"
 node -e '
@@ -125,14 +138,14 @@ printf '{"seed":0,"size":1,"instances":["%s"]}\n' "$THIRD" > "$TMP/sample.json"
 
 node -e '
   const fs = require("fs")
-  const [, first, second, third, fourth, out] = process.argv
+  const [, first, second, third, fourth, out, busybox, hello, alpine] = process.argv
   fs.writeFileSync(out, JSON.stringify({
-    [first]: "busybox:latest",
-    [second]: "hello-world:latest",
-    [third]: "alpine:latest",
-    [fourth]: "busybox:latest"
+    [first]: busybox,
+    [second]: hello,
+    [third]: alpine,
+    [fourth]: busybox
   }, null, 2))
-' "$FIRST" "$SECOND" "$THIRD" "$FOURTH" "$TMP/images.json"
+' "$FIRST" "$SECOND" "$THIRD" "$FOURTH" "$TMP/images.json" "$BUSYBOX" "$HELLO" "$ALPINE"
 
 # A journal the cost reader can price: two model calls, in the event shapes
 # `lib/run-cost.mjs` reads. $0.67 an instance at the committed price table.
@@ -182,7 +195,7 @@ if [ "\$ID" = "$FIRST" ]; then
   # The rig's real extraction lock, taken the way run-instance.sh takes it.
   LOCK="$S/.extract-lock"
   "$S/lib/lock.sh" acquire "\$LOCK" --owner \$\$ --label "dryrun \$ID" --timeout 600 || exit 1
-  TMPC="\$(docker create busybox:latest)"
+  TMPC="\$(docker create "$BUSYBOX")"
   docker cp "\$TMPC:/bin/." "\$WORK/" >/dev/null 2>&1
   docker rm -f "\$TMPC" >/dev/null 2>&1
   "$S/lib/lock.sh" release "\$LOCK" --owner \$\$ --quiet
@@ -360,13 +373,13 @@ echo "dryrun: crash roles orphan=$ORPHAN stale=$STALE nopatch=$NOPATCH"
 printf '{"seed":0,"size":1,"instances":["nothing__pinned"]}\n' > "$TMP/sample2.json"
 node -e '
   const fs = require("fs")
-  const [, orphan, stale, nopatch, out] = process.argv
+  const [, orphan, stale, nopatch, out, busybox, hello] = process.argv
   fs.writeFileSync(out, JSON.stringify({
-    [orphan]: "busybox:latest",
-    [stale]: "hello-world:latest",
-    [nopatch]: "busybox:latest"
+    [orphan]: busybox,
+    [stale]: hello,
+    [nopatch]: busybox
   }, null, 2))
-' "$ORPHAN" "$STALE" "$NOPATCH" "$TMP/images2.json"
+' "$ORPHAN" "$STALE" "$NOPATCH" "$TMP/images2.json" "$BUSYBOX" "$HELLO"
 
 export FB_DIR="$FB2"
 export SWB_DATASET="$TMP/dataset2.json"
@@ -376,6 +389,7 @@ ACTIVE_FB="$FB2"
 mkdir -p "$FB2"
 
 echo "== phase F: the driver alone is killed and its worker survives it"
+seed_image busybox "$BUSYBOX"
 printf '40\n' > "$TMP/sleep-$ORPHAN"
 SWB_FULLBENCH_LIMIT=1 "$S/fullbench.sh"
 wait_for_ledger "S $ORPHAN"
@@ -393,6 +407,7 @@ wait_for "states.get('$ORPHAN')?.state === 'cleaned'"
 cp "$FB2/driver.log" "$TMP/phase-f.log"
 
 echo "== phase H: a verdict left behind by an attempt that was never recorded"
+seed_image hello-world "$HELLO"
 mkdir -p "$TMP/eval-logs/fullbench/flows-cell-harness/$STALE"
 printf '{"%s": {"patch_exists": true, "patch_successfully_applied": true, "resolved": true}}\n' \
   "$STALE" > "$TMP/eval-logs/fullbench/flows-cell-harness/$STALE/report.json"
@@ -403,32 +418,32 @@ drain_driver
 
 echo "== phase E: an instance that fails after its pull leaves no image"
 : > "$TMP/no-patch-$NOPATCH"
-docker rmi -f busybox:latest >/dev/null 2>&1 || true
+seed_image busybox "$BUSYBOX"
 SWB_FULLBENCH_LIMIT=1 "$S/fullbench.sh" --resume
 wait_for "states.get('$NOPATCH')?.state === 'failed'"
 drain_driver
 {
-  docker image inspect busybox:latest >/dev/null 2>&1 \
+  docker image inspect "$BUSYBOX" >/dev/null 2>&1 \
     && echo "busybox present" || echo "busybox absent"
 } > "$TMP/images-after-failure.txt"
 
 echo "== phase G: an image left behind between the verdict and the delete"
-docker pull hello-world:latest >/dev/null 2>&1 || true
+seed_image hello-world "$HELLO"
 node "$S/lib/manifest-append.mjs" "$FB2/manifest.jsonl" "$(node "$S/lib/fullbench-row.mjs" \
   --kind instance --id "$ORPHAN" --state graded --at "$(node -e 'process.stdout.write(String(Date.now()))')" \
-  --image hello-world:latest --verdict resolved)"
+  --image "$HELLO" --verdict resolved)"
 SWB_FULLBENCH_LIMIT=0 "$S/fullbench.sh" --resume
 drain_driver
 {
-  docker image inspect hello-world:latest >/dev/null 2>&1 \
+  docker image inspect "$HELLO" >/dev/null 2>&1 \
     && echo "hello-world present" || echo "hello-world absent"
 } > "$TMP/images-after-reconcile.txt"
 
 echo "== assertions"
 {
-  docker image inspect busybox:latest >/dev/null 2>&1 && echo "busybox present" || echo "busybox absent"
-  docker image inspect hello-world:latest >/dev/null 2>&1 && echo "hello-world present" || echo "hello-world absent"
-  docker image inspect alpine:latest >/dev/null 2>&1 && echo "alpine present" || echo "alpine absent"
+  docker image inspect "$BUSYBOX" >/dev/null 2>&1 && echo "busybox present" || echo "busybox absent"
+  docker image inspect "$HELLO" >/dev/null 2>&1 && echo "hello-world present" || echo "hello-world absent"
+  docker image inspect "$ALPINE" >/dev/null 2>&1 && echo "alpine present" || echo "alpine absent"
 } > "$TMP/images-final.txt"
 
 node "$S/fixtures/check-dryrun.mjs" "$TMP"

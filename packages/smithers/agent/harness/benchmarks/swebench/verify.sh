@@ -209,6 +209,7 @@ node "$S/fixtures/check-fullbench-receipts.mjs"
 node "$S/fixtures/check-fullbench-budget.mjs"
 node "$S/fixtures/check-request-cost.mjs"
 node "$S/fixtures/check-fullbench-status.mjs"
+node --test "$S/fixtures/check-operator-safety.mjs"
 
 echo "== the driver's own wait for a worker that never finishes"
 node "$S/fixtures/check-fullbench-drain.mjs"

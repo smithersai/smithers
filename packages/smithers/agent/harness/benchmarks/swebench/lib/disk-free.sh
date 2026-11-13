@@ -4,10 +4,10 @@
 #   lib/disk-free.sh
 #
 # One instance costs an official image (2–3 GB) and an extracted testbed
-# (1–3 GB), and those two land in different places on this host: the testbed is
-# a directory under the rig, on the host filesystem, and the image is a layer
-# inside the docker VM. So neither number alone bounds an instance, and this
-# prints the **smaller of the two** — the one that runs out first.
+# (1–3 GB), plus its evidence archive. These may land on different filesystems:
+# SWB_ARTIFACT_ROOT holds the workspace, FB_DIR holds the archive, and Docker
+# holds the image. Print the minimum free space across these destinations,
+# resolving nonexistent directories to their nearest existing parent.
 #
 # The docker side is read by running `df` inside a container, because no docker
 # command reports free space. The probe image is one that is **already local**;
@@ -20,7 +20,7 @@
 #                          which need a disk gate that can be made to fail
 #
 # Spends nothing, needs no dataset, and never pulls.
-set -eu
+set -euo pipefail
 S="$(cd "$(dirname "$0")/.." && pwd)"
 PROBE="${SWB_DISK_PROBE_IMAGE:-alpine:latest}"
 EXPLAIN=0
@@ -38,8 +38,31 @@ if [ -n "${SWB_DISK_FREE_MIB:-}" ]; then
   exit 0
 fi
 
-# The host filesystem the extracted testbeds live on.
-HOST_MIB="$(df -k "$S" | tail -1 | awk '{ printf "%d", $4 / 1024 }')"
+# Resolve the actual destinations through the same helper the worker uses.
+ROOTS="$("$S/lib/run-paths.sh" flows --roots)"
+eval "$ROOTS"
+existing_parent() {
+  local destination="$1"
+  while [ ! -d "$destination" ]; do
+    destination="$(dirname "$destination")"
+  done
+  (cd "$destination" && pwd -P)
+}
+free_mib() {
+  local reading
+  reading="$(df -k "$1")" || return 1
+  printf '%s\n' "$reading" | awk 'END {
+    if (NF < 4 || $4 !~ /^[0-9]+$/) exit 1
+    printf "%d", $4 / 1024
+  }'
+}
+WORK_DEST="$(existing_parent "$WORK_ROOT")"
+ARCHIVE_DEST="$(existing_parent "${FB_DIR:-$S/fullbench}/archives")"
+WORK_MIB="$(free_mib "$WORK_DEST")"
+ARCHIVE_MIB="$(free_mib "$ARCHIVE_DEST")"
+HOST_MIB="$WORK_MIB"
+if [ "$ARCHIVE_MIB" -lt "$HOST_MIB" ]; then HOST_MIB="$ARCHIVE_MIB"; fi
+HOST_SOURCE="workspace $WORK_DEST: $WORK_MIB MiB, archive $ARCHIVE_DEST: $ARCHIVE_MIB MiB"
 
 # The docker VM's filesystem, when a probe image is already here to read it
 # with. `docker run` writes its platform warning to stderr, which is discarded.
@@ -54,9 +77,9 @@ if command -v docker >/dev/null 2>&1 && docker image inspect "$PROBE" >/dev/null
 fi
 
 FREE="$HOST_MIB"
-SOURCE="host filesystem only; no local probe image ($PROBE)"
+SOURCE="$HOST_SOURCE; no local probe image ($PROBE)"
 if [ -n "$DOCKER_MIB" ]; then
-  SOURCE="host ${HOST_MIB} MiB, docker VM ${DOCKER_MIB} MiB"
+  SOURCE="$HOST_SOURCE, docker VM ${DOCKER_MIB} MiB"
   if [ "$DOCKER_MIB" -lt "$FREE" ]; then FREE="$DOCKER_MIB"; fi
 fi
 

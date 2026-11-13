@@ -1402,6 +1402,11 @@ and that the same journals twice produce byte-identical output.
 
 ### Grading and reporting
 
+Selection is built in a fresh directory for every `grade-matrix.sh` invocation.
+Only a complete selection replaces `selected/`; missing or unreadable journals
+stop the command before any selected grading. A failed attempt preserves the
+previous selection for inspection without submitting it under the new run id.
+
 The evaluator keys its predictions by instance id, so one instance can carry
 exactly one patch per grading. A matrix of n runs per instance is therefore n
 gradings a side, one per round, plus one for the selected patches:
@@ -1565,9 +1570,11 @@ otherwise. After `SWB_FULLBENCH_DISK_WAIT_MAX` seconds (an hour by default) the
 instance stops as `failed` rather than blocking the queue for ever; it re-runs on
 the next resume.
 
-`lib/disk-free.sh` answers with **the smaller of two numbers**, because an
-instance spends two different disks: the extracted testbed lands on the host
-filesystem and the image lands inside the docker VM. The docker side is read by
+`lib/disk-free.sh` answers with **the minimum free space across the destinations**:
+the workspace root derived from `SWB_ARTIFACT_ROOT`, the evidence archive under
+`FB_DIR` (the rig's `fullbench/` by default), and Docker storage. A destination
+that does not exist yet is measured through its nearest existing parent, so moving
+artifacts to another volume also moves the disk check. The docker side is read by
 running `df` in a container built from an image that is *already local* — the
 probe never pulls, because a disk check that needs the network to answer "is
 there room to pull" is the wrong shape. With no local probe image the answer is
@@ -1682,9 +1689,11 @@ report the one it is running under.
 
 Every 25 completed instances (`SWB_FULLBENCH_CHECKPOINT_EVERY`) the driver
 appends one row to `fullbench/progress.md` and regenerates `fullbench/report.md`
-and `fullbench/report.json` from the manifest alone. Three things they say that
-are worth knowing before reading them:
+and `fullbench/report.json` from the manifest alone. Its rate and projections follow these rules:
 
+- **The screen, report and checkpoints use the scored population.** Each live
+  screen and checkpoint rate names the scored and raw denominators and any
+  excluded instances. With no scored instances they print no measured rate.
 - **The resolve rate carries a 95% Wilson interval.** At 25 of 500 graded, 8
   resolved is a rate somewhere between 17.2% and 51.6%; a checkpoint that printed
   "32%" on its own would invite a conclusion the sample cannot support. Wilson
@@ -1811,7 +1820,8 @@ still while it kills the driver.
 
 ### Proving the driver without spending a token
 
-Two checks, and between them they cover the whole thing.
+The offline fixtures check selection publication, destination disk checks, scored
+rates and concurrent startup cleanup. The Docker dry run checks the driver lifecycle.
 
 ```sh
 ./verify.sh              # offline; includes fixtures/check-fullbench.mjs
@@ -1830,6 +1840,13 @@ instances, and the observed finish divides the whole ledger's span rather than
 the current session's. A copied rig with stub commands also checks archive copy
 failures, interrupted copies, content mismatches, link and publication failures,
 successful publication, and preservation of an earlier attempt before retry.
+
+Each `fullbench-dryrun.sh` invocation exports a private `SWB_ARTIFACT_ROOT`
+inside its temporary directory and uses private image tags. It may read or pull
+the shared `alpine:latest`, `busybox:latest` and `hello-world:latest` source
+images, and preserves those tags. Worker deletion and cleanup remove only that
+invocation's aliases. The source images are tagged before each phase that needs
+them; workers exercise the cached-image path.
 
 `fixtures/check-fullbench-status.mjs`, also inside `verify.sh`, runs
 `lib/fullbench-status.mjs` over ledgers carrying every budget the driver

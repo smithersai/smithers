@@ -819,7 +819,10 @@ if [ "$ARCHIVE_MODE" = publish-fail ]; then exit 1; fi
   assert.match(paused, /> \*\*PAUSED\*\* — cumulative API cost \$612\.40 reached the \$600 budget/)
 
   const checkpoint = renderCheckpoint(summary)
-  assert.match(checkpoint, /\| 25\/30 \| 8 \| 32\.0% \(17\.2%–51\.6%\) \| — \| — \| — \|/)
+  assert.match(
+    checkpoint,
+    /\| 25\/30 \| 8 \| 32\.0% \(95% Wilson 17\.2%–51\.6%; 25 scored of 25 run\) \| — \| — \| — \|/
+  )
   assert.match(checkpoint, /9001 MiB \|$/m)
 
   // The generator run twice over one ledger writes the same report: it holds no
