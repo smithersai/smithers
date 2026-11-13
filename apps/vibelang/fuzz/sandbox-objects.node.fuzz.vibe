@@ -10,7 +10,7 @@ import { accountObject, gatewayOf, gatewayWithIdentity, identityFromPolicy, noId
 import { signedOutGateway } from "../worker/SandboxHttp.vibe"
 import { makeBox, namespaceOf, type BoxFault } from "./machine-box.ts"
 import { objectStorage } from "../test/support/objectStorage.ts"
-import { run, Int } from "./run.vibe"
+import { run, Finding, Int } from "./run.vibe"
 
 const OWNER = "person-1"
 const FAULTS = ["start", "stuck", "setup", "snapshot", "destroy", "exec", "running"] as const satisfies ReadonlyArray<BoxFault>
@@ -122,6 +122,20 @@ it.live("sandbox/machine-object", () => run("sandbox/machine-object", MachineInp
   return true
 })))
 
+/**
+ * The owner's walk with no machine binding, then under each box fault: start, command and stop, then a command for the
+ * generation it stopped.
+ */
+const accountChosen: ReadonlyArray<typeof AccountInput.Type> = [{ role: "contributor", person: OWNER, prefix: true, allowed: true, binding: false, steps: [] }, ...FAULTS.map((_, at): typeof AccountInput.Type => ({
+  role: "contributor" as const, person: OWNER, prefix: false, allowed: true, binding: true,
+  steps: [
+    { kind: "start" as const, generation: 0, current: true, operation: 0, command: 0, fault: { faulty: true, fault: at } },
+    { kind: "command" as const, generation: 0, current: true, operation: 1, command: 0, fault: { faulty: true, fault: at } },
+    { kind: "stop" as const, generation: 0, current: true, operation: 2, command: 0, fault: { faulty: true, fault: at } },
+    { kind: "command" as const, generation: 1, current: false, operation: 3, command: 0, fault: clean },
+  ],
+}))]
+
 /** Only the owner with a starting role reaches their machine, and every failure answers as a typed refusal. */
 it.live("sandbox/account-gateway", () => run("sandbox/account-gateway", AccountInput, (input) => provided(effect {
   const local = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
@@ -169,6 +183,8 @@ it.live("sandbox/account-gateway", () => run("sandbox/account-gateway", AccountI
   for (const step of [...lifecycle, ...input.steps]) {
     faulted(local.faults, step.fault)
     const outcome = try Effect.result(Effect.provideService(act(step, generation), HttpServerRequest.HttpServerRequest, {} as never))
+    // With no machine binding an admitted start reaches the account, whose refusal names the missing binding.
+    if (admitted && !input.binding && step.kind === "start" && !(outcome._tag === "Failure" && outcome.failure._tag === "Refused" && outcome.failure.refusal === "unavailable" && outcome.failure.reason === "container-binding")) throw new Finding({ report: `an unbound start answered ${outcome._tag === "Failure" ? outcome.failure._tag : "success"}` })
     if (outcome._tag === "Failure") {
       if (!admitted && step.kind !== "read" && !(outcome.failure._tag === "Refused" && outcome.failure.refusal === "forbidden")) return false
       continue
@@ -188,7 +204,7 @@ it.live("sandbox/account-gateway", () => run("sandbox/account-gateway", AccountI
   if (blank.ok || blank.refusal !== "forbidden") return false
   const foreign = try account.run("someone-else", "start", "c-1", "op-foreign", 0, "")
   return owner === undefined || (!foreign.ok && foreign.refusal === "forbidden")
-})))
+}), undefined, { chosen: accountChosen }))
 
 /** A deployment with no container image binds no objects: every sandbox request answers signed out. */
 it.live("sandbox/gateway-without-image", () => run("sandbox/gateway-without-image", Schema.Boolean, () => scoped(effect {

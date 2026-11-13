@@ -129,6 +129,16 @@ const Lifecycle = Schema.Struct({
   text: Text,
 })
 
+/**
+ * Every refusal the lifecycle can take, by the maintainer; the only maintainer demoting themselves (refused); and the
+ * plain path by a new person resuming a write.
+ */
+const lifecycleChosen: ReadonlyArray<typeof Lifecycle.Type> = [
+  { person: "1", grant: "contributor", target: "2", resume: false, badOrigin: true, badMethod: true, resumeGarbage: true, badGithubId: false, connectSignedOut: true, grantGarbage: true, grantOversized: true, crossOrigin: true, text: "" },
+  { person: "1", grant: "new", target: "1", resume: false, badOrigin: false, badMethod: false, resumeGarbage: false, badGithubId: false, connectSignedOut: false, grantGarbage: false, grantOversized: false, crossOrigin: false, text: "" },
+  { person: "2", grant: "community", target: "2", resume: true, badOrigin: false, badMethod: false, resumeGarbage: false, badGithubId: false, connectSignedOut: false, grantGarbage: false, grantOversized: false, crossOrigin: false, text: "" },
+]
+
 /** The documented lifecycle always works: sign-in, session, members, grants, the event stream, connect and sign-out. */
 it.live("accounts/worker-lifecycle", () => run("accounts/worker-lifecycle", Lifecycle, (input) => effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
@@ -204,7 +214,7 @@ it.live("accounts/worker-lifecycle", () => run("accounts/worker-lifecycle", Life
   const after = try step("GET", "/api/auth/session")
   const out = try Effect.try(() => JSON.parse(after.text))
   return out.id === ""
-}))
+}, undefined, { chosen: lifecycleChosen }))
 
 /** The unconfigured host refuses politely; the exposed role, policy and participation surfaces answer typed. */
 it.live("accounts/worker-surface", () => run("accounts/worker-surface", Schema.Struct({ person: Schema.Literals(["1", "2"]), path: Schema.Literals(["/api/auth/session", "/api/auth/sign-in", "/missing"]) }), (input) => effect {

@@ -433,6 +433,8 @@ const Publishing = Schema.Struct({ setting: Schema.Literals(["off", "github:o/r"
  * setting and a token), the object's start-up starts the Publish flow with its first round due, and its alarm drives
  * that round; otherwise no Publish intent is ever stored. GitHub is offline, so no round reaches it.
  */
+/** Publishing on, which a draw picks one time in eight. */
+const publishingChosen: ReadonlyArray<typeof Publishing.Type> = [{ setting: "github:o/r", token: true, member: "alarm" }, { setting: "github:o/r", token: true, member: "page" }]
 it.live("api-objects/history-publish", () => run("api-objects/history-publish", Publishing, ({ setting, token, member }) => scoped(effect {
   const offline = HttpClient.make((request) => Effect.fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
   const kv = try Effect.try(() => objectStorage())
@@ -449,4 +451,4 @@ it.live("api-objects/history-publish", () => run("api-objects/history-publish", 
   // next one later.
   const due = kv.alarmAt - (try Clock.currentTimeMillis)
   return flow === "vibelang/history/Publish" && (member === "alarm" ? due > 0 : due <= 0)
-})))
+}), undefined, { chosen: publishingChosen }))

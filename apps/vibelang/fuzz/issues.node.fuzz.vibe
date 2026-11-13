@@ -151,6 +151,8 @@ const Direct = Schema.Struct({
   assignee: Schema.Literals(["", "fuzz", "vibe-agent", "VibeLang agent", "ghost"]),
   withWriter: Schema.Boolean,
   authorizeFails: Schema.Boolean,
+  // A device sign-in (decision 0028); optional, so the saved values from before it still decode.
+  agent: Schema.optionalKey(Schema.Boolean),
 })
 
 /** The host itself, without the engine: every refusal is typed before any write, and unjournaled writes complete. */
@@ -166,7 +168,7 @@ const performBoundary = (input: typeof Direct.Type) => effect {
   const authority: IssueAuthority.Shape = {
     current: () => Effect.flatMap(Ref.updateAndGet(calls, (n) => n + 1), (n) =>
       Ref.get(authorizeFails).pipe(Effect.as(
-        input.signedOut ? undefined : { id: "7", login: "fuzz", role: (input.demote && n > 1 ? "viewer" : input.role) as typeof Role.Type, ...(input.noToken ? {} : { connection: site.connection }) },
+        input.signedOut ? undefined : { id: "7", login: "fuzz", role: (input.demote && n > 1 ? "viewer" : input.role) as typeof Role.Type, ...(input.noToken ? {} : { connection: site.connection }), ...(input.agent === true ? { kind: "agent" as const } : {}) },
       ))),
     authorize: () => Effect.flatMap(Ref.get(authorizeFails), (forbid) => forbid ? Effect.fail(new IssueFailure({ reason: "forbidden" })) : Effect.void),
   }
@@ -177,7 +179,9 @@ const performBoundary = (input: typeof Direct.Type) => effect {
   )
   const journaled = ["new", "comment", "split", "propose"].includes(input.op)
   // A signed-out caller acts with the viewer role (worker/Issues.vibe: `actor?.role ?? "viewer"`).
-  const permitted = !input.bogus && issuePermission(input.signedOut ? "viewer" : input.role, input.op) && !input.authorizeFails && !(input.demote && !issuePermission("viewer", input.op))
+  // A device sign-in never accepts or declines a VIP, whatever its role.
+  const agentReview = input.agent === true && !input.signedOut && !input.bogus && (input.op === "accept" || input.op === "decline")
+  const permitted = !input.bogus && issuePermission(input.signedOut ? "viewer" : input.role, input.op) && !input.authorizeFails && !(input.demote && !issuePermission("viewer", input.op)) && !agentReview
   const proceeds = permitted && !input.noToken && !input.blankKey
   // Journaled creations need the durable engine; here they only run up to their first typed refusal.
   if ((journaled && proceeds && !(input.blank && ["new", "split", "propose"].includes(input.op)) && !(input.number === 9999 && ["split", "comment"].includes(input.op))) || (input.op === "draft" && input.withWriter && proceeds)) return true
@@ -200,6 +204,7 @@ const performBoundary = (input: typeof Direct.Type) => effect {
     if (result._tag === "Success" || fake.writes !== writesBefore) throw new Finding({ report: `githubHost answered ${input.op}` })
     if (proceeds && [1, 2, 3, 4].includes(input.number) && result.failure.reason !== "unsupported") throw new Finding({ report: `${input.op} on an issue answered ${result.failure.reason}` })
   }
+  if (agentReview && (result._tag === "Success" || result.failure.reason !== "forbidden" || fake.writes !== writesBefore)) throw new Finding({ report: `an agent's ${input.op} was not refused` })
   if (result._tag === "Failure") {
     if (result.failure._tag !== "IssueFailure" || !reasons.includes(result.failure.reason)) return false
     if (result.failure.reason === "forbidden" && permitted) return false
@@ -207,14 +212,23 @@ const performBoundary = (input: typeof Direct.Type) => effect {
   }
   if (!permitted) return false
   if (input.op === "read") return Schema.is(IssuesState)(result.success)
+  // Issue 4 is a VIP in review: a decision labels it, and a decline also closes it.
+  const reviewed = fake.issues.find((issue) => issue.number === 4)!
+  if (input.op === "decline" && input.number === 4 && (!reviewed.labels.some((label) => label.name === "vibelang:declined") || reviewed.state !== "closed")) throw new Finding({ report: "a declined VIP was not labeled and closed" })
   return ["link", "commit", "uncommit", "accept", "decline"].includes(input.op)
 }
 const directWitness: typeof Direct.Type = { op: "commit", role: "maintainer", signedOut: false, noToken: false, number: 1, parent: 0, blank: false, blankKey: false, bogus: false, demote: false, assignee: "fuzz", withWriter: false, authorizeFails: false }
+/** A maintainer declines the VIP in review; a device signed in as a maintainer tries to accept and decline it. */
+const directChosen: ReadonlyArray<typeof Direct.Type> = [
+  { ...directWitness, op: "decline", number: 4 },
+  { ...directWitness, op: "accept", number: 4, agent: true },
+  { ...directWitness, op: "decline", number: 4, agent: true },
+]
 /** Random inputs rarely permit a specification operation on an existing issue; each runs once per execution. */
 const specificationWitnesses = Effect.forEach(["spec-revise", "spec-review"] as const, (op) => effect {
   if (!(try scoped(performBoundary({ ...directWitness, op })))) throw new Finding({ report: `issues/host-perform-boundary: the ${op} witness failed` })
 })
-it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary", Direct, performBoundary).pipe(
+it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary", Direct, performBoundary, undefined, { chosen: directChosen }).pipe(
   Effect.andThen(reached("issues/host-perform-boundary", boundary, performBoundary, directWitness)),
   Effect.andThen(specificationWitnesses),
 ))
@@ -266,6 +280,8 @@ const httpOne = (input: typeof HttpOp.Type) => effect {
 
   const text = try promise(() => HttpServerResponse.toWeb(response).text())
   if (![200, 400, 401, 403, 404, 405, 409, 413, 503].includes(response.status)) return false
+  // The tracker serves GET and POST only; any other method on its path is refused before its body is read.
+  if (input.path !== "/other" && input.method !== "GET" && input.method !== "POST" && response.status !== 405) throw new Finding({ report: `${input.method} ${input.path} answered ${response.status}` })
   if (response.status === 200) {
     const parsed = try Effect.try(() => JSON.parse(text))
     return Schema.is(Schema.Unknown)(parsed) && typeof parsed === "object" && parsed !== null && "items" in parsed
@@ -274,7 +290,12 @@ const httpOne = (input: typeof HttpOp.Type) => effect {
   const parsed = try Effect.try(() => JSON.parse(text))
   return typeof parsed.reason === "string"
 }
-it.live("issues/http-surface", () => Effect.andThen(run("issues/http-surface", HttpOp, httpSurface), reached("issues/http-surface", surface, httpSurface, { method: "POST", path: "/api/issues", body: "valid", role: "maintainer", signedOut: false, key: 1 })))
+/** Methods the tracker does not serve, which a draw reaches only when it picks them. */
+const httpChosen: ReadonlyArray<typeof HttpOp.Type> = [
+  { method: "PUT", path: "/api/issues", body: "valid", role: "maintainer", signedOut: false, key: 1 },
+  { method: "DELETE", path: "/api/issues", body: "empty", role: "viewer", signedOut: true, key: 2 },
+]
+it.live("issues/http-surface", () => Effect.andThen(run("issues/http-surface", HttpOp, httpSurface, undefined, { chosen: httpChosen }), reached("issues/http-surface", surface, httpSurface, { method: "POST", path: "/api/issues", body: "valid", role: "maintainer", signedOut: false, key: 1 })))
 
 const Evidence = Schema.Struct({
   body: Schema.Literals(["plain", "marked", "bad-path", "bad-review", "foreign-review", "two-markers", "bad-number"] as const),

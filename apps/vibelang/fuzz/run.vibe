@@ -18,13 +18,17 @@ export error NoExecution {
 
 const executions = Metric.counter("vibelang_fuzz_executions", { incremental: true })
 
-/** Every target has its own wall budget; corpus replay happens on every invocation. */
+/**
+ * Every target has its own wall budget; corpus replay happens on every invocation.
+ * `chosen` inputs run once per invocation, before the search, whatever the seed and budget: an arm a full run must
+ * reach gets one, so the gate never depends on a draw (0015).
+ */
 export effect function run<S extends Schema.Constraint>(
   name: string,
   schema: S,
   property: (input: S["Type"]) => boolean | (boolean!unknown!Scope.Scope),
   execution?: Fuzz.Execution,
-  options?: { readonly revision?: string; readonly codec?: Fuzz.Codec<S["Type"]>; readonly minimum?: Duration.Input },
+  options?: { readonly revision?: string; readonly codec?: Fuzz.Codec<S["Type"]>; readonly minimum?: Duration.Input; readonly chosen?: ReadonlyArray<S["Type"]> },
 ) {
   provide NodeServices.layer {
     return try withSpan(effect {
@@ -44,10 +48,16 @@ export effect function run<S extends Schema.Constraint>(
         : { failures: path.join(directory, "__fuzz__"), inputs: path.join(directory, "../node_modules/.cache/effect-fuzz") }))
       // Warnings reach a logger, so a property can observe them with its own; none goes to the console, where one
       // target's thousands of expected warnings would only slow the run.
-      const target = try Effect.try(() => Fuzz.target(schema, (input) => scoped(Effect.suspend(() => {
+      const judge = (input: S["Type"]) => scoped(Effect.suspend(() => {
         const output = property(input)
         return Effect.isEffect(output) ? output : succeed(output)
-      })).pipe(Effect.provideService(References.MinimumLogLevel, "Warn"), Effect.provide(Logger.layer([]))), { id: name, revision: options?.revision ?? "1", ...(options?.codec === undefined ? {} : { codec: options.codec }) }))
+      })).pipe(Effect.provideService(References.MinimumLogLevel, "Warn"), Effect.provide(Logger.layer([])))
+      const chosen = options?.chosen ?? []
+      for (let index = 0; index < chosen.length; index++) {
+        if (!(try judge(chosen[index]))) throw new Finding({ report: `${name}: chosen input ${index} refuted` })
+      }
+      if (chosen.length > 0) try Effect.logInfo("vibelang.fuzz.chosen").pipe(Effect.annotateLogs({ target: name, inputs: chosen.length }))
+      const target = try Effect.try(() => Fuzz.target(schema, judge, { id: name, revision: options?.revision ?? "1", ...(options?.codec === undefined ? {} : { codec: options.codec }) }))
       const searched = { seed, maxShrinks: name.startsWith("browser/") ? 16 : 64, ...(execution === undefined ? {} : { execution }) }
       const first = try Fuzz.runTarget(target, { duration: budget, ...searched, ...(Option.isSome(limit) ? { executions: limit.value } : {}) }).pipe(Effect.provideService(Fuzz.Corpus, store))
       // The deadline covers the replay of saved failures, so a slow box can spend the whole budget replaying them and
