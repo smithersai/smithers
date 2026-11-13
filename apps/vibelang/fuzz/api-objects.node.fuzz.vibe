@@ -249,6 +249,15 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
           try start(replyChildId("ab2"), Tour._tag, {}), try start("ab2", Post._tag, { text: "one" }),
         ].map((answer) => answer?.status ?? 0).join(",")
         if (statuses !== "202,409,409,202,409") throw new Finding({ report: `start-conflicts: ${statuses}` })
+        // A reply id whose run has no route key, as a run stored before route keys existed: the run itself refuses
+        // the Post (`root` reads the run, not the key, for such a run).
+        const directory = try w.storageOf("actions", "vibelang")
+        const key = `action-root/${replyChildId("ab3")}`
+        if ((try start(replyChildId("ab3"), Tour._tag, {}))?.status !== 202) throw new Finding({ report: "start-conflicts: the legacy run not started" })
+        // The world outlives one execution, so a later one finds the key already gone.
+        try promise(() => directory.delete(key))
+        const legacy = try start("ab3", Post._tag, { text: "one" })
+        if (legacy?.status !== 409) throw new Finding({ report: `start-conflicts: a Post over a legacy reply run answered ${legacy?.status ?? 0}` })
         return
       }
       case "sign-in": {

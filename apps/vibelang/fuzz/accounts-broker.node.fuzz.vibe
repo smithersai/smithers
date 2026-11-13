@@ -11,10 +11,12 @@ import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
 import * as Accounts from "../worker/Accounts.vibe"
+import { wikiRepository } from "../worker/Wiki.vibe"
 import { may, type Role } from "../src/core/conversation.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "../test/support/objectStorage.ts"
 import { run, stepped, Int, STEERED_FLOOR } from "./run.vibe"
+import { delegated as smithersConnection, reach } from "./delegated.vibe"
 
 const SITE = "https://factory.example"
 const BROKER = "https://broker.example"
@@ -23,7 +25,7 @@ const KEY = Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 const STATE = "__Host-vibelang-sign-in"
 
 const Op = Schema.Struct({
-  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall", "lost", "reads", "queued", "propose"]),
+  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall", "lost", "reads", "queued", "propose", "revoke", "file"]),
   person: Schema.Literals(["1", "2", "7", "0"]),
   tamper: Schema.Literals(["none", "none", "state", "cookie", "code", "replay", "null-same", "null-cross", "foreign-origin", "expired", "corrupt", "huge"]),
   query: Schema.Literals(["", "?wiki-page=index", "?wiki-page=../x", "?resume-op=new&resume-key=k1", "?resume-op=new", "?resume-op=bad&resume-key=k1", "?resume-op=new&resume-key=k1&resume-recovery=r1", "?resume-recovery=r1", "?resume-op=new&resume-key=k1&resume-recovery=bad%20key"]),
@@ -61,7 +63,15 @@ const inFlow = <R>(body: string!GitHub.Auth.Broker.BrokerRefused!R) => scoped(ef
 interface Answer { readonly status: number; readonly location: string; readonly text: string; readonly cookies: ReadonlyArray<string> }
 type Jar = Map<string, string>
 
-effect function world(slug: boolean, brokered: boolean, named: boolean, legacy = false) {
+/** The world's GitHub when person 7's delegation is smithers.sh's real one: down, so no write lands. */
+const githubDown = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 503 })))))
+
+/**
+ * `real`: person 7's Connect installs smithers.sh's real delegation (fuzz/delegated.vibe), the site's delegate calls
+ * smithers.sh's real route, and `revoke` ends that delegation there. Otherwise the custodian hands out `d-<person>`.
+ */
+effect function world(slug: boolean, brokered: boolean, named: boolean, legacy = false, real = false) {
+  const smithers = real ? try smithersConnection(githubDown, reach(), "p7", { api: wikiRepository.api, repository: `${wikiRepository.owner}/${wikiRepository.name}`, repositoryId: 1, token: Redacted.make("fixture-token") }) : undefined
   const storage = try Effect.try(() => objectStorage())
   // An object that held tokens from the per-site connect path (0165 migration) before this version started.
   if (legacy) try promise(() => storage.put({ "github/1": { token: "sealed" }, "github/7": { token: "sealed" } }))
@@ -74,20 +84,22 @@ effect function world(slug: boolean, brokered: boolean, named: boolean, legacy =
   const setSqlLost = (lost: boolean) => { Object.assign(storage, { sql: lost ? { exec: () => sql.exec("SELECT lost FROM vibelang_database_lost") } : sql }) }
   const keys = try Core.CookieKeys.make({ primary: Redacted.make("fixture-only-broker-cookie-key-32-chars") }, "primary")
   let custodian = true
+  const issued = (person: number) => smithers !== undefined && person === smithers.connection.person ? smithers.connection.delegation : `d-${person}`
   const broker = try GitHub.Auth.Broker.make({
     origin: BROKER, keys, github, store: try GitHub.Auth.Broker.memoryStore(), sites: [{ origin: SITE, secret: SECRET }], encryptionKey: KEY,
-    connections: { install: (input) => custodian ? succeed({ delegation: `d-${input.person}`, expires: Date.now() + 3_600_000 }) : fail(new GitHub.Auth.Broker.BrokerRefused()) },
+    connections: { install: (input) => custodian ? succeed({ delegation: issued(input.person), expires: Date.now() + 3_600_000 }) : fail(new GitHub.Auth.Broker.BrokerRefused()) },
   })
   const durable = { ...broker, callback: (...args: Parameters<typeof broker.callback>) => inFlow(broker.callback(...args)), consent: (...args: Parameters<typeof broker.consent>) => inFlow(broker.consent(...args)) }
   const serveBroker = GitHub.Auth.Broker.serve(durable, BROKER)
   // The site's own HttpClient: smithers.sh's routes, served in process; anything else is unreachable.
-  const client = HttpClient.make((request) => effect {
+  const client = HttpClient.make((request, url) => effect {
+    if (smithers !== undefined && url.origin !== BROKER) return try smithers.http.execute(request)
     const response = try Effect.provideService(serveBroker, HttpServerRequest.HttpServerRequest, HttpServerRequest.fromClientRequest(request))
     return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(response))
   })
   const accounts = try Effect.provideService(Accounts.make("accounts-broker-fuzz", storage as unknown as Storage, {
     origin: SITE, initialMaintainer: "1", clientId: "fixture-client-id", github, signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
-    encryptionKey: KEY, ...(brokered ? { broker: { origin: BROKER, secret: SECRET } } : named ? { broker: { origin: BROKER } } : {}), ...(slug ? { appSlug: "vibelang fixture" } : {}),
+    encryptionKey: KEY, ...(smithers === undefined ? {} : { delegate: smithers.delegate }), ...(brokered ? { broker: { origin: BROKER, secret: SECRET } } : named ? { broker: { origin: BROKER } } : {}), ...(slug ? { appSlug: "vibelang fixture" } : {}),
   }), HttpClient.HttpClient, client)
   const jars = new Map<string, Jar>([[SITE, new Map()], [BROKER, new Map()]])
   /** One browser request: the origin's cookies, then the response's Set-Cookie into that jar. */
@@ -118,7 +130,8 @@ effect function world(slug: boolean, brokered: boolean, named: boolean, legacy =
     const text = options.stream !== true && (response.status === 200 || response.status >= 400) ? try promise(() => answer.text()) : ""
     return { status: response.status, location: answer.headers.get("location") ?? "", text, cookies } satisfies Answer
   }
-  return { storage, accounts, ask, jars, setLost, setSqlLost, setCustodian: (healthy: boolean) => { custodian = healthy } }
+  const revoke = smithers === undefined ? Effect.void : smithers.end()
+  return { storage, accounts, ask, jars, setLost, setSqlLost, setCustodian: (healthy: boolean) => { custodian = healthy }, issued, revoke }
 }
 type World = Effect.Success<ReturnType<typeof world>>
 const kvOf = (w: World) => (w.storage as unknown as { readonly kv: ReadonlyMap<string, unknown> }).kv
@@ -175,12 +188,18 @@ it.live("accounts/broker-sequences", () => run("accounts/broker-sequences", Inpu
   if (!(try play(input, false, true, true))) return false
   // Lost storage as a fresh brokered world's first step, with no session cookie (0015).
   if (!(try play({ ...input, ops: [{ kind: "lost", person: "1", tamper: "none", query: "", answer: "connect", install: true, role: "new", body: "valid", n: 0 }] }, true, false, false))) return false
+  // smithers.sh's real delegation, ended there: the site still holds its copy, so the proposal reaches smithers.sh,
+  // which no longer honors it; the proposal asks to connect and the site forgets the copy (checks 260 and 261).
+  // Connected again with that same ended delegation, a new issue is answered the same way (checks 271 and 272).
+  const as = (kind: Op["kind"], person: Op["person"], role: Op["role"] = "community", n = 0): Op => ({ kind, person, tamper: "none", query: "", answer: "connect", install: true, role, body: "valid", n })
+  const ended = [as("sign-in", "1"), as("grant", "1", "contributor", 6), as("sign-out", "1"), as("sign-in", "7"), as("connect", "7"), as("revoke", "7"), as("propose", "7", "community", 2), as("connect", "7"), as("file", "7", "community", 3)]
+  if (!(try play({ ...input, ops: ended }, true, false, false, true))) return false
   return try play(input, input.brokered, !input.brokered && input.named, false)
   // One execution walks three worlds: about 20 s on nyc-01 and over a minute on a 4-vCPU box, after the 30 s floor.
 }), undefined, { minimum: STEERED_FLOOR }), 300_000)
 
-effect function play(input: typeof Input.Type, brokered: boolean, named: boolean, walking: boolean) {
-  const w = try world(input.slug, brokered, named, walking)
+effect function play(input: typeof Input.Type, brokered: boolean, named: boolean, walking: boolean, real = false) {
+  const w = try world(input.slug, brokered, named, walking, real)
   // The migration deletes every per-site token once, before the object answers anything.
   if (walking && (kvOf(w).has("github/1") || kvOf(w).has("github/7") || kvOf(w).get("migrated/connect-v1") !== true)) throw new Refuted({ kind: "migration", check: 1 })
   const base: Op = { kind: "session", person: "7", tamper: "none", query: "", answer: "connect", install: true, role: "community", body: "valid", n: 0 }
@@ -211,6 +230,8 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
   ] : []
   // The model: whose session the browser holds, and whether it is the person's agent.
   let signedIn: { readonly id: string; readonly agent: boolean } | undefined
+  // Whether smithers.sh ended the delegation it issued (a `real` world only).
+  let revoked = false
   // A refuted check fails naming its step kind and check, never a value.
   const refute = effect (kind: string, check: number) => {
     throw new Refuted({ kind, check })
@@ -291,7 +312,7 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
         if (unsigned !== undefined) { if (accepted.status !== 403 || JSON.stringify(stored ?? null) !== before) return try refute(op.kind, 57); break }
         // Consent with a working custodian is the only way here, and it installs a delegation for the same person.
         const delegated = op.answer === "connect" && op.install
-        if (!delegated || accepted.status !== 200 || stored?.delegation !== `d-${signedIn.id}`) return try refute(op.kind, 59)
+        if (!delegated || accepted.status !== 200 || stored?.delegation !== w.issued(Number(signedIn.id))) return try refute(op.kind, 59)
         if (delegated) {
           const location = ((try parsed(accepted.text)) as { readonly location?: string }).location ?? ""
           const expected = op.query === "?wiki-page=index" ? "/wiki/index" : op.query.startsWith("?resume-op") ? "/?issues=1&" + op.query.slice(1) : "/?issues=1"
@@ -469,6 +490,23 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
         const connected = expected[1] === "connect" && held && proposal.status === 503
         if (!connected && (proposal.status !== expected[0] || reason !== expected[1])) return try refute(op.kind, 260)
         if (signedIn !== undefined && reason === "connect" && kvOf(w).has("delegation/" + signedIn.id)) return try refute(op.kind, 261)
+        break
+      }
+      case "revoke": {
+        // smithers.sh ends the delegation it issued (a person's Disconnect there); the site still holds its copy.
+        try w.revoke
+        if (real) revoked = true
+        break
+      }
+      case "file": {
+        // A new issue: a visitor is asked to sign in before any GitHub request; a delegation smithers.sh ended is
+        // answered `connect` and forgotten, so the person holds none after that answer.
+        const held = signedIn !== undefined && kvOf(w).has("delegation/" + signedIn.id)
+        const filed = try seen(try stepped(w.ask(SITE + "/api/issues", { method: "POST", origin: SITE, body: JSON.stringify({ op: "new", number: 0, parent: 0, title: "Fuzzed", text: "Fuzzed", assignee: "", example: "", prior: "", key: `f${op.n}` }) }), 20))
+        const reason = filed.status === 200 ? "" : ((try parsed(filed.text)) as { readonly reason?: string }).reason
+        if (signedIn === undefined && (filed.status !== 401 || reason !== "sign-in")) return try refute(op.kind, 270)
+        if (held && revoked && (filed.status !== 401 || reason !== "connect")) return try refute(op.kind, 271)
+        if (signedIn !== undefined && reason === "connect" && kvOf(w).has("delegation/" + signedIn.id)) return try refute(op.kind, 272)
         break
       }
       case "queued": {

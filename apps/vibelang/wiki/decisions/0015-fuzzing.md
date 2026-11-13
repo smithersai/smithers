@@ -1759,6 +1759,21 @@ level (`"Warn"`), so no log at any level reached a logger under fuzzing, and no 
 accepts it because `Effect.provideService` infers the service type from both arguments; a direct `LogLevel` annotation
 rejects it. Fixed to `"Warn"`.
 
+Session 15's three surviving mutants, each now caught:
+
+- `worker/Wiki.vibe` 102's reason: already caught in the suite by `wiki-host`'s `connected` scenario ("a connected
+  proposal with no storage answered forbidden"); it survived only `accounts/broker-sequences`, the one target it was
+  run against.
+- `worker/Accounts.vibe`'s `lost`, forgetting the connection, on the wiki route (443) and the issue route (425):
+  `accounts/broker-sequences` walks one more world each execution, where person 7's Connect installs smithers.sh's
+  real delegation (`fuzz/delegated.vibe`) and the site's delegate calls smithers.sh's real route. A new `revoke` step
+  ends that delegation at smithers.sh; the site still holds its copy. The next proposal answers `connect` and the copy
+  is gone (check 261); connected again with the same ended delegation, a new `file` step's issue answers `connect`
+  and the copy is gone (check 272). Removing either `forget` is caught.
+- `worker/ActionDirectory.vibe` 82, a Post whose reply id names a stored run: `start-conflicts` starts a reply id's
+  run, removes its route key (as a run stored before route keys existed, which `root` already reads), and requires
+  the Post to answer 409. Removing the run-request term answers 202.
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the
