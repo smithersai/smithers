@@ -241,7 +241,7 @@ envelope `bash` declares for every call.
 | `writes`      | array of non-empty string      | Paths the command may write. Hermetic mode only.                                             |
 | `cwd`         | string, optional               | Working directory; use `{ at: ctx.base }` as the third `ctx.call` argument for a checkpoint. |
 | `env`         | record of string, optional     | Environment variables.                                                                       |
-| `timeoutMs`   | number, optional               | Numeric wall-clock milliseconds. Defaults to 600,000.                                        |
+| `timeoutMs`   | number, optional               | Finite wall-clock milliseconds greater than zero and at most 600,000. Defaults to 600,000.   |
 
 | Output                                     | Type                           | Meaning                                                                            |
 | ------------------------------------------ | ------------------------------ | ---------------------------------------------------------------------------------- |
@@ -271,11 +271,11 @@ anything is spawned. A host that must stay out of the cell's reach binds it
 
 Runs the declared test runner and returns a reading rather than a log.
 
-| Input       | Type                                | Meaning                                                         |
-| ----------- | ----------------------------------- | --------------------------------------------------------------- |
-| `selection` | array of string, optional           | Test ids or paths, passed as arguments. All tests when omitted. |
-| `against`   | `"workspace"` or `"base"`, optional | `base` also runs the pristine base commit.                      |
-| `timeoutMs` | number, optional                    | Wall-clock timeout for the run.                                 |
+| Input       | Type                                | Meaning                                                               |
+| ----------- | ----------------------------------- | --------------------------------------------------------------------- |
+| `selection` | array of string, optional           | Test ids or paths, passed as arguments. All tests when omitted.       |
+| `against`   | `"workspace"` or `"base"`, optional | `base` also runs the pristine base commit.                            |
+| `timeoutMs` | number, optional                    | Finite wall-clock milliseconds greater than zero and at most 600,000. |
 
 `Output` is `Outcome` plus the attribution fields. `TestRun.Outcome` is exported
 separately, because the base run carries the same shape:
@@ -313,19 +313,23 @@ no repository directory, `not_found` when the base ref does not resolve,
 
 A clone of the Codex CLI tool of the same name.
 
-| Input        | Type             | Meaning                                   |
-| ------------ | ---------------- | ----------------------------------------- |
-| `command`    | string           | Shell script to run in the default shell. |
-| `workdir`    | string, optional | Working directory.                        |
-| `timeout_ms` | number, optional | Maximum runtime. Defaults to 10,000.      |
+| Input        | Type             | Meaning                                                                                   |
+| ------------ | ---------------- | ----------------------------------------------------------------------------------------- |
+| `command`    | string           | Shell script to run in the default shell.                                                 |
+| `workdir`    | string, optional | Working directory.                                                                        |
+| `timeout_ms` | number, optional | Finite runtime in milliseconds greater than zero and at most 600,000. Defaults to 10,000. |
 
 | Output     | Type   | Meaning                                                                             |
 | ---------- | ------ | ----------------------------------------------------------------------------------- |
 | `output`   | string | Codex-formatted result: exit code, wall time, and possibly middle-truncated output. |
 | `exitCode` | number | Exit code; 124 when the command timed out.                                          |
 
-A timeout is a successful value, not a failure. Fails with `command_failed` when
-the process could not start.
+A timeout is a successful value that retains both output streams up to the
+deadline. Fails with `invalid_input` for an invalid timeout, or
+`command_failed` when the process could not start. Capture keeps the
+first and last halves of each stream's 8,000,000-byte budget and discloses
+omitted bytes before the formatted output. Line and token counts describe the
+retained output.
 
 ## apply_patch
 

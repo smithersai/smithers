@@ -300,6 +300,7 @@ const codingPolicy = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//.smithers/flows/test/coding-host.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-input-fence.test.ts"),
+    Smithers.file("//.smithers/flows/test/coding-stale-read.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-host-registry.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-wiki-selection.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-build-only.test.ts"),

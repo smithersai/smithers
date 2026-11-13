@@ -59,6 +59,43 @@ it.each([false, true])(
   }
 )
 
+it.each([1, 2, 3, 4, 7])("matches whole-file reads across %s-byte chunks", async (chunkSize) => {
+  const file = join(root, `chunks-${chunkSize}.txt`)
+  const content = "before\r\nneedle é😀 across chunks\r\ncontext\nneedle final 😀"
+  writeFileSync(file, content)
+  const bytes = new TextEncoder().encode(content)
+  const chunks = Array.from(
+    { length: Math.ceil(bytes.length / chunkSize) },
+    (_, index) => bytes.slice(index * chunkSize, (index + 1) * chunkSize)
+  )
+  let streamed = 0
+  let atomicReads = 0
+  const search = await Effect.runPromise(
+    Effect.gen(function*() {
+      const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+      const fs = yield* FileSystem.FileSystem
+      return PortableSearch.make(Context.add(services, FileSystem.FileSystem, {
+        ...fs,
+        stream: () => Stream.fromIterable(chunks).pipe(Stream.tap(() => Effect.sync(() => streamed++))),
+        readFile: (path) => {
+          atomicReads++
+          return fs.readFile(path)
+        }
+      }))
+    }).pipe(Effect.provide(NodeServices.layer))
+  )
+  const input = { root: file, pattern: "needle", symbols: false, beforeContext: 1, afterContext: 1 }
+  const chunked = await Effect.runPromise(Grep.run(input).pipe(Effect.provideService(Search.Search, search)))
+  const whole = await grep(input)
+  expect(chunked).toEqual(whole)
+  expect(chunked.matches.map(({ line, text }) => ({ line, text }))).toEqual([
+    { line: 2, text: "needle é😀 across chunks" },
+    { line: 4, text: "needle final 😀" }
+  ])
+  expect(streamed).toBe(chunks.length)
+  expect(atomicReads).toBe(0)
+})
+
 describe("portable search bounds", () => {
   it("completes a nested-quantifier near miss while timers can run", async () => {
     const file = join(root, "nested.txt")

@@ -176,16 +176,22 @@ describe("ShellCommand", () => {
     expect(result.output).toContain(`Output:\n${workdir}`)
   })
 
-  it("bounds capture while retaining the tail of very large output", async () => {
+  it.each(["stdout", "stderr"] as const)("discloses %s capture loss while retaining both ends", async (stream) => {
     const head = "HEAD-WOULD-SURVIVE-UNBOUNDED-CAPTURE\n"
     const tail = "\nRETAINED-TAIL"
     const stdout = `${head}${"x".repeat(ShellCommand.MAX_CAPTURE_BYTES * 2)}${tail}`
     const result = await execute(Effect.provide(
       ShellCommand.run({ command: "very-large" }),
-      layer({ commands: { "very-large": { stdout } } })
+      layer({ commands: { "very-large": { [stream]: stdout } } })
     ))
 
-    expect(result.output).not.toContain(head.trim())
+    expect(result.output).toContain(head.trim())
+    expect(result.output).toContain(
+      `${stream} omitted ${
+        new TextEncoder().encode(stdout).byteLength - ShellCommand.MAX_CAPTURE_BYTES
+      } bytes during capture`
+    )
+    expect(result.output).toContain("counts describe retained output")
     expect(result.output).toContain(tail.trim())
     expect(new TextEncoder().encode(result.output).byteLength).toBeLessThan(ShellCommand.MAX_CAPTURE_BYTES)
   })

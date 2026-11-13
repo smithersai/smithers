@@ -84,7 +84,7 @@ when its name looks sensitive. The allowlist is read through `@smthrs/kernel`'s
 
 ## Limits
 
-Every limit is a display budget disclosed to the caller, never a silent cut. A capped result says so in its own output: `truncated`, `<stream>Truncated`, or a `notice` line naming what was shown and what there was. Rows named by prose are fixed in the package and not exported; the rest are the constants named.
+Output limits are disclosed to the caller, never a silent cut. A capped result says so in its own output: `truncated`, `<stream>Truncated`, or a `notice` line naming what was shown and what there was. Rows named by prose are fixed in the package and not exported; the rest are the constants named.
 
 | Limit                             | Value       | Applies to                                                      |
 | --------------------------------- | ----------- | --------------------------------------------------------------- |
@@ -107,7 +107,9 @@ Every limit is a display budget disclosed to the caller, never a silent cut. A c
 
 The language-server client's frame, queue and request limits belong to `NodeLanguageServer` in `@smthrs/platform-node`.
 
-Shell capture is bounded where it is read rather than after: a command that prints gigabytes costs the bound, not the whole of what it printed, and the `<stream>DroppedBytes` fields count what the process actually produced. `bash` keeps the first and last 15,000 bytes of a stream and puts one line naming the omitted bytes where the middle was. Every caller-supplied command (`bash`, `test`, `shell_command`) passes a bound. The internal `git` plumbing calls behind `Checkpoints` and `TestRun`'s baseline do not, because a listing read for its content is useless with its head missing. Those fields and the `<stream>Truncated` flags beside them are a wire convention: [`@smthrs/harness`](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/harness/docs) reads them to refuse a later write of those exact bytes, so check the flag before writing captured output anywhere.
+Process timeouts must be finite milliseconds greater than zero and at most 600,000. An invocation’s timeout overrides the host-declared test runner default. The selected value fails with `invalid_input` before a process starts if it is outside these bounds.
+
+Shell capture is bounded where it is read rather than after: a command that prints gigabytes costs the bound, not the whole of what it printed, and the `<stream>DroppedBytes` fields count what the process actually produced. `bash` keeps the first and last 15,000 bytes of a stream and puts one line naming the omitted bytes where the middle was. `shell_command` also keeps both ends and names each stream’s dropped bytes before its Codex-formatted output; line and token counts describe the retained output. Every caller-supplied command (`bash`, `test`, `shell_command`) passes a bound. The internal `git` plumbing calls behind `Checkpoints` and `TestRun`'s baseline do not, because a listing read for its content is useless with its head missing. Those fields and the `<stream>Truncated` flags beside them are a wire convention: [`@smthrs/harness`](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/harness/docs) reads them to refuse a later write of those exact bytes, so check the flag before writing captured output anywhere.
 
 ## Failures
 

@@ -37,6 +37,7 @@ import { GitWorktree } from "./internal/GitWorktree.ts"
 import * as Prune from "./internal/Prune.ts"
 import * as TestReport from "./internal/TestReport.ts"
 import { MAX_SHELL_OUTPUT_BYTES, truncateBytes } from "./internal/Text.ts"
+import * as Timeout from "./internal/TimeoutMs.ts"
 import * as Probe from "./Probe.ts"
 import * as StdError from "./StdError.ts"
 import * as TestRunner from "./TestRunner.ts"
@@ -97,7 +98,9 @@ export const Input = Schema.Struct({
     description:
       "workspace (default) runs the tree as it stands; base also runs the pristine base commit and reports which failures are new"
   }),
-  timeoutMs: Schema.optional(Schema.Number).annotate({ description: "Wall-clock timeout in milliseconds" })
+  timeoutMs: Schema.optional(Timeout.TimeoutMs).annotate({
+    description: "Positive finite wall-clock milliseconds up to 600000"
+  })
 })
 
 /**
@@ -376,6 +379,7 @@ export const run = Effect.fn("TestRun.run")(function*(
   const transport = yield* Effect.serviceOption(Container.Container)
   const selection = input.selection ?? []
   const timeoutMs = input.timeoutMs ?? runner.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  yield* Timeout.validate(timeoutMs)
   const current = yield* execute(runner, transport, {
     selection,
     cwd: runner.cwd,

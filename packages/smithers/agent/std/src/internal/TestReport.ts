@@ -156,11 +156,12 @@ const tap = (text: string): Report | undefined => {
  * @since 1.0.0
  */
 export const parse = (text: string): Report => {
-  const hasTap = /^(?:TAP version \d+|1\.\.\d+|not ok\b|ok\b)/m.test(text)
   const hasUnittest = /^Ran \d+ tests?\b/m.test(text)
   const lastLine = text.trimEnd().split("\n").at(-1)!
   const hasPytest = /^(?:=+[ \t]*)?\d+ [a-z]+(?:,[ \t]*\d+ [a-z]+)* in \d+(?:\.\d+)?s(?: \([^)]*\))?[ \t]*(?:=+)?$/
     .test(lastLine)
+  const hasTap = /^(?:TAP version \d+|1\.\.\d+)/m.test(text) ||
+    (!hasUnittest && !hasPytest && /^(?:not ok|ok)\b/m.test(text))
   // Two runner completion signatures in one capture cannot establish which
   // protocol owns the outcomes. Never attribute such a report.
   if ([hasTap, hasUnittest, hasPytest].filter(Boolean).length > 1) {

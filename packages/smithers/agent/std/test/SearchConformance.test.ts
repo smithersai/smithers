@@ -397,8 +397,6 @@ for (const [peer, implementation] of peers) {
       expect(matches.files).toEqual([join(linkedRoot, "a.ts")])
     })
 
-    it.skip("streams a file larger than available memory (skipped: a hermetic test cannot exhaust its runner)", () => {})
-
     it("discloses global truncation and notice semantics", async () => {
       const result = await grep({ pattern: "needle", root: join(root, "src"), globs: ["*.ts"], limit: 1 })
       expect(result).toMatchObject({ truncated: true })

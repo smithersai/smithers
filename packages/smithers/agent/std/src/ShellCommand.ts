@@ -18,6 +18,7 @@ import * as Schema from "effect/Schema"
 import { formatExecOutputForModel } from "./internal/CodexText.ts"
 import { capability, envelope } from "./internal/Declaration.ts"
 import * as Exec from "./internal/Exec.ts"
+import * as Timeout from "./internal/TimeoutMs.ts"
 import type * as StdError from "./StdError.ts"
 
 /**
@@ -49,10 +50,9 @@ export const DEFAULT_TIMEOUT_MS = 10_000
 /**
  * Maximum bytes retained from each stream while a shell command executes.
  *
- * This is far above the 10,000-token model budget because
- * `formatExecOutputForModel` keeps the head and tail while the capture bound
- * keeps only the tail. Commands below this bound therefore render byte for
- * byte as before, while larger output costs the bound instead of its full size.
+ * Both capture and model display preserve the head and tail. Capture loss
+ * is disclosed separately from the 10,000-token display budget, whose counts
+ * describe only the retained output.
  *
  * @category constants
  * @since 1.0.0
@@ -87,7 +87,9 @@ export const Input = Schema.Struct({
     Schema.String.annotate({ description: "Working directory for the command. Defaults to the turn cwd." })
   ),
   timeout_ms: Schema.optional(
-    Schema.Number.annotate({ description: "Maximum command runtime. Defaults to 10000 ms." })
+    Timeout.TimeoutMs.annotate({
+      description: "Maximum runtime: positive finite milliseconds up to 600000. Defaults to 10000 ms."
+    })
   )
 })
 
@@ -170,11 +172,13 @@ export const run = Effect.fn("ShellCommand.run")(function*(
   input: typeof Input.Type
 ): Effect.fn.Return<typeof Output.Type, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner> {
   const timeoutMs = input.timeout_ms ?? DEFAULT_TIMEOUT_MS
+  yield* Timeout.validate(timeoutMs)
   const startedAt = Date.now()
   const result = yield* Exec.exec(input.command, {
     ...(input.workdir === undefined ? {} : { cwd: input.workdir }),
     timeoutMs,
-    maxCaptureBytes: MAX_CAPTURE_BYTES
+    maxCaptureBytes: MAX_CAPTURE_BYTES,
+    overflow: "ends"
   }).pipe(
     Effect.map((value) => ({ timedOut: false, value })),
     // A timeout always captures, so `captured` is present here.
@@ -190,14 +194,25 @@ export const run = Effect.fn("ShellCommand.run")(function*(
     : result.value.stdout === ""
     ? result.value.stderr
     : `${result.value.stdout}${result.value.stderr}`
+  const captureNotices = ([
+    ["stdout", result.value.stdoutDroppedBytes],
+    ["stderr", result.value.stderrDroppedBytes]
+  ] as const).flatMap(([stream, dropped]) =>
+    dropped === 0
+      ? []
+      : [stream + " omitted " + dropped + " bytes during capture; line and token counts describe retained output."]
+  )
   return {
     exitCode: result.value.exitCode,
-    output: formatExecOutputForModel({
-      durationSeconds,
-      exitCode: result.value.exitCode,
-      maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
-      output: aggregated,
-      ...(result.timedOut ? { timedOutAfterMs: timeoutMs } : {})
-    })
+    output: [
+      ...captureNotices,
+      formatExecOutputForModel({
+        durationSeconds,
+        exitCode: result.value.exitCode,
+        maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
+        output: aggregated,
+        ...(result.timedOut ? { timedOutAfterMs: timeoutMs } : {})
+      })
+    ].join("\n")
   }
 })

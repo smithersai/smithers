@@ -28,6 +28,7 @@ import * as Diagnostics from "./internal/Diagnostics.ts"
 import { outsideEnvelope } from "./internal/EnvelopePrecheck.ts"
 import * as Exec from "./internal/Exec.ts"
 import { elideMiddle as elide, MAX_SHELL_OUTPUT_BYTES } from "./internal/Text.ts"
+import * as Timeout from "./internal/TimeoutMs.ts"
 import * as Probe from "./Probe.ts"
 import * as StdError from "./StdError.ts"
 import * as TreeFingerprint from "./TreeFingerprint.ts"
@@ -92,9 +93,9 @@ const Cwd = Schema.optional(Schema.String).annotate({
 const Env = Schema.optional(
   Schema.Record(Schema.String, Schema.String).annotate({ description: "Environment variables for the command" })
 )
-const TimeoutMs = Schema.optional(Schema.Number).annotate({
-  description: "Wall-clock timeout in milliseconds; defaults to 600000 ms",
-  message: "timeoutMs must be a number of milliseconds."
+const TimeoutMs = Schema.optional(Timeout.TimeoutMs).annotate({
+  description: "Positive finite wall-clock milliseconds up to 600000; defaults to 600000 ms",
+  message: "timeoutMs must be a number of milliseconds greater than zero, finite, and at most 600000."
 })
 
 /**
@@ -524,6 +525,7 @@ const printed = (
 export const run = Effect.fn("Bash.run")(function*(
   input: Input
 ): Effect.fn.Return<Output, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner | Path.Path> {
+  yield* Timeout.validate(input.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   const intent = precheck(input, yield* Path.Path)
   if (intent instanceof StdError.StdError) return yield* Effect.fail(intent)
   const limitMillis = input.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -617,6 +619,7 @@ export const inTerminal = <R>(
   Effect.fn("Bash.inTerminal")(function*(
     input: Input
   ): Effect.fn.Return<Output, StdError.StdError, R | Path.Path> {
+    yield* Timeout.validate(input.timeoutMs ?? DEFAULT_TIMEOUT_MS)
     const intent = precheck(input, yield* Path.Path)
     if (intent instanceof StdError.StdError) return yield* Effect.fail(intent)
     if (input.container !== undefined) return yield* Effect.fail(Container.unavailable(input.container))

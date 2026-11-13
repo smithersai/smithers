@@ -1,4 +1,4 @@
-/** Production coding/edit-atom std bindings over the real Node filesystem.
+/** Standard tool bindings over the confined coding filesystem on Node.
  * With no provider every mutation is refused. With the workspace owner's
  * `localProvider`, the provider a hosted box runs, the full stale-read matrix
  * runs on every Linux host: successful batch, delete and move, pagination,
@@ -6,12 +6,9 @@
  * host. Anchored file access needs Linux's /proc/self/fd.
  */
 import { NodeServices } from "@effect/platform-node"
-import * as StandardFlows from "@smthrs/agent/StandardFlows"
-import * as Cell from "@smthrs/harness/Cell"
-import * as ApplyPatch from "@smthrs/std/ApplyPatch"
-import * as Edit from "@smthrs/std/Edit"
-import * as Read from "@smthrs/std/Read"
-import * as Write from "@smthrs/std/Write"
+import { StandardFlows } from "@smthrs/agent"
+import { Cell } from "@smthrs/harness"
+import { ApplyPatch, Edit, Read, Write } from "@smthrs/std"
 import { Context, Effect, FileSystem, Option, Path } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import assert from "node:assert/strict"
@@ -19,15 +16,19 @@ import { existsSync } from "node:fs"
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { test } from "vitest"
-import * as CodingFileSystem from "../../../../../.smithers/flows/coding/filesystem.ts"
+import { test } from "node:test"
+import * as CodingFileSystem from "../coding/filesystem.ts"
 
 for (const available of [false, true]) {
-  test.skipIf(available && process.platform !== "linux")(
+  test(
     `C-COL-01 production dispatcher ${available ? "local provider batch/delete/move" : "unavailable provider"}`,
+    { skip: available && process.platform !== "linux", timeout: 120_000 },
     async (t) => {
       const root = await realpath(await mkdtemp(join(tmpdir(), "col10-")))
-      t.onTestFinished(() => rm(root, { recursive: true, force: true }))
+      t.after(async () => {
+        await chmod(join(root, "locked"), 0o700).catch(() => {})
+        await rm(root, { recursive: true, force: true })
+      })
       await Effect.runPromise(
         Effect.gen(function*() {
           const fs = yield* FileSystem.FileSystem
@@ -35,13 +36,17 @@ for (const available of [false, true]) {
           const path = yield* Path.Path
           // A temp root has no provider of its own and cannot write; the
           // matrix supplies the workspace owner's provider.
+          // Match the coding host’s confined read boundary around its versioned filesystem.
           const host = () =>
-            CodingFileSystem.make(
-              { repositoryPath: root },
-              fs,
-              spawner,
-              root,
-              available ? CodingFileSystem.localProvider(root) : undefined
+            CodingFileSystem.confineReads(
+              CodingFileSystem.make(
+                { repositoryPath: root },
+                fs,
+                spawner,
+                root,
+                available ? CodingFileSystem.localProvider(root) : undefined
+              ),
+              root
             )
           const coding = host()
           const bindings = yield* StandardFlows.filesystem(
@@ -241,10 +246,6 @@ for (const available of [false, true]) {
             // distinguishes ledger invalidation from merely detecting changed bytes.
             const locked = join(root, "locked"), blocked = join(locked, "new")
             yield* Effect.promise(() => mkdir(locked))
-            t.onTestFinished(async () => {
-              await chmod(locked, 0o700).catch(() => {})
-              await rm(root, { recursive: true, force: true })
-            })
             yield* Effect.promise(() => chmod(locked, 0o555))
             yield* expect(
               ApplyPatch.name,
@@ -284,12 +285,12 @@ for (const available of [false, true]) {
           }
           // Confinement at the same production tool door.
           const outside = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "col10-outside-")))
-          t.onTestFinished(() => rm(outside, { recursive: true, force: true }))
+          t.after(() => rm(outside, { recursive: true, force: true }))
           const outsideFile = join(outside, "protected")
           yield* Effect.promise(() => writeFile(outsideFile, "outside remains\n"))
           const linked = join(root, "linked")
           yield* Effect.promise(() => symlink(outsideFile, linked))
-          yield* expect(Read.name, { path: linked }, "success")
+          yield* expect(Read.name, { path: linked }, "failure")
           yield* expect(Write.name, { path: linked, content: "bad" }, "failure")
           yield* expect(Write.name, { path: outsideFile, content: "bad" }, "failure")
           assert.equal(yield* Effect.promise(() => readFile(outsideFile, "utf8")), "outside remains\n")
@@ -342,18 +343,18 @@ for (const available of [false, true]) {
           assert.equal(yield* Effect.promise(() => readFile(a, "utf8")), "hello\n")
         }).pipe(Effect.provide(NodeServices.layer))
       )
-    },
-    120_000
+    }
   )
 }
 
 // Exercise the actual child-process adapter when the main-installed client is
 // absent. No injected spawner, filesystem or provider can manufacture settlement.
-test.skipIf(existsSync("/opt/smithers/bin/smithers-machined"))(
+test(
   "C-COL-01 production dispatcher loses authority after missing installed client",
+  { skip: existsSync("/opt/smithers/bin/smithers-machined"), timeout: 120_000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), "col10-missing-client-"))
-    t.onTestFinished(() => rm(root, { recursive: true, force: true }))
+    t.after(() => rm(root, { recursive: true, force: true }))
     const a = join(root, "a"), b = join(root, "b"), dest = join(root, "dest")
     await writeFile(a, "hello\n")
     await writeFile(b, "world\n")
@@ -422,15 +423,14 @@ test.skipIf(existsSync("/opt/smithers/bin/smithers-machined"))(
         }
       }).pipe(Effect.provide(NodeServices.layer))
     )
-  },
-  120_000
+  }
 )
 
 // Local preflight runs before the installed transport. Real dispatch and Node
 // bytes can qualify these refusals without inventing a successful daemon receipt.
-test("C-COL-01 production dispatcher stale batch/delete/move preflight", async (t) => {
+test("C-COL-01 production dispatcher stale batch/delete/move preflight", { timeout: 120_000 }, async (t) => {
   const root = await mkdtemp(join(tmpdir(), "col10-preflight-"))
-  t.onTestFinished(() => rm(root, { recursive: true, force: true }))
+  t.after(() => rm(root, { recursive: true, force: true }))
   const a = join(root, "a"), b = join(root, "b"), dest = join(root, "dest")
   await Effect.runPromise(
     Effect.gen(function*() {
@@ -504,4 +504,4 @@ test("C-COL-01 production dispatcher stale batch/delete/move preflight", async (
       }
     }).pipe(Effect.provide(NodeServices.layer))
   )
-}, 120_000)
+})

@@ -278,6 +278,21 @@ describe("TestRun", () => {
     expect(result.tailDroppedBytes).toBe(output.length - MAX_SHELL_OUTPUT_BYTES)
   })
 
+  it.each([0, Infinity, 600_001])("uses the invocation budget before the host default %s", async (timeoutMs) => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const result = await execute(
+      TestRun.run({ timeoutMs: 1_000 }).pipe(
+        Effect.provide(Layer.mergeAll(
+          host(spawns, [["pytest", { stdout: "1 passed in 0.1s\n" }]]),
+          TestRunner.layer({ command: "pytest", timeoutMs }),
+          tree
+        ))
+      )
+    )
+    expect(result).toMatchObject({ passed: 1, failed: [], exitCode: 0 })
+    expect(spawns).toHaveLength(1)
+  })
+
   it("uses a ten-minute timeout when neither input nor runner supplies one", async () => {
     const stalled = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
       ChildProcessSpawner.makeNoop({ spawn: () => Effect.never })

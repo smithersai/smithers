@@ -43648,6 +43648,8 @@ needs is POSIX or busybox; a container without `find`, `stat -c` or `timeout`
 is unmeasured and `bash` reports no `mutated` at all. A tree with no file in
 it is a measurement, so the first write into an empty directory is a move.
 
+Process timeout overrides for `bash`, `shell_command`, and `test` must be finite milliseconds greater than zero and at most 600,000. An invocation’s `timeoutMs` overrides `Runner.timeoutMs`. When the invocation omits it, the host default is checked instead; an invalid selected value fails with `invalid_input` before spawning.
+
 ## TestRunner
 
 How the project under test runs its suite, declared once by the host.

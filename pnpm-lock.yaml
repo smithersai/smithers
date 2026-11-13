@@ -3236,6 +3236,15 @@ importers:
       '@smthrs/plan':
         specifier: 1.0.0-rc.18
         version: link:../../flows/plan
+      '@smthrs/platform-browser':
+        specifier: workspace:*
+        version: link:../../flows/platform-browser
+      '@smthrs/platform-node':
+        specifier: workspace:*
+        version: link:../../flows/platform-node
+      '@smthrs/testing':
+        specifier: workspace:*
+        version: link:../../../testing
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

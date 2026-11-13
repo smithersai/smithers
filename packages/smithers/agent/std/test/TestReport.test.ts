@@ -236,7 +236,7 @@ describe("TestReport", () => {
     )
   })
 
-  it.each(["", "OK\n"])("reads pytest with captured output %j", (prefix) => {
+  it.each(["", "OK\n", "ok so far\n", "not ok yet\n"])("reads pytest with captured output %j", (prefix) => {
     expect(TestReport.parse(
       prefix + [
         "FAILED tests/test_a.py::test_two - AssertionError",
@@ -275,15 +275,18 @@ describe("TestReport", () => {
     expect(TestReport.parse(output)).toEqual({ passed: 1, failed: [], reportedFailed: 0, parsed: true })
   })
 
-  it("keeps unittest diagnostics from choosing pytest", () => {
-    const output = "1 passed\nFAIL: test_x (tests.Case)\nRan 1 test in 0.001s\nFAILED (failures=1)"
-    expect(TestReport.parse(output)).toEqual({
-      passed: 0,
-      failed: ["tests.Case.test_x"],
-      reportedFailed: 1,
-      parsed: true
-    })
-  })
+  it.each(["", "ok so far\n", "not ok yet\n"])(
+    "keeps unittest diagnostics from choosing another runner: %j",
+    (prefix) => {
+      const output = prefix + "1 passed\nFAIL: test_x (tests.Case)\nRan 1 test in 0.001s\nFAILED (failures=1)"
+      expect(TestReport.parse(output)).toEqual({
+        passed: 0,
+        failed: ["tests.Case.test_x"],
+        reportedFailed: 1,
+        parsed: true
+      })
+    }
+  )
 
   it("refuses mixed runner completion markers", () => {
     const output = "TAP version 13\n1..1\nnot ok 1 - broken\n=== 1 passed in 0.10s ==="
