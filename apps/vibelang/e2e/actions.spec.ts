@@ -124,6 +124,32 @@ test("a history write the sequencer refuses says why in its run", async ({ page 
   }
 })
 
+test("a plan the sequencer refuses says why, and one inserted before a commit is planned", async ({ page }) => {
+  // The Plan arms of src/history/mythical.vibe `decide` that only the agent's door reaches: an unknown epic, a task or
+  // new epic title past 200 characters, an amend of no commit, and an insert before a commit. One run per fresh page.
+  test.setTimeout(90_000)
+  const plan = (fields: Record<string, string>) => `Run /plan ${JSON.stringify({ how: "append", epic: "e1", newEpic: "", target: "", title: "fix(history): planned by the agent", task: "", ...fields })}`
+  const long = "x".repeat(201)
+  const cases: ReadonlyArray<readonly [string, string | RegExp]> = [
+    [plan({ epic: "e-none" }), "No such epic or commit."],
+    [plan({ task: long }), "Too long."],
+    [plan({ epic: "", newEpic: long }), "Too long."],
+    [plan({ how: "amend", target: "m-none", task: "Again." }), "No such epic or commit."],
+    [plan({ how: "insert", epic: "", target: "m1" }), /"id":"m\d+","refusal":null/],
+  ]
+  for (const [text, words] of cases) {
+    await chat(page)
+    await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+    const input = page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })
+    await input.fill(text)
+    await input.press("Enter")
+    const run = page.getByRole("button", { name: /Open Plan run/ })
+    await expect(run).toHaveCount(1)
+    await run.click()
+    await expect(page.getByRole("region", { name: "Actions", exact: true }).getByLabel("Result", { exact: true })).toHaveText(words)
+  }
+})
+
 test.describe("local real-engine action faults and role views", () => {
   test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_4511 ?? process.env.E2E_PORT ?? 4173}` })
   test("all five roles see only commands they may run", async ({ page }) => {
