@@ -141,8 +141,11 @@ store and its sweep with the same directory and coordination mode; no runtime
 check can detect a mismatch. See
 [Coordination between processes](./concepts/coordination.md).
 
-The store also sweeps its own crash orphans, `.tmp-*` payloads and `.locks/`
-entries older than one hour, once per store instance on its first publication.
+The store also sweeps `.tmp-*` payloads and `.locks/` stale-owner tombstones
+(`.stale-*`) older than one hour, once per store instance on its first
+publication. It never sweeps lock paths or `.reclaim-*` mutation claims:
+locks are reclaimed only on contention through the lease protocol, and abandoned
+claims require host recovery with all possible holders stopped.
 That is scratch reclamation, never garbage collection of published blobs.
 
 ### The memory store
@@ -441,19 +444,21 @@ through `failure` with a `RangeError`, before touching the lock, unless
 `0 < heartbeatEvery < staleAfterMs` and `staleAfterMs` is finite: a shorter
 stale bound would let a contender reclaim a live holder's lock.
 
-| Option           | Default        | Meaning                                          |
-| ---------------- | -------------- | ------------------------------------------------ |
-| `heartbeatEvery` | `"10 seconds"` | How often the holder refreshes the lock's mtime. |
-| `staleAfterMs`   | `60_000`       | Age past which a lock or reclaim claim is stale. |
-| `acquireWithin`  | `"2 minutes"`  | Acquisition deadline (`withLease` only).         |
-| `retryEvery`     | `"25 millis"`  | Sleep between attempts while contended.          |
-| `label`          | `"File lease"` | Names the lock in the reclaimed-holder warning.  |
-| `annotations`    | none           | Extra fields logged with that warning.           |
+| Option           | Default        | Meaning                                                       |
+| ---------------- | -------------- | ------------------------------------------------------------- |
+| `heartbeatEvery` | `"10 seconds"` | How often the holder refreshes the lock's mtime.              |
+| `staleAfterMs`   | `60_000`       | Age past which a lock is stale; mutation claims never expire. |
+| `acquireWithin`  | `"2 minutes"`  | Acquisition deadline (`withLease` only).                      |
+| `retryEvery`     | `"25 millis"`  | Sleep between attempts while contended.                       |
+| `label`          | `"File lease"` | Names the lock in the reclaimed-holder warning.               |
+| `annotations`    | none           | Extra fields logged with that warning.                        |
 
 The host needs exclusive `wx` file creation, `readFileString`, `stat` with an
 mtime, `utimes`, `rename`, and `remove`. Reclaim writes siblings named
-`<lockPath>.reclaim-<token>` and `<lockPath>.stale-<token>`. The fence is
-bounded: see [Coordination](./concepts/coordination.md).
+`<lockPath>.reclaim-<token>` and `<lockPath>.stale-<token>`. Mutation claims
+never expire; an abandoned claim requires host recovery with all possible
+holders stopped. The fence is bounded: see
+[Coordination](./concepts/coordination.md).
 
 ## ArtifactStoreMetrics
 
@@ -601,7 +606,8 @@ metadata value reaches a span, a log or a metric.
 ## Reclaiming published blobs
 
 Reclaiming published blobs never happens as a side effect of a store call. The
-filesystem store sweeps only stale scratch and lock files. The mark policy and
-grace period for published blobs belong to
+filesystem store sweeps only old `.tmp-*` payloads and stale-owner tombstones,
+leaving lock paths and mutation claims untouched. The mark policy and grace
+period for published blobs belong to
 [`@smthrs/engine-store`](/api/engine-store), which also owns artifact
 publication ordering.

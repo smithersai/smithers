@@ -23,10 +23,10 @@ import { measureBytes } from "./measureBytes.ts"
 import { snapshotBytes } from "./snapshotBytes.ts"
 import { validateDigest } from "./validateDigest.ts"
 
-const hostFailure = (cause: unknown): ArtifactStoreError =>
+const hostFailure = (cause: unknown, detail = String(cause)): ArtifactStoreError =>
   cause instanceof ArtifactStoreError ? cause : new ArtifactStoreError({
     code: "unavailable",
-    message: `the host filesystem refused an artifact operation: ${String(cause)}`,
+    message: `the host filesystem refused an artifact operation: ${detail}`,
     cause
   })
 
@@ -455,7 +455,12 @@ export const makeFileSystem = (
           const missing = new ArtifactMissing({ code: "artifact_missing", digest: validated })
           if (isNotFound(cause)) return Effect.fail(missing)
           return fs.exists(blob.path).pipe(
-            Effect.mapError((probeCause) => hostFailure({ read: cause, existenceProbe: probeCause })),
+            Effect.mapError((probeCause) =>
+              hostFailure(
+                { read: cause, existenceProbe: probeCause },
+                `read: ${String(cause)}; existence probe: ${String(probeCause)}`
+              )
+            ),
             Effect.flatMap((present): Effect.Effect<Uint8Array, ArtifactMissing | ArtifactStoreError> =>
               Effect.fail(present ? hostFailure(cause) : missing)
             )

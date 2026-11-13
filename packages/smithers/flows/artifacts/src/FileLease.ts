@@ -59,9 +59,11 @@ export interface Options {
   /** How often the holder refreshes the lock's mtime. Defaults to 10 seconds. */
   readonly heartbeatEvery?: Duration.Input | undefined
   /**
-   * Age past which a lock or claim is stale. Defaults to 60 000 ms. Must be a
-   * finite positive number longer than `heartbeatEvery`; anything else fails
-   * the lease through `failure` before the lock is touched.
+   * Age past which a lock is stale. Defaults to 60 000 ms. Must be a finite
+   * positive number longer than `heartbeatEvery`; anything else fails the
+   * lease through `failure` before the lock is touched. Mutation claims never
+   * expire; abandoned claims require host recovery with all possible holders
+   * stopped.
    */
   readonly staleAfterMs?: number | undefined
   /** How long acquisition may wait. Defaults to 2 minutes. */

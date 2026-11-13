@@ -69,7 +69,7 @@ const memoryFs = (options: {
         existsCalls++
         const budget = options.failExistsAfter
         if (options.failExists === true || (budget !== undefined && existsCalls > budget)) {
-          return Effect.fail(new Error(`EIO: ${path}`))
+          return Effect.fail(new Error(`EIO: exists ${path}`))
         }
         return Effect.succeed(files.has(path))
       })) as never,
@@ -441,8 +441,17 @@ describe("fenced removal", () => {
         failRemoveOf: blobPath,
         failExists: true
       })
-      const exit = yield* withCrypto(sweepFor(host).remove(digest).pipe(Effect.exit))
-      expect(Exit.isFailure(exit)).toBe(true)
+      const error = yield* withCrypto(sweepFor(host).remove(digest).pipe(Effect.flip))
+      expect(error).toMatchObject({
+        code: "unavailable",
+        message:
+          `the host filesystem refused a sweep operation: remove: Error: EIO: ${blobPath}; existence probe: Error: EIO: exists ${blobPath}`,
+        cause: {
+          remove: { message: `EIO: ${blobPath}` },
+          existenceProbe: { message: `EIO: exists ${blobPath}` }
+        }
+      })
+      expect(host.files.has(blobPath)).toBe(true)
     }))
 })
 

@@ -119,8 +119,8 @@ const error = (message: string, cause?: unknown): ArtifactStore.ArtifactStoreErr
     ...(cause === undefined ? {} : { cause })
   })
 
-const hostFailure = (cause: unknown): ArtifactStore.ArtifactStoreError =>
-  error(`the host filesystem refused a sweep operation: ${String(cause)}`, cause)
+const hostFailure = (cause: unknown, detail = String(cause)): ArtifactStore.ArtifactStoreError =>
+  error(`the host filesystem refused a sweep operation: ${detail}`, cause)
 
 const isNotFound = (cause: unknown): boolean =>
   cause instanceof PlatformError.PlatformError && cause.reason._tag === "NotFound"
@@ -295,7 +295,12 @@ export const makeFileSystem = (
             // refusal over bytes that still exist is a host failure.
             Effect.catch((cause) =>
               fs.exists(path).pipe(
-                Effect.mapError((probeCause) => hostFailure({ remove: cause, existenceProbe: probeCause })),
+                Effect.mapError((probeCause) =>
+                  hostFailure(
+                    { remove: cause, existenceProbe: probeCause },
+                    `remove: ${String(cause)}; existence probe: ${String(probeCause)}`
+                  )
+                ),
                 Effect.flatMap((present) => present ? Effect.fail(hostFailure(cause)) : Effect.succeed(false))
               )
             )

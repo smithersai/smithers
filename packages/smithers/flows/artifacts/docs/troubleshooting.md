@@ -96,6 +96,11 @@ larger value is refused.
 | `the host could not copy the artifact bytes`             | The snapshot of the caller's buffer failed: a detached buffer, or an allocation the runtime would not give. |
 | `<method> is unavailable`                                | A `makeNoop` store or sweep, with no override for that method.                                              |
 
+When a filesystem read or removal fails and its follow-up existence probe
+also fails, the message names both stages: `read: ...; existence probe: ...`
+or `remove: ...; existence probe: ...`. Both original failures remain in
+`cause`, under `read` or `remove` and `existenceProbe`.
+
 **What to change.** The cause carries the underlying host error. Two cases have
 non-obvious fixes:
 

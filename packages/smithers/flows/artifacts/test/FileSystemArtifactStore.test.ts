@@ -723,7 +723,15 @@ describe("reads, probes, and refusals", () => {
     Effect.gen(function*() {
       const host = memoryFs({ seed: { [blobPath]: artifact }, failReadOf: blobPath, failExists: true })
       const exit = yield* withCrypto(store(host).get(digest).pipe(Effect.exit))
-      expect(errorOf(exit), JSON.stringify(exit)).toMatchObject({ code: "unavailable" })
+      expect(errorOf(exit)).toMatchObject({
+        code: "unavailable",
+        message:
+          `the host filesystem refused an artifact operation: read: Error: ENOENT: ${blobPath}; existence probe: Error: EIO: exists`,
+        cause: {
+          read: { message: `ENOENT: ${blobPath}` },
+          existenceProbe: { message: "EIO: exists" }
+        }
+      })
     }))
 
   it.effect.each<[string, string]>([

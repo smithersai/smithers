@@ -76,10 +76,10 @@ store instead writes to a temp path inside the destination fanout directory,
 fsyncs it, and renames it into place. The rename never crosses a filesystem
 because the temp path is a sibling of the blob.
 
-Temp names carry a random per-store token drawn from Effect's `Random`, so two
-processes publishing the same digest into one workspace never share a scratch
-path and never clobber each other into torn bytes at the content address. The
-token enters no persisted identity, so its randomness is invisible to replay.
+Each scratch-creation attempt draws a fresh token from Effect's `Random` and
+opens its temp path exclusively. A collision retries with another token, up to
+the store's retry limit, without overwriting another writer's scratch file.
+The token enters no persisted identity, so its randomness is invisible to replay.
 
 `FileSystemOptions.durability` controls the fsync. `required`, the default,
 reports success only after syncing the blob, its fanout directory, the objects
@@ -131,9 +131,12 @@ mark phase that decides which digests are live belongs to
 durable roots are visible. See
 [Reclaim disk space](../guides/reclaim-disk-space.md).
 
-The one thing a store does clean up on its own is its own scratch: `.tmp-*`
-payloads and `.locks/` files older than an hour, swept once per store instance
-on its first publication. Those are crash orphans that nothing else observes.
+The store sweeps `.tmp-*` payloads and `.locks/` stale-owner tombstones
+(`.stale-*`) older than an hour, once per store instance on its first
+publication. It leaves lock paths and `.reclaim-*` mutation claims untouched,
+regardless of age. Locks are reclaimed only on contention through the lease
+protocol; abandoned claims require host recovery with all possible holders
+stopped. See [Crash orphans](./coordination.md#crash-orphans).
 
 ## The layout on disk
 

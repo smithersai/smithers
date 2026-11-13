@@ -70,10 +70,12 @@ import {
 } from "@smthrs/artifacts"
 ```
 
-Each module is also importable from its own subpath, which is the form the
-guides and the [API reference](./api.md) use:
+Each module except `ImmutableCache` is also importable from its own subpath,
+which is the form the guides and the [API reference](./api.md) use.
+Import `ImmutableCache` from the package root:
 
 ```ts
+import { ImmutableCache } from "@smthrs/artifacts"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import * as ArtifactSweep from "@smthrs/artifacts/ArtifactSweep"
 ```

@@ -130,9 +130,9 @@ names the key's namespace, never its parts.
   keyed by the digest it measured, so the address and the content cannot
   disagree.
 - **Publication is atomic.** Bytes land at a temp path in the destination
-  directory, are fsynced, and are renamed into place. Temp names fold a random
-  per-instance token, so two processes publishing the same digest into one
-  workspace never share a scratch path.
+  directory, are fsynced, and are renamed into place. Each scratch-creation
+  attempt draws a fresh random token and opens its path exclusively. A collision
+  retries without overwriting another writer's scratch file.
 - **An existing blob is verified on every `put`.** The objects directory is
   shared, so a remembered proof could outlive the bytes it proved. A mismatch
   or failing read falls through to the atomic rewrite and heals the address.
