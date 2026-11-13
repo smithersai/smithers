@@ -78,9 +78,10 @@ polls exactly this column and cleans up its children before it settles.
 
 ## Settle under a guard
 
-A `TransitionGuard` is an extra predicate compiled into the same `UPDATE` as the
-ownership fence, so a request that arrives while you are deciding cannot slip
-between a check and a terminal write.
+A `TransitionGuard` is an extra predicate evaluated with the ownership fence
+in the same serialized write transaction as the mutation. `DurableWriter`
+serialization prevents a cancellation request from committing between that
+check and the terminal write.
 
 ```ts
 import type { OwnerId } from "@smthrs/run-store/Ownership"
@@ -108,8 +109,8 @@ const settleCompleted = (runId: string, owner: OwnerId, state: unknown) =>
   })
 ```
 
-Together the two guards make the pair exclusive in SQL rather than in your
-control flow.
+Together the two guards make the pair exclusive under `DurableWriter`'s
+serialized transaction contract.
 
 `GuardFailed` means you still own the run and the predicate refused the write.
 That is a different situation from `FenceLost`, which means another owner holds

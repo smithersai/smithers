@@ -149,8 +149,9 @@ const finish = (runId: string, owner: OwnerId, state: unknown) =>
   })
 ```
 
-The guard is optional and is compiled into the same `UPDATE`, so a cancellation
-request that arrives while you are deciding cannot slip between a check and a
+The optional guard is evaluated with the ownership fence in the same
+serialized write transaction as the mutation. `DurableWriter` serialization
+prevents a cancellation request from committing between the check and the
 terminal write. `GuardFailed` means you still own the run and the guard refused
 it, which is a different situation from `FenceLost`.
 

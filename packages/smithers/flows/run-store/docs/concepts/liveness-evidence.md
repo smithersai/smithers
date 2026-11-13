@@ -75,15 +75,25 @@ claimant, and the instant, it produces `LivenessEvidence` or `undefined` for
 The portable package ships lease and single-incarnation checks; Node PID
 checks live in `@smthrs/platform-node`.
 
-`Ownership.leaseLiveness(staleAfter?)` is the default and the honest floor: an
-owner is alive for as long as its persisted heartbeat is younger than the
-cutoff, and gone once it is not. It is the weakest answer, and the one every
+`Ownership.leaseLiveness(staleAfter?)` is the portable engine's default and the
+honest floor: an owner is alive for as long as its persisted heartbeat is
+younger than the cutoff, and gone once it is not. It is the weakest answer, and the one every
 host can give. A fresh process with no application code at all can reclaim a
 hard-killed owner's runs once the lease it stopped renewing expires.
 
-`HostLiveness.sameHostPidProbe` asks the operating system instead. It is what a
-Node host hands the engine, so this snippet also installs
-[`@smthrs/platform-node`](/api/platform-node), whose `NodeRuntime` is that host:
+`NodeRuntime` from [`@smthrs/platform-node`](/api/platform-node) supplies a
+different default. Its `isAlive` option is optional: without it, the runtime uses
+`HostLiveness.isAlive({ hostId })` for the configured host. This checks local
+pids and treats foreign-host owners as alive (`crossHostPolicy: "alive"`).
+An expired lease alone never reclaims a foreign-host owner's run with this
+default; supply a deployment-specific check to establish that owner's death.
+For the claimant's own pid with an earlier nonce, the default answers dead,
+allowing recovery of a previous incarnation after its lease expires.
+
+`HostLiveness.sameHostPidProbe` is an explicit alternative. It probes even
+the claimant's own pid, and answers `false` for a foreign host
+(`crossHostPolicy: "lease"`), leaving takeover to the expired lease. This
+example opts into that policy:
 
 ```ts
 import { HostLiveness, type NodeRuntime } from "@smthrs/platform-node"
@@ -114,13 +124,10 @@ delivery checks, and exactly three answers matter:
   positive safe integer: the owner is treated as alive, because an unknown
   answer is not death.
 
-Failing closed is the whole point. A check that returns `false` without asking
-says "that owner is gone" about an owner it never looked at, and the engine
-steals runs out of live processes on the strength of it. That is why the
-engine's `NodeRuntime` requires `isAlive` rather than defaulting it.
+Unknown local probe results preserve liveness. A custom check must justify
+answering `false`: after lease expiry, that answer admits a takeover.
 
-Two limits are inherent to asking a pid, and they bound what reclaim can
-promise:
+Two limits of `sameHostPidProbe` bound what reclaim can promise:
 
 - **An owner recorded with the claimant's own pid is always alive.** A previous
   incarnation of this process, or a second engine composed inside it, differs
@@ -133,8 +140,9 @@ promise:
   reclaim rather than breaking it: the row is still `running` under an expired
   lease, and the next probe after the pid is free reclaims it.
 
-A recorded owner on another host is never probed. The answer is `false`, which
-adds no evidence and lets the expired lease decide, so a host that dies for
+With `sameHostPidProbe`, a recorded owner on another host is never probed.
+The answer is `false`, which adds no evidence and lets the expired lease
+decide, so a host that dies for
 good does not strand its runs where no other machine could ever produce
 evidence about its pids.
 

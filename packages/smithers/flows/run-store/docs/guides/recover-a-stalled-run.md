@@ -50,8 +50,9 @@ const probeFrom = (
 
 The `kind` has to match the host relation or the store refuses it: a pid probe
 means nothing across hosts, and an unreachability judgment means nothing on the
-owner's own machine. `HostLiveness.sameHostPidProbe` is the check to pass on a Node
-host; `Ownership.leaseLiveness()` is the floor every host can give.
+owner's own machine. A Node host can explicitly choose
+`HostLiveness.sameHostPidProbe`; `Ownership.leaseLiveness()` is the floor every
+host can give. The Node runtime's default policy is described below.
 
 ## Steal a stale running row, then activate it
 
@@ -142,11 +143,19 @@ reporting a later time.
 
 ## Let the engine do it
 
-If you are running the Smithers engine, this sweep already exists. Its
-`NodeRuntime`, from [`@smthrs/platform-node`](/api/platform-node) rather than this package,
-requires an `isAlive` check precisely so it can run the sweep, and it takes no
-default: a check that answers "gone" without asking steals runs out of live
-processes.
+If you are running the Smithers engine, this sweep already exists.
+`NodeRuntime` comes from [`@smthrs/platform-node`](/api/platform-node).
+Its `isAlive` option is optional and defaults to
+`HostLiveness.isAlive({ hostId })`. It probes local pids, reclaims an earlier
+nonce under the claimant's own pid after lease expiry, and treats foreign-host
+owners as alive (`crossHostPolicy: "alive"`). Expired leases alone therefore
+do not reclaim runs owned by a foreign host; provide a deployment-specific
+check when those runs must be recovered.
+
+The following example explicitly chooses `HostLiveness.sameHostPidProbe`
+instead. It probes the claimant's own pid even when the nonce differs and
+answers `false` for foreign hosts (`crossHostPolicy: "lease"`), leaving their
+takeover to the expired lease:
 
 ```ts
 import { HostLiveness, type NodeRuntime } from "@smthrs/platform-node"

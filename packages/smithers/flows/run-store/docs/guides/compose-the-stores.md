@@ -55,15 +55,25 @@ included.
 
 ## Compose the migration set, do not run it twice
 
-`Migrations.layer` installs this package's tables and nothing else. A host that
-also runs the journal, the step cache, or the engine state should compose the
-migration sets instead, so one migrator applies them in one pass:
+`Migrations.run` and `Migrations.layer` install the journal migration set first,
+then this package's set. The journal creates `flows_journal_events`, which the
+run-store's `flows_journal_run_progress` trigger needs, and
+`flows_consensus_leases`, which the SQL `RunStore` uses for ownership.
+
+A host that also runs the step cache or engine state should compose the sets
+instead, keeping the journal before the run store so one migrator applies them
+in one pass:
 
 ```ts
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
+import * as JournalMigrations from "@smthrs/journal/Migrations"
 import { Migrations } from "@smthrs/run-store"
 
-const runAll = DatabaseMigrations.run([Migrations.set /* , the other packages' sets */])
+const runAll = DatabaseMigrations.run([
+  JournalMigrations.set,
+  Migrations.set
+  // Add the other packages' sets here.
+])
 ```
 
 `Migrations.set` reserves id block 1000, so its ids can never collide with

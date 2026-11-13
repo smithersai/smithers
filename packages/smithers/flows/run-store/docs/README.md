@@ -24,8 +24,9 @@ This package handles both in the database rather than in your code:
   executable state a resume re-enters. A restarted process reads that row
   instead of replaying a log to work out where it was.
 - **Every owned write carries a fence.** The identity is `{ hostId, pid, nonce }`.
-  Owned run transitions and heartbeats consult `Consensus` inside the write
-  transaction. Attempt writes and cancellation acknowledgements check the
+  Owned run transitions and heartbeats consult `Consensus` in the same
+  serialized write transaction as the mutation. `DurableWriter` supplies that
+  serialization. Attempt writes and cancellation acknowledgements check the
   `running` run row's owner triple directly without consulting `Consensus`.
 - **Competition is a value, not an error.** Losing a race returns
   `AlreadyClaimed`, `HeartbeatFresh`, or `FenceLost` as an ordinary success

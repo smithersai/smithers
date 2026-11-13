@@ -22,8 +22,8 @@ normal run, and read back the row a restart would have found.
 ## Name the owner
 
 An owner identity is the fence on every write this process makes. It is three
-fields, and all three are compared in the same SQL statement as the mutation
-they guard:
+fields, and all three are compared in the same serialized write transaction
+as the mutation they guard:
 
 ```ts
 import type { OwnerId } from "@smthrs/run-store/Ownership"
@@ -186,8 +186,9 @@ The run row moved `pending` to `running` to `completed`, and every write on the
 way was admitted only because the full `(hostId, pid, nonce)` fence still
 matched the row. Had a second process taken the run over between your
 `activate` and your `transitionOwned`, the transition would have reported
-`FenceLost` and changed nothing: the fence is compared in the same statement as
-the mutation, so there is no window between the check and the write.
+`FenceLost` and changed nothing: `DurableWriter` serializes the fence check and
+mutation in one write transaction, so another writer cannot commit between
+the check and the write.
 
 The `stateJson` you passed to `transitionOwned` is what a restart would
 re-enter. It is stored and returned byte for byte, with nothing rewritten in

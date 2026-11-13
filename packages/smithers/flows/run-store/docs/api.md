@@ -67,8 +67,10 @@ The service tag. The identity string equals the defining module path.
 
 ### RunStore.Service
 
-Fourteen operations. Every one validates its input first and fails with
-`RunStoreError` on a defect; competition is reported as a success value.
+Seventeen operations. Run-state operations validate their input first and fail
+with `RunStoreError` on a defect; competition is reported as a success value.
+`withPermit` delegates named resource exclusion to `Consensus`, with
+`ConsensusError` in its error channel.
 
 #### create
 
@@ -288,7 +290,9 @@ persisted state; changed state returns `GuardFailed`. Use this only to release a
 temporarily activated pending snapshot. Without that guard or state, `pending`
 fails with `invalid_run`. An
 omitted `stateJson` leaves the column as recorded; a supplied one replaces it
-whole. The guard is compiled into the same `UPDATE` as the ownership fence.
+whole. The guard and ownership fence are checked in the same serialized write
+transaction as the mutation. This guarantee requires `DurableWriter`
+serialization; a bare SQL transaction does not supply that contract.
 
 #### steal
 
@@ -459,8 +463,9 @@ type TransitionGuard = {
 }
 ```
 
-An extra compare-and-swap predicate over first-class run metadata, compiled into
-the transition's own `UPDATE`.
+An extra compare-and-swap predicate over first-class run metadata, evaluated
+with the ownership fence in the same serialized write transaction before the
+transition updates the row.
 
 ### RunStore outcomes
 
@@ -544,11 +549,16 @@ by position never sees one. They are recorded when the caller runs with a
 ### RunStore constructors and layers
 
 ```ts
-const make: Effect<Service, never, DurableWriter | SqlClient.SqlClient>
+const make: Effect<Service, never, Consensus | DurableWriter | SqlClient.SqlClient>
 const makeNoop: (overrides?: Partial<Service>) => Service
+const layerWith: Layer<RunStore, never, Consensus | DurableWriter | SqlClient.SqlClient>
 const layer: Layer<RunStore, never, DurableWriter | SqlClient.SqlClient>
 const layerNoop: (overrides?: Partial<Service>) => Layer<RunStore>
 ```
+
+`make` and `layerWith` use the injected `Consensus` strategy. Provide the same
+strategy instance to the journal so both agree on ownership. `layer` supplies
+the database-backed `SqlConsensus` strategy over the same client.
 
 `makeNoop` is an explicit absence: `create` and `get` fail with
 `persistence_failed`, and every compare-and-swap reports a loss, `NotFound` or
@@ -953,6 +963,8 @@ See [Observe store outcomes](./guides/observe-outcomes.md) for all labels.
 
 ```ts
 const set: DatabaseMigrations.MigrationSet
+const revisionTriggers: ReadonlyArray<Dialect.DeferredTrigger>
+const deferredRevisions: Effect<void, unknown, SqlClient.SqlClient>
 const run: Effect<ReadonlyArray<readonly [id: number, name: string]>, MigrationError | SqlError, SqlClient.SqlClient>
 const layer: Layer<never, MigrationError | SqlError, SqlClient.SqlClient>
 ```
@@ -962,10 +974,23 @@ const layer: Layer<never, MigrationError | SqlError, SqlClient.SqlClient>
 reserves migration id block 1000, so its ids can never collide with another
 package's. `run` and `layer` install [`@smthrs/journal`](/api/journal)'s set
 ahead of it, because the SQL `RunStore` arbitrates ownership through the
-journal's `SqlConsensus` and its `flows_consensus_leases` table. Compose `set`
-with the other storage packages' sets and run them in one pass rather than
+journal's `SqlConsensus` and its `flows_consensus_leases` table. The journal
+also creates `flows_journal_events` before migration 1005 installs the
+`flows_journal_run_progress` trigger on it. Compose the journal set before
+`set` when running the storage packages' sets in one pass rather than
 layering several migrators; [`@smthrs/engine-store`](/api/engine-store)
 already does.
+
+`revisionTriggers` lists the three `flows_runs` revision triggers as
+`Dialect.DeferredTrigger` pairs. `set.immediateTriggers` uses that list so
+migrations can run the triggers immediately; readers joining a writer's
+transaction flush them through `Dialect.flushDeferredTriggers`.
+
+`deferredRevisions` is not included in `set`. It is migration 1006's effect:
+on PostgreSQL it replaces the immediate revision triggers with deferred
+constraint triggers; on SQLite it does nothing. Its rollout must follow a
+release whose readers flush those triggers, so that release remains a
+compatible rollback target.
 
 The schema enforces the ownership invariants as SQL `CHECK` constraints, so no
 writer, including one issuing raw SQL, can leave a half-owned row behind.
