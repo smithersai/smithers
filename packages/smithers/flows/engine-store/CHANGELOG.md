@@ -4,6 +4,8 @@
 
 ### Added
 
+- `DurableEngineState.Service.runChildrenOf?` lists child edges for a set of parents in one read on SQLite, PostgreSQL and memory, preserving per-parent sequence order.
+
 - `EngineStore.Options.sweep`: `"process"` (the default, unchanged) or
   `{ host: executionId }` for a host that drives one execution per invocation,
   such as a Cloudflare Durable Object alarm. A hosted store runs no sweep fiber

@@ -722,6 +722,14 @@ export interface Service {
    */
   readonly runChildren: (parentId: string) => Effect.Effect<ReadonlyArray<RunParentEdge>>
   /**
+   * Lists children for a set of parents in parent-id and per-parent sequence
+   * order. Duplicate parent IDs do not duplicate edges. Optional bulk read;
+   * callers of adapters without it can use `runChildren` for each parent.
+   */
+  readonly runChildrenOf?:
+    | ((parentIds: ReadonlyArray<string>) => Effect.Effect<ReadonlyArray<RunParentEdge>>)
+    | undefined
+  /**
    * Runs `effect` inside one storage write transaction, so a caller can make
    * several store operations atomic — the run driver wraps the parent-edge
    * record and the run-row creation it guards, closing the crash window that
@@ -2192,6 +2200,23 @@ const runChildren = (db: Database): Service["runChildren"] =>
     )
   )
 
+const runChildrenOf = (db: Database): NonNullable<Service["runChildrenOf"]> =>
+  Effect.fn("DurableEngineState.runChildrenOf")((parentIds) => {
+    const ids = JSON.stringify(parentIds)
+    const selected = Dialect.isPostgres(db.sql)
+      ? db.sql`SELECT value FROM jsonb_array_elements_text(${ids}::jsonb)`
+      : db.sql`SELECT value FROM json_each(${ids})`
+    return db.sql<RunParentDatabaseRow>`
+      SELECT child_id AS "childId", parent_id AS "parentId", seq AS "seq"
+      FROM flows_run_parents
+      WHERE parent_id IN (${selected})
+      ORDER BY parent_id, seq
+    `.pipe(
+      Effect.orDie,
+      Effect.flatMap((rows) => decodeSweep(rows, "run parent", runParentRowKey, decodeRunParentEdgeResult))
+    )
+  })
+
 /**
  * Constructs the database-backed durable-state implementation.
  *
@@ -2241,6 +2266,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     removeRunParentsForRun: removeRunParentsForRun(db),
     runParents: runParents(db),
     runChildren: runChildren(db),
+    runChildrenOf: runChildrenOf(db),
     transaction: transaction(db),
     readTransaction: readTransaction(db)
   })
@@ -2879,6 +2905,22 @@ const memoryRunChildren = (memory: Memory): Service["runChildren"] =>
       return edges.sort((left, right) => left.seq - right.seq)
     })
   )
+const memoryRunChildrenOf = (memory: Memory): NonNullable<Service["runChildrenOf"]> =>
+  Effect.fn("DurableEngineState.runChildrenOf")((parentIds) =>
+    Effect.sync(() => {
+      const selected = new Set(parentIds)
+      const edges: Array<RunParentEdge> = []
+      for (const [childId, parents] of memory.parentEdges) {
+        for (const [parentId, seq] of parents) {
+          if (selected.has(parentId)) edges.push({ childId, parentId, seq })
+        }
+      }
+      return edges.sort((left, right) =>
+        left.parentId < right.parentId ? -1 : left.parentId > right.parentId ? 1 : left.seq - right.seq
+      )
+    })
+  )
+
 /** Runs one operation under the memory state's permit, unless its fiber is inside a transaction. */
 const guard = <A, E, R>(memory: Memory, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.flatMap(
@@ -2982,7 +3024,8 @@ const memoryMethods = (memory: Memory): Omit<Service, "transaction" | "readTrans
   recordRunParent: memoryRecordRunParent(memory),
   removeRunParentsForRun: memoryRemoveRunParentsForRun(memory),
   runParents: memoryRunParents(memory),
-  runChildren: memoryRunChildren(memory)
+  runChildren: memoryRunChildren(memory),
+  runChildrenOf: memoryRunChildrenOf(memory)
 })
 
 /**
@@ -3041,6 +3084,7 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
     removeRunParentsForRun: (runId) => guard(memory, unguarded.removeRunParentsForRun(runId)),
     runParents: (childId) => guard(memory, unguarded.runParents(childId)),
     runChildren: (parentId) => guard(memory, unguarded.runChildren(parentId)),
+    runChildrenOf: (parentIds) => guard(memory, unguarded.runChildrenOf!(parentIds)),
     transaction,
     // Memory has no lock to contend for; its permit is what keeps reads agreeing.
     readTransaction: (effect) => transaction(effect)

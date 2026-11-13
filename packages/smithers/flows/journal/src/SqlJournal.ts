@@ -3049,7 +3049,41 @@ export const make = (
       }
     })
 
+    const heads: NonNullable<Service["heads"]> = Effect.fn("SqlJournal.heads")(function*(runIds) {
+      const heads: Array<{ runId: RunId; generation: number; afterSeq: number; maxSeq: number | null }> = []
+      for (let offset = 0; offset < runIds.length; offset += 2000) {
+        const ids = JSON.stringify(runIds.slice(offset, offset + 2000))
+        const selected = Dialect.isPostgres(sql)
+          ? sql`SELECT value AS run_id FROM jsonb_array_elements_text(${ids}::jsonb)`
+          : sql`SELECT value AS run_id FROM json_each(${ids})`
+        // Generation and tail must share a statement snapshot: a rewind can
+        // reuse sequences below a reader's previous position.
+        const rows = yield* sql<{
+          readonly runId: RunId
+          readonly generation: number
+          readonly afterSeq: number
+          readonly maxSeq: number | null
+        }>`
+          SELECT ids.run_id AS "runId", COALESCE(g.generation, 0) AS generation,
+            COALESCE(g.after_seq, -1) AS "afterSeq",
+            (SELECT MAX(e.seq) FROM flows_journal_events e WHERE e.run_id = ids.run_id) AS "maxSeq"
+          FROM (${selected}) AS ids
+          LEFT JOIN flows_journal_generations g ON g.run_id = ids.run_id
+        `.pipe(Effect.mapError((cause) => error("read_failed", "could not read journal heads", cause)))
+        for (const row of rows) {
+          heads.push({
+            runId: row.runId,
+            generation: Number(row.generation),
+            afterSeq: Number(row.afterSeq),
+            maxSeq: row.maxSeq === null ? null : Number(row.maxSeq)
+          })
+        }
+      }
+      return heads
+    })
+
     return makeJournal({
+      heads,
       generation: (runId) =>
         sql<{ readonly generation: number; readonly afterSeq: number }>`
           SELECT generation, after_seq AS "afterSeq" FROM flows_journal_generations WHERE run_id = ${runId}

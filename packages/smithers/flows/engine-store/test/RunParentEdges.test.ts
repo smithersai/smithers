@@ -39,6 +39,42 @@ const memoryHarness: Harness = {
 
 const describeContract = (harness: Harness) => {
   describe(`run parent edges (${harness.label})`, () => {
+    it.effect("bulk children equal per-parent reads, preserving each parent's sequence order", () =>
+      harness.run((state) =>
+        Effect.gen(function*() {
+          expect(typeof state.runChildrenOf).toBe("function")
+          yield* state.recordRunParent("first", "parent-b")
+          yield* state.recordRunParent("shared", "parent-a")
+          yield* state.recordRunParent("last", "parent-b")
+          yield* state.recordRunParent("shared", "parent-b")
+          yield* state.recordRunParent("later", "parent-c")
+          yield* state.recordRunParent("outsider", "foreign")
+          const expected = [
+            ...(yield* state.runChildren("parent-a")),
+            ...(yield* state.runChildren("parent-b")),
+            ...(yield* state.runChildren("parent-c"))
+          ]
+          expect(yield* state.runChildrenOf!(["parent-b", "unknown", "parent-a", "parent-c", "parent-b"])).toEqual(
+            expected
+          )
+          expect(yield* state.runChildrenOf!([])).toEqual([])
+          expect(yield* state.runChildrenOf!(Array.from({ length: 5000 }, (_, i) => `unknown-${i}`))).toEqual([])
+          yield* state.transaction(Effect.gen(function*() {
+            yield* state.recordRunParent("transactional", "parent-a")
+            expect((yield* state.runChildrenOf!(["parent-a"])).map((edge) => edge.childId)).toEqual([
+              "shared",
+              "transactional"
+            ])
+          }))
+          yield* state.removeRunParentsForRun("shared")
+          expect((yield* state.runChildrenOf!(["parent-a", "parent-b"])).map((edge) => edge.childId)).toEqual([
+            "transactional",
+            "first",
+            "last"
+          ])
+        })
+      ))
+
     it.effect("accepts an acyclic edge after traversing shared ancestors once", () =>
       harness.run((state) =>
         Effect.gen(function*() {

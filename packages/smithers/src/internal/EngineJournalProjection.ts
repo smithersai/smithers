@@ -20,7 +20,7 @@ export interface Options {
   readonly executionId: string
   readonly engineJournal: Journal.Service
   readonly controlJournal: Journal.Service
-  readonly engineState: Pick<DurableEngineState.Service, "runChildren">
+  readonly engineState: Pick<DurableEngineState.Service, "runChildren" | "runChildrenOf">
   /** Native trampoline membership, separate from spawn edges. Legacy adapters may omit it. */
   readonly runLineage?: RunStore.Service["lineage"] | undefined
   /** The root's terminal evidence was drained; detached descendants may still be observed. */
@@ -211,7 +211,12 @@ export const make = (options: Options) =>
             // A storage refusal/lost ack retries the event, never skips the page.
             positions.set(executionId, { generation: generation.generation, sequence: cursor })
           }
-          if (!page.success.hasMore) return
+          if (!page.success.hasMore) {
+            if (positions.get(executionId)?.generation !== generation.generation) {
+              positions.set(executionId, { generation: generation.generation, sequence: after })
+            }
+            return
+          }
           if (cursor === after) {
             return yield* Effect.fail(
               new Journal.JournalError({
@@ -235,23 +240,17 @@ export const make = (options: Options) =>
           payload: { version: 1, controlRunId: options.controlRunId, executionId: options.executionId }
         })
       )
-      const seen = new Set<string>()
-      // Rounds a lineage read of this catch-up already returned. One read
-      // names every round of a lineage, so its members are not asked again:
-      // asking each of N rounds for all N made a catch-up cost N squared rows.
+      const seen = new Set<string>([options.executionId])
+      // A lineage read already names all its rounds, without loading state.
       const listed = new Set<string>()
-      // The status each lineage read of this pass gave. A follower judges its
-      // rounds settled from these rather than reading every round's row, and
-      // with it the round's saved state, again on every pass.
       const statuses = new Map<string, RunStore.RunStatus>()
-      const pending = [options.executionId]
-      for (let index = 0; index < pending.length; index++) {
-        const executionId = pending[index]!
-        if (seen.has(executionId)) continue
-        seen.add(executionId)
-        yield* readRun(executionId)
-        if (options.runLineage !== undefined && !listed.has(executionId)) {
-          // Membership only: the rounds' saved state is never read here.
+      const lineages = new Map<string, ReadonlyArray<string>>()
+      const byParent = new Map<string, Array<string>>()
+      let level = [options.executionId]
+      while (level.length > 0) {
+        for (let index = 0; index < level.length; index++) {
+          const executionId = level[index]!
+          if (options.runLineage === undefined || listed.has(executionId)) continue
           const rounds = yield* options.runLineage(executionId, { includeState: false })
           const member = rounds.find((row) => row.runId === executionId)
           if (member === undefined) {
@@ -263,6 +262,7 @@ export const make = (options: Options) =>
             )
           }
           const lineage = member.lineageId ?? member.runId
+          const members = rounds.map((round) => round.runId)
           for (const round of rounds) {
             if ((round.lineageId ?? round.runId) !== lineage) {
               return yield* Effect.fail(
@@ -270,13 +270,32 @@ export const make = (options: Options) =>
               )
             }
             listed.add(round.runId)
+            lineages.set(round.runId, members)
             statuses.set(round.runId, round.status)
-            if (!seen.has(round.runId)) pending.push(round.runId)
+            if (!seen.has(round.runId)) {
+              seen.add(round.runId)
+              level.push(round.runId)
+            }
           }
         }
-        const children = yield* options.engineState.runChildren(executionId)
+        const parents = new Set(level)
+        const children = options.engineState.runChildrenOf === undefined
+          ? (yield* Effect.forEach(level, (id) =>
+            Effect.gen(function*() {
+              const edges = yield* options.engineState.runChildren(id)
+              if (edges.some((edge) => edge.parentId !== id)) {
+                return yield* Effect.fail(
+                  new Journal.JournalError({
+                    code: "decode_failed",
+                    message: "Engine projection received a foreign parent edge"
+                  })
+                )
+              }
+              return edges
+            }))).flat()
+          : yield* options.engineState.runChildrenOf(level)
         for (const edge of children) {
-          if (edge.parentId !== executionId) {
+          if (!parents.has(edge.parentId)) {
             return yield* Effect.fail(
               new Journal.JournalError({
                 code: "decode_failed",
@@ -284,7 +303,62 @@ export const make = (options: Options) =>
               })
             )
           }
-          if (!seen.has(edge.childId)) pending.push(edge.childId)
+          const siblings = byParent.get(edge.parentId) ?? []
+          siblings.push(edge.childId)
+          byParent.set(edge.parentId, siblings)
+        }
+        const next: Array<string> = []
+        // Preserve parent traversal order even when SQL groups by parent id.
+        for (const parent of level) {
+          for (const child of byParent.get(parent) ?? []) {
+            if (seen.has(child)) continue
+            seen.add(child)
+            next.push(child)
+          }
+        }
+        level = next
+      }
+      // Replay the original queue order from the freshly read adjacency. A
+      // child's lineage was appended before its children, while its siblings
+      // already in the queue kept their places. Batch discovery must not change
+      // the order of copied records or onRecord callbacks.
+      seen.clear()
+      listed.clear()
+      const pending = [options.executionId]
+      for (let index = 0; index < pending.length; index++) {
+        const id = pending[index]!
+        if (seen.has(id)) continue
+        seen.add(id)
+        if (!listed.has(id)) {
+          for (const member of lineages.get(id) ?? []) {
+            listed.add(member)
+            if (!seen.has(member)) pending.push(member)
+          }
+        }
+        for (const child of byParent.get(id) ?? []) {
+          if (!seen.has(child)) pending.push(child)
+        }
+      }
+      // Membership and statuses precede heads, which precede page reads. Never
+      // infer journal or child immutability from a run's terminal status.
+      const heads = options.engineJournal.heads === undefined ? undefined : new Map(
+        (yield* options.engineJournal.heads([...seen] as Array<JournalEvent.RunId>)).map((
+          head
+        ) => [head.runId as string, head])
+      )
+      for (const executionId of seen) {
+        const head = heads?.get(executionId)
+        const position = positions.get(executionId)
+        if (
+          head === undefined || (position === undefined
+            ? head.maxSeq !== null || head.generation > 0
+            : head.generation !== position.generation || (head.maxSeq ?? -1) > position.sequence)
+        ) {
+          yield* readRun(executionId)
+        } else if (position === undefined) {
+          // An empty generation-zero head is a drained position too. The root
+          // can settle while a detached child remains live and needs its readers.
+          positions.set(executionId, { generation: head.generation, sequence: -1 })
         }
       }
       return { seen, statuses }
@@ -304,8 +378,8 @@ export const make = (options: Options) =>
             let rootTerminal = false
             const rootGeneration = positions.get(options.executionId)?.generation
             for (const executionId of observed) {
-              // A status the pass read is at least as new as the journal pages
-              // it read before it; the drain below still follows a terminal one.
+              // Membership statuses precede heads and pages. The drain below
+              // reads membership and heads again after a terminal observation.
               const known = statuses.get(executionId)
               const row = known !== undefined
                 ? { _tag: "Success" as const, success: { status: known } }

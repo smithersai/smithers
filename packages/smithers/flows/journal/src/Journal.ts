@@ -475,6 +475,22 @@ export interface Service {
       readonly afterSeq: number
     }, JournalError>)
     | undefined
+  /**
+   * Committed tail and rewind generation for every requested run, read together
+   * in one snapshot per batch. Unknown runs have generation 0, afterSeq -1 and
+   * maxSeq null. Optional acceleration for readers; adapters may omit it.
+   */
+  readonly heads?:
+    | ((runIds: ReadonlyArray<RunId>) => Effect.Effect<
+      ReadonlyArray<{
+        readonly runId: RunId
+        readonly generation: number
+        readonly afterSeq: number
+        readonly maxSeq: number | null
+      }>,
+      JournalError
+    >)
+    | undefined
   readonly emitLossy: (input: Input) => Effect.Effect<EmitReceipt, JournalError>
   readonly emitDurable: (input: Input, owner: OwnerId) => Effect.Effect<DurableReceipt, JournalError>
   /**

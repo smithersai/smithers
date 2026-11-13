@@ -297,7 +297,10 @@ Node outputs are caller-controlled data, so they are rendered through
 cannot change the command's exit status.
 
 Native journal projection follows the root, its durable children and trampoline
-rounds until every observed execution is terminal. Detached descendants can still
+rounds until every observed execution is terminal. Each pass refreshes membership
+and reads journal heads in bulk, then pages only runs whose sequence or rewind
+generation changed. Completed runs can still gain records or children. Adapters
+without bulk operations retain per-run reads. Detached descendants can still
 publish output after the root completes. Terminal ordering waits at most its grace
 period plus one grace period for the gap receipt; a blocked receipt logs a warning
 and releases the terminal write. Operator error sentences and names, including

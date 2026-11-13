@@ -103,6 +103,10 @@ historical executable states and journal payloads are not loaded to enumerate
 rounds or decide cancellation. The creating child's exit policy is read from
 that child's state when needed. Membership and ownership rules are unchanged.
 
+`DurableEngineState.runChildrenOf?(parentIds)` lists child edges for a set of
+parents, ordered by parent ID and sequence within each parent. SQL and memory
+implement it; adapters may retain per-parent `runChildren` reads.
+
 Every durable write is one transaction. A lifecycle event is written inside the
 same transaction that carries the state transition it describes: the attempt
 row with its start and finish records, the run-row compare-and-set with its

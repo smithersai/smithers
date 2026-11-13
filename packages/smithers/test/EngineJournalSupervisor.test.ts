@@ -215,6 +215,7 @@ describe("private native journal supervision", () => {
       const supervisor = yield* f.make({
         engineJournal: {
           ...f.engineJournal,
+          heads: undefined,
           entries: () => Deferred.succeed(observing, undefined).pipe(Effect.andThen(Effect.never)),
           generation: (id) =>
             Effect.gen(function*() {
@@ -660,8 +661,7 @@ describe("private native journal supervision", () => {
         const supervisor = yield* f.make({
           engineJournal: {
             ...f.engineJournal,
-            entries: (options) =>
-              f.engineJournal.entries(options).pipe(Effect.tap(() => Deferred.succeed(reading, undefined)))
+            heads: (ids) => f.engineJournal.heads!(ids).pipe(Effect.tap(() => Deferred.succeed(reading, undefined)))
           }
         })
         yield* supervisor.start("root")

@@ -16691,35 +16691,36 @@ permit deadlocks against a fiber doing the opposite.
 
 ### Service members
 
-| Member                    | Signature                                                                                                                                                        |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deferred`                | `(address: DeferredAddress) => Effect<Option<DeferredRow>>`                                                                                                      |
-| `consumeDeferred`         | `(address: DeferredAddress, consumedAtMs: number) => Effect<void>`                                                                                               |
-| `completeDeferred`        | `(row: DeferredRow) => Effect<CompleteDeferredOutcome>`                                                                                                          |
-| `clock`                   | `(address: ClockAddress) => Effect<Option<ClockRow>>`                                                                                                            |
-| `scheduleClock`           | `(row: ClockRow, owner: OwnerId) => Effect<ScheduleClockOutcome>`                                                                                                |
-| `completeClock`           | `(address: ClockAddress, completedAtMs: number) => Effect<CompleteClockOutcome>`                                                                                 |
-| `dueClocks`               | `(nowMs: number) => Effect<ReadonlyArray<ClockRow>>`                                                                                                             |
-| `completeRunClocks`       | `(executionId: string, completedAtMs: number) => Effect<void>`                                                                                                   |
-| `pendingClocks`           | `(scope: { executionId?: string; flowName?: string }) => Effect<ReadonlyArray<ClockRow>>`                                                                        |
-| `completedDeferreds`      | `(flowName: string \| undefined, executionId?: string) => Effect<ReadonlyArray<DeferredAddress>>`; `undefined` lists every flow's                                |
-| `park`                    | `(runId: string, waiting: Waiting, owner: OwnerId) => Effect<ParkOutcome>`                                                                                       |
-| `wake`                    | `(runId: string) => Effect<WakeOutcome>`                                                                                                                         |
-| `waiting`                 | `(runId: string) => Effect<Option<WaitingRow>>`                                                                                                                  |
-| `waitingRuns`             | `(filter?: WaitingRunsFilter) => Effect<ReadonlyArray<WaitingRow>>`                                                                                              |
-| `waitingTree`             | `(runId: string, options?: WaitingTreeOptions) => Effect<ReadonlyArray<WaitingRow>>`                                                                             |
-| `pendingRuns`             | `(flowName: string, limit?: number, after?: PendingRunCursor, through?: PendingRunCursor, eligibleBeforeMs?: number) => Effect<ReadonlyArray<PendingRunCursor>>` |
-| `pendingRunTail`          | `(flowName: string, eligibleBeforeMs?: number) => Effect<Option<PendingRunCursor>>`                                                                              |
-| `pendingCancellationRuns` | `(limit: number, after?: PendingRunCursor, through?: PendingRunCursor) => Effect<ReadonlyArray<PendingRunCursor>>`                                               |
-| `pendingCancellationTail` | `() => Effect<Option<PendingRunCursor>>`                                                                                                                         |
-| `staleRunningRuns`        | `(staleBeforeMs: number, limit?: number) => Effect<ReadonlyArray<StaleRunningRow>>`                                                                              |
-| `attemptSurvivors`        | `((runId: string, stepKeyDigest: string) => Effect<Option<AttemptSurvivors>>)` (optional)                                                                        |
-| `copyAttempts`            | `((options: { from: string; to: string; attempts: ReadonlyArray<AttemptRef> }) => Effect<number>)` (optional)                                                    |
-| `recordRunParent`         | `(childId: string, parentId: string) => Effect<RecordRunParentOutcome, RunParentCycleError>`                                                                     |
-| `removeRunParentsForRun`  | `(runId: string) => Effect<void>`                                                                                                                                |
-| `runParents`              | `(childId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                      |
-| `runChildren`             | `(parentId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                     |
-| `transaction`             | `<A, E, R>(effect: Effect<A, E, R>, options?: { onCommit?, partition? }) => Effect<A, E, R>`                                                                     |
+| Member                    | Signature                                                                                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deferred`                | `(address: DeferredAddress) => Effect<Option<DeferredRow>>`                                                                                                                                             |
+| `consumeDeferred`         | `(address: DeferredAddress, consumedAtMs: number) => Effect<void>`                                                                                                                                      |
+| `completeDeferred`        | `(row: DeferredRow) => Effect<CompleteDeferredOutcome>`                                                                                                                                                 |
+| `clock`                   | `(address: ClockAddress) => Effect<Option<ClockRow>>`                                                                                                                                                   |
+| `scheduleClock`           | `(row: ClockRow, owner: OwnerId) => Effect<ScheduleClockOutcome>`                                                                                                                                       |
+| `completeClock`           | `(address: ClockAddress, completedAtMs: number) => Effect<CompleteClockOutcome>`                                                                                                                        |
+| `dueClocks`               | `(nowMs: number) => Effect<ReadonlyArray<ClockRow>>`                                                                                                                                                    |
+| `completeRunClocks`       | `(executionId: string, completedAtMs: number) => Effect<void>`                                                                                                                                          |
+| `pendingClocks`           | `(scope: { executionId?: string; flowName?: string }) => Effect<ReadonlyArray<ClockRow>>`                                                                                                               |
+| `completedDeferreds`      | `(flowName: string \| undefined, executionId?: string) => Effect<ReadonlyArray<DeferredAddress>>`; `undefined` lists every flow's                                                                       |
+| `park`                    | `(runId: string, waiting: Waiting, owner: OwnerId) => Effect<ParkOutcome>`                                                                                                                              |
+| `wake`                    | `(runId: string) => Effect<WakeOutcome>`                                                                                                                                                                |
+| `waiting`                 | `(runId: string) => Effect<Option<WaitingRow>>`                                                                                                                                                         |
+| `waitingRuns`             | `(filter?: WaitingRunsFilter) => Effect<ReadonlyArray<WaitingRow>>`                                                                                                                                     |
+| `waitingTree`             | `(runId: string, options?: WaitingTreeOptions) => Effect<ReadonlyArray<WaitingRow>>`                                                                                                                    |
+| `pendingRuns`             | `(flowName: string, limit?: number, after?: PendingRunCursor, through?: PendingRunCursor, eligibleBeforeMs?: number) => Effect<ReadonlyArray<PendingRunCursor>>`                                        |
+| `pendingRunTail`          | `(flowName: string, eligibleBeforeMs?: number) => Effect<Option<PendingRunCursor>>`                                                                                                                     |
+| `pendingCancellationRuns` | `(limit: number, after?: PendingRunCursor, through?: PendingRunCursor) => Effect<ReadonlyArray<PendingRunCursor>>`                                                                                      |
+| `pendingCancellationTail` | `() => Effect<Option<PendingRunCursor>>`                                                                                                                                                                |
+| `staleRunningRuns`        | `(staleBeforeMs: number, limit?: number) => Effect<ReadonlyArray<StaleRunningRow>>`                                                                                                                     |
+| `attemptSurvivors`        | `((runId: string, stepKeyDigest: string) => Effect<Option<AttemptSurvivors>>)` (optional)                                                                                                               |
+| `copyAttempts`            | `((options: { from: string; to: string; attempts: ReadonlyArray<AttemptRef> }) => Effect<number>)` (optional)                                                                                           |
+| `recordRunParent`         | `(childId: string, parentId: string) => Effect<RecordRunParentOutcome, RunParentCycleError>`                                                                                                            |
+| `removeRunParentsForRun`  | `(runId: string) => Effect<void>`                                                                                                                                                                       |
+| `runParents`              | `(childId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                                                             |
+| `runChildren`             | `(parentId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                                                            |
+| `runChildrenOf?`          | `(parentIds: ReadonlyArray<string>) => Effect<ReadonlyArray<RunParentEdge>>`; optional bulk child read, ordered by parent ID and sequence within each parent; duplicate parent IDs do not repeat edges. |
+| `transaction`             | `<A, E, R>(effect: Effect<A, E, R>, options?: { onCommit?, partition? }) => Effect<A, E, R>`                                                                                                            |
 
 `scheduleClock` requires the execution's ownership token. Creation succeeds
 only while the run is running under that owner. An existing clock wins unchanged,
@@ -16753,7 +16754,7 @@ optional for the same reason, and an engine over storage without it refuses a
 retry from a step `unsupported`.
 
 Every list read (`dueClocks`, `pendingClocks`, `completedDeferreds`,
-`waitingRuns`, `runParents`, and `runChildren`) skips a row that will not decode
+`waitingRuns`, `runParents`, `runChildren`, and `runChildrenOf`) skips a row that will not decode
 and logs a storage-integrity warning naming its primary key, so one corrupt row
 costs its own row and nothing else. The point reads `deferred`, `clock`, and
 `waiting` still die on such a row: reporting "no row" for a completion or
@@ -24498,25 +24499,26 @@ Fallible journal operations use `JournalError` with a stable `code`.
 
 ### Operations
 
-| Method                | Signature                                                                                          | Behavior                                                                                                                                                                    |
-| --------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `emitLossy`           | `(input: Input) => Effect<EmitReceipt, JournalError>`                                              | bounded non-blocking queue; may return `Dropped`                                                                                                                            |
-| `emitDurable`         | `(input: Input, owner: OwnerId) => Effect<DurableReceipt, JournalError>`                           | allocates and commits inside the write transaction, fenced on `owner`                                                                                                       |
-| `emitDurableUnfenced` | `(input: Input) => Effect<DurableReceipt, JournalError>`                                           | the same commit with no fence, for a genuinely ownerless admission                                                                                                          |
-| `emitDeferred?`       | `(input: Input, owner: OwnerId) => Effect<void, JournalError>`                                     | queues a fenced entry to commit with its run's next durable write                                                                                                           |
-| `recall?`             | `(runId: RunId) => Effect<void, JournalError>`                                                     | reads the run's latest committed entries into memory in one read, so their re-emissions are answered without a write                                                        |
-| `recorded?`           | `(input: Input) => Effect<boolean>`                                                                | whether the journal knows `input` is committed, by identity and content, without a read; `false` means not known                                                            |
-| `transact`            | `<A, E, R>(effect: Effect<A, E, R>, options?: WriteOptions) => Effect<A, E \| JournalError, R>`    | runs a state projection and its `emitDurable` calls in one transaction; `options.partition` names the run it writes                                                         |
-| `whenCommitted`       | `(update: Effect<void>) => Effect<boolean>`                                                        | accepts a short, non-failing update after managed commit, or runs it immediately outside a transaction; returns `false` without publishing when commit ownership is unknown |
-| `stream`              | `(options: StreamOptions) => Stream<Entry, JournalError>`                                          | durable history, then committed changes; never completes                                                                                                                    |
-| `entries`             | `(options: EntriesOptions) => Effect<EntriesPage, JournalError>`                                   | paged read                                                                                                                                                                  |
-| `changes`             | `Effect<PubSub.Subscription<Entry>, never, Scope>`                                                 | post-commit publication, bounded and sliding                                                                                                                                |
-| `project`             | `<S, E, R>(projection: Projection<S, E, R>, options: StreamOptions) => Stream<S, JournalError, R>` | folds `stream` through a deterministic reducer                                                                                                                              |
-| `flush`               | `Effect<void, JournalError>`                                                                       | barrier for the lossy queue                                                                                                                                                 |
-| `checkpoint`          | `(options: CheckpointOptions, owner: OwnerId) => Effect<Checkpoint, JournalError>`                 | durably captures replay state at a committed sequence, in `transact`'s discipline                                                                                           |
-| `latestCheckpoint`    | `(runId: RunId) => Effect<Option<Checkpoint>, JournalError>`                                       | the resync point for a compacted run                                                                                                                                        |
-| `compact`             | `(options: CompactOptions, owner: OwnerId) => Effect<Compacted, JournalError>`                     | truncates strictly below a checkpoint, atomically with the floor advance                                                                                                    |
-| `generation?`         | `(runId: RunId) => Effect<{ generation: number; afterSeq: number }, JournalError>`                 | optional durable rewind generation and archive boundary; omission means generation zero                                                                                     |
+| Method                | Signature                                                                                                                                               | Behavior                                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `emitLossy`           | `(input: Input) => Effect<EmitReceipt, JournalError>`                                                                                                   | bounded non-blocking queue; may return `Dropped`                                                                                                                            |
+| `emitDurable`         | `(input: Input, owner: OwnerId) => Effect<DurableReceipt, JournalError>`                                                                                | allocates and commits inside the write transaction, fenced on `owner`                                                                                                       |
+| `emitDurableUnfenced` | `(input: Input) => Effect<DurableReceipt, JournalError>`                                                                                                | the same commit with no fence, for a genuinely ownerless admission                                                                                                          |
+| `emitDeferred?`       | `(input: Input, owner: OwnerId) => Effect<void, JournalError>`                                                                                          | queues a fenced entry to commit with its run's next durable write                                                                                                           |
+| `recall?`             | `(runId: RunId) => Effect<void, JournalError>`                                                                                                          | reads the run's latest committed entries into memory in one read, so their re-emissions are answered without a write                                                        |
+| `recorded?`           | `(input: Input) => Effect<boolean>`                                                                                                                     | whether the journal knows `input` is committed, by identity and content, without a read; `false` means not known                                                            |
+| `transact`            | `<A, E, R>(effect: Effect<A, E, R>, options?: WriteOptions) => Effect<A, E \| JournalError, R>`                                                         | runs a state projection and its `emitDurable` calls in one transaction; `options.partition` names the run it writes                                                         |
+| `whenCommitted`       | `(update: Effect<void>) => Effect<boolean>`                                                                                                             | accepts a short, non-failing update after managed commit, or runs it immediately outside a transaction; returns `false` without publishing when commit ownership is unknown |
+| `stream`              | `(options: StreamOptions) => Stream<Entry, JournalError>`                                                                                               | durable history, then committed changes; never completes                                                                                                                    |
+| `entries`             | `(options: EntriesOptions) => Effect<EntriesPage, JournalError>`                                                                                        | paged read                                                                                                                                                                  |
+| `changes`             | `Effect<PubSub.Subscription<Entry>, never, Scope>`                                                                                                      | post-commit publication, bounded and sliding                                                                                                                                |
+| `project`             | `<S, E, R>(projection: Projection<S, E, R>, options: StreamOptions) => Stream<S, JournalError, R>`                                                      | folds `stream` through a deterministic reducer                                                                                                                              |
+| `flush`               | `Effect<void, JournalError>`                                                                                                                            | barrier for the lossy queue                                                                                                                                                 |
+| `checkpoint`          | `(options: CheckpointOptions, owner: OwnerId) => Effect<Checkpoint, JournalError>`                                                                      | durably captures replay state at a committed sequence, in `transact`'s discipline                                                                                           |
+| `latestCheckpoint`    | `(runId: RunId) => Effect<Option<Checkpoint>, JournalError>`                                                                                            | the resync point for a compacted run                                                                                                                                        |
+| `compact`             | `(options: CompactOptions, owner: OwnerId) => Effect<Compacted, JournalError>`                                                                          | truncates strictly below a checkpoint, atomically with the floor advance                                                                                                    |
+| `generation?`         | `(runId: RunId) => Effect<{ generation: number; afterSeq: number }, JournalError>`                                                                      | optional durable rewind generation and archive boundary; omission means generation zero                                                                                     |
+| `heads?`              | `(runIds: ReadonlyArray<RunId>) => Effect<ReadonlyArray<{ runId: RunId; generation: number; afterSeq: number; maxSeq: number \| null }>, JournalError>` | optional bulk committed tails with matching rewind generations                                                                                                              |
 
 `whenCommitted` returning `true` means accepted, possibly deferred. Failed
 savepoints and transaction retries discard their registrations. See
@@ -25190,6 +25192,19 @@ caller who disables redaction.
   the run store and the step cache.
 - [`@smthrs/chain`](/docs/reference/api/chain/) has a journal of its own with a different
   contract; see [the chain journal](https://chain.smithers.sh/concepts/journal/).
+
+### Bulk journal heads
+
+`Journal.Service.heads?(runIds)` returns one `{ runId, generation, afterSeq,
+maxSeq }` row per requested ID. Unknown or empty runs report `maxSeq: null`;
+an absent generation row reports generation `0` and `afterSeq: -1`. SQL
+adapters read generation and committed maximum sequence in the same statement
+snapshot, in batches of at most 2,000 IDs. Empty input returns no rows.
+
+Readers can compare these heads with their positions before paging. A changed
+generation requires rereading even when the maximum sequence decreased. Run
+status does not make a head immutable. Adapters may omit this optimization;
+readers then use their ordinary per-run generation and page reads.
 
 ### Journal generations
 

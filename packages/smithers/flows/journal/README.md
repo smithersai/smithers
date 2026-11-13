@@ -207,6 +207,10 @@ adapters may omit the operation; truncating adapters must implement it. The
 `JournalGeneration.initialize` subpath shares the table installation with time
 travel without adding a migration below an already applied migration block.
 
+`Journal.Service.heads?(runIds)` reads committed tails and rewind generations
+together in batches of 2,000 IDs. Readers can page only changed runs while
+still observing late records on completed runs. See the [API](./docs/api.md#bulk-journal-heads).
+
 ## Documentation
 
 - [State and event authority](./docs/concepts/state-event-authority.md)

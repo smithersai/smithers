@@ -24,7 +24,7 @@ import * as Projection from "./EngineJournalProjection.ts"
 export interface Options {
   readonly engineJournal: Journal.Service
   readonly controlJournal: Journal.Service
-  readonly engineState: Pick<DurableEngineState.Service, "runChildren" | "runParents">
+  readonly engineState: Pick<DurableEngineState.Service, "runChildren" | "runChildrenOf" | "runParents">
   readonly runs: Pick<RunStore.Service, "get"> & Partial<Pick<RunStore.Service, "lineage">>
   readonly control: Pick<ControlRuntime.Service, "getRun" | "pageRunIds">
   /** Whether the caller holds a control write transaction that the projection needs. */

@@ -23,6 +23,7 @@ const setup = Effect.gen(function*() {
   const controlJournal = Context.get(control, Journal.Journal)
   const engineState = Context.get(native, DurableEngineState.DurableEngineState)
   return {
+    native,
     engineJournal,
     controlJournal,
     engineState,
@@ -51,7 +52,511 @@ const rows = (journal: Journal.Service) =>
   )
 const record = (entry: JournalEvent.Entry) => entry.payload as Record<string, unknown>
 
+// Count calls at execution time while delegating to the production services.
+const counted = (f: Effect.Success<typeof setup>) => {
+  const reads = { entries: [] as Array<string>, generations: [] as Array<string>, heads: 0, children: 0 }
+  const engineJournal: Journal.Service = {
+    ...f.engineJournal,
+    entries: (options) =>
+      Effect.suspend(() => {
+        reads.entries.push(options.runId)
+        return f.engineJournal.entries(options)
+      }),
+    generation: (runId) =>
+      Effect.suspend(() => {
+        reads.generations.push(runId)
+        return f.engineJournal.generation!(runId)
+      }),
+    ...(f.engineJournal.heads === undefined ? {} : {
+      heads: (ids: ReadonlyArray<JournalEvent.RunId>) =>
+        Effect.suspend(() => {
+          reads.heads++
+          return f.engineJournal.heads!(ids)
+        })
+    })
+  }
+  const engineState = {
+    ...f.engineState,
+    ...(f.engineState.runChildrenOf === undefined ? {} : {
+      runChildrenOf: (ids: ReadonlyArray<string>) =>
+        Effect.suspend(() => {
+          reads.children++
+          return f.engineState.runChildrenOf!(ids)
+        })
+    })
+  }
+  return {
+    reads,
+    options: { ...f.options, engineJournal, engineState },
+    reset: () => {
+      reads.entries.length = 0
+      reads.generations.length = 0
+      reads.heads = 0
+      reads.children = 0
+    }
+  }
+}
+
+const stateJson = JSON.stringify({ version: 1, flowName: "fixture", payload: {} })
+const roundsFixture = (f: Effect.Success<typeof setup>, count: number) =>
+  Effect.gen(function*() {
+    yield* f.runs.create("native-root", stateJson)
+    yield* emit(f.engineJournal, "native-root", { round: 0 })
+    for (let round = 1; round <= count; round++) {
+      yield* f.runs.create(`round-${round}`, stateJson, {
+        lineageId: "native-root",
+        roundOrdinal: round,
+        parentRunId: "native-root"
+      })
+      yield* emit(f.engineJournal, `round-${round}`, { round })
+    }
+  })
+
 describe("private engine journal projection", () => {
+  it.each(["foreign", "repeated", "empty-continuing"] as const)(
+    "refuses a faulty adapter's %s journal page",
+    (fault) =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const f = yield* setup
+        if (fault !== "empty-continuing") yield* emit(f.engineJournal, "native-root", { real: true })
+        const projector = yield* Projection.make({
+          ...f.options,
+          engineJournal: {
+            ...f.engineJournal,
+            heads: undefined,
+            entries: (options) =>
+              Effect.map(f.engineJournal.entries(options), (page) => ({
+                ...page,
+                entries: fault === "foreign" ?
+                  page.entries.map((entry) => ({ ...entry, runId: "foreign" as JournalEvent.RunId }))
+                  : fault === "repeated"
+                  ? [...page.entries, ...page.entries]
+                  : [],
+                hasMore: fault === "empty-continuing"
+              }))
+          }
+        })
+        expect(yield* Effect.result(projector.catchUp)).toMatchObject({
+          _tag: "Failure",
+          failure: {
+            code: "decode_failed",
+            message: fault === "empty-continuing"
+              ? "Engine projection received an empty continuing page"
+              : "Engine projection received an unordered or foreign journal page"
+          }
+        })
+        expect(yield* rows(f.controlJournal)).toHaveLength(fault === "repeated" ? 1 : 0)
+      })))
+  )
+
+  it("refuses settling when a legacy status reader fails instead of reporting a missing row", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      const projector = yield* Projection.make(f.options)
+      const refusal = new RunStore.RunStoreError({
+        code: "invalid_run",
+        method: "get",
+        message: "unreadable status",
+        cause: null
+      })
+      expect(yield* Effect.result(projector.followUntilSettled({ get: () => Effect.fail(refusal) }))).toMatchObject({
+        _tag: "Failure",
+        failure: refusal
+      })
+    }))))
+
+  it("preserves a diamond whose shared child precedes its second parent in traversal", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* f.engineState.recordRunParent("shared", "native-root")
+      yield* f.engineState.recordRunParent("parent", "native-root")
+      yield* f.engineState.recordRunParent("shared", "parent")
+      for (const id of ["native-root", "shared", "parent"]) yield* emit(f.engineJournal, id, { id })
+      const projector = yield* Projection.make(f.options)
+      expect([...(yield* projector.catchUp)]).toEqual(["native-root", "shared", "parent"])
+      expect((yield* rows(f.controlJournal)).map((entry) => record(entry).executionId)).toEqual([
+        "native-root",
+        "shared",
+        "parent"
+      ])
+    }))))
+
+  it("refuses an old root readiness callback when its drain crosses a rewind", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* f.runs.create("native-root", stateJson)
+      yield* f.runs.create("detached", stateJson)
+      yield* f.engineState.recordRunParent("detached", "native-root")
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = 'native-root'`
+      let rootReads = 0
+      const ready: Array<number> = []
+      const runLineage = ((id: string) =>
+        Effect.gen(function*() {
+          if (id === "native-root" && ++rootReads === 2) {
+            yield* f.sql.withTransaction(Effect.gen(function*() {
+              yield* f
+                .sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq) VALUES ('native-root', 1, -1)`
+              yield* f.sql`UPDATE flows_runs SET status = 'pending' WHERE run_id = 'native-root'`
+            })).pipe(Effect.orDie)
+          }
+          return yield* f.runs.lineage(id, { includeState: false })
+        })) as typeof f.runs.lineage
+      const projector = yield* Projection.make({
+        ...f.options,
+        runLineage,
+        onRootSettled: (generation) =>
+          Effect.sync(() => {
+            ready.push(generation)
+          })
+      })
+      const follower = yield* Effect.forkScoped(projector.followUntilSettled(f.runs))
+      yield* Effect.retry(Effect.suspend(() => rootReads >= 3 ? Effect.void : Effect.fail("waiting")), {
+        times: 300,
+        schedule: Schedule.spaced("10 millis")
+      })
+      expect(ready).toEqual([])
+      expect((yield* rows(f.controlJournal)).map(record)).toMatchObject([{ reason: "rewound", generation: 1 }])
+      yield* Fiber.interrupt(follower)
+    }))))
+
+  it("drains a child linked after the terminal membership read and keeps following it", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* roundsFixture(f, 0)
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = 'native-root'`
+      let headReads = 0
+      const projector = yield* Projection.make({
+        ...f.options,
+        runLineage: f.runs.lineage,
+        engineJournal: {
+          ...f.engineJournal,
+          heads: (ids) =>
+            Effect.gen(function*() {
+              if (++headReads === 1) {
+                yield* f.runs.create("late-child", stateJson).pipe(Effect.orDie)
+                yield* f.engineState.recordRunParent("late-child", "native-root").pipe(Effect.orDie)
+                yield* emit(f.engineJournal, "late-child", { value: 1 })
+              }
+              return yield* f.engineJournal.heads!(ids)
+            })
+        }
+      })
+      const follower = yield* Effect.forkScoped(projector.followUntilSettled(f.runs))
+      yield* Effect.retry(Effect.suspend(() => headReads >= 3 ? Effect.void : Effect.fail("waiting")), {
+        times: 300,
+        schedule: Schedule.spaced("10 millis")
+      })
+      expect(follower.pollUnsafe()).toBeUndefined()
+      yield* emit(f.engineJournal, "late-child", { value: 2 }, "fixture", 1)
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = 'late-child'`
+      yield* Fiber.join(follower).pipe(Effect.timeout("5 seconds"))
+      expect((yield* rows(f.controlJournal)).map((entry) => record(entry).payload)).toEqual([
+        { round: 0 },
+        { value: 1 },
+        { value: 2 }
+      ])
+    }))))
+
+  it("keeps an empty completed root's readers ready while its detached child remains live", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* f.runs.create("native-root", stateJson)
+      yield* f.runs.create("detached", stateJson)
+      yield* f.engineState.recordRunParent("detached", "native-root")
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = 'native-root'`
+      const c = counted(f)
+      const ready: Array<number> = []
+      const projector = yield* Projection.make({
+        ...c.options,
+        runLineage: f.runs.lineage,
+        onRootSettled: (generation) =>
+          Effect.sync(() => {
+            ready.push(generation)
+          })
+      })
+      const follower = yield* Effect.forkScoped(projector.followUntilSettled(f.runs))
+      yield* Effect.retry(Effect.suspend(() => ready.includes(0) ? Effect.void : Effect.fail("waiting")), {
+        times: 300,
+        schedule: Schedule.spaced("10 millis")
+      })
+      expect(ready).toContain(0)
+      expect(c.reads.entries).toEqual([])
+      expect(follower.pollUnsafe()).toBeUndefined()
+      yield* Fiber.interrupt(follower)
+    }))))
+
+  it("legacy child reads refuse an edge belonging to another member of the same level", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* roundsFixture(f, 1)
+      const projector = yield* Projection.make({
+        ...f.options,
+        runLineage: f.runs.lineage,
+        engineState: {
+          runChildren: (id) =>
+            id === "native-root"
+              ? Effect.succeed([{ parentId: "round-1", childId: "intruder", seq: 1 }]) :
+              f.engineState.runChildren(id)
+        }
+      })
+      expect(yield* Effect.result(projector.catchUp)).toMatchObject({
+        _tag: "Failure",
+        failure: {
+          code: "decode_failed",
+          message: "Engine projection received a foreign parent edge"
+        }
+      })
+    }))))
+
+  it("preserves copied traversal order across sibling child lineages and their children", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* roundsFixture(f, 0)
+      for (const id of ["a", "b"]) {
+        yield* f.runs.create(id, stateJson)
+        yield* f.engineState.recordRunParent(id, "native-root")
+        yield* f.runs.create(`${id}-round`, stateJson, { lineageId: id, roundOrdinal: 1, parentRunId: id })
+        yield* f.runs.create(`${id}-child`, stateJson)
+        yield* f.engineState.recordRunParent(`${id}-child`, id)
+        for (const run of [id, `${id}-round`, `${id}-child`]) yield* emit(f.engineJournal, run, { run })
+      }
+      yield* (yield* Projection.make({ ...f.options, runLineage: f.runs.lineage })).catchUp
+      expect((yield* rows(f.controlJournal)).map((entry) => record(entry).executionId)).toEqual([
+        "native-root",
+        "a",
+        "b",
+        "a-round",
+        "a-child",
+        "b-round",
+        "b-child"
+      ])
+    }))))
+
+  it("bulk heads keep idle journal and child reads flat at 8 and 40 rounds", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      for (const count of [8, 40]) {
+        const f = yield* setup
+        yield* roundsFixture(f, count)
+        const c = counted(f)
+        let lineageReads = 0
+        const runLineage = ((id: string, options?: { readonly includeState: false }) =>
+          Effect.suspend(() => {
+            lineageReads++
+            return f.runs.lineage(id, options ?? { includeState: false })
+          })) as typeof f.runs.lineage
+        const projector = yield* Projection.make({ ...c.options, runLineage })
+        yield* projector.catchUp
+        yield* projector.catchUp
+        c.reset()
+        lineageReads = 0
+        yield* emit(f.engineJournal, "round-7", { late: true }, "fixture", 1)
+        expect((yield* projector.catchUp).size).toBe(count + 1)
+        expect(c.reads).toEqual({ entries: ["round-7"], generations: ["round-7", "round-7"], heads: 1, children: 1 })
+        expect(lineageReads).toBe(1)
+        expect(yield* rows(f.controlJournal)).toHaveLength(count + 2)
+      }
+    }))))
+
+  it("bulk heads follow a detached child admitted after its parent completed, including its later records", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* roundsFixture(f, 0)
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = 'native-root'`
+      const c = counted(f)
+      const projector = yield* Projection.make({ ...c.options, runLineage: f.runs.lineage })
+      yield* projector.catchUp
+      yield* f.runs.create("detached", stateJson)
+      yield* f.engineState.recordRunParent("detached", "native-root")
+      yield* emit(f.engineJournal, "detached", { value: 1 })
+      yield* projector.catchUp
+      c.reset()
+      yield* emit(f.engineJournal, "detached", { value: 2 }, "fixture", 1)
+      yield* projector.catchUp
+      expect(c.reads.entries).toEqual(["detached"])
+      expect((yield* rows(f.controlJournal)).map((entry) => record(entry).payload)).toEqual([
+        { round: 0 },
+        { value: 1 },
+        { value: 2 }
+      ])
+    }))))
+
+  it("bulk heads copy a completed child's record when a second in-tree parent joins it", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* roundsFixture(f, 1)
+      yield* f.runs.create("shared", stateJson)
+      yield* f.engineState.recordRunParent("shared", "native-root")
+      yield* emit(f.engineJournal, "shared", { value: 1 })
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = 'shared'`
+      const c = counted(f)
+      const projector = yield* Projection.make({ ...c.options, runLineage: f.runs.lineage })
+      yield* projector.catchUp
+      yield* f.engineState.recordRunParent("shared", "round-1")
+      yield* emit(f.engineJournal, "shared", { secondParent: true }, "fixture", 1)
+      c.reset()
+      expect([...(yield* projector.catchUp)]).toEqual(["native-root", "round-1", "shared"])
+      expect(c.reads.entries).toEqual(["shared"])
+      expect((yield* rows(f.controlJournal)).map(record).filter((row) => row.executionId === "shared")).toMatchObject([
+        { payload: { value: 1 } },
+        { payload: { secondParent: true } }
+      ])
+    }))))
+
+  it("bulk heads notice a rewind whose new maximum is below the copied position", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      for (let seq = 0; seq <= 5; seq++) yield* emit(f.engineJournal, "native-root", { seq }, "fixture", seq)
+      const c = counted(f)
+      const projector = yield* Projection.make(c.options)
+      yield* projector.catchUp
+      // The same atomic truncation/generation boundary used by time travel.
+      yield* f.sql.withTransaction(Effect.gen(function*() {
+        yield* f.sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq) VALUES ('native-root', 2, 1)`
+        yield* f.sql`DELETE FROM flows_journal_events WHERE run_id = 'native-root' AND seq > 1`
+      }))
+      // A fresh journal writer allocates against the rewound durable tail.
+      const writer = Context.get(
+        yield* Layer.build(
+          SqlJournal.layer({ capacity: 16, overflow: "reject" }).pipe(
+            Layer.provide(Layer.succeedContext(f.native))
+          )
+        ),
+        Journal.Journal
+      )
+      yield* emit(writer, "native-root", { replayed: true }, "after-rewind", 0)
+      yield* emit(writer, "native-root", { replayed: true }, "after-rewind", 1)
+      yield* projector.catchUp
+      const projected = (yield* rows(f.controlJournal)).map(record)
+      expect(projected.filter((row) => row.reason === "rewound")).toMatchObject([{ generation: 2, afterSequence: 1 }])
+      expect(projected.filter((row) => row.generation === 2 && row.sequence !== undefined)).toMatchObject([
+        { sequence: 0 },
+        { sequence: 1 },
+        { sequence: 2, payload: { replayed: true } },
+        { sequence: 3, payload: { replayed: true } }
+      ])
+      c.reset()
+      yield* projector.catchUp
+      expect(c.reads.entries).toEqual([])
+    }))))
+
+  it("bulk heads remember an empty rewound generation after one gap and one page", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* emit(f.engineJournal, "native-root", { before: true })
+      const c = counted(f)
+      const projector = yield* Projection.make(c.options)
+      yield* projector.catchUp
+      yield* f.sql.withTransaction(Effect.gen(function*() {
+        yield* f
+          .sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq) VALUES ('native-root', 2, -1)`
+        yield* f.sql`DELETE FROM flows_journal_events WHERE run_id = 'native-root'`
+      }))
+      c.reset()
+      yield* projector.catchUp
+      expect(c.reads.entries).toEqual(["native-root"])
+      c.reset()
+      yield* projector.catchUp
+      yield* projector.catchUp
+      expect(c.reads.entries).toEqual([])
+      expect((yield* rows(f.controlJournal)).map(record).filter((row) => row.reason === "rewound")).toEqual([
+        { executionId: "native-root", generation: 2, reason: "rewound", afterSequence: -1 }
+      ])
+    }))))
+
+  it("bulk heads restart by rereading each populated run once without duplicating output", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* roundsFixture(f, 8)
+      yield* (yield* Projection.make({ ...f.options, runLineage: f.runs.lineage })).catchUp
+      const before = yield* rows(f.controlJournal)
+      const c = counted(f)
+      const restarted = yield* Projection.make({ ...c.options, runLineage: f.runs.lineage })
+      yield* restarted.catchUp
+      expect(c.reads.entries).toEqual(["native-root", ...Array.from({ length: 8 }, (_, i) => `round-${i + 1}`)])
+      c.reset()
+      yield* restarted.catchUp
+      expect(c.reads.entries).toEqual([])
+      expect(yield* rows(f.controlJournal)).toEqual(before)
+    }))))
+
+  it("legacy adapters read every member each pass and preserve copied output", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* roundsFixture(f, 2)
+      const c = counted(f)
+      const options = {
+        ...c.options,
+        engineJournal: { ...c.options.engineJournal, heads: undefined, generation: undefined },
+        engineState: { runChildren: f.engineState.runChildren },
+        runLineage: f.runs.lineage
+      }
+      const projector = yield* Projection.make(options)
+      yield* projector.catchUp
+      const before = yield* rows(f.controlJournal)
+      c.reset()
+      yield* projector.catchUp
+      expect(c.reads.entries).toEqual(["native-root", "round-1", "round-2"])
+      expect(yield* rows(f.controlJournal)).toEqual(before)
+      yield* (yield* Projection.make({ ...f.options, runLineage: f.runs.lineage })).catchUp
+      expect(yield* rows(f.controlJournal)).toEqual(before)
+    }))))
+
+  it("bulk child membership refuses a foreign parent edge", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      const engineState = {
+        ...f.engineState,
+        runChildrenOf: () => Effect.succeed([{ childId: "outsider", parentId: "foreign", seq: 1 }])
+      }
+      const failure = yield* Effect.result((yield* Projection.make({ ...f.options, engineState })).catchUp)
+      expect(failure).toMatchObject({
+        _tag: "Failure",
+        failure: { code: "decode_failed", message: "Engine projection received a foreign parent edge" }
+      })
+    }))))
+
+  it("bulk heads fall back for an omitted head and refresh membership after edge removal", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* emit(f.engineJournal, "native-root", { root: true })
+      yield* f.engineState.recordRunParent("child", "native-root")
+      yield* emit(f.engineJournal, "child", { child: true })
+      const c = counted(f)
+      const projector = yield* Projection.make({
+        ...c.options,
+        engineJournal: { ...c.options.engineJournal, heads: () => Effect.succeed([]) }
+      })
+      yield* projector.catchUp
+      c.reset()
+      yield* f.engineState.removeRunParentsForRun("child")
+      expect([...(yield* projector.catchUp)]).toEqual(["native-root"])
+      expect(c.reads.entries).toEqual(["native-root"])
+      expect(yield* rows(f.controlJournal)).toHaveLength(2)
+    }))))
+
+  it("bulk heads keep following 200 idle rounds with only the changed round paged", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* roundsFixture(f, 200)
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id <> 'round-200'`
+      const c = counted(f)
+      const projector = yield* Projection.make({ ...c.options, runLineage: f.runs.lineage })
+      yield* projector.catchUp
+      c.reset()
+      const follower = yield* Effect.forkScoped(projector.followUntilSettled(f.runs))
+      yield* Effect.retry(Effect.suspend(() => c.reads.heads >= 2 ? Effect.void : Effect.fail("waiting")), {
+        times: 300,
+        schedule: Schedule.spaced("10 millis")
+      })
+      expect(c.reads.entries).toEqual([])
+      expect(follower.pollUnsafe()).toBeUndefined()
+      yield* emit(f.engineJournal, "round-200", { settled: true }, "fixture", 1)
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = 'round-200'`
+      yield* Fiber.join(follower).pipe(Effect.timeout("10 seconds"))
+      expect(c.reads.entries).toEqual(["round-200"])
+      expect(yield* rows(f.controlJournal)).toHaveLength(202)
+    }))))
+
   it("reopens both SQLite files and converges a committed call outbox after a lost destination receipt", () =>
     Effect.runPromise(Effect.acquireUseRelease(
       Effect.promise(() => mkdtemp(join(tmpdir(), "call-outbox-"))),
@@ -245,15 +750,18 @@ describe("private engine journal projection", () => {
       yield* f.runs.create("round-2", state, { lineageId: "native-root", roundOrdinal: 2, parentRunId: "native-root" })
       yield* emit(f.engineJournal, "round-1", { round: 1 })
       yield* f.sql`UPDATE flows_runs SET status = 'completed', finished_at_ms = 100 WHERE run_id = 'round-1'`
-      const projector = yield* Projection.make({ ...f.options, runLineage: f.runs.lineage })
+      const c = counted(f)
+      const projector = yield* Projection.make({ ...c.options, runLineage: f.runs.lineage })
       yield* projector.catchUp
       yield* projector.catchUp
+      c.reset()
       // After two passes saw round 1 ended and drained: a late record, and a late child with a record.
       yield* emit(f.engineJournal, "round-1", { late: "claim-lost" }, "fixture", 1)
       yield* f.runs.create("late-child", state)
       yield* f.engineState.recordRunParent("late-child", "round-1")
       yield* emit(f.engineJournal, "late-child", { child: true })
       expect([...(yield* projector.catchUp)].sort()).toEqual(["late-child", "native-root", "round-1", "round-2"])
+      expect(c.reads.entries).toEqual(["round-1", "late-child"])
       expect((yield* rows(f.controlJournal)).map((entry) => record(entry).executionId)).toEqual([
         "round-1",
         "round-1",
@@ -547,7 +1055,8 @@ describe("private engine journal projection", () => {
         state: null
       }, owner)
       expect((yield* f.engineJournal.compact({ runId: "native-root" as JournalEvent.RunId }, owner)).deleted).toBe(1)
-      const projector = yield* Projection.make(f.options)
+      const c = counted(f)
+      const projector = yield* Projection.make(c.options)
       yield* projector.catchUp
       const projected = yield* rows(f.controlJournal)
       expect(projected.map((entry) => entry.eventType)).toEqual([
@@ -562,8 +1071,15 @@ describe("private engine journal projection", () => {
         { sequence: 2, payload: { value: 2 } },
         { sequence: 3, payload: { value: 3 } }
       ])
-      const restarted = yield* Projection.make(f.options)
-      yield* restarted.catchUp
+      yield* f.engineJournal.checkpoint({
+        runId: "native-root" as JournalEvent.RunId,
+        seq: 3 as JournalEvent.Seq,
+        state: null
+      }, owner)
+      yield* f.engineJournal.compact({ runId: "native-root" as JournalEvent.RunId }, owner)
+      c.reset()
+      yield* projector.catchUp
+      expect(c.reads.entries).toEqual([])
       expect(yield* rows(f.controlJournal)).toEqual(projected)
     }))))
 
@@ -611,10 +1127,7 @@ describe("private engine journal projection", () => {
         const projector = yield* Projection.make({
           engineJournal: {
             ...source,
-            entries: (options) =>
-              source.entries(options).pipe(
-                Effect.tap(() => Deferred.succeed(firstRead, undefined))
-              )
+            heads: (ids) => source.heads!(ids).pipe(Effect.tap(() => Deferred.succeed(firstRead, undefined)))
           },
           engineState: Context.get(native, DurableEngineState.DurableEngineState),
           controlJournal: destination,
@@ -622,7 +1135,7 @@ describe("private engine journal projection", () => {
           executionId: "native-root"
         })
         const follower = yield* Effect.forkScoped(projector.follow)
-        // The first empty page is already read. This separate writer cannot
+        // The first empty head is already read. This separate writer cannot
         // wake the source journal's PubSub, so only the durable recheck finds it.
         yield* Deferred.await(firstRead)
         yield* emit(Context.get(writer, Journal.Journal), "native-root", { externalWriter: true })
@@ -671,6 +1184,7 @@ describe("private engine journal projection", () => {
         let reads = 0
         const source: Journal.Service = {
           ...f.engineJournal,
+          heads: undefined,
           generation: (id) => ++reads === phase ? refusal : f.engineJournal.generation!(id)
         }
         const projector = yield* Projection.make({ ...f.options, engineJournal: source })
@@ -730,6 +1244,7 @@ describe("private engine journal projection", () => {
         ...f.options,
         engineJournal: {
           ...f.engineJournal,
+          heads: undefined,
           entries: (options) =>
             f.engineJournal.entries(options).pipe(Effect.tap(() => {
               pageReads++

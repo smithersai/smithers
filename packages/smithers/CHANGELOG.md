@@ -89,6 +89,8 @@
 
 ### Fixed
 
+- Control journal projection refreshes membership each pass, then pages only runs whose committed journal head or rewind generation moved. Late records and children on completed runs remain visible; adapters without bulk reads retain per-run reads.
+
 - A `claude-code:` seat reports how many of a turn's output tokens Claude spent
   thinking, as the usage event's `reasoningTokens`. It reported none, so a run's
   records showed a seat thinking at `xhigh` as not thinking at all.

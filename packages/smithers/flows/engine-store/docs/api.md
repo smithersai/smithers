@@ -381,35 +381,36 @@ permit deadlocks against a fiber doing the opposite.
 
 ### Service members
 
-| Member                    | Signature                                                                                                                                                        |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deferred`                | `(address: DeferredAddress) => Effect<Option<DeferredRow>>`                                                                                                      |
-| `consumeDeferred`         | `(address: DeferredAddress, consumedAtMs: number) => Effect<void>`                                                                                               |
-| `completeDeferred`        | `(row: DeferredRow) => Effect<CompleteDeferredOutcome>`                                                                                                          |
-| `clock`                   | `(address: ClockAddress) => Effect<Option<ClockRow>>`                                                                                                            |
-| `scheduleClock`           | `(row: ClockRow, owner: OwnerId) => Effect<ScheduleClockOutcome>`                                                                                                |
-| `completeClock`           | `(address: ClockAddress, completedAtMs: number) => Effect<CompleteClockOutcome>`                                                                                 |
-| `dueClocks`               | `(nowMs: number) => Effect<ReadonlyArray<ClockRow>>`                                                                                                             |
-| `completeRunClocks`       | `(executionId: string, completedAtMs: number) => Effect<void>`                                                                                                   |
-| `pendingClocks`           | `(scope: { executionId?: string; flowName?: string }) => Effect<ReadonlyArray<ClockRow>>`                                                                        |
-| `completedDeferreds`      | `(flowName: string \| undefined, executionId?: string) => Effect<ReadonlyArray<DeferredAddress>>`; `undefined` lists every flow's                                |
-| `park`                    | `(runId: string, waiting: Waiting, owner: OwnerId) => Effect<ParkOutcome>`                                                                                       |
-| `wake`                    | `(runId: string) => Effect<WakeOutcome>`                                                                                                                         |
-| `waiting`                 | `(runId: string) => Effect<Option<WaitingRow>>`                                                                                                                  |
-| `waitingRuns`             | `(filter?: WaitingRunsFilter) => Effect<ReadonlyArray<WaitingRow>>`                                                                                              |
-| `waitingTree`             | `(runId: string, options?: WaitingTreeOptions) => Effect<ReadonlyArray<WaitingRow>>`                                                                             |
-| `pendingRuns`             | `(flowName: string, limit?: number, after?: PendingRunCursor, through?: PendingRunCursor, eligibleBeforeMs?: number) => Effect<ReadonlyArray<PendingRunCursor>>` |
-| `pendingRunTail`          | `(flowName: string, eligibleBeforeMs?: number) => Effect<Option<PendingRunCursor>>`                                                                              |
-| `pendingCancellationRuns` | `(limit: number, after?: PendingRunCursor, through?: PendingRunCursor) => Effect<ReadonlyArray<PendingRunCursor>>`                                               |
-| `pendingCancellationTail` | `() => Effect<Option<PendingRunCursor>>`                                                                                                                         |
-| `staleRunningRuns`        | `(staleBeforeMs: number, limit?: number) => Effect<ReadonlyArray<StaleRunningRow>>`                                                                              |
-| `attemptSurvivors`        | `((runId: string, stepKeyDigest: string) => Effect<Option<AttemptSurvivors>>)` (optional)                                                                        |
-| `copyAttempts`            | `((options: { from: string; to: string; attempts: ReadonlyArray<AttemptRef> }) => Effect<number>)` (optional)                                                    |
-| `recordRunParent`         | `(childId: string, parentId: string) => Effect<RecordRunParentOutcome, RunParentCycleError>`                                                                     |
-| `removeRunParentsForRun`  | `(runId: string) => Effect<void>`                                                                                                                                |
-| `runParents`              | `(childId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                      |
-| `runChildren`             | `(parentId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                     |
-| `transaction`             | `<A, E, R>(effect: Effect<A, E, R>, options?: { onCommit?, partition? }) => Effect<A, E, R>`                                                                     |
+| Member                    | Signature                                                                                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deferred`                | `(address: DeferredAddress) => Effect<Option<DeferredRow>>`                                                                                                                                             |
+| `consumeDeferred`         | `(address: DeferredAddress, consumedAtMs: number) => Effect<void>`                                                                                                                                      |
+| `completeDeferred`        | `(row: DeferredRow) => Effect<CompleteDeferredOutcome>`                                                                                                                                                 |
+| `clock`                   | `(address: ClockAddress) => Effect<Option<ClockRow>>`                                                                                                                                                   |
+| `scheduleClock`           | `(row: ClockRow, owner: OwnerId) => Effect<ScheduleClockOutcome>`                                                                                                                                       |
+| `completeClock`           | `(address: ClockAddress, completedAtMs: number) => Effect<CompleteClockOutcome>`                                                                                                                        |
+| `dueClocks`               | `(nowMs: number) => Effect<ReadonlyArray<ClockRow>>`                                                                                                                                                    |
+| `completeRunClocks`       | `(executionId: string, completedAtMs: number) => Effect<void>`                                                                                                                                          |
+| `pendingClocks`           | `(scope: { executionId?: string; flowName?: string }) => Effect<ReadonlyArray<ClockRow>>`                                                                                                               |
+| `completedDeferreds`      | `(flowName: string \| undefined, executionId?: string) => Effect<ReadonlyArray<DeferredAddress>>`; `undefined` lists every flow's                                                                       |
+| `park`                    | `(runId: string, waiting: Waiting, owner: OwnerId) => Effect<ParkOutcome>`                                                                                                                              |
+| `wake`                    | `(runId: string) => Effect<WakeOutcome>`                                                                                                                                                                |
+| `waiting`                 | `(runId: string) => Effect<Option<WaitingRow>>`                                                                                                                                                         |
+| `waitingRuns`             | `(filter?: WaitingRunsFilter) => Effect<ReadonlyArray<WaitingRow>>`                                                                                                                                     |
+| `waitingTree`             | `(runId: string, options?: WaitingTreeOptions) => Effect<ReadonlyArray<WaitingRow>>`                                                                                                                    |
+| `pendingRuns`             | `(flowName: string, limit?: number, after?: PendingRunCursor, through?: PendingRunCursor, eligibleBeforeMs?: number) => Effect<ReadonlyArray<PendingRunCursor>>`                                        |
+| `pendingRunTail`          | `(flowName: string, eligibleBeforeMs?: number) => Effect<Option<PendingRunCursor>>`                                                                                                                     |
+| `pendingCancellationRuns` | `(limit: number, after?: PendingRunCursor, through?: PendingRunCursor) => Effect<ReadonlyArray<PendingRunCursor>>`                                                                                      |
+| `pendingCancellationTail` | `() => Effect<Option<PendingRunCursor>>`                                                                                                                                                                |
+| `staleRunningRuns`        | `(staleBeforeMs: number, limit?: number) => Effect<ReadonlyArray<StaleRunningRow>>`                                                                                                                     |
+| `attemptSurvivors`        | `((runId: string, stepKeyDigest: string) => Effect<Option<AttemptSurvivors>>)` (optional)                                                                                                               |
+| `copyAttempts`            | `((options: { from: string; to: string; attempts: ReadonlyArray<AttemptRef> }) => Effect<number>)` (optional)                                                                                           |
+| `recordRunParent`         | `(childId: string, parentId: string) => Effect<RecordRunParentOutcome, RunParentCycleError>`                                                                                                            |
+| `removeRunParentsForRun`  | `(runId: string) => Effect<void>`                                                                                                                                                                       |
+| `runParents`              | `(childId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                                                             |
+| `runChildren`             | `(parentId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                                                            |
+| `runChildrenOf?`          | `(parentIds: ReadonlyArray<string>) => Effect<ReadonlyArray<RunParentEdge>>`; optional bulk child read, ordered by parent ID and sequence within each parent; duplicate parent IDs do not repeat edges. |
+| `transaction`             | `<A, E, R>(effect: Effect<A, E, R>, options?: { onCommit?, partition? }) => Effect<A, E, R>`                                                                                                            |
 
 `scheduleClock` requires the execution's ownership token. Creation succeeds
 only while the run is running under that owner. An existing clock wins unchanged,
@@ -443,7 +444,7 @@ optional for the same reason, and an engine over storage without it refuses a
 retry from a step `unsupported`.
 
 Every list read (`dueClocks`, `pendingClocks`, `completedDeferreds`,
-`waitingRuns`, `runParents`, and `runChildren`) skips a row that will not decode
+`waitingRuns`, `runParents`, `runChildren`, and `runChildrenOf`) skips a row that will not decode
 and logs a storage-integrity warning naming its primary key, so one corrupt row
 costs its own row and nothing else. The point reads `deferred`, `clock`, and
 `waiting` still die on such a row: reporting "no row" for a completion or
