@@ -226,8 +226,14 @@ export class WeakEtagError extends Data.TaggedError("@smthrs/build-infra/WeakEta
   readonly etag: string
 }> {
   override readonly name = "WeakEtagError"
-  override get message(): string {
-    return `R2 state ${this.key} carries the weak ETag ${this.etag}, which R2 never matches on a conditional write`
+  declare readonly message: string
+  constructor(options: { readonly key: string; readonly etag: string }) {
+    super(options)
+    Object.defineProperty(this, "message", {
+      value: `R2 state ${this.key} carries the weak ETag ${this.etag}, which R2 never matches on a conditional write`,
+      writable: false,
+      configurable: false
+    })
   }
 }
 

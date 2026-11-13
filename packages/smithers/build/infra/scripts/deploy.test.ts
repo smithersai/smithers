@@ -565,6 +565,36 @@ describe("deploy wrapper", () => {
     }
   }, 30_000)
 
+  it("prints a weak ETag diagnostic at the deployment failure boundary", () => {
+    const state = stateDirectory("weak-etag")
+    const key = "alchemy/Test.json"
+    const etag = 'W/"e1"'
+    const run = spawnSync(process.execPath, [
+      "--import",
+      import.meta.resolve("vibelang/register"),
+      "--input-type=module",
+      "--eval",
+      `import { deploy } from ${JSON.stringify(new URL("./deploy.ts", import.meta.url).href)}
+import { WeakEtagError } from ${JSON.stringify(new URL("./remote-state.ts", import.meta.url).href)}
+process.exitCode = await deploy([], {
+  cli: ${JSON.stringify(script("writes-state"))},
+  cwd: ${JSON.stringify(directory)},
+  stateDirectory: ${JSON.stringify(state)},
+  remoteState: async () => { throw new WeakEtagError(${JSON.stringify({ key, etag })}) }
+})
+`
+    ], { cwd: infraRoot, encoding: "utf8", timeout: 10_000 })
+
+    expect(run.error).toBeUndefined()
+    expect(run.status).toBe(1)
+    expect(run.stderr).toBe(
+      `Alchemy deployment refused: R2 state ${key} carries the weak ETag ${etag}, which R2 never matches on a conditional write\n`
+    )
+    expect(run.stdout).toBe("")
+    expect(existsSync(NodePath.join(state, "prod", "CacheWorker.json"))).toBe(false)
+    expect(existsSync(lockFileIn(state))).toBe(false)
+  })
+
   it("refuses to start while another deployment owns the state", async () => {
     const state = stateDirectory("state-owned")
     const marker = NodePath.join(directory, "refused")

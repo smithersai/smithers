@@ -1,9 +1,31 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import { failureMessage } from "./failure-message.ts"
+import { WeakEtagError } from "./remote-state.ts"
 
 describe("failureMessage", () => {
   it("renders a plain error message", () => {
     expect(failureMessage(new Error("state directory is read-only"))).toBe("state directory is read-only")
+  })
+
+  it.each([
+    { key: "alchemy/Test.json", etag: 'W/"e1"' },
+    { key: "alchemy/Nested Stack.json", etag: 'W/"version-2"' }
+  ])("renders an immutable weak ETag diagnostic for $key", ({ key, etag }) => {
+    const error = new WeakEtagError({ key, etag })
+    const message = `R2 state ${key} carries the weak ETag ${etag}, which R2 never matches on a conditional write`
+
+    expectTypeOf<Pick<WeakEtagError, "message">>().toEqualTypeOf<{ readonly message: string }>()
+    expect(error).toBeInstanceOf(Error)
+    expect(error).toMatchObject({ name: "WeakEtagError", _tag: "@smthrs/build-infra/WeakEtagError", key, etag })
+    expect(failureMessage(error)).toBe(message)
+    expect(Object.getOwnPropertyDescriptor(error, "message")).toEqual({
+      value: message,
+      writable: false,
+      enumerable: false,
+      configurable: false
+    })
+    expect(Reflect.set(error, "message", "hidden")).toBe(false)
+    expect(failureMessage(error)).toBe(message)
   })
 
   it("does not render anything that is not an error", () => {
