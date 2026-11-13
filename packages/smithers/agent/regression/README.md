@@ -187,8 +187,9 @@ node packages/smithers/agent/regression/character/run.ts --suite <dir> --calibra
 Offline runs spend nothing and work under Bun or Node. `--live` needs Node (the
 egress HTTP client uses Undici's dispatcher, which Bun lacks) and runs on the
 owner's subscription login (`SMITHERS_OPENAI_AUTH=chatgpt`, the codex login in
-`$CODEX_HOME/auth.json`); every `*_API_KEY` variable and the metered account
-pool and model proxy variables are removed. At most `--concurrency` (default 2)
+`$CODEX_HOME/auth.json`); every `*_API_KEY` and `*_API_KEY_FILE` variable,
+`ANTHROPIC_AUTH_TOKEN`, `CODEX_API_KEY`, and the metered account pool and model
+proxy variables are removed. At most `--concurrency` (default 2)
 conversations run at once. `--label` names the results file, so it is one path
 segment of letters, digits, `.`, `_` and `-`.
 
