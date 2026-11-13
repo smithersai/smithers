@@ -151,6 +151,38 @@ describe("TerminalFrame frames the terminal", () => {
     expect(iframe().srcdoc).toContain("<script>/* runtime */</script>");
   });
 
+  test("reconnects with a fresh nonce when its runtime changes and retires the old stream", async () => {
+    const rendered = await render({ runtime: "/* first runtime */" });
+    const firstNonce = nonceOf(iframe().srcdoc);
+    const first = await handshake();
+    expect(rendered.writers).toHaveLength(1);
+    await rendered.rerender({ runtime: "/* second runtime */" });
+    expect(iframe().srcdoc).toContain("<script>/* second runtime */</script>");
+    expect(nonceOf(iframe().srcdoc)).not.toBe(firstNonce);
+    expect(rendered.teardowns).toEqual([0]);
+    expect((await handshake({ nonce: firstNonce })).posted).toEqual([]);
+    const second = await handshake();
+    expect(second.posted).toHaveLength(1);
+    expect(rendered.writers).toHaveLength(2);
+    await send(first.port!, "terminal/input", { data: "stale input" });
+    await send(second.port!, "terminal/input", { data: "fresh input" });
+    expect(rendered.inputs).toEqual(["fresh input"]);
+    await act(async () => {
+      rendered.writers[0]!.output("stale output");
+      rendered.writers[1]!.output("fresh output");
+      await tick();
+    });
+    expect(first.received).toEqual([]);
+    expect(second.received.map((message) => new TextDecoder().decode(message.params.bytes))).toEqual(["fresh output"]);
+    await rendered.rerender({ runtime: "/* second runtime */", theme: "dark" });
+    expect(rendered.teardowns).toEqual([0]);
+    expect(rendered.writers).toHaveLength(2);
+    const mounted = root!;
+    await act(async () => mounted.unmount());
+    root = undefined;
+    expect(rendered.teardowns).toEqual([0, 1]);
+  });
+
   test("only while it is near the screen, with a new nonce each time it mounts", async () => {
     const observers: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = [];
     (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = class {

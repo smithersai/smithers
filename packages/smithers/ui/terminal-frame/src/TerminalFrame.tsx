@@ -110,8 +110,8 @@ export function TerminalFrame({
   latest.current = { options, stream, onInput, onResize, onKey, onLink };
   const port = useRef<MessagePort | undefined>(undefined);
 
-  // A new nonce, and so a new document, each time the frame mounts.
-  const nonce = useMemo(() => (visible ? newNonce() : ""), [visible]);
+  // A fresh connection for each document, including a replacement runtime.
+  const nonce = useMemo(() => (visible ? newNonce() : ""), [visible, runtime]);
   const srcDoc = useMemo(
     () =>
       visible

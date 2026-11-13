@@ -26,7 +26,7 @@ terminal never carries it.
 
 ```sh
 pnpm test        # bun test --isolate test, at 100% line and function coverage
-pnpm check       # vibelang --noEmit
+pnpm check       # vibelang -p tsconfig.json --noEmit
 pnpm generate    # node scripts/build-runtime.mjs: regenerate src/runtime.generated.ts
 bun test browser # the frame in real Chromium (pnpm exec playwright install chromium)
 ```

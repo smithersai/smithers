@@ -44,7 +44,8 @@ writes: the frame runtime is its only script, pinned by hash, and
 `connect-src 'none'` leaves the frame no network. `style-src 'unsafe-inline'`
 stays, because xterm.js injects `<style>` elements and writes 24-bit colors
 as `style` attributes. The frame mounts only while it is within 200 px of the
-screen, with a new nonce and document each time.
+screen, with a new nonce and document each time. Changing `runtime` also
+creates a fresh nonce and reconnects the stream.
 
 The frame asks with `terminal/initialize` and its nonce. The page answers
 only its own frame's `contentWindow`, only with this mount's nonce and only
@@ -56,13 +57,13 @@ once, and transfers a `MessagePort`; everything after uses the port.
 | `terminal/output` | page to frame | `{ bytes }`, a transferred `Uint8Array` |
 | `terminal/options` | page to frame | `{ theme, colors, readOnly, screenReaderMode }`, after any changes |
 | `terminal/focus` | page to frame | `{}` |
-| `terminal/input` | frame to page | `{ data }`, at most 1 MiB |
+| `terminal/input` | frame to page | `{ data }`, at most 1,048,576 UTF-16 code units per message; larger input is split in order without splitting surrogate pairs |
 | `terminal/resize` | frame to page | `{ cols, rows }`, integers from 1 to 65,535, first and after each fit that changes them |
 | `terminal/key` | frame to page | a `TerminalFrameKey`, for ⌘K and Ctrl+K only |
 | `terminal/link` | frame to page | `{ url }`, an `http:` or `https:` URL of at most 2048 characters |
 
 `stream` runs each time the frame connects; its teardown runs when the frame
-unmounts or leaves the screen. `output` transfers a `Uint8Array` that spans
+unmounts, leaves the screen or changes `runtime`. `output` transfers a `Uint8Array` that spans
 its whole buffer, so the caller must not reuse it; anything else is copied,
 and a string is sent as UTF-8. `colors` is the terminal palette for `theme`
 from the document's `data-palette`.

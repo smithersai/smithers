@@ -60,7 +60,7 @@ export const isWebUrl = (url: string): boolean => {
 
 const urlPattern = /https?:\/\/[^\s"'<>`]+/gi;
 
-/** The web links in one line of terminal text, with the column each starts at; labels may opt out of the navigation length limit. */
+/** The web links in one line of terminal text, with the UTF-16 offset each starts at; labels may opt out of the navigation length limit. */
 export const linksIn = (line: string, maxLength = maxUrlLength): Array<{ readonly start: number; readonly url: string }> =>
   Array.from(line.matchAll(urlPattern), (match) => {
     let url = match[0];

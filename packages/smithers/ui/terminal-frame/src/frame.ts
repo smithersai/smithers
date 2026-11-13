@@ -23,7 +23,7 @@
  * It loads no clipboard (OSC 52) addon.
  */
 import type { IBufferLine, IBufferRange, IDisposable, ILink, ITheme, Terminal as XTerminal } from "@xterm/xterm";
-import { initializeId, isPageKey, isRecord, isWebUrl, linksIn, nonceAttribute } from "./protocol";
+import { initializeId, isPageKey, isRecord, isWebUrl, linksIn, maxInputLength, nonceAttribute } from "./protocol";
 
 /** The xterm.js modules the frame runs. */
 export type TerminalFrameModules = {
@@ -89,7 +89,7 @@ export const startTerminalFrame = (frame: FrameWindow, modules: TerminalFrameMod
         lines.push(line);
       }
       const rows = lines.map((line, index) => line.translateToString(index === lines.length - 1));
-      return { first, rows, text: rows.join("") };
+      return { first, lines, rows, text: rows.join("") };
     };
 
     const activate = (event: MouseEvent, url: string, range: IBufferRange) => {
@@ -136,7 +136,17 @@ export const startTerminalFrame = (frame: FrameWindow, modules: TerminalFrameMod
       if (typeof next.readOnly === "boolean") {
         term.options.disableStdin = next.readOnly;
         input?.dispose();
-        input = next.readOnly ? undefined : term.onData((data) => post("terminal/input", { data }));
+        input = next.readOnly ? undefined : term.onData((data) => {
+          for (let start = 0; start < data.length;) {
+            let end = Math.min(start + maxInputLength, data.length);
+            // The page may encode each chunk separately; never split a surrogate pair.
+            const last = data.charCodeAt(end - 1);
+            const next = data.charCodeAt(end);
+            if (last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end -= 1;
+            post("terminal/input", { data: data.slice(start, end) });
+            start = end;
+          }
+        });
       }
     };
 
@@ -162,15 +172,24 @@ export const startTerminalFrame = (frame: FrameWindow, modules: TerminalFrameMod
         // A line longer than the terminal is wide wraps onto rows marked `isWrapped`.
         // Links are found in the whole line row `y` is part of, so a URL that wraps is
         // offered whole, from any of its rows, and never as its first row alone.
-        const { first, rows, text } = wrappedLine(y);
-        // The cell holding the character at `offset` of the joined line.
-        const cell = (offset: number) => {
+        const { first, lines, rows, text } = wrappedLine(y);
+        // String offsets count UTF-16 units; xterm ranges count cells. A wide
+        // character has a trailing width-zero cell, and a combining sequence
+        // or surrogate pair can put several string units in a single cell.
+        const cell = (offset: number, end = false) => {
           let row = 0;
           while (row < rows.length - 1 && offset >= rows[row]!.length) offset -= rows[row++]!.length;
-          return { x: offset + 1, y: first + row + 1 };
+          const line = lines[row]!;
+          let x = 0;
+          let value = line.getCell(x)!;
+          while (value.getWidth() === 0 || offset >= (value.getChars() || " ").length) {
+            if (value.getWidth() !== 0) offset -= (value.getChars() || " ").length;
+            value = line.getCell(++x)!;
+          }
+          return { x: x + (end ? value.getWidth() : 1), y: first + row + 1 };
         };
         const links = linksIn(text).map(({ start, url }): ILink => ({
-          range: { start: cell(start), end: cell(start + url.length - 1) },
+          range: { start: cell(start), end: cell(start + url.length - 1, true) },
           text: url,
           activate: follow,
           hover: preview,

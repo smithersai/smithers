@@ -142,6 +142,52 @@ describe("terminal-frame browser probes", () => {
       await page.close();
     }, 60_000);
 
+    test("delivers a large Unicode paste through bounded port messages without losing text", async () => {
+      const { frame, page } = await open({ readOnly: false });
+      const data = "x".repeat(1024 * 1024 - 1) + "😀" + "y".repeat(1024 * 1024);
+      await frame.locator("textarea").evaluate((node, text) => {
+        const clipboardData = new DataTransfer();
+        clipboardData.setData("text/plain", text);
+        node.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+      }, data);
+      await logged(page, "window.log.inputs.join(\"\").length === 2097153");
+      const { inputs } = await log(page);
+      expect(inputs.join("")).toBe(data);
+      expect(inputs.length).toBeGreaterThan(1);
+      expect(inputs.every((chunk) => chunk.length <= 1024 * 1024 && chunk.isWellFormed())).toBe(true);
+      await page.close();
+    }, 60_000);
+
+    test("reconnects and accepts input after replacing the mounted runtime", async () => {
+      const { page, frame } = await open({ readOnly: false });
+      const oldDocument = await page.locator("iframe").getAttribute("srcdoc");
+      await page.evaluate(() => window.replaceRuntime());
+      await logged(page, "window.log.connections === 2");
+      await until(() => frame.evaluate(() => document.querySelector(".xterm-rows")?.textContent?.includes("truecolor")));
+      expect(await page.locator("iframe").getAttribute("srcdoc")).not.toBe(oldDocument);
+      expect((await log(page)).teardowns).toBe(1);
+      await page.evaluate(() => window.focusTerminal());
+      await page.keyboard.type("after");
+      await logged(page, "window.log.inputs.join(\"\") === \"after\"");
+      await page.close();
+    }, 60_000);
+
+    test("the last URL cell after wide text remains clickable", async () => {
+      const url = "https://example.test/wide";
+      const { frame, page } = await open({ readOnly: false, output: output + `你好 ${url}\r\n` });
+      const row = frame.locator(".xterm-rows > div", { hasText: url });
+      const box = (await row.boundingBox())!;
+      const cols = (await log(page)).sizes.at(-1)![0];
+      const x = box.x + (5 + url.length - 0.5) * box.width / cols;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await until(() => frame.evaluate(() => document.querySelector(".xterm-screen.xterm-cursor-pointer") !== null));
+      await page.mouse.click(x, y);
+      await logged(page, "window.log.links.length === 1");
+      expect((await log(page)).links).toEqual([{ url, active: true }]);
+      await page.close();
+    }, 60_000);
+
     test("read-only sends no input at all", async () => {
       const { frame, page } = await open({ readOnly: true });
       await frame.click(".xterm-screen");

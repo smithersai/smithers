@@ -9,7 +9,7 @@ import { type ILink, type ILinkProvider, type ITerminalOptions, Terminal } from 
 import { Window } from "happy-dom";
 import { ViewCsp } from "@smthrs/views";
 import { type FrameWindow, startTerminalFrame } from "../src/frame";
-import { initializeId, nonceAttribute } from "../src/protocol";
+import { decodeFrameMessage, initializeId, maxInputLength, nonceAttribute } from "../src/protocol";
 
 const nonce = "n".repeat(32);
 const encoder = new TextEncoder();
@@ -200,6 +200,39 @@ describe("the terminal frame runtime", () => {
     expect(of(received, "terminal/input")).toEqual([{ data: "ls\r" }, { data: "pwd\r" }]);
   });
 
+  test.each([
+    maxInputLength - 1,
+    maxInputLength,
+    maxInputLength + 1,
+    maxInputLength * 2,
+    maxInputLength * 2 + 17,
+  ])("posts every pasted character in bounded messages for %i UTF-16 units", async (length) => {
+    const opened = frame();
+    const { received, term } = await connect(opened);
+    const data = "x".repeat(length);
+    term.paste(data);
+    term.resize(90, 20);
+    await waitFor(() => of(received, "terminal/resize").length >= 2);
+    const messages = received.filter((message) => message.method === "terminal/input");
+    expect(messages).toHaveLength(Math.ceil(length / maxInputLength));
+    expect(messages.every((message) => decodeFrameMessage(message) !== undefined)).toBe(true);
+    expect(messages.map((message) => message.params.data).join("")).toBe(data);
+  });
+
+  test("keeps surrogate pairs together at paste boundaries, including bracketed paste delimiters", async () => {
+    const opened = frame();
+    const { received, term } = await connect(opened);
+    await write(term, "\x1b[?2004h");
+    const data = "x".repeat(maxInputLength - 7) + "😀" + "y".repeat(maxInputLength) + "𐀀";
+    term.paste(data);
+    term.resize(90, 20);
+    await waitFor(() => of(received, "terminal/resize").length >= 2);
+    const chunks: Array<string> = of(received, "terminal/input").map(({ data }) => data);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= maxInputLength && chunk.isWellFormed())).toBe(true);
+    expect(chunks.join("")).toBe(`\x1b[200~${data}\x1b[201~`);
+  });
+
   test("applies new colors and a new theme, and leaves what a change omits", async () => {
     const opened = frame();
     const { port, term } = await connect(opened);
@@ -281,6 +314,41 @@ describe("the terminal frame runtime", () => {
     links[1]!.activate(click(opened), links[1]!.text);
     await waitFor(() => received.some((message) => message.method === "terminal/link"));
     expect(of(received, "terminal/link")).toEqual([{ url: "http://x.test/p" }]);
+  });
+
+  test.each([
+    ["你好 ", 5],
+    ["e\u0301 ", 2],
+    ["😀 ", 2],
+    ["𐀀 ", 2],
+    ["界😀e\u0301 ", 5],
+    ["\t", 8],
+  ] as const)("maps link ranges after %j to terminal cells", async (prefix, cells) => {
+    const opened = frame();
+    const { term } = await connect(opened);
+    const url = "https://example.test/a";
+    await write(term, prefix + url);
+    const [link] = (await linksAt(term, 1))!;
+    expect(link!.text).toBe(url);
+    expect(link!.range).toEqual({ start: { x: cells + 1, y: 1 }, end: { x: cells + url.length, y: 1 } });
+  });
+
+  test("maps wide and combining characters inside URLs, including the last cell and wrapped rows", async () => {
+    const opened = frame();
+    const { term } = await connect(opened);
+    term.resize(40, 24);
+    const prefix = "界 ";
+    const url = "https://example.test/" + "a".repeat(20) + "界e\u0301😀";
+    await write(term, prefix + url + " http://x.test/界");
+    const expected = [
+      { start: { x: 4, y: 1 }, end: { x: 8, y: 2 } },
+      { start: { x: 10, y: 2 }, end: { x: 25, y: 2 } },
+    ];
+    for (const y of [1, 2]) {
+      const links = (await linksAt(term, y))!;
+      expect(links.map((link) => link.text)).toEqual([url, "http://x.test/界"]);
+      expect(links.map((link) => link.range)).toEqual(expected);
+    }
   });
 
   test("finds a web link that wraps onto a second row whole, from either row, and offers it with its full range", async () => {
