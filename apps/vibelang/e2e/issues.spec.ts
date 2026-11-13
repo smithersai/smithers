@@ -43,6 +43,8 @@ test("a task committed to a chosen assignee names them, and Enter in the choice 
   await page.getByRole("link", { name: "Case branches on tuples", exact: true }).click()
   await page.getByRole("button", { name: "Commit", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: "Commit #42 as a task" })
+  // The whole dialog is on screen, a phone's included: every assignee can be chosen.
+  await expect(dialog).toBeInViewport({ ratio: 1 })
   const group = dialog.getByRole("radiogroup", { name: "Assignee" })
   await expect(group.getByRole("radio")).not.toHaveCount(0)
   const chosen = group.locator("input[type=radio]:not(:checked)").last()

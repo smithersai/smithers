@@ -291,7 +291,8 @@ html { overflow-anchor: none; }
 .ix-surface { position: fixed; inset: var(--vl-header-height, 56px) 0 0; overflow: auto; z-index: 10; background: var(--bg); }
 .ix-error { padding: 12px 14px; display: grid; gap: 10px; justify-items: start; }
 .ix-dialog:not([open]) { display: none; }
-.ix-dialog[open] { position: fixed; inset: 0; margin: auto; }
+/* Centered by inset and margin alone: the shared .sui-dialog-content translate would move it half its size off a phone. */
+.ix-dialog[open] { position: fixed; inset: 0; margin: auto; transform: none; }
 .ix-dialog::backdrop { background: var(--dialog-overlay, #0009); }
 .vl-nav button.vl-nav-link { background: transparent; border: 0; cursor: pointer; }
 /* Keep navigation and the account menu inside a phone viewport. */
