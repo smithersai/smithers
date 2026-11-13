@@ -36,7 +36,7 @@ import { defaultModel } from "./session"
 import { todoSteerLines } from "./todoSteer.ts"
 
 const NAME = "todo-steer"
-const only = (process.env.EVAL_ONLY ?? "").split(",").filter((name) => name !== "")
+const only = (process.env.EVAL_ONLY ?? "").split(",").map(name => name.trim()).filter((name) => name !== "")
 const TRIALS = Number(process.env.EVAL_K ?? "1")
 
 const runtime = testFile("eval_todo_steer")

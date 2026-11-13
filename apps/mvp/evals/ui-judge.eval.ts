@@ -19,7 +19,7 @@ const form = {
 const shown = { ...call("ui/form", form.props), result: { viewId: "example-form", shown: "form" } }
 const selected = (process.env.EVAL_ONLY ?? "").split(",").map((name) => name.trim()).filter(Boolean)
 
-test.skipIf(selected.length > 0 && !selected.some((name) => ["form-ask", "form-clone-no-url", "board", "flow-new", "own-alerts"].includes(name)))(
+test.skipIf(selected.length > 0 && !selected.includes("ui-judge") && !selected.some((name) => ["form-ask", "form-clone-no-url", "board", "flow-new", "own-alerts"].includes(name)))(
   "the UI judge accepts a shown form and rejects prose questions, false claims and internal wording",
   async () => {
     const allCases = [...CASES, ...FLOW_CASES]

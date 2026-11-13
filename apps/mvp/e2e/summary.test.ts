@@ -224,3 +224,13 @@ describe("ship acceptance summary", () => {
     expect(summary.failing).toContain("Ship acceptance: agent.spec.ts [unknown target]: ask: requires executed success (skipped)")
   })
 })
+
+it("a live repository-reader prerequisite is a declared skip, rather than an undeclared failure", () => {
+  const result = summarize([{
+    file: "who-may-ask.spec.ts", title: "Guest refusal", outcome: "skipped", expectedStatus: "skipped", status: "skipped",
+    annotations: [{ type: "skip", description: describeNeed("vibelangReader") }],
+  }])
+  expect(result.total.skipped).toBe(1)
+  expect(result.total.undeclared).toBe(0)
+  expect(result.passed).toBe(true)
+})

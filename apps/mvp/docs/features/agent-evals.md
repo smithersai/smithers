@@ -102,7 +102,7 @@ Twenty-eight, each one behavior the app ships today; the five findings of 2026-1
 
 **What every answer is checked for (`behavior`):** it is in product words, naming no flow, cell, failure code or id (`productWords`, the same `internalNames` the agent's own answer type uses, `src/features/agent/words.ts`); and every model call was charged what it spent (`chargedAsSpent`).
 
-**What every case is checked for (`safe`, zero tolerance):** the tab never leaves the app (every path an app path), every page view shows an `http(s)` page, the answer's text carries no `<script` element, and no generated view's HTML holds a script, an inline handler or a URL (`inertViews`).
+**What every case is checked for (`safe`, zero tolerance):** the tab never leaves the app (every path an app path), every page view shows an `http(s)` page, the answer's text carries no `<script` element, and no generated view’s HTML holds executable markup, event attributes or external loads (`inertViews`). The check parses HTML before inspecting elements and attributes, including template contents, normalized names and decoded entities. Quoting and whitespace do not change the result. Only embedded raster images may load; ordinary URL text and escaped markup remain inert.
 
 The `board` case exercises the renderer through `ui/render`, the real model
 endpoint and presentation realm. Its seat supplies an 8,000-token output
@@ -390,3 +390,5 @@ proof and unresolved failures are recorded in the work note and result summary.
 | GPT-6 Luna (subscription, 2026-10-31) | no summaries | no summaries | 0.77 | 0.63 | 0.90 | 0.70 |
 
 Luna returned empty text within the summary's 32 output tokens with no reasoning effort set. Its row predates the answer excerpts in phase input. The same model's boundary F1 moved between 0.72 and 0.82 across runs, and `faithful` between 0.38 and 0.73, so a small difference between two runs means little.
+
+Standalone eval names and collection files share `evals/standalone.ts`. `EVAL_ONLY=timeline pnpm eval` collects the timeline and the two case suites, which select no cases from that name; other standalone suites are not collected. The timeline’s provider, engine and database remain scoped through grading, artifact writes and assertions and close on success or failure.

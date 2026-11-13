@@ -14,6 +14,41 @@ const E = 'import { Effect } from "effect";\n'
 
 // Handlers that log, rethrow, or say why they need neither.
 const good = [
+  E + 'x.pipe(Effect.catch(() => (flag ? Effect.logInfo : Effect.logWarning)("failed")))',
+  E + 'x.pipe(Effect.catch(() => Effect.logWithLevel("Warn")("failed")))',
+  'let failed; new Promise((resolve, reject) => { failed = reject }); p.catch(error => failed(error))',
+
+  E + 'const logs = [Effect.logError("x")]; x.pipe(Effect.catch(() => Effect.all(logs)))',
+  E + 'p.catch(() => ({ logged: Effect.runSync(Effect.logError("x")) }))',
+  E + 'p.catch(() => [Effect.runSync(Effect.logError("x"))])',
+  E + 'p.catch(() => ({ ...Effect.runSync(Effect.logError("x")) }))',
+  E + 'p.catch(() => [...Effect.runSync(Effect.logError("x"))])',
+
+  E + 'x.pipe(Effect.catch(() => flag || Effect.logError("a")))',
+  E + 'x.pipe(Effect.catch(() => Effect.logError("a") || fallback))',
+  E + 'x.pipe(Effect.catch(() => Effect.forEach([1], () => Effect.logError("a"))))',
+
+  E + 'x.pipe(Effect.catch(() => flag ? Effect.logError("a") : Effect.fail("b")))',
+  E + 'x.pipe(Effect.catch(() => flag ? Effect.void : Effect.fail("b")))',
+  E + 'x.pipe(Effect.catch(() => flag && Effect.logError("a")))',
+  E + 'x.pipe(Effect.catch(() => (n++, Effect.logError("a"))))',
+  E + 'try { x() } catch (e) { Effect.runSyncWith(ctx)(Effect.logError("x")) }',
+  E + 'x.pipe(Effect.catch(() => Effect.map(Effect.void, () => Effect.runSync(Effect.logError("x")))))',
+  'p.catch(Promise.reject)',
+
+  E + 'x.pipe(Effect.catch(() => Effect.as(Effect.logError("x"), undefined)))',
+  E + 'x.pipe(Effect.catch(() => Effect.all([Effect.logError("x"), Effect.void])))',
+  E + 'x.pipe(Effect.catch(() => Effect.all({ log: Effect.logError("x") })))',
+  E + 'x.pipe(Effect.catch(() => Effect.sync(() => { throw new Error("x") })))',
+  E + 'x.pipe(Effect.catch(() => Effect.void.pipe(Effect.map(() => Effect.runSync(Effect.logError("x"))))))',
+  E + 'p.catch(async () => { await Effect.runPromise(Effect.logError("x")) })',
+  E + 'try { x() } catch { (() => { throw new Error("x") })() }',
+
+  E + 'x.pipe(Effect.catch(() => Effect.logError("x").pipe(Effect.andThen(Effect.void))))',
+  E + 'x.pipe(Effect.catch(() => Effect.gen(function* () { yield* Effect.logError("x") })))',
+  E + 'x.pipe(Effect.catch(() => { const logged = Effect.logError("x"); return logged }))',
+  E + 'try { x() } catch { const log = () => Effect.runSync(Effect.logWarning("x")); log() }',
+
   // Logs through Effect, in each of its imports.
   E + 'try { x() } catch { Effect.runSync(Effect.logWarning("x")) }',
   'import * as Effect from "effect/Effect"; x.pipe(Effect.catchTag("A", () => Effect.logError("a")))',
@@ -59,6 +94,39 @@ const good = [
 
 // Handlers that swallow.
 const bad = [
+  'let failed; failed = () => { throw new Error("x") }; failed = () => {}; p.catch(error => failed(error))',
+  'let failed = () => { throw new Error("x") }; failed = () => {}; p.catch(error => failed(error))',
+
+  E + 'x.pipe(Effect.catch(e => Effect.logError(e) && Effect.void))',
+  E + 'x.pipe(Effect.catch(() => ({ unused: Effect.logError("lost") })))',
+  E + 'x.pipe(Effect.catch(() => [Effect.logError("lost")]))',
+
+  'p.catch(Promise)',
+  'let handler; p.catch(handler)',
+  'p.catch(missing)',
+  'p.catch(x.y.reject)',
+  'p.catch(Promise.resolve)',
+
+  E + 'x.pipe(Effect.catch(() => Effect.gen(function* () { return Effect.logError("lost") })))',
+  E + 'x.pipe(Effect.catch(() => Effect.succeed(Effect.logError("lost"))))',
+  E + 'x.pipe(Effect.catch(() => Effect.as(Effect.void, Effect.logError("lost"))))',
+  E + 'x.pipe(Effect.catch(() => { const n = new Map(); return n }))',
+  E + 'x.pipe(Effect.catch(() => Effect.gen(function* () { return new Refused() })))',
+  E + 'p.catch(async () => { await Effect.logError("lost") })',
+  E + 'try { x() } catch { const unused = { log: () => Effect.runSync(Effect.logWarning("lost")) } }',
+
+  E + 'try { throw new Error("lost") } catch { Effect.logWarning("request failed") }',
+  E + 'Promise.reject(new Error("lost")).catch(() => { const unused = () => Effect.logError("failed"); return undefined; })',
+  E + 'p.catch(() => Effect.logWarning("lost"))',
+  E + 'try { x() } catch { const log = Effect.logWarning; }',
+  E + 'try { x() } catch { function unused() { throw new Error("lost") } }',
+  E + 'x.pipe(Effect.catch(() => { Effect.logError("lost"); return Effect.void }))',
+  E + 'x.pipe(Effect.catch(() => Effect.gen(function* () { Effect.logError("lost"); yield* Effect.void })))',
+  E + 'x.pipe(Effect.catch(() => { const unused = Effect.logError("lost"); return Effect.void }))',
+  E + 'x.pipe(Effect.catch(() => { const unused = () => Effect.logError("lost"); return Effect.void }))',
+  E + 'try { x() } catch { Effect.fail("lost") }',
+  'try { x() } catch { Promise.reject }',
+
   'try { x() } catch {}',
   'p.catch(() => undefined)',
   'p.catch()',

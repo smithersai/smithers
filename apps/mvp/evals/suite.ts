@@ -24,6 +24,7 @@ import { judgeScorer, questionsFor } from "./judge"
 import { canUpdateBaseline, unscored } from "./baseline-update"
 import { capGate, endpointSpend, judgeSpend, type ReadingUsage, type Scored, summary } from "./report"
 import { openSession } from "./session"
+import { STANDALONE_EVALS } from "./standalone"
 
 /** One suite: its cases, the baseline it gates on, and the most a run spends unless `EVAL_MAX_TOKENS` says otherwise. */
 export interface SuiteSpec {
@@ -136,8 +137,8 @@ const options = (spec: SuiteSpec) => {
   }
 }
 
-/** The evals outside these suites that `EVAL_ONLY` may name (evals/todo-steer.eval.ts). */
-const OTHER_EVALS = ["todo-steer"]
+/** The standalone evals share one registry with collection. */
+const OTHER_EVALS = Object.keys(STANDALONE_EVALS)
 
 /** Refuses an `EVAL_ONLY` that names a case no suite has: a typo would otherwise run nothing and pass. */
 export const onlyKnown = () => {

@@ -27,7 +27,7 @@ import { boundaryF1, TIMELINE_FIXTURES, type TimelineFixture } from "./timelineF
 import { gateFailures, phaseExchanges } from "./timelineGrades"
 
 const NAME = "timeline"
-const only = (process.env.EVAL_ONLY ?? "").split(",").filter(name => name !== "")
+const only = (process.env.EVAL_ONLY ?? "").split(",").map(name => name.trim()).filter(name => name !== "")
 const SAMPLE = Number(process.env.TIMELINE_EVAL_SAMPLE ?? "24")
 const BASELINE = new URL("timeline-baseline.json", import.meta.url)
 
@@ -207,47 +207,51 @@ const gradeFixture = (engine: Engine, fixture: TimelineFixture) => Effect.gen(fu
 
 test.skipIf(only.length > 0 && !only.includes(NAME))("timeline: summaries and phases read as a person would write them", async () => {
   const scope = Effect.runSync(Scope.make())
-  const seat = process.env.TIMELINE_EVAL_SEAT
-  // A subscription seat (`claude-code:haiku`, `luna`) or the summary role's record, whichever is set; the request is the flows' own.
-  const real = seat !== undefined
-    ? await Effect.runPromise(Effect.gen(function* () {
-      // Built in the eval's own scope: the seat's transport must outlive this effect.
-      const executors = yield* Layer.build(NodeControl.layerRebuildableRequestExecutor(NodeControl.environmentDispatcher(process.env)))
-      const resolver = yield* NodeControl.scopedSeatResolver(process.env, Context.get(executors, RequestExecutor.RequestExecutor))
-      return yield* resolver.resolve(seat)
+  try {
+    const seat = process.env.TIMELINE_EVAL_SEAT
+    // A subscription seat (`claude-code:haiku`, `luna`) or the summary role's record, whichever is set; the request is the flows' own.
+    const real = seat !== undefined
+      ? await Effect.runPromise(Effect.gen(function* () {
+        // Built in the eval's own scope: the seat's transport must outlive this effect.
+        const executors = yield* Layer.build(NodeControl.layerRebuildableRequestExecutor(NodeControl.environmentDispatcher(process.env)))
+        const resolver = yield* NodeControl.scopedSeatResolver(process.env, Context.get(executors, RequestExecutor.RequestExecutor))
+        return yield* resolver.resolve(seat)
+      }).pipe(Scope.provide(scope)))
+      : await Effect.runPromise(Effect.gen(function* () {
+        const fetch = yield* EgressHttpClient.providerFetch(process.env)
+        const record = process.env.TIMELINE_EVAL_MODEL ?? process.env.SUMMARY_MODEL
+        return yield* Effect.gen(function* () { return yield* HostModel }).pipe(
+          Effect.provide(HostModel.layerConfig("TIMELINE_MODEL", DEFAULT_CHAT_MODEL, { fetch })),
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...process.env, ...(record === undefined ? {} : { TIMELINE_MODEL: record }) }))),
+        )
+      }).pipe(Scope.provide(scope)))
+    const spent: Spent = { calls: 0 }
+    const results = await Effect.runPromise(Effect.gen(function* () {
+      const engine = yield* engineFor(real, spent)
+      return yield* Effect.forEach(TIMELINE_FIXTURES, fixture => gradeFixture(engine, fixture))
     }).pipe(Scope.provide(scope)))
-    : await Effect.runPromise(Effect.gen(function* () {
-      const fetch = yield* EgressHttpClient.providerFetch(process.env)
-      const record = process.env.TIMELINE_EVAL_MODEL ?? process.env.SUMMARY_MODEL
-      return yield* Effect.gen(function* () { return yield* HostModel }).pipe(
-        Effect.provide(HostModel.layerConfig("TIMELINE_MODEL", DEFAULT_CHAT_MODEL, { fetch })),
-        Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...process.env, ...(record === undefined ? {} : { TIMELINE_MODEL: record }) }))),
-      )
-    }).pipe(Scope.provide(scope)))
-  const spent: Spent = { calls: 0 }
-  const results = await Effect.runPromise(Effect.gen(function* () {
-    const engine = yield* engineFor(real, spent)
-    return yield* Effect.forEach(TIMELINE_FIXTURES, fixture => gradeFixture(engine, fixture))
-  }).pipe(Scope.provide(scope)))
-  const scores = {
-    summariesMade: mean(results.map(result => result.summariesMade)),
-    entryAccurate: mean(results.map(result => result.entryAccurate)),
-    entrySpecific: mean(results.map(result => result.entrySpecific)),
-    boundaryF1: mean(results.map(result => result.boundaryF1)),
-    boundaries: mean(results.map(result => result.boundaries)),
-    titles: mean(results.map(result => result.titles)),
-    faithful: mean(results.map(result => result.faithful)),
+    const scores = {
+      summariesMade: mean(results.map(result => result.summariesMade)),
+      entryAccurate: mean(results.map(result => result.entryAccurate)),
+      entrySpecific: mean(results.map(result => result.entrySpecific)),
+      boundaryF1: mean(results.map(result => result.boundaryF1)),
+      boundaries: mean(results.map(result => result.boundaries)),
+      titles: mean(results.map(result => result.titles)),
+      faithful: mean(results.map(result => result.faithful)),
+    }
+    // Per 100 messages: every summary and segmentation call the conversations needed, over the messages they hold.
+    const messages = results.reduce((sum, result) => sum + result.entries, 0)
+    const per100 = Object.fromEntries(Object.entries(spent).map(([name, value]) => [name, Math.round(value * 100 / messages * 1000) / 1000]))
+    const report = { eval: NAME, model: real.modelId, scores, messages, spent, per100Messages: per100, fixtures: results }
+    mkdirSync(new URL("results/", import.meta.url), { recursive: true })
+    writeFileSync(new URL(`results/${NAME}-${new Date().toISOString().replaceAll(":", "-")}.json`, import.meta.url), `${JSON.stringify(report, null, 2)}\n`)
+    console.log(JSON.stringify({ model: real.modelId, scores, per100Messages: per100, failures: results.flatMap(result => gateFailures(result.name, result)), calls: results.map(result => result.calls), phases: results.map(result => result.phases.map(phase => `${phase.from}:${phase.title}`)) }, null, 1))
+    const perFixture = Object.fromEntries(results.map(({ name, summariesMade, entryAccurate, entrySpecific, boundaryF1, boundaries, titles, faithful, invalidCalls, calls }) =>
+      [name, { summariesMade, entryAccurate, entrySpecific, boundaryF1, boundaries, titles, faithful, invalidCalls, calls }]))
+    if (process.env.TIMELINE_EVAL_WRITE === "1") writeFileSync(BASELINE, `${JSON.stringify({ model: real.modelId, scores, per100Messages: per100, fixtures: perFixture }, null, 2)}\n`)
+    // Every fixture clears every bar on its own: a mean hides the one conversation whose phases are wrong.
+    expect(results.flatMap(result => gateFailures(result.name, result))).toEqual([])
+  } finally {
+    await Effect.runPromise(Scope.close(scope, Exit.void))
   }
-  // Per 100 messages: every summary and segmentation call the conversations needed, over the messages they hold.
-  const messages = results.reduce((sum, result) => sum + result.entries, 0)
-  const per100 = Object.fromEntries(Object.entries(spent).map(([name, value]) => [name, Math.round(value * 100 / messages * 1000) / 1000]))
-  const report = { eval: NAME, model: real.modelId, scores, messages, spent, per100Messages: per100, fixtures: results }
-  mkdirSync(new URL("results/", import.meta.url), { recursive: true })
-  writeFileSync(new URL(`results/${NAME}-${new Date().toISOString().replaceAll(":", "-")}.json`, import.meta.url), `${JSON.stringify(report, null, 2)}\n`)
-  console.log(JSON.stringify({ model: real.modelId, scores, per100Messages: per100, failures: results.flatMap(result => gateFailures(result.name, result)), calls: results.map(result => result.calls), phases: results.map(result => result.phases.map(phase => `${phase.from}:${phase.title}`)) }, null, 1))
-  const perFixture = Object.fromEntries(results.map(({ name, summariesMade, entryAccurate, entrySpecific, boundaryF1, boundaries, titles, faithful, invalidCalls, calls }) =>
-    [name, { summariesMade, entryAccurate, entrySpecific, boundaryF1, boundaries, titles, faithful, invalidCalls, calls }]))
-  if (process.env.TIMELINE_EVAL_WRITE === "1") writeFileSync(BASELINE, `${JSON.stringify({ model: real.modelId, scores, per100Messages: per100, fixtures: perFixture }, null, 2)}\n`)
-  // Every fixture clears every bar on its own: a mean hides the one conversation whose phases are wrong.
-  expect(results.flatMap(result => gateFailures(result.name, result))).toEqual([])
 })

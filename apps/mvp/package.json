@@ -123,6 +123,7 @@
     "wrangler": "4.151.2",
     "@alchemy.run/cloudflare": "2.0.0-beta.85",
     "@alchemy.run/neon": "2.0.0-beta.85",
-    "@alchemy.run/test": "2.0.0-beta.85"
+    "@alchemy.run/test": "2.0.0-beta.85",
+    "parse5": "8.1.0"
   }
 }

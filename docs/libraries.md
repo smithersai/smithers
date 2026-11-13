@@ -22,6 +22,7 @@ full API; the name in each table links to the best starting page.
 
 | Job | Library | Call |
 | --- | --- | --- |
+| Parse rendered HTML for deterministic eval safety checks without executing it | `parse5` | `parse(html)` supplies normalized elements, decoded attributes and template contents; used by `apps/mvp/evals/checks.ts` before inspecting active markup and resource loads. |
 | Strip TypeScript types and lower imports before isolated QuickJS evaluation in a Worker | `sucrase` | `transform(source, { transforms: ["typescript", "imports"], production: true })`; pure JavaScript, no native process or runtime WASM compilation. The catalog previously had no library for this job; browser language services answer editor queries, not this transform. The app wraps transformation errors in its Effect-based realm. |
 | Call a model: streaming, any provider, OpenAI-compatible APIs | `@smthrs/model` | `Route.openaiChatCompatible`, `Route.anthropic`, `Route.layer`, then `Model.Model` and `model.stream(request)` |
 | Pick a host's model from configuration, with keys kept on their origin | `@smthrs/model-host` | `HostModel.layerConfig("CHAT_MODEL", fallback)`, then `yield* HostModel` for `model` and the credential-free `route.prepare`; `HostModel.make(record)` for a record read at run time, such as an admin's database row |

@@ -45,24 +45,30 @@ export const noSharedInflight = {
     const declarations = []
     const calls = []
     const references = []
-    const nameOf = (node) => {
+    // Preserve every reachable alias: a later assignment cannot erase an earlier
+    // constructor use, and closures can observe assignments in either order.
+    let aliasCount = 0
+    const remember = (variable, names) => {
+      if (!variable) return
+      const known = aliases.get(variable) ?? new Set()
+      for (const name of names) {
+        // Only module and method paths matter. Bound self-referential assignments.
+        if (name.split(".").length > 3 || known.has(name)) continue
+        known.add(name)
+        aliasCount++
+      }
+      aliases.set(variable, known)
+    }
+    const namesOf = (node) => {
       if (node?.type === "Identifier") {
-        const variable = context.sourceCode.getScope(node).set.get(node.name)
-        // Resolve through lexical scopes, so shadowed imports are not treated as Effect.
         let scope = context.sourceCode.getScope(node)
         while (scope && !scope.set.has(node.name)) scope = scope.upper
-        const binding = variable ?? scope?.set.get(node.name)
-        return aliases.get(binding)
+        return [...(aliases.get(scope?.set.get(node.name)) ?? [])]
       }
-      if (node?.type === "MemberExpression") {
-        const parent = nameOf(node.object)
-        return parent ? `${parent}.${property(node)}` : undefined
-      }
+      if (node?.type === "MemberExpression") return namesOf(node.object).map(name => `${name}.${property(node)}`)
+      return []
     }
-    const bind = (node, name) => {
-      const variable = context.sourceCode.getDeclaredVariables(node)[0]
-      aliases.set(variable, name)
-    }
+    const bind = (node, names) => remember(context.sourceCode.getDeclaredVariables(node)[0], names)
     // Whether a type mentions pending work: Effect.Effect<...>, Promise<...>, Fiber.Fiber<...>.
     const pendingType = (node) => {
       if (!node || typeof node !== "object") return false
@@ -83,27 +89,31 @@ export const noSharedInflight = {
       if (node.type === "NewExpression" && node.callee.type === "Identifier" && node.callee.name === "Promise") return true
       if (node.type === "CallExpression" || node.type === "MemberExpression") {
         const target = node.type === "CallExpression" ? node.callee : node
-        if (pendingCalls.has((nameOf(target)?.replace(/^effect\./, "") ?? "").split(".")[0])) return true
+        if (namesOf(target).some(name => pendingCalls.has(name.replace(/^effect\./, "").split(".")[0]))) return true
         if (target.type === "MemberExpression" && target.object.type === "Identifier" && target.object.name === "Promise") return true
       }
       return Object.entries(node).some(([key, child]) => key !== "parent" &&
         (Array.isArray(child) ? child.some(pendingValue) : typeof child?.type === "string" && pendingValue(child)))
     }
     const check = (node, callee, value) => {
-      const name = nameOf(callee)?.replace(/^effect\./, "")
-      if (!name) return
-      const [owner, method] = name.split(".")
-      if (owner === "Ref" && refs.has(method)) {
-        if (node.type === "CallExpression" && (pendingType(node.typeArguments) || pendingValue(value))) {
-          context.report({ node, messageId: "shared", data: { name: `${name} of pending work` } })
+      const names = namesOf(callee).map(name => name.replace(/^effect\./, ""))
+      for (const name of names) {
+        const [owner, method] = name.split(".")
+        if (owner === "Ref" && refs.has(method)) {
+          if (node.type === "CallExpression" && (pendingType(node.typeArguments) || pendingValue(value))) {
+            context.report({ node, messageId: "shared", data: { name: `${name} of pending work` } })
+            return
+          }
+          continue
         }
+        if (!factories[owner]?.has(method)) continue
+        // Every possible initializer must be a completed literal constant.
+        const initializers = value?.type === "CallExpression" ? namesOf(value.callee) : []
+        if (name === "Effect.cached" && initializers.length > 0 &&
+          initializers.every(name => name.replace(/^effect\./, "") === "Effect.succeed") && pure(value.arguments[0])) continue
+        context.report({ node, messageId: "shared", data: { name } })
         return
       }
-      if (!factories[owner]?.has(method)) return
-      // A completed literal constant cannot own pending I/O.
-      if (name === "Effect.cached" && value?.type === "CallExpression" &&
-        nameOf(value.callee)?.replace(/^effect\./, "") === "Effect.succeed" && pure(value.arguments[0])) return
-      context.report({ node, messageId: "shared", data: { name } })
     }
     const reference = (node) => {
       const parent = node.parent
@@ -117,10 +127,10 @@ export const noSharedInflight = {
         for (const specifier of node.specifiers) {
           const variable = context.sourceCode.getDeclaredVariables(specifier)[0]
           if (source === "effect") {
-            aliases.set(variable, specifier.type === "ImportNamespaceSpecifier" ? "effect" : specifier.imported?.name)
+            remember(variable, [specifier.type === "ImportNamespaceSpecifier" ? "effect" : specifier.imported?.name].filter(Boolean))
           } else if (modules.test(source)) {
             const part = source.split("/")[1]
-            aliases.set(variable, specifier.type === "ImportNamespaceSpecifier" ? part : `${part}.${specifier.imported?.name}`)
+            remember(variable, [specifier.type === "ImportNamespaceSpecifier" ? part : part + "." + specifier.imported?.name])
           }
         }
       },
@@ -136,29 +146,35 @@ export const noSharedInflight = {
       "Program:exit"() {
         // Resolve to a fixed point before checking uses: a closure can refer to an
         // alias declared later, and aliases can themselves form forward chains.
-        let previous
-        do {
-          previous = aliases.size
-          for (const node of declarations) {
-            const name = nameOf(node.init)
-            if (!name) continue
-            if (node.assignment) {
-              let scope = context.sourceCode.getScope(node.id)
-              while (scope && !scope.set.has(node.id.name)) scope = scope.upper
-              const variable = scope?.set.get(node.id.name)
-              if (variable) aliases.set(variable, name)
-            } else if (node.id.type === "Identifier") bind(node, name)
-            else if (node.id.type === "ObjectPattern") {
-              const variables = context.sourceCode.getDeclaredVariables(node)
-              for (const entry of node.id.properties) {
-                const local = entry.type === "RestElement" ? entry.argument :
-                  entry.value.type === "AssignmentPattern" ? entry.value.left : entry.value
-                const variable = variables.find((value) => value.name === local.name)
-                if (variable) aliases.set(variable, entry.type === "RestElement" ? name : `${name}.${entry.key.name ?? entry.key.value}`)
+        // First resolve forward chains; only then taint genuinely unknown writes.
+        for (const includeUnknown of [false, true]) {
+          let previous
+          do {
+            previous = aliasCount
+            for (const node of declarations) {
+              const names = namesOf(node.init)
+              // An unknown initializer may return pending work. Keep it in the
+              // set so it cannot borrow the literal allowlist from another write.
+              if (includeUnknown && names.length === 0 && node.init) names.push("unknown")
+              if (names.length === 0) continue
+              if (node.assignment) {
+                let scope = context.sourceCode.getScope(node.id)
+                while (scope && !scope.set.has(node.id.name)) scope = scope.upper
+                const variable = scope?.set.get(node.id.name)
+                remember(variable, names)
+              } else if (node.id.type === "Identifier") bind(node, names)
+              else if (node.id.type === "ObjectPattern") {
+                const variables = context.sourceCode.getDeclaredVariables(node)
+                for (const entry of node.id.properties) {
+                  const local = entry.type === "RestElement" ? entry.argument :
+                    entry.value.type === "AssignmentPattern" ? entry.value.left : entry.value
+                  const variable = variables.find((value) => value.name === local.name)
+                  remember(variable, names.map(name => entry.type === "RestElement" ? name : name + "." + (entry.key.name ?? entry.key.value)))
+                }
               }
             }
-          }
-        } while (aliases.size !== previous)
+          } while (aliasCount !== previous)
+        }
         for (const node of calls) check(node, node.callee, node.arguments[0])
         for (const node of references) check(node, node)
       },

@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import ts from "typescript"
 import {
   appURLOf,
   type Broken,
@@ -328,6 +329,7 @@ describe("needs", () => {
       "inspectRun",
       "timelineVisualFixture",
       "outsideRoles",
+      "vibelangReader",
       "vibelangFeed",
       "sandboxSecrets",
       "webhookSecret",
@@ -813,6 +815,76 @@ describe("the stored session's files", () => {
   })
 })
 
+/** Read syntax rather than matching text: renamed and derived test APIs obey the same policy. */
+const directSkips = (text: string): ReadonlyArray<string> => {
+  const source = ts.createSourceFile("journey.spec.ts", text, ts.ScriptTarget.Latest, true)
+  const names = new Set<string>()
+  const namespaces = new Set<string>()
+  const skips = new Set<string>()
+  const declarations: Array<ts.VariableDeclaration | { name: ts.Identifier; initializer: ts.Expression }> = []
+  const calls: ts.CallExpression[] = []
+  const visit = (node: ts.Node) => {
+    if (ts.isImportDeclaration(node)) {
+      const bindings = node.importClause?.namedBindings
+      if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text)
+      if (bindings && ts.isNamedImports(bindings)) for (const entry of bindings.elements) {
+        if (["test", "strictTest"].includes((entry.propertyName ?? entry.name).text)) names.add(entry.name.text)
+      }
+    }
+    if (ts.isVariableDeclaration(node)) declarations.push(node)
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(node.left)) {
+      declarations.push({ name: node.left, initializer: node.right })
+    }
+    if (ts.isCallExpression(node)) calls.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  const isApi = (node: ts.Expression): boolean => {
+    if (ts.isIdentifier(node)) return names.has(node.text)
+    if (ts.isPropertyAccessExpression(node)) return (ts.isIdentifier(node.expression) &&
+      namespaces.has(node.expression.text) && ["test", "strictTest"].includes(node.name.text)) ||
+      ["describe", "parallel", "serial"].includes(node.name.text) && isApi(node.expression)
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "extend") return isApi(node.expression.expression)
+    return false
+  }
+  const isSkip = (node: ts.Expression): boolean =>
+    ts.isIdentifier(node) && skips.has(node.text) ||
+    ts.isPropertyAccessExpression(node) && node.name.text === "skip" && isApi(node.expression) ||
+    ts.isElementAccessExpression(node) && ts.isStringLiteral(node.argumentExpression) && node.argumentExpression.text === "skip" && isApi(node.expression)
+  let previous: number
+  do {
+    previous = names.size + skips.size
+    for (const entry of declarations) {
+      if (!entry.initializer) continue
+      if (ts.isIdentifier(entry.name)) {
+        if (isApi(entry.initializer)) names.add(entry.name.text)
+        if (isSkip(entry.initializer)) skips.add(entry.name.text)
+      }
+      if (ts.isObjectBindingPattern(entry.name) && isApi(entry.initializer)) for (const binding of entry.name.elements) {
+        const key = binding.propertyName ?? binding.name
+        if (ts.isIdentifier(binding.name) && (ts.isIdentifier(key) || ts.isStringLiteral(key)) && key.text === "skip") skips.add(binding.name.text)
+      }
+    }
+  } while (previous !== names.size + skips.size)
+  return calls.filter(call => isSkip(call.expression)).map(call => call.getText(source))
+}
+
+it("finds raw skips through renamed, namespace and extended test APIs", () => {
+  for (const code of [
+    'import { test } from "./fixtures"; test.describe.skip("journey", () => {})',
+    'import { test } from "./fixtures"; const { skip: omit } = test; omit(true)',
+    'import { test } from "./fixtures"; const { "skip": omit } = test; omit(true)',
+    'import { test } from "./fixtures"; let omit; omit = test.skip; omit(true)',
+    'import { test } from "./fixtures"; const omit = test.skip; omit(true)',
+    'import { test } from "./fixtures"; test.skip(true, "missing")',
+    'import { test as pageTest } from "./fixtures"; pageTest.skip(true, "missing")',
+    'import { strictTest as base } from "./watch"; const test = base.extend({}); test.skip(true)',
+    'import * as fixtures from "./fixtures"; fixtures.test["skip"](true)',
+    'import { test as base } from "./fixtures"; const b = a; const a = base; b.skip(true)',
+  ]) expect(directSkips(code), code).toHaveLength(1)
+  expect(directSkips('const text = "test.skip("; // pageTest.skip()')).toEqual([])
+})
+
 // The suite's one way to tell targets apart and skip (docs/rules.md, test.e2e-declared-needs): every spec skips only by
 // `requires`, and none decides for itself whether its target is local.
 describe("the specs", () => {
@@ -837,7 +909,7 @@ describe("the specs", () => {
   })
 
   it("skip only by declaring a need", async () => {
-    const offenders = (await specs()).filter(({ source }) => /\btest\.skip\(/.test(source)).map(({ name }) => name)
+    const offenders = (await specs()).filter(({ source }) => directSkips(source).length > 0).map(({ name }) => name)
     expect(offenders, "use requires(...) from e2e/target.ts instead of test.skip").toEqual([])
   })
 
@@ -906,4 +978,14 @@ describe("addressed-ask prerequisites", () => {
       }
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
+})
+
+
+it("uses the live repository role for the declared Guest-refusal prerequisite", () => {
+  expect(NEEDS.vibelangReader.met(local)).toBe(false)
+  for (const role of [null, "guest", "member", "maintainer", "admin"] as const) {
+    const run = { ...deployedAs("admin"), repository: () => ({ role, synced: true }) }
+    expect(NEEDS.vibelangReader.met(run)).toBe(role === null || role === "guest")
+  }
+  expect(parseDescription(describeNeed("vibelangReader"))).toEqual({ kind: "needs", name: "vibelangReader" })
 })

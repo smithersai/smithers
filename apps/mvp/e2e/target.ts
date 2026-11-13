@@ -257,6 +257,13 @@ const needs = {
     met: (run) => run.target === "deployment",
     reason: "it proves the test account's role on the deployment's repository counts for nothing where the GitHub App isn't installed (decision 0079); local development without the App keeps its people's roles on every repository",
   },
+  vibelangReader: {
+    met: (run) => {
+      const answer = run.repository?.("smithersai/vibelang")
+      return answer !== undefined && !MEMBER_OR_ABOVE.has(answer.role)
+    },
+    reason: "the Guest-refusal journey needs an account that only reads smithersai/vibelang; its live repository role is checked before the journey",
+  },
   vibelangMaintainer: {
     met: (run) => run.target === "local",
     reason: "it needs the test account to be a Maintainer or Admin on smithersai/vibelang (maintain or admin there on GitHub); the deployment says it is less",
@@ -631,9 +638,9 @@ export const requires = (...names: ReadonlyArray<NeedName>) => {
   }
 }
 
-/** A blocked prerequisite established from live per-account data rather than run-wide configuration. */
+/** A declared prerequisite established from live per-account data rather than run-wide configuration. */
 export const requiresVerified = (name: NeedName, available: boolean) => {
-  if (!inTest() || !NEEDS[name].blocked) throw new Error("A live prerequisite must be a declared blocked need inside a test")
+  if (!inTest()) throw new Error("A live prerequisite must be declared inside a test")
   record(name)
   base.skip(!available, describeNeed(name))
 }

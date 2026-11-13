@@ -1,3 +1,4 @@
+import { type DefaultTreeAdapterMap, parse } from "parse5"
 import { internalNames } from "../src/features/agent/words"
 
 // The deterministic half of the agent evals (docs/features/agent-evals.md): what one trial of a case shows, the checks
@@ -233,14 +234,39 @@ export const boardShows = (t: Trial, cells: number): Check => {
   return check(`a generated board with ${cells} playable cells`, view !== undefined && playable >= cells)
 }
 
-/** No generated view's HTML holds a script, an inline handler, or a URL to load (decision 0004 §5): zero tolerance. */
+const activeElements = new Set(["script", "iframe", "object", "embed", "base", "link", "meta", "set", "animate", "animateMotion", "animateTransform", "discard"])
+const urlAttributes = new Set(["src", "href", "action", "formaction", "poster", "background", "data", "cite", "longdesc", "manifest", "profile", "codebase", "classid", "icon"])
+const cssLoads = (css: string) => /(?:url|(?:-webkit-)?image-set|image|cross-fade|src|expression)\s*\(|@import/i.test(css
+  .replace(/\\([0-9a-f]{1,6}\s?|.)/gi, (_, escaped: string) =>
+    /^[0-9a-f]/i.test(escaped) ? String.fromCodePoint(Math.min(parseInt(escaped, 16), 0x10ffff)) : escaped)
+  .replace(/\/\*[\s\S]*?\*\//g, ""))
+
+/** Parse without executing anything: HTML quoting, case and entities have browser semantics. */
+const inertHtml = (html: string) => {
+  const textOf = (node: DefaultTreeAdapterMap["node"]): string =>
+    "value" in node ? node.value : "childNodes" in node ? node.childNodes.map(textOf).join("") : ""
+  const inert = (node: DefaultTreeAdapterMap["node"]): boolean => {
+    if ("tagName" in node) {
+      if (activeElements.has(node.tagName)) return false
+      if (node.tagName === "style" && cssLoads(textOf(node))) return false
+      for (const attribute of node.attrs) {
+        const name = attribute.name.toLowerCase()
+        if (name.startsWith("on") || name === "srcdoc" || name === "srcset" || name === "imagesrcset" || name === "ping") return false
+        if (name === "style" && cssLoads(attribute.value)) return false
+        // Only an embedded raster image can load: data HTML/SVG can execute code.
+        if (urlAttributes.has(name) && !(node.tagName === "img" && name === "src" &&
+          /^data:image\/(?:png|jpeg|gif|webp|avif|bmp);base64,[a-z0-9+/=\s]*$/i.test(attribute.value.trim()))) return false
+      }
+      if ("content" in node && !inert((node as DefaultTreeAdapterMap["template"]).content)) return false
+    }
+    return !("childNodes" in node) || node.childNodes.every(inert)
+  }
+  return inert(parse(html))
+}
+
+/** No generated view's HTML holds executable markup or external loads (decision 0004 §5): zero tolerance. */
 export const inertViews = (t: Trial): Check =>
-  check(
-    "inert views",
-    t.views.every((view) =>
-      view.html == null || !/<script|<iframe|\son[a-z]+=|(?:src|href)="(?!data:)|https?:\/\//i.test(view.html)
-    ),
-  )
+  check("inert views", t.views.every(view => view.html == null || inertHtml(view.html)))
 
 /** The conversation holds no view. */
 export const noViews = (t: Trial): Check => check("no views", t.views.length === 0)

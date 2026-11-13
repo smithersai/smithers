@@ -52,7 +52,7 @@ import {
 } from "./todoLint.ts"
 
 const NAME = "todo-lint"
-const only = (process.env.EVAL_ONLY ?? "").split(",").filter((name) => name !== "")
+const only = (process.env.EVAL_ONLY ?? "").split(",").map(name => name.trim()).filter((name) => name !== "")
 const TRIALS = Number(process.env.EVAL_K ?? "1")
 
 const runtime = testFile("eval_todo_lint")

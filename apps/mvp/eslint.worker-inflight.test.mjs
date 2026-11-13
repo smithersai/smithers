@@ -10,6 +10,16 @@ const lint = (source) => new Linter().verify(source, [{
   rules: { "worker/io": "error" },
 }])
 const bad = [
+  'import { Effect } from "effect"; let init = Effect.succeed; init = () => work; Effect.cached(init(1));',
+
+  'import { Effect } from "effect"; let memo = Effect.cached; memo = memo.foo; memo(work);',
+
+  'import { Effect } from "effect"; let memo = Effect.cached; const pending = memo(work); memo = Effect.succeed;',
+  'import { Effect } from "effect"; let memo = Effect.succeed; memo = Effect.cached; memo(work); memo = Effect.succeed;',
+  'import { Effect } from "effect"; let memo = Effect.cached; const copy = memo; memo = Effect.succeed; copy(work);',
+  'import { Effect } from "effect"; let owner = Effect; const { cached: memo } = owner; owner = other; memo(work);',
+  'import { Effect } from "effect"; let a; let b; a = b; b = Effect.cached; a(work); b = Effect.succeed;',
+
   'import { Effect } from "effect"; Effect.cachedInvalidateWithTTL(work, "1 minute")',
   'import { ScopedCache } from "effect"; ScopedCache.make({ lookup: read })',
   'import { ScopedCache } from "effect"; ScopedCache.makeWith({ lookup: read })',
@@ -92,6 +102,11 @@ for (const source of bad) test(`rejects ${source}`, () => {
   assert.equal(lint(source).filter((entry) => entry.ruleId === "worker/io").length, 1)
 })
 const good = [
+  'import { Effect } from "effect"; const make = () => { const init = succeed; return Effect.cached(init(1)); }; const succeed = Effect.succeed; make();',
+
+  'import { Effect } from "effect"; let make = Effect.succeed; make = make.value; make(1)',
+  'import { Effect } from "effect"; let memo = Effect.succeed; const safe = memo; Effect.cached(safe(1))',
+
   'import { Effect } from "effect"; missing = Effect.succeed',
 
   'import { Effect } from "effect"; const { cached: { x } } = Effect; x(work)',
@@ -124,3 +139,8 @@ const good = [
   'import { Queue } from "effect"; function request(Queue) { return Queue.unbounded() }',
 ]
 for (const source of good) test(`allows ${source}`, () => assert.deepEqual(lint(source), []))
+
+
+test("the literal allowlist refuses an initializer that may itself be a cached constructor", () => {
+  assert.equal(lint('import { Effect } from "effect"; let make = Effect.succeed; make = Effect.cached; Effect.cached(make(1))').length, 2)
+})

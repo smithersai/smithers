@@ -49,76 +49,122 @@ export const failureObserved = {
         const [def] = variable.defs
         if (def === undefined) return undefined
         if (def.type === "FunctionName") return def.node
-        return def.type === "Variable" && def.node.id.type === "Identifier" ? def.node.init ?? undefined : undefined
+        if (def.type !== "Variable" || def.node.id.type !== "Identifier") return undefined
+        const writes = variable.references.filter(reference => reference.writeExpr)
+        // A later replacement must not borrow an earlier helper's observation.
+        return writes.length === 1 ? writes[0].writeExpr : undefined
       }
       return undefined
     }
-    // A name being read, not a member's or a property's key.
-    const reference = (node) =>
-      !(node.parent.type === "MemberExpression" && node.parent.property === node && !node.parent.computed) &&
-      !(node.parent.type === "Property" && node.parent.key === node && !node.parent.computed && !node.parent.shorthand)
-
     const isEffect = (node) => node.type === "Identifier" && effect.has(node.name)
     // Only `Effect`'s logs are the app's records: `Console.log` writes to the console alone.
     const logs = (node) => node.object.type === "Identifier" && effect.get(node.object.name) === "Effect" && LOG.test(property(node))
 
-    // Whether `node`'s code logs or rethrows, following the same-file helpers it names.
-    const observes = (node, depth, seen) => {
-      let found = false
-      const visit = (current) => {
-        if (found || current === null || typeof current !== "object") return
-        if (Array.isArray(current)) return current.forEach(visit)
-        if (typeof current.type !== "string") return
-        switch (current.type) {
-          case "ThrowStatement":
-            found = true
-            return
-          case "MemberExpression":
-            // `Effect.logWarning`, `Effect.fail`, `Effect.die`, called or passed as they are.
-            if (logs(current) || (isEffect(current.object) && FAIL.test(property(current)))) {
-              found = true
-              return
-            }
-            if (current.object.type === "Identifier" && current.object.name === "Promise" && property(current) === "reject") {
-              found = true
-              return
-            }
-            break
-          case "Identifier": {
-            if (!reference(current)) break
-            if (current.name === "reject" || loggers.has(current.name)) {
-              found = true
-              return
-            }
-            const target = depth < DEPTH ? resolve(current) : undefined
-            if (target !== undefined && !seen.has(target)) {
-              seen.add(target)
-              if (observes(target, depth + 1, seen)) found = true
-              return
-            }
-            break
-          }
-          case "ReturnStatement":
-          case "YieldExpression":
-            // A tagged error returned or yielded fails the Effect with it.
-            if (current.argument?.type === "NewExpression") {
-              found = true
-              return
-            }
-            break
-          case "ArrowFunctionExpression":
-            if (current.body.type === "NewExpression") {
-              found = true
-              return
-            }
-            break
-        }
-        for (const [key, value] of Object.entries(current)) {
-          if (key !== "parent" && key !== "loc" && key !== "range") visit(value)
-        }
+    // A constructed Effect is lazy. Follow only work that a handler executes,
+    // returns to an Effect catch, yields in Effect.gen, or runs at a boundary.
+    const observes = (node, depth, seen, effectHandler, invoke = true, kind = effectHandler ? "effect" : "native") => {
+      const follow = (identifier, kind, invoke) => {
+        if (depth >= DEPTH) return false
+        const target = resolve(identifier)
+        if (target === undefined || seen.has(target)) return false
+        return observes(target, depth + 1, new Set(seen).add(target), kind === "effect", invoke, kind)
       }
-      visit(node)
-      return found
+      const effectCallbacks = /^(?:andThen|flatMap|tap|tapError|tapCause|catch.*|suspend|onError|ensuring|forEach)$/
+      const boundaries = /^run(?:Sync|Promise|Fork)(?:Exit|With)?$/
+      const walk = (current, kind = "discard", returnKind = kind, invoke = false) => {
+        if (current === null || typeof current !== "object") return false
+        switch (current.type) {
+          case "ArrowFunctionExpression":
+          case "FunctionExpression":
+          case "FunctionDeclaration":
+            if (!invoke) return false
+            if (current.body.type === "NewExpression" && kind === "effect") return true
+            return walk(current.body, current.body.type === "BlockStatement" ? "discard" : kind, kind)
+          case "Identifier":
+            if (invoke && (current.name === "reject" || loggers.has(current.name))) return true
+            return (invoke || kind === "effect" || kind === "collection") && follow(current, kind, invoke)
+          case "ThrowStatement":
+            return true
+          case "ReturnStatement":
+            if (returnKind === "effect" && current.argument?.type === "NewExpression") return true
+            return walk(current.argument, returnKind === "generator" ? "native" : returnKind, returnKind)
+          case "YieldExpression":
+            return returnKind === "generator" && (current.argument?.type === "NewExpression" || walk(current.argument, "effect", returnKind))
+          case "AwaitExpression":
+            return walk(current.argument, "native", returnKind)
+          case "NewExpression":
+            return false
+          case "SpreadElement":
+            return walk(current.argument, kind, returnKind)
+          case "ConditionalExpression":
+            return walk(current.test, "discard", returnKind) ||
+              walk(current.consequent, kind, returnKind, invoke) || walk(current.alternate, kind, returnKind, invoke)
+          case "LogicalExpression":
+          case "SequenceExpression":
+            return current.type === "LogicalExpression"
+              ? walk(current.left, current.operator === "&&" ? "discard" : kind, returnKind) || walk(current.right, kind, returnKind)
+              : current.expressions.some((expression, index) => walk(expression, index === current.expressions.length - 1 ? kind : "discard", returnKind))
+          case "ArrayExpression":
+            return current.elements.some(element => walk(element, kind === "collection" ? "effect" : "discard", returnKind))
+          case "ObjectExpression":
+            return current.properties.some(entry => walk(entry.type === "Property" ? entry.value : entry.argument, kind === "collection" ? "effect" : "discard", returnKind))
+          case "MemberExpression":
+            return (invoke && kind === "effect" &&
+              (logs(current) || (isEffect(current.object) && FAIL.test(property(current))))) ||
+              (invoke && current.object.type === "Identifier" && current.object.name === "Promise" && property(current) === "reject")
+          case "CallExpression": {
+            const callee = current.callee
+            if (callee.type === "ConditionalExpression" && walk(callee, kind, returnKind, true)) return true
+            if (callee.type === "CallExpression" && callee.callee.type === "MemberExpression" && kind === "effect" && logs(callee.callee)) return true
+            if (callee.type === "CallExpression" && callee.callee.type === "MemberExpression" &&
+              isEffect(callee.callee.object) && effect.get(callee.callee.object.name) === "Effect" && boundaries.test(property(callee.callee))) {
+              return current.arguments.some(argument => walk(argument, "effect", returnKind))
+            }
+            if (callee.type === "Identifier") {
+              if (loggers.has(callee.name) || callee.name === "reject") return true
+              if (follow(callee, kind, true)) return true
+            }
+            if (callee.type === "ArrowFunctionExpression" || callee.type === "FunctionExpression") {
+              if (walk(callee, kind, returnKind, true)) return true
+            }
+            if (callee.type === "MemberExpression") {
+              const name = property(callee)
+              if (isEffect(callee.object)) {
+                if (kind === "effect" && (logs(callee) || FAIL.test(name))) return true
+                if (effect.get(callee.object.name) === "Effect" && boundaries.test(name)) {
+                  return current.arguments.some(argument => walk(argument, "effect", returnKind))
+                }
+                if (kind === "effect") {
+                  if (name === "gen") return current.arguments.some(argument => walk(argument, "generator", "generator", true))
+                  if (name === "sync" || name === "promise" || name === "tryPromise") {
+                    return current.arguments.some(argument => walk(argument, "native", "native", true))
+                  }
+                  // These constructors store their argument as a value, without running it.
+                  if (name === "succeed") return false
+                  if (name === "all") return walk(current.arguments[0], "collection", returnKind)
+                  if (name === "as") return current.arguments.length > 1 && walk(current.arguments[0], "effect", returnKind)
+                  if (name === "map") return current.arguments.some((argument, index) =>
+                    walk(argument, index === current.arguments.length - 1 ? "native" : "effect", returnKind, index === current.arguments.length - 1))
+                  return current.arguments.some(argument => walk(argument, "effect", returnKind, effectCallbacks.test(name)))
+                }
+              }
+              if (name === "pipe" && kind === "effect") {
+                return walk(callee.object, "effect", returnKind) ||
+                  current.arguments.some(argument => walk(argument, "effect", returnKind))
+              }
+              if (callee.object.type === "Identifier" && callee.object.name === "Promise" && name === "reject" && kind !== "discard") return true
+            }
+            // Arguments are evaluated, but a callback passed as a value isn't called.
+            return current.arguments.some(argument => walk(argument, "discard", returnKind))
+          }
+        }
+        return Object.entries(current).some(([key, value]) =>
+          key !== "parent" && key !== "loc" && key !== "range" &&
+          (Array.isArray(value) ? value.some(child => walk(child, "discard", returnKind)) :
+            typeof value?.type === "string" && walk(value, "discard", returnKind))
+        )
+      }
+      return walk(node, kind, kind, invoke)
     }
 
     // Whether an `expected:` marker ends on the line before `line`, sits on it, or is inside `handler`.
@@ -129,8 +175,8 @@ export const failureObserved = {
           (handler !== undefined && comment.range[0] >= handler.range[0] && comment.range[1] <= handler.range[1]))
       )
 
-    const check = (node, line, form, handler) => {
-      handlers.push({ node, line, form, handler })
+    const check = (node, line, form, handler, effectHandler = false) => {
+      handlers.push({ node, line, form, handler, effectHandler })
     }
 
     return {
@@ -154,7 +200,7 @@ export const failureObserved = {
         if (isEffect(object)) {
           // The handler is the last argument; `catchTags` takes one per tag.
           const last = node.arguments.at(-1)
-          return check(node, line, `${object.name}.${name} handler`, last)
+          return check(node, line, `${object.name}.${name} handler`, last, true)
         }
         if (name !== "catch" || (object.type === "Identifier" && flow.has(object.name))) return
         check(node, line, ".catch handler", node.arguments[0])
@@ -165,10 +211,10 @@ export const failureObserved = {
         }
       },
       "Program:exit"() {
-        for (const { node, line, form, handler } of handlers) {
+        for (const { node, line, form, handler, effectHandler } of handlers) {
           if (marked(line, handler)) continue
           const parts = handler?.type === "ObjectExpression" ? handler.properties.map((entry) => entry.value) : [handler]
-          if (parts.every((part) => part !== undefined && observes(part, 0, new Set()))) continue
+          if (parts.every((part) => part !== undefined && observes(part, 0, new Set(), effectHandler))) continue
           context.report({ node, messageId: "unobserved", data: { form } })
         }
       },

@@ -358,7 +358,7 @@ Every failure handler in the browser app logs the failure once, at Warn or Error
 
 - **Will (Telegram, 2026-10-25 19:45):** "Can we add an in app way of reporting bugs in the app to the Smithers team? It should be built into our general observability on frontend so the agent adding this can do a general sweep to make sure we collect good metrics especially on errors".
 - **Scope:** `apps/mvp/src/**/*.{ts,tsx}` and `apps/mvp/plugins/*/src/**`, tests and `src/test/**` excluded.
-- **Enforced:** lint, `eslint.frontend-failures.js` (rule `frontend/failure-observed`), run by `pnpm lint`; its own tests are `eslint.frontend-failures.test.mjs` (`pnpm test:failure-lint`, target `failureLintTests`). It flags a `catch` clause, a promise's `.catch(...)`, an Effect module's `X.catch*(...)` (`Effect`, `Stream`, `Layer`, ...; the handler is the last argument, and each of `catchTags`'s) and an `onError` callback whose code neither logs through `Effect.log*` nor rethrows (`throw`, `X.fail*`, `X.die*`, `X.interrupt*`, `Promise.reject`, `reject`, or a tagged error returned or yielded). It follows the same-file helpers a handler calls or names, four deep. `console.*` and Effect's `Console` aren't records. A durable plan's or flow's `Node.catch` (`@smthrs/plan`, `@smthrs/flow`) is the engine's, which records the failed step (`flow.step.failed`), so it isn't checked.
+- **Enforced:** lint, `eslint.frontend-failures.js` (rule `frontend/failure-observed`), run by `pnpm lint`; its own tests are `eslint.frontend-failures.test.mjs` (`pnpm test:failure-lint`, target `failureLintTests`). It flags a `catch` clause, a promise's `.catch(...)`, an Effect module's `X.catch*(...)` (`Effect`, `Stream`, `Layer`, ...; the handler is the last argument, and each of `catchTags`'s) and an `onError` callback whose code neither logs through `Effect.log*` nor rethrows (`throw`, `X.fail*`, `X.die*`, `X.interrupt*`, `Promise.reject`, `reject`, or a tagged error returned or yielded). A logging or failing Effect counts only when returned to an Effect handler, yielded in its generator, composed into the returned Effect, or run at a boundary. A native catch or promise callback must execute its record; constructing an Effect does not run it. It follows invoked same-file helpers four deep and ignores unused nested functions. `console.*` and Effect's `Console` aren't records. A durable plan's or flow's `Node.catch` (`@smthrs/plan`, `@smthrs/flow`) is the engine's, which records the failed step (`flow.step.failed`), so it isn't checked.
 - **Named exceptions:** a comment on the line above the handler, on its line, or inside it: `// expected: <reason>` for a handler that handles no failure (a parse guard, a not-found that answers false, a superseded request), or `// recorded: <record>` for one whose failure another record already shows (such as `flow.dispatch`, which logs every failed dispatch). Each reason has three words or more. `Effect.ignore` and `Effect.orElse*` aren't handlers it reads; the 2026-10-25 sweep fixed the silent ones by hand ([Errors](observability.md#errors)).
 
 ### obs.agent-debuggable-dependencies
@@ -387,6 +387,8 @@ Every feature has e2e tests that run locally and against a live deployment.
 - **Jev asks:** Is this end-to-end code tied to one environment, such as a hard-coded localhost URL or port, local-only file paths, or a dev-only fixture, so the tests cannot run against a live deployment?
 
 ### test.e2e-declared-needs
+
+The source inventory resolves renamed, namespace and extended test APIs before checking for direct skips. A prerequisite checked from live per-account data uses `requiresVerified` with a registered need; the repository-reader journey uses `vibelangReader`, independently of the account’s role on the deployment’s repository.
 
 Every e2e test runs against every target or declares, with `requires(...)` from `e2e/target.ts`, the need its target lacks; it skips there with that need's reason. A test known to fail on a target is marked `broken(...)`. Nothing else skips, and only `e2e/target.ts` tells a local target from a deployment.
 
@@ -610,7 +612,7 @@ in-flight lookup for another request to await (2026-10-25 About incident).
 `Effect.cached/cachedWithTTL/cachedInvalidateWithTTL`, `ScopedCache.make/makeWith`,
 `RcMap.make`, `RcRef.make` and `Pool.make/makeWithTTL/makeWithStrategy` in production Worker sources. It
 resolves import aliases, forward-declared local aliases, assignment and
-destructuring aliases, including pipe-form calls. Factory
+destructuring aliases, including pipe-form calls. Reassignment preserves all reachable aliases: a later safe assignment cannot hide an earlier forbidden constructor call. Factory
 functions are checked too: a function can be called once during layer construction.
 This deliberately conservative rule does not attempt whole-program reachability.
 The sole memoization allowlist is `Effect.cached(Effect.succeed(<literal constant>))`;

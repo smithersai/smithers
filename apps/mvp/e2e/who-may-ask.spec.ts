@@ -4,7 +4,7 @@ import { expect, test } from "./devices"
 import { step, test as pageTest } from "./fixtures"
 import { firstRun, firstRunStep } from "./firstRun"
 import { connectionRows, fillYourModel } from "./personal-model"
-import { requires, scriptedAgent } from "./target"
+import { requires, requiresVerified, scriptedAgent } from "./target"
 import { expectServerError } from "./watch"
 
 // Who may ask Smithers (ruling AUTH-8, decision 0122): anyone signed in, with their own model, in a conversation on a
@@ -131,7 +131,7 @@ pageTest("who may ask: on a repository the account only reads, the branch says M
   // smithersai/vibelang has the App, and the test account only reads it on a deployment; where it is a Member there,
   // as local development's developer is, there is nothing to refuse.
   const role = ((await (await page.request.get("/api/repos/smithersai/vibelang/role")).json()) as { role?: string | null }).role
-  pageTest.skip(role === "admin" || role === "maintainer" || role === "member", "the account is a Member or above on smithersai/vibelang here")
+  requiresVerified("vibelangReader", role !== "admin" && role !== "maintainer" && role !== "member")
   expectServerError(403, "/api/branches")
   expectServerError(403, "/api/shapes/*")
   await step("Open smithersai/vibelang's main: Members can ask Smithers., and no composer", async () => {
