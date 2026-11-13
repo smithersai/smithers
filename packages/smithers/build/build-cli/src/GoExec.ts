@@ -487,7 +487,8 @@ const listed = async (
   context: Context,
   tests = false
 ): Promise<ReadonlyArray<GoListRow>> =>
-  jsonRows(
+  // With no pattern, Go lists the current package rather than an empty set.
+  patterns.length === 0 ? [] : jsonRows(
     await execFile(
       goPath,
       ["list", ...(deps ? ["-deps"] : []), ...(tests ? ["-test"] : []), "-json", ...patterns],
@@ -792,6 +793,17 @@ export const planRule = async (
         readSet: []
       }
     }
+    if (packages.length === 0) {
+      return {
+        refusal: "the Go package selection is empty",
+        cwd,
+        env,
+        outDirs: [],
+        writeSet: [],
+        readSet: authority,
+        closureIdentity: { packages: [], files: [] }
+      }
+    }
     const testFlags = [
       ...(attrs["timeout"] === undefined ? [] : ["-timeout", String(attrs["timeout"])]),
       // Go's own default for -parallel is GOMAXPROCS, so "cpus" is the
@@ -840,6 +852,17 @@ export const planRule = async (
   }
   if (rule === "Go.Generate") {
     const packages = await selectedPackages(attrs["pkgs"], context, goPath, listEnv)
+    if (packages.length === 0) {
+      return {
+        refusal: "the Go package selection is empty",
+        cwd,
+        env,
+        outDirs: [],
+        writeSet: [],
+        readSet: authority,
+        closureIdentity: { packages: [], files: [] }
+      }
+    }
     // `go generate` scans `_test.go` files for directives too.
     const graph = await closure(packages, context, goPath, listEnv, true)
     return {

@@ -412,6 +412,7 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
       goPath()
     )
     expect(planned.closureIdentity).toEqual({ packages: [], files: [] })
+    expect(await host.calls()).toEqual([])
   })
 
   it("refuses a gotestsum runner that is not on PATH", async () => {

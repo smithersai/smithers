@@ -203,6 +203,87 @@ describe.runIf(olderGo !== undefined)("Go selected SDK execution", () => {
   }, 120_000)
 })
 
+describe.runIf(hasGo)("Go empty package selections", () => {
+  it.each([true, false])("keeps an empty difference empty with root package %s", async (rootPackage) => {
+    const root = await fixture()
+    if (rootPackage) await write(root, "root.go", "package root\n")
+    const loaded = await PackageLoader.load(await PackageDiscovery.discover(root))
+    const context: GoExec.Context = { root, packagePath: "", workspace: loaded.workspace }
+    const all = S.Go.Packages({ pkgs: ["./..."] })
+    const pkgs = S.Files.difference(all, all)
+    for (const rule of ["Go.Packages", "Go.Test", "Go.Generate"]) {
+      const planned = await GoExec.planRule(rule, { pkgs, changes: ["generated.go"] }, context, goPath!)
+      expect(planned.closureIdentity).toEqual({ packages: [], files: [] })
+      expect(planned.readSet).toEqual(["go.mod", "go.sum"])
+      expect(planned.argv).toBeUndefined()
+      expect(planned.writeSet).toEqual([])
+      expect(planned.refusal).toBe(rule === "Go.Packages" ? undefined : "the Go package selection is empty")
+    }
+  })
+
+  it("does not start go for empty patterns or selections it cannot resolve", async () => {
+    const root = await fixture()
+    const loaded = await PackageLoader.load(await PackageDiscovery.discover(root))
+    const context: GoExec.Context = { root, packagePath: "", workspace: loaded.workspace }
+    // An absent executable makes any accidental probe fail, without a stand-in for go.
+    const absentGo = NodePath.join(root, "absent-go")
+    const empty = S.Go.Packages({ pkgs: [] })
+    for (const pkgs of [[], empty, { _tag: "TargetFiles", target: 1 }, S.Files.difference(empty, empty)]) {
+      for (const rule of ["Go.Packages", "Go.Test", "Go.Generate"]) {
+        const planned = await GoExec.planRule(rule, { pkgs, changes: ["generated.go"] }, context, absentGo)
+        expect(planned.closureIdentity).toEqual({ packages: [], files: [] })
+        expect(planned.argv).toBeUndefined()
+        expect(planned.writeSet).toEqual([])
+      }
+    }
+  })
+
+  it("does not subtract the root package for a right operand with no Go patterns", async () => {
+    const root = await fixture()
+    await write(root, "root.go", "package root\n")
+    const loaded = await PackageLoader.load(await PackageDiscovery.discover(root))
+    const planned = await GoExec.planRule(
+      "Go.Test",
+      { pkgs: S.Files.difference(S.Go.Packages({ pkgs: ["./"] }), S.Filegroup({ srcs: [S.file("root.go")] })) },
+      { root, packagePath: "", workspace: loaded.workspace },
+      goPath!
+    )
+    expect(planned.refusal).toBeUndefined()
+    expect(planned.argv).toEqual([goPath, "test", "example.test/fixture"])
+    expect(planned.readSet).toContain("root.go")
+  })
+
+  it("refuses empty test and generate targets without running root tests or generators", async () => {
+    const root = await fixture()
+    await write(root, "root.go", "package root\n//go:generate sh -c \"printf generated > generated.txt\"\n")
+    await write(
+      root,
+      "root_test.go",
+      "package root\nimport \"testing\"\nfunc TestRoot(t *testing.T) { t.Fatal(\"unselected root test ran\") }\n"
+    )
+    await write(
+      root,
+      "PACKAGE.ts",
+      [
+        "import { Smithers as S } from \"@smthrs/targets\"",
+        "const all = S.Go.Packages({ pkgs: [\"./...\"] })",
+        "const pkgs = S.Files.difference(all, all)",
+        "const test = S.Go.Test({ pkgs })",
+        "const generate = S.Go.Generate({ pkgs, changes: [\"generated.txt\"] })",
+        "export const Package = S.Package({ targets: { test, generate } })",
+        ""
+      ].join("\n")
+    )
+    for (const args of [["//:test"], ["//:generate", "--write"]]) {
+      const result = await serve(root, args)
+      expect(result.exitCode).not.toBe(0)
+      expect(result.output + result.logs).toContain("the Go package selection is empty")
+      expect(result.output + result.logs).not.toContain("unselected root test ran")
+    }
+    await expect(Fs.stat(NodePath.join(root, "generated.txt"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+})
+
 describe.runIf(hasGo)("Go package execution", () => {
   it("loads, plans without NotImplemented, executes tests/build/tool edge/stamps, and hits", async () => {
     const root = await fixture()

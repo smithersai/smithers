@@ -36,6 +36,11 @@ hit. `Go.Test`, `Go.Fuzz`, `Go.Generate` and `Go.Packages` add the test files
 and test-only imports (`go list -deps -test`); `Go.Binary` does not, so a test
 edit never rebuilds a binary.
 
+An empty package selection has an empty closure; it never falls back to the
+module-root package. `Go.Test` and `Go.Generate` refuse with
+`the Go package selection is empty` when no packages remain, including when
+`S.Files.difference` subtracts every package.
+
 A target that names a selection in `data` reads its closure: `go.mod`,
 `go.sum` and every file above, test files included. A confined shell that runs
 `go test` over the selection needs nothing else declared:
