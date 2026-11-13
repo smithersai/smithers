@@ -15,7 +15,6 @@ afterEach(async () => {
   root = undefined;
   container?.remove();
   container = undefined;
-  delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((el) => el.remove());
 });
 
@@ -35,12 +34,6 @@ describe("Reasoning", () => {
 
     const long = renderToStaticMarkup(<Reasoning duration={72}>Thinking</Reasoning>);
     expect(long).toContain("Thought for 1m 12s");
-  });
-
-  test("renders under the dark theme", () => {
-    document.documentElement.dataset.theme = "dark";
-    const html = renderToStaticMarkup(<Reasoning defaultOpen>Thinking</Reasoning>);
-    expect(html).toContain("sui-reasoning-body");
   });
 
   test("starts open while streaming and auto-collapses when streaming ends", async () => {

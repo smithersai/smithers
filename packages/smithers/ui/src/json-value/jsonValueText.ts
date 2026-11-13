@@ -48,11 +48,11 @@ export const jsonValueText = (value: JsonValueData): string => {
 /** A size in bytes as it reads: `512 B`, `1.5 KB`, `16 KB`, `2.3 MB` (1 KB = 1,024 B). */
 export const formatBytes = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
-  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (Math.round(bytes) < 1024) return `${Math.round(bytes)} B`;
   const units = ["KB", "MB", "GB"] as const;
   let size = bytes / 1024;
   let unit = 0;
-  while (size >= 1024 && unit < units.length - 1) {
+  while (Math.round(size) >= 1024 && unit < units.length - 1) {
     size /= 1024;
     unit += 1;
   }

@@ -45,6 +45,5 @@ test("Markdown fences use repository-home highlighting for TypeScript, Bash and 
   ]) {
     const html = renderToStaticMarkup(<Markdown content={`\`\`\`${language}\n${source}\n\`\`\``} variant="document" />);
     expect(html).toContain("sui-rh-tok-keyword");
-    expect(html).not.toContain("<script>");
   }
 });

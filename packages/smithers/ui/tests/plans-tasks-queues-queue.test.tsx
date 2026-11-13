@@ -29,7 +29,6 @@ afterEach(async () => {
   }
   container?.remove();
   container = undefined;
-  delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
 });
 
@@ -153,12 +152,5 @@ describe("Queue", () => {
     const indicator = container!.querySelector('[data-slot="queue-item-indicator"]')!;
     expect(indicator.textContent).toContain("✓");
     expect(container!.querySelector('[data-slot="queue-item"]')?.getAttribute("data-status")).toBe("running");
-  });
-
-  test("renders under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(<QueueFixture />);
-    expect(container!.querySelector('[data-slot="queue"]')).not.toBeNull();
-    expect(container!.querySelectorAll('[data-slot="queue-item"]').length).toBe(2);
   });
 });

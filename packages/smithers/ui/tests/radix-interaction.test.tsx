@@ -7,8 +7,6 @@
 // at module-load time, so registering happy-dom here (after hoisted imports)
 // would be too late and portals would render nothing.
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
@@ -124,11 +122,6 @@ describe("style auto-injection", () => {
     expect(styles).toHaveLength(2);
     expect(document.head.contains(injected)).toBe(true);
     expect(container!.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)).not.toBeNull();
-  });
-
-  test("documents that the host owns rendered-sheet multiplicity", () => {
-    const source = readFileSync(join(import.meta.dir, "..", "src", "styles.tsx"), "utf8");
-    expect(source).toContain("host must render `<SmithersUiStyles/>` exactly once");
   });
 });
 

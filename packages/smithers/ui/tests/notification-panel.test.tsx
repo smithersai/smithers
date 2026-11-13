@@ -739,5 +739,9 @@ test("the panel's sheet: fixed at the top-right, its list scrolls, full width on
     onExpandedChange={noop} onHide={noop} note="Not found" /></ul>);
   expect(byText("Open")).toBeNull();
   expect($("[data-slot=notification-row]")!.getAttribute("aria-keyshortcuts")).toBe("E H");
-  await press($("[data-slot=notification-row]")!, "o");
+  const openKey = new KeyboardEvent("keydown", { key: "o", bubbles: true, cancelable: true });
+  await act(async () => {
+    $("[data-slot=notification-row]")!.dispatchEvent(openKey);
+  });
+  expect(openKey.defaultPrevented).toBe(false);
  });

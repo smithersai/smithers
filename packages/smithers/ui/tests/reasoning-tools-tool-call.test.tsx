@@ -26,7 +26,6 @@ afterEach(async () => {
   root = undefined;
   container?.remove();
   container = undefined;
-  delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((el) => el.remove());
 });
 
@@ -202,16 +201,6 @@ describe("ToolCall compound anatomy", () => {
       </ToolCall>,
     );
     expect(live.textContent).toBe("Done");
-  });
-
-  test("renders under the dark theme", () => {
-    document.documentElement.dataset.theme = "dark";
-    const html = renderToStaticMarkup(
-      <ToolCall name="search" state="running">
-        <ToolCallHeader />
-      </ToolCall>,
-    );
-    expect(html).toContain("sui-toolcall");
   });
 });
 

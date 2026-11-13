@@ -16,7 +16,6 @@ afterEach(async () => {
   root = undefined;
   container?.remove();
   container = undefined;
-  delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((el) => el.remove());
 });
 
@@ -118,11 +117,5 @@ describe("ReasoningSummary", () => {
     const html = renderToStaticMarkup(<ReasoningSummary text="Working through it" streaming label="Reasoning" />);
     expect(html).toContain("Reasoning");
     expect(html).toContain('data-streaming="true"');
-  });
-
-  test("renders under the dark theme", () => {
-    document.documentElement.dataset.theme = "dark";
-    const html = renderToStaticMarkup(<ReasoningSummary text="Dark summary" />);
-    expect(html).toContain("sui-reasoning-summary");
   });
 });

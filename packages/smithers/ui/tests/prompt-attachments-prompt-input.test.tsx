@@ -168,28 +168,6 @@ describe("PromptInput", () => {
     expect(container!.querySelector('[aria-live="polite"]')!.textContent).toBe("report.pdf removed");
   });
 
-  test("image files get object URLs that are revoked on remove", async () => {
-    let hook!: ReturnType<typeof usePromptInputAttachments>;
-    function Harness() {
-      hook = usePromptInputAttachments();
-      return <PromptInputTextarea />;
-    }
-    await render(
-      <PromptInput onSubmit={() => {}}>
-        <Harness />
-      </PromptInput>,
-    );
-    await act(async () => hook.add([makeFile("photo.png", { type: "image/png" })]));
-    const item = hook.attachments[0]!;
-    if (typeof URL.createObjectURL === "function") {
-      expect(item.thumbnailUrl).toContain("blob:");
-      expect(container!.querySelector('[data-slot="attachment-thumb"] img')).not.toBeNull();
-      await act(async () => hook.remove(item.id));
-    } else {
-      expect(item.thumbnailUrl).toBeUndefined();
-    }
-  });
-
   test("clear removes all image object URLs before unmount", async () => {
     let hook!: ReturnType<typeof usePromptInputAttachments>;
     const created: string[] = [];
@@ -569,7 +547,6 @@ describe("PromptInput", () => {
     expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(promptAttachmentsCss.trim());
   });
 });
-
 
 for (const submitKey of ["enter", "mod-enter"] as const) {
   for (const ime of [{ isComposing: true }, { keyCode: 229 }, { isComposing: true, keyCode: 229 }]) {

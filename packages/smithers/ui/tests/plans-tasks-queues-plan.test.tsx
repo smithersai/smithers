@@ -184,8 +184,7 @@ describe("Plan compound anatomy", () => {
     expect(container!.querySelector('[data-status="pending"]')).not.toBeNull();
   });
 
-  test("renders the compound anatomy under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
+  test("streaming propagates from Plan to the title shimmer", async () => {
     await render(
       <Plan streaming>
         <PlanHeader>

@@ -86,6 +86,22 @@ describe("formatBytes", () => {
     expect(formatBytes(5 * 1024 ** 4)).toBe("5120 GB");
   });
 
+  test.each([
+    [1023.49, "1023 B"],
+    [1023.5, "1 KB"],
+    [1023.99, "1 KB"],
+    [1048063, "1023 KB"],
+    [1048064, "1 MB"],
+    [1048575, "1 MB"],
+    [1048576, "1 MB"],
+    [1073217535, "1023 MB"],
+    [1073217536, "1 GB"],
+    [1073741823, "1 GB"],
+    [1073741824, "1 GB"],
+  ] as const)("promotes a rounded size at the unit boundary: %s", (bytes, expected) => {
+    expect(formatBytes(bytes)).toBe(expected);
+  });
+
   test("an unreadable or negative size is 0 B", () => {
     expect(formatBytes(-1)).toBe("0 B");
     expect(formatBytes(Number.NaN)).toBe("0 B");

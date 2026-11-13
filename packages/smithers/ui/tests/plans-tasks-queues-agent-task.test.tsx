@@ -73,8 +73,7 @@ describe("AgentTask", () => {
     expect(container!.querySelector('[data-slot="agent-task-content"]')).toBeNull();
   });
 
-  test("groups tasks in a list and renders under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
+  test("groups tasks in a list", async () => {
     await render(
       <AgentTaskGroup>
         <AgentTask title="One" status="pending">

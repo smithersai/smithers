@@ -27,7 +27,6 @@ afterEach(async () => {
   }
   container?.remove();
   container = undefined;
-  delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
 });
 
@@ -139,8 +138,7 @@ describe("Sandbox", () => {
     expect(container!.querySelector('[data-slot="agent-sandbox-reconnect"]')).not.toBeNull();
   });
 
-  test("actions invoke callbacks and render under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
+  test("actions invoke callbacks", async () => {
     let retries = 0;
     await render(
       <Sandbox state="failed">

@@ -131,7 +131,10 @@ export const clockDuration = (ms: number): string => {
 /** A step's duration: `12 ms`, `1.2 s`, `42 s`, then a clock from a minute on. */
 export const stepDuration = (ms: number): string => {
   const value = Number.isFinite(ms) && ms > 0 ? ms : 0;
-  if (value < 1000) return `${Math.round(value)} ms`;
+  if (value < 1000) {
+    const rounded = Math.round(value);
+    return rounded < 1000 ? `${rounded} ms` : "1.0 s";
+  }
   if (value < 10_000) return `${(Math.floor(value / 100) / 10).toFixed(1)} s`;
   if (value < 60_000) return `${Math.floor(value / 1000)} s`;
   return clockDuration(value);

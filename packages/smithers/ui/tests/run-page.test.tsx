@@ -133,6 +133,18 @@ describe("the run vocabulary", () => {
     expect(stepDuration(Number.POSITIVE_INFINITY)).toBe("0 ms");
   });
 
+  test.each([
+    [999.49, "999 ms"],
+    [999.5, "1.0 s"],
+    [999.99, "1.0 s"],
+    [1000, "1.0 s"],
+    [1099.99, "1.0 s"],
+    [9999.99, "9.9 s"],
+    [59999.99, "59 s"],
+  ] as const)("promotes rounded milliseconds without rounding later units: %s", (ms, expected) => {
+    expect(stepDuration(ms)).toBe(expected);
+  });
+
   test("until: seconds, minutes, hours, and now once due", () => {
     expect(untilWords(10_000, 2_000)).toBe("in 8 s");
     expect(untilWords(2_000 + 125_000, 2_000)).toBe("in 2 m");

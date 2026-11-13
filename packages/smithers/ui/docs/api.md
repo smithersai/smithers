@@ -1390,10 +1390,10 @@ The pure helpers the components use, for a terminal or a test:
 | `runWord(state, { cancelRequested })` | `pending` → `Queued`, `running` → `Working`, `suspended` → `Waiting`, each `Stopping` once a stop is requested; `completed` → `Done`, `failed` → `Failed`, `cancelled` → `Stopped`. |
 | `RUN_WORDS`, `RUN_WORD_GLYPHS`, `RUN_WORD_TONES`, `isSettled` | The closed vocabulary (`RunWord`), adding `On another device`, `Expired` and `No access`; a glyph and a badge tone per word. `Failed` and `No access` are ember; `Done` is success; `Working` is brand and pulses; the rest are quiet. |
 | `STEP_GLYPHS`, `STEP_WORDS` | A step's state (`StepState`: `running`, `completed`, `failed`, `waiting`, `skipped`) as a glyph and a word. |
-| `clockDuration(ms)`, `stepDuration(ms)`, `untilWords(atMs, now)`, `offsetWords(atMs, originMs)`, `stepElapsed(step, now)` | `0:42` and `1:02:03`; `12 ms`, `1.2 s`, `42 s`, then a clock; `in 8 s`; `+1.2 s`; a step's elapsed time, to `now` while open. |
+| `clockDuration(ms)`, `stepDuration(ms)`, `untilWords(atMs, now)`, `offsetWords(atMs, originMs)`, `stepElapsed(step, now)` | `0:42` and `1:02:03`; `12 ms`, `1.2 s`, `42 s`, then a clock (rounded milliseconds reaching `1000` show `1.0 s`); `in 8 s`; `+1.2 s`; a step's elapsed time, to `now` while open. |
 | `waterfallBars(steps, now)`, `waterfallAxis(steps, now)` | Each step's bar (`WaterfallBar`: `left` and `width` in percent, `instant`, `open`) on the shared axis. A zero-width axis makes every bar a marker at the start. |
 | `attemptWords`, `waitWords` | One attempt (`2 ✓`, `1 ✕ unavailable`); a wait (`timer · since 10s ago · wakes in 1 m`). |
-| `jsonValueText`, `formatBytes` | A value's text as shown; `512 B`, `1.5 KB`, `16 KB`. |
+| `jsonValueText`, `formatBytes` | A value's text as shown; `512 B`, `1.5 KB`, `16 KB`. A rounded size reaching `1024` promotes to the next unit, up to `GB`. |
 | `draftStatusLine`, `questionValue`, `isAssumed`, `changedAnswers`, `answersToSend` | `◌ Drafting · round 2`, `◆ Needs you`, `✓ Ready`, `✕ Failed`, `✓ Saved`, `✓ Proposed`; what a question's field shows; whether it shows the assumed default; the answers that change the draft; what Answer sends: the changed answers and each unanswered blocking question at the value its field shows (its default until a person types), never an empty field. |
 
 `jsonValueCss`, `runPageCss` and `flowDraftViewCss` are part of `smithersUiCss`.

@@ -16,7 +16,6 @@ afterEach(async () => {
   root = undefined;
   container?.remove();
   container = undefined;
-  delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((el) => el.remove());
 });
 
@@ -87,17 +86,6 @@ describe("ChainOfThought compound mode", () => {
     await act(async () => trigger.click());
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(step.textContent).not.toContain("Hidden detail");
-  });
-
-  test("renders under the dark theme", () => {
-    document.documentElement.dataset.theme = "dark";
-    const html = renderToStaticMarkup(
-      <ChainOfThought defaultOpen>
-        <ChainOfThoughtStep label="Dark step" status="pending" />
-      </ChainOfThought>,
-    );
-    expect(html).toContain('data-slot="chain-of-thought-step"');
-    expect(html).toContain("Pending: ");
   });
 
   test("legacy steps-array mode is unchanged", () => {

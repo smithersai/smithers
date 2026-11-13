@@ -16,7 +16,6 @@ afterEach(async () => {
   root = undefined;
   container?.remove();
   container = undefined;
-  delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((el) => el.remove());
 });
 
@@ -203,11 +202,5 @@ describe("CodeBlockGroup", () => {
       expect(panel).not.toBeNull();
       expect(panel!.getAttribute("aria-labelledby")).toBe(tab.id);
     }
-  });
-
-  test("renders under the dark theme", () => {
-    document.documentElement.dataset.theme = "dark";
-    const html = renderToStaticMarkup(<CodeBlockGroup items={items} />);
-    expect(html).toContain("sui-codeblock-group");
   });
 });

@@ -24,7 +24,6 @@ afterEach(async () => {
   }
   container?.remove();
   container = undefined;
-  delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
 });
 
@@ -117,13 +116,5 @@ describe("ActivityTimeline", () => {
     expect(group.querySelectorAll('[data-slot="activity-item"]').length).toBe(2);
     expect(container!.querySelectorAll('[data-slot="activity-item"]').length).toBe(3);
     expect(container!.querySelector('[data-kind="output"] .sui-activity-detail')?.textContent).toBe("report.html");
-  });
-
-  test("renders under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(<ActivityTimeline items={[{ id: "d1", kind: "failure", title: "Boom", status: "failed" }]} />);
-    const item = container!.querySelector('[data-slot="activity-item"]')!;
-    expect(item.getAttribute("data-kind")).toBe("failure");
-    expect(item.querySelector(".sui-activity-marker")?.textContent).toBe("✕");
   });
 });

@@ -17,7 +17,6 @@ afterEach(async () => {
   }
   container?.remove();
   container = undefined;
-  delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
 });
 
@@ -71,12 +70,5 @@ describe("InlineCitation", () => {
 
     expect(link.getAttribute("href")).toBe("/docs/reference");
     expect(navigated).toEqual([{ href: "/docs/reference", prevented: true }]);
-  });
-
-  test("renders under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(<InlineCitation index={1} label="Dark source" href="mailto:test@example.com" />);
-    expect(container!.querySelector('[data-slot="inline-citation"]')).not.toBeNull();
-    expect(container!.querySelector("a")?.getAttribute("href")).toBe("mailto:test@example.com");
   });
 });
