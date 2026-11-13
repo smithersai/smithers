@@ -10,7 +10,7 @@ import { apply, decideWithinCapacity, empty, type History, type Intent, MAX_NOTE
 import { admitsLine, pairCut } from "./stackDecision.vibe"
 import { bucketOrder, topological } from "./bucketDecision.vibe"
 import { areaOf, BOOTSTRAP } from "./areas.vibe"
-import { entryUse, evidenceStep, foldedTitle, joins, ownsLine, sentenceCut, sentenceEnded } from "./seedDecision.vibe"
+import { carriesOwnTitle, entryUse, evidenceStep, fitsIn, foldedTitle, foldsIntoMerge, joins, ownsLine, sentenceCut, sentenceEnded } from "./seedDecision.vibe"
 import { evidenceStart, firstLine, regeneratedTitle, revertedTitle } from "./seedTextDecision.vibe"
 import { redactText, sentenceEnds, sentenceTail } from "./seedSanitizeDecision.vibe"
 
@@ -124,8 +124,8 @@ export function endsSentence(text: string): boolean {
 export function wholeSentences(text: string, max: number): string {
   const trimmed = sentenceTail(text.trim())
   if (trimmed === "") return ""
-  const ended = endsSentence(trimmed) ? trimmed : `${trimmed}.`
-  if (ended.length <= max) return ended
+  const ended = sentenceEnded(trimmed) ? trimmed : `${trimmed}.`
+  if (fitsIn(ended.length, max)) return ended
   const ends = sentenceEnds(ended)
   const cut = sentenceCut(ends, ended.length, max, MAX_NOTE)
   return cut < 0 ? "" : ended.slice(0, cut)
@@ -208,7 +208,7 @@ export function seedOf(repository: string, commits: ReadonlyArray<RawCommit>, en
   const buckets = bucketsOf(commits)
   for (const { commit, step } of buckets) {
     // A merge's side commits fold into the merge's mythical commit (below), not into commits of their own.
-    if (step !== commit.sha) continue
+    if (foldsIntoMerge(step, commit.sha)) continue
     const title = titleOf(commit.description)
     const entry = landed.get(title)?.shift()
     const reverted = revertedTitle(title)
@@ -265,7 +265,7 @@ export function seedOf(repository: string, commits: ReadonlyArray<RawCommit>, en
     return {
       sha: commit.sha.slice(0, SHA_LENGTH),
       change: commit.change.slice(0, CHANGE_LENGTH),
-      title: title === group.title ? "" : clip(title, MAX_TITLE),
+      title: carriesOwnTitle(title, group.title) ? clip(title, MAX_TITLE) : "",
       into: ids.get(group)!,
     }
   })
@@ -275,7 +275,7 @@ export function seedOf(repository: string, commits: ReadonlyArray<RawCommit>, en
 
 /** `text` in at most `max` units, cut short with "…" and never inside a surrogate pair (stackDecision, proved). */
 function clip(text: string, max: number): string {
-  return text.length <= max ? text : text.slice(0, pairCut(text, max - 1)).trimEnd() + "…"
+  return fitsIn(text.length, max) ? text : text.slice(0, pairCut(text, max - 1)).trimEnd() + "…"
 }
 
 /** A group's notes: what the queue refused or replaced (tried), how it landed and what its messages state (evidence). */

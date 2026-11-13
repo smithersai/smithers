@@ -4,7 +4,7 @@ import { ALLOWANCES, applySandbox, decideSandbox, emptySandboxLedger, leaseMilli
 import { Factory, Refused, Unavailable, type SandboxSnapshot } from "./Factory.vibe"
 import { meter, meterDelayMilliseconds, monthOf, nextMonth, millisecondOf, snapshotOf } from "./sandboxMeter.vibe"
 import { mayStart, SandboxPolicy } from "./sandboxPolicy.vibe"
-import { alarmKind, causeOf, clearsPending, commandOutput, commandRefusal, completionRefusal, completionStep, firstSandbox, forbiddenCaller, foreignLedger, freshAdmission, intentType, leaseShare, mustStopAll, operationKey, outOfMinutes, pendingGeneration, receiptCause, receiptKind, receiptRefused, recoveryOf, replayAnswer, replayConflict, safeRoom, sandboxConversation, stepOutcome, storedNumber, storedText, transcriptStart } from "./sandboxHostDecision.vibe"
+import { alarmKind, causeOf, recordsGeneration, clearsPending, commandOutput, commandRefusal, completionRefusal, completionStep, firstSandbox, forbiddenCaller, foreignLedger, freshAdmission, intentType, leaseShare, mustStopAll, operationKey, outOfMinutes, pendingGeneration, receiptCause, receiptKind, receiptRefused, recoveryOf, replayAnswer, replayConflict, safeRoom, sandboxConversation, stepOutcome, storedNumber, storedText, transcriptStart } from "./sandboxHostDecision.vibe"
 
 /** `reason`: a cancelled start's content-free cause (failureReason), kept so its receipt names it. */
 export interface Pending { readonly kind: "start" | "stop" | "command" | "cancel-start"; readonly conversation: string; readonly operationId: string; readonly generation: number; readonly command: string; readonly reason?: string }
@@ -244,7 +244,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     if (admission === "generation-overflow") throw new Unavailable({ reason: "generation-overflow" })
     if (admission !== "pending") throw new Refused({ refusal: admission })
     const pending = { ...request, generation: pendingGeneration(request.kind, snapshot.generation, request.generation) }
-    const next = { ...state, pending, generations: request.kind === "start" ? { ...state.generations, [request.conversation]: pending.generation } : state.generations }
+    const next = { ...state, pending, generations: recordsGeneration(request.kind) ? { ...state.generations, [request.conversation]: pending.generation } : state.generations }
     try store.write(next)
     try arm(next)
     return { type: "pending" as const, state: next, pending, now }

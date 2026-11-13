@@ -297,3 +297,10 @@ export function transcriptStart(length: number): number {
 export function firstSandbox(count: number): boolean {
   return count === 0
 }
+
+/** Only a start records its conversation's generation; a stop or command leaves the generations as they are. */
+//@ verify
+//@ ensures \result == (kind == "start")
+export function recordsGeneration(kind: string): boolean {
+  return kind === "start"
+}

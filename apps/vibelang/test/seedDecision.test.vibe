@@ -4,6 +4,7 @@ import { MAX_NOTE } from "../src/history/mythical.vibe"
 import { areaOf, AREAS, FOUNDATIONS } from "../src/history/areas.vibe"
 import { evidenceOf, intentsOf, type QueueEntry, type RawCommit, seedOf, wholeSentences } from "../src/history/seed.vibe"
 import { entryUse, evidenceStep, foldedTitle, joins, lastFitEnd, sentenceCut } from "../src/history/seedDecision.vibe"
+import { carriesOwnTitle, fitsIn, foldsIntoMerge } from "../src/history/seedDecision.vibe"
 import { areaIndex } from "../src/history/areaDecision.vibe"
 
 function linear(descriptions: ReadonlyArray<string>): ReadonlyArray<RawCommit> {
@@ -92,5 +93,13 @@ describe("a fold's title", () => {
     const seed = seedOf("r", linear(["feat: a", "chore(docs): regenerate"]), [])
     const folds = intentsOf(seed).filter((intent) => intent.type === "Fold")
     expect(folds.map((fold) => fold.type === "Fold" ? fold.title : "")).toEqual(["feat: a", "chore(docs): regenerate"])
+  })
+})
+
+describe("the seed's text fit, side commits and real titles", () => {
+  it("fits a text of at most max units, folds a side commit into its merge, and stores a real title only when it differs", () => {
+    expect([fitsIn(3, 3), fitsIn(4, 3), fitsIn(0, 0)]).toEqual([true, false, true])
+    expect([foldsIntoMerge("m", "s"), foldsIntoMerge("m", "m")]).toEqual([true, false])
+    expect([carriesOwnTitle("a", "b"), carriesOwnTitle("a", "a")]).toEqual([true, false])
   })
 })

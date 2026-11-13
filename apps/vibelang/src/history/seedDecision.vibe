@@ -119,3 +119,26 @@ export function sentenceEnded(text: string): boolean {
 export function ownsLine(line: string): boolean {
   return /^(?:[A-Z][\w-]*:\s|[-*•]\s|\d+[.)]\s)/.test(line)
 }
+
+// 0018 third-lane batch 50: the seed's last inline decisions.
+
+/** A note or title of `length` units fits in `max` as it is; a longer one is cut. */
+//@ verify
+//@ ensures \result == (length <= max)
+export function fitsIn(length: number, max: number): boolean {
+  return length <= max
+}
+
+/** A merge's side commit (its bucket's step is the merge) folds into the merge's mythical commit, not one of its own. */
+//@ verify
+//@ ensures \result == (step != sha)
+export function foldsIntoMerge(step: string, sha: string): boolean {
+  return step !== sha
+}
+
+/** A real commit carries its own title only when it differs from its mythical commit's; the view shows the group's. */
+//@ verify
+//@ ensures \result == (title != groupTitle)
+export function carriesOwnTitle(title: string, groupTitle: string): boolean {
+  return title !== groupTitle
+}

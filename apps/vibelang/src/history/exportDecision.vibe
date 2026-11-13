@@ -136,3 +136,91 @@ export function writable(names: RefNames, ref: string): boolean {
   if (ref === "refs/heads/main" || ref === "refs/heads/vibe") return false
   return ref === names.mythical || ref === names.notes || ref === names.manifest
 }
+
+// 0018 third-lane batch 50: the planner's and the read-back check's own decisions.
+
+/** A mythical commit's parents: none for the first commit, else the commit before it. */
+//@ verify
+//@ ensures parent == "" ==> \result.length == 0
+//@ ensures parent != "" ==> \result.length == 1 && \result[0] == parent
+export function parentsOf(parent: string): ReadonlyArray<string> {
+  return parent === "" ? [] : [parent]
+}
+
+/** A commit read back is linked when its parents are exactly `parentsOf(parent)`: the chain stays linear. */
+//@ verify
+//@ ensures parent == "" ==> \result == (parents.length == 0)
+//@ ensures parent != "" ==> \result == (parents.length == 1 && parents[0] == parent)
+export function linkedTo(parents: ReadonlyArray<string>, parent: string): boolean {
+  if (parent === "") return parents.length === 0
+  return parents.length === 1 && parents[0] === parent
+}
+
+/** Where a checked commit's tree comes from: the real commit it folds; for an empty reservation, its parent, or git's empty tree first. */
+//@ verify
+//@ ensures source != "" ==> \result == "source"
+//@ ensures source == "" && parent != "" ==> \result == "parent"
+//@ ensures source == "" && parent == "" ==> \result == "empty"
+export function treeOrigin(source: string, parent: string): "source" | "parent" | "empty" {
+  if (source !== "") return "source"
+  return parent === "" ? "empty" : "parent"
+}
+
+/** One new commit's verdict: an unlinked commit is "linear", a tree that is not its origin's is "tree", else "ok". */
+//@ verify
+//@ ensures !linked ==> \result == "linear"
+//@ ensures linked && !treeMatches ==> \result == "tree"
+//@ ensures linked && treeMatches ==> \result == "ok"
+export function commitVerdict(linked: boolean, treeMatches: boolean): "linear" | "tree" | "ok" {
+  if (!linked) return "linear"
+  return treeMatches ? "ok" : "tree"
+}
+
+/** A candidate's manifest names the candidate's own two tips; otherwise the check refuses it as "linear". */
+//@ verify
+//@ ensures \result == (manifestMythical == mythical && manifestNotes == notes)
+export function headerAgrees(manifestMythical: string, manifestNotes: string, mythical: string, notes: string): boolean {
+  return manifestMythical === mythical && manifestNotes === notes
+}
+
+/** The checked chain ends at the candidate's mythical tip. */
+//@ verify
+//@ ensures \result == (last == mythical)
+export function chainEnds(last: string, mythical: string): boolean {
+  return last === mythical
+}
+
+/** An object (a note blob, the notes tree) is written only when it differs from the last publication's. */
+//@ verify
+//@ ensures \result == (before != after)
+export function writesChange(before: string, after: string): boolean {
+  return before !== after
+}
+
+/** The manifest is written when there is no last one, or its text changed. */
+//@ verify
+//@ ensures \result == (!hasPrevious || before != after)
+export function manifestChanged(hasPrevious: boolean, before: string, after: string): boolean {
+  return !hasPrevious || before !== after
+}
+
+/** A new export rewrote the published mythical tip when one exists and the new chain does not hold it. */
+//@ verify
+//@ ensures \result == (tip != "" && !extended)
+export function rewritesMythical(tip: string, extended: boolean): boolean {
+  return tip !== "" && !extended
+}
+
+/** A plan waits while it has real commits' trees to read. */
+//@ verify
+//@ ensures \result == (needs > 0)
+export function waitsForTrees(needs: number): boolean {
+  return needs > 0
+}
+
+/** More reads or writes than one batch of the pace is the publisher's work, paced across hours. */
+//@ verify
+//@ ensures \result == (count > limit)
+export function pacedOut(count: number, limit: number): boolean {
+  return count > limit
+}

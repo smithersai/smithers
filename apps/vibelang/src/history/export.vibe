@@ -14,7 +14,7 @@
 // parent's, so the bookmark's tree is always the tree of the last real commit it folds. The commits' author, committer
 // and date are fixed, so the same history is the same commits, and preparing again writes nothing new.
 import { Repository } from "@smthrs/jj"
-import { kept, moves, type RefNames, type Refs, treeSource, writable } from "./exportDecision.vibe"
+import { chainEnds, commitVerdict, headerAgrees, kept, linkedTo, manifestChanged, moves, pacedOut, parentsOf, rewritesMythical, treeOrigin, type RefNames, type Refs, treeSource, waitsForTrees, writable, writesChange } from "./exportDecision.vibe"
 import type { Commit, History, Real } from "./mythical.vibe"
 import { stacked } from "./pages.vibe"
 
@@ -171,7 +171,7 @@ export effect function planned(repository: Repository.Repository, history: Histo
   for (const [source, tree] of trees) known.set(source, tree)
   const commits = stacked(history)
   const needs = [...new Set(commits.map((commit) => treeSource(history.real, commit.id)).filter((source) => source !== "" && !known.has(source)))]
-  if (needs.length > 0) {
+  if (waitsForTrees(needs.length)) {
     const waiting: Planned = { needs, pending: [], candidate: NONE, written: 0 }
     return waiting
   }
@@ -182,7 +182,7 @@ export effect function planned(repository: Repository.Repository, history: Histo
     const source = treeSource(history.real, commit.id)
     // `needs` is empty, so every source's tree is known.
     const tree = source === "" ? parentTree : known.get(source) as string
-    const object: Repository.CommitObject = { tree, parents: parent === "" ? [] : [parent], author: EXPORTER, committer: EXPORTER, message: messageOf(commit) }
+    const object: Repository.CommitObject = { tree, parents: parentsOf(parent), author: EXPORTER, committer: EXPORTER, message: messageOf(commit) }
     const oid = try Repository.hashCommit(object)
     chain.push({ commit, object, oid, source })
     parent = oid
@@ -198,13 +198,13 @@ export effect function planned(repository: Repository.Repository, history: Histo
   for (const link of chain) {
     const text = noteOf(link.commit, folds.get(link.commit.id) ?? [])
     const blob = try Repository.hashBlob(text)
-    if (noted.get(link.oid) !== blob) pending.push({ oid: blob, write: () => repository.writeBlob(text) })
+    if (writesChange(noted.get(link.oid) ?? "", blob)) pending.push({ oid: blob, write: () => repository.writeBlob(text) })
     entries.push({ name: link.oid, mode: "100644", oid: blob })
   }
   let notes = published.refs.notes
   const tree = try Repository.hashTree(entries)
-  if (tree !== notesTree) {
-    const object: Repository.CommitObject = { tree, parents: published.refs.notes === "" ? [] : [published.refs.notes], author: EXPORTER, committer: EXPORTER, message: "Notes for the mythical history\n" }
+  if (writesChange(notesTree, tree)) {
+    const object: Repository.CommitObject = { tree, parents: parentsOf(published.refs.notes), author: EXPORTER, committer: EXPORTER, message: "Notes for the mythical history\n" }
     notes = try Repository.hashCommit(object)
     pending.push({ oid: tree, write: () => repository.writeTree(entries) }, { oid: notes, write: () => repository.writeCommit(object) })
   }
@@ -218,14 +218,14 @@ export effect function planned(repository: Repository.Repository, history: Histo
     commits: chain.map((link) => [link.commit.id, link.oid, link.source, link.object.tree] as const),
   }
   let manifestTip = published.refs.manifest
-  if (previous === undefined || JSON.stringify(previous) !== JSON.stringify(manifest)) {
+  if (manifestChanged(previous !== undefined, previous === undefined ? "" : JSON.stringify(previous), JSON.stringify(manifest))) {
     const text = `${JSON.stringify(manifest)}\n`
     const blob = try Repository.hashBlob(text)
     const files: ReadonlyArray<Repository.TreeEntry> = [{ name: MANIFEST_FILE, mode: "100644", oid: blob }]
     const filesTree = try Repository.hashTree(files)
     // The last manifest, and a bookmark the new one rewrote rather than extended, stay reachable from the new manifest:
     // a rewrite loses no commit.
-    const rewritten = published.refs.mythical !== "" && !chain.some((link) => link.oid === published.refs.mythical)
+    const rewritten = rewritesMythical(published.refs.mythical, chain.some((link) => link.oid === published.refs.mythical))
     const parents = [published.refs.manifest, rewritten ? published.refs.mythical : ""].filter((oid) => oid !== "")
     const object: Repository.CommitObject = { tree: filesTree, parents, author: EXPORTER, committer: EXPORTER, message: `Mythical history through ${history.main === "" ? "nothing" : history.main}\n` }
     manifestTip = try Repository.hashCommit(object)
@@ -246,12 +246,12 @@ export effect function prepare(history: History, names: RefNames, pace: Pace = U
   const trees = new Map<string, string>()
   let plan = try planned(repository, history, published, trees)
   // More than one batch of `pace` is the publisher's work, paced across hours: nothing is read or written here.
-  if (plan.needs.length > pace.reads) return undefined
-  if (plan.needs.length > 0) {
+  if (pacedOut(plan.needs.length, pace.reads)) return undefined
+  if (waitsForTrees(plan.needs.length)) {
     for (const source of plan.needs) trees.set(source, (try repository.readCommit(source)).tree)
     plan = try planned(repository, history, published, trees)
   }
-  if (plan.pending.length > pace.writes) return undefined
+  if (pacedOut(plan.pending.length, pace.writes)) return undefined
   for (const each of plan.pending) try each.write()
   const prepared: Prepared = { published: refs, candidate: plan.candidate, written: plan.written }
   return prepared
@@ -277,22 +277,21 @@ export effect function check(published: Refs, candidate: Refs) {
   const old = new Set(published.manifest === "" ? [] : (try readManifest(repository, published.manifest)).commits.map((entry) => entry[1]))
   let parent = ""
   let checked = 0
-  let refusal: CheckRefusal | null = manifest.mythical === candidate.mythical && manifest.notes === candidate.notes ? null : "linear"
+  let refusal: CheckRefusal | null = headerAgrees(manifest.mythical, manifest.notes, candidate.mythical, candidate.notes) ? null : "linear"
   for (const [, oid, source] of manifest.commits) {
     if (refusal !== null) break
     if (!old.has(oid)) {
       const commit = try repository.readCommit(oid)
-      const parents = parent === "" ? [] : [parent]
-      const tree = source === ""
-        ? parent === "" ? EMPTY_TREE : (try repository.readCommit(parent)).tree
-        : (try repository.readCommit(source)).tree
-      if (commit.parents.length !== parents.length || commit.parents.some((each, at) => each !== parents[at])) refusal = "linear"
-      else if (commit.tree !== tree) refusal = "tree"
+      const origin = treeOrigin(source, parent)
+      const tree = origin === "source" ? (try repository.readCommit(source)).tree
+        : origin === "parent" ? (try repository.readCommit(parent)).tree : EMPTY_TREE
+      const verdict = commitVerdict(linkedTo(commit.parents, parent), commit.tree === tree)
+      if (verdict !== "ok") refusal = verdict
       checked++
     }
     parent = oid
   }
-  if (refusal === null && parent !== candidate.mythical) refusal = "linear"
+  if (refusal === null && !chainEnds(parent, candidate.mythical)) refusal = "linear"
   if (refusal === null) {
     const noted = new Set((try repository.readTree((try repository.readCommit(candidate.notes)).tree)).map((entry) => entry.name))
     if (!manifest.commits.every((entry) => noted.has(entry[1]))) refusal = "notes"

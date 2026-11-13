@@ -69,6 +69,10 @@ test('a new branch in a shell row is refused until it is proved or recorded with
   const mixed = proved.replace('if (maintains(role))', 'if (maintains(role) && n > 1)')
     .replace('return n > 2 ? 1 : 0', 'const lead = maintains(role)\n  return !lead ? 1 : 0');
   assert.deepEqual(shellBranches(inventorySource(fixture, mixed)).map(branch => branch.test), ['maintains(role) && n > 1']);
+  // A proved answer read against a literal is the proof's own value; a parameter compared with one is a decision.
+  const answer = '//@ verify\n//@ ensures \\result == (n > 2 ? "big" : "small")\nexport function size(n: number): string {\n  return n > 2 ? "big" : "small"\n}\n'
+    + '// Fixture.\nexport function use(n: number, kind: string) {\n  const s = size(n)\n  if (s === "big") return 1\n  if (s.length < 4) return 3\n  return kind === "big" ? 2 : 0\n}\n';
+  assert.deepEqual(shellBranches(inventorySource(fixture, answer)).map(branch => branch.test), ['kind === "big"']);
   // Presence, variant and host type tests decide nothing of their own; beside one, a comparison is still a branch.
   const guards = '// Fixture.\nexport function g(x: { _tag: string } | undefined, n: number) {\n  if (x === undefined || x._tag === "A" || !Number.isSafeInteger(n)) return 0\n  return typeof n === "number" && n > 1 ? 1 : 0\n}\n';
   assert.deepEqual(shellBranches(inventorySource(fixture, guards)).map(branch => branch.test), ['typeof n === "number" && n > 1']);
@@ -88,7 +92,7 @@ test('the tree on disk lands: no unproved row, a current 0018, a mutant for ever
 
 test('adding a branch to a real shell row is refused', () => {
   const shell = tree.rows.find(row => row.file === 'worker/Accounts.vibe' && row.category === 'effectful shell');
-  const extra = Object.defineProperty({ ...shell }, 'branches', { value: [...shell.branches, { line: 1, test: 'role === "owner"', operands: [{ calls: [], neutral: false }] }] });
+  const extra = Object.defineProperty({ ...shell }, 'branches', { value: [...shell.branches, { line: 1, test: 'role === "owner"', operands: [{ calls: [], neutral: false, compared: 'role' }] }] });
   Object.defineProperty(extra, 'bindings', { value: shell.bindings });
   const rows = tree.rows.map(row => row === shell ? extra : row);
   assert.deepEqual(refusals({ ...tree, rows }).map(line => line.split(': prove')[0]), [`unrecorded branch: worker/Accounts.vibe:1 ${shell.label.replace(/@\d+/g, '')}`]);

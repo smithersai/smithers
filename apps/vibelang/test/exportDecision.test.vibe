@@ -1,0 +1,21 @@
+import { describe, expect, it } from "@effect/vitest"
+import { chainEnds, commitVerdict, headerAgrees, linkedTo, manifestChanged, pacedOut, parentsOf, rewritesMythical, treeOrigin, waitsForTrees, writesChange } from "../src/history/exportDecision.vibe"
+
+describe("the export planner's and check's decisions", () => {
+  it("links each commit to exactly the one before it", () => {
+    expect([parentsOf(""), parentsOf("a")]).toEqual([[], ["a"]])
+    expect([linkedTo([], ""), linkedTo(["a"], ""), linkedTo(["a"], "a"), linkedTo(["a", "b"], "a"), linkedTo(["b"], "a"), linkedTo([], "a")]).toEqual([true, false, true, false, false, false])
+  })
+  it("takes a commit's tree from what it folds, its parent, or the empty tree, and names the first refusal", () => {
+    expect([treeOrigin("r", ""), treeOrigin("r", "p"), treeOrigin("", "p"), treeOrigin("", "")]).toEqual(["source", "source", "parent", "empty"])
+    expect([commitVerdict(false, true), commitVerdict(false, false), commitVerdict(true, false), commitVerdict(true, true)]).toEqual(["linear", "linear", "tree", "ok"])
+    expect([headerAgrees("m", "n", "m", "n"), headerAgrees("m", "x", "m", "n"), headerAgrees("x", "n", "m", "n")]).toEqual([true, false, false])
+    expect([chainEnds("m", "m"), chainEnds("", "m")]).toEqual([true, false])
+  })
+  it("writes only what changed, marks a rewrite, and paces reads and writes", () => {
+    expect([writesChange("a", "a"), writesChange("", "a")]).toEqual([false, true])
+    expect([manifestChanged(false, "", "x"), manifestChanged(true, "x", "x"), manifestChanged(true, "x", "y")]).toEqual([true, false, true])
+    expect([rewritesMythical("", false), rewritesMythical("t", true), rewritesMythical("t", false)]).toEqual([false, false, true])
+    expect([waitsForTrees(0), waitsForTrees(1), pacedOut(60, 60), pacedOut(61, 60), pacedOut(5, Number.POSITIVE_INFINITY)]).toEqual([false, true, false, true, false])
+  })
+})

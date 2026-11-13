@@ -1,6 +1,7 @@
 // Branches in shell rows (decision 0018, "Decisions in shell rows"): an `if` or conditional inside a row that is not
 // proved, outside the view markup in src/web/, with an operand (split at `&&`, `||` and `!`) that neither calls a
-// proved function, nor is a flag read from a `const` whose value calls one (in its row or an enclosing row), nor is a
+// proved function, nor reads a `const` whose value calls one (in its row or an enclosing row) as a flag or against a
+// literal (`replay === "replay-refused"`, `cut < 0`: the proved function's answer), nor is a
 // presence or variant test or a host type guard (`=== undefined`, `null`, `_tag`, `typeof`, `Option.isSome`,
 // `Exit.isSuccess`, `Number.isSafeInteger` and the like; inventory.cjs `neutral`). A shell row's reason covers
 // the whole row, so a new branch would inherit it unseen; the landing check refuses a branch that
@@ -25,7 +26,7 @@ function shellBranches(rows) {
     .flatMap(other => other.bindings.filter(binding => callsProved(binding.calls)).map(binding => binding.name)));
   return rows.filter(row => row.category !== 'proved' && inScope(row.file) && row.branches).flatMap(row => {
     const flags = decidedFlags(row);
-    return row.branches.filter(branch => !branch.operands.every(operand => operand.neutral || callsProved(operand.calls) || flags.has(operand.flag)))
+    return row.branches.filter(branch => !branch.operands.every(operand => operand.neutral || callsProved(operand.calls) || flags.has(operand.flag) || flags.has(operand.compared)))
       .map(branch => ({ file: row.file, line: branch.line, label: row.label, test: branch.test }));
   });
 }
