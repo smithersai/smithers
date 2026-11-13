@@ -11,7 +11,7 @@ import { world, request, history } from "./support/actionObjects.vibe"
 effect function starts(w: Effect.Success<ReturnType<typeof world>>) {
   provide MockFactory, history {
     const device = try Factory
-    try device.accounts!.choose("maintainer")
+    try device.accounts.choose("maintainer")
     provide ActionDevice = device {
       const refused = try w.directory.start(request("arun7", "vibelang/history/Plan", { nonsense: 1 }, w.person.id), "maintainer")
       const again = try w.directory.start(request("arun7", "vibelang/history/Plan", { nonsense: 1 }, w.person.id), "maintainer")

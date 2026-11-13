@@ -28,6 +28,7 @@ it.live("an idle chat does not read its sandbox every second; a running one does
       startSandbox: (conversation, operationId) => factory.startSandbox(conversation, operationId),
       stopSandbox: (conversation, operationId, generation) => factory.stopSandbox(conversation, operationId, generation),
       sandboxCommand: (conversation, operationId, command, generation) => factory.sandboxCommand(conversation, operationId, command, generation),
+      accounts: factory.accounts, issues: factory.issues, wiki: factory.wiki,
     })
     let latest = init({ session: "will", name: "Will", mode: "mock" }).model
     const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))

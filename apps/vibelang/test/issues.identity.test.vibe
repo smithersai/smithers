@@ -16,9 +16,9 @@ it.live("a queued Viewer issue request cannot borrow the subsequently selected M
     const factory = try Factory
     try factory.tour("issue-viewer")
     try factory.post("issue-viewer", "queued", "Guest", "File an issue: Viewer request")
-    try factory.accounts!.choose("maintainer")
+    try factory.accounts.choose("maintainer")
     try finish(factory, "issue-viewer", "queued")
-    const issues = try factory.issues!.read()
+    const issues = try factory.issues.read()
     const chat = try factory.read("issue-viewer", 0)
     try Effect.try(() => {
       expect(issues.items.some(issue => issue.title === "Viewer request")).toBe(false)
@@ -30,14 +30,14 @@ it.live("a queued Viewer issue request cannot borrow the subsequently selected M
 it.live("a queued issue keeps its original author and the shared project projection after identity switching", () => effect {
   provide MockFactory {
     const factory = try Factory
-    const person = try factory.accounts!.choose("contributor")
+    const person = try factory.accounts.choose("contributor")
     try factory.tour("issue-author")
     try factory.post("issue-author", "queued", person.login, "File an issue: Original author")
-    try factory.accounts!.choose("maintainer")
+    try factory.accounts.choose("maintainer")
     try finish(factory, "issue-author", "queued")
-    const seenByOther = try factory.issues!.read()
-    try factory.accounts!.choose("contributor")
-    const seenByAuthor = try factory.issues!.read()
+    const seenByOther = try factory.issues.read()
+    try factory.accounts.choose("contributor")
+    const seenByAuthor = try factory.issues.read()
     try Effect.try(() => {
       expect(seenByOther.items.find(issue => issue.title === "Original author")?.author).toBe(person.login)
       expect(seenByAuthor.items).toEqual(seenByOther.items)
@@ -48,14 +48,14 @@ it.live("a queued issue keeps its original author and the shared project project
 it.live("a queued split rechecks its original poster's role after demotion", () => effect {
   provide MockFactory {
     const factory = try Factory
-    const person = try factory.accounts!.choose("contributor")
-    const before = try factory.issues!.read()
+    const person = try factory.accounts.choose("contributor")
+    const before = try factory.issues.read()
     try factory.tour("issue-demotion")
     try factory.post("issue-demotion", "queued", person.login, "Split #38 into three children, linked under it.")
-    try factory.accounts!.choose("maintainer")
-    try factory.accounts!.grant(person.id, "new")
+    try factory.accounts.choose("maintainer")
+    try factory.accounts.grant(person.id, "new")
     try finish(factory, "issue-demotion", "queued")
-    const after = try factory.issues!.read()
+    const after = try factory.issues.read()
     const chat = try factory.read("issue-demotion", 0)
     try Effect.try(() => {
       expect(after.items).toEqual(before.items)

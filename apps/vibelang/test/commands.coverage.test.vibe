@@ -6,6 +6,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Factory, Unavailable } from "../src/core/Factory.vibe"
 import { MockFactory, mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { IssueFailure } from "../src/core/issueSchemas.vibe"
+import { AccountUnavailable } from "../src/core/roles.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { Actions, ActionFailure, Run } from "../src/actions/Actions.vibe"
 import { MockMythical } from "../src/history/MockMythical.vibe"
@@ -19,12 +20,17 @@ import {
 const failure = <A, R>(program: A!{ readonly message: string }!R) => Effect.map(Effect.flip(program), (error) => error.message)
 
 const offline = () => Effect.fail(new Unavailable({ reason: "offline" }))
+const noAccount = () => Effect.fail(new AccountUnavailable({ reason: "down" }))
 
 /** A factory that is entirely down, except the operations a case names. */
 function closed(over: Partial<Factory.Shape>): Factory.Shape {
   return {
     mode: "mock", post: offline, read: offline, events: () => Stream.fail(new Unavailable({ reason: "offline" })), tour: offline, endTour: offline,
-    openWiki: offline, sandbox: offline, startSandbox: offline, stopSandbox: offline, sandboxCommand: offline, ...over,
+    openWiki: offline, sandbox: offline, startSandbox: offline, stopSandbox: offline, sandboxCommand: offline,
+    accounts: { current: noAccount, members: noAccount, grant: noAccount, signOut: noAccount, signInAgent: noAccount, choose: noAccount, participated: noAccount, events: () => Stream.fail(new AccountUnavailable({ reason: "down" })) },
+    issues: { read: () => Effect.fail(new IssueFailure({ reason: "unavailable" })), act: () => Effect.fail(new IssueFailure({ reason: "unavailable" })) },
+    wiki: { read: () => Effect.fail(new WikiFailure({ reason: "unavailable" })), act: () => Effect.fail(new WikiFailure({ reason: "unavailable" })) },
+    ...over,
   }
 }
 
@@ -143,7 +149,7 @@ describe("sandbox text", () => {
 describe("issue commands", () => {
   it.effect("print tasks and refuse a person without the role", () => effect {
     provide MockFactory {
-      const accounts = (try Factory).accounts!
+      const accounts = (try Factory).accounts
       try accounts.choose("maintainer")
       const filed = try Issue.run({ op: "new", title: "A task", text: "Steps", key: "filed" })
       try Issue.run({ op: "commit", number: filed.items[0]!.number, assignee: "Will", key: "commit" })
@@ -163,16 +169,14 @@ describe("issue commands", () => {
     }
   })
 
-  it.effect("report a missing or failing issue service", () => effect {
+  it.effect("report a failing issue service", () => effect {
     const failing = () => Effect.fail(new IssueFailure({ reason: "offline" }))
     const faulty = closed({ issues: { read: failing, act: failing } })
     const messages = [
-      try failure(Effect.provideService(Issues.run({}), Factory, closed({}))),
-      try failure(Effect.provideService(Issue.run({ op: "read" }), Factory, closed({}))),
       try failure(Effect.provideService(Issues.run({}), Factory, faulty)),
       try failure(Effect.provideService(Issue.run({ op: "read" }), Factory, faulty)),
     ]
-    try Effect.try(() => expect(messages).toEqual(["Issues unavailable.", "Issues unavailable.", "Issues unavailable.", "Issue change failed."]))
+    try Effect.try(() => expect(messages).toEqual(["Issues unavailable.", "Issue change failed."]))
   })
 })
 
@@ -211,7 +215,7 @@ describe("action commands", () => {
 describe("wiki command", () => {
   it.effect("reads the index by default, drafts, and prints the draft's page", () => effect {
     provide MockFactory {
-      try (try Factory).accounts!.choose("maintainer")
+      try (try Factory).accounts.choose("maintainer")
       const index = try Wiki.run({ op: "read" })
       const draft = try Wiki.render({ op: "draft", page: index.pages[0]!.id, text: "More", key: "d" }, false)
       const generated = try Wiki.run({ op: "draft", page: index.pages[0]!.id, text: "Again", recovery: "r" })
@@ -223,14 +227,13 @@ describe("wiki command", () => {
     }
   })
 
-  it.effect("refuses a person without the role, and reports a missing or failing wiki", () => effect {
+  it.effect("refuses a person without the role, and reports a failing wiki", () => effect {
     provide MockFactory {
-      try (try Factory).accounts!.choose("viewer")
+      try (try Factory).accounts.choose("viewer")
       const refused = try failure(Wiki.run({ op: "draft", page: "index", text: "x", key: "r" }))
-      const missing = try failure(Effect.provideService(Wiki.run({ op: "read" }), Factory, closed({})))
       const failing = () => Effect.fail(new WikiFailure({ reason: "conflict" }))
       const failed = try failure(Effect.provideService(Wiki.run({ op: "save", page: "index", text: "x", key: "f" }), Factory, closed({ wiki: { read: failing, act: failing } })))
-      try Effect.try(() => expect([refused, missing, failed]).toEqual(["Not allowed.", "Wiki unavailable.", "Wiki change failed."]))
+      try Effect.try(() => expect([refused, failed]).toEqual(["Not allowed.", "Wiki change failed."]))
     }
   })
 })

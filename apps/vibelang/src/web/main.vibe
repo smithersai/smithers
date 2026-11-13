@@ -948,7 +948,7 @@ export const OpenWikiEditor = Command.define("OpenWikiEditor", {
   messages: [Message.BeganWikiEdit, Message.FailedWikiEdit],
   execute: effect ({ page, request }) => {
     const factory = try Factory
-    const result = try Effect.result(factory.wiki === undefined ? Effect.fail(new WikiFailure({ reason: "unavailable" })) : factory.wiki.read(page))
+    const result = try Effect.result(factory.wiki.read(page))
     return try message(() => {
       if (result._tag === "Failure") return Message.FailedWikiEdit({ request, reason: result.failure.reason })
       const observed = result.success.pages.find((entry) => entry.id === page)
@@ -963,7 +963,7 @@ export const SubmitWikiEdit = Command.define("SubmitWikiEdit", {
   args: { request: WikiRequest, serial: Schema.Number }, messages: [Message.CompletedWikiEdit, Message.FailedWikiEdit],
   execute: effect ({ request, serial }) => {
     const factory = try Factory
-    const result = try Effect.result(factory.wiki === undefined ? Effect.fail(new WikiFailure({ reason: "unavailable" })) : factory.wiki.act(request))
+    const result = try Effect.result(factory.wiki.act(request))
     return try message(() => result._tag === "Success"
       ? Message.CompletedWikiEdit({ request: serial, page: request.page, source: request.base, revision: result.success.pages.find((entry) => entry.id === request.page)?.revision ?? "", review: result.success.review ?? "" })
       : Message.FailedWikiEdit({ request: serial, reason: result.failure.reason, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
@@ -1238,7 +1238,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         modelToDependencies: (model: Model) => ({ active: model.mode !== "pending" && model.surface === "chat" && model.issues === undefined }),
         dependenciesToStream: ({ active }) => active ? Stream.fromEffect(effect {
           const api = (try Factory).issues
-          const result = try Effect.result(api === undefined ? Effect.fail(new IssueFailure({ reason: "unavailable" })) : api.read())
+          const result = try Effect.result(api.read())
           return try message(() => result._tag === "Success" ? Message.IssueProjectionLoaded({ data: result.success }) : Message.IssueDialogFocused())
         }) : Stream.empty,
       },
@@ -1249,7 +1249,6 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         modelToDependencies: (model: Model) => ({ person: accountOf(model).identity.id, epoch: accountOf(model).epoch, from: accountOf(model).from }),
         dependenciesToStream: ({ person, from }) => person === "" ? Stream.empty : Stream.unwrap(effect {
           const factory = try Factory
-          if (factory.accounts === undefined) return Stream.empty
           return factory.accounts.events(from).pipe(
             Stream.map(event => Message.ReceivedRole({ event })),
             Stream.concat(Stream.fromEffect(message(() => Message.FailedRoles()))),
@@ -1372,14 +1371,14 @@ export function roleLabel(role: Machine.Role): string { return role.slice(0, 1).
 
 export const LoadAccount = Command.define("LoadAccount", { args: {}, messages: [Message.AccountLoaded, Message.AccountFailed], execute: effect () => {
   const factory = try Factory
-  const identity = factory.accounts === undefined ? viewer : (factory.accounts.current() catch () => undefined)
+  const identity = factory.accounts.current() catch () => undefined
   return try message(() => identity === undefined ? Message.AccountFailed() : Message.AccountLoaded({ identity }))
 } })
 export const ChooseIdentity = Command.define("ChooseIdentity", {
   args: { role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]) },
   messages: [Message.AccountLoaded, Message.AccountFailed], execute: effect ({ role }) => {
     const factory = try Factory
-    const identity = factory.accounts === undefined ? viewer : (factory.accounts.choose(role) catch () => undefined)
+    const identity = factory.accounts.choose(role) catch () => undefined
     return try message(() => identity === undefined ? Message.AccountFailed() : Message.AccountLoaded({ identity }))
   },
 })
@@ -1393,28 +1392,26 @@ export const SignInAccount = Command.define("SignInAccount", {
   args: { mock: Schema.Boolean }, messages: [Message.AccountLoaded, Message.AccountFailed, Message.FocusedPrompt], execute: effect ({ mock }) => {
     if (!mock) { try Navigation.load("/api/auth/sign-in"); return try message(() => Message.FocusedPrompt()) }
     const factory = try Factory
-    const identity = factory.accounts === undefined ? viewer : (factory.accounts.choose("new") catch () => undefined)
+    const identity = factory.accounts.choose("new") catch () => undefined
     return try message(() => identity === undefined ? Message.AccountFailed() : Message.AccountLoaded({ identity }))
   },
 })
 export const SignOutAccount = Command.define("SignOutAccount", { args: {}, messages: [Message.AccountLoaded, Message.AccountFailed], execute: effect () => {
   const factory = try Factory
-  if (factory.accounts !== undefined) {
-    const failed = factory.accounts.signOut().pipe(Effect.as(false)) catch () => true
-    if (failed) return try message(() => Message.AccountFailed())
-  }
+  const failed = factory.accounts.signOut().pipe(Effect.as(false)) catch () => true
+  if (failed) return try message(() => Message.AccountFailed())
   return try message(() => Message.AccountLoaded({ identity: viewer }))
 } })
 export const LoadPeople = Command.define("LoadPeople", { args: {}, messages: [Message.LoadedPeople, Message.AccountFailed], execute: effect () => {
   const factory = try Factory
-  const members = factory.accounts === undefined ? [] : (factory.accounts.members() catch () => undefined)
+  const members = factory.accounts.members() catch () => undefined
   return try message(() => members === undefined ? Message.AccountFailed() : Message.LoadedPeople({ members: Array.from(members) }))
 } })
 export const GrantRole = Command.define("GrantRole", {
   args: { id: Schema.String, role: Schema.Literals(["new", "community", "contributor", "maintainer"]) },
   messages: [Message.GrantedRole, Message.AccountFailed], execute: effect ({ id, role }) => {
     const factory = try Factory
-    const failed = factory.accounts === undefined ? true : (factory.accounts.grant(id, role).pipe(Effect.as(false)) catch () => true)
+    const failed = factory.accounts.grant(id, role).pipe(Effect.as(false)) catch () => true
     return try message(() => failed ? Message.AccountFailed() : Message.GrantedRole())
   },
 })
@@ -1446,7 +1443,6 @@ export const LoadIssues = Command.define("LoadIssues", {
   execute: effect ({ resumeRecovery, resumeOp, resumeKey }) => {
     const factory = try Factory
     const result = try Effect.result(effect {
-      if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
       return resumeOp === undefined || resumeKey === undefined ? try factory.issues.read() : try factory.issues.act({ op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: `resume-${try Clock.currentTimeMillis}`, resumeOp, resumeKey, ...(resumeRecovery === undefined ? {} : { resumeRecovery }) })
     })
     if (factory.mode === "live" && result._tag === "Success" && result.success.saved?.status === "completed") try Navigation.replaceUrl("/?issues=1")
@@ -1459,7 +1455,6 @@ export const ActOnIssue = Command.define("ActOnIssue", {
     const factory = try Factory
     if (factory.mode === "live" && request.op !== "read" && request.op !== "draft") try Navigation.replaceUrl(`/?issues=1&resume-op=${request.op}&resume-key=${request.key}` + (request.recovery === undefined ? "" : `&resume-recovery=${request.recovery}`))
     const result = try Effect.result(effect {
-      if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
       return try factory.issues.act(request)
     })
     if (factory.mode === "live" && request.op !== "read" && request.op !== "draft" && (result._tag === "Success" || result.failure.unwritten === true)) try Navigation.replaceUrl("/?issues=1")
@@ -1496,7 +1491,7 @@ export const LoadIssueDetails = Command.define("LoadIssueDetails", {
   args: { number: Schema.Number, key: Schema.String }, messages: [Message.IssueDetailsLoaded, Message.IssueDetailsFailed],
   execute: effect ({ number, key }) => {
     const api = (try Factory).issues
-    const result = try Effect.result(api === undefined ? Effect.fail(new IssueFailure({ reason: "unavailable" })) : api.act({ op: "read", number, key, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" }))
+    const result = try Effect.result(api.act({ op: "read", number, key, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" }))
     return try message(() => result._tag === "Success" ? Message.IssueDetailsLoaded({ number, data: result.success }) : Message.IssueDetailsFailed({ number }))
   },
 })
@@ -1505,7 +1500,6 @@ export const RefreshIssueProjection = Command.define("RefreshIssueProjection", {
   args: {}, messages: [Message.IssueProjectionLoaded, Message.IssueDialogFocused],
   execute: effect () => {
     const api = (try Factory).issues
-    if (api === undefined) return try message(() => Message.IssueDialogFocused())
     const result = try Effect.result(api.read())
     return try message(() => result._tag === "Success" ? Message.IssueProjectionLoaded({ data: result.success }) : Message.IssueDialogFocused())
   },

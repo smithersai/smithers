@@ -199,12 +199,6 @@ describe("a backend that fails", () => {
       try settled(() => expect(seen.model.sandboxError).toBe(reason))
     }))
   }
-  it.live("a backend without accounts leaves a signed-in person undisturbed", () => scoped(effect {
-    const identity = { id: "1", login: "ada", role: "new" as const }
-    const seen = try started(quiet({ account: { ...accountOf(init(flags).model), identity } }), actions, faulty({ accounts: undefined }))
-    try witnessed(seen)
-    try Effect.try(() => expect(accountOf(seen.model).identity).toEqual(identity))
-  }))
 })
 
 

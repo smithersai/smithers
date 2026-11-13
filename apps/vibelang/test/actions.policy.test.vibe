@@ -8,7 +8,7 @@ it.live("demotion removes commands and refuses start, rerun and cancellation bef
   const resources = MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provideMerge(mockFactoryFor("contributor")))
   provide resources {
     const actions = try Actions
-    const accounts = (try Factory).accounts!
+    const accounts = (try Factory).accounts
     const before = try accounts.current()
     const id = try actions.start("vibelang/Post", { text: "Hello" }, "button")
     try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => run.state === "passed" || run.state === "failed")))

@@ -51,7 +51,7 @@ it.live("actions/run-hosts", () => run("actions/run-hosts", Steps, (steps) => ef
   const w = try world()
   provide MockFactory, history {
     const device = try Factory
-    try device.accounts!.choose("maintainer")
+    try device.accounts.choose("maintainer")
     const product = try Mythical
     provide ActionDevice = device {
       const sent = new Map<string, ReturnType<typeof request>>()

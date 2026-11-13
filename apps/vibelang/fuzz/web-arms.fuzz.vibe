@@ -29,11 +29,11 @@ function reversed(role: typeof Role.Type) {
 }
 /** The mock seen as live, its issue writes failing without being unwritten: the resume address stays. */
 function liveKept(role: typeof Role.Type) {
-  return backendChanged(role, (factory) => ({ mode: "live", issues: Object.assign(Object.create(factory.issues!), { act: () => fail(new IssueFailure({ reason: "unavailable" })) }) }))
+  return backendChanged(role, (factory) => ({ mode: "live", issues: Object.assign(Object.create(factory.issues), { act: () => fail(new IssueFailure({ reason: "unavailable" })) }) }))
 }
 /** The mock whose wiki holds the person's draft of another page. */
 function otherDraft(role: typeof Role.Type) {
-  return backendChanged(role, (factory) => ({ wiki: Object.assign(Object.create(factory.wiki!), { read: (page: string) => map(factory.wiki!.read(page), (snapshot) => ({ ...snapshot, draft: { page: `${page}-other`, text: "# Other" } })) }) }))
+  return backendChanged(role, (factory) => ({ wiki: Object.assign(Object.create(factory.wiki), { read: (page: string) => map(factory.wiki.read(page), (snapshot) => ({ ...snapshot, draft: { page: `${page}-other`, text: "# Other" } })) }) }))
 }
 
 /** The page's address, as the Commands read and write it. */
@@ -65,12 +65,12 @@ effect function answer(make: () => AnyCommand) {
 }
 
 const SCENARIOS = [
-  "load-bare", "load-faulty", "load-roleless", "load-resumed", "act-live-kept", "act-live", "act-bare", "refresh-bare", "refresh-faulty", "grant",
-  "sign-out-bare", "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-bare", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
+  "load-faulty", "load-roleless", "load-resumed", "act-live-kept", "act-live", "refresh-faulty", "grant",
+  "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
   "control-tour", "read-action", "actions-faulty-epoch", "act-roleless", "draft-link", "theatre-keys", "auto-tour", "tour-events",
-  "wiki-bare", "wiki-unlisted", "wiki-unwritten", "details-bare", "sign-in-mock", "wiki-link",
+  "wiki-unlisted", "wiki-unwritten", "sign-in-mock", "wiki-link",
   "end-tour", "run-without-epoch", "issue-count", "details-mock",
-  "sandbox-poll-unreachable", "open-wiki", "grant-bare", "run-json-blank", "people-bare", "people-faulty",
+  "sandbox-poll-unreachable", "open-wiki", "run-json-blank", "people-faulty",
 ] as const
 
 type Entries = Record<string, {
@@ -143,8 +143,8 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
   const role = input.role
   try goTo("/")
   switch (scenario) {
-    case "load-bare": case "load-faulty": case "load-roleless": {
-      const layer = scenario === "load-bare" ? backend("bare", role) : scenario === "load-faulty" ? backend("faulty", role) : backend("roleless", role)
+    case "load-faulty": case "load-roleless": {
+      const layer = scenario === "load-faulty" ? backend("faulty", role) : backend("roleless", role)
       const got = try Effect.provide(answer(() => LoadIssues({})), layer)
       if (scenario === "load-roleless") return got._tag === "IssuesLoaded" && got.role === "maintainer"
       return got._tag === "IssuesFailed" && got.reason === "unavailable"
@@ -155,8 +155,8 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       const status = input.key === "k-1" ? "completed" as const : input.key === "k-2" ? "running" as const : "failed" as const
       const resumed = backendChanged("maintainer", (factory) => ({
         mode: "live",
-        issues: Object.assign(Object.create(factory.issues!), {
-          act: (request: typeof IssueRequest.Type) => request.resumeKey === undefined ? factory.issues!.act(request) : map(factory.issues!.read(), (state) => ({
+        issues: Object.assign(Object.create(factory.issues), {
+          act: (request: typeof IssueRequest.Type) => request.resumeKey === undefined ? factory.issues.act(request) : map(factory.issues.read(), (state) => ({
             ...state, saved: { request: { ...request, op: "comment" as const, key: request.resumeKey! }, status, unwritten: false, selected: input.number },
           })),
         }),
@@ -176,13 +176,8 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       if (scenario === "act-live") return got._tag === "IssuesLoaded" && at === "/?issues=1"
       return got._tag === "IssuesFailed" && at === `/?issues=1&resume-op=comment&resume-key=${input.key}&resume-recovery=${input.recovery}`
     }
-    case "act-bare": {
-      const request = { op: "comment" as const, number: 1, parent: 0, title: "", text: "x", assignee: "", example: "", prior: "", key: input.key }
-      const got = try Effect.provide(answer(() => ActOnIssue({ request })), backend("bare", role))
-      return got._tag === "IssuesFailed" && got.reason === "unavailable"
-    }
-    case "refresh-bare": case "refresh-faulty": {
-      const got = try Effect.provide(answer(() => RefreshIssueProjection({})), backend(scenario === "refresh-bare" ? "bare" : "faulty", role))
+    case "refresh-faulty": {
+      const got = try Effect.provide(answer(() => RefreshIssueProjection({})), backend("faulty", role))
       return got._tag === "IssueDialogFocused"
     }
     case "grant": {
@@ -195,15 +190,14 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
         return got._tag === "GrantedRole"
       }
     }
-    case "people-bare": case "people-faulty": {
-      // Without an accounts service there is nobody to list: People loads empty, not as a failure. A service that
-      // fails to list makes People fail.
-      const got = try Effect.provide(answer(() => LoadPeople({})), backend(scenario === "people-bare" ? "bare" : "faulty", role))
-      return scenario === "people-bare" ? got._tag === "LoadedPeople" && got.members.length === 0 : got._tag === "AccountFailed"
+    case "people-faulty": {
+      // A service that fails to list makes People fail.
+      const got = try Effect.provide(answer(() => LoadPeople({})), backend("faulty", role))
+      return got._tag === "AccountFailed"
     }
-    case "sign-out-bare": case "sign-out-faulty": {
-      const got = try Effect.provide(answer(() => SignOutAccount({})), backend(scenario === "sign-out-bare" ? "bare" : "faulty", role))
-      return scenario === "sign-out-bare" ? got._tag === "AccountLoaded" && got.identity.id === "" && got.identity.role === "viewer" : got._tag === "AccountFailed"
+    case "sign-out-faulty": {
+      const got = try Effect.provide(answer(() => SignOutAccount({})), backend("faulty", role))
+      return got._tag === "AccountFailed"
     }
     case "sign-in-live": {
       // Live sign-in leaves the page for the server's sign-in route; the mock signs in without leaving.
@@ -224,11 +218,11 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       const got = try Effect.provide(answer(() => SandboxAction({ conversation: "fuzz-sandbox", operationId: "op-1", request: input.number, kind: "start", generation: 0, command: "" })), reversed(role))
       return got._tag === "FailedSandbox" && got.reason === "fault"
     }
-    case "roles-bare": case "roles-faulty": case "roles-closing": {
-      // A signed-in person's role stream: none without an accounts service; a failing or ended stream says so once.
-      const layer = backend(scenario === "roles-bare" ? "bare" : scenario === "roles-faulty" ? "faulty" : "closing", role)
+    case "roles-faulty": case "roles-closing": {
+      // A signed-in person's role stream: a failing or ended stream says so once.
+      const layer = backend(scenario === "roles-faulty" ? "faulty" : "closing", role)
       const got = try Effect.provide(effect { return Array.from(try Stream.runCollect(try subscription("roles", { person: `p${input.number}`, epoch: 0, from: input.number }))) }, layer)
-      return scenario === "roles-bare" ? got.length === 0 : got.length === 1 && got[0]!._tag === "FailedRoles"
+      return got.length === 1 && got[0]!._tag === "FailedRoles"
     }
     case "follow-lost": {
       // A lost follow reports its run; reconnect replaces the generation and reads the real run.
@@ -348,15 +342,6 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       const got = try stepped(Effect.provide(Stream.runHead(stream), lostOnce), 5)
       return follows === 2 && Option.isSome(got) && got.value._tag === "ReceivedTourEvent" && same(got.value.event, event)
     }
-    case "wiki-bare": {
-      const page = pages.filter((entry) => wikiEditable(entry.id))[input.number % 2]!.id
-      const request = { op: "save" as const, page, base: "# A", text: `# B${input.text}`, key: input.key }
-      provide backend("bare", role) {
-        const read = try answer(() => OpenWikiEditor({ page, request: input.number }))
-        const write = try answer(() => SubmitWikiEdit({ request, serial: input.number }))
-        return read._tag === "FailedWikiEdit" && read.reason === "unavailable" && write._tag === "FailedWikiEdit" && write.reason === "unavailable"
-      }
-    }
     case "wiki-unlisted": {
       const page = pages.filter((entry) => wikiEditable(entry.id))[input.number % 2]!.id
       provide backendWithWiki("maintainer", "unlisted") {
@@ -369,18 +354,13 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
     case "wiki-unwritten": {
       // A save the wiki refuses as certainly not written says so, so the editor may submit it afresh.
       const page = pages.filter((entry) => wikiEditable(entry.id))[input.number % 2]!.id
-      const refusing = backendChanged(role, (factory) => ({ wiki: Object.assign(Object.create(factory.wiki!), { act: () => fail(new WikiFailure({ reason: "conflict", unwritten: true })) }) }))
+      const refusing = backendChanged(role, (factory) => ({ wiki: Object.assign(Object.create(factory.wiki), { act: () => fail(new WikiFailure({ reason: "conflict", unwritten: true })) }) }))
       const got = try Effect.provide(answer(() => SubmitWikiEdit({ request: { op: "save", page, base: "# A", text: "# B", key: input.key }, serial: input.number })), refusing)
       return got._tag === "FailedWikiEdit" && got.reason === "conflict" && got.unwritten === true
     }
-    case "details-bare": {
-      const got = try Effect.provide(answer(() => LoadIssueDetails({ number: input.number + 1, key: input.key })), backend("bare", role))
-      return got._tag === "IssueDetailsFailed" && got.number === input.number + 1
-    }
     case "sign-in-mock": {
-      const bare = try Effect.provide(answer(() => SignInAccount({ mock: true })), backend("bare", role))
       const failing = try Effect.provide(answer(() => SignInAccount({ mock: true })), backend("faulty", role))
-      return bare._tag === "AccountLoaded" && bare.identity.id === "" && bare.identity.role === "viewer" && failing._tag === "AccountFailed"
+      return failing._tag === "AccountFailed"
     }
     case "wiki-link": {
       const document = try (try Experimental.Document.Document).current
@@ -417,9 +397,9 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       }
     }
     case "issue-count": {
-      const bare = try Effect.provide(effect { return try Stream.runHead(try subscription("issueCount", { active: true })) }, backend("bare", role))
+      const failing = try Effect.provide(effect { return try Stream.runHead(try subscription("issueCount", { active: true })) }, backend("faulty", role))
       const mock = try Effect.provide(effect { return try Stream.runHead(try subscription("issueCount", { active: true })) }, backend("mock", role))
-      return Option.isSome(bare) && bare.value._tag === "IssueDialogFocused" && Option.isSome(mock) && mock.value._tag === "IssueProjectionLoaded"
+      return Option.isSome(failing) && failing.value._tag === "IssueDialogFocused" && Option.isSome(mock) && mock.value._tag === "IssueProjectionLoaded"
     }
     case "details-mock": {
       provide backend("mock", "maintainer") {
@@ -440,10 +420,6 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       const opened = try Effect.provide(answer(() => OpenWikiCommand({ conversation: "fuzz-wiki", page, request: input.number })), backend("mock", role))
       const failed = try Effect.provide(answer(() => OpenWikiCommand({ conversation: "fuzz-wiki", page, request: input.number })), backend("faulty", role))
       return opened._tag === "SucceededWiki" && failed._tag === "FailedWiki" && failed.request === input.number
-    }
-    case "grant-bare": {
-      const got = try Effect.provide(answer(() => GrantRole({ id: "1", role: "community" })), backend("bare", role))
-      return got._tag === "AccountFailed"
     }
     case "run-json-blank": {
       provide backend("mock", "maintainer") {

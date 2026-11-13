@@ -35,9 +35,9 @@ const program = await runPromise(effect {
     // A fixture agent's real Post flow, observed by a signed-out browser through the unchanged label component.
     const factory = params.get("agent") === "yes" ? Layer.effect(Factory, effect {
       const product = Context.get(try Layer.build(base), Factory)
-      try Effect.orDie(product.accounts!.signInAgent())
+      try Effect.orDie(product.accounts.signInAgent())
       try Effect.orDie(product.post("home", "fixture-agent-post", "forged", "From the signed-in agent"))
-      try Effect.orDie(product.accounts!.signOut())
+      try Effect.orDie(product.accounts.signOut())
       return product
     }) : base
     const actions = Layer.effect(Actions, effect {

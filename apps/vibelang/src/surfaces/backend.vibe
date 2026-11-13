@@ -91,14 +91,14 @@ const surfaceMock = Layer.effect(Factory, effect {
   const stored = readMockSession() catch () => undefined
   const context = try Layer.build(mockFactoryFor())
   const factory = Context.get(context, Factory)
-  if (stored?.origin === "mock") try Effect.orDie(factory.accounts!.signInAgent())
-  else try Effect.orDie(factory.accounts!.choose("maintainer"))
+  if (stored?.origin === "mock") try Effect.orDie(factory.accounts.signInAgent())
+  else try Effect.orDie(factory.accounts.choose("maintainer"))
   return factory
 })
 const surfaceHistory = Layer.unwrap(effect {
   const factory = try Factory
   return MockMythical(SURFACE_PRINCIPAL, undefined, effect () => {
-    const identity = try Effect.orDie(factory.accounts!.current())
+    const identity = try Effect.orDie(factory.accounts.current())
     return { role: identity.role, name: !("ledger" in identity) ? "Guest" : identity.agent === true ? identity.login : SURFACE_PRINCIPAL.name, agent: true }
   })
 }).pipe(Layer.provide(surfaceMock))

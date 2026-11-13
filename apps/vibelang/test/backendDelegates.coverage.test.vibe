@@ -14,9 +14,9 @@ it.live("accounts, issues and the wiki all reach the selected mock", () => scope
   provide BrowserFactory("http://startup.test", true, "maintainer").pipe(Layer.provide(health.layer)) {
     const factory = try Factory
     const mode = try (try AgentBackend).ready
-    const accounts = factory.accounts!
-    const issues = factory.issues!
-    const wiki = factory.wiki!
+    const accounts = factory.accounts
+    const issues = factory.issues
+    const wiki = factory.wiki
     const agent = try accounts.signInAgent()
     const members = try accounts.members()
     const chosen = try accounts.choose("contributor")

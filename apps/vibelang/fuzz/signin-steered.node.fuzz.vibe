@@ -247,11 +247,7 @@ function steered(input: typeof Input.Type, part: "answers" | "waits" | "refusals
     }
     try scenario("logout-none", {}, effect () => (try signOutSurface()).signedOut === false)
 
-    // Mock mode: no accounts service, or one that fails.
-    try scenario("mock-no-accounts", {}, effect () => {
-      const out = try answer(signIn({ wait: false }))
-      return !out.ok && out.message === "Sign-in isn't available."
-    }, origin, webBackend("bare", "maintainer"))
+    // Mock mode: an accounts service that fails.
     try scenario("mock-faulty", {}, effect () => {
       const login = try answer(signIn({ wait: false }))
       const logout = try answer(signOutSurface())

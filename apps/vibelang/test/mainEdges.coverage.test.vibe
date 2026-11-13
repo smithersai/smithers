@@ -130,14 +130,6 @@ describe("streams that break", () => {
     const seen = try started({ account: { ...accountOf(home), identity: person } }, undefined, faulty({ accounts }))
     try settled(() => expect(accountOf(seen.model).error).toBe("Connection lost."))
   }))
-  it.live("a backend without accounts leaves a signed-in person undisturbed", () => scoped(effect {
-    const polled: Array<true> = []
-    const sandbox = effect () => { polled.push(true); return try Effect.fail(new Unavailable({ reason: "closed" })) }
-    const seen = try started({ account: { ...accountOf(home), identity: person } }, undefined, faulty({ accounts: undefined, sandbox }))
-    try settled(() => expect(polled.length).toBeGreaterThan(0))
-    try witnessed(seen)
-    try Effect.try(() => expect(accountOf(seen.model).identity).toEqual(person))
-  }))
   it.live("a tour event reaches the tour client", () => scoped(effect {
     const seen = try started({ tourClient: newClient }, undefined, faulty({ events: () => Stream.make({ type: "TourStarted" as const, seq: 1, id: "t1" }) }))
     try settled(() => expect(seen.model.tourClient?.conversation.seq).toBe(1))
@@ -238,7 +230,7 @@ describe("updates", () => {
 it.effect("a successful read that omits the page names it missing", () => effect {
   provide MockFactory {
     const factory = try Factory
-    const wiki = { read: () => succeed({ seq: 1, pages: [] }), act: factory.wiki!.act }
+    const wiki = { read: () => succeed({ seq: 1, pages: [] }), act: factory.wiki.act }
     const answer = try Effect.provideService(run(() => OpenWikiEditor({ page: "index", request: 3 })), Factory, overlaid(factory, { wiki }))
     try Effect.try(() => expect(answer).toMatchObject({ _tag: "FailedWikiEdit", request: 3, reason: "missing" }))
   }

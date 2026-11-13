@@ -16,7 +16,7 @@ import * as C from "../src/surfaces/commands.vibe"
 import { backend as webBackend } from "./web-backends.vibe"
 import { run, Int, Text } from "./run.vibe"
 
-const Kind = Schema.Literals(["surface", "bare", "faulty"])
+const Kind = Schema.Literals(["surface", "faulty"])
 const Input = Schema.Struct({ text: Text, title: Text, n: Int, json: Schema.Boolean, conversation: Schema.Literals(["home", "fuzz-1", "bad id!", ""]) })
 
 /** A command's answer: its rendered text, or the one sentence its CommandError carries. */
@@ -60,7 +60,6 @@ effect function everyCommand(input: typeof Input.Type & { readonly kind: typeof 
         }
         const terminal = (answer: { readonly ok: boolean; readonly text: string }) => sandbox(answer.ok ? answer : note(answer))
         const faulty = input.kind === "faulty"
-        const bare = input.kind === "bare"
         const json = input.json
         const conversation = input.conversation
 
@@ -91,23 +90,20 @@ effect function everyCommand(input: typeof Input.Type & { readonly kind: typeof 
 
         if (misnamed !== "") return `${input.kind}: sandbox refusal ${misnamed}`
 
-        // Issues: list, then a flow per operation; without the service both answer one sentence.
+        // Issues: list, then a flow per operation; a failing service answers one sentence.
         const listed = note(try attempt(C.Issues, {}, json))
-        if (bare && listed.text !== "Issues unavailable.") return `${input.kind}: line 80`
         if (faulty && listed.text !== "Issues unavailable.") return `${input.kind}: line 81`
         // A missing key is generated; a resume carries its recovery when given, and a recovery travels alone.
         const carried = { read: {}, new: { key: "" }, comment: { resumeOp: "new", resumeKey: "k-old", resumeRecovery: "rr" }, "spec-review": { resumeOp: "new", resumeKey: "k-old" }, propose: { recovery: "r" }, draft: {} }
         for (const op of ["read", "new", "comment", "spec-review", "propose", "draft"] as const) {
           const answer = note(try attempt(C.Issue, { op, title: input.title || "Fuzz", text: input.text, number: input.n % 3, key: `k-${op}-${input.n}`, ...carried[op] }, json))
-          if (bare && answer.text !== "Issues unavailable.") return `${input.kind}: line 84`
           if (answer.ok && !answer.text.includes('"detail"')) return `${input.kind}: line 85`
         }
 
-        // Wiki: read and each write; without the service one sentence.
+        // Wiki: read and each write; a failing service answers one sentence.
         for (const page of ["", "index"]) {
           for (const op of ["read", "draft", "save", "propose"] as const) {
             const answer = note(try attempt(C.Wiki, { op, page, base: "", text: input.text, key: page === "" ? "" : `w-${op}`, recovery: page === "" ? "" : "r" }, json))
-            if (bare && answer.text !== "Wiki unavailable.") return `${input.kind}: line 91`
             if (answer.ok && !answer.text.includes('"seq"')) return `${input.kind}: line 92`
           }
         }
@@ -134,11 +130,10 @@ effect function everyCommand(input: typeof Input.Type & { readonly kind: typeof 
           if (!traced.ok || (!json && !traced.text.startsWith("passed"))) return `${input.kind}: line 103`
           note(try attempt(C.Rerun, { id: shown.success.id }, json))
           note(try attempt(C.CancelRun, { id: shown.success.id }, json))
-        } else if (bare ? shown.failure.message !== "Action: forbidden" : !faulty) return `${input.kind}: line 106`
+        } else if (!faulty) return `${input.kind}: line 106`
         // A refused history write settles failed, and waiting on it says so.
         const refused = note(try attempt(C.RunWorkflow, { flow: "vibelang/history/Start", input: JSON.stringify({ id: "m-missing", lane: "fuzz" }), wait: true }, json))
-        // Without accounts the actor is a viewer, and only a tour is a viewer's.
-        if (!faulty && (refused.ok || refused.text !== (bare ? "Action: forbidden" : "Action failed."))) return `${input.kind}: line 109`
+        if (!faulty && (refused.ok || refused.text !== "Action failed.")) return `${input.kind}: line 109`
         const requested = note(try attempt(C.RunWorkflow, { flow: "vibelang/history/show" }, false))
         if (input.kind === "surface" && !requested.text.startsWith("Requested a")) return `${input.kind}: a run without waiting answered ${requested.text}`
         note(try attempt(C.RunWorkflow, { flow: "unknown/flow" }, json))
@@ -186,7 +181,6 @@ effect function everyCommand(input: typeof Input.Type & { readonly kind: typeof 
         // Sign-in, mock mode: the CLI's own session file.
         const login = note(try attempt(C.Login, { wait: false }, json))
         if (input.kind === "surface" && (!login.ok || (!json && !login.text.startsWith("Signed in as ")))) return `${input.kind}: line 139`
-        if (bare && login.text !== "Sign-in isn't available.") return `${input.kind}: line 140`
         // Signed in, a new mock backend acts as the person's agent: its notes are signed `<login> (agent)`.
         if (input.kind === "surface" && login.ok) {
           const name = (try C.Login.run({ wait: false })).login

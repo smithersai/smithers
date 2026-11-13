@@ -69,7 +69,7 @@ effect function call(input: Input) {
   const factory = try Factory
   const accounts = factory.accounts
   const controlTour = factory.controlTour
-  if (accounts === undefined || controlTour === undefined) throw new Missing()
+  if (controlTour === undefined) throw new Missing()
   const c = input.conversation
   switch (input.op) {
     case "post": return try factory.post(c, "c1", "Guest", input.text)

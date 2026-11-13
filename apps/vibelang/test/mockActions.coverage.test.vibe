@@ -33,7 +33,7 @@ function world(principal: Principal, over: (base: Factory.Shape) => Overrides = 
 
 /** The real accounts with `current` replaced, and no policy: the host authorizes, as a live Factory's does. */
 function current(base: Factory.Shape, identity: Accounts.Shape["current"]): Overrides {
-  return { accounts: withCurrent(base.accounts!, identity), policy: undefined }
+  return { accounts: withCurrent(base.accounts, identity), policy: undefined }
 }
 
 const json = (text: string) => Effect.try(() => JSON.parse(text) as Record<string, any>)
@@ -104,19 +104,7 @@ describe("mock-mode actions", () => {
     }
   }))
 
-  it.live("without accounts the principal's role decides, as a signed-out Guest", () => scoped(effect {
-    provide world(maintainer, () => ({ accounts: undefined, policy: undefined })) {
-      const run = try finished(try (try Actions).start("vibelang/Post", { text: "no accounts" }, "button"))
-      try Effect.try(() => expect(run.state).toBe("passed"))
-    }
-  }))
 
-  it.live("without accounts or a role, the Guest is a viewer", () => scoped(effect {
-    provide world({ actor: "person" }, () => ({ accounts: undefined, policy: undefined })) {
-      const refused = try Effect.flip((try Actions).start("vibelang/Post", { text: "viewer" }, "button"))
-      try Effect.try(() => expect(code(refused)).toBe("forbidden"))
-    }
-  }))
 
   it.live("a post without text fails, and a refused note fails with its reason", () => scoped(effect {
     provide world(maintainer) {
@@ -209,8 +197,8 @@ describe("mock-mode actions", () => {
   })
 
   it.live("cancels a run before it starts, and it never runs", () => scoped(effect {
-    // Without accounts or a policy, start and cancel complete before the run's fiber first runs.
-    provide world(maintainer, () => ({ accounts: undefined, policy: undefined })) {
+    // Without a policy, start and cancel complete before the run's fiber first runs.
+    provide world(maintainer, () => ({ policy: undefined })) {
       const actions = try Actions
       const id = try actions.start("vibelang/Post", { text: "never" }, "button")
       try actions.cancel(id)

@@ -64,7 +64,7 @@ type Item = IssuesUi["data"]["items"][number]
 /** The mock Factory's issue records, as a maintainer sees them. */
 effect function mockItems() {
   provide mockFactoryFor("maintainer") {
-    return (try (try Factory).issues!.read()).items
+    return (try (try Factory).issues.read()).items
   }
 }
 

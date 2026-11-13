@@ -40,12 +40,12 @@ export schema error Refused { refusal: string; reason?: string }
  * above `after`, then follows new ones until the stream is closed.
  */
 export service Factory {
-  readonly issues?: IssuesApi
-  readonly wiki?: WikiApi
+  readonly issues: IssuesApi
+  readonly wiki: WikiApi
 
   /** The browser resolves its backend after rendering; operations wait while mode is pending. */
   readonly mode: Mode | "pending"
-  readonly accounts?: Accounts.Shape
+  readonly accounts: Accounts.Shape
   /** The product mock exposes its actual policy; live authorization stays on the host. */
   readonly policy?: Policy.Shape
   post(conversation: string, clientId: string, name: string, text: string): void!(Unavailable | Refused)

@@ -5,8 +5,8 @@ const request = { op: "commit" as const, number: 42, parent: 0, title: "", text:
 it.effect("checks current roles before replay and promotes only accepted participation", () => scoped(effect {
   provide MockFactory {
     const factory = try Factory
-    const accounts = factory.accounts!
-    const issues = factory.issues!
+    const accounts = factory.accounts
+    const issues = factory.issues
     const anonymous = try Effect.result(issues.act(request))
     try Effect.try(() => expect(anonymous._tag).toBe("Failure"))
     try accounts.choose("maintainer")
@@ -34,7 +34,7 @@ it.effect("counts a denied replay without logging its title, text, assignee or w
     provide MockFactory {
       const counter = Metric.withAttributes(Metric.counter("vibelang_issue_access", { incremental: true }), { op: "commit", outcome: "forbidden" })
       const before = try Metric.value(counter)
-      const outcome = try Effect.result((try Factory).issues!.act({ ...request, title: "private-title", text: "private-body", assignee: "private-person", key: "private-key" }))
+      const outcome = try Effect.result((try Factory).issues.act({ ...request, title: "private-title", text: "private-body", assignee: "private-person", key: "private-key" }))
       const after = try Metric.value(counter)
       const records = (try Ref.get(lines)).filter(line => line.includes("vibelang.issues"))
       try Effect.try(() => {
@@ -51,10 +51,10 @@ it.effect("counts a denied replay without logging its title, text, assignee or w
 it.effect("shares the role picker with sandbox admission after the parallel-lane integration", () => scoped(effect {
   provide MockFactory {
     const factory = try Factory
-    try factory.accounts!.choose("contributor")
+    try factory.accounts.choose("contributor")
     const started = try factory.startSandbox("roles", "role-contributor-start")
     try Effect.try(() => expect(started.status).toBe("running"))
-    try factory.accounts!.choose("viewer")
+    try factory.accounts.choose("viewer")
     const refused = try Effect.result(factory.sandboxCommand("roles", "after-revoke", "pwd", started.generation))
     try Effect.try(() => expect(refused._tag).toBe("Failure"))
   }
@@ -63,12 +63,12 @@ it.effect("shares the role picker with sandbox admission after the parallel-lane
 it.live("filing an issue whose title mentions starting a sandbox performs only the requested issue action", () => scoped(effect {
   provide MockFactory {
     const factory = try Factory
-    try factory.accounts!.choose("maintainer")
+    try factory.accounts.choose("maintainer")
     const before = try factory.sandbox("issue-title")
     try factory.post("issue-title", "file-sandbox-title", "will", "File an issue: Start a sandbox for tuple tests")
     try Stream.runDrain(factory.events("issue-title", 0).pipe(Stream.filter(event => event.type === "ReplyFinished"), Stream.take(1)))
     const after = try factory.sandbox("issue-title")
-    const issues = try factory.issues!.read()
+    const issues = try factory.issues.read()
     try Effect.try(() => {
       expect(issues.items.some(issue => issue.title === "Start a sandbox for tuple tests")).toBe(true)
       expect(after.id).toBe(before.id)

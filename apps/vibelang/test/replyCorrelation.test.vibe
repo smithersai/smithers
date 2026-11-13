@@ -4,6 +4,8 @@ import { decide, type Intent } from "../src/core/decide.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { Ask } from "../src/surfaces/commands.vibe"
 
+const unused = (what: string) => () => die(new Error(`Ask never uses ${what}`))
+
 function start(id: string, inReplyTo: string) { return { type: "StartReply" as const, id, inReplyTo } }
 function started(seq: number, id: string, inReplyTo: string) { return { type: "ReplyStarted" as const, seq, id, inReplyTo } }
 
@@ -71,6 +73,12 @@ for (const earlier of ["skipped", "later"] as const) {
       startSandbox: () => die(new Error("Ask never starts a sandbox")),
       stopSandbox: () => die(new Error("Ask never stops a sandbox")),
       sandboxCommand: () => die(new Error("Ask never runs a sandbox command")),
+      accounts: {
+        current: unused("accounts"), members: unused("accounts"), grant: unused("accounts"), signOut: unused("accounts"),
+        signInAgent: unused("accounts"), choose: unused("accounts"), participated: unused("accounts"), events: () => Stream.die(new Error("Ask never follows roles")),
+      },
+      issues: { read: unused("issues"), act: unused("issues") },
+      wiki: { read: unused("the wiki"), act: unused("the wiki") },
     })
     const actual = try effect {
       provide layer {

@@ -34,7 +34,7 @@ const drive = (input: typeof Input.Type) => effect {
   const w = try world()
   provide MockFactory, history {
     const device = try Factory
-    try device.accounts!.choose("maintainer")
+    try device.accounts.choose("maintainer")
     const product = try Mythical
     provide ActionDevice = device {
       const id = "historic"

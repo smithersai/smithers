@@ -14,7 +14,7 @@ it.live("a failed start keeps its alert and Retry while the open pane reads ever
   provide mockFactoryFor("contributor") {
     const factory = try Factory
     // A contributor may start a sandbox.
-    try Effect.orDie(factory.accounts!.choose("contributor"))
+    try Effect.orDie(factory.accounts.choose("contributor"))
     let starts = 0
     const failing = Layer.succeed(Factory, overlaid(factory, {
       startSandbox: (conversation, operationId) => {

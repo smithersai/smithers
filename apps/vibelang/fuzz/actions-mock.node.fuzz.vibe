@@ -236,7 +236,7 @@ it.live("actions/mock-tour-stream", () => run("actions/mock-tour-stream", Schema
 it.live("actions/mock-before-run", () => run("actions/mock-before-run", Schema.Struct({ first: Role, then: Role, cancel: Schema.Boolean }), (input) => scoped(effect {
   provide Layer.provideMerge(MockActions({ role: input.first, actor: "person", conversation: "home" }), mockFactoryFor(input.first)) {
     const actions = try Actions
-    const accounts = (try Factory).accounts!
+    const accounts = (try Factory).accounts
     const owner = (try accounts.current()).id
     const outcome = try Effect.provideService(effect {
       const id = try actions.start(input.cancel ? "vibelang/Tour" : "vibelang/history/Plan", { how: "append", epic: "", newEpic: "Fuzz", target: "", title: "Fuzz", task: "" }, "button")
@@ -287,7 +287,7 @@ it.live("actions/mock-sign-out-mid-run", () => run("actions/mock-sign-out-mid-ru
     outcomes.push(try scoped(effect {
       let answered = 0
       const signingOut = Layer.effect(Factory, map(Factory, (factory) => {
-        const accounts = factory.accounts!
+        const accounts = factory.accounts
         const current = effect () => (answered++ < checks ? try accounts.current() : try accounts.choose("viewer"))
         return Object.assign(Object.create(factory) as Factory.Shape, { accounts: Object.assign(Object.create(accounts) as typeof accounts, { current }) })
       })).pipe(Layer.provide(mockFactoryFor("contributor")))

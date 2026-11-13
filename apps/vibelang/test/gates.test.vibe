@@ -115,7 +115,7 @@ it.effect("a person can request a reviewer but cannot supply their grade or answ
 }))
 it.effect("CLI and MCP request reviews through the same command and refuse VIP acceptance", () => effect {
   provide MockFactory {
-    try (try Factory).accounts!.choose("maintainer")
+    try (try Factory).accounts.choose("maintainer")
     const initial = try Issue.run({ op: "read", key: "spec-read" })
     try Effect.try(() => expect(JSON.parse(initial.detail).specification.revision).toBe(2))
     const revised = try Issue.run({ op: "spec-revise", revision: 2, text: "CLI specification", key: "cli-revision" })
@@ -155,11 +155,11 @@ it.effect("a faulty reviewer cannot record a stale result or change the gate aft
 it.live("the in-chat scripted agent requests the same named-review flow", () => scoped(effect {
   provide MockFactory {
     const factory = try Factory
-    try factory.accounts!.choose("maintainer")
-    try factory.issues!.act({ ...request("spec-revise", "chat-revision"), revision: 2, text: "Chat review revision" })
+    try factory.accounts.choose("maintainer")
+    try factory.issues.act({ ...request("spec-revise", "chat-revision"), revision: 2, text: "Chat review revision" })
     try factory.post("gates-chat", "request-review", "Will", "Review the specification with Codex Astra")
     try Stream.runDrain(factory.events("gates-chat", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished")))
-    const state = try factory.issues!.read()
+    const state = try factory.issues.read()
     try Effect.try(() => expect(state.specification!.astra).toMatchObject({ verdict: "LGTM", grade: "A", revision: 3 }))
   }
 }))

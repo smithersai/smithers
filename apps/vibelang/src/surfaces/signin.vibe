@@ -107,7 +107,6 @@ export effect function signIn(input: LoginInput) {
   if (factory.mode === "mock") {
     try sessionOperation("login", effect {
       const accounts = factory.accounts
-      if (accounts === undefined) throw new SignInFailed({ message: "Sign-in isn't available." })
       const identity = try Effect.mapError(accounts.signInAgent(), () => new SignInFailed({ message: "Sign-in isn't available." }))
       try safeSettings(writeMockSession(identity.login))
       return "signed-in" as const
@@ -197,7 +196,7 @@ export effect function signOutSurface() {
           if (response.status !== 204) throw new SignInFailed({ message: "Sign-out was refused." })
         }
       }
-      if (factory.mode === "mock" && factory.accounts !== undefined) try Effect.mapError(factory.accounts.signOut(), () => new SignInFailed({ message: "Sign-out failed." }))
+      if (factory.mode === "mock") try Effect.mapError(factory.accounts.signOut(), () => new SignInFailed({ message: "Sign-out failed." }))
     }, Effect.ignore(forget)))
     try forget
     if (Exit.isFailure(revoked)) try Effect.failCause(revoked.cause)

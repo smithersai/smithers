@@ -148,35 +148,35 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       : run
     return {
       mode: fault === "live-header" || fault === "live-details" ? "live" : base.mode,
-      ...(base.accounts === undefined ? {} : { accounts: fault === "roles" ? rolesFault(base.accounts, () => first("roles")) : fault === "roles-gap" ? rolesGapFault(base.accounts, () => first("roles-gap")) : fault === "accounts" ? accountsFault(base.accounts, first) : base.accounts }),
+      accounts: fault === "roles" ? rolesFault(base.accounts, () => first("roles")) : fault === "roles-gap" ? rolesGapFault(base.accounts, () => first("roles-gap")) : fault === "accounts" ? accountsFault(base.accounts, first) : base.accounts,
       ...(base.policy === undefined ? {} : { policy: base.policy }),
-      ...(base.wiki === undefined ? {} : { wiki: {
+      wiki: {
         read: effect (page) => {
-          const read = try base.wiki!.read(page)
+          const read = try base.wiki.read(page)
           return fault === "stale" ? { ...read, stale: STALE_AT } : read
         },
         // `wiki-edit`: the first save or proposal fails before anything is written; later ones are real.
         act: effect (request) => {
           if (request.op !== "read" && first("wiki-edit:act")) throw new WikiFailure({ reason: "unavailable", unwritten: true })
           if (wikiRefusal !== undefined && request.op !== "read" && first(fault)) throw new WikiFailure({ reason: wikiRefusal })
-          return try base.wiki!.act(request)
+          return try base.wiki.act(request)
         },
-      } }),
-      ...(base.issues === undefined ? {} : { issues: {
+      },
+      issues: {
         read: effect () => {
           if (fault === "issues" && !observation.faulted) { observation.faulted = true; throw new IssueFailure({ reason: "unavailable" }) }
-          const read = try base.issues!.read()
+          const read = try base.issues.read()
           // GitHub refused to refresh: the object serves its last good copy, marked stale (decision 0031).
           return fault === "stale" ? { ...read, stale: STALE_AT } : read
         },
         act: effect (request) => {
           if (request.op === "read" && request.number > 0 && first("live-details:read")) throw new IssueFailure({ reason: "unavailable" })
           if (setup !== undefined && request.op !== "read" && first(fault)) throw new IssueFailure({ reason: setup })
-          const result = try base.issues!.act(request)
+          const result = try base.issues.act(request)
           if (fault === "issue-write" && request.op !== "read" && !observation.faulted) { observation.faulted = true; throw new IssueFailure({ reason: "unavailable" }) }
           return result
         },
-      } }),
+      },
       post: effect (conversation, clientId, name, text) => {
         // `post-empty` sends the post with its text lost, so the mock's sequencer (decide.vibe) refuses it itself.
         if (fault === "post-empty" && first(fault)) return try base.post(conversation, clientId, name, "")

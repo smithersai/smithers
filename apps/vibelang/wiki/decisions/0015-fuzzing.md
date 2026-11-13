@@ -132,7 +132,7 @@ Coverage budget: `pnpm fuzz:coverage` now defaults to 5 seconds per target, beca
 
 Coverage is still bounded by decision 0016's bundled source-range defect. Workerd's refusal of precise V8 profiling no longer bounds it, and `worker/Api.vibe` is no longer excluded: since 2026-11-10 (vl-coverage-workerd) the measured targets stage gives each workerd isolate Istanbul counters, the report stage merges them by source position, and `workerd/alchemy-api-requests` runs `worker/Api.vibe` as Alchemy builds and bridges it (0016, "Unit and fuzz gates inside workerd").
 
-`web/guided-commands`, `web/command-sequences` and `web/commands-from-any-model` run the Commands `update` returns against the real mock Factory and Actions, the same seen as live, a backend without optional services, and a backend that fails every call. Each Command's Message goes back through `update`. Random `Message` unions rarely reach a draft and then a submit: a `PostMessage` mutant survived 10 seconds of `web/command-sequences`, so `web/guided-commands` picks each gesture from what the screen offers and was confirmed to kill that mutant. Both of its findings were oracle errors, kept in the corpus: `IssueUi` carries a free string and `issuesUpdate` casts it, and the view only sends members of the union. The target sends the legal values.
+`web/guided-commands`, `web/command-sequences` and `web/commands-from-any-model` run the Commands `update` returns against the real mock Factory and Actions, the same seen as live, a backend without the tour control (`bare`), and a backend that fails every call. Each Command's Message goes back through `update`. Random `Message` unions rarely reach a draft and then a submit: a `PostMessage` mutant survived 10 seconds of `web/command-sequences`, so `web/guided-commands` picks each gesture from what the screen offers and was confirmed to kill that mutant. Both of its findings were oracle errors, kept in the corpus: `IssueUi` carries a free string and `issuesUpdate` casts it, and the view only sends members of the union. The target sends the legal values.
 
 `web/subscriptions` runs every subscription over arbitrary Models with native happy-dom events and the same backends. Its one finding was a harness error kept in the corpus: a plain `Event` named `touchmove` has no `touches`; the target now sends real `TouchEvent`s. It forks the `keyboard` subscription last and fires Escape until that subscription answers `PressedEscape` (deadline 5 seconds) before the generated events, so every listener is attached and a silent keyboard is a finding; it replaced a 5 ms attach sleep that passed with nothing emitted.
 
@@ -506,7 +506,7 @@ history `Store`), never request interception.
 
 | Target | File | Exercises |
 | --- | --- | --- |
-| `surfaces/every-command` | `fuzz/surfaces-commands.node.fuzz.vibe` | all 20 commands, every execution, over the CLI's own mock backend, a mock without accounts, issues and wiki, and a backend that fails every call; a fresh mock that reads the stored session; a viewer after sign-out |
+| `surfaces/every-command` | `fuzz/surfaces-commands.node.fuzz.vibe` | all 20 commands, every execution, over the CLI's own mock backend and a backend that fails every call; a fresh mock that reads the stored session; a viewer after sign-out |
 | `surfaces/ask-correlation` | same | `ask` over a scripted event stream: its own post's reply only, the text after the last restart, why it failed or never finished |
 | `surfaces/live-backend` | `fuzz/surfaces-backend.node.fuzz.vibe` | the live backend's health probe and session cookie over a real socket: explicit, stored, foreign and missing sessions |
 | `surfaces/person-client` | same | an explicit session's cookie and origin reach only its own origin |
@@ -1762,3 +1762,15 @@ combinations and removes the observed receipt after a real history run settles a
 `test/fuzzCoverage.test.vibe` checks that partial and empty reports preserve the whole-source denominator.
 
 Tracked and fixed in [#5340](https://github.com/smithersai/smithers/issues/5340).
+
+## Required Factory services (vl-coverage, 2026-11-13)
+
+`src/core/Factory.vibe` now requires `accounts`, `issues` and `wiki` (lead's approval on the platform board,
+2026-11-13 07:55Z): both selectable factories always supplied them, so the browser's absent-service guards were dead
+code (0016). The `bare` web backend (`fuzz/web-backends.vibe`) keeps the mock's services and drops only the tour
+control. Scenarios that asserted only an absent service's answer went with their arms: `web/command-arms`'
+`load-bare`, `act-bare`, `refresh-bare`, `people-bare`, `sign-out-bare`, `roles-bare`, `wiki-bare`, `details-bare` and
+`grant-bare`; the bare halves of `sign-in-mock` and `issue-count` (the latter now checks the failing backend instead);
+`web/command-bodies`' bare expectations; `surfaces/every-command`'s `bare` kind; and `signin-steered`'s
+`mock-no-accounts`. The sections above record what each target fuzzed when it was written.
+

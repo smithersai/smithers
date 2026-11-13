@@ -50,7 +50,7 @@ describe("the HTTP Factory", () => {
   it.live("runs the actual sandbox gateway and retains files across generation changes over HTTP", () => scoped(effect {
     provide NodeHttpServer.layerTest, MockFactory {
       const product = try Factory
-      try product.accounts!.choose("maintainer")
+      try product.accounts.choose("maintainer")
       try served()
       provide LiveFactory("") {
         const factory = try Factory

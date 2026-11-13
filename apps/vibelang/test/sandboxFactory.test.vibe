@@ -83,7 +83,7 @@ it.live("a queued Viewer prompt cannot borrow a subsequently selected Contributo
     const factory = try Factory
     try factory.tour("queued-viewer")
     try factory.post("queued-viewer", "viewer-sandbox", "Guest", "start a sandbox")
-    try factory.accounts!.choose("contributor")
+    try factory.accounts.choose("contributor")
     try factory.endTour("queued-viewer")
     try Stream.runDrain(factory.events("queued-viewer", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
     const sandbox = try factory.sandbox("queued-viewer")
@@ -100,11 +100,11 @@ it.live("a queued Contributor prompt starts only its originating owner's sandbox
     const factory = try Factory
     try factory.tour("queued-contributor")
     try factory.post("queued-contributor", "contributor-sandbox", "rira", "start a sandbox")
-    try factory.accounts!.choose("maintainer")
+    try factory.accounts.choose("maintainer")
     try factory.endTour("queued-contributor")
     try Stream.runDrain(factory.events("queued-contributor", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
     const other = try factory.sandbox("queued-contributor")
-    try factory.accounts!.choose("contributor")
+    try factory.accounts.choose("contributor")
     const own = try factory.sandbox("queued-contributor")
     const chat = try factory.read("queued-contributor", 0)
     try Effect.try(() => {

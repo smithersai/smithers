@@ -32,7 +32,7 @@ it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Inpu
   const w = try world()
   provide MockFactory, history {
     const device = try Factory
-    try device.accounts!.choose("maintainer")
+    try device.accounts.choose("maintainer")
     const product = try Mythical
     provide ActionDevice = device {
       const used = new Set<string>()
@@ -49,7 +49,7 @@ it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Inpu
         const id = `arun${op.id % 16}${op.id % 3 === 0 ? "-reply" : ""}`
         const flow = FLOWS[op.flow % FLOWS.length]!
         if (op.op === "demote") {
-          try device.accounts!.choose(op.role)
+          try device.accounts.choose(op.role)
           continue
         }
         if (op.op === "start") {

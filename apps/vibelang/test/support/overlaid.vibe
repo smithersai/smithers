@@ -1,12 +1,14 @@
 // The real factory with chosen members replaced, so a test states one fault and keeps the rest of the service.
 import type { Factory } from "../../src/core/Factory.vibe"
 
-export type Overrides = { readonly [K in keyof Factory.Shape]?: Factory.Shape[K] | undefined }
+/** `undefined` removes an optional capability (`policy`, `controlTour`); the required services can only be replaced. */
+type Optional = "policy" | "controlTour"
+export type Overrides = { readonly [K in keyof Factory.Shape]?: K extends Optional ? Factory.Shape[K] | undefined : Factory.Shape[K] }
 
-/** The real factory with the named members replaced; `undefined` removes an optional capability. */
+/** The real factory with the named members replaced. */
 export function overlaid(base: Factory.Shape, over: Overrides): Factory.Shape {
   const chosen = <K extends keyof Factory.Shape>(key: K): Factory.Shape[K] => (key in over ? over[key] : base[key]) as Factory.Shape[K]
-  const optional = <K extends "accounts" | "issues" | "wiki" | "policy" | "controlTour">(key: K) => {
+  const optional = <K extends Optional>(key: K) => {
     const value = chosen(key)
     return value === undefined ? {} : { [key]: value } as Pick<Factory.Shape, K>
   }
@@ -14,6 +16,6 @@ export function overlaid(base: Factory.Shape, over: Overrides): Factory.Shape {
     mode: chosen("mode"), post: chosen("post"), read: chosen("read"), events: chosen("events"), tour: chosen("tour"), endTour: chosen("endTour"),
     openWiki: chosen("openWiki"), sandbox: chosen("sandbox"), startSandbox: chosen("startSandbox"), stopSandbox: chosen("stopSandbox"),
     sandboxCommand: chosen("sandboxCommand"),
-    ...optional("accounts"), ...optional("issues"), ...optional("wiki"), ...optional("policy"), ...optional("controlTour"),
+    accounts: chosen("accounts"), issues: chosen("issues"), wiki: chosen("wiki"), ...optional("policy"), ...optional("controlTour"),
   }
 }

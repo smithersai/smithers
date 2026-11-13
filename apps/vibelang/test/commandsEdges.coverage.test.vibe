@@ -130,7 +130,7 @@ describe("login", () => {
     provide NodeServices.layer {
       const home = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
       provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: home })) {
-        provide Layer.succeed(Factory, only({})) {
+        provide Layer.succeed(Factory, only({ accounts: { signInAgent: () => Effect.fail(new AccountUnavailable({ reason: "down" })) } as unknown as Factory.Shape["accounts"] })) {
           const message = try failure(Login.run({}))
           try Effect.try(() => expect(message).toBe("Sign-in isn't available."))
         }
@@ -142,7 +142,7 @@ describe("login", () => {
     provide NodeServices.layer {
       const home = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
       provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: home })) {
-        provide Layer.succeed(Factory, only({ accounts: { signOut: () => Effect.fail(new AccountUnavailable({ reason: "down" })) } as unknown as NonNullable<Factory.Shape["accounts"]> })) {
+        provide Layer.succeed(Factory, only({ accounts: { signOut: () => Effect.fail(new AccountUnavailable({ reason: "down" })) } as unknown as Factory.Shape["accounts"] })) {
           const message = try failure(Logout.run({}))
           try Effect.try(() => expect(message).toBe("Sign-out failed."))
         }

@@ -14,7 +14,7 @@ it.live("accounts, the wiki, a tour and a sandbox reach the selected mock", () =
   const health = try heldHealth()
   provide BrowserFactory("http://startup.test", true, "maintainer").pipe(Layer.provide(health.layer)) {
     const factory = try Factory
-    const accounts = factory.accounts!
+    const accounts = factory.accounts
     try accounts.grant("4", "contributor")
     const granted = (try accounts.members()).find((person) => person.id === "4")?.role
     const joined = try accounts.choose("new")
@@ -22,7 +22,7 @@ it.live("accounts, the wiki, a tour and a sandbox reach the selected mock", () =
     const promoted = try accounts.current()
     try accounts.choose("maintainer")
     const events = try Stream.runCollect(accounts.events(0).pipe(Stream.take(2)))
-    const drafted = try factory.wiki!.act({ op: "draft", page: "index", base: "", text: "Add a heading", key: "forward-draft" })
+    const drafted = try factory.wiki.act({ op: "draft", page: "index", base: "", text: "Add a heading", key: "forward-draft" })
     try factory.openWiki("forward", "rulings")
     try factory.tour("forward")
     try Stream.runDrain(factory.events("forward", 0).pipe(Stream.takeUntil((event) => event.type === "WalkthroughDriven")))

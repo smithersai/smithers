@@ -311,7 +311,6 @@ describe("settings and time", () => {
 
 describe("mock accounts that fail", () => {
   it.live.each([
-    ["has no accounts", undefined],
     ["can't sign the agent in", { signInAgent: unavailable }],
   ] as const)("a mock world that %s can't sign in and stores nothing", ([_name, accounts]) => scoped(effect {
     provide NodeServices.layer, mockWith(accounts) {

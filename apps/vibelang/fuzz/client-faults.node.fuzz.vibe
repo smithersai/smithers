@@ -198,14 +198,14 @@ const liveDown = HttpClient.make((request) => request.url.endsWith("/api/health"
 effect function everyDelegate(room: string, text: string) {
   const factory = try Factory
   const actions = try Actions
-  const accounts = factory.accounts!
+  const accounts = factory.accounts
   const page = "rulings"
   const calls: ReadonlyArray<readonly [string, Effect.Effect<unknown, unknown, never>]> = [
     ["current", accounts.current()], ["members", accounts.members()], ["grant", accounts.grant("4", "contributor")], ["granted", accounts.members()], ["choose", accounts.choose("new")],
     ["participated", accounts.participated("4")], ["signInAgent", accounts.signInAgent()], ["signOut", accounts.signOut()],
     ["accountEvents", Effect.timeoutOption(Stream.runHead(accounts.events(0)), "50 millis")],
-    ["issuesRead", factory.issues!.read()], ["issuesAct", factory.issues!.act({ op: "read", number: 1, key: `k-${room}`, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" })],
-    ["wikiRead", factory.wiki!.read(page)], ["wikiAct", factory.wiki!.act({ op: "save", page, base: "# A", text: `# B ${text.toWellFormed()}`, key: `w-${room}` })],
+    ["issuesRead", factory.issues.read()], ["issuesAct", factory.issues.act({ op: "read", number: 1, key: `k-${room}`, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" })],
+    ["wikiRead", factory.wiki.read(page)], ["wikiAct", factory.wiki.act({ op: "save", page, base: "# A", text: `# B ${text.toWellFormed()}`, key: `w-${room}` })],
     ["post", factory.post(room, `c-${room}`, "Guest", "install")], ["read", factory.read(room, 0)], ["tour", factory.tour(room)], ["endTour", factory.endTour(room)],
     ["openWiki", factory.openWiki(room, page)], ["controlTour", factory.controlTour!(room, "pause", 1)],
     ["sandbox", factory.sandbox(room)], ["startSandbox", factory.startSandbox(room, `op-${room}`)], ["stopSandbox", factory.stopSandbox(room, `op2-${room}`, 1)],
@@ -254,7 +254,7 @@ it.live("clients/browser-delegates", () => run("clients/browser-delegates", Sche
   // Unforced, with health unreachable: the mock, as a viewer.
   const fallback = try scoped(Effect.provide(effect {
     const ready = try (try AgentBackend).ready
-    return { ready, identity: try (try Factory).accounts!.current() }
+    return { ready, identity: try (try Factory).accounts.current() }
   }, BrowserFactory("http://fault.invalid", false).pipe(Layer.provide(down))))
   if (fallback.ready !== "mock" || fallback.identity.role !== "viewer") throw new Finding({ report: `unreachable health selected ${fallback.ready} as ${fallback.identity.role}` })
   for (const [name, result] of Object.entries(mock.results)) if (!typed(result, true) && !typed(result)) throw new Finding({ report: `mock ${name} died` })

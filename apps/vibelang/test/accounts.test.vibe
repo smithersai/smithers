@@ -5,7 +5,7 @@ import { MockFactory } from "../src/core/MockFactory.vibe"
 describe("the product's offline accounts", () => {
   it.effect("selects every role without a backend; sign-out returns to viewer", () => effect {
     provide MockFactory {
-      const accounts = (try Factory).accounts!
+      const accounts = (try Factory).accounts
       for (const role of ["viewer", "new", "community", "contributor", "maintainer"] as const) {
         const identity = try accounts.choose(role)
         try Effect.try(() => expect(identity.role).toBe(role))
@@ -17,7 +17,7 @@ describe("the product's offline accounts", () => {
   })
   it.effect("numbers promotions and demotions and refuses lower roles", () => effect {
     provide MockFactory {
-      const accounts = (try Factory).accounts!
+      const accounts = (try Factory).accounts
       try accounts.choose("community")
       const refused = try Effect.flip(accounts.grant("4", "maintainer"))
       try Effect.try(() => expect(refused._tag).toBe("Denied"))
@@ -34,7 +34,7 @@ describe("the product's offline accounts", () => {
   it.effect("promotes the signed-in author only after an accepted post", () => effect {
     provide MockFactory {
       const factory = try Factory
-      const accounts = factory.accounts!
+      const accounts = factory.accounts
       try accounts.choose("new")
       const blank = try Effect.flip(factory.post("roles", "empty", "joss", " "))
       const before = try accounts.current()
@@ -56,9 +56,9 @@ it.effect("an injected account failure becomes a safe UI failure without changin
   const { AccountUnavailable } = try promise(() => import("../src/core/roles.vibe"))
   provide MockFactory {
     const base = try Factory
-    const accounts = base.accounts!
+    const accounts = base.accounts
     try accounts.choose("maintainer")
-    const faulty: Factory.Shape = { openWiki: base.openWiki, mode: base.mode, post: base.post, read: base.read, events: base.events, tour: base.tour, endTour: base.endTour, sandbox: base.sandbox, startSandbox: base.startSandbox, stopSandbox: base.stopSandbox, sandboxCommand: base.sandboxCommand, ...(base.issues === undefined ? {} : { issues: base.issues }), accounts: { current: accounts.current, members: accounts.members, signOut: accounts.signOut, signInAgent: accounts.signInAgent, choose: accounts.choose, participated: accounts.participated, events: accounts.events, grant: () => Effect.fail(new AccountUnavailable({ reason: "private provider words" })) } }
+    const faulty: Factory.Shape = { openWiki: base.openWiki, mode: base.mode, post: base.post, read: base.read, events: base.events, tour: base.tour, endTour: base.endTour, sandbox: base.sandbox, startSandbox: base.startSandbox, stopSandbox: base.stopSandbox, sandboxCommand: base.sandboxCommand, ...(base.issues === undefined ? {} : { issues: base.issues }), accounts: { current: accounts.current, members: accounts.members, signOut: accounts.signOut, signInAgent: accounts.signInAgent, choose: accounts.choose, participated: accounts.participated, events: accounts.events, grant: () => Effect.fail(new AccountUnavailable({ reason: "private provider words" })) }, issues: base.issues, wiki: base.wiki }
     const command = try Effect.try(() => GrantRole({ id: "4", role: "maintainer" }))
     const result = try Effect.provideService(command.effect, Factory, faulty)
     const people = try accounts.members()
@@ -78,7 +78,7 @@ it.effect("records grant logs and counts without names or person text", () => ef
   })])
   provide capture {
     provide MockFactory {
-      const accounts = (try Factory).accounts!
+      const accounts = (try Factory).accounts
       try accounts.choose("maintainer")
       const counter = Metric.withAttributes(Metric.counter("vibelang_role_grants", { incremental: true }), { outcome: "accepted" })
       const before = try Metric.value(counter)
@@ -97,7 +97,7 @@ it.effect("records grant logs and counts without names or person text", () => ef
 it.effect("gives a fresh offline participant a distinct identity after the first participates", () => effect {
   provide MockFactory {
     const factory = try Factory
-    const accounts = factory.accounts!
+    const accounts = factory.accounts
     try accounts.choose("new")
     try factory.post("fixtures", "first", "Guest", "install")
     const fresh = try accounts.choose("new")
@@ -111,7 +111,7 @@ it.effect("gives a fresh offline participant a distinct identity after the first
 
 it.effect("keeps every offline role selectable after a maintainer steps down", () => effect {
   provide MockFactory {
-    const accounts = (try Factory).accounts!
+    const accounts = (try Factory).accounts
     try accounts.choose("maintainer")
     try accounts.grant("4", "new")
     try accounts.grant("1", "community")
@@ -123,7 +123,7 @@ it.effect("keeps every offline role selectable after a maintainer steps down", (
 it.effect("sandbox admission follows the selected account without rebuilding the factory", () => effect {
   provide MockFactory {
     const factory = try Factory
-    const accounts = factory.accounts!
+    const accounts = factory.accounts
     for (const role of ["viewer", "new", "community"] as const) {
       try accounts.choose(role)
       const result = try Effect.result(factory.startSandbox("roles-sandbox", "denied-" + role))
@@ -142,7 +142,7 @@ it.effect("sandbox admission follows the selected account without rebuilding the
 it.effect("switching mock identities isolates sandbox files and allowances", () => effect {
   provide MockFactory {
     const factory = try Factory
-    const accounts = factory.accounts!
+    const accounts = factory.accounts
     try accounts.choose("contributor")
     const rira = try factory.startSandbox("isolated", "rira-start")
     try factory.sandboxCommand("isolated", "rira-write", "echo private > note", rira.generation)

@@ -177,8 +177,8 @@ describe("wiki edits through the product mock and its role picker", () => {
   it.effect("a chosen role sees its own gates; saving as maintainer opens a review and a viewer still reads the base", () => scoped(effect {
     provide MockFactory {
       const factory = try Factory
-      const accounts = factory.accounts!
-      const wiki = factory.wiki!
+      const accounts = factory.accounts
+      const wiki = factory.wiki
       const denied = try Effect.result(wiki.act(edit("propose", { base: "x", text: "y" })))
       try Effect.try(() => expect(denied).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } }))
       try accounts.choose("maintainer")
@@ -201,8 +201,8 @@ describe("the agent drafts a wiki edit from the chat (FLOW-3)", () => {
   it.live("a contributor's ask becomes a stored draft linked from the reply; the person reviews and submits it", () => scoped(effect {
     provide MockFactory {
       const factory = try Factory
-      const accounts = factory.accounts!
-      const wiki = factory.wiki!
+      const accounts = factory.accounts
+      const wiki = factory.wiki
       try accounts.choose("contributor")
       try factory.post("wiki-draft", "c1", "will", "Draft a wiki edit for the roadmap: add the wiki-edit brick")
       const events = Array.from(try Stream.runCollect(factory.events("wiki-draft", 0) |> Stream.takeUntil(%, event => event.type === "ReplyFinished")))
@@ -305,8 +305,8 @@ it.effect("a fresh engine adopts the fixture repository's original keyed review 
 it.effect("a signed-in person's agent drafts with their role but cannot submit a wiki review, even after the person used the same mock", () => scoped(effect {
   provide MockFactory {
     const factory = try Factory
-    const accounts = factory.accounts!
-    const wiki = factory.wiki!
+    const accounts = factory.accounts
+    const wiki = factory.wiki
     try accounts.choose("maintainer")
     const base = (try wiki.read("roadmap")).pages.find(page => page.id === "roadmap")!.source
     const request = { op: "save" as const, page: "roadmap", base, text: base + "\nPerson review.\n", key: "same-person-review" }

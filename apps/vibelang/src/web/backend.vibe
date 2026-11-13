@@ -41,23 +41,23 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
     const factory: Factory.Shape = {
       get mode() { return current },
       accounts: {
-        current: effect () => { return try (try ready).factory.accounts!.current() },
-        members: effect () => { return try (try ready).factory.accounts!.members() },
-        grant: effect (id, role) => { try (try ready).factory.accounts!.grant(id, role) },
-        signOut: effect () => { try (try ready).factory.accounts!.signOut() },
-        signInAgent: effect () => { return try (try ready).factory.accounts!.signInAgent() },
-        choose: effect (role) => { return try (try ready).factory.accounts!.choose(role) },
-        participated: effect (id) => { try (try ready).factory.accounts!.participated(id) },
-        events: (after) => Stream.unwrap(effect { return (try ready).factory.accounts!.events(after) }),
+        current: effect () => { return try (try ready).factory.accounts.current() },
+        members: effect () => { return try (try ready).factory.accounts.members() },
+        grant: effect (id, role) => { try (try ready).factory.accounts.grant(id, role) },
+        signOut: effect () => { try (try ready).factory.accounts.signOut() },
+        signInAgent: effect () => { return try (try ready).factory.accounts.signInAgent() },
+        choose: effect (role) => { return try (try ready).factory.accounts.choose(role) },
+        participated: effect (id) => { try (try ready).factory.accounts.participated(id) },
+        events: (after) => Stream.unwrap(effect { return (try ready).factory.accounts.events(after) }),
       },
       // Both selectable factories, LiveFactory and mockFactoryFor, always supply accounts, issues, wiki and controlTour.
       issues: {
-        read: effect () => { return try (try ready).factory.issues!.read() },
-        act: effect (request) => { return try (try ready).factory.issues!.act(request) },
+        read: effect () => { return try (try ready).factory.issues.read() },
+        act: effect (request) => { return try (try ready).factory.issues.act(request) },
       },
       wiki: {
-        read: effect (page) => { return try (try ready).factory.wiki!.read(page) },
-        act: effect (request) => { return try (try ready).factory.wiki!.act(request) },
+        read: effect (page) => { return try (try ready).factory.wiki.read(page) },
+        act: effect (request) => { return try (try ready).factory.wiki.act(request) },
       },
       post: effect (conversation, clientId, name, text) => {
         const { factory } = try ready

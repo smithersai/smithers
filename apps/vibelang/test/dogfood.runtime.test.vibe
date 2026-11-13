@@ -32,13 +32,13 @@ it.live("a person in the app and the agent through the Factory commands work in 
       ["Factory CLI", "How do I install it?"], ["VibeLang agent", "done=true"],
     ])))
     // The same label component receives the signed-in agent identity without additional UI copy.
-    try factory.accounts!.signInAgent()
+    try factory.accounts.signInAgent()
     // While the person reads, the agent's next post arrives live.
     const second = try Ask.run({ text: "What is a service?" })
     try promise(() => vi.waitFor(() => expect(transcript().slice(2)).toEqual([
       ["will (agent)", "What is a service?"], ["VibeLang agent", "done=true"],
     ])))
-    try factory.accounts!.signOut()
+    try factory.accounts.signOut()
     // The person posts; the agent reads it with the reply.
     try sync(commandK)
     try promise(() => vi.waitFor(() => expect(activeId()).toBe("vl-palette-prompt")))

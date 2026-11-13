@@ -22,9 +22,8 @@ const decodeRun = Schema.decodeUnknownEffect(Run)
 export function MockActions(principal: Principal) {
   return Layer.effect(Actions, effect {
     const factory = try Factory
-    if (principal.role !== undefined && factory.accounts !== undefined) try Effect.orDie(factory.accounts.choose(principal.role))
+    if (principal.role !== undefined) try Effect.orDie(factory.accounts.choose(principal.role))
     effect function current(): Identity!ActionFailure {
-      if (factory.accounts === undefined) return { id: "", login: "Guest", role: principal.role ?? "viewer" }
       return try Effect.mapError(factory.accounts.current(), () => new ActionFailure({ code: "unavailable" }))
     }
     effect function authorize(name: string) {

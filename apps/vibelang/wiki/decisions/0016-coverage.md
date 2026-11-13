@@ -3179,3 +3179,14 @@ two separate clicks are.
 | `issueRecoveredView`'s specification arm (line 291) | Only a live resume reaches it; `e2e/live-issues.spec.ts` resumes new issues, comments and VIPs, and the issue recording has no specification write. |
 | `issueFailed`'s irrelevant arm (line 361) | A failure that is not the pending retry's own answer needs a second failing write while one is held; every fault page fails one write. |
 
+## Required Factory services (vl-coverage, session 31, 2026-11-13)
+
+`accounts`, `issues` and `wiki` are required in `src/core/Factory.vibe`. Both selectable factories always supplied
+them (`src/web/backend.vibe`), so every `=== undefined` guard on them was dead in the product: fourteen in
+`src/web/main.vibe` (wiki read and save, the issue count, the role stream, load, choose, sign in, sign out, people,
+grant, issue load, act, details and refresh), `src/actions/MockActions.vibe`'s Guest identity, and the CLI's
+"Issues unavailable.", "Wiki unavailable." and "Sign-in isn't available." guards in `src/surfaces/commands.vibe` and
+`src/surfaces/signin.vibe`. They are deleted, not tested. Unit tests that built a factory without the services now
+supply failing ones (`test/commands.coverage.test.vibe` `closed`) or delete the case that tested only the guard;
+`test/support/overlaid.vibe` can no longer remove a required service. Fuzz changes: 0015.
+

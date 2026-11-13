@@ -59,7 +59,7 @@ describe("the mock surface", () => {
   it.live("visits as the fixture maintainer when there is no settings directory to read a sign-in from", () => scoped(effect {
     provide NodeServices.layer, ConfigProvider.layer(ConfigProvider.fromUnknown({})) {
       provide backend(true, undefined) {
-        const person = try Effect.orDie((try Factory).accounts!.current())
+        const person = try Effect.orDie((try Factory).accounts.current())
         try Effect.try(() => {
           expect(person).toMatchObject({ role: "maintainer" })
           expect("ledger" in person && person.agent === true).toBe(false)

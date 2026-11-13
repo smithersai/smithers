@@ -68,7 +68,7 @@ it.live("actions/run-answers", () => run("actions/run-answers", Input, (configs)
   const w = try world()
   provide MockFactory, history {
     const device = try Factory
-    try device.accounts!.choose("maintainer")
+    try device.accounts.choose("maintainer")
     const product = try Mythical
     provide ActionDevice = device {
       for (const [index, input] of configs.entries()) {
@@ -138,7 +138,7 @@ it.live("actions/held-replies", () => run("actions/held-replies", Text, (text) =
   const w = try world()
   provide MockFactory, history {
     const device = try Factory
-    try device.accounts!.choose("maintainer")
+    try device.accounts.choose("maintainer")
     const product = try Mythical
     provide ActionDevice = device {
       const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify(`Answer: ${text}`))], prompt: 3, completion: 4 }])
@@ -254,7 +254,7 @@ it.live("actions/steered-runs", () => run("actions/steered-runs", Text, (text) =
   const w = try world()
   provide MockFactory, history {
     const device = try Factory
-    try device.accounts!.choose("maintainer")
+    try device.accounts.choose("maintainer")
     const product = try Mythical
     provide ActionDevice = device {
       const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify(`Answer: ${text}`))], prompt: 3, completion: 4 }])

@@ -216,7 +216,7 @@ effect function fixtures(body: typeof Body.Type) {
   const wantsRun = body.command === "RunAction" && body.retry === "started" || (body.command === "ReadAction" || body.command === "CancelAction") && body.id === "started"
   const run = wantsRun ? Option.getOrElse(Exit.getSuccess(try exit((try Actions).start("vibelang/Post", { text: "q" }, "button"))), () => "absent") : "unknown"
   const factory = try Factory
-  const members = body.command !== "GrantRole" || factory.accounts === undefined ? [] : Option.getOrElse(Exit.getSuccess(try exit(factory.accounts.members())), () => [])
+  const members = body.command !== "GrantRole" ? [] : Option.getOrElse(Exit.getSuccess(try exit(factory.accounts.members())), () => [])
   return { run, member: members[0]?.id ?? "nobody" }
 }
 
@@ -238,14 +238,12 @@ function commandOf(body: typeof Body.Type, { run, member }: { readonly run: stri
   }
 }
 
-/** What a backend without the service, or with every service failing, must answer. */
+/** What a backend with every service failing, or with an injected wiki fault, must answer. */
 function mustFail(kind: typeof Backend.Type, wiki: typeof WikiFault.Type, command: typeof Body.Type["command"]): boolean {
   // Wiki faults are injected only into the mock backend.
   if (kind === "mock" && command === "OpenWikiEditor" && (wiki === "read-fails" || wiki === "missing")) return true
   if (kind === "mock" && command === "SubmitWikiEdit" && (wiki === "unwritten" || wiki === "kept")) return true
-  if (kind === "faulty") return true
-  if (kind !== "bare") return false
-  return command === "GrantRole" || command === "LoadIssues" || command === "ActOnIssue" || command === "LoadIssueDetails" || command === "RefreshIssueProjection" || command === "OpenWikiEditor" || command === "SubmitWikiEdit"
+  return kind === "faulty"
 }
 
 /**
@@ -263,7 +261,6 @@ it.live("web/command-bodies", () => run("web/command-bodies", Bodies, ({ backend
   const expected = ANSWERS[body.command]
   if (answer._tag !== expected.failed && !expected.ok.includes(answer._tag)) return false
   if (mustFail(kind, wiki, body.command) && answer._tag !== expected.failed) return false
-  if (kind === "bare" && body.command === "LoadPeople") return answer._tag === "LoadedPeople" && answer.members.length === 0
   // An issue answer without a role takes the mock's default, maintainer (IssueDecision.issueDefaultRole).
   if (kind === "roleless" && answer._tag === "IssuesLoaded" && answer.role !== "maintainer") return false
   if (body.command === "RunAction" && body.format === "json" && body.text.trim() !== "" && Exit.isFailure(Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Json))(body.text))) {

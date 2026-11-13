@@ -279,7 +279,6 @@ export schema IssueBrief {
 export schema IssuesOutput { readonly seq: number; readonly items: ReadonlyArray<IssueBrief> }
 export const Issues = define("issues", "List GitHub issues, tasks and VIPs.", Tool.EmptyParams, IssuesOutput, {}, effect () => {
   const api = (try Factory).issues
-  if (api === undefined) throw new CommandError({ message: "Issues unavailable." })
   const state = api.read() catch effect () => { throw new CommandError({ message: "Issues unavailable." }) }
   return { seq: state.seq, items: state.items.map((i) => ({ number: i.number, title: i.title, state: i.state, parent: i.parent, task: i.task, vip: i.vip, assignee: i.assignee })) }
 }, (output) => output.items.map((i) => `#${i.number} ${i.title}${i.task === "" ? "" : ` · Task · ${i.task}`}${i.vip === "" ? "" : ` · VIP · ${i.vip}`}`).join("\n"))
@@ -324,7 +323,6 @@ export const Issue = define("issue", "Run an issue flow.", IssueInput, IssueOutp
   key: Flag.String("key").pipe(Flag.withDefault("")),
 }, effect (input) => {
   const api = (try Factory).issues
-  if (api === undefined) throw new CommandError({ message: "Issues unavailable." })
   const key = input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-")
   const { recovery, resumeOp, resumeKey, resumeRecovery, ...payload } = input
   const carries = issueResume(resumeOp, resumeKey, resumeRecovery, recovery)
@@ -377,7 +375,6 @@ export const Wiki = define("wiki", "Read, draft, save or propose a project wiki 
   recovery: Flag.String("recovery").pipe(Flag.withDefault("")),
 }, effect (input) => {
   const api = (try Factory).wiki
-  if (api === undefined) throw new CommandError({ message: "Wiki unavailable." })
   const result = (input.op === "read" ? api.read(wikiPage(input.page)) : api.act({ op: input.op, page: input.page, base: input.base, text: input.text, ...(input.recovery === "" ? {} : { recovery: input.recovery }), key: input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-") })) catch effect (error) => { throw new CommandError({ message: writeFailure(error.reason, "Wiki change failed.") }) }
   return result
 }, (output) => JSON.stringify({ seq: output.seq, pages: output.pages.map((page) => page.id), ...(output.review === undefined ? {} : { review: output.review }), ...(output.draft === undefined ? {} : { draft: output.draft.page }) }))

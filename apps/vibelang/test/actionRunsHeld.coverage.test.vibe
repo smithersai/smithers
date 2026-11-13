@@ -46,7 +46,7 @@ describe("a run's reply in flight", () => {
     const w = try world()
     provide MockFactory, history {
       const device = try Factory
-      try device.accounts!.choose("maintainer")
+      try device.accounts.choose("maintainer")
       const product = try Mythical
       provide ActionDevice = device {
         const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
@@ -62,7 +62,7 @@ describe("a run's reply in flight", () => {
     const w = try world()
     provide MockFactory, history {
       const device = try Factory
-      try device.accounts!.choose("maintainer")
+      try device.accounts.choose("maintainer")
       const product = try Mythical
       provide ActionDevice = device {
         const entered = try Deferred.make<void>()
@@ -98,7 +98,7 @@ describe("a run's reply in flight", () => {
     const w = try world()
     provide MockFactory, history {
       const device = try Factory
-      try device.accounts!.choose("maintainer")
+      try device.accounts.choose("maintainer")
       const product = try Mythical
       provide ActionDevice = device {
         const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
@@ -125,7 +125,7 @@ describe("a run's alarm settles it", () => {
     const w = try world()
     provide MockFactory, history {
       const device = try Factory
-      try device.accounts!.choose("maintainer")
+      try device.accounts.choose("maintainer")
       const product = try Mythical
       provide ActionDevice = device {
         const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
@@ -141,7 +141,7 @@ describe("a run's alarm settles it", () => {
     const w = try world()
     provide MockFactory, history {
       const device = try Factory
-      try device.accounts!.choose("maintainer")
+      try device.accounts.choose("maintainer")
       const product = try Mythical
       provide ActionDevice = device {
         const anonymous = try w.object("tour-anon")

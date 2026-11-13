@@ -94,7 +94,7 @@ describe("the product mock", () => {
       const hyphenated = try ask("run-hyphen", 'run /sandbox-stop {"generation":1}')
       try factory.tour("run-borrow")
       try factory.post("run-borrow", "a", "Ada", "run /history")
-      try factory.accounts!.choose("contributor")
+      try factory.accounts.choose("contributor")
       try factory.endTour("run-borrow")
       const post = (try factory.read("run-borrow", 0)).entries.find((entry) => entry.clientId === "a")!
       try settled(factory, "run-borrow", post.id)
@@ -110,7 +110,7 @@ describe("the product mock", () => {
       const post = (try factory.read("split", 0)).entries.find((entry) => entry.clientId === "a")!
       try settled(factory, "split", post.id)
       const reply = (try factory.read("split", 0)).entries.find((entry) => entry.inReplyTo === post.id)!
-      const issues = try factory.issues!.read()
+      const issues = try factory.issues.read()
       try Effect.try(() => {
         expect(reply.text).toBe("Split #38 into three children, linked under it.\n\n[Open #38](#issue-38)")
         expect(issues.items.filter((item) => ["Resolve module exports", "Check module cycles", "Document module imports"].includes(item.title))).toHaveLength(3)
@@ -121,9 +121,9 @@ describe("the product mock", () => {
   it.live("a signed-in agent reads and files issues as the agent", () => scoped(effect {
     provide mockFactoryFor("contributor") {
       const factory = try Factory
-      const agent = try factory.accounts!.signInAgent()
-      const before = try factory.issues!.read()
-      const made = try factory.issues!.act({ number: 0, parent: 0, title: "Agent task", text: "t", assignee: "", example: "", prior: "", op: "new", key: "agent-issue" })
+      const agent = try factory.accounts.signInAgent()
+      const before = try factory.issues.read()
+      const made = try factory.issues.act({ number: 0, parent: 0, title: "Agent task", text: "t", assignee: "", example: "", prior: "", op: "new", key: "agent-issue" })
       try Effect.try(() => {
         expect(agent.agent).toBe(true)
         expect(before.items.length).toBeGreaterThan(0)

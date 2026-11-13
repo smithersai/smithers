@@ -20,7 +20,7 @@ describe("terminal reply settlement", () => {
     const w = try world()
     provide MockFactory, history {
       const device = try Factory
-      try device.accounts!.choose("maintainer")
+      try device.accounts.choose("maintainer")
       const product = try Mythical
       provide ActionDevice = device {
         const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
@@ -41,7 +41,7 @@ describe("terminal reply settlement", () => {
     const w = try world()
     provide MockFactory, history {
       const device = try Factory
-      try device.accounts!.choose("maintainer")
+      try device.accounts.choose("maintainer")
       const product = try Mythical
       provide ActionDevice = device {
         const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
@@ -67,7 +67,7 @@ describe("terminal reply settlement", () => {
     const w = try world()
     provide MockFactory, history {
       const device = try Factory
-      try device.accounts!.choose("maintainer")
+      try device.accounts.choose("maintainer")
       const product = try Mythical
       provide ActionDevice = device {
         const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
@@ -109,7 +109,7 @@ describe("terminal reply settlement", () => {
     const w = try world()
     provide MockFactory, history {
       const device = try Factory
-      try device.accounts!.choose("maintainer")
+      try device.accounts.choose("maintainer")
       const product = try Mythical
       provide ActionDevice = device {
         const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
