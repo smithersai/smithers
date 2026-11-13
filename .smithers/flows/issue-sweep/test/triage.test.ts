@@ -403,3 +403,16 @@ test("parked and no-change issues are skipped before triage reads them", async (
   assert.equal(rows["1"]?.detail, "blocked on the maintainer")
   assert.equal(rows["2"]?.detail, "no change; waiting on a human")
 })
+
+test("triage text keeps Unicode intact at every clipping boundary", () => {
+  const title = "t".repeat(512 - 3)
+  const body = "b".repeat(16 * 1024 - 3)
+  const comment = "c".repeat(2 * 1024 - 3)
+  const read = textOf({
+    title: title + "😀",
+    body: body + "𠮷",
+    comments: [{ author: { login: "person" }, body: comment + "𐀀" }]
+  })
+  assert.deepEqual(read, { title, body, comments: [{ author: "person", body: comment }] })
+  assert.ok([read.title, read.body, read.comments[0]!.body].every((text) => text.isWellFormed()))
+})

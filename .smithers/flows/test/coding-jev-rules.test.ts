@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { batches, hunks, MAX_STATES, type RuleComparison } from "../coding/jev-rules.ts"
+import { clip } from "../coding/clip.ts"
+import { batches, bounded, hunks, MAX_HUNK_BYTES, MAX_STATES, type RuleComparison } from "../coding/jev-rules.ts"
 
 const lines = (count: number, prefix: string) =>
   Array.from({ length: count }, (_, index) => `const ${prefix}${index + 1} = ${index + 1}`).join("\n") + "\n"
@@ -59,4 +60,61 @@ test("a batch carries at most 64 states and keeps every one", () => {
   assert.deepEqual(batches(seventy).map((batch) => batch.length), [64, 6])
   assert.deepEqual(batches(seventy).flat(), seventy)
   assert.deepEqual(batches([]), [])
+})
+
+test("byte clipping never splits an astral character at the boundary", () => {
+  assert.equal(clip("😀", 3), "")
+  assert.equal(clip("a😀", 4), "a")
+  assert.equal(clip("a😀", 5), "a😀")
+  assert.equal(clip("😀x", 4), "😀")
+  assert.equal(clip("ab😀z", 5), "ab")
+  assert.equal(clip("ab😀z", 6), "ab😀")
+})
+
+test("byte clipping keeps the longest whole-code-point prefix at every budget", () => {
+  const encoder = new TextEncoder()
+  const alphabet = [
+    "",
+    "a",
+    "\u007f",
+    "\u0080",
+    "é",
+    "\u07ff",
+    "\u0800",
+    "\ud7ff",
+    "\ue000",
+    "\uffff",
+    "𐀀",
+    "😀",
+    "𠮷",
+    "\u{10ffff}"
+  ]
+  for (const first of alphabet) {
+    for (const second of alphabet) {
+      const text = first + second + "z"
+      for (let budget = -1; budget <= encoder.encode(text).length + 1; budget++) {
+        let expected = "", remaining = budget
+        for (const character of text) {
+          const size = encoder.encode(character).length
+          if (size > remaining) break
+          expected += character
+          remaining -= size
+        }
+        const actual = clip(text, budget)
+        assert.equal(actual, expected, JSON.stringify({ text, budget }))
+        assert.ok(actual.isWellFormed())
+        assert.ok(encoder.encode(actual).length <= Math.max(0, budget))
+      }
+    }
+  }
+  assert.equal(clip("", 1), "")
+})
+
+test("bounded hunks retain whole Unicode characters and report a clipped change", () => {
+  const prefix = "a".repeat(MAX_HUNK_BYTES - 3)
+  const text = prefix + "😀"
+  const clipped = bounded(text)
+  assert.deepEqual(clipped, { hunk: prefix, complete: false })
+  assert.ok(clipped.hunk.isWellFormed())
+  assert.deepEqual(bounded(prefix + "é"), { hunk: prefix + "é", complete: true })
 })
