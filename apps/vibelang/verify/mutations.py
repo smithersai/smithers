@@ -271,6 +271,7 @@ cases += [
 ('src/core/issueHostDecision.vibe','issue-object-path','objectPath','return path.startsWith(prefix)','return path !== ""','other paths are 404'),
 ('src/core/issueHostDecision.vibe','wiki-edit-conflict','wikiEditRefusal','if (!baseMatches) return "conflict"','if (!baseMatches) return "empty"','a stale base is a conflict'),
 ('src/core/issueHostDecision.vibe','wiki-edit-unchanged','wikiEditRefusal','if (blank || unchanged) return "empty"','if (blank) return "empty"','an unchanged page is empty'),
+('worker/accountsDecision.vibe','account-own-origin','ownOrigin','return origin === configured','return origin !== ""','another origin is refused'),
 ('worker/accountsDecision.vibe','account-open-read','openOperation','return op === "read"','return op === "read" || op === "draft"','a draft is not open to everyone'),
 ('worker/accountsDecision.vibe','account-open-only','openOperation','return op === "read"','return op !== "comment"','only reading is open'),
 ('worker/workerDecision.vibe','cursor-leading-zero','cursorAccepted','return /^(?:0|[1-9][0-9]*)$/.test(raw)','return /^[0-9]+$/.test(raw)','a cursor has no leading zero'),

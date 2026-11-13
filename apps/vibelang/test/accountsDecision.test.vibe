@@ -1,4 +1,4 @@
-import { signedIn } from "../worker/accountsDecision.vibe"
+import { ownOrigin, signedIn } from "../worker/accountsDecision.vibe"
 import { viewer } from "../src/core/roles.vibe"
 import { describe, expect, it } from "@effect/vitest"
 import {
@@ -84,5 +84,11 @@ describe("the signed-out viewer", () => {
   it("is the empty id: it may not write roles and gets no participation grant", () => {
     expect([signedIn(""), signedIn("1"), signedIn("github:12")]).toEqual([false, true, true])
     expect(signedIn(viewer.id)).toBe(false)
+  })
+})
+
+describe("the account host's origin", () => {
+  it("is the configured origin exactly", () => {
+    expect([ownOrigin("https://vibe.example", "https://vibe.example"), ownOrigin("https://evil.example", "https://vibe.example"), ownOrigin("http://vibe.example", "https://vibe.example")]).toEqual([true, false, false])
   })
 })

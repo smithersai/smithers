@@ -96,7 +96,7 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
     if (!validBodyLength(length, MAX_POST_BYTES)) return json({ error: "body size" }, 413)
     const text = request.text catch () => ""
     const body = decodePost(text) catch () => undefined
-    if (body === undefined || body.name.length > MAX_NAME) return json({ error: "body" }, 400)
+    if (body === undefined || !withinBodyLimit(body.name.length, MAX_NAME)) return json({ error: "body" }, 400)
     const refusal = try conversations.post(route.conversation, body)
     return json(refusal === null ? {} : { refusal }, writeStatus(refusal !== null))
   }

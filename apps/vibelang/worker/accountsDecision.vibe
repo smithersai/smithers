@@ -280,3 +280,10 @@ export function mayConnect(agent: boolean): boolean {
 export function signedIn(id: string): boolean {
   return id !== ""
 }
+
+/** A request is the account host's only when its URL's origin is the configured one (0018 third-lane batch 52). */
+//@ verify
+//@ ensures \result == (origin == configured)
+export function ownOrigin(origin: string, configured: string): boolean {
+  return origin === configured
+}

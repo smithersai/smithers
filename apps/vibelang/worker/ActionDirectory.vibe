@@ -75,7 +75,7 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
     const original = try runs.request(request.id, true)
     if (startConflict(original === undefined ? undefined : JSON.stringify(original), JSON.stringify(request))) return "conflict"
     const routed = try root(request.id)
-    if (routed !== request.id) return "conflict"
+    if (!sameRun(routed, request.id)) return "conflict"
     if (postFlow(request.flow)) {
       const child = replyChildId(request.id)
       const reserved = try promise(() => storage.get(routeKey(child)))

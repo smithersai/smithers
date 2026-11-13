@@ -22,7 +22,7 @@ import * as Sequencer from "./Sequencer.vibe"
 import { afterOf, eventStream } from "./Http.vibe"
 import { bodyLimit, withinBodyLimit } from "./workerDecision.vibe"
 import { logOver } from "./ObjectStorage.vibe"
-import { accountRoute, bootstrapGrant, mayConnect, openOperation, signedIn, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
+import { accountRoute, bootstrapGrant, mayConnect, openOperation, ownOrigin, signedIn, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed, connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, personId, pruned, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, stepOutcome, unexpired, writeOriginAdmitted, admittedRole } from "./accountsDecision.vibe"
 
 export const CALLBACK = "/api/auth/callback"
 /** Alchemy preserves the original origin; loopback hosts use an unprefixed cookie over HTTP. */
@@ -241,7 +241,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   effect function handle(bodyText: string) {
     const request = try HttpServerRequest.HttpServerRequest
     const url = new URL(request.url, setup.origin)
-    if (url.origin !== setup.origin) return json({ error: "origin" }, 403)
+    if (!ownOrigin(url.origin, setup.origin)) return json({ error: "origin" }, 403)
     const path = url.pathname
     if (!writeOriginAdmitted(request.method, request.headers.origin, setup.origin, path, request.headers["sec-fetch-site"])) return json({ error: "origin" }, 403)
     const route = accountRoute(path, request.method, url.searchParams.has("code"), url.searchParams.has("state"))
@@ -453,7 +453,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
         return try readResponse(Semaphore.withPermits(issueLock, 1)(serveWiki(hostId, storage).pipe(Effect.provideService(WikiAuthority, wikiAuthority), Effect.provideService(HttpClient.HttpClient, http), delegated)), request.method)
       }
       if ((url.pathname === "/api/auth/device" || url.pathname === CALLBACK) && request.method === "POST") {
-        if (url.origin !== setup.origin || !writeOriginAdmitted(request.method, request.headers.origin, setup.origin, url.pathname, request.headers["sec-fetch-site"])) return json({ error: "origin" }, 403)
+        if (!ownOrigin(url.origin, setup.origin) || !writeOriginAdmitted(request.method, request.headers.origin, setup.origin, url.pathname, request.headers["sec-fetch-site"])) return json({ error: "origin" }, 403)
         if (!withinBodyLimit(Number(request.headers["content-length"]), bodyLimit("account"))) return json({ error: "body size" }, 413)
         const bounded = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(bodyLimit("account"))), Effect.timeoutOption("3 seconds"))
         const read = bounded catch () => undefined
