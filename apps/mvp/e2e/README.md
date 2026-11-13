@@ -28,6 +28,20 @@ blank pages, frozen previews and missing chapters still fail validation.
 The helper and teardown await renderer paint acknowledgments spanning two
 recording sample slots, so short audits retain their final visible screen.
 
+## Cold reads and shared branches
+
+Cold-path regressions require `faults` and run against the dev build. `holdColdReads` configures the injected
+`ColdReads` service before navigation; the inline first-paint host and the app's `FetchHttpClient.Fetch` share
+its switches. Only the selected first-paint, role and issue-shape reads wait. Release resumes real HTTP;
+cancellation stops the caller, and an abandoned hold expires within 30 seconds. Every cold journey checks the
+content-free expiry record so a response after expiry cannot pass as held-sync evidence. Production bundles contain
+none of this service. Happy-path first-paint and search journeys retain their real services.
+
+Opening a branch updates the account's conversation history, including its archived state. Every suite opening
+the fixed `octocat/Spoon-Knife` branches declares their exclusive branch leases in `resources.ts`, including
+the history/archive, workspace, repository browser, sandbox and mobile journeys. Browser profiles alone do
+not isolate those server-side writes.
+
 ## Distinct people
 
 `branch-sharing.spec.ts` and the two-person journey in `coedit.spec.ts` run locally with developer identities, and against deployments with real GitHub test accounts. A single account on two devices never satisfies this proof.

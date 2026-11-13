@@ -104,3 +104,10 @@ export const startWithAdmissionFaults = (page: AppOptions & BootOptions, target:
   Object.assign(target, { admissionFaults: { refuseInputs: () => { refusing = true }, heal: () => { refusing = false } } })
   return { stop }
 }
+
+
+/** Cold reads are held through the injected HTTP service; all released reads reach the real backend. */
+export const startWithColdReads = async (page: AppOptions & BootOptions, target: object) => {
+  const { coldReadsFor, heldFetch } = await import("./coldReads")
+  return start({ ...page, fetch: heldFetch(page.fetch, coldReadsFor(target)) }, realServices(page))
+}

@@ -272,6 +272,7 @@ export default defineConfig({
         "src/flows/sessionStart.worker.ts",
         // The first paint's inline script, which hands the browser's objects to src/firstPaint/shell.ts, tested.
         "src/firstPaint/inline.ts",
+        "src/firstPaint/browser.ts",
         "src/features/code-intel/language.worker.ts"
       ],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }

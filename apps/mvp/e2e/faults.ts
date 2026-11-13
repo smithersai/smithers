@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test"
+import { expect, type Page } from "@playwright/test"
 import type { ShapeSource } from "@smthrs/effect-electric"
 import type { Question } from "../src/features/chat/api"
 import type { Switches } from "../src/test/e2e"
@@ -93,5 +93,29 @@ export const admissionFaults = (page: Page) => {
   return {
     refuseInputs: async () => { await built(); await page.evaluate(() => (window as unknown as HostFault).admissionFaults.refuseInputs()) },
     heal: async () => { await built(); await page.evaluate(() => (window as unknown as HostFault).admissionFaults.heal()) },
+  }
+}
+
+
+/** Configure cold-read holds before navigation, without changing the URL the first-paint shell checks. */
+export const holdColdReads = async (page: Page, reads: ReadonlyArray<import("../src/test/coldReads").ColdRead>) => {
+  guard("faults")
+  await page.addInitScript((reads) => { Object.assign(window, { coldReadHolds: reads }) }, reads)
+  const built = () => page.waitForFunction(() => "coldReads" in window, undefined, { timeout: 30_000 })
+  type Target = { readonly coldReads: import("../src/test/coldReads").ColdReadSwitches }
+  return {
+    check: async () => {
+      await built()
+      const expired = await page.evaluate(() => (window as unknown as Target).coldReads.expired())
+      expect(expired, "cold-read holds must remain active until their assertions finish").toEqual([])
+    },
+    entered: async (read: import("../src/test/coldReads").ColdRead) => {
+      await built()
+      await page.evaluate((read) => (window as unknown as Target).coldReads.entered(read), read)
+    },
+    release: async (read: import("../src/test/coldReads").ColdRead) => {
+      await built()
+      await page.evaluate((read) => (window as unknown as Target).coldReads.release(read), read)
+    },
   }
 }

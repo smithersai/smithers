@@ -1,8 +1,9 @@
 import { expect, test } from "./fixtures"
+import { holdColdReads } from "./faults"
 import { requires } from "./target"
 import { expectServerError } from "./watch"
 
-requires("trackingRepository")
+requires("trackingRepository", "faults")
 const repo = process.env.E2E_TRACKING_REPOSITORY ?? ""
 // The issues-only fixture has no Code Storage mirror or public repository metadata.
 expectServerError(404, `/api/repos/${repo}/about`)
@@ -23,11 +24,7 @@ test("a cold search starts before the store and publishes through the normal gat
   })
   // Keep the real role request pending until the early gated paint, then let its authorized answer settle the route.
   // A fixed delay races the normal view taking over and can miss a correct transient paint.
-  const role = Promise.withResolvers<void>()
-  await page.route(`**/api/repos/${repo}/role`, async route => {
-    await role.promise
-    await route.continue()
-  })
+  const held = await holdColdReads(page, ["role"])
   const timing = () => page.evaluate(() => {
     const read = (performance.getEntriesByType("resource") as PerformanceResourceTiming[]).find(entry => {
       const url = new URL(entry.name)
@@ -45,7 +42,8 @@ test("a cold search starts before the store and publishes through the normal gat
     // Preserve the shell's end reason and boot stages even when the early-paint assertion fails.
     const before = await timing().catch(() => ({ unavailable: true }))
     test.info().annotations.push({ type: "cold-search-before-handover", description: JSON.stringify(before) })
-    role.resolve()
+    await held.release("role")
+    await held.check()
   }
   await expect(page.locator(`main.issues-screen a[href="/${repo}/issues/${issue!.number}"]`).first()).toBeVisible({ timeout: 30_000 })
   const times = await timing()

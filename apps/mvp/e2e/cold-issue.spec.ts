@@ -1,8 +1,9 @@
 import { expect, test } from "./fixtures"
+import { holdColdReads } from "./faults"
 import { requires } from "./target"
 import { expectServerError } from "./watch"
 
-requires("trackingRepository")
+requires("trackingRepository", "faults")
 const repo = process.env.E2E_TRACKING_REPOSITORY ?? ""
 // This private issues-only fixture has no readable public metadata or Code Storage mirror.
 expectServerError(404, `/api/repos/${repo}/about`)
@@ -12,22 +13,22 @@ test("a direct cold issue paints its real heading when the shell and Electric ca
   const response = await request.get(`/api/repos/${repo}/issues?state=all&limit=1`)
   expect(response.ok()).toBe(true)
   const [issue] = await response.json() as Array<{ number: number; title: string }>
-  // Fault injection holds transport, never supplies a substitute answer. The early issues read reaches the real API.
-  await page.route("**/api/repos/*/*/first-paint?*", () => undefined)
-  for (const shape of ["items", "item-summaries", "comments"]) await page.route(`**/api/shapes/${shape}?*`, () => undefined)
+  // The shell and app receive the bounded faulty service; early issues reads still use the real API.
+  const held = await holdColdReads(page, ["first-paint", "items", "item-summaries", "comments"])
   const early = page.waitForResponse((response) => {
     const url = new URL(response.url())
     return url.pathname === `/api/repos/${repo}/issues` && url.searchParams.get("q") === `#${issue!.number}`
   })
-  const cancelled = page.waitForEvent("requestfailed", (request) => new URL(request.url()).pathname === `/api/repos/${repo}/first-paint`)
   await page.goto(`/${repo}/issues/${issue!.number}`)
   expect((await early).ok()).toBe(true)
   await expect(page.locator("main.issues-screen h1").filter({ hasText: issue!.title })).toContainText(`#${issue!.number}`, { timeout: 30_000 })
   await expect(page.getByText("Syncing issue…", { exact: true })).toHaveCount(0)
-  // The shell aborts the deliberately held read at its deadline or handoff. WebKit reports both spellings.
-  expect((await cancelled).failure()?.errorText).toMatch(/^(net::ERR_ABORTED|NS_BINDING_ABORTED|cancelled|Load request cancelled)$/)
+  await held.entered("first-paint")
+  // The shell's deadline cancels the injected hold before HTTP starts.
+  await expect.poll(() => page.evaluate(() => performance.getEntriesByName("smithers.first_paint.none").length)).toBe(1)
   await page.locator('main.issues-screen a[data-slot="button"]', { hasText: /^Issues$/ }).click()
   await expect(page).toHaveURL(new RegExp(`/${repo}/issues$`))
+  await held.check()
 })
 
 
@@ -35,7 +36,7 @@ test("a held-sync list restores its title search after opening an issue and brow
   const response = await request.get(`/api/repos/${repo}/issues?state=all&limit=1`)
   expect(response.ok()).toBe(true)
   const [issue] = await response.json() as Array<{ number: number; title: string }>
-  for (const shape of ["items", "item-summaries", "comments"]) await page.route(`**/api/shapes/${shape}?*`, () => undefined)
+  const held = await holdColdReads(page, ["items", "item-summaries", "comments"])
   await page.goto(`/${repo}/issues`)
   const search = page.getByRole("textbox", { name: "Search issues" })
   await search.fill(issue!.title, { timeout: 30_000 })
@@ -46,4 +47,5 @@ test("a held-sync list restores its title search after opening an issue and brow
   await page.goBack()
   await expect(search).toHaveValue(issue!.title)
   await expect(row).toBeVisible({ timeout: 10_000 })
+  await held.check()
 })

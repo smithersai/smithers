@@ -112,7 +112,9 @@ export default defineConfig(({ command }) => ({
       transformIndexHtml: async () => {
         const { build } = await import("esbuild")
         const built = await build({
-          entryPoints: [join(import.meta.dirname, "src", "firstPaint", "inline.ts")],
+          entryPoints: [command === "build"
+            ? join(import.meta.dirname, "src", "firstPaint", "inline.ts")
+            : join(import.meta.dirname, "src", "test", "coldPaint.ts")],
           bundle: true,
           write: false,
           format: "iife",

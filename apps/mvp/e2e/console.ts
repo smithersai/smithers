@@ -24,11 +24,15 @@ export const wholeLine = (text: string, values: ReadonlyArray<unknown> | undefin
 }
 
 /** A console message's whole text (`wholeLine`), its arguments read from the browser. */
-export const wholeText = (message: ConsoleMessage): Promise<string> =>
-  Promise.all(message.args().map((arg) => arg.jsonValue())).then(
-    (values: ReadonlyArray<unknown>) => wholeLine(message.text(), values),
-    () => message.text(),
-  )
+export const wholeText = async (message: ConsoleMessage): Promise<string> => {
+  try {
+    const values = await Promise.all(message.args().map((arg) => arg.jsonValue()))
+    return wholeLine(message.text(), values)
+  } catch {
+    // A disposed handle, nested BigInt or cycle still has the browser's preview.
+    return message.text()
+  }
+}
 
 /** Where a page's errors go to be checked: e2e/watch.ts's Problems. */
 export type ErrorSink = { readonly note: (observation: Observation) => void }
@@ -47,6 +51,8 @@ export const recordConsole = (page: Page, log: Array<string> | undefined, prefix
     const index = log.push(`${head}${message.text()}`) - 1
     void wholeText(message).then((text) => {
       log[index] = `${head}${text}`
+    }).catch(() => {
+      // The preview was recorded synchronously; a late browser failure leaves it intact.
     })
   })
   if (errors !== undefined) page.on("pageerror", (error) => errors.note({ kind: "page", text: error.message, name: error.name }))

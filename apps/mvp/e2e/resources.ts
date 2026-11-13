@@ -5,7 +5,7 @@ import { basename } from "node:path"
 import { ordered, type Resource } from "./resource-locks.ts"
 
 export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
-  "accessibility-chat-log.spec.ts": [],
+  "accessibility-chat-log.spec.ts": ["branch:octocat/spoon-knife/test-branch"],
   "accessibility-composer.spec.ts": [],
   "accessibility-docs.spec.ts": [],
   "accessibility-heading.spec.ts": [],
@@ -44,7 +44,7 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "branch-load.spec.ts": [
     "model:read"
   ],
-  "branch-offline.spec.ts": [],
+  "branch-offline.spec.ts": ["branch:octocat/spoon-knife/test-branch"],
   "branch-publish.spec.ts": [
     "issues"
   ],
@@ -83,10 +83,11 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "cold-issue.spec.ts": [
     "tracking"
   ],
+  "cold-search.spec.ts": ["tracking"],
   "cold-path.spec.ts": [
     "tracking"
   ],
-  "conversations.spec.ts": [],
+  "conversations.spec.ts": ["branch:octocat/spoon-knife/test-branch", "branch:octocat/spoon-knife/change-the-title"],
   "device-session.spec.ts": [],
   "device-storage-readonly.spec.ts": [],
   "device-upgrade-todos.spec.ts": [
@@ -115,9 +116,7 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "factory.spec.ts": [
     "factory"
   ],
-  "files.spec.ts": [
-    "model:read"
-  ],
+  "files.spec.ts": ["model:read", "branch:octocat/spoon-knife/test-branch"],
   "first-paint.spec.ts": [
     "tracking"
   ],
@@ -184,15 +183,13 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "local-first-conflicts.spec.ts": [
     "model:read"
   ],
-  "local-first.spec.ts": [
-    "model:read"
-  ],
+  "local-first.spec.ts": ["model:read", "branch:octocat/spoon-knife/test-branch"],
   "long-blob-path.spec.ts": [],
   "look.spec.ts": [],
   "machine-token.spec.ts": [
     "issues"
   ],
-  "markdown-edit.spec.ts": [],
+  "markdown-edit.spec.ts": ["branch:octocat/spoon-knife/test-branch"],
   "markdown-rendering.spec.ts": [],
   "message-controls.spec.ts": [
     "model:read"
@@ -204,10 +201,7 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "missing-file.spec.ts": [],
   "missing-items.spec.ts": [],
   "missing-repository.spec.ts": [],
-  "mobile.spec.ts": [
-    "stack",
-    "model:read"
-  ],
+  "mobile.spec.ts": ["stack", "model:read", "branch:octocat/spoon-knife/test-branch"],
   "model-quota.spec.ts": ["model:read"],
   "model-toast.spec.ts": [
     "model:write"
@@ -232,7 +226,7 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "pin-message.spec.ts": [
     "model:read"
   ],
-  "private-availability.spec.ts": [],
+  "private-availability.spec.ts": ["branch:octocat/spoon-knife/test-branch"],
   "pull-recovery.spec.ts": [],
   "pull-review.spec.ts": ["model:read", "pull-review-fixture"],
   "pwa-update.spec.ts": [],
@@ -249,10 +243,8 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "repo-clone.spec.ts": [
     "model:read"
   ],
-  "repo-extras.spec.ts": [],
-  "repo-in-chat.spec.ts": [
-    "model:read"
-  ],
+  "repo-extras.spec.ts": ["branch:octocat/spoon-knife/test-branch"],
+  "repo-in-chat.spec.ts": ["model:read", "branch:octocat/spoon-knife/test-branch"],
   "repo.spec.ts": [],
   "request-cancellation.spec.ts": [],
   "route-aliases.spec.ts": [],
@@ -270,7 +262,7 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
     "model:read"
   ],
   "secrets-egress.spec.ts": ["secrets-branch"],
-  "secrets.spec.ts": [],
+  "secrets.spec.ts": ["branch:octocat/spoon-knife/test-branch"],
   "settings-draft.spec.ts": [
     "model:read"
   ],
@@ -278,7 +270,7 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "settings-secrets-empty.spec.ts": [],
   "shape-demand.spec.ts": [],
   "shape-payload.spec.ts": [],
-  "shape-recovery.spec.ts": [],
+  "shape-recovery.spec.ts": ["branch:octocat/spoon-knife/test-branch"],
   "shell-home.spec.ts": [],
   "shell-notifications.spec.ts": [],
   "shell-settings.spec.ts": [],
@@ -310,7 +302,7 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "timeline-summaries.spec.ts": [],
   "timeline.spec.ts": [],
   "toast-action-clearance.spec.ts": [],
-  "toast-layout-shift.spec.ts": [],
+  "toast-layout-shift.spec.ts": ["branch:octocat/spoon-knife/test-branch", "branch:octocat/spoon-knife/change-the-title"],
   "toast-overlap.spec.ts": [],
   "toast-pin-clearance.spec.ts": [],
   "todo-admission-refusal.spec.ts": [

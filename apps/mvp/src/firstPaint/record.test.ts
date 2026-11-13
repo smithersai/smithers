@@ -7,6 +7,7 @@ import { chromium, type Browser, type Page } from "@playwright/test"
 import { Context, Effect, Layer } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { afterAll, beforeAll, expect, test } from "vitest"
+import type { ColdReadPage } from "../test/coldReads"
 import { guarded, painted } from "../../worker/github/FirstPaint"
 
 class PaintRead extends Context.Service<PaintRead, { readonly read: Effect.Effect<HttpServerResponse.HttpServerResponse, Error> }>()("first-paint-test/Read") {}
@@ -20,10 +21,12 @@ let origin: string
 beforeAll(async () => {
   const bundle = await build({ entryPoints: ["src/firstPaint/inline.ts"], bundle: true, write: false, format: "iife", platform: "browser" })
   const script = bundle.outputFiles[0]!.text
+  const dev = await build({ entryPoints: ["src/test/coldPaint.ts"], bundle: true, write: false, format: "iife", platform: "browser" })
+  const heldScript = dev.outputFiles[0]!.text
   server = createServer((request, response) => {
     if (!request.url!.startsWith("/api/")) {
       response.writeHead(200, { "content-type": "text/html" })
-      response.end(`<script>${script}</script><div id="root"></div>`)
+      response.end(`<script>${request.url!.endsWith("?cold") ? heldScript : script}</script><div id="root"></div>`)
       return
     }
     const layer = request.url!.includes("issue=8") ? failed : readable
@@ -107,4 +110,23 @@ test("a refused read records none from pending; navigation cannot invent a paint
     ])
     expect(await page.locator("#first-paint").count()).toBe(0)
   } finally { await page.close() }
+})
+
+
+test("a dev-only injected hold keeps the real first-paint read pending until release", async () => {
+  const page = await browser.newPage()
+  try {
+    await page.addInitScript(() => { Object.assign(window, { coldReadHolds: ["first-paint"] }) })
+    await page.goto(`${origin}/acme/app/issues/7?cold`)
+    await page.waitForFunction(() => "coldReads" in window)
+    await page.evaluate(() => (window as unknown as ColdReadPage).coldReads!.entered("first-paint"))
+    expect(await page.locator("#first-paint").count()).toBe(0)
+    await page.evaluate(() => (window as unknown as ColdReadPage).coldReads!.release("first-paint"))
+    await expect.poll(() => page.locator("#first-paint h1").textContent()).toBe("An issue #7")
+  } finally { await page.close() }
+})
+
+test("the production inline bundle contains no cold-read fault services", async () => {
+  const production = await build({ entryPoints: ["src/firstPaint/inline.ts"], bundle: true, write: false, format: "iife", platform: "browser", metafile: true })
+  expect(Object.keys(production.metafile!.inputs).some(path => /src\/test\/cold/.test(path))).toBe(false)
 })

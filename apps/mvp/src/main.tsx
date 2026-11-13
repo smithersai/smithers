@@ -628,7 +628,11 @@ void Promise.all([Promise.resolve(firstPaint?.handOver()).then((held) => wipe.op
       root.unmount()
       return stop()
     })
-  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("admission-faults")) {
+  if (import.meta.env.DEV && "coldReadHolds" in window) {
+    void import("./test/e2e")
+      .then((e2e) => e2e.startWithColdReads(opened, window))
+      .then(({ stop }) => leaving(stop))
+  } else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("admission-faults")) {
     void import("./test/e2e")
       .then(e2e => e2e.startWithAdmissionFaults(opened, window))
       .then(({ stop }) => leaving(stop))

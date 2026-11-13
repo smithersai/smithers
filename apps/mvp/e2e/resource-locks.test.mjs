@@ -375,3 +375,22 @@ test("candidate-dependent aliases lease the selected repository, not the configu
   const unrelated = await locks.acquire(write("repository:test/fallback"))
   await releaseAll([...selected.leases, unrelated])
 })
+
+test("conversation history and archive exclude every production journey opening the fixed branches", async (t) => {
+  const locks = await lockAt(t)
+  const archive = resourcesFor(declarations(["conversations.spec.ts"]), {})
+  const branches = ["test-branch", "change-the-title"].map(branch => write(`branch:octocat/spoon-knife/${branch}`))
+  assert.deepEqual(archive, branches.sort((a, b) => a.name.localeCompare(b.name)))
+  const held = await locks.acquireAll(archive)
+  try {
+    for (const spec of ["branch-workspace", "sandbox-lifecycle", "sandbox-tools", "repo-extras", "private-availability", "mobile", "files", "accessibility-chat-log", "branch-offline", "markdown-edit", "repo-in-chat", "local-first", "shape-recovery", "toast-layout-shift", "secrets"]) {
+      const conflicting = resourcesFor(declarations([`${spec}.spec.ts`]), {}).filter(resource => archive.some(other => resource.name === other.name))
+      assert.ok(conflicting.length > 0, `${spec} must lease the branch it opens`)
+      for (const resource of conflicting) assert.equal(await locks.tryAcquire(resource), undefined)
+    }
+    const independent = await locks.tryAcquire(write("branch:other/repository/run-owned"))
+    assert.ok(independent)
+    await independent.release()
+  } finally { await releaseAll(held) }
+  await releaseAll(await locks.acquireAll(archive))
+})

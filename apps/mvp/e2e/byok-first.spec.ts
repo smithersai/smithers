@@ -15,6 +15,9 @@ import { requires } from "./target"
 requires("member", "ownConversation", "personalModelKey", "hostedModelOff")
 // A trace keeps what was typed and sent, the key included.
 test.use({ trace: "off" })
+test.afterEach(async ({ request }) => {
+  await restorePersonalModel(request)
+})
 
 const KEY = process.env.E2E_PERSONAL_MODEL_KEY || ""
 const { baseUrl: BASE_URL, modelId: MODEL, protocol: PROTOCOL } = personalModelConfig()
@@ -102,5 +105,4 @@ test("byok first: no model shows Add your model; with one, the person's own mode
     await expect(addModel).toBeVisible({ timeout: 60_000 })
   })
 
-  await step("Save the account's model again for the specs after this one", () => restorePersonalModel(page.request))
 })
