@@ -400,11 +400,19 @@ export const make = (platform: Platform) => {
             return
           }
           closing = true
-          Effect.runFork(Scope.close(runtime, Exit.void))
           deadline = setTimeout(() => leave(signal), timeoutMs)
           // A shutdown that finishes on time must not be held open by its own
           // deadline timer.
           deadline.unref()
+          // The caller's scope can stay open after the runtime is released.
+          // Disarm this runtime's deadline as soon as its finalizers finish.
+          Effect.runFork(
+            Scope.close(runtime, Exit.void).pipe(
+              Effect.ensuring(Effect.sync(() => {
+                if (deadline !== undefined) clearTimeout(deadline)
+              }))
+            )
+          )
         }
         return { signal, handler }
       })

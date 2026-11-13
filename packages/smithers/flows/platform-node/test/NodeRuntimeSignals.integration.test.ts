@@ -26,6 +26,8 @@ const fixture = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "signa
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
 interface Shutdown {
+  readonly output: string
+  readonly elapsedMs: number
   readonly announced: string
   readonly code: number | null
   readonly signal: NodeJS.Signals | null
@@ -37,16 +39,22 @@ const shutdown = (
   filename: string,
   executionId: string,
   signal: NodeJS.Signals,
-  options?: { readonly hang?: boolean; readonly shutdownTimeoutMs?: number; readonly signals?: number }
+  options?: {
+    readonly linger?: boolean
+    readonly hang?: boolean
+    readonly shutdownTimeoutMs?: number
+    readonly signals?: number
+  }
 ): Promise<Shutdown> =>
   new Promise((resolve, reject) => {
     const argv = [fixture, filename, executionId]
-    if (options?.hang === true) argv.push("hang")
+    argv.push(options?.hang === true ? "hang" : options?.linger === true ? "linger" : "normal")
     if (options?.shutdownTimeoutMs !== undefined) argv.push(String(options.shutdownTimeoutMs))
     const child = spawn(process.execPath, argv, { stdio: ["ignore", "pipe", "pipe"] })
     let announced = ""
     let stderr = ""
     let signalled = false
+    let signalledAt = 0
     const timer = setTimeout(() => {
       child.kill("SIGKILL")
       reject(new Error(`the host never announced a running run: ${stderr}`))
@@ -57,6 +65,7 @@ const shutdown = (
       announced += chunk
       if (!signalled && /^STATUS=running\r?$/m.test(announced)) {
         signalled = true
+        signalledAt = performance.now()
         for (let sent = 0; sent < (options?.signals ?? 1); sent++) {
           // The second signal has to arrive after the first was handled, or
           // the handler has not yet had anything to be asked twice about.
@@ -71,6 +80,8 @@ const shutdown = (
     child.on("exit", (code, exitSignal) => {
       clearTimeout(timer)
       resolve({
+        output: announced,
+        elapsedMs: performance.now() - signalledAt,
         announced: /^STATUS=(.*)\r?$/m.exec(announced)?.[1] ?? announced.trim(),
         code,
         signal: exitSignal,
@@ -110,6 +121,20 @@ describe("a signalled host", () => {
     ).toMatchObject({ status: "suspended", waiting_reason: "released", owner_host_id: null })
   }, 120_000)
 
+  it("disarms the deadline while the caller finishes its own work", async () => {
+    const filename = join(directory, "linger", "runtime.sqlite")
+    const result = await shutdown(filename, "linger-signal", "SIGTERM", {
+      linger: true,
+      shutdownTimeoutMs: 1000
+    })
+    expect(result.output).toContain("RELEASED\n")
+    expect(result.output).toContain("SURVIVED\n")
+    expect(result.code).toBe(0)
+    expect(result.signal).toBeNull()
+    expect(result.elapsedMs).toBeGreaterThanOrEqual(1500)
+    expect(result.elapsedMs).toBeLessThan(10_000)
+  }, 120_000)
+
   it("leaves on a second signal when the graceful shutdown will not finish", async () => {
     // Installing a handler removes Node's default signal behavior. Without an
     // escape, a finalizer that never returns turns Ctrl-C into a program that
@@ -129,12 +154,12 @@ describe("a signalled host", () => {
     expect(result.signal).toBeNull()
   }, 120_000)
 
-  it("leaves when a graceful shutdown outlasts its deadline", async () => {
+  it.each([0, 1000])("leaves when a graceful shutdown outlasts its %i ms deadline", async (shutdownTimeoutMs) => {
     const filename = join(directory, "deadline", "runtime.sqlite")
 
     const result = await shutdown(filename, "deadline-signal", "SIGTERM", {
       hang: true,
-      shutdownTimeoutMs: 1000
+      shutdownTimeoutMs
     })
 
     expect(result.announced).toBe("running")

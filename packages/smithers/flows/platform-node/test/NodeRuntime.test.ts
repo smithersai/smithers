@@ -1230,53 +1230,12 @@ describe("the Node host composition", () => {
     expect(asked).toEqual(["ownGroup", "bootedAtMs", "refuseTarget", "isAlive", "startedAtMs", "killTree"])
   }, 60_000)
 
-  it("leaves with the signal's default status when the operator signals twice", async () => {
-    // The handler's two escapes only run in a process that is on its way out,
-    // so the child-process suites can observe their EFFECT but never execute
-    // them here. Emitting the signal on this process drives the very listener
-    // `layerHost` installed, with `process.exit` captured so the worker
-    // survives to assert on what the handler asked for.
-    const asked: Array<number | undefined> = []
-    const realExit = process.exit
-    ;(process as unknown as { exit: unknown }).exit = (code?: number) => {
-      asked.push(code)
-    }
-
-    try {
-      await Effect.runPromise(
-        Effect.promise(async () => {
-          // The first signal is the graceful path: it closes the runtime scope
-          // and arms the deadline, and asks for no exit itself.
-          process.emit("SIGTERM")
-          expect(asked).toEqual([])
-          // A zero deadline is the shutdown that outlasted its budget, so the
-          // timer leaves on the next macrotask rather than after a wall-clock
-          // wait this suite would have to sit through.
-          await new Promise((resolve) => setTimeout(resolve, 5))
-          // The third is the operator asking twice.
-          process.emit("SIGTERM")
-        }).pipe(
-          Effect.provide(
-            NodeRuntime.layerHost(
-              { filename: hostFile, workspaceRoot: directory, owner: { hostId: "host-twice" }, shutdownTimeoutMs: 0 },
-              Layer.empty
-            )
-          ),
-          Effect.scoped
-        )
-      )
-    } finally {
-      ;(process as unknown as { exit: unknown }).exit = realExit
-    }
-
-    expect(asked).toEqual([NodeRuntime.signalExitCode("SIGTERM"), NodeRuntime.signalExitCode("SIGTERM")])
-    // `128 + signal number` is the status the default behavior would have
-    // produced, and an unrecognized name has no behavior to read, so it
-    // answers `SIGTERM`'s.
+  it("maps shutdown signals to their default exit status", () => {
+    // Real process tests cover the deadline and repeated-signal escapes.
     expect(NodeRuntime.signalExitCode("SIGTERM")).toBe(143)
     expect(NodeRuntime.signalExitCode("SIGINT")).toBe(130)
     expect(NodeRuntime.signalExitCode("SIGNOTASIGNAL" as NodeJS.Signals)).toBe(143)
-  }, 60_000)
+  })
 
   it("releases the run it owns when a shutdown signal arrives, and kills what it spawned", async () => {
     // Every precondition the shutdown is read against is RECORDED here and

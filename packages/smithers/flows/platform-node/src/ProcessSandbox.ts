@@ -311,13 +311,18 @@ const pathSeparator = (platform: NodeJS.Platform): string => platform === "win32
 /** Ambient host environment for runtime lookup and cache locations. */
 const ambientEnvironment = (): Readonly<Record<string, string | undefined>> => process.env
 
+let ambientHost: Host | undefined
+
 /**
  * The real host: platform, `PATH` lookup, and filesystem probes.
+ * Ambient host facts are discovered once on first use. An explicit environment
+ * creates a fresh snapshot with its own tool lookup and developer directory.
  *
  * @category resolution
  * @since 0.1.0
  */
-export const host = (env: Readonly<Record<string, string | undefined>> = ambientEnvironment()): Host => {
+export const host = (env?: Readonly<Record<string, string | undefined>>): Host => {
+  if (env === undefined) return ambientHost ??= host(ambientEnvironment())
   const platform = process.platform
   let developerDirectory = env["DEVELOPER_DIR"]
   if (platform === "darwin" && developerDirectory === undefined) {

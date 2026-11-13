@@ -6,11 +6,12 @@
  * its process — and the only honest way to observe what that program leaves in
  * the database is to be a different process from it.
  *
- * Usage: `node signal-host.ts <sqlite file> <executionId> [hang] [timeoutMs]`.
+ * Usage: `node signal-host.ts <sqlite file> <executionId> [normal|linger|hang] [timeoutMs]`.
  * It prints the run's status once the run is actually running, then waits to be
  * signalled. In `hang` mode the action's interruption never returns, so the
  * graceful shutdown cannot finish and the handler's escapes are the only way
- * this process ever exits.
+ * this process ever exits. In `linger` mode the caller remains alive beyond
+ * the runtime deadline after the run is released.
  */
 import { Action, Flow, Interpreter, RunStore as RunStorePackage } from "@smthrs/flows"
 import * as Effect from "effect/Effect"
@@ -24,9 +25,10 @@ const { RunStore } = RunStorePackage
 const filename = process.argv[2]
 const executionId = process.argv[3]
 const hang = process.argv[4] === "hang"
+const linger = process.argv[4] === "linger"
 const shutdownTimeoutMs = process.argv[5] === undefined ? undefined : Number(process.argv[5])
 if (filename === undefined || executionId === undefined) {
-  throw new Error("usage: signal-host.ts <sqlite file> <executionId> [hang] [timeoutMs]")
+  throw new Error("usage: signal-host.ts <sqlite file> <executionId> [normal|linger|hang] [timeoutMs]")
 }
 
 const Probe = Action.make("flows/signal/probe", {
@@ -80,6 +82,11 @@ const program = Effect.gen(function*() {
     process.stdout.write(`STATUS=${row.status}\n`)
   })
   yield* Effect.exit(Fiber.join(running))
+  if (linger) {
+    yield* Effect.sync(() => process.stdout.write("RELEASED\n"))
+    yield* Effect.sleep("1500 millis")
+    yield* Effect.sync(() => process.stdout.write("SURVIVED\n"))
+  }
 }).pipe(
   Effect.provide(
     NodeRuntime.layerHost(

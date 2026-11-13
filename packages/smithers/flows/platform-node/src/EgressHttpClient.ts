@@ -227,6 +227,10 @@ export const dispatcher = (
  * provider route retries), and the pool dials a fresh one: 7 such failures in
  * 188 calls over the same 200 seconds, none of them lasting.
  *
+ * Socket failures retry once on the same pool. Session-fatal failures replace
+ * the pool, drain its active bodies, and release its scope. Host shutdown also
+ * aborts bodies still draining in a retired pool.
+ *
  * The pool lives in the caller's scope and is destroyed with it. `connect`
  * carries TLS options, such as a private provider's `ca`.
  *
@@ -251,11 +255,26 @@ export const providerFetch = (
   options: { readonly connect?: Undici.buildConnector.BuildOptions | undefined } = {}
 ): Effect.Effect<typeof globalThis.fetch, never, Scope.Scope> =>
   Effect.gen(function*() {
-    const acquire = dispatcher(environment, { allowH2: false, ...options })
+    const scope = yield* Scope.Scope
     const context = yield* Effect.context<Scope.Scope>()
+    const acquire = Effect.uninterruptible(Effect.gen(function*() {
+      const owned = yield* Scope.fork(scope)
+      const pool = yield* dispatcher(environment, { allowH2: false, ...options }).pipe(Scope.provide(owned))
+      // Agent.close detaches active clients before their bodies drain. Keep an
+      // abort signal owned by the child scope so host shutdown still ends them.
+      const abort = new AbortController()
+      const held = { dispatcher: pool, scope: owned, signal: abort.signal, drained: false }
+      yield* Scope.addFinalizer(
+        owned,
+        Effect.sync(() => {
+          if (!held.drained) abort.abort()
+        })
+      )
+      return held
+    }))
     let pool = yield* acquire
     const undici = yield* loadUndici
-    let replacement: Promise<Undici.Dispatcher> | undefined
+    let replacement: Promise<Effect.Success<typeof acquire>> | undefined
     return (async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
       const used = pool
       // Node's built-in Request and the package's Request have different brands.
@@ -270,6 +289,12 @@ export const providerFetch = (
           ...init
         }
         : init
+      const send = (active: typeof pool) =>
+        undici.fetch(target, {
+          ...request,
+          signal: request?.signal == null ? active.signal : AbortSignal.any([request.signal, active.signal]),
+          dispatcher: active.dispatcher
+        } as never)
       try {
         // Names the transport each request took, by origin only (a query can
         // carry a key), so a request meant for an injected fetch shows here.
@@ -278,7 +303,7 @@ export const providerFetch = (
             Effect.annotateLogs({ origin: new URL(String(target)).origin, protocol: "http/1.1" })
           )
         )
-        return await undici.fetch(target, { ...request, dispatcher: used } as never)
+        return await send(used)
       } catch (error) {
         // Only connection/session failures before fetch returns headers qualify.
         // Streams cannot be replayed; aborts, status errors and body failures
@@ -297,17 +322,29 @@ export const providerFetch = (
             "ERR_SSL_BAD_RECORD_MAC_ALERT"
           ].includes(code ?? "")
         ) throw error
-        if (pool === used) {
+        if (code !== "UND_ERR_SOCKET" && pool === used) {
           replacement ??= Effect.runPromiseWith(context)(acquire).then((fresh) => {
             pool = fresh
-            // Keep the retired pool scoped: Agent.close drops active clients
-            // from its map, preventing scope destruction from aborting a body.
-            replacement = undefined
+            // Drain in-flight bodies, then release the child scope and its
+            // parent finalizer. Ordinary socket failures never retire a pool.
+            Effect.runFork(
+              Effect.promise(() => used.dispatcher.close()).pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    // A drained network can still have an unread buffered Response.
+                    used.drained = true
+                  })
+                ),
+                Effect.ensuring(Scope.close(used.scope, Exit.void))
+              )
+            )
             return fresh
+          }).finally(() => {
+            replacement = undefined
           })
           await replacement
         }
-        return await undici.fetch(target, { ...request, dispatcher: pool } as never)
+        return await send(pool)
       }
     }) as unknown as typeof globalThis.fetch
   })

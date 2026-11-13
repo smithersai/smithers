@@ -467,4 +467,4 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
  * @since 1.0.0-rc.1
  */
 export const layer = (options: Options = {}): Layer.Layer<KernelProcessConfinement.ProcessConfinement> =>
-  Layer.succeed(KernelProcessConfinement.ProcessConfinement)(make(options))
+  Layer.sync(KernelProcessConfinement.ProcessConfinement, () => make(options))

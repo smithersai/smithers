@@ -134,6 +134,30 @@ describe("EgressHttpClient.providerFetch (needs openssl)", () => {
       })))
   )
 
+  it("keeps warm connections to other origins across repeated socket failures", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const sockets = new Set<import("node:net").Socket>()
+      const warm = createSecureServer({ ...certificate!, allowHTTP1: true }, (request, response) => {
+        sockets.add(request.socket)
+        response.end("warm")
+      })
+      yield* Effect.acquireRelease(
+        Effect.promise(() => new Promise<void>((resolve) => warm.listen(0, "127.0.0.1", resolve))),
+        () => Effect.promise(() => new Promise<void>((resolve) => warm.close(() => resolve())))
+      )
+      const url = `https://127.0.0.1:${(warm.address() as AddressInfo).port}`
+      const fetch = yield* EgressHttpClient.providerFetch(direct, { connect: { ca: certificate!.cert } })
+      for (let attempt = 0; attempt < 4; attempt++) {
+        expect(yield* Effect.promise(async () => (await fetch(url)).text())).toBe("warm")
+        const origin = yield* Effect.acquireRelease(
+          Effect.promise(() => listen(certificate!, 1)),
+          (o) => Effect.promise(o.close)
+        )
+        expect(yield* Effect.promise(async () => (await fetch(origin.url)).text())).toBe("1.1")
+      }
+      expect(sockets.size).toBe(1)
+    }))))
+
   it("fails after the single repair instead of retrying a real outage", () =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       const origin = yield* Effect.acquireRelease(
@@ -292,7 +316,7 @@ describe("EgressHttpClient.providerFetch (needs openssl)", () => {
     }
   })
 
-  it("releases a retired pool with an unfinished body when the host closes", async () => {
+  it("aborts an unfinished body on host close after socket recovery", async () => {
     let failures = 0
     const server = createSecureServer({ ...certificate!, allowHTTP1: true }, (request, response) => {
       if (request.url === "/held") {
@@ -322,6 +346,20 @@ describe("EgressHttpClient.providerFetch (needs openssl)", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
   })
+  it("drains retired pools, releases their idle connections, and aborts abandoned bodies on host close", () => {
+    const result = JSON.parse(execFileSync(process.execPath, [
+      fileURLToPath(new URL("./fixtures/provider-fatal-tls.mjs", import.meta.url)),
+      "provider-lifecycle"
+    ], { encoding: "utf8", timeout: 20_000 })) as {
+      counts: Array<{ repaired: string; drained: string; active: number; finalizers: number }>
+      aborted: boolean
+    }
+    expect(result.counts).toEqual(
+      Array(4).fill({ repaired: "ok", drained: "partial drained", active: 0, finalizers: 1 })
+    )
+    expect(result.aborted).toBe(true)
+  })
+
   it.each(["./fixtures/provider-fatal-tls.mjs", "./fixtures/%70rovider-fatal-tls.mjs"])(
     "repairs fatal TLS record corruption that permanently poisons Node's HTTP/2 session (%s)",
     (relative) => {
