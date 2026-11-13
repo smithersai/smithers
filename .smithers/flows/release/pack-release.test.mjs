@@ -368,6 +368,20 @@ test("dependencyOrder is a topological order with an alphabetical tiebreak", () 
   )
 })
 
+test("dependencyOrder rejects equal package basenames before staging can merge their files", () => {
+  const directories = ["packages/z/core", "packages/a/core", "packages/z/alpha"]
+  for (const order of [directories, [...directories].reverse()]) {
+    assert.throws(
+      () => dependencyOrder(new Map(order.map((directory) => [directory, new Set()]))),
+      /duplicate workspace package basename core: packages\/[az]\/core and packages\/[az]\/core/
+    )
+  }
+  assert.throws(() => dependencyOrder(new Map([
+    ["packages/a/core", new Set(["packages/z/core"])],
+    ["packages/z/core", new Set()]
+  ])), /duplicate workspace package basename core/)
+})
+
 test("dependencyOrder rejects cycles", () => {
   assert.throws(
     () => dependencyOrder(

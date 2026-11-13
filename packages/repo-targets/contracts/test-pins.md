@@ -70,7 +70,7 @@ after its failures are fixed and repeated main-branch runs are green.
 
 The release train packs the `engine`, `agent` and `tooling` groups together at
 one synchronized version: the 49 names `publishedPackages` restates in
-`.smithers/flows/release/pack-release.mjs` and checks against what the workspace declares. Four
+`.smithers/flows/release/pack-release.mjs` and checks against what the workspace declares. Three
 tooling packages are public, `@smthrs/build`, `@smthrs/build-cli`,
 `@smthrs/targets`; deployment and repository-local
 tooling stays out of the roster through its manifest `private` flag.
@@ -555,9 +555,6 @@ green:
 | `kernel`     | rejects an envelope carrying request-only payload fields                                    | `test/GrantEvent.test.ts`              |
 | `kernel`     | fails closed when a page repeats its last sequence with `hasMore`                           | `test/JournalGrantStoreReplay.test.ts` |
 | `keys`       | rejects an unsupported `key2_` key until its complete format is implemented                 | `test/Key.test.ts`                     |
-
-Agent-group packages are outside this register and outside the guard; F4's
-`harness` entry belongs to that group.
 
 ## Known limitations
 

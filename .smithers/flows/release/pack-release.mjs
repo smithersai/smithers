@@ -173,7 +173,8 @@ export const workspaceDependencies = (manifests) => {
  * rather than the whole path. Release order is a property of the packages, not
  * of where their directories sit, so nesting a granular package inside the
  * product package it belongs to publishes the same names in the same
- * order it published them from a top-level directory.
+ * order it published them from a top-level directory. Basenames must be unique
+ * because packing also uses them as staging directories.
  *
  * A cycle is a release error: publication cannot satisfy both edges without a
  * package already existing in the registry, which makes a clean RC bootstrap
@@ -183,6 +184,14 @@ export const workspaceDependencies = (manifests) => {
  * @category utilities
  */
 export const dependencyOrder = (dependencies) => {
+  const directoriesByKey = new Map()
+  for (const directory of dependencies.keys()) {
+    const key = packageKey({ dir: directory })
+    if (directoriesByKey.has(key)) {
+      throw new Error(`duplicate workspace package basename ${key}: ${directoriesByKey.get(key)} and ${directory}`)
+    }
+    directoriesByKey.set(key, directory)
+  }
   const byBasename = (left, right) => {
     const a = packageKey({ dir: left })
     const b = packageKey({ dir: right })

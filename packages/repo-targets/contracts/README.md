@@ -58,7 +58,9 @@ by those packages; this lane changes none of their thresholds or exclusions.
 the Bun server assertion, a browser DOM assertion through the actual PR
 Playwright wrapper, and a Vitest coverage threshold all fail the target.
 The coverage sentinel first passes its assertion, so an assertion failure
-cannot accidentally stand in for a coverage failure.
+cannot accidentally stand in for a coverage failure. Captured runner logs stay
+inside each temporary fixture and are removed with it; assertion failures
+include the runner output.
 
 The current general NodeTest and Vitest runners are uncacheable. The inventory
 ratchets that policy until their ambient helpers, fixtures, configs, dependency
@@ -112,7 +114,7 @@ site's own gate, `//apps/site:smithersLinks`.
 
 | Suite | What it guards |
 | --- | --- |
-| `package-contract.test.mjs` | One version across the release line, a declared publishable surface, the `next` dist-tag, the scripts every gate invokes, and no published dependency on a private package. |
+| `package-contract.test.mjs` | One version across the release line, a declared publishable surface, the `next` dist-tag, the scripts every gate invokes, and no published `dependencies`, `peerDependencies` or `optionalDependencies` edge to a private package. |
 | `barrels.test.mjs` | `@smthrs/flows` re-exports exactly the namespaces it lists, declares every package it re-exports, and every published root export points at a file that exists. |
 | `public-export-maps.test.mjs` | Explicit development/publication allowlists retain reviewed entrypoints, deny internal migrations and future files, and resolve equivalently through Node's ESM and CommonJS resolvers. |
 | `packages/repo-targets/contracts/test-script-wiring.test.mjs` | Every workspace member with tests owns a `test` target that a required `ci.yml` job selects, or a reasoned exemption; no required job is advisory in any spelling of `continue-on-error`; and the pnpm workspace and the root manifest name the same members. |

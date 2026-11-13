@@ -104,8 +104,9 @@ export const libraryPackages = (root = repoRoot) =>
  *
  * Release order is a property of the packages, not of where their directories
  * sit, so moving a package into its product's directory must not reorder the
- * publish. Basenames are unique across the workspace and {@link workspacePackages}
- * would have collapsed a collision into one entry, so this is a total order.
+ * publish. {@link workspacePackages} deduplicates manifest paths, so distinct
+ * members may share this key. Release ordering validates basename uniqueness
+ * before using it as a total order or a staging directory.
  */
 export const packageKey = (entry) => entry.dir.slice(entry.dir.lastIndexOf("/") + 1)
 

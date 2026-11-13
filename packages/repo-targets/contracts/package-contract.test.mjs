@@ -111,6 +111,23 @@ const publishable = manifests.filter((entry) => entry.manifest.private !== true)
 const exactWorkspaceDependency = (range, version) =>
   range === version || range === "workspace:*" || range === `workspace:${version}`
 
+/** Installed dependency edges of publishable packages must resolve publicly. */
+const assertNoPrivateDependencies = (entries) => {
+  const privateNames = new Set(
+    entries.filter((entry) => entry.manifest.private === true).map((entry) => entry.manifest.name)
+  )
+  for (const entry of entries.filter((entry) => entry.manifest.private !== true)) {
+    for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+      for (const name of Object.keys(entry.manifest[field] ?? {})) {
+        assert.ok(
+          !privateNames.has(name),
+          `packages/${entry.directory} publishes a dependency on ${name}, which is never published`
+        )
+      }
+    }
+  }
+}
+
 describe("the workspace package contract", () => {
   it("has packages to check", () => {
     assert.ok(manifests.length > 20, `expected a populated packages/ tree, found ${manifests.length}`)
@@ -269,17 +286,30 @@ describe("the workspace package contract", () => {
   })
 
   it("never lets a published package depend on a private one", () => {
-    const privateNames = new Set(
-      manifests.filter((entry) => entry.manifest.private === true).map((entry) => entry.manifest.name)
-    )
-    for (const entry of publishable) {
-      for (const name of Object.keys(entry.manifest.dependencies ?? {})) {
-        assert.ok(
-          !privateNames.has(name),
-          `packages/${entry.directory} publishes a dependency on ${name}, which is never published`
-        )
-      }
-    }
+    assertNoPrivateDependencies(manifests)
+  })
+
+  for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+    it(`rejects private installed dependencies in ${field}`, () => {
+      assert.throws(() => assertNoPrivateDependencies([
+        { directory: "private", manifest: { name: "@fixture/private", private: true } },
+        { directory: "public", manifest: { name: "@fixture/public", [field]: { "@fixture/private": "workspace:*" } } }
+      ]), /packages\/public publishes a dependency on @fixture\/private, which is never published/)
+    })
+  }
+
+  it("retains private development dependencies and public installed dependencies", () => {
+    assert.doesNotThrow(() => assertNoPrivateDependencies([
+      { directory: "private", manifest: { name: "@fixture/private", private: true, dependencies: { "@fixture/private": "workspace:*" } } },
+      { directory: "empty", manifest: { name: "@fixture/empty" } },
+      { directory: "public", manifest: {
+        name: "@fixture/public",
+        devDependencies: { "@fixture/private": "workspace:*" },
+        dependencies: { "@fixture/empty": "workspace:*" },
+        peerDependencies: { "@fixture/empty": "workspace:*" },
+        optionalDependencies: { external: "1.0.0" }
+      } }
+    ]))
   })
 
   it("keeps overrides out of published packages and pins only the reviewed trains in both planners", () => {

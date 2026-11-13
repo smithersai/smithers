@@ -1,7 +1,7 @@
 /** Sentinel failures travel through the real CLI, target interpreter and test runtimes. */
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -48,6 +48,18 @@ function declaration(directory, target) {
   write(directory, "PACKAGE.ts", `import { Smithers as S } from ${JSON.stringify(fileURLToPath(import.meta.resolve("@smthrs/targets")))}
 export const Package = S.Package({ targets: { sentinel: ${target} } })\n`)
 }
+function assertOutput(text, pattern, message = "runner output") {
+  assert.match(text, pattern, `${message}\n${text.slice(-16_384)}`)
+}
+
+test("runner assertion diagnostics retain the output tail after a long preamble", () => {
+  const text = "installation output ".repeat(2_000) + "\nfinal runner diagnostic"
+  assert.throws(() => assertOutput(text, /missing sentinel/), (error) => {
+    assert.match(error.message, /final runner diagnostic/)
+    return true
+  })
+})
+
 function run(directory, name) {
   // Failure sentinels need the complete diagnostic tail: Playwright can emit
   // installation output before the assertion that this contract must observe.
@@ -55,11 +67,11 @@ function run(directory, name) {
     cwd: directory, encoding: "utf8", timeout: 90_000, maxBuffer: 4 * 1024 * 1024,
     env: { ...process.env, SMITHERS_CACHE_URL: "", SMITHERS_CACHE_TOKEN: "" }
   })
-  const log = join(tmpdir(), `smithers-runner-${process.pid}-${name}.log`)
-  writeFileSync(log, `${result.stdout ?? ""}${result.stderr ?? ""}`)
-  assert.ifError(result.error)
-  console.log(`${name}: exit ${result.status}; ${log}`)
-  return { ...result, text: result.stdout + result.stderr }
+  const text = `${result.stdout ?? ""}${result.stderr ?? ""}`
+  writeFileSync(join(directory, `${name}.log`), text)
+  assert.equal(result.error, undefined, `${name}: ${result.error?.message ?? "runner output"}\n${text.slice(-16_384)}`)
+  console.log(`${name}: exit ${result.status}`)
+  return { ...result, text }
 }
 
 test("server Bun assertion failure reaches the selected NodeTest runner", () => {
@@ -69,11 +81,13 @@ test("server Bun assertion failure reaches the selected NodeTest runner", () => 
     write(directory, "src/sentinel.test.ts", 'import { test, expect } from "bun:test"; test("server sentinel", () => expect(2 + 2).toBe(5))\n')
     write(directory, "scripts/fixture.ts", "export {}\n")
     const result = run(directory, "server")
+    assert.equal(readFileSync(join(directory, "server.log"), "utf8"), result.text)
     assert.equal(result.status, 1, result.text)
-    assert.match(result.text, /server sentinel/)
-    assert.match(result.text, /Expected: 5/)
-    assert.match(result.text, /targets_failed/)
+    assertOutput(result.text, /server sentinel/)
+    assertOutput(result.text, /Expected: 5/)
+    assertOutput(result.text, /targets_failed/)
   } finally { removeFixture(directory) }
+  assert.equal(existsSync(directory), false, "fixture cleanup removes its captured runner log")
 })
 
 test("coverage failure reaches Vitest and the real target runner despite passing assertions", () => {
@@ -85,9 +99,9 @@ test("coverage failure reaches Vitest and the real target runner despite passing
     write(directory, "vitest.config.mjs", 'export default { test: { maxWorkers: 1, coverage: { enabled: true, provider: "v8", include: ["src/**"], thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 } } } }\n')
     const result = run(directory, "coverage")
     assert.equal(result.status, 1, result.text)
-    assert.match(result.text, /1 passed/)
-    assert.match(result.text, /Coverage for branches.*does not meet/)
-    assert.match(result.text, /targets_failed/)
+    assertOutput(result.text, /1 passed/)
+    assertOutput(result.text, /Coverage for branches.*does not meet/)
+    assertOutput(result.text, /targets_failed/)
   } finally { removeFixture(directory) }
 })
 
@@ -104,7 +118,7 @@ test("warmed build-result cache invalidates helper, config and declared property
     assert.equal(cold.status, 0, cold.text)
     const warm = run(directory, "cache-warm")
     assert.equal(warm.status, 0, warm.text)
-    assert.match(warm.text, /"hit":\s*1/, "must prove a real cache hit, not merely two successful runs")
+    assertOutput(warm.text, /"hit":\s*1/, "must prove a real cache hit, not merely two successful runs")
     for (const [name, path, bad, good] of [
       ["helper", "helper.mjs", "export const value = 5\n", "export const value = 4\n"],
       ["config", "config.json", '{"allowed":false}\n', '{"allowed":true}\n'],
@@ -113,13 +127,14 @@ test("warmed build-result cache invalidates helper, config and declared property
       write(directory, path, bad)
       const result = run(directory, `cache-${name}`)
       assert.equal(result.status, 1, result.text)
-      assert.match(result.text, new RegExp(`${name} sentinel`))
+      assertOutput(result.text, new RegExp(`${name} sentinel`))
       write(directory, path, good)
-      assert.equal(run(directory, `cache-restored-${name}`).status, 0)
+      const restored = run(directory, `cache-restored-${name}`)
+      assert.equal(restored.status, 0, restored.text)
     }
     declare("8")
     const result = run(directory, "cache-seed")
     assert.equal(result.status, 1, result.text)
-    assert.match(result.text, /seed sentinel/)
+    assertOutput(result.text, /seed sentinel/)
   } finally { removeFixture(directory) }
 })
