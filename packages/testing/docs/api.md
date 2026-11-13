@@ -1244,12 +1244,14 @@ exist yet.
 const makeFile: (path: string) => Effect.Effect<
   FixtureStore & {
     readonly flush: () => Effect.Effect<void>
-  }
+  },
+  never,
+  FileSystem.FileSystem | Path.Path
 >
-const layerFile: (path: string) => Layer.Layer<FixtureStore>
+const layerFile: (path: string) => Layer.Layer<FixtureStore, never, FileSystem.FileSystem | Path.Path>
 ```
 
-A store over a JSON file and an append-only journal. Node only. `append`
+A store over a JSON file and an append-only journal, requiring injected `FileSystem` and `Path` services. `append`
 asynchronously persists only the new call. `flush` atomically publishes the
 complete JSON and releases the writer lock; `layerFile` flushes on scope close.
 The store recovers completed journal lines when reopened. Competing writers

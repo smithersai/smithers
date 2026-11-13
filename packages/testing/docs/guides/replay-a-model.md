@@ -16,6 +16,7 @@ the fixture replays from it; a request that is not runs against the live model
 and is appended.
 
 ```ts
+import { NodeHost } from "@smthrs/platform-node"
 import { CachedModel, FixtureStore } from "@smthrs/testing"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -28,7 +29,7 @@ const modelLayer = Layer.unwrap(
     Effect.acquireRelease(FixtureStore.makeFile(fixture), (store) => store.flush()),
     (store) => CachedModel.layer({ live: liveModel(), fixture: store })
   )
-)
+).pipe(Layer.provide(Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer)))
 ```
 
 The first run records:
@@ -69,10 +70,10 @@ are common:
 
 ## Pick a fixture store
 
-| Constructor                      | Behavior                                                                                  |
-| -------------------------------- | ----------------------------------------------------------------------------------------- |
-| `FixtureStore.makeFile(path)`    | Recovers the JSON and journal. Appends to the journal; `flush` publishes JSON. Node only. |
-| `FixtureStore.makeMemory(init?)` | Keeps the fixture in memory. `load` reports `None` until the first call is recorded.      |
+| Constructor                      | Behavior                                                                                                         |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `FixtureStore.makeFile(path)`    | Recovers the JSON and journal. Appends to the journal; `flush` publishes JSON. Requires `FileSystem` and `Path`. |
+| `FixtureStore.makeMemory(init?)` | Keeps the fixture in memory. `load` reports `None` until the first call is recorded.                             |
 
 Each has a `layer` form: `FixtureStore.layerFile(path)` and
 `FixtureStore.layerMemory(init?)`.

@@ -10,7 +10,9 @@ helper, a child-process spawner, a [Jujutsu](https://jj-vcs.github.io/jj/)
 adapter, and an HTTP client.
 
 `@effect/platform-node` already ships Node implementations of most of those, and
-this package uses them where they fit. Three guarantees are not ones a
+this package uses them where they fit. For a Node program that needs only file
+and path access, compose `NodeHost.NodeFileSystem.layer` and
+`NodeHost.NodePath.layer`. Three guarantees are not ones a
 general-purpose adapter makes, so this package implements them itself:
 
 - **A filesystem a symlink cannot redirect.** `AtomicFileSystem` opens the

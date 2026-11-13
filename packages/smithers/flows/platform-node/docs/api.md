@@ -91,6 +91,7 @@ slot rather than the whole bundle needs no second dependency:
 | `NodeHost.AtomicFileSystem`        | this package's descriptor-relative filesystem, the bundle's slot |
 | `NodeHost.ProcessReaper`           | this package's containment sweep                                 |
 | `NodeHost.NodeCrypto`              | Effect's Node `Crypto`                                           |
+| `NodeHost.NodePath`                | Effect's Node path adapter (`layer`, `layerPosix`, `layerWin32`) |
 | `NodeHost.NodeFileSystem`          | Effect's raw Node filesystem, which carries NO atomic extension  |
 | `NodeHost.NodeChildProcessSpawner` | Effect's Node spawner                                            |
 | `NodeHost.NodeHttpClient`          | Effect's Undici-backed `HttpClient`                              |

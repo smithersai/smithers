@@ -36481,6 +36481,7 @@ slot rather than the whole bundle needs no second dependency:
 | `NodeHost.AtomicFileSystem`        | this package's descriptor-relative filesystem, the bundle's slot |
 | `NodeHost.ProcessReaper`           | this package's containment sweep                                 |
 | `NodeHost.NodeCrypto`              | Effect's Node `Crypto`                                           |
+| `NodeHost.NodePath`                | Effect's Node path adapter (`layer`, `layerPosix`, `layerWin32`) |
 | `NodeHost.NodeFileSystem`          | Effect's raw Node filesystem, which carries NO atomic extension  |
 | `NodeHost.NodeChildProcessSpawner` | Effect's Node spawner                                            |
 | `NodeHost.NodeHttpClient`          | Effect's Undici-backed `HttpClient`                              |
@@ -45725,12 +45726,14 @@ exist yet.
 const makeFile: (path: string) => Effect.Effect<
   FixtureStore & {
     readonly flush: () => Effect.Effect<void>
-  }
+  },
+  never,
+  FileSystem.FileSystem | Path.Path
 >
-const layerFile: (path: string) => Layer.Layer<FixtureStore>
+const layerFile: (path: string) => Layer.Layer<FixtureStore, never, FileSystem.FileSystem | Path.Path>
 ```
 
-A store over a JSON file and an append-only journal. Node only. `append`
+A store over a JSON file and an append-only journal, requiring injected `FileSystem` and `Path` services. `append`
 asynchronously persists only the new call. `flush` atomically publishes the
 complete JSON and releases the writer lock; `layerFile` flushes on scope close.
 The store recovers completed journal lines when reopened. Competing writers

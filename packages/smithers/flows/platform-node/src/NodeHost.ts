@@ -68,6 +68,7 @@ export {
   NodeCrypto,
   NodeFileSystem,
   NodeHttpClient,
+  NodePath,
   ProcessReaper
 }
 

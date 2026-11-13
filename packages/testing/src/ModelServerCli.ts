@@ -47,6 +47,7 @@ import * as Model from "@smthrs/model/Model"
 import { ModelRequest } from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
+import { NodeHost } from "@smthrs/platform-node"
 import { Effect, Exit, Layer, Redacted, Result, Scope } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { existsSync, readFileSync } from "node:fs"
@@ -275,7 +276,12 @@ export const serve = (config: Config): Effect.Effect<ModelServer.ModelServer, ne
       ? undefined
       : record === undefined
       ? yield* replayStore(config.fixture)
-      : yield* Effect.acquireRelease(FixtureStore.makeFile(config.fixture), (store) => store.flush())
+      : yield* Effect.acquireRelease(
+        FixtureStore.makeFile(config.fixture).pipe(
+          Effect.provide(Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer))
+        ),
+        (store) => store.flush()
+      )
     const upstream = record === undefined ? undefined : yield* live(record)
     const gate = yield* TurnGate.make()
     const log = yield* TurnLog.make(config.trace ?? {})

@@ -3,7 +3,8 @@ import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Cause, Effect, Exit, Option, Ref, Stream } from "effect"
+import { NodeHost } from "@smthrs/platform-node"
+import { Cause, Effect, Exit, FileSystem, Layer, Option, Path, Ref, Stream } from "effect"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -44,12 +45,14 @@ const failingLive = Model.make({
   stream: () => Stream.fail(new ModelError({ code: "no_route", message: "the cache must not reach the network" }))
 })
 
-const withTempDir = <A, E>(use: (directory: string) => Effect.Effect<A, E>): Effect.Effect<A, E> =>
+const withTempDir = <A, E>(
+  use: (directory: string) => Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>
+): Effect.Effect<A, E> =>
   Effect.acquireUseRelease(
     Effect.sync(() => mkdtempSync(join(tmpdir(), "flows-cached-model-"))),
     use,
     (directory) => Effect.sync(() => rmSync(directory, { recursive: true, force: true }))
-  )
+  ).pipe(Effect.provide(Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer)))
 
 /**
  * A store that publishes a new fixture per append, as the built-in stores do,

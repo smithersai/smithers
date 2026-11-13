@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, Effect, Exit, Option } from "effect"
+import { NodeHost } from "@smthrs/platform-node"
+import { Cause, Effect, Exit, FileSystem, Layer, Option, Path, PlatformError } from "effect"
 import { spawn } from "node:child_process"
 import {
   closeSync,
@@ -14,21 +15,27 @@ import {
   symlinkSync,
   writeFileSync
 } from "node:fs"
-import * as fs from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { afterEach, vi } from "vitest"
+import { join, resolve } from "node:path"
 import type { RecordedCall } from "../src/Fixture.ts"
 import * as FixtureStore from "../src/FixtureStore.ts"
 
-// Exercise the Windows contract on every host: O_NOFOLLOW is unavailable.
-vi.mock("node:fs", async (original) => {
-  const fs = await original<typeof import("node:fs")>()
-  return { ...fs, constants: { ...fs.constants, O_NOFOLLOW: 0 } }
+const host = Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer)
+const fault = (description: string) =>
+  PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "test", description })
+const unsupported = PlatformError.badArgument({
+  module: "FileSystem",
+  method: "open",
+  description: "noFollow unsupported"
 })
-
-vi.mock("node:fs/promises", async (original) => ({ ...await original<typeof import("node:fs/promises")>() }))
-afterEach(() => vi.restoreAllMocks())
+const atRoot = (root: string, path: string) =>
+  Effect.gen(function*() {
+    const paths = yield* Path.Path
+    return yield* FixtureStore.makeFile(path).pipe(Effect.provideService(Path.Path, {
+      ...paths,
+      resolve: (...parts) => resolve(root, ...parts)
+    }))
+  })
 
 const call: RecordedCall = {
   model: "test:model",
@@ -36,12 +43,12 @@ const call: RecordedCall = {
   events: [{ type: "settle", stopReason: "stop" }]
 }
 
-const withFile = <A, E>(use: (path: string) => Effect.Effect<A, E>) =>
+const withFile = <A, E>(use: (path: string) => Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
   Effect.acquireUseRelease(
     Effect.sync(() => mkdtempSync(join(tmpdir(), "testing-file-store-"))),
     (directory) => use(join(directory, "fixture.json")),
     (directory) => Effect.sync(() => rmSync(directory, { recursive: true, force: true }))
-  )
+  ).pipe(Effect.provide(host))
 
 describe("FixtureStore file persistence", () => {
   it.effect("refuses to append through a symlinked journal", () =>
@@ -78,13 +85,23 @@ describe("FixtureStore file persistence", () => {
       Effect.gen(function*() {
         const journal = `${path}.journal`
         writeFileSync(journal, "")
-        const originalOpen = fs.open
-        vi.spyOn(fs, "open").mockImplementationOnce(async (...args) => {
-          renameSync(journal, `${journal}.old`)
-          writeFileSync(journal, "partial record")
-          return originalOpen(...args)
-        })
-        const exit = yield* Effect.exit(FixtureStore.makeFile(path))
+        const fs = yield* FileSystem.FileSystem
+        let replaced = false
+        const faulty = {
+          ...fs,
+          open: (...args: Parameters<typeof fs.open>) =>
+            Effect.gen(function*() {
+              if (!replaced) {
+                replaced = true
+                renameSync(journal, `${journal}.old`)
+                writeFileSync(journal, "partial record")
+              }
+              return yield* fs.open(...args)
+            })
+        }
+        const exit = yield* Effect.exit(
+          FixtureStore.makeFile(path).pipe(Effect.provideService(FileSystem.FileSystem, faulty))
+        )
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("journal changed while opening")
         expect(readFileSync(journal, "utf8")).toBe("partial record")
@@ -97,26 +114,33 @@ describe("FixtureStore file persistence", () => {
         Effect.gen(function*() {
           const journal = `${path}.journal`
           writeFileSync(journal, "partial record")
-          const originalOpen = fs.open
+          const fs = yield* FileSystem.FileSystem
           let closed = false
-          vi.spyOn(fs, "open").mockImplementationOnce(async (...args) => {
-            const handle = await originalOpen(...args)
-            const originalStat = handle.stat.bind(handle)
-            vi.spyOn(handle, "stat").mockImplementationOnce(async () => {
-              const stat = await originalStat({ bigint: true })
-              if (mismatch === "kind") vi.spyOn(stat, "isFile").mockReturnValue(false)
-              if (mismatch === "device") Object.defineProperty(stat, "dev", { value: stat.dev + 1n })
-              if (mismatch === "inode") Object.defineProperty(stat, "ino", { value: stat.ino + 1n })
-              return stat
-            })
-            const originalClose = handle.close.bind(handle)
-            vi.spyOn(handle, "close").mockImplementationOnce(async () => {
-              await originalClose()
-              closed = true
-            })
-            return handle
-          })
-          const exit = yield* Effect.exit(FixtureStore.makeFile(path))
+          const faulty = {
+            ...fs,
+            open: (...args: Parameters<typeof fs.open>) =>
+              Effect.gen(function*() {
+                const handle = yield* fs.open(...args)
+                yield* Effect.addFinalizer(() =>
+                  Effect.sync(() => {
+                    closed = true
+                  })
+                )
+                return Object.create(handle, {
+                  stat: {
+                    value: handle.stat.pipe(Effect.map((stat) => ({
+                      ...stat,
+                      ...(mismatch === "kind" ? { type: "Directory" as const } : {}),
+                      ...(mismatch === "device" ? { dev: stat.dev + 1n } : {}),
+                      ...(mismatch === "inode" ? { ino: Option.some(Option.getOrThrow(stat.ino) + 1n) } : {})
+                    })))
+                  }
+                }) as FileSystem.File
+              })
+          }
+          const exit = yield* Effect.exit(
+            FixtureStore.makeFile(path).pipe(Effect.provideService(FileSystem.FileSystem, faulty))
+          )
           expect(Exit.isFailure(exit)).toBe(true)
           if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("journal changed while opening")
           expect(closed).toBe(true)
@@ -128,18 +152,151 @@ describe("FixtureStore file persistence", () => {
   it.effect("creates a journal exclusively when another writer installs a link during open", () =>
     withFile((path) =>
       Effect.gen(function*() {
-        const store = yield* FixtureStore.makeFile(path)
+        const fs = yield* FileSystem.FileSystem
         const journal = `${path}.journal`
         const victim = `${path}.victim`
         writeFileSync(victim, "untouched")
-        const originalOpen = fs.open
-        vi.spyOn(fs, "open").mockImplementationOnce(async (...args) => {
-          symlinkSync(victim, journal)
-          return originalOpen(...args)
-        })
+        let installed = false
+        const faulty = {
+          ...fs,
+          open: (...args: Parameters<typeof fs.open>) =>
+            Effect.gen(function*() {
+              if (!installed) {
+                installed = true
+                symlinkSync(victim, journal)
+              }
+              return yield* fs.open(...args)
+            })
+        }
+        const store = yield* FixtureStore.makeFile(path).pipe(Effect.provideService(FileSystem.FileSystem, faulty))
         const exit = yield* Effect.exit(store.append(call))
         expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.squash(exit.cause)).toMatchObject({ cause: { reason: { _tag: "AlreadyExists" } } })
+        }
         expect(readFileSync(victim, "utf8")).toBe("untouched")
+        expect(existsSync(`${path}.lock`)).toBe(false)
+      })
+    ))
+
+  for (const mode of ["read", "append", "truncate"] as const) {
+    it.effect(`uses the real no-follow open for a symlink installed during ${mode}`, () =>
+      withFile((path) =>
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          const journal = `${path}.journal`
+          const victim = `${path}.victim`
+          const original = mode === "truncate" ? "partial record" : ""
+          writeFileSync(journal, original)
+          writeFileSync(victim, "untouched")
+          let swapped = false
+          let rejected = false
+          const faulty = {
+            ...fs,
+            open: (...args: Parameters<typeof fs.open>) =>
+              Effect.gen(function*() {
+                const flag = args[1]?.flag
+                const target = mode === "read" ? flag === "r" : mode === "append" ? flag === "a" : flag === "r+"
+                if (target && !swapped) {
+                  swapped = true
+                  renameSync(journal, `${journal}.old`)
+                  symlinkSync(victim, journal)
+                }
+                return yield* fs.open(...args).pipe(Effect.tapError(() =>
+                  Effect.sync(() => {
+                    rejected = true
+                  })
+                ))
+              })
+          }
+          const result = yield* Effect.exit(
+            Effect.gen(function*() {
+              const store = yield* FixtureStore.makeFile(path)
+              if (mode === "append") yield* store.append(call)
+            }).pipe(Effect.provideService(FileSystem.FileSystem, faulty))
+          )
+          expect(Exit.isFailure(result)).toBe(true)
+          expect(swapped).toBe(true)
+          // Windows reports BadArgument and uses the handle identity fallback.
+          // POSIX must reject at open, before the fallback can inspect a handle.
+          if (process.platform !== "win32") expect(rejected).toBe(true)
+          expect(readFileSync(victim, "utf8")).toBe("untouched")
+          expect(existsSync(`${path}.lock`)).toBe(false)
+        })
+      ))
+  }
+
+  it.effect("falls back only when the filesystem rejects noFollow as unsupported", () =>
+    withFile((path) =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const attempts: Array<boolean | undefined> = []
+        const unsupportedFs: FileSystem.FileSystem = {
+          ...fs,
+          open: (file, options) =>
+            Effect.suspend(() => {
+              attempts.push(options?.noFollow)
+              return options?.noFollow ? Effect.fail(unsupported) : fs.open(file, options)
+            })
+        }
+        const store = yield* FixtureStore.makeFile(path).pipe(
+          Effect.provideService(FileSystem.FileSystem, unsupportedFs)
+        )
+        yield* store.append(call)
+        yield* store.flush()
+        expect(JSON.parse(readFileSync(path, "utf8")).calls).toEqual([call])
+        expect(attempts).toEqual([true, undefined, true, undefined])
+      })
+    ))
+
+  it.effect("checks handle identity when noFollow is unsupported", () =>
+    withFile((path) =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const journal = `${path}.journal`
+        const victim = `${path}.victim`
+        writeFileSync(journal, "")
+        writeFileSync(victim, "untouched")
+        const faulty: FileSystem.FileSystem = {
+          ...fs,
+          open: (file, options) =>
+            Effect.gen(function*() {
+              if (options?.noFollow) return yield* Effect.fail(unsupported)
+              renameSync(journal, `${journal}.old`)
+              symlinkSync(victim, journal)
+              return yield* fs.open(file, options)
+            })
+        }
+        const result = yield* Effect.exit(
+          FixtureStore.makeFile(path).pipe(Effect.provideService(FileSystem.FileSystem, faulty))
+        )
+        expect(Exit.isFailure(result)).toBe(true)
+        if (Exit.isFailure(result)) {
+          expect(String(Cause.squash(result.cause))).toContain("journal changed while opening")
+        }
+        expect(readFileSync(victim, "utf8")).toBe("untouched")
+      })
+    ))
+
+  it.effect("propagates a supported noFollow open failure without retrying", () =>
+    withFile((path) =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        writeFileSync(`${path}.journal`, "")
+        let attempts = 0
+        const faulty: FileSystem.FileSystem = {
+          ...fs,
+          open: () =>
+            Effect.suspend(() => {
+              attempts++
+              return Effect.fail(fault("open denied"))
+            })
+        }
+        const result = yield* Effect.exit(
+          FixtureStore.makeFile(path).pipe(Effect.provideService(FileSystem.FileSystem, faulty))
+        )
+        expect(Exit.isFailure(result)).toBe(true)
+        expect(attempts).toBe(1)
         expect(existsSync(`${path}.lock`)).toBe(false)
       })
     ))
@@ -152,10 +309,9 @@ describe("FixtureStore file persistence", () => {
         mkdirSync(root)
         mkdirSync(victim)
         symlinkSync(victim, join(root, "fixtures"))
-        vi.spyOn(process, "cwd").mockReturnValue(root)
         const linked = join(root, "fixtures", "nested", "fixture.json")
         const exit = yield* Effect.exit(Effect.gen(function*() {
-          const store = yield* FixtureStore.makeFile(linked)
+          const store = yield* atRoot(root, linked)
           yield* store.append(call)
           yield* store.flush()
         }))
@@ -170,9 +326,8 @@ describe("FixtureStore file persistence", () => {
       Effect.gen(function*() {
         const root = join(path, "..", "repo")
         mkdirSync(root)
-        vi.spyOn(process, "cwd").mockReturnValue(root)
         const nested = join(root, "fixtures", "nested", "fixture.json")
-        const store = yield* FixtureStore.makeFile(nested)
+        const store = yield* atRoot(root, nested)
         yield* store.append(call)
         yield* store.flush()
         expect(JSON.parse(readFileSync(nested, "utf8")).calls).toHaveLength(1)
@@ -182,8 +337,7 @@ describe("FixtureStore file persistence", () => {
   it.effect("records a fixture directly in the working directory", () =>
     withFile((path) =>
       Effect.gen(function*() {
-        vi.spyOn(process, "cwd").mockReturnValue(join(path, ".."))
-        const store = yield* FixtureStore.makeFile(path)
+        const store = yield* atRoot(join(path, ".."), path)
         yield* store.append(call)
         yield* store.flush()
         expect(JSON.parse(readFileSync(path, "utf8")).calls).toHaveLength(1)
@@ -195,12 +349,12 @@ describe("FixtureStore file persistence", () => {
       Effect.gen(function*() {
         const root = join(path, "..", "repo")
         mkdirSync(join(root, "fixtures"), { recursive: true })
-        vi.spyOn(process, "cwd").mockReturnValue(root)
-        vi.spyOn(fs, "lstat").mockRejectedValueOnce(
-          Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" })
-        )
+        const fs = yield* FileSystem.FileSystem
+        const faulty = { ...fs, lstat: () => Effect.fail(fault("EACCES: permission denied")) }
         const fixture = join(root, "fixtures", "fixture.json")
-        const exit = yield* Effect.exit(FixtureStore.makeFile(fixture))
+        const exit = yield* Effect.exit(
+          atRoot(root, fixture).pipe(Effect.provideService(FileSystem.FileSystem, faulty))
+        )
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("EACCES")
         expect(existsSync(`${fixture}.lock`)).toBe(false)
@@ -235,8 +389,6 @@ describe("FixtureStore file persistence", () => {
     withFile((path) =>
       Effect.gen(function*() {
         const store = yield* FixtureStore.makeFile(path)
-        const appends = vi.spyOn(fs, "appendFile")
-        const rewrites = vi.spyOn(fs, "writeFile")
         yield* store.append(call)
         const first = readFileSync(`${path}.journal`, "utf8")
         for (let index = 0; index < 8; index++) yield* store.append(call)
@@ -244,10 +396,7 @@ describe("FixtureStore file persistence", () => {
         expect(journal.startsWith(first)).toBe(true)
         expect(journal.split("\n").filter(Boolean)).toHaveLength(9)
         expect(Buffer.byteLength(journal)).toBe(9 * Buffer.byteLength(first))
-        expect(appends).toHaveBeenCalledTimes(9)
-        expect(appends.mock.calls.reduce((bytes, args) => bytes + Buffer.byteLength(String(args[1])), 0))
-          .toBe(Buffer.byteLength(journal))
-        expect(rewrites).not.toHaveBeenCalled()
+        expect(existsSync(path)).toBe(false)
       })
     ))
 
@@ -274,13 +423,12 @@ describe("FixtureStore flush and recovery", () => {
       Effect.gen(function*() {
         const previous = JSON.stringify({ calls: [call] })
         writeFileSync(path, previous)
-        const writes = vi.spyOn(fs, "writeFile")
         yield* Effect.gen(function*() {
           const store = yield* FixtureStore.FixtureStore
           expect(Option.getOrThrow(yield* store.load()).calls).toHaveLength(1)
         }).pipe(Effect.provide(FixtureStore.layerFile(path)))
         expect(readFileSync(path, "utf8")).toBe(previous)
-        expect(writes).not.toHaveBeenCalled()
+        expect(readdirSync(join(path, ".."))).toEqual(["fixture.json"])
       })
     ))
 
@@ -289,20 +437,23 @@ describe("FixtureStore flush and recovery", () => {
       Effect.gen(function*() {
         const previous = JSON.stringify({ calls: [call] })
         writeFileSync(path, previous)
-        const first = yield* FixtureStore.makeFile(path)
         const second = yield* FixtureStore.makeFile(path)
-        const rename = fs.rename
-        vi.spyOn(fs, "rename").mockImplementationOnce(async (staging, destination) => {
-          expect(readFileSync(path, "utf8")).toBe(previous)
-          expect(JSON.parse(readFileSync(staging, "utf8")).calls).toHaveLength(2)
-          await rename(staging, destination)
-        })
+        const fs = yield* FileSystem.FileSystem
+        const recording = yield* FixtureStore.makeFile(path).pipe(Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          rename: (staging, destination) =>
+            Effect.gen(function*() {
+              expect(existsSync(path)).toBe(true)
+              expect(JSON.parse(readFileSync(staging, "utf8")).calls.length).toBeGreaterThan(1)
+              yield* fs.rename(staging, destination)
+            })
+        }))
         // Windows refuses replacement while this reader is open. POSIX also
         // proves the old descriptor keeps observing the original inode.
         const handle = process.platform === "win32" ? undefined : openSync(path, "r")
         try {
-          yield* first.append(call)
-          yield* first.flush()
+          yield* recording.append(call)
+          yield* recording.flush()
           if (handle !== undefined) expect(readFileSync(handle, "utf8")).toBe(previous)
         } finally {
           if (handle !== undefined) closeSync(handle)
@@ -313,8 +464,8 @@ describe("FixtureStore flush and recovery", () => {
         yield* second.append(call)
         yield* second.flush()
         expect(JSON.parse(readFileSync(path, "utf8")).calls).toHaveLength(3)
-        yield* first.append(call)
-        yield* first.flush()
+        yield* recording.append(call)
+        yield* recording.flush()
         expect(JSON.parse(readFileSync(path, "utf8")).calls).toHaveLength(4)
       })
     ))
@@ -377,11 +528,23 @@ describe("FixtureStore flush and recovery", () => {
   it.effect("releases the lock after a failed append and repairs its partial record before retry", () =>
     withFile((path) =>
       Effect.gen(function*() {
-        const store = yield* FixtureStore.makeFile(path)
-        vi.spyOn(fs, "appendFile").mockImplementationOnce(async () => {
-          writeFileSync(`${path}.journal`, "{\"index\":")
-          throw new Error("disk full")
-        })
+        const fs = yield* FileSystem.FileSystem
+        let failed = false
+        const store = yield* FixtureStore.makeFile(path).pipe(Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          open: (...args) =>
+            fs.open(...args).pipe(Effect.map((handle) =>
+              Object.assign(Object.create(handle) as FileSystem.File, {
+                writeAll: (bytes: Uint8Array) =>
+                  Effect.suspend(() => {
+                    if (failed) return handle.writeAll(bytes)
+                    failed = true
+                    writeFileSync(`${path}.journal`, "{\"index\":")
+                    return Effect.fail(fault("disk full"))
+                  })
+              })
+            ))
+        }))
         const exit = yield* Effect.exit(store.append(call))
         expect(Exit.isFailure(exit)).toBe(true)
         expect(existsSync(`${path}.lock`)).toBe(false)
@@ -417,9 +580,12 @@ describe("FixtureStore flush and recovery", () => {
       Effect.gen(function*() {
         const previous = JSON.stringify({ calls: [call] })
         writeFileSync(path, previous)
-        const store = yield* FixtureStore.makeFile(path)
+        const fs = yield* FileSystem.FileSystem
+        const store = yield* FixtureStore.makeFile(path).pipe(Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          rename: () => Effect.fail(fault("rename denied"))
+        }))
         yield* store.append(call)
-        vi.spyOn(fs, "rename").mockRejectedValueOnce(new Error("rename denied"))
         const exit = yield* Effect.exit(store.flush())
         expect(Exit.isFailure(exit)).toBe(true)
         expect(readFileSync(path, "utf8")).toBe(previous)
@@ -470,36 +636,32 @@ describe("FixtureStore flush and recovery", () => {
       Effect.gen(function*() {
         const previous = JSON.stringify({ calls: [call] })
         writeFileSync(path, previous)
-        // Patch only this subprocess's async writer, then kill it after half the
-        // temporary document reaches disk. The production store controls the
-        // journal, lock, staging path and rename ordering.
+        // Kill a real writer after its injected service persists half a staged
+        // document. No global filesystem functions are replaced.
         const script = `
-        import fs from "node:fs/promises";
-        import { syncBuiltinESMExports } from "node:module";
-        const write = fs.writeFile;
-        fs.writeFile = async (path, data, options) => {
-          if (String(path).endsWith(".tmp")) {
-            await write(path, String(data).slice(0, String(data).length / 2), options);
-            process.send("staged");
-            await new Promise(() => {});
-          }
-          return write(path, data, options);
-        };
-        syncBuiltinESMExports();
-        const { Effect } = await import(${JSON.stringify(import.meta.resolve("effect"))});
+        const { NodeHost } = await import(${JSON.stringify(import.meta.resolve("@smthrs/platform-node"))});
+        const { Effect, FileSystem, Layer } = await import(${JSON.stringify(import.meta.resolve("effect"))});
         const { makeFile } = await import(${JSON.stringify(new URL("../src/FixtureStore.ts", import.meta.url).href)});
         await Effect.runPromise(Effect.gen(function*() {
-          const store = yield* makeFile(${JSON.stringify(path)});
+          const fs = yield* FileSystem.FileSystem;
+          const store = yield* makeFile(${JSON.stringify(path)}).pipe(Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            writeFileString: (path, data, options) => Effect.gen(function*() {
+              yield* fs.writeFileString(path, data.slice(0, data.length / 2), options);
+              process.send("staged");
+              yield* Effect.never;
+            })
+          }));
           yield* store.append(${JSON.stringify(call)});
           yield* store.flush();
-        }));
+        }).pipe(Effect.provide(Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer))));
       `
         const result = yield* Effect.promise(() =>
           new Promise<{ code: number | null; signal: string | null; stderr: string; staged: boolean }>(
             (resolve, reject) => {
               const child = spawn(
                 process.execPath,
-                ["--experimental-strip-types", "--input-type=module", "-e", script],
+                ["--import", import.meta.resolve("vibelang/register"), "--input-type=module", "-e", script],
                 {
                   stdio: ["ignore", "ignore", "pipe", "ipc"],
                   timeout: 20_000

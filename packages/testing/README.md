@@ -95,6 +95,7 @@ calls the provider and writes what came back. Every run after it reads that file
 and never touches the network. `CachedModel` is both halves.
 
 ```ts
+import { NodeHost } from "@smthrs/platform-node"
 import { CachedModel, FixtureStore } from "@smthrs/testing"
 import { Effect, Layer } from "effect"
 import { fileURLToPath } from "node:url"
@@ -106,7 +107,7 @@ const modelLayer = Layer.unwrap(
     Effect.acquireRelease(FixtureStore.makeFile(fixture), (store) => store.flush()),
     (store) => CachedModel.layer({ live: liveModel(), fixture: store })
   )
-)
+).pipe(Layer.provide(Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer)))
 ```
 
 The library modules read no environment variable, so how a suite decides to

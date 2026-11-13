@@ -2,16 +2,13 @@
  * Where a cached model reads and records its fixture.
  *
  * The store is the only part of the record-and-replay loop that touches a
- * host: `layerFile` is Node-only, `layerMemory` runs anywhere.
+ * host: `layerFile` requires filesystem and path services; `layerMemory` runs anywhere.
  *
  * @since 0.0.0
  */
 
-import { Context, Effect, Exit, Layer, Option, Ref, SynchronizedRef } from "effect"
-import { randomUUID } from "node:crypto"
-import { constants } from "node:fs"
-import { appendFile, lstat, mkdir, open, readFile, rename, rm, rmdir, writeFile } from "node:fs/promises"
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { Context, Effect, Exit, FileSystem, Layer, Option, Path, Ref, SynchronizedRef } from "effect"
+import type { PlatformError } from "effect/PlatformError"
 import { decode, type Fixture, type RecordedCall } from "./Fixture.ts"
 import { maximumDepth, snapshot } from "./internal/Structural.ts"
 
@@ -134,132 +131,15 @@ export const layerMemory = (initial?: Fixture): Layer.Layer<FixtureStore> =>
 const fileError = (path: string, cause: unknown): Error =>
   new Error(`Fixture file ${path}: ${String(cause)}`, { cause })
 
-const io = <A>(path: string, run: () => Promise<A>): Effect.Effect<A> =>
-  Effect.tryPromise({ try: run, catch: (cause) => fileError(path, cause) }).pipe(Effect.orDie)
-
-// O_NOFOLLOW is absent on Windows. Inspect the entry before opening, then
-// verify the opened handle names that same regular file before any IO. A new
-// journal is created exclusively, so a competing link cannot be followed.
-const journalRead = constants.O_RDONLY | constants.O_NOFOLLOW
-const journalAppend = constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW
-const journalTruncate = constants.O_WRONLY | constants.O_NOFOLLOW
-
-const withJournal = async <A>(
-  path: string,
-  flags: number,
-  use: (handle: Awaited<ReturnType<typeof open>>) => Promise<A>
-): Promise<A> => {
-  const entry = await lstat(path, { bigint: true }).catch((cause: NodeJS.ErrnoException) => {
-    if (cause.code === "ENOENT" && (flags & constants.O_CREAT) !== 0) return undefined
-    throw cause
-  })
-  if (entry !== undefined && !entry.isFile()) throw new Error(`refusing non-regular journal ${path}`)
-  const handle = await open(path, entry === undefined ? flags | constants.O_EXCL : flags & ~constants.O_CREAT)
-  try {
-    const actual = await handle.stat({ bigint: true })
-    if (!actual.isFile() || (entry !== undefined && (entry.dev !== actual.dev || entry.ino !== actual.ino))) {
-      throw new Error(`journal changed while opening ${path}`)
-    }
-    return await use(handle)
-  } finally {
-    await handle.close()
-  }
-}
-
-// A committed directory symlink on the fixture path (`test/fixtures -> ~/notes`)
-// would carry the journal, the staging file, and the published rename into the
-// link's target. Every directory between the working directory and the fixture
-// is checked with lstat before the store creates or opens anything; a path
-// outside the working directory has no trusted root and is not checked.
-const refuseSymlinkedDirs = async (path: string): Promise<void> => {
-  const root = process.cwd()
-  const rel = relative(root, dirname(path))
-  if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return
-  let current = root
-  for (const part of rel.split(sep)) {
-    current = join(current, part)
-    const stat = await lstat(current).catch((cause: NodeJS.ErrnoException) => {
-      if (cause.code === "ENOENT") return undefined
-      throw cause
-    })
-    if (stat === undefined) return
-    if (stat.isSymbolicLink()) throw new Error(`refusing to record through symbolic link ${current}`)
-  }
-}
-
-const truncateJournal = async (path: string, length: number): Promise<void> => {
-  await withJournal(path, journalTruncate, (handle) => handle.truncate(length))
-}
-
-const readOptional = (path: string, journal = false): Effect.Effect<string | undefined> =>
-  io(path, () =>
-    (journal
-      ? withJournal(path, journalRead, (handle) => readFile(handle, { encoding: "utf8" }))
-      : readFile(path, { encoding: "utf8" })).catch((cause: NodeJS.ErrnoException) => {
-        if (cause.code === "ENOENT") return undefined
-        throw cause
-      }))
-
 const parse = (path: string, text: string): Effect.Effect<unknown> =>
   Effect.try({ try: () => JSON.parse(text) as unknown, catch: (cause) => fileError(path, cause) }).pipe(Effect.orDie)
 
 const decodeFile = (path: string, value: unknown): Effect.Effect<Fixture> =>
   decode(value).pipe(Effect.mapError((cause) => fileError(path, cause)), Effect.orDie)
 
-// Called only while holding the path lock. A rename may have published JSON
-// before a killed writer removed its journal, so skip already-published indexes.
-const readFixture = (path: string): Effect.Effect<Option.Option<Fixture>> =>
-  Effect.gen(function*() {
-    const text = yield* readOptional(path)
-    const initial = text === undefined ? undefined : yield* decodeFile(path, yield* parse(path, text))
-    const calls = [...(initial?.calls ?? [])]
-    const journalPath = `${path}.journal`
-    const journal = yield* readOptional(journalPath, true)
-    if (journal !== undefined) {
-      const end = journal.lastIndexOf("\n") + 1
-      const complete = journal.slice(0, end)
-      let previous: number | undefined
-      for (const line of complete.split("\n").slice(0, -1)) {
-        const value = yield* parse(journalPath, line)
-        const entry = value as { index?: unknown; call?: unknown } | null
-        const index = entry?.index
-        if (
-          typeof index !== "number" || !Number.isSafeInteger(index) || index < 0 || index > calls.length ||
-          (previous !== undefined && index !== previous + 1)
-        ) {
-          return yield* Effect.die(fileError(journalPath, new Error("Invalid journal call index")))
-        }
-        const decoded = yield* decodeFile(journalPath, { calls: [entry!.call] })
-        if (index === calls.length) calls.push(decoded.calls[0]!)
-        previous = index
-      }
-      // A killed append can leave a partial final record, including a partial
-      // UTF-8 sequence. Only the complete newline-terminated prefix survives.
-      if (end !== journal.length) {
-        yield* io(journalPath, () => truncateJournal(journalPath, Buffer.byteLength(complete)))
-      }
-    }
-    return initial === undefined && calls.length === 0
-      ? Option.none()
-      : Option.some(recorded({ calls }))
-  })
-
-const writeFixture = (path: string, fixture: Fixture): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    const staging = `${path}.${randomUUID()}.tmp`
-    yield* io(path, async () => {
-      try {
-        await writeFile(staging, `${JSON.stringify(fixture, undefined, 2)}\n`, { flag: "wx" })
-        await rename(staging, path)
-      } finally {
-        await rm(staging, { force: true })
-      }
-      await rm(`${path}.journal`, { force: true })
-    })
-  })
-
 /**
- * Builds a store over a JSON file and an append-only journal. Node only.
+ * Builds a store over a JSON file and an append-only journal using the injected
+ * filesystem and path services from the library catalog.
  *
  * Each append asynchronously persists only the new call. Call `flush` to
  * atomically publish the complete JSON and release the path's writer lock.
@@ -274,32 +154,165 @@ const writeFixture = (path: string, fixture: Fixture): Effect.Effect<void> =>
 export const makeFile = (path: string): Effect.Effect<
   FixtureStore & {
     readonly flush: () => Effect.Effect<void>
-  }
+  },
+  never,
+  FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function*() {
-    path = resolve(path)
+    const fs = yield* FileSystem.FileSystem
+    const paths = yield* Path.Path
+    const root = paths.resolve()
+    path = paths.resolve(path)
+    const io = <A, E, R>(file: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, never, R> =>
+      effect.pipe(Effect.mapError((cause) => fileError(file, cause)), Effect.orDie)
+    const optional = <A, R>(effect: Effect.Effect<A, PlatformError, R>) =>
+      effect.pipe(Effect.catchIf((error) => error.reason._tag === "NotFound", () => Effect.succeed(undefined)))
+
+    // Unsupported hosts reject noFollow with BadArgument. Only that rejection
+    // falls back to inspecting the entry and comparing the opened handle.
+    const withJournal = <A>(
+      file: string,
+      mode: "read" | "append" | "truncate",
+      use: (handle: FileSystem.File) => Effect.Effect<A, PlatformError>
+    ) =>
+      Effect.scoped(Effect.gen(function*() {
+        const entry = yield* (mode === "append" ? optional(fs.lstat(file)) : fs.lstat(file))
+        if (entry !== undefined && entry.type !== "File") {
+          return yield* Effect.die(fileError(file, new Error(`refusing non-regular journal ${file}`)))
+        }
+        const flag = mode === "read" ? "r" : mode === "truncate" ? "r+" : entry === undefined ? "ax" : "a"
+        const handle = yield* fs.open(file, { flag, noFollow: true }).pipe(
+          Effect.catchIf((error) => error.reason._tag === "BadArgument", () => fs.open(file, { flag }))
+        )
+        const actual = yield* handle.stat
+        if (
+          actual.type !== "File" ||
+          (entry !== undefined &&
+            (entry.dev !== actual.dev || Option.getOrUndefined(entry.ino) !== Option.getOrUndefined(actual.ino)))
+        ) {
+          return yield* Effect.die(fileError(file, new Error(`journal changed while opening ${file}`)))
+        }
+        return yield* use(handle)
+      }))
+
+    const readOptional = (file: string, journal = false): Effect.Effect<string | undefined> =>
+      io(
+        file,
+        optional(
+          journal
+            ? withJournal(file, "read", (handle) =>
+              Effect.gen(function*() {
+                const decoder = new TextDecoder("utf-8", { ignoreBOM: true })
+                let text = ""
+                while (true) {
+                  const chunk = yield* handle.readAlloc(64 * 1024)
+                  if (Option.isNone(chunk)) return text + decoder.decode()
+                  text += decoder.decode(chunk.value, { stream: true })
+                }
+              }))
+            : fs.readFile(file).pipe(Effect.map((bytes) => new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes)))
+        )
+      )
+
+    // Only directories below the injected working root have a trusted anchor.
+    const refuseSymlinkedDirs = Effect.gen(function*() {
+      const rel = paths.relative(root, paths.dirname(path))
+      if (rel === "" || rel === ".." || rel.startsWith(`..${paths.sep}`) || paths.isAbsolute(rel)) return
+      let current = root
+      for (const part of rel.split(paths.sep)) {
+        current = paths.join(current, part)
+        const stat = yield* optional(fs.lstat(current))
+        if (stat === undefined) return
+        if (stat.type === "SymbolicLink") {
+          return yield* Effect.die(fileError(path, new Error(`refusing to record through symbolic link ${current}`)))
+        }
+      }
+    })
+
+    // Called only while holding the path lock. Publication can precede journal
+    // cleanup when a writer dies, so skip already-published indexes.
+    const readFixture = (): Effect.Effect<Option.Option<Fixture>> =>
+      Effect.gen(function*() {
+        const text = yield* readOptional(path)
+        const initial = text === undefined ? undefined : yield* decodeFile(path, yield* parse(path, text))
+        const calls = [...(initial?.calls ?? [])]
+        const journalPath = `${path}.journal`
+        const journal = yield* readOptional(journalPath, true)
+        if (journal !== undefined) {
+          const end = journal.lastIndexOf("\n") + 1
+          const complete = journal.slice(0, end)
+          let previous: number | undefined
+          for (const line of complete.split("\n").slice(0, -1)) {
+            const value = yield* parse(journalPath, line)
+            const entry = value as { index?: unknown; call?: unknown } | null
+            const index = entry?.index
+            if (
+              typeof index !== "number" || !Number.isSafeInteger(index) || index < 0 || index > calls.length ||
+              (previous !== undefined && index !== previous + 1)
+            ) {
+              return yield* Effect.die(fileError(journalPath, new Error("Invalid journal call index")))
+            }
+            const decoded = yield* decodeFile(journalPath, { calls: [entry!.call] })
+            if (index === calls.length) calls.push(decoded.calls[0]!)
+            previous = index
+          }
+          if (end !== journal.length) {
+            yield* io(
+              journalPath,
+              withJournal(
+                journalPath,
+                "truncate",
+                (handle) => handle.truncate(new TextEncoder().encode(complete).byteLength)
+              )
+            )
+          }
+        }
+        return initial === undefined && calls.length === 0
+          ? Option.none()
+          : Option.some(recorded({ calls }))
+      })
+
+    const writeFixture = (fixture: Fixture): Effect.Effect<void> =>
+      io(
+        path,
+        Effect.scoped(Effect.gen(function*() {
+          const directory = yield* fs.makeTempDirectoryScoped({
+            directory: paths.dirname(path),
+            prefix: `${paths.basename(path)}.`
+          })
+          const staging = paths.join(directory, "fixture.tmp")
+          yield* fs.writeFileString(staging, `${JSON.stringify(fixture, undefined, 2)}\n`, { flag: "wx" })
+          yield* fs.rename(staging, path)
+          yield* fs.remove(`${path}.journal`, { force: true })
+        }))
+      )
+
     const lockPath = `${path}.lock`
     let locked = false
-    const acquire = io(path, async () => {
-      await refuseSymlinkedDirs(path)
-      await mkdir(dirname(path), { recursive: true })
-      await mkdir(lockPath)
-      locked = true
-    })
+    const acquire = io(
+      path,
+      Effect.gen(function*() {
+        yield* refuseSymlinkedDirs
+        yield* fs.makeDirectory(paths.dirname(path), { recursive: true })
+        yield* fs.makeDirectory(lockPath)
+        locked = true
+      })
+    )
     const release = Effect.suspend(() =>
       locked
-        ? io(path, async () => {
-          await rmdir(lockPath)
-          locked = false
-        })
+        ? io(
+          path,
+          Effect.gen(function*() {
+            yield* fs.remove(lockPath, { recursive: true })
+            locked = false
+          })
+        )
         : Effect.void
     )
-    const initial = yield* Effect.acquireUseRelease(acquire, () => readFixture(path), () => release)
+    const initial = yield* Effect.acquireUseRelease(acquire, readFixture, () => release)
     const state = yield* SynchronizedRef.make(initial)
     const current = (value: Option.Option<Fixture>) =>
-      locked
-        ? Effect.succeed(value)
-        : acquire.pipe(Effect.andThen(readFixture(path)))
+      locked ? Effect.succeed(value) : acquire.pipe(Effect.andThen(readFixture))
     return {
       ...make({
         load: () => SynchronizedRef.get(state),
@@ -310,23 +323,21 @@ export const makeFile = (path: string): Effect.Effect<
               const index = next.calls.length - 1
               const journalPath = `${path}.journal`
               const line = JSON.stringify({ index, call: next.calls[index] })
-              // Persist only what reloads. JSON writes NaN and Infinity as null,
-              // so a call carrying one appended fine and then made every later
-              // open of the fixture die on decode.
+              // Persist only what reloads: JSON changes non-finite numbers to null.
               yield* decodeFile(journalPath, { calls: [(JSON.parse(line) as { readonly call: unknown }).call] })
-              yield* io(journalPath, () =>
-                withJournal(journalPath, journalAppend, (handle) => appendFile(handle, `${line}\n`)))
+              yield* io(
+                journalPath,
+                withJournal(journalPath, "append", (handle) => handle.writeAll(new TextEncoder().encode(`${line}\n`)))
+              )
               return Option.some(next)
-            }).pipe(Effect.onExit((exit) =>
-              Exit.isFailure(exit) ? release : Effect.void
-            ))).pipe(Effect.uninterruptible)
+            }).pipe(Effect.onExit((exit) => Exit.isFailure(exit) ? release : Effect.void))).pipe(Effect.uninterruptible)
       }),
       flush: () =>
         SynchronizedRef.updateEffect(state, (value) =>
           Effect.gen(function*() {
             const latest = yield* current(value)
             if (Option.isSome(latest) && (yield* readOptional(`${path}.journal`, true)) !== undefined) {
-              yield* writeFixture(path, latest.value)
+              yield* writeFixture(latest.value)
             }
             return latest
           }).pipe(Effect.ensuring(release))).pipe(Effect.uninterruptible)
@@ -339,5 +350,5 @@ export const makeFile = (path: string): Effect.Effect<
  * @category layers
  * @since 0.0.0
  */
-export const layerFile = (path: string): Layer.Layer<FixtureStore> =>
+export const layerFile = (path: string): Layer.Layer<FixtureStore, never, FileSystem.FileSystem | Path.Path> =>
   Layer.effect(FixtureStore)(Effect.acquireRelease(makeFile(path), (store) => store.flush()))

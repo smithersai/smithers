@@ -14,6 +14,11 @@ Because a fixture is executable state, the rules around it are strict.
 
 ## File persistence and recovery
 
+`FixtureStore.makeFile` and `FixtureStore.layerFile` require injected `FileSystem`
+and `Path` services. On Node, provide
+`Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer)` from
+`@smthrs/platform-node`; other hosts supply their own filesystem and path layers.
+
 `FixtureStore.makeFile(path)` reads the JSON fixture and recovers completed
 records from `path.journal`. Each `append` asynchronously writes one numbered
 call followed by a newline to that journal. It does not rewrite earlier calls
@@ -23,7 +28,7 @@ Call the file store's `flush()` after recording to materialize the committable
 JSON. `FixtureStore.layerFile(path)` flushes automatically when its scope closes,
 including on test failure. Direct callers can use
 `Effect.acquireRelease(FixtureStore.makeFile(path), (store) => store.flush())`.
-A flush writes a unique temporary file beside the target and renames it over
+A flush writes a file in a unique temporary directory beside the target and renames it over
 the target only when complete. The JSON path always contains the previous or
 next complete fixture. Commit the JSON file, not the journal or temporary files.
 Read it first: it holds every recorded request verbatim, and the recorder
@@ -39,11 +44,16 @@ refreshes from disk before its next recording session; `load` alone does not
 refresh changes from other stores. Do not address the same fixture through
 symlink aliases.
 
-The store opens `path.journal` with `O_NOFOLLOW` for every read, append, and
-truncation, so a symlink at the journal path fails with a defect naming it.
-`O_NOFOLLOW` checks only that last component. Before it creates or opens
-anything, the store also refuses a symlinked directory between the working
-directory and the fixture, so a planted directory link cannot carry the
+The store asks the filesystem to open `path.journal` with `noFollow: true`
+for every read, append, and truncation. POSIX hosts use `O_NOFOLLOW`, so a
+symlink swapped into that last component is rejected by the host.
+Only an unsupported `noFollow` request (`BadArgument`) falls back to opening
+without the flag; both paths inspect the entry and verify the handle's file
+type, device and inode before any read or write. A new journal is created
+exclusively. These checks reject a symlink with a defect naming the journal.
+`noFollow` checks only that last component. Before it creates or opens
+anything, the store also refuses a symlinked directory between the injected `Path.resolve()`
+root and the fixture, so a planted directory link cannot carry the
 journal or the published fixture into another directory. A fixture path
 outside the working directory has no trusted root, and its directories are
 not checked. Windows has no `O_NOFOLLOW`.
@@ -52,7 +62,7 @@ After a killed process, confirm that no writer remains, remove `path.lock`,
 and reopen the store. Complete journal lines are recovered; an unfinished last
 line is discarded. Numbered records prevent duplication if the process died
 after publishing JSON but before deleting the journal. Flush the recovered
-store to publish those calls. Abandoned `path.*.tmp` files can then be removed.
+store to publish those calls. Abandoned temporary directories named `path.*` can then be removed after checking their contents.
 These guarantees cover process interruption, not power loss: writes do not
 issue `fsync`. Never edit or delete the JSON or journal while a writer is active.
 
