@@ -1039,16 +1039,13 @@ describe("EngineChildren.await", () => {
       // and the only way `await` can answer is by looking again later.
       yield* runtime.register(Worker, () => DurableDeferred.await(gate))
       const spawnedChild = yield* Deferred.make<string>()
-      const parentPark = DurableDeferred.make("children/await-parent", { success: Schema.Void })
       yield* runtime.register(Parent, () =>
         Effect.gen(function*() {
           const spawned = yield* port.spawn({ flow: Worker._tag, label: "slow" }).pipe(Effect.orDie)
           yield* Deferred.succeed(spawnedChild, spawned.child)
-          yield* DurableDeferred.await(parentPark)
           return spawned.child
         }))
-      // A completed parent cancels its linked children. Keep the parent active
-      // while this test waits for the child to finish.
+      // Spawned children detach, so the parent may finish before its child.
       yield* runtime.execute(Parent, { executionId: "await-waiting", payload: {}, discard: true })
       const child = yield* Deferred.await(spawnedChild)
       yield* untilSuspended(yield* RunStore.RunStore, child)

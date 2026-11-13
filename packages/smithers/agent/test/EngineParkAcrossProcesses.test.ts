@@ -45,6 +45,7 @@ import * as Registry from "@smthrs/registry/Registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Logger, Option, Schedule, Schema, Stream } from "effect"
 import * as References from "effect/References"
+import { TestClock } from "effect/testing"
 import { mkdtempSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -182,6 +183,9 @@ const controlStores = (filename: string) =>
 
 const notes: Array<string> = []
 
+/** Records entry before the resumed agent can replay its still-pending wait. */
+const agentRuns: Array<string> = []
+
 /** Held open by `busyFrame`'s note handler so a run can be caught mid-execution. */
 let holdNote: Deferred.Deferred<void> | undefined
 
@@ -249,7 +253,17 @@ const host = (
     )),
     Layer.provide(
       Layer.mergeAll(
-        options.agent === undefined ? Agent.layer : Layer.succeed(Agent.Agent)(options.agent),
+        Layer.effect(
+          Agent.Agent,
+          Effect.map(Agent.Agent, (agent) => ({
+            ...agent,
+            run: (options) =>
+              Stream.suspend(() => {
+                agentRuns.push(engineHost)
+                return agent.run(options)
+              })
+          }))
+        ).pipe(Layer.provide(options.agent === undefined ? Agent.layer : Layer.succeed(Agent.Agent)(options.agent))),
         SeatResolver.layer({ resolve: seat }),
         scriptedCompletionJudge
       ).pipe(
@@ -310,6 +324,7 @@ const roots = new Set<string>()
 
 afterEach(async () => {
   notes.length = 0
+  agentRuns.length = 0
   frame = timerFrame
   holdNote = undefined
   noteEntered = undefined
@@ -630,7 +645,7 @@ describe("an agent execution quarantined by the durable engine", () => {
         expect(row?.status).toBe("suspended")
         expect(row?.waiting_reason).toBe("quarantine")
         expect(row?.waiting_token).toBe("peer-corruption")
-        expect(notes).toEqual([])
+        expect(agentRuns).toEqual(["quarantine-race"])
         // No recovery consent was recorded for the background delegation.
         expect(operatorWakes(runId)).toBe(outcome.wakesBefore)
       },
@@ -1127,6 +1142,91 @@ describe("a run parked on a durable clock that fell due while its process was do
   }, 120_000)
 })
 
+describe("a durable timer across separate host lifetimes", () => {
+  it("fires its persisted deadline under the next host without rewriting the clock row", async () => {
+    const root = makeRoot()
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* TestClock.setTime(Date.now())
+        const runId = yield* Effect.gen(function*() {
+          const id = yield* launch
+          yield* awaitParkEvent(id, "parked")
+          return id
+        }).pipe(Effect.provide(host(root, hostOwner)), Effect.scoped)
+        const [deadline] = readPendingClocks(root, runId)
+        expect(deadline).toBeDefined()
+
+        yield* Effect.gen(function*() {
+          yield* Control.Control
+          yield* TestClock.setTime(deadline!.due_at_ms - 1)
+          expect(readPendingClocks(root, runId)).toEqual([deadline])
+          expect(notes).toEqual([])
+          yield* TestClock.adjust("1 millis")
+          // SQL work settles asynchronously after the clock wakes the engine.
+          for (let attempt = 0; attempt < 3_000 && readEngineRun(root, runId)?.status !== "completed"; attempt++) {
+            yield* Effect.yieldNow
+            yield* TestClock.adjust("10 millis")
+          }
+          expect(readEngineRun(root, runId)?.status).toBe("completed")
+          const runtime = yield* ControlRuntime.ControlRuntime
+          yield* awaitStatus(runtime, runId, "completed")
+          expect(readPendingClocks(root, runId)).toEqual([])
+          expect(readWakeReasons(root, runId)).toEqual(["clock"])
+          expect(notes).toEqual(["timer-next:woke"])
+        }).pipe(
+          Effect.provide(host(root, secondOwner, "timer-next", { adoptsAtOnce: true })),
+          Effect.scoped
+        )
+      }).pipe(Effect.provide(TestClock.layer()), Effect.orDie)
+    )
+  }, 120_000)
+
+  it("cancels a timer park, completes its clock row, and cannot wake after the deadline", async () => {
+    const root = makeRoot()
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* TestClock.setTime(Date.now())
+        const runId = yield* Effect.gen(function*() {
+          const id = yield* launch
+          yield* awaitParkEvent(id, "parked")
+          return id
+        }).pipe(Effect.provide(host(root, hostOwner)), Effect.scoped)
+        const [deadline] = readPendingClocks(root, runId)
+        expect(deadline).toBeDefined()
+
+        yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
+          expect(yield* control.cancel({ runId, idempotencyKey: "cancel-timer" }))
+            .toEqual({ _tag: "Terminal", runId, status: "cancelled" })
+          expect((yield* runtime.getRun(runId)).status).toBe("cancelled")
+          expect(readEngineRun(root, runId)?.status).toBe("cancelled")
+          expect(readPendingClocks(root, runId)).toEqual([])
+        }).pipe(Effect.provide(host(root, secondOwner, "timer-canceller")), Effect.scoped)
+
+        yield* Effect.gen(function*() {
+          const runtime = yield* ControlRuntime.ControlRuntime
+          yield* TestClock.setTime(deadline!.due_at_ms + 1)
+          // Let a wrongly re-armed deadline's asynchronous SQL wake settle before reading its effects.
+          for (let attempt = 0; attempt < 100; attempt++) {
+            yield* Effect.yieldNow
+            yield* TestClock.adjust("10 millis")
+          }
+          expect((yield* runtime.getRun(runId)).status).toBe("cancelled")
+          expect(readEngineRun(root, runId)?.status).toBe("cancelled")
+          expect(readPendingClocks(root, runId)).toEqual([])
+          expect(readWakeReasons(root, runId)).toEqual([])
+          expect(notes).toEqual([])
+          expect(agentRuns).toEqual(["engine-park-host"])
+        }).pipe(
+          Effect.provide(host(root, hostOwner, "timer-after-cancel", { adoptsAtOnce: true })),
+          Effect.scoped
+        )
+      }).pipe(Effect.provide(TestClock.layer()), Effect.orDie)
+    )
+  }, 120_000)
+})
+
 describe("a run parked on an in-run ask that a later process cancels", () => {
   it("settles both rows and answers the ask with the run's terminal status", async () => {
     frame = askFrame
@@ -1232,7 +1332,7 @@ describe("explicit resume authorization for released native children", () => {
         yield* control.resume({ runId: id, idempotencyKey: "explicit-child-retry" })
         yield* Effect.sleep("50 millis")
         expect(calls).toHaveLength(1)
-        expect(notes).toEqual([])
+        expect(order).toEqual(["drive", "grant", "drive"])
       }).pipe(
         Effect.provide(host(root, hostOwner, "resume-hook", {
           resumed,
@@ -1305,7 +1405,7 @@ describe("explicit resume authorization for released native children", () => {
           .toBe(true)
         yield* awaitStatus(runtime, id, "parked")
         expect(yield* runtime.pendingResumes).toEqual([])
-        expect(notes).toEqual([])
+        expect(agentRuns).toEqual(["handoff-parker", "handoff-parker"])
       }).pipe(
         Effect.provide(host(root, hostOwner, "handoff-parker", { authorizeReleasedChildren: record(parker) })),
         Effect.scoped,
@@ -1314,7 +1414,7 @@ describe("explicit resume authorization for released native children", () => {
     )
   }, 120_000)
 
-  it("logs a failed permission write and re-parks the parent without retrying its work", async () => {
+  it("logs a failed permission write and returns the parent to its existing wait", async () => {
     const root = makeRoot()
     const errors: Array<string> = []
     const called = Deferred.makeUnsafe<void>()
@@ -1329,7 +1429,8 @@ describe("explicit resume authorization for released native children", () => {
         yield* Deferred.await(called)
         yield* Deferred.await(resumed)
         yield* awaitStatus(runtime, id, "parked")
-        expect(notes).toEqual([])
+        // The parent may re-enter its wait; no additional drive is requested.
+        expect(agentRuns).toEqual(["resume-failure", "resume-failure"])
         expect(errors.some((message) =>
           message.includes("Released child retry authorization could not be recorded") &&
           message.includes("permission disk offline")
@@ -1358,8 +1459,7 @@ describe("explicit resume authorization for released native children", () => {
 
   it("preserves authorization interruption and never starts the resumed body", async () => {
     const root = makeRoot()
-    const called = Deferred.makeUnsafe<void>()
-    const resumed = Deferred.makeUnsafe<void>()
+    const called = Deferred.makeUnsafe<Fiber.Fiber<unknown, unknown>>()
     await Effect.runPromise(
       Effect.gen(function*() {
         const id = yield* launch
@@ -1367,20 +1467,21 @@ describe("explicit resume authorization for released native children", () => {
         yield* awaitStatus(runtime, id, "parked")
         const control = yield* Control.Control
         expect((yield* control.resume({ runId: id, idempotencyKey: "interrupt-child-retry" }))._tag).toBe("Accepted")
-        yield* Deferred.await(called)
-        yield* Effect.sleep("50 millis")
-        expect(Option.isNone(yield* Deferred.poll(resumed))).toBe(true)
-        expect(notes).toEqual([])
+        const driver = yield* Deferred.await(called)
+        yield* Fiber.await(driver).pipe(Effect.timeout("5 seconds"))
+        expect(agentRuns).toEqual(["resume-interrupted"])
         yield* control.cancel({ runId: id, idempotencyKey: "cancel-interrupted-child-retry" })
         yield* awaitStatus(runtime, id, "cancelled")
+        expect(agentRuns).toEqual(["resume-interrupted"])
       }).pipe(
         Effect.provide(host(root, hostOwner, "resume-interrupted", {
-          resumed,
-          authorizeReleasedChildren: () => Deferred.succeed(called, void 0).pipe(Effect.andThen(Effect.interrupt))
+          authorizeReleasedChildren: () =>
+            Effect.withFiber((fiber) => Deferred.succeed(called, fiber).pipe(Effect.andThen(Effect.interrupt)))
         })),
         Effect.scoped,
         Effect.orDie
       )
     )
+    expect(agentRuns).toEqual(["resume-interrupted"])
   }, 120_000)
 })

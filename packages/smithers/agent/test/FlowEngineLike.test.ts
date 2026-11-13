@@ -1200,22 +1200,45 @@ describe("FlowEngineLike.make", () => {
     }
   )
 
-  it("lets an explicit classifier add a non-capacity refusal to parking policy", async () => {
-    const original = new ModelError({ code: "invalid_provider_output", message: "provider-specific wait" })
-    const quota = QuotaPolicy.make({
-      classify: () => Option.some({ wakeAt: 1, source: "default" })
-    })
-    const outcome = await drive(Effect.gen(function*() {
-      const engine = yield* FlowEngineLike.make({
-        model: Model.make({ stream: () => Stream.fail(original) }),
-        route: staticRoute(),
-        modelRetryPolicy: fastRetries(1)
-      }).pipe(Effect.provideService(QuotaPolicy.QuotaClassifier, quota))
-      return yield* Stream.runCollect(engine.sealStep(step("provider-specific wait")))
-    }))
+  it.each([false, true])(
+    "leaves a non-capacity refusal unsealed only with an explicit classifier (classified=%s)",
+    async (classified) => {
+      let attempts = 0
+      const original = new ModelError({ code: "invalid_provider_output", message: "provider-specific wait" })
+      const quota = QuotaPolicy.make({
+        classify: () => classified ? Option.some({ wakeAt: 1, source: "default" }) : Option.none()
+      })
+      const outcome = await drive(Effect.gen(function*() {
+        const engine = yield* FlowEngineLike.make({
+          model: Model.make({
+            stream: () =>
+              Stream.suspend(() => {
+                attempts++
+                return Stream.fail(original)
+              })
+          }),
+          route: staticRoute(),
+          // The engine may retry this provider-specific error only if the
+          // classifier leaves it failed rather than sealed as a recorded value.
+          modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2 })
+        }).pipe(Effect.provideService(QuotaPolicy.QuotaClassifier, quota))
+        const first = yield* Effect.exit(Stream.runCollect(engine.sealStep(step("provider-specific wait"))))
+        const firstCalls = attempts
+        const replayed = yield* Effect.exit(Stream.runCollect(engine.sealStep(step("provider-specific wait"))))
+        return { first: classify(first), replayed: classify(replayed), firstCalls }
+      }))
 
-    expect(failure(outcome)).toStrictEqual(original)
-  })
+      const { first, replayed, firstCalls } = completed(outcome) as {
+        readonly first: Outcome
+        readonly replayed: Outcome
+        readonly firstCalls: number
+      }
+      expect(failure(first)).toStrictEqual(original)
+      expect(failure(replayed)).toStrictEqual(original)
+      expect(firstCalls).toBe(classified ? 2 : 1)
+      expect(attempts).toBe(firstCalls)
+    }
+  )
 
   it("seals the original typed transport error on the last attempt and replays it without a call", async () => {
     const attempts: Array<number> = []
@@ -2173,14 +2196,6 @@ describe("cell call identity across runs", () => {
   })
 })
 
-/**
- * The transport backoff, driven on the test clock.
- *
- * `recordModelStep` is exercised directly rather than through `drive` because
- * the assertion is about time: the sealed step has to be forked so the test
- * clock can advance past every scheduled sleep, and the flow engine's own
- * execution is not what is under test here.
- */
 describe("FlowEngineLike.CallReadings (#3010)", () => {
   const readingCall = (ordinal: number): Cell.Call =>
     new Cell.Call({
@@ -2358,6 +2373,14 @@ describe("FlowEngineLike.CallReadings (#3010)", () => {
   })
 })
 
+/**
+ * The transport backoff, driven on the test clock.
+ *
+ * `recordModelStep` is exercised directly rather than through `drive` because
+ * the assertion is about time: the sealed step has to be forked so the test
+ * clock can advance past every scheduled sleep, and the flow engine's own
+ * execution is not what is under test here.
+ */
 describe("FlowEngineLike model step attempts", () => {
   it.each(
     [

@@ -208,13 +208,14 @@ describe("FlowStore.layerFileSystem", () => {
   })
 
   it.each(["plain", "atomic"] as const)(
-    "regression: refuses publication through a concurrently replaced parent (%s)",
+    "refuses an unsupported host or a concurrently replaced parent (%s)",
     async (host) => {
       const directory = root()
       const outside = root()
       const parent = join(directory, ".smithers/flows/triage")
       mkdirSync(parent, { recursive: true })
       writeFileSync(join(outside, "flow.ts"), "outside original")
+      let swapped = false
       const result = await Effect.gen(function*() {
         const fs = yield* (host === "plain" ? FileSystem.FileSystem : confinedAt(directory))
         const path = yield* Path.Path
@@ -225,6 +226,7 @@ describe("FlowStore.layerFileSystem", () => {
               if (from.endsWith(".new")) {
                 renameSync(parent, `${parent}-moved`)
                 symlinkSync(outside, parent)
+                swapped = true
               }
               yield* fs.rename(from, to)
             })
@@ -237,7 +239,8 @@ describe("FlowStore.layerFileSystem", () => {
         Effect.runPromiseExit
       )
       expect(readFileSync(join(outside, "flow.ts"), "utf8")).toBe("outside original")
-      expect(Exit.isFailure(result)).toBe(true)
+      expect(refused(result).code).toBe(host === "plain" ? "unsupported" : "write_failed")
+      expect(swapped).toBe(host === "atomic")
     }
   )
 

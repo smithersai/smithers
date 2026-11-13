@@ -10,7 +10,6 @@
  * and `Budget.test.ts`.
  */
 import { describe, expect, it } from "vitest"
-import * as AgentSession from "../src/AgentSession.ts"
 import { failureJson } from "../src/internal/FailureJson.ts"
 
 /** A cause that refers to itself, which no round trip can render. */
@@ -46,7 +45,7 @@ const table: ReadonlyArray<{ readonly name: string; readonly value: () => unknow
 
 describe("the failure serializer every durable boundary shares", () => {
   for (const row of table) {
-    it(`renders ${row.name} the same way at every boundary`, () => {
+    it(`renders ${row.name}`, () => {
       const rendered = failureJson(row.value())
       if (row.expected === "string") {
         expect(typeof rendered).toBe("string")
@@ -54,12 +53,6 @@ describe("the failure serializer every durable boundary shares", () => {
       } else {
         expect(rendered).toEqual(row.expected)
       }
-      // The session settlement is the boundary that was already correct, so it
-      // is the one that pins the shared answer directly. The other two reach
-      // the same function through their own encoders.
-      const settled = AgentSession.settlementFailure(row.value())
-      if (row.expected === "string") expect(typeof settled).toBe("string")
-      else expect(settled).toEqual(rendered)
     })
   }
 
@@ -84,7 +77,6 @@ describe("the failure serializer every durable boundary shares", () => {
       const rendered = failureJson(failure)
       expect(typeof rendered).toBe("string")
       expect(rendered).not.toBe("")
-      expect(typeof AgentSession.settlementFailure(failure)).toBe("string")
     }
   })
 

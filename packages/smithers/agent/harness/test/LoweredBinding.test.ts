@@ -1,4 +1,4 @@
-/** Standard schema/metadata declarations bound through the agent call boundary. */
+/** Standard schema/metadata declarations bound through the harness call boundary. */
 import * as Cell from "@smthrs/harness/Cell"
 import * as CellCalls from "@smthrs/harness/CellCalls"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
@@ -81,9 +81,6 @@ describe("a lowered std signature as a harness binding", () => {
       input: Schema.String,
       output: Schema.Number
     } as const
-    expect(scalar.input).toBe(Schema.String)
-    expect(scalar.output).toBe(Schema.Number)
-
     const seen: Array<unknown> = []
     const binding = FlowBinding.make({
       flow: scalar,

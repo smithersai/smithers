@@ -342,6 +342,40 @@ describe("ExternalAgent.make", () => {
     })
   })
 
+  it("times out a running job at TIMEOUT and cancels its current generation", async () => {
+    const store = memoryJobs(() => [])
+    // Keep the probe in flight: the deadline must win even when the store does not answer.
+    const pending = AgentRunner.AgentJobs.of({
+      ...store.service,
+      status: (key) => Effect.andThen(store.service.status(key), Effect.never)
+    })
+    const { value: exit } = await run(
+      pending,
+      Effect.gen(function*() {
+        const fiber = yield* Caller.execute({ todo: "NOTES" }, { executionId: "timed-out" }).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        for (let attempt = 0; attempt < 3_000 && !store.calls.some((call) => call.startsWith("status:")); attempt++) {
+          yield* turns
+        }
+        expect(store.calls.some((call) => call.startsWith("status:"))).toBe(true)
+        expect([...store.rows.values()][0]!.standing).toEqual(running)
+        expect(cancels(store)).toEqual([])
+        yield* TestClock.adjust(ExternalAgent.TIMEOUT)
+        return yield* settle(fiber)
+      })
+    )
+    const key = starts(store)[0]!.slice("start:".length)
+    expect(failure(exit)).toBeInstanceOf(ExternalJob.ExternalJobTimedOut)
+    expect(failure(exit)).toMatchObject({ key })
+    expect(starts(store)).toHaveLength(1)
+    expect(cancels(store)).toEqual([`cancel:${key}`])
+    expect(store.rows.get(key)?.standing).toEqual({
+      _tag: "Ended",
+      outcome: { _tag: "Cancelled", processTreeGone: true }
+    })
+  })
+
   it("abandons a key whose start never answered when the run is cancelled", async () => {
     const store = memoryJobs(() => [])
     const admitting = AgentRunner.AgentJobs.of({
