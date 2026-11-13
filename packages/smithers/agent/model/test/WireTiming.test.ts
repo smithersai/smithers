@@ -40,7 +40,7 @@ const NOW = 1_760_000_000_000
 const request = ModelRequest.ModelRequest.make({
   modelId: "test-model",
   system: [],
-  messages: [{ role: "user", content: [{ type: "text", text: "go" }] }],
+  messages: [{ role: "user", content: [{ type: "text", text: "héllo 世界 🎉" }] }],
   tools: [],
   params: ModelRequest.GenerationParams.make()
 })
@@ -761,6 +761,8 @@ describe("the wire trace's response line", () => {
 
     expect(lines.map((line) => line["kind"])).toEqual(["request", "response"])
     const [sent, answered] = lines as [Record<string, any>, Record<string, any>]
+    expect(sent["at"]).toBe(new Date(NOW + 7).toISOString())
+    expect(sent["bytes"]).toBe(await requestBytesOf(chatgpt))
     expect(answered["call"]).toBe(sent["call"])
     expect(answered).toEqual({
       at: new Date(NOW + 5_440).toISOString(),

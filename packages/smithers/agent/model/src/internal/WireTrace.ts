@@ -21,7 +21,7 @@
  * @internal
  */
 
-import { Cause, Effect } from "effect"
+import { Cause, Clock, Effect } from "effect"
 import * as CanonicalJson from "../CanonicalJson.ts"
 import type { Timing, Usage } from "../ModelEvent.ts"
 import type * as Sink from "../WireTrace.ts"
@@ -31,6 +31,7 @@ interface Traced {
   readonly protocolId: string
   readonly publicHeaders: Readonly<Record<string, string>>
   readonly bodyText: string
+  readonly body: Uint8Array
   /** Whether the request leaves with a remembered affinity token. */
   readonly affinity?: boolean | undefined
 }
@@ -54,9 +55,10 @@ const previous = new Map<string, ReadonlyArray<string>>()
  */
 export const line = (
   prepared: Traced,
+  at: number,
   history: Map<string, ReadonlyArray<string>> = previous
 ): Record<string, unknown> => {
-  // Every built-in protocol body is a JSON object; `bodyText` is its bytes.
+  // Every built-in protocol body is a JSON object; `bodyText` is its serialized form.
   const body = JSON.parse(prepared.bodyText) as Body
   const list = body.input ?? body.messages
   const input: ReadonlyArray<Item> = Array.isArray(list) ? list : []
@@ -69,7 +71,7 @@ export const line = (
   while (common < before.length && before[common] === items[common]) common++
   history.set(slot, items)
   return {
-    at: new Date().toISOString(),
+    at: new Date(at).toISOString(),
     kind: "request",
     routeId: prepared.routeId,
     protocolId: prepared.protocolId,
@@ -77,7 +79,7 @@ export const line = (
     sessionIdHeader: prepared.publicHeaders["session-id"] ?? null,
     affinity: prepared.affinity ?? false,
     instructions: typeof body.instructions === "string" ? CanonicalJson.shortHash(body.instructions) : null,
-    bytes: prepared.bodyText.length,
+    bytes: prepared.body.byteLength,
     items,
     kinds,
     commonPrefixItems: common,
@@ -119,11 +121,11 @@ export const record = (
   prepared: Traced,
   sink: Sink.WireTrace | undefined
 ): Effect.Effect<TracedCall | undefined> =>
-  Effect.suspend(() => {
-    if (sink === undefined) return Effect.succeed(undefined)
+  Effect.gen(function*() {
+    if (sink === undefined) return undefined
     const id = ++calls
-    const { at, kind, ...request } = line(prepared)
-    return Effect.as(append(sink, { at, kind, call: id, ...request }), { id, sink })
+    const { at, kind, ...request } = line(prepared, yield* Clock.currentTimeMillis)
+    return yield* Effect.as(append(sink, { at, kind, call: id, ...request }), { id, sink })
   })
 
 /**

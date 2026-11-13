@@ -13,20 +13,30 @@ import { describe, expect, it } from "vitest"
 import { WireTrace as Sink } from "../src/index.ts"
 import * as WireTrace from "../src/internal/WireTrace.ts"
 
-const prepared = (body: Record<string, unknown>, key?: string) => ({
-  routeId: "openai-chatgpt",
-  protocolId: "openai-responses-chatgpt",
-  publicHeaders: key === undefined ? {} : { "session-id": key },
-  bodyText: JSON.stringify({ ...body, ...(key === undefined ? {} : { prompt_cache_key: key }) })
-})
+const prepared = (body: Record<string, unknown>, key?: string) => {
+  const bodyText = JSON.stringify({ ...body, ...(key === undefined ? {} : { prompt_cache_key: key }) })
+  return {
+    routeId: "openai-chatgpt",
+    protocolId: "openai-responses-chatgpt",
+    publicHeaders: key === undefined ? {} : { "session-id": key },
+    bodyText,
+    body: new TextEncoder().encode(bodyText)
+  }
+}
 
 const user = (text: string) => ({ role: "user", content: [{ type: "input_text", text }] })
 
 describe("WireTrace.line", () => {
+  it.each(["go", "héllo 世界 🎉", "e\u0301", "\ud800"])("reports UTF-8 body bytes for %j", (text) => {
+    const request = prepared({ input: [user(text)] })
+    expect(WireTrace.line(request, 0, new Map())["bytes"]).toBe(new TextEncoder().encode(request.bodyText).byteLength)
+  })
+
   it("reports the cache identity and the input prefix shared with the previous request", () => {
     const history = new Map<string, ReadonlyArray<string>>()
     const first = WireTrace.line(
       prepared({ instructions: "teach", input: [user("begin"), user("panel 0")] }, "k"),
+      0,
       history
     )
     const second = WireTrace.line(
@@ -34,18 +44,19 @@ describe("WireTrace.line", () => {
         instructions: "teach",
         input: [user("begin"), { type: "reasoning", encrypted_content: "secret-state" }, user("panel 1")]
       }, "k"),
+      0,
       history
     )
     expect(first).toMatchObject({ cacheKey: "k", sessionIdHeader: "k", affinity: false, commonPrefixItems: 0 })
-    expect(WireTrace.line({ ...prepared({}, "other"), affinity: true }, history)).toMatchObject({ affinity: true })
+    expect(WireTrace.line({ ...prepared({}, "other"), affinity: true }, 0, history)).toMatchObject({ affinity: true })
     expect(second).toMatchObject({ commonPrefixItems: 1, previousItems: 2, kinds: ["user", "reasoning", "user"] })
     expect(JSON.stringify(second)).not.toContain("secret-state")
   })
 
   it("reads a Chat Completions body's messages and keys a request with no cache key by its route", () => {
     const history = new Map<string, ReadonlyArray<string>>()
-    WireTrace.line(prepared({ messages: [user("a")] }), history)
-    const line = WireTrace.line(prepared({ messages: [user("a"), null] }), history)
+    WireTrace.line(prepared({ messages: [user("a")] }), 0, history)
+    const line = WireTrace.line(prepared({ messages: [user("a"), null] }), 0, history)
     expect(line).toMatchObject({
       cacheKey: null,
       sessionIdHeader: null,
@@ -53,7 +64,7 @@ describe("WireTrace.line", () => {
       kinds: ["user", "undefined"],
       commonPrefixItems: 1
     })
-    expect(WireTrace.line(prepared({}), history)).toMatchObject({ items: [], commonPrefixItems: 0 })
+    expect(WireTrace.line(prepared({}), 0, history)).toMatchObject({ items: [], commonPrefixItems: 0 })
   })
 })
 
@@ -125,21 +136,29 @@ describe("the injected wire trace", () => {
     const file = join(directory, "trace.jsonl")
     const run = Effect.gen(function*() {
       const sink = yield* Sink.WireTrace
+      yield* TestClock.setTime(1_760_000_000_000)
       const first = yield* WireTrace.record(prepared({ input: [user("a")] }, "record-k"), sink)
+      yield* TestClock.adjust(1_000)
       const second = yield* WireTrace.record(prepared({ input: [user("a"), user("b")] }, "record-k"), sink)
-      yield* WireTrace.recordResponse(first, () => answered({ status: 200 }), 9_400)
+      yield* WireTrace.recordResponse(first, () => answered({ status: 200 }), 1_760_000_009_400)
       return [first!.id, second!.id]
     })
     try {
       const ids = await Effect.runPromise(run.pipe(
         Effect.provide(Sink.layerFileSystem(file)),
-        Effect.provide(NodeHost.NodeFileSystem.layer)
+        Effect.provide(NodeHost.NodeFileSystem.layer),
+        Effect.provide(TestClock.layer())
       ))
       const lines = readFileSync(file, "utf8").trim().split("\n").map((text) => JSON.parse(text))
       expect(lines.map((line) => [line.kind, line.call])).toEqual([["request", ids[0]], ["request", ids[1]], [
         "response",
         ids[0]
       ]])
+      expect(lines.map((line) => line.at)).toEqual([
+        new Date(1_760_000_000_000).toISOString(),
+        new Date(1_760_000_001_000).toISOString(),
+        new Date(1_760_000_009_400).toISOString()
+      ])
       expect(lines.slice(0, 2).map((line) => line.commonPrefixItems)).toEqual([0, 1])
       expect(ids[1]).toBe(ids[0]! + 1)
     } finally {

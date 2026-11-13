@@ -70,7 +70,7 @@ export const ask = (question: string, modelId: string, baseUrl: string, apiKey: 
     return chunks.join("")
   }).pipe(Effect.provide(executorLayer))
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.main) {
   if (process.argv.length > 4) {
     console.error(
       "API keys must not be passed as positional arguments. Set SMITHERS_EXAMPLE_API_KEY in the environment."
