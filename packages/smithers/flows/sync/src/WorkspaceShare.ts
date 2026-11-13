@@ -73,6 +73,8 @@ export interface AuthorizeRequest {
 /**
  * What a freshly minted workspace capability grants.
  *
+ * Expiries beyond the safe-integer range are capped at `Number.MAX_SAFE_INTEGER`.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -84,6 +86,8 @@ export const MintRequest = Schema.Struct({
 
 /**
  * What a freshly minted workspace capability grants.
+ *
+ * Expiries beyond the safe-integer range are capped at `Number.MAX_SAFE_INTEGER`.
  *
  * @category models
  * @since 0.1.0
@@ -223,7 +227,7 @@ export const makeHmac = (keyring: Keyring): Effect.Effect<Service, SyncError> =>
           capabilityId: admitted.capabilityId,
           access: admitted.access,
           issuedAtMs,
-          expiresAtMs: issuedAtMs + admitted.ttlMs
+          expiresAtMs: Math.min(issuedAtMs + admitted.ttlMs, Number.MAX_SAFE_INTEGER)
         })
         return new WorkspaceCapability({
           claims,

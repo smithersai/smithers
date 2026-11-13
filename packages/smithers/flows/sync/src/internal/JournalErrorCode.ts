@@ -42,5 +42,5 @@ export const journalErrorCode = (
 ): "backpressure" | "closed" | "decode_failed" | "unknown" => {
   if (!(cause instanceof Error)) return "unknown"
   const code = (cause as { readonly code?: unknown }).code
-  return typeof code === "string" ? journalCodes[code] ?? "unknown" : "unknown"
+  return typeof code === "string" && Object.hasOwn(journalCodes, code) ? journalCodes[code]! : "unknown"
 }

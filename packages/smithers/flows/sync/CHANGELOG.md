@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- Workspace and branch capabilities cap overflowing expiry times at
+  `Number.MAX_SAFE_INTEGER` instead of crashing during minting.
+- Journal failures whose codes match object prototype names remain typed
+  `unknown` sync errors instead of crashing the error mapper.
+- Workspace subscriptions immediately re-list runs announced during catalog
+  reconciliation instead of waiting for the next polling interval.
+
 - `SyncClient.subscribe` reconnects only on a transport failure of the live
   `Sync.Subscribe` stream. An `apply` callback that failed with a
   `transport_failed` of its own was retried forever, redelivering the same

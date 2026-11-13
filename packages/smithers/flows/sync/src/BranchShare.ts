@@ -48,6 +48,8 @@ export interface AuthorizeRequest {
 /**
  * What a freshly minted capability grants.
  *
+ * Expiries are capped at `Number.MAX_SAFE_INTEGER` and any `maxExpiresAtMs`.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -62,6 +64,8 @@ export const MintRequest = Schema.Struct({
 
 /**
  * What a freshly minted capability grants.
+ *
+ * Expiries are capped at `Number.MAX_SAFE_INTEGER` and any `maxExpiresAtMs`.
  *
  * @category models
  * @since 0.1.0
@@ -206,7 +210,7 @@ export const makeHmac = (keyring: Keyring): Effect.Effect<Service, SyncError> =>
         const admitted = yield* Admission.decode(MintRequest, request, "invalid_request")
         yield* Effect.annotateCurrentSpan({ branchId: admitted.branchId, access: admitted.access })
         const issuedAtMs = yield* Clock.currentTimeMillis
-        const maxExpiresAtMs = admitted.maxExpiresAtMs ?? Infinity
+        const maxExpiresAtMs = admitted.maxExpiresAtMs ?? Number.MAX_SAFE_INTEGER
         if (issuedAtMs >= maxExpiresAtMs) {
           return yield* Effect.fail(denied("The share capability has expired"))
         }

@@ -72,8 +72,10 @@ own keyring: `BranchShare.layerConfig` reads `SMITHERS_SYNC_BRANCH_SECRET` and
 
 Both authorities decode their mint request before signing it, so an empty id
 or a non-positive `ttlMs` from an in-process caller is refused with
-`invalid_request` rather than crashing the operation. `BranchCommands.submission`
-returns an `Effect` for the same reason: a command name the schema forbids is a
+`invalid_request` rather than crashing the operation. Expiries beyond the
+safe-integer range are capped at `Number.MAX_SAFE_INTEGER`; a branch capability
+also respects its `maxExpiresAtMs` ceiling. `BranchCommands.submission` returns
+an `Effect` for the same reason: a command name the schema forbids is a
 refusal, not a throw.
 
 ## Bounds
@@ -87,7 +89,9 @@ covered, including a run the catalog later drops, so its bookkeeping is O(runs
 covered). A catalog-wide round, which runs at open, on an announcement, and
 once per `tailIntervalMs`, reads one page and two generations per covered run,
 so its work is O(runs listed) with `concurrency` reads open at a time. A wake
-for an entry committed in this process reads only the runs it named. Size
+for an entry committed in this process reads only the runs it named. An
+announcement received during reconciliation triggers another catalog-wide
+round as soon as the current round finishes. Size
 `concurrency` and `tailIntervalMs` for the catalog, not only for the follower.
 
 | Bound                                            | Default                                         | What it caps                                                                                                                                                                   |

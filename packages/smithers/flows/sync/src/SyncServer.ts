@@ -934,14 +934,14 @@ const makeWith = (
          * dirty is read by this pass, so the set starts over; a run marked
          * while the pass runs is remembered for the next wake.
          */
-        const fullRound = Stream.unwrap(Effect.map(
-          reconcile,
-          () => {
-            dirty = new Set()
-            announced = false
-            return Stream.flatMap(Stream.fromIterable(visible), tail, { concurrency })
-          }
-        ))
+        const fullRound = Stream.suspend(() => {
+          dirty = new Set()
+          announced = false
+          return Stream.unwrap(Effect.map(
+            reconcile,
+            () => Stream.flatMap(Stream.fromIterable(visible), tail, { concurrency })
+          ))
+        })
 
         /**
          * One pass over the dirty runs only, under the same bound. No catalog
