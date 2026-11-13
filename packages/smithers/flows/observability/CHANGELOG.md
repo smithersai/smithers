@@ -26,6 +26,9 @@
 
 ### Fixed
 
+- Export `OtlpRelay` by subpath in development and published ESM and CommonJS
+  packages, and correct the module, metric and exporter documentation.
+
 - `OtlpRelay.serve` relays a metric data point whose value or sum is not a
   finite number (`"NaN"`, `"Infinity"`, `"-Infinity"` or `null` in the JSON)
   without that field, instead of answering 400 and dropping every record in

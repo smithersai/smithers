@@ -104,6 +104,10 @@ interface Options {
   received. Logs and metrics are unaffected. Pass the span names of an
   `OtlpRelay.serve` allowlist so the exporter never sends what the relay
   drops.
+- `transform`: applies the application privacy policy to OTLP JSON before
+  credential redaction, size checks, splitting and transport. It runs for logs,
+  metrics and traces, including exception events and span status messages.
+  Keep the transformation synchronous and total.
 - `maxRequestBytes`: the largest request the collector accepts, in encoded
   bytes; at most and by default `maxRequestBytes` (1 MiB). A larger batch is
   split into several requests under it.
@@ -235,7 +239,7 @@ The `service.name` attribute installed when the caller supplies none.
 ### Otlp.defaultServiceVersion
 
 ```ts
-const defaultServiceVersion: string // "1.0.0-rc.0"
+const defaultServiceVersion: string // the package release version
 ```
 
 The `service.version` attribute installed when the caller supplies none. It
@@ -628,7 +632,7 @@ counted without a counter at each call site.
 import { LogFailures, Otlp } from "@smthrs/observability"
 
 const telemetry = LogFailures.layer({ records: ["question not sent", "page error"] }).pipe(
-  Layer.provideMerge(Otlp.layerFetch({ baseUrl: "/api/telemetry", serviceName: "web" }))
+  Layer.provideMerge(Otlp.layerFetch({ baseUrl: "https://app.example/api/telemetry", serviceName: "web" }))
 )
 ```
 
@@ -967,10 +971,12 @@ const registry: {
   readonly structuredOutputRejections: typeof structuredOutputRejections
   readonly structuredOutputExhausted: typeof structuredOutputExhausted
   readonly droppedLogRecords: typeof droppedLogRecords
+  readonly relayedRecords: typeof relayedRecords
+  readonly relayDroppedRecords: typeof relayDroppedRecords
 }
 ```
 
-All six handles as one object, for a host that enumerates them. The six
+All eight handles as one object, for a host that enumerates them. The eight
 series names are the dashboard contract; treat them as public API.
 
 ## Otel
@@ -1110,5 +1116,3 @@ layer with no processor factories at all still builds; it provides the resource
 and bridges nothing. Nothing is redacted: the factories' processors and
 readers receive spans, logs and metrics as the program wrote them; use
 `Otlp.layer` for credential redaction.
-
-`transform` applies the application privacy policy to OTLP JSON before credential redaction, size checks, splitting and transport. It runs for logs, metrics and traces, including exception events and span status messages. Keep the transformation synchronous and total.

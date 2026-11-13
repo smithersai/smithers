@@ -7,6 +7,14 @@ import { describe, it } from "vitest"
 const packageRoot = fileURLToPath(new URL("../", import.meta.url))
 
 describe("built artifacts", () => {
+  it("resolves the relay's development subpath", () => {
+    execFileSync(process.execPath, [
+      "--input-type=module",
+      "--eval",
+      "import assert from \"node:assert/strict\"; assert.equal(import.meta.resolve(\"@smthrs/observability/OtlpRelay\"), new URL(\"./src/OtlpRelay.ts\", import.meta.url).href)"
+    ], { cwd: packageRoot, timeout: 20_000 })
+  })
+
   it(
     "loads every published wildcard module in ESM and CJS without splitting root identity",
     () => {

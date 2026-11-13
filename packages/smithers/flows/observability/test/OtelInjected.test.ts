@@ -252,7 +252,20 @@ describe("Resource.configToAttributes", () => {
     expect(() => Resource.configToAttributes({ serviceName: "" })).toThrow()
   })
 
-  it("exposes the OpenTelemetry resource service tag", () => {
-    expect(Resource.Resource).toBeDefined()
+  it("provides the decoded resource through its service tag", async () => {
+    const resource = await Effect.runPromise(
+      Resource.Resource.pipe(
+        Effect.provide(Resource.layer({
+          serviceName: "resource-service",
+          serviceVersion: "2",
+          attributes: { "deployment.environment": "test" }
+        }))
+      )
+    )
+    expect(resource.attributes).toMatchObject({
+      "service.name": "resource-service",
+      "service.version": "2",
+      "deployment.environment": "test"
+    })
   })
 })

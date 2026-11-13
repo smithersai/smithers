@@ -70,11 +70,15 @@ host chooses `NodeOtel` or `BrowserOtel`.
 ## The producer owns the meaning, the exporter owns the delivery
 
 A metric handle belongs to the package that knows when to advance it. This
-package holds only the four cross-package runtime signals nobody else owns,
+package holds the eight shared runtime handles in `Metric.registry`,
 and it holds them so the producers can share one identifier:
 `flows_run_throughput` is updated in [`@smthrs/run-store`](/api/run-store),
-`flows_seat_active` and `flows_quota_park` in [`@smthrs/agent`](/api/agent),
-and `flows_observability_log_dropped` here. Step-cache counters stay in
+`flows_seat_active`, `flows_quota_park`,
+`flows_agent_structured_output_rejections` and
+`flows_agent_structured_output_exhausted` in [`@smthrs/agent`](/api/agent), and
+`flows_observability_log_dropped`, `flows_observability_otlp_relayed` and
+`flows_observability_otlp_relay_dropped` here. `LogFailures` and `FetchFailures`
+also declare their own failure counters outside that registry. Step-cache counters stay in
 [`@smthrs/step-cache`](/api/step-cache); this package does not duplicate them.
 
 The consequence for a reader: a metric's name tells you which package to open

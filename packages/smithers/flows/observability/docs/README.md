@@ -127,11 +127,14 @@ The root entry point exports these namespaces, and each is also importable from
 | Namespace       | What it is                                                                                            |
 | --------------- | ----------------------------------------------------------------------------------------------------- |
 | `Otlp`          | The default exporter: one layer that posts logs, metrics, and traces to a collector, no SDK involved. |
+| `OtlpRelay`     | An OTLP/HTTP JSON handler that relays browser telemetry to the server's structured loggers.           |
+| `FetchFailures` | Failed HTTP requests counted by route template, status class, and retry state.                        |
+| `LogFailures`   | Warning and error log records counted by record, code, and area, with a bounded recent history.       |
 | `Endpoint`      | The validated collector endpoint every OTLP builder decodes before it exports anything.               |
 | `Resource`      | The validated service identity attached to every exported signal.                                     |
 | `Logger`        | Effect logger layers: pretty for development, one JSON object per line for production, and silence.   |
 | `JournalLogger` | A bounded, drop-on-overflow forwarder that mirrors log records into a run's durable journal.          |
-| `Metric`        | The four runtime metric handles the engine packages update, and their exported identifiers.           |
+| `Metric`        | The eight shared runtime metric handles the engine packages update, and their exported identifiers.   |
 | `Otel`          | The provider-neutral bridge for an OpenTelemetry SDK the application already built.                   |
 
 Two more modules are subpath-only, because each resolves a host-specific

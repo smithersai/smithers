@@ -1,5 +1,6 @@
-import { Cause, Effect, Logger as EffectLogger, References, Tracer } from "effect"
+import { Cause, Console, Effect, Logger as EffectLogger, References, Tracer } from "effect"
 import type * as Layer from "effect/Layer"
+import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
 import * as Logger from "../src/Logger.ts"
 
@@ -9,6 +10,25 @@ const captured = () => {
     values.push({ options, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })
   })
   return { logger, values }
+}
+
+const capturedConsole = () => {
+  const lines: Array<string> = []
+  const record = (...args: ReadonlyArray<unknown>) =>
+    void lines.push(args.map((value) => typeof value === "string" ? value : inspect(value, { depth: 8 })).join(" "))
+  const output: Console.Console = {
+    ...console,
+    log: record,
+    error: record,
+    warn: record,
+    info: record,
+    debug: record,
+    trace: record,
+    group: record,
+    groupCollapsed: record,
+    groupEnd: () => {}
+  }
+  return { lines, output }
 }
 
 describe("Logger layers", () => {
@@ -43,12 +63,6 @@ describe("Logger layers", () => {
     expect(ambient.values.map(({ options }) => options.message)).toEqual(
       mergeWithExisting ? [["delivered once per sink"]] : []
     )
-  })
-
-  it("exposes pretty, structured, and noop layers", () => {
-    expect(Logger.layerPrettyDev()).toBeDefined()
-    expect(Logger.layerStructuredJson()).toBeDefined()
-    expect(Logger.layerNoop()).toBeDefined()
   })
 
   it("uses the v4 minimum-level reference and preserves annotations", async () => {
@@ -126,20 +140,15 @@ describe("Logger layers", () => {
   })
 
   it("writes the span's ids into each structured JSON line", async () => {
-    const lines: Array<string> = []
+    const { lines, output } = capturedConsole()
     const parent = Tracer.externalSpan({ traceId: "4bf92f3577b34da6a3ce929d0e0e4736", spanId: "00f067aa0ba902b7" })
-    const log = console.log
-    console.log = (line: string) => void lines.push(line)
-    try {
-      await Effect.runPromise(
-        Effect.logInfo("joined").pipe(
-          Effect.withSpan("work", { parent }),
-          Effect.provide(Logger.layerStructuredJson())
-        )
+    await Effect.runPromise(
+      Effect.logInfo("joined").pipe(
+        Effect.withSpan("work", { parent }),
+        Effect.provide(Logger.layerStructuredJson()),
+        Effect.provideService(Console.Console, output)
       )
-    } finally {
-      console.log = log
-    }
+    )
 
     expect(lines).toHaveLength(1)
     expect(JSON.parse(lines[0]!)).toMatchObject({
@@ -169,20 +178,11 @@ describe("Logger layers", () => {
       Cause.fail(new Error(`401 for Bearer ${token}`))
     )
       .pipe(Effect.annotateLogs({ authorization: `Bearer ${token}` }))
-    const methods = ["log", "error", "warn", "info", "debug", "trace"] as const
     const consoleLines = async (layer: Layer.Layer<never>) => {
-      const lines: Array<string> = []
-      const saved = methods.map((name) => console[name])
-      for (const name of methods) {
-        console[name] = (...args: Array<unknown>) => void lines.push(args.map(String).join(" "))
-      }
-      try {
-        await Effect.runPromise(line.pipe(Effect.provide(layer)))
-      } finally {
-        methods.forEach((name, index) => {
-          console[name] = saved[index]!
-        })
-      }
+      const { lines, output } = capturedConsole()
+      await Effect.runPromise(
+        line.pipe(Effect.provide(layer), Effect.provideService(Console.Console, output))
+      )
       return lines.join("\n")
     }
 

@@ -2210,6 +2210,22 @@
         }
       },
       "reason": "Records, replays or passes through every call a Durable Object makes on its Cloudflare Container in the three VL-36 modes, with strict replay order and secret scrubbing; imports no Node module, so a deployed Worker records and workerd replays (6138c1eb849b)."
+    },
+    {
+      "name": "@smthrs/observability",
+      "subpath": "./OtlpRelay",
+      "development": "./src/OtlpRelay.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/OtlpRelay.d.ts",
+          "default": "./dist/esm/OtlpRelay.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OtlpRelay.d.ts",
+          "default": "./dist/cjs/OtlpRelay.js"
+        }
+      },
+      "reason": "Expose the root relay namespace by subpath, matching every sibling module."
     }
   ],
   "removed": [

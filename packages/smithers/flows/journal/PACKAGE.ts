@@ -91,6 +91,30 @@ const securityReview = Smithers.SecurityReview({
       paths: ["src/Redaction.ts"]
     },
     {
+      id: "journal-log-redaction",
+      title: "Every record forwarded to the durable journal is snapshotted and passed through Redaction.redact",
+      threat:
+        "Secrets in log messages, annotations, or error causes of one run persist in the journal where other readers of that run can read them.",
+      lookFor: [
+        "snapshot emitting a payload that skipped Redaction.redact, including the fallback records in the catch branch.",
+        "snapshotValue copying accessor (getter) properties or invoking user toString/toJSON instead of reading data descriptors only.",
+        "Error stack or cause fields projected without going through the redacted candidate."
+      ],
+      paths: ["src/TelemetryLog.ts"]
+    },
+    {
+      id: "journal-logger-resource-bounds",
+      title: "A hostile logged value cannot exhaust snapshot memory or CPU",
+      threat:
+        "Code that logs attacker-controlled data (huge strings, deep or cyclic objects, throwing proxies) stalls or crashes the run's host process.",
+      lookFor: [
+        "A snapshot path that allocates before checking maximumSnapshotBytes, maximumSnapshotMembers, or maximumSnapshotDepth.",
+        "A Proxy trap or throwing getter escaping snapshotValue's try/catch into the logger callback.",
+        "Key truncation via boundedText letting two keys collide or a record written on a non-null prototype."
+      ],
+      paths: ["src/TelemetryLog.ts"]
+    },
+    {
       id: "logger-redaction",
       title:
         "The redacting logger redacts message, cause, annotations, stack frames, and console output before any logger reads them",

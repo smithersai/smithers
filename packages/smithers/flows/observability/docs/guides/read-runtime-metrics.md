@@ -1,6 +1,6 @@
 ---
 title: "Read the runtime metrics"
-description: "The four runtime metric handles this package declares, the exact series names a dashboard binds to, which package advances each one, and how to read a counter in process without an exporter."
+description: "The eight shared runtime metric handles this package declares, the exact series names a dashboard binds to, which package advances each one, and how to read a counter in process without an exporter."
 sidebar:
   order: 5
 ---
@@ -9,7 +9,7 @@ sidebar:
 handles a producer updates and a dashboard reads. Every other metric in
 Smithers belongs to the package that owns the behavior it measures.
 
-## The six handles
+## The eight handles
 
 | Handle                       | Series name                                | Kind    | Advances when                                                                                                                                                      |
 | ---------------------------- | ------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -19,8 +19,10 @@ Smithers belongs to the package that owns the behavior it measures.
 | `structuredOutputRejections` | `flows_agent_structured_output_rejections` | counter | An agent answer is refused by its declared output schema, in the same session or a fresh one.                                                                      |
 | `structuredOutputExhausted`  | `flows_agent_structured_output_exhausted`  | counter | An agent step fails after spending every output correction and its repair.                                                                                         |
 | `droppedLogRecords`          | `flows_observability_log_dropped`          | counter | A log record is lost before durable delivery: once per queue overflow, once per journal delivery failure, and once per defect the forwarding worker recovers from. |
+| `relayedRecords`             | `flows_observability_otlp_relayed`         | counter | `OtlpRelay.serve` re-emits a record, tagged by `signal`.                                                                                                           |
+| `relayDroppedRecords`        | `flows_observability_otlp_relay_dropped`   | counter | The relay drops a record, tagged by `signal` and `reason` (`not_allowed` or `over_limit`).                                                                         |
 
-`Metric.registry` is the same six as one object, so a host can enumerate them.
+`Metric.registry` is the same eight as one object, so a host can enumerate them.
 The series names are the dashboard contract; treat them as public API.
 
 Step-cache lookup and write counters belong to

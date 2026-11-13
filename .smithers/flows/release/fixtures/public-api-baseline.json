@@ -7594,6 +7594,16 @@
             "default": "./dist/cjs/Otlp.js"
           }
         },
+        "./OtlpRelay": {
+          "import": {
+            "types": "./dist/esm/OtlpRelay.d.ts",
+            "default": "./dist/esm/OtlpRelay.js"
+          },
+          "require": {
+            "types": "./dist/cjs/OtlpRelay.d.ts",
+            "default": "./dist/cjs/OtlpRelay.js"
+          }
+        },
         "./Resource": {
           "import": {
             "types": "./dist/esm/Resource.d.ts",

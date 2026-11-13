@@ -56,29 +56,61 @@ const securityReview = Smithers.SecurityReview({
       paths: ["src/Otlp.ts", "src/NodeOtel.ts", "src/BrowserOtel.ts", "src/Otel.ts", "src/Resource.ts"]
     },
     {
-      id: "journal-log-redaction",
-      title: "Every record forwarded to the durable journal is snapshotted and passed through Redaction.redact",
+      id: "journal-forwarding-bounds",
+      title: "Journal forwarding snapshots before offering to a bounded nonblocking queue",
       threat:
-        "Secrets in log messages, annotations, or error causes of one run persist in the journal where other readers of that run can read them.",
+        "A hostile log event bypasses journal redaction or stalls the host through an unbounded forwarding queue.",
       lookFor: [
-        "makeLog or snapshotLog emitting a payload that skipped Redaction.redact, including the fallback records in the catch branch.",
-        "snapshotValue copying accessor (getter) properties or invoking user toString/toJSON instead of reading data descriptors only.",
-        "Error stack or cause fields projected without going through the redacted candidate."
+        "A forwarding path that skips Telemetry.snapshot before Queue.offerUnsafe.",
+        "A full queue blocking the logger callback instead of discarding and counting the record.",
+        "A worker delivery failure or defect that drops records without incrementing droppedLogRecords."
       ],
       paths: ["src/JournalLogger.ts"]
     },
     {
-      id: "journal-logger-resource-bounds",
-      title: "A hostile logged value cannot exhaust memory, CPU, or the forwarding queue",
-      threat:
-        "Code that logs attacker-controlled data (huge strings, deep or cyclic objects, throwing proxies) stalls or crashes the run's host process.",
+      id: "relay-input-boundary",
+      title: "Untrusted OTLP JSON stays bounded, validated and redacted before a server logger receives it",
+      threat: "A public telemetry route accepts oversized or hostile input and leaks client secrets into server logs.",
       lookFor: [
-        "A snapshot path that allocates before checking maximumSnapshotBytes, maximumSnapshotMembers, or maximumSnapshotDepth.",
-        "A Proxy trap or throwing getter escaping snapshotValue's try/catch into the logger callback.",
-        "The logger callback blocking or awaiting instead of refusing on a full queue.",
-        "Key truncation via boundedText letting two keys collide or a record written on a non-null prototype."
+        "A request read or JSON traversal that bypasses maxBodyBytes, maxNesting or maxRecords.",
+        "An off-allowlist record, raw attribute, log body or exception escaping relay redaction.",
+        "A malformed input or rejected record returning its raw payload in an error or diagnostic."
       ],
-      paths: ["src/JournalLogger.ts"]
+      paths: ["src/OtlpRelay.ts"]
+    },
+    {
+      id: "export-redaction-boundary",
+      title: "Every exported signal is redacted after transformation and before size checks and transport",
+      threat: "Credentials in spans, exception events, log messages or metric attributes reach an external collector.",
+      lookFor: [
+        "A transform result or fallback that bypasses ExportRedaction.redact at the encoded boundary.",
+        "Exception messages, stack traces, span status messages or nested OTLP values skipped by redaction.",
+        "A redaction failure that forwards the original payload instead of a safe fallback."
+      ],
+      paths: ["src/Otlp.ts", "src/internal/exportRedaction.ts"]
+    },
+    {
+      id: "console-logger-redaction",
+      title: "Every installed logger sees only redacted messages, causes and annotations",
+      threat: "A credential printed in a failure reaches a console or caller-supplied logger in clear text.",
+      lookFor: [
+        "A built-in or caller-supplied sink installed without RedactedLogger.wrap.",
+        "Structured or pretty formatting that reads the raw event before redaction.",
+        "A failure path that prints the raw value while constructing a fallback log line."
+      ],
+      paths: ["src/Logger.ts"]
+    },
+    {
+      id: "failure-label-privacy",
+      title: "Failure counts and recent history carry bounded labels without private request or log content",
+      threat:
+        "User text, credentials or URL identifiers leak into metric labels and recent history or create unbounded series.",
+      lookFor: [
+        "A LogFailures label or Recent entry built from a raw error message or unbounded annotation.",
+        "A label set or recent-history buffer exceeding its configured cap.",
+        "FetchFailures logging a full URL, path, query or request body instead of a caller-supplied route template."
+      ],
+      paths: ["src/LogFailures.ts", "src/FetchFailures.ts"]
     },
     {
       id: "export-request-bounds",

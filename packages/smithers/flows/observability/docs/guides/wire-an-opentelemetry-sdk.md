@@ -198,10 +198,11 @@ read, so a collector that never finishes its answer holds no slot.
 
 Logs and traces flush at 1,000 records or the export interval. The transport has
 no waiting queue: a batch arriving while all four slots are occupied is dropped.
-Serialized JSON payloads larger than 1 MiB are also dropped, limiting active
-request payloads to 4 MiB. This limit applies after serialization; it does not
-bound individual application records, temporary serialization allocations, or
-the application's metric registry.
+A serialized JSON batch larger than 1 MiB is split into requests under that
+limit; a single record that cannot fit is dropped. At most four request
+payloads of 1 MiB are sent concurrently. These limits apply after serialization;
+they do not bound temporary serialization allocations or the application's
+metric registry.
 
 Resource admission caps cumulative encoded metadata at 128 KiB and bounds
 arrays at 256 elements. The byte budget includes SDK-added telemetry fields,
