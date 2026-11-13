@@ -389,7 +389,7 @@ same way — `sympy__sympy-19495`, which had already written its patch and still
 graded resolved. Both REPL lanes hit this once in 45; neither filing lane hit it
 at all, which on two draws is not enough to call it an arm effect.
 
-Netting that instance out leaves the arms at 34 apiece on 42 comparable
+Netting that instance out leaves the arms at 33 apiece on 42 comparable
 instances. **This is the third pairing in a row in which the realm's verdict count
 is a tie inside the filing arm's own draw-to-draw spread.**
 
@@ -500,7 +500,7 @@ pairing running. It is neither cheaper nor same-or-more resolved:
 
 - **resolved: a tie, for the third time.** 33 against 34 is one verdict on a
   population whose filing control has swung three verdicts between two draws of
-  one configuration. Netting out the provider refusal it is 34 apiece. Nothing
+  one configuration. Netting out the provider refusal it is 33 apiece. Nothing
   here is evidence either way.
 - **cost: a loss, and a reversal.** +10 % against the contemporaneous control and
   +13 % against the arm's own previous draw, where the previous draw was −18 %.
