@@ -6835,3 +6835,18 @@ Not proved yet, by a grep of `main.vibe`: three arms add fields beside a proved 
 fields over `scopeWrite`, `ReceivedRole`'s account over `scopeWrite`, and `FailedTour`'s surface and recovery over
 `screenWrite`), and five helper sites write inline (`runTourControl`'s cleared error, `receiveTour`'s replay and tour
 client, the theatre in `recoverEndTour`, and `minimizeSplash`'s step).
+
+## The box-only `harness_test.py` red (vl-proveall, 2026-11-13)
+
+`python3 verify/harness_test.py` failed 10 tests and 2 errors in a `node26` box and passed 61 on the host. Two
+preconditions that `pnpm verify` sets up were missing, because the gate ran the file alone:
+
+- `run-heavy --add` delivers `verify/.tools/bin/lsc` as a copied file, which can't resolve `ts-morph`
+  (`ERR_MODULE_NOT_FOUND`); `check.sh` runs `lsc_fresh.py` to restore the link before the harness, a bare run did not.
+  9 failures and 1 error.
+- A fresh tree has no `src/assets/wiki.generated.vibe` or `wikiIndex.generated.vibe` (`pnpm wiki:build` writes them);
+  the host kept them from an earlier build. Emitting `main.vibe`'s declarations failed on that import. 1 failure, 1 error.
+
+The image is not at fault. `harness_test.py`'s `setUpModule` now runs `lsc_fresh.main()` and stops with one message
+naming the missing generated modules; `test_a_tree_without_the_generated_wiki_modules_is_named` checks the names.
+Checked in a `node26` box: a bare run before `wiki:build` stops on that message, and after it all tests pass.

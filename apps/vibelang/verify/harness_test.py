@@ -3,8 +3,35 @@ import json, os, pathlib, subprocess, sys, tempfile, unittest
 from sources import production_sources
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = pathlib.Path(__file__).resolve().parent
+# What `pnpm verify` builds before it runs these tests: `wiki:build`'s modules, which `src/core/wiki.vibe` imports.
+GENERATED = ['src/assets/wiki.generated.vibe', 'src/assets/wikiIndex.generated.vibe']
+
+
+def missing_generated(app: pathlib.Path) -> list:
+    return [name for name in GENERATED if not (app / name).exists()]
+
+
+def setUpModule():
+    # Run alone, the tests need what `pnpm verify` prepares (check.sh). A packed tree on a box delivers `.tools/bin/lsc`
+    # as a copied file that can't resolve ts-morph: lsc_fresh rebuilds a stale LemmaScript and restores the link.
+    # A fresh tree has no generated wiki modules, and each test that emits `main.vibe` would fail on its own import.
+    import lsc_fresh
+    lsc_fresh.main()
+    missing = missing_generated(HERE.parent)
+    if missing: raise RuntimeError(f'{", ".join(missing)} missing: run `pnpm wiki:build` first (`pnpm verify` does)')
+
 
 class StrictSourceChecks(unittest.TestCase):
+    def test_a_tree_without_the_generated_wiki_modules_is_named(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            app = pathlib.Path(folder)
+            self.assertEqual(missing_generated(app), GENERATED)
+            (app / 'src/assets').mkdir(parents=True)
+            (app / GENERATED[0]).write_text('')
+            self.assertEqual(missing_generated(app), GENERATED[1:])
+            (app / GENERATED[1]).write_text('')
+            self.assertEqual(missing_generated(app), [])
+
     def test_a_lone_mutant_gets_its_imports_imports(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
             out = pathlib.Path(folder)
