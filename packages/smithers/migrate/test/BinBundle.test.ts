@@ -12,7 +12,9 @@
  * @since 1.0.0-rc.0
  */
 import { describe, expect, it } from "@effect/vitest"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -59,6 +61,80 @@ describe("bundleOnce", () => {
     writeFileSync(manifest, `{"version":"2"}`)
 
     expect(bundleOnce({ entryPoint, directory, keyedOn: [manifest] })).not.toBe(first)
+  })
+
+  it.each(["exports", "main"] as const)("rebuilds when only a dependency manifest's %s target changes", (field) => {
+    const { directory, entryPoint } = project()
+    const dependency = join(directory, "..", "node_modules", "greeting")
+    mkdirSync(join(dependency, "src", "nested"), { recursive: true })
+    const manifest = join(dependency, "package.json")
+    writeFileSync(join(dependency, "src", "nested", "one.ts"), `export const greeting = "first"\n`)
+    writeFileSync(join(dependency, "src", "nested", "two.ts"), `export const greeting = "second"\n`)
+    writeFileSync(entryPoint, `import { greeting } from "greeting"\nconsole.log(greeting)\n`)
+    writeFileSync(manifest, JSON.stringify({ name: "greeting", [field]: "./src/nested/one.ts" }))
+
+    const first = bundleOnce({ entryPoint, directory })
+    const run = (bundle: string): string => {
+      const result = spawnSync(process.execPath, [bundle], { encoding: "utf8" })
+      expect(result.status).toBe(0)
+      expect(result.stderr).toBe("")
+      return result.stdout.trim()
+    }
+    expect(run(first)).toBe("first")
+    expect(bundleOnce({ entryPoint, directory })).toBe(first)
+
+    // Both target files already exist; only resolution changes.
+    writeFileSync(manifest, JSON.stringify({ name: "greeting", [field]: "./src/nested/two.ts" }))
+    const second = bundleOnce({ entryPoint, directory })
+    expect(second).not.toBe(first)
+    expect(run(second)).toBe("second")
+    expect(bundleInputs(directory)).toContain(manifest)
+    expect(bundleOnce({ entryPoint, directory })).toBe(second)
+
+    writeFileSync(manifest, JSON.stringify({ name: "greeting", [field]: "./src/nested/one.ts" }))
+    expect(run(bundleOnce({ entryPoint, directory }))).toBe("first")
+  })
+
+  it("rebuilds when an ancestor manifest is added, then tracks its package imports", () => {
+    const { directory, entryPoint } = project()
+    const manifest = join(entryPoint, "..", "package.json")
+    const first = bundleOnce({ entryPoint, directory })
+
+    writeFileSync(join(entryPoint, "..", "other.ts"), `export const greeting = "other"\n`)
+    writeFileSync(manifest, JSON.stringify({ imports: { "#greeting": "./other.ts" } }))
+    // Adding a package scope can change resolution without editing a source.
+    expect(bundleOnce({ entryPoint, directory })).not.toBe(first)
+
+    writeFileSync(entryPoint, `import { greeting } from "#greeting"\nconsole.log(greeting)\n`)
+    const second = bundleOnce({ entryPoint, directory })
+    expect(readFileSync(second, "utf8")).toContain("other")
+
+    writeFileSync(join(entryPoint, "..", "last.ts"), `export const greeting = "last"\n`)
+    writeFileSync(manifest, JSON.stringify({ imports: { "#greeting": "./last.ts" } }))
+    const third = bundleOnce({ entryPoint, directory })
+    expect(third).not.toBe(second)
+    expect(readFileSync(third, "utf8")).toContain("last")
+    expect(bundleInputs(directory)).toContain(manifest)
+  })
+
+  it("does not trust a source-only input record from an older cache", () => {
+    const { dependency, directory, entryPoint } = project()
+    const first = bundleOnce({ entryPoint, directory })
+    // Recreate the old on-disk format: only the entry and its source dependency.
+    const sources = [entryPoint, dependency].sort()
+    const hash = createHash("sha256")
+    for (const source of sources) hash.update(source).update("\0").update(readFileSync(source)).update("\0")
+    const legacy = join(directory, `bundle-${hash.digest("hex").slice(0, 16)}.mjs`)
+    renameSync(first, legacy)
+    writeFileSync(join(directory, "inputs.json"), JSON.stringify(sources))
+    const manifest = join(entryPoint, "..", "package.json")
+    writeFileSync(manifest, JSON.stringify({ type: "module" }))
+
+    const rebuilt = bundleOnce({ entryPoint, directory })
+    expect(rebuilt).not.toBe(legacy)
+    expect(bundleInputs(directory)).toContain(manifest)
+    expect(readFileSync(rebuilt, "utf8")).toContain("first")
+    expect(bundleOnce({ entryPoint, directory })).toBe(rebuilt)
   })
 
   it("names every bundle after its inputs, so concurrent workers never share an output path", () => {

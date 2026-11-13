@@ -25,6 +25,7 @@ import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import * as Options from "../src/flow/Options.ts"
 import * as Transform from "../src/flow/Transform.ts"
 import * as Mapping from "../src/Mapping.ts"
 import { fixture } from "./fixtures/helpers.ts"
@@ -49,6 +50,16 @@ const descriptor = Effect.gen(function*() {
 })
 
 describe("the migrated fixture's flow module", () => {
+  it("selects the flow in the default output directory through its project tsconfig", () => {
+    const root = fixture("jsx-single.migrated")
+    const config = ts.readConfigFile(join(root, "tsconfig.json"), ts.sys.readFile)
+    expect(config.error).toBeUndefined()
+    const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root)
+
+    expect(parsed.errors).toEqual([])
+    expect(parsed.fileNames).toEqual([join(root, Options.defaultFlowsDir, "simple-workflow", "flow.ts")])
+  })
+
   it("default-exports the flow the registry reads", () => {
     expect(module.default._tag).toBe("simple-workflow")
     expect(module.default.description).toBe("Researches a topic and writes a short article about it.")

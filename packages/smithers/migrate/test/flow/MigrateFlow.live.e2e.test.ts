@@ -30,11 +30,12 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Command from "@smthrs/migrate/flow/Command"
+import * as Options from "@smthrs/migrate/flow/Options"
 import * as Effect from "effect/Effect"
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { copyFixture, runBin } from "../fixtures/helpers.ts"
+import { copyFixture, fixture, runBin } from "../fixtures/helpers.ts"
 
 const keyVariable: Readonly<Record<string, string>> = {
   anthropic: "ANTHROPIC_API_KEY",
@@ -78,6 +79,15 @@ const committed = (root: string): void => {
   }
 }
 
+/** The path both single-workflow live journeys inspect after applying. */
+const singleWorkflowFlow = (root: string): string => join(root, Options.defaultFlowsDir, "simple-workflow", "flow.ts")
+
+describe("single-workflow output layout", () => {
+  it("locates the committed migrated flow at the path inspected by the live journeys", () => {
+    expect(existsSync(singleWorkflowFlow(fixture("jsx-single.migrated")))).toBe(true)
+  })
+})
+
 describe("apply against a real model", () => {
   if (seat === undefined) {
     it.skip(`migrates a single-file JSX project through the bin (${reason})`, () => {})
@@ -116,7 +126,7 @@ describe("apply against a real model", () => {
     expect(report.units.find((unit) => unit.id === "dependencies")?.status).toBe("migrated")
     expect(report.units.find((unit) => unit.id === "project")?.status).toBe("migrated")
 
-    const flow = join(root, "flows", "simple-workflow", "flow.ts")
+    const flow = singleWorkflowFlow(root)
     expect(existsSync(flow)).toBe(true)
     const source = readFileSync(flow, "utf8")
     expect(source).toContain("@smthrs/agent/AgentAction")
@@ -148,7 +158,7 @@ describe("apply against a real model", () => {
       const workflow = report.units.find((unit) => unit.id === "workflow:simple-workflow")
       expect(workflow?.status).toBe("migrated")
 
-      const flow = join(root, "flows", "simple-workflow", "flow.ts")
+      const flow = singleWorkflowFlow(root)
       expect(existsSync(flow)).toBe(true)
       const source = readFileSync(flow, "utf8")
       expect(source).toContain("@smthrs/agent/AgentAction")

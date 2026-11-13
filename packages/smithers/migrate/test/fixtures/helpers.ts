@@ -175,11 +175,34 @@ export const bundleInputs = (directory: string): ReadonlyArray<string> => {
 }
 
 /**
+ * Package manifests can select a bundled source through exports, imports or
+ * main without appearing in esbuild's source inputs. Record every ancestor
+ * candidate, including absent manifests, so adding or deleting one also
+ * invalidates resolution.
+ */
+const bundleManifests = (inputs: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const manifests = new Set<string>()
+  for (const input of inputs) {
+    let directory = dirname(input)
+    while (true) {
+      const manifest = join(directory, "package.json")
+      if (manifests.has(manifest)) break
+      manifests.add(manifest)
+      const parent = dirname(directory)
+      if (parent === directory) break
+      directory = parent
+    }
+  }
+  return [...manifests]
+}
+
+/**
  * Bundles `entryPoint` into `directory` and returns the bundle's path.
  *
  * The name carries the sha256 of every file the bundle was built from: the
- * entry, every module esbuild reached through it, and anything named in
- * `keyedOn`. Judging freshness by the entry package's own sources would reuse
+ * entry, every module esbuild reached through it, their ancestor package
+ * manifests that control resolution, and anything named in `keyedOn`.
+ * Judging freshness by the entry package's own sources would reuse
  * a bundle built before a change to anything else it inlines, and the CLI
  * bundle inlines far more than it owns: `src/flow/bin.ts` reaches 512 files,
  * of which 40 are this package's. A registry, kernel or harness edit would
@@ -199,7 +222,9 @@ export const bundleOnce = (options: {
 }): string => {
   const recorded = bundleInputs(options.directory)
   if (recorded.length > 0) {
-    const cached = join(options.directory, `bundle-${keyOf(recorded)}.mjs`)
+    // Complete older source-only records before trusting a cached bundle.
+    const inputs = [...new Set([...recorded, ...bundleManifests(recorded)])]
+    const cached = join(options.directory, `bundle-${keyOf(inputs)}.mjs`)
     if (existsSync(cached)) return cached
   }
   mkdirSync(options.directory, { recursive: true })
@@ -221,10 +246,11 @@ export const bundleOnce = (options: {
     // none until one is made.
     banner: { js: "import { createRequire as ___cr } from 'node:module'; const require = ___cr(import.meta.url);" }
   })
-  const inputs = [
+  const sources = [
     ...Object.keys(built.metafile.inputs).map((input) => resolve(workingDirectory, input)),
     ...options.keyedOn ?? []
   ]
+  const inputs = [...new Set([...sources, ...bundleManifests(sources)])]
   const bundle = join(options.directory, `bundle-${keyOf(inputs)}.mjs`)
   renameSync(scratch, bundle)
   const record = join(options.directory, `.inputs-${randomUUID()}.json`)
@@ -250,10 +276,10 @@ let bin: string | undefined
  * which stay external because they ship their own builds, resolve from the
  * package the way they do for a published install.
  *
- * The manifest is keyed on beside the sources because it is what sends those
- * imports at a source file rather than a published build; every other
- * resolution shows up in {@link bundleOnce}'s inputs as the file it resolved
- * to. One run measures one tree, so the answer is computed once per process.
+ * The entry manifest is keyed on explicitly alongside the source and
+ * dependency manifests recorded by {@link bundleOnce}. They select source
+ * files rather than published builds. One run measures one tree, so the
+ * answer is computed once per process.
  */
 export const buildBin = (): string => {
   bin ??= bundleOnce({
