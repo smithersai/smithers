@@ -151,8 +151,11 @@ export const Message = Schema.Struct({
 export type Message = typeof Message.Type
 
 /**
- * A provider took the message: the channel, and the provider's id for it,
- * `null` when its answer named none.
+ * A provider took the message: the channel, and the provider's id for it.
+ *
+ * The built-in layer returns a string id. A successful response without valid
+ * delivery evidence fails with `unavailable` and `reason: "invalid_response"`.
+ * The schema retains `null` for compatibility.
  *
  * @category models
  * @since 1.0.0

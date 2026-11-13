@@ -27,7 +27,7 @@ flow, a branch or a repository, and the watch's level is one of three:
 
 `Inbox.DEFAULT_LEVEL` is `attention`.
 
-## The launcher always hears
+## The launcher's notice
 
 `Inbox.route` takes one run fact: its launcher, its state and every watch that
 covers it. It answers with one delivery per recipient:
@@ -54,13 +54,13 @@ Inbox.route({
 ]
 ```
 
-- The launcher comes first, with the run's own state. A muted watch never
-  silences your own run.
+- The launcher comes first when it may read the run, with the run's own state.
+  A muted watch never silences your own run.
 - A run's question belongs to its launcher, so every watcher reads `needs_you`
   as `waiting`.
 - An `attention` watcher's delivery is `quiet`. An `all` watcher's is not.
-- `mayRead` removes watchers who may not read the run's repository. The
-  launcher is never removed.
+- `mayRead` removes anyone who may not read the run's repository, the launcher
+  included.
 
 A run on a branch reaches the people on that branch, and an event on a
 repository reaches everyone watching the repository, because each is a watch on

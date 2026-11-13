@@ -133,15 +133,19 @@ interface AdmissionReceipt {
   readonly decision: NotificationState.AdmissionDecision
   readonly seq: number | undefined
   readonly duplicate: boolean
+  readonly consumed?: boolean
+  readonly consumedNotification?: Notification.Notification
 }
 ```
 
-| Field            | Meaning                                                                                                                      |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `notificationId` | The `id` of the notification this receipt answers for.                                                                       |
-| `decision`       | `admitted`, `coalesced`, or `rejected-full`. A caller MUST read it: `rejected-full` means the queue retained nothing.        |
-| `seq`            | The journal sequence the admission committed at. Absent exactly when nothing was written, which today means `rejected-full`. |
-| `duplicate`      | The id had already been admitted. `decision` and `seq` are read back from the committed record rather than recomputed.       |
+| Field                  | Meaning                                                                                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notificationId`       | The `id` of the notification this receipt answers for.                                                                                                                          |
+| `decision`             | `admitted`, `coalesced`, or `rejected-full`. A caller MUST read it: `rejected-full` means the queue retained nothing.                                                           |
+| `seq`                  | The journal sequence the admission committed at. Absent exactly when nothing was written, which today means `rejected-full`.                                                    |
+| `duplicate`            | The id had already been admitted. `decision` and `seq` are read back from the committed record rather than recomputed.                                                          |
+| `consumed`             | `true` when a newer version tries to edit a previously admitted notification that is no longer pending, after promotion or replacement by coalescing. The edit is not admitted. |
+| `consumedNotification` | The persisted, possibly redacted prior notification, returned with `consumed: true`.                                                                                            |
 
 ### DrainInput
 
@@ -185,7 +189,7 @@ when the boundary had already drained.
 class NotificationError extends Schema.TaggedError<NotificationError>()(
   "/notifications/NotificationError",
   {
-    code: "notification_unavailable" | "notification_closed" | "notification_full" | "notification_id_reused" | "notification_invalid"
+    code: "notification_unavailable" | "notification_closed" | "notification_full" | "notification_id_reused" | "notification_invalid" | "notification_refused"
     message: string
     notificationId?: string
     path?: string
@@ -207,6 +211,7 @@ class NotificationError extends Schema.TaggedError<NotificationError>()(
 | `notification_full`        | New public refusal code: nothing was retained. Retry the same notification after pending work drains.                                                                    |
 | `notification_id_reused`   | A stable id was already admitted with different content. A producer bug, not a storage failure.                                                                          |
 | `notification_invalid`     | The value or an identifier is invalid, the journal redacts an address field, or a drain's `cutoffSeq` is not a non-negative integer. `path` names the field that failed. |
+| `notification_refused`     | A reserved `outside_change` payload was refused before admission.                                                                                                        |
 
 Storage failures surface as `Journal.JournalError` instead, so the two stay
 distinguishable.
@@ -216,7 +221,8 @@ The queue's ordinary `admit` still returns its existing `rejected-full` receipt.
 `NotificationError(notification_full)` instead of acknowledging an undeliverable
 message. Configured receiver policies can also emit `notification_closed`.
 Existing notification error fields and older codes are unchanged. Consumers
-with an exhaustive code union must add both new codes. The Control RPC error
+with an exhaustive code union must include `notification_closed`,
+`notification_full` and `notification_refused`. The Control RPC error
 union now carries this existing error class; update remote decoders together
 with the server so they can decode these refusals.
 
@@ -243,13 +249,13 @@ from `@smthrs/notifications/Notification`.
 
 ### Schemas
 
-| Export          | Shape                                                                                                                                     |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `Provenance`    | `{ sourceRunId: string; sourceLineageId: string; sourceTurn: number; sourceActor: string }`. `sourceTurn` is an integer at or above zero. |
-| `HumanSteer`    | Tagged `"human-steer"`. The common fields plus `delivery: "steer"`.                                                                       |
-| `HumanFollowup` | Tagged `"human-followup"`. The common fields plus `delivery: "queue"`.                                                                    |
-| `SystemEvent`   | Tagged `"system-event"`. The common fields plus `delivery: "queue"` and an optional `coalescingKey: string`.                              |
-| `Notification`  | The union of the three.                                                                                                                   |
+| Export          | Shape                                                                                                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Provenance`    | `{ sourceRunId: string; sourceLineageId: string; sourceTurn: number; sourceActor: string; attribution?: Readonly<Record<string, string>> }`. `sourceTurn` is an integer at or above zero. |
+| `HumanSteer`    | Tagged `"human-steer"`. The common fields plus `delivery: "steer"`.                                                                                                                       |
+| `HumanFollowup` | Tagged `"human-followup"`. The common fields plus `delivery: "queue"`.                                                                                                                    |
+| `SystemEvent`   | Tagged `"system-event"`. The common fields plus `delivery: "queue"` and an optional `coalescingKey: string`.                                                                              |
+| `Notification`  | The union of the three.                                                                                                                                                                   |
 
 The common fields on every member are `id` (a non-empty string, and the caller's
 idempotency key), `targetLineageId` (a non-empty string), `provenance`, and
@@ -258,7 +264,9 @@ idempotency key), `targetLineageId` (a non-empty string), `provenance`, and
 Provenance travels with the notification because the run that receives one is
 not the run that wrote it. An operator steer, a parent run's event, and a webhook
 all arrive on the same queue, and only these fields say which is which after the
-fact.
+fact. Optional `attribution` carries producer-supplied labels alongside the
+authenticated `sourceActor`. These labels do not authorize a notification or a
+model action and pass through the journal's ordinary redaction policy.
 
 ### Functions
 
@@ -425,10 +433,10 @@ Import from `@smthrs/notifications/Inbox`. See
 
 ### Routing
 
-| Export     | Signature                                                                                               | Returns                                                                                                                                                                                                                                                                                                                                                                                      |
-| ---------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `route`    | `(fact: RunFact) => ReadonlyArray<Delivery>`                                                            | The launcher first, when defined, with the run's own state, `mine: true` and `quiet: false`, even if the launcher's watch is muted. Then every other watcher that is not muted and may read the run, in input order, with `mine: false`; `needs_you` reads as `waiting`, and an `attention` watcher is `quiet`. Each recipient once; a principal listed twice is decided by its first entry. |
-| `audience` | `(watchers: ReadonlyArray<Watcher>, mayRead?: (principal: string) => boolean) => ReadonlyArray<string>` | Who hears about a subject's event that is not a run, such as `main` moving or a new release: every watcher that is not muted and may read it, each once, in input order, decided by its first entry.                                                                                                                                                                                         |
+| Export     | Signature                                                                                               | Returns                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `route`    | `(fact: RunFact) => ReadonlyArray<Delivery>`                                                            | The launcher first, when defined and allowed by `mayRead` to read the run, with the run's own state, `mine: true` and `quiet: false`, even if the launcher's watch is muted. Then every other watcher that is not muted and may read the run, in input order, with `mine: false`; `needs_you` reads as `waiting`, and an `attention` watcher is `quiet`. Each recipient once; a principal listed twice is decided by its first entry. |
+| `audience` | `(watchers: ReadonlyArray<Watcher>, mayRead?: (principal: string) => boolean) => ReadonlyArray<string>` | Who hears about a subject's event that is not a run, such as `main` moving or a new release: every watcher that is not muted and may read it, each once, in input order, decided by its first entry.                                                                                                                                                                                                                                  |
 
 ### Versions
 
@@ -451,14 +459,14 @@ retry. Import from `@smthrs/notifications/Channels`.
 
 ### Models
 
-| Export           | Shape                                                                                                                                                                                               |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Channel`        | `"email" \| "telegram"`.                                                                                                                                                                            |
-| `Destination`    | `{ _tag: "email"; to: NonEmptyArray<EmailAddress> }` (at most `maxEmailRecipients`, 50) or `{ _tag: "telegram"; chatId: TelegramChatId }`.                                                          |
-| `Message`        | `{ id; subject; text }`. `id` is the idempotency key, 1 to 256 printable ASCII characters, the same on every attempt; `subject` 1 to 200 characters; `text` 1 to 3,500, so a Telegram message fits. |
-| `Receipt`        | `{ channel: Channel; providerId: string \| null }`: Resend's email id, or Telegram's `message_id` as a string; `null` when the answer named none.                                                   |
-| `EmailAddress`   | A string `isEmailAddress` accepts.                                                                                                                                                                  |
-| `TelegramChatId` | A string `isTelegramChatId` accepts.                                                                                                                                                                |
+| Export           | Shape                                                                                                                                                                                                                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Channel`        | `"email" \| "telegram"`.                                                                                                                                                                                                                                                                                 |
+| `Destination`    | `{ _tag: "email"; to: NonEmptyArray<EmailAddress> }` (at most `maxEmailRecipients`, 50) or `{ _tag: "telegram"; chatId: TelegramChatId }`.                                                                                                                                                               |
+| `Message`        | `{ id; subject; text }`. `id` is the idempotency key, 1 to 256 printable ASCII characters, the same on every attempt; `subject` 1 to 200 characters; `text` 1 to 3,500, so a Telegram message fits.                                                                                                      |
+| `Receipt`        | `{ channel: Channel; providerId: string \| null }`: Resend's email id, or Telegram's `message_id` as a string. The schema retains `null` for compatibility; the built-in layer returns a string id or fails with `unavailable` and `reason: "invalid_response"` when valid delivery evidence is missing. |
+| `EmailAddress`   | A string `isEmailAddress` accepts.                                                                                                                                                                                                                                                                       |
+| `TelegramChatId` | A string `isTelegramChatId` accepts.                                                                                                                                                                                                                                                                     |
 
 | Export             | Signature                    | Returns                                                                                                               |
 | ------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -472,12 +480,17 @@ retry. Import from `@smthrs/notifications/Channels`.
 | `DeliveryFailed`  | Tagged `@smthrs/notifications/DeliveryFailed`: `{ channel; code: FailedCode; status?; reason?; retryAfterMillis? }`. Another attempt may clear it: let the engine retry.                                                                      |
 | `DeliveryRefused` | Tagged `@smthrs/notifications/DeliveryRefused`: `{ channel; code: RefusedCode; status?; reason? }`. Another attempt would be refused too: record it and stop.                                                                                 |
 | `DeliveryError`   | The union of both, as a schema a flow step declares.                                                                                                                                                                                          |
-| `FailedCode`      | `"unreachable"` (no answer: the transport failed), `"timeout"` (no whole answer within the bound), `"unavailable"` (5xx, 408 or 409), `"rate_limited"` (429).                                                                                 |
+| `FailedCode`      | `"unreachable"` (no answer: the transport failed), `"timeout"` (no whole answer within the bound), `"unavailable"` (5xx, 408, 409 or a 2xx without valid delivery evidence), `"rate_limited"` (429).                                          |
 | `RefusedCode`     | `"rejected"` (a 3xx, which is never followed, or another 4xx; or a destination or message outside its schema, `reason: "invalid_message"`), `"unauthorized"` (401 or 403), `"unconfigured"` (the deployment has no provider for the channel). |
 
-`reason` is the provider's own short error, at most 120 characters: Resend's
-error `name` (`validation_error`, `rate_limit_exceeded`, …) or the Bot API's
-`description` (`Bad Request: chat not found`). `retryAfterMillis` is the wait a
+`reason` retains only known provider diagnostics: Resend's `name` values
+`validation_error`, `rate_limit_exceeded` and `daily_quota_exceeded`, or the
+Bot API's `description` `Bad Request: chat not found`. Any other non-empty
+provider string becomes `provider_rejected`; an absent, empty or non-string
+diagnostic is omitted. The layer also uses `invalid_response` when a 2xx
+response lacks valid delivery evidence, and `invalid_message` for an invalid
+destination or message. The schema bounds `reason` to 120 characters.
+`retryAfterMillis` is the wait a
 429 named, from the `Retry-After` header in whole seconds or the Bot API's
 `parameters.retry_after`; it is an own property, which `@smthrs/flow`'s retry
 decision uses in place of the policy's backoff, and it survives the journal.

@@ -21,7 +21,13 @@ database that has run this package, and renaming them would silently stop
 matching the projections that consumers key on. Treat both strings, and the JSON
 stored under them, as fixed.
 
-An `Admitted` payload is `{ notification, decision }`. A `Promoted` payload is
+An `Admitted` payload is
+`{ notification, decision, fingerprint?, identityFingerprint?, version? }`.
+`fingerprint` is the SHA-256 of the validated notification's canonical JSON
+before journal redaction. `identityFingerprint` hashes the same input with its
+payload cleared, so an edit cannot change the owner or delivery binding.
+`version` identifies a versioned edit. These fields are optional so older
+records remain readable. A `Promoted` payload is
 `{ boundary, targetLineageId, ids }`.
 
 ## Replay never re-decides
