@@ -19,6 +19,11 @@
 
 ### Fixed
 
+- `Trellis.execute` reports malformed plans as typed `TrellisError` failures
+  instead of throwing synchronously, and admits leaf factory calls under its
+  shared concurrency bound
+  ([#4709](https://github.com/smithersai/smithers/issues/4709)).
+
 - `Burndown.round` preserves a settled item's status and detail when cleanup
   drains its queued release. `Escalation.run` advances on every `escalateIf`
   answer except `false`, matching `make`. `ScanFixVerify.make` rejects a

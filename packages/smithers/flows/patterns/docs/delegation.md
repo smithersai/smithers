@@ -111,9 +111,14 @@ trellis always ends within `fuel` plan rounds.
 A refused plan fails its round with a `TrellisError`, and none of its leaves
 runs. A leaf that fails fails the round with its own error.
 
-`Trellis.execute(plan, { leaf, concurrency })` runs one validated plan in
-process, with one semaphore bounding the leaves in flight. `DelegationChain.run`
-uses it.
+`Trellis.execute(plan, { leaf, concurrency })` checks the plan's shape and
+runs it in process. It snapshots the plan and options at the call; a malformed
+plan fails through the Effect error channel with its first shape refusal,
+before any leaf factory runs. Unreadable, cyclic, or excessively nested plans
+also fail with `invalid_plan`. Apply envelope bounds with `Trellis.validate`
+before executing. One shared semaphore bounds both
+leaf factory calls and their returned Effects across all nested containers.
+`DelegationChain.run` uses it.
 
 ## DelegationChain
 

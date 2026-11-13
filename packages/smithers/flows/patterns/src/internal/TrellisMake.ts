@@ -271,23 +271,12 @@ const namesNoWork = (value: unknown, depth: number): boolean => {
   return Array.isArray(members) && members.every((member) => namesNoWork(member, depth - 1))
 }
 
-/**
- * Checks a model-authored value against an envelope and returns every reason
- * it was refused, each naming the plan path it was found at. An accepted plan
- * returns no reasons.
- *
- * Fuel is charged per leaf and checked for the whole plan, so a plan is
- * admitted or refused as a unit and no leaf runs on a budget the plan already
- * overspent.
- *
- * @category validation
- * @since 0.1.0
- */
-export const validate = (plan: unknown, envelope: Envelope): ReadonlyArray<TrellisError> => {
+const validatePlan = (plan: unknown, envelope: Envelope, firstOnly: boolean): ReadonlyArray<TrellisError> => {
   const invalid = admissionRefusal({ envelope })
   if (invalid !== undefined) return [invalid]
   const found: Array<TrellisError> = []
   let leafCount = 0
+  const ancestors = new Set<unknown>()
   const visit = (value: unknown, path: string, depth: number): void => {
     const kind = shape(value)
     if (kind === undefined) {
@@ -297,6 +286,12 @@ export const validate = (plan: unknown, envelope: Envelope): ReadonlyArray<Trell
           path,
           message: "A plan node must be exactly one of agent, sequence, or parallel"
         })
+      )
+      return
+    }
+    if (firstOnly && ancestors.has(value)) {
+      found.push(
+        new TrellisError({ code: "invalid_plan", path, message: "A plan node must not contain a cycle" })
       )
       return
     }
@@ -365,7 +360,9 @@ export const validate = (plan: unknown, envelope: Envelope): ReadonlyArray<Trell
       return
     }
     // A hole is a missing member `forEach` would skip, so walk every index.
-    for (let index = 0; index < members.length; index++) {
+    // Execution needs only the first refusal, including for a huge sparse array.
+    ancestors.add(value)
+    for (let index = 0; index < members.length && (!firstOnly || found.length === 0); index++) {
       const memberPath = `${path}.${kind}[${index}]`
       if (index in members) {
         visit(members[index], memberPath, depth + 1)
@@ -379,6 +376,7 @@ export const validate = (plan: unknown, envelope: Envelope): ReadonlyArray<Trell
         )
       }
     }
+    ancestors.delete(value)
   }
   visit(plan, "root", 1)
   if (found.length === 0 && leafCount > envelope.fuel) {
@@ -391,6 +389,46 @@ export const validate = (plan: unknown, envelope: Envelope): ReadonlyArray<Trell
     )
   }
   return found
+}
+
+/**
+ * Checks a model-authored value against an envelope and returns every reason
+ * it was refused, each naming the plan path it was found at. An accepted plan
+ * returns no reasons.
+ *
+ * Fuel is charged per leaf and checked for the whole plan, so a plan is
+ * admitted or refused as a unit and no leaf runs on a budget the plan already
+ * overspent.
+ *
+ * @category validation
+ * @since 0.1.0
+ */
+export const validate = (plan: unknown, envelope: Envelope): ReadonlyArray<TrellisError> =>
+  validatePlan(plan, envelope, false)
+
+/**
+ * A call-time plan snapshot or its first shape refusal. Validation and copying
+ * share one guarded boundary so unreadable or excessively nested input never
+ * escapes the Effect form as a synchronous exception.
+ *
+ * @since 0.1.0
+ * @private
+ * @throws {never}
+ */
+export const admittedPlan = (plan: Plan): Plan | TrellisError => {
+  try {
+    return validatePlan(plan, {
+      fuel: Number.MAX_SAFE_INTEGER,
+      depth: Number.MAX_SAFE_INTEGER,
+      fanout: Number.MAX_SAFE_INTEGER
+    }, true)[0] ?? copiedPlan(plan)
+  } catch {
+    return new TrellisError({
+      code: "invalid_plan",
+      path: "root",
+      message: "The plan could not be read or copied"
+    })
+  }
 }
 
 /**

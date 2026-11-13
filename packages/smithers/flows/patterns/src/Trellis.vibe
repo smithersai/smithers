@@ -20,12 +20,12 @@
 import * as Semaphore from "effect/Semaphore"
 import {
   admissionRefusal,
+  admittedPlan,
   childPath,
   container,
-  copiedPlan,
   type Leaf,
   type Plan,
-  type TrellisError
+  TrellisError
 } from "./internal/TrellisMake.ts"
 
 export {
@@ -51,14 +51,17 @@ export {
 } from "./internal/TrellisMake.ts"
 
 /**
- * Executes one validated plan, holding at most `concurrency` leaves in flight.
+ * Executes one plan, holding at most `concurrency` leaves in flight.
  *
  * Sequence members run in plan order; parallel members are started together
  * and admitted by a shared semaphore, so the bound holds across the whole
- * plan rather than per container.
+ * plan, including leaf factory calls, rather than per container.
  *
- * `execute` copies the plan and snapshots the options at the call, so a later
- * edit to either does not alter that execution.
+ * `execute` validates and copies the plan and snapshots the options at the
+ * call, so a later edit to either does not alter that execution. A malformed
+ * plan fails with its first shape refusal before any leaf factory runs.
+ * Unreadable, cyclic, or excessively nested plans fail with `invalid_plan`.
+ * Envelope bounds remain the responsibility of `validate`.
  *
  * @category combinators
  * @since 0.1.0
@@ -72,12 +75,13 @@ export const execute = <E, R>(
 ): unknown!(E | TrellisError)!R => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the plan or the option object in between must not reach it.
-  const admitted = copiedPlan(plan)
   const runLeaf = options.leaf
   const concurrency = options.concurrency
   const invalid = admissionRefusal({ concurrency })
+  const admitted = admittedPlan(plan)
   return effect {
     if (invalid !== undefined) throw invalid
+    if (admitted instanceof TrellisError) throw admitted
     const semaphore = try Semaphore.make(concurrency)
     const visit = effect (node: Plan, path: string): unknown!E!R => {
       // The plan is the copy taken at the call, so reading it cannot throw.
@@ -87,7 +91,7 @@ export const execute = <E, R>(
         const leaf: Leaf = agent.seat === undefined
           ? { goal: agent.goal, path }
           : { goal: agent.goal, seat: agent.seat, path }
-        return try semaphore.withPermits(1)(runLeaf(leaf))
+        return try semaphore.withPermits(1)(suspend(() => runLeaf(leaf)))
       }
       return try forEach(
         members,

@@ -200,6 +200,121 @@ describe("Trellis", () => {
     }
   })
 
+  it.effect("refuses malformed execute plans through the error channel before calling any leaf factory", () =>
+    Effect.gen(function*() {
+      const malformed: ReadonlyArray<unknown> = [
+        null,
+        undefined,
+        42,
+        {},
+        { agent: null },
+        { agent: { goal: "" } },
+        { agent: { goal: "a", seat: 1 } },
+        { agent: { goal: "a" }, extra: true },
+        { sequence: [] },
+        { parallel: [] },
+        { sequence: "not-an-array" },
+        { parallel: [{ agent: { goal: "a" } }, { sequence: [] }] },
+        { sequence: [{ agent: { goal: "a" } }, { agent: null }] },
+        { parallel: new Array(1) },
+        { sequence: [{ agent: { goal: "a" } }, , { agent: { goal: "b" } }] }
+      ]
+      for (const plan of malformed) {
+        let factoryCalls = 0
+        const expected = Trellis.validate(plan, { fuel: 100, depth: 100, fanout: 100 })[0]!
+        const running = Trellis.execute(plan as Trellis.Plan, {
+          concurrency: 2,
+          leaf: () => {
+            factoryCalls += 1
+            return Effect.succeed("done")
+          }
+        })
+        expect(factoryCalls).toBe(0)
+        const failure = yield* Effect.flip(running)
+        expect(failure).toBeInstanceOf(Trellis.TrellisError)
+        expect(reported([failure])).toEqual(reported([expected]))
+        expect(factoryCalls).toBe(0)
+      }
+    }))
+
+  it.effect("refuses huge sparse plans at the first missing member", () =>
+    Effect.gen(function*() {
+      const failure = yield* Effect.flip(Trellis.execute({
+        parallel: new Array(2 ** 32 - 1)
+      } as unknown as Trellis.Plan, { concurrency: 1, leaf: () => Effect.die("unexpected leaf factory") }))
+      expect(failure.code).toBe("invalid_plan")
+      expect(failure.path).toBe("root.parallel[0]")
+      expect(failure.message).toBe("A plan node must not be a missing member")
+    }))
+
+  it.effect("refuses cyclic plans without confusing repeated subplans with cycles", () =>
+    Effect.gen(function*() {
+      const cycle: { sequence: Array<unknown> } = { sequence: [] }
+      cycle.sequence.push(cycle)
+      const failure = yield* Effect.flip(Trellis.execute(cycle as unknown as Trellis.Plan, {
+        concurrency: 1,
+        leaf: () => Effect.die("unexpected leaf factory")
+      }))
+      expect(failure.code).toBe("invalid_plan")
+      expect(failure.path).toBe("root.sequence[0]")
+      expect(failure.message).toBe("A plan node must not contain a cycle")
+
+      const shared: Trellis.Plan = { agent: { goal: "shared" } }
+      expect(
+        yield* Trellis.execute({ parallel: [shared, shared] }, {
+          concurrency: 1,
+          leaf: ({ goal }) => Effect.succeed(goal)
+        })
+      ).toEqual(["shared", "shared"])
+    }))
+
+  it.effect("refuses unreadable and excessively nested plans through the error channel", () =>
+    Effect.gen(function*() {
+      let deep: unknown = { agent: { goal: "a" } }
+      for (let index = 0; index < 20_000; index++) deep = { sequence: [deep] }
+      let reads = 0
+      const uncopyable = Object.defineProperty({}, "agent", {
+        enumerable: true,
+        get: () => {
+          if (++reads > 1) throw new Error("uncopyable")
+          return { goal: "a" }
+        }
+      })
+      const unreadable = Object.defineProperty({}, "agent", {
+        enumerable: true,
+        get: () => {
+          throw new Error("unreadable")
+        }
+      })
+      for (const plan of [deep, unreadable, uncopyable]) {
+        const failure = yield* Effect.flip(Trellis.execute(plan as Trellis.Plan, {
+          concurrency: 1,
+          leaf: () => Effect.die("unexpected leaf factory")
+        }))
+        expect(failure.code).toBe("invalid_plan")
+        expect(failure.path).toBe("root")
+        expect(failure.message).toBe("The plan could not be read or copied")
+      }
+    }))
+
+  it.effect("keeps an execute refusal when a malformed plan is repaired before running", () =>
+    Effect.gen(function*() {
+      const plan = { agent: { goal: "" } }
+      let factoryCalls = 0
+      const running = Trellis.execute(plan, {
+        concurrency: 1,
+        leaf: () => {
+          factoryCalls += 1
+          return Effect.succeed("done")
+        }
+      })
+      plan.agent.goal = "repaired"
+      const failure = yield* Effect.flip(running)
+      expect(failure.code).toBe("invalid_plan")
+      expect(failure.path).toBe("root.agent.goal")
+      expect(factoryCalls).toBe(0)
+    }))
+
   it.effect("refuses invalid execute concurrency before a leaf callback runs", () =>
     Effect.gen(function*() {
       const plan: Trellis.Plan = { agent: { goal: "a" } }
@@ -229,14 +344,16 @@ describe("Trellis", () => {
       }
       const gate = yield* Latch.make(false)
       const saturated = yield* Latch.make(false)
+      let factoryCalls = 0
       let started = 0
       let inFlight = 0
       let peak = 0
       const fiber = yield* Effect.forkChild(
         Trellis.execute(plan, {
           concurrency: 2,
-          leaf: () =>
-            Effect.gen(function*() {
+          leaf: () => {
+            factoryCalls += 1
+            return Effect.gen(function*() {
               started += 1
               inFlight += 1
               peak = Math.max(peak, inFlight)
@@ -245,15 +362,77 @@ describe("Trellis", () => {
               inFlight -= 1
               return "done"
             })
+          }
         }),
         { startImmediately: true }
       )
 
       yield* saturated.await
+      yield* Effect.yieldNow
       expect(started).toBe(2)
+      expect(factoryCalls).toBe(2)
       yield* gate.open
-      yield* Fiber.join(fiber)
+      expect(yield* Fiber.join(fiber)).toEqual(Array(6).fill("done"))
+      expect(factoryCalls).toBe(6)
       expect(peak).toBe(2)
+    }))
+
+  it.effect("does not call queued leaf factories after cancellation across nested containers", () =>
+    Effect.gen(function*() {
+      const plan: Trellis.Plan = {
+        parallel: [
+          { sequence: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }] },
+          { parallel: [{ agent: { goal: "c" } }, { agent: { goal: "d" } }] }
+        ]
+      }
+      const started = yield* Latch.make(false)
+      let factoryCalls = 0
+      let finalized = 0
+      const fiber = yield* Effect.forkChild(
+        Trellis.execute(plan, {
+          concurrency: 1,
+          leaf: () => {
+            factoryCalls += 1
+            return Effect.andThen(started.open, Effect.never).pipe(
+              Effect.ensuring(Effect.sync(() => finalized += 1))
+            )
+          }
+        }),
+        { startImmediately: true }
+      )
+
+      yield* started.await
+      yield* Effect.yieldNow
+      yield* Fiber.interrupt(fiber)
+      expect(factoryCalls).toBe(1)
+      expect(finalized).toBe(1)
+    }))
+
+  it.effect("propagates a leaf failure without calling queued leaf factories", () =>
+    Effect.gen(function*() {
+      const failure = { reason: "leaf failed" }
+      const seen: Array<string> = []
+      const started = yield* Latch.make(false)
+      const release = yield* Latch.make(false)
+      const fiber = yield* Effect.forkChild(
+        Trellis.execute({
+          parallel: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }, { agent: { goal: "c" } }]
+        }, {
+          concurrency: 1,
+          leaf: ({ goal }) => {
+            seen.push(goal)
+            return Effect.andThen(started.open, Effect.andThen(release.await, Effect.fail(failure)))
+          }
+        }),
+        { startImmediately: true }
+      )
+      yield* started.await
+      yield* Effect.yieldNow
+      expect(seen).toEqual(["a"])
+      yield* release.open
+      const result = yield* Effect.flip(Fiber.join(fiber))
+      expect(result).toBe(failure)
+      expect(seen).toEqual(["a"])
     }))
 
   it.effect("returns parallel results in declaration order rather than completion order", () =>

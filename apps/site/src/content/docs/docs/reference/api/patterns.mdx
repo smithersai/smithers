@@ -170,8 +170,11 @@ Member errors keep every field, including any input they hold.
 fault was found at (`root`, or a path such as `root.parallel[1].sequence[0]`),
 a message, and an optional `cause`. `Trellis.validate` returns every refusal
 it finds as an array and attaches no cause. `Trellis.make` throws one for an
-invalid envelope, and `Trellis.execute` fails with one for an invalid
-concurrency. A trellis round that refuses its plan fails with the first
+invalid envelope, and `Trellis.execute` fails through the Effect error channel
+for an invalid concurrency or with `invalid_plan` for a malformed, unreadable,
+cyclic, or excessively nested plan. It reports only the first shape refusal.
+Its shared semaphore bounds leaf factory calls as well as
+their returned Effects. A trellis round that refuses its plan fails with the first
 refusal's code, path, and message and carries `{ rounds, remaining, refusals }`
 as its cause; `refusals` lists every validation reason as `{ code, path,
 message }` data, so a durable engine can journal it. A round that needs more
