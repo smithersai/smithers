@@ -24,6 +24,11 @@ const Input = Schema.Struct({
   a: Int, b: Int,
 })
 
+// flags: creating, known, titleBlank, incomplete, linkAllowed, open, assigneeBlank, textBlank, reviewing
+const startWith = (titleBlank: boolean, a: number, b: number): typeof Input.Type => ({ op: "new", flags: [false, false, titleBlank, false, false, true, false, false, false], draft: ["", "", "", ""], tag: "", event: "labeled", key: "k1", entries: [], a, b })
+/** The owner's sandbox start with its minutes used up, and with no sandbox id. */
+const hostChosen: ReadonlyArray<typeof Input.Type> = [startWith(false, 5, 3), startWith(true, 0, 5)]
+
 it.live("decisions/host-rules", () => run("decisions/host-rules", Input, (input) => {
   const [creating, known, titleBlank, incomplete, linkAllowed, open, assigneeBlank, textBlank, reviewing] = input.flags as unknown as ReadonlyArray<boolean>
   const op = input.op
@@ -72,7 +77,7 @@ it.live("decisions/host-rules", () => run("decisions/host-rules", Input, (input)
   // The mock's history answer names open work, or says there is none.
   const outline = { main: "main", epics: [{ title: "Epic", commits: 2 }], open: open ? [{ id: "w1", title: "Work", state: "running" }] : [] } as unknown as Parameters<typeof historyReply>[0]
   return historyReply(outline).endsWith(open ? "Open work: `w1` Work (running)" : "No open work.")
-}))
+}, undefined, { chosen: hostChosen }))
 
 const AccountTokens = Schema.Struct({
   token: Schema.Array(Schema.Literals(["a", "Z", "9", "-", "_", " ", "\u00e9", "x".repeat(40), "x".repeat(60)])).check(Schema.isMaxLength(4)),

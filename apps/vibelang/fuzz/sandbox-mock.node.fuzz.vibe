@@ -41,6 +41,13 @@ const DeviceInput = Schema.Struct({
   steps: Schema.Array(Schema.Struct({ op: Int, id: Int, generation: Int, operation: Int, command: Int })).check(Schema.isMaxLength(24)),
 })
 
+/** A write, then the same operation id sent again with a read: the device replays the write's answer, not the read's. */
+const deviceChosen: ReadonlyArray<typeof DeviceInput.Type> = [{ steps: [
+  { op: 0, id: 0, generation: 0, operation: 0, command: 0 },
+  { op: 3, id: 0, generation: 0, operation: 0, command: 0 },
+  { op: 3, id: 0, generation: 0, operation: 0, command: 3 },
+] }]
+
 /** Every device step answers as the rules say, from a model of leases, files and answered operations. */
 it.live("sandbox/mock-device", () => run("sandbox/mock-device", DeviceInput, (input) => effect {
   const machines = memoryMachines()
@@ -82,7 +89,7 @@ it.live("sandbox/mock-device", () => run("sandbox/mock-device", DeviceInput, (in
     }
   }
   return true
-}))
+}, undefined, { chosen: deviceChosen }))
 
 /** The memory engine, recording each execution id, and failing every execution with `fault` when there is one. */
 function recordingEngine(executed: Array<string>, fault?: Refused | Unavailable | FlowRuntime.FlowCycleDetected) {

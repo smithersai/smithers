@@ -15,6 +15,10 @@ const TAGS = ["Unavailable", "WikiFailure", "IssueFailure", "Refused", "ActionFa
 const Field = Schema.Union([Schema.Literals(["forbidden", "rate-limited", "x".repeat(41), "Forbidden", "409", "no space", ""]), Schema.Number, Schema.Null])
 const RefusalInput = Schema.Struct({ shape: Schema.Literals(["object", "null", "string", "number"]), tag: Schema.Literals(TAGS), field: Field })
 
+const FIELDS = ["forbidden", "rate-limited", "x".repeat(41), "Forbidden", "409", "no space", "", 409, null] as const
+/** Every tag with every field an object can carry: each refusal-code rule refuses one of them. */
+const refusalChosen: ReadonlyArray<typeof RefusalInput.Type> = TAGS.flatMap((tag) => FIELDS.map((field) => ({ shape: "object" as const, tag, field })))
+
 /** Only a product error's code-shaped refusal reaches the agent; anything else stays opaque. */
 it.live("decisions/tool-refusal", () => run("decisions/tool-refusal", RefusalInput, ({ shape, tag, field }) => {
   const error = shape === "null" ? null : shape === "string" ? "forbidden" : shape === "number" ? 409
@@ -24,7 +28,7 @@ it.live("decisions/tool-refusal", () => run("decisions/tool-refusal", RefusalInp
   const carried = tag === "Unavailable" ? "unavailable" : tag === "WikiFailure" || tag === "IssueFailure" || tag === "Refused" || tag === "ActionFailure" ? field : undefined
   const expected = typeof carried === "string" && /^[a-z][a-z0-9_-]{0,39}$/.test(carried) ? carried : undefined
   return code === expected
-}))
+}, undefined, { chosen: refusalChosen }))
 
 const LogInput = Schema.Struct({
   log: Schema.Array(Schema.Struct({ restart: Schema.Boolean, mine: Schema.Boolean })).check(Schema.isMaxLength(12)),

@@ -95,6 +95,12 @@ effect function surface(input: typeof HttpInput.Type) {
   if (response.status !== expected(input, input.method === "GET" ? undefined : body === "" ? undefined : body)) return false
   return response.status === 404 || response.status === 413 || response.status === 400 ? calls.length === 0 : true
 }
+/** A write whose promised body never arrives, and stop and command writes that name no generation. */
+const surfaceChosen: ReadonlyArray<typeof HttpInput.Type> = [
+  { method: "POST", route: "stop", body: "lost", length: "true", gateway: "ok" },
+  { method: "POST", route: "stop", body: "no-generation", length: "true", gateway: "ok" },
+  { method: "POST", route: "command", body: "no-generation", length: "true", gateway: "ok" },
+]
 it.live("sandbox/http-surface", () => run("sandbox/http-surface", HttpInput, (input) => effect {
   // Every execution: each signed-out write with a well-formed body, refused by the signed-out gateway.
   for (const route of ["start", "stop", "command"] as const) {
@@ -103,7 +109,7 @@ it.live("sandbox/http-surface", () => run("sandbox/http-surface", HttpInput, (in
   // A command write that names a generation and no command: refused before the gateway (chosen, 0015).
   if (!(try surface({ method: "POST", route: "command", body: "no-command", length: "true", gateway: "ok" }))) return false
   return try surface(input)
-}))
+}, undefined, { chosen: surfaceChosen }))
 
 /** No sequence of requests and machine faults defects, double-runs a command, or moves a generation backward. */
 it.live("sandbox/object-lifecycle", () => run("sandbox/object-lifecycle", ObjectInput, (input) => effect {

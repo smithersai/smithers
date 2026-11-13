@@ -42,6 +42,12 @@ export function intent(step: typeof Steps.Type[number], state: M.Conversation): 
   }
 }
 
+/** A post sent again after it was delivered; a tour started, ended and started again under the same id. */
+const sequenceChosen: ReadonlyArray<typeof Steps.Type> = [
+  [{ op: 0, id: 0, text: "hello", flag: false }, { op: 0, id: 0, text: "hello again", flag: false }],
+  [{ op: 6, id: 2, text: "", flag: true }, { op: 7, id: 0, text: "", flag: false }, { op: 6, id: 2, text: "", flag: true }],
+]
+
 it.live("conversation/sequences", () => run("conversation/sequences", Steps, (steps) => effect {
   let state = M.empty
   let client = M.newClient
@@ -49,8 +55,12 @@ it.live("conversation/sequences", () => run("conversation/sequences", Steps, (st
   for (const step of steps) {
     const command = intent(step, state)
     if (command.type === "Post") client = M.post(client, command.clientId, command.text)
+    // A post the conversation already holds is delivered: sending it again never queues it a second time.
+    if (command.type === "Post" && state.entries.some((entry) => entry.clientId === command.clientId) && client.pending.some((p) => p.clientId === command.clientId)) return false
     const result = Decide.decide(state, command)
     try Fuzz.observe(result.ok ? `accepted/${result.event.type}` : `refused/${result.refusal}`)
+    // A tour never reuses an entry's id: with the agent idle, a named tour whose id is taken is a duplicate.
+    if (command.type === "StartTour" && state.agent !== "working" && command.id !== "" && state.entries.some((entry) => entry.id === command.id) && (result.ok || result.refusal !== "duplicate")) return false
     // The sequencer's record step (replayDecision.vibe): the same decision, and the replay of the log it extends.
     const recorded = recordedConversation(M.empty, state, events, command)
     if (recorded.decision.ok !== result.ok) return false
@@ -85,7 +95,7 @@ it.live("conversation/sequences", () => run("conversation/sequences", Steps, (st
   const below = { ...state, seq: -1 }
   if (events.length > 0 && (conversationStep(full, events[0]!) !== full || conversationStep(below, events[0]!) !== below || !same(conversationStep(M.empty, events[0]!), M.apply(M.empty, events[0]!)))) return false
   return same(events.reduce(M.apply, M.empty), state) && new Set(client.pending.map((p) => p.clientId)).size === client.pending.length
-}))
+}, undefined, { chosen: sequenceChosen }))
 
 it.live("conversation/delivery", () => run("conversation/delivery", Schema.Struct({ steps: Steps, order: Schema.Array(Int).check(Schema.isMaxLength(70)) }), ({ steps, order }) => effect {
   let state = M.empty
@@ -108,15 +118,30 @@ it.live("conversation/delivery", () => run("conversation/delivery", Schema.Struc
   return same(client.conversation, state) && !client.gap
 }))
 
+/** A run asked for, then a step with no key, a settlement to an unknown state, a pass, and a step and a fail after it. */
+const runEvents: ReadonlyArray<typeof EventSchema.Type> = [
+  { type: "ActionRequested", seq: 1, id: "a1", flow: "vibelang/actions/echo", door: "button", actor: "person", at: 1 },
+  { type: "ActionStep", seq: 1, id: "a1", key: "", name: "unkeyed", attempt: 1, state: "running", at: 2 },
+  { type: "ActionSettled", seq: 1, id: "a1", state: "paused", result: "", at: 3 },
+  { type: "ActionSettled", seq: 1, id: "a1", state: "passed", result: "ok", at: 4 },
+  { type: "ActionStep", seq: 1, id: "a1", key: "k1", name: "late", attempt: 1, state: "running", at: 5 },
+  { type: "ActionSettled", seq: 1, id: "a1", state: "failed", result: "late", at: 6 },
+]
+const open = (state: string) => state === "queued" || state === "running"
+
 it.live("conversation/malformed-events", () => run("conversation/malformed-events", Schema.Array(EventSchema).check(Schema.isMaxLength(30)), (events) => {
   let state = M.empty
   for (const arbitrary of events) {
     const next = M.apply(state, { ...arbitrary, seq: state.seq + 1 })
     if (!invariant(next)) return false
+    // A settled run, a step with no key, and a settlement to a state that is not final leave the run as it was.
+    const before = (state.runs ?? []).find((run) => run.id === arbitrary.id)
+    const unchanged = before !== undefined && (!open(before.state) || (arbitrary.type === "ActionStep" && arbitrary.key === "") || (arbitrary.type === "ActionSettled" && !["passed", "failed", "cancelled"].includes(arbitrary.state)))
+    if ((arbitrary.type === "ActionStep" || arbitrary.type === "ActionSettled") && unchanged && !same((next.runs ?? []).find((run) => run.id === arbitrary.id), before)) return false
     state = next
   }
   return true
-}))
+}, undefined, { chosen: [runEvents] }))
 
 import { Conversation as ConversationSchema } from "../src/core/schemas.vibe"
 const BoundaryStep = Schema.Struct({ op: Int, id: Int, text: Schema.String, flag: Schema.Boolean })

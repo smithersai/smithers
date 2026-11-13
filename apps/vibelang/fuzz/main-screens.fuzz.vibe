@@ -246,6 +246,12 @@ function mustFail(kind: typeof Backend.Type, wiki: typeof WikiFault.Type, comman
   return kind === "faulty"
 }
 
+/** The mock opening a page its fixture lacks, and a sandbox action that names no operation. */
+const bodiesChosen: ReadonlyArray<typeof Bodies.Type> = [
+  { backend: "mock", wiki: "none", role: "maintainer", body: { command: "OpenWikiEditor", page: "nope", request: 0 } },
+  { backend: "mock", wiki: "none", role: "maintainer", body: { command: "SandboxAction", kind: "start", operationId: "", request: 0, generation: 0, text: "" } },
+]
+
 /**
  * Every Command, from any args its Message can carry, answers one of its declared Messages: the failure Message when its
  * service is missing or failing, JSON input that does not parse is refused before anything starts, and an epoch is echoed.
@@ -269,8 +275,11 @@ it.live("web/command-bodies", () => run("web/command-bodies", Bodies, ({ backend
   if (kind === "mock" && wiki === "stale" && answer._tag === "BeganWikiEdit" && answer.stale !== WIKI_STALE) return false
   if (kind === "mock" && wiki === "unlisted" && answer._tag === "CompletedWikiEdit" && (answer.revision !== "" || answer.review !== "")) return false
   if (body.command === "SandboxAction" && answer._tag === "FailedSandbox" && kind === "faulty") return answer.reason === (body.kind === "stop" ? "fault" : "busy")
+  // The fixture has no page `nope`, and an operation needs an id: the mock refuses both.
+  if (kind === "mock" && wiki === "none" && body.command === "OpenWikiEditor" && body.page === "nope" && answer._tag !== "FailedWikiEdit") return false
+  if (kind === "mock" && body.command === "SandboxAction" && body.operationId === "" && answer._tag !== "FailedSandbox") return false
   return true
-}, Layer.merge(kind === "mock" && wiki !== "none" ? backendWithWiki(role, wiki) : backend(kind, role), Layer.empty))))
+}, Layer.merge(kind === "mock" && wiki !== "none" ? backendWithWiki(role, wiki) : backend(kind, role), Layer.empty)), undefined, { chosen: bodiesChosen }))
 
 const Happening = Schema.Struct({ kind: Schema.Literals(["answer", "answer-issue", "pane-wiki", "pane-other", "action", "gap"]), n: Int, text: Text, sandbox: Schema.Boolean, edit: Schema.Boolean })
 const Happenings = Schema.Struct({ session: Int, role: Role, happenings: Schema.Array(Happening).check(Schema.isMinLength(1), Schema.isMaxLength(8)) })

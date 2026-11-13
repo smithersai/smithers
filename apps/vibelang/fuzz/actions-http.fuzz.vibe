@@ -5,7 +5,7 @@ import { allowed, bundled, registration } from "../src/actions/catalog.vibe"
 import { ACTIONS_PATH } from "../src/actions/wire.vibe"
 import * as ActionIdentity from "../worker/ActionIdentity.vibe"
 import * as ActionsHttp from "../worker/ActionsHttp.vibe"
-import { run, Int } from "./run.vibe"
+import { run, Finding, Int } from "./run.vibe"
 
 const ORIGIN = "https://actions.invalid"
 const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
@@ -21,6 +21,11 @@ const Input = Schema.Struct({
   refusal: Schema.Literals(["none", "forbidden", "busy"]),
   found: Schema.Boolean,
 })
+
+/** A maintainer's start and rerun with each body the boundary refuses before the API sees it. */
+const bodyChosen: ReadonlyArray<typeof Input.Type> = (["runs", "rerun"] as const).flatMap((route) => (["none", "garbage", "bad-id", "huge", "bad-length"] as const).map((body) => ({
+  method: "POST" as const, route, body, role: "maintainer" as const, agent: false, door: "button" as const, foreign: false, flow: 0, refusal: "none" as const, found: true,
+})))
 
 /** Every request shape gets a typed status, and the API is never asked to act on a refused request. */
 it.live("actions/http-surface", () => run("actions/http-surface", Input, (input) => effect {
@@ -64,6 +69,11 @@ it.live("actions/http-surface", () => run("actions/http-surface", Input, (input)
   )
   if (![200, 202, 400, 403, 404, 408, 409, 413].includes(response.status)) return false
   if (input.foreign && input.method !== "GET") return response.status === 403 && calls.length === 0
+  // A body the boundary cannot read or decode is the caller's: 413 past the limit, 400 otherwise, and no call.
+  if (input.method === "POST" && (input.route === "runs" || input.route === "rerun")) {
+    const refused = input.body === "huge" ? 413 : input.body === "none" || input.body === "garbage" || input.body === "bad-id" ? 400 : undefined
+    if (refused !== undefined && (response.status !== refused || calls.length !== 0)) throw new Finding({ report: `${input.route} with a ${input.body} body answered ${response.status}` })
+  }
   if (input.method === "POST" && input.route === "runs") {
     const permitted = allowed(input.role, registration(flow))
     const admitted = input.body === "valid" && permitted
@@ -76,4 +86,4 @@ it.live("actions/http-surface", () => run("actions/http-surface", Input, (input)
   if (input.method === "DELETE" && input.route === "run") return calls.length === 1 && response.status === (refusal === null ? 200 : refusal === "forbidden" ? 403 : 404)
   if (input.route === "bad-id") return response.status === 404
   return true
-}))
+}, undefined, { chosen: bodyChosen }))

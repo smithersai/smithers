@@ -173,6 +173,22 @@ const Recovery = Schema.Struct({
   hugeGeneration: Schema.Boolean,
 })
 
+const recovering = (role: typeof Recovery.Type["role"], kind: "start" | "stop", rest: Partial<typeof Recovery.Type> = {}): typeof Recovery.Type => ({
+  role, pending: { kind, conversation: "c1", operationId: "op-1", generation: 1, command: "" }, running: false, failMachine: false, owner: "mock-person",
+  sequence: "zero", exhausted: false, refusedReceipt: false, clockFails: false, jumpClock: false, badMeteredAt: false, hugeGeneration: false, ...rest,
+})
+/**
+ * A viewer's pending start, dropped with a stop; a start beside a running sandbox whose clock passes the allowance once
+ * the machine is up, so it is cancelled; a stop of a sandbox already stopped; and a broken clock under a running sandbox, so the second
+ * fail-closed pass meets the sandbox the first one stopped.
+ */
+const recoveryChosen: ReadonlyArray<typeof Recovery.Type> = [
+  recovering("viewer", "start"),
+  recovering("contributor", "start", { jumpClock: true, running: true }),
+  recovering("contributor", "stop"),
+  { ...recovering("contributor", "stop"), pending: null, running: true, clockFails: true },
+]
+
 /**
  * A recovered pending operation is completed or typed-refused, exactly once, without a defect. After a successful
  * recovery nothing is pending but a command, which is left to its fiber; the operation's receipt carries its outcome,
@@ -206,8 +222,14 @@ it.live("sandbox/host-recovery", () => run("sandbox/host-recovery", Recovery, ({
     command: flakyMachines.command,
   }
   const starts = try Ref.make(0)
+  const stops = try Ref.make(0)
+  const stoppedIds = try Ref.make<ReadonlyArray<string>>([])
   const chosen = jumpClock ? jumping : flakyMachines
-  const counting: Machines = { ...chosen, start: (id, generation) => Effect.andThen(Ref.update(starts, (n) => n + 1), chosen.start(id, generation)) }
+  const counting: Machines = {
+    ...chosen,
+    start: (id, generation) => Effect.andThen(Ref.update(starts, (n) => n + 1), chosen.start(id, generation)),
+    stop: (id, generation) => Effect.andThen(Effect.andThen(Ref.update(stops, (n) => n + 1), Ref.update(stoppedIds, (ids) => [...ids, id])), chosen.stop(id, generation)),
+  }
   const host = try makeSandboxHost(store, counting)
   const jumpClockLayer = Layer.succeed(Clock.Clock, {
     currentTimeMillisUnsafe: () => Number.NaN,
@@ -234,7 +256,12 @@ it.live("sandbox/host-recovery", () => run("sandbox/host-recovery", Recovery, ({
     if (awaited && pending.operationId === "op-1" && receipts.has("op-1")) return false
     const recovering = pending !== null && pending.operationId === "op-1"
     if ((try Ref.get(starts)) > (recovering && pending.kind === "start" ? 1 : 0)) return false
+    // A machine started for the pending start is either in the ledger as running or stopped again: none is left
+    // running unaccounted, as a start the meter cancels for its minutes would be.
+    const own = pending === null ? "" : pending.conversation
+    if (pending !== null && pending.kind === "start" && (try Ref.get(starts)) > 0 && !after.ledger.sandboxes.some((box) => box.conversation === own && box.running) && !(try Ref.get(stoppedIds)).some((id) => id.endsWith(`/${own}`))) return false
     // A viewer's pending start is dropped with a stop.
+    if (pending !== null && pending.kind === "start" && !mayStart(role) && ((try Ref.get(starts)) !== 0 || (try Ref.get(stops)) === 0)) return false
     const completes = pending !== null && pending.kind !== "command" && !(pending.kind === "start" && !mayStart(role))
     if (completes && pending.operationId === "op-0" && receipts.get("op-0") !== settled) return false
     if (recovering && completes) {
@@ -244,9 +271,13 @@ it.live("sandbox/host-recovery", () => run("sandbox/host-recovery", Recovery, ({
     }
   }
   const snapshotAnswer = try exit(clocked(host.snapshot("c0")))
+  // Without a clock no call gets past loading, and each fail-closed pass stops only what still runs: one stop per
+  // sandbox that was running, however many calls fail. A ledger at the last sequence cannot record the stop, so the
+  // next pass stops it again, which is safe.
+  const stoppedOnce = effect () => !clockFails || failMachine || sequence === "huge" || (try Ref.get(stops)) === (running ? 1 : 0)
   if (snapshotAnswer._tag === "Failure") {
     if (Cause.hasDies(snapshotAnswer.cause)) return false
-    return true
+    return try stoppedOnce()
   }
   const snapshot = snapshotAnswer.value
   if (snapshot.used < 0 || snapshot.remaining < 0) return false
@@ -257,9 +288,9 @@ it.live("sandbox/host-recovery", () => run("sandbox/host-recovery", Recovery, ({
   if (fresh._tag === "Failure" && Cause.hasDies(fresh.cause)) return false
   const other = try exit(clocked(host.start("c1", "op-other")))
   if (other._tag === "Failure" && Cause.hasDies(other.cause)) return false
-  return true
+  return try stoppedOnce()
   }
-}))
+}, undefined, { chosen: recoveryChosen }))
 
 const MockCommand = Schema.Struct({ text: Schema.Union([Text, Schema.Literals(["pwd", "ls", "echo hi", "cat keep", "cat missing", "echo a > keep", "  ", "echo x > ../evil", "echo"]) ]), replay: Schema.Boolean })
 

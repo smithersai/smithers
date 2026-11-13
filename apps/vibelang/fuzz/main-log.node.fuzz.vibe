@@ -14,6 +14,10 @@ const shaOf = (n: number) => n.toString(16).padStart(12, "0").padEnd(40, "0")
  * newCommits answers main's first-parent line from the newest commit to the cursor, or nothing when that line doesn't
  * reach the cursor, meets a commit twice, or leaves a new ancestor of a non-empty cursor unlisted (mainLogDecision.vibe).
  */
+const plain = (text: string) => ({ text, merge: false, missing: false })
+/** The newest commit merges a side parent the page does not list and the cursor does not fold: no delta. */
+const graphChosen: ReadonlyArray<typeof Graph.Type> = [{ nodes: [plain("a"), plain("b"), plain("c"), { text: "d", merge: true, missing: false, side: true }], cursor: 1 }]
+
 it.live("history/main-first-parent-graph", () => run("history/main-first-parent-graph", Graph, ({ nodes, cursor }) => {
   const first = (at: number, node: typeof nodes[number]) => node.back === true && at + 1 < nodes.length ? shaOf(at + 2) : shaOf(node.missing ? 1000 : at)
   const listed: ReadonlyArray<GitHubCommit> = nodes.map((node, at) => ({ sha: shaOf(at + 1), commit: { message: node.text }, parents: at === 0 ? [] : [{ sha: first(at, node) }, ...(node.merge && at > 1 ? [{ sha: node.side === true ? shaOf(2000) : shaOf(at - 1) }] : [])] })).reverse()
@@ -50,7 +54,7 @@ it.live("history/main-first-parent-graph", () => run("history/main-first-parent-
   }
   if (actual === undefined || actual.length !== new Set(actual.map((node) => node.sha)).size) return false
   return actual.every((node) => listed.some((source) => source.sha.slice(0, 12) === node.sha && node.title === titleOf(source.commit.message))) && actual.length >= reached.size && (actual.length === 0 || actual.at(-1)?.sha === listed[0]?.sha.slice(0, 12))
-}))
+}, undefined, { chosen: graphChosen }))
 
 it.live("history/github-faults", () => run("history/github-faults", Schema.Struct({ kind: Int, text: Text }), ({ kind, text }) => effect {
   const mode = kind % 6

@@ -22,6 +22,9 @@ const Input = Schema.Struct({
   policy: Schema.Literals(["keep", "reset"]),
 })
 
+/** A revision whose text is the specification's own: no revision, the state unchanged, under either policy. */
+const unchangedChosen: ReadonlyArray<typeof Input.Type> = (["keep", "reset"] as const).map((policy) => ({ spec: "fixture", history: true, revise: true, key: "k1", revision: "current", text: "same", reviewer: null, provider: "absent", scripted: true, policy }))
+
 it.live("issues/specification-transitions", () => run("issues/specification-transitions", Input, (input) => effect {
   const spec = input.spec === "none" ? undefined : input.spec === "empty" ? emptySpecification : input.spec === "fixture" ? fixtureSpecification : { ...fixtureSpecification, revision: Number.MAX_SAFE_INTEGER }
   const before = { seq: 3, items: [], ...(spec === undefined ? {} : { specification: spec }), ...(input.history ? { specificationHistory: fixtureSpecificationHistory } : {}) }
@@ -69,4 +72,4 @@ it.live("issues/specification-transitions", () => run("issues/specification-tran
   if (REVIEWERS.some((r) => r !== reviewer && recorded[r] !== base[r]) || recorded[reviewer].revision !== current || recorded[reviewer].verdict !== "LGTM") return false
   const grade = provided ? "A" : scriptedGrade(reviewer, base.opus.verdict, fixtureSpecification[reviewer].grade)
   return recorded[reviewer].grade === grade && grade === (provided ? "A" : reviewer === "opus" && base.opus.verdict === "" ? "B+" : fixtureSpecification[reviewer].grade)
-}))
+}, undefined, { chosen: unchangedChosen }))

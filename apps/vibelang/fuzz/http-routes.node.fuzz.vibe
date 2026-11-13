@@ -151,6 +151,13 @@ function servicesOf(input: Case) {
   return { conversations, histories }
 }
 
+const routeCase = (route: Case["route"], body: Case["body"], length: Case["length"]): Case => ({ route, body, length, after: "absent", answer: "ok", refusal: "busy", text: "x", step: 1, controls: true })
+/** Bodies a draw rarely pairs with these routes: unreadable, malformed or too long, declared or chunked. */
+const routeChosen: ReadonlyArray<Case> = [
+  ...(["wiki", "post", "tour-control"] as const).flatMap((route) => (["unreadable", "garbage", "oversize"] as const).map((body) => routeCase(route, body, "exact"))),
+  ...(["note", "fold"] as const).flatMap((route) => (["oversize", "unreadable"] as const).map((body) => routeCase(route, body, "absent"))),
+]
+
 it.live("http/every-route", () => run("http/every-route", Input, (input) => effect {
   const { text, valid } = bodyOf(input)
   const { method, path } = pathOf(input)
@@ -160,7 +167,7 @@ it.live("http/every-route", () => run("http/every-route", Input, (input) => effe
   // Conversation routes answer the same through either door.
   const response = try Effect.provideService(input.step % 2 === 0 && conversational ? handleConversations(conversations) : handle(conversations, histories), HttpServerRequest.HttpServerRequest, request)
   return response.status === expectedStatus(input, text, valid)
-}))
+}, undefined, { chosen: routeChosen }))
 
 const Door = Schema.Struct({ path: Schema.Literals(["list", "commands", "runs", "bad-run", "health", "sandbox", "missing"]), actions: Schema.Boolean, fault: Schema.Boolean, commit: Schema.UndefinedOr(Schema.Literals(["abc123", ""])), bare: Schema.Boolean })
 

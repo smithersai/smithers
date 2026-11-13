@@ -11,6 +11,14 @@ const SignedRole = Schema.Literals(["new", "community", "contributor", "maintain
 const Step = Schema.Struct({ op: Int, role: Role, grant: SignedRole, target: Int })
 const Input = Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(24))
 
+/** The maintainer demotes everyone else, then chooses roles nobody holds: the mock makes a person and grants the role. */
+const vacantChosen: ReadonlyArray<typeof Input.Type> = [[
+  { op: 0, role: "maintainer", grant: "new", target: 0 },
+  ...[1, 2, 3, 4].map((target) => ({ op: 3, role: "viewer" as const, grant: "new" as const, target })),
+  { op: 0, role: "community", grant: "new", target: 0 },
+  { op: 0, role: "contributor", grant: "new", target: 0 },
+]]
+
 /** Real product mock flows: role choice, authorization, grants, participation, replay and sign-out. */
 it.live("accounts/random-role-sequences", () => run("accounts/random-role-sequences", Input, (steps) => effect {
   const accounts = try MockAccounts.make()
@@ -46,7 +54,7 @@ it.live("accounts/random-role-sequences", () => run("accounts/random-role-sequen
   if (events.length !== 4 || events.some((event, at) => event.seq !== at + 1)) return false
   const ledger = events.reduce(apply, empty)
   return roleOf(ledger.roles, "1") === "maintainer" && roleOf(ledger.roles, "4") === "contributor"
-}))
+}, undefined, { chosen: vacantChosen }))
 
 /**
  * The agent signs in as a fixture maintainer: once every fixture maintainer is demoted beneath a maintainer the fixture

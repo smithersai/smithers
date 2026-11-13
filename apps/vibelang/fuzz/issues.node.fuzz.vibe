@@ -305,6 +305,9 @@ const Evidence = Schema.Struct({
   errorKind: Schema.Literals(["none", "401", "403", "404", "429", "500", "unknown", "incomplete", "rate-limited", "no-details"] as const),
 })
 
+/** A marked proposal whose issue is not the review's author's: by another person, and by no valid author. */
+const evidenceChosen: ReadonlyArray<typeof Evidence.Type> = ([8, 0] as const).map((author) => ({ body: "marked", author, pullMissing: false, filesShifted: false, errorKind: "none" }))
+
 /** VIP evidence verifies only against native pull data; provider errors map to their documented reasons. */
 it.live("issues/vip-evidence-and-failure-mapping", () => run("issues/vip-evidence-and-failure-mapping", Evidence, (input) => effect {
   const fake = seed()
@@ -331,7 +334,7 @@ it.live("issues/vip-evidence-and-failure-mapping", () => run("issues/vip-evidenc
   if (failure.reason !== expected) return false
   if (input.errorKind === "rate-limited" && failure.retryAfterMillis !== 5000) return false
   return ["unknown", "rate-limited", "unavailable"].includes(expected) ? failure.code === expected : true
-}))
+}, undefined, { chosen: evidenceChosen }))
 
 const ISSUE_SCENARIOS = ["validations", "reviews", "resume", "spec", "shapes", "served", "demoted", "refusals", "draft", "store", "running", "delegated", "public"] as const
 const SteeredIssues = Schema.Struct({

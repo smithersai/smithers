@@ -226,6 +226,10 @@ const BenchmarkInput = Schema.Struct({
  * allowed, both before any object is asked; a POST answers this Worker's, the owner's account's and the owner's probe
  * machine's counters, in that order.
  */
+/** All 18 requests: every path, method and owner. */
+const benchmarkChosen: ReadonlyArray<typeof BenchmarkInput.Type> = (["/api/probe/coverage", "/api/probe/sweep", "/api/sandboxes/live"] as const).flatMap((path) =>
+  (["POST", "GET", "DELETE"] as const).flatMap((method) => (["", "probe-1700000000000"] as const).map((owner) => ({ path, method, owner }))))
+
 it.live("sandbox/benchmark-coverage", () => run("sandbox/benchmark-coverage", BenchmarkInput, (input) => provided(effect {
   // The binding classes' export: an object keeps its own members and gains this isolate's counters.
   const object = { apply: () => succeed("kept") }
@@ -249,5 +253,5 @@ it.live("sandbox/benchmark-coverage", () => run("sandbox/benchmark-coverage", Be
   const body = (try promise(() => HttpServerResponse.toWeb(response).json())) as { readonly schema: number; readonly snapshots: ReadonlyArray<{ readonly buildId: string | null }> }
   return response.status === 200 && body.schema === 1 && body.snapshots.length === 3 && body.snapshots[1]!.buildId === "account" && body.snapshots[2]!.buildId === "machine"
     && same(asked, ["identity", `account ${input.owner}`, `machine ${input.owner}/${PROBE_CONVERSATION}`])
-})))
+}), undefined, { chosen: benchmarkChosen }))
 
