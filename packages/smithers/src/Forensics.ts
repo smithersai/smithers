@@ -156,9 +156,15 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?
   let status: string | undefined
   let duplicateCalls = 0
   let parkedApproval: string | undefined
-  let parkedIncident:
-    | { readonly requestId: unknown; readonly facts: typeof ControlFacts.GuardIncident.Type }
-    | undefined
+  let lastRequest: {
+    readonly runId: string | undefined
+    readonly requestId: string | undefined
+    readonly versioned: boolean
+  } | undefined
+  let legacyDecided = false
+  let approvalWait: boolean | undefined
+  const approvalEvents: Array<ControlSchema.ControlEvent> = []
+  let parkedIncident: typeof ControlFacts.GuardIncident.Type | undefined
   const flowCounts = new Map<string, number>()
   const seen = new Map<string, number>()
 
@@ -176,22 +182,69 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?
     if (event.kind === "control.approval.requested") {
       const approval = payload.payload
       parkedApproval = approval === undefined ? undefined : JSON.stringify(approval)
-      parkedIncident = isIncident(payload.incident)
-        ? { requestId: payload.requestId, facts: payload.incident }
-        : undefined
+      lastRequest = {
+        runId: asString(payload.runId) ?? event.runId,
+        requestId: asString(payload.requestId),
+        versioned: payload.factVersion !== undefined
+      }
+      legacyDecided = false
+      approvalEvents.push(event)
+      parkedIncident = isIncident(payload.incident) ? payload.incident : undefined
       continue
     }
     if (event.kind === "control.approval.approved" || event.kind === "control.approval.denied") {
-      // A decided request no longer holds the run: its incident is settled.
       const target = asRecord(payload.approvalTarget)
-      if (parkedIncident !== undefined && [payload.tokenId, target.requestId].includes(parkedIncident.requestId)) {
-        parkedIncident = undefined
-      }
+      const nestedId = asString(target.requestId)
+      // Older diagnostic journals also named the request only in the target.
+      approvalEvents.push(
+        payload.factVersion === undefined && asString(payload.tokenId) === undefined &&
+          asString(payload.requestId) === undefined && nestedId !== undefined
+          ? { ...event, payload: { ...payload, tokenId: nestedId } }
+          : event
+      )
+      if (
+        lastRequest?.requestId !== undefined &&
+        [payload.tokenId, payload.requestId, target.requestId].includes(lastRequest.requestId)
+      ) legacyDecided = true
+      continue
+    }
+    if (event.kind === "control.run.resume" || event.kind === "control.run.resumed") {
+      approvalWait = false
       continue
     }
     if (!event.kind.startsWith("control.run.")) continue
     const suffix = event.kind.slice("control.run.".length)
-    if (cardStatuses.has(suffix)) status = suffix
+    if (cardStatuses.has(suffix)) {
+      status = suffix
+      const reason = asString(payload.reason) ?? asString(asRecord(payload.run).waitingReason)
+      approvalWait = suffix === "waiting-approval" ||
+        suffix === "parked" &&
+          (reason === "budget" || reason === "approval" || reason === undefined && payload.factVersion === undefined)
+    }
+  }
+
+  if (lastRequest !== undefined) {
+    // Share control's decision, duplicate and unnamed legacy-request rules.
+    // Keep the last request: Continue/Stop select that same guard request.
+    const identity = lastRequest
+    const request = ControlFacts.fold(approvalEvents).approvals.find((row) =>
+      row.runId === identity.runId && row.requestId === identity.requestId
+    )
+    if (request !== undefined) {
+      const pending = request.status === "pending"
+      parkedApproval = pending ? JSON.stringify(request.payload) : undefined
+      const incident = asRecord(request.request).incident
+      parkedIncident = pending && isIncident(incident) ? incident : undefined
+    } else if (lastRequest.versioned || legacyDecided) {
+      parkedApproval = undefined
+      parkedIncident = undefined
+    }
+  }
+  // An unresolved request survives a resumed round that re-parks without a
+  // new request fact. Only its currently actionable projection disappears.
+  if (approvalWait === false) {
+    parkedApproval = undefined
+    parkedIncident = undefined
   }
 
   const memory = runMemoryOf(events)
@@ -201,7 +254,7 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?
     duplicateCalls,
     flows: [...flowCounts.entries()].sort((left, right) => right[1] - left[1]),
     parkedApproval,
-    ...(parkedIncident === undefined ? {} : { parkedIncident: parkedIncident.facts }),
+    ...(parkedIncident === undefined ? {} : { parkedIncident }),
     ...(memory === undefined ? {} : { memory })
   }
 }
@@ -342,6 +395,7 @@ export const renderDiagnosis = (
       : `resume needs ${shellCommand("smthrs", "runs", "resume", runId, "--allow-code-drift")}`
     lines.push(`${label("Drift")}${changes.join(", ")}    # ${next}`)
   }
+  const canApprove = d.status === undefined || d.status === "waiting-approval" || d.status === "parked"
   const incident = d.parkedIncident
   if (incident !== undefined) {
     // The guard's own facts, then its two ways out: Continue approves the
@@ -354,14 +408,14 @@ export const renderDiagnosis = (
         [incident.source, ...facts, clip(terminalSafe(firstLine(incident.message)), 120)].join(" · ")
       }`
     )
-    if (d.parkedApproval !== undefined) {
+    if (canApprove && d.parkedApproval !== undefined) {
       lines.push(`${label("Continue")}${shellCommand("smthrs", "runs", "continue", runId)}`)
       lines.push(`${label("Stop")}${shellCommand("smthrs", "runs", "stop", runId)}`)
     } else {
       // A request with no payload cannot be decided; the run can still end.
       lines.push(`${label("Stop")}${shellCommand("smthrs", "runs", "cancel", runId)}`)
     }
-  } else if (d.parkedApproval !== undefined) {
+  } else if (canApprove && d.parkedApproval !== undefined) {
     lines.push(
       `${label("Unblock")}${shellCommand("smthrs", "approvals", "approve", d.parkedApproval, "--scope", "run")} && ${
         shellCommand("smthrs", "runs", "resume", runId)

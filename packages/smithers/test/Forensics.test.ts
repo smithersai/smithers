@@ -1,6 +1,7 @@
 import * as AgentSession from "@smthrs/agent/AgentSession"
-import type { ControlSchema } from "@smthrs/control"
+import { ControlFacts, type ControlSchema } from "@smthrs/control"
 import * as Diagnosis from "@smthrs/gateway/Diagnosis"
+import { Schema } from "effect"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -1071,5 +1072,318 @@ describe("Forensics runaway incidents", () => {
       expect(runs.commands.get(verb)).toMatchObject({ run: expect.any(Function) })
       expect(discovered.has(`runs ${verb}`)).toBe(false)
     }
+  })
+})
+
+describe("Forensics pending approvals", () => {
+  const request = (requestId: string | undefined = "req-1", incident?: unknown) =>
+    event("control.approval.requested", {
+      requestId,
+      question: "Continue?",
+      payload: { idempotencyKey: requestId ?? "legacy", scope: "run" },
+      incident
+    }, 1)
+  const waiting = event("control.run.waiting-approval", {}, 2)
+  const incident = { classification: "Stuck", source: "cell", message: "The cell exceeded its limit" }
+  const card = (events: ReadonlyArray<ControlSchema.ControlEvent>) =>
+    Forensics.renderDiagnosis({ runId: "run-1" }, Forensics.digest(events, "run-1"))
+
+  it.each(["control.approval.approved", "control.approval.denied"])(
+    "clears the pending payload and recovery commands after %s matches",
+    (kind) => {
+      for (
+        const target of [
+          { tokenId: "req-1" },
+          { requestId: "req-1" },
+          { approvalTarget: { requestId: "req-1" } }
+        ]
+      ) {
+        const events = [request("req-1", incident), waiting, event(kind, target, 3)]
+        const d = Forensics.digest(events, "run-1")
+        expect(d.parkedApproval).toBeUndefined()
+        expect(d.parkedIncident).toBeUndefined()
+        expect(card(events)).not.toContain("Unblock")
+        expect(card(events)).not.toContain("Continue  ")
+        expect(card(events)).not.toContain("Stop      ")
+      }
+    }
+  )
+
+  it("retains the latest request across unrelated or malformed decisions", () => {
+    for (
+      const target of [
+        { tokenId: "req-1" },
+        { requestId: "req-1" },
+        { approvalTarget: { requestId: "req-1" } },
+        {},
+        null
+      ]
+    ) {
+      const events = [request(), request("req-2", incident), waiting, event("control.approval.approved", target, 3)]
+      const d = Forensics.digest(events, "run-1")
+      expect(d.parkedApproval).toBe(JSON.stringify({ idempotencyKey: "req-2", scope: "run" }))
+      expect(d.parkedIncident).toEqual(incident)
+      expect(card(events)).toContain("Continue  smthrs runs continue run-1")
+    }
+    const legacy = event("control.approval.requested", {
+      payload: { idempotencyKey: "legacy", scope: "run" },
+      incident
+    }, 1)
+    const events = [legacy, waiting, event("control.approval.denied", {}, 3)]
+    expect(Forensics.digest(events).parkedApproval).toBeDefined()
+    expect(Forensics.digest(events).parkedIncident).toEqual(incident)
+  })
+
+  it.each(["running", "completed", "failed", "cancelled", "parked", "accepted", "pending"])(
+    "clears approval recovery when the run becomes %s without a decision event",
+    (status) => {
+      const events = [
+        request("req-1", incident),
+        waiting,
+        event("control.run." + status, status === "parked" ? { reason: "event" } : {}, 3)
+      ]
+      const d = Forensics.digest(events, "run-1")
+      expect(d.parkedApproval).toBeUndefined()
+      expect(d.parkedIncident).toBeUndefined()
+      expect(card(events)).not.toContain("approvals approve")
+      expect(card(events)).not.toContain("Continue  ")
+      expect(card(events)).not.toContain("Stop      ")
+    }
+  )
+
+  it("keeps a pending approval through repeated waits and unrelated run bookkeeping", () => {
+    const events = [request(), waiting, event("control.run.lineage", {}, 3), waiting]
+    expect(Forensics.digest(events).parkedApproval).toBeDefined()
+    expect(card(events)).toContain("Unblock   smthrs approvals approve")
+  })
+
+  it("does not resurrect a decided request after completion or a later approval wait", () => {
+    const events = [
+      request(),
+      waiting,
+      event("control.approval.approved", { tokenId: "req-1" }, 3),
+      event("control.run.completed", {}, 4),
+      event("control.run.waiting-approval", {}, 5)
+    ]
+    expect(Forensics.digest(events).parkedApproval).toBeUndefined()
+    expect(card(events)).not.toContain("Unblock")
+    expect(card([...events, request("req-2"), waiting])).toContain("req-2")
+  })
+
+  it("suppresses approval recovery while running or terminal", () => {
+    for (const status of ["running", "completed", "failed", "cancelled"]) {
+      const d = { ...Forensics.digest([request(), waiting]), status }
+      expect(Forensics.renderDiagnosis({ runId: "run-1" }, d)).not.toContain("Unblock")
+    }
+  })
+})
+
+describe("Forensics durable approval waits", () => {
+  const target = {
+    _tag: "Node",
+    runId: "run-1",
+    requestId: "budget-1",
+    digest: "budget-digest",
+    envelope: { capabilities: [], flows: [], budget: { usd: 2 } }
+  } as const
+  const incident = {
+    classification: "Runaway",
+    source: "usd",
+    message: "The run would exceed its budget",
+    used: 1,
+    max: 1,
+    allowance: 2
+  } as const
+  const fact = Schema.decodeUnknownSync(ControlFacts.ApprovalRequestFact)({
+    factVersion: ControlFacts.version,
+    runId: "run-1",
+    requestId: target.requestId,
+    question: "Raise the budget?",
+    payload: { target, scope: "run", idempotencyKey: "approve:budget-1" },
+    incident
+  })
+  const requested = event("control.approval.requested", fact, 1)
+  const parked = event("control.run.parked", {
+    ...Schema.decodeUnknownSync(ControlFacts.RunFact)({
+      factVersion: ControlFacts.version,
+      baseline: "legacy",
+      run: { runId: "run-1", flowId: "test/guard", status: "parked", createdAt: 1, updatedAt: 2 }
+    }),
+    runId: "run-1",
+    status: "parked",
+    reason: "budget"
+  }, 2)
+  const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>) => Forensics.digest(events, "run-1")
+  const card = (events: ReadonlyArray<ControlSchema.ControlEvent>) =>
+    Forensics.renderDiagnosis({ runId: "run-1" }, digest(events))
+
+  it("keeps the real budget park's approval, incident, Continue and Stop", () => {
+    const events = [requested, parked]
+    expect(digest(events).parkedApproval).toBe(JSON.stringify(fact.payload))
+    expect(digest(events).parkedIncident).toEqual(incident)
+    expect(card(events)).toContain("Continue  smthrs runs continue run-1")
+    expect(card(events)).toContain("Stop      smthrs runs stop run-1")
+  })
+
+  it.each(["control.run.resume", "control.run.resumed", "control.run.running"])(
+    "hides recovery after %s and restores an unresolved re-park without a new request",
+    (kind) => {
+      const resumed = [requested, parked, event(kind, {}, 3)]
+      expect(digest(resumed).parkedApproval).toBeUndefined()
+      expect(digest(resumed).parkedIncident).toBeUndefined()
+      expect(card(resumed)).not.toContain("Continue  ")
+      const reparked = event(parked.kind, parked.payload, 4)
+      expect(digest([...resumed, reparked]).parkedApproval).toBe(JSON.stringify(fact.payload))
+      expect(card([...resumed, reparked])).toContain("Continue  smthrs runs continue run-1")
+    }
+  )
+
+  it.each(["control.approval.approved", "control.approval.denied"])(
+    "never reopens a guard after its matching %s decision, even on duplicate requests",
+    (kind) => {
+      const decision = event(kind, ControlFacts.approvalDecisionFact(target.requestId, fact.payload.target), 3)
+      for (
+        const events of [
+          [requested, parked, decision],
+          [requested, parked, decision, requested, parked],
+          [decision, requested, parked]
+        ]
+      ) {
+        expect(digest(events).parkedApproval).toBeUndefined()
+        expect(digest(events).parkedIncident).toBeUndefined()
+        expect(card(events)).not.toContain("Continue  ")
+        expect(card(events)).not.toContain("approvals approve")
+      }
+    }
+  )
+
+  it("does not revive approval recovery on a current quarantine park without a waiting reason", () => {
+    const quarantine = Schema.decodeUnknownSync(ControlFacts.RunFact)({
+      factVersion: ControlFacts.version,
+      baseline: "legacy",
+      run: { runId: "run-1", flowId: "test/guard", status: "parked", createdAt: 1, updatedAt: 4 }
+    })
+    const events = [
+      requested,
+      parked,
+      event("control.run.resume", {}, 3),
+      event("control.run.parked", { ...quarantine, cause: "Attempt evidence was quarantined" }, 4)
+    ]
+    expect(digest(events).parkedApproval).toBeUndefined()
+    expect(digest(events).parkedIncident).toBeUndefined()
+    expect(card(events)).not.toContain("Continue  ")
+    expect(card(events)).not.toContain("approvals approve")
+  })
+
+  it("keeps pending recovery for sparse legacy budget parks without a recorded reason", () => {
+    const legacy = event("control.approval.requested", {
+      runId: fact.runId,
+      requestId: fact.requestId,
+      question: fact.question,
+      payload: fact.payload,
+      incident
+    }, 1)
+    const events = [legacy, event("control.run.parked", {}, 2)]
+    expect(digest(events).parkedApproval).toBe(JSON.stringify(fact.payload))
+    expect(card(events)).toContain("Continue  smthrs runs continue run-1")
+  })
+
+  it("reads a budget wait recorded in the current run snapshot", () => {
+    const snapshot = Schema.decodeUnknownSync(ControlFacts.RunFact)({
+      factVersion: ControlFacts.version,
+      baseline: "legacy",
+      run: {
+        runId: "run-1",
+        flowId: "test/guard",
+        status: "parked",
+        waitingReason: "budget",
+        createdAt: 1,
+        updatedAt: 2
+      }
+    })
+    expect(digest([requested, event("control.run.parked", snapshot, 2)]).parkedIncident).toEqual(incident)
+  })
+
+  it("rejects a versioned request that does not match its own target", () => {
+    const invalid = event("control.approval.requested", {
+      ...fact,
+      payload: { ...fact.payload, target: { ...fact.payload.target, runId: "other-run" } }
+    }, 1)
+    expect(digest([invalid, parked]).parkedApproval).toBeUndefined()
+    expect(digest([invalid, parked]).parkedIncident).toBeUndefined()
+  })
+
+  it("settles an identified legacy request even when the old journal has no run stamp", () => {
+    const legacy = {
+      ...event("control.approval.requested", {
+        requestId: "legacy",
+        payload: { idempotencyKey: "legacy", scope: "run" }
+      }, 1),
+      runId: undefined
+    } as unknown as ControlSchema.ControlEvent
+    const decision = {
+      ...event("control.approval.approved", { tokenId: "legacy" }, 2),
+      runId: undefined
+    } as unknown as ControlSchema.ControlEvent
+    expect(Forensics.digest([legacy]).parkedApproval).toBeDefined()
+    expect(Forensics.digest([legacy, decision]).parkedApproval).toBeUndefined()
+  })
+
+  it("preserves approval recovery for a sparse legacy journal without a lifecycle row", () => {
+    const legacy = event("control.approval.requested", {
+      requestId: "legacy",
+      payload: { idempotencyKey: "legacy", scope: "run" }
+    }, 1)
+    expect(card([legacy])).toContain("Unblock   smthrs approvals approve")
+  })
+
+  it("requires a current decision's exact target binding", () => {
+    const decision = event(
+      "control.approval.approved",
+      ControlFacts.approvalDecisionFact(target.requestId, { ...fact.payload.target, digest: "another-digest" }),
+      3
+    )
+    expect(digest([requested, parked, decision]).parkedApproval).toBe(JSON.stringify(fact.payload))
+  })
+
+  it("does not let an unnamed legacy decision settle a versioned request", () => {
+    expect(digest([requested, parked, event("control.approval.denied", {}, 3)]).parkedIncident).toEqual(incident)
+  })
+
+  it("settles the oldest same-run legacy request on an unnamed decision", () => {
+    const legacy = (requestId: string) =>
+      event("control.approval.requested", {
+        requestId,
+        question: "Continue?",
+        payload: { idempotencyKey: requestId, scope: "run" }
+      }, 1)
+    const events = [
+      legacy("oldest"),
+      legacy("latest"),
+      event("control.run.waiting-approval", {}, 2),
+      event("control.approval.approved", {}, 3)
+    ]
+    expect(digest(events).parkedApproval).toBe(JSON.stringify({ idempotencyKey: "latest", scope: "run" }))
+    expect(digest([...events, event("control.approval.denied", {}, 4)]).parkedApproval).toBeUndefined()
+  })
+
+  it("hides the latest decided guard rather than directing Continue to an older request", () => {
+    const newer = Schema.decodeUnknownSync(ControlFacts.ApprovalRequestFact)({
+      ...fact,
+      requestId: "budget-2",
+      payload: {
+        ...fact.payload,
+        idempotencyKey: "approve:budget-2",
+        target: { ...fact.payload.target, requestId: "budget-2" }
+      }
+    })
+    const events = [
+      requested,
+      event("control.approval.requested", newer, 2),
+      parked,
+      event("control.approval.approved", ControlFacts.approvalDecisionFact(newer.requestId, newer.payload.target), 3)
+    ]
+    expect(digest(events).parkedApproval).toBeUndefined()
+    expect(card(events)).not.toContain("Continue  ")
   })
 })

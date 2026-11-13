@@ -216,3 +216,75 @@ describe("CloudSession.repository", () => {
     expect(CloudSession.repository(dir, process.env)).toBeUndefined()
   })
 })
+
+describe("CloudSession response byte limit", () => {
+  const limit = 4 * 1024 * 1024
+  const signedIn = (at: string) =>
+    CloudSession.signedIn({
+      HOME: home(),
+      XDG_CONFIG_HOME: home(),
+      SMITHERS_API_ORIGIN: at,
+      SMITHERS_TOKEN: "tok_limit"
+    })
+
+  it.each([limit - 1, limit])("accepts valid JSON with %i UTF-8 bytes", async (size) => {
+    const body = "🙂".repeat(Math.floor((size - 2) / 4)) + "a".repeat((size - 2) % 4)
+    expect(Buffer.byteLength(JSON.stringify(body))).toBe(size)
+    const at = await origin(() => ({ status: 200, body }))
+    const cloud = (await signedIn(at))!
+    expect(await cloud.get("/api/limit")).toBe(body)
+  })
+
+  it.each(["a", "🙂"])("refuses an oversized %s body by byte count", async (character) => {
+    const body = character.repeat(character === "a" ? limit - 1 : 1_500_000)
+    const at = await origin(() => ({ status: 200, body }))
+    const cloud = (await signedIn(at))!
+    await expect(cloud.get("/api/limit")).rejects.toMatchObject({
+      _tag: "/cli/Refused",
+      fault: "infra",
+      code: "cloud_response_too_large",
+      message: "/api/limit: the response is larger than " + limit + " bytes"
+    })
+  })
+
+  it("cancels an oversized stream before the server ends the response", async () => {
+    let ended = false
+    let disconnected!: () => void
+    const closed = new Promise<void>((resolve) => {
+      disconnected = resolve
+    })
+    const server = createServer((_request, response) => {
+      response.once("close", () => {
+        ended = response.writableEnded
+        disconnected()
+      })
+      response.writeHead(200, { "content-type": "application/json" })
+      // No Content-Length and no EOF: the reader must stop at the byte limit.
+      response.write("\"" + "a".repeat(limit))
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    servers.push(() => {
+      server.closeAllConnections()
+      server.close()
+    })
+    const at = "http://127.0.0.1:" + (server.address() as AddressInfo).port
+    const cloud = (await signedIn(at))!
+    await expect(cloud.post("/api/stream", {})).rejects.toMatchObject({
+      code: "cloud_response_too_large",
+      fault: "infra"
+    })
+    await closed
+    expect(ended).toBe(false)
+  })
+
+  it("reports an empty successful body as invalid JSON", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(204)
+      response.end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    servers.push(() => server.close())
+    const cloud = (await signedIn("http://127.0.0.1:" + (server.address() as AddressInfo).port))!
+    await expect(cloud.get("/api/empty")).rejects.toMatchObject({ code: "cloud_response_invalid" })
+  })
+})

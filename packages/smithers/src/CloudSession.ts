@@ -12,7 +12,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import * as CliError from "./CliError.ts"
 import { processHost, resolveRepo } from "./commands/Open.ts"
 import { auth } from "./internal/backend/Auth.ts"
-import { Client } from "./internal/backend/Client.ts"
+import { chunksOf, Client } from "./internal/backend/Client.ts"
 import { Session } from "./internal/backend/Session.ts"
 
 /**
@@ -130,14 +130,22 @@ export const signedIn = async (env: Readonly<Record<string, string | undefined>>
         ...(Number.isInteger(status) && status >= 100 && status <= 599 ? { httpStatus: status } : {})
       })
     }
-    const text = await response.text()
-    if (text.length > maxBytes) {
-      throw new CliError.Refused({
-        fault: "infra",
-        code: "cloud_response_too_large",
-        message: `${path}: the response is larger than ${maxBytes} bytes`
-      })
+    const chunks: Array<Uint8Array> = []
+    let size = 0
+    if (response.body !== null) {
+      for await (const chunk of chunksOf(response.body)) {
+        size += chunk.byteLength
+        if (size > maxBytes) {
+          throw new CliError.Refused({
+            fault: "infra",
+            code: "cloud_response_too_large",
+            message: `${path}: the response is larger than ${maxBytes} bytes`
+          })
+        }
+        chunks.push(chunk)
+      }
     }
+    const text = new TextDecoder().decode(Buffer.concat(chunks))
     try {
       return JSON.parse(text) as unknown
     } catch {
