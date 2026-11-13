@@ -683,7 +683,11 @@ TIME_LIMITS = {'replay-order': 120, 'replay-skip': 120, 'receive-field-seq': 120
                'apply-tour-end-runs': 120,
                # Refuted in 26.5 s on a box at main f7acadfa; after conversation.vibe grew, 30 s ran out on a box at main
                # 1b8ba47b (it took 37.5 s). A timeout is still never a rejection (0018, lane vl-proveall3 gate).
-               'record-journal-order': 120}
+               'record-journal-order': 120,
+               # apply-drive-step's rejecting check took 14.5 s alone on the host and timed out at 30 s in a full box
+               # run about three times slower (gP4 and gD, vl-proveall, 2026-11-12); apply-drive-target checks the same
+               # drivenWalkthrough clause as apply-drive-duration and apply-drive-revision, which already get 120 s.
+               'apply-drive-step': 120, 'apply-drive-target': 120}
 
 # Whole-suite history composition hit 60 s although the same module completed in 38-42 s alone.
 # Positive headroom is module-specific; it never changes a mutant's budget or rejection criteria.
