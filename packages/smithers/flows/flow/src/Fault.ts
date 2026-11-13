@@ -251,6 +251,8 @@ register(
     request_invalid: "bug"
   } satisfies Rows<HumanTaskFailed["code"]>
 )
+// An opaque answer schema needs an explicit decoder version at construction.
+register("@smthrs/flow/HumanTask/DecodeIdentityError", "bug")
 register(
   "@smthrs/flow/HumanAnswerInvalid",
   {

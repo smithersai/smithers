@@ -30,6 +30,7 @@ import * as Identity from "@smthrs/crypto/Identity"
 import { identity } from "effect/Function"
 import { pipeArguments } from "effect/Pipeable"
 import * as Schema from "effect/Schema"
+import * as SchemaAST from "effect/SchemaAST"
 import type { Node } from "../Node.ts"
 import type * as Planned from "../Planned.ts"
 import { jsonMirror } from "./JsonMirror.ts"
@@ -709,6 +710,68 @@ export const branch = (
 }
 
 /**
+ * A class's annotation identifier can be overridden without changing its
+ * matcher. Recover the nominal name only from a retained class declaration's
+ * generated prototype marker, without invoking its getter or constructing an
+ * instance. Rebuilt schemas may have lost that declaration and stay opaque.
+ * Custom instanceof hooks are author behavior too, so do not certify them.
+ *
+ * @private
+ */
+const classFilterIdentifiers = (filter: Schema.Top): WeakMap<object, string> => {
+  const identifiers = new WeakMap<object, string>()
+  const rejected = new WeakSet<object>()
+  const pending: Array<unknown> = [filter]
+  const seen = new WeakSet<object>()
+  while (pending.length > 0) {
+    const current = pending.pop()
+    if ((typeof current !== "object" || current === null) && typeof current !== "function") continue
+    if (seen.has(current)) continue
+    seen.add(current)
+    if (typeof current === "function" && Schema.isSchema(current)) {
+      let identifier: string | undefined
+      let customInstance = false
+      for (let owner: object | null = current; owner !== null; owner = Object.getPrototypeOf(owner)) {
+        const descriptors = Object.getOwnPropertyDescriptors(owner)
+        const hook = Object.getOwnPropertyDescriptor(owner, Symbol.hasInstance)
+        if (hook !== undefined && (!("value" in hook) || hook.value !== Function.prototype[Symbol.hasInstance])) {
+          customInstance = true
+        }
+        const name = descriptors.identifier?.value
+        const prototype = descriptors.prototype?.value
+        if (
+          identifier === undefined && typeof name === "string" && typeof prototype === "object" &&
+          prototype !== null && Object.hasOwn(prototype, `~effect/Schema/Class/${name}`)
+        ) {
+          identifier = name
+        }
+      }
+      const ast = current.ast
+      if (SchemaAST.isDeclaration(ast) && identifier !== undefined) {
+        const factory = Object.getPrototypeOf(current)
+        const declaration = !Object.hasOwn(current, "ast") && factory !== null &&
+          Object.getOwnPropertyDescriptor(factory, "ast")?.get !== undefined
+        if (
+          customInstance || !declaration ||
+          identifiers.has(ast.run)
+        ) {
+          rejected.add(ast.run)
+          identifiers.delete(ast.run)
+        } else if (!rejected.has(ast.run)) identifiers.set(ast.run, identifier)
+      }
+    }
+    // Public schema relationships (members, fields, schema, from/to, etc.)
+    // retain declarations. ASTs and arbitrary accessors do not prove one.
+    const descriptors = Object.getOwnPropertyDescriptors(current)
+    for (const key of Object.keys(descriptors)) {
+      const descriptor = descriptors[key]!
+      if (key !== "ast" && key !== "prototype" && "value" in descriptor) pending.push(descriptor.value)
+    }
+  }
+  return identifiers
+}
+
+/**
  * JSON Schema does not describe arbitrary checks, declaration parsers, or
  * suspended schema factories. Include every function reachable from the
  * schema AST, preserving declared captures and treating opaque wrappers as
@@ -718,6 +781,7 @@ export const branch = (
  */
 const filterIdentity = (filter: Schema.Top): FunctionIdentity => {
   const identities: Array<readonly [string, FunctionIdentity]> = []
+  const classIdentifiers = classFilterIdentifiers(filter)
   const pending: Array<readonly [string, unknown]> = [["$", filter.ast]]
   const seen = new WeakSet<object>()
   while (pending.length > 0) {
@@ -727,6 +791,28 @@ const filterIdentity = (filter: Schema.Top): FunctionIdentity => {
     } else if (typeof current === "object" && current !== null && !seen.has(current)) {
       seen.add(current)
       const descriptors = Object.getOwnPropertyDescriptors(current)
+      if (current instanceof SchemaAST.Declaration) {
+        const identifier = classIdentifiers.get(current.run)
+        const fields = current.typeParameters[0]
+        if (identifier !== undefined && fields) {
+          const representation = filterRepresentation(Schema.make(current)) ?? filterRepresentation(Schema.make(fields))
+          if (representation !== undefined) {
+            // Schema.is checks class membership, not the field codecs. Those
+            // codecs and Effect's generated class closures are represented by
+            // the nominal identifier and encoded fields. Class-level checks
+            // still run when matching and retain their own callback identities.
+            const digest = digestSync(JSON.stringify(["schema-class-filter/v1", identifier, representation]))
+            identities.push([`${path}/class`, {
+              _tag: "FunctionIdentity",
+              algorithm: "sha256-source-captures/v5",
+              digest,
+              resumeDigest: digest
+            }])
+            pending.push([`${path}/checks`, current.checks])
+            continue
+          }
+        }
+      }
       for (const key of Object.keys(descriptors).sort()) {
         const descriptor = descriptors[key]!
         if ("value" in descriptor) pending.push([`${path}/${JSON.stringify(key)}`, descriptor.value])

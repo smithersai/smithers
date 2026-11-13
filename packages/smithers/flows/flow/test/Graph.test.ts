@@ -1170,6 +1170,37 @@ describe("Graph.build into a plan", () => {
       expect(a.digest).not.toBe(different.digest)
     }))
 
+  it.effect("admits class catch filters in stable graphs and re-keys changed fields", () =>
+    Effect.gen(function*() {
+      class Boom extends Schema.TaggedError<Boom>()("Boom", { message: Schema.String }) {}
+      class Row extends Schema.Class<Row>("Row")({ value: Schema.Number }) {}
+      const build = (error: Schema.Top) =>
+        Graph.build(
+          Node.catch(Node.succeed(1), {
+            error,
+            onFailure: Node.capture({}, () => Node.succeed(0))
+          }),
+          undefined,
+          { callbackIdentity: "stable" }
+        )
+      for (const error of [Boom, Row, Schema.Union([Boom, Row])]) {
+        expect(build(error).diagnostics).toEqual([])
+      }
+      const a = yield* compile("class-catch", "catch", build(Boom))
+      class Same extends Schema.TaggedError<Same>()("Boom", { message: Schema.String }) {}
+      const same = yield* compile("class-catch", "catch", build(Same))
+      class Changed extends Schema.TaggedError<Changed>()("Boom", { message: Schema.Number }) {}
+      const different = yield* compile("class-catch", "catch", build(Changed))
+      expect(a.digest).toBe(same.digest)
+      expect(a.digest).not.toBe(different.digest)
+      expect(a.nodes.map((node) => node.key)).not.toEqual(different.nodes.map((node) => node.key))
+      class Left extends Schema.Class<Left>("Left")({ value: Schema.Number }, { identifier: "Common" }) {}
+      class Right extends Schema.Class<Right>("Right")({ value: Schema.Number }, { identifier: "Common" }) {}
+      const left = yield* compile("class-catch", "catch", build(Left))
+      const right = yield* compile("class-catch", "catch", build(Right))
+      expect(left.digest).not.toBe(right.digest)
+    }))
+
   it("refuses opaque schema checks in stable graphs and admits structural schemas", () => {
     const make = (error: Schema.Schema<string>) =>
       Node.catch(Node.succeed(1), {

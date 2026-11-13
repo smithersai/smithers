@@ -83,6 +83,21 @@ planned error placeholder. With no schema the whole typed error channel is
 handled; with one, only the values it accepts, and the remainder survives in the
 resulting error type.
 
+`Schema.Class` and `Schema.TaggedError` filters have portable identities derived
+from their explicit class identifier and encoded field representation. Effect's
+generated class callbacks share that identity; checks applied to the class
+still need `Node.capture`. Changing the identifier or fields changes the catch's
+identity. The original class declaration must remain reachable through the
+filter schema, as it does in a union's `members` or `Schema.toType`'s source.
+A standalone class rebuilt with `.check` or `.annotate` loses that provenance
+and retains process-local identity. Custom `Symbol.hasInstance` hooks also
+retain process-local identity. Annotation names alone never certify a class. Use one schema factory per class
+declaration and `Base.extend` for subclasses; generated factories and plain
+subclasses retain process-local identity.
+This replaces the earlier process-local identity of class-filter
+catches once, so let existing runs settle before upgrading or explicitly start
+a new execution.
+
 ## There is no loop node
 
 A plan is always a DAG, so this module has no loop and never will. Repetition

@@ -3,6 +3,8 @@ import * as Identity from "@smthrs/crypto/Identity"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as SchemaAST from "effect/SchemaAST"
+import * as SchemaGetter from "effect/SchemaGetter"
+import * as SchemaIssue from "effect/SchemaIssue"
 import { readFileSync } from "node:fs"
 import { GraphBuildError } from "../src/GraphBuildError.ts"
 import * as internal from "../src/internal/node.ts"
@@ -422,6 +424,131 @@ describe("Node", () => {
     expect(Node.representationIdentity(Parsed, 3)).not.toEqual(Node.representationIdentity(Parsed, 2))
   })
 
+  it("gives class catch filters portable identities from their identifier and encoded fields", () => {
+    const caught = (error: Schema.Top) =>
+      tagged(Node.catch(Node.succeed(1), { error, onFailure: () => Node.succeed(0) }).ast, "Catch")
+    const record = (identifier: string, value: Schema.Top) => {
+      class Record extends Schema.Class<Record>(identifier)({ value }) {}
+      return Record
+    }
+    const error = (value: Schema.Top) => {
+      class Refused extends Schema.TaggedError<Refused>()("Refused", { value }) {}
+      return Refused
+    }
+    for (const make of [record.bind(null, "Record"), error]) {
+      const left = caught(make(Schema.Null))
+      const same = caught(make(Schema.Null))
+      const different = caught(make(Schema.Undefined))
+      expect(left.filterIdentity?.algorithm).toBe("sha256-source-captures/v5")
+      expect(left.filterIdentity?.resumeDigest).toMatch(/^[0-9a-f]{64}$/)
+      expect(left.filterIdentity).toEqual(same.filterIdentity)
+      // These fields have the same JSON Schema, but accept different values.
+      expect(left.filter).toEqual(different.filter)
+      expect(left.filterIdentity?.digest).not.toBe(different.filterIdentity?.digest)
+      expect(left.filterIdentity?.resumeDigest).not.toBe(different.filterIdentity?.resumeDigest)
+    }
+    expect(caught(record("Left", Schema.String)).filterIdentity)
+      .not.toEqual(caught(record("Right", Schema.String)).filterIdentity)
+    expect(caught(Schema.Union([error(Schema.String), record("Record", Schema.Number)])).filterIdentity)
+      .toEqual(caught(Schema.Union([error(Schema.String), record("Record", Schema.Number)])).filterIdentity)
+  })
+
+  it("uses nominal class identifiers despite annotation overrides and refuses custom instanceof hooks", () => {
+    const caught = (error: Schema.Top) =>
+      tagged(Node.catch(Node.succeed(1), { error, onFailure: () => Node.succeed(0) }).ast, "Catch")
+    class Left extends Schema.Class<Left>("Left")({ value: Schema.Number }, { identifier: "Common" }) {}
+    class Right extends Schema.Class<Right>("Right")({ value: Schema.Number }, { identifier: "Common" }) {}
+    const value = new Left({ value: 1 })
+    expect(Schema.is(Left)(value)).toBe(true)
+    expect(Schema.is(Right)(value)).toBe(false)
+    expect(caught(Left).filter).toEqual(caught(Right).filter)
+    expect(caught(Left).filterRepresentation).toEqual(caught(Right).filterRepresentation)
+    expect(caught(Left).filterIdentity?.algorithm).toBe("sha256-source-captures/v5")
+    expect(caught(Left).filterIdentity).not.toEqual(caught(Right).filterIdentity)
+    let reads = 0
+    class Custom extends Schema.Class<Custom>("Custom")({ value: Schema.Number }) {
+      static override [Symbol.hasInstance](_input: unknown) {
+        reads++
+        return true
+      }
+    }
+    expect(caught(Custom).filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")
+    expect(reads).toBe(0)
+    Object.defineProperty(Custom, Symbol.hasInstance, {
+      get: () => {
+        reads++
+        return () => true
+      }
+    })
+    expect(caught(Custom).filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")
+    expect(reads).toBe(0)
+    expect(caught(Left.annotate({ identifier: "Changed" })).filterIdentity?.algorithm)
+      .toBe("sha256-source-ephemeral/v4")
+    // Effect memoizes the factory's first matcher. Another retained factory
+    // or subclass must never re-certify a rejected shared matcher.
+    const Base = Schema.Class<{ readonly value: number }>("Shared")({ value: Schema.Number })
+    class Shared extends Base {
+      static override [Symbol.hasInstance](_input: unknown) {
+        return true
+      }
+    }
+    for (const error of [Base, Schema.Union([Shared, Base]), Schema.Union([Base, Shared])]) {
+      expect(caught(error).filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")
+    }
+    const CleanBase = Schema.Class<{ readonly value: number }>("Sibling")({ value: Schema.Number })
+    class First extends CleanBase {}
+    class Second extends CleanBase {}
+    expect(caught(Schema.Union([First, Second])).filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")
+    expect(caught(Schema.Union([Left, Left])).filterIdentity?.algorithm).toBe("sha256-source-captures/v5")
+    class Unsupported extends Left {}
+    expect(caught(Schema.Union([Left, Unsupported])).filterIdentity?.algorithm)
+      .toBe("sha256-source-ephemeral/v4")
+    class Extended extends Left.extend<Extended>("Extended")({ extra: Schema.String }) {}
+    expect(caught(Extended).filterIdentity?.algorithm).toBe("sha256-source-captures/v5")
+  })
+
+  it("keeps class-level checks explicit while representing nominal class fields", () => {
+    const caught = (error: Schema.Top) =>
+      tagged(Node.catch(Node.succeed(1), { error, onFailure: () => Node.succeed(0) }).ast, "Catch")
+    class Row extends Schema.Class<Row>("Row")({ value: Schema.Number }) {}
+    expect(caught(Schema.toType(Row)).filterIdentity?.algorithm).toBe("sha256-source-captures/v5")
+    const checked = Row.check(Schema.makeFilter((row) => row.value > 0))
+    const fieldChecked = Schema.Number.check(Schema.makeFilter((value) => value > 0))
+    class CheckedRow extends Schema.Class<CheckedRow>("CheckedRow")({ value: fieldChecked }) {}
+    const codec = Schema.String.pipe(Schema.decodeTo(Row, {
+      decode: SchemaGetter.transform((value) => new Row({ value: Number(value) })),
+      encode: SchemaGetter.transform((row) => String(row.value))
+    }))
+    for (const error of [checked, CheckedRow]) {
+      expect(caught(error).filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")
+    }
+    // Catch matching never runs these field/encoding callbacks: it checks
+    // class membership. The representation, including Defect's JSON shape,
+    // records their fields without treating the callbacks as author checks.
+    class WithDefect extends Schema.TaggedError<WithDefect>()("WithDefect", { cause: Schema.Defect() }) {}
+    expect(caught(WithDefect).filterIdentity?.algorithm).toBe("sha256-source-captures/v5")
+    expect(caught(codec).filterIdentity?.algorithm).toBe("sha256-source-captures/v5")
+    // A declaration is not a nominal class merely because it has an
+    // identifier. Its user-supplied matcher must remain process-local.
+    const declared = Schema.declare((value): value is string => typeof value === "string")
+    for (const declaration of [declared, declared.annotate({ identifier: "Declared" })]) {
+      const schema = Schema.String.pipe(Schema.decodeTo(declaration))
+      expect(caught(schema).filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")
+    }
+    const captured = (minimum: number) =>
+      Row.check(
+        new SchemaAST.Filter(Node.capture(
+          { minimum },
+          (row: Row) => row.value > minimum ? undefined : new SchemaIssue.InvalidValue(undefined, row.value)
+        ))
+      )
+    expect(caught(captured(0)).filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")
+    const retained = (minimum: number) => caught(Schema.Union([Row, captured(minimum)]))
+    expect(retained(0).filterIdentity?.algorithm).toBe("sha256-source-captures/v5")
+    expect(retained(0).filterIdentity).toEqual(retained(0).filterIdentity)
+    expect(retained(0).filterIdentity).not.toEqual(retained(1).filterIdentity)
+  })
+
   it("keeps schema function captures and never invokes accessor metadata", () => {
     let reads = 0
     const metadata: Record<string, unknown> = { nullable: null }
@@ -436,6 +563,7 @@ describe("Node", () => {
     })
     const error = Schema.String.check(new SchemaAST.Filter(Node.capture({}, () => undefined)))
     Object.defineProperty(error.ast, "metadata", { value: metadata })
+    Object.defineProperty(error, "metadata", { get: () => ++reads })
     const ast = tagged(Node.catch(Node.succeed(1), { error, onFailure: () => Node.succeed(0) }).ast, "Catch")
     expect(reads).toBe(0)
     expect(ast.filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")

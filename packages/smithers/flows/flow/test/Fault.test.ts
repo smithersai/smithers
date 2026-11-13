@@ -90,6 +90,12 @@ describe("register and of", () => {
 })
 
 describe("the flow's own rows", () => {
+  it("classifies an unversioned opaque answer decoder as a registered bug", () => {
+    const error = new HumanTask.DecodeIdentityError({ message: "The answer schema needs a version" })
+    expect(Fault.of(error)).toEqual({ class: "bug", tag: error._tag })
+    expect(Fault.registered().has(error._tag)).toBe(true)
+  })
+
   it("classifies a missing durable write identity as a registered bug", () => {
     const unavailable = new Action.EffectKeyUnavailable({ name: "write", message: "outside a dispatch" })
     expect(Fault.of(unavailable)).toEqual({ class: "bug", tag: "@smthrs/flow/EffectKeyUnavailable" })

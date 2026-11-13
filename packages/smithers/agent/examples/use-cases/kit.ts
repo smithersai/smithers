@@ -14,7 +14,7 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
-import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Flow, Interpreter } from "@smthrs/flow"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -142,7 +142,7 @@ export interface RunOptions<ROut, RIn> {
   readonly actions: Layer.Layer<ROut, never, RIn>
 }
 
-/** Runs `flow` once on a durable engine over `options.filename`. */
+/** Runs `flow` once with stable callback admission on a durable engine. */
 export const run = <
   Tag extends string,
   Payload extends Flow.AnyStructSchema,
@@ -159,9 +159,13 @@ export const run = <
   Effect.scoped(
     flow.execute(payload, { executionId: options.executionId }).pipe(
       Effect.provide(
-        Layer.mergeAll(options.actions, Interpreter.layer(flow)).pipe(
+        // The generic test host supplies its actions at runtime; canonical
+        // composition still validates every reached declaration before dispatch.
+        Interpreter.layerWithImplementations(
+          flow as Flow.Flow<Tag, Payload, Success, Error, never>,
+          options.actions
+        ).pipe(
           Layer.provideMerge(agents(options.script)),
-          Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(TestNodeRuntime.durableEngine(options.filename, "examples-use-cases"))
         )
       )

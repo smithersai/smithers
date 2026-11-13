@@ -20,7 +20,12 @@ the same payload. Use `Node.capture` to declare semantic captures and imported
 implementation versions, and select stable callback validation. The low-level
 process-local callback policy permits inspection but does not promise the same
 plan across processes. Stable node addresses alone do not prove unchanged
-behavior.
+behavior. `Node.catch` accepts `Schema.Class` and `Schema.TaggedError` filters
+under stable validation: their generated callbacks are identified by the class
+identifier and encoded fields. Custom checks applied to the class still need
+`Node.capture`. Class declarations must remain reachable in the schema;
+standalone rebuilt class schemas and custom `Symbol.hasInstance` hooks retain
+process-local identity.
 
 The durable interpreter records the whole graph's digest before dispatch.
 When no declared payload schema supplies a more specific refusal, a payload
