@@ -1,3 +1,4 @@
+import { clipboardPermissions, readClipboard } from "./browserCapabilities"
 import type { Page } from "@playwright/test"
 import { expect, test, visibleText } from "./fixtures"
 import { requires } from "./target"
@@ -30,8 +31,6 @@ const openReady = async (page: Page) => {
   await expect(picker).toBeVisible({ timeout: 120_000 })
   await expect(page.getByText("Well hello there!")).toBeVisible({ timeout: 30_000 })
 }
-
-const clipboard = (page: Page) => page.evaluate(() => navigator.clipboard.readText())
 
 test("switch branch: the picker lists the branches, filters, and opens one, keeping the path's kind", { annotation: { type: "summary", description: "The branch picker lists and filters branches, and opens one at the same kind of path." } }, async ({ page }) => {
   await openReady(page)
@@ -69,25 +68,25 @@ test("raw: Raw opens the file as plain text in a new tab, and GitHub's raw path 
   await expect(page.locator("body")).toContainText("<!DOCTYPE html>")
 })
 
-test("copy: Copy permalink, Copy path, Copy and the clone URL put what they say on the clipboard", { annotation: { type: "summary", description: "Copy permalink, Copy path, Copy and the clone URL copy what they say." } }, async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"])
+test("copy: Copy permalink, Copy path, Copy and the clone URL put what they say on the clipboard", { annotation: { type: "summary", description: "Copy permalink, Copy path, Copy and the clone URL copy what they say." } }, async ({ page, context, browserName }) => {
+  await context.grantPermissions(clipboardPermissions(browserName))
   await openReady(page)
   await page.goto(`${REPO}/blob/test-branch/test.md`)
   await expect(page.getByRole("article", { name: "test.md" })).toBeVisible({ timeout: 30_000 })
   // Each Copy runs `repo/copy` on this browser's engine, which writes this tab's clipboard.
   await page.getByRole("button", { name: "Copy permalink" }).click()
-  await expect.poll(() => clipboard(page), { timeout: 30_000 }).toMatch(
+  await expect.poll(() => readClipboard(browserName, page), { timeout: 30_000 }).toMatch(
     /\/octocat\/Spoon-Knife\/blob\/[0-9a-f]{40}\/test\.md$/,
   )
-  const permalink = await clipboard(page)
+  const permalink = await readClipboard(browserName, page)
   await page.getByRole("button", { name: "Copy path" }).click()
-  await expect.poll(() => clipboard(page), { timeout: 30_000 }).toBe("test.md")
+  await expect.poll(() => readClipboard(browserName, page), { timeout: 30_000 }).toBe("test.md")
   await page.getByRole("button", { name: "Copy", exact: true }).click()
-  await expect.poll(() => clipboard(page), { timeout: 30_000 }).not.toBe("test.md")
+  await expect.poll(() => readClipboard(browserName, page), { timeout: 30_000 }).not.toBe("test.md")
   // The clone menu's Code, not a Markdown file's Preview and Code toggle: the button that opens a panel.
   await page.getByRole("button", { name: "Code" }).and(page.locator('[aria-haspopup="dialog"]')).click()
   await page.getByRole("button", { name: "Copy clone URL" }).click()
-  await expect.poll(() => clipboard(page), { timeout: 30_000 }).toBe("https://github.com/octocat/Spoon-Knife.git")
+  await expect.poll(() => readClipboard(browserName, page), { timeout: 30_000 }).toBe("https://github.com/octocat/Spoon-Knife.git")
   // The permalink opens the same file, at the commit.
   await page.goto(new URL(permalink).pathname)
   await expect(page.getByRole("article", { name: "test.md" })).toBeVisible({ timeout: 30_000 })

@@ -1,3 +1,4 @@
+import { clipboardPermissions, readClipboard } from "./browserCapabilities"
 import { expect, recordActions, test, visibleText } from "./fixtures"
 import { requires } from "./target"
 
@@ -44,8 +45,8 @@ test("clone: two devices see the repository open on its README once Code Storage
   await bob.close()
 })
 
-test("browse: a file from the listing, its lines, a reload, and the permalink at the head commit", { annotation: { type: "summary", description: "A file opens from the listing with its lines, survives a reload, and has a permalink at the head commit." } }, async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"])
+test("browse: a file from the listing, its lines, a reload, and the permalink at the head commit", { annotation: { type: "summary", description: "A file opens from the listing with its lines, survives a reload, and has a permalink at the head commit." } }, async ({ page, context, browserName }) => {
+  await context.grantPermissions(clipboardPermissions(browserName))
   await openReady(page)
   await page.getByRole("link", { name: "index.html" }).first().click()
   await expect(page).toHaveURL(/\/octocat\/Spoon-Knife\/blob\/main\/index\.html$/)
@@ -56,9 +57,9 @@ test("browse: a file from the listing, its lines, a reload, and the permalink at
   // Copy permalink runs `repo/copy` on this browser's engine, which then writes this tab's clipboard.
   await page.getByRole("button", { name: "Copy permalink" }).click()
   await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()), { timeout: 30_000 })
+    .poll(() => readClipboard(browserName, page), { timeout: 30_000 })
     .toMatch(/\/octocat\/Spoon-Knife\/blob\/[0-9a-f]{40}\/index\.html\?L=3$/)
-  const permalink = await page.evaluate(() => navigator.clipboard.readText())
+  const permalink = await readClipboard(browserName, page)
   await page.goto(new URL(permalink).pathname + new URL(permalink).search)
   await expect(visibleText(page.getByRole("article", { name: "index.html", exact: true }), "<!DOCTYPE html>")).toBeVisible({ timeout: 30_000 })
   // Up the path trail, back to the README.

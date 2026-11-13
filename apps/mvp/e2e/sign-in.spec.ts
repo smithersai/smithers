@@ -1,3 +1,5 @@
+import { chromiumNetwork } from "./browserCapabilities"
+import { offlineTransport } from "./offlineTransport"
 import { CALLBACK_ROUTE, SIGN_IN, SIGN_OUT } from "../src/features/auth/contract"
 import { signInPrompt } from "./firstRun"
 import { QUESTIONS_ROUTE, SHAPE_ROUTE } from "../src/features/chat/contract"
@@ -368,9 +370,10 @@ test("a signed-out follower cannot read the live owner's engine", { annotation: 
   await expect(alice.page.getByRole("table", { name: "Runs" })).toContainText("watch/set")
 })
 
-test("an ownerless offline activation takes the verified person in place when the network returns", { annotation: { type: "summary", description: "After device storage is evicted offline, reconnecting verifies the account in place, with no reload, and asking succeeds." } }, async ({ devices }) => {
+test("an ownerless offline activation takes the verified person in place when the network returns", { annotation: { type: "summary", description: "After device storage is evicted offline, reconnecting verifies the account in place, with no reload, and asking succeeds." } }, async ({ devices, browserName }) => {
   requires("personalModel", "member", "ownConversation")
   test.setTimeout(180_000)
+  if (browserName === "webkit") devices.withTransport(await offlineTransport())
   const [tab] = await devices.open("Recovered device")
   await tab.page.addInitScript(() => {
     const record = (stage: string) => console.info("e2e.identity_network", { stage, online: navigator.onLine })
@@ -393,17 +396,21 @@ test("an ownerless offline activation takes the verified person in place when th
   await tab.page.goto(appHome())
   // Chromium keeps context-level HTTP emulation across this cached navigation but initializes the new renderer's
   // navigator.onLine to true. Correct only its connection state; context.setOffline owns the HTTP fault.
-  const network = await tab.device.context.newCDPSession(tab.page)
-  await network.send("Network.overrideNetworkState", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+  const network = await chromiumNetwork(browserName, tab.page)
+  await network?.send("Network.overrideNetworkState", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
   // Offline, the evicted device opens as a visitor's: the app's home, or a deployment run's own branch with its public
   // chrome and no workspace, which only ChatApi can open (src/features/branch/actions.ts, `offline`).
   await tab.ready()
-  expect(await tab.page.evaluate(() => navigator.onLine), "the evicted device activates offline").toBe(false)
+  if (network !== undefined) expect(await tab.page.evaluate(() => navigator.onLine), "the evicted device activates offline").toBe(false)
+  expect(await tab.page.evaluate(() => fetch("/api/auth/session", { cache: "no-store" }).then(() => true, () => false)), "the device cannot reach the session endpoint").toBe(false)
   await tab.page.evaluate(() => Object.assign(window, { e2eSamePage: true }))
   await tab.device.online()
-  await network.send("Network.overrideNetworkState", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+  await network?.send("Network.overrideNetworkState", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
   expect(await tab.page.evaluate(() => navigator.onLine), "the browser reports connectivity restored").toBe(true)
-  await expect.poll(() => tab.log.some((line) => line.includes("e2e.identity_network") && line.includes("window_online")), { message: "the browser delivered its real online event" }).toBe(true)
+  if (network !== undefined) {
+    await expect.poll(() => tab.log.some((line) => line.includes("e2e.identity_network") && line.includes("window_online")), { message: "the browser delivered its real online event" }).toBe(true)
+  }
+  expect(await tab.page.evaluate(() => fetch("/api/auth/session", { cache: "no-store" }).then(response => response.ok)), "the session endpoint is reachable again").toBe(true)
   // The leader adopts the visitor's data without reloading this page. A branch opened offline still reopens
   // its workspace when connectivity returns; wait for that route's conversation before asking.
   await expect.poll(() => tab.log.some((line) => line.includes("auth.device_identity") && line.includes("adopted")), { timeout: 60_000 }).toBe(true)
@@ -415,9 +422,10 @@ test("an ownerless offline activation takes the verified person in place when th
   expect((await accepted).status()).toBe(202)
 })
 
-test("an evicted device's earlier owner keeps their queued question: the next person adopts the device in place and never sends it", { annotation: { type: "summary", description: "The browser evicts the device store but keeps the outbox; the next person to sign in takes the device in place, and the earlier owner's queued question is never sent as them." } }, async ({ devices }) => {
+test("an evicted device's earlier owner keeps their queued question: the next person adopts the device in place and never sends it", { annotation: { type: "summary", description: "The browser evicts the device store but keeps the outbox; the next person to sign in takes the device in place, and the earlier owner's queued question is never sent as them." } }, async ({ devices, browserName }) => {
   requires("devSignIn", "devPeople")
   test.setTimeout(180_000)
+  if (browserName === "webkit") devices.withTransport(await offlineTransport())
   const [tab] = await devices.open("Shared laptop")
   const origin = new URL(tab.page.url()).origin
   const pending = `Earlier owner's question ${devices.word}`
@@ -430,7 +438,7 @@ test("an evicted device's earlier owner keeps their queued question: the next pe
     // Leave the app while still offline, so nothing sends the question, then evict OPFS from a page of the origin
     // that runs no app: no worker or collection holds the files open.
     await tab.page.goto("about:blank")
-    await tab.device.context.setOffline(false)
+    await tab.device.online()
     await tab.page.goto("/api/auth/session")
     await tab.page.evaluate(async () => {
       await navigator.locks.request("smithers-data", { mode: "exclusive" }, () =>
@@ -450,12 +458,12 @@ test("an evicted device's earlier owner keeps their queued question: the next pe
   await test.step("The device opens offline as a visitor's; online, the teammate takes it in place", async () => {
     await tab.device.offline()
     await tab.page.goto(appHome())
-    const network = await tab.device.context.newCDPSession(tab.page)
-    await network.send("Network.overrideNetworkState", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+    const network = await chromiumNetwork(browserName, tab.page)
+    await network?.send("Network.overrideNetworkState", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
     await tab.ready()
     await tab.page.evaluate(() => Object.assign(window, { e2eSamePage: true }))
     await tab.device.online()
-    await network.send("Network.overrideNetworkState", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+    await network?.send("Network.overrideNetworkState", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
     await expect.poll(() => tab.log.some((line) => line.includes("auth.device_identity") && line.includes("adopted")), { timeout: 60_000 }).toBe(true)
     await expect(tab.page.getByRole("button", { name: SIGN_OUT })).toBeVisible({ timeout: 30_000 })
     expect(await tab.page.evaluate(() => (window as { e2eSamePage?: boolean }).e2eSamePage), "the page never reloaded").toBe(true)

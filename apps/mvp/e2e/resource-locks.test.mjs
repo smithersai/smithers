@@ -95,6 +95,29 @@ test("a pull review holds its reused head until the whole proof exits, while ind
   }
   await releaseAll(await locks.acquireAll(resources))
 })
+for (const holder of ["sandbox-tools.spec.ts", "sandbox-lifecycle.spec.ts", "branch-workspace.spec.ts"]) {
+  test(holder + " excludes other runs on the shared sandbox while independent model readers coexist", async (t) => {
+    const locks = await lockAt(t)
+    const branch = write("branch:octocat/spoon-knife/test-branch")
+    const held = await locks.acquireAll(resourcesFor(declarations([holder]), {}))
+    try {
+      assert.equal(await locks.tryAcquire(branch), undefined, "the checkout and its idle lifecycle are exclusive")
+      for (const contender of ["sandbox-tools.spec.ts", "sandbox-lifecycle.spec.ts", "branch-workspace.spec.ts"]) {
+        assert.ok(resourcesFor(declarations([contender]), {}).some(resource => resource.name === branch.name && resource.mode === "write"),
+          contender + " must wait for the shared checkout")
+      }
+      const reader = await locks.tryAcquire(read("account:model-connections"))
+      assert.ok(reader, "unrelated model readers can still run")
+      await reader.release()
+      if (holder !== "sandbox-lifecycle.spec.ts") {
+        assert.equal(await locks.tryAcquire(write("account:model-connections")), undefined, "tool consumers retain the model read lease")
+      }
+    } finally { await releaseAll(held) }
+    const next = await locks.tryAcquire(branch)
+    assert.ok(next, "the next run enters after cleanup and lease release")
+    await next.release()
+  })
+}
 test("live owners and incomplete owners are never taken over; dead owners report exact path", async (t) => {
   const locks = await lockAt(t)
   const lease = await locks.acquire(write("repository:test/a"))

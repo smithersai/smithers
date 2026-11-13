@@ -1,3 +1,4 @@
+import { clipboardPermissions, readClipboard } from "./browserCapabilities"
 import type { Locator, Page } from "@playwright/test"
 import { expect, serverRows, test } from "./devices"
 import { requires } from "./target"
@@ -16,11 +17,11 @@ const shown = (message: Locator, what: string) => expect(controls(message), `${w
 // The pointer over the page's header, away from every message.
 const away = (page: Page) => page.mouse.move(4, 4)
 
-test("message copy: Copy puts an answer on the clipboard, and every message shows its time", async ({ devices }) => {
+test("message copy: Copy puts an answer on the clipboard, and every message shows its time", async ({ devices, browserName }) => {
   requires("liveModel")
   const word = devices.word
   const [a] = await devices.open("A")
-  await a.device.context.grantPermissions(["clipboard-read", "clipboard-write"])
+  await a.device.context.grantPermissions(clipboardPermissions(browserName))
 
   // An answer, with the time on both messages.
   const asked = `Reply with exactly the word: copy-${word}`
@@ -40,7 +41,7 @@ test("message copy: Copy puts an answer on the clipboard, and every message show
   // Copy on the answer: the clipboard has its text, and the button says so.
   await a.answerTo(asked).getByRole("button", { name: "Copy", exact: true }).click()
   await expect(a.answerTo(asked).getByRole("button", { name: "Copied", exact: true })).toBeVisible()
-  await expect.poll(() => a.page.evaluate(() => navigator.clipboard.readText()), { timeout: 30_000 }).toContain(`copy-${word}`)
+  await expect.poll(() => readClipboard(browserName, a.page), { timeout: 30_000 }).toContain(`copy-${word}`)
 })
 
 test("message edit: Edit takes a question queued offline back to the composer before it is sent, and a draft survives a reload", async ({ devices, request }) => {

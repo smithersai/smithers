@@ -46,6 +46,7 @@ requires an explicit `MVP_TEST_POSTGRES_BIND`, `MVP_TEST_ELECTRIC_BIND` or `MVP_
 | Task | Command |
 |---|---|
 | Tests (`worker/` and `db/` need Postgres and Electric up) | `pnpm test` |
+| Production runner locks and real Chromium/WebKit capability tests | `pnpm test:production-runner` |
 | End to end (at https://localhost:1443 unless `BASE_URL` names another) | `pnpm e2e` |
 | Stop Postgres and Electric, keeping the data | `pnpm db:down` |
 | Delete the data too | `docker compose down -v` |
@@ -133,6 +134,7 @@ What a host needs besides Docker and Node:
   `worker/personal/AgentCli.docker.test.ts` needs `SANDBOX_TEST_HOST_NETWORK=1` there (rootless Docker 29.8.2,
   2026-11-11).
 - Browser tests launch Playwright's Chromium and WebKit: `pnpm exec playwright install --with-deps chromium webkit`.
+  Clipboard journeys grant `clipboard-read` on WebKit and both `clipboard-read` and `clipboard-write` on Chromium, and assert the real clipboard contents on both. WebKit reads those contents by native paste into a temporary test-owned field, since its headless clipboard can deny `readText()`; the field is removed and focus restored. Offline device recovery uses the disconnectable CONNECT relay on WebKit and applies CDP connection-state overrides only on Chromium.
   Without WebKit's system libraries, WebKit cases fail at `browser.newPage` with `Target page, context or browser
   has been closed`.
 - `tests/Recording.browser.test.ts` and `tests/FullPageScreenshot.browser.test.ts` measure frames with `ffmpeg`,
@@ -551,7 +553,7 @@ A run that was killed never reaches its own cleanup: a Working TODO it left hold
 
 **Parallel runs.**
 - `e2e/resources.ts`, beside the target needs, declares each spec's shared resources. An empty declaration means reads or run-owned data; an unlisted spec fails before setup. Playwright's own `--list` discovery applies the selected files, projects and grep. The runner takes their union, deduplicating repository aliases and sorting resource names globally. It releases partial pool candidates before waiting, so selecting two pools cannot deadlock.
-- Repository mutations take an exclusive `repository:<owner/name>` lease; account settings, notification settings and model connections have distinct resources. Model consumers share read leases; specs that remove or restore connections take an exclusive lease. Ordinary conversation/branch data is run-owned. Model consumers probe the saved fixture under a shared lease. Only a missing or changed fixture releases every lease, takes the writer, rechecks and restores, then reacquires the resources and probes again. A ready reader keeps its lease through execution. Editors hold the writer throughout. A reader never overwrites another run's connections.
+- Repository mutations take an exclusive `repository:<owner/name>` lease; account settings, notification settings and model connections have distinct resources. Model consumers share read leases; specs that remove or restore connections take an exclusive lease. Ordinary conversation/branch data is run-owned. Model consumers probe the saved fixture under a shared lease. Only a missing or changed fixture releases every lease, takes the writer, rechecks and restores, then reacquires the resources and probes again. A ready reader keeps its lease through execution. Editors hold the writer throughout. A reader never overwrites another run's connections. Tests using a shared branch checkout take its exclusive `branch:<owner/name>/<ref>` lease, including sandbox tools and lifecycle cleanup; independent model readers still coexist.
 - Leases live in `~/.smithers-e2e/<host>/resource-locks/`, with private owner files containing PID, hostname, nonce and acquisition time. A live, unknown or incomplete owner is never stolen. A dead local owner or an owner file missing for over five seconds is reported with its path and fails closed. A wait names the blocking path and owner/host. Acquisition, wait and release log their timestamps and resource names, never credentials or content. Interrupts reach the owned Playwright process group, and leases stay until it exits.
 - During the upgrade, `run.lock` (or `E2E_PROD_LOCK`) is a **shared compatibility fence**: new runners join it concurrently; old runners still wait outside it. An existing legacy owner must exit first. The fence's creator remains alive until every joined run exits Playwright, then removes only its own fence. This preserves safety with older checkouts without serializing new runners. A killed creator or participant is reported, never reclaimed.
 - All concurrent runners for an account must use the same host and session root. Directory leases do not coordinate independent filesystems. Remote compute may run tests/media, but a separate production browser host needs shared coordination before joining this account.

@@ -266,6 +266,7 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "runs-visitor.spec.ts": [],
   "sandbox-lifecycle.spec.ts": ["branch:octocat/spoon-knife/test-branch"],
   "sandbox-tools.spec.ts": [
+    "branch:octocat/spoon-knife/test-branch",
     "model:read"
   ],
   "secrets-egress.spec.ts": ["secrets-branch"],
