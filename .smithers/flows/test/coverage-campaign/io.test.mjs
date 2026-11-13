@@ -64,6 +64,22 @@ test('jj discovery uses the real command boundary and refuses a faulty Effect pr
   assert.equal((yield* Effect.result(jjRead(root, ['--version']).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, exitsNonzero))))._tag, 'Failure')
 })))
 
+test('jj discovery preserves Unicode paths when stdout splits every UTF-8 character', () => run(Effect.gen(function*() {
+  const real = yield* ChildProcessSpawner.ChildProcessSpawner
+  const splitBytes = {
+    ...real,
+    spawn: command => Effect.map(real.spawn(command), child => ({
+      ...child,
+      stdout: Stream.flatMap(child.stdout, bytes => Stream.fromIterable(Array.from(bytes, byte => Uint8Array.of(byte))))
+    }))
+  }
+  for (const expected of ['', 'packages/demo/src/café.ts\n', 'packages/日本語/src/€-🚀.ts\npackages/demo/src/naïve.ts\n']) {
+    const output = jjRead(root, ['log', '--no-graph', '-r', '@', '-T', JSON.stringify(expected)])
+      .pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, splitBytes))
+    assert.equal(yield* output, expected)
+  }
+})))
+
 test('real repository discovery retains native crates, excludes fixture crates, and binds the tracked tree', () => run(Effect.gen(function*() {
   const snapshot = yield* discover(root)
   assert.match(snapshot.sourceBaseCommit, /^[a-f0-9]{40}$/)

@@ -17,7 +17,7 @@ export const readJson = path => Effect.gen(function*() {
 export const jjRead = (root, args) => Effect.scoped(Effect.gen(function*() {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const child = yield* spawner.spawn(ChildProcess.make('jj', args, { cwd: root, stdin: 'ignore' }))
-  const text = yield* Stream.runFold(child.stdout, () => '', (text, bytes) => text + new TextDecoder().decode(bytes))
+  const text = yield* Stream.mkString(Stream.decodeText(child.stdout))
   const exitCode = yield* child.exitCode
   if (exitCode !== 0) return yield* Effect.fail(new Error('jj discovery failed'))
   return text
