@@ -9,8 +9,8 @@ Prefer whole files to excerpts: a line range that outgrows a shrinking file fail
 Generate an explicitly unreviewed preview through a real durable flow:
 
 ```sh
-node --experimental-strip-types .smithers/flows/wiki/main.ts
-node --experimental-strip-types .smithers/flows/wiki/main.ts --check
+node --experimental-strip-types --import=vibelang/register .smithers/flows/wiki/main.ts
+node --experimental-strip-types --import=vibelang/register .smithers/flows/wiki/main.ts --check
 ```
 
 Generation output must be a dedicated directory that resolves inside the source workspace through its real ancestors; a symlinked `.flows` or other ancestor that leads out is refused, and the boundary is rechecked immediately before writing. To publish into a separate wiki repository, copy the immutable snapshot and its pointer as a separate publication step, preserving human-owned files. `--check --output /path/to/export` can verify that copy against this source checkout without opening a runtime or writing outside its boundary. A verified pointer carries an HMAC-SHA256 seal of its artifact digest under a host key kept beside, never inside, the output (`.<output>.seal-key`). `--check` refuses a verified pointer this host did not seal, so a copy or a hand-edited snapshot is never reported verified without that key.
@@ -18,11 +18,11 @@ Generation output must be a dedicated directory that resolves inside the source 
 Run the semantic reviewer and require every section to be supported:
 
 ```sh
-node --experimental-strip-types .smithers/flows/wiki/main.ts --verified --model openai:gpt-6-sol
-node --experimental-strip-types .smithers/flows/wiki/main.ts --check --verified
+node --experimental-strip-types --import=vibelang/register .smithers/flows/wiki/main.ts --verified --model openai:gpt-6-sol
+node --experimental-strip-types --import=vibelang/register .smithers/flows/wiki/main.ts --check --verified
 ```
 
-The host uses the CLI's existing model routing. The reviewer has no tools. Reviews fan out through `Node.all`, with bounded input and frames, a 15-minute admission window and journaled token accounting. No token ceiling is invented: the current Budget primitive reserves a whole cold token allowance per call, which would reject parallel cold calls before spending anything. A host with an explicit user token budget must schedule within that policy rather than silently weakening it. Model selection, the output directory, and an existing engine database can be supplied at the executable boundary. The default database is the ordinary `.flows/engine.db`, and `--database` must resolve under the root's `.flows`; no separate wiki ledger is created. `bun .smithers/flows/wiki/main.ts` chooses the Bun composition. `--run` reuses a durable execution identity; use a new identity after changing source or model policy.
+The host uses the CLI's existing model routing. The reviewer has an empty descriptor registry and can call only the host-supplied `jev` flow, with the `model:call:typesafe-ai/jev` capability. It has no filesystem or process authority. Reviews fan out through `Node.all`, with bounded input and frames, a 15-minute admission window and journaled token accounting. No token ceiling is invented: the current Budget primitive reserves a whole cold token allowance per call, which would reject parallel cold calls before spending anything. A host with an explicit user token budget must schedule within that policy rather than silently weakening it. Model selection, the output directory, and an existing engine database can be supplied at the executable boundary. The default database is the ordinary `.flows/engine.db`, and `--database` must resolve under the root's `.flows`; no separate wiki ledger is created. `bun .smithers/flows/wiki/main.ts` chooses the Bun composition. `--run` reuses a durable execution identity; use a new identity after changing source or model policy.
 
 Build labels are `//.smithers/flows/wiki:preview`, `//.smithers/flows/wiki:freshness`, and `//.smithers/flows/wiki:verify`. The preview is a deterministic build target, freshness is a fast check with that build as a dependency, and the model-backed verified run is an explicit slow target. Preview/freshness do not claim semantic correctness. Release or cloud publication must additionally require the verified gate for the current input digest.
 

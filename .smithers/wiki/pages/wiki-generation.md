@@ -16,7 +16,7 @@ Complete input files are hashed and archived, so a change outside an excerpt sti
 
 ## Review meaning, not hashes
 
-The reviewer has no tools, and reviews fan out through `Node.all`. Each quoted citation must match one visible source line exactly after trimming ASCII spaces and tabs at its edges. A review with invalid coverage or citations gets one additional call with the validator feedback and the same captured source; a second validation failure is terminal. The host never shifts citation lines.
+The reviewer has an empty descriptor registry and can call only the host-supplied `jev` flow, with the `model:call:typesafe-ai/jev` capability. It has no filesystem or process authority. Reviews fan out through `Node.all`. Each quoted citation must match one visible source line exactly after trimming ASCII spaces and tabs at its edges. A review with invalid coverage or citations gets one additional call with the validator feedback and the same captured source; a second validation failure is terminal. The host never shifts citation lines.
 
 Exact assessment does not prove a cited line bears on its claim, so Jev then classifies each claim and citation as `supports`, `contradicts` or `unrelated`. Confidence below 0.8 makes an otherwise supported section uncertain, writes a `needs-changes` draft and fails verified mode. Semantic uncertain and unsupported findings remain unchanged. The original reviewer and citation-check receipts remain in the execution attempt store; the snapshot contains the combined assessment. A confident `contradicts` or `unrelated` refuses the page, and an unavailable Jev fails the step, so a page is never published unchecked.
 
