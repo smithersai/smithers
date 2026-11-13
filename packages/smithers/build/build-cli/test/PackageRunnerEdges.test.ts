@@ -372,6 +372,197 @@ export const Package = S.Package({ targets: {
 }
 
 describe("PackageRunner declaration compatibility", () => {
+  it.each([false, true])("keeps declaration paths stable for workspace-root output order %s", async (reverse) => {
+    const root = await fixture(`import { Smithers as S } from "@smthrs/targets"
+const baseline = S.Shell.Build({ shell: "exit 97", outDirs: ["a"] })
+const surface = S.Shell.Build({ shell: "exit 98", outDirs: ["b"] })
+export const Package = S.Package({ targets: {
+  baseline, surface,
+  compat: S.Api.Compat({ baseline, surface, manifest: S.file("//version.json") })
+} })
+`)
+    await write(root, "package.json", "{\"name\":\"runner-edges\",\"private\":true,\"version\":\"1.0.0\"}")
+    await write(root, "version.json", "{\"version\":\"1.0.0\"}")
+    await write(root, "a/package.json", "{\"version\":\"1.0.0\"}")
+    await write(root, "a/api.d.ts", "export declare const value: string;")
+    const options = {
+      index: await indexOf(root),
+      cacheDirectory: ".flows",
+      verb: "auto" as const,
+      patterns: ["//:compat"]
+    }
+    const planned = await PackageExec.plan(options)
+    const nodes = new Map(planned.nodes)
+    const baselineRoots = reverse ? ["a", "."] : [".", "a"]
+    const surfaceRoots = [...baselineRoots].reverse()
+    // Products are already materialized; run only compatibility so producer
+    // cleanup cannot remove a workspace-root product or its source fixture.
+    for (
+      const [label, directories] of [
+        ["//:baseline", baselineRoots],
+        ["//:surface", surfaceRoots]
+      ] as const
+    ) {
+      const producer = nodes.get(label)!
+      if (producer.family !== "process") throw new Error("expected process producer")
+      nodes.set(label, { ...producer, outDirs: directories })
+    }
+    const compat = { ...nodes.get("//:compat")!, dependencies: [] }
+    nodes.set(compat.label, compat)
+    const result = await PackageExec.execute({ ...planned, nodes, workList: [compat] }, options)
+    expect(result.ok, JSON.stringify(result.results)).toBe(true)
+    expect(result.results).toMatchObject([{ label: "//:compat", status: "ran" }])
+    expect(result.results).toHaveLength(1)
+    expect(await Fs.readFile(NodePath.join(root, "a/api.d.ts"), "utf8"))
+      .toBe("export declare const value: string;")
+  })
+
+  it.each(
+    [
+      [
+        "separate",
+        ["baseline/a", "baseline/z"],
+        ["surface/b", "surface/y"],
+        [["baseline/a/index.d.ts", "string"], ["baseline/z/index.d.ts", "number"]],
+        [["surface/b/index.d.ts", "number"], ["surface/y/index.d.ts", "string"]],
+        true
+      ],
+      [
+        "overlapping",
+        ["baseline", "baseline/internal"],
+        ["surface/internal", "surface"],
+        [["baseline/index.d.ts", "string"], ["baseline/internal/index.d.ts", "number"]],
+        [["surface/index.d.ts", "string"], ["surface/internal/index.d.ts", "number"]],
+        true
+      ],
+      [
+        "reversed overlapping",
+        ["baseline/internal", "baseline"],
+        ["surface", "surface/internal"],
+        [["baseline/index.d.ts", "string"], ["baseline/internal/index.d.ts", "number"]],
+        [["surface/index.d.ts", "string"], ["surface/internal/index.d.ts", "number"]],
+        true
+      ],
+      [
+        "overlapping declaration moves",
+        ["baseline", "baseline/internal"],
+        ["surface", "surface/internal"],
+        [["baseline/internal/secret.d.ts", "string"]],
+        [["surface/secret.d.ts", "string"]],
+        false
+      ],
+      [
+        "reversed overlapping declaration moves",
+        ["baseline/internal", "baseline"],
+        ["surface/internal", "surface"],
+        [["baseline/internal/secret.d.ts", "string"]],
+        [["surface/secret.d.ts", "string"]],
+        false
+      ]
+    ] as const
+  )(
+    "compares declaration inventories across %s output roots",
+    async (_name, baselineRoots, surfaceRoots, baselineFiles, surfaceFiles, allowed) => {
+      const producer = (
+        directories: ReadonlyArray<string>,
+        files: ReadonlyArray<readonly [string, string]>,
+        manifest: boolean
+      ): string =>
+        "mkdir -p " + directories.join(" ") + "; " +
+        directories.map((directory) => `printf '%s' keep > ${directory}/marker.txt`).join("; ") + "; " +
+        files.map(([path, type]) => `printf '%s' 'export declare const value: ${type};' > ${path}`).join("; ") +
+        (manifest ? `; printf '%s' '{"version":"1.0.0"}' > ${directories[0]}/package.json` : "")
+      const root = await fixture(`import { Smithers as S } from "@smthrs/targets"
+const baseline = S.Shell.Build({ shell: ${JSON.stringify(producer(baselineRoots, baselineFiles, true))}, outDirs: ${
+        JSON.stringify(baselineRoots)
+      } })
+const surface = S.Shell.Build({ shell: ${JSON.stringify(producer(surfaceRoots, surfaceFiles, false))}, outDirs: ${
+        JSON.stringify(surfaceRoots)
+      } })
+export const Package = S.Package({ targets: {
+  baseline, surface,
+  compat: S.Api.Compat({ baseline, surface, manifest: S.file("//version.json") })
+} })
+`)
+      await write(root, "version.json", "{\"version\":\"1.0.0\"}")
+      const result = await run(root, "//:compat")
+      expect(result.ok, JSON.stringify(result.results)).toBe(allowed)
+      expect(result.results.find((row) => row.label === "//:compat")).toMatchObject(
+        allowed
+          ? { status: "ran" }
+          : { status: "failed", error: "declaration surface changed without a version bump (1.0.0)" }
+      )
+      if (allowed) {
+        const cached = await run(root, "//:compat")
+        expect(cached.ok).toBe(true)
+        expect(cached.results.find((row) => row.label === "//:compat")).toMatchObject({ status: "hit" })
+      }
+    }
+  )
+
+  it.each(
+    [
+      ["matching nested layouts", "internal/secret.d.ts", "internal/secret.d.ts", "1.0.0", true],
+      ["moving a nested declaration to the root", "internal/secret.d.ts", "secret.d.ts", "1.0.0", false],
+      ["moving a root declaration into a directory", "secret.d.ts", "internal/secret.d.ts", "1.0.0", false],
+      ["moving a declaration between siblings", "private/secret.d.ts", "public/secret.d.ts", "1.0.0", false],
+      ["moving a deeply nested declaration", "internal/deep/secret.d.ts", "internal/secret.d.ts", "1.0.0", false],
+      ["matching declarations with the same basename", "internal/index.d.ts", "internal/index.d.ts", "1.0.0", true],
+      ["moving a declaration after a version bump", "internal/secret.d.ts", "secret.d.ts", "1.1.0", true]
+    ] as const
+  )("compares output-relative declaration paths for %s", async (_name, baselinePath, surfacePath, version, allowed) => {
+    const baselineDirectory = "previous/types"
+    const surfaceDirectory = "generated/current/types"
+    const producer = (directory: string, path: string, manifest: boolean): string =>
+      `mkdir -p ${NodePath.posix.dirname(`${directory}/${path}`)}; ` +
+      `printf '%s' 'export declare const value: string;' > ${directory}/index.d.ts; ` +
+      `printf '%s' 'export declare const secret: number;' > ${directory}/${path}` +
+      (manifest ? `; printf '%s' '{"version":"1.0.0"}' > ${directory}/package.json` : "")
+    const root = await fixture(`import { Smithers as S } from "@smthrs/targets"
+const baseline = S.Shell.Build({ shell: ${JSON.stringify(producer(baselineDirectory, baselinePath, true))}, outDirs: [${
+      JSON.stringify(baselineDirectory)
+    }] })
+const surface = S.Shell.Build({ shell: ${JSON.stringify(producer(surfaceDirectory, surfacePath, false))}, outDirs: [${
+      JSON.stringify(surfaceDirectory)
+    }] })
+export const Package = S.Package({ targets: {
+  baseline, surface,
+  compat: S.Api.Compat({ baseline, surface, manifest: S.file("//version.json") })
+} })
+`)
+    await write(root, "version.json", JSON.stringify({ version }))
+    const result = await run(root, "//:compat")
+    expect(result.results.filter((row) => row.label !== "//:compat"), JSON.stringify(result.results)).toMatchObject([{
+      status: "ran"
+    }, { status: "ran" }])
+    expect(await Fs.readFile(NodePath.join(root, baselineDirectory, baselinePath), "utf8"))
+      .toBe("export declare const secret: number;")
+    expect(await Fs.readFile(NodePath.join(root, surfaceDirectory, surfacePath), "utf8"))
+      .toBe("export declare const secret: number;")
+    expect(result.ok).toBe(allowed)
+    expect(result.results.find((row) => row.label === "//:compat")).toMatchObject(
+      allowed
+        ? { status: "ran" }
+        : { status: "failed", error: "declaration surface changed without a version bump (1.0.0)" }
+    )
+    const entries = await Promise.all(
+      (await cacheEntries(root)).map(async (file) =>
+        JSON.parse(await Fs.readFile(file, "utf8")) as {
+          output?: { kind?: string; baselineDigest?: string; surfaceDigest?: string }
+        }
+      )
+    )
+    const receipts = entries.filter((entry) => entry.output?.kind === "api-compat")
+    expect(receipts).toHaveLength(allowed ? 1 : 0)
+    if (allowed) {
+      expect(receipts[0]!.output!.baselineDigest === receipts[0]!.output!.surfaceDigest)
+        .toBe(baselinePath === surfacePath)
+      const cached = await run(root, "//:compat")
+      expect(cached.ok).toBe(true)
+      expect(cached.results.find((row) => row.label === "//:compat")).toMatchObject({ status: "hit" })
+    }
+  })
+
   it.each(
     [
       ["matching", "export declare const value: string;", true],

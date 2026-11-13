@@ -78,7 +78,7 @@ import {
 import * as PathTools from "./PathTools.ts"
 import * as RulePolicy from "./RulePolicy.ts"
 import * as NativeRules from "./rules/NativeRules.ts"
-import { posix, sha256Hex } from "./Text.ts"
+import { byCodeUnit, posix, sha256Hex } from "./Text.ts"
 import * as TreeGate from "./TreeGate.ts"
 
 /** Promise-only I/O must settle its cleanup before its Effect releases ownership. */
@@ -2826,16 +2826,24 @@ export const executeEffect = (
               }
               const declarationDigest = (roots: ReadonlyArray<string>): Effect.Effect<string, unknown> =>
                 Effect.gen(function*() {
-                  const paths: Array<string> = []
-                  for (const directory of roots) {
+                  const paths = new Map<string, string>()
+                  // Keep the outermost root for files shared by overlapping outputs.
+                  for (
+                    const directory of [...roots].sort((left, right) =>
+                      NodePath.resolve(root, right).length - NodePath.resolve(root, left).length
+                    )
+                  ) {
                     const files = yield* joined((signal) => Input.listOutputFiles(root, directory, { signal }))
-                    paths.push(...files.filter((path) => path.endsWith(".d.ts")))
+                    for (const path of files.filter((path) => path.endsWith(".d.ts"))) {
+                      paths.set(path, posix(NodePath.relative(directory, path)))
+                    }
                   }
-                  const rows = yield* joined((signal) =>
-                    Input.digestFiles(root, [...new Set(paths)].sort(), { signal })
-                  )
+                  const rows = yield* joined((signal) => Input.digestFiles(root, [...paths.keys()].sort(), { signal }))
                   return Input.digestText(
-                    JSON.stringify(rows.map((row) => ({ ...row, path: NodePath.basename(row.path) })))
+                    JSON.stringify(
+                      rows.map((row) => ({ ...row, path: paths.get(row.path)! }))
+                        .sort((left, right) => byCodeUnit(JSON.stringify(left), JSON.stringify(right)))
+                    )
                   )
                 })
               const baselineDigest = yield* declarationDigest(baseline.outDirs)
