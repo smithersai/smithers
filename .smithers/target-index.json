@@ -55488,6 +55488,10 @@
       },
       {
         "kind": "file",
+        "path": "RELEASE_SUPPORT.md"
+      },
+      {
+        "kind": "file",
         "path": ".smithers/flows/release/pack-release.mjs"
       },
       {

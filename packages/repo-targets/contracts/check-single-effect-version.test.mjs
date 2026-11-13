@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import test from "node:test"
 
 import { readWorkspaceManifests } from "../../../.smithers/flows/release/pack-release.mjs"
@@ -28,6 +30,26 @@ test("the supported version is exactly the tested release", () => {
   assert.equal(SUPPORTED_EFFECT_RANGE, pin)
   assert.match(UNSUPPORTED_EFFECT_VERSION, /^4\.0\.0-rc\.\d+$/)
   assert.notEqual(UNSUPPORTED_EFFECT_VERSION, pin)
+})
+
+test("dependency-upgrade documentation uses the current Effect cohort", () => {
+  const document = readFileSync(join(repoRoot, "RELEASE_SUPPORT.md"), "utf8")
+  const policy = document.split("Effect and its adapters are one compatibility unit.")[1]
+    ?.split("Keep an exact `effect` version")[0]
+  assert.ok(policy, "the current Effect compatibility policy is present")
+  const versions = [...policy.matchAll(/`(?:effect@)?([^`]+)`/g)]
+    .map(([, value]) => value).filter((value) => /^\d+\.\d+\.\d+/.test(value))
+  assert.ok(versions.length >= 5, "the policy specifies tested, peer, adapter, lockfile and install versions")
+  assert.deepEqual([...new Set(versions)], [pin], "current dependency and resume guidance uses the tested release")
+  assert.match(policy, /same supported/, "reinstalling the same release is distinct from an upgrade")
+  assert.match(policy, /upgrade.compatibility guarantee/i, "reinstall guidance does not promise upgrade compatibility")
+
+  const history = document.split("## Reviewing changes before publication")[1]
+  assert.ok(history, "the historical migration guidance is present")
+  for (const version of ["4.0.0-rc.115", "4.0.5"]) {
+    assert.ok(history.includes(version), version)
+  }
+  assert.match(history, /`Schema\.brand`/, "the historical branded-schema re-keying caveat is retained")
 })
 
 test("published libraries and executables require the tested release", () => {

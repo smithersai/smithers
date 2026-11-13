@@ -176,6 +176,7 @@ const releaseContracts = Smithers.NodeTest({
   ]),
   srcs: [
     ...contracts,
+    Smithers.file("//RELEASE_SUPPORT.md"),
     Smithers.file("//.smithers/flows/release/pack-release.mjs"),
     Smithers.file("//packages/repo-targets/contracts/check-dependency-boundaries.mjs"),
     Smithers.file("//packages/repo-targets/src/ImportAnalysis.ts"),

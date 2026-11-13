@@ -41,27 +41,26 @@ does not provide that adapter's confinement contract. Browser and Bun support
 must be claimed per capability, not inferred from the native Node tests.
 
 Effect and its adapters are one compatibility unit. This repository is built
-and tested on `effect@4.0.5`, and the published packages declare it this way:
+and tested on `effect@4.1.1`, and the published packages declare it this way:
 
-- Every published library declares `effect` as a peer at exactly `4.0.5`.
+- Every published library declares `effect` as a peer at exactly `4.1.1`.
   An application must use that same version. A wider supported range is tracked
   in [#4238](https://github.com/smithersai/smithers/issues/4238).
 - Required Effect adapters and explicit optional adapter peers are pinned to
-  `4.0.5`. Metadata-only optional peers leave adapter selection to the application.
+  `4.1.1`. Metadata-only optional peers leave adapter selection to the application.
 - Development dependencies, workspace overrides and both lockfiles use exactly
-  `4.0.5`. Privately bundled adapters use that cohort too.
+  `4.1.1`. Privately bundled adapters use that cohort too.
 - Executables and authoring libraries require the same physical Effect runtime.
-  Install the CLI and authoring packages locally alongside `effect@4.0.5`.
+  Install the CLI and authoring packages locally alongside `effect@4.1.1`.
 
 `packages/repo-targets/contracts/check-single-effect-version.mjs` checks these
 manifest, lockfile and installed-runtime declarations. Release consumer gates
 exercise the supported version and reject unsupported versions.
 
-Step and declaration identity do not depend on the installed Effect version,
-so reinstalling the supported `4.0.5` runtime re-runs no completed step. The one
-exception is this upgrade from `4.0.0-rc.115`: a declaration that uses
-`Schema.brand` on a schema with a definition, and the action key of a branded
-schema, re-key once.
+Reinstalling the same supported `4.1.1` runtime does not re-run completed
+steps. This is not an upgrade-compatibility guarantee; see
+[Reviewing changes before publication](#reviewing-changes-before-publication)
+for required migration evidence and historical identity changes.
 
 Keep an exact `effect` version in the application and commit the application's
 lockfile. Upstream adapters contain transitive version ranges; a direct Effect
@@ -206,6 +205,11 @@ reconstructed entirely from current source do not establish upgrade support.
 For the initial RC, distinguish fresh-store/restart evidence from an unproven
 upgrade path. Upstream Effect persistence schemas require their own migration
 evidence when changing the Effect family.
+
+During the historical upgrade from `4.0.0-rc.115` to `4.0.5`, a declaration
+that uses `Schema.brand` on a schema with a definition, and the action key of a
+branded schema, re-keyed once. These historical versions are not supported
+runtime choices for the current candidate.
 
 The rc.112-to-rc.115 comparison preserves the tested plain structural schema
 identities, but upstream predicate implementations and annotations changed.
