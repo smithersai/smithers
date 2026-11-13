@@ -14,7 +14,7 @@ export const CommitState = Schema.Literals(["planned", "working", "approved", "l
 export const Section = Schema.Literals(["tried", "evidence", "superseded"])
 
 /** Why the history's sequencer refused an intent (`Refusal` in mythical.vibe). */
-export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "unknown", "state", "full"])
+export const RefusalReason = Schema.Literals(["empty", "no-task", "too-long", "duplicate", "unknown", "state", "full"])
 
 export schema Note { readonly section: "tried" | "evidence" | "superseded"; readonly text: string; readonly by: string }
 export schema Epic { readonly id: Name; readonly title: Name }

@@ -1349,28 +1349,28 @@ cases += [('src/history/mythical.vibe',
  ('src/history/mythical.vibe',
   'history-refusal-9',
   'decide',
-  '    case "Amend": {\n      if (intent.task.trim() === "") return refused("empty")',
+  '    case "Amend": {\n      if (intent.task.trim() === "") return refused("no-task")',
   '    case "Amend": {\n      if (intent.task.trim() === "") return refused("full")',
   'the first failed guard selects its exact refusal'),
  ('src/history/mythical.vibe',
   'history-refusal-10',
   'decide',
   '    case "Amend": {\n'
-  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.trim() === "") return refused("no-task")\n'
   '      if (intent.task.length > MAX_TITLE) return refused("too-long")',
   '    case "Amend": {\n'
-  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.trim() === "") return refused("no-task")\n'
   '      if (intent.task.length > MAX_TITLE) return refused("full")',
   'the first failed guard selects its exact refusal'),
  ('src/history/mythical.vibe',
   'history-refusal-11',
   'decide',
   '    case "Amend": {\n'
-  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.trim() === "") return refused("no-task")\n'
   '      if (intent.task.length > MAX_TITLE) return refused("too-long")\n'
   '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")',
   '    case "Amend": {\n'
-  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.trim() === "") return refused("no-task")\n'
   '      if (intent.task.length > MAX_TITLE) return refused("too-long")\n'
   '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("full")',
   'the first failed guard selects its exact refusal'),
@@ -1378,13 +1378,13 @@ cases += [('src/history/mythical.vibe',
   'history-refusal-12',
   'decide',
   '    case "Amend": {\n'
-  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.trim() === "") return refused("no-task")\n'
   '      if (intent.task.length > MAX_TITLE) return refused("too-long")\n'
   '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")\n'
   '      if (!isIn(history.commits, intent.id, "landed") || taskOf(history.commits, intent.id) !== "") return '
   'refused("state")',
   '    case "Amend": {\n'
-  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.trim() === "") return refused("no-task")\n'
   '      if (intent.task.length > MAX_TITLE) return refused("too-long")\n'
   '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")\n'
   '      if (!isIn(history.commits, intent.id, "landed") || taskOf(history.commits, intent.id) !== "") return '
@@ -3824,6 +3824,12 @@ cases.extend([('src/history/flowMachine.vibe',
   'history-read-refusal-empty',
   'historyRefusal',
   '"Needs a title."',
+  '"wrong"',
+  'the refusal preserves its exact product wording'),
+ ('src/history/flowMachine.vibe',
+  'history-read-refusal-no-task',
+  'historyRefusal',
+  '"Needs a task."',
   '"wrong"',
   'the refusal preserves its exact product wording'),
  ('src/history/flowMachine.vibe',

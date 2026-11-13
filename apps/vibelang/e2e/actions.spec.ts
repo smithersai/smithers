@@ -126,7 +126,7 @@ test("a history write the sequencer refuses says why in its run", async ({ page 
 
 test("a plan the sequencer refuses says why, and one inserted before a commit is planned", async ({ page }) => {
   // The Plan arms of src/history/mythical.vibe `decide` that only the agent's door reaches: an unknown epic, a task or
-  // new epic title past 200 characters, an amend of no commit, and an insert before a commit. One run per fresh page.
+  // new epic title past 200 characters, an amend of no commit or with a blank task, and an insert before a commit. One run per fresh page.
   test.setTimeout(90_000)
   const plan = (fields: Record<string, string>) => `Run /plan ${JSON.stringify({ how: "append", epic: "e1", newEpic: "", target: "", title: "fix(history): planned by the agent", task: "", ...fields })}`
   const long = "x".repeat(201)
@@ -135,6 +135,7 @@ test("a plan the sequencer refuses says why, and one inserted before a commit is
     [plan({ task: long }), "Too long."],
     [plan({ epic: "", newEpic: long }), "Too long."],
     [plan({ how: "amend", target: "m-none", task: "Again." }), "No such epic or commit."],
+    [plan({ how: "amend", epic: "", target: "m1", title: "", task: " " }), "Needs a task."],
     [plan({ how: "insert", epic: "", target: "m1" }), /"id":"m\d+","refusal":null/],
   ]
   for (const [text, words] of cases) {

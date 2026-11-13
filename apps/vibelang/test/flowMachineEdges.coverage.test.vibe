@@ -53,6 +53,7 @@ describe("the words for a history refusal", () => {
   it.each([
     ["forbidden", "Your role can't do that."],
     ["empty", "Needs a title."],
+    ["no-task", "Needs a task."],
     ["too-long", "Too long."],
     ["duplicate", "Already there."],
     ["unknown", "No such epic or commit."],

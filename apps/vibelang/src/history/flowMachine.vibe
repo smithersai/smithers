@@ -243,6 +243,7 @@ export function historyBadge(state: string): string {
 //@ verify
 //@ ensures refusal == "forbidden" ==> \result == "Your role can't do that."
 //@ ensures refusal == "empty" ==> \result == "Needs a title."
+//@ ensures refusal == "no-task" ==> \result == "Needs a task."
 //@ ensures refusal == "too-long" ==> \result == "Too long."
 //@ ensures refusal == "duplicate" ==> \result == "Already there."
 //@ ensures refusal == "unknown" ==> \result == "No such epic or commit."
@@ -254,10 +255,11 @@ export function historyBadge(state: string): string {
 //@ ensures refusal == "tree" || refusal == "linear" || refusal == "notes" ==> \result == "The export failed its check."
 //@ ensures refusal == "nothing" ==> \result == "Nothing to export."
 //@ ensures refusal == "paced" ==> \result == "Publishing in the background."
-//@ ensures refusal != "forbidden" && refusal != "empty" && refusal != "too-long" && refusal != "duplicate" && refusal != "unknown" && refusal != "state" && refusal != "full" && refusal != "unavailable" && refusal != "unsupported" && refusal != "conflict" && refusal != "tree" && refusal != "linear" && refusal != "notes" && refusal != "nothing" && refusal != "paced" ==> \result == refusal
+//@ ensures refusal != "forbidden" && refusal != "empty" && refusal != "no-task" && refusal != "too-long" && refusal != "duplicate" && refusal != "unknown" && refusal != "state" && refusal != "full" && refusal != "unavailable" && refusal != "unsupported" && refusal != "conflict" && refusal != "tree" && refusal != "linear" && refusal != "notes" && refusal != "nothing" && refusal != "paced" ==> \result == refusal
 export function historyRefusal(refusal: string): string {
   if (refusal === "forbidden") return "Your role can't do that."
   if (refusal === "empty") return "Needs a title."
+  if (refusal === "no-task") return "Needs a task."
   if (refusal === "too-long") return "Too long."
   if (refusal === "duplicate") return "Already there."
   if (refusal === "unknown") return "No such epic or commit."

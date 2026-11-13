@@ -180,6 +180,7 @@ describe("planning onto the stack", () => {
     history = apply(history, (amend as { readonly event: Event }).event)
     expect(history.commits.find((commit) => commit.id === "m3")).toMatchObject({ state: "planned", task: "t9" })
     expect(decide(history, { type: "Amend", id: "m3", task: "t10" })).toEqual({ ok: false, refusal: "state" })
+    expect(decide(history, { type: "Amend", id: "m3", task: " " })).toEqual({ ok: false, refusal: "no-task" })
   })
 
   it("keeps every note in order as a commit is noted, worked, approved, folded and amended", () => {
