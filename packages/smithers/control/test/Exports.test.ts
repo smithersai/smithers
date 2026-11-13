@@ -8,6 +8,24 @@ const packageRoot = fileURLToPath(new URL("../", import.meta.url))
 // The migration step body is applied by the control store layer in order; it
 // is sealed implementation detail, not importable API.
 describe("package exports", () => {
+  it.each(["ControlFacts", "JevSessionChecker"])(
+    "resolves %s through development and published entry points",
+    (name) => {
+      const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+      const specifier = `@smthrs/control/${name}`
+      const resolved = execFileSync(process.execPath, [
+        "--input-type=module",
+        "--eval",
+        `console.log(import.meta.resolve(${JSON.stringify(specifier)}))`
+      ], { cwd: packageRoot, encoding: "utf8" }).trim()
+      expect(resolved).toBe(new URL(`../src/${name}.ts`, import.meta.url).href)
+      expect(manifest.publishConfig.exports[`./${name}`]).toEqual({
+        import: { types: `./dist/esm/${name}.d.ts`, default: `./dist/esm/${name}.js` },
+        require: { types: `./dist/cjs/${name}.d.ts`, default: `./dist/cjs/${name}.js` }
+      })
+    }
+  )
+
   it("keeps migration implementations private in development and published exports", () => {
     const manifest = JSON.parse(
       readFileSync(new URL("../package.json", import.meta.url), "utf8")

@@ -88,6 +88,24 @@ const postgresInventory = Smithers.Shell.Test({
   sandbox: { network: "loopback" }
 })
 
+/** The real inbox model must reject every broken SQL transition. */
+const signalMutations = Smithers.NodeTest({
+  cwd: "packages/smithers/control",
+  runner: Smithers.entrypoint(Smithers.file("scripts/check-signal-mutations.mjs")),
+  srcs: [
+    Smithers.glob("{src,test}/**"),
+    Smithers.file("package.json"),
+    Smithers.file("vitest.config.ts"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("tsconfig.test.json"),
+    Smithers.file("//packages/repo-targets/test-utils/test-schemas.ts"),
+    Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/test-process-environment.mjs")
+  ],
+  deps: [lib],
+  timeout: "30m"
+})
+
 const securityReview = Smithers.SecurityReview({
   cwd: "packages/smithers/control",
   checks: [
@@ -274,6 +292,7 @@ export const Package = Smithers.Package({
     lint,
     test,
     postgresInventory,
+    signalMutations,
     ...securityReview
   }
 })

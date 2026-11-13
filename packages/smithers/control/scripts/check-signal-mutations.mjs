@@ -14,8 +14,8 @@ const pagination = "bounds pages and preserves pending fairness"
 const mutations = [
   {
     name: "overwrite-admission",
-    original: "VALUES (${commandId}, ${runId}, ${JSON.stringify(signal)}) ON CONFLICT(command_id) DO NOTHING",
-    replacement: "VALUES (${commandId}, ${runId}, ${JSON.stringify(signal)}) ON CONFLICT(command_id) DO UPDATE SET payload_json = excluded.payload_json",
+    original: "VALUES (${commandId}, ${runId}, ${payloadJson}, ${principalJson}) ON CONFLICT(command_id) DO NOTHING",
+    replacement: "VALUES (${commandId}, ${runId}, ${payloadJson}, ${principalJson}) ON CONFLICT(command_id) DO UPDATE SET payload_json = excluded.payload_json",
     test: model
   },
   {
@@ -38,8 +38,8 @@ const mutations = [
   },
   {
     name: "resettle-terminal-command",
-    original: "SET state = ${state} WHERE command_id = ${commandId} AND state = 'pending'",
-    replacement: "SET state = ${state} WHERE command_id = ${commandId}",
+    original: "SET state = ${state}, rejection = ${\n            rejection ?? null\n          } WHERE command_id = ${commandId} AND state = 'pending'",
+    replacement: "SET state = ${state}, rejection = ${\n            rejection ?? null\n          } WHERE command_id = ${commandId}",
     test: model
   },
   {
@@ -60,7 +60,7 @@ const execute = (name, config, pattern) => {
   ], {
     cwd: root,
     encoding: "utf8",
-    timeout: 90_000,
+    timeout: 240_000,
     env: {
       ...process.env,
       SMITHERS_FUZZ_SEED: "20260904",
@@ -84,7 +84,7 @@ const configuration = (mutation) => {
   writeFileSync(config, `import base from ${JSON.stringify(pathToFileURL(join(root, "vitest.config.ts")).href)};
 export default {
   ...base,
-  ${mutation === undefined ? "" : `plugins: [{ name: ${JSON.stringify(mutation.name)}, enforce: 'pre', transform(code, id) {
+  ${mutation === undefined ? "" : `plugins: [...base.plugins, { name: ${JSON.stringify(mutation.name)}, enforce: 'pre', transform(code, id) {
     if (!id.endsWith('/control/src/SqlControlRuntime.ts')) return null;
     const original = ${JSON.stringify(mutation.original)};
     if (code.split(original).length !== 2) throw new Error('Mutation site must occur exactly once');
@@ -94,6 +94,15 @@ export default {
 };
 `)
   return config
+}
+
+// Reject stale or ambiguous sites before running a baseline or writing evidence.
+const source = readFileSync(join(root, "src/SqlControlRuntime.ts"), "utf8")
+for (const mutation of mutations) {
+  const occurrences = source.split(mutation.original).length - 1
+  if (occurrences !== 1) {
+    throw new Error(`${mutation.name}: expected one SQL mutation site, found ${occurrences}`)
+  }
 }
 
 // A broken environment cannot count as a killed mutant. Prove that both selected

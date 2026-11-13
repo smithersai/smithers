@@ -51,6 +51,7 @@ signature, is on the [API reference](https://github.com/smithersai/smithers/blob
 | `Lineage`, `Cancellation`, `Steering`               | Pure projections: how a run came to exist, who cancelled it, and when a steer was delivered.           |
 | `Monitor`                                           | Run health as a pure classification, and the beat loop that acts on it.                                |
 | `Health`                                            | Configurable Effect checks, bounded observation policies, provenance, and the shared status rollup.    |
+| `ControlFacts`                                      | The versioned control fact contract and durable producer helpers.                                      |
 | `JevSessionChecker`                                 | The registered `jev.session` checker: does this session's own output show it waiting on a person?      |
 | `Channels`, `WebhookChannel`                        | Verified ingress: an external request becomes a control mutation, once.                                |
 | `Credential`, `CredentialStore`, `CredentialCipher` | The credential boundary and its two ports.                                                             |
@@ -85,12 +86,11 @@ Every mutation answers a `ControlSchema.Receipt` rather than throwing on a
 second ask. `Accepted` means this call did the work, `AlreadyApplied` means an
 earlier call under the same idempotency key did, `Conflict` means the key names
 a different intent, `Parked` means the plan is waiting for an approval, and
+`Terminal` means the run has settled and reports its final status.
+
 An observed run summary keeps the engine's current `status` and the coordination
 journal's `recordedStatus`. Consumers draining control events wait for the latter
 to become terminal, so an early engine observation cannot outrun its final event.
-
-`Terminal` means the run had already settled and reports the status it settled
-with.
 
 For `signal`, `Accepted` means durable admission. The command and its receipt
 commit before execution observes the payload. Delivery is tracked separately
@@ -124,16 +124,16 @@ cookie, token, and credential headers stay outside durable identity. Reusing a
 key with different declared semantics returns `Conflict`, while rotating an
 excluded credential header remains the same delivery.
 
-| Verb                       | Receipts                                             | Typed failures                                                                                                                                         |
-| -------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `plan`                     | returns a `PlanCard`, not a receipt                  | `FlowNotFound`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                                      |
-| `run` (`Plan`)             | `Accepted`, `AlreadyApplied`, `Conflict`, `Parked`   | `PlanNotFound`, `PlanDenied`, `PlanDigestMismatch`, `EnvelopeMismatch`, `ClaimLost`, `InvalidInput`, `LaunchFailed`, `PersistenceError`, `Unavailable` |
-| `run` (`Resume`), `resume` | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `RunNotFound`, `ClaimLost`, `CodeDrift`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                             |
-| `approve`, `deny`          | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `PlanDigestMismatch`, `EnvelopeMismatch`, `AlreadyResolved`, `PlanNotFound`, `RunNotFound`, `InvalidInput`, `PersistenceError`, `Unavailable`          |
-| `steer`                    | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `RunNotFound`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                                       |
-| `signal`                   | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `RunNotFound`, `NoMatchingWait`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                     |
-| `cancel`                   | `Accepted`, `Terminal`                               | `RunNotFound`, `ClaimLost`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                          |
-| `list`, `watch`            | a page or a stream                                   | every member of `ControlError`                                                                                                                         |
+| Verb                       | Receipts                                             | Typed failures                                                                                                                                             |
+| -------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plan`                     | returns a `PlanCard`, not a receipt                  | `FlowNotFound`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                                          |
+| `run` (`Plan`)             | `Accepted`, `AlreadyApplied`, `Conflict`, `Parked`   | `PlanNotFound`, `PlanDenied`, `PlanDigestMismatch`, `EnvelopeMismatch`, `ClaimLost`, `InvalidInput`, `LaunchFailed`, `PersistenceError`, `Unavailable`     |
+| `run` (`Resume`), `resume` | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `RunNotFound`, `ClaimLost`, `CodeDrift`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                 |
+| `approve`, `deny`          | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `PlanDigestMismatch`, `EnvelopeMismatch`, `AlreadyResolved`, `PlanNotFound`, `RunNotFound`, `CodeDrift`, `InvalidInput`, `PersistenceError`, `Unavailable` |
+| `steer`                    | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `RunNotFound`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                                           |
+| `signal`                   | `Accepted`, `AlreadyApplied`, `Conflict`, `Terminal` | `RunNotFound`, `NoMatchingWait`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                         |
+| `cancel`                   | `Accepted`, `Conflict`, `Terminal`                   | `RunNotFound`, `ClaimLost`, `InvalidInput`, `PersistenceError`, `Unavailable`                                                                              |
+| `list`, `watch`            | a page or a stream                                   | every member of `ControlError`                                                                                                                             |
 
 `ControlError.ControlErrorSchema` is the single membership list for the union,
 including `CredentialConflict`, and `ControlClient.isControlError` is derived
@@ -159,17 +159,17 @@ above are empty there.
 
 ## Limits
 
-| Bound                       | Value                                                                                                | Refusal                                                                                        |
-| --------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `list` page size            | `ControlSchema.defaultPageSize` (100) by default, `ControlSchema.maxPageSize` (500) maximum          | `InvalidInput` with code `invalid_input`, naming `limit`                                       |
-| `list` cursor               | only a cursor a previous page returned                                                               | `InvalidInput`, naming `cursor`                                                                |
-| `list` run filters          | `runId`, `flowId`, `status`, `parentRunId`, `lineageId`                                              | `InvalidInput` for `principalId`, which rc.0 records nothing to evaluate                       |
-| `list` trigger listings     | `triggers` filters `triggerId`, `flowId`, `enabled`; `fires` filters `triggerId`, `runId`, `outcome` | `InvalidInput` naming `this host serves no trigger store` when no `DispatchReader` is provided |
-| `watch` cursor              | `afterSequence` requires `runId`                                                                     | `InvalidInput`, naming `afterSequence`                                                         |
-| `watch` follow-mode handoff | one high-water mark per partition present when the watch starts                                      | snapshot rows at or below the mark; buffered tail rows above it                                |
-| `watch` partition reads     | 8 partition snapshots at a time, plus one reserved slot for the live tail                            | queued, never refused                                                                          |
-| webhook request body        | `WebhookChannel.maximumBodyBytes` (1 MiB), lowered per mount by `handler`'s third argument           | `InvalidInput` naming both byte counts, before the read when `content-length` declares it      |
-| mutation identity           | 4 MiB, 128 levels, 100,000 values and members; idempotency keys are 1 to 1,024 characters            | `InvalidInput` before the first wait                                                           |
+| Bound                       | Value                                                                                                             | Refusal                                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `list` page size            | `ControlSchema.defaultPageSize` (100) by default, `ControlSchema.maxPageSize` (500) maximum                       | `InvalidInput` with code `invalid_input`, naming `limit`                                       |
+| `list` cursor               | only a cursor a previous page returned                                                                            | `InvalidInput`, naming `cursor`                                                                |
+| `list` run filters          | `runId`, `flowId`, `status`, `terminal`, `principalId`, `parentRunId`, `lineageId`, `since`, `until`, `triggerId` | `principalId` selects `launchedBy.id`; it narrows the listing, not the caller's authority      |
+| `list` trigger listings     | `triggers` filters `triggerId`, `flowId`, `enabled`; `fires` filters `triggerId`, `runId`, `outcome`              | `InvalidInput` naming `this host serves no trigger store` when no `DispatchReader` is provided |
+| `watch` cursor              | `afterSequence` requires `runId`                                                                                  | `InvalidInput`, naming `afterSequence`                                                         |
+| `watch` follow-mode handoff | one high-water mark per partition present when the watch starts                                                   | snapshot rows at or below the mark; buffered tail rows above it                                |
+| `watch` partition reads     | 8 partition snapshots at a time, plus one reserved slot for the live tail                                         | queued, never refused                                                                          |
+| webhook request body        | `WebhookChannel.maximumBodyBytes` (1 MiB), lowered per mount by `handler`'s third argument                        | `InvalidInput` naming both byte counts, before the read when `content-length` declares it      |
+| mutation identity           | 4 MiB, 128 levels, 100,000 values and members; idempotency keys are 1 to 1,024 characters                         | `InvalidInput` before the first wait                                                           |
 
 A `steer` whose `message.runId` disagrees with the run the call names is
 refused with `InvalidInput` before anything is admitted to the queue.

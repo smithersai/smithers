@@ -63,21 +63,19 @@ const health: Health.HealthConfig = {
 
 The desktop local server writes that binding itself: with a subscription evaluator configured
 in its process it binds `jev.session` with `exposeOutput: true` for every session
-subject it resolves, so a session's output tail is sent to the gateway with zero
-data retention; without the key its configuration is exactly what a caller passed,
+subject it resolves. Without an evaluator it keeps the caller's configuration,
 and a subject a caller bound keeps that caller's checker. The native CLI host
 observes runs rather than sessions, so it never binds this checker.
 
-The checker sends the session's `alive`, `exitCode`, and the newest 4 KiB of its
-output to Jev, TypeSafe's decision model, through the Vercel AI Gateway, with zero
-data retention. Jev answers one choice question (`working`, `idle`, `needs-input`)
-in one request. `exposeOutput: true` is required:
+The checker passes the session's `alive`, `exitCode`, and the newest 4,096
+characters of its output to the host-supplied `Evaluator`. The host chooses the
+transport and its data-retention policy. The evaluator answers one choice
+question (`working`, `idle`, `needs-input`) in one request. `exposeOutput: true` is required:
 without it the host sends no tail and the probe answers unknown.
 
-An answer becomes a report only at confidence 0.7 or above. TypeSafe claims 76%
-agreement with a human rater, so a Jev that is merely leaning is a coin flip
-dressed as a reading: a false `needs-input` pages a person who is not needed, and
-a false `idle` retires an agent that is still working. `needs-input` carries the
+An answer becomes a report only at confidence 0.7 or above. A false
+`needs-input` pages a person who is not needed, and a false `idle` retires an
+agent that is still working. `needs-input` carries the
 reason `prompt-detected`, which the rollup turns into `attention: "needs-input"`.
 A reading below the floor is Jev's own answer and stays `unknown`.
 

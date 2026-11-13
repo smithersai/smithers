@@ -77,7 +77,7 @@ state change it describes.
 | `control.run.resume`                                                   | `resume`, carrying the principal and the reason     | the run             |
 | `control.run.cancel-requested`                                         | `cancel`, carrying the principal and the reason     | the run             |
 | `control.run.cancelled`, `control.run.completed`, `control.run.failed` | `cancel` and launch settlement                      | the run             |
-| `control.signal.delivered`                                             | `signal`                                            | the run             |
+| `control.signal.admitted`                                              | `signal`                                            | the run             |
 | `control.steer.enqueued`                                               | `steer`                                             | the run             |
 | `control.steer.woke`                                                   | `steer`, when it ended a park                       | the run             |
 | `control.monitor.beat`, `control.monitor.healed`                       | `Monitor.run`                                       | the run             |

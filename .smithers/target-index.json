@@ -70798,6 +70798,62 @@
     }
   },
   {
+    "label": "//packages/smithers/control:signalMutations",
+    "package": "packages/smithers/control",
+    "name": "signalMutations",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/scripts/check-signal-mutations.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/control/{src,test}/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/vitest.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/tsconfig.test.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-schemas.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/control:lib"
+    ],
+    "source": {
+      "file": "packages/smithers/control/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/control:test",
     "package": "packages/smithers/control",
     "name": "test",

@@ -1,7 +1,7 @@
 /**
  * Acceptance port from the control plane into a real run executor.
  *
- * Governing contract: `docs/pages/control/index.md`.
+ * Governing contract: `docs/guides/implement-an-executor.md`.
  *
  * @since 0.1.0
  */

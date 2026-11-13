@@ -205,7 +205,7 @@ export class Unauthorized extends Schema.TaggedError<Unauthorized>()("/control/U
 
 /**
  * The operation is not implemented in this deployment. `ticket` names the
- * issue that tracks it, per `Concepts/Tickets Not Exceptions.md`.
+ * issue that tracks the missing integration.
  *
  * @category errors
  * @since 0.1.0

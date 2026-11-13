@@ -102,7 +102,7 @@ run-store sets look skipped.
 
 The tables the set creates are `control_plans`, `control_plan_keys`,
 `control_tokens`, `control_grants`, `control_mutations`, `control_runs`,
-`control_run_resumes`, `control_run_messages`, `control_sequences`, and
+`control_run_resumes`, `control_run_messages`, `control_signal_commands`, `control_sequences`, and
 `control_credentials`.
 
 ## What the durable runtime adds
