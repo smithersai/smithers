@@ -763,7 +763,7 @@ const DraftPayloadSchema: z.ZodType<
       number: z.number().int().positive(),
       title: z.string(),
       body: z.string(),
-      url: z.string(),
+      url: HttpUrlSchema,
       digest: z.string().optional(),
       comments: z.array(z.object({ author: z.string().nullable(), body: z.string() }))
     }),
@@ -2751,17 +2751,30 @@ const withoutDefault = (field: z.ZodType): z.ZodType => {
   return field
 }
 
-const patchPayload = (payload: z.ZodType): z.ZodType =>
-  payload instanceof z.ZodObject ?
-    z.object(
-      Object.fromEntries(
-        Object.entries(payload.shape as Record<string, z.ZodType>).map(([key, field]) => [
-          key,
-          withoutDefault(field).optional()
-        ])
-      )
-    ) :
-    payload
+const patchObject = (payload: z.ZodObject): z.ZodObject =>
+  z.object(
+    Object.fromEntries(
+      Object.entries(payload.shape as Record<string, z.ZodType>).map(([key, field]) => [
+        key,
+        withoutDefault(field).optional()
+      ])
+    )
+  )
+
+const patchPayload = (payload: z.ZodType): z.ZodType => {
+  if (payload instanceof z.ZodUnion) {
+    const options = payload.options as ReadonlyArray<z.ZodObject>
+    // Strip unrelated fields once, then require a branch that understands every
+    // supplied payload field. An empty partial branch would otherwise swallow
+    // another branch's fields, or accept its malformed nested values.
+    const fields = Object.fromEntries(
+      options.flatMap((option) => Object.keys(option.shape).map((key) => [key, z.unknown().optional()]))
+    )
+    return z.object(fields).pipe(z.union(options.map((option) => patchObject(option).strict())))
+  }
+  // Current payloads are objects or unions of objects, audited in Cards.test.ts.
+  return patchObject(payload as z.ZodObject)
+}
 
 // Derive each branch from the card itself so enums, caps and redaction cannot drift.
 const cardPatchOptions = CurrentCardSchema.options.map((card) => {

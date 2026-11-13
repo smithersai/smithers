@@ -3,6 +3,7 @@ import {
   AgentConversationBatchSchema,
   AgentTurnBatchRejected,
   agentTurnJournalDigestInput,
+  AgentTurnJournalRequestSchema,
   projectAgentTurnBatch
 } from "../src/AgentTurnJournal.ts"
 import type { AgentTurnBatch, AgentTurnJournalHead } from "../src/AgentTurnJournal.ts"
@@ -128,5 +129,27 @@ describe("AgentConversationBatchSchema", () => {
     const parsed = AgentConversationBatchSchema.safeParse({ ...batch, frames: [{ runId: "run-1", type: "teleport" }] })
     expect(parsed.success).toBe(false)
     expect(parsed.error?.issues.every((issue) => issue.path[0] === "frames" && issue.path[1] === 0)).toBe(true)
+  })
+})
+
+describe("journal read capabilities", () => {
+  const request = (token: string) => ({ version: 1, legId: "leg-1", token })
+
+  test.each([43, 44, 64, 127, 128])("accepts %i base64url characters without rewriting", (length) => {
+    const value = request("a".repeat(length))
+    expect(AgentTurnJournalRequestSchema.parse(value)).toEqual(value)
+  })
+
+  test.each([0, 1, 31, 32, 42, 129])("refuses a token of %i characters", (length) => {
+    expect(AgentTurnJournalRequestSchema.safeParse(request("a".repeat(length))).success).toBe(false)
+  })
+
+  test("accepts the entire base64url alphabet", () => {
+    const value = request("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
+    expect(AgentTurnJournalRequestSchema.parse(value)).toEqual(value)
+  })
+
+  test.each(["+", "/", "=", " ", "\n", "é"])("refuses a non-base64url character: %j", (character) => {
+    expect(AgentTurnJournalRequestSchema.safeParse(request("a".repeat(64) + character)).success).toBe(false)
   })
 })

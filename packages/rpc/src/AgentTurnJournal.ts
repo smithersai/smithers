@@ -155,14 +155,14 @@ export const AgentTurnJournalCommandSchema = z.discriminatedUnion("operation", [
  */
 export type AgentTurnJournalCommand = z.infer<typeof AgentTurnJournalCommandSchema>
 
-/** The read capability is persisted before the first POST and never put in a URL.
+/** The read capability uses 43–128 base64url characters, is persisted before the first POST and never put in a URL.
  * @since 1.0.0
  * @category schemas
  */
 export const AgentTurnJournalRequestSchema = z.object({
   version: z.literal(1),
   legId: Identity,
-  token: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/)
+  token: z.string().regex(/^[A-Za-z0-9_-]{43,128}$/)
 }).strict()
 
 /** Stable leg identity and its private replay capability.

@@ -620,12 +620,12 @@ describe("card patch validation", () => {
 })
 
 describe("card patches never invent defaults", () => {
-  test("an empty payload patch stays empty for every card kind with an object payload", () => {
-    const objectPayloads = CardSchema.options.filter((option) =>
-      !(CUT_KINDS as readonly string[]).includes(option.shape.kind.value) && option.shape.payload instanceof z.ZodObject
+  test("an empty payload patch stays empty for every current card kind", () => {
+    const currentPayloads = CardSchema.options.filter((option) =>
+      !(CUT_KINDS as readonly string[]).includes(option.shape.kind.value)
     )
-    expect(objectPayloads.length).toBeGreaterThan(CardSchema.options.length / 2)
-    for (const option of objectPayloads) {
+    expect(currentPayloads.some((option) => option.shape.kind.value === "agents")).toBe(true)
+    for (const option of currentPayloads) {
       const kind = option.shape.kind.value
       const patch = CardPatchSchema.parse({ kind, payload: {} })
       expect({ kind, payload: patch.payload }).toEqual({ kind, payload: {} })
