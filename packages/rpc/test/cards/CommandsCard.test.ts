@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from "vitest"
 import { CommandsCardSchema } from "../../src/CommandsCard.ts"
+import { TODO_NEW_COMMAND } from "../../src/TodoCommands.ts"
 import { cardContract } from "../cardContract.ts"
 import { fixtures } from "../fixtures/Commands.ts"
 
@@ -18,6 +19,15 @@ const withCommand = (patch: Record<string, unknown>) => ({
 })
 
 describe("Commands", () => {
+  test("TODO creation fixtures use the declared confirmation rule", () => {
+    for (const fixture of Object.values(fixtures)) {
+      const commands = fixture.model.groups.flatMap((group) => group.commands).filter((command) =>
+        command.tag === TODO_NEW_COMMAND.name
+      )
+      expect(commands).toHaveLength(1)
+      expect(commands[0]!.agent).toBe(TODO_NEW_COMMAND.agent)
+    }
+  })
   test.each(AGENT)("accepts agent %s", (agent) => {
     expect(CommandsCardSchema.parse(withCommand({ agent })).groups[0]!.commands[0]!.agent).toBe(agent)
   })

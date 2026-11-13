@@ -10,14 +10,13 @@ Shared product contracts for the local host, browser, and server. Import them fr
 
 ## Route ownership
 
-Each route family has one home module, and a route constant is declared only there. Add a route to the module its family names; a new family gets a row here first. `test/RouteOwnership.test.ts` holds every `/api/` constant to this table.
+Each route family has one home module, and a route constant is declared only there. Add a route to the module its family names; a new family gets a row here first. `test/RouteOwnership.test.ts` holds every `/api/` constant, including those nested in arrays and plain objects, to this table. Every family must own at least one route constant in its named module.
 
 | Family                               | Module        |
 | ------------------------------------ | ------------- |
-| `/api/repo/files`                    | `LocalApp.ts` |
 | `/api/repos/{owner}/{repo}/mythical` | `Mythical.ts` |
 
-`TodoCommands.TodoNewInputSchema` declares TODO creation: place `before` a TODO or append.
+`TodoCommands.TodoNewInputSchema` declares TODO creation: place `before` a TODO or append. Without `cardId`, `todo.new` opens a Draft; with its `cardId`, it commits that Draft and requires confirmation. The exported card fixtures bind Edit instructions to Draft creation and Commit to the Draft it names.
 `CardAction.BranchAddToStackInputSchema` declares scratch adoption with trimmed, nonempty text and either `after` or `before`, using `TodoCommands.TodoPlacementSchema`.
 Historical billing cards retain their plan and entitlement decoders inside `Cards`.
 

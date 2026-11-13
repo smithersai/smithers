@@ -50,7 +50,7 @@ describe("Draft issue, seed and commit", () => {
     expect(DraftCardSchema.parse(fixtures.committed.model).committed).toEqual({ n: 12, rev: 1 })
     expect(DraftCardSchema.parse(fixtures.committed_amendment.model).committed).toEqual({ n: 9, rev: 2 })
   })
-  test("a draft stays private until Commit and a committed draft has no Commit", () => {
+  test("fixtures cover private drafts and public committed receipts without Commit actions", () => {
     expect(fixtures.append.model.private).toBe(true)
     expect([fixtures.committed.model.private, fixtures.committed_amendment.model.private]).toEqual([false, false])
     expect([...fixtures.committed.actions, ...fixtures.committed_amendment.actions]).toEqual([])

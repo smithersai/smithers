@@ -25,12 +25,7 @@ describe("Agent", () => {
     expect([...new Set(Object.values(fixtures).map((story) => story.model.role))].sort()).toEqual([...ROLES].sort())
   })
 
-  test("no story binds a command that commits a TODO", () => {
-    // Edit instructions must open a Draft; `todo.new` with text commits one at once.
-    const tags = Object.values(fixtures).flatMap((story) => story.actions.map((action) => action.tag))
-    expect(tags).not.toContain("todo.new")
-  })
-  test("Change model offers the owner's available models", () => {
+  test("the owner fixture offers its available models for Change model", () => {
     expect(fixtures.coding.actions[0]!.input?.[0]?.choices).toEqual(coding.available)
   })
   test("owner and provider are required", () => {

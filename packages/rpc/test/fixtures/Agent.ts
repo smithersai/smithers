@@ -30,8 +30,12 @@ const change = (agent: AgentCard): Action => ({
     value: agent.model
   }]
 })
-// Edit instructions opens a Draft TODO (ui-components.md T-UI-13). The placeholder catalog has no command that
-// opens a Draft without committing (`todo.new` with text commits), so no story binds it until T-CAT-01 names one.
+// Without cardId, todo.new opens a Draft for the person to review and commit.
+const edit = (agent: AgentCard): Action => ({
+  tag: "todo.new",
+  label: "Edit instructions",
+  args: { text: `Edit the agent instructions in ${agent.instructions_path}` }
+})
 const fast: AgentCard = {
   ...base,
   name: "app agent",
@@ -53,19 +57,20 @@ const jev: AgentCard = {
 
 export const fixtures = {
   coding: story("The coding agent, as the owner", base, {
-    actions: [change(base)],
+    actions: [change(base), edit(base)],
     expect: ["implementer", "gpt-6.1-sol", "T12 · Card model contracts", "Change model"]
   }),
   fast: story("The app agent on the fast model", fast, {
-    actions: [change(fast)],
+    actions: [change(fast), edit(fast)],
     expect: [".smithers/instructions/app.md", "Cerebras"]
   }),
-  jev: story("The Decisions model's agent", jev, { actions: [change(jev)], expect: ["AI Gateway"] }),
+  jev: story("The Decisions model's agent", jev, { actions: [change(jev), edit(jev)], expect: ["AI Gateway"] }),
   member_view: story("The coding agent, as a member", { ...base, owner: false }, {
+    actions: [edit(base)],
     expect: ["implementer", ".smithers/flows/todo/instructions/implementer.md"]
   }),
   idle: story("An agent with no runs yet", { ...base, runs: [] }, {
-    actions: [change(base)],
+    actions: [change(base), edit(base)],
     expect: [".smithers/flows/todo/instructions/implementer.md"]
   })
 } satisfies Record<string, Story<AgentCard>>

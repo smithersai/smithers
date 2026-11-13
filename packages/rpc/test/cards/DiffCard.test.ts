@@ -49,7 +49,7 @@ describe("Diff behavior", () => {
     expect(DiffCardSchema.safeParse({ ...base(), against: { kind: "burst", rev: "r" } }).success).toBe(false)
     expect(DiffCardSchema.safeParse({ ...base(), against: { kind: "fork" } }).success).toBe(false)
   })
-  test("Restore this file is offered only on the burst story", () => {
+  test("fixtures cover Restore this file on burst diffs and its absence on revision diffs", () => {
     for (const [name, story] of Object.entries(fixtures)) {
       const restores = story.actions.filter((action) => action.tag === "file.restore")
       expect(restores.length, name).toBe(story.model.against.kind === "burst" ? 1 : 0)

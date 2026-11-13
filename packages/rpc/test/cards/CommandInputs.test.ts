@@ -1,6 +1,6 @@
 /**
- * Producer checks for the batch 2 command inputs (mvp.md Appendix B.4, product 79eb1a66): every fixture action
- * that binds `draft.discard`, `confirm.cancel` or `settings.model.set` produces exactly its input, strictly.
+ * Fixture producer checks for TODO drafts, cancellation and model settings: bound actions produce their
+ * declared command inputs.
  * @since 1.0.0
  */
 
@@ -13,6 +13,7 @@ import {
   SettingsModelSetInputSchema
 } from "../../src/CardAction.ts"
 import type { ConfirmCard } from "../../src/ConfirmCard.ts"
+import { TodoNewInputSchema } from "../../src/TodoCommands.ts"
 import { fixtures as agent } from "../fixtures/Agent.ts"
 import { fixtures as confirm } from "../fixtures/Confirm.ts"
 import { fixtures as draft } from "../fixtures/Draft.ts"
@@ -28,6 +29,31 @@ const produced = (action: Action): Record<string, string> => ({
 })
 const bound = (tag: Action["tag"], list: ReadonlyArray<Action>) => list.filter((action) => action.tag === tag)
 const strict = (schema: z.ZodObject) => schema.strict()
+
+describe("todo.new fixtures", () => {
+  test("each Draft Commit names the Draft it commits and produces a declared input", () => {
+    const commits = bound("todo.new", actions(draft))
+    expect(commits.length).toBeGreaterThan(0)
+    for (const fixture of Object.values(draft)) {
+      for (const action of bound("todo.new", fixture.actions)) {
+        const input = strict(TodoNewInputSchema).parse(produced(action))
+        expect(input).toEqual({ cardId: fixture.gestures.set?.args?.entry })
+        expect(input.cardId).toBe("entry-draft-1")
+        expect(action.label).toBe("Commit")
+      }
+    }
+  })
+  test("Edit instructions opens a Draft with the agent's instructions path and no Commit id", () => {
+    for (const fixture of Object.values(agent)) {
+      const edits = bound("todo.new", fixture.actions)
+      expect(edits).toHaveLength(1)
+      const input = strict(TodoNewInputSchema).parse(produced(edits[0]!))
+      expect(input.text).toContain(fixture.model.instructions_path)
+      expect(input.cardId).toBeUndefined()
+      expect(edits[0]!.label).toBe("Edit instructions")
+    }
+  })
+})
 
 describe("draft.discard", () => {
   const discards = bound("draft.discard", actions(draft))

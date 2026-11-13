@@ -16,10 +16,10 @@ const base: DraftCard = {
   private: true
 }
 const set: Action = { tag: "form.set", label: "Edit", args: { entry: "entry-draft-1" } }
-const commit = (args: Record<string, string> = {}): Action => ({
+const commit = (): Action => ({
   tag: "todo.new",
   label: "Commit",
-  args,
+  args: { cardId: "entry-draft-1" },
   primary: true
 })
 // Discard deletes the author's uncommitted private Draft (draft.discard, mvp.md B.4); it never drops a TODO.
@@ -32,8 +32,7 @@ export const fixtures = {
   before: draft(
     "Place before T8",
     { ...base, place: { mode: "before", n: 8, options } },
-    ["Persist merge requests"],
-    [commit({ before: "8" })]
+    ["Persist merge requests"]
   ),
   amend: draft(
     "Amend T9",

@@ -31,10 +31,14 @@ describe("the Worker's own failure registry", () => {
   })
 
   test("answers the same three questions per row as plue's", async () => {
+    const shape = Object.keys(WORKER_FAILURES[WORKER_FAILURE_CODES[0]]).sort()
+    expect(shape).toEqual(["fault", "retryAfter", "status"])
+    for (const code of PLUE_FAILURE_CODES) {
+      expect(Object.keys(PLUE_FAILURES[code]).sort(), code).toEqual(shape)
+    }
     for (const code of WORKER_FAILURE_CODES) {
       const entry = WORKER_FAILURES[code]
-      expect(Object.keys(entry).sort()).toEqual(["fault", "retryAfter", "status"])
-      expect(PLUE_FAILURES[PLUE_FAILURE_CODES[0]].fault).toBeTypeOf("string")
+      expect(Object.keys(entry).sort(), code).toEqual(shape)
       expect(entry.status).toBeGreaterThanOrEqual(400)
       expect(entry.retryAfter).toBeGreaterThanOrEqual(0)
     }

@@ -5,7 +5,7 @@ const todos: CommandsCard["groups"][number] = {
   label: "TODOs",
   advanced: false,
   commands: [
-    { tag: "todo.new", synopsis: "/todo.new text", description: "Put a new TODO on the stack", agent: "run" },
+    { tag: "todo.new", synopsis: "/todo.new text", description: "Write and place a TODO", agent: "confirm" },
     { tag: "todo.answer", synopsis: "/todo.answer Tn", description: "Answer the agent's question", agent: "run" },
     { tag: "merge", synopsis: "/merge Tn", description: "Merge the first TODO in order", agent: "confirm" }
   ]
