@@ -72,6 +72,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Queue from "effect/Queue"
 import * as Schema from "effect/Schema"
+import * as EffectScope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import * as Budget from "./Budget.ts"
 import { callId } from "./internal/CallIdentity.ts"
@@ -801,6 +802,24 @@ export const make = (
           })
         )
       })
+    const applyVerdictFromBudget = (key: string) =>
+      Effect.gen(function*() {
+        const verdict = yield* budget.reserve(key).pipe(Effect.mapError(accountingFailed))
+        if (
+          verdict._tag === "refuse" && verdict.failure instanceof Budget.BudgetExceeded &&
+          verdict.failure.onExceeded === "park"
+        ) {
+          const parking = yield* Effect.serviceOption(Budget.Parking)
+          if (Option.isSome(parking)) {
+            const parked = yield* parking.value.park(verdict.failure)
+            const action = yield* FlowRuntime.FlowInstance
+            action.waiting = parked.waiting
+            yield* budget.suspend.pipe(Effect.mapError(accountingFailed))
+            return yield* Flow.suspend(action)
+          }
+        }
+        return yield* applyVerdict(verdict)
+      })
     const sealStep = (
       step: EngineLike.SealedModelStep,
       onLive?: (event: ModelEvent.ModelEvent) => Effect.Effect<void>
@@ -827,28 +846,30 @@ export const make = (
               }, prepared)
             }
           }
-          // The composition's spending ceiling, applied where every model call
-          // in the run passes: a step that assembles its own loop cannot evade
-          // a budget declared for the whole run.
-          //
-          // The sealed key goes with the question, and it has to: the check
-          // runs BEFORE the activity below replays, so on a resumed run it is
-          // asked about steps whose answers are already journaled and whose
-          // replay pays a provider nothing. Unnamed, it projects prior spend
-          // plus an estimate for a call the ledger already holds, and a run
-          // killed after its last model call resumes straight into
-          // `BudgetExceeded` for a call that costs zero.
-          yield* applyVerdict(yield* budget.reserve(key).pipe(Effect.mapError(accountingFailed)))
+          // Admission belongs to a fresh attempt, inside the model action. A
+          // replay may have sealed before its usage reached the ledger; refusing
+          // it here would strand both its answer and its missing charge.
+          // Keep a fresh call's reservation until replay accounting below ends.
+          const reservationScope = yield* Effect.scope
           // Read OUTSIDE the activity, from the caller's context: the ladder
           // rung is the caller's fact about this call, and it has to be on the
           // record the activity writes rather than discovered by whatever
           // re-executes it.
           const correction = yield* Correction
+          let admissionFailure: HarnessError.HarnessError | undefined
           const { recorded: normalized } = yield* ModelStep.dispatch({
             name: sealStepActivityName,
             key,
             request: step.request,
             model: options.model,
+            admit: applyVerdictFromBudget(key).pipe(
+              Effect.provideService(EffectScope.Scope, reservationScope),
+              Effect.tapError((error) =>
+                Effect.sync(() => {
+                  admissionFailure = error
+                })
+              )
+            ),
             // Provider retries are the engine's: each attempt is one provider
             // call, and its number and spend survive a restart. The default
             // policy retries only a `transport` failure and a
@@ -892,6 +913,7 @@ export const make = (
             ),
             settle: (recorded) => unlessParked(quota)(recorded).pipe(Effect.flatMap(unlessGuarded(guard !== undefined)))
           }).pipe(
+            Effect.mapError((error) => admissionFailure ?? error),
             Effect.catchIf(
               (error): error is ModelError.ModelError =>
                 guard !== undefined && error instanceof ModelError.ModelError && error.code === "call_timeout",

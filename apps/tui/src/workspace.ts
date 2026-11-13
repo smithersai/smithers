@@ -864,7 +864,12 @@ export class Workspace {
       this.options.host.credit?.spent(tab.seat) !== true
     ) {
       try {
-        const generated = await this.options.host.describe?.({ title: tab.title, prompt: tab.prompt, seat: tab.seat })
+        const generated = await this.options.host.describe?.({
+          id: tab.file,
+          title: tab.title,
+          prompt: tab.prompt,
+          seat: tab.seat
+        })
         description = generated?.replace(/\s+/g, " ").trim().slice(0, 80) || description
       } catch (error) {
         Log.write("worker.describe", error)

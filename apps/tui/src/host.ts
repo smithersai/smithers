@@ -58,6 +58,7 @@ import type * as Agents from "./agents.ts"
 import * as Approvals from "./approvals.ts"
 import * as Box from "./box.ts"
 import * as Changes from "./changes.ts"
+import * as Completion from "./completion.ts"
 import * as Context from "./context.ts"
 import * as Credit from "./credit.ts"
 import {
@@ -183,13 +184,13 @@ export interface Host {
     readonly unjudged?: Memory.Output["unjudged"]
   }>
   /** A one-line tab description, asked of `seat`: the seat the task already goes to. */
-  readonly describe?: (input: { title: string; prompt: string; seat: string }) => Promise<string>
+  readonly describe?: (input: { id?: string; title: string; prompt: string; seat: string }) => Promise<string>
   /** Jev judges a monitor's change; Luna writes its update. Absent on test fakes. */
   readonly monitor?: {
     readonly judge: (input: Monitors.Judged) => Promise<boolean>
     readonly compose: (input: Monitors.Judged) => Promise<string>
   }
-  readonly complete?: (input: { system: string; prompt: string; seat: string }) => Promise<string>
+  readonly complete?: (input: Completion.Input) => Promise<string>
   /** Whether the host judges worker completions and binds `jev`. */
   readonly judged: boolean
   /** Whether a worker with no chosen model runs on `Seat.auto`; false on test fakes. */
@@ -373,43 +374,28 @@ export const make = (options: {
       }))
     )
 
-  const complete: NonNullable<Host["complete"]> = ({ system, prompt, seat: id }) =>
-    runtime.runPromise(
-      Effect.gen(function*() {
-        const seat = yield* (yield* SeatResolver.SeatResolver).resolve(id)
-        const events = Array.from(
-          yield* Stream.runCollect(seat.model.stream(ModelRequest.ModelRequest.make({
-            // The seat's own model id: the full `provider:model` seat is refused as a model name.
-            modelId: seat.modelId,
-            system: [ModelRequest.SystemPart.make({ text: system })],
-            messages: [ModelRequest.Message.user([ModelRequest.TextPart.make({ text: prompt })])],
-            tools: [],
-            toolChoice: "none",
-            // No token budget: the ChatGPT-subscription route refuses `maxTokens`
-            // (`OpenAIResponses.chatgptFromRequest`) and no seat says which routes
-            // honor one. The system prompt bounds the answer instead.
-            params: ModelRequest.GenerationParams.make({})
-          })))
-        )
-        if (ModelEvent.ModelEvent.settledMessage(events).message.stopReason !== "stop") {
-          throw new Error("Answer incomplete")
-        }
-        return events.flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("")
-      })
-    )
+  const completions = Completion.make({
+    cwd: options.cwd,
+    seats: options.seats ?? NodeControl.layerSeatResolver(env).pipe(Layer.provide(executor)),
+    budget,
+    judge
+  })
+  const complete = completions.complete
 
   const monitor: NonNullable<Host["monitor"]> = {
-    judge: Monitors.jev((request) =>
-      runtime.runPromise(Effect.gen(function*() {
-        return yield* (yield* Evaluator.Evaluator).evaluate(request)
-      }))
-    ),
+    judge: completions.judge,
     compose: (input) =>
-      complete({ system: Monitors.composeSystem, prompt: Monitors.composeText(input), seat: delegateModels.luna })
+      complete({
+        id: input.id,
+        system: Monitors.composeSystem,
+        prompt: Monitors.composeText(input),
+        seat: delegateModels.luna
+      })
   }
 
-  const describeTab: NonNullable<Host["describe"]> = ({ title, prompt, seat }) =>
+  const describeTab: NonNullable<Host["describe"]> = ({ id, title, prompt, seat }) =>
     complete({
+      id,
       system:
         "Summarize this background agent task in one short line (at most 80 characters). Reply with only the description.",
       prompt: `Title: ${title}\nTask: ${prompt}`,
@@ -913,7 +899,10 @@ export const make = (options: {
     describe: describeTab,
     monitor,
     complete,
-    dispose: () => runtime.dispose()
+    dispose: async () => {
+      await completions.dispose()
+      await runtime.dispose()
+    }
   }
 }
 

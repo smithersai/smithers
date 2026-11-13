@@ -889,6 +889,10 @@ export function App(props: AppProps) {
     inspectionInterrupted,
     jumpTarget,
     workerJump,
+    transcript: viewedTranscript,
+    worker: viewedWorker,
+    tabs: viewedTabs,
+    inspectedAt,
     inspectActivity,
     followLive,
     clearInspection,
@@ -911,8 +915,8 @@ export function App(props: AppProps) {
   })
   /** Each answer's program hint: `ctrl+o program · 11s` beneath it. */
   const programHints = useMemo(
-    () => new Map([...Transcript.programs(transcript)].map(([id, span]) => [id, RunCard.programHint(span)])),
-    [transcript]
+    () => new Map([...Transcript.programs(viewedTranscript)].map(([id, span]) => [id, RunCard.programHint(span)])),
+    [viewedTranscript]
   )
   const settlements = useMemo(() => new Toasts.Settlements(workspace.snapshot().tabs, runs.snapshot()), [
     workspace,
@@ -2846,24 +2850,24 @@ export function App(props: AppProps) {
   const toastRows = Toasts.rows({ settlements: settleNotices, search, undoing, toast, now, tick })
   /** What every subagent card in the chat reads and does. */
   const cards: SubagentView.Cards = {
-    transcript: workspace.transcript,
-    now,
+    transcript: viewedWorker,
+    now: inspectedAt ?? now,
     lane,
     focused: focusedCard,
     canUndo,
     onOpen: (id) => clickTab(`tab:${id}`),
     onRunOpen: clickTab,
     flowSteps: (id) =>
-      runs.nodes(id).filter((node) => node.id !== "result").slice(-3).map((node) =>
-        `${node.status === "done" ? "✓" : node.status === "failed" ? "✗" : "◐"} ${node.label}`
-      ),
+      (activeInspection === undefined ? runs.nodes(id) : []).filter((node) => node.id !== "result").slice(-3).map((
+        node
+      ) => `${node.status === "done" ? "✓" : node.status === "failed" ? "✗" : "◐"} ${node.label}`),
     onDiff: (tab) => {
       if (canDiff(tab)) openReview(tab)
     },
     onUndo: (tab) => {
       if (canUndo(tab)) undoWorker(tab)
     },
-    ask: (id) => workspace.asks.fromPerson(id),
+    ask: (id) => activeInspection === undefined ? workspace.asks.fromPerson(id) : undefined,
     ...(form !== undefined ? { answering: true } : soleAsk === undefined ? {} : { answers: soleAsk.from })
   }
   const toastWidth = Math.min(60, mainWidth - 2)
@@ -2990,10 +2994,13 @@ export function App(props: AppProps) {
               workerTab !== undefined && !focusMain ?
               (
                 <WorkerView
-                  tab={{ ...workerTab, title: tabTitle(workerTab) }}
-                  transcript={workspace.transcript(workerTab.id)}
+                  tab={{
+                    ...(viewedTabs.find((tab) => tab.id === workerTab.id) ?? workerTab),
+                    title: tabTitle(viewedTabs.find((tab) => tab.id === workerTab.id) ?? workerTab)
+                  }}
+                  transcript={viewedWorker(workerTab.id)}
                   models={props.models}
-                  now={now}
+                  now={inspectedAt ?? now}
                   tick={tick}
                   tone={lane(workerTab.id)}
                   width={width}
@@ -3006,7 +3013,7 @@ export function App(props: AppProps) {
                   viewportRef={workerScroll}
                   onBack={() => clickTab(workerTab.parent === undefined ? "chat" : `tab:${workerTab.parent}`)}
                   onRelease={() => workspace.release(workerTab.id)}
-                  tabs={snapshot.tabs}
+                  tabs={viewedTabs}
                   cards={{
                     ...cards,
                     focused: focusedCard === Subagents.earlierKey(workerTab.id) ? focusedCard : undefined
@@ -3090,15 +3097,17 @@ export function App(props: AppProps) {
                     width={width}
                     cards={cards}
                     row={({ row }) => {
-                      const card = row.item.kind === "card" ? livePanel(row.item.panel) : undefined
-                      const step = row.item.kind === "cell" ? Scrubber.step(transcript, row.item) : undefined
+                      const card = row.item.kind === "card"
+                        ? activeInspection === undefined ? livePanel(row.item.panel) : row.item.panel
+                        : undefined
+                      const step = row.item.kind === "cell" ? Scrubber.step(viewedTranscript, row.item) : undefined
                       return (
                         <box key={row.key} id={row.key}>
                           {card !== undefined
                             ? (
                               <View.Card
                                 panel={card}
-                                status={cardStatus(card)}
+                                status={activeInspection === undefined ? cardStatus(card) : undefined}
                                 focused={row.key === focusedCard}
                                 onOpen={() => perform({ kind: "open", surface: `ui:${card.id}` })}
                               />
@@ -3106,7 +3115,7 @@ export function App(props: AppProps) {
                             : (
                               <View.Entry
                                 item={row.item}
-                                now={View.ticking(row.item) ? now : 0}
+                                now={View.ticking(row.item) ? inspectedAt ?? now : 0}
                                 tick={View.ticking(row.item) ? tick : ""}
                                 expanded={expanded}
                                 selected={row.key === jumpTarget}
@@ -3120,7 +3129,7 @@ export function App(props: AppProps) {
                       )
                     }}
                   />
-                  {working && transcript.thinking
+                  {working && viewedTranscript.thinking
                     ? <text fg={color.muted} style={{ paddingLeft: 2 }}>{tick} thinking</text>
                     : null}
                 </scrollbox>

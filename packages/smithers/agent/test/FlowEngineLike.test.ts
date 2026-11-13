@@ -323,6 +323,7 @@ describe("FlowEngineLike.make", () => {
         execute: Effect.succeed({ events: [] })
       })
       return yield* InternalModelStep.dispatch({
+        recordCall: () => Effect.die("A legacy row has no physical call to charge"),
         name: "legacy-model",
         key: "legacy-model-key",
         request: request("legacy"),
@@ -730,13 +731,27 @@ describe("FlowEngineLike.make", () => {
         )
         const first = yield* Stream.runCollect(engine.sealStep(step("capacity"))).pipe(Effect.exit)
         const retry = yield* Stream.runCollect(engine.sealStep(step("capacity"))).pipe(Effect.exit)
+        const blocked = yield* Stream.runCollect(engine.sealStep(step("fresh capacity request"))).pipe(Effect.exit)
         const fresh = yield* Budget.make({ tokens: { max: 1_000 } })
-        return { first: classify(first), retry: classify(retry), live: yield* budget.usage, fresh: yield* fresh.usage }
+        return {
+          first: classify(first),
+          retry: classify(retry),
+          blocked: classify(blocked),
+          live: yield* budget.usage,
+          fresh: yield* fresh.usage
+        }
       }).pipe(Effect.provide(TestJournal.layer()))
     )
-    const result = completed(outcome) as { first: Outcome; retry: Outcome; live: Budget.Usage; fresh: Budget.Usage }
+    const result = completed(outcome) as {
+      first: Outcome
+      retry: Outcome
+      blocked: Outcome
+      live: Budget.Usage
+      fresh: Budget.Usage
+    }
     expect(failure(result.first)).toMatchObject({ code: "rate_limited" })
-    expect(failure(result.retry)).toMatchObject({ code: "model_failed" })
+    expect(failure(result.retry)).toMatchObject({ code: "rate_limited" })
+    expect(failure(result.blocked)).toMatchObject({ code: "model_failed" })
     expect(result.live).toEqual({ tokens: 600, calls: 1, largestCall: 600 })
     expect(result.fresh).toEqual(result.live)
     expect(calls).toBe(1)
@@ -1023,7 +1038,7 @@ describe("FlowEngineLike.make", () => {
     const prepared = { ...preparedFor("historical", "not the wire bytes"), body }
     const outcome = await drive(Effect.gen(function*() {
       // Independent legacy derivation, including its numeric array. The
-      // reservation sees the actual key passed to the durable activity.
+      // usage reconciliation sees the key for live and replayed work.
       const expected = yield* StepKey.fromKeyMaterial({
         ...declared.keyMaterial,
         body: {
@@ -1044,10 +1059,9 @@ describe("FlowEngineLike.make", () => {
         route: { prepare: () => Effect.succeed(prepared) }
       }).pipe(Effect.provideService(Budget.Budget, {
         ...Budget.makeUnbounded(),
-        reserve: (key) =>
+        record: (key) =>
           Effect.sync(() => {
             keys.push(key)
-            return { _tag: "proceed" } as const
           })
       }))
       yield* Stream.runDrain(port.sealStep(declared))
@@ -2916,4 +2930,244 @@ describe("FlowEngineLike budget resume", () => {
     expect(recorded[1]).toBe(recorded[0])
     expect(calls).toEqual(["test-model", "test-model"])
   })
+})
+
+describe("sealed model admission", () => {
+  it("replays a paid answer and reconciles usage even when fresh admission is refused", async () => {
+    const calls: Array<string> = []
+    let admissions = 0
+    let charges = 0
+    const outcome = await drive(Effect.gen(function*() {
+      const port = yield* FlowEngineLike.make({ model: countingModel(calls), route: staticRoute() }).pipe(
+        Effect.provideService(Budget.Budget, {
+          ...Budget.makeUnbounded(),
+          reserve: () =>
+            Effect.sync(() => {
+              admissions++
+              if (admissions > 1) throw new Error("Fresh admission must not run during replay")
+              return { _tag: "proceed" as const }
+            }),
+          record: () =>
+            Effect.sync(() => {
+              charges++
+            })
+        })
+      )
+      const first = Array.from(yield* Stream.runCollect(port.sealStep(step("paid"))))
+      const replayed = Array.from(yield* Stream.runCollect(port.sealStep(step("paid"))))
+      return { first, replayed }
+    }))
+    const value = completed(outcome) as {
+      first: ReadonlyArray<ModelEvent.ModelEvent>
+      replayed: ReadonlyArray<ModelEvent.ModelEvent>
+    }
+    expect(value.replayed).toEqual(value.first)
+    expect(admissions).toBe(1)
+    expect(charges).toBe(2)
+    expect(calls).toEqual(["test-model"])
+  })
+})
+
+describe("provider reservation failures", () => {
+  it.each(["ceiling", "ledger"] as const)("fails closed before the provider when its %s refuses", async (kind) => {
+    const calls: Array<string> = []
+    const recorded: Array<string> = []
+    const failure = kind === "ceiling"
+      ? new HarnessError({ code: "model_failed", message: "Physical call ceiling refused" })
+      : new Budget.AccountingUnavailable({ phase: "record", runId: "run-1", message: "Physical ledger unavailable" })
+    const outcome = await drive(
+      Effect.gen(function*() {
+        const port = yield* FlowEngineLike.make({ model: countingModel(calls), route: staticRoute() })
+        return yield* Effect.flip(Stream.runDrain(port.sealStep(step("physical-refusal"))))
+      }).pipe(Effect.provideService(Budget.Budget, {
+        ...Budget.makeUnbounded(),
+        reserveCall: () => Effect.fail(failure),
+        recordCall: (receipt) =>
+          Effect.sync(() => {
+            recorded.push(receipt)
+          })
+      }))
+    )
+    expect(completed(outcome)).toBeInstanceOf(HarnessError)
+    expect(completed(outcome)).toMatchObject({
+      message: expect.stringContaining(
+        kind === "ceiling" ? "Physical call ceiling refused" : "Physical ledger unavailable"
+      )
+    })
+    expect(calls).toEqual([])
+    expect(recorded).toEqual([])
+  })
+
+  it("replays a sealed provider rejection with the same physical usage receipt", async () => {
+    let calls = 0
+    let reservations = 0
+    const receipts: Array<string> = []
+    const outcome = await drive(
+      Effect.gen(function*() {
+        const port = yield* FlowEngineLike.make({
+          model: Model.make({
+            stream: () =>
+              Stream.suspend(() => {
+                calls++
+                return Stream.fail(new ModelError({ code: "invalid_request", message: "Request refused" }))
+              })
+          }),
+          route: staticRoute()
+        })
+        const first = yield* Effect.exit(Stream.runDrain(port.sealStep(step("paid-rejection"))))
+        const replayed = yield* Effect.exit(Stream.runDrain(port.sealStep(step("paid-rejection"))))
+        return [first._tag, replayed._tag]
+      }).pipe(Effect.provideService(Budget.Budget, {
+        ...Budget.makeUnbounded(),
+        reserveCall: () =>
+          Effect.sync(() => {
+            reservations++
+            return "physical-rejection"
+          }),
+        recordCall: (receipt) =>
+          Effect.sync(() => {
+            receipts.push(receipt)
+          })
+      }))
+    )
+    expect(completed(outcome)).toEqual(["Failure", "Failure"])
+    expect(calls).toBe(1)
+    expect(reservations).toBe(1)
+    expect(receipts).toEqual(["physical-rejection", "physical-rejection"])
+  })
+
+  it("refuses a parked fresh call when this host cannot take approvals", async () => {
+    const calls: Array<string> = []
+    const exceeded = new Budget.BudgetExceeded({
+      scope: "tokens",
+      onExceeded: "park",
+      used: 1,
+      max: 1,
+      next: 1,
+      message: "Raise cap"
+    })
+    const outcome = await drive(
+      Effect.gen(function*() {
+        const port = yield* FlowEngineLike.make({ model: countingModel(calls), route: staticRoute() })
+        return yield* Effect.flip(Stream.runDrain(port.sealStep(step("no-approvals"))))
+      }).pipe(Effect.provideService(Budget.Budget, {
+        ...Budget.makeUnbounded(),
+        reserve: () => Effect.succeed({ _tag: "refuse" as const, exceeded, failure: exceeded })
+      }))
+    )
+    expect(completed(outcome)).toMatchObject({ code: "model_failed", cause: { onExceeded: "park" } })
+    expect(calls).toEqual([])
+  })
+})
+
+it("keeps conservative spend accounting for provider retry markers on replay", async () => {
+  const calls: Array<string> = []
+  const qualities: Array<unknown> = []
+  const outcome = await drive(
+    Effect.gen(function*() {
+      const port = yield* FlowEngineLike.make({
+        route: staticRoute(),
+        model: Model.make({
+          stream: (input) =>
+            Stream.concat(
+              Stream.make(ModelEvent.ModelEvent.Retry({ type: "retry", attempt: 2, code: "transport" })),
+              countingModel(calls).stream(input)
+            )
+        })
+      })
+      const first = Array.from(yield* Stream.runCollect(port.sealStep(step("provider-retry"))))
+      const replayed = Array.from(yield* Stream.runCollect(port.sealStep(step("provider-retry"))))
+      return { first, replayed }
+    }).pipe(Effect.provideService(Budget.Budget, {
+      ...Budget.makeUnbounded(),
+      record: (_key, _usage, _modelId, quality) =>
+        Effect.sync(() => {
+          qualities.push(quality)
+        })
+    }))
+  )
+  const value = completed(outcome) as { first: Array<ModelEvent.ModelEvent>; replayed: Array<ModelEvent.ModelEvent> }
+  expect(value.first).toContainEqual(expect.objectContaining({ type: "retry", attempt: 2 }))
+  expect(value.replayed).toEqual(value.first)
+  expect(qualities).toEqual([{ unreported: true }, { unreported: true }])
+  expect(calls).toEqual(["test-model"])
+})
+
+it("a skip-remaining latch refuses fresh provider work without requesting approval", async () => {
+  const calls: Array<string> = []
+  const exceeded = new Budget.BudgetExceeded({
+    scope: "tokens",
+    onExceeded: "skip-remaining",
+    used: 1,
+    max: 1,
+    next: 1,
+    message: "Token ceiling reached"
+  })
+  const skipped = new Budget.Skipped({ budget: exceeded, message: "Remaining calls skipped" })
+  const outcome = await drive(
+    Effect.gen(function*() {
+      const port = yield* FlowEngineLike.make({ model: countingModel(calls), route: staticRoute() })
+      return yield* Effect.flip(Stream.runDrain(port.sealStep(step("skipped-call"))))
+    }).pipe(Effect.provideService(Budget.Budget, {
+      ...Budget.makeUnbounded(),
+      reserve: () => Effect.succeed({ _tag: "refuse" as const, exceeded, failure: skipped })
+    }))
+  )
+  expect(completed(outcome)).toMatchObject({
+    code: "model_failed",
+    message: "Remaining calls skipped",
+    cause: { budget: { onExceeded: "skip-remaining" } }
+  })
+  expect(calls).toEqual([])
+})
+
+it("a model admission park remains unsealed and runs after the cap is raised", async () => {
+  const calls: Array<string> = []
+  let raised = false
+  let suspended = 0
+  const exceeded = new Budget.BudgetExceeded({
+    scope: "tokens",
+    onExceeded: "park",
+    used: 1,
+    max: 1,
+    next: 1,
+    message: "Raise cap"
+  })
+  const outcome = await drive(
+    Effect.gen(function*() {
+      const port = yield* FlowEngineLike.make({ model: countingModel(calls), route: staticRoute() })
+      return Array.from(yield* Stream.runCollect(port.sealStep(step("after raise"))))
+    }).pipe(
+      Effect.provideService(Budget.Budget, {
+        ...Budget.makeUnbounded(),
+        reserve: () =>
+          Effect.succeed(
+            raised ?
+              { _tag: "proceed" as const } :
+              { _tag: "refuse" as const, exceeded, failure: exceeded }
+          ),
+        suspend: Effect.sync(() => {
+          suspended++
+        })
+      }),
+      Effect.provideService(Budget.Parking, {
+        guardsTimeouts: false,
+        park: () =>
+          Effect.sync(() => {
+            expect(calls).toEqual([])
+            raised = true
+            return {
+              waiting: { reason: "approval" as const, token: "budget-raise" },
+              failure: new HarnessError({ code: "model_failed", message: "Raise cap" })
+            }
+          }),
+        admit: () => Effect.succeed({ _tag: "proceed" as const, continued: 0 }),
+        trip: () => Effect.die("No timeout is expected")
+      })
+    ),
+    { resume: true }
+  )
+  expect(completed(outcome)).toBeDefined()
+  expect(suspended).toBe(1)
+  expect(calls).toEqual(["test-model"])
 })

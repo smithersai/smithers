@@ -15,6 +15,7 @@
   "src/cli.ts",
   "src/clipboard.ts",
   "src/complete.ts",
+  "src/completion.ts",
   "src/composer.ts",
   "src/context.ts",
   "src/contributions.ts",

@@ -17,7 +17,7 @@ import { tabTitle } from "./surfaces.ts"
 import { lane as laneColor } from "./theme.ts"
 import * as Timeline from "./timeline.ts"
 import * as Timer from "./timer.ts"
-import type * as Transcript from "./transcript.ts"
+import * as Transcript from "./transcript.ts"
 import type { Tab } from "./workspace.ts"
 
 interface Source {
@@ -255,7 +255,8 @@ export const useTranscriptView = (options: {
   const chatRows = useMemo(() => Timeline.cached(), [])
   const drawsProgram = options.expanded || Timeline.program(filter)
   // A fresh projection on every render would miss the row cache, which keys on identity.
-  const projectedChat = useMemo(() => RunCard.chat(transcript, drawsProgram), [transcript, drawsProgram])
+  const liveProjectedChat = useMemo(() => RunCard.chat(transcript, drawsProgram), [transcript, drawsProgram])
+
   const activitySources = [
     { id: chat, title: "Chat", activity: transcript.activity },
     ...tabs.map((tab) => ({ id: tab.id, title: tabTitle(tab), activity: worker(tab.id).activity }))
@@ -266,12 +267,104 @@ export const useTranscriptView = (options: {
     source.activity.records[0] === inspection.first
   )
   const monitored = surface === "chat" ?
-    projectedChat.activity === undefined ? undefined : activitySources.find((source) => source.id === chat)
+    liveProjectedChat.activity === undefined ? undefined : activitySources.find((source) => source.id === chat)
     : surface.startsWith("tab:") ?
     activitySources.find((source) => source.id === surface.slice(4))
     : undefined
   const showActivity = monitored !== undefined && (panel === undefined || surface.startsWith("tab:"))
   const activeInspection = showActivity && pinnedActivity === monitored ? inspection : undefined
+  const inspectedAt = activeInspection === undefined ?
+    undefined :
+    monitored?.activity.records.findLast((record) => record.sequence! <= activeInspection.seq)?.occurredAt
+  const shownTranscript = Transcript.inspect(
+    transcript,
+    activeInspection?.source === chat ? activeInspection.seq : undefined
+  )
+  const inspected = activeInspection === undefined ?
+    undefined :
+    Transcript.inspect(
+      activeInspection.source === chat ? transcript : worker(activeInspection.source),
+      activeInspection.seq
+    )
+  // Other runs have independent clocks and sequence spaces. A recorded request
+  // proves their presence; their live results do not prove a historical outcome.
+  const requested = (flow: string) =>
+    new Map(
+      (inspected?.activity?.records ?? []).flatMap((record) => {
+        const payload = record.payload as { flowName?: string; input?: Record<string, unknown> } | undefined
+        return record.kind === "control.agent.cell-call-started" && payload?.flowName === flow &&
+            typeof payload.input?.id === "string"
+          ? [[payload.input.id, { input: payload.input, at: record.occurredAt ?? 0 }] as const] :
+          []
+      })
+    )
+  const requestedTabs = requested("agent.delegate")
+  const requestedRuns = requested("smithers.run")
+  const shownWorker = (id: string) =>
+    activeInspection === undefined ?
+      worker(id) :
+      activeInspection.source === id
+      ? inspected!
+      : Transcript.empty
+  const shownTabs: ReadonlyArray<Tab> = activeInspection === undefined ?
+    tabs :
+    tabs.filter((tab) => tab.id === activeInspection.source || requestedTabs.has(tab.id)).map((tab): Tab => {
+      const shown = shownWorker(tab.id)
+      const own = tab.id === activeInspection.source
+      const request = requestedTabs.get(tab.id)
+      const user = shown.items.findLast((item) => item.kind === "user" && item.queued !== true)
+      const prompt = own ?
+        user?.kind === "user" ? user.text : "" :
+        typeof request?.input.prompt === "string"
+        ? request.input.prompt
+        : ""
+      const title = own ?
+        prompt.split("\n")[0]!.slice(0, 80) :
+        typeof request?.input.title === "string"
+        ? request.input.title
+        : prompt.slice(0, 80)
+      const seat = own ?
+        (shown.activity?.records.findLast((record) =>
+          ["control.agent.turn-opened", "control.agent.model-requested", "control.agent.model-selected"].includes(
+            record.kind ?? ""
+          )
+        )?.payload as { seat?: unknown } | undefined)?.seat :
+        request?.input.model
+      const status = own ? shown.activity?.status ?? "running" : "requested"
+      const answer = shown.items.findLast((item) => item.kind === "answer")
+      return {
+        id: tab.id,
+        file: tab.file,
+        parent: own ? undefined : activeInspection.source === chat ? undefined : activeInspection.source,
+        depth: own ? 0 : 1,
+        title,
+        prompt,
+        seat: typeof seat === "string" ? seat : "auto",
+        status: status === "completed" ? "done" : status,
+        startedAt: own ? shown.activity?.records[0]?.occurredAt ?? 0 : request?.at ?? 0,
+        answer: answer?.kind === "answer" ? answer.text : undefined,
+        endedAt: status === "running" || status === "requested" ? undefined : shown.activity?.records.at(-1)?.occurredAt
+      }
+    })
+  const shownRuns: ReadonlyArray<Run> | undefined = activeInspection === undefined ?
+    options.runs :
+    [...requestedRuns].map(([id, request]): Run => ({
+      id,
+      flow: typeof request.input.flow === "string" ?
+        request.input.flow :
+        typeof request.input.name === "string"
+        ? request.input.name
+        : "Run",
+      by: "agent",
+      input:
+        typeof request.input.input === "object" && request.input.input !== null && !Array.isArray(request.input.input)
+          ? request.input.input as Record<string, unknown> :
+          {},
+      requested: JSON.stringify(request.input),
+      status: "requested",
+      startedAt: request.at
+    }))
+  const projectedChat = useMemo(() => RunCard.chat(shownTranscript, drawsProgram), [shownTranscript, drawsProgram])
   const transcriptOf = (source: string) => source === chat ? transcript : worker(source)
   /** The transcript item a scrubber position lands on, in the chat or a worker's tab. */
   const jump = activeInspection === undefined ? undefined : (() => {
@@ -281,14 +374,18 @@ export const useTranscriptView = (options: {
   const rows = chatRows(projectedChat, filter, {
     expanded: options.expanded,
     chat: true,
-    source: transcript,
+    source: shownTranscript,
     selected: jump?.source === chat ? jump.id : undefined
   })
-  const lines = Subagents.lines(rows, Subagents.batches(transcript, tabs, undefined, options.runs), earlierOpen())
+  const lines = Subagents.lines(
+    rows,
+    Subagents.batches(shownTranscript, shownTabs, undefined, shownRuns),
+    earlierOpen()
+  )
   const workerTab = surface.startsWith("tab:") ? tabs.find((tab) => `tab:${tab.id}` === surface) : undefined
   const workerEarlier = workerTab === undefined ? undefined : Subagents.lines(
-    Timeline.rows(worker(workerTab.id)),
-    Subagents.batches(worker(workerTab.id), tabs, workerTab.id),
+    Timeline.rows(shownWorker(workerTab.id)),
+    Subagents.batches(shownWorker(workerTab.id), shownTabs, workerTab.id),
     earlierOpen(workerTab.id),
     workerTab.id
   ).find((line) => line.kind === "earlier")
@@ -386,6 +483,10 @@ export const useTranscriptView = (options: {
     }
   }), [renderer, cancelPosition])
   return {
+    transcript: shownTranscript,
+    worker: shownWorker,
+    tabs: shownTabs,
+    inspectedAt,
     scroll,
     workerScroll,
     dragScroll,

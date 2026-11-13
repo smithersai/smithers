@@ -4,6 +4,7 @@ import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { afterEach, expect, test } from "bun:test"
+import { Option } from "effect"
 import { setImmediate, setTimeout as timerPhase } from "node:timers/promises"
 import { act, useState } from "react"
 import type * as Panels from "../src/panels.ts"
@@ -329,6 +330,7 @@ test("reveal uses the mounted scroll box and ending inspection restores its orig
   await action((view) => view.inspectActivity(1, false))
   await action((view) => view.followLive())
   expect(current().activeInspection).toBeUndefined()
+  await drainReveal()
   expect(box.scrollTop).toBe(position)
   await action((view) => view.snapToLive())
   expect(box.scrollTop).toBe(box.scrollHeight - box.viewport.height)
@@ -548,14 +550,19 @@ test("a later inspection retains its own target after both delayed deadlines", a
     }),
     201
   )
+  transcript = Transcript.apply(
+    transcript,
+    new AgentEvent.CellProduced({ eventType: "flows.harness.cell-produced.v1", cell: Cell.source("2") }),
+    202
+  )
   for (let index = 0; index < 20; index++) {
     transcript = Transcript.note(transcript, `Second update ${index}`, 202 + index)
   }
   await mount({ transcript })
   await action((view) => view.inspectActivity(1))
   await action((view) => view.inspectActivity(4))
-  const position = current().scroll.current!.scrollTop
   await drainReveal()
+  const position = current().scroll.current!.scrollTop
   expect(current().activeInspection?.seq).toBe(4)
   expect(current().jumpTarget).toBe("chat:22")
   expect(current().scroll.current!.scrollTop).toBe(position)
@@ -658,4 +665,105 @@ test("growing from ten to eleven batches hides the oldest focus, and mouse expan
   expect(current().focusedCard).toBeUndefined()
   await change(ten)
   expect(current().lines.some((line) => line.kind === "earlier")).toBe(false)
+})
+
+test("inspection excludes a later answer, cell results and run cards while preserving the live view", async () => {
+  const transcript = done(100)
+  const later = { ...tabs[0]!, startedAt: 105, status: "done" as const, endedAt: 110, answer: "future worker answer" }
+  await mount({ transcript, tabs: [later] })
+  expect(current().rows.some((row) => row.item.kind === "answer")).toBe(true)
+  await action((view) => view.inspectActivity(1, false))
+  expect(current().rows.some((row) => row.item.kind === "answer")).toBe(false)
+  expect(current().rows.some((row) => row.item.kind === "cell")).toBe(false)
+  expect(current().lines.some((line) => line.kind === "grid")).toBe(false)
+  await action((view) => view.followLive())
+  expect(current().rows.some((row) => row.item.kind === "answer")).toBe(true)
+  expect(current().lines.some((line) => line.kind === "grid")).toBe(true)
+})
+
+test("worker inspection hides its later answer and settled header while live remains available", async () => {
+  const worker = done(100)
+  const tab = { ...tabs[0]!, status: "done" as const, endedAt: 102, answer: "Done" }
+  await mount({ tabs: [tab], worker: () => worker, surface: "tab:w1" })
+  await action((view) => view.inspectActivity(1, false))
+  expect(current().worker("w1").items.some((item) => item.kind === "answer")).toBe(false)
+  expect(current().tabs[0]?.status).toBe("running")
+  expect(current().tabs[0]?.answer).toBeUndefined()
+  await action((view) => view.followLive())
+  expect(current().worker("w1")).toBe(worker)
+  expect(current().tabs[0]?.answer).toBe("Done")
+})
+
+test.each([103, 90])("inspection derives other run cards from request records despite later clock %s", async (at) => {
+  let transcript = running(100)
+  transcript = Transcript.apply(
+    transcript,
+    new AgentEvent.CellProduced({ eventType: "flows.harness.cell-produced.v1", cell: Cell.source("delegate") }),
+    101
+  )
+  for (
+    const [ordinal, flowName, input] of [
+      [0, "agent.delegate", { id: "w1", title: "Original task", prompt: "Original prompt", model: "original-seat" }],
+      [1, "smithers.run", { id: "r1", flow: "original/flow", input: {} }]
+    ] as const
+  ) {
+    transcript = Transcript.apply(
+      transcript,
+      new AgentEvent.CellCallStarted({
+        eventType: "flows.harness.cell-call-started.v1",
+        call: new Cell.Call({
+          flowName,
+          input,
+          capabilities: [],
+          effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+          placement: Option.none(),
+          identity: new Cell.CallIdentity({
+            session: "test",
+            frame: 0,
+            cell: "cell",
+            ordinal,
+            declaration: flowName,
+            layers: []
+          })
+        })
+      }),
+      102 + ordinal
+    )
+  }
+  await mount({
+    transcript,
+    tabs: [{
+      ...tabs[0]!,
+      title: "Future task",
+      prompt: "Future prompt",
+      seat: "future-seat",
+      startedAt: at,
+      endedAt: at,
+      status: "done",
+      answer: "Future answer"
+    }],
+    runs: [{
+      id: "r1",
+      flow: "future/flow",
+      by: "agent",
+      input: {},
+      requested: "{}",
+      startedAt: at,
+      endedAt: at,
+      status: "done",
+      answer: "Future flow answer"
+    }]
+  })
+  await action((view) => view.inspectActivity(transcript.activity!.records.at(-1)!.sequence!, false))
+  expect(current().tabs[0]).toMatchObject({
+    title: "Original task",
+    prompt: "Original prompt",
+    seat: "original-seat",
+    status: "requested"
+  })
+  expect(current().tabs[0]?.answer).toBeUndefined()
+  const runs = current().lines.flatMap((line) => line.kind === "grid" ? line.batch.runs ?? [] : [])
+  expect(runs).toHaveLength(1)
+  expect(runs[0]).toMatchObject({ flow: "original/flow", status: "requested" })
+  expect(runs[0]?.answer).toBeUndefined()
 })

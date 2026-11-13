@@ -165,6 +165,84 @@ export const empty: Transcript = {
   usage: { input: 0, output: 0, cached: 0, context: 0, usd: 0 }
 }
 
+/** An event retains only changed items, rather than a copy of every earlier row. */
+interface Projection {
+  readonly state: Omit<Transcript, "activity" | "items" | "past">
+  readonly status: Activity.Activity["status"]
+  readonly changed: ReadonlyArray<Item>
+  readonly removed: ReadonlyArray<string>
+  readonly prior?: Projection
+}
+type ActivityRecord = Activity.Activity["records"][number]
+const projections = new WeakMap<ActivityRecord, Projection>()
+const latest = new WeakMap<ActivityRecord, { readonly projection: Projection; readonly items: ReadonlyArray<Item> }>()
+const inspections = new WeakMap<ActivityRecord, { readonly projection: Projection; readonly transcript: Transcript }>()
+const itemsOf = (projection: Projection): ReadonlyArray<Item> => {
+  const chain: Array<Projection> = []
+  for (let each: Projection | undefined = projection; each !== undefined; each = each.prior) chain.push(each)
+  const items = new Map<string, Item>()
+  for (const each of chain.reverse()) {
+    for (const id of each.removed) items.delete(id)
+    for (const item of each.changed) items.set(item.id, item)
+  }
+  return [...items.values()]
+}
+const remember = (transcript: Transcript): Transcript => {
+  const activity = transcript.activity
+  const first = activity?.records[0]
+  const record = activity?.records.at(-1)
+  if (first !== undefined && record !== undefined && !projections.has(record)) {
+    const previousActivity = activity!.records.length === 1 ? transcript.past?.at(-1) : undefined
+    const previousFirst = previousActivity?.records[0]
+    const previousRecord = activity!.records.at(-2) ?? previousActivity?.records.at(-1)
+    const prior = previousRecord === undefined ? undefined : projections.get(previousRecord)
+    const cached = latest.get(first) ?? (previousFirst === undefined ? undefined : latest.get(previousFirst))
+    const before = new Map((prior === undefined ?
+      [] :
+      cached?.projection === prior
+      ? cached.items
+      : itemsOf(prior)).map((item) => [item.id, item]))
+    const present = new Set(transcript.items.map((item) => item.id))
+    const { activity: _activity, items: _items, past: _past, ...state } = transcript
+    const projection: Projection = {
+      state,
+      status: activity!.status,
+      changed: transcript.items.filter((item) => before.get(item.id) !== item),
+      removed: [...before.keys()].filter((id) => !present.has(id)),
+      prior
+    }
+    projections.set(record, projection)
+    latest.set(first, { projection, items: transcript.items })
+    if (previousFirst !== undefined && previousFirst !== first) {
+      latest.delete(previousFirst)
+      inspections.delete(previousFirst)
+    }
+  }
+  return transcript
+}
+
+/** The exact event prefix, independent of subsequent cell, patch or answer updates. */
+export const inspect = (transcript: Transcript, sequence?: number): Transcript => {
+  if (sequence === undefined || transcript.activity === undefined) return transcript
+  const activity = transcript.activity
+  const first = activity.records[0]
+  const record = activity.records.findLast((record) => record.sequence! <= sequence)
+  const saved = record === undefined ? undefined : projections.get(record)
+  const cached = first === undefined ? undefined : inspections.get(first)
+  if (saved !== undefined && cached?.projection === saved) return cached.transcript
+  const inspected: Transcript = {
+    ...(saved?.state ?? empty),
+    items: saved === undefined ? [] : itemsOf(saved),
+    past: transcript.past,
+    activity: {
+      records: activity.records.filter((record) => record.sequence! <= sequence),
+      status: saved?.status ?? "running"
+    }
+  }
+  if (first !== undefined && saved !== undefined) inspections.set(first, { projection: saved, transcript: inspected })
+  return inspected
+}
+
 type CellItem = Extract<Item, { kind: "cell" }>
 
 type Unsaved = Item extends infer Each ? Each extends Item ? Omit<Each, "id"> : never : never
@@ -259,18 +337,18 @@ const end = (transcript: Transcript, status: "failed" | "cancelled", text: strin
 
 /** The turn failed; `text` is its cause. */
 export const failure = (transcript: Transcript, text: string, at: number): Transcript =>
-  withId(end(transcript, "failed", text, at), { kind: "error", text }, at)
+  remember(withId(end(transcript, "failed", text, at), { kind: "error", text }, at))
 
 /** A person stopped the turn. */
 export const stopped = (transcript: Transcript, at: number): Transcript =>
-  withId(end(transcript, "cancelled", "Stopped", at), { kind: "error", text: "stopped", stopped: true }, at)
+  remember(withId(end(transcript, "cancelled", "Stopped", at), { kind: "error", text: "stopped", stopped: true }, at))
 
 /**
  * The turn finished with `answer`, but no judge could check it: done, never
  * failed. The answer stands as a finished turn's does.
  */
 export const unchecked = (transcript: Transcript, answer: string, at: number): Transcript =>
-  withId(
+  remember(withId(
     {
       ...settleOpen(transcript, at, "done"),
       streaming: "",
@@ -280,7 +358,7 @@ export const unchecked = (transcript: Transcript, answer: string, at: number): T
     },
     { kind: "answer", text: answer },
     at
-  )
+  ))
 
 /**
  * Splits a reply into the prose around its fences and the program inside
@@ -475,7 +553,7 @@ export const apply = (transcript: Transcript, event: Activity.Observed, at: numb
     transcript.contextAssessment.frame > event.frame
   ) return transcript
   const activity = Activity.apply(transcript.activity ?? Activity.empty, event, at)
-  return applyEvent(activity === transcript.activity ? transcript : { ...transcript, activity }, event, at)
+  return remember(applyEvent(activity === transcript.activity ? transcript : { ...transcript, activity }, event, at))
 }
 
 const applyEvent = (transcript: Transcript, event: Activity.Observed, at: number): Transcript => {

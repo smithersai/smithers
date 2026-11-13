@@ -84,3 +84,64 @@ describe("scrubber navigation", () => {
     expect(Scrubber.step(next, tested).line).toEqual(Scrubber.step(transcript, tested).line)
   })
 })
+
+test("restored inspection keeps a running command free of its later exit, patch and answer", () => {
+  const record = activity.records.find((record) =>
+    record.kind === "control.agent.cell-call-started" &&
+    (record.payload as { flowName?: string }).flowName === "bash"
+  )!
+  const inspected = Transcript.inspect(transcript, record.sequence)
+  const current = inspected.items.filter((item) => item.kind === "cell").at(-1)!
+  expect(current.calls.at(-1)?.status).toBe("running")
+  expect(current.calls.at(-1)?.exit).toBeUndefined()
+  expect(current.calls.at(-1)?.patches).toBeUndefined()
+  expect(current.endedAt).toBeUndefined()
+  expect(inspected.items.some((item) => item.kind === "answer")).toBe(false)
+  expect(Scrubber.step(inspected, current).line?.result ?? "").not.toContain("exit")
+  expect(Scrubber.step(inspected, current).notes.every((note) => note.seq <= record.sequence!)).toBe(true)
+  const final = Transcript.inspect(transcript, activity.records.at(-1)!.sequence)
+  expect(final.items.some((item) => item.kind === "answer")).toBe(true)
+  expect(final.activity?.status).toBe("completed")
+  expect(Transcript.inspect(transcript)).toBe(transcript)
+  expect(Transcript.inspect(transcript, 0).items).toEqual([])
+})
+
+test.each(["recorded", "tied", "regressing"] as const)(
+  "inspection equals replay of the saved prefix with %s clocks",
+  (clocks) => {
+    const records = Session.load(fixture).map((record, index) =>
+      "at" in record
+        ? { ...record, at: clocks === "tied" ? 100 : clocks === "regressing" ? 1000 - index : record.at }
+        : record
+    )
+    const whole = Session.restore(records).transcript
+    let previous = 0
+    for (const [index, record] of records.entries()) {
+      if (record.type !== "event") continue
+      const prefix = Session.restore(records.slice(0, index + 1)).transcript
+      const sequence = prefix.activity?.records.at(-1)?.sequence ?? 0
+      if (sequence === previous) continue
+      previous = sequence
+      if (sequence % 17 !== 0) continue
+      const inspected = Transcript.inspect(whole, sequence)
+      expect(inspected.items).toEqual(prefix.items)
+      expect(inspected.usage).toEqual(prefix.usage)
+      expect(inspected.activity?.records).toEqual(prefix.activity?.records)
+    }
+  }
+)
+
+test("branching a recorded prefix cannot inherit another branch's item versions", () => {
+  const records = Session.load(fixture)
+  const prefix = records.slice(
+    0,
+    records.findIndex((record) => record.type === "event" && record.event._tag === "cell-produced") + 1
+  )
+  const base = Session.restore(prefix).transcript
+  const left = Transcript.failure(base, "left branch", 200)
+  const right = Transcript.stopped(base, 100)
+  const sequence = left.activity!.records.at(-1)!.sequence!
+  expect(Transcript.inspect(left, sequence).items.at(-1)).toMatchObject({ kind: "error", text: "left branch" })
+  expect(Transcript.inspect(right, sequence).items.at(-1)).toMatchObject({ kind: "error", text: "stopped" })
+  expect(Transcript.inspect(left, sequence).items.at(-1)).toMatchObject({ kind: "error", text: "left branch" })
+})

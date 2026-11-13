@@ -189,9 +189,39 @@ describe("monitor lifecycle", () => {
     verdict.resolve(false)
     await until(() => world.delivered.length === 1)
     expect(world.judgeCalls).toEqual([
-      { watch: "the build fails", before: "baseline", after: "working" },
-      { watch: "the build fails", before: "working", after: "failed" }
+      {
+        id: `ci/${world.monitors.list()[0]!.createdAt}/0`,
+        watch: "the build fails",
+        before: "baseline",
+        after: "working"
+      },
+      {
+        id: `ci/${world.monitors.list()[0]!.createdAt}/1`,
+        watch: "the build fails",
+        before: "working",
+        after: "failed"
+      }
     ])
+  })
+
+  it("gives repeated routine changes distinct persisted reading identities", async () => {
+    const world = harness({ values: ["a", "b", "a", "b"], judge: async () => false })
+    world.monitors.create(watchTab)
+    for (let tick = 0; tick < 4; tick++) await world.monitors.tick("ci")
+    const createdAt = world.monitors.list()[0]!.createdAt
+    expect(world.judgeCalls.map((input) => input.id)).toEqual([
+      `ci/${createdAt}/0`,
+      `ci/${createdAt}/1`,
+      `ci/${createdAt}/2`
+    ])
+    expect(world.composeCalls).toHaveLength(0)
+    const restored = harness({
+      values: ["a"],
+      judge: async () => false,
+      restored: Session.restore(world.records).monitors
+    })
+    await restored.monitors.tick("ci")
+    expect(restored.judgeCalls[0]?.id).toBe(`ci/${createdAt}/3`)
   })
 
   it("coalesces events during one tick into one more observation", async () => {

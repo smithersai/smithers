@@ -57,7 +57,7 @@ composition guide: what each piece is, and what a host has to provide.
 
 `Agent.layer` provides the production implementation and requires both a quota
 classifier and a budget, captures both during layer construction, and uses those
-policies as defaults for its runs. An explicit per-run policy, including an
+policies as defaults for its runs. Fresh provider attempts require budget admission; a sealed replay restores its answer and usage even if the day's cap has since been reached. An explicit per-run policy, including an
 approved envelope budget, takes precedence. It composes the whole cell path, the controller in
 `@smthrs/harness/CellTurn`, registry-backed call
 resolution in `@smthrs/harness/CellCalls`, the QuickJS sandbox, the durable

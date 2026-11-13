@@ -114,7 +114,7 @@ use that environment's home and directory. Sign in with
 
 Spend caps are tripwires for runaway loops, not cost control. Each chat turn
 and each worker stops before a model call's estimated total would pass **200M
-tokens** (`--budget-tokens <n>` or `SMITHERS_TUI_BUDGET_TOKENS`). All runs on
+tokens** (`--budget-tokens <n>` or `SMITHERS_TUI_BUDGET_TOKENS`). Background captions, monitor judgments and monitor updates use the same caps and daily ledger. Their model steps and answers are kept in a private SQLite store beside the conversation files, so restarting replays a settled request. All runs on
 this machine together stop new model calls at **2B tokens per UTC day**
 (`--budget-daily-tokens <n>` or `SMITHERS_TUI_BUDGET_DAILY_TOKENS`). The flag
 wins over the variable; `0` or `none` disables a cap. A healthy long Opus or
@@ -254,7 +254,7 @@ Ctrl+T opens a one-row timeline over the current view with recorded actions.
 Esc closes it. Idle Chat reserves two composer rows; worker headers use two rows.
 Decisions and recovery controls reserve space before the transcript is clipped.
 Inspection reads
-the journal up to the selected event, so later results do not appear early.
+the journal up to the selected event: cell status, command exits, patches, trace notes and answers show only what was known then. Other runs show their recorded requests; inspect a run’s own timeline for its results. Returning to live restores the current transcript.
 Restoring a session reconstructs the same timeline from its saved events.
 Worker tabs show `queued` (waiting for a pool seat), `requested`, `running`,
 `waiting` for children, `parked` (with a reset time), `done`, `failed`, or

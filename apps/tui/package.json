@@ -31,6 +31,8 @@
     "@smthrs/kernel": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/plan": "workspace:*",
+    "@smthrs/platform-bun": "workspace:*",
+    "@smthrs/platform-node": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/rpc": "workspace:*",
     "@smthrs/sandbox": "workspace:*",

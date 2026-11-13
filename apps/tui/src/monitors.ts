@@ -66,6 +66,8 @@ export interface Monitor {
   /** The last observation, so a reload does not re-announce it. */
   readonly seen?: string
   readonly updates: number
+  /** Settled changed observations, including routine ones; absent in older sessions. */
+  readonly observations?: number
   readonly createdAt: number
   readonly endedAt?: number
 }
@@ -80,6 +82,7 @@ export interface Request {
 
 /** What Jev judges and Luna writes from. */
 export interface Judged {
+  readonly id?: string
   readonly watch: string
   readonly before: string
   readonly after: string
@@ -309,7 +312,12 @@ export class Monitors {
     const observed = current()
     if (observed === undefined || observed.seen === after) return
     if (observed.seen === undefined) return this.save({ ...observed, seen: after })
-    const judged: Judged = { watch: observed.watch, before: observed.seen, after }
+    const judged: Judged = {
+      id: `${id}/${observed.createdAt}/${observed.observations ?? 0}`,
+      watch: observed.watch,
+      before: observed.seen,
+      after
+    }
     let notable: boolean
     try {
       notable = await this.ports.judge(judged)
@@ -322,7 +330,7 @@ export class Monitors {
     }
     const decided = current()
     if (decided === undefined) return
-    if (!notable) return this.save({ ...decided, seen: after })
+    if (!notable) return this.save({ ...decided, seen: after, observations: (decided.observations ?? 0) + 1 })
     let text: string
     try {
       text = (await this.ports.compose(judged)).replace(/\s+/g, " ").trim().slice(0, 240)
@@ -333,7 +341,12 @@ export class Monitors {
     const composed = current()
     if (composed === undefined) return
     const at = Date.now()
-    this.save({ ...composed, seen: after, updates: composed.updates + 1 })
+    this.save({
+      ...composed,
+      seen: after,
+      updates: composed.updates + 1,
+      observations: (composed.observations ?? 0) + 1
+    })
     this.ports.persist({ type: "monitor-update", at, id, title: composed.title, text })
     this.ports.deliver({ _tag: "update", id, title: composed.title, text, at })
   }
@@ -386,7 +399,7 @@ export const message = (failure: Failure): string =>
     ? `Refused: ${failure.message}`
     : `Source failed: ${failure.message}`
 
-const question = {
+export const question = {
   notable: Classifier.boolean({
     instructions:
       "The user asked to be told when this happens: `watching`. Compare `before` with `after`. Is there a new development in `after` that the user would want to hear about now? Routine progress, repeated output and unrelated changes are not notable.",
@@ -406,9 +419,9 @@ async (input: Judged): Promise<boolean> => {
       questions: question
     })
   } catch (error) {
-    const typed = error as Partial<Evaluator.EvaluatorError>
+    const typed = error instanceof Evaluator.EvaluatorError ? error : undefined
     throw new MonitorError(
-      typeof typed?.code === "string"
+      typed !== undefined
         ? {
           _tag: "JevFailed",
           code: typed.code,

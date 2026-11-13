@@ -832,6 +832,8 @@ export interface Dispatch {
       HarnessError.HarnessError
     >
     | undefined
+  /** Fresh-attempt admission; replay never asks permission to spend again. */
+  readonly admit?: Effect.Effect<void, HarnessError.HarnessError, FlowRuntime.FlowInstance> | undefined
   readonly reserveCall?: RecordOptions["reserveCall"]
   readonly checkpointCall?: RecordOptions["checkpointCall"]
   readonly recordCall?: ((call: CallReceipt) => Effect.Effect<void, HarnessError.HarnessError>) | undefined
@@ -899,6 +901,7 @@ export const dispatch = (
       tier: "sealed",
       idempotencyKey: options.key,
       execute: Effect.gen(function*() {
+        if (options.admit !== undefined) yield* options.admit
         executed = true
         const attempt = yield* Action.CurrentAttempt
         const startedAt = yield* Clock.currentTimeMillis

@@ -632,7 +632,7 @@ describe("background work", () => {
   it("caches one description per tab from the worker's own seat and falls back to the title on failure", async () => {
     const f = setup()
     let finish!: (text: string) => void
-    const calls: Array<{ title: string; prompt: string; seat: string }> = []
+    const calls: Array<{ id?: string; title: string; prompt: string; seat: string }> = []
     ;(f.host as { describe?: Host.Host["describe"] }).describe = (input) => {
       calls.push(input)
       return new Promise((resolve) => {
@@ -642,7 +642,12 @@ describe("background work", () => {
     f.workspace.request(request)
     expect(f.workspace.snapshot().tabs[0]?.description).toBeUndefined()
     f.workspace.request(request)
-    expect(calls).toEqual([{ title: request.title, prompt: request.prompt, seat: "worker:test" }])
+    expect(calls).toEqual([{
+      id: f.workspace.snapshot().tabs[0]!.file,
+      title: request.title,
+      prompt: request.prompt,
+      seat: "worker:test"
+    }])
     finish("  Fix   addition\n and verify " + "x".repeat(90))
     await tick()
     const description = f.workspace.snapshot().tabs[0]?.description

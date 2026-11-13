@@ -2699,3 +2699,178 @@ describe("Host.run approvals remember a run's answers", () => {
     }
   }, 60000)
 })
+
+describe("background completion admission", () => {
+  test("a zero run cap refuses caption and monitor composition before contacting the provider", async () => {
+    let calls = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => {
+        calls++
+        return new Response(
+          "data: {\"choices\":[{\"delta\":{\"content\":\"caption\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+          { headers: { "content-type": "text/event-stream" } }
+        )
+      }
+    })
+    const cwd = mkdtempSync(join(tmpdir(), "tui-background-cap-"))
+    roots.push(cwd)
+    const host = Host.make({
+      cwd,
+      environment: { OPENAI_API_KEY: "k", SMITHERS_OPENAI_COMPATIBLE_BASE_URL: `http://127.0.0.1:${server.port}` },
+      budget: { tokens: { max: 0 } },
+      ledger: Spend.ledger(join(cwd, "spend"))
+    })
+    try {
+      await expect(host.describe!({ title: "task", prompt: "work", seat: "openai:gpt-6-luna" })).rejects.toThrow(
+        "approved tokens"
+      )
+      await expect(host.monitor!.compose({ watch: "check", before: "pending", after: "done" })).rejects.toThrow(
+        "approved tokens"
+      )
+      await expect(host.monitor!.judge({ watch: "check", before: "pending", after: "done" })).rejects.toThrow(
+        "approved tokens"
+      )
+      expect(calls).toBe(0)
+    } finally {
+      await host.dispose()
+      server.stop()
+    }
+  })
+})
+
+test("background completions replay per project and charge the shared daily ledger once", async () => {
+  let calls = 0
+  const server = Bun.serve({
+    port: 0,
+    fetch: () => {
+      calls++
+      const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`
+      return new Response(
+        event({ choices: [{ delta: { role: "assistant", content: "A short caption" }, finish_reason: null }] }) +
+          event({ choices: [{ delta: {}, finish_reason: "stop" }] }) +
+          event({ choices: [], usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 } }) +
+          "data: [DONE]\n\n",
+        { headers: { "content-type": "text/event-stream" } }
+      )
+    }
+  })
+  const cwd = mkdtempSync(join(tmpdir(), "tui-background-replay-"))
+  roots.push(cwd)
+  const ledger = Spend.ledger(join(cwd, "spend"))
+  const options = {
+    cwd,
+    environment: { OPENAI_API_KEY: "k", SMITHERS_OPENAI_COMPATIBLE_BASE_URL: `http://127.0.0.1:${server.port}` },
+    budget: { tokens: { max: 1000 }, daily: { max: 10_000 } },
+    ledger
+  }
+  const input = { id: "worker-caption", title: "task", prompt: "work", seat: "openai:gpt-6-luna" }
+  let host = Host.make(options)
+  try {
+    expect(await host.describe!(input)).toBe("A short caption")
+    expect(calls).toBe(1)
+    await host.dispose()
+    host = Host.make(options)
+    expect(await host.describe!({ seat: input.seat, prompt: input.prompt, title: input.title, id: input.id })).toBe(
+      "A short caption"
+    )
+    expect(calls).toBe(1)
+    expect(await Effect.runPromise(ledger.total(new Date().toISOString().slice(0, 10)))).toBe(30)
+    const otherCwd = mkdtempSync(join(tmpdir(), "tui-background-other-"))
+    roots.push(otherCwd)
+    const other = Host.make({ ...options, cwd: otherCwd })
+    try {
+      expect(await other.describe!(input)).toBe("A short caption")
+      expect(calls).toBe(2)
+      expect(await Effect.runPromise(ledger.total(new Date().toISOString().slice(0, 10)))).toBe(60)
+    } finally {
+      await other.dispose()
+    }
+    expect(await host.monitor!.compose({ id: "monitor-change", watch: "check", before: "pending", after: "done" }))
+      .toBe("A short caption")
+    expect(calls).toBe(3)
+    await Effect.runPromise(ledger.record({
+      day: new Date().toISOString().slice(0, 10),
+      runId: "another-run",
+      stepKey: "fill",
+      spent: 9910
+    }))
+    await expect(host.describe!({ ...input, id: "another-worker" })).rejects.toThrow("UTC day")
+    expect(calls).toBe(3)
+  } finally {
+    await host.dispose()
+    server.stop()
+  }
+}, 30_000)
+
+test("monitor judgments replay their sealed reading after the host restarts", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "tui-monitor-replay-"))
+  roots.push(cwd)
+  let readings = 0
+  const options = {
+    cwd,
+    environment: {},
+    budget: { tokens: { max: 1000 } },
+    judge: Evaluator.layerScripted(() => {
+      readings++
+      return { notable: { probability: 0.99 } }
+    })
+  }
+  const input = { id: "persisted-watch", watch: "finished", before: "pending", after: "done" }
+  let host = Host.make(options)
+  try {
+    expect(await host.monitor!.judge(input)).toBe(true)
+    await host.dispose()
+    host = Host.make(options)
+    expect(await host.monitor!.judge({ after: input.after, before: input.before, watch: input.watch, id: input.id }))
+      .toBe(true)
+    expect(readings).toBe(1)
+  } finally {
+    await host.dispose()
+  }
+}, 30_000)
+
+test("a paid monitor timeout replays its failure and reconciles usage once", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "tui-monitor-timeout-"))
+  roots.push(cwd)
+  const ledger = Spend.ledger(join(cwd, "spend"))
+  let readings = 0
+  const options = {
+    cwd,
+    environment: {},
+    budget: { tokens: { max: 1000 }, daily: { max: 10_000 } },
+    ledger,
+    judge: Evaluator.layerScripted(() => {
+      readings++
+      return Effect.fail(
+        new Evaluator.EvaluatorError({
+          code: "timeout",
+          message: "The judgment timed out after reporting usage",
+          usage: { inputTokens: 20, outputTokens: 10, modelId: "test-judge" }
+        })
+      )
+    })
+  }
+  const input = { id: "paid-timeout", watch: "finished", before: "pending", after: "done" }
+  let host = Host.make(options)
+  try {
+    await expect(host.monitor!.judge(input)).rejects.toMatchObject({
+      _tag: "JevFailed",
+      code: "timeout",
+      failure: { _tag: "JevFailed", code: "timeout", message: "The judgment timed out after reporting usage" }
+    })
+    expect(readings).toBe(1)
+    expect(await Effect.runPromise(ledger.total(new Date().toISOString().slice(0, 10)))).toBe(30)
+    await host.dispose()
+    host = Host.make(options)
+    await expect(host.monitor!.judge(input)).rejects.toMatchObject({
+      _tag: "JevFailed",
+      code: "timeout",
+      failure: { _tag: "JevFailed", code: "timeout", message: "The judgment timed out after reporting usage" }
+    })
+    expect(readings).toBe(1)
+    expect(await Effect.runPromise(ledger.total(new Date().toISOString().slice(0, 10)))).toBe(30)
+  } finally {
+    await host.dispose()
+  }
+}, 30_000)
