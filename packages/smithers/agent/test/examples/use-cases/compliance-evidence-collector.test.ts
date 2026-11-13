@@ -1,4 +1,5 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -178,7 +179,10 @@ it.effect("fails without a packet when a normalize fails", () =>
     }))
 
     // Unlike a fetch, a failed normalize is not dropped: 0.x set no continueOnFail on it.
-    expect(Exit.isFailure(exit)).toBe(true)
+    expect(Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : undefined).toMatchObject({
+      _tag: "Some",
+      value: { _tag: "/harness/StructuredOutputFailure" }
+    })
     expect(turns).toContain("normalize CC7.2/siem")
     expect(turns).not.toContain("packet SOC2")
   }))

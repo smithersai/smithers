@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
-import { Effect, Layer } from "effect"
+import { Cause, Effect, Exit, Layer } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { describe, expect, it } from "vitest"
@@ -140,7 +140,10 @@ describe("WorkspaceSandbox", () => {
       test.service.materialize(stale).pipe(Effect.provide(NodeCrypto.layer))
     )
 
-    expect(conflict._tag).toBe("Failure")
+    expect(Exit.isFailure(conflict) ? Cause.findErrorOption(conflict.cause) : undefined).toMatchObject({
+      _tag: "Some",
+      value: { _tag: WorkspaceSandbox.MaterializationConflict.identifier, paths: ["out/result.txt"] }
+    })
     expect(text(await Effect.runPromise(test.files), "out/result.txt")).toBe("current")
   })
 
@@ -193,7 +196,10 @@ describe("WorkspaceSandbox", () => {
       const invalid = await Effect.runPromiseExit(
         InMemoryWorkspaceSandbox.make({ [path]: "invalid" }).pipe(Effect.provide(NodeCrypto.layer))
       )
-      expect(invalid._tag).toBe("Failure")
+      expect(Exit.isFailure(invalid) ? Cause.findErrorOption(invalid.cause) : undefined).toMatchObject({
+        _tag: "Some",
+        value: { _tag: WorkspaceSandbox.WorkspaceError.identifier, code: "invalid_path" }
+      })
     }
 
     const test = await run(InMemoryWorkspaceSandbox.make({ "bytes.bin": encoder.encode("bytes") }))
@@ -207,7 +213,10 @@ describe("WorkspaceSandbox", () => {
         })
       }).pipe(Effect.provide(NodeCrypto.layer))
     )
-    expect(missing._tag).toBe("Failure")
+    expect(Exit.isFailure(missing) ? Cause.findErrorOption(missing.cause) : undefined).toMatchObject({
+      _tag: "Some",
+      value: { _tag: WorkspaceSandbox.WorkspaceError.identifier, code: "not_found" }
+    })
     expect(text(await Effect.runPromise(test.files), "bytes.bin")).toBe("bytes")
   })
 

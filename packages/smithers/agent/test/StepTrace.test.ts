@@ -44,7 +44,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Provided>) =>
 
 class Unprovided extends Context.Service<Unprovided, { readonly value: string }>()("test/agent/StepTrace/Unprovided") {}
 
-/** Never called; tsc checks it (#2704). */
+/** Compile-time regression (#2704), checked by the package's `check` target, never called at runtime. */
 const unprovidedServiceProbe = () => {
   const unmet = Effect.map(Unprovided, (service) => service.value)
   expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof run>[0]>()
@@ -343,11 +343,4 @@ describe("agent checkpoint time travel", () => {
       expect(calls).toBe(1)
     }))
   }, 60_000)
-})
-
-describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {
-  it("rejects a body that needs a service run does not provide", () => {
-    // The assertion is the `@ts-expect-error` directive on unprovidedServiceProbe.
-    expect(unprovidedServiceProbe).toBeTypeOf("function")
-  })
 })

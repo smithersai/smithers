@@ -1,4 +1,5 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -117,7 +118,10 @@ it.effect("stops before loading when the transform fails", () =>
       actions: layer
     }))
 
-    expect(Exit.isFailure(exit)).toBe(true)
+    expect(Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : undefined).toMatchObject({
+      _tag: "Some",
+      value: { _tag: "/harness/StructuredOutputFailure" }
+    })
     expect(turns).toContain("transform r1,r2,r3")
     expect(turns.some((turn) => turn.startsWith("load"))).toBe(false)
   }))

@@ -322,9 +322,18 @@ describe("WorkspaceObservation", () => {
       })).pipe(Effect.provide(NodeFileSystem.layer))
     )
 
-    const observation = await Effect.runPromise(WorkspaceObservation.observe(fs, root))
-    expect(observation.paths).toBe(1)
-    rmSync(root, { recursive: true, force: true })
+    try {
+      const before = await Effect.runPromise(WorkspaceObservation.observe(fs, root))
+      expect(before.paths).toBe(1)
+      expect(before.complete).toBe(true)
+      write(root, "a.py", "a longer rewrite")
+      const after = await Effect.runPromise(WorkspaceObservation.observe(fs, root))
+      expect(after.paths).toBe(1)
+      expect(after.complete).toBe(true)
+      expect(after.digest).not.toBe(before.digest)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it("never leaves the root through a symlink, and never measures one", async () => {

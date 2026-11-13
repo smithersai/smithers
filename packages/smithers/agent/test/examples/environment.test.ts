@@ -10,9 +10,20 @@ import { expect, it } from "vitest"
 it.skipIf(process.env.SMITHERS_LIVE_EXAMPLES === "1")(
   "isolates the deterministic suite from every ambient provider key",
   () => {
-    expect(process.env.OPENAI_API_KEY ?? "").toBe("")
-    expect(process.env.GEMINI_API_KEY ?? "").toBe("")
-    expect(process.env.SMITHERS_EXAMPLE_API_KEY ?? "").toBe("")
+    for (
+      const key of [
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "SMITHERS_EXAMPLE_API_KEY",
+        "KIMI_API_KEY",
+        "X_API_KEY",
+        "X_API_SECRET",
+        "X_ACCESS_TOKEN",
+        "X_ACCESS_SECRET"
+      ]
+    ) {
+      expect(process.env[key] ?? "", key).toBe("")
+    }
   }
 )
 

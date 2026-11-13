@@ -1,5 +1,7 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -164,7 +166,10 @@ it.effect("stops before patching when the drift agent never answers on schema", 
       actions
     }))
 
-    expect(exit._tag).toBe("Failure")
+    expect(Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : undefined).toMatchObject({
+      _tag: "Some",
+      value: { _tag: "/harness/StructuredOutputFailure" }
+    })
     expect(log).toEqual([])
     expect(opened).toEqual([])
   }))

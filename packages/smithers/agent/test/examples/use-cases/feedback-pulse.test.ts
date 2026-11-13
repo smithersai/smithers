@@ -1,4 +1,5 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -140,7 +141,10 @@ it.effect("fails the run when the analyst fails, before anything is routed", () 
       actions: layer
     }))
 
-    expect(Exit.isFailure(exit)).toBe(true)
+    expect(Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : undefined).toMatchObject({
+      _tag: "Some",
+      value: { _tag: "/harness/StructuredOutputFailure" }
+    })
     expect(turns).toContain("extract: f1 of 1")
     expect(turns.some((turn) => turn.startsWith("notify"))).toBe(false)
   }))

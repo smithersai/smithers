@@ -1,4 +1,5 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -136,7 +137,10 @@ it.effect("fails without a review when the explanation fails", () =>
       actions: layer
     }))
 
-    expect(Exit.isFailure(exit)).toBe(true)
+    expect(Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : undefined).toMatchObject({
+      _tag: "Some",
+      value: { _tag: "/harness/StructuredOutputFailure" }
+    })
     expect(turns).toContain("explain 1 with context ")
     expect(turns.some((turn) => turn.startsWith("review"))).toBe(false)
   }))

@@ -1,4 +1,5 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -130,7 +131,10 @@ it.effect("fails without validating when an extractor fails", () =>
       })
     )
 
-    expect(Exit.isFailure(exit)).toBe(true)
+    expect(Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : undefined).toMatchObject({
+      _tag: "Some",
+      value: { _tag: "/harness/StructuredOutputFailure" }
+    })
     expect(turns).toContain("extract broken")
     expect(turns.some((turn) => turn.startsWith("validate") || turn.startsWith("preview"))).toBe(false)
   }))

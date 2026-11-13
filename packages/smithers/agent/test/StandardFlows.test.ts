@@ -19,6 +19,7 @@ import * as EffectLayer from "effect/Layer"
  */
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Node } from "@smthrs/core"
 import * as Digest from "@smthrs/core/Digest"
 import type { FlowRuntime } from "@smthrs/flow"
 import * as Fault from "@smthrs/flow/Fault"
@@ -1214,6 +1215,15 @@ describe("the recall flow", () => {
     )
     const recall = bindings.find((binding) => binding.descriptor.name === "recall")!.descriptor
     expect(recall.description).toContain("withheld and listed")
+    expect(recall.input).toEqual({
+      _tag: "Inline",
+      document: Node.schemaIdentity(StandardFlows.recallFlow.input, { onExcessProperty: "error" })
+    })
+    expect(recall.output).toEqual({
+      _tag: "Inline",
+      document: Node.schemaIdentity(StandardFlows.JudgedRecallOutput, { onExcessProperty: "error" })
+    })
+    expect(recall.effects).toEqual(StandardFlows.recallFlow.effects)
     expect(recall.effects.tier).toBe("sealed")
   })
 })
