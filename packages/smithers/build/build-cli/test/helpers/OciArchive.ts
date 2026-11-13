@@ -48,8 +48,10 @@ export const tar = (files: ReadonlyArray<TarFile>): Buffer => {
   }
   const record = (key: string, value: string) => {
     const text = ` ${key}=${value}\n`
-    let length = text.length
-    while (`${length}${text}`.length !== length) length = `${length}${text}`.length
+    let length = Buffer.byteLength(text, "utf8")
+    while (Buffer.byteLength(`${length}${text}`, "utf8") !== length) {
+      length = Buffer.byteLength(`${length}${text}`, "utf8")
+    }
     return `${length}${text}`
   }
   for (const file of files) {
