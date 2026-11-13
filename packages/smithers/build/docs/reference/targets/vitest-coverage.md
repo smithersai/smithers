@@ -80,7 +80,7 @@ the written reports.
 |           |                                                                                                 |
 | --------- | ----------------------------------------------------------------------------------------------- |
 | Kinds     | `test`                                                                                          |
-| Cacheable | Under a declared Nix environment; never otherwise, the executable toolchain is not key material |
+| Cacheable | Never |
 | Executes  | Yes, through `ExecLive`                                                                         |
 
 ## See also

@@ -11,23 +11,18 @@ performs an irreversible operation that has none.
 ```ts
 import { Smithers } from "@smthrs/targets"
 
-const fireworksKey = Smithers.Secret("FIREWORKS_API_KEY")
+const fireworksKey = Smithers.HttpSecret(
+  Smithers.Secret("FIREWORKS_API_KEY"),
+  ["https://api.fireworks.ai"]
+)
 
 const sftLaunch = Smithers.ToolRun({
-  command: "firectl",
-  args: [
-    "supervised-fine-tuning-job",
-    "create",
-    "--base-model",
-    "kimi-k3",
-    "--dataset",
-    "pilot-sft-v0",
-    "--output-model",
-    "smithers-authoring-pilot-v0"
-  ],
-  inputs: [],
+  command: "node",
+  args: ["scripts/launch-job.mjs"],
+  inputs: [Smithers.file("scripts/launch-job.mjs")],
   deps: [],
   secrets: [fireworksKey],
+  env: { FIREWORKS_API_ORIGIN: Smithers.SecretOrigin("https://api.fireworks.ai") },
   cwd: "evals/authoring"
 })
 
@@ -35,6 +30,11 @@ export const Package = Smithers.Package({
   targets: { sftLaunch }
 })
 ```
+
+This example runs your repository's `scripts/launch-job.mjs` from
+`evals/authoring`. That script must use `process.env.FIREWORKS_API_ORIGIN` as
+its API base and `process.env.FIREWORKS_API_KEY` in its authorization header.
+The script is a declared input.
 
 Run it explicitly, and only through the `run` verb:
 
@@ -64,8 +64,8 @@ long-lived watch process, which is [Dev](dev.md).
 | `args`              | `Array<string>`          | required    | Arguments passed after the executable.                                                        |
 | `inputs`            | `Array<Input.Declared>`  | required    | Input declarations digested as key material and as ordering.                                  |
 | `deps`              | `Array<Target.Target>`   | required    | Dependency targets. A `run` target may depend on a check that must pass first.                |
-| `secrets`           | `Array<Secret>`          | `[]`        | Environment variables the substituting proxy fills at spawn. Never enter the plan or the key. |
-| `env`               | `Record<string, string>` | `{}`        | Non-secret environment merged over the confined base.                                         |
+| `secrets`           | `Array<HttpCredential>`          | `[]`        | Destination-bound HTTP credentials. The child receives placeholders, never their values. |
+| `env`               | `Record<string, string>` | `{}`        | Non-secret environment merged over the scrubbed tool environment.                                         |
 | `expectedExitCodes` | `Array<number>`          | `[0]`       | Exit codes treated as success.                                                                |
 | `timeoutMs`         | `number`                 | ten minutes | Overrides the shared exec runner's process-lifetime bound.                                    |
 | `cwd`               | `string`                 | `"."`       | Workspace-relative directory the command runs in.                                             |
@@ -84,11 +84,31 @@ Collected from the attrs: every declaration in `inputs`.
 
 ## Secrets
 
-A credential is declared with `Smithers.Secret("ENV_NAME")`, never as a literal
-in `env`. The value is read from the named environment variable at execution
-time and substituted into the child process by the proxy, so it appears in
-neither the recorded plan nor the content key. A `ToolRun` that a coding agent
-runs still receives the credential; a plan a human reads never shows it.
+A secret source is declared with `Smithers.Secret("ENV_NAME")` and bound to
+exact HTTPS service origins with `Smithers.HttpSecret(source, audiences)`.
+Pass those `HttpCredential` bindings in `secrets`, never literal values in
+`env`.
+
+At execution the child receives an opaque placeholder under the source's
+environment-variable name, plus the loopback proxy endpoint. Only an HTTP
+request to a declared audience can have that placeholder replaced with the
+credential by the proxy. The real value never enters the child environment,
+recorded plan, or content key.
+
+HTTPS audiences require `Smithers.SecretOrigin(audience)` in `args` or `env`.
+At spawn, that token becomes a loopback HTTP origin that forwards to the
+declared HTTPS service over TLS and substitutes its credential. Ordinary HTTPS
+`CONNECT` proxying cannot substitute inside TLS; a missing brokered-origin
+token fails at execution with `invalid_payload`. A tool that
+hardcodes its service host needs a host-owned adapter. Arbitrary non-HTTP
+credential use is unsupported.
+
+A confined runner must allow access to the proxy: `{ network: "loopback" }`
+on macOS, or `{ network: true }` on Linux, where loopback-only confinement is
+not supported. A closed network refuses a tool with secrets before spawn.
+`ToolRun` has no `sandbox` attribute; a host confining its irreversible exec
+runner must supply that network policy at the execution boundary. See
+[Actions and boundaries](../../concepts/actions-and-boundaries.md#hermeticity).
 
 ## Channels
 

@@ -26,11 +26,11 @@ allows real publication. `--plan` never executes.
 `Changesets.Publish` is a separate `run`-only target whose outward-action gate
 currently refuses publication. See [Changesets](changesets.md).
 
-**Cacheable** is the target's own declaration. Under a declared
-[Nix environment](../../concepts/environments.md) the planner overrides `Never`
-for the external-tool targets whose only missing key material was the
-toolchain: TsBuild, DtsBuild, Typecheck, Vitest, VitestCoverage, NodeTest,
-EsLint, BiomeCheck, DepsLint, PackageLint, CargoTest, and CargoLint.
+**Cacheable** reflects the target's declaration and native rule policy. A
+[Nix environment](../../concepts/environments.md) contributes tool identity but
+does not override that policy or make a non-cacheable target cacheable.
+Admission also requires complete input and output identities. See
+[Caching](../../workspace/caching.md#cacheability).
 
 **Executes** means the target's plan runs through its declared CLI verb, either
 as a root or as a dependency. **Plans only** means the target is
@@ -57,7 +57,7 @@ exists for future additions and is unused. See
 | [Vitest](vitest.md)                  | `test` | Never     | Executes | Runs `vitest run` over a declared test set.                 |
 | [VitestCoverage](vitest-coverage.md) | `test` | Never     | Executes | Runs `vitest run` with coverage and thresholds.             |
 | [VitestWatch](vitest-watch.md)       | `run`  | Never     | Executes | Runs an interactive `vitest watch` session.                 |
-| [NodeTest](node-test.md)             | `test` | Never     | Executes | Runs one JavaScript program whose exit code is the verdict. |
+| [NodeTest](node-test.md)             | `test` | `cache` attr | Executes | Runs one JavaScript program whose exit code is the verdict. |
 | [CargoTest](cargo.md)                | `test` | Never     | Executes | Runs `cargo test` under the declared Rust toolchain.        |
 
 ## Lint

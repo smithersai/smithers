@@ -16,8 +16,14 @@ import { Smithers } from "@smthrs/targets"
 
 export const runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
 export const packageManager = Smithers.PackageManager.Pnpm({ version: "11.21.0", runtime })
-export const nodeModules = Smithers.Install({ packageManager })
+const nodeModules = Smithers.Install({ packageManager })
+
+export const Package = Smithers.Package({ targets: { nodeModules } })
 ```
+
+The `Package.targets` key gives the install target its label, `//:nodeModules`
+in a root `PACKAGE.ts`. Exporting the target directly is rejected with
+`naked_target_export`.
 
 The CLI also runs the flow directly:
 

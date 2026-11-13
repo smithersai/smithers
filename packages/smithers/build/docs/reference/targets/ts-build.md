@@ -93,7 +93,7 @@ zero without creating it fails the target.
 |           |                                                                                                                             |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Kinds     | `build`                                                                                                                     |
-| Cacheable | Under a declared Nix environment, the result only; never otherwise, output restoration and toolchain identity are not wired |
+| Cacheable | Never |
 | Executes  | Yes, through `ExecLive`                                                                                                     |
 
 ## See also

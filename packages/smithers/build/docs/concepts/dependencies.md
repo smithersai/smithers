@@ -103,16 +103,12 @@ directly, `check` and `test` get `[lib, ...deps]`, and `lint`, `fmt`, and
 `docs` get `[]` because checking one package's sources does not require another
 package to be built.
 
-## Synthesized packages declare no edges
+## Every package declares its edges
 
-Default-target synthesis passes one static `attrs` value to every matching
-directory. That value is fixed at declaration time, so when it carries
-`deps: []` a synthesized package has no dependency edges, even when its
-`package.json` names workspace siblings.
-
-How a synthesized package should infer its edges, for example from the
-`package.json` dependencies on workspace siblings, is an open design question.
-Write a real `PACKAGE.ts` for a package that needs edges.
+The CLI does not consume `PackageDefaults` exports or infer targets from
+`package.json`. Each participating package needs an explicit `Package` map.
+Pass sibling target values to its macro or constructors through direct imports;
+workspace dependencies in `package.json` alone do not create build-graph edges.
 
 ## Ordering inside one target
 

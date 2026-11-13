@@ -12,23 +12,12 @@ decide how far to take the same move in your own repository.
 
 ## What the graph covers
 
-**One declaration produces targets for every package.** The root `PACKAGE.ts`
-declares:
-
-```ts
-import { buildAndCheckPackage } from "./package-targets.ts"
-export const packageDefaults = Smithers.PackageDefaults({
-  directories: "packages/{*,*/*,*/*/*}",
-  macro: buildAndCheckPackage
-})
-```
-
-A directory with a `package.json` and no `PACKAGE.ts` of its own synthesizes the
-standard set: `lib` (TsBuild), `check` (Typecheck), `test` (Vitest), `lint`
-(EsLint), `fmt` (Dprint), and `docs` (DocsParity). Packages whose build is not
-conventional write a `PACKAGE.ts` by hand instead. A test loads every committed
-`PACKAGE.ts` on each run, so a change to the declaration surface cannot silently
-invalidate one. See [Default targets](../extending/default-rules.md).
+**Each package declares its targets.** A participating directory has a
+`PACKAGE.ts` or `PACKAGE.vibe` exporting a `Package` map. Shared macros keep
+conventional declarations consistent, but the CLI does not consume
+`PackageDefaults` exports or synthesize labels from `package.json` alone.
+Directories without a package declaration are absent from `//packages/...`.
+See [Default targets](../extending/default-rules.md).
 
 **The gates are the same gates.** `lib` plus `check` covers what the packages'
 `check` scripts covered, `lint` plus `fmt` covers their lint scripts, and `test`

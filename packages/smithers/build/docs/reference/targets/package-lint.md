@@ -75,7 +75,7 @@ PackageReport = { publint: Exec.Result, attw: Exec.Result | null }
 |           |                                                                                                 |
 | --------- | ----------------------------------------------------------------------------------------------- |
 | Kinds     | `lint`                                                                                          |
-| Cacheable | Under a declared Nix environment; never otherwise, the executable toolchain is not key material |
+| Cacheable | Never |
 | Executes  | Yes, through `ExecLive`                                                                         |
 
 ## See also

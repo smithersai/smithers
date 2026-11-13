@@ -146,14 +146,14 @@ boolean or a function of decoded attrs. This fails safe for custom targets and f
 catalog targets that invoke an external tool whose complete toolchain identity is
 not yet key material.
 
-| Target                                        | Cacheable                                                        |
-| --------------------------------------------- | ---------------------------------------------------------------- |
-| `DocsParity`, `Filegroup` | Always; each is a bounded in-process check over declared content |
-| `PackageJsonCheck` | Only with no generated fields; generated-field checks consult host-local state |
-| `GithubCiGen`                                 | In `check` mode; never in `write` mode                           |
-| `ToolBuild`, `NodeTest`                       | Only when the declaration sets `cache: true`                     |
-| Rules the executor runs natively              | As their rule policy says; `Shell.Test` caches in `execute` mode |
-| Every other catalog target                    | Never                                                            |
+| Target                           | Cacheable                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------ |
+| `DocsParity`, `Filegroup`        | Always; each is a bounded in-process check over declared content               |
+| `PackageJsonCheck`               | Only with no generated fields; generated-field checks consult host-local state |
+| `GithubCiGen`                    | In `check` mode; never in `write` mode                                         |
+| `ToolBuild`, `NodeTest`          | Only when the declaration sets `cache: true`                                   |
+| Rules the executor runs natively | As their rule policy says; `Shell.Test` caches in `execute` mode               |
+| Every other catalog target       | Never                                                                          |
 
 Mutation, long-lived processes, model calls, and external publication are never
 cached. External compiler, test, and lint targets remain non-cacheable by

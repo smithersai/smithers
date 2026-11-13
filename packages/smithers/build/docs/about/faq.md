@@ -6,14 +6,16 @@ description: "Short answers about PACKAGE.ts evaluation, dependency edges, confi
 ## Is `PACKAGE.ts` really just TypeScript?
 
 Yes. The CLI imports it through the programmatic `tsx` loader with
-`tsconfig: false`. Every named export is inspected. Exports that are targets
-become labels, exports that are `Workspace` or `PackageDefaults` declarations become
-workspace configuration, and everything else is ignored.
+`tsconfig: false`. Each module must export `Package = Smithers.Package({ targets })`.
+Only `Package.targets` keys become labels. A top-level target export fails with
+`naked_target_export`; omitting `Package` fails with `package_export_missing`.
+Workspace configuration belongs in `WORKSPACE.ts`. Exporting `PackageDefaults`
+does not synthesize targets; see [Default targets](../extending/default-rules.md).
 
 One constraint follows from the loader. `tsconfig: false` means no tsconfig is
 read, so compiler options declared in the workspace do not apply: a `paths` alias
 does not resolve, and a relative import names the real file, extension included,
-as in `import { lib } from "../plan/PACKAGE.ts"`.
+as in `import { Package as plan } from "../plan/PACKAGE.ts"`.
 
 ## Can a target call read the filesystem?
 
@@ -27,9 +29,11 @@ planner expands and digests them during discovery. See
 Import it.
 
 ```ts
-import { lib as plan } from "../plan/PACKAGE.ts"
+import { Smithers } from "@smthrs/targets"
+import { Package as plan } from "../plan/PACKAGE.ts"
 
-export const lib = TsBuild({ packageManager, deps: [plan] /* ... */ })
+const lib = Smithers.TsBuild({ packageManager, deps: [plan.lib] /* ... */ })
+export const Package = Smithers.Package({ targets: { lib } })
 ```
 
 Labels never appear in target attributes. A target value found anywhere inside an

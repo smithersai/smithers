@@ -99,7 +99,7 @@ build system, start at [`@smthrs/cli`](/api/cli).
 
 | Page                                                                 | Description                                                                       |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [Structure](workspace/structure.md)                                  | Discovery, `PACKAGE.ts` placement, package boundaries, default-target synthesis.  |
+| [Structure](workspace/structure.md)                                  | Discovery, `PACKAGE.ts` placement, package boundaries, explicit target maps.      |
 | [Writing build files](workspace/writing-build-files.md)              | Targets, target calls, import edges, and macros.                                  |
 | [Configuration](workspace/configuration.md)                          | The workspace declaration, the cache directory, and confinement.                  |
 | [Running targets](workspace/running-targets.md)                      | `install`, the target verbs, `ci`, and what actually executes.                    |
@@ -128,7 +128,7 @@ build system, start at [`@smthrs/cli`](/api/cli).
 | ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | [Writing target definitions](extending/writing-targets.md) | `Target.make`: the attrs schema, the plan-time implementation, and typed failures. |
 | [Writing macros](extending/writing-macros.md)              | `buildAndCheckPackage` as the worked example.                                      |
-| [Default targets](extending/default-rules.md)              | `PackageDefaults`, `directories`, `marker`, `unless`, and `macro`.                 |
+| [Default targets](extending/default-rules.md)              | Explicit package maps and the current `PackageDefaults` limitation.                |
 
 ### Reference
 

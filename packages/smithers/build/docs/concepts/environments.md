@@ -126,11 +126,13 @@ transitively when it changes the resolved store path. A target whose capabilitie
 `Tsconfig`, or `Clean`, is not keyed on the closure; re-doing an in-process
 file write because a compiler changed would be work for nothing.
 
-**Cacheability.** The external-tool targets that were non-cacheable for want of
-toolchain identity become cacheable under a declared environment: `TsBuild`,
-`DtsBuild`, `Typecheck`, `Vitest`, `VitestCoverage`, `NodeTest`, `EsLint`,
-`BiomeCheck`, `DepsLint`, `PackageLint`, `CargoTest`, and `CargoLint`. Without
-an environment they stay as they were. See [Caching](../workspace/caching.md).
+**Cacheability.** Nix contributes tool identity, but does not by itself make
+a target cacheable or override its cache policy. External compiler, test, and
+lint targets remain non-cacheable unless their declaration or native rule
+policy explicitly admits caching. Reuse requires complete identities for the
+executed toolchain, declared environment, dependency inputs, and produced
+outputs; mutation remains non-cacheable. See
+[Caching](../workspace/caching.md#cacheability).
 
 **The planned node.** A planned target carries `nixEnvironment`: the store
 path, its hash, the `PATH` entries, the carried variables, and `closure`, the

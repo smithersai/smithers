@@ -119,10 +119,13 @@ provides implementations for:
 - GitHub workflow checks, documentation parity, LLM review, and package
   scaffolding.
 
-Irreversible release actions are intentionally absent. A `Changesets` version,
-`NpmPublish`, or `JsrPublish` target therefore refuses with
-`unresolved_action` instead of mutating external state through the ordinary
-executor.
+The ordinary executor provides `ExecIrreversibleLive`. `NpmPublish` and
+`JsrPublish` have a `run` verb gate that also applies through dependencies.
+Their default `dryRun: true` appends `--dry-run`; `dryRun: false` enables real
+publication. `Changesets.Version` applies versioning under `run` and checks
+drift under `lint`. `Changesets.Publish` uses a separate outward-action gate
+that currently refuses publication. The irreversible tier prevents blind
+retries and shared-cache execution, not ordinary CLI execution.
 
 ## Cache-directory host state
 

@@ -22,7 +22,7 @@ remote tier of the same read-through store.
 
 ## Zero configuration in a Smithers Cloud checkout
 
-When the root `PACKAGE.ts` declares no remote cache and `SMITHERS_CACHE_URL` is
+When `Workspace.cache.remote` is absent and `SMITHERS_CACHE_URL` is
 unset, `smithers-build` looks at the workspace's git remotes (the colocated
 `.git/config`, then the jj git backend's config) for a Smithers Cloud host and uses
 that repository's cache endpoint. Reads go out anonymously, which a public
@@ -45,15 +45,31 @@ base.
 smithers cache connect
 ```
 
-mints a public read token for the repository and writes one line into the
-root `PACKAGE.ts`, after the imports:
+mints a public read token for the repository. The current command writes a
+standalone `remoteCache` export into the root `PACKAGE.ts`; the build CLI does
+not consume that export. Move the returned declaration into `WORKSPACE.ts`
+and pass it to `Workspace.cache.remote` through `Smithers.Cache`:
 
 ```ts
-export const remoteCache = Smithers.RemoteCache.smithersCloud({
+// WORKSPACE.ts
+import { Smithers } from "@smthrs/targets"
+
+const remote = Smithers.RemoteCache.smithersCloud({
   repo: "acme/app",
   publicReadToken: "smithers_cachero_…"
 })
+
+export const Workspace = Smithers.Workspace("app", {
+  repository: "git+https://example.invalid/acme/app.git",
+  cache: Smithers.Cache({ directory: ".flows", remote }),
+  runtime,
+  packageManager,
+  nodeModules
+})
 ```
+
+The runtime, package manager, and installed modules are the workspace's existing
+declarations. Remove the unused `remoteCache` export from `PACKAGE.ts`.
 
 Commit it. The token has exactly one power: reading `acme/app`'s cache. It is
 refused with `403` on every `PUT` and `DELETE` before the body is read, it is
@@ -64,7 +80,7 @@ nothing more. This is the posture of an Nx read-only access token.
 
 `Smithers.RemoteCache.make` accepts the same `publicReadToken` option for a
 non-Smithers-Cloud endpoint that enforces the same split. The literal is the only
-credential that may appear in `PACKAGE.ts`: any string that is not a public read
+credential that may appear in `WORKSPACE.ts`: any string that is not a public read
 token is refused at declaration time, so a personal token pasted by mistake
 never lands in a committed file.
 
@@ -88,9 +104,9 @@ executes code nobody has reviewed. A publication from the run is refused with
 
 ## Generated CI
 
-`GithubCiGen` needs no cache secret for reads when the root declaration
-carries a public read token, because the workflow evaluates `PACKAGE.ts` and
-finds the literal there. Declare `cacheWriteTokenSecret` and mark the trunk
+`GithubCiGen` needs no cache secret for reads when the workspace's
+`cache.remote` declaration carries a public read token. Builds load the
+committed literal through `WORKSPACE.ts`. Declare `cacheWriteTokenSecret` and mark the trunk
 jobs `publishesToCache: true` for publication; the read credential is the
 committed token, and the write credential is an environment secret
 (`cacheWriteEnvironment`) rendered only into those jobs. The trust model is unchanged: readers are untrusted, writers

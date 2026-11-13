@@ -85,10 +85,15 @@ An action declaration has a retry tier and an effects boundary.
 | `expected` | Declarations are expectations; deviations are observable, not proofs |
 
 Cross-run engine admission requires both a `sealed` tier and a `hard`
-boundary. The normal executor does not provide release/publication action
-layers. Those rules therefore fail with `unresolved_action` instead of running
-through a cache-oriented execution path. The explicit install link layer uses
-an irreversible tier because its ignored files are not snapshot-restorable.
+boundary. The normal executor provides `ExecIrreversibleLive`.
+`NpmPublish` and `JsrPublish` execute only under `run`, including when reached
+through dependencies. They default to `dryRun: true`; `dryRun: false` enables
+real publication. `Changesets.Version` applies versioning under `run` and
+checks drift under `lint`. `Changesets.Publish` has a separate outward-action
+gate that currently refuses publication. The irreversible tier prevents blind
+retries and shared-cache execution; it does not refuse an ordinary run.
+The explicit install link layer uses that tier because its ignored files are
+not snapshot-restorable.
 
 ## 5. Dependency installation
 

@@ -109,8 +109,9 @@ smithers-build run //:newPackage --name @smthrs/widget
 
 It creates `packages/widget/package.json`, `tsconfig.json`, `README.md`,
 `src/index.ts`, and a test stub. It refuses an existing directory and writes no
-`PACKAGE.ts`; the root `PackageDefaults` synthesizes the standard build, test, lint,
-docs, and PackageJson targets.
+`PACKAGE.ts`. Add an explicit `Package` map for the new package's build, test,
+lint, docs, and `PackageJson` targets before including it in the build graph;
+`PackageDefaults` exports are not consumed by the CLI.
 
 ## Publication and lint coherence
 

@@ -1,88 +1,56 @@
 ---
 title: "Clean"
-description: "Deletes explicitly declared generated paths."
+description: "Deletes declared target output directories and workspace-rooted scratch paths."
 ---
 
-Deletes explicitly declared generated paths.
+Deletes generated output directories and explicitly named scratch paths through
+the native package executor. No runtime or inline script is required.
 
 ```ts
+// packages/greeter/PACKAGE.ts
 import { Smithers } from "@smthrs/targets"
-import { runtime } from "../../PACKAGE.ts"
 
 const clean = Smithers.Clean({
-  runtime,
-  paths: ["dist", "coverage", "*.tsbuildinfo"],
-  deps: [],
-  includeNodeModules: false,
-  cwd: "packages/greeter"
+  paths: ["packages/greeter/dist", "packages/greeter/coverage"]
 })
 
-export const Package = Smithers.Package({
-  targets: { clean }
-})
+export const Package = Smithers.Package({ targets: { clean } })
 ```
 
 ## Attributes
 
-| Name                 | Type                   | Default  | Description                                                               |
-| -------------------- | ---------------------- | -------- | ------------------------------------------------------------------------- |
-| `runtime`            | `Runtime.Runtime`      | required | The declared JavaScript runtime the inline program runs under.            |
-| `paths`              | `Array<string>`        | required | Paths to remove, resolved from `cwd`. Every entry must stay inside `cwd`. |
-| `deps`               | `Array<Target.Target>` | required | Dependency targets.                                                       |
-| `includeNodeModules` | `boolean`              | required | Also remove `node_modules` in `cwd`.                                      |
-| `cwd`                | `string`               | `"."`    | Workspace-relative directory the paths resolve from.                      |
+| Name | Type | Default | Description |
+| ---- | ---- | ------- | ----------- |
+| `targets` | `Array<Target.Target>` | omitted | Targets whose declared `outDirs` should be removed, including their immediate dependency targets' `outDirs`. |
+| `paths` | `Array<string>` | omitted | Literal paths resolved from the workspace root, regardless of the declaring package. |
 
-## Command
+To clean a build target's output directories, pass `targets: [lib]`. The
+planner resolves those `outDirs` against their declaring packages. It does not
+run the targets being cleaned.
 
-One exec node running a static script that removes exactly the paths it receives
-as arguments. The argv is `Runtime.evaluate` of the declared runtime. With the
-Node declaration:
+`paths` are literal paths, not glob patterns. In a package declaration,
+`paths: ["dist"]` means the workspace root's `dist`. Use
+`"packages/greeter/dist"` for that package's output. List a `node_modules`
+directory explicitly if it should be removed.
 
-```text
-node -e "const fs = require('node:fs'); for (const target of process.argv.slice(1)) fs.rmSync(target, { recursive: true, force: true });" <paths...>
-```
+## Execution and validation
 
-The script is a constant. Nothing about it varies with attrs except the argument
-list.
+The native executor resolves every output and scratch path inside the canonical
+workspace root, including symbolic-link checks, before removing any of them.
+A refused path fails the target without deleting the other paths. Accepted
+paths are removed recursively; missing paths are harmless.
 
-## Path validation
+## Channels and status
 
-Each path is normalized and checked at plan time. These are refused with
-`Clean only removes paths inside its directory: <path>`:
+| Property | Value |
+| -------- | ----- |
+| Kinds | `run` |
+| Cacheable | Never |
+| Success | A successful native target result |
+| Error | A target failure describing the refused path or removal error |
+| Executes | Yes, through the native package executor |
 
-- An absolute path.
-- `.`, which would delete the directory itself.
-- `..`, or anything normalizing to a `../` prefix.
-
-The check happens during `PACKAGE.ts` evaluation, so an invalid path fails every
-command, not just execution.
-
-## Inputs
-
-None. The target declares no input attributes.
-
-## Channels
-
-| Channel | Type             |
-| ------- | ---------------- |
-| Success | `Exec.Result`    |
-| Error   | `Exec.ExecError` |
-
-## Key material
-
-`capabilities` for this target is `["fs:delete"]`, not the default
-`["fs:read", "proc:spawn"]`.
-
-## Status
-
-|           |                                                                |
-| --------- | -------------------------------------------------------------- |
-| Kinds     | `run`                                                          |
-| Cacheable | Never; deletion changes local state and has no reusable result |
-| Executes  | Yes, through `ExecLive`, as a `run` root or dependency         |
-
-Invoke it explicitly with `smithers-build run <label>`. Making a build depend on clean
-is rarely useful: deleting outputs before a build defeats cache reuse.
+Invoke it explicitly with `smithers-build run <label>`.
 
 ## See also
 

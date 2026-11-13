@@ -21,7 +21,7 @@ The result carries the query string and one entry per target with its label, its
 target, and the verbs the target participates in.
 
 ```text
-query: //packages/greeter
+query: //packages/greeter:lib
 targets:
   - label: //packages/greeter:lib
     target: TsBuild
@@ -31,11 +31,11 @@ targets:
 Only the `PACKAGE.ts` modules the pattern selects are evaluated. `//packages/...`
 loads every `PACKAGE.ts` under `packages/`; `//packages/greeter:lib` loads one.
 
-An exact label selects one target, so listing a package prints its default
-target, not everything it exports:
+An exact label selects one target. A bare package label requires an explicit
+`default` map key; it does not fall back to `lib`. Name the key to select it:
 
 ```sh
-smithers-build query //packages/greeter      # the default target only
+smithers-build query //packages/greeter:lib   # the lib target only
 smithers-build query //packages/greeter/...  # every target in the subtree
 ```
 
@@ -151,17 +151,16 @@ The command's structured result also carries `roots`, a flat `targets` list of
 
 ## Patterns
 
-| Pattern        | Selects                                                 |
-| -------------- | ------------------------------------------------------- |
-| `//pkg:target` | One `Package.targets` key                               |
-| `//pkg`        | The package's default target                            |
-| `//pkg/...`    | Every target in the subtree, including synthesized ones |
-| `//...`        | Every target in the workspace                           |
-| `:target`      | A `Package.targets` key in the current package          |
+| Pattern        | Selects                                                |
+| -------------- | ------------------------------------------------------ |
+| `//pkg:target` | One `Package.targets` key                              |
+| `//pkg`        | The package's default target                           |
+| `//pkg/...`    | Every target in discovered Package maps in the subtree |
+| `//...`        | Every target in the workspace                          |
+| `:target`      | A `Package.targets` key in the current package         |
 
-Recursive patterns also include targets synthesized by default targets for
-directories without a `PACKAGE.ts`. See
-[Workspace structure](structure.md#default-target-synthesis).
+Directories without a `PACKAGE.ts` or `PACKAGE.vibe` contribute no targets.
+See [Workspace structure](structure.md#default-target-synthesis).
 
 ## Output format
 

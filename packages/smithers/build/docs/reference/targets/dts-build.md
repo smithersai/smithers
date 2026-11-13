@@ -83,7 +83,7 @@ plan ends with the shared output-capture step over `outDir`.
 |           |                                                                                                                             |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Kinds     | `build`                                                                                                                     |
-| Cacheable | Under a declared Nix environment, the result only; never otherwise, output restoration and toolchain identity are not wired |
+| Cacheable | Never |
 | Executes  | Yes, through `ExecLive`                                                                                                     |
 
 ## See also

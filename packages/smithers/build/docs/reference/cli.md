@@ -367,8 +367,12 @@ In addition to the common execution options, `run` accepts:
 | `--input`   | `-i`  | string[] | unset   | Payload input for agent targets as `name=value`; repeatable                         |
 
 Failure codes: `run_failed` for planning errors, `targets_failed` for failed
-targets. Exit code 1 for both. A target requiring the intentionally absent
-irreversible-exec layer reports a target failure with `unresolved_action`.
+targets. Exit code 1 for both. The executor supplies `ExecIrreversibleLive`.
+`NpmPublish` and `JsrPublish` have a `run` verb gate and default to
+`dryRun: true`; `dryRun: false` enables real publication.
+`Changesets.Version` applies versioning under `run` and checks drift under
+`lint`. `Changesets.Publish` currently refuses at its separate outward-action
+gate.
 
 ---
 

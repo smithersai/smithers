@@ -83,8 +83,9 @@ A key must match `[A-Za-z_][A-Za-z0-9._-]*`. A `file()` or `glob()` value placed
 directly in the map is wrapped in a `Filegroup`, so the key still labels exactly
 one target.
 
-Beside `Package`, a module may export a `PackageDefaults` value to declare
-synthesis. See [Default targets](../extending/default-rules.md).
+The CLI does not consume `PackageDefaults` exports. Declare every package's
+targets in its own `Package` map; see
+[Default targets](../extending/default-rules.md).
 
 ## Build files declare targets, never commands
 
@@ -252,16 +253,10 @@ See [Writing macros](../extending/writing-macros.md).
 The root file carries workspace-level declarations.
 
 ```ts
-import { buildAndCheckPackage } from "./package-targets.ts"
 // PACKAGE.ts
 import { Smithers as S } from "@smthrs/targets"
 
 export const rootJSDocConfig = S.file("//eslint.jsdoc.js")
-
-export const packageDefaults = S.PackageDefaults({
-  directories: "packages/*",
-  macro: buildAndCheckPackage
-})
 
 const scripts = S.Filegroup({ srcs: [S.glob("//scripts/**/*.mjs")] })
 

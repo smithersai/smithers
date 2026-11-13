@@ -4,7 +4,7 @@
 
 1. `PACKAGE.ts` shows the declared toolchain, the declared secrets, the
    generated root files, the real install target, shared root inputs, and the
-   workspace default-rule declaration.
+   explicit package target maps.
 2. `packages/smithers/flows/engine/PACKAGE.ts` shows `StandardPackage` plus one extra
    policy target. `packages/smithers/flows/flow/PACKAGE.ts` shows the same package
    longhand. `packages/smithers/flows/plan/PACKAGE.ts` shows the bare macro.
@@ -15,8 +15,8 @@
    Flow with planner metadata attached.
 5. `packages/smithers/build/targets/src/TsBuild.ts` is a representative catalog rule.
    `packages/smithers/build/targets/src/LlmLint.ts` shows a git diff as declared key material.
-6. `packages/smithers/build/targets/src/Config.ts` is the inert workspace configuration declaration the
-   root PACKAGE.ts file exports.
+6. `packages/smithers/build/targets/src/WorkspaceDeclaration.ts` defines the inert
+   workspace configuration exported from `WORKSPACE.ts`.
 7. `packages/smithers/build/build-cli/src/Cli.ts` defines the incur verbs. `packages/smithers/build/build-cli/src/Workspace.ts` handles lazy
    PACKAGE.ts loading and cache-directory resolution. `packages/smithers/build/build-cli/src/Planner.ts`
    constructs the target graph and key preview. `packages/smithers/build/build-cli/src/engine.ts` isolates
@@ -24,9 +24,11 @@
 
 ## Workspace configuration
 
-The root PACKAGE.ts file may export one `Workspace({ cacheDirectory,
-gitignored })` value. It is inert: the constructor validates and performs no
-I/O. Every command resolves the cache directory as `--cache-dir`, then the
+The workspace declaration lives in `.smithers/WORKSPACE.ts` or the root
+`WORKSPACE.ts` fallback and exports one `Workspace` value. It is inert: the
+constructor validates and performs no I/O. Cache settings, including a remote,
+belong in `Workspace.cache`, declared with `Smithers.Cache({ directory, remote })`.
+Every command resolves the cache directory as `--cache-dir`, then that
 declaration, then `.flows`, and applies the declared gitignore policy before
 touching the directory.
 
@@ -38,17 +40,20 @@ boundaries; configurable store placement is future work.
 
 ## Labels
 
-Labels come only from a PACKAGE.ts path and named export.
+Labels come only from a `PACKAGE.ts` path and its exported `Package.targets` keys.
+A top-level target export fails with `naked_target_export`.
 
-- `//path/to/pkg:target` addresses one named export.
-- `//path/to/pkg` selects the package default. The current convention tries
-  `lib`, `nodeModules`, the package basename, `default`, then a sole export.
-- `//...` selects every discovered PACKAGE.ts target.
+- `//path/to/pkg:target` addresses one map key.
+- `//path/to/pkg` selects the explicit `default` key. Without that key it fails
+  with `no_default_target`; no other target name is a fallback.
+- `//...` selects every target in discovered `Package` maps.
 - `//path/...` selects a subtree.
-- `:target` selects an export in the current package.
-- The root install target is `//:nodeModules` and `//` selects it by default.
+- `:target` selects a map key in the current package.
+- The root install target is `//:nodeModules`. To also select it with `//`,
+  add `default: Smithers.Alias(nodeModules)` to that map.
 
-Direct imports form dependency edges. Labels never appear in rule attrs.
+Import another module's `Package` map and select its target value to form a
+dependency edge. Labels never appear in rule attrs.
 `glob()` and `file()` create declared values and perform no I/O during module
 evaluation. The planner expands and digests them later.
 
@@ -109,18 +114,19 @@ settles before dispatch; without it both keyless execs dispatch at once and
 the engine refuses with `ConcurrentKeylessDispatch`. `captureOutputs` takes
 the producing step's planned result for this reason.
 
-Default-rule target synthesis is implemented. A directory that matches the
-declaration's glob, contains the marker file, and lacks a PACKAGE.ts file
-synthesizes the macro's targets, and the macro receives `cwd: <directory>`
-beneath its declared attrs. Every tool-running rule has a `cwd` attr
+The CLI does not consume `PackageDefaults` exports or synthesize targets for
+directories containing only `package.json`. Each package needs an explicit
+`PACKAGE.ts` exporting a `Package` map. A shared macro can populate that map
+when called explicitly. Every tool-running rule has a `cwd` attr
 defaulting to the workspace root; package-level PACKAGE.ts targets pass their
 own package directory.
 
-Release targets carry planner-level verb gates. npm and JSR publication, plus
-Changesets versioning, may appear only in a `run` graph. The planner checks
-every visited target, so a build, test, or lint target cannot smuggle a release
-operation in through a dependency. Changesets status has no gate and remains
-safe for read-only validation graphs.
+Release targets carry planner-level verb gates. `NpmPublish` and `JsrPublish`
+may appear only in a `run` graph, including through dependencies. They default
+to `dryRun: true`; `dryRun: false` enables real publication.
+`Changesets.Version` applies versioning under `run` and checks drift under
+`lint`. `Changesets.Publish` has a separate outward-action gate that currently
+refuses publication.
 
 Generated package manifests and GitHub workflows resolve their declared
 check-mode input and their read or write action from the same workspace-rooted
@@ -145,10 +151,9 @@ build, test, and lint set, and otherwise emits one command per declared kind.
    call-site path from the stack so the lazy loader can find a direct imported
    dependency without evaluating unrelated modules. Decide whether this hint
    is acceptable or whether the runtime needs a loader-owned module registry.
-3. Synthesized package defaults declare no dependency edges: the default-rule
-   declaration passes one static `attrs` value (`deps: []`) to every match.
-   Decide how synthesized packages infer edges to each other, for example from
-   package.json workspace dependencies.
+3. `PackageDefaults` helpers exist, but the loader and index do not consume
+   their exports. Automatic discovery and dependency-edge inference would need
+   integration and tests before they can replace explicit `Package` maps.
 4. Decide whether `StandardPackage` should expose `typecheck`, declaration
    build, and formatting as separate targets or keep the review surface at
    exactly `lib`, `test`, and `lint`.

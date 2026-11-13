@@ -71,27 +71,30 @@ fails with `target name is empty`.
 
 ## Package defaults
 
-`//pkg` with no target selects the package's default. The workspace tries, in
-order:
+`//pkg` with no target selects only the explicit `default` key in that
+package's `Package.targets` map. Without it, resolution fails with
+`no_default_target`: `package //<path> declares no default key; name a target explicitly`.
+No other target name is a fallback.
 
-1. `lib`
-2. `nodeModules`
-3. The package directory's basename
-4. `default`
+To expose both `lib` and a package default, use a distinct alias target:
 
-If none of those exist and the package maps exactly one target, that target is
-the default. Otherwise the label fails with
-`package //<path> has no unambiguous default target`.
+```ts
+import { Smithers as S } from "@smthrs/targets"
 
-The root install target is conventionally named `nodeModules`, which is why `//`
-resolves to it in a workspace that follows the convention.
+const lib = S.Filegroup({ srcs: [S.file("src/index.ts")] })
+export const Package = S.Package({
+  targets: { lib, default: S.Alias(lib) }
+})
+```
+
+Likewise, `//:nodeModules` selects a root install target explicitly; `//`
+requires its own `default` key.
 
 ## Recursive patterns
 
 `//...` and `//pkg/...` select targets rather than one target. They load every
-`PACKAGE.ts` in the selected subtree and return every target in their `Package` maps,
-plus every target synthesized by a matching default target for a directory in the
-subtree without its own `PACKAGE.ts`.
+`PACKAGE.ts` in the selected subtree and return every target in their `Package`
+maps. Directories without a package declaration contribute no targets.
 
 The prefix is a path prefix, not a glob. `//packages/...` selects
 `packages/greeter`, `packages/greeter/internal`, and every other package beneath

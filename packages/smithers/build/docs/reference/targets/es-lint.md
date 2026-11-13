@@ -71,7 +71,7 @@ Collected from the attrs: every declaration in `sources`, plus every entry in
 |           |                                                                                                 |
 | --------- | ----------------------------------------------------------------------------------------------- |
 | Kinds     | `lint`                                                                                          |
-| Cacheable | Under a declared Nix environment; never otherwise, the executable toolchain is not key material |
+| Cacheable | Never |
 | Executes  | Yes, through `ExecLive`                                                                         |
 
 ## Notes

@@ -1,6 +1,6 @@
 ---
 title: "Workspace structure"
-description: "Discovery, PACKAGE.ts placement, package boundaries, lazy evaluation, default-target synthesis, and the directories that stay host state."
+description: "Discovery, PACKAGE.ts placement, package boundaries, lazy evaluation, explicit target maps, and the directories that stay host state."
 ---
 
 Examples importing `buildAndCheckPackage` use the [local helper defined here](../reference/targets/standard-package.md). Create that file in your repository before using those examples.
@@ -117,8 +117,8 @@ uses to match a dependency to its label. Across commands in one process, a
 `PACKAGE.ts` that was edited is re-evaluated, and two workspaces that happen to
 share a path spelling never share a module.
 
-Besides its `Package` map, a `PACKAGE.ts` may export a `PackageDefaults`
-declaration and one `Smithers.Nix.Environment`. The environment
+Besides its `Package` map, a `PACKAGE.ts` may export one
+`Smithers.Nix.Environment`. The environment
 applies to the exporting package and every package below it; the root's is the
 workspace's, and a package that exports its own overrides it for that package
 alone. Two environment exports in one `PACKAGE.ts` fail the load. See
@@ -154,39 +154,14 @@ A package's boundary matters in three places.
 
 ## Default-target synthesis
 
-A directory without its own `PACKAGE.ts` can still produce targets. The root
-`PACKAGE.ts` exports a `PackageDefaults` declaration, and the workspace applies it to
-every matching directory.
+The current loader does not consume `PackageDefaults` exports or synthesize
+targets for directories without a package declaration. An empty root
+`Package` map plus a `PackageDefaults` export adds no package targets to the
+graph.
 
-```ts
-import { buildAndCheckPackage } from "./package-targets.ts"
-// PACKAGE.ts
-import { Smithers } from "@smthrs/targets"
-
-export const packageDefaults = Smithers.PackageDefaults({
-  directories: "packages/*",
-  macro: buildAndCheckPackage
-})
-
-export const Package = Smithers.Package({ targets: {} })
-```
-
-A directory is eligible when all three hold:
-
-- it contains the `marker` file,
-- it does not contain the `unless` file, which defaults to `PACKAGE.ts`,
-- it matches the declaration's `directories` glob, resolved against the package
-  that declared it.
-
-The first eligible declaration wins. Its macro receives `{ cwd: <directory>, ...attrs }`,
-so a synthesized package runs its tools inside itself, and declared `attrs` still
-override `cwd`. Every target in the returned object is registered under a
-path-derived label, with names sorted so synthesis is deterministic. A macro that
-returns no targets fails with `default target synthesized no targets for //<dir>`.
-
-The root `PACKAGE.ts` is always loaded before any synthesis decision, so
-workspace-level declarations are in scope. See
-[Default targets](../extending/default-rules.md).
+Write an explicit `PACKAGE.ts` or `PACKAGE.vibe` in every participating
+directory. A shared macro can populate each `Package.targets` map when called
+there; see [Default targets](../extending/default-rules.md).
 
 ## Host state
 

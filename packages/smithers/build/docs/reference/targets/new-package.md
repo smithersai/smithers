@@ -54,8 +54,9 @@ The result contains the created directory and these paths:
 - `test/index.test.ts`;
 - `README.md`.
 
-No `PACKAGE.ts` is written. The root default target synthesizes normal package
-targets from the new directory.
+No `PACKAGE.ts` is written. Add a `PACKAGE.ts` or `PACKAGE.vibe` exporting
+an explicit `Package` map before the new directory participates in queries or
+CI. The CLI does not synthesize targets from `PackageDefaults` exports.
 
 ## Channels and status
 

@@ -89,7 +89,12 @@ describe("packages/smithers/build prose", () => {
       "PackageJson"
     ])
     const naked: Array<string> = []
-    for (const file of proseFiles().filter((file) => file.startsWith("docs/reference/targets/"))) {
+    for (
+      const file of proseFiles().filter((file) =>
+        file.startsWith("docs/reference/targets/") ||
+        ["docs/concepts/install.md", "docs/about/faq.md"].includes(file)
+      )
+    ) {
       for (const fence of read(file).matchAll(/```ts[^\n]*\n([\s\S]*?)```/g)) {
         for (const exported of fence[1]!.matchAll(/export\s+const\s+(\w+)\s*=\s*(?:Smithers|S)\.([\w.]+)\s*\(/g)) {
           if (!declarations.has(exported[2]!)) naked.push(`${file}: ${exported[1]}`)
@@ -97,6 +102,141 @@ describe("packages/smithers/build prose", () => {
       }
     }
     expect(naked, "targets must be declared in the exported Package map").toEqual([])
+  })
+
+  it("keeps discovery and cross-package imports on Package map keys", () => {
+    const faq = read("docs/about/faq.md")
+    expect(faq).toContain("Package.targets")
+    expect(faq).toContain("import { Package as plan } from \"../plan/PACKAGE.ts\"")
+    expect(faq).toContain("deps: [plan.lib]")
+    expect(faq).not.toContain("Exports that are targets")
+    const review = read("API-REVIEW.md")
+    expect(review).toContain("Package.targets")
+    expect(review).not.toContain("path and named export")
+  })
+
+  it("describes executable release operations and their publication defaults", () => {
+    for (const file of ["DESIGN.md", "WIRING.md"]) {
+      const page = read(file).replace(/\s+/g, " ")
+      for (
+        const text of [
+          "ExecIrreversibleLive",
+          "dryRun: true",
+          "dryRun: false",
+          "Changesets.Version",
+          "Changesets.Publish"
+        ]
+      ) {
+        expect(page, file).toContain(text)
+      }
+      expect(page, file).toMatch(/\brun\b/)
+    }
+  })
+
+  it("does not grant cacheability merely for a Nix environment", () => {
+    for (const file of ["docs/concepts/environments.md", "docs/reference/targets/README.md"]) {
+      const page = read(file).replace(/\s+/g, " ")
+      expect(page, file).toMatch(/does not (?:by itself )?(?:make .*cacheable|override)/)
+      expect(page, file).toContain("caching.md")
+      expect(page, file).not.toMatch(/become cacheable under a declared environment|planner overrides/)
+    }
+    for (
+      const target of [
+        "ts-build",
+        "dts-build",
+        "typecheck",
+        "vitest",
+        "vitest-coverage",
+        "biome-check",
+        "deps-lint",
+        "package-lint",
+        "es-lint"
+      ]
+    ) {
+      const page = read(`docs/reference/targets/${target}.md`)
+      const row = page.split("\n").find((line) => /^\|\s*Cacheable\s*\|/.test(line))
+      expect(row, target).toMatch(/^\|\s*Cacheable\s*\|\s*Never\s*\|/)
+    }
+  })
+
+  it("wires each remote-cache recipe into the Workspace cache", () => {
+    const page = read("docs/workspace/remote-caching.md")
+    const recipes = [...page.matchAll(/```ts[^\n]*\n([\s\S]*?)```/g)].map((match) => match[1]!)
+      .filter((block) => block.includes("RemoteCache.make"))
+    expect(recipes).toHaveLength(2)
+    for (const recipe of recipes) {
+      expect(recipe).toContain("// WORKSPACE.ts")
+      expect(recipe).toContain("const remote = Smithers.RemoteCache.make(")
+      expect(recipe).toContain("cache: Smithers.Cache({ directory: \".flows\", remote })")
+      expect(recipe).toContain("export const Workspace = Smithers.Workspace(")
+    }
+    expect(page).not.toContain("export const remoteCache")
+  })
+
+  it("wires the hosted-cache recipe through Workspace and qualifies the legacy connect output", () => {
+    const page = read("docs/workspace/smithers-cloud-cache.md")
+    expect(page).toContain("// WORKSPACE.ts")
+    expect(page).toContain("const remote = Smithers.RemoteCache.smithersCloud(")
+    expect(page).toContain("cache: Smithers.Cache({ directory: \".flows\", remote })")
+    expect(page.replace(/\s+/g, " ")).toContain("does not consume that export")
+    expect(page).not.toContain("export const remoteCache =")
+  })
+
+  it("binds ToolRun credentials to HTTP audiences and leaves placeholders in the child", () => {
+    const page = read("docs/reference/targets/tool-run.md")
+    expect(page).toContain("Smithers.HttpSecret(")
+    expect(page).toContain("Smithers.SecretOrigin(")
+    expect(page).toContain("FIREWORKS_API_ORIGIN")
+    expect(page).toContain("invalid_payload")
+    expect(page).not.toContain("fails planning")
+    expect(page).toContain("\"https://api.fireworks.ai\"")
+    expect(page).toContain("Array<HttpCredential>")
+    expect(page).not.toContain("Array<Secret>")
+    expect(page).toContain("placeholder")
+    expect(page).toContain("network: \"loopback\"")
+    expect(page).toContain("network: true")
+    expect(page).not.toContain("substituted into the child process")
+  })
+
+  it("requires an explicit default key rather than target-name fallbacks", () => {
+    const labels = read("docs/concepts/labels.md")
+    expect(labels).toContain("no_default_target")
+    expect(labels).toContain("default: S.Alias(")
+    expect(labels).not.toMatch(/sole[- ](?:export|target)|workspace tries/)
+    const query = read("docs/workspace/querying.md")
+    expect(query).toContain("smithers-build query //packages/greeter:lib")
+    expect(query).not.toContain("smithers-build query //packages/greeter      #")
+    expect(query).not.toContain("including synthesized ones")
+    expect(read("API-REVIEW.md")).not.toContain("current convention tries")
+  })
+
+  it("documents the native Clean targets and workspace-rooted paths", () => {
+    const page = read("docs/reference/targets/clean.md")
+    expect(page).toContain("paths: [\"packages/greeter/dist\", \"packages/greeter/coverage\"]")
+    expect(page).toContain("workspace root")
+    expect(page).toMatch(/\|\s*`targets`\s*\|/)
+    expect(page).toMatch(/\|\s*`paths`\s*\|/)
+    expect(page).not.toMatch(/includeNodeModules|Runtime.evaluate|fs.rmSync|ExecLive|\|\s*`(?:runtime|deps|cwd)`\s*\|/)
+    expect(page).toContain("native")
+  })
+
+  it("requires explicit package declarations instead of promising automatic synthesis", () => {
+    for (
+      const file of [
+        "docs/extending/default-rules.md",
+        "docs/workspace/structure.md",
+        "docs/extending/writing-macros.md",
+        "API-REVIEW.md"
+      ]
+    ) {
+      const page = read(file).replace(/\s+/g, " ")
+      expect(page, file).toContain("PackageDefaults")
+      expect(page, file).toMatch(/(?:does not|not) (?:currently )?(?:consume|synthesize|discover|wire)/)
+      expect(page, file).toContain("PACKAGE.ts")
+      expect(page, file).not.toMatch(
+        /synthesis is implemented|now exports|targets participate in patterns|workspace calls:|workspace applies it to/
+      )
+    }
   })
 
   it("documents the opt-in cache default used by Target.make", () => {
@@ -264,7 +404,13 @@ describe("packages/smithers/build prose", () => {
     expect(read("build-cli/src/TargetExecution.ts")).toContain("ExecIrreversibleLive({ workspaceRoot })")
     const absentLayer =
       /does not (?:provide|supply)\s+`?ExecIrreversibleLive|does not supply the irreversible-exec|irreversible(?:-exec)? (?:layer|implementation) is (?:intentionally )?absent|(?:absent|lacks the) irreversible-exec layer|ExecIrreversibleLive[\s\S]{0,160}intentionally absent/i
-    const stale = proseFiles().filter((file) => file.startsWith("docs/") && absentLayer.test(read(file)))
+    const stale = proseFiles().filter((file) =>
+      (file.startsWith("docs/") || ["DESIGN.md", "WIRING.md"].includes(file)) &&
+      (absentLayer.test(read(file).replace(/\s+/g, " ")) ||
+        /(?:does not provide release\/publication action|Irreversible release actions are intentionally absent)/i.test(
+          read(file)
+        ))
+    )
     expect(stale, "pages claiming the CLI lacks irreversible execution").toEqual([])
   })
 

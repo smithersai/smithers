@@ -14,7 +14,7 @@ before choosing one.
 | Local tier      | JSON under `<cacheDirectory>/cache`, blobs under `<cacheDirectory>/cas` | The Smithers local step cache and artifact store                               |
 | Remote tier     | HTTP `/ac` and `/cas`, read-through                                     | HTTP `/ac` and `/cas`                                                          |
 | Wired by        | The CLI's cache module, when one is configured                          | Not composed by the smithers-build CLI today                                   |
-| Configured with | Root `RemoteCache`; `SMITHERS_CACHE_URL` overrides                      | `RemoteCacheStore` and `RemoteArtifacts` layer options                         |
+| Configured with | `Workspace.cache.remote`; `SMITHERS_CACHE_URL` overrides                | `RemoteCacheStore` and `RemoteArtifacts` layer options                         |
 
 If no configured credential is available (unset, empty or whitespace-only),
 the CLI keeps both the action cache and output CAS local. It sends no remote
@@ -26,19 +26,31 @@ requests still needs a non-blank token.
 
 ## The CLI result cache remote tier
 
-The root `PACKAGE.ts` declares the HTTPS endpoint without carrying a credential:
+Declare the HTTPS endpoint in `WORKSPACE.ts` and pass it to `Workspace.cache`.
+A standalone `remoteCache` export in `PACKAGE.ts` is not consumed by the CLI.
+The runtime, package manager, and installed modules below are the workspace's
+existing declarations:
 
 ```ts
+// WORKSPACE.ts
 import { Smithers } from "@smthrs/targets"
 
-export const remoteCache = Smithers.RemoteCache.make({
+const remote = Smithers.RemoteCache.make({
   endpoint: "https://build.smithers.sh"
+})
+
+export const Workspace = Smithers.Workspace("demo", {
+  repository: "git+https://example.invalid/demo.git",
+  cache: Smithers.Cache({ directory: ".flows", remote }),
+  runtime,
+  packageManager,
+  nodeModules
 })
 ```
 
 `token` is a `Secret` declaration and defaults to `Secret("SMITHERS_CACHE_TOKEN")`.
 It may name another environment variable, but the bearer-token value must only
-arrive through that variable; never put it in `PACKAGE.ts`.
+arrive through that variable; never put it in a declaration file.
 
 ### Read and write credentials
 
@@ -48,10 +60,21 @@ declaration may therefore split the credential in two, and the server enforces
 the split rather than trusting the client to respect it.
 
 ```ts
-export const remoteCache = Smithers.RemoteCache.make({
+// WORKSPACE.ts
+import { Smithers } from "@smthrs/targets"
+
+const remote = Smithers.RemoteCache.make({
   endpoint: "https://build.smithers.sh",
   read: Smithers.Secret("SMITHERS_CACHE_READ_TOKEN"),
   write: Smithers.Secret("SMITHERS_CACHE_WRITE_TOKEN")
+})
+
+export const Workspace = Smithers.Workspace("demo", {
+  repository: "git+https://example.invalid/demo.git",
+  cache: Smithers.Cache({ directory: ".flows", remote }),
+  runtime,
+  packageManager,
+  nodeModules
 })
 ```
 
