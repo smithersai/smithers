@@ -87,20 +87,20 @@ const recorder = (): Reporter.Reporter & { readonly events: Array<string> } => {
  * Collects what the run writes to the parent process pipes, so the
  * repository-child route can be read back as text.
  */
-const captureStandardStreams = (): { readonly stdout: Array<string>; readonly stderr: Array<string> } => {
+const captureStandardStreams = () => {
   const stdout: Array<string> = []
   const stderr: Array<string> = []
-  const record = (sink: Array<string>) => (chunk: string | Uint8Array): boolean => {
-    sink.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk))
-    return true
-  }
-  vi.spyOn(process.stdout, "write").mockImplementation(record(stdout) as typeof process.stdout.write)
-  vi.spyOn(process.stderr, "write").mockImplementation(record(stderr) as typeof process.stderr.write)
-  return { stdout, stderr }
+  const terminal = (chunks: Array<string>): Reporter.Terminal => ({
+    write: (text) => {
+      chunks.push(text)
+    },
+    isTTY: false,
+    columns: undefined
+  })
+  return { stdout, stderr, terminals: { stdout: terminal(stdout), stderr: terminal(stderr) } }
 }
 
 afterEach(() => {
-  vi.restoreAllMocks()
   vi.unstubAllEnvs()
 })
 
@@ -146,6 +146,7 @@ describe("PackageExec reporter hooks", () => {
       patterns: ["//:good"],
       readCache: false,
       reporter,
+      ...captured.terminals,
       environment: { ...process.env, API_TOKEN: "private-value", SMTHRS_REPO_CHILD: "1" }
     })
     expect(summary.ok).toBe(true)
@@ -169,6 +170,7 @@ describe("PackageExec reporter hooks", () => {
       patterns: ["//:good"],
       readCache: false,
       reporter,
+      ...captured.terminals,
       environment: { ...process.env, SMTHRS_REPO_CHILD: "1" }
     })
     expect(summary.ok).toBe(true)
@@ -191,6 +193,7 @@ describe("PackageExec reporter hooks", () => {
       patterns: ["//:good"],
       readCache: false,
       reporter,
+      ...captured.terminals,
       environment: { ...ambient, API_TOKEN: "private-value" }
     })
     expect(summary.ok).toBe(true)

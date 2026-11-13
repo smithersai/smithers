@@ -4,12 +4,9 @@
  */
 export const legacyModuleReplacements: Readonly<Record<string, number>> = {
   "test/Cache.test.ts": 1,
-  "test/NativeArtifactOutput.test.ts": 1,
-  "test/Owners.test.ts": 1,
   "test/PlanDigestIndex.test.ts": 2,
   "test/PlanHostLookups.test.ts": 2,
   "test/PlanInputSharing.test.ts": 2,
-  "test/PackageExecReporter.test.ts": 2,
   "test/ServiceSupervisor.test.ts": 1
 }
 

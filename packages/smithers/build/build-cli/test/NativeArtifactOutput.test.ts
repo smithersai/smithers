@@ -1,28 +1,9 @@
+import * as SafeFs from "@smthrs/targets/SafeFs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import { publish } from "../src/internal/rules/NativeArtifactOutput.ts"
-
-const faults = vi.hoisted(() => ({
-  lstat: null as null | ((path: string) => Error | null),
-  mkdir: null as null | ((path: string) => Error | null)
-}))
-
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>()
-  return {
-    ...actual,
-    lstat: (path: string, options?: object) => {
-      const failure = faults.lstat?.(path)
-      return failure === undefined || failure === null ? actual.lstat(path, options as never) : Promise.reject(failure)
-    },
-    mkdir: (path: string, options?: object) => {
-      const failure = faults.mkdir?.(path)
-      return failure === undefined || failure === null ? actual.mkdir(path, options as never) : Promise.reject(failure)
-    }
-  }
-})
 
 const sandboxes: Array<string> = []
 const oldBytes = Buffer.from("old artifact\n")
@@ -38,17 +19,20 @@ const fixture = async () => {
   return { sandbox, root, external }
 }
 
-const write = (root: string, output: string, signal?: AbortSignal) =>
-  publish(root, output, async (temporary, checkParent) => {
-    await checkParent()
-    await Fs.writeFile(temporary, newBytes, { flag: "wx" })
-    return "produced"
-  }, signal)
+const write = (root: string, output: string, signal?: AbortSignal, io?: Parameters<typeof publish>[4]) =>
+  publish(
+    root,
+    output,
+    async (temporary, checkParent) => {
+      await checkParent()
+      await Fs.writeFile(temporary, newBytes, { flag: "wx" })
+      return "produced"
+    },
+    signal,
+    io
+  )
 
 afterEach(async () => {
-  faults.lstat = null
-  faults.mkdir = null
-  vi.restoreAllMocks()
   await Promise.all(sandboxes.splice(0).map((sandbox) => Fs.rm(sandbox, { recursive: true, force: true })))
 })
 
@@ -57,13 +41,17 @@ describe("native artifact publication", () => {
     "refuses an output outside a named workspace file: %s",
     async (output) => {
       const { root, external } = await fixture()
-      const producer = vi.fn(async () => "produced")
+      let produced = false
+      const producer = async () => {
+        produced = true
+        return "produced"
+      }
 
       await expect(publish(root, output, producer)).rejects.toThrow(
         /native output must name a file inside the workspace/
       )
 
-      expect(producer).not.toHaveBeenCalled()
+      expect(produced).toBe(false)
       expect(await Fs.readdir(root)).toEqual([])
       expect(await Fs.readdir(external)).toEqual([])
     }
@@ -87,11 +75,15 @@ describe("native artifact publication", () => {
       } else {
         await Fs.writeFile(parent, oldBytes)
       }
-      const producer = vi.fn(async () => "produced")
+      let produced = false
+      const producer = async () => {
+        produced = true
+        return "produced"
+      }
 
       await expect(publish(root, "out/artifact.txt", producer)).rejects.toThrow()
 
-      expect(producer).not.toHaveBeenCalled()
+      expect(produced).toBe(false)
       expect(await Fs.readFile(externalFile)).toEqual(oldBytes)
       expect(await Fs.readdir(external)).toEqual(["artifact.txt"])
       if (kind === "internal") expect(await Fs.readdir(Path.join(root, "inside"))).toEqual([])
@@ -116,11 +108,15 @@ describe("native artifact publication", () => {
       } else {
         await Fs.mkdir(output)
       }
-      const producer = vi.fn(async () => "produced")
+      let produced = false
+      const producer = async () => {
+        produced = true
+        return "produced"
+      }
 
       await expect(publish(root, "artifact.txt", producer)).rejects.toThrow()
 
-      expect(producer).not.toHaveBeenCalled()
+      expect(produced).toBe(false)
       expect(await Fs.readFile(externalFile)).toEqual(oldBytes)
       expect(await Fs.readdir(external)).toEqual(["artifact.txt"])
       expect((await Fs.lstat(output)).isDirectory()).toBe(kind === "directory")
@@ -151,14 +147,22 @@ describe("native artifact publication", () => {
     const { root, external } = await fixture()
     const parent = Path.join(root, "out")
     const failure = Object.assign(new Error("parent stat denied"), { code: "EACCES" })
-    let observations = 0
-    faults.lstat = (path) => path === parent && ++observations === 2 ? failure : null
-    const producer = vi.fn(async () => "produced")
+    const io = {
+      ...SafeFs.defaultIo,
+      lstat: async (path: string) => {
+        if (path === parent) throw failure
+        return SafeFs.defaultIo.lstat(path)
+      }
+    }
+    let produced = false
+    const producer = async () => {
+      produced = true
+      return "produced"
+    }
 
-    await expect(publish(root, "out/artifact.txt", producer)).rejects.toBe(failure)
+    await expect(publish(root, "out/artifact.txt", producer, undefined, io)).rejects.toBe(failure)
 
-    expect(observations).toBe(2)
-    expect(producer).not.toHaveBeenCalled()
+    expect(produced).toBe(false)
     expect(await Fs.readdir(root)).toEqual([])
     expect(await Fs.readdir(external)).toEqual([])
   })
@@ -167,9 +171,15 @@ describe("native artifact publication", () => {
     const { root, external } = await fixture()
     const parent = Path.join(root, "out")
     const failure = Object.assign(new Error("parent creation denied"), { code: "EACCES" })
-    faults.mkdir = (path) => path === parent ? failure : null
+    const io = {
+      ...SafeFs.defaultIo,
+      mkdir: async (path: string) => {
+        if (path === parent) throw failure
+        await Fs.mkdir(path)
+      }
+    }
 
-    await expect(write(root, "out/artifact.txt")).rejects.toBe(failure)
+    await expect(write(root, "out/artifact.txt", undefined, io)).rejects.toBe(failure)
 
     expect(await Fs.readdir(root)).toEqual([])
     expect(await Fs.readdir(external)).toEqual([])

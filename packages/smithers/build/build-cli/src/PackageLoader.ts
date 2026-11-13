@@ -645,8 +645,8 @@ const graphDigest = async (discovery: Discovery, scannedFiles: ReadonlyArray<str
 
 const loads = new Map<string, Promise<LoadedGraph>>()
 
-/** One probed cache directory per workspace descriptor, per process. */
-const probes = new Map<string, Promise<string | undefined>>()
+/** One successful probe per workspace, bound to its declaration content. */
+const probes = new Map<string, { readonly digest: string; readonly directory: string }>()
 
 const validatePackageModule = (namespace: unknown, file: string): Package.PackageValue => {
   if (typeof namespace !== "object" || namespace === null) {
@@ -874,22 +874,35 @@ export const loadWorkspaceDeclaration = async (
  * package walk can prune it before it lists anything.
  *
  * The probe is deliberately forgiving: any failure returns undefined and the
- * full load reports the real diagnostic. The memo below avoids repeating the
- * probe within one process; it does not invalidate module caches, and it
- * holds the probe alone — {@link loadWorkspaceDeclaration} above is
- * unmemoized.
+ * full load reports the real diagnostic. Successful probes are reused only
+ * while the content digest of the workspace and its imports is unchanged.
+ * Failures are never memoized. The full loader remains unmemoized.
  *
  * @category loading
  * @since 0.1.0
  */
-export const probeCacheDirectory = (root: string, workspaceFile: string): Promise<string | undefined> => {
+export const probeCacheDirectory = async (root: string, workspaceFile: string): Promise<string | undefined> => {
   const key = `${root}\0${workspaceFile}`
-  const existing = probes.get(key)
-  if (existing !== undefined) return existing
-  const probed = loadWorkspaceDeclaration(root, workspaceFile).then(
-    (workspace) => workspace.cache.directory,
-    () => undefined
-  )
-  probes.set(key, probed)
-  return probed
+  try {
+    const discovery: Discovery = {
+      root: await Fs.realpath(root),
+      workspaceFile,
+      packageFiles: [],
+      cacheDirectory: "",
+      repositories: [],
+      pruned: [],
+      directories: 0
+    }
+    const scan = await scanImports(discovery)
+    const named = await scanNamedImports(discovery.root, scan.files)
+    const digest = await graphDigest(discovery, [...scan.files, ...named.files])
+    const existing = probes.get(key)
+    if (existing?.digest === digest) return existing.directory
+    const workspace = await loadWorkspaceDeclaration(root, workspaceFile)
+    probes.set(key, { digest, directory: workspace.cache.directory })
+    return workspace.cache.directory
+  } catch {
+    probes.delete(key)
+    return undefined
+  }
 }

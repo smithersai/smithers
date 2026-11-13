@@ -417,6 +417,26 @@ the structured envelope, so `--format json` is never mixed with progress.
 
 `TargetReport` and `Summary` are `@smthrs/build-cli/Executor` types.
 
+## PackageExec and PackageLoader
+
+The `PackageExec.run` and `PackageExec.execute` options accept optional
+`stdout` and `stderr` terminals. A repository child writes its redacted,
+bounded live output through these terminals; omitted terminals use the process
+streams. Other invocations report tool output through `reporter`.
+
+A `gitDiff` input's aggregate patch is limited to `256 MiB` across all
+path batches. A refusal names the target and asks to narrow `paths`.
+`Api.Compat` requires JSON objects with string `version` fields on
+both sides. Unreadable or malformed manifests report
+`Api.Compat could not read <path>: …` with the manifest's workspace-relative
+path.
+
+`PackageLoader.probeCacheDirectory(root, workspaceFile)` returns the
+declared cache directory or `undefined` on failure. Successful probes
+are reused only while the workspace declaration and its imported configuration
+have the same content digest. Failed probes are retried on the next call;
+`loadWorkspaceDeclaration` remains the rejecting, unmemoized loader.
+
 ## Workspace
 
 Input expansion and remote-cache resolution. From `@smthrs/build-cli/Workspace`.

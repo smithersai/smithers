@@ -809,6 +809,7 @@ export const runPackageVerb = async (
       signal: config.signal,
       failFast: failFastOf(index, flags, knownRed),
       reporter,
+      ...terminalsOf(config),
       message: flags.message,
       sweep: flags.sweep,
       inputs: parseInputs(flags.input),
@@ -976,6 +977,7 @@ const runCi = async (
                 readCache: flags.cache,
                 signal: config.signal,
                 reporter,
+                ...terminalsOf(config),
                 environment: config.environment,
                 approvals: config.approvals,
                 // CI never spawns an agent: the docs-verb page writers stay out.
@@ -1048,6 +1050,7 @@ const runCi = async (
           signal: config.signal,
           failFast: failFastOf(index, flags, knownRed),
           reporter,
+          ...terminalsOf(config),
           environment: config.environment
         }
       )
@@ -1416,6 +1419,7 @@ const runSelected = async (
     signal: config.signal,
     failFast: failFastOf(index, flags, knownRed),
     reporter,
+    ...terminalsOf(config),
     environment: config.environment,
     plan: flags.plan,
     includeExclusive: flags.includeExclusive,
@@ -1964,7 +1968,8 @@ const makeCommands = (config: RuntimeConfig) =>
             patterns: [install.label],
             environment: config.environment,
             signal: config.signal,
-            reporter
+            reporter,
+            ...terminalsOf(config)
           })
           return settle(context, config, summary)
         } catch (cause) {

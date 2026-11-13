@@ -147,6 +147,9 @@ export interface RunOptions {
   readonly log?: ((line: string) => void) | undefined
   /** Receives every execution event; without one, `log` receives the plain status lines. */
   readonly reporter?: Reporter.Reporter | undefined
+  /** The repository-child live output terminals; process streams when omitted. */
+  readonly stdout?: Reporter.Terminal | undefined
+  readonly stderr?: Reporter.Terminal | undefined
   /** `-m` override for `Git.Commit`; wins over the declared message. */
   readonly message?: string | undefined
   /**

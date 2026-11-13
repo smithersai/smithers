@@ -832,7 +832,7 @@ export const Package = S.Package({ targets: {
     expect(failed.results.find((row) => row.label === "//:compat")).toMatchObject({
       label: "//:compat",
       status: "failed",
-      error: `ENOENT: no such file or directory, open '${path}'`
+      error: expect.stringContaining("Api.Compat could not read version.json: ")
     })
   })
 
@@ -842,8 +842,8 @@ export const Package = S.Package({ targets: {
       ["boolean", "true", "Api.Compat manifests must declare string versions"],
       ["number", "1", "Api.Compat manifests must declare string versions"],
       ["string", "\"1.0.0\"", "Api.Compat manifests must declare string versions"],
-      ["null", "null", "Cannot read properties of null (reading 'version')"],
-      ["malformed JSON", "{", "Expected property name or '}' in JSON at position 1 (line 1 column 2)"]
+      ["null", "null", "Api.Compat manifests must declare string versions"],
+      ["malformed JSON", "{", undefined]
     ] as const
   )("fails a %s manifest on either side without a success cache receipt", async (_name, bytes, error) => {
     for (const side of ["current", "baseline"] as const) {
@@ -857,7 +857,9 @@ export const Package = S.Package({ targets: {
       expect(failed.results.find((row) => row.label === "//:compat"), side).toMatchObject({
         label: "//:compat",
         status: "failed",
-        error
+        error: error ?? expect.stringContaining(
+          `Api.Compat could not read ${side === "current" ? "version.json" : "baseline/package.json"}: `
+        )
       })
       const entries = await Promise.all(
         (await cacheEntries(root)).map(async (file) =>

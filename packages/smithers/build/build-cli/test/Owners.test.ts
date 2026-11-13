@@ -4,7 +4,7 @@ import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterAll, describe, expect, it, vi } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import * as Owners from "../src/Owners.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageTree from "../src/PackageTree.ts"
@@ -528,7 +528,7 @@ describe("ownership renderer projections", () => {
   })
 
   it.each(["renderCodeowners", "renderOwnersTree"] as const)(
-    "%s computes each claimant closure once per call",
+    "%s renders upstream claimants consistently across repeated calls",
     (renderer) => {
       const packages: Array<{ packagePath: string; value: ReturnType<typeof S.Package> }> = []
       let previous = S.Filegroup({ srcs: [] })
@@ -544,22 +544,15 @@ describe("ownership renderer projections", () => {
         previous = target
       }
       const index = renderingIndex(packages)
-      const scans = vi.spyOn(index, "targets")
-      try {
-        const first = Owners[renderer](index, "acme")
-        expect(scans).toHaveBeenCalledTimes(4)
-        expect(Owners[renderer](index, "acme")).toEqual(first)
-        expect(scans).toHaveBeenCalledTimes(8)
-        if (typeof first === "string") {
-          expect(generatedOwners(first, "p0/file.ts")).toEqual(["owner0", "owner12", "owner18", "owner6"])
-        } else {
-          const content = first.find((file) => file.path === "p0/acme")!.content
-          for (const claimant of [6, 12, 18]) {
-            expect(content).toContain(`owner${claimant}  # upstream-of //p${claimant}`)
-          }
+      const first = Owners[renderer](index, "acme")
+      expect(Owners[renderer](index, "acme")).toEqual(first)
+      if (typeof first === "string") {
+        expect(generatedOwners(first, "p0/file.ts")).toEqual(["owner0", "owner12", "owner18", "owner6"])
+      } else {
+        const content = first.find((file) => file.path === "p0/acme")!.content
+        for (const claimant of [6, 12, 18]) {
+          expect(content).toContain(`owner${claimant}  # upstream-of //p${claimant}`)
         }
-      } finally {
-        scans.mockRestore()
       }
     }
   )

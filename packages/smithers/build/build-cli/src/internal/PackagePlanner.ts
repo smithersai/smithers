@@ -1371,12 +1371,13 @@ const linkInput = async <A>(measure: () => Promise<A>): Promise<A> => {
 const expandInputs = async (
   context: PlanContext,
   packagePath: string,
-  declarations: ReadonlyArray<Input.Declared>
+  declarations: ReadonlyArray<Input.Declared>,
+  label: string
 ): Promise<ReadonlyArray<Workspace.ExpandedInput>> => {
   const expanded: Array<Workspace.ExpandedInput> = []
   for (const declaration of declarations) {
     if (declaration._tag === "GitDiff") {
-      expanded.push(await expandGitDiff(context, declaration))
+      expanded.push(await expandGitDiff(context, declaration, label))
       continue
     }
     const key = JSON.stringify([packagePath, declaration])
@@ -1441,7 +1442,8 @@ export const parseNameStatusZ = (raw: string): Array<DiffEntry> => {
  */
 const expandGitDiff = async (
   context: PlanContext,
-  declaration: Extract<Input.Declared, { readonly _tag: "GitDiff" }>
+  declaration: Extract<Input.Declared, { readonly _tag: "GitDiff" }>,
+  label: string
 ): Promise<Workspace.ExpandedInput> => {
   const base = Input.validateGitBase(declaration.base)
   const raw = await PackageTree.runGit(context.root, [
@@ -1470,8 +1472,8 @@ const expandGitDiff = async (
   for (const batch of gitPathspecBatches(paths)) {
     const part = await PackageTree.runGit(context.root, ["diff", "--binary", "--end-of-options", base, "--", ...batch])
     patchBytes += Buffer.byteLength(part, "utf8")
-    // Preserve runGit's output limit across all batches of this diff.
-    if (patchBytes > 256 * 1024 * 1024) throw new Error("git diff failed: stdout maxBuffer length exceeded")
+    // Bound the aggregate patch independently of Git's streaming capture.
+    if (patchBytes > 256 * 1024 * 1024) throw new Error(`gitDiff patch for ${label} exceeds 256 MiB; narrow paths`)
     patches.push(part)
   }
   const patch = patches.join("")
@@ -1636,7 +1638,7 @@ const visit = async (
     dependencyRows.push({ label: planned.label, key: depKey })
   }
 
-  const declaredInputs = await expandInputs(context, inputPackage(metadata, packagePath), view.inputs)
+  const declaredInputs = await expandInputs(context, inputPackage(metadata, packagePath), view.inputs, label)
   const inputDigests = new Map<Input.Declared, string>()
   for (const expanded of declaredInputs) inputDigests.set(expanded.declaration, expanded.digest)
 

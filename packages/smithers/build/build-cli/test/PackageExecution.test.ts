@@ -1753,7 +1753,7 @@ export const Package = S.Package({ targets: { confined, networked, open } })
     }
   })
 
-  it("admits loopback listeners under { network: \"loopback\" } and nothing else", async () => {
+  it("admits loopback listeners under { network: \"loopback\" } and nothing else", async (context) => {
     // A listener on 127.0.0.1 and one on ::1, each connected to once: the
     // shape of a Go httptest suite. The default profile fails the bind.
     const listen = [
@@ -1769,30 +1769,70 @@ export const Package = S.Package({ targets: { confined, networked, open } })
       "});",
       "once('127.0.0.1').then(() => once('::1')).then(() => process.exit(0), () => process.exit(1));"
     ].join(" ")
-    const root = await temporaryWorkspace()
-    await write(root, "WORKSPACE.ts", workspaceModule())
-    await write(root, "listen.cjs", `${listen}\n`)
-    await write(
-      root,
-      "PACKAGE.ts",
-      `import { Smithers as S } from "@smthrs/targets"
-const confined = S.Shell.Run({ shell: ${
-        JSON.stringify(`${process.execPath} listen.cjs`)
-      }, data: [S.file("listen.cjs")] })
-const loopback = S.Shell.Run({ shell: ${
-        JSON.stringify(`${process.execPath} listen.cjs`)
-      }, data: [S.file("listen.cjs")], sandbox: { network: "loopback" } })
-const egress = S.Shell.Run({ shell: "curl -sf --max-time 5 https://example.com/ > /dev/null", sandbox: { network: "loopback" } })
-export const Package = S.Package({ targets: { confined, egress, loopback } })
-`
+    const address = Object.values(Os.networkInterfaces()).flat().find((entry) =>
+      entry !== undefined && entry.family === "IPv4" && !entry.internal
     )
-    commitAll(root)
-    const confined = await serve(root, ["//:confined"])
-    expect(confined.exitCode).toBe(1)
-    const loopback = await serve(root, ["//:loopback"])
-    expect(loopback.exitCode).toBe(0)
-    const egress = await serve(root, ["//:egress"])
-    expect(egress.exitCode).toBe(1)
+    if (address === undefined) context.skip("no non-loopback IPv4 address for the local egress witness")
+    let requests = 0
+    const server = NodeHttp.createServer((_request, response) => {
+      requests++
+      response.end("local egress witness")
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, address!.address, resolve)
+    })
+    const port = (server.address() as { readonly port: number }).port
+    try {
+      const root = await temporaryWorkspace()
+      await write(root, "WORKSPACE.ts", workspaceModule())
+      await write(
+        root,
+        "egress.cjs",
+        [
+          "const http = require('node:http');",
+          "const request = http.get(" + JSON.stringify("http://" + address!.address + ":" + port) + ", response => {",
+          "response.resume(); response.on('end', () => process.exit(0));",
+          "});",
+          "request.on('error', error => { console.error('egress denied: ' + error.code); process.exit(1); });",
+          "request.setTimeout(5000, () => { console.error('egress timed out'); process.exit(2); });"
+        ].join(" ")
+      )
+      await write(root, "listen.cjs", `${listen}\n`)
+      await write(
+        root,
+        "PACKAGE.ts",
+        `import { Smithers as S } from "@smthrs/targets"
+const confined = S.Shell.Run({ shell: ${
+          JSON.stringify(`${process.execPath} listen.cjs`)
+        }, data: [S.file("listen.cjs")] })
+const loopback = S.Shell.Run({ shell: ${
+          JSON.stringify(`${process.execPath} listen.cjs`)
+        }, data: [S.file("listen.cjs")], sandbox: { network: "loopback" } })
+const egress = S.Shell.Run({ shell: ${
+          JSON.stringify("\"" + process.execPath + "\" egress.cjs")
+        }, data: [S.file("egress.cjs")], sandbox: { network: "loopback" } })
+const unrestricted = S.Shell.Run({ shell: ${
+          JSON.stringify("\"" + process.execPath + "\" egress.cjs")
+        }, data: [S.file("egress.cjs")], sandbox: "none" })
+export const Package = S.Package({ targets: { confined, egress, loopback, unrestricted } })
+`
+      )
+      commitAll(root)
+      const confined = await serve(root, ["//:confined"])
+      expect(confined.exitCode).toBe(1)
+      const loopback = await serve(root, ["//:loopback"])
+      expect(loopback.exitCode).toBe(0)
+      const unrestricted = await serve(root, ["//:unrestricted"])
+      expect(unrestricted.exitCode, unrestricted.logs).toBe(0)
+      expect(requests).toBe(1)
+      const egress = await serve(root, ["//:egress"])
+      expect(egress.exitCode, egress.logs).toBe(1)
+      expect(egress.logs).toMatch(/egress denied: (?:EPERM|EACCES)/)
+      expect(requests).toBe(1)
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    }
   })
 })
 

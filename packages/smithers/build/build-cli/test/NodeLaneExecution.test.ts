@@ -265,6 +265,11 @@ describe("Node lane package execution", () => {
 
     expect((await serve(root, ["//:copy"])).exitCode).toBe(0)
     expect(await Fs.readFile(NodePath.join(root, "out/copied.txt"), "utf8")).toBe("input")
+    await Fs.rm(NodePath.join(root, "out/copied.txt"))
+    const copyHit = await serve(root, ["//:copy"])
+    expect(copyHit.exitCode, copyHit.output + copyHit.logs).toBe(0)
+    expect(copyHit.logs).toContain("//:copy  hit")
+    expect(await Fs.readFile(NodePath.join(root, "out/copied.txt"), "utf8")).toBe("input")
 
     const packed = await serve(root, ["//:pack"])
     expect(packed.exitCode, packed.output + packed.logs).toBe(0)
@@ -333,7 +338,23 @@ describe("Node lane package execution", () => {
     expect((await serve(root, ["//:digest"])).exitCode).toBe(0)
     expect((await serve(root, ["//:digest"])).logs).toContain("//:digest  hit")
     await write(root, "digest-baseline.json", "[]")
-    expect((await serve(root, ["//:digest"])).logs).toContain("file digest differs")
+    const changed = await serve(root, ["//:digest"])
+    expect(changed.exitCode, changed.output + changed.logs).toBe(1)
+    expect(changed.logs).toContain("file digest differs")
+  })
+
+  it("fails an exceeded size budget without caching success", async () => {
+    const root = await markdownFixture()
+    await writeExecutable(
+      NodePath.join(root, "node_modules/.bin/size-limit"),
+      "#!/usr/bin/env node\nconsole.error(\"size budget exceeded\"); process.exit(1)\n"
+    )
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await serve(root, ["//:size"])
+      expect(result.exitCode, result.output + result.logs).toBe(1)
+      expect(result.logs).toContain("size budget exceeded")
+      expect(result.logs).not.toContain("//:size  hit")
+    }
   })
 
   it("confines Changesets.Version writes and distinguishes check/write", async () => {

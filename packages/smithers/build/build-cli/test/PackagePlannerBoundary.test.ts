@@ -605,7 +605,7 @@ describe("Go generator tool authority", () => {
   it("refuses a missing Go executable by name", async () => {
     const { options } = await fixture(declared("Go.Test", "{pkgs:[\"./...\"]}"), goFiles, goLayer)
     const plan = await PackageExec.plan({ ...options, environment: { PATH: "/definitely-absent-planner-path" } })
-    expect(plan.nodes.get("//:command")?.refusal).toContain("go")
+    expect(plan.nodes.get("//:command")?.refusal).toBe("host binary \"go\" is not present on PATH")
   })
 })
 
@@ -1405,22 +1405,30 @@ describe("index ownership boundaries", () => {
 })
 
 describe("real Git patch limits", () => {
-  it("enforces the aggregate patch ceiling across separate argv batches", async () => {
+  it.each([1, 520])("enforces the aggregate patch ceiling over %i selected paths", async (count) => {
     const { root, options } = await fixture(declared("DiffInputs", "{diff:S.gitDiff({base:'HEAD~1'})}"), {
       ".gitignore": ".flows\n"
     })
     snapshot(root, true)
+    // The single-file witness must enter the commit instead of being skipped
+    // by jj's default new-file size bound.
+    execFileSync("jj", ["config", "set", "--repo", "snapshot.max-new-file-size", "1GiB"], {
+      cwd: root,
+      stdio: "ignore"
+    })
     await Fs.mkdir(Path.join(root, "large"))
-    const contents = ("x".repeat(1023) + "\n").repeat(512)
+    const contents = ("x".repeat(1023) + "\n").repeat(512 * (520 / count))
     await Promise.all(
       Array.from(
-        { length: 520 },
+        { length: count },
         (_, index) =>
           Fs.writeFile(Path.join(root, "large", "path".repeat(48) + String(index).padStart(4, "0") + ".txt"), contents)
       )
     )
     snapshot(root, false)
-    await expect(PackageExec.plan(options)).rejects.toThrow("stdout maxBuffer length exceeded")
+    await expect(PackageExec.plan(options)).rejects.toThrow(
+      "gitDiff patch for //:command exceeds 256 MiB; narrow paths"
+    )
   })
 })
 

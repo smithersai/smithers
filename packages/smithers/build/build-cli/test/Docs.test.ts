@@ -234,7 +234,8 @@ describe("workspace loader documentation", () => {
   it("documents probeCacheDirectory as the forgiving, memoized probe", () => {
     const text = docFor("probeCacheDirectory")
     expect(text).toMatch(/any failure returns undefined/)
-    expect(text).toMatch(/memo below/)
+    expect(text).toMatch(/content digest/)
+    expect(text).toMatch(/Failures are never memoized/)
   })
 
   it("pins the behaviour each comment now claims", async () => {

@@ -8,8 +8,8 @@ import { randomBytes } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 
-const stat = (path: string) =>
-  Fs.lstat(path, { bigint: true }).catch((cause: unknown) => {
+const stat = (path: string, io: SafeFs.Io) =>
+  io.lstat(path).catch((cause: unknown) => {
     if (SafeFs.errorCode(cause) === "ENOENT") return undefined
     throw cause
   })
@@ -18,6 +18,7 @@ const stat = (path: string) =>
  * Produces a private sibling file, then publishes it after rechecking its
  * parent. The producer must create the temporary exclusively and close it
  * before returning. Cleanup never traverses a parent that failed admission.
+ * The optional filesystem seam supplies admission reads and parent creation.
  *
  * @category execution
  * @since 1.0.0
@@ -26,9 +27,10 @@ export const publish = async <A>(
   workspaceRoot: string,
   output: string,
   produce: (temporary: string, checkParent: () => Promise<void>) => Promise<A>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  io: SafeFs.Io & { readonly mkdir?: ((path: string) => Promise<unknown>) | undefined } = SafeFs.defaultIo
 ): Promise<A> => {
-  const root = await SafeFs.canonicalRoot(workspaceRoot)
+  const root = await SafeFs.canonicalRoot(workspaceRoot, io)
   if (Path.isAbsolute(output) || output.split(/[\\/]/).some((part) => part === ".." || part === "")) {
     throw new Error(`native output must name a file inside the workspace: ${output}`)
   }
@@ -45,6 +47,7 @@ export const publish = async <A>(
       const current = await SafeFs.resolveDirectory(expected.path, {
         root,
         what: "native output parent",
+        io,
         signal: activeSignal
       })
       if (
@@ -58,13 +61,13 @@ export const publish = async <A>(
   for (const part of ["", ...Path.relative(root, Path.dirname(destination)).split(Path.sep).filter(Boolean)]) {
     directory = Path.join(directory, part)
     await checkParent()
-    const entry = await SafeFs.resolveDirectory(directory, { root, what: "native output parent", signal })
-    if (entry === undefined) {
-      if (await stat(directory) !== undefined) {
-        throw new Error(`native output parent is not a real directory: ${directory}`)
-      }
+    if (await stat(directory, io) === undefined) {
       missing.push(directory)
     } else {
+      const entry = await SafeFs.resolveDirectory(directory, { root, what: "native output parent", signal, io })
+      if (entry === undefined) {
+        throw new Error(`native output parent is not a real directory: ${directory}`)
+      }
       directories.push(entry)
     }
   }
@@ -74,10 +77,10 @@ export const publish = async <A>(
     await checkParent()
     for (const path of missing) {
       await checkParent()
-      await Fs.mkdir(path).catch((cause: unknown) => {
+      await (io.mkdir ?? Fs.mkdir)(path).catch((cause: unknown) => {
         if (SafeFs.errorCode(cause) !== "EEXIST") throw cause
       })
-      const entry = await SafeFs.resolveDirectory(path, { root, what: "native output parent", signal })
+      const entry = await SafeFs.resolveDirectory(path, { root, what: "native output parent", signal, io })
       if (entry === undefined) throw new Error(`native output parent could not be created: ${path}`)
       directories.push(entry)
     }
@@ -85,7 +88,7 @@ export const publish = async <A>(
   }
   const checkDestination = async (): Promise<void> => {
     await checkParent()
-    await SafeFs.resolveFile(destination, { root, symlinks: "reject", what: "native output", signal })
+    await SafeFs.resolveFile(destination, { root, symlinks: "reject", what: "native output", signal, io })
   }
   await checkDestination()
   const temporary = Path.join(
@@ -95,7 +98,7 @@ export const publish = async <A>(
   try {
     const result = await produce(temporary, prepareParent)
     await checkDestination()
-    await SafeFs.resolveFile(temporary, { root, symlinks: "reject", what: "native output temporary", signal })
+    await SafeFs.resolveFile(temporary, { root, symlinks: "reject", what: "native output temporary", signal, io })
     await Fs.rename(temporary, destination)
     return result
   } finally {
@@ -106,7 +109,7 @@ export const publish = async <A>(
       // A failed download may never have created its admitted parents. Do
       // not follow a new entry that appeared there while the request ran.
       for (const path of missing) {
-        if (await stat(path) !== undefined) return
+        if (await stat(path, io) !== undefined) return
       }
       await Fs.rm(temporary, { force: true })
     })().catch(() => undefined)

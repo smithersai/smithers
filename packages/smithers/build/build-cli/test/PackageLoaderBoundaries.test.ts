@@ -207,20 +207,72 @@ export const Package = S.Package({ targets: { x: S.NoSuch.Thing({}) } })
     }
   })
 
-  it("keeps the cache-directory probe forgiving and memoized per workspace key", async () => {
+  it("refreshes the cache-directory probe after workspace and imported configuration edits", async () => {
     const root = await fixture()
-    const first = PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")
-    const second = PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")
-    expect(second).toBe(first)
-    await expect(first).resolves.toBe(".flows")
+    await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBe(".flows")
+    await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBe(".flows")
+    await write(root, "WORKSPACE.ts", workspace.replace("\".flows\"", "\".cache\""))
+    await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBe(".cache")
+    await write(root, "cache.ts", "export const directory = \".imported\"\n")
+    await write(
+      root,
+      "WORKSPACE.ts",
+      "import { directory } from \"./cache.ts\"\n" + workspace.replace("directory: \".flows\"", "directory")
+    )
+    await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBe(".imported")
+    await write(root, "cache.ts", "export const directory = \".updated\"\n")
+    await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBe(".updated")
+  })
 
-    const bad = await fixture()
-    await write(bad, "WORKSPACE.ts", "export const Workspace = ;\n")
-    const failed = PackageLoader.probeCacheDirectory(bad, "WORKSPACE.ts")
-    expect(PackageLoader.probeCacheDirectory(bad, "WORKSPACE.ts")).toBe(failed)
-    await expect(failed).resolves.toBeUndefined()
-    await expect(PackageLoader.loadWorkspaceDeclaration(bad, "WORKSPACE.ts"))
+  it("refreshes a cache directory imported from a named workspace package", async () => {
+    const root = await fixture()
+    const configuration = NodePath.join(root, "packages/cache-config")
+    await write(
+      root,
+      "packages/cache-config/package.json",
+      JSON.stringify({
+        name: "@fixture/cache-config",
+        type: "module",
+        exports: "./index.ts"
+      })
+    )
+    await write(root, "packages/cache-config/index.ts", "export const directory = \".first\"\n")
+    await Fs.mkdir(NodePath.join(root, "node_modules/@fixture"), { recursive: true })
+    await Fs.symlink(configuration, NodePath.join(root, "node_modules/@fixture/cache-config"), "dir")
+    await write(
+      root,
+      "WORKSPACE.ts",
+      "import { directory } from \"@fixture/cache-config\"\n" +
+        workspace.replace("directory: \".flows\"", "directory")
+    )
+    await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBe(".first")
+    await write(root, "packages/cache-config/index.ts", "export const directory = \".second\"\n")
+    await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBe(".second")
+  })
+
+  it("does not memoize failed cache probes, including unchanged source", async () => {
+    const root = await fixture()
+    await write(
+      root,
+      "WORKSPACE.ts",
+      workspace + "\nif (process.env.SMTHRS_PROBE_REFUSE === \"1\") throw new Error(\"probe refused\")\n"
+    )
+    const previous = process.env.SMTHRS_PROBE_REFUSE
+    try {
+      process.env.SMTHRS_PROBE_REFUSE = "1"
+      await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBeUndefined()
+      delete process.env.SMTHRS_PROBE_REFUSE
+      await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBe(".flows")
+    } finally {
+      if (previous === undefined) delete process.env.SMTHRS_PROBE_REFUSE
+      else process.env.SMTHRS_PROBE_REFUSE = previous
+    }
+    await write(root, "WORKSPACE.ts", "export const Workspace = ;\n")
+    await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBeUndefined()
+    await expect(PackageLoader.loadWorkspaceDeclaration(root, "WORKSPACE.ts"))
       .rejects.toMatchObject({ code: "module_import_failed", path: "WORKSPACE.ts" })
+    await write(root, "WORKSPACE.ts", workspace)
+    await expect(PackageLoader.probeCacheDirectory(root, "WORKSPACE.ts")).resolves.toBe(".flows")
   })
 
   it("reuses an unchanged graph and rekeys after an adjacent .smithers module changes", async () => {

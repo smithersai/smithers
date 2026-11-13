@@ -23,6 +23,7 @@ import { verifyOutputs } from "@smthrs/targets/ToolBuild"
 import * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
+import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { minimatch } from "minimatch"
@@ -513,6 +514,13 @@ const execErrorText = (error: Exec.ExecError): string => {
   return `${head}: ${error.argv.join(" ")}${detail === "" ? "" : `\n${detail}`}`
 }
 
+/** A manifest read or parse failed before compatibility could be judged. */
+class ApiCompatManifestError extends Data.TaggedError("smithers-build/ApiCompatManifestError")<{
+  readonly path: string
+  readonly cause: unknown
+  readonly message: string
+}> {}
+
 type ExecOutcome =
   | { readonly ok: true; readonly error?: undefined; readonly result?: Exec.Result | undefined }
   | { readonly ok: false; readonly error: string; readonly result?: undefined }
@@ -752,7 +760,10 @@ export const executeEffect = (
         const repositoryChild = ambient["SMTHRS_REPO_CHILD"] === "1"
         const output = OutputStream.make({
           write: repositoryChild
-            ? (stream, text) => void (stream === "stdout" ? process.stdout : process.stderr).write(text)
+            ? (stream, text) =>
+              (stream === "stdout" ?
+                options.stdout ?? Reporter.terminalOf(process.stdout) :
+                options.stderr ?? Reporter.terminalOf(process.stderr)).write(text)
             : (stream, text) => reporter.toolOutput(node.label, stream, text),
           environment: { ...ambient, ...resolved.env },
           sensitiveNames: credentialNames
@@ -2848,32 +2859,38 @@ export const executeEffect = (
                 })
               const baselineDigest = yield* declarationDigest(baseline.outDirs)
               const surfaceDigest = yield* declarationDigest(surface.outDirs)
-              const current = JSON.parse(
-                yield* joined(() =>
-                  Fs.readFile(
-                    NodePath.join(root, ...lane.manifestPath.split("/")),
-                    "utf8"
-                  )
-                )
-              ) as { readonly version?: unknown }
+              const manifestVersion = (path: string): Effect.Effect<unknown, unknown> =>
+                joined(async () => {
+                  try {
+                    const value: unknown = JSON.parse(await Fs.readFile(path, "utf8"))
+                    return typeof value === "object" && value !== null && !Array.isArray(value)
+                      ? (value as { readonly version?: unknown }).version
+                      : undefined
+                  } catch (cause) {
+                    const relative = posix(NodePath.relative(root, path))
+                    throw new ApiCompatManifestError({
+                      path: relative,
+                      cause,
+                      message: `Api.Compat could not read ${relative}: ${Diagnostic.describe(cause)}`
+                    })
+                  }
+                })
+              const current = yield* manifestVersion(NodePath.join(root, ...lane.manifestPath.split("/")))
               const baselineManifestPath = baseline.outDirs.map((directory) =>
                 NodePath.join(root, directory, "package.json")
-              )
-                .find((path) => NodeFs.existsSync(path))
+              ).find((path) => NodeFs.existsSync(path))
               const previous = baselineManifestPath === undefined
                 ? undefined
-                : (JSON.parse(yield* joined(() => Fs.readFile(baselineManifestPath, "utf8"))) as {
-                  readonly version?: unknown
-                }).version
-              if (typeof current.version !== "string" || typeof previous !== "string") {
+                : yield* manifestVersion(baselineManifestPath)
+              if (typeof current !== "string" || typeof previous !== "string") {
                 return fail("Api.Compat manifests must declare string versions")
               }
-              if (baselineDigest !== surfaceDigest && current.version === previous) {
-                return fail(`declaration surface changed without a version bump (${current.version})`)
+              if (baselineDigest !== surfaceDigest && current === previous) {
+                return fail(`declaration surface changed without a version bump (${current})`)
               }
               log(
                 `${node.label}  declarations ${
-                  baselineDigest === surfaceDigest ? "unchanged" : `changed across ${previous} -> ${current.version}`
+                  baselineDigest === surfaceDigest ? "unchanged" : `changed across ${previous} -> ${current}`
                 }`
               )
               yield* cachePut(node, { kind: "api-compat", baselineDigest, surfaceDigest })
