@@ -160,7 +160,7 @@ sourced from a host cannot resolve through `Object.prototype`.
 | `StageStrip`, `stageTone`                                                                   | `StageStripProps`, `StageStripItem`, `StageTone` | `stages`, `showSummary`, `summaryLabel`.                                    |
 | `CollapsiblePanel`                                                                          | `CollapsiblePanelProps`        | `title`, `status`, `statusLabel`, `meta`, controlled or uncontrolled `open`.                  |
 | `Markdown`                                                                                  | `MarkdownProps`, `MarkdownLinkClick`, `MarkdownVariant`, `MarkdownImageResolver` | Dependency-free renderer. Builds React children rather than `innerHTML`, and scheme-filters link hrefs. `variant="document"` reads a repository file as GitHub does: HTML comments dropped, `<pre>` kept preformatted, other tags reduced to their text, single newlines joined, `>` blockquotes and inline HTML formatting nested up to `16` levels (excess quotes become plain paragraph text; excess HTML tags are dropped with their text kept), a quote whose first line is `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` drawn as a GitHub alert, and images reduced to their alt text (no `<img>`, no request). `resolveImage` draws a line that is exactly `![alt](https://example.com/image.png)` as the light and dark files it returns, one shown per `html[data-theme]`; on a miss the line renders as it would without it. `baseUrl` resolves relative links (`/x.md`, `./y.md`, `#part`) against the document's own URL, so they open where it lives, not on the host. |
-| `FileTree`                                                                                  | `FileTreeProps`, `FileTreeItem`, `FileTreeNode`, `FileTreeNodeProps`, `FileTreeDirectoryProps` | Flat `/`-delimited paths grouped into a nested tree, with controlled single selection. |
+| `FileTree`                                                                                  | `FileTreeProps`, `FileTreeItem`, `FileTreeNode`, `FileTreeNodeProps`, `FileTreeDirectoryProps` | Flat `/`-delimited paths grouped into a nested tree, with controlled single selection. `defaultCollapsed` also collapses directories loaded later and preserves directories the person expands. `collapsed` takes precedence. |
 | `Breadcrumbs`                                                                               | `BreadcrumbsProps`, `BreadcrumbItem` | A path trail. Every step but the last with a safe URL is an `<a href>`; unsafe URLs stay plain text. The last is `aria-current="page"`. `onNavigate` takes a plain click; a modified click stays the browser's. |
 | `Popover`, `PopoverTrigger`, `PopoverContent`                                               | Radix Popover props            | A panel anchored to its trigger, in a portal, on the overlay tokens. `PopoverContent` aligns to the trigger's start, 6px below it, unless `align` or `sideOffset` say otherwise. Escape, a click outside and the trigger close it. |
 | `RefPicker`                                                                                 | `RefPickerProps`, `RefPickerRef`, `RefPickerRefs` | A branch and tag picker for a repository view's revision: a button showing `current`, opening a filter over `refs` (`loading`, `ready` with `branches`, `tags` and `truncated`, or `failed` with a `message`) on two tabs counted by length. Each choice is an `<a href>` from `href(ref)` with its short SHA; `selected` is marked and `defaultBranch` badged `default`. A full 40-hex SHA typed in the filter is offered too. `onSelect(ref)` takes a plain click or Enter on the first match; a modified click stays the browser's. |
@@ -296,6 +296,10 @@ carries the flag onto `DiffFile.partial`, and `DiffHunks` renders a
 patch metadata rows only: an unnumbered context line that is not a hunk header.
 Hunk body rows carry a line number, so a text diff whose own content reads
 `GIT binary patch` still renders its hunks instead of the binary placeholder.
+
+`parseUnifiedFile` reads paths, status, rename information and mode changes
+from the preamble before the first `@@` row. Added or deleted content such as
+`++ /dev/null` or `-- note` remains hunk content.
 
 ## Time
 
@@ -491,6 +495,10 @@ function useCommitModel(): CommitModel | null
 | `ChangeSummary`                                                                                                                                                              | `ChangeSummaryProps`                                                                             |
 | `EnvironmentVariables`, `EnvironmentVariable`                                                                                                                                | `EnvironmentVariablesProps`, `EnvironmentVariableProps`, `EnvironmentVariableModel`              |
 | `SecretField`                                                                                                                                                                | `SecretFieldProps`                                                                               |
+
+`TestResultsProgress` counts `passed`, `failed`, `skipped` and `todo` cases
+as finished. A completed run reaches `100` percent even with `todo` cases;
+a running run or an empty result remains indeterminate.
 
 `SchemaDisplay` and `SecretField` enforce bounds documented in
 [Failure codes and limits](./reference/contracts.md).

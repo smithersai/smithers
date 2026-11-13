@@ -159,6 +159,13 @@ describe("TestResults (model mode)", () => {
     expect(container!.querySelectorAll('[data-slot="test-suite"]')).toHaveLength(suites.length);
   });
 
+  test("a finished run including todo cases reaches 100 percent", async () => {
+    await render(<TestResults suites={suites}><TestResultsProgress /></TestResults>);
+    const progress = container!.querySelector('[data-slot="test-results-progress"]')!;
+    expect(progress.getAttribute("data-running")).toBe("false");
+    expect(progress.getAttribute("aria-valuenow")).toBe("100");
+  });
+
   test("progress is indeterminate while running", async () => {
     await render(
       <TestResults suites={suites} running>

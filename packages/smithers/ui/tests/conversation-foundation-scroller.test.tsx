@@ -49,6 +49,18 @@ class ManualResizeObserver implements ResizeObserver {
   }
 }
 
+test.each([
+  [1000, 200, -1, 0],
+  [1000, 200, 1000, 800],
+  [1000, 200, 799, 799],
+  [100, 200, 100, 0],
+])("viewport geometry clamps scrollTop (%i/%i, %i -> %i)", async (scrollHeight, clientHeight, requested, expected) => {
+  await render(<MessageScrollerProvider><MessageScrollerViewport><MessageScrollerContent /></MessageScrollerViewport></MessageScrollerProvider>,
+    { scrollHeight, clientHeight, scrollTop: 0 });
+  getViewport().scrollTop = requested;
+  expect(getViewport().scrollTop).toBe(expected);
+});
+
 beforeAll(() => {
   for (
     const property of [
@@ -85,7 +97,7 @@ beforeAll(() => {
     set(value: number) {
       if ((this as HTMLElement).dataset.slot !== "message-scroller-viewport") return;
       const current = metricsByElement.get(this as HTMLElement) ?? { ...defaultMetrics };
-      current.scrollTop = value;
+      current.scrollTop = Math.max(0, Math.min(value, current.scrollHeight - current.clientHeight));
       metricsByElement.set(this as HTMLElement, current);
     },
   });
@@ -253,14 +265,14 @@ describe("MessageScroller compound", () => {
       </MessageScrollerProvider>,
       { scrollHeight: 1000, clientHeight: 200, scrollTop: 0 },
     );
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
     expect(states.at(-1)!.following).toBe(true);
 
     metrics().scrollHeight = 1200;
     const content = container!.querySelector('[data-slot="message-scroller-content"]')!;
     const callback = resizeCallbacks.get(content)!;
     await act(async () => callback([], {} as ResizeObserver));
-    expect(getViewport().scrollTop).toBe(1200);
+    expect(getViewport().scrollTop).toBe(1000);
   });
 
   test("attaches growth follow when the viewport mounts one tick after its provider", async () => {
@@ -284,7 +296,7 @@ describe("MessageScroller compound", () => {
 
     metrics().scrollHeight = 1200;
     await act(async () => callback!([], {} as ResizeObserver));
-    expect(getViewport().scrollTop).toBe(1200);
+    expect(getViewport().scrollTop).toBe(1000);
   });
 
   test("roots visibility tracking in a viewport that mounts one tick late", async () => {
@@ -433,7 +445,7 @@ describe("MessageScroller compound", () => {
       </MessageScrollerProvider>
     );
     await render(view(false), { scrollHeight: 1000, clientHeight: 200, scrollTop: 0 });
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
     geometryByMessageId.set("target", { top: 300, height: 80 });
     await act(async () => root!.render(view(true)));
     expect(getViewport().scrollTop).toBe(300 - 56);
@@ -520,7 +532,7 @@ describe("MessageScroller compound", () => {
       </MessageScrollerProvider>
     );
     await render(view(false), { scrollHeight: 1000, clientHeight: 200, scrollTop: 0 });
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
     // Scrollbar-drag style gesture: a bare scroll event away from the anchor.
     metrics().scrollTop = 400;
     await scroll();
@@ -550,7 +562,7 @@ describe("MessageScroller compound", () => {
       </MessageScrollerProvider>
     );
     await render(view, { scrollHeight: 1000, clientHeight: 200, scrollTop: 0 });
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
     expect(latestState!.following).toBe(true);
     await act(async () => {
       commands!.scrollToMessage("m2");
@@ -611,7 +623,7 @@ describe("MessageScroller compound", () => {
       { scrollHeight: 1000, clientHeight: 200, scrollTop: 300 },
     );
     await act(async () => commands!.scrollToBottom());
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
     await act(async () => commands!.scrollToTop());
     expect(getViewport().scrollTop).toBe(0);
   });
@@ -664,7 +676,7 @@ describe("MessageScroller compound", () => {
       );
       expect(visible.a).toBe(true);
       expect(visible.b).toBe(false);
-      metrics().scrollTop = 850;
+      getViewport().scrollTop = 750;
       await scroll();
       expect(visible.a).toBe(false);
       expect(visible.b).toBe(true);
@@ -772,7 +784,7 @@ describe("MessageScroller compound", () => {
     expect(button.hasAttribute("inert")).toBe(false);
     expect(button.tabIndex).toBe(0);
     await act(async () => button.click());
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
     expect(button.getAttribute("data-active")).toBe("false");
   });
 
@@ -879,7 +891,7 @@ describe("MessageScroller compound", () => {
     const frame = frames[0]!;
     expect(frame.contains(getViewport())).toBe(true);
     expect(frame.querySelector('[data-slot="message-scroller-button"]')).not.toBeNull();
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
     expect(latestState!.following).toBe(true);
     // The jump affordance lives in the frame and drives the ambient viewport.
     const button = frame.querySelector<HTMLButtonElement>('[data-slot="message-scroller-button"]')!;
@@ -889,7 +901,7 @@ describe("MessageScroller compound", () => {
     expect(latestState!.following).toBe(false);
     expect(button.getAttribute("data-active")).toBe("true");
     await act(async () => button.click());
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
     expect(latestState!.following).toBe(true);
     // Commands drive the same viewport through the compound parts.
     await act(async () => {
@@ -898,7 +910,7 @@ describe("MessageScroller compound", () => {
     expect(getViewport().scrollTop).toBe(500);
     expect(latestState!.following).toBe(false);
     await act(async () => commands!.scrollToBottom());
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
     expect(latestState!.following).toBe(true);
   });
 
@@ -1134,7 +1146,7 @@ describe("MessageScroller compound", () => {
       </MessageScrollerProvider>
     );
     await render(view(false), { scrollHeight: 2000, clientHeight: 200, scrollTop: 0 });
-    expect(getViewport().scrollTop).toBe(2000);
+    expect(getViewport().scrollTop).toBe(1800);
     expect(latestState!.following).toBe(true);
     // A new turn arrives: the question row starts where the content used to
     // end, and the turn is tall enough to anchor above the bottom region.
@@ -1158,7 +1170,7 @@ describe("MessageScroller compound", () => {
     metrics().scrollHeight = 2800;
     geometryByMessageId.set("a", { top: 2060, height: 740 });
     await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
-    expect(getViewport().scrollTop).toBe(2800);
+    expect(getViewport().scrollTop).toBe(2600);
   });
 
   test("a short appended scrollAnchor turn clamps to the live edge and keeps following", async () => {
@@ -1195,7 +1207,7 @@ describe("MessageScroller compound", () => {
     geometryByMessageId.set("q", { top: 2000, height: 60 });
     geometryByMessageId.set("a", { top: 2060, height: 40 });
     await act(async () => root!.render(view(true)));
-    expect(getViewport().scrollTop).toBe(2100);
+    expect(getViewport().scrollTop).toBe(1900);
     expect(latestState!.following).toBe(true);
   });
 
@@ -1218,7 +1230,7 @@ describe("MessageScroller compound", () => {
       { scrollHeight: 1000, clientHeight: 200, scrollTop: 0 },
     );
     // Mount pinning wins: no turn-anchor move for rows that were always there.
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
   });
 
   test("scrollToMessage queues a permalink jump until its row registers", async () => {
@@ -1276,7 +1288,7 @@ describe("MessageScroller compound", () => {
       </MessageScrollerProvider>,
       { scrollHeight: 1000, clientHeight: 200, scrollTop: 0 },
     );
-    expect(getViewport().scrollTop).toBe(1000);
+    expect(getViewport().scrollTop).toBe(800);
     metrics().scrollTop = 300;
     await scroll();
     expect(latestState!.following).toBe(false);
@@ -1297,7 +1309,7 @@ describe("MessageScroller compound", () => {
     metrics().scrollHeight = 1600;
     const content = container!.querySelector('[data-slot="message-scroller-content"]')!;
     await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
-    expect(getViewport().scrollTop).toBe(1600);
+    expect(getViewport().scrollTop).toBe(1400);
     expect(latestState!.following).toBe(true);
   });
 
@@ -1388,7 +1400,7 @@ describe("MessageScroller compound", () => {
     metrics().scrollHeight = 1600;
     const content = container!.querySelector('[data-slot="message-scroller-content"]')!;
     await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
-    expect(getViewport().scrollTop).toBe(1600);
+    expect(getViewport().scrollTop).toBe(1400);
     expect(latestState!.following).toBe(true);
   });
 
@@ -1808,7 +1820,7 @@ test("a requested read of a pane card above the live edge reads it where it is (
   expect(getViewport().scrollTop).toBe(410);
   // Latest is still one click away, and it hands the live edge back.
   await act(async () => container!.querySelector<HTMLButtonElement>("button")!.click());
-  expect(getViewport().scrollTop).toBe(5600);
+  expect(getViewport().scrollTop).toBe(4960);
   geometryByMessageId.set("issue-form", { top: 4800, height: 800 });
   metrics().scrollHeight = 6000;
   await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
@@ -1845,7 +1857,7 @@ describe("transcript flow activation", () => {
     const resize = async () => act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
     metrics().scrollHeight = 1400;
     await resize();
-    expect(getViewport().scrollTop).toBe(read ? 1200 : 1400);
+    expect(getViewport().scrollTop).toBe(1200);
     metrics().scrollTop = 400;
     await scroll();
     metrics().scrollHeight = 1600;
@@ -1910,12 +1922,6 @@ test("rail wheel releases bottom follow before the next transcript commit", asyn
   </ChatTranscript>;
   await render(view(), { scrollHeight: 2000, clientHeight: 200, scrollTop: 0 });
   const viewport = getViewport();
-  // Supply the browser's clamped layout geometry; happy-dom has no layout.
-  Object.defineProperty(viewport, "scrollTop", {
-    configurable: true,
-    get: () => metrics().scrollTop,
-    set: (top: number) => { metrics().scrollTop = Math.max(0, Math.min(top, metrics().scrollHeight - metrics().clientHeight)); },
-  });
   await act(async () => commands!.scrollToBottom());
   expect(viewport.scrollTop).toBe(1800);
   expect(following).toBe(true);
@@ -2011,5 +2017,5 @@ test("reader delta command tolerates an absent viewport and zero input; bottom a
   expect(following).toBe(true);
   metrics().scrollHeight += 100;
   await act(async () => root!.render(view(true)));
-  expect(getViewport().scrollTop).toBe(1100);
+  expect(getViewport().scrollTop).toBe(900);
 });

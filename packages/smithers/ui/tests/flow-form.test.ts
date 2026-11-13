@@ -47,11 +47,17 @@ test("write-only values never become drafts or submitted payloads", () => {
     .toEqual({ payload: { id: "one" } })
 })
 
-test("headless exports bundle for Bun without importing DOM presentation", async () => {
-  const result = await Bun.build({ entrypoints: [fileURLToPath(new URL("../src/flow-form.ts", import.meta.url))],
-    target: "bun", packages: "external" })
-  expect(result.success).toBe(true)
-  const source = await result.outputs[0]!.text()
+test("headless exports bundle for Bun without importing DOM presentation", () => {
+  const built = Bun.spawnSync({
+    cmd: [process.execPath, "build", "--target=bun", "--packages=external",
+      fileURLToPath(new URL("../src/flow-form.ts", import.meta.url))],
+    stdout: "pipe",
+    stderr: "pipe"
+  })
+  expect(built.exitCode).toBe(0)
+  const source = built.stdout.toString()
+  expect(source.length).toBeGreaterThan(1_000)
+  expect(source).toContain("var assembleLine = (")
   expect(source).not.toContain("react-dom")
   expect(source).not.toContain("@opentui")
   expect(source).not.toContain("document.")

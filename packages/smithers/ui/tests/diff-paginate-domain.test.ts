@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
+import fc from "fast-check";
 import type { Diff, DiffFile } from "../src/diff";
 import {
   binaryBodyLabel,
@@ -118,6 +119,64 @@ describe("parseHunks reports a hunk cut short of its header's budget", () => {
   });
 });
 
+describe("patch metadata stays outside hunk bodies", () => {
+  test("arbitrary added and deleted text preserves preamble metadata", () => {
+    const text = fc.oneof(fc.constantFrom("-- /dev/null", "++ /dev/null", "-- note"), fc.stringMatching(/^[a-z -]{0,24}$/));
+    fc.assert(fc.property(
+      fc.constantFrom("modified", "renamed", "added", "deleted"),
+      fc.array(fc.tuple(fc.constantFrom("+", "-"), text), { minLength: 1, maxLength: 20 }),
+      (status, rows) => {
+        const add = rows.filter(([kind]) => kind === "+").length;
+        const del = rows.length - add;
+        const preamble = status === "renamed"
+          ? ["diff --git a/old.patch b/new.patch", "rename from old.patch", "rename to new.patch", "--- a/old.patch", "+++ b/new.patch"]
+          : ["diff --git a/new.patch b/new.patch",
+            "--- " + (status === "added" ? "/dev/null" : "a/new.patch"),
+            "+++ " + (status === "deleted" ? "/dev/null" : "b/new.patch")];
+        const patch = [...preamble, "@@ -1," + del + " +1," + add + " @@",
+          ...rows.map(([kind, content]) => kind + content), ""].join("\n");
+        const parsed = parseUnifiedFile(patch);
+        expect({ path: parsed.path, oldPath: parsed.oldPath, status: parsed.status, add: parsed.add, del: parsed.del })
+          .toEqual({ path: "new.patch", oldPath: status === "renamed" ? "old.patch" : undefined, status, add, del });
+      },
+    ), { numRuns: 100 });
+  });
+
+  test.each(["\n", "\r\n"])("deleted SQL comments do not become old paths (%j)", (newline) => {
+    const parsed = parseUnifiedFile(["diff --git a/m.sql b/m.sql", "@@ -1,2 +1,1 @@", "--- note", " SELECT 1;", ""].join(newline));
+    expect(parsed.path).toBe("m.sql");
+    expect(parsed.oldPath).toBeUndefined();
+    expect(parsed.status).toBe("modified");
+    expect(parsed.del).toBe(1);
+  });
+
+  test.each([
+    ["--- /dev/null", "@@ -1,2 +1,1 @@", 0, 1],
+    ["+++ /dev/null", "@@ -1,1 +1,2 @@", 1, 0],
+  ] as const)("body row %s cannot change file status", (row, hunk, add, del) => {
+    const parsed = parseUnifiedFile(["diff --git a/x.patch b/x.patch", "--- a/x.patch", "+++ b/x.patch", hunk, row, " keep", ""].join("\n"));
+    expect(parsed.path).toBe("x.patch");
+    expect(parsed.oldPath).toBeUndefined();
+    expect(parsed.status).toBe("modified");
+    expect({ add: parsed.add, del: parsed.del }).toEqual({ add, del });
+  });
+
+  test("headerless hunk content cannot supply a path", () => {
+    const parsed = parseUnifiedFile("@@ -1,1 +1,1 @@\n--- old\n+++ new\n");
+    expect(parsed.path).toBe("");
+    expect(parsed.oldPath).toBeUndefined();
+    expect(parsed.status).toBe("modified");
+  });
+
+  test("metadata after a hunk cannot override its preamble", () => {
+    const parsed = parseUnifiedFile("diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\nrename from wrong.ts\nrename to wrong.ts\nnew file mode 100755\n");
+    expect(parsed.path).toBe("a.ts");
+    expect(parsed.oldPath).toBeUndefined();
+    expect(parsed.status).toBe("modified");
+    expect(parsed.modeChanges).toBeUndefined();
+  });
+});
+
 describe("path parsing", () => {
   test("an unquoted path with spaces parses", () => {
     expect(parseUnifiedFile("diff --git a/my file.ts b/my file.ts\n@@ -1,1 +1,1 @@\n+x\n").path).toBe("my file.ts");
@@ -153,9 +212,10 @@ describe("path parsing", () => {
 /** Real staged `git diff` output, including names the host cannot materialize. */
 function realGitDiff(name: string, quotePath: boolean): string {
   const dir = mkdtempSync(join(tmpdir(), "diff-path-"));
-  const git = (...args: string[]) => execFileSync("git", ["-c", `core.quotePath=${quotePath}`, "-c", "core.protectNTFS=false", ...args], { cwd: dir, encoding: "utf8" });
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (...args: string[]) => execFileSync("git", ["-c", "commit.gpgsign=false", "-c", `core.quotePath=${quotePath}`, "-c", "core.protectNTFS=false", ...args], { cwd: dir, env, encoding: "utf8" });
   const stage = (content: string) => {
-    const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: dir, encoding: "utf8", input: content }).trim();
+    const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: dir, env, encoding: "utf8", input: content }).trim();
     git("update-index", "--add", "--cacheinfo", "100644", blob, name);
   };
   try {
@@ -170,6 +230,26 @@ function realGitDiff(name: string, quotePath: boolean): string {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+test("real diff fixtures ignore hostile global signing and hooks configuration", () => {
+  const dir = mkdtempSync(join(tmpdir(), "diff-config-"));
+  const previous = process.env.GIT_CONFIG_GLOBAL;
+  try {
+    const hooks = join(dir, "hooks");
+    mkdirSync(hooks);
+    writeFileSync(join(hooks, "pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    const config = join(dir, "config");
+    writeFileSync(config, "[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = false\n[core]\n\thooksPath = " + hooks + "\n");
+    process.env.GIT_CONFIG_GLOBAL = config;
+    const parsed = parseUnifiedFile(realGitDiff("plain.txt", true));
+    expect(parsed.path).toBe("plain.txt");
+    expect({ add: parsed.add, del: parsed.del }).toEqual({ add: 1, del: 1 });
+  } finally {
+    if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+    else process.env.GIT_CONFIG_GLOBAL = previous;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 describe("path parsing against real git", () => {
   const names = ["😀\nfile.txt", "plain.txt", "café\nname.txt", 'q"uote\n.txt', " name.txt ", " lead.txt", "trail.txt "];

@@ -64,7 +64,7 @@ export type FileTreeProps = Omit<ComponentProps<"div">, "onSelect" | "onToggle">
   nodeProps?: (node: FileTreeNode) => FileTreeNodeProps;
   /** The same pass-through for the directory toggles, keyed by directory path. */
   directoryProps?: (path: string) => FileTreeDirectoryProps;
-  /** Start with every directory collapsed (default: expanded). Ignored under `collapsed`. */
+  /** Start every directory collapsed, including ones loaded later (default: expanded). Ignored under `collapsed`. */
   defaultCollapsed?: boolean;
 };
 
@@ -106,7 +106,7 @@ function buildTree(nodes: ReadonlyArray<FileTreeNode>, directories: ReadonlyArra
   return root;
 }
 
-/** Every directory path in the tree, for seeding the default-collapsed state. */
+/** Every directory path in the tree, including directories loaded after mount. */
 function directoryPaths(dir: TreeDir, out: string[] = []): string[] {
   for (const child of dir.dirs) {
     out.push(child.path);
@@ -247,18 +247,21 @@ export function FileTree({
   useInjectUiCss();
   const resolved = nodes.map(toNode);
   const root = buildTree(resolved, directories);
-  const [ownCollapsed, setOwnCollapsed] = useState<Set<string>>(() =>
-    defaultCollapsed ? new Set(directoryPaths(root)) : new Set()
+  const [ownState, setOwnState] = useState(() => ({
+    initiallyCollapsed: defaultCollapsed,
+    toggled: new Set<string>(),
+  }));
+  const collapsed = controlledCollapsed ?? new Set(
+    directoryPaths(root).filter((path) => ownState.initiallyCollapsed !== ownState.toggled.has(path)),
   );
-  const collapsed = controlledCollapsed ?? ownCollapsed;
   const onToggle = (path: string) => {
     const expanded = collapsed.has(path);
     if (controlledCollapsed === undefined) {
-      setOwnCollapsed((current) => {
-        const next = new Set(current);
-        if (next.has(path)) next.delete(path);
-        else next.add(path);
-        return next;
+      setOwnState((current) => {
+        const toggled = new Set(current.toggled);
+        if (toggled.has(path)) toggled.delete(path);
+        else toggled.add(path);
+        return { ...current, toggled };
       });
     }
     onToggleProp?.(path, expanded);

@@ -5,6 +5,12 @@
 `@smthrs/ui` is `private: true` at this release: `apps/ui` and `flows/review`
 consume it through the workspace.
 
+### Fixed
+
+- Patch content resembling file headers no longer changes paths or file status.
+  Finished test runs with `todo` cases reach `100` percent, and `FileTree`
+  keeps late-loaded directories collapsed under `defaultCollapsed`.
+
 ### Added
 
 - Generated views (decision 0004). `GeneratedView` shows a view's HTML in a

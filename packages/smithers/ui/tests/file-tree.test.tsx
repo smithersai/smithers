@@ -123,6 +123,29 @@ describe("FileTree", () => {
     expect(entry).not.toBeUndefined();
   });
 
+  test("defaultCollapsed applies to late directories and preserves explicit expansions", async () => {
+    const toggles: Array<[string, boolean]> = [];
+    const view = (nodes: string[], directories: string[] = []) =>
+      <FileTree nodes={nodes} directories={directories} defaultCollapsed onToggle={(path, expanded) => toggles.push([path, expanded])} />;
+    await render(view([]));
+    await act(async () => root!.render(view(["src/app/main.ts", "docs/guide.md"])));
+    expect(files()).toHaveLength(0);
+    expect(dirToggles().map((toggle) => toggle.getAttribute("aria-expanded"))).toEqual(["false", "false"]);
+    await click(dirToggles()[0]!);
+    expect(dirToggles()[1]!.getAttribute("aria-expanded")).toBe("false");
+    await click(dirToggles()[1]!);
+    expect(files().map((file) => file.textContent)).toEqual(["main.ts"]);
+    await act(async () => root!.render(view(["src/app/main.ts", "src/new/extra.ts", "docs/guide.md"], ["assets"])));
+    expect(files().map((file) => file.textContent)).toEqual(["main.ts"]);
+    expect(dirToggles().map((toggle) => [toggle.textContent, toggle.getAttribute("aria-expanded")])).toEqual([
+      ["assets", "false"], ["src", "true"], ["app", "true"], ["new", "false"], ["docs", "false"],
+    ]);
+    await click(dirToggles()[1]!);
+    await click(dirToggles()[1]!);
+    expect(files().map((file) => file.textContent)).toEqual(["main.ts"]);
+    expect(toggles).toEqual([["src", true], ["src/app", true], ["src", false], ["src", true]]);
+  });
+
   test("composes nodeProps without surrendering selection or structural attributes", async () => {
     const events: string[] = [];
     await render(

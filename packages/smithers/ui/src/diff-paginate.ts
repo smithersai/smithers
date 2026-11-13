@@ -438,17 +438,19 @@ export type ParseUnifiedFileOverrides = {
  * render a placeholder instead of lines.
  */
 export function parseUnifiedFile(diffText: string, overrides: ParseUnifiedFileOverrides = {}): DiffFile {
-  const path = overrides.path ?? pathFromDiffText(diffText);
-  const binary = overrides.isBinary === true || BINARY_PATCH_RE.test(diffText);
+  const hunkStart = diffText.search(/^@@/m);
+  const preamble = hunkStart < 0 ? diffText : diffText.slice(0, hunkStart);
+  const path = overrides.path ?? pathFromDiffText(preamble);
+  const binary = overrides.isBinary === true || BINARY_PATCH_RE.test(preamble);
   const parsed = binary ? { lines: [], add: 0, del: 0, partial: false } : parseHunks(diffText);
-  const oldPath = oldPathFrom(diffText);
-  const modeChanges = modeChangesFrom(diffText);
+  const oldPath = oldPathFrom(preamble);
+  const modeChanges = modeChangesFrom(preamble);
   return {
     path,
     add: parsed.add,
     del: parsed.del,
     lines: parsed.lines,
-    status: overrides.status ?? statusFromDiffText(diffText),
+    status: overrides.status ?? statusFromDiffText(preamble),
     ...(binary ? { isBinary: true } : {}),
     ...(typeof overrides.sizeBytes === "number" ? { sizeBytes: overrides.sizeBytes } : {}),
     ...(oldPath && oldPath !== path ? { oldPath } : {}),

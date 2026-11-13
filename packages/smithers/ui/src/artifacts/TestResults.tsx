@@ -177,7 +177,7 @@ export function TestResultsProgress({ className, ...props }: ComponentProps<"div
   const context = useContext(TestResultsContext);
   const running = context?.running ?? false;
   const counts = context?.counts;
-  const finished = (counts?.passed ?? 0) + (counts?.failed ?? 0) + (counts?.skipped ?? 0);
+  const finished = (counts?.passed ?? 0) + (counts?.failed ?? 0) + (counts?.skipped ?? 0) + (counts?.todo ?? 0);
   const total = counts?.total ?? 0;
   const value = running || total === 0 ? undefined : Math.round((finished / total) * 100);
   return (
