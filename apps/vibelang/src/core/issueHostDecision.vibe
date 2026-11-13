@@ -59,6 +59,14 @@ export function carriesCode(reason: string): boolean {
   return reason === "unknown" || reason === "rate-limited" || reason === "unavailable"
 }
 
+/** The reason a broker's delegation refusal is reported as: a reused key with another request is the request's own fault. */
+//@ verify
+//@ ensures refusal == "key_conflict" ==> \result == "invalid"
+//@ ensures refusal != "key_conflict" ==> \result == refusal
+export function refusalReason(refusal: string): string {
+  return refusal === "key_conflict" ? "invalid" : refusal
+}
+
 /** Whether a refusal is the request's own fault, answered 400. */
 //@ verify
 //@ ensures \result == (reason == "title" || reason == "incomplete" || reason == "assignee" || reason == "empty" || reason == "tree" || reason == "invalid" || reason == "review" || reason == "closed" || reason == "fork" || reason == "install")

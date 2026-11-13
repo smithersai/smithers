@@ -19,7 +19,7 @@ import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
-import { carriesCode, failureReason, requestKey, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
+import { carriesCode, failureReason, refusalReason, requestKey, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
 import { editable } from "../src/core/wikiPageDecision.vibe"
 
 export service WikiAuthority {
@@ -36,7 +36,10 @@ export function wikiFilePath(page: string, root = wikiRepository.root): string |
 /** No raw provider error, request content or credential crosses this boundary. */
 export function wikiFailureOf(error: unknown): WikiFailure {
   const refusal = refusalOf(error)
-  if (refusal !== undefined) return new WikiFailure({ reason: refusal === "key_conflict" ? "invalid" : refusal, ...(refusal === "unknown" || refusal === "unavailable" ? { code: refusal } : {}) })
+  if (refusal !== undefined) {
+    const reason = refusalReason(refusal)
+    return new WikiFailure({ reason, ...(carriesCode(reason) ? { code: reason } : {}) })
+  }
   const details = (error as { readonly details?: Readonly<Record<string, unknown>> })?.details
   const status = details?.status
   const reason = failureReason(details?.outcomeUnknown === true, details?.incomplete === true, details?.rateLimited === true, typeof status === "number" ? status : 0)

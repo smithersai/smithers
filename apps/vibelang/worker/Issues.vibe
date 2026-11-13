@@ -15,7 +15,7 @@ import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/co
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { agentRefused } from "../src/core/flowPolicyDecision.vibe"
-import { carriesCode, choiceLabel, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, reviewActions, timelineText, unwritten, vipDocumentMatches, vipState } from "../src/core/issueHostDecision.vibe"
+import { carriesCode, choiceLabel, refusalReason, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, reviewActions, timelineText, unwritten, vipDocumentMatches, vipState } from "../src/core/issueHostDecision.vibe"
 import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 import { personId } from "./accountsDecision.vibe"
@@ -65,7 +65,10 @@ export effect function verifiedVip(repo: Repository, body: string, author: numbe
 /** No raw provider error, request content or credential crosses this boundary. */
 export function issueFailureOf(error: unknown): IssueFailure {
   const refusal = refusalOf(error)
-  if (refusal !== undefined) return new IssueFailure({ reason: refusal === "key_conflict" ? "invalid" : refusal, ...(refusal === "unknown" || refusal === "unavailable" ? { code: refusal } : {}) })
+  if (refusal !== undefined) {
+    const reason = refusalReason(refusal)
+    return new IssueFailure({ reason, ...(carriesCode(reason) ? { code: reason } : {}) })
+  }
   const details = (error as { readonly details?: Readonly<Record<string, unknown>> })?.details
   const status = details?.status
   const reason = failureReason(details?.outcomeUnknown === true, details?.incomplete === true, details?.rateLimited === true, typeof status === "number" ? status : 0)

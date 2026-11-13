@@ -1,9 +1,14 @@
 // Third-lane batch 6 (0018): the issues host's decisions, proved in issueHostDecision as Issues and Wiki use them.
 import { describe, expect, it } from "@effect/vitest"
-import { choiceLabel, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, timelineText, unwritten, vipState } from "../src/core/issueHostDecision.vibe"
+import { carriesCode, choiceLabel, choiceLogin, failureReason, refusalReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, timelineText, unwritten, vipState } from "../src/core/issueHostDecision.vibe"
 import { issueFailureOf } from "../worker/Issues.vibe"
 
 describe("the issues host", () => {
+  it("reports a broker refusal by its own reason, a key conflict as invalid, and codes only what a retry may clear", () => {
+    expect(["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict", "missing"].map(refusal => [refusalReason(refusal), carriesCode(refusalReason(refusal))])).toEqual([
+      ["connect", false], ["install", false], ["fork", false], ["forbidden", false], ["unavailable", true], ["unknown", true], ["invalid", false], ["missing", false],
+    ])
+  })
   it("admits a request key of 1 to 100 ASCII letters, digits and dashes, as the old pattern did", () => {
     const keys = ["", "a", "A-9", "x".repeat(100), "x".repeat(101), "a b", "a_b", "ключ", "a\n", "😀", "a-"]
     expect(keys.map(requestKey)).toEqual(keys.map((key) => /^[A-Za-z0-9-]{1,100}$/.test(key)))

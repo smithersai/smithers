@@ -203,6 +203,8 @@ cases += [
 ('src/web/issuesViewDecision.vibe','lc-issues-title','issuesTitle','? "Issues" : kind','? "All" : kind','All and Issues are titled Issues'),
 ('src/web/issuesViewDecision.vibe','lc-cell-fallback','cellText','text === "" ? fallback : text','text === "" ? text : text','an empty cell shows its fallback'),
 ('src/web/wikiViewDecision.vibe','lc-wiki-status-class','wikiStatusClass','status === "Accepted" ? "sui-badge sui-badge-success"','status === "Accepted" ? "sui-badge sui-badge-outline"','an accepted page has the success badge'),
+('src/core/issueHostDecision.vibe','refusal-conflict-invalid','refusalReason','refusal === "key_conflict" ? "invalid" : refusal','refusal === "key_conflict" ? refusal : refusal','a key conflict is the request\'s own fault'),
+('src/core/issueHostDecision.vibe','refusal-keeps-reason','refusalReason','refusal === "key_conflict" ? "invalid" : refusal','refusal === "key_conflict" ? "invalid" : "unavailable"','any other refusal keeps its own reason'),
 ('worker/mainLogDecision.vibe','lc-ancestry-starts','ancestryShas','ancestry.add(starts[i]!)','ancestry.add(starts[0]!)','every start is in the ancestry'),
 ]
 cases += web_cases
