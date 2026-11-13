@@ -46,6 +46,17 @@ export const maximumPatterns = 128
  */
 export const loginShape = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/
 
+const unsafePattern = /[\s\u0000-\u001f\u007f]|^[#!]/
+const labelPattern = /^\/\/(?:[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)?(?:\/\.\.\.)?$|^\/\/\.\.\.$/
+
+// Tagged declarations cross the same boundary as constructor options: their
+// schemas must enforce every constraint before a tag can take the fast path.
+const Pattern = Schema.NonEmptyString.check(
+  Schema.makeFilter((pattern) =>
+    !pattern.startsWith("/") && !pattern.split("/").includes("..") && !unsafePattern.test(pattern)
+  )
+)
+
 /**
  * Schema for one owner: a login or a `team:<name>` reference.
  *
@@ -92,7 +103,7 @@ export type AgentPolicy = typeof AgentPolicy.Type
  * @since 0.1.0
  */
 export const PolicyOverride = Schema.Struct({
-  pattern: Schema.NonEmptyString,
+  pattern: Pattern,
   policy: AgentPolicy
 })
 
@@ -105,7 +116,13 @@ export const PolicyOverride = Schema.Struct({
  */
 export const Agents = Schema.Struct({
   default: AgentPolicy,
-  overrides: Schema.Array(PolicyOverride)
+  overrides: Schema.Array(PolicyOverride).check(
+    Schema.makeFilter((overrides) =>
+      (["deny", "human-approve", "auto-land"] as const).every((policy) =>
+        overrides.filter((override) => override.policy === policy).length <= maximumPatterns
+      )
+    )
+  )
 })
 
 /**
@@ -124,8 +141,8 @@ export type Agents = typeof Agents.Type
  * @since 0.1.0
  */
 export const PerFile = Schema.Struct({
-  pattern: Schema.NonEmptyString,
-  owners: Schema.Array(Owner)
+  pattern: Pattern,
+  owners: Schema.Array(Owner).check(Schema.isMinLength(1), Schema.isMaxLength(maximumOwners))
 })
 
 /**
@@ -141,7 +158,12 @@ export const PerFile = Schema.Struct({
  */
 export const Upstream = Schema.Struct({
   mode: Schema.Literals(["review", "approve"]),
-  packages: Schema.optional(Schema.Array(Schema.NonEmptyString))
+  packages: Schema.optional(
+    Schema.Array(Schema.NonEmptyString.check(Schema.isPattern(labelPattern))).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(maximumPatterns)
+    )
+  )
 })
 
 /**
@@ -159,12 +181,16 @@ export type Upstream = typeof Upstream.Type
  * @since 0.1.0
  */
 export const Declaration = Schema.TaggedStruct("Owners", {
-  owners: Schema.Array(Owner),
-  perFile: Schema.Array(PerFile),
+  owners: Schema.Array(Owner).check(Schema.isMaxLength(maximumOwners)),
+  perFile: Schema.Array(PerFile).check(Schema.isMaxLength(maximumPatterns)),
   noparent: Schema.Boolean,
   agents: Schema.optional(Agents),
   upstream: Schema.optional(Upstream)
-})
+}).check(
+  Schema.makeFilter((declaration) =>
+    !declaration.noparent || declaration.owners.length > 0 || declaration.perFile.length > 0
+  )
+)
 
 /**
  * The validated ownership declaration.
@@ -248,8 +274,6 @@ const ownerList = (value: unknown, where: string): ReadonlyArray<Owner> => {
   return owners
 }
 
-const unsafePattern = /[\s\u0000-\u001f\u007f]|^[#!]/
-
 const patternList = (value: unknown, where: string): ReadonlyArray<string> => {
   if (!Array.isArray(value)) throw new TypeError(`Owners ${where} must be an array of glob patterns`)
   if (value.length > maximumPatterns) throw new Error(`Owners ${where} lists more than ${maximumPatterns} patterns`)
@@ -297,8 +321,6 @@ const normalizeAgents = (value: unknown): Agents => {
   }
   return Agents.make({ default: fallback as AgentPolicy, overrides })
 }
-
-const labelPattern = /^\/\/(?:[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)?(?:\/\.\.\.)?$|^\/\/\.\.\.$/
 
 const normalizeUpstream = (value: unknown): Upstream | undefined => {
   if (value === "none") return undefined
@@ -400,6 +422,10 @@ export const declare = (options: Options | Declaration): Declaration => {
   })
 }
 
+const TeamMembers = Schema.Array(Schema.NonEmptyString.check(Schema.isPattern(loginShape))).check(
+  Schema.isMaxLength(maximumOwners)
+)
+
 /**
  * Schema for the workspace team roster: team name to member logins.
  *
@@ -407,7 +433,13 @@ export const declare = (options: Options | Declaration): Declaration => {
  * @since 0.1.0
  */
 export const TeamsDeclaration = Schema.TaggedStruct("Teams", {
-  teams: Schema.Record(Schema.String, Schema.Array(Schema.NonEmptyString))
+  teams: Schema.Record(Schema.String, TeamMembers).check(
+    // Record parsing ignores non-enumerable properties; validate every name
+    // and member list the roster constructor would read.
+    Schema.makeFilter((teams) =>
+      Object.getOwnPropertyNames(teams).every((name) => loginShape.test(name) && Schema.is(TeamMembers)(teams[name]))
+    )
+  )
 })
 
 /**
@@ -424,7 +456,13 @@ export type TeamsDeclaration = typeof TeamsDeclaration.Type
  * @category guards
  * @since 0.1.0
  */
-export const isTeamsDeclaration: (value: unknown) => value is TeamsDeclaration = Schema.is(TeamsDeclaration)
+export const isTeamsDeclaration = (value: unknown): value is TeamsDeclaration =>
+  Schema.is(TeamsDeclaration)(value) &&
+  // Record parsing omits non-enumerable entries. Check the original roster
+  // as well, since the identity fast path returns this object unchanged.
+  Object.getOwnPropertyNames(value.teams).every((name) =>
+    loginShape.test(name) && Schema.is(TeamMembers)(value.teams[name])
+  )
 
 /**
  * Validates a team roster: team names are login-shaped, members are logins,

@@ -249,3 +249,129 @@ describe("Owners pattern lists", () => {
     expect(declaration.perFile.map((rule) => rule.pattern)).toEqual(["[ab]?.md", "src/**/*.{ts,tsx}"])
   })
 })
+
+describe("tagged ownership declarations", () => {
+  const tagged = (extra: Partial<Owners.Declaration> = {}): Owners.Declaration => ({
+    _tag: "Owners",
+    owners: ["alice"],
+    perFile: [],
+    noparent: false,
+    ...extra
+  })
+
+  const unsafePatterns = [
+    "",
+    "/outside/**",
+    "../outside/**",
+    "src/../outside/**",
+    "src/..",
+    "src/a b.ts",
+    "x @evil\n/ @evil\n../other/**",
+    "a\rb",
+    "a\tb",
+    "a\0b",
+    "a\u001fb",
+    "a\u007fb",
+    "#src/**",
+    "!src/**"
+  ]
+
+  it.each(unsafePatterns)("refuses unsafe tagged per-file and policy patterns %j", (pattern) => {
+    for (
+      const value of [
+        tagged({ perFile: [{ pattern, owners: ["alice"] }] }),
+        tagged({ agents: { default: "human-approve", overrides: [{ pattern, policy: "deny" }] } })
+      ]
+    ) {
+      expect(Owners.isDeclaration(value)).toBe(false)
+      expect(() => Owners.declare(value)).toThrow()
+    }
+  })
+
+  it("refuses tagged declarations that exceed bounds or leave paths ownerless", () => {
+    const owners = Array.from({ length: Owners.maximumOwners + 1 }, (_, index) => `owner${index}`)
+    const patterns = Array.from({ length: Owners.maximumPatterns + 1 }, (_, index) => `p${index}/**`)
+    for (
+      const value of [
+        tagged({ owners }),
+        tagged({ perFile: [{ pattern: "src/**", owners }] }),
+        tagged({ perFile: [{ pattern: "src/**", owners: [] }] }),
+        tagged({ perFile: patterns.map((pattern) => ({ pattern, owners: ["alice"] })) }),
+        tagged({
+          agents: { default: "human-approve", overrides: patterns.map((pattern) => ({ pattern, policy: "deny" })) }
+        }),
+        tagged({ owners: [], noparent: true }),
+        ...[[], ["relative"], ["//src\n*"], patterns.map((_, index) => `//p${index}`)].map((packages) =>
+          tagged({ upstream: { mode: "approve", packages } })
+        )
+      ]
+    ) {
+      expect(Owners.isDeclaration(value)).toBe(false)
+      expect(() => Owners.declare(value)).toThrow()
+    }
+  })
+
+  it("rejects forged values through the public Package and Workspace boundaries", () => {
+    const owners = tagged({ perFile: [{ pattern: "x @evil\n/ @evil", owners: ["alice"] }] })
+    const teams: Owners.TeamsDeclaration = { _tag: "Teams", teams: { platform: ["alice\n@evil"] } }
+    expect(() => Package({ targets: { lint }, owners })).toThrow()
+    expect(() => WorkspaceDeclaration.Workspace("fixture", workspaceOptions({ owners }))).toThrow()
+    expect(() => WorkspaceDeclaration.Workspace("fixture", workspaceOptions({ teams }))).toThrow()
+  })
+
+  it("accepts valid tagged declarations at every bound, including each policy separately", () => {
+    const owners = Array.from({ length: Owners.maximumOwners }, (_, index) => `owner${index}`)
+    const patterns = Array.from({ length: Owners.maximumPatterns }, (_, index) => `p${index}/**`)
+    const value = tagged({
+      owners,
+      perFile: patterns.map((pattern) => ({ pattern, owners })),
+      noparent: true,
+      agents: {
+        default: "human-approve",
+        overrides: (["deny", "human-approve", "auto-land"] as const).flatMap((policy) =>
+          patterns.map((pattern) => ({ pattern, policy }))
+        )
+      },
+      upstream: { mode: "review", packages: patterns.map((_, index) => `//p${index}/...`) }
+    })
+    expect(Owners.isDeclaration(value)).toBe(true)
+    expect(Owners.declare(value)).toBe(value)
+    expect(
+      Owners.declare(tagged({ owners: [], perFile: [{ pattern: "src/**", owners: ["alice"] }], noparent: true }))
+        .noparent
+    )
+      .toBe(true)
+  })
+
+  it.each([
+    { "bad name": ["alice"] },
+    { "": ["alice"] },
+    { platform: ["not a login"] },
+    { platform: ["alice\n@evil"] },
+    { platform: ["team:other"] },
+    { platform: Array.from({ length: Owners.maximumOwners + 1 }, (_, index) => `owner${index}`) }
+  ])("refuses an unsafe tagged team roster %j", (teams) => {
+    const value = { _tag: "Teams", teams } as Owners.TeamsDeclaration
+    expect(Owners.isTeamsDeclaration(value)).toBe(false)
+    expect(() => Owners.Teams(value)).toThrow()
+  })
+
+  it.each([
+    { members: ["alice\n@evil"] },
+    { members: Array.from({ length: Owners.maximumOwners + 1 }, (_, index) => `owner${index}`) }
+  ])("refuses unsafe non-enumerable tagged team members %j", ({ members }) => {
+    const teams = Object.defineProperty({}, "platform", { value: members, enumerable: false })
+    const value: Owners.TeamsDeclaration = { _tag: "Teams", teams }
+    expect(Owners.isTeamsDeclaration(value)).toBe(false)
+    expect(() => Owners.Teams(value)).toThrow()
+  })
+
+  it("accepts a tagged team roster at the member bound", () => {
+    const value: Owners.TeamsDeclaration = {
+      _tag: "Teams",
+      teams: { platform: Array.from({ length: Owners.maximumOwners }, (_, index) => `owner${index}`) }
+    }
+    expect(Owners.isTeamsDeclaration(value)).toBe(true)
+    expect(Owners.Teams(value)).toBe(value)
+  })
+})
