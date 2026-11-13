@@ -45,6 +45,7 @@ const importRules = ImportRules({
     {
       kind: "forbidCalls",
       files: [
+        "test/Supervisor.test.ts",
         "test/QuickJSMemoryAdmission.test.ts",
         "test/QuickJSSandbox.test.ts",
         "test/ReplRealm.test.ts",

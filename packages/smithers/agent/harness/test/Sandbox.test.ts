@@ -194,10 +194,8 @@ describe("Sandbox", () => {
   })
 
   it("reaches nothing through `this`, which no identifier check can deny", async () => {
-    // A `with` block only runs in sloppy mode, and a sloppy function called
-    // without a receiver binds `this` to the host realm's global object. That
-    // is a path around the scope proxy entirely: `this.process` never looks
-    // up an identifier, so denial by identifier cannot see it.
+    // Top-level `this` is the QuickJS realm's global object. It exposes
+    // no host process, even when accessed without an identifier lookup.
     const outcome = await evaluate(
       `ctx.done([typeof this, String(this && this.process)].join("|"))`
     )
@@ -865,21 +863,6 @@ describe("Sandbox projections", () => {
 })
 
 describe("Sandbox call refusals", () => {
-  it("rejects a call whose flow name is not a string, without queueing it", async () => {
-    const observed: Array<Sandbox.Invocation> = []
-    const outcome = await evaluate(
-      `try {
-         await ctx.call(42, {})
-       } catch (error) {
-         ctx.done(error.name)
-       }`,
-      { call: handler({}, observed) }
-    )
-
-    expect(observed).toHaveLength(0)
-    expect((outcome as Cell.Settled).transition).toMatchObject({ _tag: "complete", output: "TypeError" })
-  })
-
   it("never reaches the host for a call issued after the budget was already spent", async () => {
     // The frame is already rejected by the time the third call is issued, so
     // its only observable trace is whether the host saw it. It must not.

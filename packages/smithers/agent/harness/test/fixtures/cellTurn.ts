@@ -374,62 +374,70 @@ export interface Run {
  * @category fixtures
  * @since 0.1.0
  */
-export const run = async (options: Options): Promise<Run> => {
-  const model = ScriptedModel.make(options.script)
-  const engine = ScriptedEngine.make(
-    model.model,
-    options.calls ?? [],
-    options.tree,
-    options.treeComplete ?? true,
-    options.pins ?? true
-  )
-  const events: Array<AgentEvent.AgentEvent> = []
-  const outcome = await CellTurn.run({
-    state: options.state,
-    flows: options.flows ?? [descriptor("fs/list", { capabilities: ["fs:read:**"] })],
-    limits: options.limits,
-    monitors: options.monitors,
-    judged: options.judged,
-    stance: options.stance,
-    instructions: options.instructions,
-    pinned: options.pinned,
-    output: options.output
-  }).pipe(
-    Stream.runForEach((event) => Effect.sync(() => events.push(event))),
-    Effect.provide(
-      options.resolve === undefined && options.records === undefined
-        ? engine.layer
-        : EngineLike.layer({
-          ...engine.engine,
-          ...(options.resolve === undefined ? {} : { resolve: options.resolve }),
-          ...(options.records === undefined ? {} : { record: journaled(options.records, engine.recorder) })
-        })
-    ),
-    Effect.provide(QuickJSSandbox.layer),
-    Effect.provide(options.steering ?? Steering.layerNoop()),
-    (effect) => options.clock === undefined ? effect : Effect.provideService(effect, Clock.Clock, options.clock),
-    (effect) =>
-      options.history === undefined
-        ? effect
-        : Effect.provideService(effect, CellHistory.CellHistory, options.history),
-    (effect) =>
-      options.memory === undefined ? effect : Effect.provideService(effect, Supervisor.Memory, options.memory),
-    (effect) =>
-      options.observer === undefined ? effect : Effect.provideService(effect, AgentEvent.Observer, options.observer),
-    Effect.provide(options.evaluator ?? confidentEvaluator),
-    Effect.result,
-    Effect.exit,
-    Effect.runPromise
-  )
-  if (Exit.isFailure(outcome) && !Cause.hasInterruptsOnly(outcome.cause)) {
-    throw Cause.squash(outcome.cause)
-  }
-  const settled = outcome._tag === "Success" ? outcome.value : undefined
-  return {
-    events,
-    engine,
-    model,
-    failure: settled !== undefined && settled._tag === "Failure" ? settled.failure : undefined,
-    interrupted: Exit.isFailure(outcome) && Cause.hasInterruptsOnly(outcome.cause)
-  }
-}
+export const runEffect = (options: Options): Effect.Effect<Run> =>
+  Effect.gen(function*() {
+    const model = ScriptedModel.make(options.script)
+    const engine = ScriptedEngine.make(
+      model.model,
+      options.calls ?? [],
+      options.tree,
+      options.treeComplete ?? true,
+      options.pins ?? true
+    )
+    const events: Array<AgentEvent.AgentEvent> = []
+    const outcome = yield* CellTurn.run({
+      state: options.state,
+      flows: options.flows ?? [descriptor("fs/list", { capabilities: ["fs:read:**"] })],
+      limits: options.limits,
+      monitors: options.monitors,
+      judged: options.judged,
+      stance: options.stance,
+      instructions: options.instructions,
+      pinned: options.pinned,
+      output: options.output
+    }).pipe(
+      Stream.runForEach((event) => Effect.sync(() => events.push(event))),
+      Effect.provide(
+        options.resolve === undefined && options.records === undefined
+          ? engine.layer
+          : EngineLike.layer({
+            ...engine.engine,
+            ...(options.resolve === undefined ? {} : { resolve: options.resolve }),
+            ...(options.records === undefined ? {} : { record: journaled(options.records, engine.recorder) })
+          })
+      ),
+      Effect.provide(QuickJSSandbox.layer),
+      Effect.provide(options.steering ?? Steering.layerNoop()),
+      (effect) => options.clock === undefined ? effect : Effect.provideService(effect, Clock.Clock, options.clock),
+      (effect) =>
+        options.history === undefined
+          ? effect
+          : Effect.provideService(effect, CellHistory.CellHistory, options.history),
+      (effect) =>
+        options.memory === undefined ? effect : Effect.provideService(effect, Supervisor.Memory, options.memory),
+      (effect) =>
+        options.observer === undefined ? effect : Effect.provideService(effect, AgentEvent.Observer, options.observer),
+      Effect.provide(options.evaluator ?? confidentEvaluator),
+      Effect.result,
+      Effect.exit
+    )
+    if (Exit.isFailure(outcome) && !Cause.hasInterruptsOnly(outcome.cause)) {
+      return yield* Effect.die(Cause.squash(outcome.cause))
+    }
+    const settled = outcome._tag === "Success" ? outcome.value : undefined
+    return {
+      events,
+      engine,
+      model,
+      failure: settled !== undefined && settled._tag === "Failure" ? settled.failure : undefined,
+      interrupted: Exit.isFailure(outcome) && Cause.hasInterruptsOnly(outcome.cause)
+    }
+  })
+
+/**
+ * Runs the scripted controller at a Promise boundary.
+ *
+ * @category fixtures
+ * @since 0.1.0
+ */
+export const run = (options: Options): Promise<Run> => Effect.runPromise(runEffect(options))

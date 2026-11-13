@@ -27,7 +27,8 @@ import { ModelRequest } from "@smthrs/model"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Descriptor from "@smthrs/registry/Descriptor"
-import { Deferred, Effect, Layer, Option, Result, Schema, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Option, Result, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import * as CallLedger from "../src/CallLedger.ts"
@@ -41,7 +42,7 @@ import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import type * as Relevance from "../src/Relevance.ts"
 import * as Steering from "../src/Steering.ts"
 import * as Supervisor from "../src/Supervisor.ts"
-import { descriptor, emits, manualClock, metered, of, prose, run } from "./fixtures/cellTurn.ts"
+import { descriptor, emits, manualClock, metered, of, prose, run, runEffect } from "./fixtures/cellTurn.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
@@ -252,6 +253,12 @@ const untilRead = (from = 0) => {
   }
 }
 
+// Wait for observable progress, allowing the background fiber to run.
+const until = (condition: () => boolean): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    while (!condition()) yield* Effect.yieldNow
+  })
+
 const threeFrames = [emits(`console.log("one")`), emits(`console.log("two")`), emits(`ctx.done("done")`)]
 
 /** `frames - 1` cells that print, then a completion. */
@@ -298,15 +305,25 @@ const legacyNudge = "Supervisor: a reading of this run's last 1 frames, through 
 describe("Supervisor", () => {
   it("never waits for the supervisor: a run completes its frames while the evaluator never answers", async () => {
     const { contacted, layer } = scripted(() => Effect.never)
-    const started = Date.now()
-    const { events, failure } = await run({
-      state: state(3),
-      script: threeFrames,
-      evaluator: layer,
-      // A host's boundary does real work; a few milliseconds of it is what
-      // lets the fiber be scheduled at all, and nothing here waits for it.
-      steering: steeringAfter(() => Effect.sleep("5 millis"))
-    })
+    const { events, failure } = await Effect.gen(function*() {
+      const resolved = yield* Deferred.make<void>()
+      const fiber = yield* runEffect({
+        state: state(3),
+        script: threeFrames,
+        evaluator: layer,
+        observer: (event) =>
+          event._tag === "resolved" ? Effect.asVoid(Deferred.succeed(resolved, undefined)) : Effect.void,
+        steering: steeringAfter((boundary) =>
+          boundary.startsWith("0:") ? Effect.void : until(() => contacted.length > 0)
+        )
+      }).pipe(Effect.forkChild({ startImmediately: true }))
+      // All frames finish while the reading is still unanswered, before any
+      // clock time elapses. Only closing the scope consumes the grace.
+      yield* Deferred.await(resolved)
+      expect(contacted).toHaveLength(1)
+      yield* TestClock.adjust(Supervisor.closeGraceMs)
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
     expect(failure).toBeUndefined()
     expect(of(events, "resolved")).toHaveLength(1)
     expect(of(events, "turn-closed")).toHaveLength(3)
@@ -315,7 +332,6 @@ describe("Supervisor", () => {
     expect(contacted.length).toBeGreaterThanOrEqual(1)
     expect(of(events, "supervisor-settled")).toEqual([])
     expect(of(events, "supervisor-unjudged").map((event) => event.reason)).toEqual(["interrupted"])
-    expect(Date.now() - started).toBeLessThan(4_000)
   })
 
   it("fires on every frame it reaches and is contacted with the snapshot the frame closed on", async () => {
@@ -1391,7 +1407,12 @@ describe("Supervisor", () => {
           monitors,
           deliver: true
         })
-        return { handle, events }
+        return {
+          handle,
+          events,
+          awaitSettled: (frame: number) =>
+            until(() => events.some((event) => event._tag === "supervisor-settled" && event.frame === frame))
+        }
       }).pipe(Effect.provide(evaluator), Effect.provideService(Supervisor.Memory, memory))
 
     /** An offer whose context the judge is consulted about compacting, unless `unmarked` is `"unconsulted"`. */
@@ -1441,9 +1462,9 @@ describe("Supervisor", () => {
     it("replays a legacy reading without context scores as requiring no compaction", async () => {
       const { layer } = scripted(() => calm())
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { events, handle } = yield* open(layer, Supervisor.memoryNone, Monitor.defaults(), true)
+        const { events, handle, awaitSettled } = yield* open(layer, Supervisor.memoryNone, Monitor.defaults(), true)
         yield* handle.offer(offer(0))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(0)
         const settled = events.find((event) => event._tag === "supervisor-settled")
         expect(settled).toBeDefined()
         expect(settled).not.toHaveProperty("outdatedContext")
@@ -1458,14 +1479,14 @@ describe("Supervisor", () => {
         Deferred.await(release).pipe(Effect.as(calm({ thrashing: { probability: 0.9 } })))
       )
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { events, handle } = yield* open(layer)
+        const { events, handle, awaitSettled } = yield* open(layer)
         yield* handle.offer(offer(0))
         // Let the fiber take frame 0 and block on it, then slide two more in.
-        yield* Effect.sleep("10 millis")
+        yield* until(() => contacted.length === 1)
         yield* handle.offer(offer(1))
         yield* handle.offer(offer(2))
         yield* Deferred.succeed(release, undefined)
-        yield* Effect.sleep("50 millis")
+        yield* awaitSettled(2)
         expect(contacted.map((request) => (request.state as { signals: { frame: number } }).signals.frame)).toEqual([
           0,
           2
@@ -1480,17 +1501,17 @@ describe("Supervisor", () => {
     it("hands a verdict to the boundary of its own frame or the next, and drops it after that", async () => {
       const { layer } = scripted(() => calm({ thrashing: { probability: 0.9 } }))
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { handle } = yield* open(layer)
+        const { handle, awaitSettled } = yield* open(layer)
         yield* handle.offer(offer(3))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(3)
         expect((yield* handle.take(3, delivering)).messages).toHaveLength(1)
         // Taken once: the same boundary asked again gets nothing.
         expect(yield* handle.take(3, delivering)).toEqual(empty)
         yield* handle.offer(offer(4))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(4)
         expect((yield* handle.take(5, delivering)).messages).toHaveLength(1)
         yield* handle.offer(offer(5))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(5)
         // A boundary two frames on is stale, and the stale verdict is dropped, not held.
         expect((yield* handle.take(7, delivering)).messages).toEqual([])
         expect((yield* handle.take(6, delivering)).messages).toEqual([])
@@ -1500,14 +1521,14 @@ describe("Supervisor", () => {
     it("hands the boundary a reading's context triggers only for a context the judge is consulted about", async () => {
       const { layer } = scripted(() => calm({ outdated_context: { probability: 0.9 } }))
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { events, handle } = yield* open(layer)
+        const { events, handle, awaitSettled } = yield* open(layer)
         yield* handle.offer(offer(0))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(0)
         expect((yield* handle.take(0, delivering)).compact).toEqual(["outdated_context"])
         // The same reading of a context at or under `Compaction.judgedAbove`
         // is journaled with its score and schedules nothing.
         yield* handle.offer(offer(1, [], "unconsulted"))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(1)
         expect(yield* handle.take(1, delivering)).toMatchObject({ compact: [], marks: [], messages: [] })
         expect(
           events.filter((event) => event._tag === "supervisor-settled").map((event) => event.outdatedContext)
@@ -1519,16 +1540,16 @@ describe("Supervisor", () => {
       const { layer, marks } = scripted(() => calm())
       const segment = { digest: "a", item: { tokens: 10, cell: "cell a", prose: "", observed: "" } }
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { events, handle } = yield* open(layer)
+        const { handle, awaitSettled } = yield* open(layer)
         yield* handle.offer(offer(0, [], [segment]))
-        while (!events.some((event) => event._tag === "supervisor-settled")) yield* Effect.yieldNow
+        yield* awaitSettled(0)
         expect(yield* handle.take(0, { ...delivering, deliver: false })).toEqual({
           ...empty,
           marks: [{ digest: "a", remove: 0.1, keep: 0.1 }]
         })
         expect(yield* handle.take(0, delivering)).toEqual(empty)
         yield* handle.offer(offer(1, [], [segment]))
-        while (events.filter((event) => event._tag === "supervisor-settled").length < 2) yield* Effect.yieldNow
+        yield* awaitSettled(1)
         expect((yield* handle.take(1, delivering)).marks).toEqual([])
         expect(marks).toHaveLength(1)
       })))
@@ -1541,11 +1562,11 @@ describe("Supervisor", () => {
         item: { tokens: 10, cell: `cell ${digest}`, prose: "", observed: "" }
       })
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { events, handle } = yield* open(layer)
+        const { events, handle, awaitSettled } = yield* open(layer)
         yield* handle.offer(offer(0, [], [segment("a")]))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(0)
         yield* handle.offer(offer(1, [], [segment("a"), segment("b")]))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(1)
         // Frame 1's reading replaced frame 0's, which no boundary took, and
         // kept its marks; `a` was not asked about twice.
         expect(marks.map((request) => (request.state as { readonly items: ReadonlyArray<{ cell: string }> }).items))
@@ -1569,9 +1590,9 @@ describe("Supervisor", () => {
           : confident
       )
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { events, handle } = yield* open(failing)
+        const { events, handle, awaitSettled } = yield* open(failing)
         yield* handle.offer(offer(0, [], [{ digest: "a", item: { tokens: 1, cell: "", prose: "", observed: "" } }]))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(0)
         expect((yield* handle.take(0, delivering)).marks).toEqual([])
         expect(events.filter((event) => event._tag === "decision-unjudged")).toEqual([
           expect.objectContaining({ classifier: "compaction/marks", reason: "timeout", items: 1 })
@@ -1599,9 +1620,9 @@ describe("Supervisor", () => {
         })
       )
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { events, handle } = yield* open(metered)
+        const { events, handle, awaitSettled } = yield* open(metered)
         yield* handle.offer(offer(0))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(0)
         const settled = events.find((event) => event._tag === "supervisor-settled")
         expect(settled).toMatchObject({ frame: 0, usage: { inputTokens: 321, outputTokens: 12 } })
         // The decision row stays as it was journaled before `Judgement`: usage
@@ -1637,9 +1658,9 @@ describe("Supervisor", () => {
             deliver: true
           })
           yield* handle.offer(offer(0))
-          yield* Effect.sleep("20 millis")
+          yield* until(() => refusals === 1)
           yield* handle.offer(offer(1))
-          yield* Effect.sleep("20 millis")
+          yield* until(() => events.some((event) => event._tag === "supervisor-settled" && event.frame === 1))
           // The refused frame journaled nothing and delivered nothing; the next one was read as usual.
           expect(refusals).toBe(1)
           expect(events.map((event) => [event._tag, "frame" in event ? event.frame : -1])).toEqual([
@@ -1655,9 +1676,9 @@ describe("Supervisor", () => {
     it("recalls only when a memory is bound and asks relevance nothing when nothing was recalled", async () => {
       const { contacted, layer, relevance } = scripted(() => calm())
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { events, handle } = yield* open(layer)
+        const { events, handle, awaitSettled } = yield* open(layer)
         yield* handle.offer(offer(0))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(0)
         expect(contacted).toHaveLength(1)
         expect(relevance).toEqual([])
         expect(events.map((event) => event._tag)).toEqual(["decision-settled", "supervisor-settled"])
@@ -1668,21 +1689,21 @@ describe("Supervisor", () => {
       const { layer, relevance } = scripted(() => calm(), () => 0.2)
       const { memory } = recalling([tests, layout])
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { handle } = yield* open(layer, memory)
+        const { handle, awaitSettled } = yield* open(layer, memory)
         yield* handle.offer(offer(0, ["tests"]))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(0)
         expect(relevance.map((request) => itemsOf(request).map((item) => item.id))).toEqual([["layout"]])
         expect(yield* handle.take(1, { ledger: {}, shown: ["tests", "layout"], deliver: true })).toMatchObject({
           messages: [],
           memory: []
         })
         yield* handle.offer(offer(1))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(1)
         // Undelivered while no real judge is held, and taken all the same.
         expect(yield* handle.take(2, { ledger: {}, shown: [], deliver: false })).toEqual(empty)
         expect(yield* handle.take(2, delivering)).toEqual(empty)
         yield* handle.offer(offer(2))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(2)
         const taken = yield* handle.take(3, { ledger: {}, shown: ["tests"], deliver: true })
         expect(taken.memory).toEqual(["layout"])
         expect(textsOf(taken.messages)).toEqual([Supervisor.recalledInsert(layout)])
@@ -1693,9 +1714,9 @@ describe("Supervisor", () => {
       const { layer } = scripted(() => calm({ thrashing: { probability: 0.9 } }), () => 0.2)
       const { memory } = recalling([layout])
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const { handle } = yield* open(layer, memory)
+        const { handle, awaitSettled } = yield* open(layer, memory)
         yield* handle.offer(offer(0))
-        yield* Effect.sleep("20 millis")
+        yield* awaitSettled(0)
         const taken = yield* handle.take(1, delivering)
         expect(taken.memory).toEqual(["layout"])
         const texts = textsOf(taken.messages)
@@ -2088,14 +2109,24 @@ describe("Supervisor inserts on the transcript", () => {
 
   it("journals a reading still in flight when the run ends as interrupted, within the bound", async () => {
     const { contacted, layer } = scripted(() => Effect.never)
-    const started = Date.now()
-    const { events, failure } = await run({
-      state: state(3),
-      script: threeFrames,
-      evaluator: layer,
-      steering: steeringAfter(() => Effect.sleep("5 millis"))
-    })
-    const elapsed = Date.now() - started
+    const { events, failure } = await Effect.gen(function*() {
+      const resolved = yield* Deferred.make<void>()
+      const fiber = yield* runEffect({
+        state: state(3),
+        script: threeFrames,
+        evaluator: layer,
+        observer: (event) =>
+          event._tag === "resolved" ? Effect.asVoid(Deferred.succeed(resolved, undefined)) : Effect.void,
+        steering: steeringAfter((boundary) =>
+          boundary.startsWith("0:") ? Effect.void : until(() => contacted.length > 0)
+        )
+      }).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(resolved)
+      yield* TestClock.adjust(Supervisor.closeGraceMs - 1)
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust(1)
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
     expect(failure).toBeUndefined()
     expect(of(events, "resolved")).toHaveLength(1)
     expect(contacted.length).toBeGreaterThanOrEqual(1)
@@ -2104,18 +2135,29 @@ describe("Supervisor inserts on the transcript", () => {
     expect(unjudged).toHaveLength(1)
     expect(unjudged[0]).toMatchObject({ scope: "session-1", reason: "interrupted" })
     expect(of(events, "supervisor-settled")).toEqual([])
-    // The grace is bounded: the run ends however long the reading would have taken.
-    expect(elapsed).toBeLessThan(Supervisor.closeGraceMs + 3_000)
   })
 
   it("lets a reading in flight when the run ends settle inside the grace", async () => {
-    const { contacted, layer } = scripted(() => Effect.as(Effect.sleep("150 millis"), calm()))
-    const { events, failure } = await run({
-      state: state(3),
-      script: threeFrames,
-      evaluator: layer,
-      steering: steeringAfter(() => Effect.sleep("5 millis"))
-    })
+    const release = Effect.runSync(Deferred.make<void>())
+    const { contacted, layer } = scripted(() => Effect.as(Deferred.await(release), calm()))
+    const { events, failure } = await Effect.gen(function*() {
+      const resolved = yield* Deferred.make<void>()
+      const fiber = yield* runEffect({
+        state: state(3),
+        script: threeFrames,
+        evaluator: layer,
+        observer: (event) =>
+          event._tag === "resolved" ? Effect.asVoid(Deferred.succeed(resolved, undefined)) : Effect.void,
+        steering: steeringAfter((boundary) =>
+          boundary.startsWith("0:") ? Effect.void : until(() => contacted.length > 0)
+        )
+      }).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(resolved)
+      yield* TestClock.adjust(Supervisor.closeGraceMs - 1)
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* Deferred.succeed(release, undefined)
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
     expect(failure).toBeUndefined()
     expect(contacted.length).toBeGreaterThanOrEqual(1)
     // Every reading the fiber took settled; none was cut off by the run's end.

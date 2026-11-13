@@ -506,13 +506,13 @@ describe("Transcript", () => {
     const events: ReadonlyArray<AgentEvent.AgentEvent> = [
       new AgentEvent.ReadOnlyDemandIssued({
         eventType: AgentEvent.eventType.readOnlyDemandIssued,
-        streak: 12,
+        streak: 15,
         cap: 12,
         nextFrame: 13
       }),
       new AgentEvent.RepeatDemanded({
         eventType: AgentEvent.eventType.repeatDemanded,
-        frames: 4,
+        frames: 5,
         cap: 4,
         nextFrame: 14
       }),
@@ -587,8 +587,8 @@ describe("Transcript", () => {
     ]
 
     expect(project(events.map((event, index) => entry(index + 1, event.eventType, event)))).toEqual([
-      ModelRequest.Message.user(DemandText.readOnly(12, 12)),
-      ModelRequest.Message.user(DemandText.repeat(4, 4)),
+      ModelRequest.Message.user(DemandText.readOnly(12, 15)),
+      ModelRequest.Message.user(DemandText.repeat(5, 4)),
       ModelRequest.Message.user(DemandText.unmoved("opened", "opened")),
       ModelRequest.Message.user(DemandText.unresolved("bash", "pytest tests", "pytest tests -k one")),
       ModelRequest.Message.user(

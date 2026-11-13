@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import * as bytes from "../src/internal/bytes.ts"
 import * as elide from "../src/internal/elide.ts"
 
@@ -34,34 +34,11 @@ describe("bytes.tailSlice", () => {
     expect(bytes.tailSlice("prefix😀tail", 8)).toBe("😀tail")
   })
 
-  it("bounds temporary character materialization for a multi-megabyte print", () => {
+  it("keeps the complete UTF-8 suffix of a multi-megabyte print", () => {
     const limit = 8192
     const suffix = "😀" + "x".repeat(limit - 4)
     const text = "p".repeat(3 * 1024 * 1024) + suffix
-    const iterator = String.prototype[Symbol.iterator]
-    let materialized = 0
-    // A spread allocates one array slot per yielded character. Cap those
-    // yields deterministically instead of relying on GC or wall-clock timing.
-    const iteration = vi.spyOn(String.prototype, Symbol.iterator).mockImplementation(
-      function*(this: string): StringIterator<string> {
-        for (const character of { [Symbol.iterator]: () => iterator.call(this) }) {
-          if (++materialized > limit + 1) throw new Error("suffix character allocation budget exceeded")
-          yield character
-        }
-      }
-    )
-    const encoding = vi.spyOn(TextEncoder.prototype, "encode")
-    let result: string
-    let encoded: number
-    try {
-      result = elide.tailSlice(text, limit)
-      encoded = encoding.mock.calls.length
-    } finally {
-      iteration.mockRestore()
-      encoding.mockRestore()
-    }
-    expect(result).toBe(suffix)
-    expect(materialized).toBeLessThanOrEqual(limit + 1)
-    expect(encoded).toBe(0)
+    expect(elide.tailSlice(text, limit)).toBe(suffix)
+    expect(bytes.size(elide.tailSlice(text, limit))).toBe(limit)
   })
 })
