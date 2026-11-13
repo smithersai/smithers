@@ -890,7 +890,7 @@ A Maintainer's custom domains: the routes, their shape and the `domain/*` flows'
 | `smithers_domain_requests` | counter | ChatApi | `op`, `outcome` |
 | `domain.shape` | log, span | ChatApi | `status`, `live`, `durationMs`, `bytes`, `outcome` |
 | `smithers_domain_shape_requests` | counter | ChatApi | `status`, `live` |
-| `domain.step` | log, span | the `FlowExecution` Durable Object | `op` (`claim`, `check`, `release`), `repoId`, `outcome` (a claim's `add`, `refresh`, `taken`, `removing`, `missing`, `repeat`; a check's state, `superseded`, `unreachable` or `orphaned`; `released`, `missing`, `unavailable`), `errorCode` |
+| `domain.step` | log, span | the `FlowExecution` Durable Object | `op` (`claim`, `check`, `cleanup`, `release`), `repoId`, `outcome` (a claim's `add`, `refresh`, `taken`, `removing`, `missing`, `repeat`; a check's state, `superseded` or `unreachable`; a cleanup's `released`, `superseded` or `unavailable`; `released`, `missing`, `unavailable`), `errorCode` |
 | `smithers_domain_steps` | counter | the `FlowExecution` Durable Object | `op`, `outcome` |
 | `domains.off` | log | ChatApi, the `FlowExecution` Durable Object | `reason` (`no_zone`, `no_zone_id`, `no_token`) |
 

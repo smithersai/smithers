@@ -1,10 +1,10 @@
 import { Action, Flow, Interpreter, Poll, RetryPolicy } from "@smthrs/flow"
-import { Node } from "@smthrs/plan"
+import { Node, type Planned } from "@smthrs/plan"
 import { Effect, Layer, Metric, Option, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import type { DomainState } from "../../src/features/domains/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { DomainProvider, type Registration } from "./Provider.ts"
+import { DomainProvider, ProviderUnavailable, type Registration } from "./Provider.ts"
 import * as Store from "./Store.ts"
 
 // The custom-domain flows (decision 0039 §4, docs/features/domains.md#flows). The route admits the write (signed in;
@@ -35,7 +35,7 @@ export class ReleaseUnavailable extends Schema.TaggedError<ReleaseUnavailable>()
 /** The step couldn't tell which step it is, so it couldn't record its change once. */
 export class NoInvocationKey extends Schema.TaggedError<NoInvocationKey>()("@smthrs/mvp/domains/NoInvocationKey", {}) {}
 
-/** Steps, by `op` (`claim`, `check`, `release`) and `outcome` (a claim's change, a check's state, `released`). */
+/** Steps, by `op` (`claim`, `check`, `cleanup`, `release`) and `outcome` (a claim's change, a check's state, `released`). */
 export const steps_ = Metric.counter("smithers_domain_steps", {
   description: "Custom-domain flow steps, by op and outcome",
   incremental: true,
@@ -83,10 +83,19 @@ export const Claim = Action.make("domain/Claim", {
 /** One check: the provider's verdict on the row, and whether the poll is over. */
 export const Check = Action.make("domain/Check", {
   payload: { ...verifyInput, attempt: Schema.Number },
-  success: Poll.CheckResult(Schema.String),
+  success: Schema.Struct({ ...Poll.CheckResult(Schema.String).fields, cleanupId: Schema.optional(Schema.String) }),
   error: StoreUnavailable,
   capabilities: ["db:write:domains", "net:domains"],
   retryPolicy: STORE_RETRY,
+})
+
+/** Forget a registration returned after removal. Its sealed payload survives a provider outage or host restart. */
+export const Cleanup = Action.make("domain/Cleanup", {
+  payload: { repoId: Schema.String, hostname: Schema.String, pollId: Schema.String, providerId: Schema.String },
+  success: Poll.CheckResult(Schema.String),
+  error: ReleaseUnavailable,
+  capabilities: ["db:write:domains", "net:domains"],
+  retryPolicy: RetryPolicy.make({ initialMs: 5_000, factor: 2, maxMs: 10 * 60_000 }),
 })
 
 /** Marks the row removing, forgets the domain at the provider and deletes the row. */
@@ -107,10 +116,20 @@ export const Verify = Poll.make("domain/Verify", {
   maxAttempts: VERIFY_ATTEMPTS,
   onTimeout: "return-last",
   check: Node.capture(
-    { claim: Claim.name, check: Check.name, implementationVersion: "domain/verify-check/v1" },
+    { claim: Claim.name, check: Check.name, cleanup: Cleanup.name, implementationVersion: "domain/verify-check/v2" },
     (round) => {
       const { attempt, ...input } = round
-      const check = Check.call({ ...input, attempt })
+      const check = Check.call({ ...input, attempt }).pipe(
+        Node.branch({
+          if: Node.capture({}, (result: typeof Check.successSchema.Type) => result.cleanupId !== undefined),
+          then: Node.capture({ input, cleanup: Cleanup.name }, (result) =>
+            Cleanup.call({
+              repoId: input.repoId, hostname: input.hostname, pollId: input.pollId,
+              providerId: result.cleanupId as Planned.Planned<string>,
+            })),
+          else: Node.capture({}, (result) => Node.succeed(result)),
+        }),
+      )
       // A step that ran out of retries is one more unsatisfied attempt: the poll goes on.
       return (attempt === 1 ? Claim.call(input).pipe(Node.andThen(check)) : check).pipe(
         Node.catch({ onFailure: () => Node.succeed({ satisfied: false, output: "unavailable" }) }),
@@ -132,7 +151,7 @@ export const Remove = Flow.make("domain/Remove", {
 
 /** Every outcome as one count and log line, carrying the repository and codes; never the hostname or a token. */
 const recorded = <A, E, R>(
-  op: "claim" | "check" | "release",
+  op: "claim" | "check" | "cleanup" | "release",
   repoId: string,
   outcome: (a: A) => string,
   effect: Effect.Effect<A, E, R>,
@@ -196,20 +215,9 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         Effect.gen(function* () {
           const recorded = yield* store(Store.record({ ...found, hostname: input.hostname, pollId: input.pollId }))
           if (recorded === "written") return { satisfied: found.state !== "pending", output: found.state }
-          // Removed while this check registered it: the release saw no registration, so this check forgets it.
-          if (recorded === "removed" && found.providerId !== undefined && providerId === null) {
-            // Only a provider's answer carries a provider id, so the provider is there. A failure here leaves the
-            // registration behind: counted and logged as `orphaned` for an operator, since no row is left to retry from.
-            yield* Option.getOrThrow(provider).remove(found.providerId).pipe(
-              Effect.catch((error) =>
-                Effect.andThen(
-                  Metric.update(Metric.withAttributes(steps_, { op: "check", outcome: "orphaned" }), 1),
-                  Effect.logError("domain.step").pipe(
-                    Effect.annotateLogs({ op: "check", repoId: input.repoId, outcome: "orphaned", errorCode: error.code }),
-                  ),
-                )
-              ),
-            )
+          // Removal knew only the old id. Seal the new id before a separate durable step forgets it.
+          if (recorded === "removed" && found.providerId !== undefined && found.providerId !== providerId) {
+            return { satisfied: true, output: "superseded", cleanupId: found.providerId }
           }
           return { satisfied: true, output: "superseded" }
         })
@@ -244,6 +252,27 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       })
     }).pipe((effect) => recorded("check", input.repoId, ({ output }) => output, effect))
 
+  const cleanup = (input: typeof Cleanup.payloadSchema.Type) =>
+    Effect.gen(function* () {
+      const provider = yield* DomainProvider
+      const forget = Option.isNone(provider)
+        ? Effect.fail(new ProviderUnavailable({ code: "off" }))
+        : provider.value.remove(input.providerId)
+      const outcome = yield* Store.cleanup(input, forget).pipe(Effect.provide(database))
+      if (outcome === "pending") return yield* Effect.fail(new ProviderUnavailable({ code: "ownership_pending" }))
+      return outcome
+    }).pipe(
+      Effect.catch((error) => Effect.gen(function* () {
+        yield* Metric.update(Metric.withAttributes(steps_, { op: "cleanup", outcome: "unavailable" }), 1)
+        yield* Effect.logWarning("domain.step").pipe(
+          Effect.annotateLogs({ op: "cleanup", repoId: input.repoId, outcome: "unavailable", errorCode: codeOf(error) }),
+        )
+        return yield* Effect.fail(new ReleaseUnavailable())
+      })),
+      (effect) => recorded("cleanup", input.repoId, (outcome) => outcome, effect),
+      Effect.as({ satisfied: true, output: "superseded" }),
+    )
+
   const release = (input: typeof Release.payloadSchema.Type) =>
     Effect.gen(function* () {
       const key = yield* invocationKey
@@ -268,7 +297,7 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       return { change: "released" as const }
     }).pipe((effect) => recorded("release", input.repoId, ({ change }) => change, effect))
 
-  return { claim, check, release }
+  return { claim, check, cleanup, release }
 }
 
 /** Registers `domain/Verify` and `domain/Remove` with their steps over `database`, reaching `provider`. */
@@ -280,7 +309,7 @@ export const registration = <E, R>(
   return Layer.merge(
     Interpreter.layerWithImplementations(
       Verify,
-      Layer.mergeAll(Claim.toLayer(implementation.claim), Check.toLayer(implementation.check), Poll.layer),
+      Layer.mergeAll(Claim.toLayer(implementation.claim), Check.toLayer(implementation.check), Cleanup.toLayer(implementation.cleanup), Poll.layer),
     ),
     Interpreter.layerWithImplementations(Remove, Release.toLayer(implementation.release)),
   ).pipe(Layer.provide(provider), Layer.provideMerge(Action.layerImplementations))

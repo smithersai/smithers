@@ -17,7 +17,7 @@ Nothing in the core names the factory: a CI farm, a monitor or a release bot fee
 |---|---|
 | `name` | `[a-z0-9_.-]+(/[A-Za-z0-9_.:-]+)*`, at most 200 characters: `lanes`, `transcript/lane-3`, `report/r2/Codex:astra` |
 | `visibility` | `public`: everyone, signed out included. `maintainers`: the repository's Maintainers and Admins in person ([RepoRoles](../decisions/0079-roles-per-repository.md)) |
-| `body` | any JSON, at most 1 MiB |
+| `body` | any JSON, at most 1 MiB; actual `U+0000` in a string value or object key is refused `invalid`; literal `\u0000` text is accepted |
 
 A name without `/` is in the repository's **index**, which a tab syncs eagerly. A name with `/` is **on demand**: it syncs only while a view shows it and is never kept on the device.
 

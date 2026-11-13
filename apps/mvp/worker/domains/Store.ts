@@ -33,6 +33,30 @@ const repeated = (invocationKey: string) =>
       (rows) => rows.length > 0,
     ))
 
+/** Claims and cleanup serialize even when no row exists, so a new claim cannot adopt a registration being deleted. */
+const lockHostname = (hostname: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`SELECT pg_advisory_xact_lock(hashtextextended('domain:' || ${hostname}, 0))`)
+
+/** Forget only a registration no newer poll owns, excluding claims until the provider has forgotten it. */
+export const cleanup = <E, R>(
+  input: { readonly hostname: string; readonly pollId: string; readonly providerId: string },
+  forget: Effect.Effect<void, E, R>,
+): Effect.Effect<"released" | "superseded" | "pending", unknown, SqlClient.SqlClient | R> =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* lockHostname(input.hostname)
+      const row = yield* read(input.hostname)
+      if (Option.isSome(row) && row.value.pollId !== input.pollId && row.value.state !== "removing") {
+        // Only a recorded id transfers cleanup to the new owner's removal; an in-flight check may not adopt it.
+        return row.value.providerId === input.providerId ? "superseded" as const : "pending" as const
+      }
+      yield* forget
+      return "released" as const
+    }))
+  })
+
 /** The row of `hostname`, if any. */
 export const read = (hostname: string): Effect.Effect<Option.Option<Row>, unknown, SqlClient.SqlClient> =>
   Effect.gen(function* () {
@@ -61,6 +85,7 @@ export const claim = (write: {
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* lockHostname(write.hostname)
       if (yield* repeated(write.invocationKey)) return "repeat" as const
       const [held] = yield* sql<{ readonly repoId: string; readonly state: string }>`
         SELECT repo_id AS "repoId", state FROM domains WHERE hostname = ${write.hostname} FOR UPDATE`

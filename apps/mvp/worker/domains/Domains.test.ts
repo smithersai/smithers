@@ -3,14 +3,16 @@
 // shape, and each refusal, on the compose Postgres and Electric. The provider is the real `Dns` adapter over a resolver
 // scripted at the network; an unhappy path swaps in a faulty provider.
 import { Action } from "@smthrs/flow"
-import { Effect, Option, Redacted } from "effect"
+import { Effect, Fiber, Option, Redacted } from "effect"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest"
+import { SqlClient } from "effect/sql"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { DOMAINS_SHAPE_ROUTE, domainRoute, domainsRoute } from "../../src/features/domains/contract.ts"
 import * as Flows from "../Flows.ts"
 import { personOnlyRefusals } from "../Actor.ts"
 import { eventually, testFile } from "../test/harness.ts"
+import { incarnation } from "../test/flowHost.ts"
 import * as DomainsApi from "./Api.ts"
 import * as DomainFlows from "./DomainFlows.ts"
 import { DomainProvider, HostnameRejected, HostnameTaken, ProviderUnavailable } from "./Provider.ts"
@@ -288,6 +290,88 @@ describe("domain/Verify", () => {
   })
 })
 
+describe("replacement registration cleanup", () => {
+  test.each([
+    [null, false],
+    [null, true],
+    ["cf-obsolete", false],
+    ["cf-obsolete", true],
+  ] as const)("removal during registration from %s retains cleanup through a provider failure: %s", async (providerId, failOnce) => {
+    const hostname = "docs.example.com"
+    const pollId = crypto.randomUUID()
+    await seed(runtime, { hostname, pollId, ...(providerId === null ? {} : { providerId }) })
+    const removed: Array<string> = []
+    let cleanupAttempts = 0
+    const h = await open({ actor: maintainer })
+    provider.use({
+      status: () => Effect.succeed(Option.none()),
+      ensure: () => Effect.gen(function* () {
+        const response = yield* Effect.promise(() => h.fetch(domainRoute(REPO.owner, REPO.name, hostname), remove))
+        expect(response.status).toBe(202)
+        return { id: "cf-replacement", records: [], verification: "active", certificate: "active" } as const
+      }),
+      remove: (id) => Effect.suspend(() => {
+        if (id === "cf-replacement" && ++cleanupAttempts === 1 && failOnce) {
+          return Effect.fail(new ProviderUnavailable({ code: "http_503" }))
+        }
+        return Effect.sync(() => void removed.push(id))
+      }),
+    })
+    await Effect.runPromise(host.starter.start(DomainFlows.Verify, {
+      executionId: pollId,
+      payload: { repoId: REPO_ID, hostname, actorId: "p", pollId, refresh: true, attempt: 2 },
+    }))
+    expect(host.exits.at(-1)).toMatchObject({ _tag: "Success" })
+    expect(await rows(runtime)).toEqual([])
+    expect(removed).toEqual(providerId === null ? ["cf-replacement"] : [providerId, "cf-replacement"])
+    expect(cleanupAttempts).toBe(failOnce ? 2 : 1)
+  })
+})
+
+describe("durable registration cleanup", () => {
+  test("a host restart resumes cleanup from the sealed id after the domain row is gone", async () => {
+    const hostname = "docs.example.com"
+    const pollId = crypto.randomUUID()
+    const payload = { repoId: REPO_ID, hostname, actorId: "p", pollId, refresh: true, attempt: 2 }
+    await seed(runtime, { hostname, pollId, providerId: "cf-obsolete" })
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const registration = DomainFlows.registration(scratch.database, provider.layer)
+    const h = await open({ actor: maintainer })
+    let ensured = 0
+    let cleaning = false
+    const removed: Array<string> = []
+    provider.use({
+      status: () => Effect.succeed(Option.none()),
+      ensure: () => Effect.gen(function* () {
+        ensured++
+        yield* Effect.promise(() => h.fetch(domainRoute(REPO.owner, REPO.name, hostname), remove))
+        return { id: "cf-replacement", records: [], verification: "active", certificate: "active" } as const
+      }),
+      remove: (id) => id === "cf-replacement"
+        ? Effect.andThen(Effect.sync(() => { cleaning = true }), Effect.never)
+        : Effect.void,
+    })
+    const first = await incarnation(registration)
+    let second: Awaited<ReturnType<typeof incarnation>> | undefined
+    const running = Effect.runFork(first.execute(DomainFlows.Verify, pollId, payload))
+    try {
+      await eventually(() => cleaning, 10_000)
+      expect(await rows(runtime)).toEqual([])
+      await first.crash()
+      provider.use({ remove: (id) => Effect.sync(() => void removed.push(id)) })
+      second = await incarnation(registration, first.engine.schema)
+      expect(await Effect.runPromise(second.execute(DomainFlows.Verify, pollId, payload))).toMatchObject({ _tag: "Success" })
+      expect(ensured).toBe(1)
+      expect(removed).toEqual(["cf-replacement"])
+      expect(await rows(runtime)).toEqual([])
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(running))
+      await second?.close()
+      await first.close()
+    }
+  })
+})
+
 describe("the steps", () => {
   const keyed = <A, E>(effect: Effect.Effect<A, E, any>, key = "step-1") =>
     Effect.runPromise(
@@ -459,36 +543,35 @@ describe("the steps", () => {
     expect(await rows(runtime)).toMatchObject([{ state: "removing", pollId: "poll-1" }])
   })
 
-  test("a check that registered a domain removed meanwhile forgets the registration; a superseded one keeps it", async () => {
-    const { claim, check } = DomainFlows.steps(await database())
+  test("a removed check returns its new registration for durable cleanup; a superseded one keeps it", async () => {
+    const { claim, check, cleanup } = DomainFlows.steps(await database())
     await keyed(claim(input))
     const forgotten: Array<string> = []
     provider.use({
       ensure: (hostname) =>
         Effect.as(Effect.promise(() => resetDomains(runtime)), {
-          id: `cf-${hostname}`,
+          id: "cf-" + hostname,
           records: [],
           verification: "pending",
           certificate: "pending",
         } as const),
       remove: (id) => Effect.sync(() => void forgotten.push(id)),
     })
-    expect(await keyed(check({ ...input, attempt: 2 }))).toEqual({ satisfied: true, output: "superseded" })
-    expect(forgotten).toEqual(["cf-docs.example.com"])
-    // The provider can't forget it: the step still ends, and the orphan is counted for an operator.
-    await keyed(claim(input), "step-orphan")
-    provider.use({
-      ensure: (hostname) =>
-        Effect.as(Effect.promise(() => resetDomains(runtime)), {
-          id: `cf-${hostname}`,
-          records: [],
-          verification: "pending",
-          certificate: "pending",
-        } as const),
-      remove: () => Effect.fail(new ProviderUnavailable({ code: "http_500" })),
+    expect(await keyed(check({ ...input, attempt: 2 }))).toEqual({
+      satisfied: true, output: "superseded", cleanupId: "cf-docs.example.com",
     })
-    expect(await keyed(check({ ...input, attempt: 2 }))).toEqual({ satisfied: true, output: "superseded" })
-    provider.reset()
+    expect(forgotten).toEqual([])
+    const pending = { repoId: REPO_ID, hostname: input.hostname, pollId: input.pollId, providerId: "cf-docs.example.com" }
+    provider.use({ remove: () => Effect.fail(new ProviderUnavailable({ code: "http_503" })) })
+    expect(JSON.stringify(await Effect.runPromiseExit(
+      cleanup(pending).pipe(Effect.provide(provider.layer)),
+    ))).toContain("@smthrs/mvp/domains/ReleaseUnavailable")
+    expect(JSON.stringify(await Effect.runPromiseExit(
+      cleanup(pending).pipe(Effect.provide(DomainProvider.off)),
+    ))).toContain("@smthrs/mvp/domains/ReleaseUnavailable")
+    provider.use({ remove: (id) => Effect.sync(() => void forgotten.push(id)) })
+    expect(await keyed(cleanup(pending))).toEqual({ satisfied: true, output: "superseded" })
+    expect(forgotten).toEqual(["cf-docs.example.com"])
     await keyed(claim(input), "step-2")
     // A refresh takes the row over while this check registers it: the newer poll keeps the registration.
     provider.use({
@@ -501,11 +584,115 @@ describe("the steps", () => {
         } as const),
       remove: (id) => Effect.sync(() => void forgotten.push(id)),
     })
-    expect(await keyed(check({ ...input, attempt: 2 }))).toEqual({
-      satisfied: true,
-      output: "superseded",
-    })
+    expect(await keyed(check({ ...input, attempt: 2 }))).toEqual({ satisfied: true, output: "superseded" })
     expect(forgotten).toEqual(["cf-docs.example.com"])
+  })
+
+  test("cleanup after an outage preserves the registration a new poll adopted", async () => {
+    const { claim, check, cleanup } = DomainFlows.steps(await database())
+    const pending = { repoId: REPO_ID, hostname: input.hostname, pollId: "removed-poll", providerId: "cf-replacement" }
+    provider.use({ remove: () => Effect.fail(new ProviderUnavailable({ code: "http_503" })) })
+    expect(JSON.stringify(await Effect.runPromiseExit(
+      cleanup(pending).pipe(Effect.provide(provider.layer)),
+    ))).toContain("@smthrs/mvp/domains/ReleaseUnavailable")
+    await keyed(claim(input))
+    provider.use({
+      ensure: () => Effect.succeed({
+        id: pending.providerId, records: [], verification: "active", certificate: "active",
+      } as const),
+      remove: () => Effect.die(new Error("must retain the adopted registration")),
+    })
+    expect(await keyed(check({ ...input, attempt: 1 }))).toEqual({ satisfied: true, output: "active" })
+    expect(await keyed(cleanup(pending))).toEqual({ satisfied: true, output: "superseded" })
+    expect(await rows(runtime)).toMatchObject([{ providerId: pending.providerId, state: "active", pollId: input.pollId }])
+    expect(await runtime.runPromise(Store.active(input.hostname))).toBe(true)
+  })
+
+  test("cleanup stays retryable until a newer poll records its id or is removed", async () => {
+    const { claim, release, cleanup } = DomainFlows.steps(await database())
+    const pending = { repoId: REPO_ID, hostname: input.hostname, pollId: "removed-poll", providerId: "cf-replacement" }
+    await keyed(claim(input))
+    const forgotten: Array<string> = []
+    provider.use({ remove: (id) => Effect.sync(() => void forgotten.push(id)) })
+    expect(JSON.stringify(await Effect.runPromiseExit(cleanup(pending).pipe(Effect.provide(provider.layer)))))
+      .toContain("@smthrs/mvp/domains/ReleaseUnavailable")
+    expect(forgotten).toEqual([])
+    // The new poll is removed before its check can adopt the registration.
+    expect(await keyed(release({ repoId: REPO_ID, hostname: input.hostname, actorId: "p" }), "remove-new"))
+      .toEqual({ change: "released" })
+    expect(await keyed(cleanup(pending))).toEqual({ satisfied: true, output: "superseded" })
+    expect(forgotten).toEqual(["cf-replacement"])
+    expect(await rows(runtime)).toEqual([])
+    expect(await runtime.runPromise(Store.active(input.hostname))).toBe(false)
+  })
+
+  test("a newer removing poll with an obsolete id does not inherit replacement cleanup", async () => {
+    const { cleanup } = DomainFlows.steps(await database())
+    await seed(runtime, { hostname: input.hostname, pollId: "newer-poll", providerId: "cf-obsolete", state: "removing" })
+    const forgotten: Array<string> = []
+    provider.use({ remove: (id) => Effect.sync(() => void forgotten.push(id)) })
+    expect(await keyed(cleanup({ repoId: REPO_ID, hostname: input.hostname, pollId: "older-poll", providerId: "cf-replacement" })))
+      .toEqual({ satisfied: true, output: "superseded" })
+    expect(forgotten).toEqual(["cf-replacement"])
+    expect(await rows(runtime)).toMatchObject([{ providerId: "cf-obsolete", state: "removing" }])
+  })
+
+  test("a new claim waits until cleanup finishes deleting the registration", async () => {
+    const { claim, cleanup } = DomainFlows.steps(await database())
+    const pending = { repoId: REPO_ID, hostname: input.hostname, pollId: "removed-poll", providerId: "cf-replacement" }
+    let announce!: () => void
+    let finish!: () => void
+    const started = new Promise<void>((resolve) => { announce = resolve })
+    const gate = new Promise<void>((resolve) => { finish = resolve })
+    provider.use({ remove: () => Effect.promise(() => { announce(); return gate }) })
+    const cleaning = keyed(cleanup(pending))
+    await started
+    let added = false
+    const adding = keyed(claim(input)).then((result) => { added = true; return result })
+    try {
+      await eventually(async () => added || await runtime.runPromise(
+        Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          Effect.map(sql<{ waiting: boolean }>`SELECT EXISTS (
+            SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+          ) AS waiting`, (rows) => rows[0]!.waiting)),
+      ), 5_000)
+      expect(added).toBe(false)
+    } finally {
+      finish()
+      await cleaning
+    }
+    expect(await adding).toEqual({ change: "add" })
+    expect(await rows(runtime)).toMatchObject([{ pollId: input.pollId, providerId: null }])
+  })
+
+  test("cleanup also forgets a replacement while its original row is still removing", async () => {
+    const db = await database()
+    const { claim, check, cleanup } = DomainFlows.steps(db)
+    await keyed(claim(input))
+    provider.use({
+      ensure: () => Effect.gen(function* () {
+        yield* Store.withdraw({ hostname: input.hostname, repoId: REPO_ID, actorId: "p", invocationKey: "removing" })
+          .pipe(Effect.provide(db), Effect.orDie)
+        return { id: "cf-new", records: [], verification: "pending", certificate: "pending" } as const
+      }),
+    })
+    expect(await keyed(check({ ...input, attempt: 1 }))).toEqual({
+      satisfied: true, output: "superseded", cleanupId: "cf-new",
+    })
+    expect(await keyed(cleanup({ repoId: REPO_ID, hostname: input.hostname, pollId: input.pollId, providerId: "cf-new" })))
+      .toEqual({ satisfied: true, output: "superseded" })
+    expect(await rows(runtime)).toMatchObject([{ state: "removing", pollId: input.pollId }])
+  })
+
+  test("a removed check that only read the old registration leaves cleanup to the removal", async () => {
+    const { check } = DomainFlows.steps(await database())
+    await seed(runtime, { hostname: input.hostname, pollId: input.pollId, providerId: "cf-known" })
+    provider.use({
+      status: () => Effect.as(Effect.promise(() => resetDomains(runtime)), Option.some({
+        id: "cf-known", records: [], verification: "active", certificate: "active",
+      } as const)),
+    })
+    expect(await keyed(check({ ...input, attempt: 2 }))).toEqual({ satisfied: true, output: "superseded" })
   })
 
   test("a step whose database can't be reached fails as StoreUnavailable; one with no invocation key dies", async () => {

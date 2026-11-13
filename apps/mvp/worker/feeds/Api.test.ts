@@ -4,6 +4,7 @@
 // Every test that writes searches what was recorded for the key, the bodies, the private names and the answers' words.
 import { Data, Effect, Layer, Schema } from "effect"
 import { SqlClient } from "effect/sql"
+import fc from "fast-check"
 import { beforeEach, describe, expect, test } from "vitest"
 import {
   ANSWERS_MAX,
@@ -220,6 +221,46 @@ describe("POST /api/repos/<owner>/<name>/feeds", () => {
     }
     expect(await documents()).toEqual([])
     expect(leaks(h)).toEqual([])
+  })
+
+  test.each([
+    String.raw`The escape is \u0000`,
+    { nested: [null, { text: String.raw`\u0000` }] },
+    { [String.raw`\u0000`]: { text: String.raw`\\u0000` } },
+    { text: String.raw`\\\u0000` },
+  ])("literal NUL escape text is stored unchanged: %j", async (body) => {
+    const h = await open()
+    expect(await json(await ingest(h, { set: { source: { visibility: "public", body } } }))).toEqual([
+      200, { written: 1, unchanged: 0, deleted: 0 },
+    ])
+    expect(await documents()).toMatchObject([{ name: "source", body }])
+  })
+
+  test.each([
+    { nested: [null, { text: "before\u0000after" }] },
+    { nested: [{ ["key\u0000"]: "text" }] },
+    { text: "\\\u0000\u0000" },
+  ])("an actual nested NUL refuses the entire update: %j", async (body) => {
+    const h = await open()
+    expect(await json(await ingest(h, {
+      set: { valid: { visibility: "public", body: 1 }, source: { visibility: "public", body } },
+    }))).toEqual([400, { code: "invalid" }])
+    expect(await documents()).toEqual([])
+  })
+
+  test("NUL validation follows decoded strings and keys across escape spellings", () => {
+    fc.assert(fc.property(
+      fc.array(fc.constantFrom("x", "\\", "u0000", "\u0000", '"'), { maxLength: 30 }),
+      fc.integer({ min: 0, max: 5 }),
+      (pieces, depth) => {
+        const text = pieces.join("")
+        let body: unknown = { [text]: text }
+        for (let i = 0; i < depth; i++) body = { nested: [null, body, false, 1] }
+        expect(FeedsApi.checkSet({ source: { visibility: "public", body } })).toBe(
+          text.includes("\u0000") ? "invalid" : undefined,
+        )
+      },
+    ), { numRuns: 300 })
   })
 
   test("names may nest with capitals and colons after the first segment", async () => {

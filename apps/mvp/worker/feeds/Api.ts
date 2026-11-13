@@ -117,10 +117,14 @@ export const checkSet = (set: IngestRequest["set"]): Refusal | undefined => {
   for (const [name, document] of entries) {
     if (!isFeedName(name)) return "invalid_name"
     if (document === null) continue
-    const json = JSON.stringify(document.body)
+    let containsNul = false
+    const json = JSON.stringify(document.body, (key, value: unknown) => {
+      if (key.includes("\u0000") || (typeof value === "string" && value.includes("\u0000"))) containsNul = true
+      return value
+    })
     if (encoder.encode(json).byteLength > MAX_FEED_DOCUMENT_BYTES) return "too_large"
-    // Postgres' jsonb can't store a NUL character: refused, so the collector doesn't retry a write that can't land.
-    if (json.includes("\\u0000")) return "invalid"
+    // jsonb rejects actual NULs in decoded keys and values, but accepts literal escape text.
+    if (containsNul) return "invalid"
   }
   return undefined
 }
