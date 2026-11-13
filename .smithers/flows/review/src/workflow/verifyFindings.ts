@@ -49,6 +49,7 @@ export function buildVerifyFindingsPrompt(args: {
     "",
     "Output contract:",
     "- Return only structured data matching { verdicts: [{ index, verdict, severity?, reason }] }.",
+    "- Return exactly one verdict for every finding; do not omit or repeat an index.",
     "- index is the 0-based finding number shown below.",
     `- verdict is one of "keep", "drop", "demote"; severity is one of ${
       ReviewCommentSeverity.literals.map((severity) => `"${severity}"`).join(", ")

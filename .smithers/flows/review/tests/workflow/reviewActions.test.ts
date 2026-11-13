@@ -102,6 +102,32 @@ test("verifier failure promotes success and preserves findings", async () => {
   )
 })
 
+test.each(["success", "failed", "completed_with_errors", "completed_with_warnings"] as const)(
+  "incomplete verification retains findings and preserves or degrades %s status",
+  async (status) => {
+    const outcome = Schema.decodeUnknownSync(ReviewRunOutput)({
+      ...review,
+      status,
+      ok: status !== "failed",
+      comments: [{ path: "a.ts", content: "finding", severity: "major" }],
+      warnings: [{ file: "a.ts", type: "prior_warning", message: "prior diagnostic" }]
+    })
+    const result = await Effect.runPromise(
+      VerifyTest.execute({ review: outcome, verdicts: { verdicts: [] } }, {
+        executionId: `verify-${crypto.randomUUID()}`
+      }).pipe(Effect.provide(testLayer()))
+    )
+    expect(result.status).toBe(status === "success" ? "completed_with_warnings" : status)
+    expect(result.comments).toEqual(outcome.comments)
+    expect(result.warnings).toContainEqual(outcome.warnings[0]!)
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      file: "a.ts",
+      type: "verifier_incomplete",
+      message: expect.stringContaining("unverified")
+    }))
+  }
+)
+
 test("render action carries failed review diagnostics into HTML", async () => {
   const out = outputPath()
   await render(out, {

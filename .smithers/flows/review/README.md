@@ -12,13 +12,15 @@ A host without a checkout registers the rounds from `src/workflow/reviewFlow.ts`
 
 The typed result retains findings, coverage gaps, warnings, story and artifact receipts, and a `verdict` read from the post-verification review:
 
-| `verdict`    | When                                                                                                                                                            |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pass`       | Status `success`, every finding verified, and none at `major` or above.                                                                                         |
-| `fail`       | Status `success`, every finding verified, and a `critical` or `major` finding stands.                                                                           |
-| `incomplete` | Any other status (`skipped`, `completed_with_warnings`, `completed_with_errors`, `failed`), or findings left unverified (`verifier_error`, `verifier_skipped`). |
+| `verdict`    | When                                                                                                                                                                                   |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pass`       | Status `success`, every finding verified, and none at `major` or above.                                                                                                                |
+| `fail`       | Status `success`, every finding verified, and a `critical` or `major` finding stands.                                                                                                  |
+| `incomplete` | Any other status (`skipped`, `completed_with_warnings`, `completed_with_errors`, `failed`), or findings left unverified (`verifier_error`, `verifier_skipped`, `verifier_incomplete`). |
 
 `major` is the blocking threshold because the file prompt defines `critical` as "the merge must stop" and `major` as "a real bug users will hit"; `minor` and `info` are advice. An outage, a failed file review or a verifier that could not rule therefore never reads as a pass, nor as a fault in the code. With `verify: false` nothing is verified, and findings count as the reviewer wrote them. Narration writes the story only, so a narrator failure marks the review `completed_with_warnings` without changing the verdict. A result stored before `verdict` existed decodes as `incomplete`. Its `ui: { kind: "html", title, html }` field uses the common authored result renderer: an isolated iframe in the embedded run card. Any other flow may return the same shape. Scripts cannot access the app, navigate the parent, submit forms, or fetch external resources. The generated walkthrough also remains a self-contained HTML artifact.
+
+Verification requires one explicit `keep`, `drop` or `demote` verdict per finding index. Missing or duplicate verdicts leave the affected findings unchanged, add `verifier_incomplete` warnings, and change a successful review to `completed_with_warnings`. Valid verdicts for other findings still apply. Walkthrough findings and their deep links use new-side line numbers in both unified and split diffs.
 
 All repository reads and commands go through the caller's filesystem and process services. Cancellation interrupts model calls and host child processes. Timeouts preserve partial findings and visibly mark failed or unverified work. The host's exhausted budget prevents model calls; no private review billing or proxy exists.
 
@@ -26,7 +28,7 @@ The old standalone app, CLI, HTTP service, sessions, publishing, billing proxy a
 
 `smthrs review <pattern>` remains the independent build-system verb for declared model-review targets.
 
-Validation: `bun test .smithers/flows/review/tests` and `bun .smithers/flows/review/seeded-bugs/run.ts`. The deterministic seeded-bug baseline is preserved. `apps/tui/test/review-module-flow.test.ts` covers real TUI discovery, native host launch, completion and identical result/artifact HTML; its offline evaluator avoids provider calls and its native isolation helper must be installed. Tests use real discovery, registry loading, engine, git/jj and platform services; only model responses and explicit host-refusal/failure branches are injected. No percentage coverage claim is made by these receipts.
+Validation: `pnpm --filter @smthrs/review test` and `bun .smithers/flows/review/seeded-bugs/run.ts`. The deterministic seeded-bug baseline is preserved. `apps/tui/test/review-module-flow.test.ts` covers real TUI discovery, native host launch, completion and identical result/artifact HTML; its offline evaluator avoids provider calls and its native isolation helper must be installed. Tests use real discovery, registry loading, engine, git/jj and platform services; only model responses and explicit host-refusal/failure branches are injected. No percentage coverage claim is made by these receipts.
 
 The Mermaid runtime is a committed, compressed resource measured with the flow closure. Regenerate after dependency updates using `node .smithers/flows/review/scripts/generate-mermaid-runtime.mjs`; verify with `--check`.
 

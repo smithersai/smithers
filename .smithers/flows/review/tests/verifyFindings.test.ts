@@ -83,9 +83,11 @@ describe("buildVerifyFindingsPrompt", () => {
 })
 
 describe("VerifyVerdicts", () => {
-  test("decodes partial verdict output with safe defaults", () => {
-    const parsed = decodeVerdicts({ verdicts: [{}] })
-    expect(parsed.verdicts[0]!).toEqual({ index: -1, verdict: "keep", reason: "" })
+  test("a verdict must explicitly rule on its finding", () => {
+    expect(Option.isNone(tryVerdicts({ verdicts: [{}] }))).toBe(true)
+    expect(Option.isNone(tryVerdicts({ verdicts: [{ index: 0 }] }))).toBe(true)
+    expect(decodeVerdicts({ verdicts: [{ verdict: "keep" }] }).verdicts[0]!)
+      .toEqual({ index: -1, verdict: "keep", reason: "" })
   })
 
   test("an empty object decodes to no verdicts", () => {
@@ -115,7 +117,11 @@ describe("applyFindingVerdicts", () => {
   test("drop removes the finding, counts it, and records a warning with the reason", () => {
     const result = applyFindingVerdicts(
       [finding(), finding({ content: "Second." })],
-      [{ index: 0, verdict: "drop", reason: "Contradicted by the guard two lines above." }]
+      [{ index: 0, verdict: "drop", reason: "Contradicted by the guard two lines above." }, {
+        index: 1,
+        verdict: "keep",
+        reason: "verified"
+      }]
     )
     expect(result.findings).toHaveLength(1)
     expect(result.findings[0]!.content).toBe("Second.")
@@ -155,7 +161,7 @@ describe("applyFindingVerdicts", () => {
     expect(result.findings[0]!.severity).toBe("minor")
   })
 
-  test("two demotes stack one step each", () => {
+  test("duplicate demotes leave the finding unverified and preserve its severity", () => {
     const result = applyFindingVerdicts(
       [finding({ severity: "critical" })],
       [
@@ -163,7 +169,8 @@ describe("applyFindingVerdicts", () => {
         { index: 0, verdict: "demote", reason: "" }
       ]
     )
-    expect(result.findings[0]!.severity).toBe("minor")
+    expect(result.findings[0]!.severity).toBe("critical")
+    expect(result.warnings).toEqual([expect.objectContaining({ type: "verifier_incomplete" })])
   })
 
   test("unknown indexes are ignored with a warning and count nothing", () => {
@@ -178,11 +185,12 @@ describe("applyFindingVerdicts", () => {
     expect(result.warnings.map((warning) => warning.type)).toEqual([
       "verifier_unknown_index",
       "verifier_unknown_index",
-      "verifier_unknown_index"
+      "verifier_unknown_index",
+      "verifier_incomplete"
     ])
   })
 
-  test("duplicate drops on the same index count once", () => {
+  test("duplicate drops preserve the ambiguous finding and cannot hide a missing verdict", () => {
     const result = applyFindingVerdicts(
       [finding(), finding({ content: "Second." })],
       [
@@ -190,8 +198,9 @@ describe("applyFindingVerdicts", () => {
         { index: 0, verdict: "drop", reason: "" }
       ]
     )
-    expect(result.dropped).toBe(1)
-    expect(result.findings).toHaveLength(1)
+    expect(result.dropped).toBe(0)
+    expect(result.findings).toHaveLength(2)
+    expect(result.warnings.map((warning) => warning.type)).toEqual(["verifier_incomplete", "verifier_incomplete"])
   })
 
   test("mixed verdict batch applies each by index", () => {
@@ -201,6 +210,7 @@ describe("applyFindingVerdicts", () => {
       finding({ content: "Demote me.", severity: "major" })
     ]
     const result = applyFindingVerdicts(findings, [
+      { index: 0, verdict: "keep", reason: "verified" },
       { index: 1, verdict: "drop", reason: "refuted" },
       { index: 2, verdict: "demote", reason: "edge case only" }
     ])
@@ -211,11 +221,19 @@ describe("applyFindingVerdicts", () => {
     expect(result.dropped).toBe(1)
   })
 
-  test("empty verdicts leave everything intact", () => {
+  test("empty verdicts preserve findings with an explicit unverified warning", () => {
     const findings = [finding()]
     const result = applyFindingVerdicts(findings, [])
     expect(result.findings).toEqual(findings)
     expect(result.dropped).toBe(0)
-    expect(result.warnings).toEqual([])
+    expect(result.warnings).toEqual([expect.objectContaining({
+      file: "src/app.ts",
+      type: "verifier_incomplete",
+      message: expect.stringContaining("unverified")
+    })])
+  })
+
+  test("no findings need no verdicts", () => {
+    expect(applyFindingVerdicts([], [])).toEqual({ findings: [], dropped: 0, warnings: [] })
   })
 })

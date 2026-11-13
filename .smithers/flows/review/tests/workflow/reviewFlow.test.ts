@@ -61,7 +61,13 @@ function answerFor(options: { findingsFor?: (path: string) => boolean; refuse?: 
   return (ask: string): unknown => {
     if (ask.includes("adjudicate code-review findings")) {
       if (refuse.has("verify")) return undefined
-      return { verdicts: [{ index: 0, verdict: "keep", reason: "the diff shows it" }] }
+      return {
+        verdicts: [...ask.matchAll(/Finding (\d+):/g)].map((match) => ({
+          index: Number(match[1]),
+          verdict: "keep",
+          reason: "the diff shows it"
+        }))
+      }
     }
     if (ask.includes("explain a change set to a reader")) {
       if (refuse.has("narrate")) return undefined
@@ -377,6 +383,54 @@ describe("the review flow", () => {
     expect(result.verdict).toBe("pass")
     expect(result.review.warnings.some((warning) => warning.type === "verifier_dropped")).toBe(true)
     expect(result.review.message).toContain("Verification dropped 1 finding")
+  }, 120_000)
+
+  test.each([
+    ["empty object", {}, 2, 2],
+    ["empty verdict list", { verdicts: [] }, 2, 2],
+    ["partial list", { verdicts: [{ index: 0, verdict: "drop" }] }, 1, 1],
+    ["duplicate index", { verdicts: [{ index: 0, verdict: "drop" }, { index: 0, verdict: "keep" }] }, 2, 2],
+    [
+      "duplicate with all indexes",
+      {
+        verdicts: [
+          { index: 0, verdict: "drop" },
+          { index: 1, verdict: "keep" },
+          { index: 0, verdict: "keep" }
+        ]
+      },
+      2,
+      1
+    ],
+    ["unknown index", { verdicts: [{ index: 0, verdict: "keep" }, { index: 9, verdict: "drop" }] }, 2, 1],
+    ["fractional index", { verdicts: [{ index: 0, verdict: "keep" }, { index: 1.5, verdict: "drop" }] }, 2, 1]
+  ])("verification reports %s as incomplete through the review flow", async (_name, verdicts, kept, unverified) => {
+    const repo = tempRepo(2)
+    const result = await runReview(
+      repo,
+      { narrate: false, verify: true, out: join(repo, "w.html") },
+      (ask) => ask.includes("adjudicate code-review findings") ? verdicts : answerFor()(ask)
+    )
+    expect(result.review.status).toBe("completed_with_warnings")
+    expect(result.verdict).toBe("incomplete")
+    expect(result.review.comments).toHaveLength(kept)
+    expect(result.review.warnings.filter((warning) => warning.type === "verifier_incomplete")).toHaveLength(unverified)
+    const html = readFileSync(result.walkthrough.path, "utf8")
+    expect(html).toContain("Review incomplete or completed with warnings")
+    expect(html).toContain("unverified")
+  }, 120_000)
+
+  test("a missing verdict decision cannot default to verified keep", async () => {
+    const repo = tempRepo(1)
+    const result = await runReview(
+      repo,
+      { narrate: false, verify: true, out: join(repo, "w.html") },
+      (ask) => ask.includes("adjudicate code-review findings") ? { verdicts: [{ index: 0 }] } : answerFor()(ask)
+    )
+    expect(result.review.comments).toHaveLength(1)
+    expect(result.review.status).toBe("completed_with_warnings")
+    expect(result.verdict).toBe("incomplete")
+    expect(result.review.warnings.some((warning) => warning.type === "verifier_error")).toBe(true)
   }, 120_000)
 
   test("a verifier that fails leaves the findings unverified rather than failing the review", async () => {

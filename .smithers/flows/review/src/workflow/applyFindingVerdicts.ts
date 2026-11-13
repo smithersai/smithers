@@ -7,6 +7,9 @@ export function applyFindingVerdicts<T extends { path: string; severity: ReviewC
   findings: Array<T>,
   verdicts: ReadonlyArray<FindingVerdict>
 ): { findings: Array<T>; dropped: number; warnings: Array<{ file: string; message: string; type: string }> } {
+  // Only a single explicit decision can adjudicate a finding.
+  const verdictCounts = new Map<number, number>()
+  for (const { index } of verdicts) verdictCounts.set(index, (verdictCounts.get(index) ?? 0) + 1)
   const droppedIndexes = new Set<number>()
   const demoted = new Map<number, T>()
   const warnings: Array<{ file: string; message: string; type: string }> = []
@@ -20,7 +23,8 @@ export function applyFindingVerdicts<T extends { path: string; severity: ReviewC
       })
       continue
     }
-    const finding = demoted.get(verdict.index) ?? findings[verdict.index]!
+    if (verdictCounts.get(verdict.index) !== 1) continue
+    const finding = findings[verdict.index]!
     if (verdict.verdict === "drop") {
       droppedIndexes.add(verdict.index)
       warnings.push({
@@ -40,6 +44,18 @@ export function applyFindingVerdicts<T extends { path: string; severity: ReviewC
         message: verdict.reason || `Finding demoted to ${severitySteps[nextStep]} by the verification pass.`
       })
     }
+  }
+
+  for (const [index, finding] of findings.entries()) {
+    const count = verdictCounts.get(index) ?? 0
+    if (count === 1) continue
+    warnings.push({
+      file: finding.path,
+      type: "verifier_incomplete",
+      message: count === 0
+        ? `Verifier returned no verdict for finding index ${index}; finding is unverified.`
+        : `Verifier returned ${count} verdicts for finding index ${index}; finding is unverified.`
+    })
   }
 
   const kept = findings

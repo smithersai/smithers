@@ -35,7 +35,7 @@ describe("reviewVerdict", () => {
   })
 
   test("unverified findings are incomplete; a verifier that ruled on them is not", () => {
-    for (const type of ["verifier_error", "verifier_skipped"]) {
+    for (const type of ["verifier_error", "verifier_skipped", "verifier_incomplete"]) {
       for (const comments of [[], [finding("major")]]) {
         expect([type, reviewVerdict(review({ comments, warnings: [{ type, message: "unverified" }] }))])
           .toEqual([type, "incomplete"])

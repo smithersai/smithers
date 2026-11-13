@@ -16,7 +16,7 @@ import { ReviewCommentSeverity } from "./reviewCommentSeveritySchema.ts"
  */
 export const FindingVerdict = Schema.Struct({
   index: withDefault(Schema.Number, -1),
-  verdict: withDefault(Schema.Literals(["keep", "drop", "demote"]), "keep" as const),
+  verdict: Schema.Literals(["keep", "drop", "demote"]),
   severity: Schema.optional(ReviewCommentSeverity),
   reason: withDefault(Schema.String, "")
 })

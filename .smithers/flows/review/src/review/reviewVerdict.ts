@@ -13,8 +13,8 @@ import { rankSeverity } from "./rankSeverity.ts"
  */
 export const BLOCKING_SEVERITY: ReviewCommentSeverity = "major"
 
-/** Warnings that leave the findings unverified: the verifier failed, or the findings exceeded its cap. */
-const UNVERIFIED = new Set(["verifier_error", "verifier_skipped"])
+/** Warnings that leave findings unverified: a failed, incomplete or skipped verification pass. */
+const UNVERIFIED = new Set(["verifier_error", "verifier_skipped", "verifier_incomplete"])
 
 /**
  * Reads a review's verdict from its post-verification output.

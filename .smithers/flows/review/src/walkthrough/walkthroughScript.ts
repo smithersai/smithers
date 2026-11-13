@@ -118,7 +118,10 @@ export const walkthroughScript = `
 
   /* ---- relocate finding cards under their diff lines ---- */
   function pierreRowFor(body, line) {
-    var rows = body.querySelectorAll("[data-content] > [data-line]");
+    var split = body.querySelector('[data-diff-type="split"]');
+    var rows = body.querySelectorAll(split
+      ? "[data-additions] [data-content] > [data-line]"
+      : "[data-content] > [data-line]");
     var fallback = null;
     for (var i = 0; i < rows.length; i += 1) {
       if (Number(rows[i].getAttribute("data-line")) !== line) continue;

@@ -141,7 +141,8 @@ export const finalizeReviewLayer = FinalizeReview.toLayer(({ input, outcomes, pr
  *
  * A `null` verdict set means the verifier step failed and was caught: the
  * review is kept as it stands and a `verifier_error` warning records that
- * nothing was verified.
+ * nothing was verified. Missing or duplicate decisions retain the original
+ * findings with `verifier_incomplete` warnings and degrade a successful review.
  *
  * @since 1.0.0
  * @category actions
@@ -180,6 +181,9 @@ export const applyVerdictsLayer = ApplyVerdicts.toLayer(({ review, verdicts, fai
     const applied = applyFindingVerdicts(review.comments, verdicts.verdicts)
     return {
       ...review,
+      status: review.status === "success" && applied.warnings.some((warning) => warning.type === "verifier_incomplete")
+        ? "completed_with_warnings" as const
+        : review.status,
       comments: applied.findings,
       warnings: [...review.warnings, ...applied.warnings],
       summary: review.summary ? { ...review.summary, comments: applied.findings.length } : null,

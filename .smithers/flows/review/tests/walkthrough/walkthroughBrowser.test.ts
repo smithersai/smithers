@@ -96,7 +96,7 @@ const openPages: Array<Window> = []
  * `decompression` off drops `DecompressionStream` so the Mermaid loader takes
  * its documented no-runtime path instead of evaluating a 3.5MB bundle.
  */
-async function hostedPage(options: { decompression?: boolean } = {}): Promise<Page> {
+async function hostedPage(options: { decompression?: boolean; html?: string } = {}): Promise<Page> {
   const window = new Window({ url: "https://walkthroughs.example/w/abc" })
   openPages.push(window)
   const anyWindow = window as unknown as Record<string, unknown>
@@ -124,7 +124,7 @@ async function hostedPage(options: { decompression?: boolean } = {}): Promise<Pa
       }
     }
   })
-  window.document.write(await walkthroughHtml())
+  window.document.write(options.html ?? await walkthroughHtml())
   window.document.close()
   // happy-dom parses inline scripts but never runs them, so the page's own
   // scripts are evaluated here in document order: the theme boot script, the
@@ -267,4 +267,54 @@ describe("the hosted walkthrough page, with storage denied", () => {
     // The runtime payload is still inert data, never an executed script.
     expect(query(page, "#mermaid-runtime-gz").getAttribute("type")).toBe("text/plain")
   })
+})
+
+describe("finding anchors use new-side line numbers", () => {
+  for (const diffStyle of ["unified", "split"] as const) {
+    for (
+      const [change, hunk, line, text] of [
+        ["insertion", "@@ -1,3 +1,4 @@\n a\n+x\n b\n c\n", 3, "b"],
+        ["deletion", "@@ -1,4 +1,3 @@\n a\n-x\n b\n c\n", 3, "c"],
+        ["added line", "@@ -1,3 +1,4 @@\n a\n+x\n b\n c\n", 2, "x"]
+      ] as const
+    ) {
+      test(`${diffStyle}: a finding follows its new-side row after ${change}`, async () => {
+        const path = "src/anchor.ts"
+        const html = await renderWalkthroughHtml({
+          title: "Anchors",
+          story: {
+            headline: "Anchors",
+            synopsis: "",
+            chapters: [{
+              title: "Changes",
+              blocks: [{ kind: "diff", text: "", path, intro: "", title: "", mermaid: "" }]
+            }]
+          },
+          files: [{
+            ...files[0]!,
+            path,
+            diff: `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n${hunk}`
+          }],
+          comments: [{ ...comments[0]!, path, startLine: line, endLine: line }],
+          repoDir: ".",
+          mode: "workspace",
+          ref: "workspace",
+          diffStyle,
+          generatedAt: "2026-06-10T00:00:00.000Z"
+        })
+        const page = await hostedPage({ html })
+        const card = page.doc.querySelector("aside.finding")!
+        expect(card.getAttribute("data-anchored")).toBe("true")
+        const row = card.parentElement!.previousElementSibling!
+        expect(row.textContent.trim()).toBe(text)
+        expect(row.getAttribute("data-line")).toBe(String(line))
+        if (diffStyle === "split") {
+          expect(row.closest("[data-additions]")).not.toBe(null)
+        }
+        click(page, page.doc.querySelector("a[data-finding-link]"))
+        expect(row.classList.contains("flash")).toBe(true)
+        expect(page.window.location.hash).toBe(`#${card.id}`)
+      })
+    }
+  }
 })
