@@ -4,6 +4,8 @@
  * @since 0.1.0
  */
 
+import { rpcUrl } from "./internal/RemoteUrl.ts"
+
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import type { ApprovalAuthority, Control, ControlExecutor, ControlSchema, Health } from "@smthrs/control"
 import { ControlClient, ControlRuntime } from "@smthrs/control"
@@ -232,14 +234,6 @@ export const engineMemory: Engine = {
   // now rather than an ambient global.
   runtime: ControlRuntime.layerMemory().pipe(Layer.provide(NodeCrypto.layer)),
   journal: TestJournal.layer().pipe(Layer.orDie)
-}
-
-const rpcUrl = (remote: string): string => {
-  const url = new URL(remote)
-  if (!url.pathname.endsWith("/rpc")) {
-    url.pathname = `${url.pathname.replace(/\/+$/, "")}/rpc`
-  }
-  return url.toString()
 }
 
 /**

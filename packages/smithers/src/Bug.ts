@@ -11,6 +11,7 @@
  */
 
 import * as Redaction from "@smthrs/journal/Redaction"
+import { Buffer } from "node:buffer"
 import { isArrayBuffer, isDataView, isProxy } from "node:util/types"
 import * as CliError from "./CliError.ts"
 
@@ -45,56 +46,116 @@ const binarySize = (value: object): number | undefined => {
   return undefined
 }
 
-const assertRenderable = (value: unknown): void => {
+// These identities admit built-in storage without consulting caller-owned
+// constructors or walking an untrusted prototype chain.
+const binaryNames = new Map<object, string>([
+  [ArrayBuffer.prototype, "ArrayBuffer"],
+  [DataView.prototype, "DataView"],
+  [Buffer.prototype, "Buffer"],
+  [Int8Array.prototype, "Int8Array"],
+  [Uint8Array.prototype, "Uint8Array"],
+  [Uint8ClampedArray.prototype, "Uint8ClampedArray"],
+  [Int16Array.prototype, "Int16Array"],
+  [Uint16Array.prototype, "Uint16Array"],
+  [Int32Array.prototype, "Int32Array"],
+  [Uint32Array.prototype, "Uint32Array"],
+  [Float32Array.prototype, "Float32Array"],
+  [Float64Array.prototype, "Float64Array"],
+  [BigInt64Array.prototype, "BigInt64Array"],
+  [BigUint64Array.prototype, "BigUint64Array"]
+])
+// Older supported Node hosts do not expose this optional typed-array intrinsic.
+const float16Array = Object.getOwnPropertyDescriptor(globalThis, "Float16Array")?.value as {
+  readonly prototype: object
+} | undefined
+if (float16Array !== undefined) binaryNames.set(float16Array.prototype, "Float16Array")
+
+const indexKey = /^(?:0|[1-9][0-9]*)$/
+
+const renderableSnapshot = (value: unknown): unknown => {
   let walked = 0
   const ancestors = new WeakSet<object>()
 
-  const walk = (node: unknown, depth: number): void => {
-    walked += 1
+  const charge = (members: number): void => {
+    walked += members
     if (walked > Redaction.binaryWalkLimit) {
       throw refusal(`the value exceeds the ${Redaction.binaryWalkLimit} member walk limit`)
     }
+  }
+
+  const walk = (node: unknown, depth: number, charged = false): unknown => {
+    if (!charged) charge(1)
     if (depth > Redaction.maxDepth) {
       throw refusal(`the value exceeds the ${Redaction.maxDepth} container depth limit`)
     }
-    if ((typeof node !== "object" && typeof node !== "function") || node === null) return
+    if ((typeof node !== "object" && typeof node !== "function") || node === null) return node
     if (typeof node === "function") {
       throw refusal("the value contains a callable member")
     }
     if (isProxy(node)) {
       throw refusal("the value contains a proxy, which could run code while the report is inspected")
     }
-    if (ancestors.has(node)) return
+    if (ancestors.has(node)) return "[Circular]"
 
     const size = binarySize(node)
     if (size !== undefined && size > Redaction.binaryWalkLimit) {
       throw refusal(`a binary value exceeds the ${Redaction.binaryWalkLimit} byte walk limit`)
     }
-    if ("toJSON" in node) {
-      throw refusal("a value defines toJSON, which could run code while the report is rendered")
+    const prototype: object | null = Object.getPrototypeOf(node)
+    const binaryName = prototype === null ? undefined : binaryNames.get(prototype)
+    if (
+      prototype !== null && prototype !== Object.prototype && prototype !== Array.prototype &&
+      !(size !== undefined && binaryName !== undefined)
+    ) {
+      throw refusal("a value has an unsupported prototype, which could run code while the report is rendered")
+    }
+
+    const length: number | undefined = Array.isArray(node)
+      ? Object.getOwnPropertyDescriptor(node, "length")!.value
+      : undefined
+    // Holes cost redaction work too. Reserve every slot before allocating a
+    // snapshot or inspecting indices, sharing the same budget across arrays.
+    if (length !== undefined) charge(length)
+    const snapshot = length === undefined ? Object.create(null) : new Array<unknown>(length)
+    if (size !== undefined) {
+      Object.defineProperty(snapshot, Redaction.binaryMarker, {
+        value: `${binaryName} ${size} bytes`,
+        enumerable: true,
+        configurable: true
+      })
     }
 
     ancestors.add(node)
     try {
-      const descriptors = Object.getOwnPropertyDescriptors(node)
-      for (const descriptor of Object.values(descriptors)) {
-        if (descriptor.enumerable !== true) continue
+      for (const key of Reflect.ownKeys(node)) {
+        const descriptor = Object.getOwnPropertyDescriptor(node, key)!
         if (descriptor.get !== undefined || descriptor.set !== undefined) {
           throw refusal("a value contains an accessor, which could run code while the report is rendered")
         }
-        walk(descriptor.value, depth + 1)
+        if (key === "toJSON") {
+          throw refusal("a value defines toJSON, which could run code while the report is rendered")
+        }
+        if (typeof key !== "string") continue
+        const arrayIndex = length !== undefined && indexKey.test(key) && Number(key) < length
+        if (descriptor.enumerable !== true && !arrayIndex) continue
+        const field = walk(descriptor.value, depth + 1, arrayIndex)
+        // Binary bytes are represented by the inert brand/size marker, while
+        // attached diagnostic fields still take the shared redaction rules.
+        if (size !== undefined && indexKey.test(key)) continue
+        Object.defineProperty(snapshot, key, { value: field, enumerable: true, configurable: true })
       }
+      return snapshot
     } finally {
       ancestors.delete(node)
     }
   }
 
-  walk(value, 0)
+  return walk(value, 0)
 }
 
 const applyReportOnlyKeys = (value: unknown): unknown => {
   const walk = (node: unknown, depth: number): unknown => {
-    // `assertRenderable` has already admitted the exact tree against both
+    // `renderableSnapshot` has already admitted the exact tree against both
     // bounds, and redaction cannot add members or nesting.
     if (Array.isArray(node)) return node.map((entry) => walk(entry, depth + 1))
     if (typeof node !== "object" || node === null) return node
@@ -123,16 +184,16 @@ export const scrubText = (text: string): string => Redaction.redactDiagnostic(te
 
 /**
  * Recursively scrubs a JSON-safe value with the diagnostic rules and the retained
- * report-only `dsn` and `connection` key coverage. It refuses accessors,
- * executable `toJSON` hooks, excessive depth, and excessive walk size before
- * redaction so no partial report can be posted.
+ * report-only `dsn` and `connection` key coverage. It snapshots own data
+ * descriptors, names binary storage, and refuses accessors, unsupported
+ * prototypes, executable `toJSON` hooks, excessive depth, and excessive walk
+ * size (including sparse slots) before redaction so no partial report can be posted.
  *
  * @category conversions
  * @since 1.0.0
  */
 export const scrub = (value: unknown): unknown => {
-  assertRenderable(value)
-  return applyReportOnlyKeys(Redaction.redactDiagnostic(value))
+  return applyReportOnlyKeys(Redaction.redactDiagnostic(renderableSnapshot(value)))
 }
 
 /**

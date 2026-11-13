@@ -297,33 +297,36 @@ describe("Control surface", () => {
     }
   })
 
-  it("mounts the remote parser path on a real ephemeral Node server", async () => {
-    const local = await Effect.runPromise(
-      invoke(["--json", "plan", "demo/ship"]).pipe(
-        Effect.provide(testControl),
-        Effect.provide(scenarioServices),
-        Effect.provide(NodeServices.layer)
-      )
-    )
-    const remote = await Effect.runPromise(
-      Effect.gen(function*() {
-        const server = yield* HttpServer.HttpServer
-        return yield* invoke(["--json", "plan", "demo/ship"]).pipe(
-          Effect.provide(NodeControl.layerControl({ remote: addressUrl(server) })),
-          Effect.provide(scenarioServices)
+  it.each(["", "/", "/rpc", "/rpc/", "/rpc///"])(
+    "mounts the remote parser path at %s on a real ephemeral Node server",
+    async (suffix) => {
+      const local = await Effect.runPromise(
+        invoke(["--json", "plan", "demo/ship"]).pipe(
+          Effect.provide(testControl),
+          Effect.provide(scenarioServices),
+          Effect.provide(NodeServices.layer)
         )
-      }).pipe(
-        Effect.provide(
-          NodeControl.layerServerNoopAuth({ host: "127.0.0.1", port: 0 }).pipe(
-            Layer.provide(testControl)
-          )
-        ),
-        Effect.scoped
       )
-    )
+      const remote = await Effect.runPromise(
+        Effect.gen(function*() {
+          const server = yield* HttpServer.HttpServer
+          return yield* invoke(["--json", "plan", "demo/ship"]).pipe(
+            Effect.provide(NodeControl.layerControl({ remote: addressUrl(server) + suffix })),
+            Effect.provide(scenarioServices)
+          )
+        }).pipe(
+          Effect.provide(
+            NodeControl.layerServerNoopAuth({ host: "127.0.0.1", port: 0 }).pipe(
+              Layer.provide(testControl)
+            )
+          ),
+          Effect.scoped
+        )
+      )
 
-    expect(normalize(remote)).toEqual(normalize(local))
-  })
+      expect(normalize(remote)).toEqual(normalize(local))
+    }
+  )
 
   it("renders an accepted non-terminal remote run without awaiting server settlement", async () => {
     const accepted = await Effect.runPromise(
@@ -714,32 +717,37 @@ describe("Control surface", () => {
     )
   })
 
-  it("uses the bearer credential for the remote WebSocket projection", async () => {
-    const events = await Effect.runPromise(
-      Effect.gen(function*() {
-        const server = yield* HttpServer.HttpServer
-        return yield* Effect.gen(function*() {
-          const control = yield* ControlService.Control
-          return yield* control.watch({}).pipe(Stream.runHead)
-        }).pipe(
-          Effect.provide(NodeControl.layerControl({ remote: addressUrl(server), credential: "alpha-secret" }))
-        )
-      }).pipe(
-        Effect.provide(
-          NodeControl.layerServerBearerAuth({
-            token: "alpha-secret",
-            principal: { id: "alpha", kind: "bearer" }
-          }, { port: 0 }).pipe(
-            Layer.provide(streamingControl)
+  it.each(["", "/", "/rpc", "/rpc/", "/rpc///"])(
+    "uses the bearer credential for the remote WebSocket projection at %s",
+    async (suffix) => {
+      const events = await Effect.runPromise(
+        Effect.gen(function*() {
+          const server = yield* HttpServer.HttpServer
+          return yield* Effect.gen(function*() {
+            const control = yield* ControlService.Control
+            return yield* control.watch({}).pipe(Stream.runHead)
+          }).pipe(
+            Effect.provide(
+              NodeControl.layerControl({ remote: addressUrl(server) + suffix, credential: "alpha-secret" })
+            )
           )
-        ),
-        Effect.scoped
+        }).pipe(
+          Effect.provide(
+            NodeControl.layerServerBearerAuth({
+              token: "alpha-secret",
+              principal: { id: "alpha", kind: "bearer" }
+            }, { port: 0 }).pipe(
+              Layer.provide(streamingControl)
+            )
+          ),
+          Effect.scoped
+        )
       )
-    )
 
-    expect(events._tag).toBe("Some")
-    if (events._tag === "Some") {
-      expect(events.value).toEqual(websocketEvent)
+      expect(events._tag).toBe("Some")
+      if (events._tag === "Some") {
+        expect(events.value).toEqual(websocketEvent)
+      }
     }
-  })
+  )
 })

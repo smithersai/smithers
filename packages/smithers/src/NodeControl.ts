@@ -58,6 +58,7 @@ import * as Failure from "./internal/Failure.ts"
 import { Session } from "./internal/backend/Session.ts"
 import * as NodeWebSocket from "./internal/NodeWebSocket.ts"
 import * as RegistryWorkspace from "./internal/RegistryWorkspace.ts"
+import { websocketUrl } from "./internal/RemoteUrl.ts"
 import * as SupervisorMemory from "./internal/SupervisorMemory.ts"
 import * as Output from "./Output.ts"
 import * as Project from "./Project.ts"
@@ -277,15 +278,6 @@ export const configFromArguments = (
 export const config: Effect.Effect<Application.Config, CliError.UsageError> = Effect.suspend(() =>
   configFromArguments(process.argv.slice(2))
 )
-
-const websocketUrl = (remote: string): string => {
-  const url = new URL(remote)
-  const basePath = url.pathname.replace(/\/+$/, "").replace(/\/rpc$/, "")
-  url.pathname = `${basePath}/rpc/ws`
-  url.search = ""
-  url.hash = ""
-  return url.toString()
-}
 
 const websocketLayer = (remote: string, credential: string | undefined) => {
   const url = websocketUrl(remote)
