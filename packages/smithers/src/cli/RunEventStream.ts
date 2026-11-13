@@ -10,6 +10,8 @@ import { Control, type ControlSchema } from "@smthrs/control"
 import { Ownership } from "@smthrs/run-store"
 import { Clock, Effect, Schema, Stream } from "effect"
 import { hostname } from "node:os"
+import * as CliError from "../CliError.ts"
+import * as BoundedEvents from "../internal/BoundedEvents.ts"
 
 const observer: Ownership.OwnerId = { hostId: hostname(), pid: process.pid, nonce: "cli-log-observer" }
 const isTerminal = (status: ControlSchema.RunStatus) =>
@@ -50,9 +52,33 @@ const resume = (cursor: ControlSchema.WatchCursor | undefined) =>
 export const events = (runId: string, follow: boolean, after?: ControlSchema.WatchCursor) =>
   Stream.unwrap(Effect.gen(function*() {
     const control = yield* Control.Control
+    let count = 0
+    let bytes = 0
+    // Validate before either renderer sees an event. Only finite pulls own a
+    // cumulative budget; following never retains or budgets earlier events.
+    const bounded = <E>(stream: Stream.Stream<ControlSchema.ControlEvent, E>) =>
+      Stream.mapEffect(stream, (event) =>
+        Effect.suspend(() => {
+          const size = BoundedEvents.encodedBytes(event)
+          const excess = size > BoundedEvents.maximumEventBytes
+            ? { limit: BoundedEvents.maximumEventBytes, unit: "bytes" as const }
+            : !follow && count >= BoundedEvents.maximumEvents
+            ? { limit: BoundedEvents.maximumEvents, unit: "events" as const }
+            : !follow && bytes + size > BoundedEvents.maximumBytes
+            ? { limit: BoundedEvents.maximumBytes, unit: "bytes" as const }
+            : undefined
+          if (excess !== undefined) {
+            return Effect.fail(new CliError.ResourceLimitError({ operation: "logs", subject: runId, ...excess }))
+          }
+          if (!follow) {
+            count++
+            bytes += size
+          }
+          return Effect.succeed(event)
+        }))
     let cursor = after
     const watch = (live: boolean) => control.watch({ runId, follow: live, ...resume(cursor) })
-    if (!follow) return watch(false)
+    if (!follow) return bounded(watch(false))
     const terminal = Effect.gen(function*() {
       while (true) {
         const page = yield* control.list({ _tag: "runs", filters: { runId } })
@@ -69,13 +95,15 @@ export const events = (runId: string, follow: boolean, after?: ControlSchema.Wat
         yield* Effect.sleep("250 millis")
       }
     })
-    return watch(true).pipe(
-      Stream.interruptWhen(terminal),
-      Stream.tap((event) =>
-        Effect.sync(() => {
-          cursor = event.cursor ?? { sequence: event.sequence }
-        })
-      ),
-      Stream.concat(Stream.unwrap(Effect.sync(() => watch(false))))
+    return bounded(
+      watch(true).pipe(
+        Stream.interruptWhen(terminal),
+        Stream.tap((event) =>
+          Effect.sync(() => {
+            cursor = event.cursor ?? { sequence: event.sequence }
+          })
+        ),
+        Stream.concat(Stream.unwrap(Effect.sync(() => watch(false))))
+      )
     )
   }))

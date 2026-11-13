@@ -222,7 +222,7 @@ export const makeCli = (
       cwd: dirname(createRequire(import.meta.url).resolve("@smthrs/cli/package.json")),
       include: ["skills/*"]
     },
-    cacheSteps: createStepCacheCli(),
+    cacheSteps: createStepCacheCli(config),
     approvals: config.approvals ?? TargetApprovals.store
   })
   cli.use((context, next) => Presentation.scope(context, config, next))
@@ -555,7 +555,7 @@ export const makeCli = (
       cliVersion: packageVersion,
       cliDescription: "Build workspace targets and operate durable agent flows",
       sync: { cwd: dirname(createRequire(import.meta.url).resolve("@smthrs/cli/package.json")), include: ["skills/*"] },
-      cacheSteps: createStepCacheCli(),
+      cacheSteps: createStepCacheCli(config),
       approvals: config.approvals ?? TargetApprovals.store
     })
     made.use((context, next) => Presentation.scope(context, config, next))
@@ -631,7 +631,7 @@ export const makeCli = (
       cliName: "smthrs",
       cliVersion: packageVersion,
       cliDescription: "Build workspace targets and operate durable agent flows",
-      cacheSteps: createStepCacheCli(),
+      cacheSteps: createStepCacheCli(config),
       approvals: config.approvals ?? TargetApprovals.store
     })
   const humanDoors = [

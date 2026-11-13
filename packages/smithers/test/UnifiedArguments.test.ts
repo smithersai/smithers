@@ -16,6 +16,11 @@ describe("public workspace spelling", () => {
       "/project",
       "//:sources"
     ]],
+    [["cache", "status", "--root", "/project"], ["cache", "status", "--workspace", "/project"]],
+    [["cache", "steps", "ls", "--root", "/project"], ["cache", "steps", "ls", "--root", "/project"]],
+    [["--root=/project", "cache", "steps", "show", "head"], ["cache", "steps", "show", "head", "--root=/project"]],
+    [["cache", "--root", "/project", "steps", "ls"], ["cache", "--root", "/project", "steps", "ls"]],
+    [["cache", "steps", "ls", "--", "--root", "literal"], ["cache", "steps", "ls", "--", "--root", "literal"]],
     [["generate", "ci", "--root", "/project"], ["generate", "ci", "--workspace", "/project"]],
     [["--root", "/project", "gateway", "--port", "8080"], ["gateway", "--port", "8080", "--root", "/project"]],
     [["--root", "/project", "runs", "show", "run-1"], ["runs", "show", "run-1", "--root", "/project"]],

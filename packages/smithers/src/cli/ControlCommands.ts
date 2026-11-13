@@ -661,6 +661,7 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
         } catch (failure) {
           renderer?.close("failed")
           const cause = olderStore("runs logs", c.options, runtime, failure)
+          if (Failure.tagOf(cause) === "/cli/ResourceLimitError") return Presentation.fail(c, cause)
           return c.error({
             code: cause instanceof CliError.Refused ? cause.code : "logs_failed",
             message: String(Redaction.redactDiagnostic(Failure.operatorSentence(cause)))

@@ -8,6 +8,9 @@ import { Cli, z } from "incur"
 import { existsSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
 import * as NodeControl from "../NodeControl.ts"
+import * as Project from "../Project.ts"
+import type * as Bridge from "./ControlBridge.ts"
+import * as Presentation from "./Presentation.ts"
 
 interface Row {
   key_digest: string
@@ -36,28 +39,41 @@ const columns = "key_digest, result_json, meta_json, created_at_ms, recorded_run
 const present = (db: DatabaseSync): boolean =>
   db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'flows_step_cache'").get() !== undefined
 
-const rootOf = (options: { root?: string | undefined }): string => options.root ?? process.cwd()
+const inProject = <A>(
+  context: Presentation.Failing & { readonly options: { readonly root?: string | undefined } },
+  runtime: Bridge.Runtime,
+  operation: (root: string) => A
+): A => {
+  let root: string
+  try {
+    root = Project.localRoot(context.options, runtime.environment ?? process.env)
+  } catch (cause) {
+    return Presentation.fail(context, cause)
+  }
+  return operation(root)
+}
 
 /**
  * Construct the local step-cache operator command tree.
  * @category constructors
  * @since 1.0.0
  */
-export const createStepCacheCli = () =>
+export const createStepCacheCli = (runtime: Bridge.Runtime = {}) =>
   Cli.create("steps", { description: "Inspect and maintain durable flow step results" })
     .command("ls", {
       description: "List recent step cache heads",
       mcp: { annotations: { readOnlyHint: true } },
       options: z.object({ root: z.string().optional() }),
       run: (c) =>
-        files(rootOf(c.options)).flatMap((file) =>
-          withCache(file, true, (db) =>
-            present(db)
-              ? (db.prepare(`SELECT key_digest, created_at_ms, recorded_run_id, recorded_event_seq
+        inProject(c, runtime, (root) =>
+          files(root).flatMap((file) =>
+            withCache(file, true, (db) =>
+              present(db)
+                ? (db.prepare(`SELECT key_digest, created_at_ms, recorded_run_id, recorded_event_seq
               FROM flows_step_cache ORDER BY created_at_ms DESC, key_digest LIMIT 100`).all() as Array<object>)
-                .map((row) => ({ database: file, ...row }))
-              : [])
-        )
+                  .map((row) => ({ database: file, ...row }))
+                : [])
+          ))
     })
     .command("show", {
       description: "Inspect a recorded step result",
@@ -66,21 +82,22 @@ export const createStepCacheCli = () =>
       options: z.object({ root: z.string().optional() }),
       run: (c) => {
         if (!keyIsValid(c.args.key)) return c.error({ code: "invalid_key", message: "Invalid step cache key" })
-        return files(rootOf(c.options)).flatMap((file) =>
-          withCache(file, true, (db) => {
-            if (!present(db)) return []
-            const row = db.prepare(`SELECT ${columns} FROM flows_step_cache WHERE key_digest = ?`)
-              .get(c.args.key) as Row | undefined
-            return row === undefined ? [] : [{
-              database: file,
-              key: row.key_digest,
-              result: JSON.parse(row.result_json) as unknown,
-              meta: JSON.parse(row.meta_json) as unknown,
-              createdAtMs: row.created_at_ms,
-              recordedBy: { runId: row.recorded_run_id, eventSeq: row.recorded_event_seq }
-            }]
-          })
-        )
+        return inProject(c, runtime, (root) =>
+          files(root).flatMap((file) =>
+            withCache(file, true, (db) => {
+              if (!present(db)) return []
+              const row = db.prepare(`SELECT ${columns} FROM flows_step_cache WHERE key_digest = ?`)
+                .get(c.args.key) as Row | undefined
+              return row === undefined ? [] : [{
+                database: file,
+                key: row.key_digest,
+                result: JSON.parse(row.result_json) as unknown,
+                meta: JSON.parse(row.meta_json) as unknown,
+                createdAtMs: row.created_at_ms,
+                recordedBy: { runId: row.recorded_run_id, eventSeq: row.recorded_event_seq }
+              }]
+            })
+          ))
       }
     })
     .command("evict", {
@@ -92,14 +109,15 @@ export const createStepCacheCli = () =>
         if (!keyIsValid(c.args.key) || !c.options.ifRecordedBy) {
           return c.error({ code: "invalid_provenance", message: "A valid key and --if-recorded-by run are required" })
         }
-        return files(rootOf(c.options)).map((file) =>
-          withCache(file, false, (db) => ({
-            database: file,
-            removed: present(db) && db.prepare(
-                  "DELETE FROM flows_step_cache WHERE key_digest = ? AND recorded_run_id = ?"
-                ).run(c.args.key, c.options.ifRecordedBy).changes > 0
-          }))
-        )
+        return inProject(c, runtime, (root) =>
+          files(root).map((file) =>
+            withCache(file, false, (db) => ({
+              database: file,
+              removed: present(db) && db.prepare(
+                    "DELETE FROM flows_step_cache WHERE key_digest = ? AND recorded_run_id = ?"
+                  ).run(c.args.key, c.options.ifRecordedBy).changes > 0
+            }))
+          ))
       }
     })
     .command("sweep", {
@@ -114,13 +132,14 @@ export const createStepCacheCli = () =>
           return c.error({ code: "invalid_duration", message: "--older-than must be a positive duration such as 7d" })
         }
         const cutoff = Date.now() - age
-        return files(rootOf(c.options)).map((file) =>
-          withCache(file, false, (db) => ({
-            database: file,
-            removed: present(db)
-              ? db.prepare("DELETE FROM flows_step_cache WHERE created_at_ms < ?").run(cutoff).changes
-              : 0
-          }))
-        )
+        return inProject(c, runtime, (root) =>
+          files(root).map((file) =>
+            withCache(file, false, (db) => ({
+              database: file,
+              removed: present(db)
+                ? db.prepare("DELETE FROM flows_step_cache WHERE created_at_ms < ?").run(cutoff).changes
+                : 0
+            }))
+          ))
       }
     })

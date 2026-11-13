@@ -258,8 +258,10 @@ Step results use a separate cache from target results:
 | `cache steps evict <key> --if-recorded-by <run>` | Remove a head only when its recording run matches. |
 | `cache steps sweep --older-than <duration>` | Remove old heads; durations are positive integers with `s`, `m`, `h`, `d` or `w`, such as `7d`. |
 
-All four accept `--root <workspace>`. Eviction and sweeping preserve the
-recorded replay ledger.
+All four accept `--root <workspace>`, resolved relative to the invocation directory.
+Without it, they use the nearest containing Smithers project, including when
+invoked from a subdirectory. They require an accessible local project and refuse
+`SMITHERS_REMOTE`. Eviction and sweeping preserve the recorded replay ledger.
 
 ## Execution environments
 
