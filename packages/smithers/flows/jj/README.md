@@ -93,8 +93,9 @@ ceiling.
 
 `SMITHERS_JJ_PATH` names the `jj` binary the Node and Bun layers spawn. An
 override that names an existing file stays authoritative even when it cannot be
-executed, so a broken explicit path is reported rather than a different binary
-being quietly substituted.
+executed, so a broken explicit path fails the first operation with
+`not_installed` and a permission hint rather than quietly substituting a
+different binary.
 
 Snapshot messages are opaque strings on both browser and CLI layers, including
 empty strings, leading `-`, quotes, and newlines. Node and Bun never pass them
@@ -175,11 +176,10 @@ repository refused, `invalid_ref` that a revision does not resolve,
 `unknown` everything else jj reported. Nothing escapes as an untyped throw, and
 the codes survive a journal round trip, so a recorded run keeps its meaning.
 
-Two of those codes also fail a CLI layer before it hands out `Jj` at all, so a
-composition sees them from the layer rather than from a call: `not_installed`
-when the version probe finds no usable binary, and `unsupported_version` when
-the binary it found is older than `NodeJj.minimumVersion` or prints a version
-this package cannot parse. `unsupported_version` never reaches an operation.
+The first operation's version probe reports `not_installed` when it finds no
+usable binary, or `unsupported_version` when the binary is older than
+`NodeJj.minimumVersion` or prints a version this package cannot parse. Both
+fail the operation; building a CLI layer never probes or fails.
 
 **Feature detection is by error code, never by property absence.** A backend
 that cannot perform an operation keeps the method and answers `not_installed`,
@@ -215,7 +215,7 @@ change without describing or closing it and includes `operationId`;
 `opRestore` restores the repository view while preserving remote and Git state,
 and refuses changes to other workspaces. The backend also diverges from the command line in ways worth
 reading before you assume parity: repositories use jj's Simple backend with no
-git interop, only `snapshot` creates a missing repository while `status`,
+git interop, only `snapshot` initializes a repository in an existing root directory while `status`,
 `diff`, and `restore` refuse one with `unknown` and write nothing, real
 symlinks are rejected before snapshotting, and durability belongs to the mount
 rather than to this layer. All of them are listed in

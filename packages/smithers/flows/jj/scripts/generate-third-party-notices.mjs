@@ -64,6 +64,7 @@ const generate = () => {
     const rows = inventory.get(group)
     if (rows === undefined) throw new Error(`Unknown template group: ${group}`)
     inventory.delete(group)
+    if (rows.length === 0) return "No crates in this license group."
     rows.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)
     rows.unshift(["Crate", "Version", "Copyright", "Repository"])
     const widths = rows[0].map((_, index) => Math.max(3, ...rows.map((row) => row[index].length)))

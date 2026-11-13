@@ -58,8 +58,8 @@ usable:
 
 - Every command it runs is short-lived and starts no long-lived child of its
   own. Each writes to a pipe, so jj starts no pager.
-- No command opens an editor, because `snapshot` either passes `-m` or runs no
-  `describe` at all.
+- No command opens an editor: `snapshot` never runs `describe` and never passes
+  its message to jj.
 - The invocation holds the handle it started, so cancelling the fiber signals
   the process rather than losing it. The package pins that with a `jj` shim
   that never returns: after an interrupt, nothing on the machine still names

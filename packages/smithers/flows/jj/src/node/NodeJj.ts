@@ -285,7 +285,7 @@ const spawnFailure = (
   if (cwd !== undefined && !isDirectory(cwd)) {
     return new JjError({ ...shared, code: "unknown", message: `jj ${method}: cannot run in ${cwd}: not a directory` })
   }
-  return missingBinary
+  return missingBinary || (hint !== undefined && shared.cause.code === "EACCES")
     ? new JjError({ ...shared, code: "not_installed", message: notInstalledMessage(hint) })
     : new JjError({ ...shared, code: "unknown", message: `jj ${method}: ${shared.cause.message}` })
 }
@@ -864,7 +864,7 @@ const viaSpawner = (spawner: ChildProcessSpawner["Service"]) => (binary: Binary)
               // `TimedOut` is `ETIMEDOUT` with a different name on it, as
               // `NotFound` is `ENOENT`: the startup probe retries on that code.
               error.reason._tag === "TimedOut" ? { ...jjErrorCause(error), code: "ETIMEDOUT" } : error,
-              error.reason._tag === "NotFound"
+              error.reason._tag === "NotFound" || (hint !== undefined && error.reason._tag === "PermissionDenied")
             )
         )
       ),
@@ -1456,10 +1456,8 @@ const requireMinimumVersion = (output: string): Effect.Effect<string, JjError> =
  * That is a bounded exposure rather than a leak, and the bound is what makes
  * this layer usable at all. Every command below is short-lived and starts no
  * long-lived children of its own: each one writes to a pipe, so jj starts no
- * pager, and no command opens an editor, because `snapshot` either passes
- * `-m` or runs no `describe` at all (`jj describe` without `-m` starts
- * `$JJ_EDITOR` and waits for it, which is exactly the child this bound
- * denies). The invocation holds the handle it started, so cancelling a flow
+ * pager, and no command opens an editor: `snapshot` never runs `describe`
+ * and never passes its message to jj. The invocation holds the handle it started, so cancelling a flow
  * signals the process rather than losing it
  * (`packages/smithers/flows/jj/test/NodeJjLifetime.test.ts`,
  * `packages/smithers/flows/jj/test/NodeJj.test.ts`). A host that wants the process GROUP

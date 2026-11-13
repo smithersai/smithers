@@ -55,6 +55,7 @@ describe("version probe documentation", () => {
   /** Every page that says when a CLI layer checks the jj version. */
   const probePages = [
     "README.md",
+    "docs/README.md",
     "docs/api.md",
     "docs/concepts/failures.md",
     "docs/troubleshooting.md",
@@ -64,7 +65,9 @@ describe("version probe documentation", () => {
   it.each(probePages)("%s places the version probe on the first operation, not on the layer build", (page) => {
     const markdown = read(page)
     expect(markdown).toMatch(/first operation/)
-    expect(markdown).not.toMatch(/fails? construction|before (?:it )?expos(?:es|ing) `Jj`|Layer<Jj, JjError/)
+    expect(markdown).not.toMatch(
+      /fails? construction|fails? a CLI layer|never reaches an operation|before (?:it )?expos(?:es|ing) `Jj`|Layer<Jj, JjError/
+    )
     expect(markdown).not.toMatch(/(?:layer|construction) error channel/)
   })
 })

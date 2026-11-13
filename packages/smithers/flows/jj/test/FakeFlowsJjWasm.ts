@@ -14,9 +14,10 @@
  *   has into what the host serialized — then returns `(64 << 32) | len`
  *   pointing at the canned response the data segments placed at offset 64;
  * - with `trap: true`, `flows_jj_call` instead calls the imported `proc_exit`,
- *   exercising the host's trap handling; with `openBeforeTrap` it first opens
- *   `/f` for reading through the imported `path_open` and never closes it, so
- *   a test can check the host releases what a trapped guest left open;
+ *   exercising the host's trap handling;
+ * - with `openOnCall`, each call first opens `/f` for reading through the
+ *   imported `path_open` and never closes it, so tests can observe descriptors
+ *   retained by a successful or trapped reactor;
  * - with `packedResult`, `flows_jj_call` returns exactly `(ptr << 32) | len`
  *   without writing any response — for driving the host's handling of a
  *   corrupt answer whose buffer lies outside wasm memory.
@@ -99,11 +100,10 @@ export interface FakeFlowsJjWasmOptions {
   /** When set, `flows_jj_call` calls `proc_exit(7)` instead of answering. */
   readonly trap?: boolean
   /**
-   * With `trap`, `flows_jj_call` first opens `/f` for reading through
-   * `path_open` (fd 3, the preopen) and leaves it open, so the trap abandons a
-   * live host descriptor the way a panicking guest does.
+   * Each `flows_jj_call` first opens `/f` for reading through `path_open`
+   * (fd 3, the preopen) and leaves it open, whether the call answers or traps.
    */
-  readonly openBeforeTrap?: boolean
+  readonly openOnCall?: boolean
   /**
    * When set, `flows_jj_call` returns exactly `(ptr << 32) | len` — a corrupt
    * packed answer the host must survive when it points outside wasm memory.
@@ -147,7 +147,7 @@ export const fakeFlowsJjWasm = (options: FakeFlowsJjWasmOptions = {}): Uint8Arra
     0x1a // drop the errno
   ]
   const callBody = options.trap === true
-    ? [...(options.openBeforeTrap === true ? openF : []), ...i32c(7), 0x10, ...uleb(1), 0x00] // proc_exit(7); unreachable
+    ? [...i32c(7), 0x10, ...uleb(1), 0x00] // proc_exit(7); unreachable
     : options.packedResult !== undefined
     ? [
       ...i64c(options.packedResult.ptr),
@@ -220,7 +220,7 @@ export const fakeFlowsJjWasm = (options: FakeFlowsJjWasmOptions = {}): Uint8Arra
             : i32c(options.allocResult ?? 4096)
         ),
         body(options.logAllocs === true ? writeStderr(i32c(1040), i32c(4)) : []),
-        body(callBody)
+        body([...(options.openOnCall === true ? openF : []), ...callBody])
       ])
     ),
     ...section(

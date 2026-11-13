@@ -511,11 +511,13 @@ describe.skipIf(process.platform === "win32")("NodeJj spawn errors", () => {
     await rm(directory, { recursive: true, force: true })
   })
 
-  it.live("reports a non-ENOENT spawn failure as `unknown` rather than `not_installed`", () =>
+  it.live("reports a non-executable override as `not_installed` with a permission hint", () =>
     Effect.gen(function*() {
       const error = yield* Effect.flip(run(Effect.flatMap(Jj, (jj) => jj.status())))
 
-      expect(error.code).toBe("unknown")
-      expect(error.message).toMatch(/^jj version: /)
+      expect(error.code).toBe("not_installed")
+      expect(error.cause).toMatchObject({ code: "EACCES" })
+      expect(error.message).toContain(`Cannot execute the jj binary at ${join(directory, "jj")}.`)
+      expect(error.message).toContain(`chmod +x '${join(directory, "jj")}'`)
     }))
 })

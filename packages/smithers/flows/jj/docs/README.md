@@ -31,8 +31,8 @@ Behind a service, each of those becomes a decision the composition makes once:
 - **Failures are a closed set of seven codes.** `not_installed`, `conflict`,
   `invalid_ref`, `snapshot_refused`, `stale_workspace`, `unsupported_version`, and `unknown`, each
   carrying the command that produced it and a plain-data cause you can store and
-  replay. Nothing escapes as an untyped throw, and the last two can fail a CLI
-  layer as it is built rather than an operation.
+  replay. The first operation probes the CLI version; building a layer never
+  probes or fails.
 - **Tests swap the layer, not the code.** `layerNoop({ ... })` stubs every
   operation, and the ones you did not stub fail by name instead of silently
   succeeding.
@@ -88,9 +88,9 @@ const reversible = Effect.gen(function*() {
 ```
 
 `commitId` names the recorded tree across process restarts. Store it for later
-diffs and restores; `changeId` is a moving display pointer. Native Node and Bun
-snapshots do not describe or open changes. The browser backend still differs
-until browser snapshot parity is implemented (#1976).
+diffs and restores; `changeId` is a moving display pointer. On Node, Bun, and
+the browser, snapshots capture the current working-copy tree without describing
+or opening a change, and include the recorded `operationId`.
 
 ## How this fits with @smthrs/flows
 
@@ -113,9 +113,9 @@ program, not by the library, so import `@smthrs/jj/node/NodeJj`,
 way you pick a platform bundle.
 
 Depend on `@smthrs/jj` on its own when version control is all you want from the
-engine. It adds one package, [`@smthrs/capability`](/api/capability), on top of
-the `effect` peer the whole engine shares, and neither pulls in a process
-spawner or an HTTP client.
+engine. It depends on [`@smthrs/capability`](/api/capability) and
+[`@smthrs/canonical`](/api/canonical), alongside the `effect` peer the engine
+shares. Its root entry point pulls in no process spawner or HTTP client.
 
 Within that engine, `@smthrs/jj` is where the snapshots come from.
 [`@smthrs/time-travel`](/api/time-travel) forks a run by adding a workspace and

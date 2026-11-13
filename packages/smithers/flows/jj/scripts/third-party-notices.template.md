@@ -257,8 +257,9 @@ license text are maintained in
 
 ### Apache-2.0 (no alternate license offered)
 
-jj-lib and jj-lib-proc-macros are covered by the Apache License 2.0 text
-above; `prost`, `prost-derive`, and `unicode-bom` are separate crates in the
+`jj-lib`, `jj-core`, `jj-core-proc-macros`, and `jj-dsl` are covered by
+the Apache License 2.0 text above; `prost`, `prost-derive`, and `unicode-bom`
+are separate crates in the
 dependency closure that are also Apache-2.0–only.
 
 {{crates:Apache-2.0}}

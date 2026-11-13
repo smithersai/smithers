@@ -32,7 +32,7 @@ The failing default is the point. A test that stubs only `snapshot` gets a
 named failure the moment the code under test reaches `restore`, instead of a
 silent success that hides a call the test never meant to allow.
 
-Both optional operations are stubbed too, so reaching one gives you the named
+All three optional operations are stubbed too, so reaching one gives you the named
 failure rather than "undefined is not a function".
 
 Use `makeNoop` directly when you want the service value instead of a layer, for
@@ -40,10 +40,10 @@ example to call a method in a unit test with no Effect context.
 
 ## Hand-write an implementation
 
-`root` and `revert` are optional on the interface, so a double may define the
-six required members and nothing else. Reach for this shape when the code under
-test never calls `root` or `revert`, and you want the six it does call to
-succeed quietly:
+`root`, `revert`, and `opRestore` are optional on the interface, so a double
+may define the six required members and nothing else. Reach for this shape when
+the code under test never calls those optional operations, and you want the six
+it does call to succeed quietly:
 
 ```ts
 import { Jj, make } from "@smthrs/jj"
@@ -69,7 +69,7 @@ where it is written rather than where it is provided.
 ## Non-mutating capability checks
 
 `"revert" in jj` is true for `makeNoop`, for `BrowserJj.make`, and for
-`BrowserJj.layerUnsupported` alike, because every shipped layer defines both
+`BrowserJj.layerUnsupported` alike, because every shipped layer defines all three
 optional members. Property presence does not establish support. Use host
 configuration or non-mutating capability metadata maintained by the host to
 decide whether to show an undo affordance in advance. The `Jj` interface has no

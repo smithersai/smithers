@@ -1,9 +1,13 @@
+import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcessSpawner"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { describe, expect, it } from "@effect/vitest"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
+import * as Path from "effect/Path"
 import * as References from "effect/References"
 import * as TestClock from "effect/testing/TestClock"
 import { execFileSync } from "node:child_process"
@@ -239,18 +243,33 @@ describe("NodeJj version requirement", () => {
         expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\nprobe\n")
       })))
 
-  it.effect("accepts an executable repaired with chmod after a refused probe", () =>
-    withVersion("jj 0.39.0", (root) =>
-      Effect.gen(function*() {
-        // The permission hint tells the operator to run chmod +x; a running
-        // host must honour that without a restart.
-        yield* Effect.promise(() => chmod(join(root, "jj"), 0o644))
-        const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
-        const refused = yield* Effect.flip(jj.status())
-        expect(refused).toMatchObject({ method: "version", cause: { code: "EACCES" } })
-        yield* Effect.promise(() => chmod(join(root, "jj"), 0o755))
-        expect(yield* jj.status()).toBe("ok\n")
-      })))
+  for (const mode of ["layer", "layerAt", "layerSpawner", "layerSpawnerAt"] as const) {
+    it.effect(`reports a non-executable override and accepts chmod repair with ${mode}`, () =>
+      withVersion("jj 0.39.0", (root) =>
+        Effect.gen(function*() {
+          // The permission hint tells the operator to run chmod +x; a running
+          // host must honour that without a restart.
+          yield* Effect.promise(() => chmod(join(root, "jj"), 0o644))
+          const spawner = Layer.provide(
+            NodeChildProcessSpawner.layer,
+            Layer.mergeAll(NodeFileSystem.layer, Path.layer)
+          )
+          const layer = mode === "layer" ?
+            NodeJj.layer
+            : mode === "layerAt" ?
+            NodeJj.layerAt(root)
+            : Layer.provide(mode === "layerSpawner" ? NodeJj.layerSpawner : NodeJj.layerSpawnerAt(root), spawner)
+          const jj = yield* Effect.provide(Jj, layer)
+          const refused = yield* Effect.flip(inTemporaryDirectory(jj.status()))
+          expect(refused).toMatchObject({ code: "not_installed", method: "version" })
+          expect(refused.cause).toBeDefined()
+          if (mode === "layer" || mode === "layerAt") expect(refused.cause).toMatchObject({ code: "EACCES" })
+          expect(refused.message).toContain(`Cannot execute the jj binary at ${join(root, "jj")}.`)
+          expect(refused.message).toContain(`chmod +x '${join(root, "jj")}'`)
+          yield* Effect.promise(() => chmod(join(root, "jj"), 0o755))
+          expect(yield* inTemporaryDirectory(jj.status())).toBe("ok\n")
+        })))
+  }
 
   it.effect("reports an executable that loses permission after the version probe", () =>
     withVersion("jj 0.39.0", (root) =>
@@ -307,7 +326,7 @@ describe("NodeJj version requirement", () => {
           // Explicit non-executable candidates still reach spawn for EACCES diagnostics.
           process.env.SMITHERS_JJ_PATH = join(root, "jj")
           const refused = yield* Effect.flip(inTemporaryDirectory(Effect.provide(status, NodeJj.layer)))
-          expect(refused.code).toBe("unknown")
+          expect(refused.code).toBe("not_installed")
         } finally {
           if (previousPath === undefined) delete process.env.PATH
           else process.env.PATH = previousPath

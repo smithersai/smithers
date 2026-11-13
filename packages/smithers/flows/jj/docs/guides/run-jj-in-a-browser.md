@@ -147,7 +147,9 @@ Only the `init` ABI operation creates a repository. `status`, `diff`, and
 and leave the filesystem unchanged, like NodeJj. BrowserJj checks for the
 repository before calling those operations, including with older wasm bytes.
 `BrowserJj.snapshot` explicitly calls `init` before its first snapshot when the
-repository is absent; snapshot is a compensable write capability.
+repository is absent; snapshot is a compensable write capability. Create the
+root directory on the mounted filesystem first: the symlink scan refuses a
+missing directory before initialization.
 
 ### Simple backend, no git
 

@@ -10,7 +10,9 @@
  * `BrowserJjContract.test.ts`.
  */
 import { describe, expect, it } from "@effect/vitest"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
 import type { PlatformError } from "effect/PlatformError"
 import * as fs from "node:fs"
 import { runInNewContext } from "node:vm"
@@ -402,7 +404,7 @@ describe("BrowserJj over the fake ABI module", () => {
       const counting = countingSlice()
       const stderr: Array<string> = []
       const options: BrowserJj.BrowserJjOptions = {
-        wasm: fakeFlowsJjWasm({ trap: true, openBeforeTrap: true }),
+        wasm: fakeFlowsJjWasm({ trap: true, openOnCall: true }),
         fs: counting.fs,
         onStderr: (text) => stderr.push(text)
       }
@@ -528,29 +530,34 @@ describe("BrowserJj over the fake ABI module", () => {
       }
     }))
 
-  it.effect("layerScoped closes the live reactor's descriptors when the scope closes", () =>
-    Effect.gen(function*() {
-      const counting = countingSlice()
-      const stderr: Array<string> = []
-      let escaped: Jj | undefined
-      // The fake never closes `/f` and never traps here, so the descriptor is
-      // live until something outside the guest releases it.
-      const wasm = fakeFlowsJjWasm({ trap: true, openBeforeTrap: true })
-      const options: BrowserJj.BrowserJjOptions = { wasm, fs: counting.fs, onStderr: (text) => stderr.push(text) }
-      yield* Effect.scoped(
-        Effect.gen(function*() {
-          const jj = yield* BrowserJj.makeScoped(options)
-          escaped = jj
-          yield* Effect.flip(jj.status())
-        })
-      )
-      expect(counting.closed).toEqual(counting.opened)
-      // A service that escaped its scope answers in the error channel.
-      const error = jjError(yield* Effect.flip(escaped!.status()))
-      expect(error.message).toBe("jj status: the browser reactor was disposed")
-      expect(error.cause).toMatchObject({ name: "JjInternalFault", code: "reactor_disposed" })
-      expect(stderr.filter((entry) => entry === "INIT")).toHaveLength(1)
-    }))
+  for (const scopedLayer of [false, true]) {
+    it.effect(`${scopedLayer ? "layerScoped" : "makeScoped"} closes live descriptors when the scope closes`, () =>
+      Effect.gen(function*() {
+        const counting = countingSlice()
+        const stderr: Array<string> = []
+        let escaped: Jj | undefined
+        // The guest answers normally and leaves /f open for scope disposal.
+        const wasm = fakeFlowsJjWasm({ response: "{\"ok\":{\"status\":\"clean\"}}", openOnCall: true })
+        const options: BrowserJj.BrowserJjOptions = { wasm, fs: counting.fs, onStderr: (text) => stderr.push(text) }
+        yield* Effect.scoped(
+          Effect.gen(function*() {
+            const jj = yield* (scopedLayer
+              ? Effect.map(Layer.build(BrowserJj.layerScoped(options)), (context) => Context.get(context, Jj))
+              : BrowserJj.makeScoped(options))
+            escaped = jj
+            expect(yield* jj.status()).toBe("clean")
+            expect(counting.opened).toHaveLength(1)
+            expect(counting.closed).toEqual([])
+          })
+        )
+        expect(counting.closed).toEqual(counting.opened)
+        // A service that escaped its scope answers in the error channel.
+        const error = jjError(yield* Effect.flip(escaped!.status()))
+        expect(error.message).toBe("jj status: the browser reactor was disposed")
+        expect(error.cause).toMatchObject({ name: "JjInternalFault", code: "reactor_disposed" })
+        expect(stderr.filter((entry) => entry === "INIT")).toHaveLength(1)
+      }))
+  }
 
   it.effect("layerScoped provides the same service as layer", () =>
     Effect.gen(function*() {

@@ -88,10 +88,10 @@ note.txt is now: first
 
 ## What just happened
 
-On Node and Bun, `snapshot("first note")` captured the working-copy tree
-without describing or closing the change, and returned its commit and change
-ids. The second snapshot captures another tree in that same change. Browser
-snapshot behavior still differs until #1976 is implemented.
+On Node, Bun, and the browser, `snapshot("first note")` captured the
+working-copy tree without describing or closing the change, and returned its
+commit, change, and operation ids. The second snapshot captures another tree
+in that same change.
 The commit id is the durable handle: it names one tree forever, survives a
 process restart, and is what Smithers stores in the journal. The change id is
 a display name that follows later rewrites of the change.

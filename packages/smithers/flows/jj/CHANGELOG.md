@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- A non-executable `SMITHERS_JJ_PATH` now fails with `not_installed` and the
+  permission hint on both direct and host-spawner layers. Repairing its execute
+  permission lets the next operation retry without rebuilding the layer.
+
 - A failed jj command quotes at most 4096 characters of its stderr, or of its
   stdout when stderr is empty, in `JjError.message`. A child killed after
   printing a diff and before writing stderr journaled the whole diff.

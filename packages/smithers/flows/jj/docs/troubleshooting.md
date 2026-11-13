@@ -74,10 +74,10 @@ under test if the call was not supposed to happen. See
 ### "jj \<method>: empty revision string"
 
 **What happened.** An empty string was passed as a revision to `restore`,
-`diff`, `revert`, or `workspaceAdd`. It is refused before jj is spawned,
-because jj's own answer would be an argument-parser usage error that classifies
-as `unknown`, and the two layers must agree on durable error identity. The
-`command` names the operation that would have run.
+`diff`, `revert`, or `workspaceAdd`. Node and Bun refuse it with `invalid_ref` before invoking
+jj. A browser `workspaceAdd` adds the lane before attempting the pin; if the
+pin fails, it forgets the lane but leaves its directory. The `command` names
+the failed operation.
 
 **What to change.** Pass a commit id, a change id, `@`, or `@-`. Check the upstream code path that produced the empty string: a change
 id read from an empty journal field is the usual source.
@@ -124,9 +124,9 @@ in jj's config for this repository does change the lookup; check
 
 **What to change.** Confirm the id exists in the repository the layer is bound
 to. A bound layer and an unbound one can be looking at different checkouts;
-`NodeJj.layerAt(root)` makes that explicit. On the browser layer, a mistyped
-`root` silently creates a fresh empty repository, so a known change id then
-reports `invalid_ref` rather than "no repo".
+`NodeJj.layerAt(root)` makes that explicit. Browser `status`, `diff`, and
+`restore` refuse an uninitialized or missing root with `unknown` and write
+nothing. Check the mounted `root` before looking up the revision.
 
 ## conflict
 
@@ -182,8 +182,10 @@ the message: it carries jj's own text.
 repository.
 
 **What to change.** Run `jj git init` there, or bind the layer to a real
-repository root with `NodeJj.layerAt(root)`. The browser layer behaves
-differently on purpose and creates a repository instead.
+repository root with `NodeJj.layerAt(root)`. Browser `status`, `diff`, and
+`restore` also refuse a missing repository with `unknown`. Only `snapshot`
+initializes a repository, and its root directory must already exist on the
+mounted filesystem.
 
 ### "jj \<method>: cannot run in \<path>: not a directory"
 

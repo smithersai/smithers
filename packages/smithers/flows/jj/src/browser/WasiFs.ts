@@ -12,7 +12,7 @@
  *
  * The slice is an argument, never an import: this module names the shape and
  * depends on nothing, so the browser bundle decides which backend is mounted
- * and this package's dependency list stays at `effect` alone.
+ * without adding a filesystem backend to this package's dependencies.
  *
  * Paths are POSIX-shaped (`/`-separated), which is what ZenFS speaks natively
  * and what `node:fs` accepts on every platform the test suite runs on.

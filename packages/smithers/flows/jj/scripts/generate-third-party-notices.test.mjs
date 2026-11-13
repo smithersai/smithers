@@ -46,6 +46,7 @@ test("notices follow Cargo's wasm normal/build closure and --check detects drift
     assert.doesNotMatch(notices, /^\| `(dev|native|flows-jj)`/m)
     assert.match(notices, /A &#124; B/)
     assert.match(notices, /Apache License\n/)
+    assert.doesNotMatch(notices, /\| Crate[^\n]*\n\| [- |]+\n(?:\n|$)/)
     assert.equal(run("--check").status, 0)
     writeFileSync(output, `${notices}\nstale\n`)
     const drift = run("--check")

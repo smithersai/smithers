@@ -53,8 +53,10 @@ example with `jj squash`, the commit is hidden, and pinning a lane at it brings
 it back as a divergent sibling of the rewritten change. That sibling holds the
 tree the run recorded, which is the one a fork needs.
 
-An empty revision string fails `invalid_ref` before jj is spawned, and no lane
-directory is created.
+On Node and Bun, an empty revision string fails `invalid_ref` before invoking
+jj. The adapter may already have created the lane's parent directories. In the
+browser, adding a pinned lane creates its directory before attempting the pin;
+a failed pin forgets the lane but leaves the directory behind.
 
 ## Forget the lane afterwards
 

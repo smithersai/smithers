@@ -3,7 +3,7 @@
  *
  * jj is a native binary, but jj-lib compiles to wasm32-wasip1: the
  * `flows_jj.wasm` reactor (built by `packages/smithers/flows/jj-wasm`, shipped in this
- * package's `wasm/` directory) exposes the six `Jj` contract operations over a
+ * package's `wasm/` directory) exposes repository operations over a
  * tiny JSON ABI, and runs against the {@link WasiPreview1} host shim over the
  * same virtual-filesystem slice `BrowserFileSystem` mounts on. {@link layer}
  * wires the two together.
