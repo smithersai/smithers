@@ -242,6 +242,11 @@ try {
   mkdirSync(gateLogs)
   const gateCases = [
     { name: "missing transcript", text: undefined, kind: "missing trace" },
+    { name: "empty transcript", text: "", kind: "missing agent evidence" },
+    { name: "spaces-only transcript", text: "   ", kind: "missing agent evidence" },
+    { name: "line-breaks-only transcript", text: "\t\r\n \n", kind: "missing agent evidence" },
+    { name: "Unicode-whitespace-only transcript", text: "\uFEFF\u00A0", kind: "missing agent evidence" },
+    { name: "padded quiet trace", text: " \t\r\npytest -q\nok\n \t", kind: undefined },
     { name: "host web search", text: "web search: upstream fix\n", kind: "web search" },
     { name: "complete quiet trace", text: "pytest -q\nok\n", kind: undefined },
     {
@@ -324,6 +329,10 @@ try {
         require: required
       })
       const expected = entry.kind === undefined ? [] : [entry.kind]
+      const transcriptsRead = entry.text === undefined || entry.text.trim() === "" ? 0 : 1
+      if (gated.seal.transcriptsRead !== transcriptsRead) {
+        gateFailures.push(`${entry.name}: read ${gated.seal.transcriptsRead} transcripts, expected ${transcriptsRead}`)
+      }
       if (JSON.stringify(gated.seal.failures.map((failure) => failure.kind)) !== JSON.stringify(expected)) {
         gateFailures.push(`${entry.name} (require ${required}): ${JSON.stringify(gated.seal.failures)}`)
       }
@@ -348,6 +357,17 @@ try {
     if (cli.status !== (entry.kind === undefined ? 0 : 1)) {
       gateFailures.push(`${entry.name}: CLI exited ${cli.status}: ${cli.stderr}`)
     }
+    const cliResult = JSON.parse(cli.stdout)
+    assert.deepEqual(
+      cliResult.seal.failures.map((failure) => failure.kind),
+      entry.kind === undefined ? [] : [entry.kind],
+      `${entry.name}: CLI reports the failed obligation`
+    )
+    assert.equal(
+      cliResult.seal.transcriptsRead,
+      entry.text === undefined || entry.text.trim() === "" ? 0 : 1,
+      `${entry.name}: CLI counts only non-empty transcripts`
+    )
   }
   assert.deepEqual(gateFailures, [], "every seal obligation gates the verdict and exit status")
 

@@ -448,8 +448,9 @@ must hold or the report exits non-zero:
   by construction, and a non-zero one means the constraint did not hold
   somewhere the ledger did not see. Either way the lane fails and the offenders
   are named.
-- **every attempted run has a transcript.** A missing transcript fails even
-  when the ledger recorded `none`. Unattempted population rows owe no trace.
+- **every attempted run has a non-empty transcript.** Missing, empty and
+  whitespace-only transcripts fail even when the ledger recorded `none`.
+  Unattempted population rows owe no trace.
 - **zero web-search tool lines.** Host-side web searches bypass the container's
   network setting and fail the seal independently of in-container fetches.
 - **zero host fetches the trace does not show refused.** The testbed
@@ -489,8 +490,8 @@ It imports `egress`, `inContainerEgress`, `provedUnnetworked`,
 `countedBreaches` and `hostEgress` from `compare-codex-lanes.mjs` rather than
 restating them, so
 the two reports cannot drift apart on what counts as an attempt or a breach. The
-comparison also uses `traceFailures` from `breach-scan.mjs` for the shared
-missing-trace and web-search obligations. A Sealed headline requires an empty
+comparison also uses `traceOf` and `traceFailures` from `breach-scan.mjs` for
+the shared evidence contract, missing-trace and web-search obligations. A Sealed headline requires an empty
 failure list after all obligations have been checked. The
 one thing that differs per arm is **where the
 trace lives**: a codex run writes one transcript at `logs/<id>.run.log`, and a

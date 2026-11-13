@@ -9,6 +9,10 @@
 - Without `--journals`, scan non-empty `<id>.run.log` or `<id>.codex.log`
   transcripts under `--logs`. A `<id>.last.txt` final message is diagnostic.
 
+`compare-codex-lanes.mjs` uses the same transcript evidence reader. Empty and
+whitespace-only files leave `missing-agent-evidence` and do not count toward
+`transcriptsRead`.
+
 Each instance reports `traceStatus`: `traced`, `missing-agent-evidence` when
 artifacts survive without agent evidence, or `no-evidence` when no artifacts
 exist. Only `traced` sets `traced: true`. `traceDiagnostics` lists diagnostic

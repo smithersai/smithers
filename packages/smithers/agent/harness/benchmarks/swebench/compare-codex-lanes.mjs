@@ -49,9 +49,9 @@
  *
  * @since 0.1.0
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { traceFailures } from "./breach-scan.mjs"
+import { traceFailures, traceOf } from "./breach-scan.mjs"
 import { attempted, population } from "./lib/codex-backfill-queue.mjs"
 import { denominators, isExcluded, renderExclusions } from "./lib/excluded.mjs"
 
@@ -464,12 +464,6 @@ export const hostEgress = (trace) => {
 export const hostBreaches = (text) =>
   text === undefined ? [] : hostEgress(text).filter((one) => !one.refused).map((one) => one.command)
 
-const readLog = (logsDirectory, id) => {
-  const path = join(logsDirectory, `${id}.run.log`)
-  if (!existsSync(path)) return undefined
-  return readFileSync(path, "utf8")
-}
-
 /** The two testbed network conditions a run may have been measured under. */
 export const TESTBED_MODES = new Set(["none", "bridge"])
 
@@ -554,7 +548,8 @@ export const compareLanes = (
   const sealed = attempted(sealedPath)
 
   const rows = flows.map(({ id, flowsVerdict }) => {
-    const text = logsDirectory === undefined ? undefined : readLog(logsDirectory, id)
+    const trace = traceOf(id, { logs: logsDirectory })
+    const text = trace.text
     const sealedRow = sealed.get(id)
     return {
       id,
@@ -570,6 +565,7 @@ export const compareLanes = (
       attempted: sealedRow !== undefined,
       testbedRequested: sealedRow?.testbedNetwork,
       testbedObserved: sealedRow?.testbedNetworkObserved,
+      traceStatus: trace.status,
       egress: text === undefined ? undefined : egress(text),
       // The attempts above, read to their outcomes against the condition the
       // container was actually observed on.
