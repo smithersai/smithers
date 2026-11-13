@@ -22,3 +22,14 @@ The Go-backed durability cases (C-DUR-01 to C-DUR-04), the long tier
 (`faultsLong`), the reference-host matrix (`faultsReference`) and their
 PostgreSQL and native-program builds were removed with the Go backend on
 2026-10-21; `jj file show -r 78407fce59dd <path>` reads them from history.
+
+Engine crash cases own every child they spawn. Handshake and exit waits have
+finite deadlines; teardown reaps the hosts and their contained process groups
+before removing fixture directories, even after readiness or assertion failures.
+The deliberate crash remains separate from this idempotent cleanup.
+
+The subscriber memory case checks each reader's complete set of injected
+`control.signal.admitted` command identities and advancing journal cursors
+before sampling. Subscriptions stay attached through those samples. Launch
+events, duplicate signals, and a replay missing any injected signal cannot
+satisfy that boundary.

@@ -1,15 +1,18 @@
 // Engine-layer proof: the external result is a durable fixture file, not a
 // GitHub adapter or a machine shell. Installed C-DUR-01..03 remain separate.
-import { killProcess, waitFor } from "@smthrs/testing/Faults"
+import { killProcess } from "@smthrs/testing/Faults"
 import { rmSync } from "node:fs"
 import { afterAll, describe, expect, it } from "vitest"
 import { journalEventTypes } from "./harness/durableState.ts"
-import { probeEngineChild, spawnEngineChild } from "./harness/engineChild.ts"
+import { probeEngineChild, reapEngineChildren, spawnEngineChild, waitForEngine } from "./harness/engineChild.ts"
 import { killResumeFixture } from "./harness/killResumeCase.ts"
 import { markers } from "./harness/killResumeFlow.ts"
 
 const fixtures: Array<ReturnType<typeof killResumeFixture>> = []
-afterAll(() => fixtures.forEach((fixture) => rmSync(fixture.directory, { recursive: true, force: true })))
+afterAll(async () => {
+  await reapEngineChildren()
+  fixtures.forEach((fixture) => rmSync(fixture.directory, { recursive: true, force: true }))
+})
 
 describe("case39 crossing recovery after SIGKILL", () => {
   for (const crossing of ["keyed-write", "sealed-check", "keyless-shell"] as const) {
@@ -21,7 +24,8 @@ describe("case39 crossing recovery after SIGKILL", () => {
       const killed = spawnEngineChild({ ...options, mode: "execute" })
       try {
         await killed.handshake
-        await waitFor(
+        await waitForEngine(
+          killed,
           () => fixture.marker(markers.secondStarted) !== undefined,
           "remote effect before settlement",
           60_000

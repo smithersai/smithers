@@ -1,1547 +1,230 @@
-import * as Audience from "@smthrs/build-cli/Audience"
-import { Control, ControlSchema } from "@smthrs/control"
-import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
-import { Effect, Option, Stream } from "effect"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { Control, ControlError } from "@smthrs/control"
+import { waitFor } from "@smthrs/testing/Faults"
+import { Effect } from "effect"
+import { HttpServer } from "effect/http"
+import { existsSync, readFileSync } from "node:fs"
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { makeCli } from "../src/Cli.ts"
-import type * as Bridge from "../src/cli/ControlBridge.ts"
-import { createRunsCli } from "../src/cli/ControlCommands.ts"
-import * as Presentation from "../src/cli/Presentation.ts"
+import { DatabaseSync } from "node:sqlite"
+import { afterEach, describe, expect, it } from "vitest"
+import { invoke, project, remoteAddress, serverLayer, waitingProject } from "./support/unified-cli.ts"
 
-const ports = vi.hoisted(() => ({
-  invoke: vi.fn(),
-  launch: vi.fn(),
-  start: vi.fn(),
-  execute: vi.fn(),
-  resume: vi.fn(),
-  approve: vi.fn(),
-  deny: vi.fn(),
-  plan: vi.fn(),
-  output: vi.fn(),
-  deliverSignal: vi.fn(),
-  steer: vi.fn(),
-  listFlows: vi.fn(),
-  query: vi.fn(),
-  read: vi.fn(),
-  local: vi.fn(),
-  events: vi.fn(),
-  hasRecords: vi.fn(),
-  list: vi.fn(),
-  cancel: vi.fn(),
-  watch: vi.fn(),
-  reconcile: vi.fn(),
-  prepare: vi.fn(),
-  localRoot: vi.fn(),
-  progress: vi.fn(),
-  event: vi.fn(),
-  close: vi.fn()
-}))
-vi.mock("../src/cli/ControlBridge.ts", async (load) => ({
-  ...await load<typeof import("../src/cli/ControlBridge.ts")>(),
-  invoke: ports.invoke,
-  launch: ports.launch,
-  query: ports.query,
-  read: ports.read,
-  local: ports.local,
-  events: ports.events,
-  hasRecords: ports.hasRecords
-}))
-// Routing doubles return Effects; handler behavior is covered independently by CommandHandlers.
-vi.mock("../src/commands/Launch.ts", async (load) => ({
-  ...await load<typeof import("../src/commands/Launch.ts")>(),
-  start: ports.start,
-  execute: ports.execute,
-  resume: ports.resume,
-  approve: ports.approve,
-  deny: ports.deny
-}))
-vi.mock("../src/commands/RunControl.ts", async (load) => ({
-  ...await load<typeof import("../src/commands/RunControl.ts")>(),
-  plan: ports.plan,
-  output: ports.output,
-  deliverSignal: ports.deliverSignal,
-  steer: ports.steer,
-  get listFlows() {
-    return ports.listFlows()
-  }
-}))
-vi.mock("../src/history/History.ts", async (load) => ({
-  ...await load<typeof import("../src/history/History.ts")>(),
-  reconcile: ports.reconcile,
-  prepare: ports.prepare
-}))
-vi.mock("../src/cli/RunProgress.ts", async (load) => ({
-  ...await load<typeof import("../src/cli/RunProgress.ts")>(),
-  make: ports.progress
-}))
-
-vi.mock("../src/Project.ts", async (load) => ({
-  ...await load<typeof import("../src/Project.ts")>(),
-  localRoot: ports.localRoot
-}))
-
-const dispatched = (argv: ReadonlyArray<string>) => {
-  const [verb, value, ...rest] = argv
-  switch (verb) {
-    case "ls":
-      expect(ports.listFlows).toHaveBeenCalledOnce()
-      break
-    case "plan": {
-      const dataAt = rest.indexOf("--data")
-      expect(ports.plan).toHaveBeenCalledExactlyOnceWith(
-        value,
-        dataAt < 0 ? rest : rest.slice(0, dataAt),
-        Option.fromUndefinedOr(dataAt < 0 ? undefined : rest[dataAt + 1])
-      )
-      expect(ports.query.mock.calls[0]![3]).toEqual({ plansFlows: true })
-      break
-    }
-    case "up": {
-      const flag = (key: string) => {
-        const i = rest.indexOf(key)
-        return i < 0 ? undefined : rest[i + 1]
-      }
-      expect(ports.start).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-        flow: value,
-        wait: rest.includes("--wait"),
-        detached: rest.includes("--detached"),
-        data: Option.fromUndefinedOr(flag("--data")),
-        budgetTokens: Option.fromUndefinedOr(
-          flag("--budget-tokens") === undefined ? undefined : Number(flag("--budget-tokens"))
-        ),
-        budgetMs: Option.fromUndefinedOr(flag("--budget-ms") === undefined ? undefined : Number(flag("--budget-ms"))),
-        budgetUsd: Option.fromUndefinedOr(
-          flag("--budget-usd") === undefined ? undefined : Number(flag("--budget-usd"))
-        ),
-        onExceeded: Option.fromUndefinedOr(flag("--on-exceeded")),
-        deadline: Option.fromUndefinedOr(flag("--deadline"))
-      }))
-      break
-    }
-    case "run":
-      expect(ports.execute).toHaveBeenCalledExactlyOnceWith(value, false)
-      break
-    case "resume":
-      expect(ports.resume).toHaveBeenCalledExactlyOnceWith(value, rest.includes("--allow-code-drift"), false)
-      break
-    case "approve":
-      expect(ports.approve).toHaveBeenCalledExactlyOnceWith(value, rest[1], false)
-      break
-    case "deny":
-      expect(ports.deny).toHaveBeenCalledExactlyOnceWith(value, false)
-      break
-    case "output":
-      expect(ports.output).toHaveBeenCalledExactlyOnceWith(value, rest[0])
-      break
-    case "signal":
-      expect(ports.deliverSignal).toHaveBeenCalledExactlyOnceWith(value, rest[0])
-      break
-    case "steer":
-      expect(ports.steer).toHaveBeenCalledExactlyOnceWith(value, rest[1])
-      break
-    case "cancel":
-      break // the real cancel Effect is asserted through its service below
-    default:
-      throw new Error(`Missing dispatch assertion: ${verb}`)
-  }
-  expect(ports.invoke).not.toHaveBeenCalled()
-  return ["up", "run", "resume", "approve", "deny"].includes(verb!)
-    ? ports.launch
-    : verb === "output"
-    ? ports.read
-    : ports.query
-}
-
-const directories: Array<string> = []
+const roots: Array<string> = []
 afterEach(async () => {
-  await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
-beforeEach(() => {
-  for (const port of Object.values(ports)) port.mockReset()
-  for (
-    const name of [
-      "start",
-      "execute",
-      "resume",
-      "approve",
-      "deny",
-      "plan",
-      "output",
-      "deliverSignal",
-      "steer",
-      "listFlows"
-    ] as const
-  ) {
-    ports[name].mockImplementation(() => Effect.succeed({ handler: name }))
+const fixture = async () => {
+  const root = await project()
+  roots.push(root)
+  return root
+}
+const value = (result: Awaited<ReturnType<typeof invoke>>) => {
+  expect(result.codes, result.stdout + result.stderr).not.toContain(1)
+  expect(result.codes, result.stdout + result.stderr).not.toContain(2)
+  return JSON.parse(result.stdout)
+}
+const query = (root: string, sql: string) => {
+  const db = new DatabaseSync(join(root, ".flows/control.db"), { readOnly: true })
+  try {
+    return db.prepare(sql).all()
+  } finally {
+    db.close()
   }
-  const control = (effect: Effect.Effect<unknown, unknown, Control.Control>) =>
-    Effect.runPromise(
-      Effect.gen(function*() {
-        const base = yield* Control.Control
-        return yield* effect.pipe(Effect.provideService(Control.Control, {
-          ...base,
-          list: ports.list,
-          cancel: ports.cancel,
-          watch: ports.watch
-        }))
-      }).pipe(Effect.provide(Control.layerNoop))
-    )
-
-  ports.launch.mockImplementation(control)
-  ports.query.mockImplementation(control)
-  ports.read.mockImplementation(control)
-  ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [] }))
-  ports.cancel.mockImplementation(({ runId }) =>
-    Effect.succeed({ _tag: "Accepted", receiptId: `cli:cancel:${runId}`, runId })
-  )
-  ports.watch.mockReturnValue(Stream.empty)
-  ports.events.mockImplementation(async function*() {})
-  ports.hasRecords.mockReturnValue(true)
-  ports.localRoot.mockImplementation((options) => options.root ?? process.cwd())
-  ports.prepare.mockReturnValue({ executionRoot: "/isolated-child" })
-  ports.progress.mockReturnValue({ event: ports.event, close: ports.close })
-})
-
-const invoke = async (args: Array<string>, overrides: Bridge.Runtime = {}) => {
-  const result = { stdout: "", stderr: "", codes: [] as Array<number> }
-  const runtime: Bridge.Runtime = {
-    environment: {},
-    stdout: {
-      isTTY: false,
-      columns: 80,
-      write: (text) => {
-        result.stdout += text
-      }
-    },
-    stderr: {
-      isTTY: false,
-      columns: 80,
-      write: (text) => {
-        result.stderr += text
-      }
-    },
-    ...overrides
-  }
-  const presentation = Audience.fromArguments(args, {
-    env: runtime.environment,
-    stdout: runtime.stdout?.isTTY,
-    stderr: runtime.stderr?.isTTY
-  })
-  const config = { ...runtime, presentation }
-  await makeCli(config).serve(Audience.incurArguments(args, presentation), {
-    env: runtime.environment,
-    stdout: (text) => {
-      result.stdout += text
-    },
-    exit: (code) => {
-      result.codes.push(code)
-    }
-  })
-  return { ...result, config }
 }
 
-const row = (runId: string, status: ControlSchema.RunSummary["status"] = "parked"): ControlSchema.RunSummary => ({
-  runId,
-  flowId: "demo/ship",
-  status,
-  createdAt: 1,
-  updatedAt: 2
-})
-const event = (
-  sequence: number,
-  kind = "control.agent.turn-opened",
-  payload: unknown = {}
-): ControlSchema.ControlEvent => ({
-  sequence,
-  kind,
-  runId: "run-1",
-  occurredAt: sequence,
-  payload: payload as ControlSchema.ControlEvent["payload"]
-})
-const approval = {
-  scope: "run",
-  idempotencyKey: "approval:one",
-  target: {
-    _tag: "Node",
-    runId: "run-1",
-    requestId: "request-3",
-    digest: "digest",
-    envelope: { capabilities: [], flows: [], budget: {} }
-  }
-}
-const approvalEvents = [
-  event(2, "control.approval.requested", { question: "Ship this change?", payload: approval }),
-  event(3, "control.run.waiting-approval", { runId: "run-1", status: "waiting-approval" })
-]
-
-describe("unified control dispatch", () => {
-  it("preserves verbose options in direct MCP registration", async () => {
-    const result = await invoke(["mcp", "add", "--agent", "invalid", "--verbose", "--json"])
-    expect(result.codes).toEqual([2])
-    expect(result.stdout).toContain("Unknown agent invalid")
-    expect(result.stdout).not.toContain("Unknown option")
-    expect(ports.invoke).not.toHaveBeenCalled()
-  })
-
-  it("keeps the executable prefix in custom MCP add help", async () => {
-    const result = await invoke(["mcp", "add", "--help"])
-    expect(result.codes).toEqual([])
-    expect(result.stdout).toMatch(/Usage:\s+smthrs mcp add/)
-    expect(result.stdout).toContain("Register with Claude Code or Codex")
-    expect(ports.invoke).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    ["mcp", "--help"],
-    ["--help", "mcp"],
-    ["--ui", "plain", "mcp", "--help"]
-  ])("uses the Smithers MCP registration help with prefixes: %j", async (...args) => {
-    const result = await invoke(args)
-    expect(result.codes).toEqual([])
-    // 03233c3f34ad routes integration overview help to Incur.
-    expect(result.stdout).toContain("Register as MCP server")
-    expect(result.stdout).toMatch(/doctor\s+Validate MCP server startup/)
-    expect(ports.invoke).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    [["flow", "list"], ["ls"]],
-    [["flow", "plan", "demo/ship"], ["plan", "demo/ship"]],
-    [["flow", "plan", "demo/ship", "branch=next", "count=2", "--data", "{\"extra\":true}"], [
-      "plan",
-      "demo/ship",
-      "branch=next",
-      "count=2",
-      "--data",
-      "{\"extra\":true}"
-    ]],
-    [["flow", "start", "demo/ship"], ["up", "demo/ship"]],
-    [["flow", "start", "demo/ship", "-d", "--data", "{}"], ["up", "demo/ship", "--data", "{}", "--detached"]],
-    [["flow", "start", "demo/ship", "--budget-tokens", "50", "--budget-ms", "1000", "--on-exceeded", "park"], [
-      "up",
-      "demo/ship",
-      "--budget-tokens",
-      "50",
-      "--budget-ms",
-      "1000",
-      "--on-exceeded",
-      "park"
-    ]],
-    [["flow", "start", "demo/ship", "--budget-usd", "2.5", "--on-exceeded", "park"], [
-      "up",
-      "demo/ship",
-      "--budget-usd",
-      "2.5",
-      "--on-exceeded",
-      "park"
-    ]],
-    [["flow", "start", "demo/ship", "--deadline", "30 minutes"], ["up", "demo/ship", "--deadline", "30 minutes"]],
-    [["flow", "execute", JSON.stringify(approval)], ["run", JSON.stringify(approval)]],
-    [["runs", "output", "run-1"], ["output", "run-1"]],
-    [["runs", "output", "run-1", "publish"], ["output", "run-1", "publish"]],
-    [["runs", "cancel", "run-1"], ["cancel", "run-1"]],
-    [["runs", "signal", "run-1", "{\"wake\":true}"], ["signal", "run-1", "{\"wake\":true}"]],
-    [["runs", "steer", "run-1", "--message", "Keep the exact words"], [
-      "steer",
-      "run-1",
-      "--message",
-      "Keep the exact words"
-    ]],
-    [["approvals", "approve", JSON.stringify(approval)], ["approve", JSON.stringify(approval), "--scope", "run"]],
-    [["approvals", "approve", JSON.stringify(approval), "--scope", "remembered"], [
-      "approve",
-      JSON.stringify(approval),
-      "--scope",
-      "remembered"
-    ]],
-    [["approvals", "deny", JSON.stringify(approval)], ["deny", JSON.stringify(approval)]]
-  ])("translates %j without changing its payload", async (args, expected) => {
-    const result = await invoke([
-      ...args,
-      "--root",
-      "/fixture",
-      "--remote",
-      "https://control.invalid",
-      "--json"
-    ])
-    expect(dispatched(expected)).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      expect.objectContaining({
-        root: "/fixture",
-        remote: "https://control.invalid",
-        quiet: false
-      }),
-      result.config,
-      ...(expected[0] === "plan" ? [{ plansFlows: true }] : []),
-      // Flow start eagerly loads only the requested flow body (2f0a13df).
-      ...(expected[0] === "up" ? [[expected[1]]] : [])
-    )
-    expect(result.codes).toEqual([])
-    expect(result.stdout + result.stderr).not.toContain("private-fixture")
-  })
-
-  it.each(["execute", "approve", "deny"])("reads the complete @file for %s", async (command) => {
-    const root = await mkdtemp(join(tmpdir(), "smthrs-approval-dispatch-"))
-    directories.push(root)
-    const file = join(root, "decision.json")
-    const contents = JSON.stringify(approval, null, 2) + "\n"
-    await writeFile(file, contents)
-    await invoke([
-      command === "execute" ? "flow" : "approvals",
-      command,
-      `@${file}`,
-      ...(command === "approve" ? ["--scope", "run"] : []),
-      "--json"
-    ])
-    dispatched(
-      command === "approve"
-        ? ["approve", contents, "--scope", "run"]
-        : [command === "execute" ? "run" : "deny", contents]
-    )
-  })
-
-  it("does not dispatch a payload file that cannot be read", async () => {
-    const result = await invoke(["flow", "execute", "@/missing-smthrs-review/approval.json", "--json"])
-    expect(result.codes).toEqual([1])
-    expect(result.stdout).toContain(`"code": "payload_unreadable"`)
-    expect(result.stdout).toContain("The payload file /missing-smthrs-review/approval.json does not exist.")
-    expect(ports.invoke).not.toHaveBeenCalled()
-  })
-
-  const remote = ["--remote", "https://control.invalid"]
-
-  it("finds a remote flow after an empty page and preserves the catalog cursor exactly", async () => {
-    const flow = { flowId: "demo/ship", description: "Publish a release" }
-    ports.list.mockReturnValueOnce(Effect.succeed({ _tag: "flows", items: [], nextCursor: "opaque/page:2" }))
-      .mockReturnValueOnce(
-        Effect.succeed({ _tag: "flows", items: [{ flowId: "other", description: "Other" }, flow] })
-      )
-    const result = await invoke(["flow", "show", "demo/ship", ...remote, "--json"])
-    expect(JSON.parse(result.stdout)).toEqual(flow)
-    expect(ports.list.mock.calls).toEqual([
-      [{ _tag: "flows", limit: ControlSchema.maxPageSize }],
-      [{ _tag: "flows", limit: ControlSchema.maxPageSize, cursor: "opaque/page:2" }]
-    ])
-    expect(ports.local).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    [{ _tag: "flows", items: [] }, "Unknown flow missing"],
-    [{ _tag: "runs", items: [] }, "the control plane returned a run page for a flow listing"]
-  ])("reports missing or malformed catalogs instead of inventing a flow", async (page, message) => {
-    ports.list.mockReturnValue(Effect.succeed(page))
-    const result = await invoke(["flow", "show", "missing", ...remote, "--json"])
-    expect(result.codes).toEqual([1])
-    expect(result.stdout).toContain(message)
-    if (page._tag === "flows") expect(JSON.parse(result.stdout)).toMatchObject({ code: "flow_not_found" })
-  })
-
-  it("reads a local flow catalog from the discovery snapshot, never the control host", async () => {
-    const flow = { flowId: "demo/ship", description: "Publish a release" }
-    ports.local.mockResolvedValue({ items: [{ flowId: "other", description: "Other" }, flow], warnings: [] })
-    const shown = await invoke(["flow", "show", "demo/ship", "--json"])
-    expect(JSON.parse(shown.stdout)).toEqual(flow)
-    ports.local.mockResolvedValue({ _tag: "flows", items: [flow] })
-    const listed = await invoke(["flow", "list", "--json"])
-    expect(JSON.parse(listed.stdout)).toMatchObject({ _tag: "flows", items: [flow] })
-    expect(ports.local).toHaveBeenCalledTimes(2)
-    expect(ports.invoke).not.toHaveBeenCalled()
-    expect(ports.query).not.toHaveBeenCalled()
-  })
-
-  it("answers observing verbs empty without opening a store the project does not have", async () => {
-    const root = await mkdtemp(join(tmpdir(), "smthrs-observe-empty-"))
-    directories.push(root)
-    ports.hasRecords.mockReturnValue(false)
+describe("unified commands with real local stores", () => {
+  it("plans the merged input, approves the exact file payload and executes the approved flow", async () => {
+    const root = await fixture()
     const at = ["--root", root, "--json"]
-    expect(JSON.parse((await invoke(["runs", "list", ...at])).stdout)).toMatchObject({ _tag: "runs", items: [] })
-    expect(JSON.parse((await invoke(["runs", "count", ...at])).stdout)).toMatchObject({ count: 0 })
-    expect(JSON.parse((await invoke(["approvals", "list", ...at])).stdout)).toEqual([])
-    const shown = await invoke(["runs", "show", "absent", ...at])
-    expect(shown.codes).toEqual([1])
-    expect(shown.stdout).toContain("Unknown run absent")
-    expect(JSON.parse(shown.stdout)).toMatchObject({ code: "run_not_found" })
-    expect(JSON.parse((await invoke(["runs", "logs", "absent", ...at])).stdout)).toEqual([])
-    for (const port of [ports.invoke, ports.query, ports.read, ports.events, ports.reconcile]) {
-      expect(port).not.toHaveBeenCalled()
-    }
-  })
-
-  it.each([false, true])("reconciles local history before listing with filters=%s", async (filtered) => {
-    const order: Array<string> = []
-    ports.reconcile.mockImplementation(() => {
-      order.push("reconcile")
-    })
-    ports.list.mockImplementation(() => {
-      order.push("query")
-      return Effect.succeed({ _tag: "runs", items: [] })
-    })
-    await invoke([
-      "runs",
-      "list",
-      "--root",
-      "/fixture",
-      ...(filtered
-        ? [
-          "--flow",
-          "demo/ship",
-          "--status",
-          "waiting-approval",
-          "--since",
-          "2026-09-01",
-          "--until",
-          "1790000000000",
-          "--sort",
-          "oldest",
-          "--parent",
-          "run-root",
-          "--trigger",
-          "nightly",
-          "--limit",
-          "2",
-          "--cursor",
-          "page-2"
-        ]
-        : []),
-      "--json"
-    ])
-    expect(order).toEqual(["reconcile", "query"])
-    expect(ports.reconcile).toHaveBeenCalledExactlyOnceWith("/fixture")
-    expect(ports.invoke).not.toHaveBeenCalled()
-    expect(ports.read).toHaveBeenCalledTimes(1)
-    expect(ports.list.mock.calls).toEqual([[
-      filtered
-        ? {
-          _tag: "runs",
-          filters: {
-            flowId: "demo/ship",
-            status: "waiting-approval",
-            parentRunId: "run-root",
-            since: Date.parse("2026-09-01"),
-            until: 1790000000000,
-            triggerId: "nightly"
-          },
-          order: "oldest",
-          limit: 2,
-          cursor: "page-2"
-        }
-        : { _tag: "runs", filters: {} }
-    ]])
-  })
-
-  it("counts runs with the list's filters after reconciling local history", async () => {
-    const order: Array<string> = []
-    ports.reconcile.mockImplementation(() => {
-      order.push("reconcile")
-    })
-    ports.list.mockImplementation((request: ControlSchema.ListRequest) => {
-      order.push("query")
-      return Effect.succeed(
-        request._tag === "executions" || request.cursor === undefined
-          ? { _tag: "runs", items: [row("run-1"), row("run-2")], nextCursor: "page-2" }
-          : { _tag: "runs", items: [row("run-3")] }
-      )
-    })
-    const result = await invoke([
-      "runs",
-      "count",
-      "--root",
-      "/fixture",
-      "--flow",
-      "demo/ship",
-      "--since",
-      "1000",
-      "--until",
-      "2000",
-      "--parent",
-      "run-root",
-      "--trigger",
-      "nightly",
-      "--json"
-    ])
-    expect(JSON.parse(result.stdout)).toMatchObject({ count: 3 })
-    expect(order).toEqual(["reconcile", "query", "query"])
-    const filters = { flowId: "demo/ship", parentRunId: "run-root", since: 1000, until: 2000, triggerId: "nightly" }
-    expect(ports.list.mock.calls).toEqual([
-      [{ _tag: "runs", filters, limit: ControlSchema.maxPageSize }],
-      [{ _tag: "runs", filters, limit: ControlSchema.maxPageSize, cursor: "page-2" }]
-    ])
-  })
-
-  it("refuses an unreadable count window without reading runs", async () => {
-    const result = await invoke(["runs", "count", "--root", "/fixture", "--since", "soon", "--json"])
-    // A usage error exits 2.
-    expect(result.codes).toEqual([2])
-    expect(result.stdout).toContain("--since must be epoch milliseconds or an ISO 8601 date")
-    expect(ports.list).not.toHaveBeenCalled()
-  })
-
-  it("diagnoses the requested run using its entire finite transcript", async () => {
-    // The run's approved deadline is part of the row `runs show` prints.
-    const run = { ...row("run-1", "waiting-approval"), deadlineAt: 1_800_000 }
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("other"), run] }))
-    ports.watch.mockReturnValue(Stream.fromIterable(approvalEvents))
-    const result = await invoke(["runs", "show", "run-1", "--root", "/fixture", "--json"])
-    // The first read resolves the requested id to its owning run (8e01a3d4); the second reads that run's row.
-    expect(ports.list.mock.calls).toEqual([
-      [{ _tag: "runs", filters: { runId: "run-1" }, limit: 1 }],
-      [{ _tag: "runs", filters: { runId: "run-1" } }]
-    ])
-    expect(ports.watch).toHaveBeenCalledExactlyOnceWith({ runId: "run-1", follow: false })
-    const output = JSON.parse(result.stdout)
-    expect(output).toEqual({
-      ...run,
-      // The last recorded event is newer than the row, and the run is live,
-      // so its diagnosis has no end yet.
-      updatedAt: 3,
-      executions: [],
-      executionSnapshots: [],
-      health: { health: "awaiting-human", attention: "awaiting-approval", reason: "awaiting-reply" },
-      diagnosis: {
-        status: "waiting-approval",
-        turns: 0,
-        calls: 0,
-        callsFailed: 0,
-        duplicateCalls: 0,
-        editsAttempted: 0,
-        editsSucceeded: 0,
-        flows: [],
-        refusals: [],
-        inputTokens: 0,
-        outputTokens: 0,
-        costUsd: 0,
-        parkedQuestion: "Ship this change?",
-        parkedApproval: JSON.stringify(approval),
-        startedAt: 2
-      },
-      cta: {
-        description: "Suggested commands:",
-        commands: [
-          {
-            command: "smthrs runs logs run-1 --format jsonl --root /fixture",
-            description: "Read detailed events only when needed"
-          },
-          { command: "smthrs approvals list --root /fixture", description: "Inspect pending approval payloads" }
-        ]
-      }
-    })
-  })
-
-  // These port fixtures qualify serial read ordering and refusal before the
-  // CLI displays evidence. NativeRunActivityCancellation tests the real stores.
-  it("reads 405 exact execution identities in serial 200-ID batches and keeps each batch's revision", async () => {
-    const ids = Array.from({ length: 405 }, (_, i) => `native-${i}`)
-    const requests: Array<ReadonlyArray<string>> = []
-    const order: Array<string> = []
-    const events = ids.map((executionId, i) =>
-      event(i + 1, "control.engine.event", {
-        executionId,
-        eventType: "flows.engine.run-decision",
-        generation: 0,
-        sequence: i + 1,
-        payload: {
-          executionFact: {
-            observation: { executionId, flowName: "demo/ship/work", status: "running", parentRunId: "run-1" }
-          }
-        }
-      })
+    const card = value(
+      await invoke(["flow", "plan", "echo", "message=pair", "--data", "{\"message\":\"file wins\"}", ...at])
     )
-    ports.watch.mockReturnValue(Stream.fromIterable([...events, events[0]!]))
-    ports.list.mockImplementation((request: ControlSchema.ListRequest) => {
-      if (request._tag !== "executions") return Effect.succeed({ _tag: "runs", items: [row("run-1", "cancelled")] })
-      const batch = requests.length
-      requests.push(request.executionIds)
-      order.push(`start:${batch}`)
-      return Effect.sleep("1 millis").pipe(Effect.andThen(Effect.sync(() => {
-        order.push(`end:${batch}`)
-        return {
-          _tag: "executions",
-          source: "native-source",
-          revision: 10 + batch,
-          items: request.executionIds.map((executionId, index) => ({
-            _tag: "Observed",
-            executionId,
-            source: "native-source",
-            revision: 10 + batch,
-            observation: {
-              executionId,
-              flowName: "demo/ship/work",
-              status: "cancelled",
-              createdAtMs: 1,
-              startedAtMs: 2,
-              finishedAtMs: batch * 200 + index + 3,
-              parentRunId: "run-1",
-              lineageId: executionId,
-              roundOrdinal: 0,
-              cancelRequestedAtMs: 3,
-              waiting: null
-            }
-          }))
-        }
-      })))
-    })
-    const result = await invoke(["runs", "show", "run-1", "--remote", "https://control.invalid", "--json"])
-    expect(result.codes).toEqual([])
-    expect(requests).toEqual([ids.slice(0, 200), ids.slice(200, 400), ids.slice(400)])
-    expect(order).toEqual(["start:0", "end:0", "start:1", "end:1", "start:2", "end:2"])
-    const output = JSON.parse(result.stdout)
-    expect(output.executionSnapshots.map((row: { revision: number }) => row.revision))
-      .toEqual(ids.map((_, index) => 10 + Math.floor(index / 200)))
-    expect(output.executionSnapshots.map((row: { executionId: string }) => row.executionId)).toEqual(ids)
-    expect(output.executionSnapshots[0]).toEqual({
-      executionId: ids[0],
-      state: "cancelled",
-      revision: 10,
-      createdAtMs: 1,
-      startedAtMs: 2,
-      finishedAtMs: 3
-    })
-    expect(output.executions).toHaveLength(20)
-    expect(output.executionsOmitted).toBe(385)
-    expect(
-      output.executions.every((execution: { status: string; running: unknown }) =>
-        execution.status === "cancelled" && execution.running === null
-      )
-    ).toBe(true)
-  })
-
-  it.each(["wrong-tag", "source-replaced", "read-failed"] as const)(
-    "refuses a partial activity display when a later exact batch is %s",
-    async (mode) => {
-      const ids = Array.from({ length: 201 }, (_, i) => `native-${i}`)
-      ports.watch.mockReturnValue(
-        Stream.fromIterable(ids.map((executionId, i) => event(i + 1, "control.engine.event", { executionId })))
-      )
-      let batches = 0
-      ports.list.mockImplementation((request: ControlSchema.ListRequest) => {
-        if (request._tag !== "executions") return Effect.succeed({ _tag: "runs", items: [row("run-1")] })
-        batches++
-        if (batches === 2 && mode === "wrong-tag") return Effect.succeed({ _tag: "runs", items: [] })
-        if (batches === 2 && mode === "read-failed") {
-          return Effect.fail(new Error("native observation failed"))
-        }
-        return Effect.succeed({
-          _tag: "executions",
-          source: batches === 2 ? "replaced-source" : "native-source",
-          revision: batches,
-          items: request.executionIds.map((executionId) => ({
-            _tag: "Unavailable",
-            executionId,
-            reason: "unsupported"
-          }))
-        })
-      })
-      const result = await invoke(["runs", "show", "run-1", "--remote", "https://control.invalid", "--json"])
-      expect(result.codes).toEqual([1])
-      expect(batches).toBe(2)
-      const output = JSON.parse(result.stdout)
-      if (mode !== "read-failed") expect(output.code).toBe(mode === "wrong-tag" ? "unexpected_listing" : "conflict")
-      expect(output).not.toHaveProperty("executions")
-      expect(output).not.toHaveProperty("executionSnapshots")
-      expect(result.stdout).toContain(
-        mode === "wrong-tag"
-          ? "execution observation is unavailable"
-          : mode === "source-replaced"
-          ? "execution source changed; retry"
-          : "native observation failed"
-      )
-    }
-  )
-
-  it("inspects the requested run's node tree through the shared DevTools projection", async () => {
-    const run = row("run-1", "running")
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [run] }))
-    const calls = [
-      event(1, "control.agent.turn-opened", { seat: "openai:gpt-5.6-sol" }),
-      event(2, "control.agent.cell-call-started", { flowName: "files.read", input: { path: "README.md" } }),
-      event(3, "control.agent.cell-call-settled", { flowName: "files.read", outcome: "success", value: "# Smithers" })
-    ]
-    ports.watch.mockReturnValue(Stream.fromIterable(calls))
-    const result = await invoke(["runs", "devtools", "run-1", "--root", "/fixture", "--json"])
-    expect(ports.watch).toHaveBeenCalledExactlyOnceWith({ runId: "run-1", follow: false })
-    const output = JSON.parse(result.stdout)
-    expect(output.runId).toBe("run-1")
-    expect(output.status).toBe("running")
-    expect(output.nodes.map((node: { label: string }) => node.label)).toEqual([
-      "run run-1 · demo/ship",
-      "frame 1 · openai:gpt-5.6-sol",
-      "files.read"
+    expect(card.inputSummary).toBe("{\"message\":\"file wins\"}")
+    const file = join(root, "approval.json")
+    await writeFile(file, JSON.stringify(card.approval, null, 2) + "\n")
+    const approved = value(await invoke(["approvals", "approve", `@${file}`, "--scope", "run", ...at]))
+    expect(approved._tag).toBe("Accepted")
+    expect(query(root, "SELECT decision, decoded_input_json FROM control_plans")).toEqual([
+      expect.objectContaining({ decision: "approved", decoded_input_json: "{\"message\":\"file wins\"}" })
     ])
-    expect(output.inspection.node.kind).toBe("run")
-    expect(output.inspection.frameCount).toBe(3)
+    const receipt = value(await invoke(["flow", "execute", `@${file}`, ...at]))
+    expect(receipt).toMatchObject({ _tag: "Accepted", runId: expect.any(String) })
+    const shown = value(await invoke(["runs", "show", receipt.runId, ...at]))
+    expect(shown).toMatchObject({ runId: receipt.runId, flowId: "echo", status: "completed" })
+    const waited = value(await invoke(["runs", "wait", receipt.runId, ...at]))
+    expect(waited.status).toBe("completed")
+    const resumed = value(await invoke(["runs", "resume", receipt.runId, "--allow-code-drift", ...at]))
+    expect(resumed).toMatchObject({ _tag: "Terminal", runId: receipt.runId, status: "completed" })
+  }, 120_000)
 
-    const node = await invoke(["runs", "devtools", "run-1", "call-1", "--frames", "1", "--json"])
-    const inspected = JSON.parse(node.stdout)
-    expect(inspected.inspection.node.label).toBe("files.read")
-    expect(inspected.inspection.output).toBe("# Smithers")
-    expect(inspected.inspection.frames.map((frame: { sequence: number }) => frame.sequence)).toEqual([3])
-    expect(inspected.inspection.frameCount).toBe(2)
-
-    // A person at a terminal reads the tree itself, not the document's keys.
-    let tty = ""
-    const human = await invoke(["runs", "devtools", "run-1", "call-1", "--audience", "human"], {
-      stdout: {
-        isTTY: true,
-        columns: 120,
-        write: (text) => {
-          tty += text
-        }
-      }
-    })
-    const printed = human.stdout + tty
-    expect(printed).toContain(">     ● files.read")
-    expect(printed).toContain("call · run run-1 · demo/ship / frame 1 · openai:gpt-5.6-sol / files.read · completed")
-    expect(printed).toContain("Frames 2")
-
-    const missing = await invoke(["runs", "devtools", "run-1", "nope", "--json"])
-    expect(missing.codes).toEqual([1])
-    expect(missing.stdout).toContain("Run run-1 has no trace node nope")
-  })
-
-  it.each([{ _tag: "runs", items: [row("other")] }, { _tag: "flows", items: [] }])(
-    "does not watch a missing run",
-    async (page) => {
-      for (const verb of ["show", "devtools"]) {
-        ports.list.mockReturnValue(Effect.succeed(page))
-        const result = await invoke(["runs", verb, "run-1", "--json"])
-        expect(result.codes).toEqual([1])
-        expect(result.stdout).toContain("Unknown run run-1")
-        expect(ports.watch).not.toHaveBeenCalled()
-      }
-    }
-  )
-
-  it("summarizes a synthetic run state over 16 MiB and names omitted fields", async () => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "failed")] }))
-    ports.watch.mockReturnValue(Stream.make(
-      event(1, "example.state", { state: "x".repeat(16 * 1024 * 1024 + 1), round: 401, currentNode: "handoff" }),
-      event(2, "control.run.failed", { cause: "synthetic failure" })
-    ))
-    const result = await invoke(["runs", "show", "run-1", "--json"])
-    expect(result.codes, result.stdout).toEqual([])
-    const output = JSON.parse(result.stdout)
-    expect(output.status).toBe("failed")
-    expect(output.history.truncatedFields).toContainEqual({
-      path: "/events/1/payload/state",
-      bytes: 16 * 1024 * 1024 + 3
-    })
-    expect(output.history.largestFields[0]).toMatchObject({ path: "/events/1/payload/state" })
-    expect(output.diagnosis.cause).toBe("synthetic failure")
-    expect(result.stdout.length).toBeLessThan(100_000)
-  })
-
-  it("summarizes more than 16 MiB of individually bounded state events", async () => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "failed")] }))
-    ports.watch.mockReturnValue(Stream.fromIterable((function*() {
-      for (let i = 1; i <= 34; i++) yield event(i, "example.state", { state: "x".repeat(512 * 1024) })
-      yield event(35, "control.run.failed", { cause: "aggregate failure" })
-    })()))
-    const result = await invoke(["runs", "show", "run-1", "--json"])
-    expect(result.codes, result.stdout).toEqual([])
-    const output = JSON.parse(result.stdout)
-    expect(output.status).toBe("failed")
-    expect(output.history.bytes).toBeGreaterThan(16 * 1024 * 1024)
-    expect(output.history.omittedEvents).toBeGreaterThan(0)
-    expect(output.diagnosis.cause).toBe("aggregate failure")
-  })
-
-  it("does not compare omitted call inputs as duplicate calls", async () => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "running")] }))
-    ports.watch.mockReturnValue(Stream.make(
-      event(1, "control.agent.cell-call-started", { flowName: "example", input: "a".repeat(2 * 1024 * 1024) }),
-      event(2, "control.agent.cell-call-started", { flowName: "example", input: "b".repeat(2 * 1024 * 1024) })
-    ))
-    const result = await invoke(["runs", "show", "run-1", "--json"])
-    expect(result.codes, result.stdout).toEqual([])
-    expect(JSON.parse(result.stdout).diagnosis).toEqual({ status: "running", unavailable: true })
-    expect(JSON.parse(result.stdout)).not.toHaveProperty("health")
-    expect(JSON.parse(result.stdout)).not.toHaveProperty("executions")
-    expect(JSON.parse(result.stdout)).toMatchObject({ activityUnavailable: true, healthUnavailable: true })
-  })
-
-  it("prefers the native current lineage round over historical state and child observations", async () => {
-    const observed = (executionId: string, roundOrdinal: number) => ({
-      executionId,
-      flowName: "demo/ship",
-      status: "failed" as const,
-      createdAtMs: 1,
-      startedAtMs: 1,
-      finishedAtMs: 2,
-      parentRunId: null,
-      lineageId: "run-1",
-      roundOrdinal,
-      cancelRequestedAtMs: null,
-      waiting: null
-    })
-    const run = {
-      ...row("run-1", "failed"),
-      executionView: { root: observed("run-1", 400), current: observed("current", 401) }
-    }
-    ports.list.mockImplementation((request: ControlSchema.ListRequest) =>
-      Effect.succeed(
-        request._tag === "executions"
-          ? { _tag: "executions", source: "native", revision: 1, items: [] }
-          : { _tag: "runs", items: [run] }
-      )
-    )
-    ports.watch.mockReturnValue(Stream.make(
-      event(1, "example.state", { state: "x".repeat(2 * 1024 * 1024), round: 999 }),
-      event(2, "control.engine.event", {
-        executionId: "child",
-        eventType: "observation",
-        payload: { executionFact: { observation: observed("child", 0) } }
-      })
-    ))
-    const result = await invoke(["runs", "show", "run-1", "--json"])
-    expect(result.codes, result.stdout).toEqual([])
-    expect(JSON.parse(result.stdout).history.round).toBe(401)
-  })
+  it.each(["inline", "file"])("denies a real plan from an %s payload and prevents execution", async (source) => {
+    const root = await fixture()
+    const at = ["--root", root, "--json"]
+    const card = value(await invoke(["flow", "plan", "echo", "--data", "{\"message\":\"do not run\"}", ...at]))
+    const contents = JSON.stringify(card.approval)
+    await writeFile(join(root, "deny.json"), contents)
+    const payload = source === "inline" ? contents : `@${join(root, "deny.json")}`
+    value(await invoke(["approvals", "deny", payload, ...at]))
+    expect(query(root, "SELECT decision FROM control_plans")).toEqual([expect.objectContaining({ decision: "denied" })])
+    const result = await invoke(["flow", "execute", contents, ...at])
+    expect(result.codes).toContain(1)
+    expect(result.stdout).toContain("denied")
+    expect(query(root, "SELECT run_id FROM flows_runs")).toEqual([])
+  }, 120_000)
 
   it.each([
-    { cause: "x".repeat(6000) },
-    { fault: { code: "synthetic_fault", message: "structured failure" } }
-  ])("renders a bounded error or its omission receipt for a human", async (payload) => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "failed")] }))
-    ports.watch.mockReturnValue(Stream.make(
-      event(1, "example.state", { blob: "x".repeat(2 * 1024 * 1024) }),
-      event(2, "control.run.failed", payload)
-    ))
-    let printed = ""
-    const result = await invoke(["runs", "show", "run-1", "--audience", "human"], {
-      stdout: {
-        isTTY: true,
-        columns: 120,
-        write: (text) => {
-          printed += text
-        }
-      }
-    })
-    expect(result.codes).toEqual([])
-    printed += result.stdout
-    expect(printed).not.toContain("[object Object]")
-    if ("cause" in payload) {
-      expect(printed).toContain("6002 bytes")
-      expect(printed).toContain("/events/2/payload/cause")
-    } else expect(printed).toContain("synthetic_fault")
-  })
-
-  it("returns a partial-history summary without materializing unused execution batches", async () => {
-    ports.list.mockImplementation((request: ControlSchema.ListRequest) =>
-      request._tag === "executions"
-        ? Effect.fail(new Error("must not read unused snapshots"))
-        : Effect.succeed({ _tag: "runs", items: [row("run-1", "running")] })
-    )
-    ports.watch.mockReturnValue(Stream.make(event(1, "control.engine.event", {
-      executionId: "native",
-      eventType: "flows.engine.node-scheduled",
-      payload: { kind: "ActionCall", nodeId: "node", action: "current", state: "x".repeat(2 * 1024 * 1024) }
-    })))
-    const result = await invoke(["runs", "show", "run-1", "--json"])
-    expect(result.codes, result.stdout).toEqual([])
-    expect(JSON.parse(result.stdout).history.currentNode).toBe("current")
-    // Resolving the requested id (8e01a3d4) and reading its row are the only reads: no execution batch.
-    expect(ports.list.mock.calls).toEqual([
-      [{ _tag: "runs", filters: { runId: "run-1" }, limit: 1 }],
-      [{ _tag: "runs", filters: { runId: "run-1" } }]
-    ])
-  })
-
-  it.each(["completed", "failed", "cancelled"] as const)(
-    "uses authoritative %s status to invalidate stale action evidence",
-    async (status) => {
-      ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", status)] }))
-      ports.watch.mockReturnValue(
-        Stream.make(event(1, "example.state", { currentNode: "handoff", state: "x".repeat(2 * 1024 * 1024) }))
-      )
-      const result = await invoke(["runs", "show", "run-1", "--json"])
-      expect(result.codes).toEqual([])
-      expect(JSON.parse(result.stdout).history).toMatchObject({
-        lastRecordedNode: "handoff",
-        currentNodeUnavailable: true
-      })
-      expect(JSON.parse(result.stdout).history).not.toHaveProperty("currentNode")
-    }
-  )
-
-  it("keeps the small-run diagnosis golden unchanged", async () => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "failed")] }))
-    ports.watch.mockReturnValue(Stream.make(event(1, "control.run.failed", { cause: "synthetic failure" })))
-    const result = await invoke(["runs", "show", "run-1", "--json"])
-    expect(result.codes).toEqual([])
-    expect(JSON.parse(result.stdout)).toMatchSnapshot()
-  })
-
-  it.each(["approvals"])("fails %s when its transcript exceeds the event byte budget", async (command) => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "waiting-approval")] }))
-    ports.watch.mockReturnValue(
-      Stream.fromIterable([...approvalEvents, event(4, "example", { text: "x".repeat(1024 * 1024) })])
-    )
-    const result = await invoke(
-      command === "show" ? ["runs", "show", "run-1", "--json"] : ["approvals", "list", "--json"]
-    )
-    expect(result.codes).toEqual([1])
-    expect(result.stdout).toContain("ResourceLimitError")
-    expect(result.stdout).not.toContain("Ship this change?")
-  })
-
-  it("cancels every nonterminal run across pages and returns each distinct receipt", async () => {
-    ports.list.mockReturnValueOnce(
-      Effect.succeed({
-        _tag: "runs",
-        items: [row("completed", "completed"), row("accepted", "accepted"), row("failed", "failed")],
-        nextCursor: "more"
-      })
-    )
-      .mockReturnValueOnce(
-        Effect.succeed({
-          _tag: "runs",
-          items: [
-            row("cancelled", "cancelled"),
-            row("running", "running"),
-            row("parked"),
-            row("approval", "waiting-approval")
-          ]
-        })
-      )
-    const result = await invoke(["runs", "cancel-all", "--root", "/fixture", "--json"])
-    expect(ports.list.mock.calls).toEqual([[{ _tag: "runs" }], [{ _tag: "runs", cursor: "more" }]])
-    expect(ports.cancel.mock.calls.map((call) => call[0])).toEqual(
-      ["accepted", "running", "parked", "approval"].map((runId) => ({ runId, idempotencyKey: `cli:cancel:${runId}` }))
-    )
-    expect(JSON.parse(result.stdout)).toEqual({
-      cancelled: ["accepted", "running", "parked", "approval"].map((runId) => ({
-        runId,
-        receipt: { _tag: "Accepted", receiptId: `cli:cancel:${runId}`, runId }
-      }))
-    })
-  })
-
-  it("acquires the runtime once for listing and all cancellations", async () => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("first"), row("second")] }))
-    const result = await invoke(["runs", "cancel-all", "--root", "/fixture", "--json"])
-    expect(result.codes).toEqual([])
-    expect(ports.query).toHaveBeenCalledTimes(1)
-    expect(ports.invoke).not.toHaveBeenCalled()
-    expect(ports.cancel).toHaveBeenCalledTimes(2)
-    expect(ports.reconcile).toHaveBeenCalledExactlyOnceWith("/fixture")
-    expect(ports.prepare).not.toHaveBeenCalled()
-  })
-
-  it("refuses a malformed cancellation page before issuing any cancellation", async () => {
-    ports.list.mockReturnValueOnce(Effect.succeed({ _tag: "runs", items: [row("run-1")], nextCursor: "wrong" }))
-      .mockReturnValueOnce(Effect.succeed({ _tag: "flows", items: [] }))
-    const result = await invoke(["runs", "cancel-all", "--json"])
-    expect(result.codes).toEqual([1])
-    expect(result.stdout).toContain("run_list_unexpected")
-    expect(result.stdout).toContain("The run list came back in an unexpected shape. Not your fault.")
-    expect(result.stdout).not.toContain("Expected durable runs")
-    expect(ports.invoke).not.toHaveBeenCalled()
-    expect(ports.cancel).not.toHaveBeenCalled()
-  })
-
-  it("does not continue cancelling after a failed mutation", async () => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("first"), row("second"), row("third")] }))
-    ports.cancel.mockReturnValueOnce(Effect.succeed({ _tag: "Accepted", receiptId: "first", runId: "first" }))
-      .mockReturnValueOnce(Effect.fail(new Error("cancellation unavailable")))
-    const result = await invoke(["runs", "cancel-all", "--json"])
-    expect(result.codes).toEqual([1])
-    expect(ports.cancel.mock.calls.map((call) => call[0])).toEqual([
-      { runId: "first", idempotencyKey: "cli:cancel:first" },
-      { runId: "second", idempotencyKey: "cli:cancel:second" }
-    ])
-    expect(result.stdout).toContain("cancellation unavailable")
-  })
-
-  it("resumes locally inside the reconciled child execution root", async () => {
-    const result = await invoke(["runs", "resume", "child", "--root", "/fixture", "--json"], {
-      executionRoot: "/stale-child"
-    })
-    expect(ports.prepare).toHaveBeenCalledExactlyOnceWith("/fixture", "child")
-    expect(dispatched(["resume", "child"])).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
-      root: "/fixture",
-      quiet: false,
-      verbose: false
-    }, {
-      ...result.config,
-      executionRoot: "/isolated-child"
-    })
-  })
-
-  it("forwards --allow-code-drift to the resume handler and not to the connection", async () => {
-    const result = await invoke(["runs", "resume", "child", "--allow-code-drift", "--root", "/fixture", "--json"])
-    expect(dispatched(["resume", "child", "--allow-code-drift"])).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      { root: "/fixture", quiet: false, verbose: false },
-      { ...result.config, executionRoot: "/isolated-child" }
-    )
-  })
-
-  it.each(["flag", "environment"])("leaves remote resume and list to the remote host (%s)", async (source) => {
-    const args = source === "flag" ? ["--remote", "https://control.invalid"] : []
-    const environment = source === "environment" ? { SMITHERS_REMOTE: "https://control.invalid" } : {}
-    const result = await invoke(["runs", "resume", "run-1", ...args, "--json"], { environment })
-    expect(ports.launch.mock.calls[0]![2]).toEqual(result.config)
-    await invoke(["runs", "list", ...args, "--json"], { environment })
-    expect(ports.prepare).not.toHaveBeenCalled()
-    expect(ports.reconcile).not.toHaveBeenCalled()
-  })
-
-  it.each([undefined, "run-1"])("lists exact approval payloads across every page with run filter %s", async (run) => {
-    ports.list.mockReturnValueOnce(Effect.succeed({ _tag: "runs", items: [], nextCursor: "approval-page:2" }))
-      .mockReturnValueOnce(Effect.succeed({ _tag: "runs", items: [row("run-1", "waiting-approval")] }))
-    ports.watch.mockReturnValue(Stream.fromIterable(approvalEvents))
-    const result = await invoke(["approvals", "list", ...(run === undefined ? [] : ["--run", run]), "--json"])
-    const filters = { status: "waiting-approval", ...(run === undefined ? {} : { runId: run }) }
-    expect(ports.list.mock.calls).toEqual([[{ _tag: "runs", filters }], [{
-      _tag: "runs",
-      filters,
-      cursor: "approval-page:2"
-    }]])
-    expect(ports.watch).toHaveBeenCalledExactlyOnceWith({ runId: "run-1", follow: false })
-    expect(JSON.parse(result.stdout)).toEqual([{
-      runId: "run-1",
-      flowId: "demo/ship",
-      question: "Ship this change?",
-      approval: JSON.stringify(approval)
-    }])
-  })
-
-  it("lists a USD budget park with its dollar question and the payload that raises it", async () => {
-    const raise = {
-      target: {
-        _tag: "Node",
-        runId: "run-1",
-        requestId: "budget/run-1/usd",
-        digest: "d",
-        envelope: { capabilities: [], flows: [], budget: { usd: 2.2, onExceeded: "park" } }
-      },
-      scope: "once",
-      idempotencyKey: "approve:budget"
-    }
-    ports.list.mockReturnValueOnce(Effect.succeed({ _tag: "runs", items: [row("run-1", "waiting-approval")] }))
-    ports.watch.mockReturnValue(Stream.fromIterable([
-      event(2, "control.approval.requested", { question: "Raise the USD budget from $1.00 to $2.20?", payload: raise })
-    ]))
-    const result = await invoke(["approvals", "list", "--json"])
-    expect(JSON.parse(result.stdout)).toEqual([{
-      runId: "run-1",
-      flowId: "demo/ship",
-      question: "Raise the USD budget from $1.00 to $2.20?",
-      approval: JSON.stringify(raise)
-    }])
-  })
-
-  describe("a guard incident's Continue and Stop", () => {
-    const guardPayload = (requestId: string) => ({
-      target: {
-        _tag: "Node",
-        runId: "run-1",
-        requestId,
-        digest: "d",
-        envelope: { capabilities: [], flows: [], budget: { tokens: 40, onExceeded: "park" } }
-      },
-      scope: "once",
-      idempotencyKey: `approve:${requestId}`
-    })
-    const incident = {
-      classification: "Runaway",
-      source: "tokens",
-      message: "over",
-      used: 15,
-      max: 10,
-      next: 15,
-      allowance: 40
-    }
-    // `null` records a request no guard made: it carries no incident.
-    const parked = (sequence: number, requestId: string, facts: unknown = incident) =>
-      event(sequence, "control.approval.requested", {
-        requestId,
-        question: "Raise the token budget?",
-        payload: guardPayload(requestId),
-        ...(facts === null ? {} : { incident: facts })
-      })
-    const decided = (sequence: number, requestId: string, kind: "approved" | "denied") =>
-      event(sequence, `control.approval.${kind}`, { tokenId: requestId })
-
-    it.each([
-      ["continue", ["approve", JSON.stringify(guardPayload("budget/run-1/tokens")), "--scope", "once"]],
-      ["stop", ["deny", JSON.stringify(guardPayload("budget/run-1/tokens"))]]
-    ])("%s decides the undecided request with its recorded payload", async (verb, argv) => {
-      ports.watch.mockReturnValue(Stream.fromIterable([parked(2, "budget/run-1/tokens")]))
-      const result = await invoke(["runs", verb, "run-1", "--json"])
-      expect(result.codes).toEqual([])
-      expect(ports.watch).toHaveBeenCalledExactlyOnceWith({ runId: "run-1", follow: false })
-      expect(dispatched(argv)).toHaveBeenCalledExactlyOnceWith(expect.anything(), { quiet: false, verbose: false }, {
-        ...result.config,
-        executionRoot: "/isolated-child"
-      })
-      expect(ports.prepare).toHaveBeenCalledOnce()
-    })
-
-    it("answers the latest incident when the run parked again after a Continue", async () => {
-      ports.watch.mockReturnValue(Stream.fromIterable([
-        parked(2, "budget/run-1/tokens"),
-        decided(3, "budget/run-1/tokens", "approved"),
-        parked(5, "timeout/run-1/cell", { classification: "Stuck", source: "cell", message: "slow", max: 1000 })
-      ]))
-      await invoke(["runs", "stop", "run-1", "--json"])
-      expect(dispatched(["deny", JSON.stringify(guardPayload("timeout/run-1/cell"))])).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
-        { quiet: false, verbose: false },
-        expect.anything()
-      )
-    })
-
-    it.each([["continue", "approved"], ["stop", "denied"]] as const)(
-      "%s on a request already %s resumes from the recorded decision instead of deciding twice",
-      async (verb, kind) => {
-        ports.watch.mockReturnValue(Stream.fromIterable([
-          parked(2, "budget/run-1/tokens"),
-          decided(3, "budget/run-1/tokens", kind)
-        ]))
-        const result = await invoke(["runs", verb, "run-1", "--root", "/fixture", "--json"])
-        expect(result.codes).toEqual([])
-        expect(ports.prepare).toHaveBeenCalledExactlyOnceWith("/fixture", "run-1")
-        expect(dispatched(["resume", "run-1"])).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
-          root: "/fixture",
-          quiet: false,
-          verbose: false
-        }, {
-          ...result.config,
-          executionRoot: "/isolated-child"
-        })
-      }
-    )
-
-    it.each([["continue", "denied", "stopped"], ["stop", "approved", "continued"]] as const)(
-      "%s refuses a request already %s the other way",
-      async (verb, kind, word) => {
-        ports.watch.mockReturnValue(Stream.fromIterable([
-          parked(2, "budget/run-1/tokens"),
-          decided(3, "budget/run-1/tokens", kind)
-        ]))
-        const result = await invoke(["runs", verb, "run-1", "--json"])
-        expect(result.codes).toEqual([1])
-        expect(result.stdout).toContain("guard_incident_decided")
-        expect(result.stdout).toContain(`Run run-1 was already ${word} on budget/run-1/tokens.`)
-        expect(ports.invoke).not.toHaveBeenCalled()
-      }
-    )
-
-    it.each([
-      ["an ordinary approval", [parked(2, "ship", null)]],
-      ["malformed incident facts", [parked(2, "budget/run-1/tokens", { ...incident, used: "lots" })]],
-      ["no request at all", []]
-    ])("refuses a run parked on %s, and decides nothing", async (_name, events) => {
-      ports.watch.mockReturnValue(Stream.fromIterable(events))
-      for (const verb of ["continue", "stop"]) {
-        const result = await invoke(["runs", verb, "run-1", "--json"])
-        expect(result.codes).toEqual([1])
-        expect(result.stdout).toContain("no_guard_incident")
-        expect(result.stdout).toContain("Run run-1 is not parked on a budget or time limit.")
-      }
-      expect(ports.invoke).not.toHaveBeenCalled()
-    })
-
-    it("refuses an unknown run in a project with no records", async () => {
-      ports.hasRecords.mockReturnValue(false)
-      const result = await invoke(["runs", "continue", "run-1", "--json"])
-      expect(result.codes).toEqual([1])
-      expect(result.stdout).toContain("run_not_found")
-      expect(ports.watch).not.toHaveBeenCalled()
-      expect(ports.invoke).not.toHaveBeenCalled()
-    })
-
-    it("lists a pending incident with its frozen facts beside the payload that decides it", async () => {
-      ports.list.mockReturnValueOnce(Effect.succeed({ _tag: "runs", items: [row("run-1", "waiting-approval")] }))
-      ports.watch.mockReturnValue(Stream.fromIterable([parked(2, "budget/run-1/tokens")]))
-      const result = await invoke(["approvals", "list", "--json"])
-      expect(JSON.parse(result.stdout)).toEqual([{
-        runId: "run-1",
-        flowId: "demo/ship",
-        question: "Raise the token budget?",
-        approval: JSON.stringify(guardPayload("budget/run-1/tokens")),
-        incident
-      }])
-    })
-  })
-
-  it("refuses a malformed pending-approval page", async () => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "flows", items: [] }))
-    const result = await invoke(["approvals", "list", "--json"])
-    expect(result.codes).toEqual([1])
-    expect(result.stdout).toContain("run_list_unexpected")
-    expect(result.stdout).toContain("The run list came back in an unexpected shape. Not your fault.")
-    expect(result.stdout).not.toContain("Expected durable runs")
-  })
-
-  it.each([
-    [
-      new NodeDatabase.UnsupportedDatabase({ code: "unsupported_database_file", message: "Old database file" }),
-      "unsupported_database_file",
-      1
-    ],
-    [{ _tag: "/cli/UsageError", message: "Authorization: Bearer private-fixture" }, "UsageError", 2],
-    [{ _tag: "/control/Unavailable", message: "temporarily unavailable" }, "Unavailable", 1],
-    ["Authorization: Bearer private-fixture", "command_failed", 1],
-    [null, "command_failed", 1]
-  ])("keeps stable typed refusal codes and redacts credentials", async (cause, code, exitCode) => {
-    ports.local.mockRejectedValue(cause)
-    const result = await invoke(["flow", "list", "--json"])
-    expect(result.codes).toEqual([exitCode])
-    expect(result.stdout).toContain(`"code": "${code}"`)
-    expect(result.stdout).not.toContain("private-fixture")
-  })
-
-  it("lists flows one per line for a person, starring the featured rows", async () => {
-    ports.local.mockResolvedValue({
-      _tag: "flows",
-      items: [
-        { flowId: "review", description: "Reviews the change.", featured: true, summary: "Review the change." },
-        { flowId: "create-flow/scaffold", description: "Writes the flow file." }
-      ]
-    })
-    let terminal = ""
-    const result = await invoke(["flow", "list", "--audience", "human", "--silent"], {
-      stdout: {
-        isTTY: true,
-        columns: 80,
-        write: (text) => {
-          terminal += text
-        }
-      }
-    })
-    expect(result.codes).toEqual([])
-    expect(result.stdout).toBe("")
-    expect(terminal).toBe(
-      "flow list\n" +
-        `* ${"review".padEnd("create-flow/scaffold".length)}  Review the change.\n` +
-        "  create-flow/scaffold  Writes the flow file.\n" +
-        "Next:\nsmthrs flow show review\nsmthrs flow plan --help\n"
-    )
-    expect(terminal).not.toContain("flowId")
-  })
-
-  it("keeps the flow page document for agents and --json", async () => {
-    const page = { _tag: "flows", items: [{ flowId: "review", description: "Reviews the change.", featured: true }] }
-    ports.local.mockResolvedValue(page)
-    const result = await invoke(["flow", "list", "--json"])
-    expect(result.codes).toEqual([])
-    expect(JSON.parse(result.stdout)).toMatchObject(page)
-  })
-
-  it("keeps the guard usable directly without a presentation session", async () => {
-    const error = vi.fn<(cause: { code: string; message: string; exitCode?: number }) => never>()
-    expect(await Presentation.guard({ error }, async () => ({ answer: 42 }))).toEqual({ answer: 42 })
-    expect(error).not.toHaveBeenCalled()
-  })
-})
-
-describe("runs wait status exits", () => {
-  it.each([["local", []], ["remote", ["--remote", "https://control.invalid"]]] as const)(
-    "exits 3 on timeout and 0 after success (%s)",
-    async (_name, connection) => {
-      ports.list.mockReturnValueOnce(Effect.succeed({ _tag: "runs", items: [row("run-1", "running")] }))
-        .mockReturnValueOnce(Effect.succeed({ _tag: "runs", items: [row("run-1", "completed")] }))
-      const timed = await invoke(["runs", "wait", "run-1", "--timeout", "0", ...connection, "--json"])
-      expect(timed.codes).toEqual([3])
-      const done = await invoke(["runs", "wait", "run-1", ...connection, "--json"])
-      expect(done.codes).toEqual([])
-      expect(JSON.parse(done.stdout)).toMatchObject({ runId: "run-1", status: "completed" })
-    }
-  )
-
-  it.each(["parked", "waiting-approval", "failed", "cancelled"] as const)("exits for %s", async (status) => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", status)] }))
-    const result = await invoke(["runs", "wait", "run-1", "--json"])
-    expect(result.codes).toEqual([status === "failed" ? 1 : status === "cancelled" ? 130 : 3])
-  })
-
-  it("waits for a remotely launched flow", async () => {
-    ports.launch.mockResolvedValue({ _tag: "Accepted", runId: "run-1" })
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "completed")] }))
+    ["--budget-tokens", "50", "--budget-ms", "1000", "--on-exceeded", "park"],
+    ["--budget-usd", "2.5", "--on-exceeded", "park"],
+    ["--deadline", "30 minutes"]
+  ])("persists the launch budget from %j", async (...flags) => {
+    const root = await fixture()
     const result = await invoke([
       "flow",
       "start",
-      "demo/ship",
-      "--wait",
-      "--remote",
-      "https://control.invalid",
+      "echo",
+      "--data",
+      "{\"message\":\"budgeted\"}",
+      ...flags,
+      "--root",
+      root,
       "--json"
     ])
-    expect(result.codes).toEqual([])
-    dispatched(["up", "demo/ship", "--wait"])
-  })
-})
-
-describe("unified durable log streams", () => {
-  const chunk = (data: ControlSchema.ControlEvent) => ({ type: "chunk", data })
-  const done = (after?: number, root = "") => ({
-    type: "done",
-    ok: true,
-    meta: {
-      command: "runs logs",
-      duration: expect.stringMatching(/^\d+ms$/),
-      ...(after === undefined ? {} : {
-        cta: {
-          description: "Suggested command:",
-          commands: [{
-            command: `smthrs runs logs run-1 --after ${after} --format jsonl${root}`,
-            description: "Continue from the last returned event"
-          }]
-        }
-      })
-    }
-  })
-
-  it("returns exact ordered events, resumes after the supplied cursor, and closes on its explicit bound", async () => {
-    const returned = vi.fn()
-    const values = [event(41), event(44), event(49)]
-    ports.events.mockImplementation(async function*() {
-      try {
-        yield* values
-      } finally {
-        returned()
-      }
-    })
-    const result = await invoke([
-      "runs",
-      "logs",
-      "run-1",
-      "--after",
-      "40",
-      "--limit",
-      "2",
-      "--root",
-      "/fixture",
-      "--format",
-      "jsonl"
+    value(result)
+    const plans = query(root, "SELECT card_json FROM control_plans") as Array<{ card_json: string }>
+    expect(plans).toHaveLength(1)
+    expect(query(root, "SELECT decoded_input_json FROM control_plans")).toEqual([
+      expect.objectContaining({ decoded_input_json: "{\"message\":\"budgeted\"}" })
     ])
-    const lines = result.stdout.trim().split("\n").map((line) => JSON.parse(line))
-    expect(lines).toEqual([...values.slice(0, 2).map(chunk), done(44, " --root /fixture")])
-    expect(ports.events).toHaveBeenCalledExactlyOnceWith(
-      "run-1",
-      false,
-      { after: 40, limit: 2, root: "/fixture", quiet: false, verbose: false, follow: false },
-      result.config,
-      // The whole watch cursor, so a page can resume inside an expanded journal entry (69e55744).
-      { sequence: 40 }
+    const budget = JSON.parse(plans[0]!.card_json).envelope.budget
+    if (flags[0] === "--budget-tokens") {
+      expect(budget).toMatchObject({ tokens: 50, milliseconds: 1000, onExceeded: "park" })
+    }
+    if (flags[0] === "--budget-usd") expect(budget).toMatchObject({ usd: 2.5, onExceeded: "park" })
+    if (flags[0] === "--deadline") expect(budget).toMatchObject({ deadline: 1_800_000 })
+  }, 120_000)
+
+  it("reads local flow descriptions and refuses an unknown flow", async () => {
+    const root = await fixture()
+    const at = ["--root", root, "--json"]
+    const listed = value(await invoke(["flow", "list", ...at]))
+    expect(listed.items).toContainEqual(
+      expect.objectContaining({ flowId: "echo", description: "Return the supplied input" })
     )
-    expect(returned).toHaveBeenCalledOnce()
-    expect(ports.progress).not.toHaveBeenCalled()
+    expect(value(await invoke(["flow", "show", "echo", ...at]))).toMatchObject({ flowId: "echo" })
+    const missing = await invoke(["flow", "show", "missing", ...at])
+    expect(missing.codes).toContain(1)
+    expect(missing.stdout).toContain("Unknown flow missing")
   })
 
-  it("bounds an agent's default pull to 100 events without consuming event 101", async () => {
-    const consumed: Array<number> = []
-    ports.events.mockImplementation(async function*() {
-      for (let sequence = 1; sequence <= 101; sequence++) {
-        consumed.push(sequence)
-        yield event(sequence)
-      }
-    })
-    const result = await invoke(["runs", "logs", "run-1", "--audience", "agent", "--format", "jsonl"])
-    const lines = result.stdout.trim().split("\n").map((line) => JSON.parse(line))
-    expect(lines).toEqual([...Array.from({ length: 100 }, (_, index) => chunk(event(index + 1))), done(100)])
-    expect(consumed).toEqual(Array.from({ length: 100 }, (_, index) => index + 1))
+  it("answers observing verbs without creating a missing store", async () => {
+    const root = await mkdtemp(join(tmpdir(), "smthrs-empty-observers-"))
+    roots.push(root)
+    const at = ["--root", root, "--json"]
+    expect(value(await invoke(["runs", "list", ...at]))).toMatchObject({ _tag: "runs", items: [] })
+    expect(value(await invoke(["runs", "count", ...at]))).toMatchObject({ count: 0 })
+    expect(value(await invoke(["approvals", "list", ...at]))).toEqual([])
+    expect(value(await invoke(["runs", "logs", "absent", ...at]))).toEqual([])
+    const shown = await invoke(["runs", "show", "absent", ...at])
+    expect(shown.codes).toContain(1)
+    expect(shown.stdout).toContain("run_not_found")
+    expect(await readdir(root)).toEqual([])
   })
 
-  it("follows beyond the default pull limit and emits no continuation when the source ends", async () => {
-    const values = Array.from({ length: 101 }, (_, index) => event(index + 1))
-    ports.events.mockImplementation(async function*() {
-      yield* values
-    })
-    const result = await invoke(["runs", "logs", "run-1", "--follow", "--format", "jsonl"])
-    expect(result.stdout.trim().split("\n").map((line) => JSON.parse(line))).toEqual([...values.map(chunk), done()])
-    expect(ports.events.mock.calls[0]![1]).toBe(true)
-  })
-
-  it("does not invent a continuation for an empty finite transcript", async () => {
-    const result = await invoke(["runs", "logs", "run-1", "--after", "40", "--limit", "1", "--format", "jsonl"])
-    expect(result.stdout.trim().split("\n").map((line) => JSON.parse(line))).toEqual([done()])
-    expect(result.codes).toEqual([])
-  })
-
-  it.each([
-    [new Error("Authorization: Bearer private-fixture"), "Authorization: Bearer [REDACTED_TOKEN]"],
-    ["Authorization: Bearer private-fixture", "Something went wrong on our side. Not your fault."]
-  ])(
-    "preserves emitted events and redacts a subsequent stream failure",
-    async (cause, message) => {
-      ports.events.mockImplementation(async function*() {
-        yield event(1)
-        throw cause
-      })
-      const result = await invoke(["runs", "logs", "run-1", "--format", "jsonl"])
-      const lines = result.stdout.trim().split("\n").map((line) => JSON.parse(line))
-      expect(lines).toEqual([chunk(event(1)), {
-        type: "error",
-        ok: false,
-        error: { code: "logs_failed", message }
-      }])
-      expect(result.stdout).not.toContain("private-fixture")
-      expect(result.codes).toEqual([1])
+  it.each([["runs", "logs", "missing", "--limit=0"], ["runs", "logs", "missing", "--limit=10001"], [
+    "runs",
+    "logs",
+    "missing",
+    "--limit=1.5"
+  ], [
+    "flow",
+    "execute",
+    "@missing-approval.json"
+  ]])(
+    "refuses invalid input without creating stores: %j",
+    async (...args) => {
+      const root = await fixture()
+      const result = await invoke([...args, "--root", root, "--json"])
+      expect(result.codes.some((code) => code !== 0)).toBe(true)
+      expect(await readdir(root)).not.toContain(".flows")
     }
   )
+})
 
-  it.each(
-    [
-      [false, false, "caught-up"],
-      [true, false, "caught-up"],
-      [false, true, "ended"]
-    ] as const
-  )("renders human events and closes the renderer after failure=%s follow=%s", async (fail, follow, end) => {
-    ports.events.mockImplementation(async function*() {
-      yield event(1)
-      if (fail) throw new Error("stream unavailable")
-    })
-    const result = await invoke([
-      "runs",
-      "logs",
-      "run-1",
-      "--audience",
-      "human",
-      "--silent",
-      ...(follow ? ["--follow"] : [])
-    ], {
-      stdout: { isTTY: true, columns: 80, write: () => {} }
-    })
-    expect(ports.progress.mock.calls[0]![1].policy).toMatchObject({
-      audience: "human",
-      progress: "plain",
-      structured: false
-    })
-    expect(ports.event).toHaveBeenCalledExactlyOnceWith(event(1))
-    expect(ports.close.mock.calls).toEqual(fail ? [["failed"], [end]] : [[end]])
-    expect(result.codes).toEqual(fail ? [1] : [])
-  })
+describe("unified commands over a real local transport", () => {
+  it("executes and interrupts the real flow while preserving signal and steering payloads", async () => {
+    const root = await waitingProject()
+    roots.push(root)
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control.Control
+        const remote = remoteAddress(yield* HttpServer.HttpServer)
+        const at = ["--remote", remote, "--json"]
+        const card = value(yield* Effect.promise(() => invoke(["flow", "plan", "wait", "message=exact words", ...at])))
+        expect(card.inputSummary).toBe("{\"message\":\"exact words\"}")
+        yield* control.approve({ ...card.approval, scope: "run" })
+        const receipt = value(
+          yield* Effect.promise(() => invoke(["flow", "execute", JSON.stringify(card.approval), ...at]))
+        )
+        const runId = receipt.runId as string
+        yield* Effect.promise(() => waitFor(() => existsSync(join(root, "wait.log")), "real action admission", 15_000))
+        expect(readFileSync(join(root, "wait.log"), "utf8")).toBe("exact words\n")
+        value(
+          yield* Effect.promise(() =>
+            invoke(["runs", "signal", runId, "{\"name\":\"wake\",\"payload\":{\"exact\":\"words\"}}", ...at])
+          )
+        )
+        value(yield* Effect.promise(() => invoke(["runs", "steer", runId, "--message", "Keep the exact words", ...at])))
+        const logs = value(yield* Effect.promise(() => invoke(["runs", "logs", runId, ...at])))
+        expect(logs.filter((event: { kind: string }) => event.kind === "control.signal.admitted")).toHaveLength(1)
+        const signals = query(root, "SELECT payload_json FROM control_signal_commands") as Array<
+          { payload_json: string }
+        >
+        expect(signals.map((signal) => JSON.parse(signal.payload_json))).toEqual([{
+          name: "wake",
+          payload: { exact: "words" }
+        }])
+        const count = value(yield* Effect.promise(() => invoke(["runs", "count", "--flow", "wait", ...at])))
+        expect(count.count).toBe(1)
+        value(yield* Effect.promise(() => invoke(["runs", "cancel", runId, ...at])))
+        yield* Effect.promise(() =>
+          waitFor(
+            () => readFileSync(join(root, "wait.log"), "utf8").includes("cancelled"),
+            "real action cancellation finalizer",
+            15_000
+          )
+        )
+        expect(readFileSync(join(root, "wait.log"), "utf8")).toBe("exact words\ncancelled\n")
+        expect(yield* control.list({ _tag: "runs", filters: { runId } })).toMatchObject({
+          items: [expect.objectContaining({ runId, status: "cancelled" })]
+        })
+      }).pipe(Effect.provide(serverLayer(root)), Effect.scoped)
+    )
+  }, 120_000)
 
-  it("supports an independently mounted runs group without a presentation session", async () => {
-    ports.events.mockImplementation(async function*() {
-      yield event(1)
-    })
-    let output = ""
-    await createRunsCli({
-      environment: { SMITHERS_AUDIENCE: "human" },
-      stdout: { isTTY: true, columns: 80, write: () => {} }
-    }).serve(["logs", "run-1"], {
-      stdout: (text) => {
-        output += text
-      },
-      env: {},
-      exit: () => {}
-    })
-    expect(ports.progress.mock.calls[0]![1].output).toBe(process.stdout)
-    expect(ports.event).toHaveBeenCalledExactlyOnceWith(event(1))
-    expect(ports.close).toHaveBeenCalledExactlyOnceWith("caught-up")
-    expect(output).toBe("")
-  })
-
-  it.each(["0", "10001", "1.5"])("rejects invalid event limit %s before opening a stream", async (limit) => {
-    const result = await invoke(["runs", "logs", "run-1", "--limit", limit, "--json"])
-    expect(result.codes.some((code) => code !== 0)).toBe(true)
-    expect(ports.events).not.toHaveBeenCalled()
+  it("redacts an injected Effect service failure after the real transport and handler", async () => {
+    const root = await fixture()
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const remote = remoteAddress(yield* HttpServer.HttpServer)
+        const result = yield* Effect.promise(() => invoke(["flow", "show", "missing", "--remote", remote, "--json"]))
+        expect(result.codes).toContain(1)
+        expect(result.stdout).toContain("[REDACTED_TOKEN]")
+        expect(result.stdout + result.stderr).not.toContain("private-fixture")
+      }).pipe(
+        Effect.provide(serverLayer(root, (control) =>
+          Control.make({
+            ...control,
+            list: () =>
+              Effect.fail(
+                new ControlError.TransportError({
+                  message: "Authorization: Bearer private-fixture",
+                  retryable: false
+                })
+              )
+          }))),
+        Effect.scoped
+      )
+    )
   })
 })

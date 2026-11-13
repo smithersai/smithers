@@ -42,7 +42,7 @@ export interface ServedSuite {
  * @since 1.0.0
  * @category constructors
  */
-export const servedSuite = (label: string): ServedSuite => {
+export const servedSuite = (label: string, prepare?: (root: string) => Promise<unknown>): ServedSuite => {
   let directory: string | undefined
   let server: ServeProcess | undefined
 
@@ -65,6 +65,7 @@ export const servedSuite = (label: string): ServedSuite => {
   return {
     start: async () => {
       directory = mkdtempSync(join(tmpdir(), `smithers-e2e-${label}-`))
+      await prepare?.(directory)
       server = await startServe(directory)
     },
     stop: async () => {

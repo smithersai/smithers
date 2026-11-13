@@ -22,12 +22,13 @@ import { cpSync, mkdirSync, rmSync } from "node:fs"
 import { basename, join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { journalEntries } from "./harness/durableState.ts"
-import { probeEngineChild, spawnEngineChild } from "./harness/engineChild.ts"
+import { probeEngineChild, reapEngineChildren, spawnEngineChild, waitForEngine } from "./harness/engineChild.ts"
 import { killResumeFixture } from "./harness/killResumeCase.ts"
 import { firstStep, markers, secondStep } from "./harness/killResumeFlow.ts"
 
 const fixture = killResumeFixture("case31", 60_000)
-afterAll(() => {
+afterAll(async () => {
+  await reapEngineChildren()
   const receipts = process.env.FAULT_3367_RECEIPTS
   if (receipts !== undefined) {
     mkdirSync(receipts, { recursive: true })
@@ -41,14 +42,15 @@ describe("case31 real engine kill and resume", () => {
     await probeEngineChild({ ...fixture })
 
     const engine = spawnEngineChild({ ...fixture, mode: "execute" })
-    await engine.handshake
-    await waitFor(() => fixture.marker(markers.spawnedPid) !== undefined, "the contained spawn", 60_000)
-
-    const orphan = Number(fixture.marker(markers.spawnedPid))
-    expect(Number.isFinite(orphan)).toBe(true)
-    expect(parentPid(orphan)).toBe(engine.pid)
-
+    let orphan = 0
     try {
+      await engine.handshake
+      await waitForEngine(engine, () => fixture.marker(markers.spawnedPid) !== undefined, "the contained spawn", 60_000)
+
+      orphan = Number(fixture.marker(markers.spawnedPid))
+      expect(Number.isFinite(orphan)).toBe(true)
+      expect(parentPid(orphan)).toBe(engine.pid)
+
       await killProcess(engine.process)
       expect(isAlive(engine.pid)).toBe(false)
 
@@ -66,6 +68,7 @@ describe("case31 real engine kill and resume", () => {
 
       await waitFor(() => !isGroupAlive(orphan), "the orphaned process group to be reaped", 30_000)
     } finally {
+      await reapEngineChildren()
       killGroup(orphan)
     }
 

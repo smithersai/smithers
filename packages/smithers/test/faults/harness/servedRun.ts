@@ -16,10 +16,15 @@ import { localDecision } from "./serveProcess.ts"
  * @since 1.0.0
  * @category constructors
  */
-export const launchRun = (label: string, root: string) =>
+export const launchRun = (
+  label: string,
+  root: string,
+  flowId = "system/test",
+  input: Record<string, string> = { case: label }
+) =>
   Effect.gen(function*() {
     const control = yield* Control.Control
-    const card = yield* control.plan({ flowId: "system/test", input: { case: label } })
+    const card = yield* control.plan({ flowId, input })
     const decision = yield* Effect.promise(() => localDecision(root, "approve", card.approval))
     if (decision.status !== 0) return yield* Effect.die(new Error(`local approval failed: ${decision.stderr}`))
     const receipt = yield* control.run({
@@ -41,14 +46,26 @@ export const launchRun = (label: string, root: string) =>
  * @since 1.0.0
  * @category constructors
  */
-export const emitSignals = (runId: string, count: number, prefix = "tick") =>
+export const emitSignals = (
+  runId: string,
+  count: number,
+  prefix = "tick",
+  options: { readonly concurrency?: number; readonly onAdmitted?: (count: number) => void } = {}
+) =>
   Effect.gen(function*() {
     const control = yield* Control.Control
-    for (let index = 0; index < count; index += 1) {
-      yield* control.signal({
-        runId,
-        signal: { name: prefix, payload: { index } } as never,
-        idempotencyKey: `${prefix}:${runId}:${index}`
-      })
-    }
+    let admitted = 0
+    yield* Effect.forEach(Array.from({ length: count }, (_, index) => index), (index) =>
+      Effect.gen(function*() {
+        const receipt = yield* control.signal({
+          runId,
+          signal: { name: prefix, payload: { index } } as never,
+          idempotencyKey: `${prefix}:${runId}:${index}`
+        })
+        if (receipt._tag !== "Accepted" && receipt._tag !== "AlreadyApplied") {
+          return yield* Effect.die(new Error(`Signal ${index} was not admitted: ${receipt._tag}`))
+        }
+        admitted += 1
+        if (options.onAdmitted !== undefined) yield* Effect.sync(() => options.onAdmitted!(admitted))
+      }), { concurrency: options.concurrency ?? 1, discard: true })
   })
