@@ -51,9 +51,10 @@ identifies the credential in a span or an audit trail; it is not a secret and
 it is not the signature.
 
 `verify` is the other half, and it is the single place a refusal happens. It
-checks the signature in constant time, then that the key name is known, then
-the expiry, then that the access asked for is covered. Every refusal is
-`unauthorized` with a distinct message.
+checks that the key name is known, then the signature in constant time, then
+the expiry, then that the access asked for is covered. An unknown key fails
+with `The workspace capability names an unknown signing key` before any
+signature check. Every refusal is `unauthorized` with a distinct message.
 
 ## Present it from a client
 

@@ -264,9 +264,13 @@ to assert against.
 ## What these fixtures do not cover
 
 `TestSync` binds the read path only. It mounts `SyncRpcs`, never `BranchRpcs`,
-so a branch test drives `BranchServer` and the branch services directly. See
-[Branch collaboration](../concepts/branches.md) for why the branch surface
-ships unserved.
+so a branch test drives `BranchServer` and the branch services directly.
+
+The native gateway serves branch presence at `POST /branch` when its
+authenticated runtime bridge is configured. Branch commands and share-link
+bootstrap remain unserved on that mount; `Branch.WatchRoster` also returns
+`unsupported`. See [Branch collaboration](../concepts/branches.md) for the
+served presence procedures and how to host the remaining branch operations.
 
 The socket pair's queues hold 16 frames each. A test that writes more than
 that without a reader blocks, which is a bounded transport behaving correctly

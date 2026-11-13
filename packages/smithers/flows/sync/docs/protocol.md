@@ -172,9 +172,15 @@ covering every compacted prefix and version they continue to serve.
 `SyncRpcs` is read only: `Sync.Read`, `Sync.Subscribe`, and `Sync.Snapshot`. Client-to-server
 submission is not planned work, it is `BranchRpcs`: `Branch.Submit` admits one
 command onto a branch's journal run under a client-minted idempotency key, and
-`Branch.Announce`, `Branch.Leave`, `Branch.Roster`, and `Branch.WatchRoster`
-carry ephemeral presence. `BranchRpcs` has no production mount at
-1.0.0-rc.0; the gateway serves `SyncRpcs` alone.
+`Branch.Announce`, `Branch.Leave`, `Branch.Roster`, `Branch.PresenceOn`, and
+`Branch.WatchRoster` carry ephemeral presence.
+
+The native [`@smthrs/gateway`](/api/gateway) serves branch presence at
+`POST /branch` when its authenticated runtime bridge is configured. The Go
+host resolves membership, branch and socket session before forwarding to the
+`BranchPresence` lease roster. Branch commands and share-link bootstrap
+remain unserved on that mount; `Branch.WatchRoster` also returns
+`unsupported`. The read path remains on `POST /sync` and `/sync/ws`.
 
 Bidirectional reconciliation of the read path, acknowledgement windows, and
 resumable transport sessions remain unplanned.

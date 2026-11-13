@@ -218,3 +218,52 @@ test("journal docs agree on SQL backends and retained history", () => {
     assert.match(introduction, /compact.*delet/s)
   }
 })
+
+test("sync docs distinguish the authenticated presence mount from unserved commands", () => {
+  const dir = `${flows}sync`
+  const pages = ["docs/api.md", "docs/concepts/branches.md", "docs/troubleshooting.md", "docs/protocol.md", "docs/README.md", "docs/guides/test-a-follower.md"].map((path) => `${dir}/${path}`)
+  pages.push("apps/site/src/content/docs/docs/reference/http-api.mdx")
+  for (const path of pages) {
+    const docs = read(path).replace(/\s+/g, " ")
+    assert.match(docs, /POST \/branch/, path)
+    assert.match(docs, /authenticated runtime bridge/, path)
+    assert.match(docs, /commands and share-link bootstrap remain unserved/i, path)
+    assert.doesNotMatch(docs, /collaboration ships unserved|branch surface ships unserved|nothing outside this package|nothing mounts the branch|has no production mount|serves `SyncRpcs` alone/i, path)
+  }
+})
+
+test("sync docs list every branch procedure including presence health", () => {
+  const dir = `${flows}sync`
+  const names = [...read(`${dir}/src/BranchRpcs.ts`).matchAll(/Rpc\.make\("(Branch\.[^"]+)"/g)].map((match) => match[1])
+  assert.equal(names.length, 8)
+  for (const path of ["docs/api.md", "docs/concepts/branches.md"]) {
+    const docs = read(`${dir}/${path}`)
+    assert.match(docs, /eight procedures/, path)
+    for (const name of names) assert.ok(docs.includes(`\`${name}\``), `${path}: missing ${name}`)
+  }
+  const handlers = read(`${dir}/src/BranchServer.ts`).split("*/")[0]
+  assert.match(handlers, /Six procedures/)
+  assert.ok(handlers.includes("`Branch.PresenceOn`"))
+})
+
+test("sync troubleshooting assigns unavailable branch presence to unsupported", () => {
+  const docs = read(`${flows}sync/docs/troubleshooting.md`)
+  const row = docs.split("\n").find((line) => line.startsWith("| `unsupported`"))
+  assert.ok(row)
+  assert.ok(row.includes("Branch presence is unavailable"))
+  assert.ok(row.includes("`BranchPresence.layerNoop`"))
+  const closed = docs.split("## Every operation fails with closed")[1].split("\n## ")[0]
+  assert.doesNotMatch(closed, /Branch presence is unavailable/)
+  assert.match(read(`${flows}sync/src/BranchPresence.ts`), /code: "unsupported", message: "Branch presence is unavailable"/)
+})
+
+test("sync authorization docs check the key name before the signature", () => {
+  const docs = read(`${flows}sync/docs/guides/authorize-a-connection.md`).replace(/\s+/g, " ")
+  assert.match(docs, /checks that the key name is known, then the signature in constant time, then the expiry/)
+  assert.match(docs, /names an unknown signing key/)
+  for (const module of ["BranchShare", "WorkspaceShare"]) {
+    const source = read(`${flows}sync/src/${module}.ts`)
+    const lookup = source.indexOf("ring.verification.get(claims.kid)")
+    assert.ok(lookup >= 0 && lookup < source.indexOf("yield* shareSigner.verifyClaims"))
+  }
+})

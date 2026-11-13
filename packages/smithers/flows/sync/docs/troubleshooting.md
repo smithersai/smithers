@@ -25,21 +25,21 @@ answers `false` rather than raising.
 
 ## Error codes
 
-| Code                 | Where it comes from                                                                                                                                                                                                      | What to do                                                                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `unauthorized`       | No workspace principal, a refused workspace capability, a missing or foreign branch capability, or a credential that expired before a read finished or while a subscription was open.                                    | Present a credential, or mint a new one and resubscribe.                                                                                |
-| `unsupported`        | Presence transport or required host wiring is unavailable.                                                                                                                                                               | Keep presence unknown; enable only after authenticated sources are ready.                                                               |
-| `invalid_request`    | A cursor set naming one run twice, a numeric option that is not a positive safe integer, an option above the ceiling the wire allows, a keyring with a duplicate or dangling `kid`, or claims that do not survive UTF-8. | Fix the request or the option. The message names the field.                                                                             |
-| `compacted`          | The request's cursor for one run sits below that run's compaction floor. `resync` names the run and the checkpoint sequence.                                                                                             | Restore through an explicit `onResync` handler or retain the refusal. See [Handle a compacted run](./guides/handle-a-compacted-run.md). |
-| `not_found`          | `Sync.Snapshot` ran against a server that provides no `SyncServer.SnapshotSource`, a provider that failed, or `SyncServer.makeNoop`.                                                                                     | Provide a `SnapshotSource`, or omit `onResync` so the client never asks for a snapshot.                                                 |
-| `lineage_changed`    | A read or subscription named a generation the run has moved past, because the run was rewound. `rewind` names the current generation and the archive boundary.                                                           | Rebuild the projection from retained history and create a fresh client. The client never retries this refusal.                          |
-| `frame_too_large`    | A single entry whose own encoded size exceeds the frame ceiling, or a page or frame whose entries sum past the ceiling the client enforces.                                                                              | Raise `maxFrameBytes` on both sides, or stop writing entries that large.                                                                |
-| `protocol_violation` | A server page or frame that contradicted itself: another run's entry, a repeated or reordered sequence, an entry at or below the requested cursor, or an incomplete page with no entries.                                | Report it. No cursor moved, so nothing was skipped. A rewriting proxy is the usual cause.                                               |
-| `transport_failed`   | The RPC transport failed.                                                                                                                                                                                                | During live follow the client retries this under backoff. During catch-up (`Sync.Read`) and `snapshot` it reaches you: resubscribe.     |
-| `closed`             | The server sent a `Closed` frame, the journal reported `journal_closed`, or the operation ran against `SyncClient.makeNoop`, `SyncServer.layerNoop`, or `BranchCommands.layerNoop`.                                      | Check that the composition provides real services, then resubscribe.                                                                    |
-| `backpressure`       | The journal's admission queue overflowed, or a branch already holds `maxParticipants` participants.                                                                                                                      | Retry. Raise the bound only after confirming the producer is not the problem.                                                           |
-| `decode_failed`      | The journal could not decode a stored payload.                                                                                                                                                                           | Inspect the run's storage. The sync boundary is reporting, not causing, this.                                                           |
-| `unknown`            | A journal failure this boundary has no counterpart for, or Web Crypto refusing to import or use the signing key.                                                                                                         | Read `cause`, which carries the underlying error's name and its own enumerated code.                                                    |
+| Code                 | Where it comes from                                                                                                                                                                                                           | What to do                                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `unauthorized`       | No workspace principal, a refused workspace capability, a missing or foreign branch capability, or a credential that expired before a read finished or while a subscription was open.                                         | Present a credential, or mint a new one and resubscribe.                                                                                |
+| `unsupported`        | `BranchPresence.layerNoop` refuses announce, leave and list with `Branch presence is unavailable`, presence transport or required host wiring is unavailable, or the native presence-only mount does not serve the operation. | Keep presence unknown; enable only after authenticated sources are ready.                                                               |
+| `invalid_request`    | A cursor set naming one run twice, a numeric option that is not a positive safe integer, an option above the ceiling the wire allows, a keyring with a duplicate or dangling `kid`, or claims that do not survive UTF-8.      | Fix the request or the option. The message names the field.                                                                             |
+| `compacted`          | The request's cursor for one run sits below that run's compaction floor. `resync` names the run and the checkpoint sequence.                                                                                                  | Restore through an explicit `onResync` handler or retain the refusal. See [Handle a compacted run](./guides/handle-a-compacted-run.md). |
+| `not_found`          | `Sync.Snapshot` ran against a server that provides no `SyncServer.SnapshotSource`, a provider that failed, or `SyncServer.makeNoop`.                                                                                          | Provide a `SnapshotSource`, or omit `onResync` so the client never asks for a snapshot.                                                 |
+| `lineage_changed`    | A read or subscription named a generation the run has moved past, because the run was rewound. `rewind` names the current generation and the archive boundary.                                                                | Rebuild the projection from retained history and create a fresh client. The client never retries this refusal.                          |
+| `frame_too_large`    | A single entry whose own encoded size exceeds the frame ceiling, or a page or frame whose entries sum past the ceiling the client enforces.                                                                                   | Raise `maxFrameBytes` on both sides, or stop writing entries that large.                                                                |
+| `protocol_violation` | A server page or frame that contradicted itself: another run's entry, a repeated or reordered sequence, an entry at or below the requested cursor, or an incomplete page with no entries.                                     | Report it. No cursor moved, so nothing was skipped. A rewriting proxy is the usual cause.                                               |
+| `transport_failed`   | The RPC transport failed.                                                                                                                                                                                                     | During live follow the client retries this under backoff. During catch-up (`Sync.Read`) and `snapshot` it reaches you: resubscribe.     |
+| `closed`             | The server sent a `Closed` frame, the journal reported `journal_closed`, or the operation ran against `SyncClient.makeNoop`, `SyncServer.layerNoop`, or `BranchCommands.layerNoop`.                                           | Check that the composition provides real services, then resubscribe.                                                                    |
+| `backpressure`       | The journal's admission queue overflowed, or a branch already holds `maxParticipants` participants.                                                                                                                           | Retry. Raise the bound only after confirming the producer is not the problem.                                                           |
+| `decode_failed`      | The journal could not decode a stored payload.                                                                                                                                                                                | Inspect the run's storage. The sync boundary is reporting, not causing, this.                                                           |
+| `unknown`            | A journal failure this boundary has no counterpart for, or Web Crypto refusing to import or use the signing key.                                                                                                              | Read `cause`, which carries the underlying error's name and its own enumerated code.                                                    |
 
 The `cause` field is a bounded string and never the host object that failed.
 `SyncError` is the declared error schema of every procedure in both RPC groups,
@@ -197,8 +197,8 @@ different job from following, and it gets its own client.
 
 ## Every operation fails with closed
 
-**Symptom.** Every subscription fails immediately with "Sync client is closed",
-"Branch commands are unavailable", or "Branch presence is unavailable".
+**Symptom.** Operations fail immediately with `closed`, with a message such as
+`Sync client is closed` or `Branch commands are unavailable`.
 
 **Cause.** The composition provided a noop stub. `SyncClient.layerNoop`,
 `SyncServer.layerNoop`, `BranchCommands.layerNoop`, and
@@ -221,14 +221,18 @@ test journal and is Node only.
 **Fix.** Import from the root or from a public module path. In a browser test,
 `@smthrs/sync/test/TestSocket` is the half that runs anywhere.
 
-## Branch procedures have no server
+## Branch commands have no server
 
-**Symptom.** A branch client finds no endpoint to talk to.
+**Symptom.** A branch client cannot submit commands or bootstrap share links;
+the native presence mount refuses those procedures with `unsupported`.
 
-**Cause.** Nothing outside this package's tests mounts `BranchRpcs`.
-[`@smthrs/gateway`](/api/gateway) mounts `SyncRpcs` on `POST /sync` and
-`/sync/ws` and stops there.
+**Cause.** The native [`@smthrs/gateway`](/api/gateway) serves branch presence at
+`POST /branch` when its authenticated runtime bridge is configured. The Go
+host resolves membership, branch and socket session before forwarding to the
+`BranchPresence` lease roster. Branch commands and share-link bootstrap
+remain unserved on that mount; `Branch.WatchRoster` also returns
+`unsupported`. The read path remains on `POST /sync` and `/sync/ws`.
 
-**Fix.** Mount `BranchServer.layerHandlers` on a transport of your own, and
-treat the branch modules as a library surface pending a host. See
+**Fix.** For commands, share-link bootstrap, or roster watches, mount
+`BranchServer.layerHandlers` on an authenticated transport of your own. See
 [Branch collaboration](./concepts/branches.md).

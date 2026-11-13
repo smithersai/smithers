@@ -59,7 +59,7 @@ WebSocket clients must connect to a separately authenticated gateway.
 
 ## The RPC surface
 
-Three RPC groups share the gateway. The sources pin the procedure names, the error vocabularies, and the subscription frame tags; row-level payload shapes are not pinned here and are decoded by selector through `GatewaySchema.rowSchemaFor`.
+The gateway's RPC groups share one host. The sources pin the procedure names, the error vocabularies, and the subscription frame tags; row-level payload shapes are not pinned here and are decoded by selector through `GatewaySchema.rowSchemaFor`.
 
 `ControlRpcs` on `/rpc` is ten procedures:
 
@@ -73,7 +73,9 @@ There is no `Pause` procedure. `ControlRpcs` declares no memory procedure either
 
 `GatewayRpcs` on `/projections` serves seven read models folded from the control event stream: `workspace-runs`, `run-summary`, `run-events`, `transcript`, `run-tree`, `approvals`, and `node-output`. Over WebSocket, `Projection.Subscribe` streams tagged frames (`SnapshotStartFrame`, `RowFrame`, `SnapshotEndFrame`, `DeltaFrame`, `HeartbeatFrame`) so a client can tell a snapshot from a change. A projection never claims a run and never writes. The group's one mutation, `Approval.Submit`, is the transport form of Control's approve, deny, and answer commands for an approval card; it adds no failure of its own.
 
-`SyncRpcs` on `/sync` is read-only journal replication: `Sync.Snapshot` returns a public projection through a sequence, `Sync.Read` pages entries for a scope and cursor set, and `Sync.Subscribe` streams `Entries` frames under a credit bound. `BranchRpcs`, the client-to-server submission group, has no production mount, so the gateway serves `SyncRpcs` alone.
+`SyncRpcs` on `/sync` is read-only journal replication: `Sync.Snapshot` returns a public projection through a sequence, `Sync.Read` pages entries for a scope and cursor set, and `Sync.Subscribe` streams `Entries` frames under a credit bound.
+
+The native gateway serves `BranchRpcs` presence at `POST /branch` when its authenticated runtime bridge is configured: `Branch.Announce`, `Branch.Leave`, `Branch.Roster`, and `Branch.PresenceOn`. Branch commands and share-link bootstrap remain unserved on that mount; `Branch.Submit`, `Branch.CreateBranch`, `Branch.MintShare`, and `Branch.WatchRoster` return `unsupported`.
 
 ## Health
 

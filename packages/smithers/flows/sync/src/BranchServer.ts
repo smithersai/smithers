@@ -2,9 +2,9 @@
  * The server-side handlers of {@link BranchRpcs}: a thin projection of the
  * branch services onto the wire.
  *
- * Five procedures forward to the service that owns their boundary and add
+ * Six procedures forward to the service that owns their boundary and add
  * nothing: `Branch.Submit` to {@link BranchCommands}, and `Branch.Announce`,
- * `Branch.Leave`, `Branch.Roster`, and `Branch.WatchRoster` to
+ * `Branch.Leave`, `Branch.Roster`, `Branch.PresenceOn`, and `Branch.WatchRoster` to
  * {@link BranchPresence}. Two enforce policy here, on top of what
  * {@link BranchShare} checks: `Branch.CreateBranch` refuses any principal that
  * is not an authenticated workspace, and `Branch.MintShare` verifies write

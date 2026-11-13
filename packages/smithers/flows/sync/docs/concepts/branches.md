@@ -4,11 +4,12 @@ description: "A branch is one shared live document whose durable state is exactl
 ---
 
 :::warning
-Branch collaboration ships unserved at 1.0.0-rc.0.
-[`@smthrs/gateway`](/api/gateway) mounts `SyncRpcs` on `POST /sync` and
-`/sync/ws`; nothing outside this package's own tests mounts `BranchRpcs`, so
-the seven branch procedures have no integration against a real host yet. Treat
-these modules as a library surface pending a host, not as a served endpoint.
+The native [`@smthrs/gateway`](/api/gateway) serves branch presence at
+`POST /branch` when its authenticated runtime bridge is configured. The Go
+host resolves membership, branch and socket session before forwarding to the
+`BranchPresence` lease roster. Branch commands and share-link bootstrap
+remain unserved on that mount; `Branch.WatchRoster` also returns
+`unsupported`. The read path remains on `POST /sync` and `/sync/ws`.
 :::
 
 A branch is one shared live document that several people edit at once. It has
@@ -159,13 +160,14 @@ is not deterministic.
 
 ## The wire group
 
-`BranchRpcs` carries seven procedures: `Branch.CreateBranch`,
+`BranchRpcs` carries eight procedures: `Branch.CreateBranch`,
 `Branch.MintShare`, `Branch.Submit`, `Branch.Announce`, `Branch.Leave`,
-`Branch.Roster`, and `Branch.WatchRoster`. `BranchServer.layerHandlers` projects
-the branch services onto them. Five procedures forward to the service that owns
-their boundary and add nothing: `Branch.Submit` to `BranchCommands`,
-`Branch.Announce`, `Branch.Leave`, `Branch.Roster`, and `Branch.WatchRoster`
-to `BranchPresence`. For those, an in-process caller and a remote caller face
+`Branch.Roster`, `Branch.PresenceOn`, and `Branch.WatchRoster`.
+`BranchServer.layerHandlers` projects the branch services onto them. Six
+procedures forward to the service that owns their boundary and add nothing:
+`Branch.Submit` to `BranchCommands`, and `Branch.Announce`, `Branch.Leave`,
+`Branch.Roster`, `Branch.PresenceOn`, and `Branch.WatchRoster` to
+`BranchPresence`. For those, an in-process caller and a remote caller face
 the same rules.
 
 Two procedures enforce policy in the adapter itself, on top of what

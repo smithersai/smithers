@@ -284,17 +284,20 @@ admitted through a client-minted idempotency key whose exactly-once constraint
 is the journal's own producer identity, so two servers racing one command
 collide durably inside the write transaction.
 
-`BranchRpcs` is the wire group and `BranchServer.layerHandlers` projects the
-branch services onto it. The payload schemas ARE the service schemas, so the
-wire and the services cannot drift about what a legal message is.
+`BranchRpcs` carries eight procedures: `Branch.CreateBranch`,
+`Branch.MintShare`, `Branch.Submit`, `Branch.Announce`, `Branch.Leave`,
+`Branch.Roster`, `Branch.PresenceOn`, and `Branch.WatchRoster`.
+`BranchServer.layerHandlers` projects the branch services onto them. The
+payload schemas ARE the service schemas, so the wire and the services cannot
+drift about what a legal message is.
 
 :::warning
-Branch collaboration ships unserved at 1.0.0-rc.0.
-[`@smthrs/gateway`](/api/gateway) mounts `SyncRpcs` on `POST /sync` and
-`/sync/ws`; nothing outside this package's own tests mounts `BranchRpcs`, so
-the seven branch procedures have no integration against a real gateway yet.
-Treat the branch modules as a library surface pending a host, not as a served
-endpoint.
+The native [`@smthrs/gateway`](/api/gateway) serves branch presence at
+`POST /branch` when its authenticated runtime bridge is configured. The Go
+host resolves membership, branch and socket session before forwarding to the
+`BranchPresence` lease roster. Branch commands and share-link bootstrap
+remain unserved on that mount; `Branch.WatchRoster` also returns
+`unsupported`. The read path remains on `POST /sync` and `/sync/ws`.
 :::
 
 ## Presence rooms

@@ -108,10 +108,13 @@ means multiplayer inherits the canonical sequence, the cursors, the gap
 detection, and the resumable follow rather than introducing a second source of
 truth.
 
-Branch collaboration ships unserved at 1.0.0-rc.0. The gateway mounts the read
-path and nothing mounts the branch procedures, so treat those modules as a
-library surface waiting for a host. [Branch collaboration](./concepts/branches.md)
-describes what they guarantee.
+The native [`@smthrs/gateway`](/api/gateway) serves branch presence at
+`POST /branch` when its authenticated runtime bridge is configured. The Go
+host resolves membership, branch and socket session before forwarding to the
+`BranchPresence` lease roster. Branch commands and share-link bootstrap
+remain unserved on that mount; `Branch.WatchRoster` also returns
+`unsupported`. The read path remains on `POST /sync` and `/sync/ws`.
+[Branch collaboration](./concepts/branches.md) describes the branch services' guarantees.
 
 ## Presence
 
