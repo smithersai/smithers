@@ -15,7 +15,14 @@ await runPromise(scoped(effect {
   try server.serve(effect {
     const request = try HttpServerRequest.HttpServerRequest
     const pathname = new URL(request.url, origin).pathname
-    if (pathname === "/meta") return HttpServerResponse.jsonUnsafe({ resources: Native.PATHS.RESOURCES_FOLDER, compatibility: Native.SMITHERS_BUN14_COMPAT, windows: windows.size, loaded })
+    if (pathname === "/meta") {
+      const windowDetails = try orDie(Effect.try(() => Array.from(windows.values(), (window) => {
+        // Inspect the real native window; these test-only members are not part of the SDK's foreign port.
+        const actual = window as typeof window & { readonly title: string; readonly html: string | null; readonly preload: string | null; getFrame(): { x: number; y: number; width: number; height: number } }
+        return { title: actual.title, frame: actual.getFrame(), html: actual.html, preload: actual.preload }
+      })))
+      return HttpServerResponse.jsonUnsafe({ resources: Native.PATHS.RESOURCES_FOLDER, compatibility: Native.SMITHERS_BUN14_COMPAT, windows: windows.size, loaded, windowDetails })
+    }
     if (pathname === "/fixture") return HttpServerResponse.text("SDK native fixture")
     if (pathname === "/window") { loaded++; return HttpServerResponse.text("Native SDK integration") }
     if (pathname === "/shutdown") { try Deferred.succeed(stopped, undefined); return HttpServerResponse.empty() }

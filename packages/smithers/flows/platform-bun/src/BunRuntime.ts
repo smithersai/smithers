@@ -32,6 +32,8 @@ const runtime = NativeRuntime.make({
   // A fresh SQLite file is initialized privately and published whole, as on
   // Node: a host killed during first start never leaves a partial store at
   // the published name, and concurrent creators converge on one winner.
+  // Only the native Bun lane executes this driver factory; Node cannot import bun:sqlite.
+  /* v8 ignore start */
   database: (filename) =>
     NodeRuntime.publishFreshDatabase(
       filename,
@@ -44,6 +46,7 @@ const runtime = NativeRuntime.make({
         ),
       Runtime.storage
     ),
+  /* v8 ignore stop */
   host: Host,
   crypto: Host.BunCrypto.layer
 })

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- File replacements on a raw filesystem now sync the file and its parent directory before reporting success. Sync failures propagate, and a replay retries the durability barriers.
+- Native windows accept an application's title and frame through optional `WindowOptions`; calls without options use generic native defaults.
+
 ### Added
 
 - `BunRuntime`, the durable flow runtime on Bun, moved from

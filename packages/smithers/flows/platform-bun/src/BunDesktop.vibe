@@ -4,11 +4,21 @@ import type * as Electrobun from "#electrobun"
 /** Failure to open a native window or dialog, without OS messages or paths in diagnostics. */
 export schema error DesktopUnavailable {}
 
+/**
+ * Presentation chosen by the application; omitted options use Electrobun's defaults.
+ * @category models
+ * @since 0.1.0
+ */
+export interface WindowOptions {
+  readonly title: string
+  readonly frame?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+}
+
 /** The native desktop seam; dialogs are selected by the person, never by web content. */
 export service DesktopWindow {
   readonly resources: string
   openExternal(url: string): void!DesktopUnavailable
-  open(url: string): void!DesktopUnavailable
+  open(url: string, options?: WindowOptions): void!DesktopUnavailable
   chooseDirectory(): (string | null)!DesktopUnavailable
 }
 
@@ -33,10 +43,14 @@ const implementation = Layer.effect(DesktopWindow, effect {
   if (native.SMITHERS_BUN14_COMPAT !== 3) throw new DesktopUnavailable()
   return {
     resources: native.PATHS.RESOURCES_FOLDER,
-    open: (url: string) => observed("open", effect {
+    open: (url: string, options: WindowOptions = { title: "" }) => observed("open", effect {
       const window = try Effect.try({
         try: () => new native.BrowserWindow({
-          title: "VibeLang", url, frame: { x: 80, y: 80, width: 1280, height: 800 },
+          title: options.title,
+          ...(options.frame === undefined ? {} : { frame: {
+            x: options.frame.x, y: options.frame.y, width: options.frame.width, height: options.frame.height,
+          } }),
+          url,
           titleBarStyle: "hiddenInset", renderer: "cef", sandbox: true,
           navigationRules: JSON.stringify(["^*", `${new URL(url).origin}/*`]),
         }),

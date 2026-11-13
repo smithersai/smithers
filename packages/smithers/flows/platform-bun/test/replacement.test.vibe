@@ -1,4 +1,5 @@
 // A real confined filesystem; interrupted disk writes and concurrent edits are faulty external services.
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { expect, it } from "@effect/vitest"
 import { FileSystem as Confined } from "@smthrs/kernel"
 import { BunFileSystem, BunHost } from "../src/index.ts"
@@ -48,3 +49,73 @@ it.effect("refuses a stale original before creating a temporary file", () => (ef
   const entries = try fs.readDirectory(".")
   try Effect.try(() => { expect(Exit.isFailure(result)).toBe(true); expect(current).toBe("person's edit"); expect(entries).toEqual(["file"]) })
 }).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("flushes a raw filesystem replacement and its completed replay without changing permissions", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped()
+  const name = path.join(root, "file")
+  try fs.writeFileString(name, "before", { mode: 0o640 })
+  try BunFileSystem.replaceFileString(fs, name, "before", "after")
+  try BunFileSystem.replaceFileString(fs, name, "before", "after")
+  const current = try fs.readFileString(name)
+  const stat = try fs.stat(name)
+  const entries = try fs.readDirectory(root)
+  try Effect.try(() => {
+    expect(current).toBe("after")
+    expect(stat.mode & 0o777).toBe(0o640)
+    expect(entries).toEqual(["file"])
+  })
+}).pipe(Effect.provide(Layer.merge(BunHost.layer, NodeFileSystem.layer)), Effect.scoped))
+
+for (const stage of ["file", "directory"] as const) {
+  it.effect(`refuses success when the raw ${stage} sync fails, including a replay`, () => (effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const root = try fs.makeTempDirectoryScoped()
+    const name = path.join(root, "file")
+    try fs.writeFileString(name, "before")
+    const failure = PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "sync" })
+    const faulty: FileSystem.FileSystem = {
+      ...fs,
+      open: (target, options) => fs.open(target, options).pipe(Effect.map((file) =>
+        (target === root) === (stage === "directory") ? { ...file, sync: Effect.fail(failure) } : file)),
+    }
+    for (const attempt of [0, 1]) {
+      const result = try exit(BunFileSystem.replaceFileString(faulty, name, "before", "after"))
+      const current = try fs.readFileString(name)
+      const entries = try fs.readDirectory(root)
+      try Effect.try(() => {
+        expect(Exit.isFailure(result), `attempt ${attempt}`).toBe(true)
+        if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBe(failure)
+        expect(current).toBe(stage === "file" ? "before" : "after")
+        expect(entries).toEqual(["file"])
+      })
+    }
+    try BunFileSystem.replaceFileString(fs, name, "before", "after")
+    const recovered = try fs.readFileString(name)
+    try Effect.try(() => expect(recovered).toBe("after"))
+    const replay = try exit(BunFileSystem.replaceFileString(faulty, name, "before", "after"))
+    try Effect.try(() => {
+      expect(Exit.isFailure(replay)).toBe(true)
+      if (Exit.isFailure(replay)) expect(Cause.squash(replay.cause)).toBe(failure)
+    })
+  }).pipe(Effect.provide(Layer.merge(BunHost.layer, NodeFileSystem.layer)), Effect.scoped))
+}
+
+
+it.effect("replaces and replays a read-only raw file without requiring write access to its inode", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped()
+  const name = path.join(root, "readonly")
+  try fs.writeFileString(name, "before", { mode: 0o444 })
+  try BunFileSystem.replaceFileString(fs, name, "before", "after")
+  try BunFileSystem.replaceFileString(fs, name, "before", "after")
+  const current = try fs.readFileString(name)
+  const stat = try fs.stat(name)
+  try Effect.try(() => {
+    expect(current).toBe("after")
+    expect(stat.mode & 0o777).toBe(0o444)
+  })
+}).pipe(Effect.provide(Layer.merge(BunHost.layer, NodeFileSystem.layer)), Effect.scoped))

@@ -35536,9 +35536,9 @@ same spawner instance.
 | `@smthrs/platform-bun/BunHost`       | [src/BunHost.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/src/BunHost.ts)             | Bun, Node |
 | `@smthrs/platform-bun/BunFileSystem` | [src/BunFileSystem.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/src/BunFileSystem.ts) | Bun, Node |
 
-The root entry point exports exactly four names: `BunHost` and `BunFileSystem`,
-each the namespace of the module above, and [`BunRuntime`](#bunruntime) and
-[`BunGarbageCollector`](#bungarbagecollector), which have no subpath of their own. `@smthrs/platform-bun/internal/*` and
+The root entry point exports six module namespaces: `BunHost`, `BunFileSystem`,
+[`BunRuntime`](#bunruntime), [`BunGarbageCollector`](#bungarbagecollector),
+`BunDesktop` and `BunServer`. The last four have no subpath of their own. `@smthrs/platform-bun/internal/*` and
 `@smthrs/platform-bun/*/index` are blocked in the export map;
 `@smthrs/platform-bun/package.json` is exported.
 
@@ -35809,7 +35809,9 @@ produce.
 
 ## Native windows and loopback HTTP
 
-`BunDesktop.layer` provides `BunDesktop.DesktopWindow`, with `resources`, `open(url)` and `chooseDirectory()`.
+`BunDesktop.layer` provides `BunDesktop.DesktopWindow`, with `resources`, `open(url, options?)`, `openExternal(url)` and `chooseDirectory()`.
+`WindowOptions` supplies an application-owned `title` and an optional `frame` with `x`, `y`, `width` and `height`.
+Omitting options uses Electrobun's generic window defaults. `openExternal` opens only credential-free HTTPS links in the system browser.
 The optional peer `electrobun` 1.18.1 is loaded only when this layer is built. Native window operations require an initialized Electrobun process. `open` uses
 CEF, restricts navigation to the supplied origin and disables view RPC. The caller owns the Effect scope, which
 closes its windows. A cancelled directory chooser returns `null`; native failures return `DesktopUnavailable`,
@@ -35826,8 +35828,10 @@ runs both exports under Xvfb and drives the real native folder chooser and the r
 
 ### Crash-safe local edits
 
-`BunFileSystem.replaceFileString(fs, path, before, after)` writes a private sibling file, syncs it through the
-host, preserves the original mode, rechecks the expected original, then uses same-directory atomic rename.
+`BunFileSystem.replaceFileString(fs, path, before, after)` writes a private sibling file, preserves its
+original mode, syncs the file, rechecks the expected original, then uses same-directory atomic rename and syncs the parent directory.
+The kernel's confined filesystem already syncs its helper operations; other filesystems must support `open` and file and directory `sync`.
+A sync refusal fails the operation; a completed replay repeats the durability barriers on an unconfined filesystem.
 An interrupted temporary write leaves the original intact. An already applied edit is an idempotent success;
 a changed original fails with `FileChanged`. This is optimistic conflict detection, not a lock against another
 process writing between the final comparison and rename. Supply the kernel's confined filesystem to retain
@@ -35837,7 +35841,7 @@ its descriptor-relative root identity and no-follow boundary. The function requi
 
 `BunDesktop.layer` supports Bun 1.4 with the compatibility-marked Electrobun 1.18.1 API. Upstream 1.18.1 assumes
 cstring callback arguments are pointers; Bun 1.4 supplies strings. This package ships the correction in
-`patches/electrobun@1.18.1.patch`, including redacted callback diagnostics. Compatibility version 2 also replaces the native Linux opener's shell
+`patches/electrobun@1.18.1.patch`, including redacted callback diagnostics. Compatibility version 3 also replaces the native Linux opener's shell
 fallback with an OS argument vector, a bounded wait and private child diagnostics. The workspace already applies it.
 External applications apply the shipped patch before using this optional native layer:
 

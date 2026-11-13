@@ -43,8 +43,8 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A remote server answers an authorized request with a 3xx and makes the host fetch an origin the capability kernel never authorized (SSRF to metadata or internal services).",
       lookFor: [
-        "A factory in src/BunHost.ts that merges BunHttpClient.layer without the RequestInit { redirect: \"manual\" } override.",
-        "A RequestInit that sets redirect to \"follow\" or omits it, or a second HttpClient layer that shadows layerHttpClient.",
+        "A factory in src/BunHost.ts that omits layerHttpClient, which supplies EgressHttpClient.layer(process.env).",
+        "A second HttpClient layer that shadows layerHttpClient with a redirect-following client, bypassing EgressHttpClient.",
         "A re-export of @effect/platform-bun/BunHttpClient, whose layer follows redirects, or docs that tell callers to provide BunHttpClient.layer directly instead of BunHost.layerHttpClient."
       ],
       paths: ["src/BunHost.ts", "docs/**", "README.md"]

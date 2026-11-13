@@ -24,6 +24,8 @@ declare const Bun: { readonly gc: (force: boolean) => void }
  * @since 1.0.0
  */
 export const collector: MicrosandboxSandbox.GarbageCollector = {
+  // Native Bun GC is exercised only by the real Bun lane, which has no V8 coverage.
+  /* v8 ignore next */
   collect: Effect.sync(() => Bun.gc(true))
 }
 

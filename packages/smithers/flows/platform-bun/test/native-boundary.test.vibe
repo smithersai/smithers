@@ -1,5 +1,5 @@
 // Node exercises the unsupported-runtime boundary; the real Bun/CEF success path runs in the desktop E2E.
-import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { HttpServer } from "effect/http"
 import { expect, it } from "@effect/vitest"
 import { bunRuntime } from "./native/config.ts"
 import { BunDesktop, BunServer } from "../src/index.ts"
@@ -12,10 +12,24 @@ it.effect.skipIf(bunRuntime)("refuses native FFI on Node with the public safe fa
   })
 })
 
-it.effect("Bun's scoped server requires Bun and releases its listener", () => (effect {
-  const versions = try (try Experimental.Process.Process).versions
-  for (const layer of [BunServer.layer(), BunServer.layer(0)]) {
-    const result = try exit(scoped(Layer.build(layer)))
-    try Effect.try(() => expect(Exit.isSuccess(result)).toBe(versions.bun !== undefined))
+it.effect.skipIf(bunRuntime)("refuses the Bun server on Node", () => effect {
+  const result = try exit(scoped(Layer.build(BunServer.layer())))
+  try Effect.try(() => expect(Exit.isFailure(result)).toBe(true))
+})
+
+it.effect.runIf(bunRuntime)("releases the chosen listener and rebinds its explicit port after each scope", () => effect {
+  const address = try scoped(effect {
+    const context = try Layer.build(BunServer.layer())
+    return Context.get(context, HttpServer.HttpServer).address
+  })
+  try Effect.try(() => expect(address._tag).toBe("InetAddressV4"))
+  if (address._tag !== "InetAddressV4") return
+  try Effect.try(() => expect(address.port).toBeGreaterThan(0))
+  for (const attempt of [0, 1]) {
+    const rebound = try scoped(effect {
+      const context = try Layer.build(BunServer.layer(address.port))
+      return Context.get(context, HttpServer.HttpServer).address
+    })
+    try Effect.try(() => expect(rebound, String(attempt)).toEqual(address))
   }
-}).pipe(Effect.provide(ExperimentalNodeServices.layer)))
+})

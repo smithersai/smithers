@@ -2,8 +2,8 @@
  * Redirect fail-closed contract for BunHost's HttpClient.
  *
  * Both the Node coverage lane and the Bun compatibility lane run this suite.
- * Each lane exercises its runtime's native fetch implementation.
- * `redirect: "manual"` is the whole subject, so the assertion is that the
+ * Both runtimes exercise the shared Undici-backed EgressHttpClient.
+ * Redirect refusal is the subject, so the assertion is that the
  * second origin is never reached.
  */
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"

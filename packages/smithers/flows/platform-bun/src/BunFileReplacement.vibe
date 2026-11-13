@@ -1,29 +1,53 @@
-// Crash-safe replacement over the host's real filesystem, including its confined descriptor-relative view.
+// Durable replacement over a syncing filesystem, including the kernel's confined descriptor-relative view.
+import { FileSystem as Confined } from "@smthrs/kernel"
 import { SecureRandom } from "effect/crypto"
 
 /** The file changed since the caller read it. Its contents never enter the error. */
 export schema error FileChanged {}
 
 /**
- * Write to a private sibling, sync it through the host, then rename atomically.
+ * Write to a private sibling, flush its data and mode, rename atomically, then sync its directory.
+ * Confined views already flush each write and rename through the native helper.
  * Refuse a changed original before rename and accept an already completed replay.
  * This is optimistic conflict detection, not a lock against an uncooperative external writer.
  * The supplied filesystem must implement same-directory atomic rename (the Bun host does).
  */
 effect function replace(fs: FileSystem.FileSystem, name: string, before: string, after: string) {
   const current = try fs.readFileString(name)
-  if (current === after) return
+  const path = try Path.Path
+  const needsSync = (try orDie(Effect.try(() => Confined.confinedRoot(fs)))) === undefined
+  if (current === after) {
+    // A replay also completes a directory flush that failed after the previous rename.
+    if (needsSync) try syncReplacement(fs, name, path.dirname(name))
+    return
+  }
   if (current !== before) throw new FileChanged()
   const stat = try fs.stat(name)
   const random = try SecureRandom.SecureRandom
-  const path = try Path.Path
   const temporary = path.join(path.dirname(name), `.smithers-${try random.uuidV4()}.tmp`)
   try ensuring(effect {
     try fs.writeFileString(temporary, after, { flag: "wx", mode: stat.mode & 0o777 })
     try fs.chmod(temporary, stat.mode & 0o777)
+    if (needsSync) try scoped(effect {
+      const file = try fs.open(temporary, { flag: "r" })
+      try file.sync
+    })
     if ((try fs.readFileString(name)) !== before) throw new FileChanged()
     try fs.rename(temporary, name)
+    if (needsSync) try scoped(effect {
+      const directory = try fs.open(path.dirname(name))
+      try directory.sync
+    })
   }, fs.remove(temporary, { force: true }).pipe(Effect.orDie))
+}
+
+effect function syncReplacement(fs: FileSystem.FileSystem, name: string, parent: string) {
+  try scoped(effect {
+    const file = try fs.open(name, { flag: "r" })
+    try file.sync
+    const directory = try fs.open(parent)
+    try directory.sync
+  })
 }
 
 /** Atomically replace a file without exposing a partial write. @since 1.0.0-rc.16 */

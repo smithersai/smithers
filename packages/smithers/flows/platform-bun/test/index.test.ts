@@ -2,8 +2,8 @@
  * The barrel, and the one dependency this package must *not* have.
  *
  * Bun used to reach into `@smthrs/platform-browser` purely to borrow a
- * `fetch`-backed transport. Outgoing requests are now Effect's own
- * `HttpClient` — `@effect/platform-bun/BunHttpClient` — so the browser package
+ * `fetch`-backed transport. Outgoing requests now use the shared Undici-backed
+ * `EgressHttpClient` from `@smthrs/platform-node`, so the browser package
  * has no business in a Bun bundle, and the resolved module graph says so.
  */
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"

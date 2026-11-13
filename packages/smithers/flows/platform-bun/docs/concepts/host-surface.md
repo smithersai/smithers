@@ -27,10 +27,17 @@ caller passes it, so "which platform implementations were in scope" is an
 explicit input a caller supplies, not something this bundle contributes. The
 identity table below is data to pass; nothing reads it for you.
 
-`BunHost.layer` provides all five, and `BunHost` is the type union of them:
+`BunHost.layer` provides all five capability slots and the native process-confinement service.
+`BunHost` includes that host-side service:
 
 ```ts
-export type BunHost = FileSystem | Path.Path | ChildProcessSpawner | Jj | HttpClient
+export type BunHost =
+  | FileSystem
+  | Path.Path
+  | ChildProcessSpawner
+  | Jj
+  | HttpClient
+  | KernelProcessConfinement.ProcessConfinement
 ```
 
 ## What fills each slot, and whose code it is

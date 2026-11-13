@@ -69,9 +69,10 @@ The spawner inside the bundle keeps the default filesystem layer it was built
 with for resolving executables and working directories; that path is unguarded
 and does not use the helper.
 
-Prefer this over hand-composing the five slots. Rebuilding them yourself means
-rebuilding the `HttpClient` slot too, and its `redirect: "manual"` wiring is
-internal, so a hand-composed bundle quietly gains redirect following.
+Prefer this over hand-composing the five slots. When composing a subset, include
+the public `BunHost.layerHttpClient` for HTTP. It provides `EgressHttpClient`,
+which uses Undici on both runtimes and stops at redirects. Replacing that slot
+with a redirect-following client bypasses the kernel's authorization of each hop.
 
 `BunHost` also re-exports `AtomicFileSystem` itself, so you can reach the
 implementation and its full option set without adding

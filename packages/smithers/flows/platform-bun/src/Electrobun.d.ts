@@ -12,9 +12,9 @@
 export declare class BrowserWindow {
   constructor(
     options: {
-      title: string
+      title?: string
       url: string
-      frame: { x: number; y: number; width: number; height: number }
+      frame?: { x: number; y: number; width: number; height: number }
       titleBarStyle: "hiddenInset"
       renderer: "cef"
       sandbox: boolean

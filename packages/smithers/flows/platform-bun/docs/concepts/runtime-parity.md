@@ -65,8 +65,10 @@ The package's `test` target runs conformance under Node with V8 coverage.
 The `bunTest` target imports Vitest's JavaScript entry under Bun and asserts
 `process.versions.bun` inside every worker. Both lanes exercise redirects,
 process containment, and filesystem helpers. Node coverage reports use private
-`0700` directories under the package's gitignored `coverage/` directory and are
-removed when the runner exits. Bun coverage is disabled.
+`0700` directories under the operating system's temporary directory, outside the checkout, and are
+removed when the runner exits. Bun coverage is disabled. Native SQLite storage and garbage collection
+run only on Bun, using `BunHost.layer` and the real `Bun.gc`. Their Bun-only callbacks
+are excluded from V8 coverage because Node cannot execute them; Node never substitutes a driver or collector.
 
 Verify process streams, cancellation, and cleanup on the runtime and operating
 system you deploy. The contained handle's POSIX

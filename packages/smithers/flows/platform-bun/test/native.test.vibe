@@ -19,12 +19,31 @@ it.live("opens a real CEF window, applies navigation rules, and closes it with i
   await runPromise(withNative(effect {
     const desktop = try BunDesktop.DesktopWindow
     try Effect.try(() => expect(desktop.resources).toBe(fixture.resources))
-    try desktop.open(fixture.url + "/window")
+    // A structural options value can carry extra keys; the host forwards only presentation fields.
+    const options = { title: "SDK window", frame: { x: 20, y: 30, width: 640, height: 480 }, html: "<h1>Unrequested content</h1>", preload: "globalThis.unrequestedPreload = true", rpc: {} }
+    try desktop.open(fixture.url + "/window", options)
     try tryPromise(async () => {
       const deadline = Date.now() + 10000
       while ((await meta()).loaded === 0 && Date.now() < deadline) await delay(50)
       expect((await meta()).loaded).toBeGreaterThan(0)
       expect((await meta()).windows).toBe(1)
+      expect((await meta()).windowDetails).toEqual([{ title: "SDK window", frame: { x: 20, y: 30, width: 640, height: 480 }, html: null, preload: null }])
+    })
+  }))
+  expect((await meta()).windows).toBe(0)
+}))
+
+it.live("uses a caller's title and the native default frame when no frame is supplied", () => tryPromise(async () => {
+  await runPromise(withNative(effect {
+    const desktop = try BunDesktop.DesktopWindow
+    try desktop.open(fixture.url + "/window", { title: "Another application" })
+    try tryPromise(async () => {
+      const details = (await meta()).windowDetails
+      expect(details).toHaveLength(1)
+      expect(details[0].title).toBe("Another application")
+      expect(details[0].frame).not.toMatchObject({ width: 1280, height: 800 })
+      expect(details[0].html).toBeNull()
+      expect(details[0].preload).toBeNull()
     })
   }))
   expect((await meta()).windows).toBe(0)

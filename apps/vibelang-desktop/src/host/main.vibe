@@ -30,7 +30,7 @@ export effect function main() {
     const random = try SecureRandom.SecureRandom
     const launch = Array.from(try random.randomBytes(32), (byte) => byte.toString(16).padStart(2, "0")).join("")
     try server.serve(handler(origin, assets, launch))
-    try window.open(`${origin}/desktop/launch?key=${launch}`)
+    try window.open(`${origin}/desktop/launch?key=${launch}`, { title: "VibeLang", frame: { x: 80, y: 80, width: 1280, height: 800 } })
     try Effect.logInfo("vibelang.desktop.ready")
     try Effect.never
   }
