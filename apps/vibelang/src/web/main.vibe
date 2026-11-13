@@ -441,7 +441,9 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     ClickedLearnMore: () => learnMore(model),
     ClickedEndTour: () => endTour(model),
     // Ended before the tour was even recorded: end it now that it is.
-    SucceededTour: () => TourDecision.endsLateTour(model.tour) ? { model, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) })] } : { model },
+    // Only the person's end (a dismissal) ends a start that lands late: an earlier tour's recorded end, replayed while
+    // this start was in flight, also leaves `tour` false and must not end the new tour.
+    SucceededTour: () => TourDecision.endsLateTour(model.tour || model.tourDismissed !== true) ? { model, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) })] } : { model },
     // Busy while this tab's own tour runs (a Learn more racing an Escape): that tour keeps control.
     FailedTour: ({ reason }) => TourDecision.failedTourKeeps(touringHere(model), model.recoverTour === true, reason) ? { model: { ...model, ...TourDecision.keptTour() } } : {
       model: { ...ModelWrite.screenWrite(model, failScreenTour(ScreenRead.screenOf(model), reason, false)), surface: "chat", recoverTour: false },
@@ -696,17 +698,27 @@ function touringHere(model: Model): boolean {
   const conversation = (model.tourClient ?? model.client).conversation
   return Machine.isTouring(conversation, conversation.replying)
 }
-function endTour(model: Model): Update.Return<Model, Message, Factory | Actions> {
+/**
+ * Gives the screen back. A person's end (`recorded` false) dismisses this tab's tour and asks the sequencer to end it.
+ * An end the sequencer already recorded (the tour finished, failed or was ended) sends nothing and dismisses nothing:
+ * the page follows its tour conversation from the first event, so an earlier tour's end arrives before a later tour
+ * of the same session starts, and ending or dismissing then would stop the later one.
+ */
+function endTour(model: Model, recorded = false): Update.Return<Model, Message, Factory | Actions> {
   const issues = issueStateOf(model)
   const actions = actionsOf(model)
   const ended = TourDecision.endedTour(ScreenRead.tourEndScreen(model, issues, actions))
-  return { model: ModelWrite.tourEndWrite(model, issues, actions, ended), commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), ClosePalette({ dock: true }), PresentTour({ step: model.theatre.step, sound: model.theatre.sound, active: false, paused: false }), FocusComposer({})] }
+  const screen = recorded ? { ...ended, tourDismissed: model.tourDismissed === true } : ended
+  const presentation = [ClosePalette({ dock: true }), PresentTour({ step: model.theatre.step, sound: model.theatre.sound, active: false, paused: false }), FocusComposer({})]
+  return { model: ModelWrite.tourEndWrite(model, issues, actions, screen), commands: recorded ? presentation : [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), ...presentation] }
 }
 function receiveTour(model: Model, event: Machine.Event): Update.Return<Model, Message, Factory | Actions> {
   const previous = model.tourClient ?? Machine.newClient
   const tourClient = Machine.receive(previous, event)
   const state = tourClient.conversation.walkthrough
-  const receipt = TourDecision.tourReceived(tourClient.gap, tourClient.conversation.seq === previous.conversation.seq, model.tourDismissed === true, state !== undefined, Machine.isTour(tourClient.conversation.entries, event.id), event.type)
+  // Only a running tour's walkthrough presents: an ended tour keeps its last one, and a refused move of it must not show it again.
+  const running = state !== undefined && Machine.isTouring(tourClient.conversation, event.id)
+  const receipt = TourDecision.tourReceived(tourClient.gap, tourClient.conversation.seq === previous.conversation.seq, model.tourDismissed === true, running, Machine.isTour(tourClient.conversation.entries, event.id), event.type)
   if (receipt.kind === "replay") return { model: { ...model, tourClient: Machine.newClient, epoch: model.epoch + 1 } }
   if (receipt.kind === "ignore") return { model }
   let next: Update.Return<Model, Message, Factory | Actions> = { model: { ...model, tourClient } }
@@ -714,7 +726,7 @@ function receiveTour(model: Model, event: Machine.Event): Update.Return<Model, M
     const presented: WithCommands<Update.Return<Model, Message, Factory | Actions>> = { model: ModelWrite.tourPresentWrite(next.model, state.step, TourDecision.tourTarget(state.target, model.theatre.target), state.paused), commands: [PresentTour({ step: state.step, sound: model.theatre.sound, active: true, paused: TourDecision.presentedPaused(state.paused, event.type) })] }
     next = receipt.drive ? driveWalkthrough(presented, state) : presented
   }
-  if (receipt.end) return endTour(next.model)
+  if (receipt.end) return endTour(next.model, true)
   return next
 }
 

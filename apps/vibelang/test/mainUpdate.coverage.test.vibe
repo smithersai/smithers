@@ -237,8 +237,14 @@ describe("the tour", () => {
   })
   it("ending before the start was recorded ends it once the start lands", () => {
     expect(update(touring, Message.SucceededTour()).model).toBe(touring)
-    const ended = update(home, Message.SucceededTour())
+    const ended = update({ ...home, tourDismissed: true }, Message.SucceededTour())
     expect(ended.commands?.[0]).toMatchObject({ name: "EndTour", args: { conversation: tourConversation("u") } })
+  })
+  it("a start that lands after an earlier tour's recorded end ends nothing", () => {
+    const replayed = update(touring, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t0", seq: 1 } })).model
+    const over = update(replayed, Message.ReceivedTourEvent({ event: { type: "TourEnded", id: "t0", seq: 2 } })).model
+    expect(over.tour).toBe(false)
+    expect(names(update(over, Message.SucceededTour()))).not.toContain("EndTour")
   })
   it("a failed start gives the chat back, unless this tab's own tour holds it", () => {
     const failed = update(touring, Message.FailedTour({ reason: "unavailable" }))
@@ -281,10 +287,34 @@ describe("the tour", () => {
     const again = update(step2, event(3, 3)).model
     expect(again.client.pending.filter(post => post.clientId === pendingId)).toHaveLength(1)
   })
-  it("the tour's end event ends control and keeps the presentation commands", () => {
+  it("the tour's end event ends control and keeps the presentation commands, and asks the sequencer for nothing", () => {
     const ended = update(started, Message.ReceivedTourEvent({ event: { type: "TourEnded", id: "t1", seq: 2 } }))
     expect(ended.model.tour).toBe(false)
-    expect(names(ended)).toEqual(expect.arrayContaining(["EndTour", "FocusComposer"]))
+    expect(ended.model.tourDismissed).not.toBe(true)
+    expect(names(ended)).toEqual(expect.arrayContaining(["ClosePalette", "PresentTour", "FocusComposer"]))
+    expect(names(ended)).not.toContain("EndTour")
+    // The ended tour keeps its walkthrough; a refused pause of it does not show it again.
+    const driven = update(started, event(2, 3)).model
+    const over = update(driven, Message.ReceivedTourEvent({ event: { type: "TourEnded", id: "t1", seq: 3 } })).model
+    expect(update(over, Message.ReceivedTourEvent({ event: { type: "TourPaused", id: "t1", seq: 4, at: 1 } })).model.tour).toBe(false)
+  })
+  it("an earlier tour's end, replayed before a later tour of the session starts, leaves the later tour running", () => {
+    const events = [
+      { type: "TourStarted", id: "t0", seq: 1 },
+      { type: "WalkthroughDriven", id: "t0", seq: 2, step: 1, target: "splash", at: 0, duration: 1000 },
+      { type: "TourEnded", id: "t0", seq: 3 },
+      { type: "TourStarted", id: "t1", seq: 4 },
+      { type: "WalkthroughDriven", id: "t1", seq: 5, step: 3, target: "issues", at: 0, duration: 1000 },
+    ] as const
+    let model = touring
+    const sent: Array<string> = []
+    for (const received of events) {
+      const result = update(model, Message.ReceivedTourEvent({ event: received }))
+      sent.push(...names(result))
+      model = result.model
+    }
+    expect(sent).not.toContain("EndTour")
+    expect(model).toMatchObject({ tour: true, theatre: { step: 3 } })
   })
   it("pausing, resuming and seeking present the frozen stop", () => {
     const driven = update(started, event(2, 3, "issues:list")).model

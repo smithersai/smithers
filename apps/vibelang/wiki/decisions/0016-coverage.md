@@ -78,6 +78,8 @@ Named browser sites and status:
 | `src/web/historyStartup.vibe` (`signedRoles`) | Runs only live: the preview has no API Worker, and the mock plays the role the page chose. The unit suite drives it through the real startup over a loopback API (`test/historyStartup.test.vibe`). |
 | `src/core/conversation.vibe` `apply`: a fractional or negative walkthrough `step`, `duration` or seek | The page decodes every event with `EventSchema`, whose `Seq` is a non-negative integer, so such an event fails decoding first (vl-coverage-core: the forged fault crashed Foldkit's schema check when it sent one). The contracts keep the checks because Dafny's numbers are not integers. |
 | `src/core/conversation.vibe` `hasClientId("")` | `apply` refuses an empty client id before calling it, and `post` before that. |
+| `src/core/conversation.vibe` `holdRemaining`: `remaining < 0` | A walkthrough's remainder is a `WalkthroughDriven` duration, which `apply` admits only when it is 0 or more, or `holdRemaining`'s own answer, which is never negative. The guard keeps the function total for its proof. |
+| `src/core/conversation.vibe` `tourWalkthrough` answering `null` for a walkthrough it holds | `TourStarted` clears the last tour's walkthrough (`c5a2f3f9`) and `WalkthroughDriven` applies only to the running tour, so a walkthrough always belongs to the running tour; `flows.vibe` `walk`, the only reader, runs only for a running tour. |
 | `src/core/flowDecision.vibe` `tourLawful` (18 arms) | Called only by proof contracts, `test/decisions.coverage.test.vibe` and the fuzz oracle (`fuzz/core-flow-decisions.node.fuzz.vibe`), never by product code. It becomes a `spec function` when a compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`). |
 | `src/core/flowDecision.vibe` `observeTourActivity` past `begun`, `startTourSpeech` when it cannot speak, `finishTourSpeech` when not speaking | `flows.vibe` `toured`, the only product caller, calls each once, in that order, on a fresh run and only after `canSpeakTour` holds. The guards keep each function total for its proof; the unit test and fuzz suite reach them. |
 | `src/core/flowDecision.vibe` `readingHold`'s four-second floor | It applies to a narration of 10 words or fewer; every subtitle in `walkthroughSteps.vibe` has 12 to 18. The unit test and bench reach it. |
@@ -127,6 +129,25 @@ again, without end, and never handled Escape. `openRoom` now keeps only the even
 Closed in `conversation`: `apply`'s out-of-sequence guard (its named row above is gone), the other-entry arms of
 `ReplyRestarted` and `ReplyFailed` and the empty reason, `hasRun`'s repeat, `settleRun` on a settled run, `cancelStep`,
 `stepRun`'s empty key and late attempt, and `latestAt`'s earlier step.
+
+**A second tour in one tab** (`e2e/core-tour-repeat.spec.ts`, `e2e/core-tour-journal.spec.ts`, session 6).
+`learnMore` starts every tour of a session in its one tour conversation, and the page follows that conversation from
+its first event, so the earlier tour's start, steps and end arrive again before the new tour's.
+
+**Bug fixed.** A second Learn more in a tab ended at once ("Tour ended. You have control."), and so did a reload during
+a second tour. The replayed end of the first tour ran `endTour`: it dismissed the tab's tour, so the new tour's steps
+never showed, and it sent `EndTour`, which ended the new tour on the sequencer. Once that was fixed, the start's own
+answer did the same: `SucceededTour` ends a start that lands after the tour ended, and read the replayed end as the
+person's. Now an end the sequencer recorded gives the screen back and sends and dismisses nothing; only a dismissal,
+the person's end, ends a late start; and only a running tour's walkthrough presents, so a refused move of an ended
+tour does not show it again (`src/web/main.vibe` `endTour`, `receiveTour`, `SucceededTour`). Red first: unit
+`test/mainUpdate.coverage.test.vibe` (2 failed on the old code) and `core1/s6repeat2`, `core1/s6tours1`; green:
+`core1/s6tours2`, 84 passed on three projects with every tour, walkthrough, restore and recovery spec. The unit test
+that expected a received end to send `EndTour` encoded the bug and now expects the opposite.
+
+A stored tour journal restores a step with what remains of its reading time: none once it ran out (the tour moves on
+at once) and all of it when the step's clock reads later than the page's. Closed in `conversation`: `TourEnded`'s
+other-entry arm and `holdRemaining`'s clock-behind and elapsed arms.
 
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
 
