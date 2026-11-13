@@ -30,6 +30,7 @@ const Recoverable = Schema.Union([StructuredOutput.StructuredOutputFailure, Harn
 
 /** One classified item and the handler it is routed to. */
 export const Item = Schema.Struct({
+  content: Schema.Json,
   id: Schema.String,
   title: Schema.String,
   category: Schema.String,
@@ -70,7 +71,7 @@ export const Classify = AgentAction.make("examples/Triage/Classify", {
   system: [
     `You are a triage specialist. Classify incoming items by category,
 priority, and routing. Be consistent and fair in prioritization.
-Use "ignore" for items that don't need action.`
+Use "ignore" for items that don't need action. Copy each complete source item into its classification's content field, including any fetched description or body.`
   ],
   prompt: ({ fetchCmd, items, source }) =>
     `Triage these items:\n\nSource: ${source}\n${
@@ -88,7 +89,9 @@ const handler = <const Tag extends string>(tag: Tag, role: string) =>
 If you can handle it, do so. If it needs human attention, escalate with details.`
     ],
     prompt: (item) =>
-      `Handle this ${item.priority} ${item.category} item:\n\nID: ${item.id}\nTitle: ${item.title}\nRouting: ${item.assignTo}\nReasoning: ${item.reasoning}\n\nTake appropriate action or escalate with details.`
+      `Handle this ${item.priority} ${item.category} item:\n\nID: ${item.id}\nTitle: ${item.title}\nContent: ${
+        JSON.stringify(item.content)
+      }\nRouting: ${item.assignTo}\nReasoning: ${item.reasoning}\n\nTake appropriate action or escalate with details.`
   })
 
 /** One handler per route. `ignore` has none. */
@@ -121,8 +124,8 @@ export const HandleItems = Flow.make("examples/Triage/HandleItems", {
     const actionable = items.filter((item): item is Actionable => item.assignTo !== "ignore")
     if (actionable.length === 0) return Node.succeed([])
     // 0.x `continueOnFail`: a handler that failed on its own settles as null instead of failing its siblings.
-    const members = Object.fromEntries(actionable.map((item) => [
-      item.id,
+    const members = Object.fromEntries(actionable.map((item, index) => [
+      String(index),
       Node.catch(route(item), { error: Recoverable, onFailure: Node.capture({}, () => Node.succeed(null)) })
     ]))
     const joined = Bounded.all(members, { concurrency: 5 })

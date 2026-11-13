@@ -250,3 +250,33 @@ it.live("packages a draft under a lowered threshold with no person asked", () =>
     expect(person.questions).toEqual([])
     expect(output.openQuestions).toEqual([])
   }), { timeout: 60_000 })
+
+it.live(
+  "drafts duplicate requirement ids independently and preserves their question order",
+  () =>
+    Effect.gen(function*() {
+      const { answer, packaged } = script()
+      const output = yield* Kit.run(RfpResponseRoom, {}, {
+        filename: join(directory, "duplicate-ids.sqlite"),
+        executionId: "rfp-duplicate-ids",
+        script: (asked) => {
+          const result = answer(asked)
+          if (asked.includes("You are an RFP intake analyst")) {
+            const parsed = result as { requirements: Array<{ id: string; question: string }> }
+            parsed.requirements.forEach((requirement, index) => {
+              requirement.id = "3.1.all.0"
+              requirement.question = `question ${index}`
+            })
+          }
+          return result
+        },
+        actions: layer
+      })
+      expect(output.summary).toBe("2 answers, 3 reviews")
+      expect(packaged[0].drafts.map((draft: { answer: string }) => draft.answer)).toEqual([
+        "answer to question 0",
+        "answer to question 1"
+      ])
+    }),
+  { timeout: 60_000 }
+)

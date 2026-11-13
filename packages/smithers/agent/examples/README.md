@@ -78,6 +78,23 @@ Runbook ratification shows the proposed rule and rationale. Its count comes from
 the same supersession list saved with the proposal, so retries and unrelated
 memory writes do not change it.
 
+Use-case fan-outs key their members by input position, so repeated requirement
+ids, ticket ids, item ids, or check names still run separately. The service-desk
+classifier preserves each ticket's `description` and `submitter`; triage
+preserves the full source item in `content`. Social action agents receive the
+normalized inbox item beside its classification.
+
+`retry-budget-manager.ts` stops when the policy sets `shouldRetry: false`,
+even with budget remaining. `monitor-workflow.ts` persists the previous
+`Health` and matching count between beats. Healing waits for two consecutive
+samples of the same condition, target, and ownership state; a missed sample
+resets that evidence. The interpreter supplies the examples' human tasks.
+
+`tweet-thread.ts` bounds each irreversible post to 30 seconds and aborts the
+HTTP request on cancellation. A malformed successful response fails with
+`PostRefused`: the posting outcome is uncertain, so the engine never retries
+it automatically.
+
 ## Sandbox filesystem tools
 
 `25-agent-tools-in-sandbox.ts` exposes only `read` and `write`, with

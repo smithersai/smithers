@@ -111,8 +111,8 @@ const runChecks = (
 ): Node.Node<ReadonlyArray<CheckResult>, never, Action.Requirement<"examples/Smoketest/RunCheck">> => {
   if (checks.length === 0) return Node.succeed([])
   // 0.x `continueOnFail`: a check that could not run does not fail its siblings; it reports as failed.
-  const members = Object.fromEntries(checks.map(({ cmd, name }) => [
-    `check-${name}`,
+  const members = Object.fromEntries(checks.map(({ cmd, name }, index) => [
+    String(index),
     Node.catch(RunCheck.call({ name, cmd, directory, timeoutMs }), {
       onFailure: Node.capture({}, (failed: Planned.Planned<CheckFailed>) =>
         Node.map(

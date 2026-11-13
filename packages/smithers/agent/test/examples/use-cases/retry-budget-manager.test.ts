@@ -28,7 +28,12 @@ const script = (options: {
   readonly failureClass?: string
   readonly decide: (
     seen: Seen
-  ) => { readonly budgetRemaining: number; readonly escalate: boolean; readonly routeOverride?: string }
+  ) => {
+    readonly budgetRemaining: number
+    readonly escalate: boolean
+    readonly shouldRetry?: boolean
+    readonly routeOverride?: string
+  }
 }) => {
   const turns: Array<string> = []
   const answer: Kit.Script = (asked) => {
@@ -210,4 +215,23 @@ it.effect("stops after the payload's budget of attempts", () =>
       escalated: true,
       summary: "Exhausted 2/2 retries — escalated as medium: retry-with-approval"
     })
+  }))
+
+it.effect("honors a refusal to retry even with budget left and no escalation flag", () =>
+  Effect.gen(function*() {
+    const { answer, turns } = script({
+      decide: () => ({ shouldRetry: false, budgetRemaining: 3, escalate: false })
+    })
+    const report = yield* Kit.run(RetryBudgetManager, { command: "check-config" }, {
+      filename: join(directory, "retry-refused.sqlite"),
+      executionId: "retry-budget-refused",
+      script: answer,
+      actions: layer
+    })
+    expect(turns).toEqual([
+      "step 1: 5 left, route none, previous none",
+      "policy 1: 1 in history",
+      "escalate: 1 results, 1 policies"
+    ])
+    expect(report).toMatchObject({ totalAttempts: 1, escalated: true })
   }))

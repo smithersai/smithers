@@ -5,8 +5,8 @@
  * step and classifies any failure. After a failure a policy controller agent
  * decides the backoff, the budget left, any route override and whether to
  * escalate; the next attempt is told its decision and the previous error. The
- * loop stops when the step succeeds, when the policy reports no budget left or
- * asks to escalate, or after `budget` attempts (default 5). Unless the step
+ * loop stops when the step succeeds, when the policy declines another retry,
+ * reports no budget left or asks to escalate, or after `budget` attempts (default 5). Unless the step
  * succeeded, an escalation agent assesses the run. A report counts the
  * attempts.
  *
@@ -224,7 +224,7 @@ const tryStep = (
         return Node.branch(
           DecidePolicy.call({ stepResult: step, attempt: n, budgetTotal: budget, budgetSpent: n, history: tried }),
           {
-            if: Node.capture({}, (policy) => policy.budgetRemaining <= 0 || policy.escalate),
+            if: Node.capture({}, (policy) => !policy.shouldRetry || policy.escalate || policy.budgetRemaining <= 0),
             then: Node.capture(attempt, (policy) => escalate(run, tried, [...policies, policy])),
             else: Node.capture(attempt, (policy) =>
               n >= budget

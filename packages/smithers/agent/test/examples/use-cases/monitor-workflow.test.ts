@@ -10,7 +10,15 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 import type { Condition, Health } from "../../../examples/use-cases/monitor-workflow.ts"
-import { Check, Handle, layer, MonitorWorkflow, rules, settings } from "../../../examples/use-cases/monitor-workflow.ts"
+import {
+  Check,
+  Handle,
+  layer,
+  monitorPrompt,
+  MonitorWorkflow,
+  rules,
+  settings
+} from "../../../examples/use-cases/monitor-workflow.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "monitor-workflow-"))
 
@@ -64,6 +72,7 @@ const health = (
  */
 const script = (beats: ReadonlyArray<typeof Health.Type | "broken">) => {
   const samples: Array<string> = []
+  const prompts: Array<string> = []
   const handled: Array<string> = []
   const answer: Kit.Script = (asked) => {
     const handler = /The heartbeat classified run run-7 as "(.+)"\.\n\nHealth sample:\n(.+)\n\n(.+)/.exec(asked)
@@ -80,12 +89,13 @@ const script = (beats: ReadonlyArray<typeof Health.Type | "broken">) => {
       if (asked.includes("\"unexpected\"")) return { unexpected: true }
       const beat = beats[samples.length]
       if (beat === undefined) return undefined
+      prompts.push(asked)
       samples.push(beat === "broken" ? "broken" : `${beat.condition}/${beat.runStatus}`)
       return beat === "broken" ? { unexpected: true } : beat
     }
     return undefined
   }
-  return { answer, handled, samples }
+  return { answer, handled, prompts, samples }
 }
 
 it("keeps the 0.x rule table: no rule for healthy, heal ownerless stalled and wedged runs, escalate the rest", () => {
@@ -108,6 +118,8 @@ it.live("heals what the table routes, keeps watching a healthy run, and stops wh
   Effect.gen(function*() {
     const { answer, handled, samples } = script([
       health("stalled", "running", undefined, false),
+      health("stalled", "running", undefined, false),
+      health("wedged-node", "running", "compile", false),
       health("wedged-node", "running", "compile", false),
       health("healthy", "running"),
       health("healthy", "finished")
@@ -124,7 +136,14 @@ it.live("heals what the table routes, keeps watching a healthy run, and stops wh
     })
 
     // One sample per beat until the watched run finished.
-    expect(samples).toEqual(["stalled/running", "wedged-node/running", "healthy/running", "healthy/finished"])
+    expect(samples).toEqual([
+      "stalled/running",
+      "stalled/running",
+      "wedged-node/running",
+      "wedged-node/running",
+      "healthy/running",
+      "healthy/finished"
+    ])
     // Each unhealthy beat reached its own handler with the command its sample allows.
     expect(handled).toHaveLength(2)
     expect(handled[0]).toContain(
@@ -134,7 +153,7 @@ it.live("heals what the table routes, keeps watching a healthy run, and stops wh
     expect(handled[1]).toContain(
       "`bunx smthrs retry-task '/repo/flows/build.ts' --run-id 'run-7' --node-id 'compile'`"
     )
-    expect(last).toEqual({ beats: 4, health: health("healthy", "finished"), action: null })
+    expect(last).toEqual({ beats: 6, health: health("healthy", "finished"), action: null })
   }))
 
 // The person polls the engine's waiting rows on a schedule as well.
@@ -173,8 +192,12 @@ it.live(
 
 it.live("survives a failed sample and refuses to resume without a workflow path", () =>
   Effect.gen(function*() {
-    const { answer, handled, samples } = script(["broken", health("stalled", "running", undefined, false)])
-    const last = yield* Kit.run(MonitorWorkflow, { watchRunId: "run-7", intervalMs: 1, maxChecks: 2 }, {
+    const { answer, handled, samples } = script([
+      "broken",
+      health("stalled", "running", undefined, false),
+      health("stalled", "running", undefined, false)
+    ])
+    const last = yield* Kit.run(MonitorWorkflow, { watchRunId: "run-7", intervalMs: 1, maxChecks: 3 }, {
       filename: join(directory, "broken.sqlite"),
       executionId: "monitor-broken",
       script: answer,
@@ -182,12 +205,12 @@ it.live("survives a failed sample and refuses to resume without a workflow path"
     })
 
     // The failed sample routed nowhere, and the next beat sampled again.
-    expect(samples).toEqual(["broken", "stalled/running"])
+    expect(samples).toEqual(["broken", "stalled/running", "stalled/running"])
     expect(handled).toEqual([
       "stalled: Do not resume: watchWorkflowPath was not supplied. Report that the monitor cannot build a safe resume command."
     ])
     expect(last).toEqual({
-      beats: 2,
+      beats: 3,
       health: health("stalled", "running", undefined, false),
       action: { action: "handled stalled", changed: false, summary: "acted on stalled evidence" }
     })
@@ -306,3 +329,70 @@ it.live("settles at the bound when the last beat had no sample but the misses st
     expect(samples).toEqual(["healthy/running", "broken"])
     expect(last).toEqual({ beats: 2, health: null, action: null })
   }))
+
+it.live("hands each check the prior heartbeat and heals only consecutive matching samples", () =>
+  Effect.gen(function*() {
+    const stalled = health("stalled", "running", undefined, false)
+    const done = health("healthy", "finished")
+    const { answer, handled, prompts } = script([stalled, { ...stalled, targetNodeId: null }, done])
+    yield* Kit.run(MonitorWorkflow, { watchRunId: "run-7", intervalMs: 1 }, {
+      filename: join(directory, "heartbeat-history.sqlite"),
+      executionId: "monitor-history",
+      script: answer,
+      actions: layer
+    })
+    expect(handled).toHaveLength(1)
+    expect(prompts[0]?.match(/Previous heartbeat:/g)).toHaveLength(1)
+    expect(prompts[0]).toContain("Previous heartbeat: null")
+    expect(prompts[0]).toContain("Consecutive matching heartbeats: 0")
+    expect(prompts[1]).toContain(`Previous heartbeat: ${JSON.stringify(stalled)}`)
+    expect(prompts[1]).toContain("Consecutive matching heartbeats: 1")
+    expect(prompts[2]).toContain("Consecutive matching heartbeats: 2")
+  }))
+
+it.live("resets healing evidence after a missed heartbeat or a different target", () =>
+  Effect.gen(function*() {
+    const { answer, handled, prompts } = script([
+      health("wedged-node", "running", "first", false),
+      "broken",
+      health("wedged-node", "running", "first", false),
+      health("wedged-node", "running", "second", false),
+      health("healthy", "finished")
+    ])
+    yield* Kit.run(MonitorWorkflow, { watchRunId: "run-7", intervalMs: 1 }, {
+      filename: join(directory, "heartbeat-reset.sqlite"),
+      executionId: "monitor-history-reset",
+      script: answer,
+      actions: layer
+    })
+    expect(handled).toEqual([])
+    expect(prompts[2]).toContain("Previous heartbeat: null")
+    expect(prompts[2]).toContain("Consecutive matching heartbeats: 0")
+    expect(prompts[4]).toContain("Consecutive matching heartbeats: 1")
+  }))
+
+it.live("starts new healing evidence when the watched run changes ownership state", () =>
+  Effect.gen(function*() {
+    const { answer, handled, prompts } = script([
+      health("stalled", "running", undefined, false),
+      health("stalled", "running", undefined, true),
+      health("stalled", "running", undefined, false),
+      health("healthy", "finished")
+    ])
+    const executionId = "monitor-owner-reset"
+    const questions: Array<string> = []
+    yield* Kit.run(MonitorWorkflow, { watchRunId: "run-7", intervalMs: 1 }, {
+      filename: join(directory, "owner-reset.sqlite"),
+      executionId,
+      script: answer,
+      actions: Layer.mergeAll(layer, person(executionId, [{ action: "none", summary: "observe owner" }], questions))
+    })
+    expect(handled).toEqual([])
+    expect(questions).toHaveLength(1)
+    expect(prompts[3]).toContain("Consecutive matching heartbeats: 1")
+  }))
+
+it("keeps dynamic heartbeat state out of the shared monitoring doctrine", () => {
+  expect(monitorPrompt()).not.toContain("Previous heartbeat:")
+  expect(monitorPrompt()).not.toContain("Consecutive matching heartbeats:")
+})

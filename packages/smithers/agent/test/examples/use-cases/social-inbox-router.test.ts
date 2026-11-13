@@ -24,8 +24,10 @@ const ids = (items: ReadonlyArray<{ readonly id?: string; readonly itemId?: stri
  */
 const script = () => {
   const turns: Array<string> = []
+  const prompts: Array<string> = []
   const actions: Array<string> = []
   const answer: Kit.Script = (asked) => {
+    prompts.push(asked)
     if (asked.includes("Normalize this social message into an inbox item")) {
       const [message] = JSON.parse(field(asked, "Messages")) as ReadonlyArray<
         { readonly id: string; readonly from: string; readonly text: string }
@@ -48,7 +50,13 @@ const script = () => {
       return {
         items: items.map((item) => ({
           id: item.id,
-          category: item.messageBody.includes("demo") ? "lead" : item.messageBody.includes("bug") ? "support" : "noise",
+          category: item.messageBody.includes("demo")
+            ? "lead"
+            : item.messageBody.includes("bug")
+            ? "support"
+            : item.messageBody.includes("following")
+            ? "follow-up"
+            : "noise",
           confidence: 0.9,
           reasoning: "keyword"
         })),
@@ -116,7 +124,7 @@ const script = () => {
     }
     return undefined
   }
-  return { actions, answer, turns }
+  return { actions, answer, prompts, turns }
 }
 
 it.effect("opens a ticket for a support message and still asks every action agent", () =>
@@ -180,3 +188,25 @@ it.effect("hands every action agent an empty list for noise", () =>
     expect(output.leadActions).toEqual([])
     expect(output.supportTickets).toEqual([])
   }))
+
+for (
+  const [text, role] of [
+    ["Could we get a demo?", "You are a sales development assistant"],
+    ["Found a bug in export", "You are a support triage specialist"],
+    ["following up on our quote", "You are a relationship manager"]
+  ] as const
+) {
+  it.effect(`passes the sender and message to ${role}`, () =>
+    Effect.gen(function*() {
+      const { answer, prompts } = script()
+      yield* Kit.run(SocialInboxRouter, { messages: [{ id: "source", from: "Grace", text }] }, {
+        filename: join(directory, `content-${text.length}.sqlite`),
+        executionId: `social-content-${text.length}`,
+        script: answer,
+        actions: layer
+      })
+      const prompt = prompts.find((asked) => asked.includes(role))
+      expect(prompt).toContain("Grace")
+      expect(prompt).toContain(text)
+    }))
+}

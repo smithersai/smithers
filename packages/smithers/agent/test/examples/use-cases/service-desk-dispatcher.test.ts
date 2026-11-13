@@ -39,17 +39,24 @@ const script = (received: ReadonlyArray<string>, broken: ReadonlyArray<string> =
   const answer: Kit.Script = (asked) => {
     if (asked.includes("You are a service-desk intake agent")) {
       intakes.push(`${line(asked, "Source")} | ${line(asked, "Tickets")} | ${line(asked, "Fetch command")}`)
-      const tickets = received.map((id) => ({ id, title: `title of ${id}`, description: "", submitter: "dana" }))
+      const tickets = received.map((id, index) => ({
+        id,
+        title: `title of ${id}`,
+        description: `description of ${id}, source ${index}`,
+        submitter: `submitter-${index}`
+      }))
       return { tickets, totalReceived: tickets.length }
     }
     if (asked.includes("You are a service-desk classifier")) {
       const tickets = JSON.parse(line(asked, "Tickets")) as ReadonlyArray<
-        { readonly id: string; readonly title: string }
+        { readonly id: string; readonly title: string; readonly description: string; readonly submitter: string }
       >
       return {
-        classified: tickets.map(({ id, title }) => ({
+        classified: tickets.map(({ description, id, submitter, title }) => ({
           id,
           title,
+          description,
+          submitter,
           category: prefixes[id.slice(0, 3)],
           urgency: "high",
           reasoning: `prefix ${id.slice(0, 3)}`
@@ -162,4 +169,27 @@ it.effect("fails the run when a specialist's seat has no model, instead of dropp
     expect(seats).toContain("anthropic:claude-sonnet-5-5")
     expect(handled).not.toContain("incident handler <- INC-1")
     expect(error._tag).toBe("@smthrs/agent/Seat/SeatUnresolved")
+  }))
+
+it.effect("dispatches repeated ids separately and passes the description and submitter", () =>
+  Effect.gen(function*() {
+    const { answer, handled } = script(["POL-1", "POL-1"])
+    const prompts: Array<string> = []
+    const report = yield* Kit.run(ServiceDeskDispatcher, {}, {
+      filename: join(directory, "duplicate-ids.sqlite"),
+      executionId: "service-desk-duplicate-ids",
+      script: (asked) => {
+        prompts.push(asked)
+        return answer(asked)
+      },
+      actions: layer
+    })
+    expect(handled).toEqual(["policy advisor <- POL-1", "policy advisor <- POL-1"])
+    expect(report).toMatchObject({ totalTickets: 2, resolved: 2 })
+    const requests = prompts.filter((asked) => asked.includes("You are a policy advisor."))
+    expect(requests).toHaveLength(2)
+    expect(requests.map((asked) => [line(asked, "Description"), line(asked, "Submitter")]).sort()).toEqual([
+      ["description of POL-1, source 0", "submitter-0"],
+      ["description of POL-1, source 1", "submitter-1"]
+    ])
   }))

@@ -123,7 +123,7 @@ Return a confidence score and brief reasoning for each classification.`
 
 /** Drafts replies and CRM actions for the leads. */
 export const LeadActions = AgentAction.make("examples/SocialInboxRouter/LeadActions", {
-  payload: { leads: Schema.Array(ClassifiedItem), senderContext: Schema.Json },
+  payload: { item: InboxItem, leads: Schema.Array(ClassifiedItem), senderContext: Schema.Json },
   output: LeadAction,
   seat,
   system: [
@@ -131,15 +131,15 @@ export const LeadActions = AgentAction.make("examples/SocialInboxRouter/LeadActi
 draft a personalized reply, determine the appropriate CRM action, and assign a
 priority level based on the sender's title, company, and message intent.`
   ],
-  prompt: ({ leads, senderContext }) =>
-    `Draft actions for these leads.\n\nLeads: ${JSON.stringify(leads)}\nSender context: ${
-      JSON.stringify(senderContext)
-    }`
+  prompt: ({ item, leads, senderContext }) =>
+    `Draft actions for these leads.\n\nLeads: ${JSON.stringify(leads)}\nSource item: ${
+      JSON.stringify(item)
+    }\nSender context: ${JSON.stringify(senderContext)}`
 })
 
 /** Opens tickets for the support items. */
 export const SupportActions = AgentAction.make("examples/SocialInboxRouter/SupportActions", {
-  payload: { supportItems: Schema.Array(ClassifiedItem), productContext: Schema.Json },
+  payload: { item: InboxItem, supportItems: Schema.Array(ClassifiedItem), productContext: Schema.Json },
   output: SupportAction,
   seat,
   system: [
@@ -147,15 +147,15 @@ export const SupportActions = AgentAction.make("examples/SocialInboxRouter/Suppo
 create a ticket with a subject line, determine urgency, draft a helpful initial
 reply, and flag whether escalation to engineering is needed.`
   ],
-  prompt: ({ productContext, supportItems }) =>
-    `Open tickets for these support items.\n\nSupport items: ${JSON.stringify(supportItems)}\nProduct context: ${
-      JSON.stringify(productContext)
-    }`
+  prompt: ({ item, productContext, supportItems }) =>
+    `Open tickets for these support items.\n\nSupport items: ${JSON.stringify(supportItems)}\nSource item: ${
+      JSON.stringify(item)
+    }\nProduct context: ${JSON.stringify(productContext)}`
 })
 
 /** Drafts replies with due dates for the follow-ups. */
 export const FollowUpActions = AgentAction.make("examples/SocialInboxRouter/FollowUpActions", {
-  payload: { followUps: Schema.Array(ClassifiedItem), relationshipContext: Schema.Json },
+  payload: { item: InboxItem, followUps: Schema.Array(ClassifiedItem), relationshipContext: Schema.Json },
   output: FollowUpAction,
   seat,
   system: [
@@ -163,10 +163,10 @@ export const FollowUpActions = AgentAction.make("examples/SocialInboxRouter/Foll
 provide context on the conversation history, draft a thoughtful reply, and
 set a due-by date to keep the relationship warm.`
   ],
-  prompt: ({ followUps, relationshipContext }) =>
-    `Draft follow-ups for these items.\n\nFollow-ups: ${JSON.stringify(followUps)}\nRelationship context: ${
-      JSON.stringify(relationshipContext)
-    }`
+  prompt: ({ item, followUps, relationshipContext }) =>
+    `Draft follow-ups for these items.\n\nFollow-ups: ${JSON.stringify(followUps)}\nSource item: ${
+      JSON.stringify(item)
+    }\nRelationship context: ${JSON.stringify(relationshipContext)}`
 })
 
 /** Summarizes what was routed where. */
@@ -220,9 +220,9 @@ export const SocialInboxRouter = Flow.make("examples/SocialInboxRouter", {
                 Node.capture(run, (sorted: Planned.Planned<ReturnType<typeof sort>>) =>
                   Node.bindPlanned(
                     Node.all({
-                      lead: LeadActions.call({ leads: sorted.leads, senderContext }),
-                      support: SupportActions.call({ supportItems: sorted.supportItems, productContext }),
-                      followUp: FollowUpActions.call({ followUps: sorted.followUps, relationshipContext })
+                      lead: LeadActions.call({ item, leads: sorted.leads, senderContext }),
+                      support: SupportActions.call({ item, supportItems: sorted.supportItems, productContext }),
+                      followUp: FollowUpActions.call({ item, followUps: sorted.followUps, relationshipContext })
                     }),
                     Node.capture({}, (actions) =>
                       Summarize.call({

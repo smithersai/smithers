@@ -124,7 +124,7 @@ data into a concise incident report with a timeline, containment status, and sum
 
 type Detection = typeof Detection.Type
 
-// `HumanTask` is a system action: its call adds no requirement, but `layer` still registers it.
+// The interpreter supplies `HumanTask` as a system action; its call adds no requirement.
 type Requirements = Action.Requirement<`examples/RansomwareIsolationCoordinator/${"Detect" | "Contain" | "Report"}`>
 
 type Failure = AgentAction.AgentFailure | HumanTask.HumanTaskFailed | typeof ContainmentDenied.Type

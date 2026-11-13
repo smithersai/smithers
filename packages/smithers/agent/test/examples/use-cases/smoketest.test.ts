@@ -162,3 +162,23 @@ it.effect("runs the given checks one at a time and names a failure that carries 
       summary: "1/2 checks passed"
     })
   }))
+
+it.effect("runs repeated and address-like check names without dropping a command", () =>
+  Effect.gen(function*() {
+    const { actions, log } = host(true)
+    const report = yield* Kit.run(Smoketest, {
+      directory: "app",
+      checks: [{ name: "same.all.0", cmd: "first" }, { name: "same.all.0", cmd: "second" }],
+      maxParallel: 1
+    }, {
+      filename: join(directory, "duplicate-names.sqlite"),
+      executionId: "smoketest-duplicate-names",
+      script: noAgents,
+      actions
+    })
+    expect(log.slice(1)).toEqual([
+      "check same.all.0: first in app within 120000",
+      "check same.all.0: second in app within 120000"
+    ])
+    expect(report).toMatchObject({ totalChecks: 2, passed: 2, duration: 11, verdict: "pass" })
+  }))

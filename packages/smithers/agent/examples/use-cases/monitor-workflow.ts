@@ -9,7 +9,9 @@
  * rule table, kept as data and folded first-match into `Node.branch`
  * predicates as 0.x's `<DecisionTable>` did, sends the condition to a healing
  * agent, a reporting agent, or a person; `healthy` has no rule, so it keeps
- * watching. The monitor stops when a sample reports a terminal run status or
+ * watching. The previous health sample and matching count persist between beats;
+ * healing requires two consecutive samples of the same condition, target, and ownership state. A
+ * missed sample resets that evidence. The monitor stops when a sample reports a terminal run status or
  * after `maxChecks` beats, settling with the last beat.
  *
  * 0.x's `continueOnFail` caught every failure; here an unresolved seat, a spent budget or a plugin failure fails the monitor at once, because no later beat can sample past it.
@@ -135,6 +137,8 @@ interface PromptParams {
   readonly stallBeats?: number | undefined
   readonly autoHeal?: ReadonlyArray<Condition> | undefined
   readonly guidance?: string | undefined
+  readonly previous?: Health | null | undefined
+  readonly consecutive?: number | undefined
 }
 
 /** The monitoring doctrine 0.x's `monitorPrompt` assembled, section by section. */
@@ -148,6 +152,10 @@ export const monitorPrompt = (params: PromptParams = {}): string => {
     "# Monitor one Smithers run",
     `You are the heartbeat health check for run \`${runId}\`. You run alongside it as a sibling run, sample its health on an interval, classify what you see into exactly one condition, and let the workflow route that condition to a handler. You are not doing the run's work and you must not interfere with it.`,
     "## How to read the run",
+    ...(params.previous === undefined ? [] : [
+      `Previous heartbeat: ${JSON.stringify(params.previous)}`,
+      `Consecutive matching heartbeats: ${params.consecutive ?? 0}`
+    ]),
     ...[
       "Read run state ONLY through the Gateway client (`smthrs/gateway-client`) or the public CLI: `bunx smthrs status`, `bunx smthrs inspect RUN_ID --format json`, `bunx smthrs events RUN_ID`, `bunx smthrs node NODE_ID --runId RUN_ID`, `bunx smthrs why RUN_ID`, `bunx smthrs ps`.",
       "NEVER open the store directly. Do not read `.smithers/*.db`, `.smithers/pg`, `smithers.db`, or any SQL over them, and do not parse the Gateway runtime state file. Those are private engine state; reading them races the run and is wrong even when it appears to work.",
@@ -196,7 +204,9 @@ export const Check = AgentAction.make("examples/MonitorWorkflow/Check", {
     intervalMs: Schema.Number,
     stallBeats: Schema.Number,
     autoHeal: Schema.Array(Schema.Literals(conditions)),
-    guidance: Schema.String
+    guidance: Schema.String,
+    previous: Schema.NullOr(Health),
+    consecutive: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
   },
   output: Health,
   seat,
@@ -273,6 +283,8 @@ export interface Rule {
   readonly condition: Condition
   /** Matches only a sample that reports `ownerActive: false`. */
   readonly ownerless?: true
+  /** Samples needed before a matching healing rule may act. Reporting needs one. */
+  readonly confirmations?: 2
   readonly then: Then
 }
 
@@ -317,8 +329,12 @@ export const rules: ReadonlyArray<Rule> = conditions.flatMap((condition): Readon
   const then = thenFor(condition, settings.autoHeal)
   if (then === null) return []
   return then._tag === "handle" && (condition === "stalled" || condition === "wedged-node")
-    ? [{ condition, ownerless: true, then }, { condition, then: escalate(repairQuestion[condition]) }]
-    : [{ condition, then }]
+    ? [{ condition, ownerless: true, confirmations: 2, then }, { condition, then: escalate(repairQuestion[condition]) }]
+    : [{
+      condition,
+      ...(then._tag === "handle" && condition === "runaway-loop" ? { confirmations: 2 as const } : {}),
+      then
+    }]
 })
 
 /** The question a person is asked when a condition escalates. Pure, so it runs in a `Node.map`. */
@@ -382,20 +398,35 @@ const act = (rule: Rule, health: Planned.Planned<Health | null>, watch: Watch): 
  * 0.x's `<DecisionTable strategy="first-match">` nested its `<Branch>`es. No
  * match falls through to doing nothing.
  */
-const decide = (health: Planned.Planned<Health | null>, watch: Watch): Routed =>
+const decide = (
+  health: Planned.Planned<Health | null>,
+  consecutive: Planned.Planned<number>,
+  watch: Watch
+): Routed =>
   rules.reduceRight<Routed>(
     (otherwise, rule) =>
-      Node.branch(Node.succeed(health), {
-        if: Node.capture({ condition: rule.condition, ownerless: rule.ownerless === true }, function(
-          sample: Health | null
-        ) {
-          return sample !== null && sample.condition === this.condition &&
-            (!this.ownerless || sample.ownerActive === false)
+      Node.branch(Node.succeed({ health, consecutive }), {
+        if: Node.capture({
+          condition: rule.condition,
+          ownerless: rule.ownerless === true
+        }, function(sample: { readonly health: Health | null; readonly consecutive: number }) {
+          return sample.health !== null && sample.health.condition === this.condition &&
+            (!this.ownerless || sample.health.ownerActive === false)
         }),
         then: Node.capture({
           rule,
           watch: { watchRunId: watch.watchRunId, watchWorkflowPath: watch.watchWorkflowPath ?? null }
-        }, (matched) => act(rule, matched, watch)),
+        }, (matched) =>
+          Node.branch(Node.succeed(matched), {
+            if: Node.capture({ required: rule.confirmations ?? 1 }, function(sample) {
+              return sample.consecutive >= this.required
+            }),
+            then: Node.capture(
+              { rule, watch: { ...watch, watchWorkflowPath: watch.watchWorkflowPath ?? null } },
+              (sample) => act(rule, sample.health, watch)
+            ),
+            else: Node.capture({}, () => Node.succeed(null))
+          })),
         else: Node.capture({}, () => otherwise)
       }),
     Node.succeed(null)
@@ -412,7 +443,10 @@ const payload = {
   /** The beat this round runs, counted from 0. The flow hands it to itself; a caller omits it. */
   beat: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   /** The beats in a row before this one that had no sample. The flow hands it to itself; a caller omits it. */
-  misses: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
+  misses: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  /** Previous sample and matching streak, persisted across heartbeat rounds. A miss resets both. */
+  previous: Schema.optional(Schema.NullOr(Health)),
+  consecutive: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
 }
 
 const Failure = Schema.Union([
@@ -442,6 +476,8 @@ export const MonitorWorkflow: MonitorFlow = Flow.make("examples/MonitorWorkflow"
     intervalMs = settings.intervalMs,
     maxChecks = settings.maxChecks,
     misses = 0,
+    previous = null,
+    consecutive = 0,
     watchRunId,
     watchWorkflowPath
   }: Schema.Struct.Type<typeof payload>) => {
@@ -452,12 +488,24 @@ export const MonitorWorkflow: MonitorFlow = Flow.make("examples/MonitorWorkflow"
         intervalMs,
         stallBeats: settings.stallBeats,
         autoHeal: [...settings.autoHeal],
-        guidance: settings.guidance
+        guidance: settings.guidance,
+        previous,
+        consecutive
       }),
       { error: Recoverable, onFailure: Node.capture({}, () => Node.succeed(null)) }
     )
+    const counted = Node.map(
+      sample,
+      Node.capture({ previous, consecutive }, function(health: Health | null) {
+        const same = health !== null && this.previous !== null &&
+          health.condition === this.previous.condition &&
+          (health.targetNodeId ?? null) === (this.previous.targetNodeId ?? null) &&
+          health.ownerActive === this.previous.ownerActive
+        return { health, consecutive: health === null ? 0 : same ? this.consecutive + 1 : 1 }
+      })
+    )
     // Sample immediately on the first beat; pace every beat after it.
-    const paced = beat === 0 ? sample : Node.andThen(Sleep.action.call({ millis: intervalMs }), sample)
+    const paced = beat === 0 ? counted : Node.andThen(Sleep.action.call({ millis: intervalMs }), counted)
     const round = {
       beat,
       intervalMs,
@@ -487,32 +535,50 @@ export const MonitorWorkflow: MonitorFlow = Flow.make("examples/MonitorWorkflow"
           intervalMs,
           maxChecks,
           beat: beat + 1,
-          misses: misses + 1
+          misses: misses + 1,
+          previous: null,
+          consecutive: 0
         })
     return Node.bindPlanned(
       paced,
-      Node.capture(round, (health: Planned.Planned<Health | null>) =>
-        Node.bindPlanned(
-          decide(health, { watchRunId, watchWorkflowPath }),
-          Node.capture(round, (action: Planned.Planned<MonitorAction | null>) =>
-            Node.branch(Node.succeed({ beats: beat + 1, health, action }), {
-              if: Node.capture({}, (last: typeof Beat.Type) =>
-                last.health === null),
-              then: Node.capture(round, missed),
-              else: Node.capture(round, () =>
+      Node.capture(
+        round,
+        (observed: Planned.Planned<{ readonly health: Health | null; readonly consecutive: number }>) => {
+          const health = observed.health
+          return Node.bindPlanned(
+            decide(health, observed.consecutive, { watchRunId, watchWorkflowPath }),
+            Node.capture(
+              round,
+              (action: Planned.Planned<MonitorAction | null>) =>
                 Node.branch(Node.succeed({ beats: beat + 1, health, action }), {
-                  // Running out of beats is the monitor's job ending, not a failure.
-                  if: Node.capture({ bound: beat + 1 >= maxChecks }, function(last: typeof Beat.Type) {
-                    return this.bound || finished(last)
-                  }),
-                  then: Node.capture({}, (last) => Flow.done(last)),
-                  else: Node.capture(
-                    round,
-                    () => MonitorWorkflow.to({ watchRunId, watchWorkflowPath, intervalMs, maxChecks, beat: beat + 1 })
-                  )
-                }))
-            }))
-        ))
+                  if: Node.capture({}, (last: typeof Beat.Type) => last.health === null),
+                  then: Node.capture(round, missed),
+                  else: Node.capture(round, () =>
+                    Node.branch(Node.succeed({ beats: beat + 1, health, action }), {
+                      // Running out of beats is the monitor's job ending, not a failure.
+                      if: Node.capture({ bound: beat + 1 >= maxChecks }, function(last: typeof Beat.Type) {
+                        return this.bound || finished(last)
+                      }),
+                      then: Node.capture({}, (last) => Flow.done(last)),
+                      else: Node.capture(
+                        round,
+                        () =>
+                          MonitorWorkflow.to({
+                            watchRunId,
+                            watchWorkflowPath,
+                            intervalMs,
+                            maxChecks,
+                            beat: beat + 1,
+                            previous: health,
+                            consecutive: observed.consecutive
+                          })
+                      )
+                    }))
+                })
+            )
+          )
+        }
+      )
     )
   })
 })

@@ -1,14 +1,18 @@
 import { afterAll, afterEach, expect, it } from "@effect/vitest"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
-import { FlowRuntime } from "@smthrs/flow"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as TestClock from "effect/testing/TestClock"
 import { mkdtempSync, rmSync } from "node:fs"
+import { createServer, type RequestListener, type Server } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { onTestFailed, vi } from "vitest"
@@ -185,7 +189,7 @@ it.effect("signs each X request and threads it on the id X returned for the post
       filename: join(directory, "signed.sqlite"),
       executionId: "tweet-thread-signed",
       script: noAgents,
-      actions: Layer.mergeAll(xLayer, timer)
+      actions: Layer.mergeAll(xLayer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, globalThis.fetch))), timer)
     })
 
     expect(requests).toHaveLength(25)
@@ -239,7 +243,10 @@ it.effect("parks on the durable timer between posts with the flow's own layer", 
       filename: join(directory, "durable-timer.sqlite"),
       executionId,
       script: noAgents,
-      actions: Layer.mergeAll(layer, clockMover(executionId, () => posts, parks))
+      actions: Layer.mergeAll(
+        layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, globalThis.fetch))),
+        clockMover(executionId, () => posts, parks)
+      )
     }))
 
     // The run parked three seconds out after the first post, and posted the
@@ -248,3 +255,117 @@ it.effect("parks on the durable timer between posts with the flow's own layer", 
     expect(posts).toBe(2)
     expect(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "").toContain("PostRefused")
   }))
+
+it("bounds each irreversible post and links to the actual examples repository", () => {
+  expect(PostTweet.attemptTimeoutMs).toBe(30_000)
+  expect(tweets.at(-1)).toContain("github.com/smithersai/smithers")
+})
+
+const SinglePost = Flow.make("examples/TweetThread/SinglePostTest", {
+  payload: PostTweet.payloadSchema,
+  success: PostTweet.successSchema,
+  error: PostRefused,
+  body: Node.capture({ action: PostTweet.name }, (payload) => PostTweet.call(payload))
+})
+
+/** A real loopback endpoint, reached by injecting the fetch transport service. */
+const serve = (handler: RequestListener) =>
+  Effect.acquireRelease(
+    Effect.callback<Server>((resume) => {
+      const server = createServer(handler)
+      server.once("error", (error) => resume(Effect.die(error)))
+      server.listen(0, "127.0.0.1", () => resume(Effect.succeed(server)))
+      return Effect.sync(() => {
+        server.closeAllConnections()
+        server.close()
+      })
+    }),
+    (server) =>
+      Effect.callback<void>((resume) => {
+        server.closeAllConnections()
+        server.close((error) => resume(error ? Effect.die(error) : Effect.void))
+      })
+  )
+
+const credentials = () => {
+  vi.stubEnv("X_API_KEY", "consumer-key")
+  vi.stubEnv("X_API_SECRET", "consumer-secret")
+  vi.stubEnv("X_ACCESS_TOKEN", "access-token")
+  vi.stubEnv("X_ACCESS_SECRET", "access-secret")
+}
+
+const localTransport = (server: Server, record: (signal: AbortSignal | null | undefined) => void = () => {}) =>
+  Layer.succeed(FetchHttpClient.Fetch, (_url, init) => {
+    record(init?.signal)
+    const address = server.address()
+    if (address === null || typeof address === "string") return Promise.reject(new Error("No TCP address"))
+    return fetch(`http://127.0.0.1:${address.port}/2/tweets`, init)
+  })
+
+it.effect("records malformed successful X responses as typed refusals without retrying", () =>
+  Effect.scoped(Effect.gen(function*() {
+    credentials()
+    let body = ""
+    let requests = 0
+    const server = yield* serve((_request, response) => {
+      requests++
+      response.writeHead(201, { "content-type": "application/json" })
+      response.end(body)
+    })
+    const actions = xLayer.pipe(Layer.provide(localTransport(server)))
+    const invalid = ["not json", "{}", "null", "{\"data\":null}", "{\"data\":{\"id\":17}}", "{\"data\":{\"id\":\"\"}}"]
+    for (const [index, value] of invalid.entries()) {
+      body = value
+      const exit = yield* Effect.exit(Kit.run(SinglePost, { text: "hello" }, {
+        filename: join(directory, `malformed-${index}.sqlite`),
+        executionId: `tweet-malformed-${index}`,
+        script: noAgents,
+        actions
+      }))
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const error = Cause.findErrorOption(exit.cause)
+        expect(Option.isSome(error) ? error.value : null).toMatchObject({
+          _tag: "examples/TweetThread/PostRefused",
+          status: 201
+        })
+        expect(Cause.hasDies(exit.cause)).toBe(false)
+      }
+      expect(requests).toBe(index + 1)
+    }
+  })))
+
+for (const mode of ["cancel", "timeout"] as const) {
+  it.effect(`aborts a hung X request on ${mode} and never posts twice`, () =>
+    Effect.scoped(Effect.gen(function*() {
+      credentials()
+      let signal: AbortSignal | null | undefined
+      let requests = 0
+      const arrived = yield* Deferred.make<void>()
+      const server = yield* serve((_request, _response) => {
+        requests++
+        Deferred.doneUnsafe(arrived, Exit.void)
+      })
+      const executionId = `tweet-hung-${mode}`
+      const actions = xLayer.pipe(Layer.provide(localTransport(server, (current) => {
+        signal = current
+      })))
+      const control = Layer.effectDiscard(Effect.forkScoped(Effect.gen(function*() {
+        const runtime = yield* FlowRuntime.FlowRuntime
+        yield* Deferred.await(arrived)
+        if (mode === "cancel") yield* runtime.interrupt(SinglePost, executionId).pipe(Effect.orDie)
+        else yield* TestClock.adjust(30_000)
+      })))
+      const exit = yield* Effect.exit(Kit.run(SinglePost, { text: "hello" }, {
+        filename: join(directory, `hung-${mode}.sqlite`),
+        executionId,
+        script: noAgents,
+        actions: Layer.mergeAll(actions, control)
+      }))
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (mode === "timeout") expect(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "").toContain("AttemptTimedOut")
+      expect(signal).toBeInstanceOf(AbortSignal)
+      expect(signal?.aborted).toBe(true)
+      expect(requests).toBe(1)
+    })))
+}

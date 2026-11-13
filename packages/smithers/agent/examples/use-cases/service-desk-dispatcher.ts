@@ -47,6 +47,8 @@ export const IntakeResult = Schema.Struct({
 
 /** One ticket as the classifier labelled it. */
 export const Classified = Schema.Struct({
+  description: Schema.String,
+  submitter: Schema.String,
   id: Schema.String,
   title: Schema.String,
   category: Schema.Literals(["incident", "request", "policy"]),
@@ -108,7 +110,7 @@ export const Classify = AgentAction.make("examples/ServiceDeskDispatcher/Classif
     `You are a service-desk classifier. Categorize each ticket as an incident
 (something is broken or degraded), a request (someone needs something provisioned
 or changed), or a policy question (someone needs guidance on rules or processes).
-Assign urgency based on business impact.`
+Assign urgency based on business impact. Preserve each ticket's description and submitter in the classification.`
   ],
   prompt: ({ tickets }) => `Classify each ticket.\n\nTickets: ${JSON.stringify(tickets)}`
 })
@@ -120,7 +122,7 @@ const handler = <const Tag extends string>(tag: Tag, system: string) =>
     seat,
     system: [system],
     prompt: (ticket) =>
-      `Handle this ${ticket.urgency} ${ticket.category} ticket.\n\nID: ${ticket.id}\nTitle: ${ticket.title}\nReasoning: ${ticket.reasoning}`
+      `Handle this ${ticket.urgency} ${ticket.category} ticket.\n\nID: ${ticket.id}\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nSubmitter: ${ticket.submitter}\nReasoning: ${ticket.reasoning}`
   })
 
 /** One specialist per category. */
@@ -165,8 +167,8 @@ export const HandleTickets = Flow.make("examples/ServiceDeskDispatcher/HandleTic
   body: Node.capture({}, ({ tickets }) => {
     if (tickets.length === 0) return Node.succeed([])
     // 0.x `continueOnFail`: a handler that failed on its own settles as null instead of failing its siblings.
-    const members = Object.fromEntries(tickets.map((ticket) => [
-      ticket.id,
+    const members = Object.fromEntries(tickets.map((ticket, index) => [
+      String(index),
       Node.catch(route(ticket), { error: Recoverable, onFailure: Node.capture({}, () => Node.succeed(null)) })
     ]))
     const joined = Bounded.all(members, { concurrency: 5 })

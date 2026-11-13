@@ -208,14 +208,14 @@ export const DraftAnswers = Flow.make("examples/RfpResponseRoom/DraftAnswers", {
   error: AgentAction.AgentFailure,
   body: Node.capture({}, ({ answerPlan, approvedSources, maxDraftConcurrency, requirements }) => {
     if (requirements.length === 0) return Node.succeed([])
-    const members = Object.fromEntries(requirements.map((requirement) => [
-      requirement.id,
+    const members = Object.fromEntries(requirements.map((requirement, index) => [
+      String(index),
       DraftAnswer.call({ requirement, answerPlan, approvedSources })
     ]))
     const joined = Bounded.all(members, { concurrency: maxDraftConcurrency })
     return Node.map(
       joined,
-      Node.capture({ requirements }, (drafted) => requirements.map((requirement) => drafted[requirement.id]!))
+      Node.capture({ requirements }, (drafted) => requirements.map((_, index) => drafted[String(index)]!))
     )
   })
 })
@@ -351,7 +351,7 @@ export const RfpResponseRoom = Flow.make("examples/RfpResponseRoom", {
     ))
 })
 
-/** Every step the flow calls, the SME question included, and the child flow it starts. */
+/** The agent steps and child flow. The interpreter supplies the human task for the SME question. */
 export const layer = Layer.mergeAll(
   ParseRfp.layer,
   BuildAnswerPlan.layer,

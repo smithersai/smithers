@@ -363,7 +363,7 @@ export const SqlAnalystDashboard = Flow.make("examples/SqlAnalystDashboard", {
     ))
 })
 
-/** Every step the flow calls, and the human task that parks for the approval. */
+/** The agent steps. The interpreter supplies the human task that parks for approval. */
 export const layer = Layer.mergeAll(
   InspectSchema.layer,
   PlanQuery.layer,

@@ -19,7 +19,8 @@ const item = (id: string, assignTo: (typeof Item.Type)["assignTo"]): typeof Item
   category: assignTo,
   priority: assignTo === "security" ? "urgent" : "medium",
   assignTo,
-  reasoning: `routed to ${assignTo}`
+  reasoning: `routed to ${assignTo}`,
+  content: { body: assignTo === "docs" ? "first body" : "second body" }
 })
 
 /**
@@ -29,6 +30,7 @@ const item = (id: string, assignTo: (typeof Item.Type)["assignTo"]): typeof Item
  */
 const script = (classified: ReadonlyArray<typeof Item.Type>, broken: ReadonlyArray<string> = []) => {
   const handled: Array<string> = []
+  const requests: Array<string> = []
   const triaged: Array<string> = []
   const answer: Kit.Script = (asked) => {
     if (asked.includes("You are a triage specialist")) {
@@ -39,6 +41,7 @@ const script = (classified: ReadonlyArray<typeof Item.Type>, broken: ReadonlyArr
     const id = /\nID: (.+)/.exec(asked)?.[1]
     if (role === undefined || id === undefined) return undefined
     handled.push(`${role} <- ${id}`)
+    requests.push(asked)
     if (broken.includes(id)) return { unexpected: true }
     const escalated = role === "security incident"
     return {
@@ -48,12 +51,12 @@ const script = (classified: ReadonlyArray<typeof Item.Type>, broken: ReadonlyArr
       summary: `${role} took ${id}`
     }
   }
-  return { answer, handled, triaged }
+  return { answer, handled, requests, triaged }
 }
 
 it.effect("routes each actionable item to its handler and skips ignored ones", () =>
   Effect.gen(function*() {
-    const { answer, handled, triaged } = script([
+    const { answer, handled, requests, triaged } = script([
       item("SEC-1", "security"),
       item("DOC-2", "docs"),
       item("NOISE-3", "ignore"),
@@ -71,6 +74,9 @@ it.effect("routes each actionable item to its handler and skips ignored ones", (
     expect(triaged[0]).toContain("Source: GitHub issues\nCommand to fetch items: gh issue list --json")
     // One handler per actionable item, chosen by its route; nothing for the ignored one.
     expect([...handled].sort()).toEqual(["bug fix <- BUG-4", "documentation <- DOC-2", "security incident <- SEC-1"])
+    // The classifier fetched the items itself; the handlers still receive their source bodies.
+    expect(requests.find((asked) => asked.includes("You are a documentation handler."))).toContain("first body")
+    expect(requests.find((asked) => asked.includes("You are a bug fix handler."))).toContain("second body")
     expect(report).toEqual({
       totalItems: 4,
       handled: 2,
@@ -146,4 +152,24 @@ it.effect("fails the run when a handler's seat has no model, instead of dropping
     expect(seats).toContain("anthropic:claude-sonnet-5-5")
     expect(handled).not.toContain("bug fix <- BUG-1")
     expect(error._tag).toBe("@smthrs/agent/Seat/SeatUnresolved")
+  }))
+
+it.effect("handles every repeated id and gives the handler its full source content", () =>
+  Effect.gen(function*() {
+    const classified = [item("same.all.0", "docs"), item("same.all.0", "feature")]
+    const { answer, handled } = script(classified)
+    const prompts: Array<string> = []
+    const report = yield* Kit.run(Triage, { items: [{ body: "first body" }, { body: "second body" }] }, {
+      filename: join(directory, "duplicate-ids.sqlite"),
+      executionId: "triage-duplicate-ids",
+      script: (asked) => {
+        prompts.push(asked)
+        return answer(asked)
+      },
+      actions: layer
+    })
+    expect([...handled].sort()).toEqual(["documentation <- same.all.0", "feature request <- same.all.0"])
+    expect(report).toMatchObject({ totalItems: 2, handled: 2 })
+    expect(prompts.find((asked) => asked.includes("You are a documentation handler."))).toContain("first body")
+    expect(prompts.find((asked) => asked.includes("You are a feature request handler."))).toContain("second body")
   }))
