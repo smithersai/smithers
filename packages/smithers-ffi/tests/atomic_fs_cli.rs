@@ -37,8 +37,20 @@ fn identity(path: &std::path::Path) -> String {
 }
 
 fn invoke(request: Value) -> Value {
+    invoke_with_limit(request, 10000)
+}
+
+fn invoke_with_limit(request: Value, response_limit: usize) -> Value {
+    invoke_command(
+        Command::new(env!("CARGO_BIN_EXE_smithers-jj-export")),
+        request,
+        response_limit,
+    )
+}
+
+fn invoke_command(mut command: Command, request: Value, response_limit: usize) -> Value {
     let body = serde_json::to_vec(&request).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_smithers-jj-export"))
+    let mut child = command
         .arg("--atomic-fs")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -46,7 +58,12 @@ fn invoke(request: Value) -> Value {
         .unwrap();
     {
         let mut stdin = child.stdin.take().unwrap();
-        writeln!(stdin, "flows-atomic/1 {} 10000 10000 10000", body.len()).unwrap();
+        writeln!(
+            stdin,
+            "flows-atomic/1 {} 10000 10000 {response_limit}",
+            body.len()
+        )
+        .unwrap();
         stdin.write_all(&body).unwrap();
     }
     let output = child.wait_with_output().unwrap();
@@ -343,4 +360,112 @@ fn native_patch_rejects_invalid_edits_and_retains_deleted_preimages() {
         .unwrap();
     assert_eq!(fs::read(preimage).unwrap(), b"before");
     assert_eq!(invoke_local(&request)["replayed"], true);
+}
+
+#[test]
+fn glob_response_limit_counts_only_selected_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    fs::write(root.join("selected.txt"), "").unwrap();
+    for index in 0..12 {
+        fs::write(root.join(format!("{index}-{}.log", "x".repeat(160))), "").unwrap();
+    }
+    for (pattern, exclude) in [
+        ("selected.txt", json!([])),
+        ("*.txt", json!(["*.log"])),
+        ("*", json!(["*.log"])),
+    ] {
+        let request = json!({"operation":"glob","boundaryRoot":root,"logicalRoot":root,
+            "rootIdentity":identity(&root),"root":root,"pattern":pattern,
+            "options":{"exclude":exclude}});
+        let expected = json!({"ok":true,"value":[root.join("selected.txt")]});
+        let exact = serde_json::to_vec(&expected).unwrap().len();
+        assert!(exact < 512);
+        assert_eq!(invoke_with_limit(request.clone(), 512), expected);
+        assert_eq!(invoke_with_limit(request.clone(), exact), expected);
+        assert_eq!(invoke_with_limit(request, exact - 1)["code"], "EFBIG");
+    }
+}
+
+#[test]
+fn glob_response_limit_includes_root_prefixes_escaping_and_framing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(dir.path())
+        .unwrap()
+        .join("long-prefix".repeat(12));
+    fs::create_dir(&root).unwrap();
+    let mut names = vec!["one.txt", "two-λ.txt"];
+    #[cfg(unix)]
+    names.push("quote-\"-and-\n.txt");
+    #[cfg(windows)]
+    names.push("three.txt");
+    for name in &names {
+        fs::write(root.join(name), "").unwrap();
+    }
+    for pattern in ["*", "."] {
+        let request = json!({"operation":"glob","boundaryRoot":root,"logicalRoot":root,
+            "rootIdentity":identity(&root),"root":root,"pattern":pattern});
+        let expected = if pattern == "." {
+            json!({"ok":true,"value":[root]})
+        } else {
+            let mut paths = names.iter().map(|name| root.join(name)).collect::<Vec<_>>();
+            paths.sort();
+            json!({"ok":true,"value":paths})
+        };
+        let exact = serde_json::to_vec(&expected).unwrap().len();
+        assert_eq!(invoke_with_limit(request.clone(), exact), expected);
+        assert_eq!(invoke_with_limit(request, exact - 1)["code"], "EFBIG");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn metadata_changes_do_not_require_content_read_permission() {
+    use std::os::unix::{fs::PermissionsExt, process::CommandExt};
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let target = root.join("owned.txt");
+    fs::write(&target, "preserved").unwrap();
+    let privileged = unsafe { libc::geteuid() } == 0;
+    let binary = if privileged {
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+        let binary = root.join("helper");
+        fs::copy(env!("CARGO_BIN_EXE_smithers-jj-export"), &binary).unwrap();
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+        let path = std::ffi::CString::new(target.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::chown(path.as_ptr(), 65534, 65534) }, 0);
+        binary
+    } else {
+        env!("CARGO_BIN_EXE_smithers-jj-export").into()
+    };
+    let execute = |request| {
+        let mut command = Command::new(&binary);
+        if privileged {
+            command.gid(65534).uid(65534);
+        }
+        invoke_command(command, request, 10000)
+    };
+    let common = json!({"boundaryRoot":root,"logicalRoot":root,
+        "rootIdentity":identity(&root),"path":target});
+    for mode in [0, 0o200] {
+        let mut chmod = common.clone();
+        chmod["operation"] = json!("chmod");
+        chmod["options"] = json!({"mode":mode});
+        assert_eq!(execute(chmod.clone()), json!({"ok":true,"value":null}));
+        let mut read = common.clone();
+        read["operation"] = json!("readFile");
+        assert_eq!(execute(read)["code"], "EACCES");
+        let mut chown = common.clone();
+        chown["operation"] = json!("chown");
+        chown["options"] = json!({"uid":-1,"gid":-1});
+        assert_eq!(execute(chown), json!({"ok":true,"value":null}));
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            mode
+        );
+        chmod["options"] = json!({"mode":0o600});
+        assert_eq!(execute(chmod), json!({"ok":true,"value":null}));
+        assert_eq!(fs::read_to_string(&target).unwrap(), "preserved");
+    }
 }

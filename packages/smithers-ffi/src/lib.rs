@@ -5943,6 +5943,155 @@ mod tests {
     }
 
     #[test]
+    fn merge_diffs_and_working_tree_status_use_all_parents() {
+        for reversed in [false, true] {
+            let tmp = TempDir::new().expect("tempdir");
+            let repo_path = repo_path(&tmp);
+            let repo_path_c = c_path(&repo_path);
+            let init = unsafe { take_json(smithers_init_repo(repo_path_c.as_ptr())) };
+            assert_eq!(init["status"], "ok");
+            let settings = create_settings(&UserConfig::default());
+            let (_, repo) = load_repo_at_head(&repo_path, &settings).unwrap();
+            let store = repo.store().clone();
+            let base_id = repo
+                .view()
+                .get_wc_commit_id(WorkspaceName::DEFAULT)
+                .unwrap()
+                .clone();
+            let base = store.get_commit(&base_id).unwrap();
+            let tree_with = |tree: &MergedTree, path: &str, content: &str| {
+                let tree_id = tree.tree_ids().clone().into_resolved().unwrap();
+                let mut builder = TreeBuilder::new(store.clone(), tree_id);
+                let path = RepoPathBuf::from_internal_string(path).unwrap();
+                let id = store
+                    .write_file(&path, &mut content.as_bytes())
+                    .block_on()
+                    .unwrap();
+                builder.set(
+                    path,
+                    TreeValue::File {
+                        id,
+                        executable: false,
+                        copy_id: CopyId::placeholder(),
+                    },
+                );
+                MergedTree::resolved(store.clone(), builder.write_tree().block_on().unwrap())
+            };
+            let mut tx = repo.start_transaction();
+            let left = tx
+                .repo_mut()
+                .new_commit(
+                    vec![base_id.clone()],
+                    tree_with(&base.tree(), "a.txt", "a\n"),
+                )
+                .write()
+                .block_on()
+                .unwrap();
+            let right = tx
+                .repo_mut()
+                .new_commit(vec![base_id], tree_with(&base.tree(), "b.txt", "b\n"))
+                .write()
+                .block_on()
+                .unwrap();
+            let parents = if reversed {
+                vec![right, left]
+            } else {
+                vec![left, right]
+            };
+            let merged = jj_lib::rewrite::merge_commit_trees(tx.repo(), &parents)
+                .block_on()
+                .unwrap();
+            let parent_ids = parents
+                .iter()
+                .map(|parent| parent.id().clone())
+                .collect::<Vec<_>>();
+            for edited in [false, true] {
+                let tree = if edited {
+                    tree_with(&merged, "a.txt", "edited\n")
+                } else {
+                    merged.clone()
+                };
+                let commit = tx
+                    .repo_mut()
+                    .new_commit(parent_ids.clone(), tree)
+                    .write()
+                    .block_on()
+                    .unwrap();
+                tx.repo_mut()
+                    .set_wc_commit(WorkspaceName::DEFAULT.to_owned(), commit.id().clone())
+                    .unwrap();
+                let current_repo = tx.commit("merge fixture").block_on().unwrap();
+                std::fs::write(
+                    repo_path.join("a.txt"),
+                    if edited { "edited\n" } else { "a\n" },
+                )
+                .unwrap();
+                std::fs::write(repo_path.join("b.txt"), "b\n").unwrap();
+                let change = c_string(&commit.change_id().reverse_hex());
+                let revision = c_string(&commit.id().hex());
+                let change_diff =
+                    unsafe { take_json(smithers_get_diff(repo_path_c.as_ptr(), change.as_ptr())) };
+                let revision_diff = unsafe {
+                    take_json(smithers_get_revision_diff(
+                        repo_path_c.as_ptr(),
+                        std::ptr::null(),
+                        revision.as_ptr(),
+                        std::ptr::null(),
+                    ))
+                };
+                let status =
+                    unsafe { take_json(smithers_get_working_tree_status(repo_path_c.as_ptr())) };
+                for (response, key, kind) in [
+                    (&change_diff, "file_diffs", "change_type"),
+                    (&revision_diff, "file_diffs", "change_type"),
+                    (&status, "changes", "status"),
+                ] {
+                    let changes = response[key]
+                        .as_array()
+                        .unwrap_or_else(|| panic!("{response}"));
+                    assert_eq!(
+                        changes.len(),
+                        usize::from(edited),
+                        "reversed={reversed}: {response}"
+                    );
+                    if edited {
+                        assert_eq!(changes[0]["path"], "a.txt", "{response}");
+                        assert_eq!(changes[0][kind], "modified", "{response}");
+                    }
+                }
+                if edited {
+                    assert_eq!(revision_diff["file_diffs"][0]["old_content"], "a\n");
+                    assert_eq!(revision_diff["file_diffs"][0]["new_content"], "edited\n");
+                }
+                tx = current_repo.start_transaction();
+            }
+        }
+    }
+
+    #[test]
+    fn conflicted_merge_diff_has_no_changes_against_merged_parents() {
+        let tmp = TempDir::new().expect("tempdir");
+        let path = repo_path(&tmp);
+        let path_c = c_path(&path);
+        let init = unsafe { take_json(smithers_init_repo(path_c.as_ptr())) };
+        assert_eq!(init["status"], "ok");
+        let change = create_conflicted_change(&path);
+        let change_c = c_string(&change);
+        let diff = unsafe { take_json(smithers_get_diff(path_c.as_ptr(), change_c.as_ptr())) };
+        assert_eq!(diff["file_diffs"], serde_json::json!([]), "{diff}");
+        let revision = c_string(&current_commit_id(&path));
+        let diff = unsafe {
+            take_json(smithers_get_revision_diff(
+                path_c.as_ptr(),
+                std::ptr::null(),
+                revision.as_ptr(),
+                std::ptr::null(),
+            ))
+        };
+        assert_eq!(diff["file_diffs"], serde_json::json!([]), "{diff}");
+    }
+
+    #[test]
     fn revision_interdiff_ignores_parent_only_rebases_and_supports_show_at_revision() {
         let tmp = TempDir::new().expect("tempdir");
         let repo_path = repo_path(&tmp);

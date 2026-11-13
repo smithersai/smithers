@@ -1,6 +1,6 @@
 //! Descriptor-relative filesystem requests for the Flow host. The root and every
 //! traversed directory are opened with O_NOFOLLOW; content uses a checked fd.
-use super::atomic_glob::{relative_pattern, GlobRule};
+use super::atomic_glob::{relative_pattern, GlobBudget, GlobRule};
 use super::atomic_protocol::{self, syscall, HARD_LIMIT};
 use base64::Engine as _;
 use serde_json::{json, Value};
@@ -319,6 +319,15 @@ fn checked_file(
     flags: i32,
     mode: u32,
 ) -> io::Result<File> {
+    checked_file_with_parent(root, request, path, flags, mode).map(|(_, file)| file)
+}
+fn checked_file_with_parent(
+    root: &File,
+    request: &Value,
+    path: &str,
+    flags: i32,
+    mode: u32,
+) -> io::Result<(File, File)> {
     let (dir, name) = parent(root, request, path, false, 0)?;
     let file = open_at(dir.as_raw_fd(), name, flags | libc::O_NONBLOCK, mode)?;
     let stat = fstat(&file)?;
@@ -328,8 +337,97 @@ fn checked_file(
     if stat.st_nlink > 1 {
         return Err(error(libc::EPERM, "hard-linked file denied"));
     }
-    Ok(file)
+    Ok((dir, file))
 }
+// Metadata descriptors do not ask for permission to read the file's content.
+// checked_file still rejects links, directories and special files on the fd.
+#[cfg(target_os = "linux")]
+const METADATA_FLAGS: i32 = libc::O_PATH;
+#[cfg(target_vendor = "apple")]
+const METADATA_FLAGS: i32 = libc::O_EVTONLY;
+#[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
+const METADATA_FLAGS: i32 = libc::O_RDONLY;
+
+#[cfg(target_os = "linux")]
+fn chmod_metadata(file: &File, mode: libc::mode_t) -> io::Result<()> {
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_fchmodat2,
+            file.as_raw_fd(),
+            c"".as_ptr(),
+            mode as libc::c_uint,
+            libc::AT_EMPTY_PATH,
+        )
+    };
+    if rc == 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    if !matches!(error.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL)) {
+        return Err(error);
+    }
+    chmod_metadata_via_proc(file, mode)
+}
+
+// Older kernels have no fchmodat2. This magic link names the held descriptor,
+// never a workspace name that another process could replace after the checks.
+#[cfg(target_os = "linux")]
+fn chmod_metadata_via_proc(file: &File, mode: libc::mode_t) -> io::Result<()> {
+    let path = cstring(OsStr::new(&format!("/proc/self/fd/{}", file.as_raw_fd())))?;
+    if unsafe { libc::chmod(path.as_ptr(), mode) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn chmod_metadata(file: &File, mode: libc::mode_t) -> io::Result<()> {
+    if unsafe { libc::fchmod(file.as_raw_fd(), mode) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+fn chown_metadata(file: &File, uid: libc::uid_t, gid: libc::gid_t) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    let rc = unsafe {
+        libc::fchownat(
+            file.as_raw_fd(),
+            c"".as_ptr(),
+            uid,
+            gid,
+            libc::AT_EMPTY_PATH,
+        )
+    };
+    #[cfg(not(target_os = "linux"))]
+    let rc = unsafe { libc::fchown(file.as_raw_fd(), uid, gid) };
+    if rc < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn sync_metadata(parent: &File, file: &File) -> io::Result<()> {
+    // O_PATH cannot fsync. Flush the target filesystem through its held parent
+    // directory without reopening the target with content-read permission.
+    if fstat(parent)?.st_dev == fstat(file)?.st_dev {
+        if unsafe { libc::syncfs(parent.as_raw_fd()) } < 0 {
+            return Err(io::Error::last_os_error());
+        }
+    } else {
+        // A bind-mounted file can be on a different filesystem from its parent.
+        // sync waits for all filesystems without resolving an untrusted path.
+        unsafe { libc::sync() };
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn sync_metadata(_parent: &File, file: &File) -> io::Result<()> {
+    file.sync_all()
+}
+
 fn fingerprint(stat: &libc::stat) -> [i128; 9] {
     [
         stat.st_dev as i128,
@@ -446,6 +544,9 @@ fn stat_json(stat: libc::stat, birthtime: Option<f64>) -> Value {
         "size":stat.st_size.to_string(), "blksize":stat.st_blksize.to_string(), "blocks":stat.st_blocks })
 }
 fn read_entries(dir: &File) -> io::Result<Vec<(String, libc::stat)>> {
+    read_entries_bounded(dir, MAX_ENTRIES)
+}
+fn read_entries_bounded(dir: &File, limit: usize) -> io::Result<Vec<(String, libc::stat)>> {
     let fd = unsafe { libc::dup(dir.as_raw_fd()) };
     if fd < 0 {
         return Err(io::Error::last_os_error());
@@ -465,13 +566,13 @@ fn read_entries(dir: &File) -> io::Result<Vec<(String, libc::stat)>> {
         if name.to_bytes() == b"." || name.to_bytes() == b".." {
             continue;
         }
-        let name = OsStr::from_bytes(name.to_bytes());
-        let stat = lstat_at(dir, name)?;
-        out.push((name.to_string_lossy().into_owned(), stat));
-        if out.len() > MAX_ENTRIES {
+        if out.len() == limit {
             unsafe { libc::closedir(stream) };
             return Err(error(libc::EFBIG, "directory listing too large"));
         }
+        let name = OsStr::from_bytes(name.to_bytes());
+        let stat = lstat_at(dir, name)?;
+        out.push((name.to_string_lossy().into_owned(), stat));
     }
     unsafe { libc::closedir(stream) };
     out.sort_by(|a, b| a.0.cmp(&b.0));
@@ -544,24 +645,22 @@ fn glob_walk(
     dir: &File,
     prefix: &str,
     rules: &GlobWalk<'_>,
-    budget: &mut usize,
+    budget: &mut GlobBudget,
     depth: usize,
     result: &mut Vec<String>,
 ) -> io::Result<()> {
     if depth > 512 {
         return Err(error(libc::EFBIG, "glob depth exceeded"));
     }
-    for (name, stat) in read_entries(dir)? {
+    let entries = read_entries_bounded(dir, budget.remaining_entries())?;
+    budget.visit_entries(entries.len());
+    for (name, stat) in entries {
         let relative = if prefix.is_empty() {
             name.clone()
         } else {
             format!("{prefix}/{name}")
         };
         let is_directory = stat.st_mode & libc::S_IFMT == libc::S_IFDIR;
-        *budget += relative.len() + 4;
-        if *budget > rules.response_limit {
-            return Err(error(libc::EFBIG, "glob listing exceeds response limit"));
-        }
         if rules
             .excluded
             .iter()
@@ -570,7 +669,11 @@ fn glob_walk(
             continue;
         }
         if rules.selected.matches(&relative, is_directory) {
-            result.push(format!("{}/{relative}", rules.base));
+            let path = format!("{}/{relative}", rules.base);
+            if !budget.select(&path, result.is_empty(), rules.response_limit)? {
+                return Err(error(libc::EFBIG, "glob listing exceeds response limit"));
+            }
+            result.push(path);
             if result.len() > MAX_ENTRIES {
                 return Err(error(libc::EFBIG, "glob result too large"));
             }
@@ -921,27 +1024,26 @@ pub(super) fn run_observed(
             {
                 return Err(error(libc::EINVAL, "invalid owner"));
             }
-            let file = checked_file(&root, request, field(request, "path")?, libc::O_RDONLY, 0)?;
-            let rc = if operation == "chmod" {
-                unsafe {
-                    libc::fchmod(
-                        file.as_raw_fd(),
-                        options["mode"].as_u64().ok_or_else(|| invalid("mode"))? as libc::mode_t,
-                    )
-                }
+            let (dir, file) = checked_file_with_parent(
+                &root,
+                request,
+                field(request, "path")?,
+                METADATA_FLAGS,
+                0,
+            )?;
+            if operation == "chmod" {
+                chmod_metadata(
+                    &file,
+                    options["mode"].as_u64().ok_or_else(|| invalid("mode"))? as libc::mode_t,
+                )?;
             } else {
-                unsafe {
-                    libc::fchown(
-                        file.as_raw_fd(),
-                        options["uid"].as_i64().ok_or_else(|| invalid("uid"))? as libc::uid_t,
-                        options["gid"].as_i64().ok_or_else(|| invalid("gid"))? as libc::gid_t,
-                    )
-                }
-            };
-            if rc < 0 {
-                return Err(io::Error::last_os_error());
+                chown_metadata(
+                    &file,
+                    options["uid"].as_i64().ok_or_else(|| invalid("uid"))? as libc::uid_t,
+                    options["gid"].as_i64().ok_or_else(|| invalid("gid"))? as libc::gid_t,
+                )?;
             }
-            file.sync_all()?;
+            sync_metadata(&dir, &file)?;
             Ok(Value::Null)
         }
         "readLink" => {
@@ -1038,10 +1140,13 @@ pub(super) fn run_observed(
                 return Ok(json!([]));
             }
             let mut result = Vec::new();
+            let mut budget = GlobBudget::new(MAX_ENTRIES);
             if selected.matches("", true) {
+                if !budget.select(base, true, response_limit)? {
+                    return Err(error(libc::EFBIG, "glob listing exceeds response limit"));
+                }
                 result.push(base.to_owned());
             }
-            let mut budget = 32;
             if selected.below("") {
                 glob_walk(
                     &dir,
@@ -1121,6 +1226,106 @@ mod tests {
         let pinned = super::root(root.to_str().unwrap()).unwrap();
         json!({"operation":operation,"boundaryRoot":root,"logicalRoot":root,
             "rootIdentity":identity(&pinned).unwrap(),"path":path})
+    }
+
+    #[test]
+    fn glob_work_limit_counts_whole_directories_before_recursing() {
+        let temp = tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        fs::create_dir(root.join("a")).unwrap();
+        fs::create_dir(root.join("a/a")).unwrap();
+        for (directory, names) in [
+            ("", ["b", "c", "d"]),
+            ("a", ["b", "c", "d"]),
+            ("a/a", ["b", "c", "d"]),
+        ] {
+            for name in names {
+                fs::write(root.join(directory).join(name), "").unwrap();
+            }
+        }
+        let dir = super::root(root.to_str().unwrap()).unwrap();
+        let selected = GlobRule::new("**/missing", true).unwrap();
+        let rules = GlobWalk {
+            selected: &selected,
+            excluded: &[],
+            base: root.to_str().unwrap(),
+            response_limit: 10000,
+        };
+        let mut budget = GlobBudget::new(6);
+        let mut result = Vec::new();
+        let error = glob_walk(&dir, "", &rules, &mut budget, 0, &mut result).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(libc::EFBIG));
+        // Four root entries were charged before entering "a"; its four names
+        // exceed the two remaining slots before "a/a" can be traversed.
+        assert_eq!(budget.remaining_entries(), 2);
+        assert!(result.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn metadata_fallback_changes_the_checked_inode_after_a_name_is_replaced() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        let target = root.join("file");
+        fs::write(&target, "original").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o0)).unwrap();
+        let request = request(&root, "chmod", &target);
+        let pinned = super::root(root.to_str().unwrap()).unwrap();
+        let file = checked_file(
+            &pinned,
+            &request,
+            target.to_str().unwrap(),
+            METADATA_FLAGS,
+            0,
+        )
+        .unwrap();
+        let moved = root.join("moved");
+        fs::rename(&target, &moved).unwrap();
+        fs::write(&target, "replacement").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o400)).unwrap();
+        chmod_metadata_via_proc(&file, 0o600).unwrap();
+        sync_metadata(&pinned, &file).unwrap();
+        chown_metadata(&file, unsafe { libc::geteuid() }, unsafe {
+            libc::getegid()
+        })
+        .unwrap();
+        assert_eq!(
+            fs::metadata(&moved).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o400
+        );
+        assert_eq!(fs::read_to_string(&moved).unwrap(), "original");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "replacement");
+    }
+
+    #[test]
+    fn metadata_changes_keep_refusing_links_directories_and_special_files() {
+        let temp = tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        let target = root.join("file");
+        fs::write(&target, "original").unwrap();
+        fs::hard_link(&target, root.join("hard")).unwrap();
+        symlink(&target, root.join("link")).unwrap();
+        fs::create_dir(root.join("directory")).unwrap();
+        let fifo = cstring(root.join("fifo").as_os_str()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        let original = fs::metadata(&target).unwrap();
+        for name in ["hard", "link", "directory", "fifo"] {
+            for operation in ["chmod", "chown"] {
+                let mut request = request(&root, operation, &root.join(name));
+                request["options"] = json!({"mode":0o600,"uid":-1,"gid":-1});
+                assert!(run(&request, 1024, 1024).is_err(), "{operation} {name}");
+            }
+        }
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions(),
+            original.permissions()
+        );
+        assert_eq!(fs::read_to_string(&target).unwrap(), "original");
     }
 
     #[test]

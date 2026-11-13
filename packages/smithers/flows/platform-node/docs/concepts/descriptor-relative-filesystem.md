@@ -71,12 +71,17 @@ readLink  realPath  makeDirectory  readDirectory  remove  rename  glob
 chmod  chown
 ```
 
-`chmod` and `chown` change metadata through the descriptor of the resolved
-target (`fchmod`, `fchown`), never through a path. They refuse a symbolic link,
-a hard-linked file and the workspace root, a mode outside `0` to `0o7777`, and
-an owner below `-1`; `-1` leaves a `uid` or `gid` unchanged. The change is
-synced before the call returns. A refusal arrives as a typed failure and the
-target keeps its previous mode and owner.
+`chmod` and `chown` use a checked metadata descriptor, so an owner can
+restore an owned mode-`000` file or change a write-only file without read
+permission. They refuse a symbolic link, a hard-linked file and the workspace
+root, a mode outside `0` to `0o7777`, and an owner below `-1`; `-1` leaves a
+`uid` or `gid` unchanged. Linux uses `O_PATH` with descriptor-relative metadata
+syscalls; older kernels change permissions through the held descriptor's
+`/proc/self/fd` entry. macOS uses `O_EVTONLY`. The checked inode stays pinned
+even if its original name is replaced. The change is synced before the call
+returns; Linux flushes the target filesystem through its held parent directory,
+or all filesystems when the file is a mount on a different filesystem. A refusal
+arrives as a typed failure.
 
 Everything else on Effect's `FileSystem` surface returns a live handle or a
 stream that Node cannot open relative to a pinned descriptor: `open`, `stream`, `sink`, `watch`, `copy`,

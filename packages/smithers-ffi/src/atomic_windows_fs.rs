@@ -1,5 +1,5 @@
 //! Flow filesystem requests evaluated through pinned Windows directory handles.
-use super::atomic_glob::{relative_pattern, GlobRule};
+use super::atomic_glob::{relative_pattern, GlobBudget, GlobRule};
 use super::atomic_protocol::{self, syscall, HARD_LIMIT};
 use super::atomic_windows_handle::{info, BoundaryError, Directory, Info};
 use base64::Engine as _;
@@ -202,7 +202,10 @@ fn reject_link(info: &Info) -> io::Result<()> {
     }
 }
 fn names(dir: &Directory) -> io::Result<Vec<String>> {
-    dir.entries(MAX_ENTRIES)?
+    names_bounded(dir, MAX_ENTRIES)
+}
+fn names_bounded(dir: &Directory, limit: usize) -> io::Result<Vec<String>> {
+    dir.entries(limit)?
         .into_iter()
         .map(|name| {
             name.into_string()
@@ -301,23 +304,21 @@ fn glob_walk(
     prefix: &str,
     rules: &GlobWalk<'_>,
     depth: usize,
-    budget: &mut usize,
+    budget: &mut GlobBudget,
     result: &mut Vec<String>,
 ) -> io::Result<()> {
     if depth > 512 {
         return Err(error("EFBIG", "glob depth exceeded"));
     }
-    for name in names(dir)? {
+    let entries = names_bounded(dir, budget.remaining_entries())?;
+    budget.visit_entries(entries.len());
+    for name in entries {
         let relative = if prefix.is_empty() {
             name.clone()
         } else {
             format!("{prefix}/{name}")
         };
         let directory = is_directory(&dir.metadata(OsStr::new(&name))?);
-        *budget += relative.len() + 4;
-        if *budget > rules.limit {
-            return Err(error("EFBIG", "glob listing exceeds response limit"));
-        }
         if rules
             .excluded
             .iter()
@@ -326,7 +327,11 @@ fn glob_walk(
             continue;
         }
         if rules.selected.matches(&relative, directory) {
-            result.push(joined(rules.base, &relative));
+            let path = joined(rules.base, &relative);
+            if !budget.select(&path, result.is_empty(), rules.limit)? {
+                return Err(error("EFBIG", "glob listing exceeds response limit"));
+            }
+            result.push(path);
             if result.len() > MAX_ENTRIES {
                 return Err(error("EFBIG", "glob result too large"));
             }
@@ -681,10 +686,13 @@ pub(super) fn run_observed(
                 return Ok(json!([]));
             }
             let mut result = Vec::new();
+            let mut budget = GlobBudget::new(MAX_ENTRIES);
             if selected.matches("", true) {
+                if !budget.select(base, true, response_limit)? {
+                    return Err(error("EFBIG", "glob listing exceeds response limit"));
+                }
                 result.push(base.to_owned());
             }
-            let mut budget = 32;
             if selected.below("") {
                 glob_walk(
                     &dir,
@@ -789,6 +797,39 @@ mod tests {
 
     // These tests are in atomic_windows_ so the existing Windows CI command
     // executes them, as well as the standalone publication integration suite.
+    #[test]
+    fn glob_work_limit_counts_whole_directories_before_recursing() {
+        let fixture = Fixture::new();
+        let root = fixture.root.clone();
+        fs::create_dir(root.join("a")).unwrap();
+        fs::create_dir(root.join("a/a")).unwrap();
+        for (directory, names) in [
+            ("", ["b", "c", "d"]),
+            ("a", ["b", "c", "d"]),
+            ("a/a", ["b", "c", "d"]),
+        ] {
+            for name in names {
+                fs::write(root.join(directory).join(name), "").unwrap();
+            }
+        }
+        let dir = Directory::root(&root).unwrap();
+        let selected = GlobRule::new("**/missing", true).unwrap();
+        let rules = GlobWalk {
+            selected: &selected,
+            excluded: &[],
+            base: root.to_str().unwrap(),
+            limit: 10000,
+        };
+        let mut budget = GlobBudget::new(6);
+        let mut result = Vec::new();
+        let error = glob_walk(&dir, "", &rules, 0, &mut budget, &mut result).unwrap_err();
+        assert_eq!(code(&error), "EFBIG");
+        // Four root entries were charged before entering "a"; its four names
+        // exceed the two remaining slots before "a/a" can be traversed.
+        assert_eq!(budget.remaining_entries(), 2);
+        assert!(result.is_empty());
+    }
+
     #[test]
     fn private_publication_crash_child() {
         let Ok(root) = std::env::var("SMITHERS_PRIVATE_CRASH_ROOT") else {

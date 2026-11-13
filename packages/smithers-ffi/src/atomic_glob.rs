@@ -1,6 +1,33 @@
 //! The same bounded glob grammar for every native filesystem backend.
 use std::io;
 
+/// Walking costs and encoded response bytes are independent ceilings.
+pub(super) struct GlobBudget {
+    remaining_entries: usize,
+    response_bytes: usize,
+}
+impl GlobBudget {
+    pub(super) fn new(entry_limit: usize) -> Self {
+        Self {
+            remaining_entries: entry_limit,
+            response_bytes: br#"{"ok":true,"value":[]}"#.len(),
+        }
+    }
+
+    pub(super) fn remaining_entries(&self) -> usize {
+        self.remaining_entries
+    }
+
+    pub(super) fn visit_entries(&mut self, count: usize) {
+        self.remaining_entries -= count;
+    }
+
+    pub(super) fn select(&mut self, path: &str, first: bool, limit: usize) -> io::Result<bool> {
+        self.response_bytes += serde_json::to_vec(path)?.len() + usize::from(!first);
+        Ok(self.response_bytes <= limit)
+    }
+}
+
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }

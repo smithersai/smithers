@@ -142,23 +142,15 @@ pub fn format_timestamp(ts: &jj_lib::backend::Timestamp) -> String {
     }
 }
 
-/// Get the parent tree for a commit (or empty tree if no parents).
+/// Merge every parent tree for a commit (or return the empty tree at the root).
 pub fn parent_tree(
     repo: &Arc<ReadonlyRepo>,
     commit: &jj_lib::commit::Commit,
 ) -> anyhow::Result<jj_lib::merged_tree::MergedTree> {
-    if let Some(parent_id) = commit.parent_ids().first() {
-        let parent_commit = repo
-            .store()
-            .get_commit(parent_id)
-            .context("failed to load parent commit")?;
-        Ok(parent_commit.tree())
-    } else {
-        Ok(jj_lib::merged_tree::MergedTree::resolved(
-            repo.store().clone(),
-            repo.store().empty_tree_id().clone(),
-        ))
-    }
+    commit
+        .parent_tree(repo.index())
+        .block_on()
+        .context("failed to merge parent trees")
 }
 
 /// Maximum number of bytes any FFI export will buffer from a single blob.
