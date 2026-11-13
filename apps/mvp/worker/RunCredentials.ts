@@ -24,7 +24,7 @@ import type { SessionKeys } from "./SessionKeys.ts"
 /** The longest caller chain a credential carries: a deeper nested call is refused `too_deep`. */
 export const MAX_CHAIN = 16
 
-/** The largest bearer token sessions read; a longer `Authorization` header is no credential at all. */
+/** The largest bearer token sessions read; a longer `Authorization` header is a credential that doesn't read. */
 export const MAX_TOKEN_LENGTH = 8 * 1024
 
 /** A run's id: an engine's execution id, printable ASCII. */
@@ -113,8 +113,12 @@ export const claimsFor = (
   })
 }
 
-/** How a credential a request carried read: as its run (`verified`), or not at all, and why not. */
-export type Verification = "verified" | "forged" | "expired" | "ended"
+/**
+ * How a credential a request carried read: as its run (`verified`), or not at all, and why not. `unreadable` is an
+ * `Authorization` header that isn't a bearer token at most `MAX_TOKEN_LENGTH` long: another scheme, no token, or one
+ * too long.
+ */
+export type Verification = "verified" | "forged" | "expired" | "ended" | "unreadable"
 
 /** Credentials minted, renewed and read, by `op` (`mint`, `renew`, `verify`), `outcome` and `act`. */
 export const credentials = Metric.counter("smithers_run_credentials", {
@@ -147,6 +151,16 @@ export const devicePrincipalRefusals = Metric.counter("smithers_device_principal
 
 const decodeClaims = Schema.decodeUnknownOption(Schema.fromJsonString(Claims))
 
+/** Nobody: a credential that didn't read, logged and counted by `outcome`, never with its person. */
+const notRead = (outcome: Exclude<Verification, "verified">) =>
+  Effect.as(
+    Effect.andThen(
+      Metric.update(Metric.withAttributes(credentials, { op: "verify", outcome, act: "none" }), 1),
+      Effect.logWarning("auth.credential").pipe(Effect.annotateLogs({ op: "verify", outcome })),
+    ),
+    Option.none<Actor>(),
+  )
+
 /**
  * Run credentials signed with `keys` (purpose `run`, so no cookie ever reads as one), whose person `person` resolves as
  * their session stands now: none once it ended.
@@ -155,14 +169,6 @@ export const make = (options: {
   readonly keys: SessionKeys
   readonly person: (claims: Claims) => Effect.Effect<Option.Option<Actor>, SessionsUnavailable>
 }): RunCredentials["Service"] => {
-  const failed = (outcome: Exclude<Verification, "verified">) =>
-    Effect.as(
-      Effect.andThen(
-        Metric.update(Metric.withAttributes(credentials, { op: "verify", outcome, act: "none" }), 1),
-        Effect.logWarning("auth.credential").pipe(Effect.annotateLogs({ op: "verify", outcome })),
-      ),
-      Option.none<Actor>(),
-    )
   const read = (token: string) => Effect.gen(function* () {
     const value = yield* options.keys.verify("run", token)
     if (Option.isNone(value)) return Option.none<Claims>()
@@ -183,14 +189,14 @@ export const make = (options: {
     verify: (token) =>
       Effect.gen(function* () {
         const value = yield* options.keys.verify("run", token)
-        if (Option.isNone(value)) return yield* failed("forged")
+        if (Option.isNone(value)) return yield* notRead("forged")
         const text = Base64Url.decodeString(value.value.value)
         const claims = Result.isSuccess(text) ? decodeClaims(text.success) : Option.none()
         // Signed by us yet not claims: a key reused for another purpose would be a bug; it reads as forged.
-        if (Option.isNone(claims)) return yield* failed("forged")
-        if ((yield* Clock.currentTimeMillis) >= claims.value.exp) return yield* failed("expired")
+        if (Option.isNone(claims)) return yield* notRead("forged")
+        if ((yield* Clock.currentTimeMillis) >= claims.value.exp) return yield* notRead("expired")
         const person = yield* options.person(claims.value)
-        if (Option.isNone(person)) return yield* failed("ended")
+        if (Option.isNone(person)) return yield* notRead("ended")
         const { act, run, root, chain, ceiling } = claims.value
         yield* Metric.update(Metric.withAttributes(credentials, { op: "verify", outcome: "verified", act }), 1)
         return Option.some<Actor>({ ...person.value, act: { kind: act, id: run, root, chain, ceiling } })
@@ -198,17 +204,26 @@ export const make = (options: {
   })
 }
 
-/** The run credential `request` carries: its `Authorization: Bearer` token, when one at most `MAX_TOKEN_LENGTH` long. */
+/**
+ * The bearer token `request` carries (`Authorization: Bearer <token>`, the scheme in any case, as HTTP reads one), when
+ * one at most `MAX_TOKEN_LENGTH` long. None for another scheme, no token, or one too long: that header is still a
+ * credential (`carriesCredential`), one that doesn't read.
+ */
 export const bearerOf = (request: HttpServerRequest.HttpServerRequest): Option.Option<string> => {
   const header = request.headers["authorization"]
-  if (header === undefined || !header.startsWith("Bearer ")) return Option.none()
+  if (header === undefined || !/^bearer /i.test(header)) return Option.none()
   const token = header.slice("Bearer ".length).trim()
   return token.length === 0 || token.length > MAX_TOKEN_LENGTH ? Option.none() : Option.some(token)
 }
 
+/** Whether `request` carries an `Authorization` header at all: a credential, whether or not it reads, never its cookie's person. */
+export const carriesCredential = (request: HttpServerRequest.HttpServerRequest): boolean =>
+  request.headers["authorization"] !== undefined
+
 /**
  * Who a request is: the run its credential names, when it carries one, and never its cookie's person then, even when the
- * credential doesn't read; else `session`, the person behind its cookie. A request that says whose device data it comes
+ * credential doesn't read, or isn't a bearer token sessions read at all (`unreadable`: another scheme, no token, or one
+ * past `MAX_TOKEN_LENGTH`); else `session`, the person behind its cookie. A request that says whose device data it comes
  * from (`x-smithers-device-person`, src/device/identity.ts) and names anyone else reads as nobody, so one person's
  * queued writes and open pages never act as the next person signed in on the browser; so does a cookie-authenticated
  * write that names no one. A page that opened none of the device's data says so (`@none`) and acts as its cookie's
@@ -223,8 +238,12 @@ export const resolveWith = <R>(
     const request = yield* HttpServerRequest.HttpServerRequest
     if (request.headers[DEVICE_PERSON_HEADER] === ANONYMOUS_DEVICE_PERSON) return yield* refuseAnonymous
     const bearer = bearerOf(request)
-    const actor = Option.isSome(bearer) ? yield* credentials.verify(bearer.value) : yield* session
-    return yield* bound(request, actor, Option.isSome(bearer))
+    const actor = Option.isSome(bearer)
+      ? yield* credentials.verify(bearer.value)
+      : carriesCredential(request)
+      ? yield* notRead("unreadable")
+      : yield* session
+    return yield* bound(request, actor, carriesCredential(request))
   })
 
 /**

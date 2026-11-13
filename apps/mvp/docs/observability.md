@@ -456,9 +456,9 @@ Spans: `auth.sign_in`, `auth.callback` (with `auth.github.consent` inside a sign
 | Record | Kind | Where | Fields |
 |---|---|---|---|
 | `auth.credential` | log | ChatApi, each `POST /api/runs/<run>/credential` | `runId`, `flow`, `by` (`person`, or the caller's `act`), `act` and `depth` when minted, `status`, `durationMs`, `bytes`, `errorCode` |
-| `auth.credential` | log, Warn | ChatApi, a bearer token that didn't read | `op: verify`, `outcome` (`forged`, `expired`, `ended`) |
+| `auth.credential` | log, Warn | ChatApi, a credential that didn't read | `op: verify`, `outcome` (`forged`, `expired`, `ended`; `unreadable`, an `Authorization` header that isn't a bearer token at most 8 KiB long) |
 | `auth.credential.verify` | span | ChatApi | |
-| `smithers_run_credentials` | counter | ChatApi | `op` (`mint`, `verify`), `outcome` (`minted`, `person_only`, `capability_exceeded`, `too_deep`; `verified`, `forged`, `expired`, `ended`), `act` |
+| `smithers_run_credentials` | counter | ChatApi | `op` (`mint`, `verify`), `outcome` (`minted`, `person_only`, `capability_exceeded`, `too_deep`; `verified`, `forged`, `expired`, `ended`, `unreadable`), `act` |
 | `auth.device_principal`, `smithers_device_principal_refusals` | log (Warn) and counter | ChatApi, a request read as nobody because of whose device data it comes from (`x-smithers-device-person`) | `outcome`: `mismatch` (another person's) or `unbound` (a cookie-authenticated write naming no one). Never either person |
 | `auth.person_only` | log, Warn | ChatApi, a person-only route refusing an `act` | `act` (the flow or protected act), `by` (`agent`, `flow`, `app`, `sandbox`), `runId`, `depth` |
 | `smithers_person_only_refusals` | counter | ChatApi | `act`, `by` |

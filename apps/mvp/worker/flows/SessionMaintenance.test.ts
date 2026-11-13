@@ -1,6 +1,7 @@
 import { ExecutionObject } from "@smthrs/platform-cloudflare"
 import { TestSchemas } from "@smthrs/database"
 import { Effect, Exit, Layer, Metric, Redacted } from "effect"
+import { HttpEffect, HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, onTestFinished, test } from "vitest"
@@ -9,7 +10,7 @@ import * as ExecutionHost from "../ExecutionHost.ts"
 import * as Flows from "../Flows.ts"
 import * as Keys from "../SessionKeys.ts"
 import { testFile } from "../test/harness.ts"
-import { SECRET, signInHarness } from "../test/signIn.ts"
+import { cookie, SECRET, signInHarness } from "../test/signIn.ts"
 import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
 import { sourceText } from "../../../../packages/repo-targets/test-utils/source-readers.mjs"
 
@@ -26,7 +27,7 @@ test("authentication seeds maintenance and existing idle alarms own subsequent r
   expect(ExecutionHost.remoteWithSignIn).toBeDefined()
 })
 
-test("idle alarms recover a refused cleanup admission and erase retained rows without another request", async () => {
+test("a seed refused during an outage is tried again by the next request; then idle alarms recover a refused cleanup admission and erase retained rows without another request", async () => {
   const h = await signInHarness(runtime)
   const first = await h.signInAs()
   const auth = await h.start()
@@ -44,8 +45,9 @@ test("idle alarms recover a refused cleanup admission and erase retained rows wi
   }
   const objects = new Map<string, { host: Host; alarm: number | null }>()
   let refuseCleanup = true
+  let refuseMaintenance = true
   const starter = Flows.FlowStarter.of({
-    start: (flow, request) => flow === Cleanup.RevokeReplacedGitHubToken && refuseCleanup
+    start: (flow, request) => (flow === Cleanup.RevokeReplacedGitHubToken && refuseCleanup) || (flow === Cleanup.MaintainSessions && refuseMaintenance)
       ? Effect.fail(new Flows.StartUnavailable({ errorCode: "test_admission" }))
       : ExecutionHost.intent(flow, { executionId: request.executionId, payload: request.payload as never }).pipe(
         Effect.flatMap(intent => objectFor(intent.executionId).host.start(intent)), Effect.orDie,
@@ -77,7 +79,17 @@ test("idle alarms recover a refused cleanup admission and erase retained rows wi
     return object
   }
   expect(Cleanup.MaintainSessions).toBeDefined()
-  await Effect.runPromise(Cleanup.ensure.pipe(Effect.provideService(Flows.FlowStarter, starter)))
+  // Requests seed the singleton through the shared boundary: the first, while admission is unavailable, fails and is
+  // forgotten; the next seeds again under the same intent, and that one is admitted.
+  const write = HttpEffect.toWebHandler(h.signIn.admit(Effect.succeed(HttpServerResponse.empty({ status: 204 }))).pipe(
+    Effect.provideService(Flows.FlowStarter, starter), Effect.provide(h.services),
+  ))
+  const request = () => write(new Request("http://smithers.test/api/write", { method: "POST", body: "write", headers: { cookie: cookie(first.cookies) } }))
+  expect((await request()).status).toBe(204)
+  expect(objects.size).toBe(0)
+  refuseMaintenance = false
+  expect((await request()).status).toBe(204)
+  expect(objects.size).toBe(1)
   const root = [...objects.values()][0]!
   expect((await Effect.runPromise(root.host.alarm()))._tag).toBe("Parked")
   expect(root.alarm).toBeGreaterThan(Date.now())

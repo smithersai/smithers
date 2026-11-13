@@ -1,5 +1,5 @@
 import { Core, GitHub } from "@smthrs/integrations"
-import { Cause, Clock, Config, Context, Duration, Effect, Layer, Metric, Option, Redacted, Schema } from "effect"
+import { Cause, Clock, Config, Context, Duration, Effect, Exit, Layer, Metric, Option, Redacted, Ref, Schema } from "effect"
 import { type HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { digestSync } from "@smthrs/crypto"
@@ -564,9 +564,10 @@ export const make = <E, R>(
     const guard = <E2, R2>(next: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>) => Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
-      // Recovery routes and bearer proofs validate themselves. Sign-out verifies the configured signature and owner
-      // so a lost rotation response cannot strand a live session behind its old cookie.
-      if (Option.isNone(setup) || (Option.isSome(RunCredentials.bearerOf(request)) && !path.startsWith("/api/auth/")) ||
+      // Recovery routes and requests carrying a credential validate themselves: a credential that doesn't read is nobody,
+      // never its cookie's person. Sign-out verifies the configured signature and owner so a lost rotation response
+      // cannot strand a live session behind its old cookie.
+      if (Option.isNone(setup) || (RunCredentials.carriesCredential(request) && !path.startsWith("/api/auth/")) ||
         [SESSION_ROUTE, SIGN_IN_ROUTE, SIGN_OUT_ROUTE, CALLBACK_ROUTE, ARRIVE_ROUTE, HANDOFF_ROUTE].includes(path)) return yield* next
       if (Option.isSome(yield* Effect.serviceOption(CookieReceipt))) return yield* next
       const receipt = yield* readCookie
@@ -583,14 +584,19 @@ export const make = <E, R>(
       withSigningKeys,
     )
 
-    // One attempt per isolate's SignIn service, set before yielding so concurrent requests never join its RPC.
-    let maintenanceStarted = false
+    // One seed in flight per isolate's SignIn service, claimed before yielding so concurrent requests never join its RPC.
+    // Only an admitted seed is remembered: one that fails or times out frees the next request to seed again.
+    const maintenance = yield* Ref.make<"idle" | "seeding" | "admitted">("idle")
+    const claimSeed = Ref.modify(maintenance, (state) => state === "idle" ? [true, "seeding"] as const : [false, state] as const)
     /** The shared request boundary for body admission and cookie authority. Maintenance is best effort. */
     const admit = <E2, R2>(next: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>,
       preflight?: Parameters<typeof WriteAdmission.afterBody>[1]) => WriteAdmission.afterBody(Effect.gen(function* () {
-      if (Option.isSome(setup) && !maintenanceStarted) {
-        maintenanceStarted = true
-        yield* ReplacedTokens.ensure.pipe(Effect.catchCause(() => Effect.void))
+      if (Option.isSome(setup)) {
+        yield* Effect.acquireUseRelease(
+          claimSeed,
+          claimed => claimed ? ReplacedTokens.ensure : Effect.void,
+          (claimed, exit) => claimed ? Ref.set(maintenance, Exit.isSuccess(exit) ? "admitted" : "idle") : Effect.void,
+        ).pipe(Effect.catchCause(() => Effect.void))
       }
       return yield* guard(next)
     }), preflight).pipe(Effect.provideService(BodyLimits.ModelBytes, modelBytes))

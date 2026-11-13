@@ -244,38 +244,81 @@ describe("signing and reading a credential", () => {
     expect(await at(NOW, credentials.verify(stranger))).toEqual(Option.none())
   })
 
-  test("a request's bearer token is read only when it is one, bounded", () => {
-    const of = (authorization?: string) =>
-      RunCredentials.bearerOf(
-        HttpServerRequest.fromWeb(
-          new Request("http://chat.test/", authorization === undefined ? {} : { headers: { authorization } }),
-        ),
+  test("a request's bearer token is read only when it is one, bounded, its scheme in any case; any header is a credential", () => {
+    const requestWith = (authorization?: string) =>
+      HttpServerRequest.fromWeb(
+        new Request("http://chat.test/", authorization === undefined ? {} : { headers: { authorization } }),
       )
+    const of = (authorization?: string) => RunCredentials.bearerOf(requestWith(authorization))
     expect(of()).toEqual(Option.none())
     expect(of("Basic abc")).toEqual(Option.none())
+    expect(of("Bearer")).toEqual(Option.none())
     expect(of("Bearer ")).toEqual(Option.none())
     expect(of(`Bearer ${"a".repeat(RunCredentials.MAX_TOKEN_LENGTH + 1)}`)).toEqual(Option.none())
     expect(of(`Bearer ${signed}`)).toEqual(Option.some(signed))
+    // The scheme is read in any case, as HTTP reads one.
+    expect(of(`bearer ${signed}`)).toEqual(Option.some(signed))
+    expect(of(`BEARER ${signed}`)).toEqual(Option.some(signed))
+    // Any `Authorization` header is a credential, whether or not it reads.
+    const carries = (authorization?: string) => RunCredentials.carriesCredential(requestWith(authorization))
+    expect([carries(), carries("Basic abc"), carries("Bearer"), carries(`Bearer ${signed}`)]).toEqual([false, true, true, true])
   })
 
-  test("a request carrying a credential is never its cookie's person, even when the credential doesn't read", async () => {
+  test("a request carrying a credential is never its cookie's person, even when the credential doesn't read, or isn't a bearer token at all", async () => {
+    const registry: Metric.MetricRegistry = new Map()
+    const logs: Array<unknown> = []
     const sessions = RunCredentials.sessionsWith(Effect.succeedSome(member)).pipe(
       Layer.provide(Layer.succeed(RunCredentials.RunCredentials, credentials)),
     )
-    const resolve = (headers: Record<string, string>) =>
+    const resolve = (headers: Record<string, string>, method = "GET") =>
       at(
         NOW,
         Effect.flatMap(Effect.service(Sessions), (service) => service.resolve).pipe(
           Effect.provideService(
             HttpServerRequest.HttpServerRequest,
-            HttpServerRequest.fromWeb(new Request("http://chat.test/", { headers })),
+            HttpServerRequest.fromWeb(new Request("http://chat.test/", { method, headers })),
           ),
           Effect.provide(sessions),
+          Effect.provideService(Metric.MetricRegistry, registry),
+          Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
         ),
       )
     expect(await resolve({})).toEqual(Option.some(member))
     expect(await resolve({ authorization: `Bearer ${signed}` })).toMatchObject({ value: { act: { kind: "agent" } } })
+    expect(await resolve({ authorization: `bearer ${signed}`, cookie: "smithers_session=x" })).toMatchObject({ value: { act: { kind: "agent" } } })
     expect(await resolve({ authorization: "Bearer forged", cookie: "smithers_session=x" })).toEqual(Option.none())
+    expect(await resolve({ authorization: "bearer forged", cookie: "smithers_session=x" })).toEqual(Option.none())
+    // A header that isn't a bearer token sessions read is a credential that doesn't read: nobody, never the cookie's
+    // person beside it, whatever the device header says, and never counted or logged with that person.
+    const mixed = { cookie: "smithers_session=x", [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA }
+    const unreadable = [
+      `Bearer ${"a".repeat(RunCredentials.MAX_TOKEN_LENGTH + 1)}`,
+      `bearer ${"a".repeat(RunCredentials.MAX_TOKEN_LENGTH + 1)}`,
+      "Basic forged",
+      "Bearer",
+      "Bearer ",
+      "",
+    ]
+    for (const authorization of unreadable) {
+      expect(await resolve({ ...mixed, authorization }), authorization.slice(0, 16)).toEqual(Option.none())
+      expect(await resolve({ ...mixed, authorization }, "POST"), authorization.slice(0, 16)).toEqual(Option.none())
+      expect(await resolve({ ...mixed, [DEVICE_PERSON_HEADER]: member.subject.id, authorization }), authorization.slice(0, 16)).toEqual(Option.none())
+    }
+    const counted = await Effect.runPromise(
+      Metric.value(Metric.withAttributes(RunCredentials.credentials, { op: "verify", outcome: "unreadable", act: "none" })).pipe(
+        Effect.provideService(Metric.MetricRegistry, registry),
+      ),
+    )
+    expect(counted.count).toBe(unreadable.length * 3)
+    const lines = (logs as Array<{ message: unknown; annotations: Record<string, unknown> }>).filter((line) =>
+      JSON.stringify(line.message).includes("auth.credential")
+    )
+    expect(lines.map((line) => line.annotations)).toEqual([
+      { op: "verify", outcome: "forged" },
+      { op: "verify", outcome: "forged" },
+      ...Array.from({ length: unreadable.length * 3 }, () => ({ op: "verify", outcome: "unreadable" })),
+    ])
+    expect(JSON.stringify(logs)).not.toMatch(/person-member|smithers_session/)
   })
 
   test("the cookie resolver reads the cookie's person alone, never a credential, bound by the device header", async () => {
@@ -444,10 +487,14 @@ describe("POST /api/runs/<run>/credential", () => {
     expect([report.status, await report.json()]).toEqual([403, { code: "other_run" }])
     const write = await post(mine, `/api/answers/${second}`, { status: "streaming", parts: [] }, bearer(token))
     expect(write.status).toBe(403)
-    // Forged and expired credentials read as nobody, never as the cookie's person: signed out.
+    // Forged and expired credentials read as nobody, never as the cookie's person: signed out. So does an
+    // `Authorization` header that isn't a bearer token sessions read: too long, another scheme, or no token.
     const expired = await sign({ ...success(claims(asker, first, { flow: "chat/Answer" })), exp: Date.now() - 1 })
-    for (const forged of ["forged", expired]) {
-      expect((await post(mine, `/api/runs/${first}`, { status: "working" }, bearer(forged))).status).toBe(401)
+    const unreadable = [`Bearer ${"a".repeat(RunCredentials.MAX_TOKEN_LENGTH + 1)}`, "bearer forged", "Basic forged", "Bearer"]
+    for (const headers of [bearer("forged"), bearer(expired), ...unreadable.map((authorization) => ({ authorization }))]) {
+      expect((await post(mine, `/api/runs/${first}`, { status: "working" }, headers)).status, headers.authorization.slice(0, 16)).toBe(401)
+      // The person-only answer route refuses it too: nobody, not the person whose cookie rides along.
+      expect((await post(mine, `/api/runs/${first}/answer`, { version: 1, value: "main" }, headers)).status, headers.authorization.slice(0, 16)).toBe(401)
     }
     // The bad requests to the route, and an unknown flow, are refused before anything is minted.
     expect((await mine.fetch(credentialRoute(first), { method: "POST", body: "{" })).status).toBe(400)
