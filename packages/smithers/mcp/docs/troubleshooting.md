@@ -10,6 +10,18 @@ on the [API reference](./api.md).
 One failure is not an `McpError` at all, and it is the most common one: see
 [capability_refused](#capability_refused) at the end.
 
+## MCP server "..." bearer credentials require HTTPS except on loopback
+
+**Code.** `protocol_error`.
+
+**What happened.** A credential provider was configured for a non-loopback
+`http:` endpoint. The connection was refused before evaluating `authProvider.token` or
+sending any request.
+
+**What to change.** Use an `https:` endpoint. Local development may use
+`http:` on `localhost`, `127.0.0.0/8`, or `[::1]`. This applies to both
+`authProvider` and the CLI's `bearerTokenEnv` option.
+
 ## Failed to start MCP server "..."
 
 **Code.** `spawn_failed`.

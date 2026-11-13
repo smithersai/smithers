@@ -83,7 +83,10 @@ variable the CLI reads it from.
 ```
 
 Export `TRACKER_MCP_TOKEN` from your secret store in the shell that runs
-`smthrs`; never type the token on the command line.
+`smthrs`; never type the token on the command line. With `bearerTokenEnv`, use
+`https:` unless the host is loopback (`localhost`, `127.0.0.0/8`, or `[::1]`).
+A non-loopback `http:` endpoint fails with `protocol_error` when connecting,
+before any request is sent.
 
 Requests go through the host's egress client, so its proxy settings and
 capability grants apply. A grant that denies `net:post` to the server's origin
@@ -131,11 +134,11 @@ error naming the server and the variable.
 The CLI preserves these projection fields and passes them to
 `McpFlows.connected`:
 
-| Field        | Meaning                                                                   |
-| ------------ | ------------------------------------------------------------------------- |
-| `include`    | Optional array of exact tool names. Omitted or empty includes every tool. |
-| `exclude`    | Optional array of exact tool names to drop, applied after `include`.      |
-| `namePrefix` | Optional replacement for the default `mcp/<server>` flow-name prefix.     |
+| Field        | Meaning                                                                              |
+| ------------ | ------------------------------------------------------------------------------------ |
+| `include`    | Optional array of exact tool names. Omitted includes every tool; `[]` includes none. |
+| `exclude`    | Optional array of exact tool names to drop, applied after `include`.                 |
+| `namePrefix` | Optional replacement for the default `mcp/<server>` flow-name prefix.                |
 
 The checked projection constructor rejects an empty `namePrefix` before
 spawning and unknown `include` or `exclude` names after reading the catalog. These are

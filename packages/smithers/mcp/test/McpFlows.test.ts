@@ -167,6 +167,22 @@ describe("McpFlows.mcp", () => {
     expect(guide).not.toContain("are not checked by the flag")
   })
 
+  it.each([undefined, [], ["first"]])("projects no tools for an empty include with exclude %j", async (exclude) => {
+    const bindings = await execute(McpFlows.mcp(projectionClient, { include: [], exclude }).bindings())
+    expect(bindings).toEqual([])
+  })
+
+  it("projects no tools when connected receives an empty include", async () => {
+    const bindings = await withFakeServer(
+      respondToEcho,
+      Effect.flatMap(
+        McpFlows.connected({ server: "checked", command: "mcp", args: [], include: [] }),
+        (source) => source.bindings()
+      )
+    )
+    expect(bindings).toEqual([])
+  })
+
   it("applies include in catalog order", async () => {
     const bindings = await execute(McpFlows.mcp(projectionClient, { include: ["third", "first"] }).bindings())
 

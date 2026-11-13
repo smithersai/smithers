@@ -68,7 +68,10 @@ const program = Effect.scoped(Effect.gen(function*() {
 
 `authProvider.token` runs once per HTTP message and is sent as
 `Authorization: Bearer`, so a provider may refresh it between messages. The URL
-itself must not carry credentials.
+itself must not carry credentials. With `authProvider`, use `https:` unless the
+host is loopback (`localhost`, `127.0.0.0/8`, or `[::1]`). A non-loopback
+`http:` endpoint fails with `protocol_error` before the provider is read or any
+request is sent.
 
 The session id the server issues at `initialize` is sent with every later
 message, and closing the scope ends the session with a `DELETE`. A server that

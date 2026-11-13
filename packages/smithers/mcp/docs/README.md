@@ -80,7 +80,7 @@ Three details in that program decide how the rest behaves:
   rather than hanging.
 - `include` is an exact-name allowlist, checked against the catalog the server
   actually sent, so a typo fails the connection instead of quietly handing the
-  model a smaller toolset. Omit it to project every tool.
+  model a smaller toolset. Omit it to project every tool; `include: []` projects none.
 - `env` is overlaid on a bootstrap allowlist (`PATH`, `HOME`, `USER`, `LANG`,
   `LC_*`, `TERM`, `TMPDIR`, `SHELL`), not on the full host environment, so a
   server receives only the credentials you declare. Install and pin the server

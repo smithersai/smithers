@@ -57,7 +57,7 @@ export interface ConnectOptions {
   readonly server: string
   /** The server's MCP endpoint: an absolute `http:` or `https:` URL without credentials. */
   readonly url: string
-  /** Bearer credential source. Omit for a server that needs none. */
+  /** Bearer credential source. Requires HTTPS except on loopback. Omit when unneeded. */
   readonly authProvider?: AuthProvider | undefined
   /** Default deadline for a request/reply exchange. See {@link Transport.defaultRequestTimeoutMs}. */
   readonly requestTimeoutMs?: number | undefined
@@ -175,6 +175,14 @@ export const connect = (
       return yield* Effect.fail(Limits.protocolError(
         server,
         `MCP server "${server}" url must be an absolute http or https URL without credentials`
+      ))
+    }
+    const loopback = endpoint.hostname === "localhost" || endpoint.hostname === "[::1]" ||
+      /^127\.\d+\.\d+\.\d+$/.test(endpoint.hostname)
+    if (options.authProvider !== undefined && endpoint.protocol === "http:" && !loopback) {
+      return yield* Effect.fail(Limits.protocolError(
+        server,
+        `MCP server "${server}" bearer credentials require HTTPS except on loopback`
       ))
     }
     // Each message runs in its own scope, which aborts the HTTP request and

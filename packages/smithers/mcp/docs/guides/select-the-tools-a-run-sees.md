@@ -12,8 +12,8 @@ nothing.
 
 ## Project only the tools you need
 
-`include` is an exact-name allowlist. An omitted or empty `include` means every
-tool:
+`include` is an exact-name allowlist. Omit `include` to project every tool;
+`include: []` projects no tools, including when a computed allowlist is empty:
 
 ```ts
 const source = yield * McpFlows.connected({

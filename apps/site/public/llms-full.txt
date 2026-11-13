@@ -27138,6 +27138,11 @@ Every numeric field must be a positive safe integer. Anything else fails with
 `protocol_error` naming the option, before the process is spawned or a request
 is sent.
 
+With `authProvider`, the URL must use `https:` unless its host is loopback
+(`localhost`, `127.0.0.0/8`, or `[::1]`). A non-loopback `http:` endpoint
+fails with `protocol_error` before reading the token or sending any request.
+Without a credential provider, both schemes remain available.
+
 A `url` is treated as a secret past its host, because an MCP endpoint often
 carries its key in the path or the query. Each HTTP message opens one span
 named for its method, `POST` or `DELETE`, that records the method, scheme, host,
@@ -27195,7 +27200,8 @@ The authoritative decoder for a persisted Streamable HTTP server entry. It
 requires a non-empty `server`, an absolute `http:` or `https:` `url` without
 a user or password, and positive integers for every limit. The entry never
 holds a credential: `bearerTokenEnv` names the environment variable the host
-reads the bearer token from and supplies as `authProvider`.
+reads the bearer token from and supplies as `authProvider`. Connecting an entry
+with `bearerTokenEnv` requires `https:` except on loopback, as above.
 
 ### McpClient.clientInfo
 
@@ -27385,11 +27391,11 @@ passes the live client here.
 
 ### McpFlows.ProjectionOptions
 
-| Field        | Type                                 | Meaning                                                         |
-| ------------ | ------------------------------------ | --------------------------------------------------------------- |
-| `include`    | `ReadonlyArray<string> \| undefined` | Exact tool names to project. Omitted or empty means every tool. |
-| `exclude`    | `ReadonlyArray<string> \| undefined` | Exact tool names to drop, applied after `include`.              |
-| `namePrefix` | `string \| undefined`                | Replaces the default `mcp/<server>` flow-name prefix.           |
+| Field        | Type                                 | Meaning                                                                     |
+| ------------ | ------------------------------------ | --------------------------------------------------------------------------- |
+| `include`    | `ReadonlyArray<string> \| undefined` | Exact tool names to project. Omitted means every tool; `[]` means no tools. |
+| `exclude`    | `ReadonlyArray<string> \| undefined` | Exact tool names to drop, applied after `include`.                          |
+| `namePrefix` | `string \| undefined`                | Replaces the default `mcp/<server>` flow-name prefix.                       |
 
 ### McpFlows.Args
 

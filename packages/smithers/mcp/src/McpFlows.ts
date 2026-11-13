@@ -88,7 +88,7 @@ export const effects = Effects.make({
  * @since 1.0.0-rc.0
  */
 export interface ProjectionOptions {
-  /** Exact tool names to project. Omitted or empty means every tool. */
+  /** Exact tool names to project. Omitted means every tool; empty means no tools. */
   readonly include?: ReadonlyArray<string> | undefined
   /** Exact tool names to drop, applied after `include`. */
   readonly exclude?: ReadonlyArray<string> | undefined
@@ -153,7 +153,7 @@ const toolBinding = (
  */
 export const mcp = (client: McpClient.McpClient, options: ProjectionOptions = {}): FlowBinding.Source => {
   const prefix = options.namePrefix ?? `mcp/${client.server}`
-  const include = options.include === undefined || options.include.length === 0
+  const include = options.include === undefined
     ? undefined
     : new Set(options.include)
   const exclude = new Set(options.exclude ?? [])

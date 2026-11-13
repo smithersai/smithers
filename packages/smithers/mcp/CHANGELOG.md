@@ -4,6 +4,15 @@
 
 ### Changed
 
+- **Breaking security fixes:** `include: []` previously projected every tool;
+  it now projects no tools. Omit `include` to keep the entire catalog.
+  For example, `McpFlows.mcp(client, { include: [] })` now returns an empty
+  source instead of all tools.
+- **Breaking security fix:** a credentialed endpoint such as
+  `http://mcp.example.test/mcp` previously sent its bearer token in clear text;
+  it now fails with `protocol_error` before any request. Use
+  `https://mcp.example.test/mcp`. Loopback HTTP remains allowed.
+
 - Enforce a fixed 128-container JSON nesting limit, including the wire envelope,
   before recursive consumers; reject incoming numeric overflow. Bound argument
   expansion before copying shared-reference trees, require an object argument
