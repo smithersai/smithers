@@ -3218,98 +3218,6 @@ describe("CellTurn sufficiency", () => {
   })
 })
 
-describe("CellTurn vacuous verification, unwired", () => {
-  // `VacuousVerification` is not read by the controller. The module, its own
-  // suite and `AgentEvent.VacuousVerificationObserved` are kept for a
-  // controlled re-measure; the live arm is off, and these are the shapes that
-  // used to fire it. the r93 wave report is the reason: the
-  // control fired twice in 45 journals, and its one consequential firing —
-  // `django__django-15732`, frame 7 — preceded the wave's only revert to an
-  // empty patch. Two firings is not a rate, and a control that ships beside
-  // two prompt rules cannot be priced.
-  const shell = descriptor("bash", { capabilities: ["proc:spawn:*"], tier: "irreversible" })
-  const editor = descriptor("edit", { capabilities: ["fs:write:**"], writes: ["**"], tier: "compensable" })
-
-  /** A frame that runs one command and stores it as the proof it will use. */
-  const storing = (command: string) =>
-    `await ctx.call("bash", { mode: "unhermetic", command: ${JSON.stringify(command)} })
-     console.log("stored the proof")`
-
-  const exits = (exitCode: number): ScriptedEngine.CallStep => ({ _tag: "Success", value: { exitCode } })
-
-  const running = (
-    cells: ReadonlyArray<string>,
-    calls: ReadonlyArray<ScriptedEngine.CallStep>,
-    overrides: { readonly unmovedCap?: number; readonly evaluator?: Layer.Layer<Evaluator.Evaluator> } = {}
-  ) =>
-    run({
-      state: CellTurn.make({
-        session: "session-1",
-        seat: "anthropic:test-model",
-        modelParams: ModelRequest.GenerationParams.make(),
-        layers: ["layer-a"],
-        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
-        placement: Option.none(),
-        contextWindow: tasked,
-        maxFrames: cells.length,
-        repeatCap: 0,
-        narrowingCap: 0,
-        unresolvedCap: 0,
-        unmovedCap: overrides.unmovedCap ?? 0,
-        // The unmoved demand rides the claim judge, which the workflow arms.
-        ...(overrides.evaluator === undefined ? {} : { claimCap: 3 })
-      }),
-      flows: [shell, editor],
-      script: cells.map(emits),
-      calls,
-      tree: "a.py=base",
-      ...(overrides.evaluator === undefined ? {} : { evaluator: overrides.evaluator })
-    })
-
-  it("says nothing to a run whose stored proof was already green", async () => {
-    const { events, model } = await running(
-      [storing("check a.py"), `ctx.done("done")`],
-      [exits(0)]
-    )
-
-    // The exact shape the control was written for, and the run is told
-    // nothing: no journal row, no sentence on the frame it gets back.
-    expect(of(events, "vacuous-verification-observed")).toEqual([])
-    expect(JSON.stringify(model.recorder.requests[1]?.messages)).not.toContain("Vacuous verification")
-    expect(of(events, "turn-closed").map((event) => event.outcome)).toEqual(["continue", "resolved"])
-  })
-
-  it("adds nothing to a demand another control is already handing back", async () => {
-    // The `django__django-14351` shape: the empty proof is stored by the frame
-    // that completes, so the sentence used to ride `UnmovedTree`'s note. The
-    // note is now that control's own words and nothing else.
-    const { events, model } = await running(
-      [
-        `await ctx.call("bash", { mode: "unhermetic", command: "check a.py" })
-         ctx.done("done")`,
-        `ctx.done("done anyway")`
-      ],
-      [exits(0)],
-      {
-        unmovedCap: 1,
-        // The unmoved tree hands a completion back only when the claim brake
-        // reads it as unsupported (#2937).
-        evaluator: Evaluator.layerScripted(() => ({
-          complete: { probability: 0.4 },
-          overclaims: { probability: 0.9 },
-          invented: { probability: 0.6 }
-        }))
-      }
-    )
-
-    expect(of(events, "vacuous-verification-observed")).toEqual([])
-    expect(of(events, "unmoved-demanded")).toHaveLength(1)
-    const answering = JSON.stringify(model.recorder.requests[1]?.messages)
-    expect(answering).toContain("Unmoved workspace")
-    expect(answering).not.toContain("Vacuous verification")
-  })
-})
-
 describe("CellTurn call latency", () => {
   it("journals the wall-clock duration of each sealed model call from the injected clock", async () => {
     const { advance, clock } = manualClock()
@@ -6421,9 +6329,8 @@ describe("CellTurn unsupported claim", () => {
       [editing, finishing("check src/a.py", "kept the query string; the suite is green")],
       [edited, green],
       { complete: { probability: 0.94 }, overclaims: { probability: 0.03 }, invented: { probability: 0.02 } },
-      // A frame the run never needs: a brake with nowhere to hand the frame
-      // back to is not consulted at all, so a run at its last frame would
-      // prove nothing about what the reading does.
+      // Leave a frame available for a demand. On the last frame the brake
+      // still reads the claim, but its reading can only stand or refuse.
       { maxFrames: 3 }
     )
 

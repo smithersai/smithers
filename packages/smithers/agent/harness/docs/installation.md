@@ -33,7 +33,7 @@ The `exports` map publishes these subpaths:
 
 | Import                           | What it is                                                                                                                                                           |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@smthrs/harness`                | The root barrel: 38 namespaces, each re-exporting one module.                                                                                                        |
+| `@smthrs/harness`                | The root barrel: 37 namespaces, each re-exporting one module.                                                                                                        |
 | `@smthrs/harness/<Module>`       | A module with a published subpath, for example `@smthrs/harness/CellTurn`.                                                                                           |
 | `@smthrs/harness/QuickJSSandbox` | The QuickJS-WASM `Sandbox` binding. Deliberately not re-exported from the root, because it carries an embedded WebAssembly build; only hosts that want it import it. |
 | `@smthrs/harness/QuickJSWorkerd` | The QuickJS variant for Cloudflare workerd, imported only by its host.                                                                                               |

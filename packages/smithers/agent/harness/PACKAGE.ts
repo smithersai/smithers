@@ -39,7 +39,7 @@ const importRules = ImportRules({
     {
       kind: "forbidCalls",
       files: ["test/**"],
-      callees: ["setTimeout", "setInterval", "*.waitForTimeout"],
+      callees: ["setTimeout", "setInterval", "*.waitForTimeout", "*.sleep", "*.delay"],
       because: "test.behavioral: synchronize tests on conditions or Effect TestClock instead of timer waits."
     },
     {
@@ -175,7 +175,7 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A model claims success over failed calls or unverified work and the user merges or deploys a change the harness should have blocked.",
       lookFor: [
-        "A path from the __intent done payload to a successful run outcome that skips the CompletionClaim, UnresolvedFailure, FailedCall, UnmovedTree or VacuousVerification demands.",
+        "A path from the __intent done payload to a successful run outcome that skips the CompletionClaim, UnresolvedFailure, FailedCall, UnmovedTree demands.",
         "A judgement or classifier failure that resolves as allowed rather than as a typed refusal."
       ],
       paths: [
@@ -184,7 +184,6 @@ const securityReview = Smithers.SecurityReview({
         "src/UnresolvedFailure.ts",
         "src/FailedCall.ts",
         "src/UnmovedTree.ts",
-        "src/VacuousVerification.ts",
         "src/Sufficiency.ts",
         "src/CellTurn.ts"
       ]

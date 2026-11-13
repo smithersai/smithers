@@ -4328,14 +4328,6 @@ const frame = (
       return yield* readOnlyCapFailure(cap, readOnlyFrames)
     }
 
-    // `VacuousVerification` was read here, between the read-only cap and the
-    // completion branch, and it is not read anywhere now. The module, its
-    // tests and `AgentEvent.VacuousVerificationObserved` are kept; the arm is
-    // off. the r93 wave report is the reason and the module's
-    // own docblock carries it. Re-wiring is one `stored`/`find` pair here plus
-    // the two `State` fields it needs, and it is a controlled arm of its own
-    // wave when it happens — not a change that rides along with another.
-
     const drained = yield* drain(exit, transition._tag === "complete" || !Frame.hasNextFrame(state))
     if (transition._tag === "complete" && carries(drained)) {
       const step = yield* resumed(
@@ -4775,7 +4767,8 @@ export const run = (
               }
               : {}),
             ...(input.stance === undefined ? {} : { stance: input.stance }),
-            ...limits
+            ...limits,
+            callMs: limits.callMs ?? Sandbox.defaultLimits.callMs
           })
         )
       }

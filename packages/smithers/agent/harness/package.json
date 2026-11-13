@@ -71,7 +71,6 @@
     "./UnmovedTree": "./src/UnmovedTree.ts",
     "./UnresolvedFailure": "./src/UnresolvedFailure.ts",
     "./FailedCall": "./src/FailedCall.ts",
-    "./VacuousVerification": "./src/VacuousVerification.ts",
     "./VariablesPanel": "./src/VariablesPanel.ts",
     "./index": "./src/index.ts"
   },
@@ -449,16 +448,6 @@
         "require": {
           "types": "./dist/cjs/FailedCall.d.ts",
           "default": "./dist/cjs/FailedCall.js"
-        }
-      },
-      "./VacuousVerification": {
-        "import": {
-          "types": "./dist/esm/VacuousVerification.d.ts",
-          "default": "./dist/esm/VacuousVerification.js"
-        },
-        "require": {
-          "types": "./dist/cjs/VacuousVerification.d.ts",
-          "default": "./dist/cjs/VacuousVerification.js"
         }
       },
       "./VariablesPanel": {

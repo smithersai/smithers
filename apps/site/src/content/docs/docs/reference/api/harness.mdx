@@ -57,7 +57,7 @@ settled hi
 
 | Import                           | What it is                                                                                                           |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `@smthrs/harness`                | The root barrel: the 38 namespaces listed in the module index.                                                       |
+| `@smthrs/harness`                | The root barrel: the 37 namespaces listed in the module index.                                                       |
 | `@smthrs/harness/<Module>`       | A module with a published subpath, for example `@smthrs/harness/CellTurn`.                                           |
 | `@smthrs/harness/QuickJSSandbox` | The QuickJS-WASM `Sandbox` binding. Not re-exported from the root, because it carries an embedded WebAssembly build. |
 | `@smthrs/harness/QuickJSWorkerd` | The QuickJS variant for Cloudflare workerd, imported only by its host.                                               |
@@ -70,7 +70,7 @@ The `./internal/*` and `./*/index` subpaths map to `null` and do not resolve.
 
 ## Module index
 
-38 public root modules. Each module's full export table is
+37 public root modules. Each module's full export table is
 in the [module and export inventory](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/reference.md); the sections below state
 behavior and signatures.
 
@@ -111,7 +111,6 @@ behavior and signatures.
 | `UnresolvedFailure`          | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The failing check a completion stepped around.                                                           |
 | `FailedCall`                 | `cap`, `heading`, `stated`, `Failure`, `reason`, `inspects`, `find`, `demand`, `state`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The completion its own cell wrote before a call in it failed.                                            |
 | `Sufficiency`                | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `unanswered`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The evidence that is already complete.                                                                   |
-| `VacuousVerification`        | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The proof that was already true before anything changed. Not wired into `CellTurn`.                      |
 | `VariablesPanel`             | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The variables panel: what the realm holds, stated every frame.                                           |
 | `QuickJSVariant`             | `cacheSuccessful`, `VariantService`, `Variant`, `layerVariant`, `loadModule`, `compiledModule`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The QuickJS build a host names, shared by every QuickJS realm; carries no build itself.                  |
 | `QuickJSSandbox` _(subpath)_ | `cacheSuccessful`, `layerVariant`, `loadModule`, `Variant`, `VariantService`, `layerVariantLive`, `ComputeClockService`, `ComputeClock`, `layerClockLive`, `makeWithVariant`, `makeWithClock`, `make`, `layerWithVariant`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | The QuickJS-WASM sandbox binding.                                                                        |
@@ -1096,10 +1095,15 @@ observations (`ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`,
 `NarrowedDemanded`, `NarrowOnlyDemanded`, `UnmovedDemanded`,
 `UnresolvedDemanded`, `FailedCallDemanded`, `UnobservedDemanded`, `OutputDemanded`, `ClaimDemanded`,
 `DecisionSettled`,
-`SufficiencyObserved`, `VacuousVerificationObserved`,
+`SufficiencyObserved`,
 `MutationObserved`, `CheckpointMinted`, `CompactionSettled`,
 `SteeringDrained`), and the terminal set (`Suspended`, `PermissionRequired`,
 `TurnClosed`, `Resolved`, `Aborted`).
+
+`VacuousVerificationObserved` is retained only to decode stored journals;
+the retired control emits no new observations. `DisciplineArmed.callMs`
+records the controller's enforced per-call ceiling even when the sandbox
+binding supplies no call limits.
 
 Capacity attempts emit `ModelSelected` (`seat`) with the actual selected seat,
 including recovery to the primary and later frames continuing on a backup.
@@ -2245,20 +2249,6 @@ ran in, bounded to `retained` (16); `find` finds a failing-before, passing-after
 pair over one subject; and `observation` states, once per run, that the run
 holds both halves of its own evidence. It asks for nothing, refuses nothing,
 and spends no cap.
-
-## VacuousVerification
-
-`import * as VacuousVerification from "@smthrs/harness/VacuousVerification"`
-
-The proof that was already true before anything changed. **This control is
-not wired into `CellTurn`: nothing in a production run reads it, and no run
-is told anything by it.** The module and
-`AgentEvent.VacuousVerificationObserved` are exported so a host can wire it in
-and measure it on its own. Its `stored` input reads a reserved `verification`
-key out of durable state that nothing currently writes, so a host that turns
-it on first decides where a run declares its verification. Once it is wired,
-`find` locates the pristine-tree pass a stored verification stands on and
-`observation` states the fact once per distinct input.
 
 ## TruncatedOutput
 

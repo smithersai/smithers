@@ -1576,18 +1576,9 @@ export class SufficiencyObserved extends Schema.TaggedClass<SufficiencyObserved>
 /**
  * The controller telling a run that its stored proof was already green.
  *
- * **Nothing emits this.** `VacuousVerification` is unwired from `CellTurn`;
- * the event stays declared so the r93 journals that carry it keep decoding and
- * so a controlled re-measure needs no schema change. See `VacuousVerification`
- * for the evidence that turned the arm off.
- *
- * The second control in this package that is not a brake, and the narrower of
- * the two: a cell stored `state.verification` naming a call this run had
- * already watched pass over the tree it was handed, before any frame changed a
- * byte. Written when the observation is issued, at most once per distinct
- * verification input, and delivered on the `invalidProbe` channel because it is
- * the same class of fact — a result that reads identically on a broken tree and
- * on a fixed one.
+ * Decode-only legacy event. The retired verification control no longer emits
+ * observations; this schema remains in the union so stored journals stay
+ * readable.
  *
  * `check` quotes the stored input as the run wrote it, and `callDigest` is the
  * controller's own identity for that call, so a reader can reconcile the

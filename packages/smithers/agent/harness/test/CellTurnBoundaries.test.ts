@@ -14,7 +14,8 @@ import { CanonicalJson, Model, ModelError, ModelEvent, ModelRequest } from "@smt
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Descriptor } from "@smthrs/registry"
-import { Clock, Deferred, Effect, Layer, Option, Result, Schema, Stream } from "effect"
+import { Clock, Deferred, Effect, Fiber, Layer, Option, Result, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import * as Cell from "../src/Cell.ts"
@@ -31,6 +32,7 @@ import {
   confidentEvaluator,
   descriptor,
   emits,
+  journaled,
   manualClock,
   of,
   pattern,
@@ -128,7 +130,7 @@ interface Observed {
  * budget stop, and an abort all publish events first, and a case that conflates
  * them cannot tell a cancelled run from a corrupted one.
  */
-const collect = async (
+const collectEffect = (
   input: CellTurn.Input,
   layers: {
     readonly engine: Layer.Layer<EngineLike.EngineLike>
@@ -143,27 +145,30 @@ const collect = async (
     readonly observer?: ((event: AgentEvent.AgentEvent) => Effect.Effect<void>) | undefined
     readonly clock?: Clock.Clock | undefined
   }
-): Promise<Observed> => {
-  const events: Array<AgentEvent.AgentEvent> = []
-  const outcome = await CellTurn.run(input).pipe(
-    Stream.runForEach((event) => Effect.sync(() => events.push(event))),
-    Effect.provide(layers.engine),
-    Effect.provide(layers.sandbox ?? QuickJSSandbox.layer),
-    Effect.provide(layers.steering ?? Steering.layerNoop()),
-    Effect.provide(layers.evaluator ?? confidentEvaluator),
-    Effect.provideService(AgentEvent.Observer, layers.observer ?? (() => Effect.void)),
-    Effect.provide(layers.clock === undefined ? Layer.empty : Layer.succeed(Clock.Clock, layers.clock)),
-    Effect.result,
-    Effect.exit,
-    Effect.runPromise
-  )
-  const settled = outcome._tag === "Success" ? outcome.value : undefined
-  return {
-    events,
-    failure: settled !== undefined && settled._tag === "Failure" ? settled.failure : undefined,
-    interrupted: outcome._tag === "Failure"
-  }
-}
+): Effect.Effect<Observed> =>
+  Effect.gen(function*() {
+    const events: Array<AgentEvent.AgentEvent> = []
+    const outcome = yield* CellTurn.run(input).pipe(
+      Stream.runForEach((event) => Effect.sync(() => events.push(event))),
+      Effect.provide(layers.engine),
+      Effect.provide(layers.sandbox ?? QuickJSSandbox.layer),
+      Effect.provide(layers.steering ?? Steering.layerNoop()),
+      Effect.provide(layers.evaluator ?? confidentEvaluator),
+      Effect.provideService(AgentEvent.Observer, layers.observer ?? (() => Effect.void)),
+      Effect.provide(layers.clock === undefined ? Layer.empty : Layer.succeed(Clock.Clock, layers.clock)),
+      Effect.result,
+      Effect.exit
+    )
+    const settled = outcome._tag === "Success" ? outcome.value : undefined
+    return {
+      events,
+      failure: settled !== undefined && settled._tag === "Failure" ? settled.failure : undefined,
+      interrupted: outcome._tag === "Failure"
+    }
+  })
+
+const collect = (...args: Parameters<typeof collectEffect>): Promise<Observed> =>
+  Effect.runPromise(collectEffect(...args))
 
 interface Run extends Observed {
   readonly engine: ScriptedEngine.Fixture
@@ -1967,63 +1972,6 @@ describe("CellTurn replay", () => {
 })
 
 /**
- * A journal of recorded boundaries, shared by two runs over one state.
- *
- * The scripted fixture's own `record` executes every boundary, which is a
- * single-pass host: it can say a boundary was opened and never that a second
- * attempt was served the first one's answer. These cases are about the second
- * attempt, so they need the storage half — and they need it to round-trip
- * through the declared schema, because a durable store hands back decoded JSON
- * and never the object the first attempt held.
- *
- * The key is `name` and `identity` TOGETHER, because several records of one
- * frame share an identity and differ only in name. Its separator is U+0000,
- * which no field can contain, so no two distinct boundaries collide on one
- * key. It is written as an escape rather than typed in: a literal NUL byte
- * makes this whole file binary to `grep` and `rg`, which silently drops it
- * from every repository-wide sweep.
- */
-const boundaryKey = (boundary: EngineLike.RecordBoundary<unknown>): string =>
-  `${boundary.name}\u0000${
-    boundary.identity.session ?? ""
-  }\u0000${boundary.identity.frame}\u0000${boundary.identity.boundary}`
-
-/** Wraps a scripted engine so its recorded boundaries persist in `records`. */
-const journaled = (
-  fixture: ScriptedEngine.Fixture,
-  records: Map<string, unknown>,
-  replayDelay = 0
-): Layer.Layer<EngineLike.EngineLike> =>
-  EngineLike.layer(
-    EngineLike.make({
-      ...fixture.engine,
-      record: (boundary) => {
-        fixture.recorder.records.push(boundary)
-        const key = boundaryKey(boundary)
-        const held = records.get(key)
-        if (held !== undefined) {
-          return Effect.fromResult(Schema.decodeUnknownResult(boundary.success)(held)).pipe(
-            Effect.delay(boundary.name === "cell-call" ? replayDelay : 0),
-            Effect.mapError((cause) =>
-              new HarnessError({ code: "engine_failed", message: `Boundary ${boundary.name} did not decode`, cause })
-            )
-          )
-        }
-        const encode = Schema.encodeUnknownSync(
-          boundary.success as unknown as Schema.Schema<unknown> & { readonly "EncodingServices": never }
-        )
-        return boundary.execute.pipe(
-          Effect.tap((value) =>
-            Effect.sync(() => {
-              records.set(key, encode(value))
-            })
-          )
-        )
-      }
-    })
-  )
-
-/**
  * The durable notification queue, in miniature.
  *
  * Two properties are the whole point, and both are the shipped queue's: a drain
@@ -2082,6 +2030,70 @@ const steeringQueue = () => {
  * the second run must not do is settle differently from the first on the
  * strength of that.
  */
+describe("shared replay journal", () => {
+  it("replays decoded settlements and their paid usage without executing them again", async () => {
+    const fixture = ScriptedEngine.make(ScriptedModel.make([]).model)
+    const records = new Map<string, unknown>()
+    const usage = [{ modelId: "test-model", usage: { inputTokens: 12, outputTokens: 3 } }]
+    const value = { text: "recorded", usage }
+    const success = Schema.Struct({
+      text: Schema.String,
+      usage: Schema.Array(Schema.Struct({ modelId: Schema.String, usage: ModelEvent.Usage }))
+    })
+    let executions = 0
+    const record = (name: string, session: string, frame: number, boundary: string) =>
+      Effect.flatMap(EngineLike.EngineLike, (engine) =>
+        engine.record({
+          name,
+          identity: { session, frame, boundary },
+          success,
+          execute: Effect.sync(() => {
+            executions++
+            return value
+          }),
+          usage: (result) => result.usage
+        }))
+    const replay = await Effect.gen(function*() {
+      yield* record("cell-call", "run", 0, "call")
+      const replay = yield* record("cell-call", "run", 0, "call")
+      yield* record("cell-frame", "run", 0, "call")
+      yield* record("cell-call", "other", 0, "call")
+      yield* record("cell-call", "run", 1, "call")
+      yield* record("cell-call", "run", 0, "other")
+      return replay
+    }).pipe(Effect.provide(journaled(fixture, records)), Effect.runPromise)
+    expect(replay).toEqual(value)
+    expect(replay).not.toBe(value)
+    expect(executions).toBe(5)
+    expect(records.size).toBe(5)
+    expect(fixture.recorder.paid).toEqual([
+      { name: "cell-call", usage },
+      { name: "cell-call", usage },
+      { name: "cell-frame", usage },
+      { name: "cell-call", usage },
+      { name: "cell-call", usage },
+      { name: "cell-call", usage }
+    ])
+  })
+
+  it("refuses an invalid recorded settlement before executing the host", async () => {
+    const fixture = ScriptedEngine.make(ScriptedModel.make([]).model)
+    const records = new Map<string, unknown>()
+    const boundary: EngineLike.RecordBoundary<string> = {
+      name: "cell-call",
+      identity: { session: "run", frame: 0, boundary: "call" },
+      success: Schema.String,
+      execute: Effect.succeed("recorded")
+    }
+    const record = Effect.flatMap(EngineLike.EngineLike, (engine) => engine.record(boundary))
+    await record.pipe(Effect.provide(journaled(fixture, records)), Effect.runPromise)
+    records.set([...records.keys()][0]!, 42)
+    const replay = await record.pipe(Effect.provide(journaled(fixture, records)), Effect.result, Effect.runPromise)
+    expect(replay).toMatchObject({ _tag: "Failure", failure: { code: "engine_failed" } })
+    expect(fixture.recorder.paid).toHaveLength(1)
+  })
+})
+
 describe("CellTurn recorded observations", () => {
   it("awaits the steering observer checkpoint before asking the next frame or judging its answer", async () => {
     const queue = steeringQueue()
@@ -2409,24 +2421,32 @@ describe("CellTurn recorded observations", () => {
        if (first.ok === false) { await ctx.call("fs/list", { path: "narrow" }) }
        ctx.done(first.ok === false ? "timed out" : "answered at once")`
 
-      const attempt = async (stalls: boolean) => {
-        const model = ScriptedModel.make([emits(cell)])
-        const engine = ScriptedEngine.make(model.model, [])
-        const stub = EngineLike.make({
-          ...engine.engine,
-          call: (call) => {
-            engine.recorder.calls.push(call)
-            return stalls && call.identity.ordinal === 0
-              ? Effect.never
-              : Effect.succeed(Cell.CallResult.new({ outcome: "success", value: ["alpha.md"] }))
+      const attempt = (stalls: boolean) =>
+        Effect.gen(function*() {
+          const entered = yield* Deferred.make<void>()
+          const model = ScriptedModel.make([emits(cell)])
+          const engine = ScriptedEngine.make(model.model, [])
+          const stub = EngineLike.make({
+            ...engine.engine,
+            call: (call) => {
+              engine.recorder.calls.push(call)
+              return stalls && call.identity.ordinal === 0
+                ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+                : Effect.succeed(Cell.CallResult.new({ outcome: "success", value: ["alpha.md"] }))
+            }
+          })
+          const fiber = yield* collectEffect(
+            { state: state({ maxFrames: 2 }), flows: [lister], limits: { callMs: 50 } },
+            { engine: journaled({ ...engine, engine: stub }, records) }
+          ).pipe(Effect.forkChild({ startImmediately: true }))
+          if (stalls) {
+            yield* Deferred.await(entered)
+            yield* TestClock.adjust(49)
+            expect(fiber.pollUnsafe()).toBeUndefined()
+            yield* TestClock.adjust(1)
           }
-        })
-        const observed = await collect(
-          { state: state({ maxFrames: 2 }), flows: [lister], limits: { callMs: 50 } },
-          { engine: journaled({ ...engine, engine: stub }, records) }
-        )
-        return { ...observed, calls: engine.recorder.calls }
-      }
+          return { ...yield* Fiber.join(fiber), calls: engine.recorder.calls }
+        }).pipe(Effect.scoped, Effect.provide(TestClock.layer()), Effect.runPromise)
 
       // The original attempt: the first call never settles and is answered at its
       // own budget, so the cell takes the narrowing branch.
@@ -2603,32 +2623,43 @@ describe("CellTurn recorded observations", () => {
   )
 
   it("admits a call before its clock starts and hands the cell a refusal admit returns", async () => {
-    const cell = `const slow = await ctx.call("fs/list", { path: "slow" })
-       const refused = await ctx.call("fs/list", { path: "refused" })
-       ctx.done(String(slow) + " " + refused.error.code)`
-    const model = ScriptedModel.make([emits(cell)])
-    const engine = ScriptedEngine.make(model.model, [])
-    const stub = EngineLike.make({
-      ...engine.engine,
-      // A person takes longer to answer than the call may run.
-      admit: (call) =>
-        (call.input as { path: string }).path === "refused"
-          ? Effect.succeed(
-            Cell.CallResult.new({ outcome: "failure", value: null, code: "capability_refused", message: "Denied" })
-          )
-          : Effect.as(Effect.sleep("150 millis"), undefined),
-      call: (call) => {
-        engine.recorder.calls.push(call)
-        return Effect.succeed(Cell.CallResult.new({ outcome: "success", value: "listed" }))
-      }
-    })
-    const observed = await collect(
-      { state: state({ maxFrames: 1 }), flows: [lister], limits: { callMs: 50 } },
-      { engine: EngineLike.layer(stub) }
-    )
+    const observed = await Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const cell = `const slow = await ctx.call("fs/list", { path: "slow" })
+         const refused = await ctx.call("fs/list", { path: "refused" })
+         ctx.done(String(slow) + " " + refused.error.code)`
+      const model = ScriptedModel.make([emits(cell)])
+      const engine = ScriptedEngine.make(model.model)
+      const stub = EngineLike.make({
+        ...engine.engine,
+        admit: (call) =>
+          (call.input as { path: string }).path === "refused"
+            ? Effect.succeed(
+              Cell.CallResult.new({ outcome: "failure", value: null, code: "capability_refused", message: "Denied" })
+            )
+            : Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as(undefined)),
+        call: (call) => {
+          engine.recorder.calls.push(call)
+          return Effect.succeed(Cell.CallResult.new({ outcome: "success", value: "listed" }))
+        }
+      })
+      const fiber = yield* collectEffect(
+        { state: state({ maxFrames: 1 }), flows: [lister], limits: { callMs: 50 } },
+        { engine: EngineLike.layer(stub) }
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      // Approval can remain pending beyond the call's entire running budget.
+      yield* TestClock.adjust(150)
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      expect(engine.recorder.calls).toEqual([])
+      yield* Deferred.succeed(release, undefined)
+      return { ...yield* Fiber.join(fiber), calls: engine.recorder.calls }
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer()), Effect.runPromise)
 
+    expect(observed.failure).toBeUndefined()
     expect(resolvedText(observed.events)).toBe("listed capability_refused")
-    expect(engine.recorder.calls.map((call) => call.input)).toEqual([{ path: "slow" }])
+    expect(observed.calls.map((call) => call.input)).toEqual([{ path: "slow" }])
   })
 
   it.each(["call", "checkpoint", "call-timeout", "slow-journal"])(
@@ -2647,42 +2678,73 @@ describe("CellTurn recorded observations", () => {
       await ctx.call("work", "irreversible")
       await ctx.checkpoint()
       progress = 3`
-      const attempt = async (first: boolean) => {
-        const model = ScriptedModel.make([emits(cell), emits("ctx.done(String(progress))")])
-        const engine = ScriptedEngine.make(model.model)
-        const stub = EngineLike.make({
-          ...engine.engine,
-          call: (call) =>
-            Effect.gen(function*() {
-              dispatches.push(call.input)
-              const key = JSON.stringify(call.identity)
-              const previous = cached.get(key)
-              if (previous !== undefined) return previous
-              effects.push(call.input)
-              if (first && call.input === "read") {
-                if (kind === "call-timeout") return yield* Effect.never
-                yield* Effect.sleep(50)
-              }
-              if (first && call.input === "wait") return yield* Effect.never
-              const result = Cell.CallResult.new({ outcome: "success", value: call.input })
-              cached.set(key, result)
-              return result
-            }),
-          capture: ({ id }) =>
-            Effect.gen(function*() {
-              captures.push(id)
-              if (first) return yield* Effect.never
-              return Option.none()
+      const attempt = (first: boolean, slowReplay = false) =>
+        Effect.gen(function*() {
+          const started = yield* Deferred.make<void>()
+          const frontier = yield* Deferred.make<void>()
+          const replayed = yield* Deferred.make<void>()
+          const release = yield* Deferred.make<void>()
+          const model = ScriptedModel.make([emits(cell), emits("ctx.done(String(progress))")])
+          const engine = ScriptedEngine.make(model.model)
+          const stub = EngineLike.make({
+            ...engine.engine,
+            call: (call) =>
+              Effect.gen(function*() {
+                dispatches.push(call.input)
+                const key = JSON.stringify(call.identity)
+                const previous = cached.get(key)
+                if (previous !== undefined) return previous
+                effects.push(call.input)
+                if (first && call.input === "read") {
+                  if (kind === "call-timeout") {
+                    yield* Deferred.succeed(started, undefined)
+                    return yield* Effect.never
+                  }
+                }
+                if (first && call.input === "wait") {
+                  yield* Deferred.succeed(frontier, undefined)
+                  return yield* Effect.never
+                }
+                const result = Cell.CallResult.new({ outcome: "success", value: call.input })
+                cached.set(key, result)
+                return result
+              }),
+            capture: ({ id }) =>
+              Effect.gen(function*() {
+                captures.push(id)
+                if (first) {
+                  yield* Deferred.succeed(frontier, undefined)
+                  return yield* Effect.never
+                }
+                return Option.none()
+              })
+          })
+          const fiber = yield* collectEffect({
+            state: state({ maxFrames: 2 }),
+            flows: [descriptor("work", { tier: "irreversible" })],
+            limits: kind === "call-timeout" ? { totalMs: 300, callMs: 200 } : { totalMs: 500, callMs: 5000 }
+          }, {
+            engine: journaled({ ...engine, engine: stub }, records, {
+              replayDelay: (boundary) =>
+                slowReplay && boundary.name === "cell-call"
+                  ? Deferred.succeed(replayed, undefined).pipe(Effect.andThen(Deferred.await(release)))
+                  : Effect.void
             })
-        })
-        return collect({
-          state: state({ maxFrames: 2 }),
-          flows: [descriptor("work", { tier: "irreversible" })],
-          limits: kind === "call-timeout" ? { totalMs: 300, callMs: 200 } : { totalMs: 500, callMs: 5000 }
-        }, {
-          engine: journaled({ ...engine, engine: stub }, records, !first && kind === "slow-journal" ? 600 : 0)
-        })
-      }
+          }).pipe(Effect.forkChild({ startImmediately: true }))
+          if (first) {
+            if (kind === "call-timeout") {
+              yield* Deferred.await(started)
+              yield* TestClock.adjust(200)
+            }
+            yield* Deferred.await(frontier)
+            yield* TestClock.adjust(kind === "call-timeout" ? 100 : 500)
+          } else if (slowReplay) {
+            yield* Deferred.await(replayed)
+            yield* TestClock.adjust(600)
+            yield* Deferred.succeed(release, undefined)
+          }
+          return yield* Fiber.join(fiber)
+        }).pipe(Effect.scoped, Effect.provide(TestClock.layer()), Effect.runPromise)
       const first = await attempt(true)
       expect(first.failure).toBeUndefined()
       expect(resolvedText(first.events)).toBe("1")
@@ -2695,7 +2757,7 @@ describe("CellTurn recorded observations", () => {
       const originalEffects = [...effects]
       const originalCaptures = [...captures]
       const originalDispatches = [...dispatches]
-      const replay = await attempt(false)
+      const replay = await attempt(false, kind === "slow-journal")
       expect(replay.failure).toBeUndefined()
       expect(effects).toEqual(originalEffects)
       expect(dispatches).toEqual(originalDispatches)
@@ -3046,34 +3108,54 @@ describe("CellTurn recorded observations", () => {
   })
 
   it("takes the shipped per-call ceiling when the binding enforces no call budget", async () => {
-    const model = ScriptedModel.make([emits(`ctx.done("done")`)])
-    const engine = ScriptedEngine.make(model.model, [])
-    const { events } = await collect(
-      { state: state({ maxFrames: 2 }), flows: [lister] },
-      {
-        engine: engine.layer,
-        // A binding that cannot count calls gets no `callMs` default from
-        // `withDefaults`, and the frame must still bound its settlements.
-        sandbox: Sandbox.layer({
-          capabilities: { calls: false, memoryBytes: false, steps: false, timeMs: false },
-          openRealm: () =>
-            Effect.succeed(
-              {
-                evaluate: () =>
-                  Effect.succeed({
-                    outcome: new Cell.Settled({
-                      transition: Sandbox.replTransition({ _tag: "Done", output: "done" }, undefined)
-                    }),
-                    prints: "",
-                    bindings: []
-                  })
-              } as Sandbox.Realm
-            )
-        })
-      }
-    )
+    const observed = await Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const model = ScriptedModel.make([emits("await ctx.call(\"fs/list\", {}); ctx.done(\"timeout\")")])
+      const engine = ScriptedEngine.make(model.model)
+      const fiber = yield* collectEffect(
+        { state: state({ maxFrames: 1 }), flows: [lister] },
+        {
+          engine: EngineLike.layer({
+            ...engine.engine,
+            call: () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+          }),
+          sandbox: Sandbox.layer({
+            capabilities: { calls: false, memoryBytes: false, steps: false, timeMs: false },
+            openRealm: () =>
+              Effect.succeed({
+                evaluate: ({ call }) =>
+                  call({ ordinal: 0, flow: "fs/list", input: {} }).pipe(
+                    Effect.map((result) => ({
+                      outcome: new Cell.Settled({
+                        transition: Sandbox.replTransition(
+                          { _tag: "Done", output: result.code ?? "no timeout" },
+                          undefined
+                        )
+                      }),
+                      prints: "",
+                      bindings: []
+                    }))
+                  )
+              })
+          })
+        }
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      yield* TestClock.adjust(Sandbox.defaultLimits.callMs - 1)
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust(1)
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer()), Effect.runPromise)
 
-    expect(resolvedText(events)).toBe("done")
+    expect(of(observed.events, "discipline-armed")).toEqual([
+      expect.objectContaining({ callMs: Sandbox.defaultLimits.callMs })
+    ])
+    expect(observed.failure).toBeUndefined()
+    expect(resolvedText(observed.events)).toMatch(/^timeout(?:\n|$)/)
+    expect(of(observed.events, "cell-call-settled")[0]?.result).toMatchObject({
+      code: "timeout",
+      value: { limitMillis: Sandbox.defaultLimits.callMs }
+    })
   })
 
   it("tells the cell nothing was pinned when the store runs past the per-call ceiling", async () => {
@@ -3084,10 +3166,23 @@ describe("CellTurn recorded observations", () => {
       )
     ])
     const engine = ScriptedEngine.make(model.model, [])
-    const { events } = await collect(
-      { state: state({ maxFrames: 2 }), flows: [lister], limits: { callMs: 20 } },
-      { engine: EngineLike.layer(EngineLike.make({ ...engine.engine, capture: () => Effect.never })) }
-    )
+    const { events } = await Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const fiber = yield* collectEffect(
+        { state: state({ maxFrames: 2 }), flows: [lister], limits: { callMs: 20 } },
+        {
+          engine: EngineLike.layer(EngineLike.make({
+            ...engine.engine,
+            capture: () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+          }))
+        }
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      yield* TestClock.adjust(19)
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust(1)
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer()), Effect.runPromise)
 
     // A store that hangs past the ceiling is answered exactly as a host with no
     // store is, and the refusal is what the boundary records — so the resumed
@@ -3427,6 +3522,7 @@ describe("CellTurn timeout guard", () => {
 
   const callRun = async (options: {
     readonly parks: boolean
+    readonly expires?: boolean
     readonly stops?: ((subject: string) => boolean) | undefined
     readonly call: (call: Cell.Call) => Effect.Effect<Cell.CallResult, HarnessError>
     readonly admit?: ((call: Cell.Call) => Effect.Effect<Cell.CallResult | undefined, HarnessError>) | undefined
@@ -3447,15 +3543,30 @@ describe("CellTurn timeout guard", () => {
           return options.call(call)
         })
     })
-    const observed = await collect(
-      { state: state({ maxFrames: 1 }), flows: [lister], limits: { callMs: 20 } },
-      { engine: EngineLike.layer(stub) }
-    )
+    const observed = await Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const fiber = yield* collectEffect(
+        { state: state({ maxFrames: 1 }), flows: [lister], limits: { callMs: 20 } },
+        {
+          engine: EngineLike.layer({
+            ...stub,
+            call: (call) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(stub.call(call)))
+          })
+        }
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      if (options.expires) {
+        yield* Deferred.await(entered)
+        yield* TestClock.adjust(19)
+        expect(fiber.pollUnsafe()).toBeUndefined()
+        yield* TestClock.adjust(1)
+      }
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer()), Effect.runPromise)
     return { ...observed, guard, records: engine.recorder.records }
   }
 
   it("parks a call cut off at the per-call ceiling with its exact limit and no settlement", async () => {
-    const observed = await callRun({ parks: true, call: () => Effect.never })
+    const observed = await callRun({ parks: true, expires: true, call: () => Effect.never })
     const frameSubject = frameSubjectOf(observed.records)
     const callSubject = callSubjectOf(observed.records, 0)
 
@@ -3525,7 +3636,7 @@ describe("CellTurn timeout guard", () => {
   })
 
   it("hands the cell its timeout and records it when the run's timeouts are not guarded", async () => {
-    const observed = await callRun({ parks: false, call: () => Effect.never })
+    const observed = await callRun({ parks: false, expires: true, call: () => Effect.never })
 
     expect(observed.failure).toBeUndefined()
     expect(resolvedText(observed.events)).toBe("timeout")

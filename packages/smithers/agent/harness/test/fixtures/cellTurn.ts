@@ -294,19 +294,16 @@ const recordKey = (boundary: EngineLike.RecordBoundary<unknown>): string =>
     boundary.identity.session ?? ""
   }\u0000${boundary.identity.frame}\u0000${boundary.identity.boundary}`
 
-/**
- * `record` over a journal that replays what it holds and keeps what it
- * executes; every boundary is also listed in `seen`, replayed or not.
- */
 /** A replayed boundary reports what its record says it paid, as a live one does. */
 const reportPaid = <A>(recorder: ScriptedEngine.Recorder, boundary: EngineLike.RecordBoundary<A>) => (value: A) =>
   Effect.sync(() => {
     recorder.paid.push({ name: boundary.name, usage: boundary.usage?.(value) })
   })
 
-const journaled = (
+const replayRecord = (
   records: Map<string, unknown>,
-  recorder: ScriptedEngine.Recorder
+  recorder: ScriptedEngine.Recorder,
+  options: JournalOptions = {}
 ): EngineLike.EngineLike["record"] =>
 (boundary) => {
   recorder.records.push(boundary)
@@ -314,6 +311,7 @@ const journaled = (
   const held = records.get(recordKey(boundary))
   if (held !== undefined) {
     return Effect.fromResult(Schema.decodeUnknownResult(boundary.success)(held)).pipe(
+      Effect.andThen((value) => (options.replayDelay?.(boundary) ?? Effect.void).pipe(Effect.as(value))),
       Effect.mapError((cause) =>
         new HarnessError({ code: "engine_failed", message: `Boundary ${boundary.name} did not decode`, cause })
       ),
@@ -328,6 +326,29 @@ const journaled = (
     Effect.tap(paid)
   )
 }
+
+/** An optional replay barrier, driven by a case's Deferred or test clock. */
+interface JournalOptions {
+  readonly replayDelay?: ((boundary: EngineLike.RecordBoundary<unknown>) => Effect.Effect<void>) | undefined
+}
+
+/**
+ * Persists schema-encoded settlements and replays decoded values with their
+ * recorded usage. Names and all identity fields share one NUL-separated key,
+ * so distinct boundaries cannot collide.
+ *
+ * @category fixtures
+ * @since 0.1.0
+ */
+export const journaled = (
+  fixture: ScriptedEngine.Fixture,
+  records: Map<string, unknown>,
+  options: JournalOptions = {}
+): Layer.Layer<EngineLike.EngineLike> =>
+  EngineLike.layer({
+    ...fixture.engine,
+    record: replayRecord(records, fixture.recorder, options)
+  })
 
 /**
  * A Jev that reads every claim as done and modest, so the sixth brake lets
@@ -403,7 +424,7 @@ export const runEffect = (options: Options): Effect.Effect<Run> =>
           : EngineLike.layer({
             ...engine.engine,
             ...(options.resolve === undefined ? {} : { resolve: options.resolve }),
-            ...(options.records === undefined ? {} : { record: journaled(options.records, engine.recorder) })
+            ...(options.records === undefined ? {} : { record: replayRecord(options.records, engine.recorder) })
           })
       ),
       Effect.provide(QuickJSSandbox.layer),

@@ -442,6 +442,7 @@ describe("Sandbox", () => {
     // each call to its end, so the reading never depends on host scheduling.
     const outcome = await Effect.gen(function*() {
       const entered = [yield* Deferred.make<void>(), yield* Deferred.make<void>()]
+      const release = [yield* Deferred.make<void>(), yield* Deferred.make<void>()]
       const fiber = yield* withRealm((realm) =>
         realm.evaluate({
           cell: Cell.source(
@@ -452,13 +453,14 @@ describe("Sandbox", () => {
           frame: 0,
           call: (invocation) =>
             Deferred.succeed(entered[invocation.ordinal]!, undefined).pipe(
-              Effect.andThen(Effect.sleep(200)),
+              Effect.andThen(Deferred.await(release[invocation.ordinal]!)),
               Effect.as(Cell.CallResult.new({ outcome: "success", value: invocation.input }))
             )
         }), { callMs: 300 }).pipe(Effect.forkChild({ startImmediately: true }))
-      for (const call of entered) {
-        yield* Deferred.await(call)
+      for (let index = 0; index < entered.length; index++) {
+        yield* Deferred.await(entered[index]!)
         yield* TestClock.adjust(200)
+        yield* Deferred.succeed(release[index]!, undefined)
       }
       return (yield* Fiber.join(fiber)).outcome
     }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
@@ -1136,8 +1138,10 @@ describe("Sandbox.driveCell", () => {
       abort: () => {}
     }]
 
-    await Effect.runPromise(
-      Sandbox.driveCell({
+    await Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const fiber = yield* Sandbox.driveCell({
         pending,
         flush: () => {},
         finished: () =>
@@ -1147,10 +1151,18 @@ describe("Sandbox.driveCell", () => {
         abort: () => {},
         remainingMs: () => 60_000,
         handler: (invocation) =>
-          Effect.sleep(80).pipe(Effect.andThen(handler({ bash: { exitCode: 0 } }, observed)(invocation))),
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.andThen(handler({ bash: { exitCode: 0 } }, observed)(invocation))
+          ),
         limits: { callMs: 20 }
-      })
-    )
+      }).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      yield* TestClock.adjust(80)
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(fiber)
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer()), Effect.runPromise)
 
     expect(result).toMatchObject({ outcome: "success", value: { exitCode: 0 } })
     expect(observed).toEqual([{

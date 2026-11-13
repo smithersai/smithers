@@ -7,7 +7,7 @@ This page lists every public module and the exports it publishes, one table
 per module. Behavior, signatures, and error semantics for each module are in
 the [API reference](./api.md); this page is the lookup table.
 
-The root barrel `@smthrs/harness` exposes 38 namespaces.
+The root barrel `@smthrs/harness` exposes 37 namespaces.
 `QuickJSSandbox` and `QuickJSWorkerd` are imported only from their platform
 subpaths, `@smthrs/harness/QuickJSSandbox` and `@smthrs/harness/QuickJSWorkerd`.
 Every root namespace is also importable as `@smthrs/harness/<Module>`, except
@@ -48,7 +48,6 @@ the root only.
 | `Supervisor` | `frameBytes`, `recentFrames`, `recalledLimit`, `closeGraceMs`, `thrashingAt`, `offTargetAt`, `suspectAt`, `contextAt`, `Level`, `levels`, `Help`, `emotions`, `Emotion`, `Frame`, `Signals`, `Recalled`, `skillLimit`, `skillBytes`, `calledLimit`, `Skill`, `skill`, `Snapshot`, `monitorPrefix`, `MonitorQuestions`, `classifierFor`, `classifier`, `Reading`, `read`, `Memory`, `MemoryFailure`, `memoryNone`, `triggers`, `Triggerable`, `Trigger`, `triggered`, `contextTriggers`, `ContextTrigger`, `crosses`, `compacting`, `nudge`, `recalledInsert`, `head`, `tail`, `prose` | The reading Jev takes of a run while it is still running. |
 | `Monitor` | `Kind`, `Common`, `Questioned`, `Derived`, `Monitor`, `Budget`, `Input`, `budgets`, `idPattern`, `questionId`, `make`, `InvalidMonitor`, `validate`, `lint`, `paranoidText`, `carefulText`, `stepBackText`, `clarifyText`, `moods`, `defaults`, `skillText`, `skills`, `useJevText`, `useJev`, `questions`, `Row`, `Candidate`, `Evaluation`, `evaluate`, `Entry`, `Ledger`, `fresh`, `Gated`, `gate` | What one supervisor reading can put in front of the run, and when. |
 | `Sufficiency` | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `unanswered`, `observation` | The evidence that is already complete. |
-| `VacuousVerification` | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation` | The proof that was already true before anything changed. |
 | `VariablesPanel` | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render` | The variables panel: what the realm holds, stated every frame. |
 | `QuickJSSandbox` *(subpath)* | `cacheSuccessful`, `layerVariant`, `loadModule`, `Variant`, `VariantService`, `layerVariantLive`, `ComputeClockService`, `ComputeClock`, `layerClockLive`, `makeWithVariant`, `makeWithClock`, `make`, `layerWithVariant`, `layer` | The QuickJS-WASM sandbox binding. |
 | `QuickJSLifecycle` | `stackBytes`, `prelude`, `abandon`, `isQuarantined`, `interruptBudget`, `utf8Length` | Portable lifecycle primitives shared by cell and presentation realms. Security policy remains with each consumer: these helpers neither install a host bridge nor harden presentation objects. |
@@ -127,7 +126,7 @@ Serializable events emitted by harness adapters.
 | `SeatRouted` | class | events | The seat a run with no declared model was routed to, and who chose it. |
 | `SupervisorMemoryFailed` | class | events | A memory read or write the store refused: a supervisor recall, or a run-end transcript write. |
 | `SufficiencyObserved` | class | events | The controller telling a run that its own evidence is complete. |
-| `VacuousVerificationObserved` | class | events | The controller telling a run that its stored proof was already green. |
+| `VacuousVerificationObserved` | class | events | Decode-only legacy observation retained for stored journals. |
 | `MutationObserved` | class | events | What one frame did to the workspace, and how the controller knows. |
 | `CheckpointMinted` | class | events | One tree this run pinned, and the store's own name for it. |
 | `Suspended` | class | events | The durable reason a cell execution parked. |
@@ -959,24 +958,6 @@ The evidence that is already complete.
 | `find` | const | conversions | Finds a failing-before, passing-after pair this frame has completed. |
 | `unanswered` | const | conversions | The remembered failures that no passing check has answered yet. |
 | `observation` | const | constructors | States that the run holds both halves of its own evidence. |
-
-## VacuousVerification
-
-`import * as VacuousVerification from "@smthrs/harness/VacuousVerification"`
-
-The proof that was already true before anything changed. This control is not
-wired into `CellTurn`; the table describes what it does for a host that wires
-it in.
-
-| Export | Kind | Category | Summary |
-| --- | --- | --- | --- |
-| `retained` | const | constants | How many pristine-tree passes one run carries forward. |
-| `Pass` | class | models | One check that passed over the tree the run was handed. |
-| `Ledger` | const | schemas | The pristine-tree passes this run carries, oldest first and bounded. |
-| `remember` | const | combinators | Records one frame's passing checks, but only while the tree is untouched. |
-| `stored` | const | conversions | The `{ flow, input }` pair a cell stored as its verification, if it stored one this module can read. |
-| `find` | const | conversions | Finds the pristine-tree pass a stored verification is standing on. |
-| `observation` | const | constructors | States that the stored proof was already green before anything changed. |
 
 ## VariablesPanel
 

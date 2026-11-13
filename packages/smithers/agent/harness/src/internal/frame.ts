@@ -416,8 +416,7 @@ export const account = (options: {
       // nothing can name.
       checkpointIds: options.minted.length === 0 ? state.checkpointIds : [...state.checkpointIds, ...options.minted],
       // Live readings only. Every consumer of this ledger — the narrowing
-      // demand, the unresolved-failure demand, the vacuous-verification notice
-      // — asks whether the tree the run is completing on was checked, and a
+      // demand and the unresolved-failure demand — asks whether the tree the run is completing on was checked, and a
       // checkpointed reading is not a reading of that tree.
       checks: NarrowedCheck.remember(state.checks, frameChecks),
       // What this frame asked, folded into what the run had already asked. A

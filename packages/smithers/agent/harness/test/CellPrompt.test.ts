@@ -1,7 +1,7 @@
 import * as Digest from "@smthrs/core/Digest"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import { Option, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import * as CellPrompt from "../src/internal/cellPrompt.ts"
 import { printsObservation } from "../src/internal/printsObservation.ts"
@@ -383,14 +383,14 @@ describe("cellPrompt", () => {
   })
 
   it("admits only typed, harness-measurable facts into the environment section", () => {
-    // The program that motivated this section rejects instance-specific
-    // teaching outright, so the guard is structural: there is no field a
-    // caller could put a task answer in. This test fails the moment one is
-    // added, which is the point at which somebody has to justify it.
-    // `noLaterCommits` is a boolean the host that built the checkout declares.
-    const keys: ReadonlyArray<keyof CellPrompt.Environment> = ["locale", "absentTools", "noLaterCommits"]
-    const populated: CellPrompt.Environment = { locale: "C.UTF-8", absentTools: ["rg"], noLaterCommits: true }
-    expect(Object.keys(populated).every((key) => keys.includes(key as keyof CellPrompt.Environment))).toBe(true)
+    const keys = {
+      locale: true,
+      absentTools: true,
+      noLaterCommits: true
+    } satisfies Record<keyof Required<CellPrompt.Environment>, true>
+    expectTypeOf<Exclude<keyof CellPrompt.Environment, "locale" | "absentTools" | "noLaterCommits">>()
+      .toEqualTypeOf<never>()
+    expect(Object.keys(keys)).toEqual(["locale", "absentTools", "noLaterCommits"])
   })
 
   it("keeps the taught prefix inside its measured token budget", () => {

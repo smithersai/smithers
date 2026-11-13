@@ -533,6 +533,20 @@ const stableEvents: ReadonlyArray<AgentEvent.AgentEvent> = [
 ]
 
 describe("AgentEvent", () => {
+  it("decodes a stored verification observation after retiring its control", () => {
+    const stored = {
+      _tag: "vacuous-verification-observed",
+      eventType: "flows.harness.vacuous-verification-observed.v1",
+      flow: "bash",
+      check: "pytest tests",
+      callDigest: "recorded-call",
+      nextFrame: 7
+    }
+    const decoded = Schema.decodeUnknownSync(AgentEvent.AgentEvent)(stored)
+    expect(decoded).toBeInstanceOf(AgentEvent.VacuousVerificationObserved)
+    expect(Schema.encodeSync(AgentEvent.AgentEvent)(decoded)).toEqual(stored)
+  })
+
   it("retains every member and its ordered unique tag after tagged-union validation", () => {
     const union = AgentEvent.AgentEvent
     expect(union.members).toHaveLength(48)
