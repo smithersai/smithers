@@ -63,17 +63,17 @@ const snapshot = (root: string) => {
   try {
     return {
       runs: (db.prepare(
-        "SELECT run_id, status, waiting_reason, state_json FROM (SELECT * FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc')) ORDER BY run_id"
+        "SELECT run_id, status, waiting_reason, state_json FROM (SELECT * FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc') AND COALESCE(json_extract(state_json, '$.flowName'), '') NOT LIKE 'smithers/health/Discovery/%') ORDER BY run_id"
       )
         .all() as unknown as Array<NativeRow>)
         .map((row) => ({ ...row, state: JSON.parse(row.state_json) })),
       attempts: (db.prepare(
-        "SELECT run_id, state, meta_json FROM flows_attempts WHERE run_id IN (SELECT run_id FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc')) ORDER BY run_id, step_key_digest, attempt"
+        "SELECT run_id, state, meta_json FROM flows_attempts WHERE run_id IN (SELECT run_id FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc') AND COALESCE(json_extract(state_json, '$.flowName'), '') NOT LIKE 'smithers/health/Discovery/%') ORDER BY run_id, step_key_digest, attempt"
       )
         .all() as unknown as Array<AttemptRow>)
         .map((row) => ({ ...row, meta: JSON.parse(row.meta_json) })),
       journal: (db.prepare(
-        "SELECT run_id, event_type, payload_json FROM flows_journal_events WHERE run_id IN (SELECT run_id FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc')) ORDER BY run_id, seq"
+        "SELECT run_id, event_type, payload_json FROM flows_journal_events WHERE run_id IN (SELECT run_id FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc') AND COALESCE(json_extract(state_json, '$.flowName'), '') NOT LIKE 'smithers/health/Discovery/%') ORDER BY run_id, seq"
       )
         .all() as unknown as Array<JournalRow>)
         .map((row) => ({ ...row, payload: JSON.parse(row.payload_json) })),

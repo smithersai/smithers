@@ -19,16 +19,38 @@ const Discover = Action.make("smithers/health/Discover", {
   payload: { attempt: Schema.Number },
   success: Poll.CheckResult(Schema.Number)
 })
-const Discovery = Poll.make("smithers/health/Discovery", {
-  input: {},
-  result: Schema.Number,
-  intervalMs: 5_000,
-  maxAttempts: Number.MAX_SAFE_INTEGER,
-  check: Node.capture(
-    { action: Discover.name, implementationVersion: "health-discovery/v1" },
-    ({ attempt }) => Discover.call({ attempt })
-  )
-})
+const makeDiscovery = (name: string) =>
+  Poll.make(name, {
+    input: {},
+    result: Schema.Number,
+    intervalMs: 5_000,
+    maxAttempts: Number.MAX_SAFE_INTEGER,
+    check: Node.capture(
+      { action: Discover.name, implementationVersion: "health-discovery/v1" },
+      ({ attempt }) => Discover.call({ attempt })
+    )
+  })
+
+/**
+ * A plan-specific registration keeps an older build's due timers from running
+ * another build's callbacks, so a rollback can resume its original lineage.
+ * Hash a fixed-tag declaration first: the actual poll captures its own tag.
+ * @since 1.0.0
+ * @private
+ */
+export const flowName = `smithers/health/Discovery/${
+  Node.functionIdentity(makeDiscovery("smithers/health/Discovery").body).digest
+}`
+const Discovery = makeDiscovery(flowName)
+
+/**
+ * One discovery lineage per build of the poll's plan. The same build resumes
+ * after a host restart; changed callbacks start a new lineage because the
+ * engine cannot resume the recorded plan under another callback identity.
+ * @since 1.0.0
+ * @private
+ */
+export const executionId = `smithers-health-discovery-${Node.functionIdentity(Discovery.body).digest}`
 
 /** Run observations only on the host that owns the local journal; no control mutations.
  * Discovery attempts and waits belong to the durable poll flow, including
@@ -117,7 +139,7 @@ const prepare = (
         Sleep.layer
       )
     )
-    // A stable identity resumes the same poll after a host crash. A UUID here
+    // A stable identity per plan resumes the poll after a host crash. A UUID here
     // would leave another perpetual lineage for every interrupted host.
     const services = yield* Layer.build(layer)
     const context = yield* Effect.context<FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)>()
@@ -125,10 +147,17 @@ const prepare = (
     // registered until those probes stop, so a due timer cannot become an
     // unregistered wake during an otherwise ordinary host shutdown.
     yield* Effect.addFinalizer((exit) => Scope.close(probes, exit))
-    return Discovery.execute({}, { executionId: "smithers-health-discovery" }).pipe(
+    return Discovery.execute({}, { executionId }).pipe(
       Effect.provide(services),
       Effect.provide(context),
       Effect.andThen(Effect.never),
+      Effect.onError((cause) =>
+        Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.logWarning(
+          "Health subject discovery stopped",
+          { operation: "health-discovery", terminal: true },
+          cause
+        )
+      ),
       Effect.orDie
     )
   })

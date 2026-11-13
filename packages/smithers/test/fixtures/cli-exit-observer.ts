@@ -19,7 +19,7 @@ const read = (name: string) => {
       SELECT run_id, status, owner_pid, cancel_requested_at_ms, waiting_reason,
              json_extract(state_json, '$.result._tag') AS result_tag
       FROM flows_runs
-      WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc')
+      WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc') AND COALESCE(json_extract(state_json, '$.flowName'), '') NOT LIKE 'smithers/health/Discovery/%'
       ORDER BY run_id LIMIT 32
     `).all()
     const events = database.prepare(`

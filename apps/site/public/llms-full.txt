@@ -12906,10 +12906,14 @@ executes these callbacks. The stall threshold is
 `control.status.observed` and projected as `statusRollup`; they never authorize
 a lifecycle mutation. See [Configure observational health](https://control.smithers.sh/guides/observe-health/)
 for checker configuration, defaults, and validation. Discovery pages through all
-active statuses in `smithers/health/Discovery`, a durable `@smthrs/flow` poll.
-Its five-second waits and repeated scans are flow steps, including discovery of
-runs written by other processes and recovery after a failed read. Each scoped
-host rebuilds its monitors; the same discovery lineage resumes after restart.
+active statuses in a durable `@smthrs/flow` poll registered as
+`smithers/health/Discovery/<digest>`. Its five-second waits and repeated scans
+are flow steps, including discovery of runs written by other processes and
+recovery after a failed read. Each scoped host rebuilds its monitors; the same
+poll plan resumes its discovery lineage after restart. Changed callbacks use
+a separate registration and lineage, leaving older timers available for a
+rollback. Terminal discovery failures log their cause; shutdown interruption
+stays quiet.
 
 ## CloudSandbox
 

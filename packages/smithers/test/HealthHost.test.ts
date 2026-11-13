@@ -15,7 +15,7 @@ import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import { Registry } from "@smthrs/registry"
 import { RunStore } from "@smthrs/run-store"
-import { Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Schema, Scope, Stream } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Schema, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -47,6 +47,49 @@ const source = (control: Control.Service): Control.Service => ({
 })
 
 describe("native health producer lifetime", () => {
+  it.each(["failure", "defect", "interruption"] as const)(
+    "logs a terminal discovery %s except ordinary shutdown interruption",
+    async (kind) => {
+      const warnings: Array<{ message: unknown; cause: Cause.Cause<unknown> }> = []
+      const logger = Logger.make((record) => {
+        if (record.logLevel === "Warn") warnings.push({ message: record.message, cause: record.cause })
+      })
+      const failure = new FlowRuntime.StoreUnavailable({ executionId: "health-test" })
+      const defect = new Error("discovery engine defect")
+      const exit = await Effect.runPromise(
+        Effect.gen(function*() {
+          const runtime = yield* FlowRuntime.FlowRuntime
+          return yield* Effect.exit(
+            HealthHost.watch(Health.makeRegistry()).pipe(
+              Effect.provideService(FlowRuntime.FlowRuntime, {
+                ...runtime,
+                execute: () =>
+                  kind === "failure"
+                    ? Effect.fail(failure)
+                    : kind === "defect"
+                    ? Effect.die(defect)
+                    : Effect.interrupt
+              })
+            )
+          )
+        }).pipe(
+          Effect.provide(testLayer),
+          Effect.provide(Logger.layer([logger])),
+          Effect.scoped
+        )
+      )
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (kind === "interruption") {
+        expect(warnings).toEqual([])
+      } else {
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0]?.message).toContain("Health subject discovery stopped")
+        expect(warnings[0]?.message).toContainEqual({ operation: "health-discovery", terminal: true })
+        expect(Cause.pretty(warnings[0]!.cause)).toContain(kind === "failure" ? "StoreUnavailable" : defect.message)
+      }
+    }
+  )
+
   it("keeps discovery registered while slow probes close", async () => {
     const warnings: unknown[] = []
     const logger = Logger.make((record) => {
@@ -99,7 +142,7 @@ describe("native health producer lifetime", () => {
           )
         )
         yield* TestDatabase.until(
-          runs.lineage("smithers-health-discovery").pipe(
+          runs.lineage(HealthHost.executionId).pipe(
             Effect.map((lineage) => lineage.some((run) => run.status === "suspended"))
           )
         )
@@ -107,14 +150,14 @@ describe("native health producer lifetime", () => {
         yield* Deferred.await(closing)
         // A real durable timer becomes due while a probe finalizer is held open.
         yield* TestClock.adjust(5_000)
-        const discovery = Flow.make("smithers/health/Discovery", {
+        const discovery = Flow.make(HealthHost.flowName, {
           payload: {},
           success: Schema.Number,
           body: Node.capture({}, () => Node.succeed(0))
         })
         try {
           yield* Context.get(services, EngineStore.Driver).drive(discovery, {
-            executionId: "smithers-health-discovery",
+            executionId: HealthHost.executionId,
             payload: {},
             holdMs: 0
           })
@@ -176,7 +219,7 @@ describe("native health producer lifetime", () => {
         yield* TestClock.adjust(5_000)
         yield* Deferred.await(recorded)
         expect(attempts).toBeGreaterThan(1)
-        expect(discoveryFlow).toBe("smithers/health/Discovery")
+        expect(discoveryFlow).toBe(HealthHost.flowName)
         const page = yield* journal.entries({ runId: JournalEvent.RunId.make("health-0"), limit: 10 })
         expect(page.entries.some((entry) => entry.eventType === Health.statusObservedEventType)).toBe(true)
         yield* Fiber.interrupt(fiber)
@@ -482,14 +525,14 @@ it("resumes one discovery lineage after reopening its persisted timer", () =>
               const runs = Context.get(services, RunStore.RunStore)
               // Close the host only once its durable timer and waiting row exist.
               for (;;) {
-                const lineage = yield* runs.lineage("smithers-health-discovery")
+                const lineage = yield* runs.lineage(HealthHost.executionId)
                 if (lineage.some((run) => run.status === "suspended")) break
                 yield* Effect.yieldNow
               }
               const sql = Context.get(services, SqlClient)
               const roots = yield* sql<{ readonly runId: string }>`SELECT run_id AS "runId" FROM flows_runs
-          WHERE json_extract(state_json, '$.flowName') = 'smithers/health/Discovery' AND round_ordinal = 0`
-              expect(roots.map((row) => row.runId)).toEqual(["smithers-health-discovery"])
+          WHERE json_extract(state_json, '$.flowName') = ${HealthHost.flowName} AND round_ordinal = 0`
+              expect(roots.map((row) => row.runId)).toEqual([HealthHost.executionId])
             }))
           yield* host(false)
           yield* host(true)

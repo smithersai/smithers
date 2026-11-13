@@ -104,7 +104,7 @@ const rows = () => {
   const db = new DatabaseSync(join(root, ".flows", "engine.db"), { readOnly: true, timeout: 10_000 })
   try {
     return db.prepare(
-      "SELECT run_id, status, waiting_reason FROM (SELECT * FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc'))"
+      "SELECT run_id, status, waiting_reason FROM (SELECT * FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc') AND COALESCE(json_extract(state_json, '$.flowName'), '') NOT LIKE 'smithers/health/Discovery/%')"
     ).all() as unknown as Array<
       { readonly run_id: string; readonly status: string; readonly waiting_reason: string | null }
     >

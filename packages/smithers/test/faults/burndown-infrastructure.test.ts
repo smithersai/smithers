@@ -202,7 +202,7 @@ const rows = (root: string): RunRow[] => {
     // The host's own health discovery run parks on a timer between rounds; it is not a fixture run.
     return db.prepare(
       "select run_id, status, waiting_reason, state_json from flows_runs"
-        + " where coalesce(json_extract(state_json, '$.flowName'), '') not in ('smithers/health/Discovery', 'smithers/memory/TtlGc') order by run_id"
+        + " where coalesce(json_extract(state_json, '$.flowName'), '') not in ('smithers/health/Discovery', 'smithers/memory/TtlGc') and coalesce(json_extract(state_json, '$.flowName'), '') not like 'smithers/health/Discovery/%' order by run_id"
     ).all() as unknown as RunRow[]
   } finally {
     db.close()
@@ -487,7 +487,9 @@ describe("host stall", () => {
             // Health discovery holds its own lease while a round runs; `rows` leaves that run out too.
             return db.prepare(
               "select run_id, owner_pid, heartbeat_at_ms from flows_consensus_leases"
-                + " where run_id <> 'smithers-health-discovery' and run_id not like 'smithers-memory-ttl-gc-%' order by run_id"
+                + " where run_id in (select run_id from flows_runs"
+                + " where coalesce(json_extract(state_json, '$.flowName'), '') not in ('smithers/health/Discovery', 'smithers/memory/TtlGc')"
+                + " and coalesce(json_extract(state_json, '$.flowName'), '') not like 'smithers/health/Discovery/%') order by run_id"
             ).all() as unknown as Array<{
               run_id: string
               owner_pid: number
@@ -559,6 +561,7 @@ describe("host stall", () => {
           const frames = (db.prepare("select run_id, payload_json from flows_journal_events").all() as unknown as Array<
             { run_id: string; payload_json: string }
           >)
+            .filter((row) => initialRunIds.includes(row.run_id))
             .map((row) => ({ runId: row.run_id, payload: JSON.parse(row.payload_json) }))
           const reconfirmed = frames.filter((row) => row.payload.decision === "lease-reconfirmed")
           expect(reconfirmed.map((row) => row.runId).sort()).toEqual(rows(root).map((row) => row.run_id).sort())
