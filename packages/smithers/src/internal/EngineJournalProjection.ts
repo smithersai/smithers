@@ -223,7 +223,7 @@ export const make = (options: Options) =>
         }
       })
 
-    const catchUp = gate.withPermits(1)(Effect.gen(function*() {
+    const pass = gate.withPermits(1)(Effect.gen(function*() {
       // Additive binding preserves every existing copied-envelope producer ID.
       // Only the supervisor's validated native root can create this association.
       yield* options.controlJournal.emitDurableUnfenced(
@@ -240,6 +240,10 @@ export const make = (options: Options) =>
       // names every round of a lineage, so its members are not asked again:
       // asking each of N rounds for all N made a catch-up cost N squared rows.
       const listed = new Set<string>()
+      // The status each lineage read of this pass gave. A follower judges its
+      // rounds settled from these rather than reading every round's row, and
+      // with it the round's saved state, again on every pass.
+      const statuses = new Map<string, RunStore.RunStatus>()
       const pending = [options.executionId]
       for (let index = 0; index < pending.length; index++) {
         const executionId = pending[index]!
@@ -266,6 +270,7 @@ export const make = (options: Options) =>
               )
             }
             listed.add(round.runId)
+            statuses.set(round.runId, round.status)
             if (!seen.has(round.runId)) pending.push(round.runId)
           }
         }
@@ -282,8 +287,9 @@ export const make = (options: Options) =>
           if (!seen.has(edge.childId)) pending.push(edge.childId)
         }
       }
-      return seen
+      return { seen, statuses }
     }))
+    const catchUp = Effect.map(pass, (observed) => observed.seen)
 
     // Exactly the journal's own wake/recheck pattern. Local notifications are
     // hints, not data: durable paging catches lost hints, other processes,
@@ -292,13 +298,18 @@ export const make = (options: Options) =>
       Effect.scoped(Effect.gen(function*() {
         const changes = yield* options.engineJournal.changes
         for (;;) {
-          const observed = yield* catchUp
+          const { seen: observed, statuses } = yield* pass
           if (runs !== undefined) {
             let allTerminal = true
             let rootTerminal = false
             const rootGeneration = positions.get(options.executionId)?.generation
             for (const executionId of observed) {
-              const row = yield* Effect.result(runs.get(executionId))
+              // A status the pass read is at least as new as the journal pages
+              // it read before it; the drain below still follows a terminal one.
+              const known = statuses.get(executionId)
+              const row = known !== undefined
+                ? { _tag: "Success" as const, success: { status: known } }
+                : yield* Effect.result(runs.get(executionId))
               if (row._tag === "Failure") {
                 // An accepted root or linked child may not have its row yet.
                 if (row.failure.code !== "not_found_row") return yield* Effect.fail(row.failure)

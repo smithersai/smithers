@@ -204,6 +204,36 @@ describe("private engine journal projection", () => {
       }
     }))))
 
+  it("settles a run of many rounds without reading any round's row: the lineage read gave their statuses", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      const state = JSON.stringify({ version: 1, flowName: "agent/run", payload: { large: "x".repeat(4_000) } })
+      yield* f.runs.create("native-root", state)
+      yield* emit(f.engineJournal, "native-root", { round: 0 })
+      for (let round = 1; round <= 40; round++) {
+        yield* f.runs.create(`round-${round}`, state, {
+          lineageId: "native-root",
+          roundOrdinal: round,
+          parentRunId: "native-root"
+        })
+        yield* emit(f.engineJournal, `round-${round}`, { round })
+      }
+      // Every round but the last has ended; the follower must keep following.
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id <> 'round-40'`
+      const rowReads: Array<string> = []
+      const projector = yield* Projection.make({ ...f.options, runLineage: f.runs.lineage })
+      const follower = yield* Effect.forkScoped(projector.followUntilSettled({
+        get: (id) => Effect.tap(f.runs.get(id), () => Effect.sync(() => void rowReads.push(id)))
+      }))
+      yield* Effect.sleep("300 millis")
+      expect(follower.pollUnsafe()).toBeUndefined()
+      yield* emit(f.engineJournal, "round-40", { last: true }, "fixture", 1)
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = 'round-40'`
+      yield* Fiber.join(follower).pipe(Effect.timeout("10 seconds"))
+      expect(rowReads).toEqual([])
+      expect(yield* rows(f.controlJournal)).toHaveLength(42)
+    }))))
+
   it("still refuses a lineage read that omits the run it was asked for or returns a foreign round", () =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       const f = yield* setup
