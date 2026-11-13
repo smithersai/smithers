@@ -79,6 +79,41 @@ class StrictSourceChecks(unittest.TestCase):
             (app / 'src' / 'unmarked.vibe').write_text('export function yes() { return true }\n')
             self.assertEqual(len(production_sources(app)), 4)
 
+    def test_directory_checks_vibelang_contracts_with_or_without_typescript(self):
+        for mixed in [False, True]:
+            with self.subTest(mixed=mixed), tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+                app = pathlib.Path(folder)
+                selected = app / 'src/core'
+                selected.mkdir(parents=True)
+                (app / 'tsconfig.json').write_text(json.dumps({'extends': str(ROOT.parent / 'tsconfig.json'), 'files': [], 'include': []}))
+                source = selected / 'contract.vibe'
+                correct = '//@ verify\n//@ ensures \\result == input\nexport function same(input: number): number { return input }\n'
+                source.write_text(correct)
+                (selected / 'unmarked.vibe').write_text('not a proof module\n')
+                for name in ['generated.vibe.ts', 'types.d.ts', '.tools/ignored.ts', 'node_modules/ignored.ts', '.checks/ignored.ts']:
+                    ignored = selected / name
+                    ignored.parent.mkdir(parents=True, exist_ok=True)
+                    ignored.write_text('invalid TypeScript\n')
+                for directory in ['.tools', 'node_modules', '.checks']:
+                    (selected / directory / 'ignored.vibe').write_text('//@ verify\ninvalid VibeLang\n')
+                if mixed:
+                    (selected / 'fixture.ts').write_text(correct.replace('same', 'fixture'))
+                env = {k: v for k, v in os.environ.items() if k != 'VERIFY_MUTATION_MANIFEST'}
+                env['VIBELANG_VERIFY_ROOT'] = str(app)
+                for broken in [False, True]:
+                    source.write_text(correct.replace('return input', 'return input + 1') if broken else correct)
+                    result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(selected), str(source)], capture_output=True, text=True, env=env, timeout=120)
+                    self.assertEqual(result.returncode == 0, not broken, result.stdout + result.stderr)
+                    self.assertIn(('FAIL' if broken else 'PASS') + f' {source}:', result.stdout)
+                    if broken:
+                        self.assertIn('postcondition', result.stdout)
+                # The directory alone must select the same contracts, without relying on an explicit file argument.
+                result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(selected)], capture_output=True, text=True, env=env, timeout=120)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(f'FAIL {source}:', result.stdout)
+                summary = json.loads(max((app / 'verify/.checks').glob('run-*/summary.json'), key=lambda p: p.stat().st_mtime_ns).read_text())
+                self.assertEqual(sorted(r['file'] for r in summary['results']), sorted([str(source)] + ([str(selected / 'fixture.ts')] if mixed else [])))
+
     def test_empty_selection_is_not_success(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
             nested = pathlib.Path(folder) / '.checks'

@@ -8,11 +8,13 @@ import { expect, it } from "vitest"
 import { build } from "esbuild"
 import vibelang from "vibelang-unplugin/esbuild"
 import { fileURLToPath } from "node:url"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { createServer } from "node:http"
+import { createHash } from "node:crypto"
 import { alchemyWorker } from "./support/alchemyBundle.vibe"
-import { instrumentModules, sourceCoverage } from "./support/workerdCoverage.ts"
+import { dumpWorkerdCoverage, instrumentModules, sourceCoverage } from "./support/workerdCoverage.ts"
 
 const fixture = fileURLToPath(new URL("./support/coverageShape.vibe", import.meta.url))
 
@@ -64,3 +66,74 @@ it("a measured module that does not compile reports the compiler's diagnostics",
     await rm(directory, { recursive: true, force: true })
   }
 }, 240_000)
+
+/** A real inspector transport that can stop at either discovery or the HTTP upgrade. */
+async function stalledInspector(stage: "listing" | "body" | "upgrade" | "close") {
+  const sockets = new Set<import("node:net").Socket>()
+  let upgraded = false
+  const server = createServer((_request, response) => {
+    if (stage === "listing") return
+    if (stage === "body") {
+      response.writeHead(200, { "content-type": "application/json" })
+      response.write("[")
+      return
+    }
+    response.setHeader("content-type", "application/json")
+    response.end(JSON.stringify([{ title: "core:user:coverage", webSocketDebuggerUrl: inspector.href.replace("http:", "ws:") }]))
+  })
+  server.on("connection", (socket) => {
+    sockets.add(socket)
+    socket.on("close", () => sockets.delete(socket))
+  })
+  server.on("upgrade", (request, socket) => {
+    upgraded = true
+    // An upgraded HTTP socket permits a half-close; finish the server side when the client aborts.
+    socket.on("end", () => socket.end())
+    if (stage === "close") {
+      const accept = createHash("sha1").update(String(request.headers["sec-websocket-key"]) + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64")
+      socket.end("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + "\r\n\r\n" + "\u0088\u0000", "latin1")
+    }
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address() as import("node:net").AddressInfo
+  const inspector = new URL(`http://127.0.0.1:${address.port}`)
+  return {
+    worker: { async getInspectorURL() { return new URL(inspector) } },
+    upgraded: () => upgraded,
+    connections: () => sockets.size,
+    close: () => new Promise<void>((resolve, reject) => {
+      for (const socket of sockets) socket.destroy()
+      server.close((error) => error === undefined ? resolve() : reject(error))
+    }),
+  }
+}
+
+for (const stage of ["listing", "body", "upgrade", "close"] as const) {
+  it(`bounds inspector ${stage} failure so worker disposal can finish`, async () => {
+    const inspector = await stalledInspector(stage)
+    const directory = await mkdtemp(join(tmpdir(), "workerd-inspector-"))
+    let disposed = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      // This is the measured worker's disposal ordering: a failed dump must reach its finalizer.
+      const dump = dumpWorkerdCoverage(inspector.worker, "coverage", directory).finally(() => { disposed = true })
+      const result = await Promise.race([
+        dump.then(() => ({ error: undefined }), (error: unknown) => ({ error })),
+        new Promise<{ error: undefined }>((resolve) => { timer = setTimeout(() => resolve({ error: undefined }), 18_000) }),
+      ])
+      expect(disposed).toBe(true)
+      expect(result.error).toBeInstanceOf(Error)
+      expect(String(result.error)).toMatch(stage === "close" ? /socket.*(closed|failed)/ : /timeout|timed out/i)
+      expect(inspector.upgraded()).toBe(stage === "upgrade" || stage === "close")
+      expect(await readdir(directory)).toEqual([])
+      // A failed handshake must close its socket before fixture cleanup.
+      if (stage === "upgrade") {
+        await expect.poll(inspector.connections).toBe(0)
+      }
+    } finally {
+      clearTimeout(timer)
+      await inspector.close()
+      await rm(directory, { recursive: true, force: true })
+    }
+  }, 25_000)
+}

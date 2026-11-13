@@ -3071,3 +3071,12 @@ never infers ownership from a global nesting depth or a reused level number. Tes
 escaped contexts and a SQL client consumed as a layer dependency.
 
 Tracked and fixed in [#5354](https://github.com/smithersai/smithers/issues/5354).
+
+## Inspector failures during coverage collection
+
+Inspector discovery, including its response body, and WebSocket opening each have a 15-second deadline. Opening and
+CDP requests reject a premature socket close; each request removes its listeners and timer when it settles. Socket
+cleanup encloses the handshake as well as counter collection. A failed dump still fails measurement and reaches the
+measured worker's disposal finalizer, so an unavailable inspector cannot leave workerd running indefinitely.
+`test/workerdCoverageShape.test.ts` exercises stalled discovery headers and bodies, an unanswered upgrade, and an
+early close over real loopback connections; `test/workerdCoverage.workerd.test.vibe` checks successful collection.

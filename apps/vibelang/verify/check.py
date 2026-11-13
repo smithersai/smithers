@@ -10,13 +10,14 @@ import proof_cache
 from mutation_targets import POSTCONDITIONS, ASSERTIONS, INVARIANTS, postcondition_line, case_assertion_line, invariant_line, time_limit, wall_limit
 ROOT=pathlib.Path(__file__).resolve().parent
 APP=pathlib.Path(os.environ.get("VIBELANG_VERIFY_ROOT", str(ROOT.parent))).resolve()
+PRODUCTION=production_sources(APP)
 if len(sys.argv)>1:
  sources=[pathlib.Path(arg).resolve() for arg in sys.argv[1:]]
  selected=[]
  for candidate in sources:
   if not candidate.exists(): raise SystemExit(f'Not found: {candidate}')
   if not candidate.is_relative_to(APP): raise SystemExit(f'Source must be inside {APP}')
-  selected += [candidate] if candidate.is_file() else sorted(p for p in candidate.rglob('*.ts') if not p.name.endswith(('.vibe.ts','.d.ts')) and not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(candidate).parts))
+  selected += [candidate] if candidate.is_file() else sorted(p for p in candidate.rglob('*') if (p in PRODUCTION or (p.suffix=='.ts' and not p.name.endswith(('.vibe.ts','.d.ts')))) and not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(candidate).parts))
  selected=list(dict.fromkeys(selected))
  source=sources[0] if len(sources)==1 else APP
 else:
@@ -55,7 +56,6 @@ def stage_imports(original, staged):
   copy.parent.mkdir(parents=True,exist_ok=True)
   if not copy.exists():
    copy.write_text(lower_spec_functions(proof_bytes(dep).decode())); stage_imports(dep,copy)
-PRODUCTION=production_sources(APP)
 manifest_path=pathlib.Path(os.environ['VERIFY_MUTATION_MANIFEST']).resolve() if os.environ.get('VERIFY_MUTATION_MANIFEST') else None
 manifest=json.loads(manifest_path.read_text()) if manifest_path else {}
 mutant_files=set(selected) if manifest_path else set()

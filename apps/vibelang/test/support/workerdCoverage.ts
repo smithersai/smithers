@@ -138,36 +138,62 @@ export async function dumpWorkerdCoverage(
 ): Promise<void> {
   const inspector = await worker.getInspectorURL()
   inspector.protocol = "http:"
-  const listing = await fetch(new URL("/json/list", inspector))
+  const listing = await fetch(new URL("/json/list", inspector), { signal: AbortSignal.timeout(15000) })
   const targets = await listing.json() as ReadonlyArray<InspectorTarget>
   const target = targets.find((candidate) => candidate.title.includes(`core:user:${name}`))
   if (target === undefined) throw new Error(`workerd coverage: no inspector target for ${name}`)
   const socket = new WebSocket(target.webSocketDebuggerUrl)
-  await new Promise<void>((resolve, reject) => {
-    socket.onopen = () => resolve()
-    socket.onerror = () => reject(new Error("workerd coverage: inspector socket failed"))
-  })
-  let next = 0
-  let contextId: number | undefined
-  socket.addEventListener("message", (event) => {
-    const message = JSON.parse(String(event.data)) as { method?: string; params?: { context: { id: number } } }
-    if (message.method === "Runtime.executionContextCreated") contextId = message.params!.context.id
-  })
-  const request = <T>(method: string, params: Record<string, unknown> = {}) => new Promise<T>((resolve, reject) => {
-    const id = ++next
-    const timer = setTimeout(() => reject(new Error(`workerd coverage: timeout ${method}`)), 15000)
-    const listener = (event: MessageEvent) => {
-      const message = JSON.parse(String(event.data)) as { id?: number; result?: T; error?: unknown }
-      if (message.id !== id) return
-      socket.removeEventListener("message", listener)
-      clearTimeout(timer)
-      if (message.error !== undefined) reject(new Error(`workerd coverage: ${method}: ${JSON.stringify(message.error)}`))
-      else resolve(message.result as T)
-    }
-    socket.addEventListener("message", listener)
-    socket.send(JSON.stringify({ id, method, params }))
-  })
   try {
+    await new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        clearTimeout(timer)
+        socket.onopen = null
+        socket.onerror = null
+        socket.onclose = null
+        if (error === undefined) resolve()
+        else reject(error)
+      }
+      const timer = setTimeout(() => finish(new Error("workerd coverage: timeout inspector socket open")), 15000)
+      socket.onopen = () => finish()
+      socket.onerror = () => finish(new Error("workerd coverage: inspector socket failed"))
+      socket.onclose = () => finish(new Error("workerd coverage: inspector socket closed before opening"))
+    })
+    let next = 0
+    let contextId: number | undefined
+    socket.addEventListener("message", (event) => {
+      const message = JSON.parse(String(event.data)) as { method?: string; params?: { context: { id: number } } }
+      if (message.method === "Runtime.executionContextCreated") contextId = message.params!.context.id
+    })
+    const request = <T>(method: string, params: Record<string, unknown> = {}) => new Promise<T>((resolve, reject) => {
+      const id = ++next
+      const finish = (error?: Error, result?: T) => {
+        clearTimeout(timer)
+        socket.removeEventListener("message", listener)
+        socket.removeEventListener("close", closed)
+        socket.removeEventListener("error", closed)
+        if (error !== undefined) reject(error)
+        else resolve(result as T)
+      }
+      const listener = (event: MessageEvent) => {
+        const message = JSON.parse(String(event.data)) as { id?: number; result?: T; error?: unknown }
+        if (message.id !== id) return
+        if (message.error !== undefined) finish(new Error(`workerd coverage: ${method}: ${JSON.stringify(message.error)}`))
+        else finish(undefined, message.result)
+      }
+      const closed = () => finish(new Error(`workerd coverage: inspector socket closed during ${method}`))
+      const timer = setTimeout(() => finish(new Error(`workerd coverage: timeout ${method}`)), 15000)
+      socket.addEventListener("message", listener)
+      socket.addEventListener("close", closed)
+      socket.addEventListener("error", closed)
+      if (socket.readyState !== WebSocket.OPEN) closed()
+      else {
+        try {
+          socket.send(JSON.stringify({ id, method, params }))
+        } catch (cause) {
+          finish(new Error(`workerd coverage: inspector socket failed during ${method}`, { cause }))
+        }
+      }
+    })
     await request("Runtime.enable")
     const deadline = Date.now() + 5000
     while (contextId === undefined) {
