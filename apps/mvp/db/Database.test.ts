@@ -2241,3 +2241,41 @@ describe("personal credential identity migration", () => {
     expect(await on(through("0123"))).toEqual([])
   }))
 })
+
+describe("0124_flow_placement_syntax", () => {
+  test("repairs placement from the latest revision's syntax without changing the saved code", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0123"))
+      const source = renderSource({ name: "example", description: "Example.", instructions: "Go.", flows: [] })
+      const machine = 'import "node:fs";\n' + source
+      const examples = [
+        ["sandbox", '/* Example only:\nimport fs from "node:fs"\n*/\n' + source, "client"],
+        ["sandbox", source + '\nconst prompt = `\ncapabilities: ["fs:read"]\n`;', "client"],
+        ["sandbox", machine, "sandbox"],
+        ["client", 'const options = { capabilities: ["fs:read"] as const };\n' + source, "sandbox"],
+        ["client", source, "client"],
+      ] as const
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        for (const [index, [placement, latest]] of examples.entries()) {
+          const id = `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`
+          const name = `example-${index}`
+          yield* sql`INSERT INTO flows (id, owner_id, name, revision, description, placement)
+            VALUES (${id}, 'p', ${name}, 2, 'Example.', ${placement})`
+          for (const [revision, text] of [[1, machine], [2, latest]] as const) {
+            yield* sql`INSERT INTO flow_revisions (flow_id, revision, name, digest, source, created_by)
+              VALUES (${id}, ${revision}, ${name}, ${digestSync(text)}, ${text}, 'p')`
+          }
+        }
+      }))
+      expect((await on(through("0124"))).map(([id, name]) => `${id}_${name}`)).toEqual(["124_flow_placement_syntax"])
+      const rows = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly placement: string; readonly source: string; readonly digest: string }>`
+          SELECT f.placement, r.source, r.digest FROM flows f
+          JOIN flow_revisions r ON r.flow_id = f.id AND r.revision = f.revision ORDER BY f.id`))
+      expect(rows).toEqual(examples.map(([, source, placement]) => ({ placement, source, digest: digestSync(source) })))
+      expect(await on(through("0124"))).toEqual([])
+    }))
+})

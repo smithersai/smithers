@@ -121,6 +121,7 @@ import m0120 from "./migrations/0120_ephemeral_branch_requests.ts"
 import m0121 from "./migrations/0121_triage_label_writes.ts"
 import m0122 from "./migrations/0122_reconcile_pulls.ts"
 import m0123 from "./migrations/0123_personal_credential_nonce.ts"
+import m0124 from "./migrations/0124_flow_placement_syntax.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -246,4 +247,5 @@ export const migrations = {
   "0121_triage_label_writes": m0121,
   "0122_reconcile_pulls": m0122,
   "0123_personal_credential_nonce": m0123,
+  "0124_flow_placement_syntax": m0124,
 }

@@ -38,6 +38,7 @@
     "#quickjs.wasm": "@jitl/quickjs-wasmfile-release-sync/wasm"
   },
   "dependencies": {
+    "@babel/parser": "7.29.8",
     "@effect/sql-pg": "4.1.1",
     "@electric-sql/client": "1.5.28",
     "@fontsource/inter": "5.3.0",
@@ -94,6 +95,7 @@
     "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
+    "@babel/types": "7.29.8",
     "@cloudflare/vite-plugin": "1.64.0",
     "@cloudflare/workers-types": "5.20261019.1",
     "@effect/platform-node": "4.1.1",

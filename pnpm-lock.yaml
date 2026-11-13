@@ -449,6 +449,9 @@ importers:
 
   apps/mvp:
     dependencies:
+      '@babel/parser':
+        specifier: 7.29.8
+        version: 7.29.8
       '@effect/sql-pg':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))
@@ -621,6 +624,9 @@ importers:
       '@alchemy.run/test':
         specifier: 2.0.0-beta.85
         version: 2.0.0-beta.85(@effect/vitest@4.1.1(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(vitest@5.0.0))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(33202d3c267fb7fefc22bb2c0620034f))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))(vitest@5.0.0)
+      '@babel/types':
+        specifier: 7.29.8
+        version: 7.29.8
       '@cloudflare/vite-plugin':
         specifier: 1.64.0
         version: 1.64.0(@types/node@26.4.1)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(wrangler@4.151.2(@cloudflare/workers-types@5.20261019.1)(@types/node@26.4.1))

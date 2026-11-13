@@ -1,8 +1,11 @@
+import { parse } from "@babel/parser"
+import type { Node } from "@babel/types"
+
 // A person's flow is flow source (decision 0014 §1, as Will ruled on 2026-10-20: "prompt flows are just a type of code
 // flow"): one `flow.ts` module whose default export is `Flow.make("<name>", { ... })` from @smthrs/flow, the shape a
 // repository's `.smithers/flows/<name>/flow.ts` has. Drafting from a prompt writes one with `renderSource`: a typed
 // module whose body is one agent step that follows the drafted instructions. A person may edit it like any code.
-// Nothing here imports a library, so the tab, the engine and ChatApi all can.
+// Source is parsed without evaluation, on the tab, the engine and ChatApi alike.
 //
 // Where a revision runs is its placement, read from its source, never stored apart from it (ruling FLOW-2's addendum,
 // Will, 2026-10-20: "quickjs is a sandbox"):
@@ -75,31 +78,81 @@ const MACHINE_MODULE = /^(?:node:|bun:|bun$|@smthrs\/(?:platform-node|platform-b
 /** Capabilities only a machine grants: its files, processes, network and repository, or every capability. */
 const MACHINE_CAPABILITY = /^(?:\*$|fs:|proc:|net:|jj:)/
 
+/** Removes TypeScript annotations that leave an expression's runtime value unchanged. */
+const expressionOf = (node: Node | null | undefined): Node | null | undefined => {
+  while (
+    node?.type === "TSAsExpression" || node?.type === "TSSatisfiesExpression" ||
+    node?.type === "TSTypeAssertion" || node?.type === "TSNonNullExpression" ||
+    node?.type === "ParenthesizedExpression"
+  ) node = node.expression
+  return node
+}
+
+/** A string's decoded value, without evaluating expressions or template substitutions. */
+const stringOf = (node: Node | null | undefined): string | undefined => {
+  node = expressionOf(node)
+  if (node?.type === "StringLiteral") return node.value
+  return node?.type === "TemplateLiteral" && node.expressions.length === 0 ? node.quasis[0]!.value.cooked ?? undefined : undefined
+}
+
+/** Source syntax, without evaluation. The source checks and realm report invalid code; an editor may be incomplete. */
+const requirementsOf = (source: string): { imports: Array<string>; capabilities: Array<string> } => {
+  const requirements = { imports: [] as Array<string>, capabilities: [] as Array<string> }
+  let file
+  try {
+    file = parse(source, { sourceType: "module", plugins: ["typescript"], createParenthesizedExpressions: true, errorRecovery: true })
+  } catch {
+    // expected: an unfinished editor buffer is valid UI state; source checks and the realm diagnose invalid runs.
+    return requirements
+  }
+  for (const statement of file.program.body) {
+    if (
+      statement.type === "ImportDeclaration" || statement.type === "ExportNamedDeclaration" ||
+      statement.type === "ExportAllDeclaration"
+    ) {
+      if (statement.source) requirements.imports.push(statement.source.value)
+    }
+  }
+  // Walk only parser-created child nodes, without loading Babel's Node-dependent runtime helpers.
+  const isNode = (value: unknown): value is Node => value !== null && typeof value === "object" && "type" in value
+  const pending: Array<Node> = [file.program]
+  while (pending.length > 0) {
+    const node = pending.pop()!
+    const children: Array<Node> = []
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "loc" || key === "extra" || key.endsWith("Comments")) continue
+      for (const child of Array.isArray(value) ? value : [value]) {
+        if (isNode(child)) children.push(child)
+      }
+    }
+    // Parser nodes have source offsets; visit them in source order, including template substitution expressions.
+    for (const child of children.sort((a, b) => b.start! - a.start!)) pending.push(child)
+    if (node.type !== "ObjectProperty") continue
+    const key = !node.computed && node.key.type === "Identifier" ? node.key.name : stringOf(node.key)
+    const value = expressionOf(node.value)!
+    if (key !== "capabilities" || value.type !== "ArrayExpression") continue
+    for (const element of value.elements) {
+      const capability = stringOf(element)
+      if (capability !== undefined) requirements.capabilities.push(capability)
+    }
+  }
+  return requirements
+}
+
+/** The modules static import and re-export declarations name, in source order. */
+export const importsOf = (source: string): ReadonlyArray<string> => requirementsOf(source).imports
+
+/** The literal strings in capability array properties, wherever the properties appear in code. */
+export const capabilitiesOf = (source: string): ReadonlyArray<string> => requirementsOf(source).capabilities
+
 /**
- * Every module a static `import` or `export … from` statement at the start of a line names. A string or comment that
- * only looks like one never starts a line in a module `renderSource` writes, whose instructions are indented literals.
+ * Whether source needs a machine. The realm enforces what code may do independently of this placement hint.
  */
-const IMPORT = /^[ \t]*(?:import[ \t]*["'`]([^"'`\n]+)["'`]|(?:import|export)\b[^"'`;]*?\bfrom[ \t]*["'`]([^"'`\n]+)["'`])/gm
-
-/** Every string a `capabilities: [ … ]` list that starts a line names, as `Flow.make`'s options are written. */
-const CAPABILITIES = /^[ \t]*capabilities\s*:\s*\[([^\]]*)\]/gm
-const STRING = /["'`]([^"'`]*)["'`]/g
-
-/** The modules `source` imports statically. */
-export const importsOf = (source: string): ReadonlyArray<string> =>
-  [...source.matchAll(IMPORT)].map((match) => (match[1] ?? match[2])!)
-
-/** The capabilities `source` declares in a literal list at the start of a line. */
-export const capabilitiesOf = (source: string): ReadonlyArray<string> =>
-  [...source.matchAll(CAPABILITIES)].flatMap((list) => [...list[1]!.matchAll(STRING)].map((match) => match[1]!))
-
-/**
- * Whether `source` needs a machine: it imports a module only a machine provides, or declares a capability only a
- * machine grants. Everything else runs in the QuickJS realm, which enforces what it gives code whatever this says.
- */
-export const needsMachine = (source: string): boolean =>
-  importsOf(source).some((module) => MACHINE_MODULE.test(module)) ||
-  capabilitiesOf(source).some((capability) => MACHINE_CAPABILITY.test(capability))
+export const needsMachine = (source: string): boolean => {
+  const { imports, capabilities } = requirementsOf(source)
+  return imports.some((module) => MACHINE_MODULE.test(module)) ||
+    capabilities.some((capability) => MACHINE_CAPABILITY.test(capability))
+}
 
 /** Where `source` runs: on the person's device, in the QuickJS realm, unless it needs a machine. */
 export const placementOf = (source: string): Placement => needsMachine(source) ? "sandbox" : "client"

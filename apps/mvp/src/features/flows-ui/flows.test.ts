@@ -616,6 +616,28 @@ describe("a flow's code", () => {
     expect(d.agent.painted).toEqual([])
   }, SLOW * 2)
 
+  test("import and capability examples remain client code when saved and run", async () => {
+    const model = scripted(() => drafted(), ['ctx.done("Ran.")'])
+    const d = await device(model.script)
+    await saveFlow(d, "dark-mode")
+    const source = [
+      '/* Example only:',
+      'import fs from "node:fs"',
+      '*/',
+      'const example = `',
+      'capabilities: ["fs:read"]',
+      '`;',
+      handWritten({ body: "({ input }) => Agent.call({ input })" }),
+    ].join("\n")
+    expect(await writeCode(d, 1, source)).toMatchObject({
+      _tag: "Success", value: { revision: 2, placement: "client" },
+    })
+    expect(await d.run(d.engine.flows.execute(FlowRun, {
+      executionId: crypto.randomUUID(), payload: { name: "dark-mode" },
+    }))).toEqual(Exit.succeed("Ran."))
+    expect(model.requests.filter(running)).toHaveLength(1)
+  }, SLOW)
+
   test("code that needs a machine saves as sandbox and its run fails before anything runs", async () => {
     const model = scripted(() => drafted(), ['ctx.done("Ran.")'])
     const d = await device(model.script)
