@@ -1082,30 +1082,20 @@ export const Alias = (target: Target.AnyTarget): Target.AnyTarget => {
 }
 
 /**
- * One declared source together with the directory its paths resolve from.
- *
- * `base` is the absolute directory of the PACKAGE.ts that declared the
- * source, or `""` when the source is already workspace anchored (a `//`
- * pattern, an explicit workspace-relative cwd, or a target constructed
- * outside a PACKAGE.ts module, as tests do). The executing layer maps a
- * non-empty `base` onto its workspace-relative package path; it is carried
- * as context for that mapping and is never cache-key material.
+ * One declared source with its package anchor, shared with file groups.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const AnchoredSource = Schema.Struct({
-  base: Schema.String,
-  source: Filegroup.Source
-})
+export const AnchoredSource = Filegroup.AnchoredSource
 
 /**
- * One declared source together with the directory its paths resolve from.
+ * One declared source with its package anchor.
  *
  * @category models
  * @since 0.1.0
  */
-export type AnchoredSource = typeof AnchoredSource.Type
+export type AnchoredSource = Filegroup.AnchoredSource
 
 /**
  * One file of a resolved import closure: a workspace-relative path and its
@@ -1291,47 +1281,6 @@ type ImportClosureEntries =
   | Filegroup.Source
   | ReadonlyArray<Filegroup.Source | Target.AnyTarget>
 
-/** Rewrites one declared source so its paths resolve from a workspace-relative cwd. */
-const sourceAgainstCwd = (cwd: string, source: Filegroup.Source): Filegroup.Source =>
-  source._tag === "File"
-    ? { _tag: "File", path: Input.resolvePath(cwd, source.path) }
-    : {
-      _tag: "Glob",
-      pattern: Input.resolvePath(cwd, source.pattern),
-      exclude: source.exclude.map((entry) => Input.resolvePath(cwd, entry))
-    }
-
-/**
- * Walks one file group depth first, keeping each nested group's own anchor.
- *
- * A group whose `cwd` is the default `.` contributes package-relative sources
- * anchored at its declaring PACKAGE.ts directory; a group with an explicit
- * cwd contributes workspace-anchored sources, matching how the planner
- * expands group declarations. Nested groups are entered once each, targets
- * that are not groups contribute nothing, exactly as `Filegroup.sources`.
- */
-const filegroupAnchoredSources = (
-  group: Target.AnyTarget,
-  into: Array<AnchoredSource>,
-  seen: Set<Target.AnyTarget>
-): void => {
-  const metadata = Target.metadata(group)
-  const attrs = metadata.attrs as Filegroup.Attrs
-  const packageRelative = attrs.cwd === "."
-  const base = packageRelative && metadata.sourceFile !== undefined
-    ? NodePath.dirname(metadata.sourceFile)
-    : ""
-  for (const member of attrs.srcs) {
-    if (Target.isTarget(member)) {
-      if (!Filegroup.isFilegroup(member) || seen.has(member)) continue
-      seen.add(member)
-      filegroupAnchoredSources(member, into, seen)
-      continue
-    }
-    into.push({ base, source: packageRelative ? member : sourceAgainstCwd(attrs.cwd, member) })
-  }
-}
-
 /**
  * Reduces declared closure entries to anchored sources, or names the reason
  * they cannot be reduced yet.
@@ -1355,7 +1304,11 @@ export const closureEntrySources = (
       if (!Filegroup.isFilegroup(entry)) {
         return `target ${Target.metadata(entry).target} cannot provide entry files yet`
       }
-      filegroupAnchoredSources(entry, anchored, new Set([entry]))
+      const metadata = Target.metadata(entry)
+      anchored.push(...Filegroup.sources(metadata.attrs as Filegroup.Attrs, {
+        sourceFile: metadata.sourceFile,
+        packageDirectory: metadata.sourceFile === undefined ? undefined : NodePath.dirname(metadata.sourceFile)
+      }))
       continue
     }
     anchored.push({ base: context.packageDirectory ?? "", source: entry })
@@ -1377,9 +1330,14 @@ export const closureEntrySources = (
 export const checkOperand = (value: FileSet): FilesCheckOperand | string => {
   const target = Target.isTarget(value) ? value : value.target
   if (Filegroup.isFilegroup(target)) {
-    const sources: Array<AnchoredSource> = []
-    filegroupAnchoredSources(target, sources, new Set([target]))
-    return { _tag: "SourceSet", sources }
+    const metadata = Target.metadata(target)
+    return {
+      _tag: "SourceSet",
+      sources: [...Filegroup.sources(metadata.attrs as Filegroup.Attrs, {
+        sourceFile: metadata.sourceFile,
+        packageDirectory: metadata.sourceFile === undefined ? undefined : NodePath.dirname(metadata.sourceFile)
+      })]
+    }
   }
   if (isImportClosure(target)) {
     const metadata = Target.metadata(target)

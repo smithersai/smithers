@@ -46,8 +46,10 @@ import { Action, type FlowRuntime } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
+import * as NodePath from "node:path"
 import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
+import * as SafeFs from "./SafeFs.ts"
 import * as Target from "./Target.ts"
 
 /**
@@ -160,16 +162,42 @@ export const Attrs = Schema.Struct({
 export type Attrs = typeof Attrs.Type
 
 /**
- * Payload for one group expansion: workspace-relative declared sources.
+ * One declared source together with the directory its paths resolve from.
  *
- * Paths and patterns are already resolved against the declaring group's
- * `cwd`, so the implementation resolves them from the workspace root alone.
+ * `base` is the absolute directory of the PACKAGE.ts that declared the
+ * source, or `""` for an explicit workspace-relative cwd or a target constructed
+ * outside a PACKAGE.ts module, as tests do. A source's `//` prefix still
+ * resolves from the workspace root. The executing layer maps a
+ * non-empty `base` onto its workspace-relative package path; it is carried
+ * as context for that mapping and is never cache-key material.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const AnchoredSource = Schema.Struct({
+  base: Schema.String,
+  source: Source
+})
+
+/**
+ * One declared source together with the directory its paths resolve from.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type AnchoredSource = typeof AnchoredSource.Type
+
+/**
+ * Payload for one group expansion: declared sources with their package anchors.
+ *
+ * The executing layer maps each `base` onto its workspace before resolving
+ * that source. Nested groups retain their own declaring package.
  *
  * @category schemas
  * @since 0.1.0
  */
 export const Payload = Schema.Struct({
-  sources: Schema.Array(Source)
+  sources: Schema.Array(AnchoredSource)
 })
 
 /**
@@ -208,34 +236,85 @@ const resolveSource = (cwd: string, source: Source): Source =>
     }
 
 /** Walks one group's `srcs` depth first, entering nested groups once each. */
-const gather = (attrs: Attrs, seen: Set<Target.AnyTarget>, into: Array<Source>): void => {
+const gather = (
+  attrs: Attrs,
+  context: Target.ImplementationContext,
+  seen: Set<Target.AnyTarget>,
+  into: Array<AnchoredSource>
+): void => {
+  const packageRelative = attrs.cwd === "."
+  const base = packageRelative ? context.packageDirectory ?? "" : ""
   for (const member of attrs.srcs) {
     if (Target.isTarget(member)) {
       if (!isFilegroup(member) || seen.has(member)) continue
       seen.add(member)
-      gather(Target.metadata(member).attrs as Attrs, seen, into)
+      const metadata = Target.metadata(member)
+      gather(
+        metadata.attrs as Attrs,
+        {
+          sourceFile: metadata.sourceFile,
+          packageDirectory: metadata.sourceFile === undefined ? undefined : NodePath.dirname(metadata.sourceFile)
+        },
+        seen,
+        into
+      )
       continue
     }
-    into.push(resolveSource(attrs.cwd, member))
+    into.push({ base, source: packageRelative ? member : resolveSource(attrs.cwd, member) })
   }
 }
 
 /**
- * Flattens one group's `srcs` into workspace-relative declared sources.
+ * Flattens one group's `srcs` into declared sources with package anchors.
  *
  * The walk is depth first in `srcs` order and enters each nested group once,
  * so a diamond of groups contributes its shared members once and the result
- * is deterministic. Nested sources resolve against the nested group's own
- * `cwd`. Targets that are not groups are skipped: they stay dependency edges
- * and contribute no files.
+ * is deterministic. The default `cwd: "."` anchors at
+ * `context.packageDirectory`; an explicit cwd is workspace relative.
+ * Nested groups use their own declaration context. Targets that are not
+ * groups are skipped: they stay dependency edges and contribute no files.
  *
  * @category expansion
  * @since 0.1.0
  */
-export const sources = (attrs: Attrs): ReadonlyArray<Source> => {
-  const found: Array<Source> = []
-  gather(attrs, new Set(), found)
+export const sources = (
+  attrs: Attrs,
+  context: Target.ImplementationContext
+): ReadonlyArray<AnchoredSource> => {
+  const found: Array<AnchoredSource> = []
+  gather(attrs, context, new Set(), found)
   return found
+}
+
+/** Expands sources from their individual package directories into one digested union. */
+const expandFromPackages = async (
+  workspaceRoot: string,
+  declared: ReadonlyArray<{ readonly packageDirectory: string; readonly source: Source }>,
+  options: { readonly cacheDirectory?: string | undefined }
+): Promise<Files> => {
+  const paths = new Set<string>()
+  for (const { packageDirectory, source } of declared) {
+    if (source._tag === "File") {
+      paths.add(Input.resolvePath(packageDirectory, source.path))
+      continue
+    }
+    const matches = await Input.expandGlob(workspaceRoot, packageDirectory, source, {
+      cacheDirectory: options.cacheDirectory
+    })
+    for (const match of matches) paths.add(match)
+  }
+  const digested = await Input.digestFiles(workspaceRoot, [...paths])
+  return digested.map(({ digest, path }) => ({ path, digest: digest ?? null }))
+}
+
+/** Maps a declaration anchor onto this workspace without allowing it to escape. */
+const packageDirectoryOf = (workspaceRoot: string, base: string): string => {
+  if (base === "") return ""
+  const root = NodePath.resolve(workspaceRoot)
+  if (!SafeFs.inside(root, base)) {
+    throw new FilegroupError({ message: "filegroup source is declared outside the workspace" })
+  }
+  return NodePath.relative(root, base).split(NodePath.sep).join("/")
 }
 
 /**
@@ -255,21 +334,8 @@ export const expand = async (
   workspaceRoot: string,
   declared: ReadonlyArray<Source>,
   options: { readonly cacheDirectory?: string | undefined } = {}
-): Promise<Files> => {
-  const paths = new Set<string>()
-  for (const source of declared) {
-    if (source._tag === "File") {
-      paths.add(Input.resolvePath("", source.path))
-      continue
-    }
-    const matches = await Input.expandGlob(workspaceRoot, "", source, {
-      cacheDirectory: options.cacheDirectory
-    })
-    for (const match of matches) paths.add(match)
-  }
-  const digested = await Input.digestFiles(workspaceRoot, [...paths])
-  return digested.map(({ digest, path }) => ({ path, digest: digest ?? null }))
-}
+): Promise<Files> =>
+  expandFromPackages(workspaceRoot, declared.map((source) => ({ packageDirectory: "", source })), options)
 
 /**
  * Reads the files one group names and returns them digested.
@@ -285,9 +351,11 @@ export const ExpandFilegroup = Action.make("smithers-build/filegroup", {
 })
 
 /**
- * Implements {@link ExpandFilegroup} with {@link expand}. Payload paths
- * resolve against `workspaceRoot`, and `cacheDirectory` keeps host state out
- * of the expansion the same way declared-input discovery does.
+ * Implements {@link ExpandFilegroup} with per-source package anchors.
+ * Each `base` is mapped onto `workspaceRoot` before resolving files or
+ * expanding package-scoped globs. Anchors outside the workspace are refused.
+ * `cacheDirectory` keeps host state out of the expansion the same way
+ * declared-input discovery does.
  *
  * @category layers
  * @since 0.1.0
@@ -298,7 +366,15 @@ export const ExpandFilegroupLive = (options: {
 }): Layer.Layer<Action.Requirement<"smithers-build/filegroup">, never, FlowRuntime.FlowRuntime> =>
   ExpandFilegroup.toLayer((payload) =>
     Effect.tryPromise({
-      try: () => expand(options.workspaceRoot, payload.sources, { cacheDirectory: options.cacheDirectory }),
+      try: () =>
+        expandFromPackages(
+          options.workspaceRoot,
+          payload.sources.map(({ base, source }) => ({
+            packageDirectory: packageDirectoryOf(options.workspaceRoot, base),
+            source
+          })),
+          { cacheDirectory: options.cacheDirectory }
+        ),
       catch: (cause) =>
         new FilegroupError({
           message: failureMessage(cause)
@@ -335,5 +411,5 @@ export const Filegroup = Target.make(ruleId, {
   success: Files,
   error: FilegroupError,
   cache: true,
-  implementation: (attrs) => ExpandFilegroup.call({ sources: sources(attrs) })
+  implementation: (attrs, context) => ExpandFilegroup.call({ sources: sources(attrs, context) })
 })

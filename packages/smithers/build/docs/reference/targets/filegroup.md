@@ -38,9 +38,14 @@ transitive union, walked depth first in `srcs` order. Each nested group is
 entered once, so a diamond contributes its shared members once and the result
 is deterministic. Nested sources resolve against the nested group's own `cwd`.
 
-`Filegroup.sources(attrs)` is the pure flattening used by both the target body and
-the tests. `Filegroup.expand(root, sources)` turns flattened sources into the
-deduplicated, sorted, digested file list.
+`Filegroup.sources(attrs, context)` is the pure flattening used by the target
+body and file-set composition. It returns `Filegroup.AnchoredSource` entries
+with `{ base, source }`, retaining each default-cwd group's declaring package
+directory. `ExpandFilegroupLive` maps those anchors onto its workspace before
+expanding and digesting the sources. An explicit `cwd` remains workspace relative,
+and a source's `//` prefix still resolves from the workspace root.
+`Filegroup.expand(root, sources)` remains the lower-level helper for sources
+that are already workspace relative.
 
 ## Consumers
 

@@ -115,7 +115,10 @@ export const BiomeCheck = Target.make("BiomeCheck", {
       return run([...lintPrefix, ...selected], [...formatPrefix, ...selected])
     }
     return Filegroup.ExpandFilegroup.call({
-      sources: Filegroup.sources({ srcs: sources, cwd: attrs.cwd })
+      sources: Filegroup.sources({ srcs: sources, cwd: attrs.cwd }, {
+        sourceFile: undefined,
+        packageDirectory: undefined
+      })
     }).pipe(
       Node.map(Node.capture({ cwd: attrs.cwd, lintPrefix, formatPrefix }, function(files: Filegroup.Files) {
         const paths = files.map((file) => Input.rootRelative(this.cwd, `//${file.path}`))

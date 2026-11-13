@@ -456,7 +456,7 @@ describe("generated-file rules", () => {
     const group = Filegroup.Filegroup({ srcs: [Input.glob("src/**/*.ts")], cwd: "packages/example" })
     const call = plannedCalls(group)[0]
     expect(call?.action).toBe("smithers-build/filegroup")
-    expect(call?.payload["sources"]).toEqual([Input.glob("packages/example/src/**/*.ts")])
+    expect(call?.payload["sources"]).toEqual([{ base: "", source: Input.glob("packages/example/src/**/*.ts") }])
   })
 })
 

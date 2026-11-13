@@ -22,6 +22,8 @@ import { BuildAndCheckTypeScriptPackage } from "../src/BuildAndCheckTypeScriptPa
 import { plannedArgv, plannedCalls } from "./plan.ts"
 import { packageManager } from "./toolchain.ts"
 
+const context: Target.ImplementationContext = { sourceFile: undefined, packageDirectory: undefined }
+
 describe("BuildAndCheckTypeScriptPackage docsFiles", () => {
   const targets = BuildAndCheckTypeScriptPackage({ packageManager, deps: [], cwd: "packages/smithers/flows/plan" })
 
@@ -33,10 +35,10 @@ describe("BuildAndCheckTypeScriptPackage docsFiles", () => {
   })
 
   it("names the colocated docs, the README, and the manifest under the package cwd", () => {
-    expect(Filegroup.sources(Target.metadata(targets.docsFiles).attrs as Filegroup.Attrs)).toEqual([
-      { _tag: "Glob", pattern: "packages/smithers/flows/plan/docs/**/*.md", exclude: [] },
-      { _tag: "File", path: "packages/smithers/flows/plan/README.md" },
-      { _tag: "File", path: "packages/smithers/flows/plan/package.json" }
+    expect(Filegroup.sources(Target.metadata(targets.docsFiles).attrs as Filegroup.Attrs, context)).toEqual([
+      { base: "", source: Input.glob("packages/smithers/flows/plan/docs/**/*.md") },
+      { base: "", source: Input.file("packages/smithers/flows/plan/README.md") },
+      { base: "", source: Input.file("packages/smithers/flows/plan/package.json") }
     ])
   })
 
@@ -47,8 +49,8 @@ describe("BuildAndCheckTypeScriptPackage docsFiles", () => {
       cwd: "packages/x",
       readme: { _tag: "File", path: "docs/README.md" }
     })
-    expect(Filegroup.sources(Target.metadata(overridden.docsFiles).attrs as Filegroup.Attrs)).toContainEqual(
-      { _tag: "File", path: "packages/x/docs/README.md" }
+    expect(Filegroup.sources(Target.metadata(overridden.docsFiles).attrs as Filegroup.Attrs, context)).toContainEqual(
+      { base: "", source: Input.file("packages/x/docs/README.md") }
     )
   })
 })
@@ -194,10 +196,10 @@ describe("BuildAndCheckTypeScriptPackage", () => {
 
   it("roots an explicit '.' cwd at the workspace and explicitly disables a config when asked", () => {
     const targets = BuildAndCheckTypeScriptPackage({ packageManager, cwd: ".", vitestConfig: null })
-    expect(Filegroup.sources(Target.metadata(targets.docsFiles).attrs as Filegroup.Attrs)).toEqual([
-      Input.glob("docs/**/*.md"),
-      Input.file("README.md"),
-      Input.file("package.json")
+    expect(Filegroup.sources(Target.metadata(targets.docsFiles).attrs as Filegroup.Attrs, context)).toEqual([
+      { base: "", source: Input.glob("docs/**/*.md") },
+      { base: "", source: Input.file("README.md") },
+      { base: "", source: Input.file("package.json") }
     ])
     expect(plannedArgv(targets.test)).toEqual(["pnpm", "exec", "vitest", "run", "--environment", "node"])
   })

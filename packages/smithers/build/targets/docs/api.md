@@ -90,6 +90,23 @@ payload: an untrusted cache entry never chooses which paths are verified.
 `ToolBuild.captureOutputs` digests them, and a tool that exits zero without
 producing a declared output fails the target.
 
+## File-group expansion
+
+`Filegroup.sources(attrs, context)` returns `ReadonlyArray<Filegroup.AnchoredSource>`.
+Each entry holds `{ base, source }`. For the default `cwd: "."`, `base` is
+`context.packageDirectory`, and nested groups retain their own declaring package
+directories. An explicit `cwd` resolves sources relative to the workspace root
+and uses `base: ""`; a target constructed outside a package also uses `base: ""`.
+`Compose.AnchoredSource` aliases the same schema and type.
+
+`Filegroup.Payload.sources` carries these anchored entries.
+`ExpandFilegroupLive` maps each anchor onto its workspace, refuses anchors outside
+it, and resolves each file or glob from that package. Hosts calling `sources`
+directly must pass a `Target.ImplementationContext`; hosts constructing action
+payloads directly must wrap each source as `{ base, source }`.
+`Filegroup.expand(workspaceRoot, sources)` continues to accept workspace-relative
+`Filegroup.Source` entries.
+
 ## Execution boundaries
 
 `Exec` is the sealed action every tool run goes through. Its failures carry a

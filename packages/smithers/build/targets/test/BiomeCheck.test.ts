@@ -3,6 +3,7 @@ import * as Node from "@smthrs/plan/Node"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
+import { compileFunction } from "node:vm"
 import { afterEach, describe, expect, it } from "vitest"
 import { BiomeCheck } from "../src/BiomeCheck.ts"
 import * as Filegroup from "../src/Filegroup.ts"
@@ -114,7 +115,7 @@ describe("BiomeCheck paths and families", () => {
     const expansion = Graph.nodes(graph).find((node) =>
       node.ast._tag === "ActionCall" && node.ast.action === "smithers-build/filegroup"
     )
-    expect(expansion?.payload).toEqual({ sources: resolved })
+    expect(expansion?.payload).toEqual({ sources: resolved.map((source) => ({ base: "", source })) })
   })
 
   it.each([
@@ -144,6 +145,26 @@ describe("BiomeCheck paths and families", () => {
     expect(selected).toBe(true)
     expect(value.lintArgv).toContain(expected)
     expect(value.lintArgv.slice(5).every((path) => path.endsWith(".ts") && !path.includes("generated"))).toBe(true)
+  })
+
+  it("keeps the default tool cwd workspace anchored when declared in a package", async () => {
+    const root = await fixture()
+    const filename = Path.join(root, "packages/foo/PACKAGE.ts")
+    const declare = compileFunction("return make(attrs)", ["make", "attrs"], { filename })
+    const target = declare(BiomeCheck, {
+      packageManager,
+      sources: [Input.glob("*.ts")],
+      deps: [],
+      config: Input.file("biome.json"),
+      lint: true,
+      format: false
+    }) as Target.AnyTarget
+    expect(Target.metadata(target).sourceFile).toBe(filename)
+    const graph = Graph.build(Target.plan(target))
+    const expansion = Graph.nodes(graph).find((node) =>
+      node.ast._tag === "ActionCall" && node.ast.action === "smithers-build/filegroup"
+    )
+    expect(expansion?.payload).toEqual({ sources: [{ base: "", source: Input.glob("*.ts") }] })
   })
 
   it("does not turn an empty glob expansion into a whole-directory check", async () => {

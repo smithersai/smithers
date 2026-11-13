@@ -5,14 +5,13 @@ area: targets
 order: 100
 ---
 
-A group names a set of files under one label: declared files, declared globs, and other groups, expanded as one deduplicated union. A minimal declaration names its sources and the package directory they resolve from:
+A group names a set of files under one label: declared files, declared globs, and other groups, expanded as one deduplicated union. A minimal declaration names its sources; paths resolve from the declaring package by default:
 
 ```ts
 import { Smithers } from "@smthrs/targets"
 
 const protos = Smithers.Filegroup({
-  srcs: [Smithers.glob("proto/**/*.proto")],
-  cwd: "packages/wire"
+  srcs: [Smithers.glob("proto/**/*.proto")]
 })
 
 export const Package = Smithers.Package({ targets: { protos } })
@@ -29,7 +28,7 @@ The attrs schema declares two fields:
 
 ## Behavior
 
-The implementation plans one `ExpandFilegroup` action call whose payload is the flattened source list `Filegroup.sources` builds from `srcs`. The walk is depth first in `srcs` order and enters each nested group once, so a diamond of groups contributes its shared members once and the flattening is deterministic. Nested sources resolve against the nested group's own `cwd`. A target in `srcs` that is not a group is skipped by the flattening and stays an ordinary dependency edge.
+The implementation plans one `ExpandFilegroup` action call whose payload is the flattened source list `Filegroup.sources(attrs, context)` builds from `srcs`. Each `Filegroup.AnchoredSource` contains `{ base, source }`: the default `cwd: "."` keeps the declaring package directory as `base`, and an explicit `cwd` resolves the source from the workspace root with `base: ""`. `ExpandFilegroupLive` maps each anchor onto its workspace before reading files or expanding globs, so the action reads the same package files that the planner keys. The walk is depth first in `srcs` order and enters each nested group once, so a diamond of groups contributes its shared members once and the flattening is deterministic. Nested sources resolve against the nested group's own `cwd`. A target in `srcs` that is not a group is skipped by the flattening and stays an ordinary dependency edge.
 
 The declared files and globs inside `srcs` are collected by `Target.make` as declared inputs, so the group's own key carries their digests, and nested groups are dependency edges, so their keys reach the group's key. The planner adds the files of every group reachable from a consumer to that consumer's read set, so editing any member invalidates every target that names the group. Globs expand through `Input.expandGlob`, which is package scoped and applies `.gitignore`; the expansion is deduplicated by path and sorted, and a named file that does not exist digests to null instead of failing.
 
