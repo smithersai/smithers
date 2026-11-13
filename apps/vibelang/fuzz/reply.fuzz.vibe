@@ -62,13 +62,15 @@ it.live("reply/event-progress", () => run("reply/event-progress", Schema.Array(A
     const previous = progress
     progress = Reply.fold(progress, event)
     if (event._tag === "model-settled") {
-      // A settlement without both counts is unusable, as a malformed one is: never a free call.
-      const present = event.usage.inputTokens !== undefined && event.usage.outputTokens !== undefined
-      const input = event.usage.inputTokens ?? 0
-      const output = event.usage.outputTokens ?? 0
-      if (present && Number.isSafeInteger(input) && input >= 0 && Number.isSafeInteger(output) && output >= 0) {
+      // A settlement without a total or both counts is unusable, as one with any malformed counter is (cache counts
+      // included): never a free call. The provider's total is authoritative over its components.
+      const usage = event.usage
+      const counters = [usage.totalTokens, usage.inputTokens, usage.outputTokens, usage.reasoningTokens, usage.cachedInputTokens, usage.cacheWriteTokens]
+      const wellFormed = counters.every((value) => value === undefined || (Number.isSafeInteger(value) && value >= 0))
+      const present = usage.totalTokens !== undefined || (usage.inputTokens !== undefined && usage.outputTokens !== undefined)
+      if (wellFormed && present) {
         // Independent unbounded arithmetic checks the native safe-sum boundary.
-        const sum = try Effect.try(() => BigInt(tokens) + BigInt(input) + BigInt(output))
+        const sum = try Effect.try(() => BigInt(tokens) + (usage.totalTokens !== undefined ? BigInt(usage.totalTokens) : BigInt(usage.inputTokens ?? 0) + BigInt(usage.outputTokens ?? 0)))
         if (sum <= 9007199254740991n) tokens = Number(sum)
         else usageValid = false
       } else usageValid = false
