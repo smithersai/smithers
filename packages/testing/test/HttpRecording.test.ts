@@ -47,6 +47,21 @@ const serve = (reply?: string): Promise<Service> =>
           response.end(Buffer.from(params.get("hex")!, "hex"))
           return
         }
+        if (request.url?.startsWith("/headers?")) {
+          const status = Number(new URL(request.url, "http://localhost").searchParams.get("status"))
+          response.writeHead(status, {
+            "content-type": "application/json",
+            link: "</next>; rel=\"next\"",
+            location: "/next",
+            "retry-after": "3",
+            etag: "\"version-1\"",
+            "x-ratelimit-remaining": "42",
+            "x-oauth-scopes": "repo",
+            "set-cookie": "session=private"
+          })
+          response.end(status === 200 ? "{  \"ok\": true, \"items\": [1, 2] }" : undefined)
+          return
+        }
         if (request.url === "/empty") {
           response.writeHead(204)
           response.end()
@@ -167,6 +182,69 @@ describe("HttpRecording", () => {
         expect(replayed.empty).toEqual({ status: 204, body: null })
       })
     ))
+
+  it.effect("scrubbing normalizes allowed header names and drops every other header", () =>
+    Effect.sync(() => {
+      const exchange: HttpRecording.Exchange = {
+        request: { method: "GET", url: "https://api.example.test/" },
+        response: {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            Link: "</next>; rel=\"next\"",
+            Location: "/next",
+            "Retry-After": "3",
+            ETag: "\"version-1\"",
+            "Set-Cookie": "session=private",
+            "X-RateLimit-Remaining": "42"
+          },
+          body: { ok: true }
+        }
+      }
+      expect(HttpRecording.scrubExchange(exchange).response).toEqual({
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          link: "</next>; rel=\"next\"",
+          location: "/next",
+          "retry-after": "3"
+        },
+        body: { ok: true }
+      })
+      expect(exchange.response.headers["Set-Cookie"]).toBe("session=private")
+    }))
+
+  for (const status of [200, 204, 205, 304]) {
+    it.live(`recording and replay expose the same allowed headers and body for status ${status}`, () =>
+      withService((service) =>
+        Effect.gen(function*() {
+          const path = join(directory(), "headers.json")
+          const client = yield* live
+          const url = `${service.url}/headers?status=${status}`
+          const read = (client: HttpClient.HttpClient) =>
+            client.get(url).pipe(Effect.flatMap((response) =>
+              Effect.map(response.text, (body) => ({ status: response.status, headers: response.headers, body }))
+            ))
+          const recorded = yield* Effect.scoped(Effect.gen(function*() {
+            const recorder = yield* HttpRecording.record(path, { live: client })
+            return yield* read(recorder)
+          }))
+          const replayed = yield* read(HttpRecording.replay(yield* HttpRecording.load(path)))
+          expect(recorded).toEqual(replayed)
+          expect(recorded).toEqual({
+            status,
+            headers: {
+              "content-type": "application/json",
+              link: "</next>; rel=\"next\"",
+              location: "/next",
+              "retry-after": "3"
+            },
+            body: status === 200 ? "{\"ok\":true,\"items\":[1,2]}" : ""
+          })
+          expect(service.hits()).toBe(1)
+        })
+      ))
+  }
 
   it.live("short named secrets are removed before a recording is written", () =>
     withService((service) =>

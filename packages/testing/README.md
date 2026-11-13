@@ -63,7 +63,10 @@ Every module, every export, and the contract of each is at
 table for containment checks. Use `comm` for executable names and `args`
 when a script marker must be distinguished from its interpreter. Spawn
 failures throw; an absent selected PID returns empty text. This Node-only
-helper stays off the main barrel so browser test hosts remain portable.
+helper stays off the main barrel. The root entry still reaches platform code
+through `HttpRecording`, the database test layers, and filesystem corpus tools;
+it is not yet portable to browser or Worker test hosts. See the
+[known violations](../../docs/libraries.md#known-violations-the-root-entry-reaches-platform-code).
 
 ## Certify an engine in fifteen lines
 

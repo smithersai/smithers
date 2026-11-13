@@ -470,8 +470,11 @@ export const record = (
         const bytes = yield* response.arrayBuffer.pipe(Effect.orDie)
         const liveText = responseText(bytes, response.headers["content-type"])
         const headers: Record<string, string> = {}
-        for (const [name, value] of Object.entries(response.headers)) headers[name] = value
-        // A pruned body is what the code under test sees too, so recording and replay run on the same answer.
+        for (const [name, value] of Object.entries(response.headers)) {
+          const lower = name.toLowerCase()
+          if (keptHeaders.has(lower)) headers[lower] = value
+        }
+        // Recording and replay expose the same header allowlist and body shape; only replay redacts credentials.
         const originalBody = parsed(liveText)
         const body = options.prune === undefined ? originalBody : options.prune(originalBody, keyed)
         const wasJson = originalBody !== liveText
@@ -498,11 +501,18 @@ export const record = (
           ? JSON.stringify(scrubbedBody)
           : scrubbedBody
         exchanges.push({ ...scrubbed, response: { ...scrubbed.response, body: recordedBody } })
-        const empty = response.status === 204 || response.status === 205 || response.status === 304
-        return HttpClientResponse.fromWeb(
-          request,
-          new Response(empty ? null : text, { status: response.status, headers })
-        )
+        return answer(request, {
+          request: keyed,
+          response: {
+            status: response.status,
+            headers,
+            body: untouchedScalar
+              ? text
+              : wasJson && typeof body === "string"
+              ? JSON.stringify(body)
+              : body
+          }
+        })
       }).pipe(Effect.withSpan("testing.http_recording.record", { attributes: { method: request.method } }))
     )
   })

@@ -102,6 +102,13 @@ too, so if it needs a field you removed, the recording run fails, not a later
 replay. An identity prune preserves scalar wire text. When a prune returns
 a string from a JSON response, that string remains JSON on both runs.
 
+Recording and replay expose only `content-type`, `link`, `location`, and
+`retry-after` response headers. Other headers, including cookies, request ids,
+and rate-limit counters, are absent on both runs, so a test cannot rely on a
+header that replay drops. Both runs serialize structured JSON in the same way
+and preserve scalar wire text. Live credentials remain visible during
+recording; the saved recording and replay redact them.
+
 ## Replay is strict
 
 Exchanges with the same method, URL and body are claimed once each, in
@@ -138,6 +145,7 @@ for (const file of recordings) expect(HttpRecording.scan(readFileSync(file, "utf
 ## Model calls
 
 A model call records through `CachedModel` and replays through `RecordedModel`
-(see [Replay a model](./replay-a-model.md)): those key on the model request, so
-a recording replays under another model id. Use `HttpRecording` for services
-whose wire format is the contract.
+(see [Replay a model](./replay-a-model.md)): those key on the model request
+rather than the HTTP wire format. A different `modelId` is a cache miss for
+`CachedModel` or a `ReplayHarnessMismatchError` for `RecordedModel`. Use
+`HttpRecording` for services whose wire format is the contract.

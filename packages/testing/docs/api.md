@@ -1049,6 +1049,7 @@ interface ModelErrorLike {
     | "authentication"
     | "rate_limited"
     | "quota_exceeded"
+    | "out_of_credit"
     | "content_policy"
     | "provider_internal"
     | "transport"

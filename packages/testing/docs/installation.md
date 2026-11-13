@@ -110,6 +110,13 @@ by subpath keeps that decision visible at the import site:
 import { killProcess, waitForReparent } from "@smthrs/testing/Faults"
 ```
 
+The root entry is not yet portable to browser or Worker test hosts:
+`HttpRecording` imports filesystem and path modules, database test layers reach
+Node adapters, and filesystem corpus tools also use Node modules. Keeping the
+host helpers below on subpaths does not remove those root dependencies.
+`FixtureStore.makeMemory` and `layerMemory` themselves need no host services;
+`makeFile` and `layerFile` require injected filesystem and path services.
+
 `ProcessTable` is absent because it spawns `ps` through `node:child_process`,
 which browser test hosts cannot load:
 
