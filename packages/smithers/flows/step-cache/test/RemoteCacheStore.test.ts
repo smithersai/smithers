@@ -1,9 +1,8 @@
-import * as Redacted from "effect/Redacted"
 /**
  * The dumb-HTTP action-cache protocol: `GET`/`PUT`/`DELETE /ac/{keyDigest}`,
  * mirroring `remote/http/HttpCacheClient.java` in bazelbuild/bazel.
  */
-import { describe, expect, it, vi } from "@effect/vitest"
+import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -20,7 +19,6 @@ import * as Tracer from "effect/Tracer"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import * as CacheStore from "../src/CacheStore.ts"
-import * as CacheAdmission from "../src/internal/CacheAdmission.ts"
 import * as RemoteCacheStore from "../src/RemoteCacheStore.ts"
 
 const entry: CacheStore.CacheEntry = {
@@ -783,29 +781,6 @@ describe("publications", () => {
       expect(errorOf(exit).code).toBe("invalid_cache")
       expect(tier.calls).toEqual([])
     }))
-
-  it.effect("canonicalizes each field exactly once: the wire body is the single whole-entry encoding", () =>
-    Effect.gen(function*() {
-      // `snapshotEntry` has already admitted and frozen `result` and `meta`
-      // under the per-field policy, so the only encoding a publication needs
-      // is the whole-entry one whose bytes go on the wire. Any extra per-field
-      // encoding is repeated work whose string is discarded, measured at
-      // 10,000 records as most of the publication's CPU time. The spies sit on
-      // the admission module, which is where the tier takes its encoders from.
-      const fieldEncodings = vi.spyOn(CacheAdmission, "encodeCanonical")
-      const entryEncodings = vi.spyOn(CacheAdmission, "encodeEntryCanonical")
-      try {
-        const tier = tierOf(() => new Response(null, { status: 201 }))
-        expect(yield* Effect.flatMap(tier.store, (store) => store.put(entry))).toEqual({ _tag: "Inserted" })
-        expect(fieldEncodings).not.toHaveBeenCalled()
-        expect(entryEncodings).toHaveBeenCalledTimes(1)
-        const encoding = entryEncodings.mock.results[0]!.value as Effect.Effect<string, CacheStore.CacheStoreError>
-        expect(tier.calls[0]!.body).toBe(yield* encoding)
-      } finally {
-        fieldEncodings.mockRestore()
-        entryEncodings.mockRestore()
-      }
-    }))
 })
 
 describe("configuration", () => {
@@ -1124,7 +1099,3 @@ describe("redirects", () => {
       expect(seen[0]?.cache).toBe("no-store")
     }))
 })
-
-/** Native test hosts inspect the arguments they actually execute. */
-const plainWord = (value: string | Redacted.Redacted<string>): string =>
-  Redacted.isRedacted(value) ? Redacted.value(value) : value

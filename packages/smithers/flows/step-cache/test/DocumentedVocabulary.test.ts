@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { readFileSync } from "node:fs"
 import * as CacheStore from "../src/CacheStore.ts"
+import * as TestCacheStore from "../src/test/TestCacheStore.ts"
 
 const read = (path: string): string => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 
@@ -32,6 +33,45 @@ describe("documented Conflict vocabulary", () => {
     expect(page).not.toMatch(/two runs (?:have ever )?disagreed? about\s+what a step produced/)
     expect(page).not.toMatch(/it says two\s+runs computed different results/)
   })
+
+  it.effect("diagnoses a head conflict from matching ledger bytes after a second provenance is recorded", () =>
+    Effect.gen(function*() {
+      const store = yield* CacheStore.CacheStore
+      const first = {
+        keyDigest: "shared-digest",
+        result: { value: 1 },
+        meta: { source: "first" },
+        createdAtMs: 10,
+        recordedRunId: "run-1",
+        recordedEventSeq: 1
+      }
+      const second = {
+        ...first,
+        result: { value: 2 },
+        meta: { source: "second" },
+        createdAtMs: 20,
+        recordedRunId: "run-2"
+      }
+      expect(yield* store.put(first)).toEqual({ _tag: "Inserted" })
+      expect(yield* store.put(second)).toEqual({ _tag: "Conflict" })
+      expect(Option.getOrThrow(yield* store.get(first.keyDigest))).toEqual(first)
+
+      // Remove the head so a fenced lookup cannot fall back to it: the
+      // losing publication committed its own ledger row.
+      expect(yield* store.evict(first.keyDigest)).toBe(true)
+      const recordedBy = { runId: second.recordedRunId, eventSeq: second.recordedEventSeq }
+      const recorded = Option.getOrThrow(yield* store.get(second.keyDigest, { recordedBy }))
+      expect(recorded).toEqual(second)
+
+      const changed = { ...second, meta: { source: "changed" } }
+      expect(yield* store.put(changed)).toEqual({ _tag: "Conflict" })
+      expect(Option.getOrThrow(yield* store.get(second.keyDigest, { recordedBy }))).toEqual(second)
+      expect(Option.isNone(yield* store.get(second.keyDigest))).toBe(true)
+
+      const page = read("docs/troubleshooting.md")
+      expect(page).not.toMatch(/No row there is the head stage/)
+      expect(page).toMatch(/If they match, the conflict is at the head stage/)
+    }).pipe(Effect.provide(TestCacheStore.layer)))
 
   it.effect("keeps the pages that define the outcome consistent with a metadata-only conflict", () =>
     Effect.gen(function*() {
@@ -94,4 +134,13 @@ describe("documented admission guarantees", () => {
       )
       expect(refused.message).toBe("result contains a non-plain object")
     }))
+})
+
+describe("documented ledger retention", () => {
+  it("names the host policy that permits ledger collection in the README guarantee", () => {
+    const guarantee = read("README.md").split("The **ledger** row")[1]!.split("## Install")[0]!
+    expect(guarantee).toContain("`sweepExpired`")
+    expect(guarantee).toContain("`canReclaimRecorded`")
+    expect(guarantee).not.toMatch(/no verb in this package deletes one/)
+  })
 })

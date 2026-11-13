@@ -250,13 +250,16 @@ arrives from either of two stages, and only the second one involves two runs.
 - **The head stage.** Another run already recorded a different canonical
   `result` under this digest.
 
-Read `flows_step_cache_recorded` at the exact
-`(keyDigest, recordedRunId, recordedEventSeq)` you recorded to tell the two
-apart. A row already there is the provenance stage, and comparing its
-`result_json`, `meta_json`, and `created_at_ms` against what you passed names
-the field that moved. No row there is the head stage, and the
+For `put`, both stages leave a ledger row in `flows_step_cache_recorded` at the exact
+`(keyDigest, recordedRunId, recordedEventSeq)` you recorded. Compare its
+`result_json`, `meta_json`, and `created_at_ms` with the canonical JSON and
+timestamp you passed. A difference identifies the provenance stage and names
+the field that moved. If they match, the conflict is at the head stage: the
+new ledger row committed even though the head refused it. The
 `recorded_run_id` and `recorded_event_seq` on the `flows_step_cache` row for
-that digest name the run that got there first.
+that digest name the run that got there first. These checks assume the host has
+not since reclaimed the ledger row. `importHead` does not record provenance;
+inspect the head row for its conflicts.
 
 If neither describes what you did, the digest is under-specified: two genuinely
 different computations are deriving the same key. Fix the key derivation, not

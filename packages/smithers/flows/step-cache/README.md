@@ -15,8 +15,10 @@ result instead of doing the work again.
 One `put` writes two rows. The **head** is the mutable row an ordinary lookup
 serves: evict it, sweep it when it ages out, and it is allowed to disappear.
 The **ledger** row is keyed by the run and journal event that recorded the
-result, and no verb in this package deletes one, so a replay reading through
-that fence still sees the bytes its own event recorded.
+result. No verb deletes a ledger row unless the host calls `sweepExpired`
+with a `canReclaimRecorded` policy that approves its collection. Without that
+approval, a replay reading through that fence still sees the bytes its own
+event recorded.
 
 ## Install
 
