@@ -45,6 +45,7 @@
     "./NodeOtel": "./src/NodeOtel.ts",
     "./Otel": "./src/Otel.ts",
     "./Otlp": "./src/Otlp.ts",
+    "./OtlpRelay": "./src/OtlpRelay.ts",
     "./Resource": "./src/Resource.ts",
     "./index": "./src/index.ts"
   },
@@ -174,6 +175,16 @@
         "require": {
           "types": "./dist/cjs/Otlp.d.ts",
           "default": "./dist/cjs/Otlp.js"
+        }
+      },
+      "./OtlpRelay": {
+        "import": {
+          "types": "./dist/esm/OtlpRelay.d.ts",
+          "default": "./dist/esm/OtlpRelay.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OtlpRelay.d.ts",
+          "default": "./dist/cjs/OtlpRelay.js"
         }
       },
       "./Resource": {

@@ -52,9 +52,12 @@ const bySignal = (lines: ReadonlyArray<Line>, signal: OtlpRelay.Signal) =>
   lines.filter((line) => line.annotations["otlp.signal"] === signal)
 
 /** A chunked body that never ends on its own. */
-const endless = () =>
+const endless = (onPull: () => void) =>
   new ReadableStream<Uint8Array>({
-    pull: (controller) => controller.enqueue(new Uint8Array(1024).fill(32))
+    pull: (controller) => {
+      onPull()
+      controller.enqueue(new Uint8Array(51).fill(32))
+    }
   })
 
 describe("OtlpRelay", () => {
@@ -484,14 +487,18 @@ describe("OtlpRelay", () => {
   })
 
   it("answers 413 past maxBodyBytes, for a sized body and for a chunked body that never ends", async () => {
-    const { lines, post } = relay({ maxBodyBytes: 100 })
+    const { lines, post, handle } = relay({ maxBodyBytes: 100 })
     expect((await post("/v1/logs", "x".repeat(101))).status).toBe(413)
     expect((await post("/v1/logs", "{}" + " ".repeat(98))).status).toBe(200)
+    let chunks = 0
     const chunked = new Request(
       "http://relay.test/v1/traces",
-      { method: "POST", body: endless(), duplex: "half" } as RequestInit
+      { method: "POST", body: endless(() => chunks++), duplex: "half" } as RequestInit
     )
-    expect((await relay().handle(chunked)).status).toBe(413)
+    expect((await handle(chunked)).status).toBe(413)
+    // Two chunks exceed the limit; the stream may pull one more ahead.
+    expect(chunks).toBeGreaterThanOrEqual(2)
+    expect(chunks).toBeLessThanOrEqual(3)
     expect(lines).toEqual([])
   })
 
