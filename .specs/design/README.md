@@ -12,7 +12,10 @@ Every reel step cites the spec line it shows in the caption chip ("J3.5", "§4.2
 node .specs/design/mock/build.mjs        # writes mock/dist/index.html, one self-contained file
 open .specs/design/mock/dist/index.html
 node .specs/design/mock/check.mjs        # every step renders, and its pointer target exists
-node .specs/design/mock/copy.mjs         # copy lint: no banned words, card lines of 12 words or fewer
+node .specs/design/mock/copy.mjs         # fails on banned words or card lines over 12 words
+node --test .specs/design/mock/copy.test.mjs  # copy lint regression tests (Chromium installed)
+node --test .specs/design/mock/evals/front-claims/review-subject.test.ts
+node --test .specs/design/mock/evals/live-parity/gaps.test.ts
 apps/app/node_modules/.bin/tsc -p .specs/design/mock/tsconfig.json
 node .specs/design/mock/shot.mjs <name> "j=j3&s=7" [--dark] [--width=390 --height=844]
 ```

@@ -68183,6 +68183,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/jj-wasm/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/jj-wasm/src/abi.rs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/build/build-cli/vitest.config.ts"
       }
     ],
@@ -76388,7 +76396,7 @@
       }
     ],
     "outputs": [
-      "packages/smithers/flows/jj-wasm/packages/smithers/flows/jj-wasm/**/*.rs"
+      "packages/smithers/flows/jj-wasm/**/*.rs"
     ],
     "dependencies": [
       "//packages/smithers/flows/jj-wasm:nativeSources"

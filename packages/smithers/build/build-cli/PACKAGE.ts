@@ -95,7 +95,9 @@ const test = Smithers.Vitest({
     prose,
     readme,
     sweep,
-    Smithers.file("//rust-toolchain.toml")
+    Smithers.file("//rust-toolchain.toml"),
+    Smithers.file("//packages/smithers/flows/jj-wasm/PACKAGE.ts"),
+    Smithers.file("//packages/smithers/flows/jj-wasm/src/abi.rs")
   ],
   deps: [lib],
   config: Smithers.file("vitest.config.ts"),

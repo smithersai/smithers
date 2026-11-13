@@ -15,10 +15,12 @@ export const bannedClaims = [
   { text: "reviewed", source: "PM final review A row 1: review with no person as its subject (\"In review · reviewed on the issue\")", personSubject: true }
 ] as const
 /** A person-subject claim matches as a whole word and passes when a person is its subject ("maya reviewed", "reviewed by Maya"). */
-const PERSON_BEFORE = /(?:(?:^|[^\w-]|\\n)(?:maya|cora|dev-ahn|will|ada|you|we|i|who|person|reviewer)|\$\{role\})\s+(?:has\s+|have\s+)?$/i
+const PERSON = "maya|cora|dev-ahn|will|ada|you|we|i|who|person|reviewer"
+const PERSON_BEFORE = new RegExp(String.raw`(?:(?:^|[^\w-]|\\n)(?:${PERSON})|\$\{role\})\s+(?:has\s+|have\s+)?$`, "i")
+const PERSON_AFTER = new RegExp(String.raw`^\s+(?:and\s+\w+\s+)?by\s+(?:the\s+)?(?:@?(?:${PERSON})|\$\{role\})(?![\w-])`, "i")
 const personSubject = (html: string, at: number, length: number): boolean =>
   /[A-Za-z-]/.test(html[at - 1] ?? "") || /[A-Za-z]/.test(html[at + length] ?? "")
-  || PERSON_BEFORE.test(html.slice(Math.max(0, at - 30), at)) || /^\s+(?:and\s+\w+\s+)?by\s+[A-Za-z@]/.test(html.slice(at + length, at + length + 30))
+  || PERSON_BEFORE.test(html.slice(Math.max(0, at - 30), at)) || PERSON_AFTER.test(html.slice(at + length))
 /** The -app dists left the delivered set on 2026-10-18 (PM final review A); MOCK_DISTS can still name them. */
 export const defaultDists = ["dist-smithers-site", "dist-effeck-site", "dist-default-ui", "dist-effect-monorepo"]
 export interface Output { dist: string; html: string }

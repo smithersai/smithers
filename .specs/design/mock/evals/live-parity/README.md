@@ -65,6 +65,10 @@ Three scorers bind to every case:
   `Unobservable` are separate string lists. Each side gets half the shared budget;
   context overflow halves it once. Shared transient retries use 2s/8s backoff.
 
+Each scorer must supply a finite numeric `score` from `0` to `1` before a view
+can count as green. Missing or invalid results remain `inconclusive` and appear
+in the report’s unobservable notes.
+
 Scores apply to comparable pairs only. A partial view retains every unpaired
 outcome; it is never proof that the whole view shipped. All-unavailable cases
 fail scoring as inconclusive and keep the distinct collected outcome.
@@ -80,6 +84,12 @@ field labels and overflow, plus live URL protocols. Link destinations and actual
 button effects are not exercised; no claim of successful writes or working
 closed menus is made. DOM evidence collection temporarily inserts/removes a
 color probe, as mock-fidelity does; it makes no live product writes.
+
+Report regression tests, from the workspace root:
+
+```sh
+node --test .specs/design/mock/evals/live-parity/gaps.test.ts
+```
 
 Offline tests, from workspace root, with fake collectors/executors and judges:
 

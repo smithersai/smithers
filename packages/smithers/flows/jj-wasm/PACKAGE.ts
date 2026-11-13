@@ -62,7 +62,7 @@ const destinations = [
 const cargoFmt = Smithers.Cargo.Fmt({
   workspace: true,
   data: [...sources, nativeSources],
-  changes: ["packages/smithers/flows/jj-wasm/**/*.rs"]
+  changes: ["//packages/smithers/flows/jj-wasm/**/*.rs"]
 })
 
 /**

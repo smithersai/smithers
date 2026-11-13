@@ -7,10 +7,13 @@
  * by subtracting one `S.Cargo.AppSet` from another, and a `S.Shell.Build`
  * that takes the built binary as its tool edge.
  */
+import * as Input from "@smthrs/targets/Input"
+import * as Target from "@smthrs/targets/Target"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { Package as jjWasm } from "../../../flows/jj-wasm/PACKAGE.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
@@ -295,4 +298,18 @@ export const Package`
       expect(commandsOf(deny)[0]!.slice(1)).toEqual(["deny", "--config", "deny.toml", "check"])
     }
   })
+})
+
+it("the declared Rust formatter write set covers the crate sources without escaping its package", async () => {
+  const packagePath = "packages/smithers/flows/jj-wasm"
+  const { changes } = Target.metadata(jjWasm.cargoFmt).attrs as { changes: ReadonlyArray<string> }
+  const writeSet = changes.map((path) => Input.resolvePath(packagePath, path))
+  const source = `${packagePath}/src/abi.rs`
+  expect(await Fs.readFile(new URL("../../../flows/jj-wasm/src/abi.rs", import.meta.url), "utf8")).not.toBe("")
+  expect(writeSet.some((pattern) => NodePath.matchesGlob(source, pattern))).toBe(true)
+  for (
+    const outside of ["packages/smithers-ffi/src/lib.rs", `${packagePath}/Cargo.toml`, `${packagePath}/PACKAGE.ts`]
+  ) {
+    expect(writeSet.some((pattern) => NodePath.matchesGlob(outside, pattern))).toBe(false)
+  }
 })

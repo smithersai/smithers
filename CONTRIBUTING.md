@@ -75,6 +75,11 @@ unlisted failures, not that every target passed. Keep listed failures tied to
 their issues and inspect the reported results. See the
 [build CLI policy](packages/smithers/build/build-cli/docs/cli.md).
 
+The `cloud-contract` gate checks local commands against the generated CI
+workflow. After changing the shard partition or regenerating
+`.github/workflows/ci.yml`, update the `workspace*` and `packages*` commands in
+`.github/scripts/ci/cloud.sh` and run `bun test .github/scripts/ci/cloud.test.ts`.
+
 ## Changing a root file
 
 Some files at the repository root are generated from `PACKAGE.ts` and then
