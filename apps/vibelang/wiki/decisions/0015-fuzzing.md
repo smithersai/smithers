@@ -1787,6 +1787,14 @@ mutant caught:
 | `Reply.vibe` 384-385 | `reply/answers` | a start the conversation refuses, every execution (the target runs about 7 executions in 5 s, so the draw missed it) | the refusal composes |
 | `Issues.vibe` 365 | `issues/journaled-writes` | a malformed recovery key, every execution, writing nothing | the key check removed |
 | `LiveIssues.vibe` 14, `LiveWiki.vibe` 15 | `clients/issues-wiki-replies` | each of the four calls over a 200 that is not JSON and one that is not a state | `protocol` answered as `unavailable`, in each client |
+| `apiObjects.vibe` 153, 167 | `api-objects/history-publish` (new) | the History object with a drawn export setting and token, then its alarm or a page: publishing on stores the Publish intent with its first round due, and an alarm drives that round, which finds GitHub offline and schedules the next later; publishing off stores no intent | the start removed; the start made unconditional; the alarm made a no-op |
+
+`fuzz2-full14` (job on base `bbe14456`) falsified `sandbox/host-recovery` after 615 executions at seed 20261107: a
+contributor's pending command came back still pending. `b49d96d4` (main, 2026-11-13) made that the rule: the shared
+host leaves a pending command to its fiber, and only the Worker's store settles one no fiber runs. The oracle still
+expected the removed `settle-command` arm, so the suite, not the product, was wrong. The oracle now requires a pending
+command to stay pending with no receipt, unless the meter finds the allowance spent and stops the sandbox (an
+`exhaust/` receipt, as for a viewer's running sandbox). Mutant caught: the host completing a pending command.
 
 ## Complete browser sources and settled history receipts
 

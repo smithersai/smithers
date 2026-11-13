@@ -4,7 +4,11 @@ import { it } from "@effect/vitest"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { TestNodeRuntime } from "@smthrs/platform-node"
-import { budgetObject, sandboxIdentityOf } from "../worker/apiObjects.vibe"
+import { HttpClient, HttpClientError } from "effect/http"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { budgetObject, historyObject, sandboxIdentityOf } from "../worker/apiObjects.vibe"
+import { exporterOf } from "../worker/HistoryExport.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
 import { accountRoute } from "../src/core/protocolDecision.vibe"
 import { Post, Tour } from "../src/core/flows.vibe"
 import { replyChildId } from "../src/core/actionRunDecision.vibe"
@@ -421,3 +425,28 @@ it.live("api-objects/budget", () => run("api-objects/budget", BudgetInput, (inpu
   }
   return true
 }))
+
+const Publishing = Schema.Struct({ setting: Schema.Literals(["off", "github:o/r", "github:", "gitlab:o/r"]), token: Schema.Boolean, member: Schema.Literals(["alarm", "page"]) })
+
+/**
+ * The History object's publisher (0020, "Publishing and following main"): with publishing on (a `github:<owner>/<repo>`
+ * setting and a token), the object's start-up starts the Publish flow with its first round due, and its alarm drives
+ * that round; otherwise no Publish intent is ever stored. GitHub is offline, so no round reaches it.
+ */
+it.live("api-objects/history-publish", () => run("api-objects/history-publish", Publishing, ({ setting, token, member }) => scoped(effect {
+  const offline = HttpClient.make((request) => Effect.fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
+  const kv = try Effect.try(() => objectStorage())
+  const exporter = try exporterOf(setting, token ? Redacted.make("fuzz-token") : undefined, offline)
+  const api = try historyObject({ id: { toString: () => "history/vibelang" }, raw: { storage: kv }, exports: {} } as never, undefined, offline, exporter)
+  if (member === "alarm") try api.alarm()
+  else try api.page({ what: "outline" })
+  const intent = kv.kv.get(ExecutionObject.intentKey)
+  const on = token && setting === "github:o/r"
+  if (!on) return intent === undefined
+  if (intent === undefined || kv.alarmAt === undefined) return false
+  const flow = try Effect.try(() => JSON.parse(String(intent)).flow as string)
+  // Start-up leaves the first round due now; an alarm drives that round, which finds GitHub offline and schedules the
+  // next one later.
+  const due = kv.alarmAt - (try Clock.currentTimeMillis)
+  return flow === "vibelang/history/Publish" && (member === "alarm" ? due > 0 : due <= 0)
+})))

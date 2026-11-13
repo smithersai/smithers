@@ -175,8 +175,8 @@ const Recovery = Schema.Struct({
 
 /**
  * A recovered pending operation is completed or typed-refused, exactly once, without a defect. After a successful
- * recovery nothing is pending, the operation's receipt carries its outcome, an already settled one is untouched,
- * and the machine started at most once.
+ * recovery nothing is pending but a command, which is left to its fiber; the operation's receipt carries its outcome,
+ * an already settled one is untouched, and the machine started at most once.
  */
 it.live("sandbox/host-recovery", () => run("sandbox/host-recovery", Recovery, ({ role, pending, running, failMachine, owner, sequence, exhausted, refusedReceipt, clockFails, jumpClock, badMeteredAt, hugeGeneration }) => effect {
   const now = try Clock.currentTimeMillis
@@ -224,16 +224,22 @@ it.live("sandbox/host-recovery", () => run("sandbox/host-recovery", Recovery, ({
     if (Cause.hasDies(answer.cause)) return false
   } else {
     const after = try Ref.get(store.state)
-    if (after === undefined || after.pending !== null) return false
+    // A pending command is left to its fiber (b49d96d4): only the Worker's store settles one no fiber runs, and this
+    // store is not the Worker's, so the command stays pending with no receipt, unless the meter finds the allowance
+    // spent and stops the sandbox (an `exhaust/` receipt). Anything else is no longer pending.
     const receipts = try Ref.get(store.receipts)
+    const stopped = [...receipts.keys()].some((key) => key.startsWith("exhaust/"))
+    const awaited = pending !== null && pending.kind === "command" && !stopped
+    if (after === undefined || (awaited ? JSON.stringify(after.pending) !== JSON.stringify(pending) : after.pending !== null)) return false
+    if (awaited && pending.operationId === "op-1" && receipts.has("op-1")) return false
     const recovering = pending !== null && pending.operationId === "op-1"
     if ((try Ref.get(starts)) > (recovering && pending.kind === "start" ? 1 : 0)) return false
-    // A viewer's pending start is dropped with a stop, and a pending command is settled by `current`, not `complete`.
+    // A viewer's pending start is dropped with a stop.
     const completes = pending !== null && pending.kind !== "command" && !(pending.kind === "start" && !mayStart(role))
     if (completes && pending.operationId === "op-0" && receipts.get("op-0") !== settled) return false
-    if (recovering && (completes || pending.kind === "command")) {
+    if (recovering && completes) {
       const written = receipts.get("op-1")
-      const outcomes = pending.kind === "command" ? ["command-uncertain"] : pending.kind === "cancel-start" ? ["start-failed"] : pending.kind === "stop" ? [""] : ["", "start-failed"]
+      const outcomes = pending.kind === "cancel-start" ? ["start-failed"] : pending.kind === "stop" ? [""] : ["", "start-failed"]
       if (written === undefined || !outcomes.includes(written.refusal) || written.request.kind !== (pending.kind === "cancel-start" ? "start" : pending.kind)) return false
     }
   }
