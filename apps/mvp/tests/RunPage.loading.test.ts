@@ -160,3 +160,75 @@ test("an empty repository's run list resolves from loading to No runs yet", asyn
     await server.dispose()
   }
 }, 60_000)
+
+test.each(["global", "repository"] as const)("switching from the %s URL to the other URL for the same run keeps its page", async (first) => {
+  const server = openTestApp()
+  const api = await server.runPromise(Effect.service(TestChatApi))
+  const device = openTab(api)
+  const container = document.createElement("div")
+  document.body.append(container)
+  const view = createRoot(container)
+  const runId = await Effect.runPromise(api.remote.repoRun("ci"))
+  await Effect.runPromise(api.remote.start(runId, { label: "navigation", pauseMs: 0, hold: true }))
+  try {
+    await Effect.runPromise(api.remote.ready(runId))
+    const { runs, repo, auth } = await device.runPromise(Effect.all({
+      runs: Effect.service(Runs), repo: Effect.service(Repo), auth: Effect.service(Auth),
+    }))
+    await repo.actions.role("octo", "hello")
+    // The view query is lazy; observe it before asserting its route state.
+    runs.queries.view.startSyncImmediate()
+    // The global list discovers the run's Cloudflare placement before opening its global URL.
+    await runs.actions.openList()
+    const { router: appRouter } = await import("../src/router")
+    const root = createRootRoute({ component: Outlet })
+    const globalPath = "/app/runs/$runId"
+    const repoPath = "/$owner/$repo/actions/runs/$runId"
+    const globalRoute = createRoute({ getParentRoute: () => root, path: globalPath,
+      component: appRouter.routesById[globalPath].options.component,
+      beforeLoad: appRouter.routesById[globalPath].options.beforeLoad,
+      onLeave: appRouter.routesById[globalPath].options.onLeave,
+    })
+    const repoRoute = createRoute({ getParentRoute: () => root, path: repoPath,
+      component: appRouter.routesById[repoPath].options.component,
+      validateSearch: appRouter.routesById[repoPath].options.validateSearch,
+      beforeLoad: appRouter.routesById[repoPath].options.beforeLoad,
+      onLeave: appRouter.routesById[repoPath].options.onLeave,
+    })
+    const other = createRoute({ getParentRoute: () => root, path: "/app/settings" })
+    const urls = {
+      global: `/app/runs/${encodeURIComponent(runId)}`,
+      repository: `/octo/hello/actions/runs/${encodeURIComponent(runId)}`,
+    }
+    const router = createRouter({ isServer: false, routeTree: root.addChildren([globalRoute, repoRoute, other]),
+      context: { runs, repo }, history: createMemoryHistory({ initialEntries: [urls[first]] }),
+    })
+    router.update({ context: { runs, repo, router } })
+    await router.load()
+    await act(async () => view.render(createElement(AuthProvider, { value: auth }, createElement(RepoProvider, { value: repo },
+      createElement(RunsProvider, { value: runs }, createElement(RouterProvider, { router }))))))
+    const readPage = async (repository: boolean) => {
+      await vi.waitFor(async () => {
+        await act(async () => {})
+        expect(runs.queries.view.toArray[0]).toMatchObject({ runId, repo: repository ? { owner: "octo", name: "hello" } : null })
+        expect(runs.queries.page.toArray[0]?.page.state).toBe("read")
+        expect(container.querySelector('[aria-label="Loading run"]')).toBeNull()
+        expect(container.textContent).toContain("Steps")
+      }, { timeout: 30_000 })
+    }
+    await readPage(first === "repository")
+    const destination = first === "global" ? "repository" : "global"
+    await act(async () => { await router.navigate({ to: urls[destination] as never }) })
+    expect(router.state.location.pathname).toBe(urls[destination])
+    await readPage(destination === "repository")
+    // Leaving both run routes still releases the run and any in-flight act.
+    await act(async () => { await router.navigate({ to: "/app/settings" as never }) })
+    await vi.waitFor(() => expect(runs.queries.view.toArray[0]).toMatchObject({ runId: null, acting: null, actToken: null }))
+  } finally {
+    await act(async () => view.unmount())
+    container.remove()
+    await device.dispose()
+    await Effect.runPromise(api.remote.release(runId))
+    await server.dispose()
+  }
+}, 90_000)

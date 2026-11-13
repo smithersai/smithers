@@ -330,6 +330,29 @@ test("the Run form says why it can't show: flows or inputs refused; a choice bef
   expect(await form()).toMatchObject({ state: "refused", refusal: "unavailable" })
 })
 
+test("Retry reads the initial flow list again for the same repository", async () => {
+  const asked: Array<string> = []
+  const t = await setup({
+    remote: {
+      flows: (at) => Effect.suspend(() => {
+        asked.push(`${at.owner}/${at.name}`)
+        return asked.length === 1
+          ? Effect.fail(new RepoRunsFailed({ status: 503, code: "unavailable" }))
+          : Effect.succeed({ flows: [{ name: "ci" }], defaultBranch: "trunk" })
+      }),
+    },
+  })
+  const form = () => t.runtime.runPromise(t.store.form.get("form")).then(Option.getOrThrow)
+  // No repository is open yet: Retry performs no read.
+  await t.runtime.runPromise(actions.reloadRepoFlow)
+  expect(asked).toEqual([])
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  expect(await form()).toMatchObject({ repo, state: "refused", flows: [], refusal: "unavailable" })
+  await t.runtime.runPromise(actions.reloadRepoFlow)
+  expect(asked).toEqual(["octo/hello", "octo/hello"])
+  expect(await form()).toMatchObject({ repo, state: "ready", flows: [{ name: "ci" }], ref: "trunk", refusal: null })
+})
+
 test("a slower answer for an earlier choice changes nothing", async () => {
   const slow = Effect.runSync(Deferred.make<void>())
   const t = await setup({

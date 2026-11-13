@@ -361,11 +361,12 @@ export const chooseRepoFlow = (flow: string) => Effect.flatMap(RunsStore, (store
 /** The branch a run starts at, as the person types it; the form reads again once they leave the field. */
 export const setRunRef = (ref: string) => Effect.flatMap(RunsStore, (store) => store.setRunRef(ref))
 
-/** Reads the chosen flow's form at the branch the person typed. */
+/** Reads the chosen flow's form at its branch, or retries the repository's initial flow-list read. */
 export const reloadRepoFlow = Effect.gen(function* () {
   const store = yield* RunsStore
   const form = Option.getOrThrow(yield* store.form.get(FORM))
   if (form.flow !== null) yield* store.chooseRepoFlow(form.flow)
+  else if (form.repo !== null) yield* store.loadRepoFlows(form.repo)
 })
 
 /** The runs page's `onLeave`: a Run still answering no longer moves this tab. */

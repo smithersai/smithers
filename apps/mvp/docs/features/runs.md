@@ -161,6 +161,8 @@ Above the list, one line per flow, this device's runs and Cloudflare's together:
 
 ## The run page
 
+A run may open at `/app/runs/$runId` or `/$owner/$repo/actions/runs/$runId`. Switching between those URLs keeps the destination's open run, including when both name the same run. Leaving the run pages closes it and releases any in-flight act.
+
 | Part | What it shows |
 |---|---|
 | Header | The flow, its state in 0009's words (`Queued`, `Working`, `Waiting`, `Stopping`, `Stopped`, `Failed`, `Done`), the time it took, `This device`, and the acts |

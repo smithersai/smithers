@@ -398,7 +398,7 @@ const runRoute = createRoute({
   path: ROUTE_PATHS.run,
   component: RunScreen,
   beforeLoad: (load) => enter(load, local, () => load.context.runs.actions.openRun(load.params.runId)),
-  onLeave: ({ context, params }) => context.runs.actions.closeRun(params.runId),
+  onLeave: ({ context, params }) => leaveRun(context, params.runId),
 })
 
 /**
@@ -653,8 +653,18 @@ const actionRunRoute = createRoute({
   beforeLoad: (load) =>
     enterRepo(load.context, load.params, load, local, () =>
       load.context.runs.actions.openRun(load.params.runId, { owner: load.params.owner, name: load.params.repo })),
-  onLeave: ({ context, params }) => context.runs.actions.closeRun(params.runId),
+  onLeave: ({ context, params }) => leaveRun(context, params.runId),
 })
+
+/**
+ * The destination's beforeLoad opens its run before the departing route's onLeave. Both run URLs may name the same
+ * run, so only close it when the destination is outside the run pages.
+ */
+const leaveRun = (context: RouterContext, runId: string) => {
+  const next = context.router?.state.matches.at(-1)?.routeId
+  if (next === runRoute.id || next === actionRunRoute.id) return
+  context.runs.actions.closeRun(runId)
+}
 
 /** `/$owner/$repo/pulls`: the repository's pull requests (decision 0012 §6). */
 const pullsRoute = createRoute({

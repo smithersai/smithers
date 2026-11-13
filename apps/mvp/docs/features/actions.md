@@ -60,6 +60,8 @@ The stop route's refusals are `{ code }`, `Cache-Control: no-store`:
 
 The Run form on `/$owner/$repo/actions` lists the repository's runnable flows (`GET .../flows`), and for the chosen flow and branch draws its inputs (`GET .../flows/<flow>`) with `FlowFormView` (`@smthrs/views`), defaults and choices kept. Run starts `repo/run { repo, flow, ref, input }`, a client flow the agent may call too; its step `repo/run/start` posts through the outbox to `POST .../runs`, and the new run opens on its page. Only a navigation reads the flows into the form: a link's hover or focus ([navigation](navigation.md)) syncs the repository's runs and keeps the chosen flow and branch, so hovering another repository's Runs link never points Run at that repository.
 
+The Run card stays visible while the flow list loads or its read is refused. A refusal shows its reason and Retry reads the list again. Only a successful empty list hides the card.
+
 The person's Stop and the agent's call run the same flow on this device's engine; its step asks ChatApi as the run that made it (decision 0017 slice 0).
 
 ## The browser
@@ -92,6 +94,8 @@ No record carries a value of a run.
 | `src/features/runs/remote.test.ts` "a repository's run on Cloudflare" | a device lists two repositories independently, follows live updates and deletes, reloads its SQLite store, watches the run, and stops it through `run/cancel` and ChatApi; a job's progress reads its run's page, and a job's own page, with no Stop; a Guest reads Not found |
 | `worker/ci/RunsApi.test.ts` | the flows list, a flow's inputs, a run by hand, Retry and Retry failed, each refusal, a repeated id starting nothing new |
 | `src/features/runs/actions.test.ts`, `runs.test.ts` | the Run form's flows then inputs at the branch, `repo/run` and Retry/Retry failed through the outbox, their refusals |
+| `tests/RepoFlowsView.test.ts` | flow-list failures stay visible, Retry reads again with a busy card, and only successful empty results hide it |
+| `tests/RunPage.loading.test.ts` | navigation in either direction between a run's global and repository URLs retains its page; leaving both closes it |
 | `src/features/navigation/runs-route-form.test.ts` | a preload of the runs page, the page's own or another repository's, leaves the Run form as it is; the navigation reads the page's flows into it |
 | `e2e/actions.spec.ts` | a Member runs the test repository's `hand` flow from the Run form and sees it on its page |
 | `e2e/ci.spec.ts` | a real push, repository run list, run page and reload; `requires("localLogs", "repoFlows")` plus `githubAppKey` on deployments, or `githubPushToken` and `webhookSecret` locally, declare the prerequisites; its recording supplies the run-view GIF |
