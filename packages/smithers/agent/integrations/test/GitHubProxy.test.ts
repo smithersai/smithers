@@ -5,8 +5,10 @@
  * Node processes.
  */
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
-import { Context, Effect, Exit, Layer, Scope } from "effect"
+import { Clock, Context, Effect, Exit, Fiber, Layer, Scope } from "effect"
+import { HttpClient, HttpClientRequest, HttpServerRequest } from "effect/http"
 import * as HttpServer from "effect/http/HttpServer"
+import { TestClock } from "effect/testing"
 import { execFile } from "node:child_process"
 import { createServer } from "node:http"
 import { fileURLToPath } from "node:url"
@@ -185,8 +187,48 @@ describe("GitHub proxy control endpoints", () => {
   })
 
   it("defaults to api.github.com and GitHub's limits", async () => {
-    const app = await Effect.runPromise(Effect.provide(make({ credential: operator }), fetchLayer))
-    expect(Effect.isEffect(app)).toBe(true)
+    const upstream = await github((_request, response) => json(response, 201, {}))
+    const sent: Array<{ readonly url: string; readonly at: number }> = []
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const real = yield* HttpClient.HttpClient
+        // Record the actual target before routing the real transport to the local fixture.
+        const transport = HttpClient.make((request) =>
+          Effect.gen(function*() {
+            sent.push({ url: request.url, at: yield* Clock.currentTimeMillis })
+            return yield* real.execute(HttpClientRequest.setUrl(
+              request,
+              request.url.replace(new URL(request.url).origin, upstream.origin)
+            ))
+          })
+        )
+        const app = yield* make({ credential: operator }).pipe(
+          Effect.provideService(HttpClient.HttpClient, transport)
+        )
+        // An in-memory body keeps request preparation synchronous before TestClock advances.
+        const write = () =>
+          app.pipe(Effect.provideService(
+            HttpServerRequest.HttpServerRequest,
+            HttpServerRequest.fromClientRequest(
+              HttpClientRequest.post("http://proxy.invalid/repos/o/r/issues").pipe(HttpClientRequest.bodyText("{}"))
+            )
+          ))
+        expect((yield* write()).status).toBe(201)
+        const second = yield* Effect.forkChild(write())
+        yield* TestClock.adjust("999 millis")
+        expect(sent).toEqual([{ url: "https://api.github.com/repos/o/r/issues", at: 0 }])
+        yield* TestClock.adjust("1 millis")
+        expect((yield* Fiber.join(second)).status).toBe(201)
+        expect(sent).toEqual([
+          { url: "https://api.github.com/repos/o/r/issues", at: 0 },
+          { url: "https://api.github.com/repos/o/r/issues", at: 1000 }
+        ])
+      }).pipe(Effect.provide(fetchLayer), Effect.provide(TestClock.layer()))
+    )
+    expect(upstream.requests.map((request) => [request.method, request.url, request.body])).toEqual([
+      ["POST", "/repos/o/r/issues", "{}"],
+      ["POST", "/repos/o/r/issues", "{}"]
+    ])
   })
 })
 

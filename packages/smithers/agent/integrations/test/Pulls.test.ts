@@ -985,6 +985,23 @@ describe("Pulls", () => {
     expect((await failure(Pulls.listPulls("o", "r"))).reason).toBe("decode-failed")
   })
 
+  it.each([[7], [undefined], [null], [true], [{}], [[]]])(
+    "rejects a non-string head (%j) before any request",
+    async (head) => {
+      await startGitHub()
+      const refusals: Array<Effect.Effect<unknown, IntegrationError, GitHubClient>> = [
+        Pulls.requireHead(head as never),
+        Pulls.createPull("o", "r", { head: head as never, base: "main", title: "t", body: "" })
+      ]
+      for (const refused of refusals) {
+        const error = await failure(refused)
+        expect(error.reason).toBe("invalid-config")
+        expect(error.details).toMatchObject({ field: "head", retryable: false })
+      }
+      expect(github!.fixture.requests).toHaveLength(0)
+    }
+  )
+
   it("validates every input before any request", async () => {
     await startGitHub()
     const refusals: Array<Effect.Effect<unknown, IntegrationError, GitHubClient>> = [
@@ -993,9 +1010,12 @@ describe("Pulls", () => {
       Pulls.getPull("o", "r", "1" as unknown as number),
       Pulls.listPulls("bad owner", "r"),
       Pulls.listPulls("o", "r", { head: "a..b" }),
+      Pulls.listPulls("o", "r", { head: 7 as never }),
+      Pulls.findPullByHead("o", "r", { head: 7 as never }),
       Pulls.findPullByHead("o", "r", { head: "x", writeId: "has space" }),
       Pulls.createPull("bad owner", "r", { head: "a", base: "main", title: "t", body: "" }),
       Pulls.createPull("o", "r", { head: "a..b", base: "main", title: "t", body: "" }),
+      Pulls.createPull("o", "r", { head: 7 as never, base: "main", title: "t", body: "" }),
       Pulls.createPull("o", "r", { head: "a", base: "", title: "t", body: "" }),
       Pulls.createPull("o", "r", { head: "a", base: "main", title: "  ", body: "" }),
       Pulls.createPull("o", "r", { head: "a", base: "main", title: 4 as unknown as string, body: "" }),

@@ -50,6 +50,9 @@ import { isOwner, IssueNumber, requireRepositoryPath } from "./Repository.ts"
  */
 export const requireHead = (head: string): Effect.Effect<string, IntegrationError> =>
   Effect.gen(function*() {
+    if (typeof head !== "string") {
+      return yield* Effect.fail(invalid("head", "A pull request head is a branch or a fork's owner:branch.", head))
+    }
     const parts = head.split(":")
     if (parts.length === 1) return yield* requireBranch(head)
     if (parts.length === 2 && isOwner(parts[0])) {
