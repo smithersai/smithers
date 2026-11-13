@@ -6076,3 +6076,22 @@ cases.extend([
 ('src/history/bucketDecision.vibe', 'bucket-emit-first', 'bucketed', 'for (let o = 0; o < n; o++) {', 'for (let o = 1; o < n; o++) {', 'the oldest owner is emitted too'),
 ('src/history/bucketDecision.vibe', 'bucket-emit-at', 'bucketed', 'at[c] = order.length', 'at[c] = 0', 'each commit records where it stands'),
 ])
+cases += [
+('src/web/actionFollowDecision.vibe', 'follow-current-epoch', 'current', 'epoch === currentEpoch && ', '', 'a replaced identity cannot change the observation'),
+('src/web/actionFollowDecision.vibe', 'follow-current-generation', 'current', ' && generation === currentGeneration', '', 'a replaced subscription cannot change the observation'),
+('src/web/actionFollowDecision.vibe', 'follow-failed-running', 'failed', '!runs.some(run => run.id === id && (run.state === "queued" || run.state === "running"))', '!runs.some(run => run.id === id && run.state === "queued")', 'a running run becomes uncertain'),
+('src/web/actionFollowDecision.vibe', 'follow-failed-terminal', 'failed', '!runs.some(run => run.id === id && (run.state === "queued" || run.state === "running"))', '!runs.some(run => run.id === id)', 'a terminal run stays settled'),
+('src/web/actionFollowDecision.vibe', 'follow-failed-added', 'failed', 'disconnected.includes(id) ? disconnected : [...disconnected, id]', 'disconnected', 'an unsettled run is marked uncertain'),
+('src/web/actionFollowDecision.vibe', 'follow-received-others', 'received', 'disconnected.filter(value => value !== id)', '[]', 'a snapshot restores only its run'),
+('src/web/actionFollowDecision.vibe', 'follow-received-own', 'received', 'disconnected.filter(value => value !== id)', 'disconnected', 'a snapshot restores its run'),
+('src/web/actionFollowDecision.vibe', 'follow-reconnected', 'reconnected', 'return generation + 1', 'return generation', 'reconnect replaces the subscription'),
+('src/web/actionFollowDecision.vibe', 'follow-observed-running', 'observedState', '(state === "queued" || state === "running") ? "disconnected"', 'state === "queued" ? "disconnected"', 'a running unobserved run is not shown healthy'),
+('src/web/actionFollowDecision.vibe', 'follow-observed-connected', 'observedState', 'disconnected && (state', '(state', 'an observed run keeps its state'),
+('src/web/actionFollowDecision.vibe', 'follow-settled-all', 'settled', 'disconnected.filter(id => !runs.some(run => run.id === id && run.state !== "queued" && run.state !== "running"))', '[]', 'a running read keeps a dead follow uncertain'),
+('src/web/actionFollowDecision.vibe', 'follow-settled-running', 'settled', 'run.state !== "queued" && run.state !== "running"))', 'run.state !== "queued"))', 'only a terminal receipt settles uncertainty'),
+('src/web/actionFollowDecision.vibe', 'follow-watching-none', 'watching', 'return runs.filter(run => (run.state === "queued" || run.state === "running") && !stopped.includes(run.id)).map(run => run.id)', 'return []', 'every live, unstopped run is watched'),
+('src/web/actionFollowDecision.vibe', 'follow-watching-stopped', 'watching', 'run.state === "running") && !stopped.includes(run.id)).map', 'run.state === "running")).map', 'an ended follow stays paused'),
+('src/web/actionFollowDecision.vibe', 'follow-watching-running', 'watching', '(run.state === "queued" || run.state === "running") && !stopped', 'run.state === "queued" && !stopped', 'a running run is watched'),
+('src/web/actionFollowDecision.vibe', 'follow-same-element', 'same', '    if (left[index] !== right[index]) return false\n', '', 'a changed follow set fences old messages'),
+('src/web/actionFollowDecision.vibe', 'follow-same-length', 'same', '  if (left.length !== right.length) return false\n', '  if (left.length > right.length) return false\n', 'sets of different sizes differ'),
+]

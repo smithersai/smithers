@@ -2560,13 +2560,13 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/actionFollowDecision.vibe:25` | `received/callback@25` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `src/web/actionFollowDecision.vibe:31` | `reconnected` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `src/web/actionFollowDecision.vibe:36` | `observedState` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/web/actionFollowDecision.vibe:43` | `settled` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/web/actionFollowDecision.vibe:44` | `settled/callback@44` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/web/actionFollowDecision.vibe:44` | `settled/callback@44/callback@44` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/web/actionFollowDecision.vibe:51` | `watching` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/web/actionFollowDecision.vibe:52` | `watching/callback@52` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/web/actionFollowDecision.vibe:52` | `watching/callback@52` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/web/actionFollowDecision.vibe:58` | `same` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/actionFollowDecision.vibe:44` | `settled` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/actionFollowDecision.vibe:45` | `settled/callback@45` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/actionFollowDecision.vibe:45` | `settled/callback@45/callback@45` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/actionFollowDecision.vibe:53` | `watching` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/actionFollowDecision.vibe:54` | `watching/callback@54` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/actionFollowDecision.vibe:54` | `watching/callback@54` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/actionFollowDecision.vibe:60` | `same` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `src/web/actionModel.vibe:29` | `resultText` | pure logic | A refused answer reads through the proved historyRefusal; JSON/Schema decoding of the result is the json-codec.ts tool boundary. |
 | `src/web/actionModel.vibe:33` | `actionsOf` | pure logic | Reads the optional actions field, else the initial screen: a default, no decision. |
 | `src/web/actionModel.vibe:35` | `modeCommands` | pure logic | Calls the proved modeCommandTarget and modeCommandTitle (actionViewDecision) and builds the registered entry. |
@@ -6792,3 +6792,18 @@ Dafny 4.11.0, at most 4 at once). Two findings, neither a proof that no longer h
   counterexamples in `mutation_targets.py`. A timeout is still a tool failure, never a rejection.
 - A box host restart (Cloudflare's SIGTERM, `cf-compute/OPERATIONS.md`) stopped one shard per run. The gate driver
   reruns an interrupted shard, at most twice, and never counts it as a verdict.
+
+## Third-lane batch 38: an action follow's contracts that a body returning nothing met
+
+`src/web/actionFollowDecision.vibe` (main `f7771264`) was proved but had no mutants. Its first 17 mutants left 4
+survivors: `settled` and `watching` returning `[]`, or dropping `running` from their live test, met every
+postcondition. Two clauses close the gap:
+
+| Function | Added postcondition |
+| --- | --- |
+| `settled` | Every uncertain run without a terminal receipt stays uncertain. |
+| `watching` | Every queued or running run that is not stopped is watched. |
+
+`watching`'s clause needs a filter-then-map step (`proof_additions.py`). The step is guarded by the body's own
+shape rather than asserted, so a mutated body skips it and fails the lemma's own postcondition, the only failure
+`verify:broken` counts. 17/17 mutants rejected; 15 obligations verified.

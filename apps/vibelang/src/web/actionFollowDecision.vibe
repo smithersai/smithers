@@ -37,17 +37,19 @@ export function observedState(state: string, disconnected: boolean): string {
   return disconnected && (state === "queued" || state === "running") ? "disconnected" : state
 }
 
-/** A one-time read settles uncertainty only with a terminal receipt; a running read cannot repair a dead follow. */
+/** A one-time read settles uncertainty only with a terminal receipt; a running read cannot repair a dead follow, and every other uncertain run stays uncertain. */
 //@ verify
 //@ ensures forall(i, 0 <= i && i < \result.length ==> !exists(j, 0 <= j && j < runs.length && runs[j].id == \result[i] && runs[j].state != "queued" && runs[j].state != "running"))
+//@ ensures forall(i, 0 <= i && i < disconnected.length && !exists(j, 0 <= j && j < runs.length && runs[j].id == disconnected[i] && runs[j].state != "queued" && runs[j].state != "running") ==> \result.includes(disconnected[i]))
 export function settled<R extends ObservedRun>(disconnected: ReadonlyArray<string>, runs: ReadonlyArray<R>): ReadonlyArray<string> {
   return disconnected.filter(id => !runs.some(run => run.id === id && run.state !== "queued" && run.state !== "running"))
 }
 
-/** Ended follows stay paused across unrelated run changes until the person reconnects. */
+/** Ended follows stay paused across unrelated run changes until the person reconnects; every other live run is watched. */
 //@ verify
 //@ ensures \result.length <= runs.length
 //@ ensures forall(i, 0 <= i && i < \result.length ==> !exists(j, 0 <= j && j < stopped.length && stopped[j] == \result[i]))
+//@ ensures forall(j, 0 <= j && j < runs.length && (runs[j].state == "queued" || runs[j].state == "running") && !stopped.includes(runs[j].id) ==> \result.includes(runs[j].id))
 export function watching<R extends ObservedRun>(runs: ReadonlyArray<R>, stopped: ReadonlyArray<string>): ReadonlyArray<string> {
   return runs.filter(run => (run.state === "queued" || run.state === "running") && !stopped.includes(run.id)).map(run => run.id)
 }

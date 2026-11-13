@@ -323,6 +323,23 @@ REPLAY_CONVERSATION_STEPS = [
 ]
 
 LEMMA_STEPS = {
+    # Every live, unstopped run is watched (0018 third-lane batch 38): the filter's membership clause, then an index.
+    'src/web/actionFollowDecision.vibe': [
+        # Guarded by the body's shape, not asserted: a mutated body skips the block and fails the lemma's own clause.
+        ('lemma watching_ensures(runs: seq<ObservedRun>, stopped: seq<string>)',
+         '''  var s := SeqFilter((run: ObservedRun) => (((run.state == "queued") || (run.state == "running")) && !((run.id in stopped))), runs);
+  var w := watching(runs, stopped);
+  if |w| == |s| && forall i :: 0 <= i < |s| ==> w[i] == s[i].id {
+    forall j | 0 <= j < |runs| && (runs[j].state == "queued" || runs[j].state == "running") && !(runs[j].id in stopped)
+      ensures runs[j].id in w
+    {
+      assert runs[j] in s;
+      var k :| 0 <= k < |s| && s[k] == runs[j];
+      assert w[k] == runs[j].id;
+    }
+  }
+'''),
+    ],
     'src/history/seedInputDecision.vibe': [
         ('lemma batchRevset_ensures(ids: seq<string>, start: int, end: int)',
          '  var selected := SafeSlice(ids, start, end);\n  var mapped := seq(|selected|, i requires 0 <= i < |selected| => "present(" + selected[i] + ")");\n  assert selected == ids[start..end];\n  assert |mapped| == end - start;\n  var actual := (var s_map := SafeSlice(ids, start, end); seq(|s_map|, i_map requires 0 <= i_map < |s_map| => var id := s_map[i_map]; (("present(" + id) + ")")));\n  assert forall i :: 0 <= i < |mapped| ==> mapped[i] == actual[i];\n  assert mapped == actual;\n  assert batchRevset(ids, start, end) == SeqJoin(actual, "|");\n  var cursor := end;\n  while cursor > start\n    invariant start <= cursor <= end\n    invariant batchRevset(ids, start, end) == SeqJoin(mapped, "|")\n    invariant SeqJoin(mapped[cursor - start..], "|") == referenceList(ids, cursor, end)\n    decreases cursor - start\n  {\n    var before := cursor - 1;\n    assert mapped[before - start..][1..] == mapped[cursor - start..];\n    assert mapped[before - start] == "present(" + ids[before] + ")";\n    cursor := before;\n  }\n'),
