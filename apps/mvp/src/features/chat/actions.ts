@@ -260,7 +260,7 @@ export interface FromView {
  * `MAX_QUESTION_LENGTH` changes nothing, so the draft stays. Sent from a view (`from`), it names the view and carries
  * the values, goes to the view's own conversation, and leaves the draft as it is.
  */
-const askAdmitted = (question: string, from: FromView | undefined, conversationId: string | undefined, draft: string, store: ChatStore["Service"], clearDraft: boolean): Effect.Effect<QuestionSubmitted, never, ChatStore> =>
+const askAdmitted = (question: string, from: FromView | undefined, conversationId: string | undefined, draft: string, revision: number, store: ChatStore["Service"], clearDraft: boolean): Effect.Effect<QuestionSubmitted, never, ChatStore> =>
   Effect.gen(function* () {
     const questionId = crypto.randomUUID()
     const answerId = crypto.randomUUID()
@@ -279,7 +279,7 @@ const askAdmitted = (question: string, from: FromView | undefined, conversationI
     }).pipe(
       Effect.withSpan("chat.ask", { attributes: { questionId, answerId, "question.length": question.length } }),
     )
-    if (clearDraft && from === undefined && (yield* placeNow) === conversationId && (yield* composerNow).draft === draft) yield* setDraft("")
+    if (clearDraft && from === undefined && (yield* placeNow) === conversationId && (yield* composerNow).draft === draft && (yield* Ref.get(store.draftRevision)) === revision) yield* setDraft("")
     yield* Metric.update(Metric.withAttributes(questionsAsked, { queued: String(queued) }), 1)
     yield* Effect.forkIn(timeFirstText(answerId, askedAt, conversationId), store.scope, { startImmediately: true })
     yield* Effect.logInfo("question asked").pipe(
@@ -308,7 +308,7 @@ const submit = (text: string, from: FromView | undefined, clearDraft: boolean): 
         : [undefined, new Map(held).set(key, pending)] as const)
       if (existing !== undefined) return yield* restore(Deferred.await(existing))
       // Reserve and install cleanup atomically, so cancellation cannot strand another Send.
-      return yield* restore(askAdmitted(question, from, conversationId, draft, store, clearDraft)).pipe(Effect.onExit((exit) =>
+      return yield* restore(askAdmitted(question, from, conversationId, draft, revision, store, clearDraft)).pipe(Effect.onExit((exit) =>
         Effect.andThen(Deferred.done(pending, exit), Ref.update(store.pendingAsks, (held) => { const next = new Map(held); next.delete(key); return next }))))
     }))
   }).pipe(Effect.annotateLogs({ feature: "chat" }))

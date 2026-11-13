@@ -360,9 +360,30 @@ describe("Compare", () => {
           { sha: "e".repeat(40), headline: "Add a line", author: "" },
         ],
         files: [file],
+        truncated: false,
+        commitsTruncated: false,
+        githubUrl: `https://github.com/acme/repo/compare/${BASE}...${HEAD}`,
       })
     // Files with no commits of their own still show.
-    expect(compareOf(publication(), [row({ files: [file] })])).toEqual({ kind: "ready", commits: [], files: [file] })
+    expect(compareOf(publication(), [row({ files: [file] })])).toEqual({
+      kind: "ready", commits: [], files: [file], truncated: false, commitsTruncated: false,
+      githubUrl: `https://github.com/acme/repo/compare/${BASE}...${HEAD}`,
+    })
     expect(compareCommitsOf([])).toEqual([])
   })
+  test.each([
+    [true, false], [false, true], [true, true],
+  ])("preserves incomplete files %s and commits %s, including an empty partial result", (truncated, commitsTruncated) => {
+    for (const files of [[], [file]]) {
+      expect(compareOf(publication(), [row({ files, truncated, commitsTruncated })])).toEqual({
+        kind: "ready",
+        commits: [],
+        files,
+        truncated,
+        commitsTruncated,
+        githubUrl: `https://github.com/acme/repo/compare/${BASE}...${HEAD}`,
+      })
+    }
+  })
+
 })

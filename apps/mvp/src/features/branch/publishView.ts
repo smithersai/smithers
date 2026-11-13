@@ -249,7 +249,14 @@ export type CompareView =
   | { readonly kind: "loading" }
   | { readonly kind: "failed"; readonly title: string }
   | { readonly kind: "empty"; readonly title: string }
-  | { readonly kind: "ready"; readonly commits: ReadonlyArray<CompareCommit>; readonly files: ReadonlyArray<ChangedFile> }
+  | {
+    readonly kind: "ready"
+    readonly commits: ReadonlyArray<CompareCommit>
+    readonly files: ReadonlyArray<ChangedFile>
+    readonly truncated: boolean
+    readonly commitsTruncated: boolean
+    readonly githubUrl: string
+  }
 
 /** The commits as Compare lists them. */
 export const compareCommitsOf = (commits: ReadonlyArray<ComparedCommit>): ReadonlyArray<CompareCommit> =>
@@ -260,11 +267,18 @@ export const compareCommitsOf = (commits: ReadonlyArray<ComparedCommit>): Readon
  * `Couldn't load` when it failed, `No changes` when they don't differ, else the commits, then each file.
  */
 export const compareOf = (publication: PublicationRow | undefined, comparisons: ReadonlyArray<FilesRow>): CompareView => {
-  const row = publication === undefined
-    ? undefined
-    : comparisons.find((comparison) => comparison.id === comparisonKey(publication.repoId, publication.baseSha, publication.headSha))
+  if (publication === undefined) return { kind: "loading" }
+  const row = comparisons.find((comparison) => comparison.id === comparisonKey(publication.repoId, publication.baseSha, publication.headSha))
   if (row === undefined || row.status === "loading") return { kind: "loading" }
   if (row.status === "failed") return { kind: "failed", title: COULDNT_LOAD }
-  if (row.commits.length === 0 && row.files.length === 0) return { kind: "empty", title: NO_CHANGES }
-  return { kind: "ready", commits: compareCommitsOf(row.commits), files: row.files }
+  if (row.commits.length === 0 && row.files.length === 0 && !row.truncated && !row.commitsTruncated) return { kind: "empty", title: NO_CHANGES }
+  const repo = row.repoId.slice("github/".length).split("/").map(encodeURIComponent).join("/")
+  return {
+    kind: "ready",
+    commits: compareCommitsOf(row.commits),
+    files: row.files,
+    truncated: row.truncated,
+    commitsTruncated: row.commitsTruncated,
+    githubUrl: `https://github.com/${repo}/compare/${encodeURIComponent(publication.baseSha)}...${encodeURIComponent(publication.headSha)}`,
+  }
 }

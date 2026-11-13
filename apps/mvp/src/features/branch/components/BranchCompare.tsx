@@ -1,8 +1,8 @@
-import { EmptyState } from "@smthrs/ui"
+import { Button, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { ChangedFiles } from "../../pulls/components/ChangedFiles"
 import { CommitList } from "../../pulls/components/CommitList"
-import { COMPARE, compareOf } from "../publishView"
+import { COMPARE, compareOf, type CompareView } from "../publishView"
 import { useBranch } from "./BranchContext"
 import "./publish.css"
 
@@ -12,7 +12,11 @@ export function BranchCompare() {
   const { publishing } = useBranch()
   const { data: publication } = useLiveQuery(publishing.queries.publication)
   const { data: comparisons } = useLiveQuery(publishing.queries.comparisons)
-  const view = compareOf(publication, comparisons)
+  return <BranchCompareContent view={compareOf(publication, comparisons)} />
+}
+
+/** The comparison's receipts rendered with its partial lists. */
+export function BranchCompareContent({ view }: { readonly view: CompareView }) {
   return (
     <section className="branch-compare" aria-label={COMPARE}>
       {view.kind === "loading"
@@ -20,6 +24,14 @@ export function BranchCompare() {
         : view.kind === "ready"
         ? (
           <>
+            {view.truncated || view.commitsTruncated ? (
+              <div role="status">
+                <span>Incomplete comparison</span>{" "}
+                <Button asChild variant="outline">
+                  <a href={view.githubUrl} target="_blank" rel="noopener noreferrer">View on GitHub ↗</a>
+                </Button>
+              </div>
+            ) : null}
             <CommitList commits={view.commits} />
             <ChangedFiles files={view.files} />
           </>

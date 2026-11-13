@@ -244,7 +244,7 @@ after it. `e2e/accessibility-composer.spec.ts` checks this with existing history
 
 Question actions resolve after durable outbox admission. The queued question survives a reload at that boundary; server acceptance and the answer run continue in the background.
 
-An admission still in progress cannot clear newer typing or a later conversation’s draft. A second storage refusal on Retry retains the same unsent question.
+An admission still in progress clears only the submitted draft revision in the same conversation. Retyping identical text or navigating away and back keeps the later draft. A second storage refusal on Retry retains the same unsent question.
 
 Repeated Send of one pending draft shares its receipt. New typing starts a separate question; cancellation releases the pending reservation and wakes its waiters.
 

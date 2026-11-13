@@ -409,6 +409,9 @@ describe("Compare", () => {
     await until(() =>
       expect(tab.compare()).toEqual({
         kind: "ready",
+        truncated: false,
+        commitsTruncated: false,
+        githubUrl: `https://github.com/octo/hello/compare/${base}...${head}`,
         commits: [{ sha: head, headline: "Update README.md", author: "octocat" }],
         files: [expect.objectContaining({ filename: "README.md", status: "modified", patch: expect.stringContaining("+A line") })],
       })

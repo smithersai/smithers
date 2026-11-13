@@ -1369,7 +1369,7 @@ for (const delay of [0, 100, 300] as const) {
   }, 90_000)
 }
 
-for (const later of ["typing", "navigation"] as const) {
+for (const later of ["typing", "navigation", "identical retyping", "return navigation"] as const) {
   test(`question admission preserves later ${later}`, async () => {
     const opened = await openChat({ answers: false })
     const base = nodeDevice()
@@ -1385,14 +1385,18 @@ for (const later of ["typing", "navigation"] as const) {
     const asking = tab.actions.ask("Earlier question")
     try {
       await entered
-      if (later === "navigation") {
-        const conversationId = crypto.randomUUID()
-        await tab.actions.show(conversationId)
+      if (later === "navigation" || later === "return navigation") {
+        await tab.actions.show(crypto.randomUUID())
+        if (later === "return navigation") await tab.actions.show(null)
+      } else if (later === "identical retyping") {
+        await tab.actions.setDraft("Different text")
+        await tab.actions.setDraft("Earlier question")
       }
-      await tab.actions.setDraft("Later draft")
+      if (later === "typing" || later === "navigation") await tab.actions.setDraft("Later draft")
     } finally { release(); await asking }
-    expect(tab.composer()?.draft).toBe("Later draft")
-    await until(async () => expect((await tab.runtime.runPromise(tab.store.drafts.toArray)).some((row) => row.text === "Later draft")).toBe(true))
+    const expected = later === "typing" || later === "navigation" ? "Later draft" : "Earlier question"
+    expect(tab.composer()?.draft).toBe(expected)
+    await until(async () => expect((await tab.runtime.runPromise(tab.store.drafts.toArray)).some((row) => row.text === expected)).toBe(true))
   }, 90_000)
 }
 
