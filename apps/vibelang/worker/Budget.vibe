@@ -5,7 +5,7 @@
 // charges never pass the limit by more than `over`, the charges beyond a call's own ceiling (decision 0018). Nothing
 // here records what anyone asked.
 
-import { canCharge, reserve, settle } from "./budgetDecision.vibe"
+import { canCharge, reserve, reserveAdmissible, settle, settleAdmissible } from "./budgetDecision.vibe"
 
 /** The ledger's storage: numbers under keys, several written at once. */
 export interface Ledger {
@@ -57,7 +57,7 @@ export effect function make(ledger: Ledger, limit: number) {
         const { spent, reserved, over } = try totals()
         const held = (try ledger.read(holdKey(reply))) ?? 0
         const recorded = (try ledger.read(replyKey(reply))) !== undefined
-        if (!Number.isSafeInteger(ceiling) || ceiling <= 0 || !Number.isSafeInteger(held) || held < 0 || !canCharge(spent + reserved, ceiling)) {
+        if (!Number.isSafeInteger(ceiling) || !Number.isSafeInteger(held) || !reserveAdmissible(spent, reserved, over, held, ceiling)) {
           try invalid()
         }
         const result = reserve(spent, reserved, held, ceiling, limit, over, recorded)
@@ -80,7 +80,7 @@ export effect function make(ledger: Ledger, limit: number) {
         const rounded = Number.isFinite(used) ? Math.round(used) : -1
         const usable = reported && Number.isSafeInteger(rounded) && rounded >= 0
         const charged = usable ? rounded : 0
-        if (!Number.isSafeInteger(ceiling) || ceiling <= 0 || !Number.isSafeInteger(held) || held < 0 || held > reserved || !canCharge(spent, charged + ceiling) || !canCharge(over, charged + ceiling)) {
+        if (!Number.isSafeInteger(ceiling) || !Number.isSafeInteger(held) || !settleAdmissible(spent, reserved, over, held, charged, ceiling)) {
           try invalid()
         }
         const result = settle(spent, reserved, over, held, charged, usable, ceiling, recorded, limit)

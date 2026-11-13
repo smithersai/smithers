@@ -211,6 +211,12 @@ cases += [
 ('src/core/issueHostDecision.vibe','issue-write-missing','issueWriteRefusal','  if (!known) return "missing"\n  if (op === "comment"','  if (!known && op !== "link") return "missing"\n  if (op === "comment"','every other write needs its issue'),
 ('src/core/issueHostDecision.vibe','issue-write-empty','issueWriteRefusal','if (op === "comment" && textBlank) return "empty"','if (op === "comment" && titleBlank) return "empty"','a comment needs text'),
 ('src/core/issueHostDecision.vibe','issue-write-closed','issueWriteRefusal','if (op === "commit" && !open) return "closed"','if (op === "uncommit" && !open) return "closed"','a commitment needs an open issue'),
+('worker/budgetDecision.vibe','budget-admit-held','reserveAdmissible','reserved >= 0 && held >= 0 && ceiling > 0','reserved >= 0 && ceiling > 0','admission needs a nonnegative hold'),
+('worker/budgetDecision.vibe','budget-admit-ceiling','reserveAdmissible','held >= 0 && ceiling > 0 && over >= 0','held >= 0 && ceiling >= 0 && over >= 0','admission needs a positive ceiling'),
+('worker/budgetDecision.vibe','budget-admit-fit','reserveAdmissible','spent + reserved <= 9007199254740991 - ceiling','spent <= 9007199254740991 - ceiling','open reservations count toward the safe range'),
+('worker/budgetDecision.vibe','budget-settle-held','settleAdmissible','held >= 0 && held <= reserved && used >= 0','held >= 0 && used >= 0','a hold is part of the open reservations'),
+('worker/budgetDecision.vibe','budget-settle-over','settleAdmissible',' && over + used <= 9007199254740991 - ceiling','','the overshoot stays in the safe range'),
+('worker/budgetDecision.vibe','budget-settle-used','settleAdmissible','held <= reserved && used >= 0 && ceiling > 0','held <= reserved && ceiling > 0','a charge is nonnegative'),
 ('worker/mainLogDecision.vibe','lc-ancestry-starts','ancestryShas','ancestry.add(starts[i]!)','ancestry.add(starts[0]!)','every start is in the ancestry'),
 ]
 cases += web_cases

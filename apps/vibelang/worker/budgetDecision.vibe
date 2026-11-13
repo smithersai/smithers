@@ -47,6 +47,28 @@ export function settle(spent: number, reserved: number, over: number, held: numb
   return { spent: spent + added, reserved: reserved - held, over: over + beyond, added, write: true }
 }
 
+/**
+ * Whether admission may run `reserve`: exactly its precondition. The ledger's totals and this call's hold are
+ * nonnegative, the ceiling is positive, and charges, open reservations and the ceiling fit the safe integers.
+ * Integrality (`Number.isSafeInteger`) is the caller's.
+ */
+//@ verify
+//@ ensures \result == (0 <= spent && 0 <= reserved && 0 <= held && 0 < ceiling && 0 <= over && spent + reserved + ceiling <= 9007199254740991)
+export function reserveAdmissible(spent: number, reserved: number, over: number, held: number, ceiling: number): boolean {
+  return spent >= 0 && reserved >= 0 && held >= 0 && ceiling > 0 && over >= 0 && spent + reserved <= 9007199254740991 - ceiling
+}
+
+/**
+ * Whether settlement may run `settle`: exactly its precondition. The hold is part of the open reservations, and the
+ * charge plus the ceiling fits beside both the day's charges and its overshoot.
+ */
+//@ verify
+//@ ensures \result == (0 <= spent && 0 <= reserved && 0 <= over && 0 <= held && held <= reserved && 0 <= used && 0 < ceiling && spent + used + ceiling <= 9007199254740991 && over + used + ceiling <= 9007199254740991)
+export function settleAdmissible(spent: number, reserved: number, over: number, held: number, used: number, ceiling: number): boolean {
+  return spent >= 0 && reserved >= 0 && over >= 0 && held >= 0 && held <= reserved && used >= 0 && ceiling > 0
+    && spent + used <= 9007199254740991 - ceiling && over + used <= 9007199254740991 - ceiling
+}
+
 /** The integer arithmetic domain a new ledger charge must stay inside. */
 //@ verify
 //@ ensures \result == (0 <= spent && 0 <= used && spent + used <= 9007199254740991)

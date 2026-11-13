@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { make, OVER, RESERVED, SPENT, type Ledger } from "../worker/Budget.vibe"
+import { reserveAdmissible, settleAdmissible } from "../worker/budgetDecision.vibe"
 
 // A real in-memory ledger; the budget owns the semaphore and all accounting.
 effect function ledger() {
@@ -12,6 +13,18 @@ effect function ledger() {
 }
 
 describe("the daily ledger's accounting", () => {
+  it("runs the kernel only inside its precondition: nonnegative totals, a positive ceiling, a hold within the reservations", () => {
+    const max = Number.MAX_SAFE_INTEGER
+    expect([reserveAdmissible(0, 0, 0, 0, 1), reserveAdmissible(0, 0, 0, -1, 1), reserveAdmissible(0, 0, 0, 0, 0), reserveAdmissible(max - 2, 1, 0, 0, 1), reserveAdmissible(max - 2, 2, 0, 0, 1)]).toEqual([true, false, false, true, false])
+    expect([settleAdmissible(0, 5, 0, 5, 0, 1), settleAdmissible(0, 4, 0, 5, 0, 1), settleAdmissible(0, 5, 0, 5, -1, 1), settleAdmissible(0, 5, max - 1, 5, 0, 1), settleAdmissible(0, 5, max, 5, 0, 1)]).toEqual([true, false, false, true, false])
+  })
+  it.effect("a stored hold larger than the open reservations stops settlement instead of freeing more than was reserved", () => effect {
+    const { storage } = try ledger()
+    try storage.write({ [SPENT]: 0, [RESERVED]: 10, [OVER]: 0, "hold/r": 20 })
+    const budget = try make(storage, 1000)
+    const exit = try Effect.exit(budget.spend("r", 5, true, 40))
+    expect(exit._tag).toBe("Failure")
+  })
   it.effect("an unusable report charges the call's whole ceiling, never zero or the partial sum", () => effect {
     const { storage, values } = try ledger()
     const budget = try make(storage, 1000)
