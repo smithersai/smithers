@@ -152,7 +152,7 @@ const securityReview = Smithers.SecurityReview({
       id: "run-requires-approved-plan",
       title: "A run starts only from an approved plan whose digest and envelope match what was approved",
       threat:
-        "A bearer holder launches a deploy-class system flow (release, serve, up, gc) or edited flow code that no operator approved.",
+        "A bearer holder launches a deploy-class system flow (release, serve, up, target) or edited flow code that no operator approved.",
       lookFor: [
         "launch starting a run when the stored plan decision is pending or denied, or before comparing the requested digest and envelope with the stored card.",
         "planCard computing the digest without flowId, decoded input, envelope, executionDigest, or deployClass, so an approval covers a different flow or input.",

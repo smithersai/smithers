@@ -16,9 +16,7 @@
  * and a different body under the same key is a conflict rather than a silent
  * second execution.
  */
-import * as Sha256 from "@smthrs/crypto/Sha256"
-import { Effect, Layer, Schema, Stream } from "effect"
-import * as EffectDigest from "effect/crypto/Digest"
+import { Effect, Layer, Schema } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -28,7 +26,7 @@ import * as Control from "../src/Control.ts"
 import { InvalidInput, Unavailable } from "../src/ControlError.ts"
 import * as ControlExecutor from "../src/ControlExecutor.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
-import type { PlanCard, Receipt } from "../src/ControlSchema.ts"
+import type { PlanCard } from "../src/ControlSchema.ts"
 import * as TestControl from "../src/test/TestControl.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
 import { durable, fileBundle } from "./DurableStack.ts"
@@ -40,64 +38,22 @@ const channelOf = (overrides: Partial<Channels.Channel> = {}): Channels.Channel 
   schema: Schema.Unknown,
   verify: () => Effect.void,
   decode: () => Effect.succeed(null),
-  map: () => Effect.succeed({ _tag: "Start", flowId: "flow", input: {} }),
+  map: () => Effect.succeed({ _tag: "Start", flowId: "system/test", input: {} }),
   project: () => ({ cursor: "1", operation: "post", message: {} }),
   ...overrides
 })
 
-/** A Control whose `run` answers whatever the case under test needs. */
-const controlAnswering = (receipt: Receipt) =>
-  Layer.succeed(
-    Control.Control,
-    Control.make({
-      plan: () =>
-        Effect.succeed({
-          planId: "plan",
-          flowId: "flow",
-          digest: "digest",
-          inputSummary: "input",
-          envelope: { capabilities: [], flows: [], budget: {} },
-          deployClass: false,
-          nodes: [],
-          approval: {
-            target: {
-              _tag: "Plan",
-              planId: "plan",
-              digest: "digest",
-              envelope: { capabilities: [], flows: [], budget: {} }
-            },
-            scope: "run",
-            idempotencyKey: "approve:plan"
-          }
-        }),
-      run: () => Effect.succeed(receipt),
-      approve: () => Effect.die("unused"),
-      deny: () => Effect.die("unused"),
-      steer: () => Effect.die("unused"),
-      signal: () => Effect.die("unused"),
-      cancel: () => Effect.die("unused"),
-      resume: () => Effect.die("unused"),
-      list: () => Effect.die("unused"),
-      watch: () => Stream.empty
-    })
-  )
-
-const memoryChannels = (receipt: Receipt = { _tag: "Accepted", receiptId: "receipt", runId: "run-1" }) =>
-  Channels.layerMemory.pipe(
-    Layer.provide(controlAnswering(receipt)),
-    Layer.provide(Layer.succeed(EffectDigest.Digest, Sha256.syncCrypto))
-  )
+const memoryChannels = () => Channels.layerMemory.pipe(Layer.provideMerge(TestControl.layer()))
 
 const withChannels = <A, E>(
-  effect: (channels: Channels.Channels) => Effect.Effect<A, E>,
-  layer = memoryChannels()
+  effect: (channels: Channels.Channels) => Effect.Effect<A, E, Control.Control | ControlRuntime>
 ) =>
   Effect.runPromise(
-    Effect.flatMap(Channels.Channels, effect).pipe(Effect.provide(layer))
+    Effect.flatMap(Channels.Channels, effect).pipe(Effect.provide(memoryChannels()), Effect.scoped)
   )
 
 /** The refusal `ingest` answered, or a failure if it did not refuse. */
-const refusal = (request: unknown, layer = memoryChannels()): Promise<string> =>
+const refusal = (request: unknown): Promise<string> =>
   withChannels((channels) =>
     Effect.gen(function*() {
       yield* channels.register(channelOf())
@@ -107,19 +63,36 @@ const refusal = (request: unknown, layer = memoryChannels()): Promise<string> =>
       if (result._tag === "Success") return "the boundary accepted the request"
       const error = result.failure
       return error instanceof InvalidInput ? error.issue : `unexpected failure: ${String(error)}`
-    }), layer)
+    })
+  )
 
 const wellFormed = { channel: "hook", raw: { body, headers: {}, idempotencyKey: "delivery-1" } }
 
+const approveDelivery = Effect.gen(function*() {
+  const control = yield* Control.Control
+  const card = yield* control.plan({
+    flowId: "system/test",
+    input: {},
+    idempotencyKey: "channel:4:hook:delivery-1"
+  })
+  yield* control.approve(card.approval)
+  return card
+})
+
 describe("the channel ingress boundary", () => {
   it("accepts a well-formed request", async () => {
-    const receipt = await withChannels((channels) =>
+    await withChannels((channels) =>
       Effect.gen(function*() {
+        yield* approveDelivery
         yield* channels.register(channelOf())
-        return yield* channels.ingest(wellFormed)
+        const receipt = yield* channels.ingest(wellFormed)
+        const control = yield* Control.Control
+        const runs = yield* control.list({ _tag: "runs" })
+        if (runs._tag !== "runs") return yield* Effect.die("expected runs")
+        expect(runs.items).toHaveLength(1)
+        expect(receipt).toEqual({ _tag: "Accepted", receiptId: "delivery-1", runId: runs.items[0]!.runId })
       })
     )
-    expect(receipt).toEqual({ _tag: "Accepted", receiptId: "delivery-1", runId: "run-1" })
   })
 
   it("refuses a request that is not a plain record", async () => {
@@ -217,6 +190,7 @@ describe("the channel ingress boundary", () => {
     const declaring = channelOf({ fingerprintHeaders: ["X-Event", "x-event"] })
     const receipts = await withChannels((channels) =>
       Effect.gen(function*() {
+        yield* approveDelivery
         yield* channels.register(declaring)
         const first = yield* channels.ingest(wellFormed)
         const second = yield* channels.ingest({
@@ -233,35 +207,51 @@ describe("the channel ingress boundary", () => {
 
 describe("the process-local channel coordinator", () => {
   it("replays the first receipt for a redelivery of the same body", async () => {
-    const receipts = await withChannels((channels) =>
+    await withChannels((channels) =>
       Effect.gen(function*() {
+        yield* approveDelivery
         yield* channels.register(channelOf())
         const first = yield* channels.ingest(wellFormed)
         const second = yield* channels.ingest(wellFormed)
-        return [first, second]
+        const control = yield* Control.Control
+        const runs = yield* control.list({ _tag: "runs" })
+        if (runs._tag !== "runs") return yield* Effect.die("expected runs")
+        expect(runs.items).toHaveLength(1)
+        expect(first).toEqual({ _tag: "Accepted", receiptId: "delivery-1", runId: runs.items[0]!.runId })
+        expect(second).toEqual({ ...first, _tag: "AlreadyApplied" })
       })
     )
-    expect(receipts[0]).toEqual({ _tag: "Accepted", receiptId: "delivery-1", runId: "run-1" })
-    expect(receipts[1]).toEqual({ _tag: "AlreadyApplied", receiptId: "delivery-1", runId: "run-1" })
   })
 
   it("keeps a parked start retryable without inventing a run id for it", async () => {
-    const parked: Receipt = { _tag: "Parked", receiptId: "receipt", planId: "plan", status: "waiting-approval" }
-    const receipts = await withChannels((channels) =>
+    await withChannels((channels) =>
       Effect.gen(function*() {
         yield* channels.register(channelOf())
         const first = yield* channels.ingest(wellFormed)
         const second = yield* channels.ingest(wellFormed)
-        return [first, second]
-      }), memoryChannels(parked))
-    expect(receipts[0]).toEqual({ _tag: "Parked", receiptId: "delivery-1", planId: "plan", status: "waiting-approval" })
-    expect(receipts[1]).toEqual({ _tag: "Parked", receiptId: "delivery-1", planId: "plan", status: "waiting-approval" })
-    expect(Object.hasOwn(receipts[1] as object, "runId")).toBe(false)
+        expect(first).toMatchObject({ _tag: "Parked", receiptId: "delivery-1", status: "waiting-approval" })
+        expect(second).toEqual(first)
+        expect(Object.hasOwn(second, "runId")).toBe(false)
+        if (first._tag !== "Parked") return yield* Effect.die("expected a parked plan")
+        const runtime = yield* ControlRuntime
+        const control = yield* Control.Control
+        const stored = yield* runtime.getPlan(first.planId)
+        expect(stored.decision).toBe("pending")
+        expect((yield* control.list({ _tag: "runs" })).items).toEqual([])
+        yield* control.approve(stored.card.approval)
+        const accepted = yield* channels.ingest(wellFormed)
+        const runs = yield* control.list({ _tag: "runs" })
+        if (runs._tag !== "runs") return yield* Effect.die("expected runs")
+        expect(runs.items).toHaveLength(1)
+        expect(accepted).toEqual({ _tag: "Accepted", receiptId: "delivery-1", runId: runs.items[0]!.runId })
+      })
+    )
   })
 
   it("refuses a different body under a key it has already answered", async () => {
     const receipt = await withChannels((channels) =>
       Effect.gen(function*() {
+        yield* approveDelivery
         yield* channels.register(channelOf())
         yield* channels.ingest(wellFormed)
         return yield* channels.ingest({
@@ -274,16 +264,39 @@ describe("the process-local channel coordinator", () => {
   })
 
   it("records nothing for a conflicting mutation, so a later delivery is still answered", async () => {
-    const conflict: Receipt = { _tag: "Conflict", message: "another mutation owns this key" }
-    const receipts = await withChannels((channels) =>
+    await withChannels((channels) =>
       Effect.gen(function*() {
+        const control = yield* Control.Control
+        const occupied = yield* control.plan({ flowId: "system/test", input: { other: true } })
+        yield* control.approve(occupied.approval)
+        const request = {
+          _tag: "Plan" as const,
+          planId: occupied.planId,
+          digest: occupied.digest,
+          envelope: occupied.envelope,
+          idempotencyKey: "channel:4:hook:delivery-1",
+          principal: { id: "hook", kind: "channel", stampedAt: 0 }
+        }
+        const owner = yield* control.run(request)
+        expect(owner._tag).toBe("Accepted")
+        const card = yield* approveDelivery
+        const conflict = yield* control.run({ ...request, planId: card.planId, digest: card.digest })
+        expect(conflict._tag).toBe("Conflict")
         yield* channels.register(channelOf())
         const first = yield* channels.ingest(wellFormed)
-        const second = yield* channels.ingest(wellFormed)
-        return [first, second]
-      }), memoryChannels(conflict))
-    expect(receipts[0]?._tag).toBe("Conflict")
-    expect(receipts[1]?._tag).toBe("Conflict")
+        const redelivered = yield* channels.ingest(wellFormed)
+        expect(first).toEqual(conflict)
+        expect(redelivered).toEqual(conflict)
+        // A different body must still reach Control: ingress never claimed this key.
+        expect(
+          yield* channels.ingest({
+            ...wellFormed,
+            raw: { ...wellFormed.raw, body: new TextEncoder().encode("{}") }
+          })
+        ).toEqual(conflict)
+        expect((yield* control.list({ _tag: "runs" })).items).toHaveLength(1)
+      })
+    )
   })
 })
 

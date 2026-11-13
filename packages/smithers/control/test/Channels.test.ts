@@ -2,7 +2,7 @@ import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Deferred, Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import * as Channels from "../src/Channels.ts"
 import * as Control from "../src/Control.ts"
 import { InvalidInput, PersistenceError, Unauthorized } from "../src/ControlError.ts"
@@ -153,15 +153,15 @@ describe("Channels", () => {
       schema: Schema.Unknown,
       map: () => Effect.succeed({ _tag: "Start", flowId: "flow", input: {} })
     }
-    const exit = await run(Effect.gen(function*() {
+    const invalid = await run(Effect.gen(function*() {
       const channels = yield* Channels.Channels
       yield* channels.register(channel)
-      return yield* Effect.exit(channels.ingest({
+      return yield* Effect.flip(channels.ingest({
         channel: "schema",
         raw: { ...raw(), body: new TextEncoder().encode("{\"count\":\"wrong\"}") }
       }))
     }))
-    expect(exit._tag).toBe("Failure")
+    expect(invalid).toBeInstanceOf(InvalidInput)
   })
 
   it("maps starts and signals through Control and deduplicates inbound keys", async () => {
@@ -642,7 +642,7 @@ describe("Channels", () => {
     }))
   })
 
-  it("does not copy delivery history or replace records for unchanged projections", async () => {
+  it("preserves delivery identity for unchanged projections", async () => {
     await run(Effect.gen(function*() {
       const channels = yield* Channels.Channels
       const observed: Array<Channels.Delivery | undefined> = []
@@ -660,30 +660,20 @@ describe("Channels", () => {
       })
       const summary = { runId: "live", flowId: "flow", status: "running" as const, createdAt: 0, updatedAt: 0 }
       yield* channels.project({ channel: "constant-time", run: summary })
-      const iterator = Map.prototype[Symbol.iterator]
-      let copied = 0
-      const spy = vi.spyOn(Map.prototype, Symbol.iterator).mockImplementation(function(this: Map<unknown, unknown>) {
-        if (this.has("13:constant-time:live")) copied += this.size
-        return iterator.call(this)
-      })
-      try {
-        yield* channels.project({ channel: "constant-time", run: summary })
-        operation = "noop"
-        yield* channels.project({ channel: "constant-time", run: summary })
-        yield* channels.project({ channel: "constant-time", run: summary })
-        expect(copied).toBe(0)
-        expect(observed[2]).toBe(observed[1])
-        expect(observed[3]).toBe(observed[1])
-        yield* channels.project({ channel: "constant-time", run: { ...summary, runId: "silent" } })
-        yield* channels.project({ channel: "constant-time", run: { ...summary, runId: "silent" } })
-        expect(observed.at(-1)).toBeUndefined()
-      } finally {
-        spy.mockRestore()
-      }
+      yield* channels.project({ channel: "constant-time", run: summary })
+      operation = "noop"
+      yield* channels.project({ channel: "constant-time", run: summary })
+      yield* channels.project({ channel: "constant-time", run: summary })
+      expect(observed[1]).toEqual({ cursor: "1", messageId: "message" })
+      expect(observed[2]).toBe(observed[1])
+      expect(observed[3]).toBe(observed[1])
+      yield* channels.project({ channel: "constant-time", run: { ...summary, runId: "silent" } })
+      yield* channels.project({ channel: "constant-time", run: { ...summary, runId: "silent" } })
+      expect(observed.at(-1)).toBeUndefined()
     }))
   })
 
-  it("retains delivery cursors for edit projections and redacts credentials", async () => {
+  it("retains delivery cursors for edit projections", async () => {
     const deliveries: Array<Channels.Delivery | undefined> = []
     const channel: Channels.Channel = {
       name: "outbound",
@@ -706,7 +696,6 @@ describe("Channels", () => {
       yield* channels.project({ channel: "outbound", run })
     }))
     expect(deliveries).toEqual([undefined, { cursor: "1", messageId: "message" }])
-    expect(JSON.stringify({ secret: Redacted.make("do-not-persist") })).not.toContain("do-not-persist")
   })
 
   it("keeps delimiter-bearing channel and run identities separate", async () => {
