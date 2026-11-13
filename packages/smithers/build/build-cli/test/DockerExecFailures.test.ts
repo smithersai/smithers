@@ -3,6 +3,9 @@
  * CLI, a silent daemon and every malformed declaration become typed refusals
  * before anything spawns, and the resolved argv carries each option once.
  */
+import * as Docker from "@smthrs/targets/Docker"
+import * as Input from "@smthrs/targets/Input"
+import * as Target from "@smthrs/targets/Target"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
@@ -54,7 +57,7 @@ const host = async (options: {
 }
 
 const buildAttrs = (fields: Record<string, unknown> = {}) =>
-  ({ dockerfile: { path: "Dockerfile" }, context: ".", ...fields }) as never
+  ({ dockerfile: Input.file("Dockerfile"), context: ".", ...fields }) as never
 
 const pushAttrs = (tags: ReadonlyArray<unknown>) => ({ registry: "registry.test", name: "app", tags }) as never
 
@@ -181,29 +184,33 @@ describe.skipIf(process.platform === "win32")("Docker plans", () => {
 
   it("refuses a build argument that is not a scalar and still names the output directory", async () => {
     const docker = await host()
+    const attrs = buildAttrs({ buildArgs: { A: "1", B: ["list"] } })
+    const outDir = Input.resolvePath("app", Target.metadata(Docker.Build(attrs)).outputs!.paths[0]!)
     const planned = await DockerExec.plan({
       rule: "Docker.Build",
       packagePath: "app",
-      attrs: buildAttrs({ buildArgs: { A: "1", B: ["list"] } }),
+      attrs,
       environment: docker.environment
     })
     expect(planned).toMatchObject({
-      outDirs: ["app/docker-image"],
+      outDirs: [outDir],
       refusal: "Docker.Build buildArgs.B must resolve to a string before execution"
     })
   })
 
   it("renders a build with builder, platforms, sorted build arguments and the package context", async () => {
     const docker = await host({ builders: "ci docker-container\n" })
+    const attrs = buildAttrs({
+      dockerfile: Input.file("docker/Dockerfile"),
+      context: "src",
+      platforms: ["linux/amd64", "linux/arm64"],
+      buildArgs: { Z: false, A: 3, S: { _tag: "Stamp", name: "commit" } }
+    })
+    const outDir = Input.resolvePath("app", Target.metadata(Docker.Build(attrs)).outputs!.paths[0]!)
     const planned = await DockerExec.plan({
       rule: "Docker.Build",
       packagePath: "app",
-      attrs: buildAttrs({
-        dockerfile: { path: "docker/Dockerfile" },
-        context: "src",
-        platforms: ["linux/amd64", "linux/arm64"],
-        buildArgs: { Z: false, A: 3, S: { _tag: "Stamp", name: "commit" } }
-      }),
+      attrs,
       environment: docker.environment
     })
     expect(planned.refusal).toBeUndefined()
@@ -224,17 +231,19 @@ describe.skipIf(process.platform === "win32")("Docker plans", () => {
       "--build-arg",
       "Z=false",
       "--output",
-      "type=oci,dest=app/docker-image/image.tar",
+      `type=oci,dest=${outDir}/image.tar`,
       "app/src"
     ])
   })
 
   it("builds the workspace root context as '.' without a builder or platforms", async () => {
     const docker = await host()
+    const attrs = buildAttrs({ platforms: [] })
+    const outDir = Target.metadata(Docker.Build(attrs)).outputs!.paths[0]!
     const planned = await DockerExec.plan({
       rule: "Docker.Build",
       packagePath: "",
-      attrs: buildAttrs({ platforms: [] }),
+      attrs,
       environment: docker.environment
     })
     expect(planned.argv).toEqual([
@@ -244,14 +253,16 @@ describe.skipIf(process.platform === "win32")("Docker plans", () => {
       "--file",
       "Dockerfile",
       "--output",
-      "type=oci,dest=docker-image/image.tar",
+      `type=oci,dest=${outDir}/image.tar`,
       "."
     ])
   })
 
-  it("renders a bake into a sanitized per-target output directory", async () => {
+  it("renders a bake into its declared per-target output directory", async () => {
     const docker = await host({ builders: "ci docker-container\n" })
-    const attrs = { config: { path: "docker-bake.hcl" }, target: "web/app:latest" } as never
+    const attrs = { config: Input.file("docker-bake.hcl"), target: "web/app:latest" }
+    const relativeOutDir = Target.metadata(Docker.Bake(attrs)).outputs!.paths[0]!
+    const outDir = Input.resolvePath("app", relativeOutDir)
     const planned = await DockerExec.plan({
       rule: "Docker.Bake",
       packagePath: "app",
@@ -268,10 +279,10 @@ describe.skipIf(process.platform === "win32")("Docker plans", () => {
         "--file",
         "app/docker-bake.hcl",
         "--set",
-        "web/app:latest.output=type=oci,dest=app/docker-image-web-app-latest/image.tar",
+        `web/app:latest.output=type=oci,dest=${outDir}/image.tar`,
         "web/app:latest"
       ],
-      outDirs: ["app/docker-image-web-app-latest"],
+      outDirs: [outDir],
       toolchain: expect.objectContaining({ tag: "Docker", builder: "ci" })
     })
     const plain = await host()
@@ -284,11 +295,11 @@ describe.skipIf(process.platform === "win32")("Docker plans", () => {
       "--file",
       "docker-bake.hcl",
       "--set",
-      "web/app:latest.output=type=oci,dest=docker-image-web-app-latest/image.tar",
+      `web/app:latest.output=type=oci,dest=${relativeOutDir}/image.tar`,
       "web/app:latest"
     ])
     await DockerExec.prepareOutputs(docker.root, planned.outDirs)
-    expect((await Fs.stat(NodePath.join(docker.root, "app/docker-image-web-app-latest"))).isDirectory()).toBe(true)
+    expect((await Fs.stat(NodePath.join(docker.root, outDir))).isDirectory()).toBe(true)
   })
 })
 

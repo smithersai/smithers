@@ -116,10 +116,8 @@ const serviceDefinition = Target.make("Docker.Service", {
  * an unprintable byte in this source file and make it unreadable to `git
  * diff` and to every plain-text search.
  *
- * `@smthrs/build-cli` still derives its own output directory for these two
- * rules, so the path the executor writes is not yet this one. Until that
- * import lands, this is the declared path the planner reads in the old executor and
- * the two disagree in the build system.
+ * The package executor uses this declared path for the OCI archive it writes
+ * and captures, so execution and cache metadata name the same output tree.
  *
  * @category accessors
  * @since 0.1.0

@@ -1,5 +1,5 @@
 import { Smithers as S } from "@smthrs/targets"
-import type * as Target from "@smthrs/targets/Target"
+import * as Target from "@smthrs/targets/Target"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
@@ -78,8 +78,10 @@ it("keys a Docker.Build on the files its context holds, not the Dockerfile alone
 it("does not key a Docker.Build on the archive it writes inside its own context", async () => {
   const targets = { image: S.Docker.Build({ dockerfile: S.file("Dockerfile"), context: "." }) }
   const before = (await planOf(targets)).nodes.get("//:image")!
-  await mkdir(join(root, "docker-image"))
-  await writeFile(join(root, "docker-image", "image.tar"), "archive")
+  for (const outDir of before.outDirs) {
+    await mkdir(join(root, outDir))
+    await writeFile(join(root, outDir, "image.tar"), "archive")
+  }
   const after = (await planOf(targets)).nodes.get("//:image")!
   expect(after.keyPreview).toBe(before.keyPreview)
 })
@@ -91,4 +93,60 @@ it("caches a Docker.Bake only when data declares what its contexts read", async 
   })
   expect(plan.nodes.get("//:bare")!.cacheable).toBe(false)
   expect(plan.nodes.get("//:covered")!.cacheable).toBe(true)
+})
+
+it.each([
+  ["Dockerfile", { dockerfile: S.file("Other.Dockerfile") }],
+  ["context", { context: "src" }],
+  ["platform", { platforms: ["linux/arm64"] }],
+  ["build argument", { buildArgs: { MODE: "production" } }]
+])("plans separate archives for two builds in one package differing by %s", async (_name, variant) => {
+  await writeFile(join(root, "Other.Dockerfile"), "FROM scratch\n")
+  await mkdir(join(root, "src"))
+  await writeFile(join(root, "src", "copied.txt"), "source")
+  const attrs = { dockerfile: S.file("Dockerfile"), context: "." }
+  const targets = { first: S.Docker.Build(attrs), second: S.Docker.Build({ ...attrs, ...variant }) }
+  const plan = await planOf(targets)
+  const first = plan.nodes.get("//:first")!
+  const second = plan.nodes.get("//:second")!
+  expect(first.outDirs).not.toEqual(second.outDirs)
+  for (const [name, target] of Object.entries(targets)) {
+    const node = plan.nodes.get(`//:${name}`)!
+    expect(node.refusal).toBeUndefined()
+    expect(node.outDirs).toEqual(Target.metadata(target).outputs!.paths)
+    expect(node.argv).toContain(`type=oci,dest=${node.outDirs[0]}/image.tar`)
+  }
+})
+
+it("uses the same build archive path when build argument order changes", async () => {
+  const attrs = { dockerfile: S.file("Dockerfile"), context: "." }
+  const targets = {
+    first: S.Docker.Build({ ...attrs, buildArgs: { A: "a", Z: "z" } }),
+    second: S.Docker.Build({ ...attrs, buildArgs: { Z: "z", A: "a" } })
+  }
+  const plan = await planOf(targets)
+  const first = plan.nodes.get("//:first")!
+  const second = plan.nodes.get("//:second")!
+  expect(first.outDirs).toEqual(Target.metadata(targets.first).outputs!.paths)
+  expect(second.outDirs).toEqual(first.outDirs)
+})
+
+it("plans separate bake archives for different configs and colliding target slugs", async () => {
+  await writeFile(join(root, "other-bake.hcl"), "target \"app\" {}\n")
+  const targets = {
+    first: S.Docker.Bake({ config: S.file("docker-bake.hcl"), target: "app" }),
+    second: S.Docker.Bake({ config: S.file("other-bake.hcl"), target: "app" }),
+    slash: S.Docker.Bake({ config: S.file("docker-bake.hcl"), target: "a/b" }),
+    question: S.Docker.Bake({ config: S.file("docker-bake.hcl"), target: "a?b" })
+  }
+  const plan = await planOf(targets)
+  const outDirs = []
+  for (const [name, target] of Object.entries(targets)) {
+    const node = plan.nodes.get(`//:${name}`)!
+    expect(node.refusal).toBeUndefined()
+    expect(node.outDirs).toEqual(Target.metadata(target).outputs!.paths)
+    expect(node.argv).toContainEqual(expect.stringContaining(`.output=type=oci,dest=${node.outDirs[0]}/image.tar`))
+    outDirs.push(...node.outDirs)
+  }
+  expect(new Set(outDirs).size).toBe(Object.keys(targets).length)
 })

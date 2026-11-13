@@ -1,3 +1,6 @@
+import * as Docker from "@smthrs/targets/Docker"
+import * as Input from "@smthrs/targets/Input"
+import * as Target from "@smthrs/targets/Target"
 import { spawn, spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import * as Fs from "node:fs/promises"
@@ -241,7 +244,7 @@ describe("Docker fixture cache identity", () => {
       const before = await plan()
       expect(before("//:dockerBuild").cacheable).toBe(true)
       expect(before("//:dockerBake").cacheable).toBe(true)
-      for (const directory of ["docker-image", "docker-image-fixture"]) {
+      for (const directory of [...before("//:dockerBuild").outDirs, ...before("//:dockerBake").outDirs]) {
         await Fs.mkdir(NodePath.join(root, directory), { recursive: true })
         await Fs.writeFile(NodePath.join(root, directory, "image.tar"), "archive")
       }
@@ -275,23 +278,27 @@ if (!engineAvailable) {
 describe.skipIf(!engineAvailable)("Docker package execution", { concurrent: false }, () => {
   it("builds an OCI archive through CAS and restores it on a cache hit", async () => {
     const root = await workspace()
+    const buildDir = Target.metadata(Docker.Build({ dockerfile: Input.file("Dockerfile"), context: "." })).outputs!
+      .paths[0]!
+    const bakeDir = Target.metadata(Docker.Bake({ config: Input.file("docker-bake.hcl"), target: "fixture" })).outputs!
+      .paths[0]!
     const built = await serve(root, ["//:dockerBuild"])
     expect(built.exitCode, built.logs).toBe(0)
     expect(built.logs).toContain("//:dockerBuild  ran")
-    expect(await Fs.stat(NodePath.join(root, "docker-image/image.tar"))).toBeDefined()
+    expect(await Fs.stat(NodePath.join(root, buildDir, "image.tar"))).toBeDefined()
 
     const baked = await serve(root, ["//:dockerBake"])
     expect(baked.exitCode, baked.logs).toBe(0)
     expect(baked.logs).toContain("//:dockerBake  ran")
-    expect(await Fs.stat(NodePath.join(root, "docker-image-fixture/image.tar"))).toBeDefined()
+    expect(await Fs.stat(NodePath.join(root, bakeDir, "image.tar"))).toBeDefined()
     const bakedAgain = await serve(root, ["//:dockerBake"])
     expect(bakedAgain.exitCode, bakedAgain.logs).toBe(0)
     expect(bakedAgain.logs).toContain("//:dockerBake  hit")
-    await Fs.rm(NodePath.join(root, "docker-image"), { recursive: true, force: true })
+    await Fs.rm(NodePath.join(root, buildDir), { recursive: true, force: true })
     const restored = await serve(root, ["//:dockerBuild"])
     expect(restored.exitCode, restored.logs).toBe(0)
     expect(restored.logs).toContain("//:dockerBuild  hit")
-    expect(await Fs.stat(NodePath.join(root, "docker-image/image.tar"))).toBeDefined()
+    expect(await Fs.stat(NodePath.join(root, buildDir, "image.tar"))).toBeDefined()
   }, 120_000)
 
   it("acquires, exec-probes, initializes, and releases a Docker service", async () => {
@@ -502,18 +509,20 @@ describe("Docker service spec", () => {
 describe("Docker build, bake, and push plans", () => {
   it("plans buildx against the resolved builder with platforms and ordered build args", async () => {
     await withDockerStub({ builder: "stub-builder" }, async (docker) => {
+      const attrs = {
+        dockerfile: Input.file("Dockerfile"),
+        context: ".",
+        platforms: ["linux/amd64", "linux/arm64"],
+        buildArgs: { RELEASE: true, ALPHA: "one", BUILD: 7 }
+      }
+      const outDir = Input.resolvePath("apps/img", Target.metadata(Docker.Build(attrs)).outputs!.paths[0]!)
       const built = await DockerExec.plan({
         rule: "Docker.Build",
         packagePath: "apps/img",
-        attrs: {
-          dockerfile: { path: "Dockerfile" },
-          context: ".",
-          platforms: ["linux/amd64", "linux/arm64"],
-          buildArgs: { RELEASE: true, ALPHA: "one", BUILD: 7 }
-        } as never
+        attrs
       })
       expect(built.refusal).toBeUndefined()
-      expect(built.outDirs).toEqual(["apps/img/docker-image"])
+      expect(built.outDirs).toEqual([outDir])
       expect(built.argv).toEqual([
         docker,
         "buildx",
@@ -531,18 +540,18 @@ describe("Docker build, bake, and push plans", () => {
         "--build-arg",
         "RELEASE=true",
         "--output",
-        "type=oci,dest=apps/img/docker-image/image.tar",
+        `type=oci,dest=${outDir}/image.tar`,
         "apps/img"
       ])
 
+      const bakeAttrs = { config: Input.file("docker-bake.hcl"), target: "web/app" }
+      const bakeDir = Input.resolvePath("apps/img", Target.metadata(Docker.Bake(bakeAttrs)).outputs!.paths[0]!)
       const baked = await DockerExec.plan({
         rule: "Docker.Bake",
         packagePath: "apps/img",
-        attrs: { config: { path: "docker-bake.hcl" }, target: "web/app" } as never
+        attrs: bakeAttrs
       })
-      // The target names the output directory, so the one character a path
-      // cannot carry is replaced rather than dropped.
-      expect(baked.outDirs).toEqual(["apps/img/docker-image-web-app"])
+      expect(baked.outDirs).toEqual([bakeDir])
       expect(baked.argv).toEqual([
         docker,
         "buildx",
@@ -552,7 +561,7 @@ describe("Docker build, bake, and push plans", () => {
         "--file",
         "apps/img/docker-bake.hcl",
         "--set",
-        "web/app.output=type=oci,dest=apps/img/docker-image-web-app/image.tar",
+        `web/app.output=type=oci,dest=${bakeDir}/image.tar`,
         "web/app"
       ])
     })
@@ -560,10 +569,12 @@ describe("Docker build, bake, and push plans", () => {
 
   it("omits the builder flag when buildx lists none, and creates the archive's parent", async () => {
     await withDockerStub({}, async (docker) => {
+      const buildAttrs = { dockerfile: Input.file("Dockerfile"), context: ".", platforms: [] }
+      const buildDir = Target.metadata(Docker.Build(buildAttrs)).outputs!.paths[0]!
       const built = await DockerExec.plan({
         rule: "Docker.Build",
         packagePath: "",
-        attrs: { dockerfile: { path: "Dockerfile" }, context: ".", platforms: [] } as never
+        attrs: buildAttrs
       })
       expect(built.argv).toEqual([
         docker,
@@ -572,14 +583,16 @@ describe("Docker build, bake, and push plans", () => {
         "--file",
         "Dockerfile",
         "--output",
-        "type=oci,dest=docker-image/image.tar",
+        `type=oci,dest=${buildDir}/image.tar`,
         "."
       ])
 
+      const bakeAttrs = { config: Input.file("docker-bake.hcl"), target: "fixture" }
+      const bakeDir = Target.metadata(Docker.Bake(bakeAttrs)).outputs!.paths[0]!
       const baked = await DockerExec.plan({
         rule: "Docker.Bake",
         packagePath: "",
-        attrs: { config: { path: "docker-bake.hcl" }, target: "fixture" } as never
+        attrs: bakeAttrs
       })
       expect(baked.argv).toEqual([
         docker,
@@ -588,7 +601,7 @@ describe("Docker build, bake, and push plans", () => {
         "--file",
         "docker-bake.hcl",
         "--set",
-        "fixture.output=type=oci,dest=docker-image-fixture/image.tar",
+        `fixture.output=type=oci,dest=${bakeDir}/image.tar`,
         "fixture"
       ])
 
@@ -597,8 +610,8 @@ describe("Docker build, bake, and push plans", () => {
       const root = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-docker-out-"))
       temporaryDirectories.push(root)
       await DockerExec.prepareOutputs(root, [...built.outDirs, ...baked.outDirs])
-      expect(existsSync(NodePath.join(root, "docker-image"))).toBe(true)
-      expect(existsSync(NodePath.join(root, "docker-image-fixture"))).toBe(true)
+      expect(existsSync(NodePath.join(root, buildDir))).toBe(true)
+      expect(existsSync(NodePath.join(root, bakeDir))).toBe(true)
     })
   })
 
@@ -608,7 +621,7 @@ describe("Docker build, bake, and push plans", () => {
         rule: "Docker.Build",
         packagePath: "",
         attrs: {
-          dockerfile: { path: "Dockerfile" },
+          dockerfile: Input.file("Dockerfile"),
           context: ".",
           buildArgs: { VERSION: { _tag: "Stamp", name: "git-sha" } }
         } as never
@@ -625,7 +638,7 @@ describe("Docker build, bake, and push plans", () => {
         rule: "Docker.Build",
         packagePath: "",
         attrs: {
-          dockerfile: { path: "Dockerfile" },
+          dockerfile: Input.file("Dockerfile"),
           context: ".",
           buildArgs: { OPAQUE: { registry: "example.invalid" } }
         } as never
@@ -715,7 +728,7 @@ describe("Docker build, bake, and push plans", () => {
       const built = await DockerExec.plan({
         rule: "Docker.Build",
         packagePath: "apps/img",
-        attrs: { dockerfile: { path: "Dockerfile" }, context: "." } as never
+        attrs: { dockerfile: Input.file("Dockerfile"), context: "." } as never
       })
       expect(built.argv).toBeUndefined()
       expect(built.outDirs).toEqual([])

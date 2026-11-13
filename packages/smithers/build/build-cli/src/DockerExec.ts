@@ -12,9 +12,10 @@
  * @since 0.1.0
  */
 
-import type * as Docker from "@smthrs/targets/Docker"
+import * as Docker from "@smthrs/targets/Docker"
 import * as Input from "@smthrs/targets/Input"
 import * as Stamp from "@smthrs/targets/Stamp"
+import * as Target from "@smthrs/targets/Target"
 import * as Data from "effect/Data"
 import * as Schema from "effect/Schema"
 import { createHash } from "node:crypto"
@@ -102,21 +103,18 @@ export const resolveDocker = async (
     }
 }
 
-const safeTarget = (target: string): string => target.replaceAll(/[^A-Za-z0-9._-]/g, "-")
-
 /**
  * The package-relative output directory of a Docker build target.
  *
  * @category planning
  * @since 0.1.0
  */
-export const outputDir = (rule: "Docker.Build" | "Docker.Bake", packagePath: string, attrs: unknown): string =>
-  Input.resolvePath(
-    packagePath,
-    rule === "Docker.Bake"
-      ? `docker-image-${safeTarget((attrs as { readonly target: string }).target)}`
-      : "docker-image"
-  )
+export const outputDir = (rule: "Docker.Build" | "Docker.Bake", packagePath: string, attrs: unknown): string => {
+  const declaration = rule === "Docker.Build"
+    ? Docker.Build(attrs as (typeof Docker.BuildAttrs)["Type"])
+    : Docker.Bake(attrs as (typeof Docker.BakeAttrs)["Type"])
+  return Input.resolvePath(packagePath, Target.metadata(declaration).outputs!.paths[0]!)
+}
 
 const scalar = (value: unknown): string | undefined => {
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value)

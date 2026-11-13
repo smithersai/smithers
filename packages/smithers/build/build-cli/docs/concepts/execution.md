@@ -21,6 +21,16 @@ and waits for pending host I/O. Receipt failures close their descriptor, includi
 when an empty fallback receipt cannot be written.
 `CliServices` and `cliServicesLive` are exported from `@smthrs/build-cli`.
 
+## Docker image outputs
+
+`Docker.Build` and `Docker.Bake` write `image.tar` into the output directory
+declared by the target. The directory name combines a readable slug with a
+digest of the build options: the Dockerfile, context, platforms, and build
+arguments for `Docker.Build`; the config file and target for `Docker.Bake`.
+Builds with different image options in one package keep separate archives. The planner
+captures that same directory, and `Docker.Push` reads its image dependency's
+archive.
+
 ## Docker pushes
 
 `Docker.Push` requires at least one tag. Literal tags are checked when planning;
