@@ -129,7 +129,7 @@ export const Package = S.Package({ targets: { clean: S.Clean({ paths: ["scratch"
 })
 
 describe("Materialize execution", () => {
-  it("places a cacheable build's captured tree and answers green when the tree already matches", async () => {
+  it("restores a cacheable build's captured outputs and stays green when they already match", async () => {
     const root = await fixture(`import { Smithers as S } from "@smthrs/targets"
 const build = S.Shell.Build({
   shell: "mkdir -p dist && printf built > dist/a.txt && printf file > out.txt",
@@ -140,6 +140,20 @@ export const Package = S.Package({ targets: { build, materialized: S.Materialize
     const first = await run(root, "//:materialized")
     expect(first.ok).toBe(true)
     expect(statuses(first.results)).toEqual({ "//:build": "ran", "//:materialized": "ran" })
+    expect(await Fs.readFile(NodePath.join(root, "dist", "a.txt"), "utf8")).toBe("built")
+    expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe("file")
+
+    await Fs.rm(NodePath.join(root, "dist"), { recursive: true })
+    await Fs.rm(NodePath.join(root, "out.txt"))
+    const restored = await run(root, "//:materialized")
+    expect(restored.ok).toBe(true)
+    expect(statuses(restored.results)).toEqual({ "//:build": "hit", "//:materialized": "ran" })
+    expect(await Fs.readFile(NodePath.join(root, "dist", "a.txt"), "utf8")).toBe("built")
+    expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe("file")
+
+    const matching = await run(root, "//:materialized")
+    expect(matching.ok).toBe(true)
+    expect(statuses(matching.results)).toEqual({ "//:build": "hit", "//:materialized": "ran" })
     expect(await Fs.readFile(NodePath.join(root, "dist", "a.txt"), "utf8")).toBe("built")
     expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe("file")
   })

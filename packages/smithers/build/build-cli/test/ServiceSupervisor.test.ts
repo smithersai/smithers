@@ -443,28 +443,36 @@ describe("prepare", () => {
   it("runs prepare before the process is spawned, and a failing prepare does not block the spawn", async () => {
     const directory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-service-prepare-"))
     const marker = NodePath.join(directory, "prepared")
+    const failedPrepare = NodePath.join(directory, "failed-prepare")
+    const port = await freePort()
     try {
       await run(Effect.scoped(Effect.gen(function*() {
         const supervisor = yield* ServiceSupervisor.make
-        // The service refuses to run unless the marker already exists, so a
-        // live handle is only possible if prepare ran first. The second
-        // prepare command exits non-zero: prepare is best-effort, like
-        // cleanup, and must not turn a stale-state sweep into a failure.
+        // The child checks both hooks before it opens the readiness port.
+        // Acquisition must observe its startup, not just an allocated pid.
         const handle = yield* supervisor.acquire({
           key: "//x:prepared",
           cwd: directory,
           argv: [
             process.execPath,
             "-e",
-            `if (!require('node:fs').existsSync(${
-              JSON.stringify(marker)
-            })) process.exit(3); setInterval(() => {}, 1000)`
+            `const fs = require('node:fs');
+if (fs.readFileSync(${JSON.stringify(marker)}, 'utf8') !== 'ok' ||
+    fs.readFileSync(${JSON.stringify(failedPrepare)}, 'utf8') !== 'attempted') process.exit(3);
+require('node:http').createServer((req, res) => res.end('ok')).listen(${port}, '127.0.0.1')`
           ],
+          readiness: { http: `http://127.0.0.1:${port}/health`, timeout: "10s" },
           prepare: [
             [process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ok')`],
-            [process.execPath, "-e", "process.exit(1)"]
+            [
+              process.execPath,
+              "-e",
+              `require('node:fs').writeFileSync(${JSON.stringify(failedPrepare)}, 'attempted'); process.exit(1)`
+            ]
           ]
         })
+        const response = yield* handle.whileHealthy(Effect.promise(() => getText(`http://127.0.0.1:${port}/health`)))
+        expect(response).toBe("ok")
         expect(alive(handle.pid)).toBe(true)
       })))
     } finally {
@@ -491,20 +499,43 @@ describe("readiness", () => {
     const port = await freePort()
     const directory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-service-init-"))
     const marker = NodePath.join(directory, "ready")
+    const probeStarted = NodePath.join(directory, "probe-started")
+    const url = `http://127.0.0.1:${port}/health`
     try {
       await run(Effect.scoped(Effect.gen(function*() {
         const supervisor = yield* ServiceSupervisor.make
         const handle = yield* supervisor.acquire({
-          ...serverSpec("//x:exec-ready", port, ["--delay-listen", "300"], {}),
+          key: "//x:exec-ready",
+          cwd: directory,
+          argv: [
+            process.execPath,
+            "-e",
+            // Only the exec probe can release the listener. Init before the
+            // first probe therefore fails regardless of process startup time.
+            `const fs = require('node:fs');
+const timer = setInterval(() => {
+  if (!fs.existsSync(${JSON.stringify(probeStarted)})) return;
+  clearInterval(timer);
+  require('node:http').createServer((req, res) => res.end('ok')).listen(${port}, '127.0.0.1');
+}, 10)`
+          ],
           readiness: {
             exec: [
               process.execPath,
               "-e",
-              `fetch('http://127.0.0.1:${port}/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))`
+              `require('node:fs').writeFileSync(${JSON.stringify(probeStarted)}, 'started');
+fetch(${JSON.stringify(url)}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))`
             ],
             timeout: "10s"
           },
-          init: [[process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)},'ok')`]]
+          init: [[
+            process.execPath,
+            "-e",
+            `fetch(${JSON.stringify(url)}).then(async r => {
+  if (!r.ok) process.exit(1);
+  require('node:fs').writeFileSync(${JSON.stringify(marker)}, await r.text());
+}).catch(() => process.exit(1))`
+          ]]
         })
         expect(alive(handle.pid)).toBe(true)
         const contents = yield* Effect.promise(() => Fs.readFile(marker, "utf8"))

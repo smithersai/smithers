@@ -9,7 +9,6 @@ import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { DatabaseSync } from "node:sqlite"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as PackageTree from "../src/PackageTree.ts"
 
@@ -1893,16 +1892,6 @@ describe("materialization publication ownership and cleanup", () => {
     expect((await Fs.readdir(root)).filter((name) => name.startsWith(".smthrs-"))).toEqual([])
   })
 
-  it("documents staged publication without promising atomic visibility", async () => {
-    const source = await Fs.readFile(new URL("../src/PackageTree.ts", import.meta.url), "utf8")
-    const jsdoc = source.slice(
-      source.lastIndexOf("/**", source.indexOf("export const materializeManifest")),
-      source.indexOf("export const materializeManifest")
-    )
-    expect(jsdoc).toContain("brief absence window")
-    expect(jsdoc).not.toContain("atomically")
-  })
-
   it("leaves no copied file temporary after an obstructed destination on repeated attempts", async () => {
     const digest = await seed()
     await Fs.mkdir(NodePath.join(root, "output"))
@@ -2175,6 +2164,9 @@ describe("judgedChanges", () => {
   })
 })
 
+// Restoring an old SQLite WAL under its live owner can truncate committed
+// pages and cause SQLITE_IOERR_SHORT_READ. Runtime files belong to the running
+// engine; snapshots and rollback must leave them alone.
 describe("live runtime ownership", () => {
   const file = async (path: string, bytes: string): Promise<void> => {
     await Fs.mkdir(NodePath.dirname(NodePath.join(root, path)), { recursive: true })
@@ -2236,27 +2228,6 @@ describe("live runtime ownership", () => {
       await PackageTree.releaseIgnored(snapshot)
     }
   })
-})
-
-it("restoring an older live WAL reproduces SQLITE_IOERR_SHORT_READ in an isolated database", async () => {
-  const path = NodePath.join(root, "smithers.db")
-  const db = new DatabaseSync(path)
-  try {
-    db.exec(
-      "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; PRAGMA cache_size=5; CREATE TABLE entries (value TEXT)"
-    )
-    const oldWal = await Fs.readFile(`${path}-wal`)
-    const insert = db.prepare("INSERT INTO entries VALUES (?)")
-    for (let index = 0; index < 100; index++) insert.run("x".repeat(8000))
-    expect(db.prepare("SELECT count(*) AS n FROM entries").get()?.n).toBe(100)
-    await Fs.writeFile(`${path}-wal`, oldWal)
-    db.exec("PRAGMA shrink_memory")
-    expect(() => db.prepare("SELECT sum(length(value)) FROM entries").get()).toThrow(
-      expect.objectContaining({ errcode: 522 })
-    )
-  } finally {
-    db.close()
-  }
 })
 
 it("excludes individually ignored runtime logs while retaining ignored source", async () => {

@@ -3,7 +3,7 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import type * as Node from "@smthrs/plan/Node"
 import * as Compose from "@smthrs/targets/Compose"
 import { Filegroup } from "@smthrs/targets/Filegroup"
-import { glob } from "@smthrs/targets/Input"
+import { file, glob } from "@smthrs/targets/Input"
 import * as Target from "@smthrs/targets/Target"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -93,14 +93,25 @@ describe("S.ImportClosure execution", () => {
     expect(failure.message).toContain("cannot provide entry files yet")
   })
 
-  it("fails when a declared entry file does not exist", async () => {
+  it("treats an unmatched glob entry as empty", async () => {
     await write("src/present.ts", `export const present = 1\n`)
     const target = Compose.ImportClosure({
       entries: [glob("src/present.ts"), glob("src/absent.ts")]
     })
     const exit = await run(target)
-    // A non-matching glob expands empty; only the matched file closes over.
-    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(Exit.isSuccess(exit) ? exit.value : undefined).toEqual({
+      files: [{ path: "src/present.ts", digest: expect.any(String) }],
+      packages: [],
+      unresolved: [],
+      dynamic: []
+    })
+  })
+
+  it("fails when a declared file entry does not exist", async () => {
+    const target = Compose.ImportClosure({ entries: file("src/absent.ts") })
+    const failure = failureOf(await run(target)) as Compose.ImportClosureError
+    expect(failure._tag).toBe("smithers-build/ImportClosureError")
+    expect(failure.message).toContain("declared entry file does not exist: src/absent.ts")
   })
 })
 
