@@ -161,6 +161,8 @@ type ActionCase = {
   readonly menu?: ReadonlyArray<string>
   /** Text the page shows somewhere. */
   readonly shows?: ReadonlyArray<string>
+  /** The pane says its run stream was lost, with Reconnect. */
+  readonly lost?: boolean
 }
 
 /** One case per arm of the Actions pane and its decisions: closed with and without a run, loading, failed, each layout, each primary control, and a trace for each way it picks a step. */
@@ -185,6 +187,7 @@ function actionCases(input: typeof ActionInput.Type): ReadonlyArray<ActionCase> 
     { actions: { ...open, selected: JSON_ACTION.name, runs: [done], input: input.text }, primary: "Run", body: "list", input: "{}", rows: 0 },
     { actions: { ...open, selected: POST.name, runs: [done, live] }, primary: "Run", body: "list", input: "Message", rows: 2 },
     { actions: { ...open, selected: POST.name, run: live.id, runs: [live] }, primary: "Cancel", body: "trace", logged: 1 },
+    { actions: { ...open, runs: [live], disconnected: [live.id] }, primary: "", body: "list", lost: true },
     { actions: { ...open, selected: POST.name, run: done.id, runs: [done], now: 9, step: stepKey("c", 1) }, primary: "Re-run", body: "trace", logged: 2 },
     { actions: { ...open, selected: POST.name, run: done.id, runs: [done], step: "none/1" }, primary: "Re-run", body: "trace", logged: 1 },
     { actions: { ...open, run: failed.id, runs: [failed] }, primary: "", body: "trace", logged: 1 },
@@ -243,7 +246,8 @@ function actionHolds(c: ActionCase, input: typeof ActionInput.Type): boolean {
     if (findAll(pane, ".sui-skeleton").length !== (c.body === "loading" ? 1 : 0)) holds = false
     if (getAllByRole("button", { name: "Retry" })(pane).length !== (c.body === "error" ? 1 : 0)) holds = false
     const alerts = getAllByRole("alert")(pane)
-    if (alerts.length !== (c.body === "error" || c.notice ? 1 : 0)) holds = false
+    if (alerts.length !== (c.body === "error" || c.notice || c.lost ? 1 : 0)) holds = false
+    if (getAllByRole("button", { name: "Reconnect" })(pane).length !== (c.lost ? 1 : 0)) holds = false
     if (c.notice && (alerts.length !== 1 || textContent(alerts[0]!) !== actions.error)) holds = false
     const inputs = getAllByRole("textbox", { name: "Action input" })(pane)
     if (inputs.length !== (c.input === undefined ? 0 : 1)) holds = false

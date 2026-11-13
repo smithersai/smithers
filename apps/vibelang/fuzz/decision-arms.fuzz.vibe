@@ -105,6 +105,14 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
   for (const toured of [false, true]) for (const kind of ["ReplyFinished", "WalkthroughDriven"]) {
     try check("completeScreenTour", same(Screen.completeScreenTour(screen, toured, kind), { ...screen, tour: toured ? false : screen.tour, docs: toured && kind !== "ReplyFinished" ? "pane" : screen.docs }))
   }
+  // An absent actions epoch is epoch zero on either side; a failed tour end keeps the docs maximized only while this
+  // tab still tours, else leaves them as they were.
+  for (const incoming of [null, 0, 3]) for (const current of [null, 0, 3]) {
+    try check(`actionsEpochCurrent ${incoming} ${current}`, ModelD.actionsEpochCurrent(incoming, current) === ((incoming ?? 0) === (current ?? 0)))
+  }
+  for (const touring of [false, true]) for (const docs of ["pane", "max"] as const) {
+    try check(`failedScreenEnd ${touring} ${docs}`, same(Screen.failedScreenEnd({ ...screen, docs }, touring), { ...screen, tour: touring, docs: touring ? "max" : docs }))
+  }
   // A run's place in the list is found past runs with other ids, and a new run has none.
   const clocks = ["a", "b", "c"].map((id) => ({ id: `${id}${text}`, state: "running", at: 1, started: 1 }))
   try check("runIndex", ModelD.runIndex(clocks, `c${text}`) === 2 && ModelD.runIndex(clocks, `a${text}`) === 0 && ModelD.runIndex(clocks, `d${text}`) === -1 && ModelD.runIndex([], other) === -1)

@@ -450,7 +450,7 @@ const UPDATES = [
   "assignees-without-agent", "submit-without-request", "began-stale", "walkthrough-posted", "learn-more-palette", "control-clears-error",
   "pane-closes-editor", "scroll-stale", "tour-gap", "sandbox-polled-failure", "chat-from-splash",
   "account-retries", "sign-in-unavailable", "action-failures", "learn-more-same-conversation",
-  "tour-late-dismissed", "wiki-saved-without-review",
+  "tour-late-dismissed", "wiki-saved-without-review", "end-failed-elsewhere",
 ] as const
 const UpdateArms = Schema.Struct({ flags: Flags, step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), seek: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), overlay: Schema.Boolean, text: Text })
 
@@ -476,7 +476,8 @@ function names(result: { readonly commands?: ReadonlyArray<{ readonly name: stri
  * unavailable is refused without a command; a failed action names its input, permission or operation. Learn more in the
  * tour's own conversation keeps its messages; from another conversation it starts with none. A tour start that lands
  * after the person dismissed it ends it; one that lands after any other end does not. A save that opened no review
- * closes the editor and links no review; one that opened a review links it for its page.
+ * closes the editor and links no review; one that opened a review links it for its page. A tour end that failed
+ * presents the walkthrough's stop again while this tab still tours, and none once its tour stopped.
  */
 function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.Type): boolean {
   const base: Model = { ...init(input.flags).model, mode: "mock", surface: "chat" }
@@ -654,6 +655,16 @@ function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.
       const plain = saved("")
       const linked = saved("https://github.com/o/r/pull/1")
       return valid(plain.model) && plain.model.wikiEdit === undefined && plain.model.wikiReview === undefined && same(linked.model.wikiReview, { page: "index", url: "https://github.com/o/r/pull/1" })
+    }
+    case "end-failed-elsewhere": {
+      let model = base
+      for (const message of tourStop(model, input.step)) model = update(model, message).model
+      const conversation = model.tourClient?.conversation
+      if (conversation?.walkthrough === undefined) return false
+      const touring = update(model, Message.FailedEndTour())
+      const stopped: Model = { ...model, tourClient: { ...model.tourClient!, conversation: { ...conversation, agent: "idle" } } }
+      const elsewhere = update(stopped, Message.FailedEndTour())
+      return valid(elsewhere.model) && names(touring).includes("PresentTour") && !names(elsewhere).includes("PresentTour")
     }
     case "walkthrough-posted": {
       const seq = base.client.conversation.seq
