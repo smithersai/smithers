@@ -12,6 +12,10 @@ import type * as Reporter from "../../src/Reporter.ts"
 import { executionPresentation } from "../fixtures/presentation.ts"
 
 export interface ServeOptions {
+  /** The remote-cache endpoint override passed to the real CLI. */
+  readonly cacheUrl?: string | undefined
+  /** The cache credential passed to the runtime, outside fixture declarations. */
+  readonly cacheToken?: string | undefined
   /** The hermetic environment `RuntimeConfig.environment` receives; `process.env` when omitted. */
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   /** The audience policy; the plain, structured {@link executionPresentation} when omitted. */
@@ -52,6 +56,8 @@ export const serve = async (
   // the ambient environment gets the same treatment the real CLI gives it.
   if (options.environment === undefined) Environment.anchorSearchPath(process.env, process.cwd())
   await makeCli({
+    cacheUrl: options.cacheUrl,
+    cacheToken: options.cacheToken,
     presentation: options.presentation ?? executionPresentation,
     environment: options.environment,
     signal: options.signal,

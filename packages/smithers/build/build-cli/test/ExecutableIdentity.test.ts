@@ -5,8 +5,10 @@
  */
 import { Context, Effect, Layer } from "effect"
 import * as ChildProcess from "node:child_process"
+import { once } from "node:events"
 import type { BigIntStats } from "node:fs"
 import * as Fs from "node:fs/promises"
+import * as Http from "node:http"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -81,8 +83,11 @@ export const Package = S.Package({ targets: { dist: ${target} } })`
   return { root, tools }
 }
 /** Builds `//:dist`, requires it green, and returns the standard error log. */
-const serve = async (root: string): Promise<string> => {
-  const { exitCode, output, logs } = await serveCli(root, ["//:dist"])
+const serve = async (root: string, cacheUrl?: string): Promise<string> => {
+  const { exitCode, output, logs } = await serveCli(root, ["//:dist"], {
+    cacheUrl,
+    cacheToken: "identity-test-token"
+  })
   expect(exitCode, logs + output).toBe(0)
   return logs
 }
@@ -290,11 +295,36 @@ if (process.argv.includes("--version")) { console.log("1.0.0"); } else {
       await assertReplacement(root, tools, () => write(tools, "identity-helper", compiler(tools, "second")))
       return
     }
-    // The undeclared helper is invisible to the key: a replacement replays.
-    expect(await serve(root)).toContain("//:dist  ran")
-    await write(tools, "identity-helper", compiler(tools, "second"))
-    expect(await serve(root)).toContain("//:dist  hit")
-    expect(await Fs.readFile(Path.join(root, "dist/value"), "utf8")).toBe("first")
+    // An undeclared helper the tool spawns is outside the key. This
+    // unconfined result may replay locally, but must never be shared.
+    // See ../docs/concepts/caching.md#overrides-and-trust-domains.
+    const requests: Array<string | undefined> = []
+    const server = Http.createServer((request, response) => {
+      requests.push(request.method)
+      request.resume()
+      response.writeHead(request.method === "PUT" ? 201 : 404).end()
+    })
+    server.listen(0, "127.0.0.1")
+    await once(server, "listening")
+    try {
+      const address = server.address()
+      if (address === null || typeof address === "string") throw new Error("cache server did not bind")
+      const cacheUrl = `http://127.0.0.1:${address.port}/cache`
+      const first = await serve(root, cacheUrl)
+      expect(first).toContain("//:dist  ran")
+      expect(requests).toContain("GET")
+      expect(requests).not.toContain("PUT")
+      expect(requests).not.toContain("POST")
+      expect(first).toContain("remote cache publication skipped: //:dist ran unconfined")
+      requests.length = 0
+      await write(tools, "identity-helper", compiler(tools, "second"))
+      expect(await serve(root, cacheUrl)).toContain("//:dist  hit")
+      expect(await Fs.readFile(Path.join(root, "dist/value"), "utf8")).toBe("first")
+      expect(requests).toHaveLength(0)
+    } finally {
+      server.close()
+      await once(server, "close")
+    }
   })
 
   it("keys the helper a Host.bin variable selects over PATH and hands the process that file", async () => {
