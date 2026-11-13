@@ -39,21 +39,15 @@ export default defineConfig({
       // spawning a process, which `test/flow/Bin.test.ts` does against the
       // built binary, and the command it runs is `flow/Cli.ts`, covered in
       // process. The floor below allows for it.
-      // A ratchet, not the goal. The 1.0 command contract's baseline is 100 on every
-      // default run. On a checkout with no `SMITHERS_MIGRATE_PLUE_PACK` beside
-      // it, which is every checkout but the maintainer's, the package measures
-      // 94.4 statements, 86.0 branches, 95.3 functions, and 96.9 lines. The
-      // floor sits under that so a change that lowers coverage fails here
-      // rather than passing under a threshold nobody meets. Raise both
-      // together: `packages/smithers/flows/test/vitestCoverageIsolation.test.ts`
-      // carries the comment justifying this package's place in
-      // `coverageFloorDeferred`, and it has to state the same numbers these
-      // thresholds do.
+      // The default suite's documented baseline, not the 100% goal. Pin
+      // every measured category so regressions below that baseline fail.
+      // Full coverage remains deferred in the repository conformance suite;
+      // its independent baseline assertion prevents weakening this ratchet.
       thresholds: {
-        branches: 83,
-        functions: 93,
-        lines: 95,
-        statements: 92
+        branches: 86,
+        functions: 95.3,
+        lines: 96.9,
+        statements: 94.4
       }
     }
   }

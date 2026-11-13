@@ -11,10 +11,11 @@
  * @private
  */
 
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import { resolve } from "node:path"
 import * as ts from "typescript/unstable/ast"
-import { API } from "typescript/unstable/sync"
+import { API, type APIOptions } from "typescript/unstable/sync"
 
 /**
  * One import in a file, with the local name each binding is written as.
@@ -34,15 +35,47 @@ export interface ImportRecord {
   readonly typeOnly: boolean
 }
 
+/**
+ * The syntax-only compiler boundary. Production uses the native compiler;
+ * faulty services can fail a request without replacing compiler modules.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export interface CompilerService {
+  readonly open: (options: APIOptions) => {
+    readonly clearSourceFileCache: () => void
+    readonly updateSnapshot: (options: Parameters<API["updateSnapshot"]>[0]) => {
+      readonly getProject: (config: string) => {
+        readonly program: { readonly getSourceFile: (file: string) => ts.SourceFile | undefined }
+      } | undefined
+      readonly dispose: () => void
+    }
+    readonly close: () => void
+  }
+}
+
+const liveCompiler: CompilerService = { open: (options) => new API(options) }
+
+/**
+ * Defaults to the real compiler and keeps scanner service requirements unchanged.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const Compiler = Context.Reference<CompilerService>("@smthrs/migrate/Compiler", {
+  defaultValue: () => liveCompiler
+})
+
 /** A session owns one isolated compiler and caches trees by path and content. */
-const makeSession = () => {
+const makeSession = (compiler: CompilerService = liveCompiler) => {
   const directory = resolve(".__smithers_migration_syntax__").replace(/\\/g, "/")
   const config = `${directory}/tsconfig.json`
   const files = new Map<string, string>()
   const trees = new Map<string, Map<string, ts.SourceFile>>()
   let opened = false
   let closed = false
-  const api = new API({
+  const api = compiler.open({
     cwd: directory,
     fs: {
       readFile: (name) => files.get(name) ?? null,
@@ -103,7 +136,7 @@ const makeSession = () => {
  * @private
  */
 export const session = Effect.acquireRelease(
-  Effect.sync(makeSession),
+  Effect.flatMap(Compiler, (compiler) => Effect.sync(() => makeSession(compiler))),
   (session) => Effect.sync(() => session.close())
 ).pipe(Effect.map((session) => session.parse))
 

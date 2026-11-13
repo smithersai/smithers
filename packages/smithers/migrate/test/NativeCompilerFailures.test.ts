@@ -1,49 +1,59 @@
-import type { APIOptions } from "typescript/unstable/sync"
-import { beforeEach, describe, expect, it, vi } from "vitest"
-
-const state = vi.hoisted(() => ({
-  options: undefined as APIOptions | undefined,
-  failure: "project" as "project" | "source" | "snapshot",
-  closes: 0
-}))
-vi.mock("typescript/unstable/sync", () => ({
-  API: class {
-    constructor(options: APIOptions) {
-      state.options = options
-    }
-    clearSourceFileCache() {}
-    updateSnapshot() {
-      if (state.failure === "snapshot") throw new Error("compiler failed")
-      return {
-        dispose() {},
-        getProject: () => state.failure === "project" ? undefined : { program: { getSourceFile: () => undefined } }
-      }
-    }
-    close() {
-      state.closes++
-    }
-  }
-}))
+import * as Effect from "effect/Effect"
+import { API, type APIOptions } from "typescript/unstable/sync"
+import { describe, expect, it } from "vitest"
 import * as Ts from "../src/internal/Ts.ts"
 
-beforeEach(() => {
-  state.options = undefined
-  state.closes = 0
-  state.failure = "project"
-})
-
 describe("compiler isolation and cleanup", () => {
-  it.each(["project", "source", "snapshot"] as const)("closes the compiler on %s failure", (failure) => {
-    state.failure = failure
-    expect(() => Ts.parse("flow.ts", "")).toThrow(
-      failure === "snapshot" ? "compiler failed" : "did not return a syntax tree"
-    )
-    expect(state.closes).toBe(1)
+  it.each(["project", "source", "snapshot"] as const)("closes the compiler on %s failure", async (failure) => {
+    const events: Array<string> = []
+    const compiler: Ts.CompilerService = {
+      open: (options) => {
+        const api = new API(options)
+        events.push("open")
+        return {
+          clearSourceFileCache: () => api.clearSourceFileCache(),
+          updateSnapshot: (options) => {
+            if (failure === "snapshot") throw new Error("compiler failed")
+            const snapshot = api.updateSnapshot(options)
+            return {
+              getProject: () => failure === "project" ? undefined : { program: { getSourceFile: () => undefined } },
+              dispose: () => {
+                snapshot.dispose()
+                events.push("dispose")
+              }
+            }
+          },
+          close: () => {
+            api.close()
+            events.push("close")
+          }
+        }
+      }
+    }
+    await expect(Effect.runPromise(
+      Effect.gen(function*() {
+        const parse = yield* Ts.session
+        return parse("flow.ts", "")
+      }).pipe(Effect.scoped, Effect.provideService(Ts.Compiler, compiler))
+    )).rejects.toThrow(failure === "snapshot" ? "compiler failed" : "did not return a syntax tree")
+    expect(events).toEqual(failure === "snapshot" ? ["open", "close"] : ["open", "dispose", "close"])
   })
 
-  it("supplies only source text and a closed configuration, never filesystem fallback", () => {
-    expect(() => Ts.parse("../../outside.tsx", "const view = <Task />")).toThrow()
-    const { cwd, fs } = state.options!
+  it("supplies only source text and a closed configuration, never filesystem fallback", async () => {
+    let captured: APIOptions | undefined
+    const compiler: Ts.CompilerService = {
+      open: (options) => {
+        captured = options
+        return new API(options)
+      }
+    }
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const parse = yield* Ts.session
+        expect(parse("../../outside.tsx", "const view = <Task />").statements[0]?.getText()).toContain("<Task />")
+      }).pipe(Effect.scoped, Effect.provideService(Ts.Compiler, compiler))
+    )
+    const { cwd, fs } = captured!
     expect(fs!.readFile!(`${cwd}/input.tsx`)).toBe("const view = <Task />")
     expect(fs!.fileExists!(`${cwd}/input.tsx`)).toBe(true)
     expect(fs!.directoryExists!(cwd!)).toBe(true)
@@ -58,6 +68,5 @@ describe("compiler isolation and cleanup", () => {
       expect(fs!.getAccessibleEntries!(path)).toEqual({ files: [], directories: [] })
       expect(fs!.realpath!(path)).toBe(path)
     }
-    expect(state.closes).toBe(1)
   })
 })

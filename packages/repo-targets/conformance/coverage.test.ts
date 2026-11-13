@@ -125,10 +125,9 @@ describe("coverage conformance", () => {
   // 99, statements 98) are the measured coverage of adapters that talk to
   // GitHub, Linear, and Telegram over HTTP, and its own config carries the
   // instruction to raise them as each case closes.
-  // `migrate` joins them too: its floors are 70 in all four categories, the
-  // measured coverage of a translator whose remaining branches are the 0.x
-  // shapes only a live model run reaches, and those three cases are pinned in
-  // `packages/repo-targets/contracts/test-pins.md` rather than run by the default gate.
+  // `migrate` retains its full-coverage deferral. Its default baseline is
+  // statements 94.4, branches 86, functions 95.3, lines 96.9, independently
+  // pinned below; the live-model cases remain in the test-pin register.
   // `control` and `testing` left the set on 2026-09-01: both now pin 100 in
   // every category (`6b3e0142e4`, `d1012596b6`). `build` left it on
   // 2026-11-11 for the same reason (`bde0da03c9`).
@@ -493,6 +492,43 @@ describe("coverage conformance", () => {
     return null
   }
 
+  /** A deferred gate may never drop below its documented default baseline. */
+  const assertMigrationCoverageFloor = (source: string) => {
+    const baseline = { branches: 86, functions: 95.3, lines: 96.9, statements: 94.4 }
+    const pinned = aggregateThresholds(source)
+    assert.notEqual(pinned, null)
+    for (const [category, minimum] of Object.entries(baseline)) {
+      const values = [...(pinned ?? "").matchAll(new RegExp(`\\b${category}:\\s*(\\d+(?:\\.\\d+)?)`, "g"))]
+      assert.equal(values.length, 1, `migrate must declare one ${category} threshold`)
+      const value = Number(values[0]?.[1])
+      assert.ok(value >= minimum && value <= 100, `migrate ${category} coverage must be at least ${minimum}%`)
+    }
+  }
+
+  it("migrate pins every category to at least its documented default coverage baseline", () => {
+    assertMigrationCoverageFloor(configs.find((config) => config.name === "smithers/migrate")!.source)
+  })
+
+  it("rejects migration coverage floors below the baseline, including fractional regressions", () => {
+    const source = "thresholds: { branches: 86, functions: 95.3, lines: 96.9, statements: 94.4 }"
+    assertMigrationCoverageFloor(source)
+    assertMigrationCoverageFloor(source.replaceAll(/\d+(?:\.\d+)?/g, "100"))
+    for (
+      const [category, minimum] of Object.entries({ branches: 86, functions: 95.3, lines: 96.9, statements: 94.4 })
+    ) {
+      const pattern = new RegExp(`\\b${category}:\\s*\\d+(?:\\.\\d+)?`)
+      for (const value of [minimum - 0.1, minimum - 1, 0, 100.1]) {
+        assert.throws(() => assertMigrationCoverageFloor(source.replace(pattern, `${category}: ${value}`)))
+      }
+      assert.throws(() => assertMigrationCoverageFloor(source.replace(pattern, "")))
+    }
+    assert.throws(() =>
+      assertMigrationCoverageFloor(
+        "thresholds: { branches: 84, functions: 94, lines: 95.5, statements: 93 }"
+      )
+    )
+  })
+
   it("pins the coverage-gate deferral set to packages that really exist", () => {
     // Guard the deferral the way every other exclusion here is guarded: a
     // renamed or removed package must fail here, not silently widen the set.
@@ -524,7 +560,7 @@ describe("coverage conformance", () => {
       assertCoverageDenominator(name, source)
       const pinned = aggregateThresholds(source)
       assert.notEqual(pinned, null, `packages/${name}/vitest.config.ts declares no thresholds block`)
-      const values = [...(pinned ?? "").matchAll(/\b(branches|functions|lines|statements):\s*(\d+)/g)]
+      const values = [...(pinned ?? "").matchAll(/\b(branches|functions|lines|statements):\s*(\d+(?:\.\d+)?)/g)]
       assert.deepEqual(values.map((match) => match[1]).sort(), ["branches", "functions", "lines", "statements"])
       const numbers = values.map((match) => Number(match[2]))
       assert.equal(numbers.every((value) => value > 0 && value <= 100), true)
