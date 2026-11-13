@@ -11,6 +11,7 @@ import { Actions } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 import { apply, empty } from "../src/core/conversation.vibe"
 import { replyIdOf } from "../src/core/flows.vibe"
+import { mockReply } from "../src/core/mockReplies.vibe"
 import { run, Int, STEERED_FLOOR } from "./run.vibe"
 
 const PROMPTS = {
@@ -22,11 +23,12 @@ const PROMPTS = {
   history: "Show me the mythical history",
   review: "Ask Claude Opus to review the specification",
   action: "run /history",
+  unnamed: "Please review the specification",
 } as const
 const Input = Schema.Struct({
   walk: Schema.Boolean,
   role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
-  kinds: Schema.Array(Schema.Literals(["wiki", "draft", "issue", "split", "sandbox", "history", "review", "action"])).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
+  kinds: Schema.Array(Schema.Literals(["wiki", "draft", "issue", "split", "sandbox", "history", "review", "action", "unnamed"])).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
   room: Int,
 })
 
@@ -47,6 +49,8 @@ function expected(kind: keyof typeof PROMPTS, text: string, maintainer: boolean,
     case "history": return text.trim() !== ""
     // The agent's slash command runs as an action it requested, or is unavailable to the role.
     case "action": return /^[a-z-]+ requested\.$/.test(text) || (text === "Action unavailable." && !maintainer)
+    // A review that names no reviewer requests none: the scripted reply answers it.
+    case "unnamed": return text === mockReply(PROMPTS.unnamed)
     default: return contributes ? /^Claude Opus · LGTM · [A-F][+-]? · r[0-9]+$/.test(text) : text === "Only contributors can request a specification review."
   }
 }
@@ -54,7 +58,7 @@ function expected(kind: keyof typeof PROMPTS, text: string, maintainer: boolean,
 it.live("mock/scripted-actions", () => run("mock/scripted-actions", Input, ({ walk, role, kinds: drawn, room }) => effect {
   // Every execution asks for each action kind once, then the drawn ones, so none depends on the draw. History, whose
   // first read imports the large seed module, is drawn only; other targets reach its reply.
-  const kinds = [...(["wiki", "draft", "issue", "split", "sandbox", "review", "action"] as const), ...(walk ? [] : drawn)]
+  const kinds = [...(["wiki", "draft", "issue", "split", "sandbox", "review", "action", "unnamed"] as const), ...(walk ? [] : drawn)]
   // The app binds its actions service for the agent; the mock's actions run over their own mock Factory.
   const actions = Context.get(try Layer.build(MockActions({ role, actor: "agent" }).pipe(Layer.provide(MockFactory))), Actions)
   provide mockFactoryFor(role), AgentActions = { actions } {

@@ -62,3 +62,24 @@ it.live("history/github-faults", () => run("history/github-faults", Schema.Struc
   const error = Cause.findError(result.cause)
   return error._tag === "Success" && error.success._tag === "MainUnavailable" && !error.success.reason.includes("synthetic-fault-token")
 }))
+
+/**
+ * main served whole on one page, newest first: a linear line of 1 to 30 commits whose cursor is one of them. The pager
+ * answers what `newCommits` answers for that page, from its first request, and asks for no second page.
+ */
+it.live("history/github-page", () => run("history/github-page", Schema.Struct({ length: Int, at: Int, text: Text }), ({ length, at, text }) => effect {
+  const count = 1 + length % 30
+  const sha = (index: number) => index.toString(16).padStart(40, "a")
+  // Index 0 is the newest; each commit's only parent is the next older one.
+  const line = Array.from({ length: count }, (_, index): GitHubCommit => ({ sha: sha(index), commit: { message: `${text} ${index}` }, parents: index + 1 < count ? [{ sha: sha(index + 1) }] : [] }))
+  const cursor = sha(at % count).slice(0, 12)
+  let requests = 0
+  const client = HttpClient.make((request) => {
+    requests++
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(JSON.stringify(line), { status: 200 }))))
+  })
+  const expected = newCommits(line, cursor)
+  if (expected === undefined) return false
+  const result = try exit(githubMain("fuzz/fuzz", client).since(cursor))
+  return result._tag === "Success" && JSON.stringify(result.value) === JSON.stringify(expected) && requests === 1
+}))

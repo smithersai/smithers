@@ -1787,6 +1787,8 @@ mutant caught:
 | `Reply.vibe` 384-385 | `reply/answers` | a start the conversation refuses, every execution (the target runs about 7 executions in 5 s, so the draw missed it) | the refusal composes |
 | `Issues.vibe` 365 | `issues/journaled-writes` | a malformed recovery key, every execution, writing nothing | the key check removed |
 | `LiveIssues.vibe` 14, `LiveWiki.vibe` 15 | `clients/issues-wiki-replies` | each of the four calls over a 200 that is not JSON and one that is not a state | `protocol` answered as `unavailable`, in each client |
+| `specification.vibe` 62 | `mock/scripted-actions` | "Please review the specification", naming no reviewer, every execution: no review is requested and the scripted reply answers | an unnamed request defaulting to the first reviewer (removing the guard does not compile) |
+| `MainLog.vibe` 58 | `history/github-page` (new) | main served on one page, a linear line of 1 to 30 commits with the cursor among them: the pager answers what `newCommits` answers for that page, after one request | the found page ignored |
 | `ReplyAccounting.vibe` 100, 103 | `objects/reply-cleanup` (new) | a reply whose settlement transport is interrupted for 1 to 3 alarms, with 0 to 20 checkpointed tokens: the main drive settles, each interrupted alarm tries the charge once and keeps the hold and its receipt, the recovered cleanup settles in its own alarm, the next forgets the main intent, and exactly the checkpointed tokens are spent | the cleanup's early return removed (a second charge attempt in one alarm); the settled cleanup's return removed (the main intent forgotten in the same alarm) |
 | `apiObjects.vibe` 153, 167 | `api-objects/history-publish` (new) | the History object with a drawn export setting and token, then its alarm or a page: publishing on stores the Publish intent with its first round due, and an alarm drives that round, which finds GitHub offline and schedules the next later; publishing off stores no intent | the start removed; the start made unconditional; the alarm made a no-op |
 
@@ -1814,6 +1816,13 @@ product:
 - `api-objects/world`: no receipt; the test timed out. A target checks its budget only between executions, and one
   execution of this target takes about 12 s on nyc-01, more on a loaded box, past the 30 s of slack `fuzz.config.ts`
   gave. The slack is now 120 s. At the same seed on nyc-01 it passed, 13 executions in 157 s.
+
+`fuzz2-full15` (`playwright` box, job `14256b0805ea85594199bc6c`, base `c6d11ee2`, 1,951 s, exit 1 on thresholds
+only): 104 fuzz files and 5 browser tests passed. In scope, 15 lines missed; `specification.vibe` 62 and `MainLog.vibe`
+58 are reached by the two cases after it, leaving 13: `MockAccounts` 102 (unreachable: `grantPolicy` never demotes the
+last maintainer), `HistoryObject` 149-150 (`unrouted` guards, by design), `Accounts` 435 (the participation grant
+needs a successful issue write through smithers.sh's connection), `ActionRuns` 72, `SandboxAccounts` 20,
+`SandboxHttp` 50, `SandboxMachine` 17, `Wiki` 86, and, new with `b49d96d4`, `sandboxHost` 272 and `Sandboxes` 37-39.
 
 ## Complete browser sources and settled history receipts
 
