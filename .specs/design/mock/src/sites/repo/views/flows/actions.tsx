@@ -2,10 +2,11 @@ import { HeldCodeChange } from "../../ui/HeldCodeChange"
 import { useEffect, useId, useRef, useState } from "react"
 import { useMock } from "../../../core/mock"
 import { navigate, useLocation } from "../../../core/router"
-import { agents, flows, issues, MOCK_NOW, people, pulls, repo, runs, tags, to } from "../../fixtures"
+import { flows, issues, MOCK_NOW, people, pulls, repo, runs, tags, to } from "../../fixtures"
 import type { Flow, Run } from "../../fixtures/types"
 import { Denied, registerSlash, SignInWall } from "../../frame"
 import { Box, CopyButton, toast } from "../../ui"
+import { allAgents } from "./agent-models"
 
 export const changesCode = (flow: Flow) => /implement|land|release(?!-notes)|docs-sync|docs-generate/.test(flow.name)
   || flow.graph.nodes.some(node => /implement|open pull|commit|publish|merge|write code/i.test(node.label))
@@ -23,7 +24,7 @@ export const runDefaults = (flow: Flow): Record<string, string> => Object.fromEn
 export const startFlowRun = (flow: Flow, inputs: Record<string, string>) => {
   const id = `run-local-${Date.now()}`
   const by = people.find(person => person.role === "owner")?.login ?? repo.owner
-  const agent = agents.find(agent => agent.id === flow.roles[0]?.agent)
+  const agent = allAgents().find(agent => agent.id === flow.roles[0]?.agent)
   const prototype = runs.find(run => run.flow === flow.name)
   const record: Run = {
     id,

@@ -140,12 +140,22 @@ await render(h(kit.Issues), "smithers.sh/effeck/effeck/issues?q=is:fixed-by-agen
 assert.deepEqual(rowNumbers(), [31])
 assert.equal(container.querySelectorAll(".repo-issues-receipt").length, 1)
 assert.ok([...container.querySelectorAll(".repo-issues-receipt a")].every(link => link.getAttribute("href").startsWith("#/smithers.sh/effeck/effeck/")))
-const originalFixState = fixed.state
+await render(h(kit.CodeHome, { owner: "effeck", name: "effeck" }), "smithers.sh/effeck/effeck")
+const evidence = () => container.querySelector('.repo-code-home-main .repo-code-home-evidence a.repo-code-home-fix-title[href="#/smithers.sh/effeck/effeck/issues/31"], .repo-code-home-main a.repo-code-home-evidence-title[href="#/smithers.sh/effeck/effeck/issues/31"]')
+assert.ok(evidence())
 try {
-  fixed.state = "open"
+  await act(async () => model.saveIssue({ ...fixed, title: "Updated issue title" }))
+  assert.ok(evidence().textContent.includes("Updated issue title"), "Home subscribes to saved title edits")
+  await act(async () => model.setIssueClosed(model.allIssues().find(item => item.n === 31), false))
+  assert.ok(evidence() === null, "Reopening removes the home evidence immediately")
+  await render(h(kit.Issues), "smithers.sh/effeck/effeck/issues?q=is:fixed-by-agents")
+  assert.deepEqual(rowNumbers(), [], "The list and home read the same reopened issue")
   await render(h(kit.CodeHome, { owner: "effeck", name: "effeck" }), "smithers.sh/effeck/effeck")
+  assert.ok(evidence() === null, "Navigation keeps reopened issues out of fixed evidence")
   assert.ok(![...container.querySelectorAll(".repo-code-home-main .repo-ui-box-header")].some(header => header.textContent === "Fixed by agents"), "Omit the entire fixes block when no verified closed pair remains")
-} finally { fixed.state = originalFixState }
+  await act(async () => model.setIssueClosed(model.allIssues().find(item => item.n === 31), true))
+  assert.ok(evidence().textContent.includes("Updated issue title"), "Closing restores current evidence")
+} finally { await act(async () => model.saveIssue(fixed)) }
 fixtures.selectRepo("maya/tinyhttp")
 await render(h(kit.Issues), list("is:open"))
 assert.ok(container.querySelector('[aria-label="Issue state"]'))

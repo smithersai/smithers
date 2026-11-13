@@ -2,7 +2,7 @@ import { useState, type Dispatch, type ReactNode, type SetStateAction } from "re
 import { useMock } from "../../../core/mock"
 import { Link } from "../../../core/router"
 import { MOCK_NOW, people, repo, stack, to } from "../../fixtures"
-import type { Pull, Review, StackItem } from "../../fixtures/types"
+import type { DiffFile, DiffSide, Pull, Review, ReviewComment, StackItem } from "../../fixtures/types"
 import { Denied, SignInWall } from "../../frame"
 import { Box, StateIcon } from "../../ui"
 import { allIssues } from "../issues/model"
@@ -51,6 +51,10 @@ export const currentStack = (empty = false): StackItem[] => {
     .map((item, index) => ({ ...item, order: nextOrder + index + 1 }))]
 }
 export const now = () => MOCK_NOW
+
+/** Older saved comments prefer the new side, falling back to an old-only line. */
+export const reviewSide = (comment: ReviewComment, file?: DiffFile): DiffSide => comment.side
+  ?? (file?.lines.some(line => line.old === comment.line) && !file.lines.some(line => line.new === comment.line) ? "old" : "new")
 
 export function latestReviews(reviews: Review[]): Review[] {
   const latest = new Map<string, Review>()

@@ -233,7 +233,8 @@ export interface Issue {
 
 /* ---------- Pull requests, landings and the stack ---------- */
 
-export interface ReviewComment { path: string; line: number; author: string; date: string; body: string; agent?: AgentMark; resolved?: boolean }
+export type DiffSide = "old" | "new"
+export interface ReviewComment { path: string; line: number; side?: DiffSide; author: string; date: string; body: string; agent?: AgentMark; resolved?: boolean }
 export interface Review { author: string; date: string; state: "approved" | "changes_requested" | "commented"; body: string; agent?: AgentMark }
 
 export interface Pull {

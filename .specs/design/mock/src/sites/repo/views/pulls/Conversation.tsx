@@ -25,6 +25,7 @@ import {
   now,
   passedAgentChecks,
   reviewIsNext,
+  reviewSide,
   reviewState,
   viewer,
   type PullDetailProps
@@ -58,9 +59,9 @@ export const ReviewThread = ({
   onResolve: () => void
 }) => {
   const { flags } = useMock()
-  const excerpt = item.files
-    .find((file) => file.path === comment.path)
-    ?.lines.find((line) => line.new === comment.line || line.old === comment.line)?.text
+  const file = item.files.find(file => file.path === comment.path)
+  const side = reviewSide(comment, file)
+  const excerpt = file?.lines.find(line => line[side] === comment.line)?.text
   return (
     <Box
       className={`repo-pulls-thread${comment.resolved ? " repo-pulls-thread-resolved" : ""}`}
@@ -68,7 +69,7 @@ export const ReviewThread = ({
         <div className="repo-pulls-thread-head">
           <Link
             to={to(
-              `pull/${item.n}/files?file=${encodeURIComponent(comment.path)}&line=${comment.line}`
+              `pull/${item.n}/files?file=${encodeURIComponent(comment.path)}&line=${comment.line}&side=${side}`
             )}
           >
             {comment.path}:{comment.line}
@@ -88,7 +89,7 @@ export const ReviewThread = ({
         {flags.as === "in" && flags.role === "member" && (
           <WriteControl><button
             className="repo-ui-btn"
-            title={`/pull.thread.${comment.resolved ? "reopen" : "resolve"} ${item.n} ${comment.path}:${comment.line}`}
+            title={`/pull.thread.${comment.resolved ? "reopen" : "resolve"} ${item.n} ${comment.path}:${comment.line} ${side}`}
             onClick={onResolve}
           >
             {comment.resolved ? "Reopen conversation" : "Resolve conversation"}

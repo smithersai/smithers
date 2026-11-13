@@ -1,12 +1,12 @@
 import { pluralize } from "../../ui/pluralize"
-import { fixedByAgents } from "../issues/model"
+import { fixedByAgents, useIssues } from "../issues/model"
 /* Code-home states are exported for review. Every fixture read happens during render. */
 import { useEffect, useId, useRef, useState } from "react"
 import { signInRoute } from "../../../core/catalog"
 import { useMock } from "../../../core/mock"
 import { Link, navigate, useLocation } from "../../../core/router"
 import {
-  branches, children, commit, file, history, issue, KNOWN_REPOS,
+  branches, children, commit, file, history, KNOWN_REPOS,
   lastCommitFor, releases, repo, shortSha, tags, to, tree
 } from "../../fixtures"
 import type { HomeBlock, Issue } from "../../fixtures/types"
@@ -195,6 +195,7 @@ const HomePrompt = ({ block }: { block: Extract<HomeBlock, { type: "prompt" }> }
 }
 
 const HomeConfigBlock = ({ block }: { block: HomeBlock }) => {
+  const issues = useIssues()
   if (block.type === "text") {
     return (
       <div className="repo-code-home-block repo-code-home-intro">
@@ -232,7 +233,7 @@ const HomeConfigBlock = ({ block }: { block: HomeBlock }) => {
     )
   }
   if (block.type === "fixed-by-agents") {
-    const fixed = block.issues.map(n => issue(n)).filter((item): item is Issue => Boolean(item && fixedByAgents(item)))
+    const fixed = block.issues.map(n => issues.find(item => item.n === n)).filter((item): item is Issue => Boolean(item && fixedByAgents(item)))
     if (!fixed.length) return null
     return (
       <Box header="Fixed by agents">

@@ -4,10 +4,10 @@ import { Empty } from "../../frame"
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react"
 import { useMock } from "../../../core/mock"
 import { useLocation } from "../../../core/router"
-import type { DiffFile, Review, ReviewComment } from "../../fixtures/types"
+import type { DiffFile, DiffSide, Review, ReviewComment } from "../../fixtures/types"
 import { Box, Icon, Markdown, toast } from "../../ui"
 import { ReviewThread } from "./Conversation"
-import { FormCard, now, useLocal, viewer, type PullDetailProps } from "./shared"
+import { FormCard, now, reviewSide, useLocal, viewer, type PullDetailProps } from "./shared"
 
 /* DiffView has no line or annotation slots. This local extension keeps its unified-diff anatomy. */
 const ReviewDiff = ({
@@ -23,8 +23,8 @@ const ReviewDiff = ({
   file: DiffFile
   comments: ReviewComment[]
   renderThread: (comment: ReviewComment, index: number) => ReactNode
-  onLine: (line: number) => void
-  selected?: number
+  onLine: (line: number, side: DiffSide) => void
+  selected?: { line: number; side: DiffSide }
   composer?: ReactNode
 }) => {
   const { flags } = useMock()
@@ -34,21 +34,23 @@ const ReviewDiff = ({
     <div className="repo-pulls-diff-lines" role="table" aria-label={`Changes in ${file.path}`}>
       {file.lines.map((line, index) => {
         const number = line.new ?? line.old
+        const side = line.kind === "del" ? "old" : "new"
+        const isSelected = selected !== undefined && line[selected.side] === selected.line
         const threads = comments
           .map((comment, i) => ({ comment, i }))
           .filter(
             ({ comment, i }) =>
-              comment.path === file.path && comment.line === number && !shown.has(i)
+              comment.path === file.path && line[reviewSide(comment, file)] === comment.line && !shown.has(i)
           )
         threads.forEach(({ i }) => shown.add(i))
-        const showComposer = Boolean(composer && selected === number && !composerShown)
+        const showComposer = Boolean(composer && isSelected && !composerShown)
         if (showComposer) composerShown = true
         return (
           <Fragment key={index}>
             <div
               role="row"
               className={`repo-pulls-diff-line repo-pulls-diff-${line.kind}`}
-              data-selected={line.kind !== "hunk" && number !== undefined && selected === number || undefined}
+              data-selected={line.kind !== "hunk" && number !== undefined && isSelected || undefined}
             >
               <span role="cell" className="repo-pulls-line-old">
                 {line.old}
@@ -56,9 +58,9 @@ const ReviewDiff = ({
               <span role="cell" className="repo-pulls-line-new">
                 {number !== undefined && (flags.as === "out" ? <span>{line.new ?? line.old}</span> : (
                   <button
-                    title={`/pull.comment-line ${n} ${file.path}:${number}`}
+                    title={`/pull.comment-line ${n} ${file.path}:${number} ${side}`}
                     aria-label={`Comment on ${file.path} line ${number}`}
-                    onClick={() => onLine(number)}
+                    onClick={() => onLine(number, side)}
                   >
                     {line.new ?? line.old}
                   </button>
@@ -100,7 +102,7 @@ export const PullFiles = ({ item, update }: PullDetailProps) => {
   const [body, setBody] = useState("")
   const [viewed, setViewed] = useLocal<string[]>(`viewed:${item.n}`, [])
   const [pending, setPending] = useLocal<ReviewComment[]>(`pending:${item.n}`, [])
-  const [line, setLine] = useState<{ path: string; line: number } | null>(null)
+  const [line, setLine] = useState<{ path: string; line: number; side: DiffSide } | null>(null)
   const [lineBody, setLineBody] = useState("")
   const reviewForm = useRef<HTMLDivElement>(null)
   const currentFile = query.get("file")
@@ -318,13 +320,13 @@ export const PullFiles = ({ item, update }: PullDetailProps) => {
                 comments={allComments}
                 selected={
                   line?.path === file.path
-                    ? line.line
-                    : currentFile === file.path
-                      ? Number(query.get("line"))
+                    ? line
+                    : currentFile === file.path && query.has("line")
+                      ? { line: Number(query.get("line")), side: query.get("side") === "old" ? "old" : "new" }
                       : undefined
                 }
-                onLine={(number) => {
-                  setLine({ path: file.path, line: number })
+                onLine={(number, side) => {
+                  setLine({ path: file.path, line: number, side })
                   setLineBody("")
                 }}
                 renderThread={(comment, index) =>
@@ -379,7 +381,7 @@ export const PullFiles = ({ item, update }: PullDetailProps) => {
                           <div className="repo-ui-actions">
                             <button
                               className="repo-ui-btn"
-                              title={`/pull.comment-line ${item.n} ${line.path}:${line.line}`}
+                              title={`/pull.comment-line ${item.n} ${line.path}:${line.line} ${line.side}`}
                               disabled={!lineBody.trim()}
                             >
                               Add single comment

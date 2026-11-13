@@ -16,7 +16,7 @@ const headingText = (text: string) => text
 export const documentBlocks = (body: string): DocBlock[] => {
   const lines = stripFrontmatter(body).split("\n")
   const blocks: DocBlock[] = []
-  const used = new Map<string, number>()
+  const used = new Set<string>()
   let prose: string[] = []
   const flush = () => {
     if (prose.join("\n").trim()) blocks.push({ kind: "markdown", text: prose.join("\n") })
@@ -51,9 +51,11 @@ export const documentBlocks = (body: string): DocBlock[] => {
     flush()
     const text = headingText(heading[2])
     const base = text.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s+/g, "-") || "section"
-    const count = used.get(base) ?? 0
-    used.set(base, count + 1)
-    blocks.push({ kind: "heading", level: heading[1].length, text, id: count ? `${base}-${count}` : base })
+    let id = base
+    let suffix = 0
+    while (used.has(id)) id = `${base}-${++suffix}`
+    used.add(id)
+    blocks.push({ kind: "heading", level: heading[1].length, text, id })
   }
   flush()
   return blocks

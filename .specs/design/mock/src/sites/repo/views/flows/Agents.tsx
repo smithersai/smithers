@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect } from "react"
 import { useMock } from "../../../core/mock"
 import { Link, navigate } from "../../../core/router"
-import { agents, repo, settings, to } from "../../fixtures"
+import { repo, settings, to } from "../../fixtures"
 import type { Agent } from "../../fixtures/types"
 import { Empty, Failed, Loading, registerSlash, useView } from "../../frame"
 import { ViewFrame as RepoFrame } from "../checklist/ViewFrame"
 import { Box, Icon, Markdown, PageHeader, toast } from "../../ui"
 import options from "./model-options.json"
+import { allAgents, saveAgentModel, useAgents } from "./agent-models"
 
 const AgentCard = ({ agent, model, onModel }: { agent: Agent; model: string; onModel: (model: string) => void }) => {
   const { flags } = useMock()
+  const agents = useAgents()
   const canEdit = flags.as === "in" && flags.role === "member"
   const provider = agent.connection === "codex" ? "Codex" : "Claude"
   const models = [...new Set([model, ...options[agent.harness], ...agents.filter(item => item.harness === agent.harness).map(item => item.model)])]
@@ -54,17 +56,18 @@ const AgentCard = ({ agent, model, onModel }: { agent: Agent; model: string; onM
 
 export const AgentsReady = () => {
   const { flags } = useMock()
-  const [models, setModels] = useState<Record<string, string>>({})
+  const agents = useAgents()
   const disconnected = [...new Set(agents.map(agent => agent.connection))].filter(provider =>
     (flags.model === "none" && provider === "codex") || !settings.models.some(item => item.provider === provider && item.state === "connected"))
   const changeModel = useCallback((id: string, model: string) => {
     if (flags.as !== "in" || flags.role !== "member") return
+    const agents = allAgents()
     const agent = agents.find(agent => agent.id === id)
     if (!agent) throw new Error("Agent not found.")
     if (![agent.model, ...options[agent.harness], ...agents.filter(item => item.harness === agent.harness).map(item => item.model)].includes(model)) {
       throw new Error(`Choose a ${agent.harness === "codex" ? "Codex" : "Claude"} model for ${agent.name}.`)
     }
-    setModels(current => ({ ...current, [id]: model }))
+    saveAgentModel(id, model)
     toast(`${agent.name} now uses ${model}.`)
   }, [flags.as, flags.role])
   useEffect(() => registerSlash("agent.model", {
@@ -105,7 +108,7 @@ export const AgentsReady = () => {
         <Link className={"repo-ui-btn" + (i === 0 ? " repo-ui-btn-primary" : "")} title={`/model.connect ${provider}`} to={to(`settings/models?connect=${provider}`)}>Connect {provider === "codex" ? "Codex" : "Claude"}</Link>
       </div>)}
       <div className="repo-flows-agents">
-        {agents.map(agent => <AgentCard key={agent.id} agent={agent} model={models[agent.id] ?? agent.model} onModel={model => changeModel(agent.id, model)} />)}
+        {agents.map(agent => <AgentCard key={agent.id} agent={agent} model={agent.model} onModel={model => changeModel(agent.id, model)} />)}
       </div>
     </>
   )

@@ -3,13 +3,14 @@ import { WriteControl } from "../../frame/WriteControl"
 import { useCallback, useEffect, useState } from "react"
 import { useMock } from "../../../core/mock"
 import { Link, navigate, useLocation } from "../../../core/router"
-import { agents, file, flow as findFlow, repo, run, to } from "../../fixtures"
+import { file, flow as findFlow, repo, run, to } from "../../fixtures"
 import type { Flow as FlowRecord, Trigger } from "../../fixtures/types"
 import { Empty, Failed, Loading, registerSlash, useView } from "../../frame"
 import { ViewFrame as RepoFrame } from "../checklist/ViewFrame"
 import { Box, CodeView, Icon, PageHeader, RelTime, StateIcon, Tabs, toast } from "../../ui"
 import { FlowRunForm, useFlowCommands } from "./actions"
 import { triggerLabel } from "./Flows"
+import { useAgents } from "./agent-models"
 
 const FlowGraph = ({ flow }: { flow: FlowRecord }) => {
   const { nodes, edges } = flow.graph
@@ -104,39 +105,42 @@ const FlowTriggers = ({ flow }: { flow: FlowRecord }) => {
   )
 }
 
-export const FlowOverview = ({ flow }: { flow: FlowRecord }) => (
-  <div className="repo-flows-overview">
-    <FlowGraph flow={flow} />
-    <Box header="Inputs">
-      {flow.inputs.length ? (
-        <div className="repo-flows-input-table" role="table" aria-label="Flow inputs">
-          {flow.inputs.map(input => (
-            <div role="row" key={input.name}>
-              <span role="cell"><code>{input.name}</code><small>{input.type} · {input.required ? "required" : "optional"}</small></span>
-              <span role="cell">{input.description}</span>
-            </div>
-          ))}
-        </div>
-      ) : <p className="repo-flows-padding repo-ui-muted">No inputs.</p>}
-    </Box>
-    <div className="repo-flows-details-grid">
-      <FlowTriggers flow={flow} />
-      <Box header="Roles">
-        {flow.roles.map(role => {
-          const agent = agents.find(agent => agent.id === role.agent)
-          return (
-            <div className="repo-flows-role" key={role.role}>
-              <strong>{role.role}</strong>
-              <Link to={to("agents")}><Icon name="agent" />{agent?.name ?? role.agent}</Link>
-              <code>{agent?.model}</code>
-            </div>
-          )
-        })}
-        {!flow.roles.length && <p className="repo-flows-padding repo-ui-muted">No agent roles.</p>}
+export const FlowOverview = ({ flow }: { flow: FlowRecord }) => {
+  const agents = useAgents()
+  return (
+    <div className="repo-flows-overview">
+      <FlowGraph flow={flow} />
+      <Box header="Inputs">
+        {flow.inputs.length ? (
+          <div className="repo-flows-input-table" role="table" aria-label="Flow inputs">
+            {flow.inputs.map(input => (
+              <div role="row" key={input.name}>
+                <span role="cell"><code>{input.name}</code><small>{input.type} · {input.required ? "required" : "optional"}</small></span>
+                <span role="cell">{input.description}</span>
+              </div>
+            ))}
+          </div>
+        ) : <p className="repo-flows-padding repo-ui-muted">No inputs.</p>}
       </Box>
+      <div className="repo-flows-details-grid">
+        <FlowTriggers flow={flow} />
+        <Box header="Roles">
+          {flow.roles.map(role => {
+            const agent = agents.find(agent => agent.id === role.agent)
+            return (
+              <div className="repo-flows-role" key={role.role}>
+                <strong>{role.role}</strong>
+                <Link to={to("agents")}><Icon name="agent" />{agent?.name ?? role.agent}</Link>
+                <code>{agent?.model}</code>
+              </div>
+            )
+          })}
+          {!flow.roles.length && <p className="repo-flows-padding repo-ui-muted">No agent roles.</p>}
+        </Box>
+      </div>
     </div>
-  </div>
-)
+  )
+}
 
 export const FlowSource = ({ flow }: { flow: FlowRecord }) => {
   const source = file(flow.file)
