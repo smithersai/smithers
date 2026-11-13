@@ -44,13 +44,13 @@ const segments = (path: string) => path.replace(/\/+$/, "").split("/")
 
 export const matchPattern = (pattern: string, path: string): Record<string, string> | null => {
   const want = segments(pattern)
-  const have = segments(path)
+  const have = segments(path).map(segment => decodeURIComponent(segment))
   const params: Record<string, string> = {}
   for (let i = 0; i < want.length; i += 1) {
     const part = want[i]
     if (part === "*") { params["*"] = have.slice(i).join("/"); return params }
     if (i >= have.length || have[i] === "") return null
-    if (part.startsWith(":")) params[part.slice(1)] = decodeURIComponent(have[i])
+    if (part.startsWith(":")) params[part.slice(1)] = have[i]
     else if (part !== have[i]) return null
   }
   return have.length === want.length ? params : null
@@ -72,7 +72,7 @@ export const resolveRoute = (route: string): { route: Route; context: RouteConte
 }
 
 /* Location lives in the hash so the mock works from file://. */
-const read = () => decodeURI(window.location.hash.replace(/^#\/?/, ""))
+const read = () => window.location.hash.replace(/^#\/?/, "")
 const listeners = new Set<() => void>()
 window.addEventListener("hashchange", () => { for (const listener of listeners) listener() })
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }

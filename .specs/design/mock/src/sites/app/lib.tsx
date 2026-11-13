@@ -1,5 +1,5 @@
 /* Shared UI primitives for the repo app mock. */
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Link } from "../core/router"
 
 export const Icon = ({ name, size = 16 }: { name: string; size?: number }) => {
@@ -30,18 +30,10 @@ export const Icon = ({ name, size = 16 }: { name: string; size?: number }) => {
 }
 
 export const CopyButton = ({ text, label = "Copy", small = false }: { text: string; label?: string; small?: boolean }) => {
-  const [copied, setCopied] = useState(false)
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), 1500)
-    return () => clearTimeout(timer)
-  }, [copied])
+  const { copied, failed, copy } = useCopied()
   return (
-    <button type="button" className={`app-btn app-btn-secondary${small ? " app-btn-sm" : ""}`} onClick={() => {
-      try { navigator.clipboard?.writeText(text) } catch { /* clipboard unavailable */ }
-      setCopied(true)
-    }}>
-      <Icon name={copied ? "check" : "copy"} size={14} /> {copied ? "Copied" : label}
+    <button type="button" className={`app-btn app-btn-secondary${small ? " app-btn-sm" : ""}`} onClick={() => copy(text)} aria-live="polite">
+      <Icon name={failed ? "x" : copied ? "check" : "copy"} size={14} /> {failed ? "Copy failed. Retry" : copied ? "Copied" : label}
     </button>
   )
 }
@@ -217,15 +209,31 @@ export const Markdown = ({ source, resolve, dense = false }: { source: string; r
   return <div className={`app-md${dense ? " app-md-dense" : ""}`}>{blocks}</div>
 }
 
-/** "Copied" for 1.5 s, shared shape. */
+/** Acknowledges a completed clipboard write for 1.5 s; failures remain retryable. */
 export const useCopied = () => {
   const [copied, setCopied] = useState(false)
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), 1500)
-    return () => clearTimeout(timer)
-  }, [copied])
-  return { copied, copy: (text: string) => { try { navigator.clipboard?.writeText(text) } catch { /* no clipboard */ } setCopied(true) } }
+  const [failed, setFailed] = useState(false)
+  const copying = useRef(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const copy = async (text: string) => {
+    if (copying.current) return
+    copying.current = true
+    clearTimeout(timer.current)
+    setCopied(false)
+    setFailed(false)
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard unavailable")
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      timer.current = setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setFailed(true)
+    } finally {
+      copying.current = false
+    }
+  }
+  return { copied, failed, copy }
 }
 
 /** A live seconds counter, frozen for screenshots. */

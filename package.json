@@ -43,7 +43,7 @@
     "lint": "pnpm --recursive --if-present run lint",
     "target-index": "pnpm exec smthrs target '//:targetIndex' --write",
     "test": "pnpm --recursive --if-present run test",
-    "test:design-mock": "node --test .specs/design/mock/player.test.mjs",
+    "test:design-mock": "node --test .specs/design/mock/player.test.mjs .specs/design/mock/src/sites/reporting.test.mjs",
     "test:jsdoc": "node --test eslint.jsdoc.test.mjs",
     "lint:jsdoc": "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0"
   },

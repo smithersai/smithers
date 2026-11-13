@@ -385,7 +385,12 @@ export const BugCard = ({ repo, from, onClose, onPublish }: { repo: RepoData | F
   useEffect(() => {
     try { sessionStorage.setItem(draftKey, JSON.stringify({ title, happened, chips })) } catch { /* storage unavailable */ }
   }, [title, happened, chips])
-  const publicBody = `${happened.trim()}\n\n${chips.map(chip => `- ${chip}`).join("\n")}${conversion ? `\n\nInput\n\`\`\`ts\n${conversionInput}\n\`\`\`\n\nOutput\n\`\`\`\n${conversionOutput}\n\`\`\`\n\n${DIAGNOSTICS.map(d => `${d.code}: ${d.message}`).join("\n")}` : ""}`
+  const attachments = conversion ? [
+    { label: "Input · Users example", detail: conversionInput, body: `Input\n\`\`\`ts\n${conversionInput}\n\`\`\`` },
+    { label: "Output · Users example", detail: conversionOutput, body: `Output\n\`\`\`\n${conversionOutput}\n\`\`\`` },
+    { label: "2 diagnostics", detail: DIAGNOSTICS.map(d => `${d.code} ${d.file}:${d.line}:${d.col} — ${d.message}`).join("\n"), body: DIAGNOSTICS.map(d => `${d.code}: ${d.message}`).join("\n") }
+  ].filter(attachment => chips.includes(attachment.label)) : []
+  const publicBody = [`${happened.trim()}\n\n${chips.map(chip => `- ${chip}`).join("\n")}`, ...attachments.map(attachment => attachment.body)].join("\n\n")
   const publish = () => {
     const next: { title?: string; happened?: string } = {}
     if (title.trim() === "") next.title = "Give the report a title."
@@ -431,20 +436,14 @@ export const BugCard = ({ repo, from, onClose, onPublish }: { repo: RepoData | F
             ))}
           </div>
         </div>
-        {conversion && (
+        {attachments.length > 0 && (
           <div className="app-field">
-            <details className="app-collapse">
-              <summary>Input · Users example</summary>
-              <pre>{conversionInput}</pre>
-            </details>
-            <details className="app-collapse">
-              <summary>Output · Users example</summary>
-              <pre>{conversionOutput}</pre>
-            </details>
-            <details className="app-collapse">
-              <summary>2 diagnostics</summary>
-              <pre>{DIAGNOSTICS.map(d => `${d.code} ${d.file}:${d.line}:${d.col} — ${d.message}`).join("\n")}</pre>
-            </details>
+            {attachments.map(attachment => (
+              <details className="app-collapse" key={attachment.label}>
+                <summary>{attachment.label}</summary>
+                <pre>{attachment.detail}</pre>
+              </details>
+            ))}
           </div>
         )}
         <div className="app-field">

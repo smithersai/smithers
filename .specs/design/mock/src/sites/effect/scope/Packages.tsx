@@ -4,7 +4,9 @@ import { Markdown as SourceMarkdown } from "../../app/lib"
 import { stripFrontmatter } from "../../repo/ui/markdown-source"
 import { useMock, useRead } from "../../core/mock"
 import { Link, useLocation } from "../../core/router"
-import { children, commit, file, fmtAgo, issues, pulls, repo, to, tree } from "../../repo/fixtures"
+import { children, commit, file, fmtAgo, pulls, repo, to, tree } from "../../repo/fixtures"
+import { useIssues } from "../../repo/views/issues/model"
+import { issuesFor } from "../work/filters"
 import { extras } from "../../repo/fixtures/data/Effect-TS__effect"
 import type { PackageInfo } from "../../repo/fixtures/types"
 import { Empty, Failed, Loading, registerSlash, RepoFrame, usePackageScope, useRepoFrame } from "../../repo/frame"
@@ -13,9 +15,9 @@ import { AgentMark, Box, Icon, PersonChip } from "../../repo/ui"
 
 const packageHref = (pkg: PackageInfo) => scopedRoute(to(`packages/${packageSlug(pkg)}`), pkg)
 const releaseFor = (pkg: PackageInfo) => extras.packageReleases.filter(value => value.package === pkg.name).sort((a, b) => b.date.localeCompare(a.date))[0]
-const openSubjects = (pkg: PackageInfo, kind: "issue" | "pull") => {
-  const refs = new Set(extras.relations.filter(value => value.kind === kind && (value.packages.includes(pkg.name) || (value.basis === "shared-input" && value.packages.length === 0))).map(value => value.ref))
-  return (kind === "issue" ? issues : pulls).filter(value => refs.has(String(value.n)) && (value.state === "open" || value.state === "draft"))
+const openPulls = (pkg: PackageInfo) => {
+  const refs = new Set(extras.relations.filter(value => value.kind === "pull" && (value.packages.includes(pkg.name) || (value.basis === "shared-input" && value.packages.length === 0))).map(value => value.ref))
+  return pulls.filter(value => refs.has(String(value.n)) && (value.state === "open" || value.state === "draft"))
 }
 const Owners = ({ pkg, compact = false }: { pkg: PackageInfo; compact?: boolean }) => <span className="effect-package-owners">{pkg.owners.map(login => <PersonChip login={login} compact={compact} key={login} />)}</span>
 
@@ -27,6 +29,7 @@ export const PackagesSignedOut = () => <PackagesReady />
 
 export const PackagesReady = () => {
   const location = useLocation()
+  const issues = useIssues()
   const initialQuery = new URLSearchParams(location.split("?")[1]).get("q") ?? ""
   const [filter, setFilter] = useState(initialQuery)
   const { openAsk, actionOpen } = useRepoFrame()
@@ -50,8 +53,8 @@ export const PackagesReady = () => {
       const members = matching.filter(pkg => (pkg.family ?? "") === family)
       return members.length ? <section className="effect-packages-group" key={family} aria-label={`${label} packages`}><div className="effect-packages-group-heading"><h3>{label}</h3><span>{members.length}</span></div><div className="effect-packages-list">{members.map(pkg => {
         const latest = releaseFor(pkg)
-        const issueCount = openSubjects(pkg, "issue").length
-        const pullCount = openSubjects(pkg, "pull").length
+        const issueCount = issuesFor(pkg, issues).filter(value => value.state === "open").length
+        const pullCount = openPulls(pkg).length
         return <article className="effect-package-row" key={pkg.path}>
           <div className="effect-package-identity"><Link className="effect-package-name" to={packageHref(pkg)} title={`/package.open ${pkg.name}`}>{pkg.name}</Link><p>{pkg.description}</p><Link className="effect-package-path" to={scopedRoute(to(`tree/${repo.defaultBranch}/${pkg.path}`), pkg)}>{pkg.path}</Link></div>
           <div className="effect-package-row-meta"><span className="effect-package-version">{pkg.private ? "private" : pkg.version}</span><span className="effect-package-owner-meta">Owners <Owners pkg={pkg} /></span><div className="effect-package-counts"><Link to={scopedRoute(to("issues"), pkg)} aria-label={`${issueCount} open ${pluralize(issueCount, "issue")} for ${pkg.name}`}><Icon name="issue" size={16} />{issueCount} {pluralize(issueCount, "issue")}</Link><Link to={scopedRoute(to("pulls"), pkg)} aria-label={`${pullCount} open ${pluralize(pullCount, "pull request")} for ${pkg.name}`}><Icon name="change" size={16} />{pullCount} {pluralize(pullCount, "pull request")}</Link></div>{latest && !pkg.private && <Link className="effect-package-latest" to={scopedRoute(to(`releases/tag/${encodeURIComponent(latest.tag)}`), pkg)}>Released {fmtAgo(latest.date)}</Link>}</div>
@@ -96,6 +99,9 @@ const PackageFiles = ({ pkg, revision }: { pkg: PackageInfo; revision: string })
 }
 
 const PackageSidebar = ({ pkg }: { pkg: PackageInfo }) => {
+  const issues = useIssues()
+  const issueCount = issuesFor(pkg, issues).filter(value => value.state === "open").length
+  const pullCount = openPulls(pkg).length
   const { withScope } = usePackageScope()
   const packages = repo.config.packages ?? []
   const dependencies = packages.filter(value => pkg.dependencies?.some(dep => dep.name === value.name))
@@ -105,7 +111,7 @@ const PackageSidebar = ({ pkg }: { pkg: PackageInfo }) => {
     <section><h3>{pkg.private ? "Private package" : "Version"}</h3>{!pkg.private && <><span className="effect-package-version">{pkg.version}</span><a className="effect-package-npm" href={`https://www.npmjs.com/package/${pkg.name}`} target="_blank" rel="noopener noreferrer">npm <Icon name="external" size={12} /></a></>}</section>
     <section><h3>Owners</h3><Owners pkg={pkg} /></section>
     <section><h3>Documentation</h3><Link className="effect-package-open-docs" to={withScope(to(pkg.docs ?? `docs/${packageSlug(pkg)}`))}>Open docs <Icon name="chevron" size={16} /></Link></section>
-    <section><h3>Open work</h3><Link to={withScope(to("issues"))}>{openSubjects(pkg, "issue").length} {pluralize(openSubjects(pkg, "issue").length, "issue")}</Link><Link to={withScope(to("pulls"))}>{openSubjects(pkg, "pull").length} {pluralize(openSubjects(pkg, "pull").length, "pull request")}</Link></section>
+    <section><h3>Open work</h3><Link to={withScope(to("issues"))}>{issueCount} {pluralize(issueCount, "issue")}</Link><Link to={withScope(to("pulls"))}>{pullCount} {pluralize(pullCount, "pull request")}</Link></section>
     {dependencies.length > 0 && <section><h3>Workspace dependencies <span>{dependencies.length}</span></h3><ul>{dependencies.map(dep => <li key={dep.path}><Link to={packageHref(dep)}>{dep.name}</Link><span>{[...new Set(pkg.dependencies?.filter(value => value.name === dep.name).map(value => value.kind))].join(", ")}</span></li>)}</ul></section>}
     {dependents.length > 0 && <section><h3>Dependents <span>{dependents.length}</span></h3><details><summary title="/package.dependents">{dependents.length} {pluralize(dependents.length, "package")}</summary><ul>{dependents.map(dep => <li key={dep.path}><Link to={packageHref(dep)}>{dep.name}</Link></li>)}</ul></details></section>}
     {!pkg.private && releases.length > 0 && <section><h3>Releases</h3>{releases.map(release => <Link key={release.tag} to={withScope(to(`releases/tag/${encodeURIComponent(release.tag)}`))}>{release.version}<small>{fmtAgo(release.date)}</small></Link>)}</section>}
