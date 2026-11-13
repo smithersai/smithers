@@ -171,6 +171,42 @@ command is always awaited; mutation row `sandbox-host-recovery-command` replaces
 `fault=post-empty` now loses the post's text on the way instead of faking the refusal, so the mock's sequencer refuses
 it itself (`decide`'s empty post); the page shows "Empty message" and Retry as before (`e2e/recovery.spec.ts`).
 
+### Live mode against the production sandbox objects (vl-coverage-core, session 7, 2026-11-13)
+
+`e2e/core-live.spec.ts` runs the page in live mode on a live site whose API Worker (workerd,
+`test/workerd/worker.vibe`) has sign-in configured and runs the production sandbox gateway (`gatewayOf`), per-person
+account object (`accountObject`) and per-sandbox machine object (`machineObject`) in workerd SQLite on an in-memory
+Container (`test/workerd/liveSandboxes.vibe`; served by `e2e/authbroker-host.vibe`). Six journeys, each on three
+projects:
+
+| Journey | `LiveFactory` arms it closes |
+| --- | --- |
+| A maintainer starts a sandbox, runs two commands and stops it | read, start, command, stop success |
+| A machine that never starts: the refusal and Retry | `sandboxRefusal` with a reason |
+| An account object that resets during a start, a command and a stop: each failure shows, Retry recovers | start, command and stop answering neither 200 nor a refusal |
+| A person whose role was taken away after the page's last read: the read is refused, then a start | read answering 403; a refusal with no reason |
+| A message over 8,000 characters (the sequencer's 409, "Message too long"), two over the post body limit (the Worker's 413, "Send failed"), a Retry of one that fails again, then one that is sent | `refusable` refused and unavailable; in `conversation`, `failPost` and `retryPost` passing another pending post |
+| An API Worker that throws on health: the page starts in the mock | `health` answering other than 200 |
+
+Each journey that changes an account uses its own person (a contributor the maintainer grants), so no journey sees
+another's sandbox. Faults are the test host's injected services, set through `/__fault/sandbox` and
+`/__fault/health`: the in-memory Container's own (`machine=`), an account object whose call rejects during one kind
+of operation as a Durable Object reset does (`account=…&fail=<kind>`), an identity service whose role check answers
+`new` (`account=…&revoked=1`), and a Worker that throws on health. Nothing intercepts a request.
+`test/sandbox.workerd.test.vibe` drives the same objects over HTTP without a browser: start, two commands, a write
+from another origin refused (403), stop.
+
+`LiveFactory` `sandboxCommand` now decodes its answer with a schema (`decodeTerminal`), as every other answer in the
+file is decoded, instead of a hand-written check; the reason is still "terminal is not the protocol"
+(`test/liveSandboxEdges.coverage.test.vibe`).
+
+Still open in `LiveFactory`, both reached only from Node:
+
+| Site | Reason |
+| --- | --- |
+| `pathOf`'s invalid conversation | The page's conversation ids are generated session UUIDs. Only the CLI and the MCP server pass an id a person typed; the unit gate covers it. |
+| `read` | No browser code calls `Factory.read`: the page follows `events`. Only the CLI reads (`src/surfaces/commands.vibe`). Taking `read` off the browser's `Factory` is the lead's call (asked on the board). |
+
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
 
 The lead's two decisions: move `decide`'s non-blank guarantee into the outline's schema, and make the session type

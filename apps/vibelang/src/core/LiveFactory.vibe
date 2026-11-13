@@ -15,6 +15,7 @@ const decodeHealth = Schema.decodeUnknownEffect(Health)
 const decodeSnapshot = Schema.decodeUnknownEffect(ReadSnapshot)
 const decodeRefusal = Schema.decodeUnknownEffect(Refusal)
 const decodeSandbox = Schema.decodeUnknownEffect(SandboxSnapshot)
+const decodeTerminal = Schema.decodeUnknownEffect(Schema.Struct({ output: Schema.String }))
 const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))
 
 /** `Unavailable`, naming what failed; never a response body, which could carry anything. */
@@ -116,8 +117,7 @@ export function LiveFactory(origin: string) {
         try sandboxRefusal(response)
         if (response.status !== 200) throw new Unavailable({ reason: `terminal answered ${response.status}` })
         const body = try Effect.mapError(response.json, unavailable("terminal is not JSON"))
-        if (typeof body !== "object" || body === null || !("output" in body) || typeof body.output !== "string") throw new Unavailable({ reason: "terminal is not the protocol" })
-        return body.output
+        return (try Effect.mapError(decodeTerminal(body), unavailable("terminal is not the protocol"))).output
       },
       read: effect (conversation: string, after: number) => {
         const url = origin + (try pathOf(conversation)) + `?after=${after}`

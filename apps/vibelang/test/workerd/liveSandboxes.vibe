@@ -1,0 +1,129 @@
+// The live e2e site's sandboxes (e2e/core-live.spec.ts): the production gateway (gatewayOf), per-person account object
+// (accountObject) and per-sandbox machine object (machineObject) in real workerd SQLite, on an in-memory Container
+// (memoryContainer.vibe), not a Cloudflare Container. The person and their role come from this host's ProjectAccounts
+// session (Accounts.sandboxPrincipal), as Api.vibe's SandboxIdentity adapter reads them. Faults (`/__fault/sandbox`) are
+// the in-memory Container's own, an account object that resets during one kind of operation, and an identity service
+// whose role check answers after the role was taken away; nothing intercepts a request.
+import { RuntimeContext } from "alchemy/RuntimeContext"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { machineObject } from "../../worker/machineObject.vibe"
+import { accountObject, gatewayOf, type SandboxIdentity } from "../../worker/accountObject.vibe"
+import { admittedRole } from "../../worker/accountsDecision.vibe"
+import { Unavailable } from "../../src/core/Factory.vibe"
+import type { Role } from "../../src/core/sandboxDecision.vibe"
+import { memoryContainer, type Fault } from "./memoryContainer.vibe"
+
+interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(input: string | Request, init?: RequestInit): Promise<Response> } }
+export interface SandboxEnv { readonly ACCOUNTS: Namespace; readonly SANDBOX_MACHINE: Namespace; readonly SANDBOX_ACCOUNT: Namespace }
+interface State { readonly id: { toString(): string }; readonly storage: unknown }
+
+export const noRuntime = Layer.succeed(RuntimeContext, {} as never)
+const json = (body: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(body))
+const accounts = (env: SandboxEnv) => env.ACCOUNTS.get(env.ACCOUNTS.idFromName("project"))
+const asked = <A>(work: () => Promise<A>) => Effect.tryPromise({ try: work, catch: () => new Unavailable({ reason: "accounts" }) }).pipe(Effect.orDie)
+const post = (env: SandboxEnv, path: string, body: unknown) =>
+  asked(() => accounts(env).fetch(`https://object/__fixture/${path}`, { method: "POST", body: JSON.stringify(body) }).then((response) => response.json()))
+
+/**
+ * The session's person and admitted role, and an owner's current role, from this host's ProjectAccounts. While
+ * `revoked()`, the owner's current role is `new`: the role was taken away after the session's principal was read.
+ */
+function identity(env: SandboxEnv, revoked: () => boolean = () => false): SandboxIdentity.Shape {
+  return {
+    request: effect () => {
+      const incoming = try HttpServerRequest.HttpServerRequest
+      // Accounts.sandboxPrincipal compares the Origin header with the request's own origin, as the deployed Worker does.
+      const own = new URL(incoming.originalUrl).origin
+      const headers: Record<string, string> = { cookie: incoming.headers.cookie ?? "" }
+      if (incoming.headers.origin !== undefined) headers.origin = incoming.headers.origin
+      // A host without sign-in configured answers as Accounts.disabled does: nobody is signed in.
+      return try asked(() => accounts(env).fetch(own + "/__fixture/sandbox-principal", { method: incoming.method, headers }).then(async (response) =>
+        response.ok ? await response.json() as { owner: string; role: Role } : { owner: "", role: "viewer" as const }))
+    },
+    role: effect (owner) => {
+      if (revoked()) return "new" as Role
+      const role = (try post(env, "role", { owner })) as Role
+      const allowed = (try post(env, "allowed", { owner, action: "sandbox" })) as boolean
+      return admittedRole(allowed, role)
+    },
+  }
+}
+
+/** One sandbox's machine object. */
+export class SandboxMachineHost {
+  readonly memory = memoryContainer()
+  readonly api: Promise<{ apply(kind: string, generation: number, operationId: string, command: string): unknown }>
+  constructor(readonly state: State) {
+    this.api = runPromise(machineObject(this.memory.container as never, { raw: this.state } as never).pipe(Effect.provide(noRuntime))) as never
+  }
+  async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname === "/fault") {
+      this.memory.box.fault = (await request.json() as { readonly fault: Fault }).fault
+      return json({})
+    }
+    const body = await request.json() as { readonly kind: string; readonly generation: number; readonly operationId: string; readonly command: string }
+    const api = await this.api
+    return json(await runPromise(Effect.provide(api.apply(body.kind, body.generation, body.operationId, body.command) as Effect.Effect<unknown, never, RuntimeContext>, noRuntime)))
+  }
+}
+
+/** Machine objects reached by `fetch`, the shape of Alchemy's RPC stub over this host's plain objects. */
+function machines(env: SandboxEnv) {
+  return {
+    getByName: (id: string) => ({
+      apply: (kind: string, generation: number, operationId: string, command: string) => promise(() =>
+        env.SANDBOX_MACHINE.get(env.SANDBOX_MACHINE.idFromName(id)).fetch("https://object/apply", { method: "POST", body: JSON.stringify({ kind, generation, operationId, command }) }).then((response) => response.json())),
+    }),
+  }
+}
+
+/** How one person's account object fails next: during one kind of operation, or its owner's role was taken away. */
+export interface AccountFault { readonly fail: string; readonly revoked: boolean }
+
+/** One person's allowance object. Its alarm is a no-op: the journeys never wait a metering minute. */
+export class SandboxAccountHost {
+  readonly api: Promise<{ run(...args: Array<unknown>): unknown }>
+  fault: AccountFault = { fail: "", revoked: false }
+  constructor(readonly state: State, readonly env: SandboxEnv) {
+    this.api = runPromise(accountObject({ id: state.id, raw: state } as never, machines(env) as never, identity(env, () => this.fault.revoked)).pipe(Effect.provide(noRuntime))) as never
+  }
+  async alarm(): Promise<void> {}
+  async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname === "/fault") {
+      this.fault = await request.json() as AccountFault
+      return json({})
+    }
+    const body = await request.json() as { readonly args: ReadonlyArray<unknown> }
+    // A reset object rejects its caller's call, as a Durable Object reset does; the gateway receives no answer.
+    if (this.fault.fail !== "" && body.args[1] === this.fault.fail) throw new Error("account object reset")
+    const api = await this.api
+    return json(await runPromise(Effect.provide(api.run(...body.args) as Effect.Effect<unknown, never, RuntimeContext>, noRuntime)))
+  }
+}
+
+/** The production gateway over this host's account objects and session identity. */
+export function sandboxGateway(env: SandboxEnv) {
+  const people = {
+    getByName: (owner: string) => ({
+      run: (...args: Array<unknown>) => promise(() =>
+        env.SANDBOX_ACCOUNT.get(env.SANDBOX_ACCOUNT.idFromName(owner)).fetch("https://object/run", { method: "POST", body: JSON.stringify({ args }) }).then((response) => response.json())),
+    }),
+  }
+  return gatewayOf(people as never, identity(env)).gateway
+}
+
+/**
+ * `/__fault/sandbox?machine=<owner>/<conversation>&fault=<Fault>`: how that sandbox's in-memory Container fails next.
+ * `/__fault/sandbox?account=<owner>&fail=<read|start|stop|command>&revoked=1`: how that person's account object fails
+ * next; without `fail` or `revoked` it answers again.
+ */
+export async function sandboxFault(request: Request, env: SandboxEnv): Promise<Response> {
+  const url = new URL(request.url)
+  const account = url.searchParams.get("account")
+  if (account !== null) {
+    const fault: AccountFault = { fail: url.searchParams.get("fail") ?? "", revoked: url.searchParams.get("revoked") === "1" }
+    return env.SANDBOX_ACCOUNT.get(env.SANDBOX_ACCOUNT.idFromName(account)).fetch("https://object/fault", { method: "POST", body: JSON.stringify(fault) })
+  }
+  const machine = env.SANDBOX_MACHINE.get(env.SANDBOX_MACHINE.idFromName(url.searchParams.get("machine") ?? ""))
+  return machine.fetch("https://object/fault", { method: "POST", body: JSON.stringify({ fault: url.searchParams.get("fault") ?? "" }) })
+}

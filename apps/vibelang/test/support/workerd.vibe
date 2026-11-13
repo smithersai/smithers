@@ -158,6 +158,8 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}, port
         HISTORY: { type: "durable-object", worker: "api", exportName: "History" },
         SANDBOX_LEDGER: { type: "durable-object", worker: "api", exportName: "SandboxLedger" },
         ACTION_INDEX: { type: "durable-object", worker: "api", exportName: "ActionIndex" },
+        SANDBOX_MACHINE: { type: "durable-object", worker: "api", exportName: "SandboxMachineHost" },
+        SANDBOX_ACCOUNT: { type: "durable-object", worker: "api", exportName: "SandboxAccountHost" },
       },
       exports: {
         Conversation: { type: "durable-object", storage: "sqlite" },
@@ -166,6 +168,8 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}, port
         History: { type: "durable-object", storage: "sqlite" },
         SandboxLedger: { type: "durable-object", storage: "sqlite" },
         ActionIndex: { type: "durable-object", storage: "sqlite" },
+        SandboxMachineHost: { type: "durable-object", storage: "sqlite" },
+        SandboxAccountHost: { type: "durable-object", storage: "sqlite" },
       },
     }, port, apiBundle.measure)
   }

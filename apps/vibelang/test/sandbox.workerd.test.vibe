@@ -72,3 +72,41 @@ describe("sandbox HTTP boundary in real workerd", () => {
     }
   })
 })
+
+describe("a signed-in person's sandbox through the production gateway, account and machine objects in real workerd", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi({
+    VIBELANG_ORIGIN: "https://factory.example", VIBELANG_INITIAL_MAINTAINER_ID: "1",
+    GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+    SESSION_SECRET: "fixture-only-signing-secret-32-chars",
+    SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  })) }, deadline(120000))
+  afterAll(async () => { await api?.dispose() })
+  it.live("starts, runs commands in, and stops the person's own sandbox; another origin's write is refused", () => effect {
+    provide FetchHttpClient.layer {
+      const client = try HttpClient.HttpClient
+      const issued = try (try client.get(api!.origin + "/__fixture/issue?id=1&login=will")).json
+      const cookie = (issued as { readonly cookie: string }).cookie
+      const send = effect (path: string, body: unknown, origin = api!.origin) => {
+        const response = try client.execute(HttpClientRequest.post(api!.origin + "/api/sandboxes/home" + path).pipe(
+          HttpClientRequest.setHeader("cookie", cookie), HttpClientRequest.setHeader("origin", origin), HttpClientRequest.bodyJsonUnsafe(body)))
+        return { status: response.status, body: try response.json }
+      }
+      const read = try (try client.execute(HttpClientRequest.get(api!.origin + "/api/sandboxes/home").pipe(HttpClientRequest.setHeader("cookie", cookie)))).json
+      const started = try send("/start", { operationId: "start-1" })
+      const generation = (started.body as { readonly generation: number }).generation
+      const wrote = try send("/command", { operationId: "write-1", command: "echo saved > keep", generation })
+      const cat = try send("/command", { operationId: "read-1", command: "cat keep", generation })
+      const foreign = try send("/command", { operationId: "read-2", command: "cat keep", generation }, "https://other.example")
+      const stopped = try send("/stop", { operationId: "stop-1", generation })
+      try Effect.try(() => {
+        expect(read).toMatchObject({ role: "maintainer", status: "stopped" })
+        expect(started).toMatchObject({ status: 200, body: { status: "running", generation: 1 } })
+        expect(wrote).toMatchObject({ status: 200, body: { output: "" } })
+        expect(cat).toMatchObject({ status: 200, body: { output: "saved\n" } })
+        expect(foreign).toMatchObject({ status: 403, body: { refusal: "forbidden" } })
+        expect(stopped).toMatchObject({ status: 200, body: { status: "stopped" } })
+      })
+    }
+  }, 120_000)
+})

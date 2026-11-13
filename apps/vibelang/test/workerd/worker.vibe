@@ -1,5 +1,6 @@
 import { accountRoute } from "../../src/core/protocolDecision.vibe"
 export { ProjectAccounts } from "./accounts.vibe"
+export { SandboxAccountHost, SandboxMachineHost } from "./liveSandboxes.vibe"
 // The workerd test's API Worker (test/live.workerd.test.vibe): plain Durable Objects over the same code the Alchemy ones
 // in worker/Api.vibe run (worker/Objects.vibe, worker/Http.vibe), so local workerd runs the real sequencer, the real
 // reply flow on the engine in each object's SQLite, and the real HTTP protocol. Alchemy's own bundle can't be loaded
@@ -18,6 +19,7 @@ import { type PageRequest, pageOf } from "../../src/history/pages.vibe"
 import type { Principal } from "../../src/history/roles.vibe"
 import { note, show, type ShowInput } from "../../src/history/tools.vibe"
 import type { Write } from "../../src/history/wire.vibe"
+import { HEALTH_PATH } from "../../src/core/wire.vibe"
 import * as HistoryObject from "../../worker/HistoryObject.vibe"
 import { githubMain } from "../../worker/MainLog.vibe"
 import type { ReadSnapshot } from "../../src/core/schemas.vibe"
@@ -34,6 +36,7 @@ import { Unreachable } from "../../worker/Unreachable.vibe"
 import * as Sandboxes from "../../worker/Sandboxes.vibe"
 import { memoryMachines } from "../../src/core/sandboxMock.vibe"
 import { mockPolicy } from "../../src/core/sandboxPolicy.vibe"
+import { noRuntime, sandboxFault, sandboxGateway } from "./liveSandboxes.vibe"
 import type { SandboxHost } from "../../src/core/flows.vibe"
 
 /** The real per-person SQL writer and flow engine, hosted against VL-13's explicit product device. Not a container. */
@@ -77,6 +80,8 @@ interface Env {
   readonly ACCOUNTS: Namespace
   readonly HISTORY: Namespace
   readonly ACTION_INDEX: Namespace
+  readonly SANDBOX_MACHINE: Namespace
+  readonly SANDBOX_ACCOUNT: Namespace
   readonly [name: string]: unknown
 }
 
@@ -91,6 +96,9 @@ const configured = <A, E>(env: Env, program: A!E) =>
 
 /** `body` as the platform's JSON response. */
 const json = (body: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(body))
+
+/** `/__fault/health?down=1`: this host's Worker throws on health, so the platform answers 500 (`down=0` heals it). */
+let healthDown = false
 
 const call = async (namespace: Namespace, name: string, path: string, body: unknown) => {
   const response = await namespace.get(namespace.idFromName(name)).fetch(`https://object/${path}`, {
@@ -361,6 +369,12 @@ export default {
     const path = new URL(request.url).pathname
     const crash = path.match(/^\/action-crash\/(.+)$/)
     if (crash !== null) return json(await call(env.CONVERSATION, `action-${crash[1]}`, "action/crash", await request.json()))
+    if (path === "/__fault/sandbox") return await sandboxFault(request, env)
+    if (path === "/__fault/health") {
+      healthDown = new URL(request.url).searchParams.get("down") === "1"
+      return json({})
+    }
+    if (path === HEALTH_PATH && healthDown) throw new Error("health fault")
     if (accountRoute(path) || path.startsWith("/__fixture/")) {
       return await env.ACCOUNTS.get(env.ACCOUNTS.idFromName("project")).fetch(request)
     }
@@ -419,7 +433,7 @@ export default {
       })),
     }
     const response = await Effect.runPromise(
-      handle(conversations, histories, undefined, actions).pipe(Effect.provideService(ActionIdentity, actionIdentity(env)), Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request))),
+      handle(conversations, histories, sandboxGateway(env), actions).pipe(Effect.provideService(ActionIdentity, actionIdentity(env)), Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)), Effect.provide(noRuntime)),
     )
     return HttpServerResponse.toWeb(response)
   },

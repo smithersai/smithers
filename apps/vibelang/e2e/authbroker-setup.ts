@@ -31,6 +31,8 @@ export default async function setup() {
           process.env.LIVE_ISSUES_TEST_ORIGINS = output.match(/LIVE_ISSUES_READY (\{[^\n]+\})/)![1]!
           // Then the recorded Markdown reply's prompt and sites, none until it is recorded (chat-markdown.spec.ts).
           process.env.LIVE_REPLY_TEST = output.match(/LIVE_REPLY_READY (\{[^\n]+\})/)![1]!
+          // Then the signed-in live sites with the production sandbox objects (core-live.spec.ts).
+          process.env.LIVE_CORE_TEST_ORIGINS = output.match(/LIVE_CORE_READY (\{[^\n]+\})/)![1]!
           resolve(ready[1]!)
         }
       })
