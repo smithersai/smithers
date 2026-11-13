@@ -159,3 +159,85 @@ test("session reads follow a person's changed role without changing identity", a
     await server.dispose()
   }
 })
+
+test("answer diagnostics work before any lazy engine has initialized", async () => {
+  const server = openTestApi()
+  try {
+    const api = await server.runPromise(Effect.service(TestChatApi))
+    expect(await server.runPromise(api.answerDiagnostics(crypto.randomUUID())))
+      .toEqual({ answer: null, report: null, engines: [] })
+    const { answerId } = await server.runPromise(api.askElsewhere("A question without a device"))
+    expect(await server.runPromise(api.answerDiagnostics(answerId)))
+      .toEqual({ answer: { status: "streaming", failure: null }, report: null, engines: [] })
+  } finally { await server.dispose() }
+})
+
+test("answer diagnostics retain a stalled local answer's run and journal without remote engines", async () => {
+  const server = openTestApi()
+  let tab: ReturnType<typeof openTab> | undefined
+  try {
+    const api = await server.runPromise(Effect.service(TestChatApi))
+    tab = openTab(api, { host: nodeDevice({ agent: api }) })
+    const chat = await tab.runPromise(Effect.service(Chat))
+    const asked = await chat.actions.ask("Hold this answer for diagnostics")
+    if (!asked.asked) throw new Error("not asked")
+    const reply = await server.runPromise(api.answerTo("Hold this answer for diagnostics"))
+    const diagnostics = await server.runPromise(api.answerDiagnostics(asked.answerId))
+    expect(diagnostics.answer).toMatchObject({ status: "streaming", failure: null })
+    expect(diagnostics.engines).toHaveLength(1)
+    expect(diagnostics.engines[0]).toMatchObject({
+      status: "running",
+      attempts: expect.arrayContaining([expect.objectContaining({ state: expect.any(String), count: expect.any(Number) })]),
+      records: expect.arrayContaining([expect.objectContaining({ type: expect.any(String), count: expect.any(Number) })]),
+    })
+    reply.say("Finished after inspection.")
+    reply.done()
+    await vi.waitFor(async () => {
+      const completed = await server.runPromise(api.answerDiagnostics(asked.answerId))
+      expect(completed.answer?.status).toBe("done")
+      expect(completed.engines).toEqual([expect.objectContaining({ status: "completed" })])
+    }, { timeout: 15_000 })
+  } finally {
+    await tab?.dispose()
+    await server.dispose()
+  }
+})
+
+test("answer diagnostics keep local evidence when an initialized remote store is unavailable", async () => {
+  const server = openTestApi()
+  let tab: ReturnType<typeof openTab> | undefined
+  try {
+    const api = await server.runPromise(Effect.service(TestChatApi))
+    const runId = crypto.randomUUID()
+    await server.runPromise(api.remote.run(Effect.flatMap(SqlClient.SqlClient, sql =>
+      sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES (${runId}, 'pending', ${Date.now()}, ${JSON.stringify({ version: 1, flowName: "ops/SpendAlert", payload: {} })})`)))
+    expect((await server.runPromise(api.answerDiagnostics(runId))).engines)
+      .toEqual([expect.objectContaining({ status: "pending", attempts: [], records: [] })])
+    tab = openTab(api, { host: nodeDevice({ agent: api }) })
+    const result = await tab.runPromise(Effect.flatMap(FlowDispatch, flows =>
+      flows.dispatch("app/theme/set", { mode: "dark" }, { executionId: runId, door: "button" })))
+    expect(result._tag).toBe("Done")
+    expect((await server.runPromise(api.answerDiagnostics(runId))).engines.map(engine => engine.status))
+      .toEqual(["pending", "completed"])
+    await server.runPromise(api.remote.run(Effect.flatMap(SqlClient.SqlClient, sql =>
+      sql`ALTER TABLE flows_attempts RENAME TO unavailable_attempts`)))
+    try {
+      const partial = await server.runPromise(api.answerDiagnostics(runId))
+      expect(partial).toMatchObject({ answer: null, report: null })
+      expect(partial.engines).toEqual([expect.objectContaining({
+        status: "completed",
+        attempts: expect.arrayContaining([expect.objectContaining({ count: expect.any(Number) })]),
+        records: expect.arrayContaining([expect.objectContaining({ count: expect.any(Number) })]),
+      })])
+    } finally {
+      await server.runPromise(api.remote.run(Effect.flatMap(SqlClient.SqlClient, sql =>
+        sql`ALTER TABLE unavailable_attempts RENAME TO flows_attempts`)))
+    }
+    expect((await server.runPromise(api.answerDiagnostics(runId))).engines.map(engine => engine.status))
+      .toEqual(["pending", "completed"])
+  } finally {
+    await tab?.dispose()
+    await server.dispose()
+  }
+})

@@ -425,6 +425,8 @@ export class TestChatApi extends Context.Service<
      * `probe/Pause` under that id until this ChatApi closes.
      */
     readonly remote: {
+      /** Run real SQL in this fixture's remote engine, including deliberate database faults. */
+      readonly run: <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.Effect<A>
       readonly systemRun: () => Effect.Effect<string>
       readonly todoRun: (title: string) => Effect.Effect<string>
       readonly startExternal: (runId: string) => Effect.Effect<void>
@@ -1048,16 +1050,25 @@ export class TestChatApi extends Context.Service<
               SELECT status, waiting FROM runs WHERE id = ${answerId}`
               const engines: Array<AnswerDiagnostics["engines"][number]> = []
               for (const store of stores) {
-                const [run] = yield* sql<{ readonly status: string }>`
-                SELECT status FROM ${sql(`${store}.flows_runs`)} WHERE run_id = ${answerId}`
-                if (run === undefined) continue
-                const attempts = yield* sql<{ readonly state: string; readonly count: number }>`
-                SELECT state, count(*)::int AS count FROM ${sql(`${store}.flows_attempts`)}
-                WHERE run_id = ${answerId} GROUP BY state ORDER BY state`
-                const records = yield* sql<{ readonly type: string; readonly count: number }>`
-                SELECT event_type AS type, count(*)::int AS count FROM ${sql(`${store}.flows_journal_events`)}
-                WHERE run_id = ${answerId} GROUP BY event_type ORDER BY event_type`
-                engines.push({ status: run.status, attempts, records })
+                const engine = yield* Effect.gen(function*() {
+                  // A registered schema may still be waiting for its lazy engine's first use.
+                  const [relation] = yield* sql<{ readonly name: string | null }>`
+                  SELECT to_regclass(${`${store}.flows_runs`})::text AS name`
+                  if (relation?.name == null) return
+                  const [run] = yield* sql<{ readonly status: string }>`
+                  SELECT status FROM ${sql(`${store}.flows_runs`)} WHERE run_id = ${answerId}`
+                  if (run === undefined) return
+                  const attempts = yield* sql<{ readonly state: string; readonly count: number }>`
+                  SELECT state, count(*)::int AS count FROM ${sql(`${store}.flows_attempts`)}
+                  WHERE run_id = ${answerId} GROUP BY state ORDER BY state`
+                  const records = yield* sql<{ readonly type: string; readonly count: number }>`
+                  SELECT event_type AS type, count(*)::int AS count FROM ${sql(`${store}.flows_journal_events`)}
+                  WHERE run_id = ${answerId} GROUP BY event_type ORDER BY event_type`
+                  return { status: run.status, attempts, records }
+                }).pipe(Effect.catch(() => Effect.logWarning("answer diagnostics store unavailable").pipe(
+                  Effect.annotateLogs({ answerId, store }), Effect.as(undefined),
+                )))
+                if (engine !== undefined) engines.push(engine)
               }
               yield* Effect.sync(() => {
                 for (const filename of engineFiles) {
@@ -1122,6 +1133,7 @@ export class TestChatApi extends Context.Service<
             run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie)
           },
           remote: {
+            run: (effect) => Effect.andThen(remoteEngine, effect.pipe(Effect.provide(remoteWriter), Effect.orDie)),
             systemRun: () => Effect.gen(function* () {
               yield* remoteEngine
               const runId = `ops-spend-${crypto.randomUUID()}`

@@ -23,3 +23,5 @@ Private composer drafts v2 retain an optional source generation. An actual edit 
 Live submission, startup recovery and page Retry share composer cleanup. `Collection.pendingWrites(key)` supplies actual unsettled receipts, including an optimistic deletion after navigation. Cleanup awaits those receipts and retains its input when a newer write or unsaved replacement still prevents confirmation. No application retry loop is added.
 
 Only a Create from the New issue form retains a navigation receipt (`draftId`). Slash-created issues retire after delivery and composer cleanup, and recovery never registers them as form navigation.
+
+If storage refuses an engine input update, the tab's newer memory receipt remains authoritative, including its execution identity and completion fields. Failed removal of the stored copy preserves that override until storage confirms removal.

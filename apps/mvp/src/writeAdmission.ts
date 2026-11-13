@@ -81,15 +81,18 @@ export class WriteIntents extends Context.Service<WriteIntents, {
       },
       forget: commandId => {
         const had = pending().some(row => row.commandId === commandId)
-        memory.delete(commandId)
         const held = snapshot?.read()
         if (held !== undefined) {
           const remaining = staged().filter(row => row.commandId !== commandId)
           if (remaining.length === 0) snapshot?.acknowledge(held.token)
           else snapshot?.stage(remaining)
         }
-        const gone = !pending().some(row => row.commandId === commandId)
-        if (gone) refused.delete(commandId)
+        // Keep the newer memory receipt until storage confirms the older copy is gone.
+        const gone = !staged().some(row => row.commandId === commandId)
+        if (gone) {
+          memory.delete(commandId)
+          refused.delete(commandId)
+        }
         // Only a change is news: a forget storage refused changed nothing, and wakes nothing.
         if (had && gone) notify()
         return gone

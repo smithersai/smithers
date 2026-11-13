@@ -10,7 +10,10 @@ const device = () => {
   const snapshot = PendingSnapshot.make({ getItem: key => data.get(key) ?? null, setItem: (key, value) => {
     if (state.refused) throw new Error("quota")
     data.set(key, value)
-  }, removeItem: key => { data.delete(key) } }, "pending", () => state.owner)
+  }, removeItem: key => {
+    if (state.refused) throw new Error("quota")
+    data.delete(key)
+  } }, "pending", () => state.owner)
   return { data, state, snapshot }
 }
 const storeOf = (snapshot?: PendingSnapshot.Service) => Effect.runPromise(Effect.scoped(Effect.map(Layer.build(WriteIntents.layer(snapshot)), context => Context.get(context, WriteIntents))))
@@ -330,4 +333,70 @@ test("a press joins an engine operation's input until it retires, cleaned or not
   expect(store.retain({ ...intent("write", "issue/create"), payload: { repo: "a/b", title: "t" }, draftId: "new:a/b", admitted: true, cleaned: true })).toBe(true)
   expect(Option.getOrThrow(await run(beginAdmission("todo/issue", { repo: "a/b", issue: 1 }, undefined, "make:1"))).commandId).toBe("engine")
   expect(Option.getOrThrow(await run(beginAdmission("issue/create", { repo: "a/b", title: "t" }, undefined, "new:a/b"))).commandId).not.toBe("write")
+})
+
+for (const flow of ["todo/issue", "conversation/new"]) {
+  for (const sibling of [false, true]) test(`failed receipt removal preserves newer ${flow} metadata with sibling=${sibling}`, async () => {
+    const { identifyAdmission } = await import("./writeAdmission")
+    const host = device()
+    const store = await storeOf(host.snapshot)
+    const original = intent("original", flow)
+    const other = intent("other")
+    expect(store.retain(original)).toBe(true)
+    if (sibling) expect(store.retain(other)).toBe(true)
+    host.state.refused = true
+    await Effect.runPromise(identifyAdmission(original, "exec-original").pipe(Effect.provideService(WriteIntents, store)))
+    await Effect.runPromise(finishAdmission(original, true, true).pipe(Effect.provideService(WriteIntents, store)))
+    store.refused.set(original.commandId, 123)
+    const newest = { ...original, executionId: "exec-original", admitted: true, cleaned: true }
+    const results = new Map([["run:exec-original", "done"]] as const)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect(store.forget(original.commandId)).toBe(false)
+      expect(store.pending().find(row => row.commandId === original.commandId)).toEqual(newest)
+      expect(settledEngineInputs(store, results)).toEqual([{ intent: newest, state: "done" }])
+      expect(store.refused.get(original.commandId)).toBe(123)
+      expect((await storeOf(host.snapshot)).pending()).toEqual(sibling ? [original, other] : [original])
+    }
+    host.state.refused = false
+    expect(store.forget(original.commandId)).toBe(true)
+    expect(store.pending()).toEqual(sibling ? [other] : [])
+    expect((await storeOf(host.snapshot)).pending()).toEqual(sibling ? [other] : [])
+    expect(store.refused.has(original.commandId)).toBe(false)
+  })
+}
+
+test("an admission reply after its input retired cannot overwrite a newer press", async () => {
+  const host = device()
+  const store = await storeOf(host.snapshot)
+  const begin = () => Option.getOrThrow(Effect.runSync(beginAdmission("todo/issue", { repo: "private/name", issue: 1 }, undefined, undefined, undefined, "button").pipe(Effect.provideService(WriteIntents, store))))
+  const original = begin()
+  expect(store.forget(original.commandId)).toBe(true)
+  const newer = begin()
+  expect(newer.commandId).not.toBe(original.commandId)
+  expect(newer.door).toBe("button")
+  await Effect.runPromise(finishAdmission(original, true).pipe(Effect.provideService(WriteIntents, store)))
+  expect(store.pending()).toEqual([newer])
+  expect(store.admitting.has(original.commandId)).toBe(false)
+  expect(store.admitting.get(newer.commandId)).toBe(1)
+  expect((await storeOf(host.snapshot)).pending()).toEqual([newer])
+})
+
+test("Discard waits for a retried write's admission before removing its receipt", async () => {
+  const { Deferred, Fiber } = await import("effect")
+  const { forgetAdmission } = await import("./writeAdmission")
+  const host = device()
+  const store = await storeOf(host.snapshot)
+  const row = { ...intent("retry"), writeId: "write-retry" }
+  expect(store.retain(row)).toBe(true)
+  const gate = await Effect.runPromise(Deferred.make<void>())
+  const retry = Effect.runFork(whileAdmitting(row.writeId, Deferred.await(gate)).pipe(Effect.provideService(WriteIntents, store)))
+  try {
+    expect(Effect.runSync(forgetAdmission("namespace", row.writeId).pipe(Effect.provideService(WriteIntents, store)))).toBe(false)
+    expect((await storeOf(host.snapshot)).pending()).toEqual([row])
+  } finally {
+    await Effect.runPromise(Deferred.succeed(gate, undefined))
+    await Effect.runPromise(Fiber.join(retry))
+  }
+  expect(Effect.runSync(forgetAdmission("namespace", row.writeId).pipe(Effect.provideService(WriteIntents, store)))).toBe(true)
+  expect((await storeOf(host.snapshot)).pending()).toEqual([])
 })
