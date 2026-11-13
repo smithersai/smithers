@@ -69,7 +69,7 @@ const SCENARIOS = [
   "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
   "control-tour", "read-action", "actions-faulty-epoch", "act-roleless", "draft-link", "theatre-keys", "auto-tour", "tour-events",
   "wiki-unlisted", "wiki-unwritten", "sign-in-mock", "wiki-link",
-  "end-tour", "run-without-epoch", "issue-count", "details-mock",
+  "end-tour", "run-without-epoch", "issue-count", "details-mock", "details-faulty",
   "sandbox-poll-unreachable", "open-wiki", "run-json-blank", "people-faulty",
 ] as const
 
@@ -407,6 +407,13 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
         if (number === 0) return false
         const got = try answer(() => LoadIssueDetails({ number, key: `${input.key}-details` }))
         return got._tag === "IssueDetailsLoaded" && got.number === number
+      }
+    }
+    case "details-faulty": {
+      // An issue whose details the tracker cannot read answers that it failed, for that issue.
+      provide backend("faulty", role) {
+        const got = try answer(() => LoadIssueDetails({ number: input.number, key: `${input.key}-details` }))
+        return got._tag === "IssueDetailsFailed" && got.number === input.number
       }
     }
     case "sandbox-poll-unreachable": {

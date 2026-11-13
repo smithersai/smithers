@@ -11,6 +11,7 @@ import { escapeWrite, escapeWritesIssues, screenKept, wikiFailedWrite } from "..
 import { escapeScreen, wikiDraft, wikiRequest } from "../src/web/screenRead.vibe"
 import { initialIssues, issuesUpdate } from "../src/web/issues.vibe"
 import { historyRefusal } from "../src/history/flowMachine.vibe"
+import { Note, Start } from "../src/history/flows.vibe"
 import * as IssuesView from "../src/web/issuesViewDecision.vibe"
 import * as Markdown from "../src/web/markdownDecision.vibe"
 import * as ModelD from "../src/web/modelDecision.vibe"
@@ -103,6 +104,11 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
   for (const toured of [false, true]) for (const kind of ["ReplyFinished", "WalkthroughDriven"]) {
     try check("completeScreenTour", same(Screen.completeScreenTour(screen, toured, kind), { ...screen, tour: toured ? false : screen.tour, docs: toured && kind !== "ReplyFinished" ? "pane" : screen.docs }))
   }
+  // An accepted sandbox action keeps a maximized docs pane maximized and opens any other at pane size.
+  for (const docs of ["pane", "max"] as const) {
+    const sandbox: Pane.SandboxScreen = { surface: "splash", palette: true, docs, pane: "closed", operation: "", busy: false, error: "e", request: 4, draft: text }
+    try check(`startSandboxAction ${docs}`, same(Pane.startSandboxAction(sandbox, "command", 2), { state: { ...sandbox, surface: "chat", palette: false, docs: "pane", pane: docs, operation: "command", busy: true, error: "", request: 5, draft: "" }, commands: [{ type: "SandboxAction", request: 5, kind: "command", generation: 2, command: text }] }))
+  }
   // Panes: a polled answer leaves a waiting operation alone; the editor keeps typed text, else the draft, else the source.
   for (const operation of ["", "start"] as const) for (const opens of [false, true]) {
     const state: Pane.SandboxResult = { pane: "closed", operation, busy: operation !== "", error: "e" }
@@ -124,6 +130,9 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
   const open = { ...initialActions, slash: true }
   try check("completions without a mode", completions({ actions: open, draft: "/" }).length === 0 && completions({ actions: open, draft: "/", mode: "live" }).some((entry) => entry.command === "/mock"))
   try check("resultText", resultText(JSON.stringify({ id: "m1", refusal: "forbidden" }), other) === historyRefusal("forbidden") && resultText(JSON.stringify({ id: "m1", refusal: null }), other) === JSON.stringify({ id: "m1", refusal: null }) && resultText(other, other) === other)
+  // A blank lane or note only the agent sends is refused as `empty`; the answer names the field its flow needs.
+  const blank = JSON.stringify({ id: "m1", refusal: "empty" })
+  try check("resultText empty", resultText(blank, Start._tag) === "Needs a lane." && resultText(blank, Note._tag) === "Needs text." && resultText(blank, "vibelang/history/Fold") === historyRefusal("empty"))
   // A specification revision is sent with the revision it revises (0 before any).
   const revise = issuesUpdate({ ...initialIssues, role: "maintainer", status: "ready", screen: "specification", comment: other || "x" }, "spec-revise", other || "x")
   try check(`spec-revise ${JSON.stringify(revise.request ?? null)}`, revise.request?.op === "spec-revise" && revise.request.revision === 0)
