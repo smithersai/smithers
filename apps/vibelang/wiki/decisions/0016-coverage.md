@@ -287,6 +287,7 @@ and 13 verified) and `src/web/screenRead.vibe` (13 verified), 0 errors.
 | `wiki-forbidden`, `wiki-conflict`, `wiki-connect`, `wiki-fork`, `wiki-install` | the first wiki save | `e2e/fault-paths.spec.ts` "a save refused with …" | `paneDecision` `wikiEditErrorText`; `wikiView` 55's steps |
 | `post-empty`, `post-duplicate`, `post-not-replying`, `post-full` | the first post, with that refusal | `e2e/recovery.spec.ts` "a post the sequencer refuses …" | `viewDecision` `postFailure` |
 | `issue-forbidden`, `issue-closed`, `issue-no-model` | the first issue write, with that reason | `e2e/issue-paths.spec.ts` "a comment the host refuses …" | `issueDecision` `issueFailureText` (session 25) |
+| `issue-assignee` | the first issue write, with `assignee`, as `worker/Issues.vibe` does for a commit to someone it cannot assign | `e2e/issue-paths.spec.ts` "a commit the host refuses for its assignee …" | `issueFailureText`'s `assignee` arm (session 31) |
 
 A post of 8,001 characters is refused as `too-long` by the mock's real sequencer, with no fault
 (`e2e/recovery.spec.ts`). New journeys without faults (`e2e/issues.spec.ts`): a search with no match and a Tasks list
@@ -3147,3 +3148,30 @@ cleanup encloses the handshake as well as counter collection. A failed dump stil
 measured worker's disposal finalizer, so an unavailable inspector cannot leave workerd running indefinitely.
 `test/workerdCoverageShape.test.ts` exercises stalled discovery headers and bodies, an unanswered upgrade, and an
 early close over real loopback connections; `test/workerdCoverage.workerd.test.vibe` checks successful collection.
+
+## Writes held behind a saved write (vl-coverage, session 31, 2026-11-13)
+
+`e2e/issue-paths.spec.ts` adds five journeys, four over `fault=issue-write` (the first write happens and its answer is
+lost): Retry pressed twice files the issue once; a lost review request answers another reviewer with "Retry the saved
+action." and resends when the same reviewer is asked again; a lost Decline holds Accept until Decline is sent again; a
+viewer is offered no Retry for a maintainer's lost revision. The fifth uses the new `issue-assignee` fault. They close
+`issueAction`'s retry guard, the spec-review `saved` and `blocked` arms, an operation's `saved` and `blocked` arms, and
+`issueFailureText`'s `assignee` arm.
+
+The double-click journey credits the retry guard only when the second click lands before the page renders the first
+(Chromium dispatches both within one frame). Its assertion, one issue, holds either way. The same journey for Request
+review is not kept: the mock answers a review before the second click arrives, so a double-click is two reviews, as
+two separate clicks are.
+
+### `src/web/issueDecision.vibe` sites the browser does not reach
+
+| Site | Reason |
+| --- | --- |
+| `issueAction` spec-review `state.busy \|\| !f.allowed` (line 154) | Each Request review button is disabled while busy and rendered only for a role with `spec-review` permission; the mock settles a review before a second click lands (above). Unit: `test/issuesUpdate.coverage.test.vibe`. |
+| `back` at step 1 and `continue` at step 4 (lines 173, 177) | The form renders Back only for a VIP past step 1 (`issuesViewDecision` `back: vip && step > 1`), and Continue only before the last step. The clamps keep the proved step within 1 to 4. |
+| `new-form`, `vip-form` and the three dialogs' `!f.allowed` (lines 181, 186) | Each button is rendered only when `issuePermission` grants the same operation (`issuesView.vibe:142`, `:164`), and a role change re-renders before another click. |
+| `propose` with a blank title (line 191) | Step 1's Continue refuses a blank title and only step 1 shows the Title field, so Submit VIP never sends one. |
+| `issueDefaultRole` (line 264) | Both hosts answer every issue read and write with `role` (`src/core/IssuesFactory.vibe:125`, `worker/Issues.vibe:301`, `:427`); `IssuesState.role` is optional only because the stored projection has none. A response schema with a required role would delete it (`src/core`, vl-coverage-core). |
+| `issueRecoveredView`'s specification arm (line 291) | Only a live resume reaches it; `e2e/live-issues.spec.ts` resumes new issues, comments and VIPs, and the issue recording has no specification write. |
+| `issueFailed`'s irrelevant arm (line 361) | A failure that is not the pending retry's own answer needs a second failing write while one is held; every fault page fails one write. |
+
