@@ -14,7 +14,7 @@ import * as Context from "effect/Context"
  */
 export const Process = Context.Reference<
   | (Pick<typeof ScopedProcess, "spawn" | "status"> & {
-    /** Platform used only to select a module launcher; execution keeps the native host lifecycle. */
+    /** Optional platform advertised by the process host. */
     readonly platform?: NodeJS.Platform
   })
   | undefined

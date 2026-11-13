@@ -18,8 +18,9 @@
  *    than read. `O_NOFOLLOW` and `O_NONBLOCK` are added where the platform has
  *    them so the kernel refuses a link or a FIFO swapped in after the `lstat`,
  *    and `fstat` on the descriptor decides the question again regardless.
- * 3. **Only ENOENT means absent.** A permission error, a corrupt directory, or
- *    an unsupported entry type is reported. Converting one into "the file is
+ * 3. **Only `ENOENT` and `ENOTDIR` mean absent.** A path through a regular
+ *    file cannot name an entry. A permission error, a corrupt directory, or an
+ *    unsupported entry type is reported. Converting one into "the file is
  *    not there" turns a broken workspace into a green one.
  *
  * @since 0.1.0
@@ -139,8 +140,8 @@ export const defaultReadlink = (path: string): Promise<string> => Fs.readlink(pa
  * and the `fstat` check remains the guard.
  */
 const openFlags = NodeFs.constants.O_RDONLY |
-  (NodeFs.constants.O_NOFOLLOW ?? 0) |
-  (NodeFs.constants.O_NONBLOCK ?? 0)
+  NodeFs.constants.O_NOFOLLOW |
+  NodeFs.constants.O_NONBLOCK
 
 /**
  * Reads the real filesystem through `node:fs`.

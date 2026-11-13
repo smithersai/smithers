@@ -445,12 +445,14 @@ export const CiAttrs = Schema.Struct({
   changes: Schema.optional(Schema.Array(Schema.NonEmptyString))
 })
 
-// This definition is validation-only. Ci returns the existing CiGen object so
-// rendering, checking, writing, caching, and refusal behavior have one path.
+// This definition is validation-only: Ci reads only metadata.attrs. Neither
+// the constructed target nor its plan or implementation escapes. Public Ci
+// returns the existing CiGen object, so rendering, checking, writing, caching,
+// and refusal behavior have one path.
 const compactCiDefinition = Target.make("Github.Ci", {
   attrs: CiAttrs,
   kinds: ["run", "lint"],
-  implementation: () => Target.notImplemented("Github.Ci")
+  implementation: Target.notImplemented.bind(undefined, "Github.Ci")
 })
 
 /**

@@ -767,7 +767,7 @@ const canonicalize = (value: unknown, seen: Set<object>): unknown => {
  */
 export const targetIdentity = (target: Target.AnyTarget): string => {
   const metadata = Target.metadata(target)
-  const encoded = JSON.stringify(canonicalize(target, new Set())) ?? "$unencodable"
+  const encoded = JSON.stringify(canonicalize(target, new Set()))
   return `${metadata.target}#${createHash("sha256").update(encoded).digest("hex")}`
 }
 

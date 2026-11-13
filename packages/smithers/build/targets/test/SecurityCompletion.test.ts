@@ -16,19 +16,6 @@ const git = (...args: ReadonlyArray<string>): Promise<void> =>
     }, (error) => error === null ? resolve() : reject(error))
   })
 
-const fakeCli = async (answer: string): Promise<string> => {
-  const executable = NodePath.join(root, "model.mjs")
-  await Fs.writeFile(
-    executable,
-    `#!/usr/bin/env node\nfor await (const _ of process.stdin) {}\nprocess.stdout.write(${
-      JSON.stringify(claude(answer))
-    })\n`,
-    "utf8"
-  )
-  await Fs.chmod(executable, 0o755)
-  return executable
-}
-
 interface CliCall {
   readonly args: ReadonlyArray<string>
   readonly stdin: string
@@ -128,9 +115,15 @@ afterEach(async () => {
 
 describe("LlmLint.review security completion", () => {
   it("rejects a bare clean array without explicit completed coverage", async () => {
-    const executable = await fakeCli("[]")
-    const result = await Effect.runPromise(Effect.exit(LlmLint.review({ workspaceRoot: root, executable }, payload())))
-    expect(result._tag).toBe("Failure")
+    const cli = await scriptedCli([claude("[]")])
+    const failure = await Effect.runPromise(Effect.flip(
+      LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload())
+    ))
+    expect(failure).toMatchObject({ _tag: "smithers-build/LlmReviewError", phase: "parse" })
+    const calls = await cli.calls()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.args).toContain("-p")
+    expect(calls[0]!.stdin).toContain("export const a = 2")
   })
 
   it("records one failed attempt when the security CLI is missing", async () => {

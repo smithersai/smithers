@@ -1,7 +1,7 @@
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
-import { describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 import { Smithers } from "../src/index.ts"
 import * as Input from "../src/Input.ts"
 import type * as LlmLint from "../src/LlmLint.ts"
@@ -329,8 +329,13 @@ describe("SecurityReview check validation", () => {
 })
 
 describe("SecurityReview path validation", () => {
+  const roots: Array<string> = []
+  afterAll(() => {
+    for (const root of roots) NodeFs.rmSync(root, { recursive: true, force: true })
+  })
   const workspace = (files: ReadonlyArray<string>): string => {
     const root = NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "security-review-paths-"))
+    roots.push(root)
     for (const file of files) {
       NodeFs.mkdirSync(NodePath.dirname(NodePath.join(root, file)), { recursive: true })
       NodeFs.writeFileSync(NodePath.join(root, file), "x\n")

@@ -163,8 +163,7 @@ const isDataRecord = (value: unknown): value is Readonly<Record<string, unknown>
 /** Whether a value is a dense, accessor-free array of strings. */
 const isStringArray = (value: unknown): value is ReadonlyArray<string> => {
   if (typeof value !== "object" || value === null || NodeUtil.isProxy(value) || !Array.isArray(value)) return false
-  const length = own(value, "length")
-  if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 0) return false
+  const length = value.length
   for (let index = 0; index < length; index += 1) {
     if (typeof own(value, String(index)) !== "string") return false
   }
@@ -258,7 +257,9 @@ export const expand = (target: PackageDefaults, directory: string): Expansion =>
   const targets: Array<readonly [string, Target.AnyTarget]> = []
   const declarations: Array<readonly [string, PackageJson.Declaration]> = []
   for (
-    const [name, value] of Object.entries(produced).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+    const [name, value] of Object.entries(produced).sort(([left], [right]) =>
+      Number(left > right) - Number(left < right)
+    )
   ) {
     if (Target.isTarget(value)) targets.push([name, value])
     else if (PackageJson.isDeclaration(value)) declarations.push([name, value])

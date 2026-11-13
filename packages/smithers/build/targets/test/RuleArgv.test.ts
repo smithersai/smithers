@@ -180,9 +180,25 @@ describe("Vitest rules", () => {
     cwd: "packages/example"
   }
 
-  it("Vitest turns coverage off unless the declaration asks for it", () => {
+  it.each([{}, { coverage: true }] as const)("Vitest preserves configured coverage for %j", (options) => {
+    expect(plannedArgv(Vitest({ ...base, ...options, passWithNoTests: false }))).toEqual([
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "--config",
+      "vitest.config.ts",
+      "--environment",
+      "node"
+    ])
+  })
+
+  it("Vitest disables coverage only when explicitly requested", () => {
     expect(plannedArgv(Vitest({ ...base, coverage: false, passWithNoTests: false, timeoutMs: 1_000 })))
       .toContain("--coverage.enabled=false")
+  })
+
+  it("Vitest forwards passWithNoTests independently of coverage", () => {
     expect(plannedArgv(Vitest({ ...base, coverage: true, passWithNoTests: true, timeoutMs: 1_000 })))
       .toContain("--passWithNoTests")
   })

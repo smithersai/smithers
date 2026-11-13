@@ -106,3 +106,11 @@ describe("S.Go", () => {
     ).toThrow(/Expected .*Stamp.*string/)
   })
 })
+
+describe("Go linker flag defaults", () => {
+  it("emits no stripping or stamping flags unless requested", () => {
+    expect(S.Go.ldflags({})).toBe("")
+    expect(S.Go.ldflags({ strip: false })).toBe("")
+    expect(S.Go.ldflags({ strip: true })).toBe("-s -w")
+  })
+})

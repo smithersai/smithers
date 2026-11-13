@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as Compose from "../src/Compose.ts"
 import {
   checkGeneratedFile,
+  checkGeneratedSymlink,
   failureMessage,
   maximumFailureMessageCodeUnits,
   maximumGeneratedFileBytes,
@@ -391,4 +392,13 @@ describe("Generate declarations", () => {
     expect(JSON.stringify(Target.metadata(target).schemaIdentity))
       .toContain("smithers-build/DriftError")
   })
+})
+
+it("classifies a native symlink lookup failure as unreadable rather than missing", async () => {
+  const path = "x".repeat(300)
+  const failure = await Effect.runPromise(Effect.flip(
+    checkGeneratedSymlink(root, { path, target: "target" })
+  ))
+  expect(failure).toMatchObject({ path, reason: "unreadable" })
+  expect(failure.message).toMatch(/ENAMETOOLONG|name too long/i)
 })

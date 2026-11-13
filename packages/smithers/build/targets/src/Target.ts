@@ -18,6 +18,7 @@ import { getCallSites } from "node:util"
 import * as NodeUtil from "node:util/types"
 import * as Config from "./Config.ts"
 import * as Input from "./Input.ts"
+import * as DeclarationSource from "./internal/DeclarationSource.ts"
 
 /**
  * CLI verbs a target can participate in.
@@ -587,12 +588,7 @@ export const catalogNotImplemented = () => notImplemented("catalog target")
  */
 export const isTarget = (value: unknown): value is AnyTarget => {
   if (!(typeof value === "function" || Predicate.isObject(value)) || NodeUtil.isProxy(value)) return false
-  let descriptor: PropertyDescriptor | undefined
-  try {
-    descriptor = Object.getOwnPropertyDescriptor(value, TargetTypeId)
-  } catch {
-    return false
-  }
+  const descriptor = Object.getOwnPropertyDescriptor(value, TargetTypeId)
   if (
     descriptor === undefined ||
     !("value" in descriptor) ||
@@ -640,8 +636,7 @@ const isArrayOf = <A>(value: unknown, guard: (entry: unknown) => entry is A): va
     NodeUtil.isProxy(value) ||
     !Array.isArray(value)
   ) return false
-  const length = ownData(value, "length")
-  if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 0) return false
+  const length = value.length
   for (let index = 0; index < length; index += 1) {
     const entry = ownData(value, String(index))
     if (entry === missingProperty || !guard(entry)) return false
@@ -921,9 +916,7 @@ const collect = (
       Object.getOwnPropertySymbols(value).length > 0
     ) return
     for (let index = 0; index < value.length; index += 1) {
-      if (names[index] !== String(index)) return
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
-      if (descriptor === undefined) return
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index))!
       // A non-data element is rejected rather than skipped: skipping the rest
       // would drop a declared input the target still reads, which keys the
       // target on fewer inputs than it consumes.
@@ -937,8 +930,7 @@ const collect = (
   if (prototype !== Object.prototype && prototype !== null) return
   if (Object.getOwnPropertySymbols(value).length > 0) return
   for (const key of Object.getOwnPropertyNames(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key)
-    if (descriptor === undefined) return
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)!
     if (!("value" in descriptor)) throw nonDataProperty(key)
     if (descriptor.enumerable !== true) continue
     collect(descriptor.value, inputs, dependencies, dependencySelectors, seen)
@@ -956,8 +948,8 @@ const nonDataProperty = (key: string): TypeError =>
  * while the declaration is being rejected.
  */
 const exoticValue = (value: object): TypeError => {
-  const prototype = Object.getPrototypeOf(value) as object | null
-  const descriptor = prototype === null ? undefined : Object.getOwnPropertyDescriptor(prototype, "constructor")
+  const prototype = Object.getPrototypeOf(value) as object
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, "constructor")
   const constructor = descriptor !== undefined && "value" in descriptor ? descriptor.value : undefined
   const name = typeof constructor === "function" && typeof constructor.name === "string" && constructor.name !== ""
     ? constructor.name
@@ -1043,8 +1035,7 @@ const snapshotAttrs = (
   const copy: Record<string, unknown> = {}
   seen.set(value, copy)
   for (const key of Object.getOwnPropertyNames(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key)
-    if (descriptor === undefined) continue
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)!
     if (!("value" in descriptor)) throw nonDataProperty(key)
     if (descriptor.enumerable !== true) continue
     spend()
@@ -1129,32 +1120,13 @@ interface SourceSite {
   readonly column: number | undefined
 }
 
-const sourceSite = (): SourceSite | undefined => {
-  let sites: ReturnType<typeof getCallSites>
-  try {
-    sites = getCallSites(100, { sourceMap: true })
-  } catch {
-    return undefined
-  }
-  for (const site of sites) {
-    let file = site.scriptName
-    try {
-      if (file.startsWith("file:")) file = fileURLToPath(file)
-    } catch {
-      continue
-    }
-    // Package declarations (PACKAGE.ts, PACKAGE.vibe) and WORKSPACE.ts are
-    // the routed declarations. The site is diagnostic context only —
-    // build-system labels come exclusively from the package index, never
-    // from this stack.
-    const basename = NodePath.basename(file)
-    if (!Input.isDeclarationFileName(basename) && basename !== "WORKSPACE.ts") continue
-    const positive = (value: unknown): number | undefined =>
-      typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined
-    return { path: NodePath.resolve(file), line: positive(site.lineNumber), column: positive(site.columnNumber) }
-  }
-  return undefined
-}
+const sourceSite: () => SourceSite | undefined = DeclarationSource.capture.bind(undefined, {
+  callSites: getCallSites,
+  fromFileUrl: fileURLToPath,
+  basename: NodePath.basename,
+  resolve: NodePath.resolve,
+  isDeclaration: Input.isDeclarationFileName
+})
 
 /**
  * The absolute path of the `PACKAGE.ts` or `WORKSPACE.ts` file whose

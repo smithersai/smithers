@@ -719,3 +719,23 @@ describe("Lifecycle.Policy", () => {
     ) expect(() => Smithers.Lifecycle.Policy(value as never)).toThrow(/Lifecycle.Policy/)
   })
 })
+
+it("validates the same scheduled payload against every flow in an array", () => {
+  const on = {
+    "schedule:0 6 * * *": { flow: ["review", "lint"], payload: { args: "the last day" } }
+  }
+  const factory = Factory.Factory({ summary: "S.", flows: [review, lint], on })
+  const projected = Factory.parseProjection(Factory.renderProjection(factory, [row(review), row(lint)]))
+  expect(projected).toMatchObject({
+    on: [{ event: "schedule:0 6 * * *", flow: ["review", "lint"], payload: { args: "the last day" } }]
+  })
+  // The first flow is a module with deferred schema admission; the second
+  // Markdown flow must still reject the incompatible payload.
+  const invalid = Factory.Factory({
+    summary: "S.",
+    flows: [review, lint],
+    on: { "schedule:0 6 * * *": { flow: ["review", "lint"], payload: { note: "not markdown args" } } }
+  })
+  expect(() => Factory.renderProjection(invalid, [{ ...row(review), kind: "ts" }, row(lint)]))
+    .toThrow(/does not fit the flow "lint"/)
+})

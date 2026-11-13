@@ -192,3 +192,12 @@ describe("Anvil and Docker targets", () => {
     )
   })
 })
+
+describe("Foundry version authority defaults", () => {
+  it("allows a config without a workspace version authority", () => {
+    const config = Input.file("//foundry.toml")
+    const toolchain = Foundry.Toolchain({ config })
+    expect(toolchain).toEqual({ _tag: "FoundryToolchain", config })
+    expect(Object.isFrozen(toolchain)).toBe(true)
+  })
+})

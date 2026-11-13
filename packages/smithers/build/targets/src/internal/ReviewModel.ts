@@ -93,6 +93,16 @@ export const seatReviewModel = (
   Effect.suspend(() => bounded(collect(model, reviewRequest(modelId, prompt, policy), maximumBytes), timeoutMs))
 
 /**
+ * Validates a constructed provider route before it can supply review inference.
+ * @since 1.0.0
+ * @private
+ */
+export const configuredRoute = <A, E>(route: Result.Result<A, E>): Effect.Effect<A, Error> =>
+  Result.isFailure(route)
+    ? Effect.fail(new Error("Review provider configuration is invalid"))
+    : Effect.succeed(route.success)
+
+/**
  * Sends only the supplied review text to a fixed provider endpoint.
  * @category execution
  * @since 1.0.0
@@ -105,19 +115,19 @@ export const reviewModel = (
   maximumBytes: number,
   policy?: string
 ): Effect.Effect<string, Error> =>
-  Effect.suspend(() => {
+  Effect.gen(function*() {
     const name = engine === "claude" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"
     const key = process.env[name]
-    if (key === undefined || key.trim() === "") return Effect.fail(new Error(`Review requires ${name}`))
+    if (key === undefined || key.trim() === "") return yield* Effect.fail(new Error(`Review requires ${name}`))
     const route = engine === "claude"
       ? Result.map(Route.anthropic({ apiKey: Redacted.make(key) }), Route.layer)
       : Result.map(Route.openai({ apiKey: Redacted.make(key) }), Route.layer)
-    if (Result.isFailure(route)) return Effect.fail(new Error("Review provider configuration is invalid"))
-    const layer = route.success.pipe(
+    const resolved = yield* configuredRoute(route)
+    const layer = resolved.pipe(
       Layer.provide(RequestExecutor.layer),
       Layer.provide(FetchHttpClient.layer)
     )
-    return bounded(
+    return yield* bounded(
       Effect.flatMap(Model.Model, (model) => collect(model, reviewRequest(modelId, prompt, policy), maximumBytes)).pipe(
         Effect.provide(layer),
         Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error", credentials: "omit" })

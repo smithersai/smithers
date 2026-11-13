@@ -29,6 +29,9 @@ import * as Input from "./Input.ts"
 import * as PrivateStore from "./internal/PrivateStore.ts"
 import { Process } from "./internal/Process.ts"
 import * as ReviewBatches from "./internal/ReviewBatches.ts"
+import * as ReviewEnvironment from "./internal/ReviewEnvironment.ts"
+import * as ReviewExecutable from "./internal/ReviewExecutable.ts"
+import * as ReviewFilePresence from "./internal/ReviewFilePresence.ts"
 import { ReviewFileSystem } from "./internal/ReviewFileSystem.ts"
 import { maximumResponseTokens, reviewModel, seatReviewModel } from "./internal/ReviewModel.ts"
 import { Engine } from "./ModelEngine.ts"
@@ -861,9 +864,9 @@ const decodeTail = (capture: TailCapture): string => {
 const subprocessError = (error: PlatformError.PlatformError): NodeJS.ErrnoException =>
   error.cause instanceof Error ? error.cause : new Error(error.reason.description ?? error.message, { cause: error })
 
-const spawnError = (message: string, code?: string | undefined): NodeJS.ErrnoException => {
+const spawnError = (message: string, code: string): NodeJS.ErrnoException => {
   const error: NodeJS.ErrnoException = new Error(message)
-  if (code !== undefined) error.code = code
+  error.code = code
   return error
 }
 
@@ -873,40 +876,8 @@ const spawnEnvironment = (
   git: boolean,
   home: string,
   engine?: Engine
-): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = {
-    PATH: process.env["PATH"] ?? "",
-    HOME: home,
-    TMPDIR: home,
-    CLICOLOR: "0",
-    FORCE_COLOR: "0",
-    LANG: "C",
-    LC_ALL: "C",
-    NO_COLOR: "1"
-  }
-  if (process.platform === "win32") {
-    env["USERPROFILE"] = home
-    if (process.env["SystemRoot"] !== undefined) env["SystemRoot"] = process.env["SystemRoot"]
-  }
-  const auth = engine === "claude" ?
-    ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]
-    : engine === "codex"
-    ? ["OPENAI_API_KEY", "CODEX_API_KEY"]
-    : []
-  for (const name of auth) {
-    if (!sensitiveEnv.includes(name) && process.env[name] !== undefined) env[name] = process.env[name]
-  }
-  if (engine === "claude") env["CLAUDE_CONFIG_DIR"] = NodePath.join(home, ".claude")
-  if (engine === "codex") env["CODEX_HOME"] = NodePath.join(home, ".codex")
-  if (git) {
-    env["GIT_CONFIG_GLOBAL"] = process.platform === "win32" ? "NUL" : "/dev/null"
-    env["GIT_CONFIG_NOSYSTEM"] = "1"
-    env["GIT_OPTIONAL_LOCKS"] = "0"
-    env["GIT_PAGER"] = "cat"
-    env["GIT_TERMINAL_PROMPT"] = "0"
-  }
-  return env
-}
+): NodeJS.ProcessEnv =>
+  ReviewEnvironment.spawnEnvironment(sensitiveEnv, git, home, engine, process.env, process.platform, NodePath.join)
 
 /**
  * Value-free discovery delivered to a trusted host's private rotation workflow.
@@ -1101,7 +1072,7 @@ class SpellingMatcher {
       const node = queue[head]!
       for (const code of children[node]!) {
         const child = this.#edges.get(node * 65536 + code)!
-        this.#fail[child] = node === 0 ? 0 : this.#step(this.#fail[node]!, code)
+        this.#fail[child] = this.#step(this.#fail[node]!, code)
         const inherited = this.#longest[this.#fail[child]]
         if ((this.#longest[child]?.[0] ?? 0) < (inherited?.[0] ?? 0)) this.#longest[child] = inherited
         queue.push(child)
@@ -1359,11 +1330,6 @@ export const publicError = (error: LlmReviewError | ModelCliMissing) =>
     ...(error.attempts === undefined ? {} : { attempts: publicAttempts(error.attempts) })
   }
 
-/** Windows Node modules use this host's Node, never file associations or a shell. */
-const nodeModule = (path: string, options: { readonly platform: NodeJS.Platform }): boolean =>
-  options.platform === "win32" && NodePath.isAbsolute(path) && /\.(?:mjs|cjs|js)$/.test(path) &&
-  NodeFs.statSync(path, { throwIfNoEntry: false })?.isFile() === true
-
 /** Spawns git in the workspace and model CLIs in an isolated home, never through a shell. */
 const spawnText = (
   cwd: string,
@@ -1378,7 +1344,12 @@ const spawnText = (
     )
     const processOverride = yield* Process
     const script = yield* Effect.try({
-      try: () => nodeModule(executable, { platform: processOverride?.platform ?? process.platform }),
+      try: () =>
+        ReviewExecutable.nodeModule(executable, {
+          platform: processOverride?.platform ?? process.platform,
+          stat: NodeFs.statSync,
+          isAbsolute: NodePath.isAbsolute
+        }),
       catch: (cause) => cause as NodeJS.ErrnoException
     })
     const processService = processOverride ?? ScopedProcess
@@ -1641,7 +1612,7 @@ const readBatch = (
       for (const path of paths) {
         signal.throwIfAborted()
         reviewPath(path)
-        const contents = snapshot === undefined ?
+        const rawContents = snapshot === undefined ?
           await SafeFs.readText(NodePath.join(workspaceRoot, path), {
             root: workspaceRoot,
             signal,
@@ -1650,10 +1621,8 @@ const readBatch = (
             what: "LLM review file"
           }) :
           snapshot.get(path)?.contents
-        if (contents === undefined) {
-          if (missing === "fail") throw new Error(`LLM review file disappeared after discovery: ${path}`)
-          continue
-        }
+        const contents = ReviewFilePresence.contents(path, rawContents, missing)
+        if (contents === undefined) continue
         usableText(contents, "LLM review file", maximumReviewFileBytes, false)
         const bytes = Buffer.byteLength(contents, "utf8")
         total += bytes
@@ -2667,29 +2636,15 @@ const executableIdentity = (
 ): Effect.Effect<{ readonly executable?: { readonly path: string; readonly sha256: string } }, LlmReviewError> =>
   Effect.flatMap(ReviewFileSystem, (provided) =>
     Effect.tryPromise({
-      try: async () => {
-        const io = provided ?? NodeFs
-        const path = (NodePath.isAbsolute(executable) || executable.includes("/") ?
-          [NodePath.resolve(executable)] :
-          (process.env["PATH"] ?? "")
-            .split(NodePath.delimiter).filter(Boolean).map((directory) => NodePath.join(directory, executable)))
-          .find((candidate) => io.statSync(candidate, { throwIfNoEntry: false })?.isFile() === true)
-        if (path === undefined) return {}
-        const hash = createHash("sha256")
-        for await (const chunk of io.createReadStream(path)) hash.update(chunk as Buffer)
-        const identity = { path: io.realpathSync(path), sha256: hash.digest("hex") }
-        if (!nodeModule(path, { platform: process.platform })) return { executable: identity }
-        const interpreter = createHash("sha256")
-        for await (const chunk of io.createReadStream(process.execPath)) interpreter.update(chunk as Buffer)
-        return {
-          executable: {
-            path: identity.path,
-            sha256: createHash("sha256").update(JSON.stringify([identity.sha256, interpreter.digest("hex")])).digest(
-              "hex"
-            )
-          }
-        }
-      },
+      try: () =>
+        ReviewExecutable.identity(executable, provided ?? NodeFs, {
+          path: process.env["PATH"],
+          platform: process.platform,
+          execPath: process.execPath,
+          paths: NodePath,
+          nativeStat: NodeFs.statSync,
+          createHash
+        }),
       catch: (cause) =>
         new LlmReviewError({ phase: "review", message: `Review executable identity: ${failureMessage(cause)}` })
     }))
@@ -2967,7 +2922,9 @@ export const review = (
       files.filter((path) => !read.has(path)),
       maximumReviewContentBytes - present.reduce((total, file) => total + Buffer.byteLength(file.contents, "utf8"), 0)
     )
-    const rawChanged = [...present, ...removed].sort((left, right) => left.path < right.path ? -1 : 1)
+    const rawChanged = [...present, ...removed].sort((left, right) =>
+      Number(left.path > right.path) - Number(left.path < right.path)
+    )
     if (payload.required === true && rawChanged.length === 0) return yield* Effect.fail(emptyRequired)
     const raw = yield* relatedSources(runtime, payload, snapshot, rawChanged, new Set(paths), reviewable)
     // Scan every path and byte before planning. Slices are cut from masked text, so no request can
@@ -3226,38 +3183,39 @@ export const review = (
         const before = attempts.length
         if (stored !== undefined) attempts.push(...stored.attempts)
         else invoked++
-        const batchFindings = stored !== undefined ? stored.findings : yield* (payload.securityChecks === undefined
-          ? reviewBatch(runtime, payload, batch, context, mask, spend).pipe(
-            Effect.mapError((error) =>
-              payload.required === true && error._tag === "smithers-build/ModelCliMissing"
-                ? new LlmReviewError({ phase: "review", message: `Required review cannot run: ${error.message}` })
-                : error
+        const batchFindings = stored !== undefined ? stored.findings : yield* Effect.gen(function*() {
+          const next = yield* (payload.securityChecks === undefined
+            ? reviewBatch(runtime, payload, batch, context, mask, spend).pipe(
+              Effect.mapError((error) =>
+                payload.required === true && error._tag === "smithers-build/ModelCliMissing"
+                  ? new LlmReviewError({ phase: "review", message: `Required review cannot run: ${error.message}` })
+                  : error
+              )
             )
-          )
-          : securityBatch(
-            runtime,
-            options.executable,
-            payload,
-            batch,
-            context,
-            batchIndex,
-            attempts,
-            charged,
-            mask,
-            spend
-          ))
-        if (stored === undefined) {
+            : securityBatch(
+              runtime,
+              options.executable,
+              payload,
+              batch,
+              context,
+              batchIndex,
+              attempts,
+              charged,
+              mask,
+              spend
+            ))
           // Persist each batch as it completes so a later failure never discards it.
           yield* persist({
             batches: [...run.batches, {
               index: batchIndex,
               files,
-              findings: batchFindings,
+              findings: next,
               attempts: attempts.slice(before)
             }]
           })
-          yield* record(batchFindings)
-        }
+          yield* record(next)
+          return next
+        })
         findings.push(...batchFindings)
         if (findings.length > maximumFindings) {
           return yield* Effect.fail(

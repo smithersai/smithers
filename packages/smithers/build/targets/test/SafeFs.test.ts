@@ -83,6 +83,51 @@ describe("SafeFs.digestFile", () => {
     expect(await SafeFs.digestFile(at("no/such/dir/a.ts"), options)).toBeUndefined()
   })
 
+  it("reports a path through a regular file as absent", async () => {
+    await write("a.ts", "content\n")
+    const options = { root: await canonical(), what: "declared input" }
+    for (const relative of ["a.ts/b.ts", "a.ts/deep/b.ts"]) {
+      const path = at(relative)
+      if (process.platform !== "win32") await expect(Fs.lstat(path)).rejects.toMatchObject({ code: "ENOTDIR" })
+      expect(await SafeFs.resolveFile(path, options)).toBeUndefined()
+      expect(await SafeFs.resolveFile(path)).toBeUndefined()
+      expect(await SafeFs.digestFile(path, options)).toBeUndefined()
+      expect(await SafeFs.readText(path, options)).toBeUndefined()
+      expect(await SafeFs.resolveDirectory(path, options)).toBeUndefined()
+    }
+  })
+
+  it("keeps bounded and unbounded unconfined digests separate in one index", async () => {
+    await write("a.ts", "content\n")
+    const digests = SafeFs.makeDigestIndex()
+    expect(await SafeFs.digestFile(at("a.ts"), { digests })).toBe(sha256("content\n"))
+    expect(await SafeFs.digestFile(at("a.ts"), { digests, maximumBytes: 128 })).toBe(sha256("content\n"))
+    await expect(SafeFs.digestFile(at("a.ts"), { digests, maximumBytes: 1 })).rejects.toThrow(/larger than 1 bytes/)
+    expect(await SafeFs.digestFile(at("a.ts"), { digests })).toBe(sha256("content\n"))
+    expect(digests.confirmed.size).toBe(2)
+  })
+
+  it.each(["mtimeMs", "ctimeMs"] as const)("refuses a descriptor with an invalid %s", async (field) => {
+    await write("a.ts", "content\n")
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      lstat: (path) => Fs.lstat(path),
+      open: async (path) => {
+        const handle = await Fs.open(path, "r")
+        return {
+          stat: async () => {
+            const stats = await handle.stat()
+            stats[field] = Number.NaN
+            return stats
+          },
+          read: async (into) => (await handle.read(into)).bytesRead,
+          close: () => handle.close()
+        }
+      }
+    }
+    await expect(SafeFs.digestFile(at("a.ts"), { io })).rejects.toThrow(/changed while it was being opened/)
+  })
+
   it("enforces an optional digest byte ceiling before streaming", async () => {
     await write("large.ts", "a".repeat(64))
     await expect(SafeFs.digestFile(at("large.ts"), {
@@ -92,7 +137,7 @@ describe("SafeFs.digestFile", () => {
     })).rejects.toThrow(/larger than 8 bytes/)
   })
 
-  it.each([Number.NaN, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+  it.each([Number.NaN, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "8" as never])(
     "refuses the invalid digest byte limit %s before reading",
     async (maximumBytes) => {
       await expect(SafeFs.digestFile(at("absent"), {
@@ -321,7 +366,7 @@ describe("SafeFs.digestFile", () => {
       .rejects.toThrow(message)
   })
 
-  it.each([Number.NaN, -1, 1.5, SafeFs.chunkBytes + 1])(
+  it.each([Number.NaN, -1, 1.5, SafeFs.chunkBytes + 1, "8" as never])(
     "refuses an invalid descriptor read length %s",
     async (bytesRead) => {
       await write("a.ts", "content\n")
@@ -411,7 +456,7 @@ describe("SafeFs.readText", () => {
       .rejects.toThrow(/not valid UTF-8/)
   })
 
-  it.each([Number.NaN, -1, 1.5, SafeFs.maximumTextBytes + 1])(
+  it.each([Number.NaN, -1, 1.5, SafeFs.maximumTextBytes + 1, "8" as never])(
     "refuses the invalid text limit %s before reading",
     async (limit) => {
       await expect(SafeFs.readText(at("absent"), { root: await canonical(), limit, what: ".gitignore" }))
@@ -521,6 +566,20 @@ describe("SafeFs.resolveDirectory", () => {
     await Fs.symlink(NodePath.join(outside, "src"), at("src"))
     await expect(SafeFs.resolveDirectory(at("src/deep"), { root: await canonical(), what: "directory" }))
       .rejects.toThrow(/resolves outside the workspace/)
+  })
+
+  it("reports a directory metadata failure immediately before enumeration", async () => {
+    await write("src/a.ts", "content\n")
+    const options = { root: await canonical(), what: "directory" }
+    const entry = await SafeFs.resolveDirectory(at("src"), options)
+    const failure = Object.assign(new Error("metadata read failed"), { code: "EIO" })
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      lstat: async () => {
+        throw failure
+      }
+    }
+    await expect(SafeFs.listDirectory(at("src"), entry!, { ...options, io })).rejects.toBe(failure)
   })
 
   it("bounds a directory listing before materializing every entry", async () => {
@@ -633,5 +692,15 @@ describe("SafeFs.inside", () => {
     expect(SafeFs.inside("/a/b", "/a/bc")).toBe(false)
     expect(SafeFs.inside("/a/b", "/a")).toBe(false)
     expect(SafeFs.inside("/a/b", "/")).toBe(false)
+  })
+})
+
+describe("SafeFs directory disappearance", () => {
+  it("reports replacement when an admitted directory disappears before listing", async () => {
+    await Fs.mkdir(at("directory"))
+    const entry = await SafeFs.resolveDirectory(at("directory"))
+    await Fs.rmdir(at("directory"))
+    await expect(SafeFs.listDirectory(at("directory"), entry!))
+      .rejects.toThrow("was replaced while it was being read")
   })
 })

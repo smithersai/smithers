@@ -317,3 +317,12 @@ describe("GithubCiGen with a Nix environment", () => {
     expect(cachix).toContain("\"extra_nix_config\":")
   })
 })
+
+describe("Nix environment partial input discovery", () => {
+  it("returns exactly the files present in a decoded environment", () => {
+    expect(Nix.environmentInputs({ _tag: "NixEnvironment" })).toEqual([])
+    expect(Nix.environmentInputs({ _tag: "NixEnvironment", flake })).toEqual([flake])
+    const lock = Input.file("//flake.lock")
+    expect(Nix.environmentInputs({ _tag: "NixEnvironment", lock })).toEqual([lock])
+  })
+})

@@ -467,7 +467,26 @@ describe("run", () => {
           expect(() => process.kill(outcome.pid, 0)).not.toThrow()
           yield* Fiber.interrupt(fiber)
           expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true)
-          expect(() => process.kill(outcome.pid, 0)).toThrow()
+          // Interrupt sends the termination signal; the host's child-close event
+          // may arrive on a later turn. Require actual disappearance within a
+          // real-time bound so a live leak or an unreaped zombie still fails.
+          yield* Effect.promise(async () => {
+            const deadline = Date.now() + 5000
+            for (;;) {
+              try {
+                process.kill(outcome.pid, 0)
+              } catch (cause) {
+                expect(cause).toMatchObject({ code: "ESRCH" })
+                return
+              }
+              if (Date.now() >= deadline) {
+                const stat = await Fs.readFile(`/proc/${outcome.pid}/stat`, "utf8").catch(() => "")
+                const state = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0]
+                throw new Error(`interrupted child ${outcome.pid} was not reaped within 5000ms (state ${state})`)
+              }
+              await new Promise<void>((resolve) => setTimeout(resolve, 10))
+            }
+          })
         } finally {
           yield* Fiber.interrupt(fiber)
         }
@@ -758,6 +777,18 @@ describe("run", () => {
     }
 
     expect((await failed(tooManyExitCodes)).stderr).toContain("exec expected exit codes has more than 256 entries")
+  })
+
+  it("refuses oversized environment maps and duplicate success codes before spawning", async () => {
+    const env = Object.fromEntries(Array.from({ length: 4097 }, (_, index) => [`KEY_${index}`, "x"]))
+    expect((await failed({ ...payload(["node", "-e", "0"]), env })).stderr)
+      .toContain("exec environment has more than 4096 entries")
+    expect(
+      await failed({
+        ...payload(["node", "-e", "0"]),
+        expectedExitCodes: [0, 0]
+      })
+    ).toMatchObject({ code: "invalid_payload", exitCode: -1, stdout: "" })
   })
 
   it("refuses more sensitive environment names than it will fold", async () => {

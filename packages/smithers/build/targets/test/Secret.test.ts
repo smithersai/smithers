@@ -1446,3 +1446,51 @@ describe("SecretProxy brokered origin bound", () => {
     }
   })
 })
+
+describe("secret proxy audience boundary defaults", () => {
+  it("accepts null-prototype vault options without ambient reads", () => {
+    const options = Object.assign(Object.create(null), { read: () => "fixture-value" })
+    const vault = SecretProxy.makeVault(options)
+    const placeholder = vault.mint(Secret.HttpSecret(Secret.Secret("NULL_OPTIONS"), ["https://example.test"]))
+    expect(placeholder).not.toContain("fixture-value")
+    expect(vault.audiences()).toEqual(new Set(["https://example.test"]))
+  })
+
+  it.each([
+    ["https://localhost", "127.0.0.1:443"],
+    ["http://localhost", "127.0.0.1:80"],
+    ["http://[::1]", "[::1]:80"]
+  ])("refuses an opaque tunnel to %s at its default port", async (audience, authority) => {
+    const vault = SecretProxy.makeVault({ read: () => "unread-value" })
+    vault.mint(Secret.HttpSecret(Secret.Secret("DEFAULT_PORT_TOKEN"), [audience]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const response = await connectThrough(proxy.endpoint, authority)
+      expect(response).toMatch(/^HTTP\/1\.1 501 Not Implemented/)
+      expect(response).toContain(`${audience} is a declared secret audience`)
+      expect(response).not.toContain("unread-value")
+    } finally {
+      await proxy.close()
+    }
+  })
+})
+
+it("permits CONNECT to a different host sharing a declared audience port", async () => {
+  const echo = NodeNet.createServer((socket) => socket.pipe(socket))
+  await new Promise<void>((resolve) => echo.listen(0, "127.0.0.1", resolve))
+  const address = echo.address() as NodeNet.AddressInfo
+  const audience = `https://api.example.test:${address.port}`
+  const vault = SecretProxy.makeVault({ read: () => "unread-host-value" })
+  vault.mint(Secret.HttpSecret(Secret.Secret("SAME_PORT_TOKEN"), [audience]))
+  const proxy = await SecretProxy.startProxy(vault)
+  try {
+    const response = await connectThrough(proxy.endpoint, `127.0.0.1:${address.port}`)
+    expect(response).toMatch(/^HTTP\/1\.1 200 Connection Established/)
+    expect(response).not.toContain("unread-host-value")
+    const refused = await connectThrough(proxy.endpoint, `api.example.test:${address.port}`)
+    expect(refused).toContain(`${audience} is a declared secret audience`)
+  } finally {
+    await proxy.close()
+    await new Promise<void>((resolve) => echo.close(() => resolve()))
+  }
+})

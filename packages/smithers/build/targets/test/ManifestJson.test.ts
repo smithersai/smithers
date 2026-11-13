@@ -112,3 +112,28 @@ describe("ManifestJson array shape", () => {
     expect(() => ManifestJson.cloneValue(decorated)).toThrow(/sparse array or carries extra own properties/)
   })
 })
+
+it("refuses a hole balanced by an extra named array property", () => {
+  const value = ["a", "b"] as Array<string> & { extra?: string }
+  delete value[0]
+  value.extra = "replacement"
+  expect(() => ManifestJson.cloneValue(value))
+    .toThrow("manifest value is a sparse array or carries extra own properties")
+})
+
+it("rejects an array grown by diagnostic-path coercion after its initial shape check", () => {
+  const value = [1]
+  let grown = false
+  const path = {
+    toString: () => {
+      if (!grown) {
+        value.push(2)
+        grown = true
+      }
+      return "changing array"
+    }
+  }
+  expect(() => ManifestJson.cloneValue(value, path as never))
+    .toThrow("changing array is a sparse array or carries extra own properties")
+  expect(value).toEqual([1, 2])
+})

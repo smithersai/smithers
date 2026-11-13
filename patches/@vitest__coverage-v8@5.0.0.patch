@@ -1,22 +1,24 @@
 diff --git a/dist/index.js b/dist/index.js
-index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..e1568f6e041bf07b64e5d095cfd0a612e2b3b2fb 100644
+index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..5acb20fb3beb93708ed51529596b4ca20369977d 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -43,8 +43,11 @@ const mod = {
- 		const result = [];
+@@ -44,7 +44,14 @@
  		// Reduce amount of data sent over rpc by doing some early result filtering
  		for (const entry of coverage.result) {
--			if (filterResult(entry)) {
+ 			if (filterResult(entry)) {
 -				entry.startOffset = options?.moduleExecutionInfo?.get(normalize(fileURLToPath(entry.url)))?.startOffset || 0;
-+			if (filterResult(entry) && !new URL(entry.url).searchParams.has("tsx-namespace")) {
++				// VM scripts may use virtual file URLs that cannot name a native file or Vite module.
++				let filename;
++				try { filename = fileURLToPath(entry.url); } catch { continue; }
++				if (new URL(entry.url).searchParams.has("tsx-namespace")) continue;
 +				// Native loaders do not run Vite's transform; its offsets and map cannot describe their code.
-+				const execution = options?.moduleExecutionInfo?.get(normalize(fileURLToPath(entry.url)));
++				const execution = options?.moduleExecutionInfo?.get(normalize(filename));
 +				if (!execution) continue;
 +				entry.startOffset = execution.startOffset || 0;
  				result.push(entry);
  			}
  		}
-@@ -56,20 +59,38 @@ const mod = {
+@@ -56,20 +63,38 @@
  				await rm(path);
  				return content;
  			}));

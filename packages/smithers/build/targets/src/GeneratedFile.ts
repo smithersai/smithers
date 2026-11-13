@@ -331,7 +331,7 @@ const publication = (io: typeof Fs) => {
     const flags = NodeFs.constants.O_WRONLY |
       NodeFs.constants.O_CREAT |
       NodeFs.constants.O_EXCL |
-      (NodeFs.constants.O_NOFOLLOW ?? 0)
+      NodeFs.constants.O_NOFOLLOW
     for (let attempt = 0; attempt < 4; attempt += 1) {
       signal.throwIfAborted()
       const path = NodePath.join(directory, `.${base}.${process.pid.toString(36)}.${randomUUID()}.tmp`)
@@ -351,8 +351,7 @@ const publication = (io: typeof Fs) => {
   ): Promise<void> => {
     const validated = validatePayload(payload)
     const root = await SafeFs.canonicalRoot(workspaceRoot)
-    const parent = await prepareParent(root, validated.path, true, signal)
-    if (parent === undefined) throw new Error("generated output parent could not be created")
+    const parent = (await prepareParent(root, validated.path, true, signal))!
     const absolute = NodePath.join(parent.path, NodePath.basename(validated.path))
     let existing: NodeFs.BigIntStats | undefined
     try {
@@ -415,7 +414,7 @@ const publication = (io: typeof Fs) => {
       try {
         await io.rm(temp.path, { force: true })
       } catch (cause) {
-        primary = failed ? combinedFailure(primary, cause, "temporary file cleanup also failed") : cause
+        primary = combinedFailure(primary, cause, "temporary file cleanup also failed")
         failed = true
       }
     }
@@ -461,8 +460,7 @@ export const writeGeneratedSymlink = (
     try: async (signal) => {
       const validated = validatePayload({ path: payload.path, contents: payload.target })
       const root = await SafeFs.canonicalRoot(workspaceRoot)
-      const parent = await prepareParent(root, validated.path, true, signal)
-      if (parent === undefined) throw new Error("generated output parent could not be created")
+      const parent = (await prepareParent(root, validated.path, true, signal))!
       const absolute = NodePath.join(parent.path, NodePath.basename(validated.path))
       const temporary = NodePath.join(parent.path, `.${NodePath.basename(absolute)}.${randomUUID()}.tmp`)
       await checkParent(root, parent, signal)

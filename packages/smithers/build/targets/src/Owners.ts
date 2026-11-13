@@ -252,7 +252,7 @@ export interface Options {
 
 const knownOptions: ReadonlySet<string> = new Set(["owners", "perFile", "noparent", "agents", "upstream"])
 const policies: ReadonlySet<string> = new Set(["auto-land", "human-approve", "deny"])
-const byCodeUnit = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
+const byCodeUnit = (left: string, right: string): number => Number(left > right) - Number(left < right)
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !NodeUtil.isProxy(value) && !Array.isArray(value) &&

@@ -9,7 +9,7 @@
  * and this package has no bare string handed to `Effect.fail` or `Effect.die` and
  * no thrown string, which would print as an unknown failure.
  *
- * The counts below are the reviewed sites per file (295 in all). A new
+ * The counts below are the reviewed sites per file (294 in all). A new
  * failure is a tagged error (`Schema.TaggedError` or `Data.TaggedError`), so a
  * count may only fall: a file that gains a site fails, and one that drops a
  * site fails until its count is lowered.
@@ -30,16 +30,17 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   ["src/Attr.ts", 1],
   ["src/Cargo.ts", 5],
   ["src/CiToolchain.ts", 7],
-  ["src/Compose.ts", 22],
+  ["src/Compose.ts", 21],
   ["src/Config.ts", 8],
   ["src/DocsCheck.ts", 3],
   ["src/Exec.ts", 1],
-  ["src/GeneratedFile.ts", 20],
+  ["src/GeneratedFile.ts", 18],
   ["src/GithubCiGen.ts", 34],
   ["src/Input.ts", 16],
   ["src/Install.ts", 1],
-  ["src/LlmLint.ts", 34],
-  ["src/NewPackage.ts", 6],
+  ["src/LlmLint.ts", 33],
+  ["src/NewPackage.ts", 4],
+  ["src/internal/ScaffoldDirectory.ts", 2],
   ["src/Nix.ts", 5],
   ["src/Owners.ts", 15],
   ["src/Package.ts", 1],
@@ -55,7 +56,6 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   ["src/RustToolchain.ts", 3],
   ["src/SafeFs.ts", 26],
   ["src/Secret.ts", 2],
-  ["src/SecretProxy.ts", 2],
   ["src/Shell.ts", 2],
   ["src/Target.ts", 2],
   ["src/WorkspaceDeclaration.ts", 3],
@@ -63,6 +63,8 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   // The existing SafeFs directory-overflow error moved with the shared reader.
   ["src/internal/ReadDirectory.ts", 1],
   ["src/internal/ReviewBatches.ts", 1],
+  ["src/internal/GeneratorOutputPath.ts", 1],
+  ["src/internal/ReviewFilePresence.ts", 1],
   ["src/internal/ReviewModel.ts", 9]
 ]
 

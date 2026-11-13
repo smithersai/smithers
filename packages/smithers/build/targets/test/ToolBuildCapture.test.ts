@@ -859,3 +859,31 @@ describe("manifest shapes", () => {
     expect(file?.contentDigest).toBe(sha(JSON.stringify([["file", "artifact.tar", false, sha("tar")]])))
   })
 })
+
+describe("output capture boundary faults", () => {
+  it("retains non-ENOENT filesystem diagnostics", async () => {
+    await expect(measureOutput(root, ".", "out", {
+      io: seam({
+        lstat: async () => {
+          throw new Error("injected metadata denial")
+        }
+      })
+    })).rejects.toMatchObject({ message: "declared output could not be read: out: injected metadata denial" })
+  })
+
+  it.runIf(posixOnly)("refuses an output containing a cache reached through an alias", async () => {
+    await write("out/cache/entry", "cached")
+    await Fs.symlink(at("out/cache"), at("cache-alias"), "dir")
+    await expect(measureOutput(root, ".", "out", { cacheDirectory: "cache-alias" })).rejects.toMatchObject({
+      message: expect.stringContaining("overlaps the configured cache directory")
+    })
+  })
+
+  it("allows a missing cache directory during first output capture", async () => {
+    await write("out/file", "content")
+    expect(await measureOutput(root, ".", "out", { cacheDirectory: "new-cache" })).toMatchObject({
+      path: "out",
+      fileCount: 1
+    })
+  })
+})

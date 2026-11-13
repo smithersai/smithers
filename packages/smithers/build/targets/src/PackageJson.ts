@@ -212,7 +212,7 @@ export const fieldOrder: ReadonlyArray<string> = [
 const orderIndex = new Map(fieldOrder.map((key, index) => [key, index]))
 
 /** Orders strings by UTF-16 code unit, which does not vary with host locale. */
-const byCodeUnit = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
+const byCodeUnit = (left: string, right: string): number => Number(left > right) - Number(left < right)
 
 /**
  * npm's published name grammar: an optional `@scope/` prefix, then a name of
@@ -527,7 +527,6 @@ export const render = (fields: Readonly<Record<string, unknown>>): string => {
 /** Renders one field value compactly for a diff line. */
 const show = (value: unknown): string => {
   const encoded = JSON.stringify(value)
-  if (encoded === undefined) return "undefined"
   return encoded.length <= 120 ? encoded : `${encoded.slice(0, 117)}...`
 }
 

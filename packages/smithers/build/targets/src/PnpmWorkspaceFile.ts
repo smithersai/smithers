@@ -101,7 +101,7 @@ const key = (value: string): string =>
     : JSON.stringify(value)
 
 /** Orders map keys by UTF-16 code unit, never by locale. */
-const byCodeUnit = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
+const byCodeUnit = (left: string, right: string): number => Number(left > right) - Number(left < right)
 
 const checkSettings = (settings: Readonly<Record<string, boolean | string>> | undefined): void => {
   for (const name of ["packages", "allowBuilds", "linkWorkspacePackages"]) {

@@ -32,6 +32,7 @@
 import * as Schema from "effect/Schema"
 import { Buffer } from "node:buffer"
 import * as Yaml from "yaml"
+import { nodeLine, parseErrorLine } from "./internal/YamlLocation.ts"
 
 /**
  * Maximum encoded workflow size accepted by the structural parser.
@@ -155,10 +156,6 @@ interface Entry {
 }
 
 /** The 1-based source line a node starts on, or line 1 when it has no range. */
-const nodeLine = (counter: Yaml.LineCounter, node: unknown): number => {
-  const range = (node as { readonly range?: readonly [number, number, number] } | null | undefined)?.range
-  return range === undefined ? 1 : counter.linePos(range[0]).line
-}
 
 /** Whether a mapping entry was written with no value at all (`steps:`). */
 const isEmptyNode = (node: unknown): boolean =>
@@ -420,7 +417,7 @@ const refuseYamlErrors = (document: Yaml.Document.Parsed, counter: Yaml.LineCoun
   const failure = document.errors[0]
   if (failure === undefined) return
   const summary = failure.message.split("\n")[0]!.replace(/ at line \d+, column \d+:?$/, "")
-  const line = failure.linePos?.[0].line ?? counter.linePos(failure.pos[0]).line
+  const line = parseErrorLine(counter, failure)
   throw refusal(line, "invalid_yaml", `invalid YAML: ${summary}`)
 }
 

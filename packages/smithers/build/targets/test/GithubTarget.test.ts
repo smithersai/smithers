@@ -75,3 +75,35 @@ describe("Github.Workflow build-system attrs", () => {
     expect(Target.metadata(workflow).target).toBe("Github.Workflow")
   })
 })
+
+describe("Github compact CI validation boundary", () => {
+  it("returns a CiGen with equivalent expanded workflows", () => {
+    const setup = GithubTarget.Setup({})
+    const ci = GithubTarget.Ci({
+      workflows: {
+        verify: { on: { pullRequest: true, push: ["main"], dispatch: false }, run: [setup] }
+      },
+      changes: [".github/workflows/*.yml"]
+    })
+    expect(Target.metadata(ci).target).toBe("Github.CiGen")
+    const attrs = GithubTarget.ciGenAttrsOf(ci)
+    expect(attrs.changes).toEqual([".github/workflows/*.yml"])
+    expect(attrs.workflows).toHaveLength(1)
+    expect(GithubTarget.workflowAttrsOf(attrs.workflows[0]!)).toEqual(
+      GithubTarget.workflowAttrsOf(GithubTarget.Workflow({
+        name: "verify",
+        on: { pullRequest: true, push: { branches: ["main"] }, workflowDispatch: false },
+        run: [setup]
+      }))
+    )
+  })
+
+  it("validates compact attrs before expansion", () => {
+    expect(() =>
+      GithubTarget.Ci({
+        workflows: { verify: { on: { dispatch: "yes" as never }, run: [] } }
+      })
+    ).toThrow()
+    expect(() => GithubTarget.Ci({ workflows: {}, unexpected: true } as never)).toThrow()
+  })
+})

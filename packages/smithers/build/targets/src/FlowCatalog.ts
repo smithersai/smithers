@@ -197,7 +197,7 @@ export const rows = (
   }
   const rest = [...byId.values()]
     .filter((flow) => !declared.has(flow.id))
-    .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+    .sort((left, right) => Number(left.id > right.id) - Number(left.id < right.id))
     .map((flow) => row(flow, undefined))
   return [...featured, ...declaredOnly, ...rest]
 }

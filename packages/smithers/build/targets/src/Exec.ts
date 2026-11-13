@@ -29,6 +29,11 @@ import * as Config from "./Config.ts"
 import * as ExecSandbox from "./ExecSandbox.ts"
 import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
+import * as ExecDestinationPolicy from "./internal/ExecDestinationPolicy.ts"
+import * as ExecEnvironment from "./internal/ExecEnvironment.ts"
+import * as ExecLaunch from "./internal/ExecLaunch.ts"
+import * as ImportProbe from "./internal/ImportProbe.ts"
+import * as NearestRealpath from "./internal/NearestRealpath.ts"
 import { Process } from "./internal/Process.ts"
 import { SandboxHost } from "./internal/SandboxHost.ts"
 import { SecretProxyHost } from "./internal/SecretProxyHost.ts"
@@ -122,15 +127,12 @@ const resolvedBareImport = (
       ["--input-type=module", "--eval", importProbe, specifier],
       { cwd, encoding: "utf8", env: inheritedValues(["SYSTEMROOT"]), timeout: 60_000, windowsHide: true },
       (error, stdout, stderr) => {
-        if (error === null && stdout.startsWith("resolved ")) resume(Effect.succeed(stdout.slice("resolved ".length)))
-        else if (error === null && stdout === "missing") resume(Effect.succeed(undefined))
-        else {
-          const reason = error?.message ?? `unexpected probe output ${JSON.stringify(stdout)}`
-          resume(Effect.fail(refuse(
-            `cannot resolve the runtime preload ${JSON.stringify(specifier)} from ${cwd}: ${reason}` +
-              (stderr === "" ? "" : `\n${stderr}`)
-          )))
-        }
+        const answer = ImportProbe.parse(error, stdout, stderr)
+        if (answer.kind === "resolved") resume(Effect.succeed(answer.url))
+        else if (answer.kind === "missing") resume(Effect.succeed(undefined))
+        else {resume(Effect.fail(refuse(
+            `cannot resolve the runtime preload ${JSON.stringify(specifier)} from ${cwd}: ${answer.detail}`
+          )))}
       }
     )
   })
@@ -763,9 +765,6 @@ const validatedPayload = (untrusted: Payload): Payload => {
   const folded = new Set<string>()
   let environmentBytes = 0
   const entries = Object.entries(payload.env)
-  if (entries.length > maximumEnvironmentEntries) {
-    throw new TypeError(`exec environment has more than ${maximumEnvironmentEntries} entries`)
-  }
   for (const [name, value] of entries) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
       throw new TypeError(`exec environment name is not portable: ${JSON.stringify(name)}`)
@@ -782,16 +781,9 @@ const validatedPayload = (untrusted: Payload): Payload => {
     }
     env[name] = value
   }
-  if (new Set(payload.expectedExitCodes).size !== payload.expectedExitCodes.length) {
-    throw new TypeError("exec expected exit codes contain a duplicate")
-  }
   const secretNames = new Set<string>()
   for (const binding of payload.secrets) {
     const secret = binding.secret
-    usableText(secret.env, "exec secret name")
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(secret.env)) {
-      throw new TypeError(`exec secret name is not portable: ${JSON.stringify(secret.env)}`)
-    }
     // Two declarations of one variable would mint one placeholder and read the
     // same value twice. Refusing says so at the boundary instead of silently
     // collapsing them.
@@ -824,7 +816,7 @@ const validatedSensitiveNames = (names: ReadonlyArray<string>): ReadonlyArray<st
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
       throw new TypeError(`sensitive environment name is not portable: ${JSON.stringify(name)}`)
     }
-    const key = process.platform === "win32" ? name.toUpperCase() : name
+    const key = ExecEnvironment.nameKey(name, process.platform)
     if (!seen.has(key)) {
       seen.add(key)
       output.push(name)
@@ -833,11 +825,7 @@ const validatedSensitiveNames = (names: ReadonlyArray<string>): ReadonlyArray<st
   return output
 }
 
-const hostValue = (name: string): string | undefined => {
-  if (process.platform !== "win32") return process.env[name]
-  const found = Object.keys(process.env).find((entry) => entry.toUpperCase() === name)
-  return found === undefined ? undefined : process.env[found]
-}
+const hostValue = (name: string): string | undefined => ExecEnvironment.hostValue(name, process.env, process.platform)
 
 /**
  * Reads the host values of the environment names a target inherits
@@ -911,11 +899,11 @@ export const toolEnvironment = (
   for (const [name, value] of Object.entries(declared)) env[name] = value
   const withheld = new Set(
     ["SMITHERS_CACHE_URL", "SMITHERS_CACHE_TOKEN", ...sensitiveEnv].map((name) =>
-      process.platform === "win32" ? name.toUpperCase() : name
+      ExecEnvironment.nameKey(name, process.platform)
     )
   )
   for (const name of Object.keys(env)) {
-    const key = process.platform === "win32" ? name.toUpperCase() : name
+    const key = ExecEnvironment.nameKey(name, process.platform)
     if (withheld.has(key)) delete env[name]
   }
   for (const [name, value] of Object.entries(secretEnv)) env[name] = value
@@ -929,22 +917,13 @@ const inside = (root: string, candidate: string): boolean => {
 }
 
 /** Resolves symlinks through the nearest existing ancestor of one path. */
-const realpath = (absolute: string): string => {
-  let current = absolute
-  const suffix: Array<string> = []
-  while (true) {
-    try {
-      return NodePath.resolve(NodeFs.realpathSync(current), ...suffix)
-    } catch (cause) {
-      const code = SafeFs.errorCode(cause)
-      if (code !== "ENOENT" && code !== "ENOTDIR") throw cause
-      const parent = NodePath.dirname(current)
-      if (parent === current) throw cause
-      suffix.unshift(NodePath.basename(current))
-      current = parent
-    }
-  }
-}
+const realpath = NearestRealpath.resolve.bind(undefined, {
+  realpath: NodeFs.realpathSync,
+  dirname: NodePath.dirname,
+  basename: NodePath.basename,
+  resolve: NodePath.resolve,
+  errorCode: SafeFs.errorCode
+})
 
 /**
  * Resolves a path against a workspace and refuses lexical or symlink escapes.
@@ -1297,10 +1276,12 @@ const spawnTool = (
     }
     const program = Effect.gen(function*() {
       const env = toolEnvironment(payload.env, sensitiveEnv, secretEnv, base)
-      const shape = yield* Effect.try({
-        try: () => spawnShape(payload.argv, { env }),
-        catch: (cause) => failure(failureMessage(cause), "spawn_failed")
-      })
+      const shape = yield* ExecLaunch.prepare(
+        { shape: spawnShape, describe: failureMessage },
+        payload.argv,
+        { env },
+        failure
+      )
       const processService = (yield* Process) ?? ScopedProcess
       const retry = yield* StartupRetry
       const deadline = payload.timeoutMs === "unbounded" ? Infinity : payload.timeoutMs
@@ -1490,8 +1471,7 @@ const withSecretEnvironment = <A, E>(
         (resolved) => {
           const secretEnv: Record<string, string> = {
             ...minted,
-            HTTP_PROXY: proxy.endpoint,
-            HTTPS_PROXY: proxy.endpoint
+            ...ExecEnvironment.proxyVariables(proxy.endpoint, process.platform)
           }
           // NODE_USE_ENV_PROXY stays unset: with it, Node rejects a request a
           // tool addresses to the proxy in absolute form itself. Node and Go
@@ -1499,10 +1479,7 @@ const withSecretEnvironment = <A, E>(
           // audience through S.SecretOrigin like any HTTPS audience.
           // Tools split on which spelling they read, and a host with
           // case-insensitive environment variables would see the two as one name.
-          if (process.platform !== "win32") {
-            secretEnv["http_proxy"] = proxy.endpoint
-            secretEnv["https_proxy"] = proxy.endpoint
-          }
+
           return use(secretEnv, resolved)
         }
       ),
@@ -1642,42 +1619,31 @@ export const run = (
           })
         )
       }
-      if (
-        destinations !== undefined && (
-          confinement === undefined || confinement.mechanism._tag !== "bubblewrap" ||
-          confinement.network !== "none" || resolved.secrets.length > 0
-        )
-      ) {
-        return Effect.fail(execError({
-          argv: resolved.argv,
-          cwd: resolved.cwd,
-          exitCode: -1,
-          code: "sandbox_unenforceable",
-          stdout: "",
-          stderr: "sandbox: destination allowlists require bubblewrap with a closed network and no secret proxy"
-        }))
-      }
-      return withSecretEnvironment(resolved, diagnostic, (secretEnv, brokered) =>
-        Effect.flatMap(
-          confined(confinement, cwd, brokered, sensitiveEnv, secretEnv, options, destinations, hostFacts),
-          (output) =>
-            resolved.expectedExitCodes.includes(output.exitCode)
-              ? Effect.succeed({
-                exitCode: output.exitCode,
-                stdout: output.stdout,
-                stderr: output.stderr
-              })
-              : Effect.fail(
-                execError({
-                  argv: resolved.argv,
-                  cwd: resolved.cwd,
-                  exitCode: output.exitCode,
-                  code: "exit_status",
-                  stdout: output.stdoutTail,
-                  stderr: tail(annotate(confinement, output.stderrTail))
-                })
-              )
-        ))
+      return Effect.andThen(
+        ExecDestinationPolicy.validate(destinations, confinement, resolved.secrets.length, resolved.argv, resolved.cwd),
+        () =>
+          withSecretEnvironment(resolved, diagnostic, (secretEnv, brokered) =>
+            Effect.flatMap(
+              confined(confinement, cwd, brokered, sensitiveEnv, secretEnv, options, destinations, hostFacts),
+              (output) =>
+                resolved.expectedExitCodes.includes(output.exitCode)
+                  ? Effect.succeed({
+                    exitCode: output.exitCode,
+                    stdout: output.stdout,
+                    stderr: output.stderr
+                  })
+                  : Effect.fail(
+                    execError({
+                      argv: resolved.argv,
+                      cwd: resolved.cwd,
+                      exitCode: output.exitCode,
+                      code: "exit_status",
+                      stdout: output.stdoutTail,
+                      stderr: tail(annotate(confinement, output.stderrTail))
+                    })
+                  )
+            ))
+      )
     }
   )
 }

@@ -17,12 +17,12 @@ import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { randomUUID } from "node:crypto"
-import type * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as NodeUtil from "node:util/types"
 import { failureMessage, type FilePayload, WriteFileError, writeGeneratedFile } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
+import { ensureDirectory, reclaimStaleTemporaries } from "./internal/ScaffoldDirectory.ts"
 import { assertPackageName, License, merge, render } from "./PackageJson.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Target from "./Target.ts"
@@ -149,11 +149,11 @@ const reservedIdentifiers = new Set([
 /** Maps an npm package component to a valid, non-reserved JavaScript identifier. */
 const sourceIdentifier = (name: string): string => {
   const words = directoryName(name).split(/[^A-Za-z0-9]+/).filter((word) => word !== "")
-  const candidate = words.map((word, index) => index === 0 ? word : `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`)
+  const candidate = words.map((word, index) => index === 0 ? word : `${word[0]!.toUpperCase()}${word.slice(1)}`)
     .join("")
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(candidate) && !reservedIdentifiers.has(candidate)
     ? candidate
-    : `package${candidate === "" ? "Name" : `${candidate[0]?.toUpperCase() ?? ""}${candidate.slice(1)}`}`
+    : `package${candidate === "" ? "Name" : `${candidate[0]!.toUpperCase()}${candidate.slice(1)}`}`
 }
 
 /**
@@ -250,63 +250,15 @@ export interface ScaffoldIo {
   readonly remove?: (path: string) => Promise<void>
 }
 
-/** Creates a workspace directory one component at a time without following links. */
-const ensureDirectory = async (root: string, relative: string): Promise<string> => {
-  let current = root
-  for (const segment of relative === "." ? [] : relative.split("/")) {
-    const parent = current
-    const candidate = NodePath.join(parent, segment)
-    let stats: NodeFs.Stats
-    let created = false
-    try {
-      stats = await Fs.lstat(candidate)
-    } catch (cause) {
-      if (SafeFs.errorCode(cause) !== "ENOENT") throw cause
-      try {
-        await Fs.mkdir(candidate)
-        created = true
-      } catch (mkdirCause) {
-        if (SafeFs.errorCode(mkdirCause) !== "EEXIST") throw mkdirCause
-      }
-      if (created) await SafeFs.syncDirectory(parent)
-      stats = await Fs.lstat(candidate)
-    }
-    if (stats.isSymbolicLink() || !stats.isDirectory()) {
-      throw new Error(`package scaffold parent is not a real directory: ${candidate}`)
-    }
-    const canonical = await Fs.realpath(candidate)
-    if (!SafeFs.inside(root, canonical)) {
-      throw new Error(`package scaffold parent leaves the workspace: ${candidate}`)
-    }
-    current = canonical
-  }
-  return current
-}
-
-/**
- * How old a scaffold temporary directory must be before a later run reclaims it.
- * A younger one may belong to a concurrent scaffold that is still writing.
- */
-const staleTemporaryMs = 5 * 60 * 1000
-
-/**
- * Removes scaffold temporary directories a killed process left under `parent`.
- * In-process failures clean up after themselves; SIGKILL, OOM, and power loss
- * do not, and a leftover holds a `package.json` under the packages glob.
- */
-const reclaimStaleTemporaries = async (
-  parent: string,
-  remove: (path: string) => Promise<void>
-): Promise<void> => {
-  const cutoff = Date.now() - staleTemporaryMs
-  for (const entry of await Fs.readdir(parent)) {
-    if (!/^\.smthrs-scaffold-.*\.tmp$/.test(entry)) continue
-    const path = NodePath.join(parent, entry)
-    // Best effort: a leftover that vanished or cannot be read is not ours to fail on.
-    // lstat reports a symbolic link as a non-directory, so links are never followed.
-    const stats = await Fs.lstat(path).catch(() => undefined)
-    if (stats?.isDirectory() === true && stats.mtimeMs < cutoff) await remove(path)
-  }
+const directoryIo = {
+  lstat: Fs.lstat,
+  mkdir: Fs.mkdir,
+  realpath: Fs.realpath,
+  readdir: Fs.readdir,
+  join: NodePath.join,
+  inside: SafeFs.inside,
+  syncDirectory: SafeFs.syncDirectory,
+  errorCode: SafeFs.errorCode
 }
 
 const absent = async (path: string): Promise<boolean> => {
@@ -344,7 +296,7 @@ export const scaffold = (
       const name = assertPackageName(packageName)
       const created = directory === "." ? directoryName(name) : `${directory}/${directoryName(name)}`
       const root = await SafeFs.canonicalRoot(options.workspaceRoot)
-      const parent = await ensureDirectory(root, directory)
+      const parent = await ensureDirectory(root, directory, directoryIo)
       const destination = NodePath.join(parent, directoryName(name))
       if (!await absent(destination)) throw new Error(`${created} already exists; scaffolding never overwrites`)
 
@@ -353,7 +305,7 @@ export const scaffold = (
         Effect.runPromise(writeGeneratedFile(workspaceRoot, file), { signal: childSignal }))
       const rename = io?.rename ?? Fs.rename
       const remove = io?.remove ?? ((path) => Fs.rm(path, { recursive: true, force: true }))
-      await reclaimStaleTemporaries(parent, remove)
+      await reclaimStaleTemporaries(parent, remove, directoryIo)
       const temporary = NodePath.join(parent, `.smthrs-scaffold-${randomUUID()}.tmp`)
       const temporaryRelative = NodePath.relative(root, temporary).split(NodePath.sep).join("/")
       const files: Array<string> = []

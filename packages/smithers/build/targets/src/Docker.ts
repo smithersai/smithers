@@ -163,7 +163,7 @@ const orderedBuildArgs = (
 ): ReadonlyArray<readonly [string, unknown]> | null =>
   buildArgs === undefined
     ? null
-    : Object.entries(buildArgs).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+    : Object.entries(buildArgs).sort(([left], [right]) => Number(left > right) - Number(left < right))
 
 const buildDefinition = Target.make("Docker.Build", {
   attrs: BuildAttrs,

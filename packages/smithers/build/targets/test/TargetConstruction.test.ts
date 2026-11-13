@@ -87,12 +87,18 @@ describe("validated metadata is immutable", () => {
   })
 
   it("freezes the declared output tree", () => {
-    const target = Smithers.Filegroup({ srcs: [Smithers.glob("src/**/*.ts")], cwd: "packages/smithers/build/targets" })
+    const target = Smithers.Fetch({
+      url: "https://example.invalid/source",
+      sha256: "0".repeat(64),
+      out: "dist"
+    })
     const outputs = Target.metadata(target).outputs
-    if (outputs !== undefined) {
-      expect(Object.isFrozen(outputs)).toBe(true)
-      expect(Object.isFrozen(outputs.paths)).toBe(true)
-    }
+    expect(outputs).toBeDefined()
+    expect(Object.isFrozen(outputs)).toBe(true)
+    expect(Object.isFrozen(outputs!.paths)).toBe(true)
+    expect(() => (outputs!.paths as Array<string>).push("changed")).toThrow(TypeError)
+    expect(Reflect.set(outputs!, "paths", [])).toBe(false)
+    expect(outputs!.paths).toEqual(["dist"])
   })
 
   it("freezes each kind view", () => {

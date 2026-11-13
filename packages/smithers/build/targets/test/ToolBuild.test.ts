@@ -1,3 +1,7 @@
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import * as Effect from "effect/Effect"
+import * as Latch from "effect/Latch"
+import * as Layer from "effect/Layer"
 /**
  * The `ToolBuild` target itself, and output measurement, the shared step every
  * producing build target ends with.
@@ -18,6 +22,7 @@ import * as Exec from "../src/Exec.ts"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
 import {
+  CaptureOutputsLive,
   measureOutput,
   measureOutputs,
   OutputError,
@@ -472,5 +477,56 @@ describe("concurrent capture", () => {
     await Fs.symlink(NodePath.join(root, "fail/f-00.txt"), NodePath.join(root, "fail/f-10.link"))
     await Fs.symlink(NodePath.join(root, "fail/f-00.txt"), NodePath.join(root, "fail/f-50.link"))
     await expect(measureOutput(root, ".", "fail")).rejects.toThrow(/f-10\.link/)
+  })
+})
+
+it("refuses a revoked array in an untrusted output manifest", () => {
+  const array = Proxy.revocable([], {})
+  array.revoke()
+  expect(readOutputManifest({ cwd: ".", paths: ["out"] }, { outputs: array.proxy }))
+    .toBe("the output manifest could not be inspected safely")
+})
+
+it("wraps an unexpected capture configuration failure through the registered action", async () => {
+  let registered: ((payload: unknown, id: string) => Effect.Effect<unknown, unknown>) | undefined
+  const runtime = FlowRuntime.FlowRuntime.of(
+    {
+      register: (_flow: unknown, action: typeof registered) =>
+        Effect.sync(() => {
+          registered = action
+        }),
+      actionExecute: (action: { execute: Effect.Effect<unknown, unknown> }) =>
+        Effect.map(Effect.exit(action.execute), (exit) => new Flow.Complete({ exit }))
+    } as unknown as FlowRuntime.FlowRuntime["Service"]
+  )
+  const options = Object.defineProperty({}, "workspaceRoot", {
+    get: () => {
+      throw new Error("capture root unavailable")
+    }
+  })
+  const layer = CaptureOutputsLive(options as never)
+  const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    yield* Layer.build(layer.pipe(Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, runtime))))
+    if (registered === undefined) throw new Error("capture action not registered")
+    return yield* registered({ cwd: ".", paths: ["out"] }, "capture-fault").pipe(
+      Effect.provideService(FlowRuntime.FlowRuntime, runtime),
+      Effect.provideService(
+        FlowRuntime.FlowInstance,
+        FlowRuntime.FlowInstance.of({
+          executionId: "capture-fault",
+          actionState: { count: 0, latch: Latch.makeUnsafe() }
+        } as never)
+      ),
+      Effect.flip
+    )
+  })))
+  expect(result).toBeInstanceOf(OutputError)
+  expect(result).toMatchObject({ path: "", message: "capture root unavailable" })
+})
+
+it("reports an invalid cwd even when no outputs supply a diagnostic path", async () => {
+  await expect(measureOutputs(root, "../escape", [])).rejects.toMatchObject({
+    path: "",
+    message: expect.stringContaining("leaves the directory")
   })
 })

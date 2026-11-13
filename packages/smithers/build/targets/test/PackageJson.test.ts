@@ -940,10 +940,54 @@ describe("generated fields, cache, and refresh", () => {
     await run(withGenerated())
   })
 
+  it("refuses a model object missing the requested generated fields", async () => {
+    const executable = await fakeClaude("{}")
+    const error = await failure(withGenerated({ mode: "refresh" }), executable)
+    expect(error.message).toContain("fields")
+    await expect(Fs.stat(NodePath.join(root, "package.json"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
   it("fails refresh with a precise message when the model answers with prose", async () => {
     const executable = await fakeClaude("I cannot help with that.")
     const error = await failure(withGenerated({ mode: "refresh" }), executable)
     expect(error.message).toContain("not strict JSON")
+  })
+})
+
+describe("manifest rendering boundaries", () => {
+  it("bounds long field values in a field-level diff", () => {
+    const expected = "a".repeat(200)
+    const actual = "b".repeat(200)
+    expect(diffFields({ description: expected }, { description: actual })).toEqual([
+      `description: expected ${JSON.stringify(expected).slice(0, 117)}..., found ${
+        JSON.stringify(actual).slice(0, 117)
+      }...`
+    ])
+  })
+
+  it("retains original check attrs when viewed outside the lint verb", () => {
+    const target = PackageJsonCheck({
+      output: "//package.json",
+      fields: payload().fields,
+      generated: [],
+      readme: null,
+      sources: null,
+      mode: "check"
+    })
+    const metadata = Target.metadata(target)
+    expect(metadata.forKind("run").attrs).toBe(metadata.attrs)
+  })
+
+  it("anchors root-package targets for the dot package directory spelling", () => {
+    const expanded = targets(PackageJson({ name: "widget", version: "0.1.0" }), ".", labeller([]))
+    expect(Target.metadata(expanded.check).attrs).toMatchObject({ output: "//package.json" })
+  })
+
+  it("hashes a generation context without a declared manifest name", async () => {
+    const context = await generationContext(root, payload({ fields: {} }))
+    expect(context.digest).toMatch(/^[a-f0-9]{64}$/)
+    expect(context.readme).toBe("")
+    expect(context.sources).toEqual([])
   })
 })
 
@@ -1096,4 +1140,19 @@ describe("target synthesis", () => {
     expect(attrs.readme.path).toBe("//packages/widget/README.md")
     expect(attrs.sources.pattern).toBe("//packages/widget/src/**/*.ts")
   })
+})
+
+it("refuses a callable script candidate without executing it", () => {
+  let called = false
+  const candidate = () => {
+    called = true
+  }
+  expect(() =>
+    PackageJson({
+      name: "widget",
+      version: "0.1.0",
+      scripts: { build: candidate as never }
+    })
+  ).toThrow("must name a target target")
+  expect(called).toBe(false)
 })

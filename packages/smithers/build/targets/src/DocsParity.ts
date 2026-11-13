@@ -260,7 +260,7 @@ const tableDivider = /^ {0,3}:?-+:?(?:\s*\|\s*:?-+:?)+\s*\|?\s*$/
 /** Whether a block is prose rather than a heading, list, quote, table, or HTML. */
 const isProseBlock = (block: string): boolean => {
   const lines = block.split("\n")
-  const first = lines[0] ?? ""
+  const first = lines[0]!
   return !/^(?: {4}|\t)/.test(first) &&
     !heading.test(first) &&
     !listItem.test(first) &&
@@ -290,7 +290,7 @@ export const summarize = (contents: string): Summary => {
   for (const block of body.split(/\n[ \t]*\n/)) {
     const trailingTrimmed = block.trimEnd()
     if (trailingTrimmed.trimStart() === "") continue
-    const match = title.exec(trailingTrimmed.trimStart().split("\n")[0] ?? "")
+    const match = title.exec(trailingTrimmed.trimStart().split("\n")[0]!)
     if (found === undefined && match?.[1] !== undefined) found = match[1]
     if (isProseBlock(trailingTrimmed)) proseCharacters += proseOf(trailingTrimmed).length
   }

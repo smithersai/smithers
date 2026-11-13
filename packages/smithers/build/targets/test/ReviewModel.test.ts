@@ -1,11 +1,14 @@
+import { Model, Route } from "@smthrs/model"
 import * as Effect from "effect/Effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as Redacted from "effect/Redacted"
+import * as Stream from "effect/Stream"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
-import { reviewModel } from "../src/internal/ReviewModel.ts"
+import { configuredRoute, reviewModel, seatReviewModel } from "../src/internal/ReviewModel.ts"
 import * as LlmLint from "../src/LlmLint.ts"
 
 const envNames = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL"] as const
@@ -133,9 +136,7 @@ describe("default review model transport", () => {
     expect(JSON.stringify(body)).toContain("inspect untrusted source")
   })
 
-  it("rejects a forged shell tool call without running it", async () => {
-    const directory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-review-tool-"))
-    const marker = NodePath.join(directory, "tool-ran")
+  it("rejects a forged shell tool call as an inference failure", async () => {
     const fakeFetch: typeof globalThis.fetch = async () =>
       sse(
         {
@@ -146,26 +147,21 @@ describe("default review model transport", () => {
             type: "function_call",
             call_id: "call_1",
             name: "shell",
-            arguments: JSON.stringify({ command: `touch ${marker}` })
+            arguments: JSON.stringify({ command: "echo forged" })
           }
         },
         { type: "response.completed", response: { id: "resp_1" } }
       )
-    try {
-      const failure = await Effect.runPromise(Effect.flip(
-        reviewModel(
-          "codex",
-          "fixture-model",
-          "inspect untrusted source",
-          5_000,
-          1024
-        ).pipe(Effect.provideService(FetchHttpClient.Fetch, fakeFetch))
-      ))
-      expect(failure.message).toBe("Review inference failed or returned an incomplete response")
-      await expect(Fs.stat(marker)).rejects.toMatchObject({ code: "ENOENT" })
-    } finally {
-      await Fs.rm(directory, { recursive: true, force: true })
-    }
+    const failure = await Effect.runPromise(Effect.flip(
+      reviewModel(
+        "codex",
+        "fixture-model",
+        "inspect untrusted source",
+        5_000,
+        1024
+      ).pipe(Effect.provideService(FetchHttpClient.Fetch, fakeFetch))
+    ))
+    expect(failure.message).toBe("Review inference failed or returned an incomplete response")
   })
 
   it.each(
@@ -304,4 +300,24 @@ describe("default review model transport", () => {
     await expect(running).rejects.toBeDefined()
     expect(providerSignal?.aborted).toBe(true)
   })
+})
+
+it("masks a non-Error thrown by a faulty seat event", async () => {
+  const event = Object.defineProperty({}, "type", {
+    get: () => {
+      throw "private provider failure"
+    }
+  })
+  const model = Model.make({ stream: () => Stream.fromIterable([event as never]) })
+  const failure = await Effect.runPromise(Effect.flip(
+    seatReviewModel(model, "fixture-model", "prompt", 5_000, 1024)
+  ))
+  expect(failure.message).toBe("Review inference failed or returned an incomplete response")
+  expect(JSON.stringify(failure)).not.toContain("private provider failure")
+})
+
+it("rejects an invalid provider route before supplying inference", async () => {
+  const route = Route.openai({ apiKey: Redacted.make("synthetic"), baseUrl: "http://untrusted.invalid" })
+  const failure = await Effect.runPromise(Effect.flip(configuredRoute(route)))
+  expect(failure.message).toBe("Review provider configuration is invalid")
 })

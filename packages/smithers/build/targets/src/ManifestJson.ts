@@ -72,14 +72,6 @@ const defaultLimits: Limits = {
 
 const step = (path: string, key: string): string => `${path}[${JSON.stringify(key)}]`
 
-const inspect = <A>(path: string, operation: () => A): A => {
-  try {
-    return operation()
-  } catch {
-    throw new TypeError(`${path} could not be inspected without executing hostile object behavior`)
-  }
-}
-
 const encodedStringBytes = (value: string, path: string): number => {
   if (!value.isWellFormed()) throw new TypeError(`${path} contains an unpaired UTF-16 surrogate`)
   return Buffer.byteLength(JSON.stringify(value), "utf8")
@@ -133,20 +125,18 @@ const clone = (
       throw new TypeError(`${path} is a function`)
     case "object":
       break
-    default:
-      throw new TypeError(`${path} is an unsupported ${typeof value} value`)
   }
 
   const object = value
   if (NodeUtil.isProxy(object)) throw new TypeError(`${path} is a Proxy`)
   if (seen.has(object)) throw new TypeError(`${path} closes a reference cycle`)
-  const prototype = inspect(path, () => Object.getPrototypeOf(object))
+  const prototype = Object.getPrototypeOf(object)
   seen.add(object)
   try {
     if (Array.isArray(object)) {
       if (prototype !== Array.prototype) throw new TypeError(`${path} is an array subclass instance`)
-      const names = inspect(path, () => Object.getOwnPropertyNames(object))
-      const symbols = inspect(path, () => Object.getOwnPropertySymbols(object))
+      const names = Object.getOwnPropertyNames(object)
+      const symbols = Object.getOwnPropertySymbols(object)
       if (names.length !== object.length + 1 || names.at(-1) !== "length" || symbols.length > 0) {
         throw new TypeError(`${path} is a sparse array or carries extra own properties`)
       }
@@ -158,7 +148,7 @@ const clone = (
         if (names[index] !== String(index)) {
           throw new TypeError(`${path} is a sparse array or carries extra own properties`)
         }
-        const descriptor = inspect(memberPath, () => Object.getOwnPropertyDescriptor(object, String(index)))
+        const descriptor = Object.getOwnPropertyDescriptor(object, String(index))
         if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) {
           throw new TypeError(`${memberPath} is an accessor or non-enumerable property`)
         }
@@ -170,16 +160,16 @@ const clone = (
     if (prototype !== Object.prototype && prototype !== null) {
       throw new TypeError(`${path} is an object whose prototype is not a plain object`)
     }
-    if (inspect(path, () => Object.getOwnPropertySymbols(object)).length > 0) {
+    if (Object.getOwnPropertySymbols(object).length > 0) {
       throw new TypeError(`${path} carries symbol-keyed own properties`)
     }
     spend(budget, limits, 2, path, true)
     const copied = Object.create(null) as Record<string, Value>
-    const names = inspect(path, () => Object.getOwnPropertyNames(object))
+    const names = Object.getOwnPropertyNames(object)
     for (let index = 0; index < names.length; index += 1) {
       const key = names[index]!
       const memberPath = step(path, key)
-      const descriptor = inspect(memberPath, () => Object.getOwnPropertyDescriptor(object, key))
+      const descriptor = Object.getOwnPropertyDescriptor(object, key)
       if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) {
         throw new TypeError(`${memberPath} is an accessor or non-enumerable property`)
       }

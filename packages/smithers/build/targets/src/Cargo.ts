@@ -9,6 +9,7 @@ import { parse as parseToml } from "smol-toml"
 import * as Attr from "./Attr.ts"
 import * as Compose from "./Compose.ts"
 import * as Input from "./Input.ts"
+import { binarySuffix } from "./internal/CargoPlatform.ts"
 import * as Target from "./Target.ts"
 
 /**
@@ -484,11 +485,7 @@ export const binaries = (
   const profile = typeof values["profile"] === "string" ? values["profile"] : "dev"
   const directory = profile === "dev" || profile === "test" ? "debug" : profile === "bench" ? "release" : profile
   const target = typeof values["target"] === "string" ? values["target"] : undefined
-  const suffix = target === undefined
-    ? process.platform === "win32" ? ".exe" : ""
-    : /-windows(?:-|$)/.test(target)
-    ? ".exe"
-    : ""
+  const suffix = binarySuffix(target, process.platform)
   const resolved = selections ?? (values["crates"] === undefined ? [{ _tag: "Workspace" } as const] : [])
   return resolved.flatMap((selection) => {
     const manifestDirectory = selection._tag === "Manifest" ? selection.path.split("/").slice(0, -1).join("/") : ""

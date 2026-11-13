@@ -71,7 +71,7 @@ export type PackageValue<
  */
 export const targetKeyPattern = /^[A-Za-z_][A-Za-z0-9._-]*$/
 
-const byCodeUnit = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
+const byCodeUnit = (left: string, right: string): number => Number(left > right) - Number(left < right)
 
 /** One value a Package map accepts before wrapping. */
 type MapValue = Target.AnyTarget | Input.File | Input.Glob
@@ -183,12 +183,7 @@ export const Package = <const T extends Readonly<Record<string, MapValue>>>(opti
  */
 export const isPackage = (value: unknown): value is PackageValue => {
   if (typeof value !== "object" || value === null || NodeUtil.isProxy(value)) return false
-  let descriptor: PropertyDescriptor | undefined
-  try {
-    descriptor = Object.getOwnPropertyDescriptor(value, PackageTypeId)
-  } catch {
-    return false
-  }
+  const descriptor = Object.getOwnPropertyDescriptor(value, PackageTypeId)
   if (
     descriptor === undefined || !("value" in descriptor) ||
     descriptor.enumerable !== false || descriptor.configurable !== false || descriptor.writable !== false

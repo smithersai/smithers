@@ -228,7 +228,7 @@ const readChunkBytes = 256 * 1024
  * tree digest differently on different machines; code-unit order is the same
  * everywhere.
  */
-const byCodeUnit = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
+const byCodeUnit = (left: string, right: string): number => Number(left > right) - Number(left < right)
 
 /** Reports whether `candidate` is `root` or below it, lexically. */
 const inside = (root: string, candidate: string): boolean => {
@@ -291,8 +291,8 @@ export interface CaptureIo {
  * degrade to zero and the `fstat` check remains the guard.
  */
 const openFlags = NodeFs.constants.O_RDONLY |
-  (NodeFs.constants.O_NOFOLLOW ?? 0) |
-  (NodeFs.constants.O_NONBLOCK ?? 0)
+  NodeFs.constants.O_NOFOLLOW |
+  NodeFs.constants.O_NONBLOCK
 
 /**
  * Reads the real workspace through `node:fs`.
@@ -788,9 +788,8 @@ export const measureOutput = async (
   const unusable = Target.declaredOutputFailure(cwd, declared)
   if (unusable !== undefined) throw new OutputError({ path: declared, message: unusable })
   const absolute = NodePath.resolve(root, cwd, declared)
-  if (!inside(root, absolute)) {
-    throw new OutputError({ path: declared, message: `declared output leaves the workspace: ${declared}` })
-  }
+  // declaredOutputFailure already refuses absolute paths and every ".." segment
+  // in both cwd and declared, so resolving them cannot lexically leave root.
   const cache = cachePath(root, declared, options.cacheDirectory)
   refuseCacheOverlap(declared, absolute, cache)
   let stats

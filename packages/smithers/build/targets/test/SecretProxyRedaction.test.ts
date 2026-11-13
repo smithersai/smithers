@@ -1,5 +1,9 @@
 import * as NodeHttp from "node:http"
+import * as NodeHttps from "node:https"
+import * as NodeNet from "node:net"
 import { describe, expect, it } from "vitest"
+import { observeUpstream, type ResponseContext } from "../src/internal/SecretProxyResponse.ts"
+import { connectTunnel } from "../src/internal/SecretProxyTunnel.ts"
 import * as Secret from "../src/Secret.ts"
 import * as SecretProxy from "../src/SecretProxy.ts"
 
@@ -611,4 +615,180 @@ describe("single-pass redaction", () => {
     expect(seeded.redact("éclair")).toBe("seed")
     expect(seeded.redactBytes(Buffer.from("éclair"))).toEqual(Buffer.from("seed"))
   })
+})
+
+const socketPair = async () => {
+  let accepted!: (socket: NodeNet.Socket) => void
+  const incoming = new Promise<NodeNet.Socket>((resolve) => {
+    accepted = resolve
+  })
+  const server = NodeNet.createServer(accepted)
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address() as NodeNet.AddressInfo
+  const client = NodeNet.connect({ host: "127.0.0.1", port: address.port })
+  const socket = await incoming
+  return {
+    client,
+    socket,
+    close: async () => {
+      client.destroy()
+      socket.destroy()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  }
+}
+
+describe("CONNECT host failure boundary", () => {
+  it("answers a synchronous native transport failure without leaking its diagnostic", async () => {
+    const pair = await socketPair()
+    const tunnels = new Set<() => void>()
+    const answer = new Promise<string>((resolve, reject) => {
+      let text = ""
+      pair.client.setEncoding("utf8")
+      pair.client.on("data", (chunk: string) => {
+        text += chunk
+      })
+      pair.client.once("end", () => resolve(text))
+      pair.client.once("error", reject)
+    })
+    try {
+      connectTunnel(pair.socket, { host: "127.0.0.1", port: 443 }, Buffer.alloc(0), tunnels, 1000, {
+        connect: () => {
+          throw new Error("private host allocation failure")
+        },
+        setTimeout,
+        clearTimeout
+      })
+      expect(await answer).toBe("HTTP/1.1 502 Bad Gateway\r\n\r\n")
+      expect(tunnels.size).toBe(0)
+    } finally {
+      await pair.close()
+    }
+  })
+
+  it("cleans an asynchronous transport failure after the child socket already closed", async () => {
+    const pair = await socketPair()
+    const tunnels = new Set<() => void>()
+    const pending = new NodeNet.Socket()
+    const closed = new Promise<void>((resolve) => pending.once("close", () => resolve()))
+    try {
+      pair.socket.destroy()
+      connectTunnel(pair.socket, { host: "127.0.0.1", port: 443 }, Buffer.alloc(0), tunnels, 1000, {
+        connect: () => {
+          queueMicrotask(() => pending.destroy(new Error("injected connection failure")))
+          return pending
+        },
+        setTimeout,
+        clearTimeout
+      })
+      await closed
+      expect(pending.destroyed).toBe(true)
+      expect(pair.socket.destroyed).toBe(true)
+      expect(tunnels.size).toBe(0)
+    } finally {
+      pending.destroy()
+      await pair.close()
+    }
+  })
+})
+
+describe("upstream response settlement", () => {
+  it.each(["before-response", "before-body"] as const)(
+    "ignores an upstream settling %s after cancellation",
+    async (stage) => {
+      const upstream = await listen((_request, response) => response.end("private response"))
+      let settled = stage === "before-response"
+      let completed = false
+      const chunks: Array<Buffer> = []
+      try {
+        await new Promise<void>((resolve, reject) => {
+          NodeHttp.get(upstream.origin, (incoming) => {
+            const context: ResponseContext = {
+              isSettled: () => settled,
+              fail: () => {},
+              failError: reject,
+              chunks,
+              concat: Buffer.concat,
+              boundary: SecretProxy.makeVault().request(upstream.origin),
+              hopByHop: new Set(),
+              method: "GET",
+              complete: () => {
+                completed = true
+              }
+            }
+            incoming.once("close", () => resolve())
+            observeUpstream(incoming, context, 1024)
+            settled = true
+            if (stage === "before-body") incoming.resume()
+          }).on("error", reject)
+        })
+        expect(completed).toBe(false)
+        expect(chunks).toEqual([])
+      } finally {
+        await upstream.close()
+      }
+    }
+  )
+})
+
+it("masks an unexpected request-boundary failure through real HTTP", async () => {
+  const upstream = await listen((_request, response) => response.end("should not arrive"))
+  const vault: SecretProxy.Vault = {
+    ...SecretProxy.makeVault(),
+    request: () => {
+      throw new Error("private substitution failure")
+    }
+  }
+  const proxy = await SecretProxy.startProxy(vault)
+  try {
+    const answer = await exchange(proxy.endpoint, upstream.origin + "/", "GET")
+    expect(answer).toMatchObject({ status: 502, body: "secret substitution failed" })
+  } finally {
+    await proxy.close()
+    await upstream.close()
+  }
+})
+
+it("fails closed when a native TLS audience cannot authenticate the handshake", async () => {
+  let contacts = 0
+  const upstream = NodeHttps.createServer((_request, response) => {
+    contacts += 1
+    response.end("unexpected")
+  })
+  upstream.on("tlsClientError", () => {})
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+  const port = (upstream.address() as NodeNet.AddressInfo).port
+  const destination = `https://127.0.0.1:${port}/private-destination`
+  const proxy = await SecretProxy.startProxy(SecretProxy.makeVault({ read: () => undefined }))
+  try {
+    const capability = proxy.urlFor(Secret.Secret("TLS_DESTINATION", { fallback: destination }))
+    expect(proxy.urlFor(Secret.Secret("TLS_DESTINATION", { fallback: destination }))).toBe(capability)
+    const answer = await get(capability)
+    expect(answer.status).toBe(502)
+    expect(answer.body).toMatch(/^upstream request failed/)
+    expect(answer.body).not.toContain(destination)
+    expect(contacts).toBe(0)
+  } finally {
+    await proxy.close()
+    upstream.closeAllConnections()
+    await new Promise<void>((resolve) => upstream.close(() => resolve()))
+  }
+})
+
+it("refuses a brokered absolute URL whose path has a second authority marker", async () => {
+  const upstream = await listen((_request, response) => response.end("unexpected"))
+  const vault = SecretProxy.makeVault({ read: () => "token" })
+  vault.mint(Secret.HttpSecret(Secret.Secret("BROKER_TOKEN"), [upstream.origin]))
+  const proxy = await SecretProxy.startProxy(vault)
+  try {
+    const origin = await proxy.originFor(upstream.origin)
+    const answer = await exchange(proxy.endpoint, origin + "//elsewhere.invalid/x", "GET")
+    expect(answer).toMatchObject({
+      status: 400,
+      body: "brokered origin requires an origin-form request target"
+    })
+  } finally {
+    await proxy.close()
+    await upstream.close()
+  }
 })

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest"
 import * as Cargo from "../src/Cargo.ts"
 import * as Compose from "../src/Compose.ts"
 import * as Input from "../src/Input.ts"
+import { binarySuffix } from "../src/internal/CargoPlatform.ts"
 import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"
 
@@ -487,5 +488,28 @@ describe("Cargo manifest facts", () => {
     expect(Cargo.metadataMatches(metadata, { aomi: { skip: false } })).toBe(false)
     expect(Cargo.metadataMatches({ aomi: { display: "x" } }, { aomi: { skip: true } })).toBe(false)
     expect(Cargo.metadataMatches({}, {})).toBe(true)
+  })
+})
+
+describe("Cargo executable platform policy", () => {
+  it.each(
+    [
+      [undefined, "win32", ".exe"],
+      [undefined, "linux", ""],
+      ["x86_64-pc-windows-msvc", "linux", ".exe"],
+      ["x86_64-pc-windows", "linux", ".exe"],
+      ["x86_64-unknown-linux-gnu", "win32", ""]
+    ] as const
+  )("uses target %s before host %s", (target, platform, suffix) => {
+    expect(binarySuffix(target, platform)).toBe(suffix)
+  })
+
+  it("treats primitive accessor input as no declaration", () => {
+    expect(Cargo.binaries(42)).toEqual([])
+    expect(Cargo.appSetFilter(42)).toBeUndefined()
+  })
+
+  it("rejects absent fetch attrs through declaration validation", () => {
+    expect(() => Cargo.Fetch(undefined as never)).toThrow("Cargo.Fetch declaration is invalid: Expected object")
   })
 })

@@ -74,8 +74,8 @@ describe("rules name the attrs the workspace resolves", () => {
     })
   }
 
-  it("a rule that runs no workspace tool names none", () => {
-    const shell = Target.metadata(TsBuild({
+  it("TsBuild resolves only the package manager from the workspace", () => {
+    const build = Target.metadata(TsBuild({
       packageManager,
       srcs: [Input.glob("src/**/*.ts")],
       entries: [Input.file("src/index.ts")],
@@ -85,7 +85,7 @@ describe("rules name the attrs the workspace resolves", () => {
       format: "esm",
       outDir: "dist"
     }))
-    expect([...shell.workspaceAttrs]).toEqual(["packageManager"])
+    expect([...build.workspaceAttrs]).toEqual(["packageManager"])
   })
 })
 

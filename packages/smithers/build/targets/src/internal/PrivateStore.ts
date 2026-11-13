@@ -10,13 +10,13 @@ import * as NodePath from "node:path"
 
 const recordName = /^[a-z]+\/[a-f0-9]{64}\.json$/
 
-const privateDirectory = (path: string, io: typeof NodeFs): void => {
+const privateDirectory = (path: string, io: typeof NodeFs, platform: NodeJS.Platform): void => {
   io.mkdirSync(path, { recursive: true, mode: 0o700 })
   const stats = io.lstatSync(path)
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`Review finding store is not a directory: ${path}`)
   }
-  if (process.platform !== "win32") io.chmodSync(path, 0o700)
+  if (platform !== "win32") io.chmodSync(path, 0o700)
 }
 
 /**
@@ -24,9 +24,13 @@ const privateDirectory = (path: string, io: typeof NodeFs): void => {
  * @category store
  * @since 1.0.0
  */
-export const ensure = (directory: string, io: typeof NodeFs = NodeFs): string => {
+export const ensure = (
+  directory: string,
+  io: typeof NodeFs = NodeFs,
+  platform: NodeJS.Platform = process.platform
+): string => {
   if (!NodePath.isAbsolute(directory)) throw new Error("Review finding store directory must be absolute")
-  privateDirectory(directory, io)
+  privateDirectory(directory, io, platform)
   return io.realpathSync(directory)
 }
 
@@ -54,7 +58,7 @@ const recordPath = (directory: string, name: string): string => {
  */
 export const write = (directory: string, name: string, value: unknown, io: typeof NodeFs = NodeFs): void => {
   const path = recordPath(directory, name)
-  privateDirectory(NodePath.dirname(path), io)
+  privateDirectory(NodePath.dirname(path), io, process.platform)
   const temporary = `${path}.${randomBytes(8).toString("hex")}.tmp`
   const descriptor = io.openSync(temporary, "wx", 0o600)
   try {

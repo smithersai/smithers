@@ -360,3 +360,13 @@ describe("LlmLint.review seat transport", () => {
     expect(failure.message).toBe("LLM review takes an executable override or a seat transport, not both")
   })
 })
+
+it("reports unavailable default-provider credentials through the review error channel", async () => {
+  // This file's native environment setup removes provider keys and restores
+  // them afterward, so default inference must fail before any HTTP request.
+  const failure = await Effect.runPromise(
+    Effect.flip(LlmLint.review({ workspaceRoot: root }, payload({ scope: "all" })))
+  )
+  expect(failure).toMatchObject({ phase: "review" })
+  expect(failure.message).toContain("Review requires ANTHROPIC_API_KEY")
+})

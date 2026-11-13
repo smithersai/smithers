@@ -1204,7 +1204,6 @@ const ignoreDecision = (
   let decision: "ignored" | "unignored" | undefined
   for (const scope of scopes) {
     const relative = scope.base === "" ? path : path.slice(scope.base.length + 1)
-    if (relative.length === 0) continue
     // A deeper rule overrides an ancestor only when it makes a decision.
     const result = scope.matcher.test(isDirectory ? `${relative}/` : relative)
     if (result.ignored) decision = "ignored"

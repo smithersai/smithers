@@ -55,6 +55,9 @@ import * as NodeHttp from "node:http"
 import * as NodeHttps from "node:https"
 import * as NodeNet from "node:net"
 import * as NodeUtil from "node:util/types"
+import * as HttpPolicy from "./internal/HttpProxyPolicy.ts"
+import { observeUpstream } from "./internal/SecretProxyResponse.ts"
+import { connectTunnel } from "./internal/SecretProxyTunnel.ts"
 import * as Secret from "./Secret.ts"
 import { placeholderPattern, placeholderPrefix } from "./Secret.ts"
 
@@ -487,11 +490,8 @@ const hopByHop = new Set([
   "upgrade"
 ])
 
-const connectionHeaders = (headers: NodeHttp.IncomingHttpHeaders): ReadonlySet<string> => {
-  const value = headers.connection
-  const fields = Array.isArray(value) ? value : value === undefined ? [] : [value]
-  return new Set(fields.flatMap((field) => field.split(",")).map((field) => field.trim().toLowerCase()).filter(Boolean))
-}
+const connectionHeaders = (headers: NodeHttp.IncomingHttpHeaders): ReadonlySet<string> =>
+  HttpPolicy.connectionHeaderNames(headers.connection)
 
 /**
  * Maximum brokered origins one proxy binds.
@@ -530,21 +530,14 @@ const forward = (
     return
   }
   const chunks: Array<Buffer> = []
-  let bodyBytes = 0
-  let rejected = false
+  const upload = { bytes: 0, rejected: false }
   request.on("data", (chunk: Buffer) => {
-    if (rejected) return
-    bodyBytes += chunk.byteLength
-    if (bodyBytes > maximumRequestBodyBytes) {
-      rejected = true
-      chunks.length = 0
+    if (HttpPolicy.appendUploadChunk(upload, chunks, chunk, maximumRequestBodyBytes)) {
       response.writeHead(413).end("proxy request body is too large")
-      return
     }
-    chunks.push(chunk)
   })
   request.on("end", () => {
-    if (rejected) return
+    if (upload.rejected) return
     let headers: Record<string, string | Array<string>>
     let body: Buffer
     let path: string
@@ -611,84 +604,41 @@ const forward = (
     const failError = (error: NodeJS.ErrnoException) => {
       // Error messages can contain secret destinations. Expose only a
       // bounded transport code, and redact even that request-local value.
-      const code = typeof error.code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)
-        ? `: ${error.code}`
-        : ""
-      fail(`upstream request failed${code}`)
+      fail(HttpPolicy.upstreamFailure(error))
     }
     try {
       upstream = requestUpstream(
         {
           protocol: target.protocol,
           hostname: target.hostname,
-          port: target.port === "" ? (target.protocol === "https:" ? 443 : 80) : target.port,
+          port: HttpPolicy.destinationPort(target),
           method: request.method,
           path,
           headers
         },
         (upstreamResponse) => {
           incoming = upstreamResponse
-          upstreamResponse.once("error", failError)
-          const endedEarly = () => fail("upstream request failed: upstream response ended early")
-          upstreamResponse.once("aborted", endedEarly)
-          upstreamResponse.once("close", endedEarly)
-          if (settled) {
-            upstreamResponse.destroy()
-            return
-          }
-          const encoding = upstreamResponse.headers["content-encoding"]
-          if (encoding !== undefined && encoding !== "identity") {
-            fail("upstream returned an encoded response")
-            return
-          }
-          let responseBytes = 0
-          upstreamResponse.on("data", (chunk: Buffer) => {
-            if (settled) return
-            responseBytes += chunk.byteLength
-            if (responseBytes > maximumResponseBodyBytes) {
-              fail("upstream response is too large")
-              return
+          observeUpstream(upstreamResponse, {
+            isSettled: () => settled,
+            failError,
+            fail,
+            chunks: responseChunks,
+            concat: Buffer.concat,
+            boundary,
+            hopByHop,
+            method: request.method,
+            complete: (status, responseHeaders, redacted) => {
+              settled = true
+              clear()
+              response.writeHead(status, responseHeaders)
+              response.end(redacted)
             }
-            responseChunks.push(chunk)
-          })
-          upstreamResponse.on("end", () => {
-            if (settled) return
-            const responseHeaders: Record<string, string | Array<string>> = {}
-            const nominated = connectionHeaders(upstreamResponse.headers)
-            for (const [name, value] of Object.entries(upstreamResponse.headers)) {
-              const lower = name.toLowerCase()
-              if (
-                value !== undefined && !hopByHop.has(lower) && !nominated.has(lower) &&
-                lower !== "content-length" && lower !== "content-encoding"
-              ) {
-                responseHeaders[name] = Array.isArray(value)
-                  ? value.map(boundary.redact)
-                  : boundary.redact(value)
-              }
-            }
-            const redacted = boundary.redactBytes(Buffer.concat(responseChunks))
-            // HEAD and 304 carry metadata about a representation, not a body
-            // whose length can be recomputed after redaction.
-            if (request.method === "HEAD" || upstreamResponse.statusCode === 304) {
-              const length = upstreamResponse.headers["content-length"]
-              if (length !== undefined && !nominated.has("content-length")) responseHeaders["content-length"] = length
-            } else {
-              responseHeaders["content-length"] = String(redacted.byteLength)
-            }
-            settled = true
-            clear()
-            response.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders)
-            response.end(redacted)
-          })
+          }, maximumResponseBodyBytes)
         }
       )
     } catch {
       const named = boundary.resolvedDeclarations()
-      fail(
-        named.length === 0
-          ? "the request could not be represented as an http request"
-          : `the declared secret ${named.join(", ")} produced an invalid request target`
-      )
+      fail(HttpPolicy.unrepresentableRequest(named))
       return
     }
     const timedOut = () => fail("upstream request failed: timed out")
@@ -769,11 +719,8 @@ export const startProxy = (vault: Vault): Promise<Proxy> =>
     // same route instead of being denied for the loopback origin.
     const originRoutes = new Map<string, (requestTarget: string) => Route | string>()
     const originRoute = (audience: string, loopbackOrigin: string) => (requestTarget: string): Route | string => {
-      if (!requestTarget.startsWith("/") || requestTarget.startsWith("//")) {
-        return "brokered origin requires an origin-form request target"
-      }
-      const target = new URL(requestTarget, audience)
-      if (target.origin !== audience) return "brokered origin requires an origin-form request target"
+      const target = HttpPolicy.brokeredTarget(audience, requestTarget)
+      if (typeof target === "string") return target
       return {
         target,
         // An upstream that echoes its own origin, in a redirect or a link,
@@ -784,7 +731,7 @@ export const startProxy = (vault: Vault): Promise<Proxy> =>
       }
     }
     const server = NodeHttp.createServer((request, response) => {
-      const requestUrl = request.url ?? ""
+      const requestUrl = HttpPolicy.requestTarget(request.url)
       if (requestUrl.startsWith(secretUrlPath)) {
         const route = requestUrl.slice(secretUrlPath.length)
         const entry = destinations.get(route)
@@ -867,7 +814,7 @@ export const startProxy = (vault: Vault): Promise<Proxy> =>
       socket.on("error", release)
       tunnels.add(release)
       socket.once("close", () => tunnels.delete(release))
-      const authority = parseConnectAuthority(request.url ?? "")
+      const authority = parseConnectAuthority(HttpPolicy.requestTarget(request.url))
       if (authority === undefined) {
         socket.end("HTTP/1.1 400 Bad Request\r\n\r\n")
         return
@@ -882,72 +829,28 @@ export const startProxy = (vault: Vault): Promise<Proxy> =>
         )
         return
       }
-      let upstream: NodeNet.Socket
-      let connected = false
-      try {
-        upstream = NodeNet.connect(authority, () => {
-          connected = true
-          clearTimeout(deadline)
-          socket.write("HTTP/1.1 200 Connection Established\r\n\r\n")
-          if (head.byteLength > 0) upstream.write(head)
-          socket.pipe(upstream)
-          upstream.pipe(socket)
-        })
-      } catch {
-        socket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n")
-        return
-      }
-      const drop = () => {
-        clearTimeout(deadline)
-        if (!connected && !socket.destroyed) socket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n")
-        else socket.destroy()
-        upstream.destroy()
-      }
-      // A destination that black-holes the SYN never connects and never
-      // errors. Without a deadline the child's CONNECT would wait for the
-      // operating system's whole TCP connect timeout, so the same elapsed
-      // bound as a proxy-owned request applies here.
-      const deadline = setTimeout(drop, upstreamTimeoutMs)
-      const teardown = () => {
-        clearTimeout(deadline)
-        upstream.destroy()
-      }
-      tunnels.add(teardown)
-      upstream.once("error", drop)
-      socket.once("error", drop)
-      socket.once("close", () => upstream.destroy())
-      upstream.once("close", () => {
-        tunnels.delete(teardown)
-        clearTimeout(deadline)
-        socket.destroy()
+      connectTunnel(socket, authority, head, tunnels, upstreamTimeoutMs, {
+        connect: NodeNet.connect,
+        setTimeout,
+        clearTimeout
       })
     })
     server.on("error", reject)
     server.listen(0, "127.0.0.1", () => {
-      const address = server.address()
-      if (address === null || typeof address === "string") {
-        server.close()
-        reject(new Error("secret proxy did not bind a loopback port"))
-        return
-      }
+      const address = server.address() as NodeNet.AddressInfo
       const bindOrigin = (audience: string): Promise<string> =>
         new Promise((bound, failed) => {
           // A listener accepts nothing before `listen` calls back, and the
           // route exists from then on.
-          let routeFor: (requestTarget: string) => Route | string = () => "brokered origin is not ready"
+          let routeFor!: (requestTarget: string) => Route | string
           const listener = NodeHttp.createServer((request, response) => {
-            const route = routeFor(request.url ?? "")
+            const route = routeFor(HttpPolicy.requestTarget(request.url))
             if (typeof route === "string") response.writeHead(400).end(route)
             else forward(vault, request, response, route)
           })
           listener.once("error", failed)
           listener.listen(0, "127.0.0.1", () => {
-            const listening = listener.address()
-            if (listening === null || typeof listening === "string") {
-              listener.close()
-              failed(new Error("secret proxy did not bind a brokered origin port"))
-              return
-            }
+            const listening = listener.address() as NodeNet.AddressInfo
             const loopbackOrigin = `http://127.0.0.1:${listening.port}`
             routeFor = originRoute(audience, loopbackOrigin)
             originRoutes.set(loopbackOrigin, routeFor)

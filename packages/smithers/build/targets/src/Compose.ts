@@ -26,6 +26,8 @@ import * as Exec from "./Exec.ts"
 import * as Filegroup from "./Filegroup.ts"
 import * as GeneratedFile from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
+import * as GeneratorOutputPath from "./internal/GeneratorOutputPath.ts"
+import { GeneratorScanLimits } from "./internal/GeneratorScanLimits.ts"
 import { PublicationFileSystem } from "./internal/PublicationFileSystem.ts"
 import * as Reference from "./Reference.ts"
 import * as SafeFs from "./SafeFs.ts"
@@ -234,22 +236,30 @@ export const GenerateCheck = Action.make("smithers-build/generate-check", {
  * standing where one belongs, and would write through that symlink into a file
  * outside the declared tree.
  */
-type OutputKind = "absent" | "directory" | "file" | "symlink" | "other"
-
-/** One declared output exactly as it stood before the generator ran. */
-interface OutputState {
-  readonly kind: OutputKind
-  /** Link target, or a bounded file preview used only for the first drift. */
-  readonly bytes: Buffer | undefined
-  /** Permission bits, so a chmod-only change is drift and is undone. */
-  readonly mode: number | undefined
-  readonly digest?: string | undefined
-}
+type OutputState =
+  | { readonly kind: "absent"; readonly bytes: undefined; readonly mode: undefined; readonly digest?: undefined }
+  | {
+    readonly kind: "directory"
+    readonly bytes: undefined
+    readonly mode: number
+    readonly digest?: undefined
+  }
+  | {
+    readonly kind: "other"
+    readonly bytes: undefined
+    readonly mode: number
+    readonly digest?: undefined
+  }
+  | { readonly kind: "symlink"; readonly bytes: Buffer; readonly mode: undefined; readonly digest?: undefined }
+  | {
+    readonly kind: "file"
+    readonly bytes: Buffer | undefined
+    readonly mode: number
+    readonly digest?: string | undefined
+  }
 
 /** One declared output as it stood before the generator ran. */
-interface OutputSnapshot extends OutputState {
-  readonly path: string
-}
+type OutputSnapshot = OutputState & { readonly path: string }
 
 /** A snapshot and the canonical root it is safe to restore beneath. */
 interface OutputTreeSnapshot {
@@ -329,9 +339,6 @@ const driftMessage = (path: string, previous: OutputState, current: OutputState)
   if (previous.bytes === undefined || current.bytes === undefined) {
     return `${path} changed and the change is not readable as text`
   }
-  if (equalBytes(previous.bytes, current.bytes)) {
-    return `${path} kept its contents and the generator changed its permissions`
-  }
   const checkedIn = decodeUtf8(previous.bytes).split("\n")
   const regenerated = decodeUtf8(current.bytes).split("\n")
   const differing = checkedIn.findIndex((line, position) => line !== regenerated[position])
@@ -350,14 +357,16 @@ const absent: OutputState = { kind: "absent", bytes: undefined, mode: undefined 
  * final file is opened with `O_NOFOLLOW`, so a link swapped in after `lstat`
  * fails instead of exposing its target. Only ENOENT means absent.
  */
-const generatorOperations = (io: typeof Fs) => {
+const generatorOperations = (
+  io: typeof Fs,
+  scanLimits: Pick<Input.ScanLimits, "depth" | "directories" | "entries" | "files">
+) => {
   const checkedOutputPath = async (
     root: string,
     path: string,
     signal: AbortSignal | undefined
   ): Promise<string | undefined> => {
-    const absolute = NodePath.resolve(root, path)
-    if (!SafeFs.inside(root, absolute)) throw new Error(`declared output escapes the workspace: ${path}`)
+    const absolute = GeneratorOutputPath.resolve({ resolve: NodePath.resolve, inside: SafeFs.inside }, root, path)
     const rootStats = await io.lstat(root)
     if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) {
       throw new Error(`canonical workspace root was replaced while outputs were checked: ${root}`)
@@ -485,7 +494,7 @@ const generatorOperations = (io: typeof Fs) => {
   type OutputWalkLimit = "directories" | "entries" | "files"
 
   const withinOutputLimit = (key: OutputWalkLimit, value: number): void => {
-    const limit = Input.defaultScanLimits[key]
+    const limit = scanLimits[key]
     if (value > limit) throw new Error(`declared output scan exceeds its ${key} limit of ${limit}`)
   }
 
@@ -498,8 +507,8 @@ const generatorOperations = (io: typeof Fs) => {
     if (walk.visited.has(path)) return
     signal?.throwIfAborted()
     const depth = path === "." ? 0 : path.split("/").length
-    if (depth > Input.defaultScanLimits.depth) {
-      throw new Error(`declared output scan exceeds its depth limit of ${Input.defaultScanLimits.depth}`)
+    if (depth > scanLimits.depth) {
+      throw new Error(`declared output scan exceeds its depth limit of ${scanLimits.depth}`)
     }
     const absolute = await checkedOutputPath(root, path, signal)
     if (absolute === undefined) {
@@ -654,10 +663,9 @@ const generatorOperations = (io: typeof Fs) => {
   const restoreMode = async (
     root: string,
     path: string,
-    previous: OutputState,
+    previous: Extract<OutputState, { kind: "directory" | "file" }>,
     signal: AbortSignal | undefined
   ): Promise<void> => {
-    if (previous.mode === undefined || (previous.kind !== "directory" && previous.kind !== "file")) return
     signal?.throwIfAborted()
     const absolute = await checkedOutputPath(root, path, signal)
     if (absolute === undefined) throw new Error(`declared output parent is missing during restore: ${path}`)
@@ -694,17 +702,17 @@ const generatorOperations = (io: typeof Fs) => {
     const absolute = await checkedOutputPath(root, path, signal)
     if (absolute === undefined) throw new Error(`declared output parent is missing during restore: ${path}`)
     if (previous.kind === "directory") {
-      await io.mkdir(absolute, { mode: (previous.mode ?? 0o755) | 0o700 })
+      await io.mkdir(absolute, { mode: previous.mode | 0o700 })
       return
     }
     if (previous.kind === "symlink") {
-      await io.symlink(previous.bytes === undefined ? "" : decodeUtf8(previous.bytes), absolute)
+      await io.symlink(decodeUtf8(previous.bytes), absolute)
       return
     }
     const handle = await io.open(
       absolute,
       NodeFsConstants.O_WRONLY | NodeFsConstants.O_CREAT | NodeFsConstants.O_EXCL | NodeFsConstants.O_NOFOLLOW,
-      previous.mode ?? 0o644
+      previous.mode
     )
     try {
       const source = await io.open(
@@ -722,15 +730,15 @@ const generatorOperations = (io: typeof Fs) => {
       } finally {
         await source.close()
       }
-      if (previous.mode !== undefined) await handle.chmod(previous.mode)
+      await handle.chmod(previous.mode)
     } finally {
       await handle.close()
     }
   }
 
   const byDepthThenPath = (left: { readonly path: string }, right: { readonly path: string }): number => {
-    const leftDepth = left.path === "." ? 0 : left.path.split("/").length
-    const rightDepth = right.path === "." ? 0 : right.path.split("/").length
+    const leftDepth = left.path.split("/").length - Number(left.path === ".")
+    const rightDepth = right.path.split("/").length - Number(right.path === ".")
     return leftDepth - rightDepth || left.path.localeCompare(right.path)
   }
 
@@ -765,7 +773,7 @@ const generatorOperations = (io: typeof Fs) => {
       .map((path) => ({
         path,
         previous: previousByPath.get(path) ?? absent,
-        current: repaired.get(path) ?? currentByPath.get(path) ?? absent
+        current: repaired.get(path) ?? currentByPath.get(path)!
       }))
       .filter((entry) => !unchanged(entry.previous, entry.current))
     const first = [...changed].sort((left, right) => left.path.localeCompare(right.path))[0]
@@ -796,7 +804,11 @@ const generatorOperations = (io: typeof Fs) => {
     }
     for (
       const entry of [...changed]
-        .filter((candidate) => candidate.previous.kind === "directory")
+        .filter((
+          candidate
+        ): candidate is typeof candidate & { readonly previous: Extract<OutputState, { kind: "directory" }> } =>
+          candidate.previous.kind === "directory"
+        )
         .sort((left, right) => -byDepthThenPath(left, right))
     ) {
       await restoreMode(before.root, entry.path, entry.previous, signal)
@@ -901,7 +913,12 @@ export const checkGenerator = (
   },
   payload: GenerateCheckPayload
 ): Effect.Effect<void, Exec.ExecError | GeneratedFile.DriftError> =>
-  Effect.flatMap(PublicationFileSystem, (io) => generatorOperations(io ?? Fs).checkGenerator(options, payload))
+  Effect.flatMap(
+    PublicationFileSystem,
+    (io) =>
+      Effect.flatMap(GeneratorScanLimits, (limits) =>
+        generatorOperations(io ?? Fs, limits ?? Input.defaultScanLimits).checkGenerator(options, payload))
+  )
 
 /**
  * Implements {@link GenerateCheck} by running the generator against the real

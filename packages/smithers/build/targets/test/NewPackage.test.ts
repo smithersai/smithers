@@ -5,10 +5,15 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { writeGeneratedFile } from "../src/GeneratedFile.ts"
+import { WriteFileError } from "../src/GeneratedFile.ts"
 import * as Input from "../src/Input.ts"
+import { ensureDirectory, reclaimStaleTemporaries } from "../src/internal/ScaffoldDirectory.ts"
 import { boilerplate, scaffold, type ScaffoldPayload, type ScaffoldReport } from "../src/NewPackage.ts"
+import { NewPackage } from "../src/NewPackage.ts"
 import { matches, PackageDefaults } from "../src/PackageDefaults.ts"
 import * as PackageJsonTemplate from "../src/PackageJsonTemplate.ts"
+import * as SafeFs from "../src/SafeFs.ts"
+import { plannedCalls } from "./plan.ts"
 
 let root: string
 
@@ -250,4 +255,105 @@ describe("scaffold", () => {
   it("renders the same tree every time, with no model in reach", () => {
     expect(boilerplate("@smthrs/widget", payload)).toEqual(boilerplate("@smthrs/widget", payload))
   })
+})
+
+describe("scaffold failure values", () => {
+  it("reports cleanup failure when a dependency throws undefined", async () => {
+    const result = await Effect.runPromise(Effect.flip(scaffold({
+      workspaceRoot: root,
+      packageName: "widget",
+      io: {
+        writeFile: () => Promise.reject(undefined),
+        remove: () => Promise.reject(new Error("cleanup failed after undefined"))
+      }
+    }, payload)))
+    expect(result.message).toBe("cleanup failed after undefined")
+    expect(await temporaryEntries()).toHaveLength(1)
+    await expect(Fs.lstat(NodePath.join(root, "packages/widget"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+})
+
+describe("scaffold directory fault boundary", () => {
+  it("refuses a parent replaced with an escaping link after lstat", async () => {
+    await Fs.mkdir(NodePath.join(root, "packages"))
+    const outside = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "scaffold-escape-"))
+    try {
+      const io = {
+        ...Fs,
+        join: NodePath.join,
+        inside: SafeFs.inside,
+        syncDirectory: SafeFs.syncDirectory,
+        errorCode: SafeFs.errorCode,
+        realpath: async (path: Parameters<typeof Fs.realpath>[0]) => {
+          await Fs.rmdir(NodePath.join(root, "packages"))
+          await Fs.symlink(outside, NodePath.join(root, "packages"), "dir")
+          return Fs.realpath(path)
+        }
+      }
+      await expect(ensureDirectory(root, "packages", io as never))
+        .rejects.toThrow("package scaffold parent leaves the workspace")
+      expect(await Fs.readdir(outside)).toEqual([])
+    } finally {
+      await Fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it("ignores a stale temporary that disappears after enumeration", async () => {
+    const temporary = NodePath.join(root, ".smthrs-scaffold-gone.tmp")
+    await Fs.mkdir(temporary)
+    let removed = false
+    const io = {
+      ...Fs,
+      join: NodePath.join,
+      inside: SafeFs.inside,
+      syncDirectory: SafeFs.syncDirectory,
+      errorCode: SafeFs.errorCode,
+      lstat: async (path: Parameters<typeof Fs.lstat>[0]) => {
+        await Fs.rmdir(temporary)
+        return Fs.lstat(path)
+      }
+    }
+    await reclaimStaleTemporaries(root, async () => {
+      removed = true
+    }, io as never)
+    expect(removed).toBe(false)
+    expect(await Fs.readdir(root)).toEqual([])
+  })
+})
+
+it("plans a scaffold with the inferred workspace tsconfig", () => {
+  const calls = plannedCalls(NewPackage({ license: "MIT" }))
+  expect(calls[0]?.payload).not.toHaveProperty("tsconfigExtends")
+})
+
+it("preserves an already classified write failure", async () => {
+  const original = new WriteFileError({ path: "generated", message: "classified failure" })
+  const result = await Effect.runPromise(Effect.flip(scaffold({
+    workspaceRoot: root,
+    packageName: "widget",
+    io: { writeFile: () => Promise.reject(original) }
+  }, payload)))
+  expect(result).toBe(original)
+})
+
+it("does not inspect a proxy payload after its accessor fails", async () => {
+  const input = new Proxy(payload, {
+    get: () => {
+      throw new Error("payload unavailable")
+    }
+  })
+  const result = await Effect.runPromise(Effect.flip(scaffold({ workspaceRoot: root, packageName: "widget" }, input)))
+  expect(result.path).toBe("package")
+  expect(result.message).toBe("payload unavailable")
+})
+
+it("uses a generic path when a payload directory is an accessor", async () => {
+  const input = Object.defineProperty({ ...payload }, "directory", {
+    get: () => {
+      throw new Error("no directory")
+    }
+  })
+  const result = await Effect.runPromise(Effect.flip(scaffold({ workspaceRoot: root, packageName: "widget" }, input)))
+  expect(result.path).toBe("package")
+  expect(result.message).toBe("no directory")
 })
