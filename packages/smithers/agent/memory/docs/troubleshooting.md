@@ -17,9 +17,9 @@ A full text read reached a namespace kind that has not opted into FTS. Call `ena
 
 ### `invalid_namespace`
 
-A namespace or bank name is empty or malformed. An empty bank string is the common case, including a `remember` input whose `bank` is empty outside a policy. An invalid `enableFts` kind raises the same code.
+A namespace or bank name is empty or malformed. An empty bank string is the common case, including a `remember` input whose `bank` is empty. An invalid `enableFts` kind raises the same code.
 
-For a policy-carrying declaration, `Flows.handlersFor`, `Flows.runRecallFor`, and `Flows.runRememberFor` also reject an explicit bank whose resolved kind or id differs from `policy.namespace`. Rejection happens before any I/O; one foreign bank fails the entire recall request. Empty bank selections use the policy namespace. `recall: "none"` and `retain: "never"` short-circuit before bank validation. Given a declaration that carries no policy, the same three fail with `invalid_namespace` before any I/O; bind the `WithMemory.withMemory` copy.
+For a policy-carrying declaration, `Flows.handlersFor`, `Flows.runRecallFor`, and `Flows.runRememberFor` also reject an explicit bank unless its resolved kind and id match a bank in `policy.banks`. Rejection happens before any I/O; one foreign bank fails the entire recall request. An empty recall `banks` list uses all policy banks; `remember` requires a non-empty `bank`. `recall: "none"` and `retain: "never"` short-circuit before bank validation. Given a declaration that carries no policy, the same three fail with `invalid_namespace` before any I/O; bind the `WithMemory.withMemory` copy.
 
 ### `invalid_tag`
 
@@ -35,7 +35,7 @@ A supersession request contradicts what is already stored: a note id reused with
 
 ### `idempotency_conflict`
 
-`createThread` rejects an existing id with different namespace, title, or metadata. `appendMessage` rejects an existing message id with different `role`, `text`, or `at`; `path` names the first differing field. These two operations accept identical retries as no-ops.
+`createThread` rejects an existing id with different namespace, title, or metadata. `appendMessage` rejects an existing message id with different `role`, `text`, or `at`; `path` names the first differing field. These two operations accept identical retries as no-ops. `setNoteStatus` also rejects changing the status or `acceptedTodo` of a note already bound to a TODO; repeating `status: "accepted"` with the same TODO or with no `acceptedTodo` is a no-op.
 
 `compactMessages` rejects an existing summary id even when the summary and source snapshot are identical. After a lost response, use `listMessages` to confirm that the exact summary (`threadId`, `id`, `role`, `text`, and `at`) exists and every source id is absent. Check all pages. Treat this as evidence of a committed compaction only if the summary id was unique to that operation and no other writer has reset or edited that history. The conflict alone does not prove success. Otherwise, read the current history and summarize it again with a fresh summary id.
 
@@ -59,7 +59,7 @@ The backend failed: SQL errors, undecodable stored data, or a migration failure.
 
 Work through the checks in order:
 
-1. The request decoded at all: `banks` non-empty, each name at most 128 code units, at most 16 banks, the query at most 16,384 UTF-8 bytes, at most 16 tag groups, `maxTokens` at most 65,536. A violated bound fails at decode, before any binding runs.
+1. The request decoded at all: each bank name is non-empty and at most 128 code units, at most 16 banks, the query at most 16,384 UTF-8 bytes, at most 16 tag groups, `maxTokens` at most 65,536. An empty `banks` list is valid and selects no rows for unscoped recall; scoped handlers fill it from `policy.banks`. A violated bound fails at decode, before any binding runs.
 2. The query has terms. Keyword and FTS recall answer no rows for an empty or whitespace query.
 3. Rows survive the filters. Notes default to `accepted`, a note with an accepted superseder is hidden, and every tag group must match. Read the bank with `searchRows` and `status: "any"` to see what the binding saw.
 4. FTS is enabled for the namespace kind. `RecallFts` propagates `fts_not_enabled` rather than answering nothing.

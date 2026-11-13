@@ -299,9 +299,9 @@ const validatePolicyBank = (bank: string, policy: WithMemory.Policy): Effect.Eff
 /**
  * Applies the memory policy a flow carries to a recall request.
  *
- * Empty banks use the policy namespace; every explicit bank must resolve to
- * that same namespace or the entire request fails before recall runs. The
- * policy budget is a default the caller may override. `recall: "none"`
+ * An empty bank list uses all `policy.banks`; every explicit bank must match
+ * one of them by resolved kind and id or the entire request fails before recall
+ * runs. The policy budget is a default the caller may override. `recall: "none"`
  * returns no rows before bank validation or any call to the recall service.
  * A flow that carries no policy fails with `invalid_namespace` before recall
  * runs; `runRecall` is the explicitly unscoped call.

@@ -15,7 +15,7 @@ import * as TestMemory from "../src/test/TestMemory.ts"
 import * as WithMemory from "../src/WithMemory.ts"
 
 describe("Flows", () => {
-  it("declares remember and recall as unsealed flows without bodies", () => {
+  it("declares remember as unsealed and recall as sealed", () => {
     expect(Flows.remember.name).toBe("remember")
     expect(Flows.recall.name).toBe("recall")
     // A declaration with no body of its own carries the action a host

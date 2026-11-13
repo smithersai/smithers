@@ -5,7 +5,7 @@
  *
  * Storage is SQLite through `@smthrs/database`. Recall is a replaceable slot
  * with three bindings in the box: keyword, SQLite full text, and in-process
- * semantic. A memory policy attached to a flow decides which namespace its tree
+ * semantic. A memory policy attached to a flow decides which namespaces its tree
  * reads and writes, and whether recall runs at all.
  *
  * @since 0.1.0

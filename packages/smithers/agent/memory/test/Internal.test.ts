@@ -37,7 +37,7 @@ describe("memory internal helpers", () => {
     expect(FactProjection.retainedTags(null)).toEqual([])
   })
 
-  it("encodes vectors explicitly little-endian and truncates on UTF-8 boundaries", () => {
+  it("encodes vectors explicitly little-endian", () => {
     expect([...VectorBytes.vectorBytes([1, -2, 0.5])]).toEqual([
       0,
       0,

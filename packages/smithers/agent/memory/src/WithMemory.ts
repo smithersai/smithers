@@ -24,7 +24,7 @@ import { MemoryError } from "./MemoryError.ts"
 import { BankName, MaxTokens } from "./Recall.ts"
 
 /**
- * The memory policy a flow tree inherits: which namespace its memory lives in,
+ * The memory policy a flow tree inherits: a non-empty bank allowlist,
  * whether recall is refused (`recall: "none"`; absent, recall answers when
  * asked), the byte budget recall answers within, and whether writes are
  * dropped (`retain: "never"`; absent, every write is stored when it is made).

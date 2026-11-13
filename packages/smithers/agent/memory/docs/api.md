@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every public export of @smthrs/memory: the two flows, the memory policy, the store contract, the recall bindings, and the failure codes."
 ---
 
-This page covers the parts a flow author touches: the two callable flows, the memory policy that decides which namespace a flow tree reads and writes, and the store behaviors that are easy to get wrong. The [module reference](#module-reference) at the end lists every export; the sections before it explain how those exports behave.
+This page covers the parts a flow author touches: the two callable flows, the memory policy that decides which namespaces a flow tree reads and writes, and the store behaviors that are easy to get wrong. The [module reference](#module-reference) at the end lists every export; the sections before it explain how those exports behave.
 
 ## The two flows
 
@@ -34,7 +34,7 @@ A policy is an annotation, and an annotation takes no part in flow identity. App
 
 ### Reading a policy back
 
-`Flows.runRecallFor(flow, input)` and `Flows.runRememberFor(flow, input)` read the policy, and `Flows.handlersFor(flow)` is the pair a host binds. The policy namespace is the only namespace these scoped handlers may read or write:
+`Flows.runRecallFor(flow, input)` and `Flows.runRememberFor(flow, input)` read the policy, and `Flows.handlersFor(flow)` is the pair a host binds. The policy banks are the only namespaces these scoped handlers may read or write:
 
 - `runRecallFor` fills an empty `banks` list with all policy banks. Every explicit bank must resolve to a policy bank, matching both `kind` and `id`. A foreign bank fails the whole request with `invalid_namespace` before the recall service runs, including requests that mix allowed and foreign banks.
 - `runRememberFor` requires a non-empty `bank` naming a policy bank. A foreign bank fails with `invalid_namespace` before the store runs.
@@ -286,9 +286,9 @@ Model types, all plain interfaces unless noted:
 | `MessageStats`           | `{ messages, codePoints, bytes }`: one thread's size bounds; its JavaScript string length lies between `codePoints` and `bytes`.      |
 | `GetNoteInput`           | `{ id }`.                                                                                                                             |
 | `NoteStatus`             | schema and type: `"pending"`, `"accepted"`, `"rejected"`; the only mutable state on an append-only note.                              |
-| `Note`                   | `{ namespace, id, text, tags, provenance, status, createdAtMs }`.                                                                     |
+| `Note`                   | `{ namespace, id, text, tags, provenance, status, createdAtMs, statusAtMs?, acceptedTodo? }`.                                         |
 | `PutNoteInput`           | `{ namespace, id, text, tags, provenance, status?, supersedes? }`; `supersedes` persists in the same write transaction.               |
-| `SetNoteStatusInput`     | `{ id, status }`.                                                                                                                     |
+| `SetNoteStatusInput`     | `{ id, status, acceptedTodo? }`.                                                                                                      |
 | `SupersedeInput`         | `{ supersederId, targetId }`.                                                                                                         |
 | `NamespaceInput`         | `Namespace \| string`: a structured namespace or a bank name; explicit prefixes keep their lifetime, unprefixed banks are flow-local. |
 | `StatusFilter`           | `NoteStatus \| "any" \| ReadonlyArray<NoteStatus>`.                                                                                   |
@@ -299,6 +299,8 @@ Model types, all plain interfaces unless noted:
 | `SearchFtsInput`         | `SearchRowsInput` plus `query`.                                                                                                       |
 | `FtsRow`                 | `SearchRow` plus `rank` (raw SQLite BM25) and `score`.                                                                                |
 | `CompactMessagesInput`   | `{ threadId, summary: Message, sourceMessages: ReadonlyArray<Message> }`.                                                             |
+
+`Note.statusAtMs` records the last real status transition; an identical retry preserves it. `setNoteStatus` accepts a non-empty `acceptedTodo` only with `status: "accepted"`. Once a note is bound to a TODO, changing its status or binding it to another TODO fails with `idempotency_conflict`. Repeating `status: "accepted"` with the same TODO or with no `acceptedTodo` is a no-op.
 
 The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStore`. Every operation fails only with `MemoryError`:
 
@@ -440,21 +442,23 @@ When memory shares a database with the engine or control plane, compose all requ
 
 ### `@smthrs/memory/RecallSemantic`
 
-| Export                     | Signature                                                                         | Behavior                                                                                                                                                                 |
-| -------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Vector`                   | interface                                                                         | A durable projection row: `{ bank, recordKind, recordId, model, contentDigest, dimensions, vector, updatedAtMs }`; components may be a readonly array or `Float32Array`. |
-| `VectorStore`              | interface                                                                         | The injectable vector-table adapter: `upsert(vector)`, which keeps the newest row by `updatedAtMs`, and finite `scan(banks, model)` pages of at most 64 vectors.         |
-| `Options`                  | interface                                                                         | `{ vectorStore, model?, halfLifeMs?, projectionTimeout? }`.                                                                                                              |
-| `budgetLimits`             | `{ low: 3, mid: 8, high: 20 }`                                                    | Deterministic result counts for the three budgets.                                                                                                                       |
-| `defaultModel`             | `Embedding.inProcessModel`                                                        | The model semantic recall uses when a declaration names none. It is the lexical in-process hash, so name a provider-backed model for semantic similarity.                |
-| `makeSqlVectorStore`       | `(database: DatabaseService) => VectorStore`                                      | The SQLite adapter for the migration-owned `memory_vectors` table.                                                                                                       |
-| `recall`                   | `(input, options) => Effect<Output, MemoryError, MemoryStore \| Embedding>`       | Cosine similarity decayed by row age. Skips foreign-model and stale rows; a same-model dimension mismatch fails `vector_model_mismatch`.                                 |
-| `ProjectionInput`          | interface                                                                         | One authoritative row submitted for projection after commit: `{ bank, recordKind, recordId, text, updatedAtMs }`.                                                        |
-| `Projector`                | interface                                                                         | `{ project(row), activeKeys() }`: the per-key serialized projection coordinator. There is no callable projector alias.                                                   |
-| `makeProjector`            | `(options: Options) => Effect<Projector, never, Scope>`                           | Constructs the coordinator in its owner scope. Projection retries once, times out after `projectionTimeout`, and logs failures without changing the write result.        |
-| `defaultProjectionTimeout` | `"5 seconds"`                                                                     | The projection deadline used when `Options.projectionTimeout` is absent.                                                                                                 |
-| `decorateStore`            | `(store: Service, projector: Projector, embedding: Embedding.Service) => Service` | Adds after-commit projection to `putFact` and `putNote`, keeping the ordinary write signatures.                                                                          |
-| `layer`                    | `(options: Options) => Layer<Recall, never, MemoryStore \| Embedding>`            | Provides semantic recall from the store, the embedding service, and the vector table.                                                                                    |
+| Export                     | Signature                                                                         | Behavior                                                                                                                                                                        |
+| -------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Vector`                   | interface                                                                         | A durable projection row: `{ bank, recordKind, recordId, model, contentDigest, text?, dimensions, vector, updatedAtMs }`; components may be a readonly array or `Float32Array`. |
+| `VectorStore`              | interface                                                                         | The injectable vector-table adapter: `upsert(vector)` and finite `scan(banks, model)` pages of at most 64 vectors.                                                              |
+| `Options`                  | interface                                                                         | `{ vectorStore, model?, halfLifeMs?, projectionTimeout? }`.                                                                                                                     |
+| `budgetLimits`             | `{ low: 3, mid: 8, high: 20 }`                                                    | Deterministic result counts for the three budgets.                                                                                                                              |
+| `defaultModel`             | `Embedding.inProcessModel`                                                        | The model semantic recall uses when a declaration names none. It is the lexical in-process hash, so name a provider-backed model for semantic similarity.                       |
+| `makeSqlVectorStore`       | `(database: DatabaseService) => VectorStore`                                      | The SQLite adapter for the migration-owned `memory_vectors` table.                                                                                                              |
+| `recall`                   | `(input, options) => Effect<Output, MemoryError, MemoryStore \| Embedding>`       | Cosine similarity decayed by row age. Skips foreign-model and stale rows; a same-model dimension mismatch fails `vector_model_mismatch`.                                        |
+| `ProjectionInput`          | interface                                                                         | One authoritative row submitted for projection after commit: `{ bank, recordKind, recordId, text, updatedAtMs }`.                                                               |
+| `Projector`                | interface                                                                         | `{ project(row), activeKeys() }`: the per-key serialized projection coordinator. There is no callable projector alias.                                                          |
+| `makeProjector`            | `(options: Options) => Effect<Projector, never, Scope>`                           | Constructs the coordinator in its owner scope. Projection retries once, times out after `projectionTimeout`, and logs failures without changing the write result.               |
+| `defaultProjectionTimeout` | `"5 seconds"`                                                                     | The projection deadline used when `Options.projectionTimeout` is absent.                                                                                                        |
+| `decorateStore`            | `(store: Service, projector: Projector, embedding: Embedding.Service) => Service` | Adds after-commit projection to `putFact` and `putNote`, keeping the ordinary write signatures.                                                                                 |
+| `layer`                    | `(options: Options) => Layer<Recall, never, MemoryStore \| Embedding>`            | Provides semantic recall from the store, the embedding service, and the vector table.                                                                                           |
+
+The SQL vector adapter accepts a projection carrying `text` only while that text matches the authoritative row in the same write transaction. The projector always supplies `text`; identical-text writes can therefore project out of order, replacing a newer vector's `updatedAtMs` with an older value and reducing its recency score. Direct upserts that omit `text` keep the newest vector by `updatedAtMs`.
 
 ### `@smthrs/memory/Source`
 

@@ -27,7 +27,7 @@ const recalled = Effect.gen(function*() {
 
 `banks` accepts at most 16 names, de-duplicated on the resolved namespace. `maxTokens` is a UTF-8 byte ceiling over the serialized result array, at most 65,536; rows with empty text drop out before the budget fills. `tagGroups` accepts at most 16 groups, and every group must match a row's tags for the row to rank.
 
-The example calls the unscoped `runRecall` and has no policy boundary. For model-facing access, bind a policy-carrying declaration with `Flows.handlersFor`, or call `Flows.runRecallFor`. An empty `banks` list then selects the policy namespace; every explicit bank must resolve to the same `kind` and `id`. Any foreign bank fails the whole request with `invalid_namespace` before the recall service runs. Equivalent bank spellings are allowed; there is no extra readable-bank list. `recall: "none"` returns no rows before bank validation. The policy budget fills an omitted `maxTokens`; an explicit budget still wins.
+The example calls the unscoped `runRecall` and has no policy boundary. For model-facing access, bind a policy-carrying declaration with `Flows.handlersFor`, or call `Flows.runRecallFor`. An empty `banks` list then selects all `policy.banks`; every explicit bank must match one of them by resolved `kind` and `id`. Any foreign bank fails the whole request with `invalid_namespace` before the recall service runs. Equivalent bank spellings are allowed; there is no extra readable-bank list. `recall: "none"` returns no rows before bank validation. The policy budget fills an omitted `maxTokens`; an explicit budget still wins.
 
 ## Keyword recall
 
@@ -66,7 +66,7 @@ The store maintains the FTS projection on every write, so no reindex step exists
 
 ## Semantic recall
 
-`RecallSemantic.layer` ranks rows by cosine similarity between each row's stored vector and the query embedding, decayed by a recency half-life. It needs an `Embedding` service and a vector store. The authoritative store writes no vectors itself, so decorate it: every `putFact` and `putNote` then projects a vector after commit, retrying once and logging failures without changing the write result. The projection runs in the caller's fiber under `projectionTimeout` (default 5 seconds), so a hung embedding provider delays the write by at most that deadline and is logged like any other failure. The vector upsert keeps the newest projection by `updatedAtMs`, so when two processes write the same record, a slower embedding for the older write cannot replace the newer vector.
+`RecallSemantic.layer` ranks rows by cosine similarity between each row's stored vector and the query embedding, decayed by a recency half-life. It needs an `Embedding` service and a vector store. The authoritative store writes no vectors itself, so decorate it: every `putFact` and `putNote` then projects a vector after commit, retrying once and logging failures without changing the write result. The projection runs in the caller's fiber under `projectionTimeout` (default 5 seconds), so a hung embedding provider delays the write by at most that deadline and is logged like any other failure. The SQL vector upsert accepts a projection only while its text matches the authoritative row in the same write transaction. When two processes write identical text, a late projection can still replace a newer vector's `updatedAtMs` with an older value and reduce its recency score. Direct vector upserts that omit `text` instead keep the newest vector by `updatedAtMs`.
 
 ```ts
 import * as DurableWriter from "@smthrs/database/DurableWriter"
