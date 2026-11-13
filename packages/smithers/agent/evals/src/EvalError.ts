@@ -19,8 +19,8 @@ import * as Schema from "effect/Schema"
  *   another suite, or holds a record the schema rejects. Regenerate it.
  * - `invalid_tolerance`: the caller passed a tolerance that is not a finite
  *   non-negative number. Fix the call, not the baseline.
- * - `invalid_trials`: the caller passed run, pass, or `k` counts to `Trials`
- *   outside their bounds. Fix the call.
+ * - `invalid_trials`: the caller passed run, pass, or `k` counts to `Trials`,
+ *   or `trials` or `k` to `Runner.run`, outside their bounds. Fix the call.
  * - `executor`: the target flow failed for a case.
  * - `ambiguous_score_job`: two score jobs shared a step key and a scorer, so
  *   an order-only batch runner's results cannot be attributed to a case. Give
@@ -29,7 +29,9 @@ import * as Schema from "effect/Schema"
  * - `scorer_protocol`: a batch runner broke the `runBatch` contract by returning
  *   the wrong number of observations, or observations that identify jobs other
  *   than the ones it was given. Nothing it returned can be trusted.
- * - `scorer_unavailable`: no batch runner was available to score with.
+ * - `scorer_unavailable`: no batch runner was available to score with, or
+ *   a correlated runner reported a failed durable observation write.
+ *   Unavailable scoring becomes inconclusive; a failed write fails the run.
  *
  * @category models
  * @since 0.1.0

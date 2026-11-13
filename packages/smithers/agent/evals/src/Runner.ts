@@ -154,6 +154,9 @@ export type Ungraded = "unbound" | "sampled_out"
 /**
  * Per-case result retained by the deterministic runner.
  *
+ * `execution` is the first attempt's execution, when it succeeded; `error`
+ * is the first failure across all attempts. Both may be present. `observations`
+ * concatenates every attempt's observations in trial order.
  * `ungraded` names why an attempt that executed produced no observation:
  * `unbound` when any attempt matched no binding, `sampled_out` when every
  * attempt was sampled out. `trials` is absent in the second case, because a
@@ -174,6 +177,9 @@ export interface CaseResult {
 /**
  * Stable result of a suite run.
  *
+ * `trials` aggregates the per-case summaries and `k` records the requested
+ * statistic (default 1). {@link run} supplies both, including for one trial.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -188,6 +194,10 @@ export interface RunResult {
 
 /**
  * Options for a deterministic suite run.
+ *
+ * `trials` overrides the suite's trial count, defaulting to 1 when neither
+ * declares it, and must be an integer from 1 to 1000. `k` defaults to 1 and
+ * must be an integer from 1 to that count. See {@link run} for the pass rule.
  *
  * `caseTimeout` is the deadline for one case's target and, separately, for
  * each score job. A target that outlives it fails its own case with an
@@ -804,21 +814,36 @@ const score = (
  *
  * Scoring goes through `options.scorer` when the caller passes one, the
  * {@link Runner} service when one is provided, and {@link makeInline}
- * otherwise. A case whose target failed keeps its typed error, locates itself
- * with the executor's own `path` or with `cases['<name>']`, and produces no
- * observations; a scorer that failed produces an inconclusive observation.
+ * otherwise. An attempt whose target failed keeps its typed error, locates
+ * itself with the executor's own `path` or with `cases['<name>']`, and produces
+ * no observations; a scorer that failed produces an inconclusive observation.
+ * Cases retain the first attempt's execution, the first error from any attempt,
+ * and all observations, so a case may carry both an execution and an error.
  * With `options.caseTimeout`, a target that outlives it is such a failed case
  * and a scorer that outlives it such an inconclusive observation. A
  * case with an attempt that executed but produced no observation carries
- * `ungraded`. Trial
- * statistics leave out sampled-out attempts, so a case every attempt of which
- * was sampled out has no `trials` and is absent from the aggregate. The
- * run itself fails only with `invalid_run_options` for a non-canonical run
+ * `ungraded`.
+ *
+ * `options.trials` overrides `suite.trials`, defaulting to 1. Trials run
+ * sequentially, with bounded case concurrency within each trial. A trial
+ * passes only when the target succeeded, at least one observation exists, and
+ * every observation is a `score` of exactly `1`; `0.95` or an inconclusive
+ * observation fails it. Trial statistics leave out sampled-out attempts, so
+ * a case whose every attempt was sampled out has no `trials` and is absent
+ * from the aggregate. Each case's `trials` summarizes its outcomes; the run's
+ * `trials` averages those summaries. `k` defaults to 1 and selects `passAtK`
+ * (at least one pass) and `passHatK` (all pass), drawing without replacement.
+ * It is clamped to each case's counted trials after sampling.
+ *
+ * The run itself fails only with `invalid_run_options` for a non-canonical run
  * identity or timestamp or a case timeout that is not a finite positive
- * duration, `invalid_suite` for an unusable sampling policy,
+ * duration, `invalid_trials` at `options.trials` for a count outside
+ * 1..1000 or at `options.k` for a `k` outside 1..`trials` (both must be
+ * integers), `invalid_suite` for an unusable sampling policy,
  * `ambiguous_score_job` when an order-only runner cannot distinguish two jobs,
- * or `scorer_protocol` for a batch runner that broke the
- * {@link ScoreBatchRunner} contract.
+ * `scorer_protocol` for a batch runner that broke the
+ * {@link ScoreBatchRunner} contract, or `scorer_unavailable` when a correlated
+ * runner reports a failed durable observation write.
  *
  * @category constructors
  * @since 0.1.0
@@ -873,12 +898,13 @@ export const run = (
     }
     const n = options.trials ?? suite.trials ?? 1
     const k = options.k ?? 1
-    if (!Number.isSafeInteger(n) || n < 1 || n > 1000 || !Number.isSafeInteger(k) || k < 1 || k > n) {
+    const invalidTrials = !Number.isSafeInteger(n) || n < 1 || n > 1000
+    if (invalidTrials || !Number.isSafeInteger(k) || k < 1 || k > n) {
       return yield* Effect.fail(
         new EvalError({
           code: "invalid_trials",
           message: "trials must be an integer from 1 to 1000 and k must be an integer from 1 to trials",
-          path: "options.trials"
+          path: invalidTrials ? "options.trials" : "options.k"
         })
       )
     }

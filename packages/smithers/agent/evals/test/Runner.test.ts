@@ -165,16 +165,60 @@ describe("Runner", () => {
     expect(JSON.stringify(first.observations)).toBe(JSON.stringify(second.observations))
   })
 
+  it.each([0, 0.95, 1])("counts only a perfect score as a passing trial (score: %s)", async (value) => {
+    const scorer = Scorer.make({
+      id: "trial-pass-rule",
+      version: "1",
+      name: "trial-pass-rule",
+      score: () => Effect.succeed({ score: value })
+    })
+    const suite = await suiteOf("strict-trials", [binding, Binding.make({ scorer, appliesTo: target })])
+    const run = await Effect.runPromise(
+      Runner.run(suite, { ...runOptions, trials: 2 }).pipe(Effect.provide(succeeding))
+    )
+    expect(run.cases[0]?.observations).toHaveLength(4)
+    expect(run.cases[0]?.trials).toMatchObject({ n: 2, passes: value === 1 ? 2 : 0 })
+    expect(run.trials?.passAt1).toBe(value === 1 ? 1 : 0)
+  })
+
+  it("retains the first execution and observations alongside a later trial error", async () => {
+    const suite = await suiteOf("mixed-trials", [binding])
+    let calls = 0
+    const executor = executorFor(() =>
+      Effect.suspend(() => {
+        calls += 1
+        return calls === 1
+          ? Effect.succeed({ output: 1, stepKey: "first", latencyMs: 0, target })
+          : Effect.fail(new EvalError({ code: "executor", message: "later trial failed", path: "target" }))
+      })
+    )
+    const run = await Effect.runPromise(
+      Runner.run(suite, { ...runOptions, trials: 2, k: 2 }).pipe(Effect.provide(executor))
+    )
+    expect(calls).toBe(2)
+    expect(run.cases[0]).toMatchObject({
+      execution: { output: 1, stepKey: "first" },
+      error: { code: "executor", message: "Target failed for case 'one': later trial failed", path: "target" },
+      trials: { n: 2, passes: 1, passAt1: 0.5, passAtK: 1 }
+    })
+    expect(run.cases[0]?.observations).toHaveLength(1)
+    expect(run.observations).toEqual(run.cases[0]?.observations)
+    expect(run.k).toBe(2)
+  })
+
   it.each([
-    { trials: 0, k: undefined },
-    { trials: 1001, k: undefined },
-    { trials: 1.5, k: undefined },
-    { trials: Number.NaN, k: undefined },
-    { trials: 2, k: 0 },
-    { trials: 2, k: 1.5 },
-    { trials: 2, k: 3 },
-    { trials: undefined, k: 2 }
-  ])("refuses trials $trials with k $k before running a case", async ({ k, trials }) => {
+    { trials: 0, k: undefined, path: "options.trials" },
+    { trials: 1001, k: undefined, path: "options.trials" },
+    { trials: 1.5, k: undefined, path: "options.trials" },
+    { trials: Number.NaN, k: undefined, path: "options.trials" },
+    { trials: Number.POSITIVE_INFINITY, k: 0, path: "options.trials" },
+    { trials: 2, k: 0, path: "options.k" },
+    { trials: 2, k: 1.5, path: "options.k" },
+    { trials: 2, k: 3, path: "options.k" },
+    { trials: 2, k: Number.NaN, path: "options.k" },
+    { trials: 2, k: Number.POSITIVE_INFINITY, path: "options.k" },
+    { trials: undefined, k: 2, path: "options.k" }
+  ])("refuses trials $trials with k $k before running a case", async ({ k, path, trials }) => {
     const suite = await suiteOf("bounds", [binding], [{ name: "one", input: 1, expected: 1 }])
     let calls = 0
     const executor = executorFor((suiteCase) =>
@@ -187,7 +231,7 @@ describe("Runner", () => {
     expect(error).toBeInstanceOf(EvalError)
     expect(error.code).toBe("invalid_trials")
     expect(error.message).toBe("trials must be an integer from 1 to 1000 and k must be an integer from 1 to trials")
-    expect(error.path).toBe("options.trials")
+    expect(error.path).toBe(path)
     expect(calls).toBe(0)
   })
 
@@ -220,6 +264,7 @@ describe("Runner", () => {
     expect(run.cases[0]?.trials).toMatchObject({ n: 2, passes: 2, passAtK: 1 })
     const error = await failureOf(Runner.run(suite, { ...runOptions, k: 3 }).pipe(Effect.provide(succeeding)))
     expect(error.code).toBe("invalid_trials")
+    expect(error.path).toBe("options.k")
   })
 
   it("runs a suite value that declares no trials exactly once", async () => {

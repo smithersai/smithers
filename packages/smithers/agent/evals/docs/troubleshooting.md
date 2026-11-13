@@ -92,14 +92,22 @@ a positive integer, a pass count outside `0..n`, or a `k` outside `1..n`. The
 `path` names the argument (`n`, `c`, `k`, or `cases['<name>']` for a case with
 no runs). Fix the call; `Trials.aggregate` already clamps `k` for a short case.
 
+`Runner.run` also raises `invalid_trials` before executing any case when
+the resolved trial count is not an integer from `1` to `1000` (path
+`options.trials`), or `k` is not an integer from `1` to that count (path
+`options.k`). The count is `options.trials ?? suite.trials ?? 1`, and `k`
+defaults to `1`. If both are invalid, the trial count is reported first.
+
 ## executor
 
 The target flow failed for a case, or no executor was available.
 
 - `Target failed for case '<name>': ...`: the executor failed. The run keeps
   the typed error, locates it with the executor's own `path` or with
-  `cases['<name>']`, and produces no observations for the case. The rest of
-  the suite still ran. Read the retained `cause`.
+  `cases['<name>']`, and produces no observations for that attempt. Other
+  trials of the same case may have observations and an execution; both are
+  retained alongside the first error. The rest of the suite still ran. Read
+  the retained `cause`.
 - `Target failed for case '<name>': executor returned a stepKey that is not a
   string`, `... a stepKey containing the control character U+XXXX`, or
   `... a latencyMs that is not a finite non-negative number`: the executor
@@ -133,17 +141,24 @@ the reference implementation of the protocol.
 
 ## scorer_unavailable
 
-No batch runner was available to score with. This is `Runner.layerNoop`
-working as declared: every bound score becomes an inconclusive observation,
-and a gate grades the run undecidable rather than red. When the suite should
-score, provide `Runner.layerInline` or a real adapter.
+A correlated batch runner reported `recorded: "failed"`: the score
+observation could not be durably stored. `Runner.run` fails with
+`Scorer observation could not be persisted` at `runBatchCorrelated[N]`.
+Repair the adapter's storage and rerun; a failed write cannot be accepted as
+a successful evaluation.
+
+The same code also names unavailable scoring. `Runner.layerNoop` turns that
+condition into an inconclusive observation for each bound score, so it does
+not fail the run. A gate grades that run undecidable rather than red. When
+the suite should score, provide `Runner.layerInline` or a real adapter.
 
 ## Failures that are not EvalError
 
 Two wiring mistakes fail outside the `EvalError` channel:
 
 - `CaseExecutor.make` with no callback throws a `TypeError` synchronously.
-  Pass a function, or an object with a `run` or `execute` callback.
+  Pass the callback function itself. Objects with `run` or `execute` are
+  rejected too.
 - `Gate.check` with a threshold outside [0, 1] fails with a `ScoreGateError`,
   code `invalid_threshold`, from [@smthrs/scorers/ScoreGate](/api/scorers). Catch it in
   the error channel and report it.

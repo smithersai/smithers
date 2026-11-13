@@ -52,6 +52,13 @@ every target step. For the binding and sampling types, see the
 keeps `scorer` and `appliesTo` by reference: they are executable identities,
 and copying them would break the identity match.
 
+## Choose a trial count
+
+`Suite.make` and `Suite.fromJsonLines` accept an optional `trials` count,
+an integer from `1` to `1000` that defaults to `1`. `Runner.run` can
+override it per run. For the pass rule and statistics, see
+[Repeat trials](./run-a-suite.md#repeat-trials).
+
 ## Validate at construction
 
 `Suite.make` fails with `invalid_suite` when the declaration is wrong, and
@@ -61,6 +68,7 @@ each failure locates the offending value in `path`:
 | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Suite name is empty or holds a control character                                         | `name`                                                                                                          |
 | No cases, or more than `limits.cases` cases                                              | `cases`                                                                                                         |
+| Trials is not an integer in `1..1000`                                                    | `trials`                                                                                                        |
 | Concurrency is not a safe integer in [1, `limits.concurrency`]                           | `concurrency`                                                                                                   |
 | Case name is empty, holds a control character, or duplicates another case                | `cases[N].name`                                                                                                 |
 | Case or binding data is not structured-cloneable, such as a function or a class instance | `cases[N].input`, `cases[N].expected`, `bindings[N].sampling`, `bindings[N].groundTruth`, `bindings[N].context` |

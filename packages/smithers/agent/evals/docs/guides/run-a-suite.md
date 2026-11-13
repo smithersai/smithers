@@ -27,10 +27,9 @@ const executor = CaseExecutor.make((suiteCase) =>
 )
 ```
 
-`CaseExecutor.make` accepts the bare callback, or an object naming the
-callback `run`. An object without one throws a `TypeError`:
-a wiring mistake fails loudly instead of degrading to an executor that fails
-every case.
+`CaseExecutor.make` takes only the callback. Passing an object, including
+`{ run }` or `{ execute }`, throws a `TypeError`: a wiring mistake fails
+loudly instead of degrading to an executor that fails every case.
 
 Four rules make an execution usable:
 
@@ -60,8 +59,8 @@ const executor = CaseExecutor.make((suiteCase) =>
 )
 ```
 
-A failed case keeps its typed error and produces no observations; the rest of
-the suite still runs. The error keeps the executor's own `path` when it named
+A failed attempt keeps its typed error and produces no observations; the rest
+of the suite still runs. Other trials of the same case can produce observations. The error keeps the executor's own `path` when it named
 one and is located at `cases['<name>']` otherwise, and its message is prefixed
 `Target failed for case '<name>':`. An untyped failure is wrapped with the
 `executor` code. Interruption propagates instead: an interrupted target
@@ -91,6 +90,42 @@ Effect.gen(function*() {
   `new Date().toISOString()` satisfies the format.
 - `sampleId` is optional and defaults to `"default"`. It joins the job
   identity, so two samples of one run never share a job identity.
+
+## Repeat trials
+
+Set `trials` on `Suite.make` to choose a suite default, or override it in
+`Runner.run`. With neither option, each case runs once. The count must be an
+integer from `1` to `1000`. `k` defaults to `1` and must be an integer
+from `1` to the resolved trial count:
+
+```ts
+Effect.gen(function*() {
+  const run = yield* Runner.run(suite, {
+    runId: "repeated",
+    at: "2026-01-01T00:00:00.000Z",
+    trials: 3,
+    k: 2
+  })
+})
+```
+
+Trials run sequentially; the suite's concurrency bounds cases within each trial.
+A trial passes only if its target succeeded, it has at least one observation,
+and every observation is a `score` of exactly `1`. A score of `0.95` fails
+the trial, as does an inconclusive observation or a target failure. An unbound
+execution fails; a sampled-out attempt is excluded from the statistics.
+
+`CaseResult.trials` summarizes the counted attempts: `n`, `passes`,
+`rate` (also `passAt1`), `passAtK` (at least one pass among `k` trials),
+`passHatK` (all `k` pass), and `stderr` (the pass rate's standard error).
+The `k` trials are drawn without replacement from the recorded outcomes.
+`RunResult.trials` averages per-case statistics and retains `perCase`;
+`RunResult.k` records the requested `k`. A case whose every attempt was
+sampled out has no summary and is omitted from the aggregate. Each case uses
+the smaller of `k` and its counted attempts after sampling.
+
+An invalid trial count fails the run with `invalid_trials` at
+`options.trials`; invalid `k` uses `options.k`.
 
 ## Choose how scoring happens
 
@@ -134,6 +169,10 @@ key, or implement `runBatchCorrelated`. The runner service in
 used directly and `ambiguous_score_job` never applies to it. For that service,
 see the [scorers API](/api/scorers).
 
+A correlated result with `recorded: "failed"` fails the run with
+`scorer_unavailable`: its observation could not be durably stored. Repair the
+adapter's storage before accepting the evaluation.
+
 A returned score that is not finite and inside [0, 1] becomes an inconclusive
 observation naming the scorer and the offending value, and the run's own
 timestamp, not the adapter's, is what reaches the observation.
@@ -141,8 +180,11 @@ timestamp, not the adapter's, is what reaches the observation.
 ## Read the result
 
 `RunResult.cases` is in declaration order regardless of completion order. Each
-`CaseResult` carries either an `execution` or an `error`, plus the
-observations attributed to the case. `RunResult.observations` flattens the
+`CaseResult` retains the first attempt's `execution` when it succeeded, the
+first `error` from any attempt, and all observations attributed to the case in
+trial order. It can carry both `execution` and `error`: for example, a
+successful first trial followed by a failed target in the second trial keeps
+both the first execution's observations and the second trial's error. `RunResult.observations` flattens the
 cases' observations into one list of `score` and `inconclusive` entries.
 Reasons are bounded to 2048 characters, because they reach CI logs and
 committed reports.

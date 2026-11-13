@@ -52,6 +52,10 @@
 
 ### Fixed
 
+- Trial runs now document their controls, strict pass rule, combined case
+  results, and durable-write failures. Invalid `k` points to `options.k`,
+  and executor guidance consistently requires a callback.
+
 - A case that executed but that no binding applies to now leaves the gate
   undecided (exit 5) instead of passing ungraded, and a sampled-out attempt no
   longer counts as a failed trial. `Runner.CaseResult` gains `ungraded`

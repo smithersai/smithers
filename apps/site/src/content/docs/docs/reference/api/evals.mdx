@@ -113,18 +113,19 @@ Four rules decide what a comparison reports, and none of them are obvious:
 | `invalid_run_options` | `Runner.run`'s own options are wrong: an empty `runId`, or an `at` that is not a canonical UTC instant.                                    | The caller                |
 | `invalid_baseline`    | The committed baseline is unreadable, holds a record the schema rejects, or belongs to another suite.                                      | Regenerate the baseline   |
 | `invalid_tolerance`   | A comparison tolerance is not a finite non-negative number.                                                                                | The caller                |
-| `invalid_trials`      | A `Trials` run, pass, or `k` count is outside its bounds.                                                                                  | The caller                |
+| `invalid_trials`      | A `Trials` count, or `Runner.run`'s `trials` or `k`, is outside its bounds.                                                                | The caller                |
 | `executor`            | The target flow failed for a case, or no executor was available.                                                                           | The target or the wiring  |
 | `ambiguous_score_job` | Two jobs share a step key and scorer, so an order-only runner cannot attribute their results to cases.                                     | The suite or batch runner |
 | `scorer_protocol`     | A batch runner returned the wrong number of observations, or observations identifying jobs other than the ones it was given.               | The batch runner          |
-| `scorer_unavailable`  | No batch runner was available to score with.                                                                                               | The wiring                |
+| `scorer_unavailable`  | No batch runner was available, or a correlated runner reported a failed durable write.                                                     | The wiring                |
 
 Most failures carry a `path` locating the offending value: `cases[1].input`,
 `records[3].score`, `options.at`, `runBatch[0]`. A case whose target failed keeps
 the executor's own path when it named one and is located at `cases['<name>']`
 otherwise, so a failed case is always locatable. Only two failures carry no path:
 one about an artifact as a whole (`Baseline` is not JSON, or is not an object)
-and one about the absence of a runner (`scorer_unavailable`).
+and one about the absence of a runner (`scorer_unavailable`). A failed durable
+write also uses `scorer_unavailable`, with a `runBatchCorrelated[N]` path.
 
 ## The batch protocol
 
@@ -223,9 +224,11 @@ Fixed suite declarations and their JSON Lines fixture format.
 - `Binding`: a scorer binding accepted from [@smthrs/scorers](/docs/reference/api/scorers/).
   The binding's `appliesTo` flow is matched against an execution's `target` by
   reference identity.
-- `MakeOptions`: `{ name, cases, bindings?, concurrency }`.
-- `Suite`: `{ name, cases, bindings, concurrency }`, with `cases` and
+- `MakeOptions`: `{ name, cases, bindings?, concurrency, trials? }`.
+- `Suite`: `{ name, cases, bindings, concurrency, trials? }`, with `cases` and
   `bindings` frozen and every data field a copy the caller cannot reach.
+  `trials` defaults to `1` and must be an integer from `1` to `1000`;
+  `Runner.run` can override it per run.
 - `limits`: `{ concurrency: 1024, cases: 10000, fixtureLength: 8388608 }`, the
   declared ceilings a suite is validated against.
 
@@ -240,14 +243,14 @@ saw. Every case and binding is then copied with `structuredClone`, which is
 also the check that the data is inert. Fails with `invalid_suite` for an empty
 or control-character name, no cases, more than `limits.cases` cases, a
 duplicate case name, or a concurrency that is not a safe integer in
-[1, `limits.concurrency`].
+[1, `limits.concurrency`], or a trial count outside `1..1000`.
 
 ```ts
 const fromJsonLines = (text: string, options: JsonLinesOptions): Effect.Effect<Suite, EvalError>
 ```
 
 Loads the `{ name, input, expected? }` JSON Lines fixture format.
-`JsonLinesOptions` is `{ name, bindings?, concurrency }`. Blank lines are
+`JsonLinesOptions` is `{ name, bindings?, concurrency, trials? }`. Blank lines are
 skipped, a leading byte-order mark is stripped, and both LF and CRLF terminate
 a line. A malformed line fails with `invalid_suite` carrying the 1-based line
 number in both the message and the path; a fixture larger than
@@ -300,21 +303,29 @@ Deterministic suite execution and bound scorer evaluation.
   `targetStepKey` and `scorerKey`, the `score` effect, and `at` in
   milliseconds.
 - `ScoreObservation`: a score result aligned with a `ScoreRequest`.
-- `BatchResult`: `{ identity, observation }`, a batch result tagged with the
-  identity of the job that produced it.
+- `BatchResult`: `{ identity, observation, recorded? }`, a batch result tagged
+  with the identity of the job that produced it. `recorded: "failed"` reports
+  a failed durable observation write.
 - `CaseResult`: `{ case, execution?, error?, observations, ungraded?, trials? }`,
   the per-case result retained by the runner. `ungraded` names why an attempt
   that executed produced no observation: `unbound` when any attempt matched no
   binding, `sampled_out` when every attempt was sampled out. `trials` is absent
-  in the second case.
+  in the second case. `execution` is the first attempt's execution, when it
+  succeeded; `error` is the first error from any attempt. A case can carry
+  both. `observations` concatenates all attempts' observations in trial order,
+  and `trials` is its `Trials.Summary`.
 - `Ungraded`: `"unbound" | "sampled_out"`, why an executed case has no
   observation. `unbound`: no binding applies to the execution's target, and a
   gate reports it as an environment fault. `sampled_out`: a binding applied
   but its sampling policy decided against the execution, so the attempt is
   not a trial.
-- `RunResult`: `{ runId, suite, cases, observations }`, the stable result of a
-  suite run.
+- `RunResult`: `{ runId, suite, cases, observations, trials?, k? }`, the stable
+  result of a suite run. `Runner.run` supplies `trials`, the `Trials.Aggregate`
+  of per-case summaries, and `k`, the requested statistic, even for one trial.
 - `RunOptions`: `{ scorer?, runId, sampleId?, trials?, k?, at, caseTimeout? }`.
+  `trials` overrides the suite's count and must be an integer from `1` to
+  `1000`; when neither declares it, the count is `1`. `k` defaults to `1`
+  and must be an integer from `1` to the resolved trial count.
   `caseTimeout` is an Effect `Duration.Input` that bounds each case's target
   and, separately, each score job. Without it nothing is bounded, so a target
   that never completes keeps the run pending.
@@ -335,20 +346,39 @@ const run = (
 Runs a fixed suite with bounded execution and declaration-order results. Cases
 run through the provided `CaseExecutor` at the suite's concurrency. Every
 execution is graded by the bindings whose `appliesTo` is the flow the
-execution reports as its target, matched by reference identity. A case whose
-target failed keeps its typed error and produces no observations; a scorer
-that failed produces an inconclusive observation. With `caseTimeout`, a target
+execution reports as its target, matched by reference identity. An attempt
+whose target failed keeps its typed error and produces no observations; a scorer
+that failed produces an inconclusive observation. A case retains the first
+attempt's execution, the first error from any attempt, and all observations,
+so `execution` and `error` can both be present. With `caseTimeout`, a target
 that outlives it fails its own case with an `executor` error at
 `cases['<name>']` whose message says `timed out after <duration>`, and a
 scorer that outlives it produces an inconclusive observation; the other cases
-and the report are unaffected. A case with an attempt that
-executed but produced no observation carries `ungraded`. Trial statistics leave out
-sampled-out attempts, so a case whose every attempt was sampled out has no
-`trials` and is absent from the aggregate. The run itself fails only
-with `invalid_run_options` for a non-canonical run identity or timestamp or a
-`caseTimeout` that is not a finite positive duration, `invalid_suite` for an unusable sampling policy, `ambiguous_score_job` when an
-order-only runner cannot distinguish two jobs, or `scorer_protocol` for a
-batch runner that broke the `ScoreBatchRunner` contract.
+and the report are unaffected. A case with an attempt that executed but
+produced no observation carries `ungraded`.
+
+Trials run sequentially, with the suite's case concurrency within each trial.
+A trial passes only when the target succeeded, at least one observation exists,
+and every observation is a `score` of exactly `1`. A score of `0.95`, an
+inconclusive observation, an executor error, or an unbound execution fails the
+trial. Sampled-out attempts are excluded, so a case whose every attempt was
+sampled out has no `trials` and is absent from the aggregate.
+
+Each case's `trials.passAt1` is its passing fraction. `passAtK` estimates the
+chance of at least one pass among `k` trials, and `passHatK` the chance that
+all `k` pass, drawn without replacement from the recorded outcomes. The
+run's `trials` averages these statistics over counted cases. `k` is clamped
+to each case's counted trials after sampling. See [Trials](#trials).
+
+The run itself fails with `invalid_run_options` for a non-canonical run
+identity or timestamp or a `caseTimeout` that is not a finite positive duration;
+`invalid_trials` at `options.trials` for a trial count outside `1..1000`, or
+at `options.k` for a `k` outside `1..trials` (both must be integers);
+`invalid_suite` for an unusable sampling policy; `ambiguous_score_job` when
+an order-only runner cannot distinguish two jobs; `scorer_protocol` for a
+batch runner that broke the `ScoreBatchRunner` contract; or
+`scorer_unavailable` when a correlated runner reports a failed durable
+observation write.
 
 ```ts
 const makeInline = (): ScoreBatchRunner

@@ -26,7 +26,7 @@ const tabled = (): ReadonlyArray<string> =>
   [...read("../docs/api.md").matchAll(/^\| `([A-Za-z]+\.[A-Za-z0-9_$]+)` *\| /gmu)].map(([, name]) => name!)
 
 // A hand-written export table drifts the moment a module gains or loses a
-// documented export, and nothing else in this private package would notice.
+// documented export, so the reference is checked against the public source.
 describe("documentation", () => {
   it("tables every documented export exactly once", () => {
     const rows = tabled()
@@ -35,9 +35,8 @@ describe("documentation", () => {
     expect([...rows].sort()).toEqual([...exported()].sort())
   })
 
-  // The README is what npm renders, and the package's "files" list does not
-  // ship docs/, so the reference it points a reader at has to be an absolute
-  // GitHub URL rather than a path that is absent from the tarball.
+  // The package ships docs/, and npm renders the README. Its reference link
+  // uses an absolute GitHub URL so readers can follow it directly from npm.
   it("keeps the package README pointing at the published reference", () => {
     const readme = read("../README.md")
     expect(readme).toContain(
@@ -125,6 +124,13 @@ describe("documentation", () => {
       expect(read(page).replace(/\s*\*?\s+/g, " "), page).toMatch(
         /only an absent (?:one|`expected`) defers to the binding/
       )
+    }
+  })
+
+  it("does not recommend the retired executor object forms", () => {
+    for (const page of ["../docs/guides/run-a-suite.md", "../docs/troubleshooting.md"]) {
+      const text = read(page).replace(/\s+/g, " ")
+      expect(text, page).not.toMatch(/(?:accepts|pass)[^.]*object[^.]*`(?:run|execute)`/i)
     }
   })
 
