@@ -146,3 +146,51 @@ test("live CRLF source retains exact Yjs UTF-16 offsets", () => {
   expect(doc.getText("content").toString()).toBe("a\r\nb!")
   doc.destroy()
 })
+
+test("changing files reveals the same coordinates in the replacement document", () => {
+  const { root, props, view, host } = mount("first\nsecond\nthird")
+  const reveal = { line: 2, col: 1, to_line: 3 }
+  act(() => root.render(<CodeEditorView {...props} reveal={reveal} />))
+  expect(view.state.doc.sliceString(view.state.selection.main.from, view.state.selection.main.to)).toBe("econd\nthird")
+  act(() => root.render(<CodeEditorView {...props} path="other.ts" text={"a\nbb\nccc"} reveal={reveal} />))
+  expect(EditorView.findFromDOM(host.querySelector(".cm-editor")!)).toBe(view)
+  expect(view.state.selection.main.anchor).toBe(3)
+  expect(view.state.selection.main.head).toBe(8)
+  expect(view.state.doc.sliceString(view.state.selection.main.from, view.state.selection.main.to)).toBe("b\nccc")
+})
+
+test("changing only the path reveals equal coordinates again", () => {
+  const { root, props, view } = mount()
+  const reveal = { line: 2, col: 1 }
+  act(() => root.render(<CodeEditorView {...props} reveal={reveal} />))
+  act(() => view.dispatch({ selection: { anchor: 0 } }))
+  act(() => root.render(<CodeEditorView {...props} path="other.ts" reveal={reveal} />))
+  expect(view.state.doc.lineAt(view.state.selection.main.head).number).toBe(2)
+  expect(view.state.selection.main.head - view.state.doc.line(2).from).toBe(1)
+})
+
+test("receiving text after an empty document replays the pending reveal", () => {
+  const { root, props, view } = mount("")
+  const reveal = { line: 3, col: 2 }
+  act(() => root.render(<CodeEditorView {...props} reveal={reveal} />))
+  expect(view.state.selection.main.head).toBe(0)
+  act(() => root.render(<CodeEditorView {...props} text={"one\ntwo\nthree"} reveal={reveal} />))
+  expect(view.state.selection.main.head).toBe(10)
+})
+
+test("binding text takes precedence over text props when revealing a replacement", () => {
+  const { root, props, view } = mount("")
+  const reveal = { line: 2, col: 1 }
+  const doc = new Y.Doc()
+  cleanups.push(() => doc.destroy())
+  const text = doc.getText("content")
+  text.insert(0, "first\nsecond")
+  act(() => root.render(<CodeEditorView {...props} reveal={reveal} />))
+  const binding = { text: text.toString(), extensions: yCollab(text, null, { undoManager: false }) }
+  act(() => root.render(<CodeEditorView {...props} binding={binding} reveal={reveal} />))
+  expect(view.state.selection.main.head).toBe(7)
+  act(() => view.dispatch({ selection: { anchor: 0 } }))
+  act(() => root.render(<CodeEditorView {...props} text="unrelated props" binding={binding} reveal={reveal} />))
+  expect(view.state.doc.toString()).toBe("first\nsecond")
+  expect(view.state.selection.main.head).toBe(0)
+})

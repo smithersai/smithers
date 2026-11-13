@@ -2,7 +2,9 @@
 // measured container, so these tests assert the parsed model — palette slots,
 // CSS-var wiring, and the tooltip/legend content components — the same
 // convention as the other heavy-widget adapters.
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Bar, BarChart } from "recharts";
 import {
@@ -14,6 +16,8 @@ import {
   chartSeriesColor,
   ChartTooltipContent,
 } from "../src/adapters/chart";
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 describe("chart palette", () => {
   test("series slots are assigned in fixed order and clamp past the palette", () => {
@@ -205,4 +209,99 @@ describe("<ChartLegendContent>", () => {
     expect(html).toContain("background:#2a78d6");
     expect(html).toContain("background:#eb6834");
   });
+});
+
+const pieConfig = chartConfig([
+  { key: "visitors", label: "Visitors" },
+  { key: "browser", label: "Browser" },
+  { key: "chrome", label: "Chrome" },
+  { key: "safari", label: "Safari" },
+  { key: "sessions", label: "Sessions" },
+]);
+
+test("pie legend resolves nameKey through each slice payload before the shared dataKey", () => {
+  const html = renderToStaticMarkup(
+    <ChartProvider config={pieConfig}>
+      <ChartLegendContent
+        nameKey="browser"
+        payload={[
+          { dataKey: "visitors", value: "chrome", payload: { browser: "chrome" } },
+          { dataKey: "visitors", value: "safari", payload: { browser: "safari" } },
+        ]}
+      />
+    </ChartProvider>,
+  );
+  expect(html).toContain("Chrome");
+  expect(html).toContain("Safari");
+  expect(html).not.toContain("Visitors");
+  expect(html).not.toContain(">Browser<");
+});
+
+test("pie tooltip resolves nameKey through the slice payload", () => {
+  const html = renderToStaticMarkup(
+    <ChartProvider config={pieConfig}>
+      <ChartTooltipContent active nameKey="browser"
+        payload={[{ dataKey: "visitors", name: "chrome", value: 42, payload: { browser: "chrome" } }]}
+      />
+    </ChartProvider>,
+  );
+  expect(html).toContain("Chrome");
+  expect(html).toContain("42");
+  expect(html).not.toContain("Visitors");
+});
+
+test("nameKey can resolve a top-level item field and falls back to its config entry", () => {
+  const html = renderToStaticMarkup(
+    <ChartProvider config={pieConfig}>
+      <ChartTooltipContent active nameKey="name"
+        payload={[{ dataKey: "visitors", name: "safari", value: 7 }]}
+      />
+      <ChartLegendContent nameKey="value" payload={[{ dataKey: "visitors", value: "chrome" }]} />
+      <ChartTooltipContent active nameKey="browser" payload={[{ dataKey: "visitors", value: 3 }]} />
+    </ChartProvider>,
+  );
+  expect(html).toContain("Safari");
+  expect(html).toContain("Chrome");
+  expect(html).toContain("Browser");
+  expect(html).not.toContain("Visitors");
+});
+
+test("pie legend uses slice values when nameKey is omitted", () => {
+  const html = renderToStaticMarkup(
+    <ChartProvider config={pieConfig}>
+      <ChartLegendContent payload={[
+        { dataKey: "visitors", value: "chrome" },
+        { dataKey: "visitors", value: "safari" },
+      ]} />
+    </ChartProvider>,
+  );
+  expect(html).toContain("Chrome");
+  expect(html).toContain("Safari");
+  expect(html).not.toContain("Visitors");
+});
+
+const legendCleanups: (() => void)[] = [];
+afterEach(() => { while (legendCleanups.length) legendCleanups.pop()!(); });
+test("reordering pie slices beside another series removes old legend entries", () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  legendCleanups.push(() => { act(() => root.unmount()); host.remove(); });
+  const render = (payload: Parameters<typeof ChartLegendContent>[0]["payload"]) =>
+    act(() => root.render(
+      <ChartProvider config={{ sessions: { label: "Sessions" } }}>
+        <ChartLegendContent payload={payload} />
+      </ChartProvider>,
+    ));
+  render([
+    { dataKey: "visitors", value: "chrome" },
+    { dataKey: "visitors", value: "safari" },
+    { dataKey: "sessions", value: "sessions" },
+  ]);
+  expect(host.textContent).toBe("chromesafariSessions");
+  render([
+    { dataKey: "sessions", value: "sessions" },
+    { dataKey: "visitors", value: "safari" },
+  ]);
+  expect(host.textContent).toBe("Sessionssafari");
 });

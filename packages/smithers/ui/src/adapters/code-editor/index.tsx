@@ -155,6 +155,6 @@ export function CodeEditorView<Tag extends string>(props: CodeEditorViewProps<Ta
     const view = editor.current!, from = position(view.state, props.reveal)
     const to = props.reveal.to_line ? position(view.state, { line: props.reveal.to_line, col: view.state.doc.line(Math.min(view.state.doc.lines, props.reveal.to_line)).length }) : from
     view.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from) })
-  }, [props.reveal?.line, props.reveal?.col, props.reveal?.to_line])
+  }, [props.path, props.binding?.text ?? props.text, props.reveal?.line, props.reveal?.col, props.reveal?.to_line])
   return <div className="code-editor" ref={host} data-flow={props.gestures?.hover?.tag} data-definition-flow={props.gestures?.definition?.tag} />
 }

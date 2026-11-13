@@ -192,9 +192,11 @@ type TooltipItem = {
   payload?: Record<string, unknown> & { fill?: string; };
 };
 
-function itemConfig(config: ChartConfig, item: TooltipItem, fallbackKey?: string): ChartConfig[string] | undefined {
-  const key = String(item.dataKey ?? item.name ?? fallbackKey ?? "");
-  return config[key];
+function itemConfig(config: ChartConfig, item: TooltipItem, key: string): ChartConfig[string] | undefined {
+  const payloadKey = item.payload?.[key];
+  const itemKey = item[key as keyof TooltipItem];
+  const configKey = typeof payloadKey === "string" ? payloadKey : typeof itemKey === "string" ? itemKey : key;
+  return config[configKey] ?? config[key];
 }
 
 export function ChartTooltipContent({
@@ -238,7 +240,7 @@ export function ChartTooltipContent({
       {heading != null && heading !== "" ? <div style={{ fontWeight: 600 }}>{heading}</div> : null}
       <div style={{ display: "grid", gap: 4 }}>
         {payload.map((item, index) => {
-          const entry = itemConfig(config, item, nameKey);
+          const entry = itemConfig(config, item, String(nameKey ?? item.dataKey ?? item.name ?? ""));
           const name = entry?.label ?? item.name ?? String(item.dataKey ?? "");
           const indicatorColor = item.color ?? item.payload?.fill;
           return (
@@ -279,7 +281,7 @@ export function ChartLegendContent({
   className,
   nameKey,
 }: {
-  payload?: ReadonlyArray<{ value?: string | number; dataKey?: string | number; color?: string; }>;
+  payload?: ReadonlyArray<{ value?: string | number; dataKey?: string | number; color?: string; payload?: Record<string, unknown>; }>;
   className?: string;
   nameKey?: string;
 }) {
@@ -300,10 +302,10 @@ export function ChartLegendContent({
       }}
     >
       {payload.map((item, index) => {
-        const key = String(item.dataKey ?? nameKey ?? item.value ?? index);
-        const entry = config[key] ?? config[String(item.value ?? "")];
+        const key = String(nameKey ?? item.value ?? item.dataKey ?? index);
+        const entry = itemConfig(config, item, key) ?? config[String(item.dataKey ?? "")];
         return (
-          <span key={key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span key={`${String(item.payload?.[key] ?? item.value ?? key)}-${index}`} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: item.color, flexShrink: 0 }} />
             {entry?.label ?? item.value}
           </span>
