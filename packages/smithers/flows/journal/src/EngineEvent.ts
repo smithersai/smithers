@@ -425,6 +425,10 @@ export const decodeCurrentAttempt = (input: unknown, consumer: Consumer) =>
     )
   }))
 
+/** A portable path never identifies a host or escapes the repository root. */
+const isRepoRelativePath = (path: string): boolean =>
+  path !== "" && !/^(?:[/\\~]|[A-Za-z][A-Za-z\d+.-]*:)/.test(path) && !path.split(/[\\/]/).includes("..")
+
 /**
  * Where a declaration was written, as a durable record may carry it.
  *
@@ -437,7 +441,7 @@ export const decodeCurrentAttempt = (input: unknown, consumer: Consumer) =>
  * @since 1.0.0
  */
 export const DeclaredAt = Schema.Struct({
-  path: Schema.NonEmptyString.check(Schema.makeFilter((value) => !value.startsWith("/"))),
+  path: Schema.NonEmptyString.check(Schema.makeFilter(isRepoRelativePath)),
   line: Event.NonNegativeQuantity
 })
 
@@ -471,7 +475,7 @@ export const relativePath = (root: string | undefined, path: string): string | u
   const base = root.endsWith("/") ? root : `${root}/`
   if (!path.startsWith(base)) return undefined
   const relative = path.slice(base.length)
-  return relative === "" ? undefined : relative
+  return isRepoRelativePath(relative) ? relative : undefined
 }
 
 /**

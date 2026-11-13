@@ -522,8 +522,7 @@ describe("RedactedLogger", () => {
       ["deep value under an Error", deepUnderError]
     ]
     for (const [name, value] of cases) {
-      const rendered = expect(() => RedactedLogger.redactArgument(value, redactor), name).not.toThrow
-      void rendered
+      expect(() => RedactedLogger.redactArgument(value, redactor), name).not.toThrow()
       const out = RedactedLogger.redactArgument(value, redactor)
       expect(() => inspect(out), name).not.toThrow()
       expect(inspect(out), name).not.toContain("sk-live-abcdefgh")
@@ -586,25 +585,28 @@ describe("RedactedLogger", () => {
     expect(inspect(RedactedLogger.redactArgument(params, redactor))).not.toContain("sk-live-abcdefgh")
   })
 
-  it("gives an annotation the same treatment the message gets", () => {
-    // Restated 2026-09-01: this asserted an annotated Date stayed a Date,
-    // which was the type-preserving render. That render was removed after
-    // three rounds of review found it could kill the run it was logging, so
-    // the shared treatment is now the plain redacted form. The property the
-    // case exists for is unchanged: both halves of one log event obey one
-    // rule, and neither leaks.
-    const redactor = Redaction.make()
-    const annotations = RedactedLogger.redactArgument(
-      { at: new Date(0), token: "sk-live-abcdefgh", nested: { authorization: "Bearer abcdefghijkl" } },
-      redactor
-    )
-    const rendered = inspect(annotations)
-    expect(rendered).not.toContain("sk-live-abcdefgh")
-    expect(rendered).not.toContain("Bearer abcdefghijkl")
-    expect(RedactedLogger.redactArgument({ token: "sk-live-abcdefgh" }, redactor)).toEqual(
-      RedactedLogger.redactArgument({ token: "sk-live-abcdefgh" }, redactor)
-    )
-  })
+  it.effect("gives an annotation the same treatment the message gets", () =>
+    Effect.gen(function*() {
+      const value = {
+        at: new Date(0),
+        token: "sk-live-abcdefgh",
+        nested: { authorization: "Bearer abcdefghijkl" }
+      }
+      const message = rendered(yield* logged(Effect.logInfo(value)))
+      const annotation = rendered(yield* logged(Effect.logInfo("annotated").pipe(Effect.annotateLogs({ value }))))
+      for (const output of [message, annotation]) {
+        expect(output).not.toContain("sk-live-abcdefgh")
+        expect(output).not.toContain("Bearer abcdefghijkl")
+        expect(output).toContain("1970-01-01T00:00:00.000Z")
+        expect(output).toContain("[REDACTED]")
+        expect(output).toContain("authorization: '[REDACTED]'")
+      }
+      // The pretty logger renders the same object as the message or as the
+      // annotation value; only its log-line prefix differs.
+      const body = (output: string) => output.slice(output.indexOf("{"), output.lastIndexOf("}") + 1)
+      expect(body(message)).not.toBe("")
+      expect(body(annotation)).toBe(body(message))
+    }))
 
   it("redacts a credential used as a Map key", () => {
     const redactor = Redaction.make()

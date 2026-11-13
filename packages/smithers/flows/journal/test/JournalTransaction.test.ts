@@ -316,7 +316,7 @@ describe("Journal.emitLossy against an open transaction", () => {
 })
 
 effect(
-  "normalizes the journal clock without relaxing explicit timestamp validation",
+  "stores a fractional journal clock as whole milliseconds",
   () =>
     withStack(Effect.gen(function*() {
       const journal = yield* Journal

@@ -42,11 +42,13 @@ for (const [name, layer] of [["local", Consensus.layerLocal], ["SQL", sql]] as c
         yield* Fiber.interrupt(waiter)
         expect(ran).toBe(false)
         yield* Fiber.interrupt(holder)
+        expect(ran).toBe(false)
         const failed = yield* Effect.exit(service.withPermit("resource", other, alive, Effect.fail("failed")))
         expect(Exit.isFailure(failed)).toBe(true)
         const interrupted = yield* Effect.exit(service.withPermit("resource", other, alive, Effect.interrupt))
         expect(Exit.isFailure(interrupted) && Cause.hasInterruptsOnly(interrupted.cause)).toBe(true)
         expect(yield* service.withPermit("resource", owner, alive, Effect.succeed("reacquired"))).toBe("reacquired")
+        expect(ran).toBe(false)
       }).pipe(Effect.provide(layer)))
 
     it.effect("keeps stale live owners excluded while unrelated keys proceed", () =>

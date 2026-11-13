@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
+import * as FastCheck from "fast-check"
 import * as EngineEvent from "../src/EngineEvent.ts"
 import * as Journal from "../src/Journal.ts"
 import * as Event from "../src/JournalEvent.ts"
@@ -479,6 +480,16 @@ describe("node and plan records", () => {
     for (
       const invalid of [
         { path: "/Users/someone/repo/src/Build.ts", line: 12 },
+        { path: "C:\\Users\\someone\\repo\\src\\Build.ts", line: 12 },
+        { path: "C:repo\\src\\Build.ts", line: 12 },
+        { path: "\\\\host\\share\\repo\\Build.ts", line: 12 },
+        { path: "\\repo\\src\\Build.ts", line: 12 },
+        { path: "../../Users/someone/repo/src/Build.ts", line: 12 },
+        { path: "src/../Build.ts", line: 12 },
+        { path: "src\\..\\Build.ts", line: 12 },
+        { path: "file:///Users/someone/repo/src/Build.ts", line: 12 },
+        { path: "https://example.test/Build.ts", line: 12 },
+        { path: "~/repo/src/Build.ts", line: 12 },
         { path: "", line: 12 },
         { path: "src/Build.ts", line: -1 }
       ]
@@ -511,6 +522,53 @@ describe("node and plan records", () => {
     expect(EngineEvent.relativePath("/repo", "/repository/src/Build.ts")).toBeUndefined()
     // The root itself is not a file under it.
     expect(EngineEvent.relativePath("/repo", "/repo/")).toBeUndefined()
+    for (
+      const suffix of [
+        "../Users/someone/secret/Build.ts",
+        "src/../Build.ts",
+        "src\\..\\Build.ts",
+        "/etc/x.ts",
+        "C:\\Users\\someone\\Build.ts",
+        "\\\\host\\share\\Build.ts",
+        "file:///Users/someone/Build.ts",
+        "~/repo/Build.ts"
+      ]
+    ) expect(EngineEvent.relativePath("/repo", "/repo/" + suffix), suffix).toBeUndefined()
+    for (const suffix of ["src/Build.ts", "src\\Build.ts", ".../Build.ts", "src/file..ts"]) {
+      const path = EngineEvent.relativePath("/repo", "/repo/" + suffix)
+      expect(path).toBe(suffix)
+      expect(Schema.decodeUnknownSync(EngineEvent.DeclaredAt)({ path, line: 0 }).path).toBe(suffix)
+    }
+  })
+
+  it("keeps generated declaration sites inside their repository root", () => {
+    const decode = Schema.decodeUnknownSync(EngineEvent.DeclaredAt)
+    const path = FastCheck.array(FastCheck.stringMatching(/^[a-zA-Z0-9_-]{1,12}$/), {
+      minLength: 1,
+      maxLength: 6
+    }).map((segments) => segments.join("/"))
+    FastCheck.assert(
+      FastCheck.property(path, (suffix) => {
+        expect(decode({ path: suffix, line: 0 }).path).toBe(suffix)
+        expect(EngineEvent.relativePath("/repo", "/repo/" + suffix)).toBe(suffix)
+        for (
+          const invalid of [
+            "/" + suffix,
+            "C:\\" + suffix,
+            "\\\\" + suffix,
+            "~/" + suffix,
+            "file:///" + suffix,
+            "../" + suffix,
+            suffix + "/../Build.ts",
+            suffix + "\\..\\Build.ts"
+          ]
+        ) {
+          expect(() => decode({ path: invalid, line: 0 })).toThrow()
+          expect(EngineEvent.relativePath("/repo", "/repo/" + invalid)).toBeUndefined()
+        }
+      }),
+      { numRuns: 100, seed: 4546 }
+    )
   })
 
   it("names one event type per record, and does not rename a stored one", () => {

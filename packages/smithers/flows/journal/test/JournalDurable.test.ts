@@ -298,9 +298,9 @@ describe("SqlJournal durable emission", () => {
 })
 
 /**
- * These cases need a real file and a real Clock: the deferred-transaction
- * allocation documented in `docs/pages/concepts/journal.md` relies on the
- * SQLite busy/snapshot retry in `@smthrs/database`, whose backoff sleeps.
+ * These cases need a real file and a real Clock: independent connections
+ * contend at BEGIN IMMEDIATE, and the SQLite busy retry in
+ * @smthrs/database sleeps between attempts. See docs/concepts/two-channels.md.
  */
 describe("SqlJournal durable emission across connections", () => {
   const withTempFile = <A, E>(body: (filename: string) => Effect.Effect<A, E>): Effect.Effect<A, E> =>
@@ -322,15 +322,10 @@ describe("SqlJournal durable emission across connections", () => {
       (context) => Context.get(context, Journal) as Service
     )
 
-  // Two real connections both hit BEGIN contention on the same SQLite file,
-  // and Effect's SqlClient.makeWithTransaction issues ROLLBACK even when
-  // BEGIN itself failed, raising "cannot rollback - no transaction is active"
-  // (Effect-TS/effect#7235, fixed by Effect-TS/effect#7236 and first released
-  // in effect@4.0.0-rc.109 — this workspace pins rc.108, so it is still live).
-  // `withWriteRetry` classifies that defect as transient write contention and
-  // retries it, so this holds as a real assertion.
-  // Actual cross-connection contention sleeps between retries. A frozen test
-  // clock with no adjuster hangs as soon as the first busy error is observed.
+  // Independent connections contend for SQLite's write lock. The current
+  // driver returns that contention as a typed SqlError, which the database
+  // write contract also verifies. WriteRetry retries the transient failure.
+  // A real Clock lets the backoff sleeps advance.
   it.live(
     "emitDurable never collides when two connections write one run concurrently",
     () =>

@@ -90,10 +90,11 @@ a plan names its edges through each node's `dependsOn` and knows no reason for
 them, while an interpreted graph knows the reason it drew each one.
 
 A node's `declaredAt` is where its action was written. It is repo-relative by
-contract and the schema refuses an absolute path: a journal is read on machines
-that did not write it, so an absolute path is at best noise and at worst an
-operator's home directory published into a run's history. A writer that cannot
-make a path relative omits the field. `EngineEvent.relativePath(root, path)` is
+contract. The schema refuses absolute paths, Windows drive and network paths,
+home-relative paths, URL schemes, and parent-directory segments with either
+path separator. A journal is read on machines that did not write it, so a
+machine-specific path can publish an operator's home directory into a run's
+history. A writer that cannot make a safe relative path omits the field. `EngineEvent.relativePath(root, path)` is
 how a writer obeys that rule: it answers the path relative to the root, or
 nothing at all for a path outside the root, for no root, and for a root that
 names the whole filesystem. Every writer of a declaration site uses it, the

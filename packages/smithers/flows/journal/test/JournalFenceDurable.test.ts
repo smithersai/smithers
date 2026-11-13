@@ -74,10 +74,9 @@ const migrated = (filename: string) =>
  * The park is placed *before* `BEGIN`, not inside the transaction. A stale
  * writer that parks mid-transaction holds SQLite's write lock, so the successor
  * cannot commit its takeover at all and both sides stall on the lock rather
- * than on the fence. Parking here reproduces the window the fence is actually
- * for: the append is already in flight — input validated, sequence allocated
- * from the in-process floor — when ownership moves underneath it, and the fence
- * predicate is then evaluated against the committed successor.
+ * than on the fence. Input validation has finished, but sequence reservation
+ * has not started. Reservation runs inside the resumed transaction, and its
+ * fence check observes the committed successor before any entry is inserted.
  */
 const parkFirstWrite = (
   reached: Deferred.Deferred<void>,
@@ -152,9 +151,8 @@ describe("SqlJournal durable fencing across connections", () => {
             const zombie = yield* connection(filename, parkFirstWrite(reached, gate))
             const winner = yield* connection(filename)
 
-            // The stale owner enters its fenced append — input validated,
-            // sequence allocated — and parks on the threshold of its write
-            // transaction, still holding the run per its lease.
+            // The stale owner validates its input and parks before opening
+            // its write transaction or reserving a sequence.
             const appending = yield* Effect.forkChild(
               Effect.flip(zombie.emitDurable(input(sourceId("zombie"), 0, { decision: "stale" }), stale)),
               { startImmediately: true }

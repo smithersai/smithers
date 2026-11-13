@@ -24,34 +24,10 @@ describe("TestJournal", () => {
       expect(receipt).toMatchObject({ _tag: "Accepted", seq: 0, sourceSeq: 0 })
     }))
 
-  it.effect("honours the supplied admission options", () =>
-    Effect.gen(function*() {
-      const receipts = yield* (
-        Effect.gen(function*() {
-          const journal = yield* Journal
-          const emit = (index: number) =>
-            journal.emitDurableUnfenced({
-              runId: "options-run" as RunId,
-              sourceId: `source-${index}` as SourceId,
-              eventType: "options",
-              payload: {}
-            })
-          return [yield* emit(0), yield* emit(1)]
-        }).pipe(
-          Effect.provide(TestJournal.layer({ capacity: 8, overflow: "drop-oldest", batchSize: 1 })),
-          Effect.scoped
-        )
-      )
-
-      expect(receipts.map((receipt) => receipt._tag)).toEqual(["Accepted", "Accepted"])
-    }))
-
   it.effect("forwards capacity and every overflow policy to the lossy queue", () =>
     Effect.gen(function*() {
-      // `emitDurable` writes straight through the transaction and never touches
-      // the admission queue, so the cell above would stay green even if the
-      // bundle stopped forwarding `capacity`/`overflow` entirely. `emitLossy` is
-      // the only channel that observes them.
+      // Durable emissions bypass the admission queue. Only lossy emissions
+      // observe its capacity and overflow policy.
       const emitThree = (policy: NonNullable<TestJournal.TestJournalOptions["overflow"]>) =>
         Effect.gen(function*() {
           const journal = yield* Journal

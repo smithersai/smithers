@@ -15,15 +15,9 @@ export default defineConfig({
     include: ["test/**/*.test.{ts,vibe}"],
     exclude: [...configDefaults.exclude],
     environment: "node",
-    // Vitest's 5 s default is a wall-clock budget, but no suite in this repo
-    // asserts on elapsed time — each is bounded by an explicit iteration,
-    // cycle, or completion count. The real gate runs those counts under v8
-    // coverage instrumentation across parallel workers, where cases that
-    // finish in well under a second in isolation have been measured 6-12x
-    // slower; that machine-load multiplier, not the workload, is what put
-    // correct suites over the default wall. Raise the budget instead of
-    // trimming the workload, and keep it FINITE so a genuine hang still
-    // fails the run rather than hanging the gate forever.
+    // Coverage instrumentation and parallel workers can exceed Vitest's
+    // default 5 s budget. Keep a finite suite timeout; individual performance
+    // tests still enforce their own tighter elapsed-time bounds.
     testTimeout: 60_000,
     hookTimeout: 30_000,
     coverage: {

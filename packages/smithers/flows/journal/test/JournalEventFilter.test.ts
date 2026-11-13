@@ -3,6 +3,7 @@ import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
+import type * as Statement from "effect/sql/Statement"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -19,7 +20,20 @@ describe.each(["memory", "file"] as const)("exact event filter (%s)", (storage) 
       const database = DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({
         filename: storage === "memory" ? ":memory:" : join(root, "journal.db")
       })))
+      const queries: Array<ReturnType<Statement.Statement<unknown>["compile"]>> = []
+      const recording = Layer.effect(
+        SqlClient.SqlClient,
+        Effect.map(SqlClient.SqlClient, (base) =>
+          new Proxy(base, {
+            apply(target, thisArgument, argumentsList) {
+              const statement = Reflect.apply(target, thisArgument, argumentsList) as Statement.Statement<unknown>
+              if (typeof statement.compile === "function") queries.push(statement.compile())
+              return statement
+            }
+          }))
+      )
       const layer = SqlJournal.layer({ capacity: 128, overflow: "reject" }).pipe(
+        Layer.provide(recording),
         Layer.provideMerge(Migrations.layer.pipe(Layer.provideMerge(database)))
       )
       await Effect.runPromise(
@@ -40,7 +54,16 @@ describe.each(["memory", "file"] as const)("exact event filter (%s)", (storage) 
           }
           yield* add(foreign, "wanted")
           yield* add(runId, "second")
+          const readQuery = () => {
+            const query = queries.find(([text]) =>
+              text.includes("FROM flows_journal_events") && text.includes("ORDER BY seq")
+            )
+            expect(query).toBeDefined()
+            return sql.unsafe(query![0], query![1])
+          }
+          queries.length = 0
           const first = yield* journal.entries({ runId, eventTypes: ["wanted"], limit: 2 })
+          const singleQuery = readQuery()
           expect(first.entries.map((row) => row.seq)).toEqual([1, 3])
           expect(first.hasMore).toBe(true)
           const second = yield* journal.entries({
@@ -82,7 +105,9 @@ describe.each(["memory", "file"] as const)("exact event filter (%s)", (storage) 
             (yield* journal.entries({ runId, limit: 1, order: "sideways" as "asc" })
               .pipe(Effect.flip)).code
           ).toBe("invalid_event")
+          queries.length = 0
           const combined = yield* journal.entries({ runId, eventTypes: ["second", "wanted", "wanted"], limit: 3 })
+          const multiQuery = readQuery()
           expect(combined.entries.map((row) => row.seq)).toEqual([1, 3, 4])
           expect(combined.hasMore).toBe(true)
           const remaining = yield* journal.entries({
@@ -106,24 +131,19 @@ describe.each(["memory", "file"] as const)("exact event filter (%s)", (storage) 
             entries: [],
             hasMore: false
           })
-          const query = yield* TestDatabase.explain(
-            sql,
-            sql`SELECT run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json
-          FROM flows_journal_events INDEXED BY flows_journal_events_run_event_type_idx WHERE run_id = ${runId} AND ${
-              sql.in("event_type", ["wanted"])
-            } AND seq > ${0}
-          ORDER BY seq ASC LIMIT ${3}`
-          )
-          expect(query.map((row) => row.detail).join("\n")).toContain("flows_journal_events_run_event_type_idx")
+          const query = yield* TestDatabase.explain(sql, singleQuery)
+          expect(
+            query.some((row) =>
+              row.detail.includes("SEARCH") && row.detail.includes("flows_journal_events_run_event_type_idx")
+            )
+          ).toBe(true)
           expect(query.some((row) => row.detail.includes("TEMP B-TREE"))).toBe(false)
-          const multi = yield* TestDatabase.explain(
-            sql,
-            sql`SELECT run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json
-            FROM flows_journal_events INDEXED BY flows_journal_events_run_event_type_idx
-            WHERE run_id = ${runId} AND ${sql.in("event_type", ["wanted", "second"])} AND seq > ${0}
-            ORDER BY seq ASC LIMIT ${3}`
-          )
-          expect(multi.map((row) => row.detail).join("\n")).toContain("flows_journal_events_run_event_type_idx")
+          const multi = yield* TestDatabase.explain(sql, multiQuery)
+          expect(
+            multi.some((row) =>
+              row.detail.includes("SEARCH") && row.detail.includes("flows_journal_events_run_event_type_idx")
+            )
+          ).toBe(true)
         }).pipe(Effect.scoped, Effect.provide(layer))
       )
     } finally {

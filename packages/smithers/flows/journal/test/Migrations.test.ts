@@ -23,7 +23,7 @@ describe("journal migrations", () => {
     Effect.gen(function*() {
       yield* migrated(Effect.gen(function*() {
         yield* Migrations.run
-        yield* Migrations.run
+        expect(yield* Migrations.run).toEqual([])
       }))
     }))
 
