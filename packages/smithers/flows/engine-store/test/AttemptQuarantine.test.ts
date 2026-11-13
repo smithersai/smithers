@@ -17,7 +17,6 @@ import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import * as Notifying from "@smthrs/journal/test/Notifying"
 import { Jj } from "@smthrs/kernel"
-import { Node } from "@smthrs/plan"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
@@ -382,7 +381,7 @@ describe("succeeded-row corruption quarantines its evidence and heals on resume 
           })
         })
         let outerDispatches = 0
-        const action = outerTier === undefined ? sealed : Action.make({
+        const action = Action.make({
           name: "AttemptQuarantine/outer",
           success: Schema.String,
           tier: outerTier,
@@ -601,7 +600,7 @@ describe("succeeded-row corruption quarantines its evidence and heals on resume 
         })
         expect(Option.getOrThrow(resumed.attempt).meta).not.toHaveProperty("boundary")
         expect(dispatches).toBe(1)
-        expect(outerDispatches).toBe(outerTier === undefined ? 0 : 3)
+        expect(outerDispatches).toBe(3)
         // The built context is released with the test's own scope.
       })
   )

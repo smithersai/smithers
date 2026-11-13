@@ -10,13 +10,13 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Journal } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
-import { type Ownership, RunStore } from "@smthrs/run-store"
+import { type Ownership } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { activate, jj as jjLayer } from "./CachePolicyFixtures.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "provenance-idem-host", pid: 53, nonce: "provenance-idem-process" }
@@ -26,31 +26,6 @@ const declared: ActionPersistence.BoundaryMetadata = {
   writeSet: ["output.txt"],
   boundaryMode: "hard"
 }
-
-const jjLayer = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () =>
-      Effect.succeed({ commitId: "provenance-idem-snapshot" as never, changeId: "provenance-idem-snapshot" as never }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
-
-const activate = (runId: string) =>
-  Effect.gen(function*() {
-    const runs = yield* RunStore.RunStore
-    yield* runs.create(runId, "{}")
-    const row = yield* runs.get(runId)
-    const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-    const claim = yield* runs.claim(runId, snapshot, owner, 1)
-    if (claim._tag !== "Claimed") return yield* Effect.die(new Error("claim lost"))
-    const activated = yield* runs.activate(runId, owner, claim.claimedAtMs, snapshot)
-    if (activated._tag !== "Activated") return yield* Effect.die(new Error("activation lost"))
-  })
 
 /** A boundary that verifies the hit but can never rematerialize the row. */
 const unreplayableBoundary = Layer.succeed(
@@ -86,7 +61,7 @@ describe("cacheProvenance emissions are idempotent per observation (issue #124)"
       const outcome = yield* withCrypto(
         Effect.gen(function*() {
           // First run records the shared row under a healthy boundary.
-          yield* activate("provenance-idem-first")
+          yield* activate("provenance-idem-first", owner)
           yield* ActionPersistence.make({
             runId: "provenance-idem-first",
             owner,
@@ -98,7 +73,7 @@ describe("cacheProvenance emissions are idempotent per observation (issue #124)"
           // Second run's boundary verifies the hit but can never replay it,
           // and its body fails — so the same refusal is observed again on the
           // next dispatch of the very same key and attempt.
-          yield* activate("provenance-idem-second")
+          yield* activate("provenance-idem-second", owner)
           const execute = ActionPersistence.make({
             runId: "provenance-idem-second",
             owner,

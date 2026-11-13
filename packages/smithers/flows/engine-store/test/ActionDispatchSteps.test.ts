@@ -8,8 +8,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { CallFact, Journal, JournalEvent, StepFact } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
-import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
+import { AttemptStore, type Ownership } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
@@ -22,6 +21,7 @@ import * as CacheSync from "../src/CacheSync.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { activate, jj } from "./CachePolicyFixtures.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "dispatch-steps", pid: 5, nonce: "dispatch-steps-process" }
@@ -32,31 +32,7 @@ const boundary: ActionPersistence.BoundaryMetadata = {
   boundaryMode: "hard"
 }
 
-const jj = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () => Effect.succeed({ commitId: "dispatch-steps" as never, changeId: "dispatch-steps" as never }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
-
 const layer = Layer.mergeAll(TestStores.layer(), StepBoundary.layerTest(), jj)
-
-const activate = (runId: string) =>
-  Effect.gen(function*() {
-    const runs = yield* RunStore.RunStore
-    yield* runs.create(runId, "{}")
-    const row = yield* runs.get(runId)
-    const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-    const claim = yield* runs.claim(runId, snapshot, owner, 1)
-    if (claim._tag !== "Claimed") return yield* Effect.die(new Error("claim lost"))
-    const activated = yield* runs.activate(runId, owner, claim.claimedAtMs, snapshot)
-    if (activated._tag !== "Activated") return yield* Effect.die(new Error("activation lost"))
-  })
 
 const entries = (runId: string) =>
   Effect.gen(function*() {
@@ -83,7 +59,7 @@ describe("action dispatch steps", () => {
   it.effect("a failed checkpoint step settles failed and projects no step fact from its missing outcome", () =>
     Effect.gen(function*() {
       const runId = "failed-checkpoint", key = `${runId}/checkpoint`
-      yield* activate(runId)
+      yield* activate(runId, owner)
       const exit = yield* Effect.exit(
         ActionPersistence.make({ runId, owner, sourceId: "dispatch-steps", execute: () => Effect.fail("broke") })({
           action: {
@@ -106,7 +82,7 @@ describe("action dispatch steps", () => {
   it.effect("a failed settled-phase call settles failed and projects no call fact from its missing outcome", () =>
     Effect.gen(function*() {
       const runId = "failed-call", key = `${runId}/write`
-      yield* activate(runId)
+      yield* activate(runId, owner)
       const exit = yield* Effect.exit(
         ActionPersistence.make({
           runId,
@@ -134,7 +110,7 @@ describe("action dispatch steps", () => {
     Effect.gen(function*() {
       const runId = "conflict-unpublished", key = `${runId}/sealed`
       const keyDigest = sha256(key)
-      yield* activate(runId)
+      yield* activate(runId, owner)
       const cache = yield* CacheStore.CacheStore
       yield* cache.put({
         keyDigest,
@@ -209,11 +185,11 @@ describe("action dispatch steps", () => {
           tier: "sealed",
           metadata: { readSet: [], writeSet: ["artifact"], boundaryMode: "hard" }
         })
-      yield* activate("host-refused-producer")
+      yield* activate("host-refused-producer", owner)
       yield* dispatch("host-refused-producer").pipe(
         Effect.provideService(StepBoundary.StepBoundary, host(() => Effect.void))
       )
-      yield* activate("host-refused-consumer")
+      yield* activate("host-refused-consumer", owner)
       const result = yield* dispatch("host-refused-consumer").pipe(
         Effect.provideService(
           StepBoundary.StepBoundary,
@@ -246,7 +222,7 @@ describe("action dispatch steps", () => {
   it.effect("an admission whose run vanished self-interrupts instead of reporting a rejected admission", () =>
     Effect.gen(function*() {
       const runId = "vanished-run", key = `${runId}/step`
-      yield* activate(runId)
+      yield* activate(runId, owner)
       const attempts = yield* AttemptStore.AttemptStore
       // The run row disappears between the dispatch's fence and its admission.
       const vanished: AttemptStore.Service = { ...attempts, put: () => Effect.succeed({ _tag: "RunNotFound" }) }
@@ -273,7 +249,7 @@ describe("action dispatch steps", () => {
     it.effect(`a ${tier} action's declared boundary is never prepared or settled: only sealed work has one`, () =>
       Effect.gen(function*() {
         const runId = `${tier}-metadata`, key = `${runId}/step`
-        yield* activate(runId)
+        yield* activate(runId, owner)
         const calls: Array<string> = []
         const measuring = StepBoundary.make({
           prepare: (descriptor) =>
@@ -321,7 +297,7 @@ describe("action dispatch steps", () => {
       })
       const unverified = (runId: string, input: Omit<ActionPersistence.ActionInput, "action" | "attempt" | "key">) =>
         Effect.gen(function*() {
-          yield* activate(runId)
+          yield* activate(runId, owner)
           yield* ActionPersistence.make({ runId, owner, sourceId: runId, execute: () => Effect.succeed("done") })({
             ...input,
             action: {},
@@ -347,7 +323,7 @@ describe("action dispatch steps", () => {
     Effect.gen(function*() {
       const runId = "adopted-park", key = `${runId}/charge`
       const id = { runId, stepKeyDigest: sha256(key), attempt: 1 }
-      yield* activate(runId)
+      yield* activate(runId, owner)
       const attempts = yield* AttemptStore.AttemptStore
       // A dead incarnation parked this keyed attempt mid-body.
       yield* attempts.put({

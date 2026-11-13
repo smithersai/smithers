@@ -26,7 +26,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import { Journal } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
@@ -36,47 +35,24 @@ import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as JournalRecords from "../src/internal/JournalRecords.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { activate, jjWith } from "./CachePolicyFixtures.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "adoption-host", pid: 7, nonce: "live" }
 const deadOwner: Ownership.OwnerId = { hostId: "adoption-host", pid: 7, nonce: "dead" }
 
 const scriptedJj = (calls: Array<{ readonly op: string; readonly id?: string }>) =>
-  Layer.succeed(
-    Jj.Jj,
-    Jj.make({
-      snapshot: () =>
-        Effect.sync(() => {
-          calls.push({ op: "snapshot" })
-          // A distinct change id: adoption and retry must restore the commit id.
-          return { commitId: `fresh-${calls.length}` as never, changeId: `moving-${calls.length}` as never }
-        }),
-      restore: (id) =>
-        Effect.sync(() => {
-          calls.push({ op: "restore", id })
-        }),
-      diff: () => Effect.succeed(""),
-      workspaceAdd: () => Effect.void,
-      workspaceForget: () => Effect.void,
-      status: () => Effect.succeed("")
-    })
-  )
-
-const activate = (runId: string) =>
-  Effect.gen(function*() {
-    const runs = yield* RunStore.RunStore
-    yield* runs.create(runId, "{}")
-    const row = yield* runs.get(runId)
-    const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-    const now = yield* Clock.currentTimeMillis
-    const claim = yield* runs.claim(runId, snapshot, owner, now)
-    if (claim._tag !== "Claimed") {
-      return yield* Effect.die(new Error(`run ${runId} claim was lost`))
-    }
-    const activated = yield* runs.activate(runId, owner, claim.claimedAtMs, snapshot)
-    if (activated._tag !== "Activated") {
-      return yield* Effect.die(new Error(`run ${runId} activation was lost`))
-    }
+  jjWith({
+    snapshot: () =>
+      Effect.sync(() => {
+        calls.push({ op: "snapshot" })
+        // A distinct change id: adoption and retry must restore the commit id.
+        return { commitId: `fresh-${calls.length}` as never, changeId: `moving-${calls.length}` as never }
+      }),
+    restore: (id) =>
+      Effect.sync(() => {
+        calls.push({ op: "restore", id })
+      })
   })
 
 const layers = (calls: Array<{ readonly op: string; readonly id?: string }>) =>
@@ -97,7 +73,7 @@ describe("adoption liveness evidence is the admission permit (issues #86, #102, 
       const key = "adoption/same-incarnation-redrive"
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("adoption-redrive")
+          yield* activate("adoption-redrive", owner, { claimedAtMs: yield* Clock.currentTimeMillis })
           const attempts = yield* AttemptStore.AttemptStore
           const startedAtMs = yield* Clock.currentTimeMillis
           yield* attempts.put(
@@ -138,7 +114,7 @@ describe("adoption liveness evidence is the admission permit (issues #86, #102, 
       const key = "adoption/concurrent-claim"
       const results = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("adoption-concurrent")
+          yield* activate("adoption-concurrent", owner, { claimedAtMs: yield* Clock.currentTimeMillis })
           const attempts = yield* AttemptStore.AttemptStore
           // The dead incarnation's row: adoptable evidence for whichever
           // dispatch reads it first.
@@ -183,7 +159,7 @@ describe("adoption liveness evidence is the admission permit (issues #86, #102, 
       const key = "adoption/dead-owner"
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("adoption-dead")
+          yield* activate("adoption-dead", owner, { claimedAtMs: yield* Clock.currentTimeMillis })
           const attempts = yield* AttemptStore.AttemptStore
           yield* attempts.put(
             {
@@ -221,7 +197,7 @@ describe("adopted compensable attempts restore their own pre-image (issue #87)",
       const key = "adoption/compensable"
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("adoption-compensable")
+          yield* activate("adoption-compensable", owner, { claimedAtMs: yield* Clock.currentTimeMillis })
           const attempts = yield* AttemptStore.AttemptStore
           // The dead incarnation snapshotted the clean tree, persisted the
           // pre-image, half-mutated the workspace, and was SIGKILLed.
@@ -271,7 +247,7 @@ describe("adopted compensable attempts restore their own pre-image (issue #87)",
       const key = "adoption/compensable-crossed"
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("adoption-crossed")
+          yield* activate("adoption-crossed", owner, { claimedAtMs: yield* Clock.currentTimeMillis })
           const attempts = yield* AttemptStore.AttemptStore
           yield* attempts.put(
             {
@@ -324,7 +300,7 @@ describe("adopted compensable attempts restore their own pre-image (issue #87)",
       const key = "adoption/pre-image-persisted"
       const observed = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("adoption-preimage")
+          yield* activate("adoption-preimage", owner, { claimedAtMs: yield* Clock.currentTimeMillis })
           const attempts = yield* AttemptStore.AttemptStore
           let runningMeta: unknown
           yield* ActionPersistence.make({
@@ -359,7 +335,7 @@ describe("adoption re-emissions are producer-idempotent (issue #91)", () => {
       const digest = sha256(key)
       const events = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("adoption-dedupe")
+          yield* activate("adoption-dedupe", owner, { claimedAtMs: yield* Clock.currentTimeMillis })
           const attempts = yield* AttemptStore.AttemptStore
           const journal = yield* Journal.Journal
           // The dead incarnation admitted the attempt, announced it, snapshotted
@@ -420,7 +396,7 @@ describe("adoption re-emissions are producer-idempotent (issue #91)", () => {
 describe("the adoption claim is fenced at the moment it lands (issue #102)", () => {
   const seedAdoptable = (runId: string, key: string) =>
     Effect.gen(function*() {
-      yield* activate(runId)
+      yield* activate(runId, owner, { claimedAtMs: yield* Clock.currentTimeMillis })
       const attempts = yield* AttemptStore.AttemptStore
       yield* attempts.put(
         {

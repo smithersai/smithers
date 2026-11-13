@@ -15,7 +15,6 @@ import { describe, expect, it } from "@effect/vitest"
 import type { FileInput } from "@smthrs/flow/FileInput"
 import { Journal } from "@smthrs/journal"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
-import { Jj } from "@smthrs/kernel"
 import * as PlanStore from "@smthrs/plan-store/PlanStore"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import * as AttemptStore from "@smthrs/run-store/AttemptStore"
@@ -28,6 +27,7 @@ import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as OwnerIdentity from "../src/OwnerIdentity.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { activate, jj as jjLayer } from "./CachePolicyFixtures.ts"
 import { key, sha256, withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "generation-host", pid: 29, nonce: "generation-process" }
@@ -37,31 +37,6 @@ const declared: ActionPersistence.BoundaryMetadata = {
   writeSet: ["output.txt"],
   boundaryMode: "hard"
 }
-
-const jjLayer = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () =>
-      Effect.succeed({ commitId: "generation-snapshot" as never, changeId: "generation-snapshot" as never }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
-
-const activate = (runId: string) =>
-  Effect.gen(function*() {
-    const runs = yield* RunStore.RunStore
-    yield* runs.create(runId, "{}")
-    const row = yield* runs.get(runId)
-    const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-    const claim = yield* runs.claim(runId, snapshot, owner, 1)
-    if (claim._tag !== "Claimed") return yield* Effect.die(new Error("claim lost"))
-    const activated = yield* runs.activate(runId, owner, claim.claimedAtMs, snapshot)
-    if (activated._tag !== "Activated") return yield* Effect.die(new Error("activation lost"))
-  })
 
 /**
  * A boundary whose `prepare` answers from a queue of measured read
@@ -100,7 +75,7 @@ describe("post-eviction re-records take fresh provenance (issue #129)", () => {
       const outcome = yield* withCrypto(
         Effect.gen(function*() {
           const cache = yield* CacheStore.CacheStore
-          yield* activate(runId)
+          yield* activate(runId, owner)
           const execute = (result: string, attempt: number, boundary: Layer.Layer<StepBoundary.Service>) =>
             ActionPersistence.make({
               runId,
@@ -172,7 +147,7 @@ describe("identical-content re-records collapse into the original provenance", (
         Effect.gen(function*() {
           const cache = yield* CacheStore.CacheStore
           const journal = yield* Journal.Journal
-          yield* activate(runId)
+          yield* activate(runId, owner)
           // Counted body (issue #146): the convergence under test re-records
           // from the PERSISTED succeeded row without re-running the body. A
           // constant body cannot distinguish that from a plain re-execution —
@@ -240,7 +215,7 @@ describe("identical-content re-records collapse into the original provenance", (
       const outcome = yield* withCrypto(
         Effect.gen(function*() {
           const cache = yield* CacheStore.CacheStore
-          yield* activate(runId)
+          yield* activate(runId, owner)
           const execute = (attempt: number, boundary: Layer.Layer<StepBoundary.Service>) =>
             ActionPersistence.make({
               runId,
@@ -334,7 +309,7 @@ describe("the generation digest is canonical, not key-order-coincident (B7)", ()
       Effect.gen(function*() {
         const cache = yield* CacheStore.CacheStore
         const journal = yield* Journal.Journal
-        yield* activate(runId)
+        yield* activate(runId, owner)
         const execute = ActionPersistence.make({
           runId,
           owner,

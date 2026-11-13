@@ -13,27 +13,39 @@ export const evidence: StepBoundary.BoundaryEvidence = {
   wholeTreeWritesVerified: true,
   hermeticReadsVerified: true
 }
-export const activate = (runId: string, parentRunId?: string) =>
+export const activate = (
+  runId: string,
+  runOwner: Ownership.OwnerId = owner,
+  options: { readonly parentRunId?: string; readonly claimedAtMs?: number } = {}
+) =>
   Effect.gen(function*() {
     const runs = yield* RunStore.RunStore
-    yield* runs.create(runId, "{}", parentRunId === undefined ? undefined : { parentRunId })
+    yield* runs.create(
+      runId,
+      "{}",
+      options.parentRunId === undefined ? undefined : { parentRunId: options.parentRunId }
+    )
     const row = yield* runs.get(runId)
     const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-    const claim = yield* runs.claim(runId, snapshot, owner, 1)
-    if (claim._tag !== "Claimed") return yield* Effect.die("claim lost")
-    yield* runs.activate(runId, owner, claim.claimedAtMs, snapshot)
+    const claim = yield* runs.claim(runId, snapshot, runOwner, options.claimedAtMs ?? 1)
+    if (claim._tag !== "Claimed") return yield* Effect.die(new Error("claim lost"))
+    const activated = yield* runs.activate(runId, runOwner, claim.claimedAtMs, snapshot)
+    if (activated._tag !== "Activated") return yield* Effect.die(new Error("activation lost"))
   })
-export const jj = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () => Effect.succeed({ commitId: "policy-snapshot" as never, changeId: "policy-snapshot" as never }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
+export const jjWith = (overrides: Partial<Parameters<typeof Jj.make>[0]> = {}) =>
+  Layer.succeed(
+    Jj.Jj,
+    Jj.make({
+      snapshot: () => Effect.succeed({ commitId: "policy-snapshot" as never, changeId: "policy-snapshot" as never }),
+      restore: () => Effect.void,
+      diff: () => Effect.succeed(""),
+      workspaceAdd: () => Effect.void,
+      workspaceForget: () => Effect.void,
+      status: () => Effect.succeed(""),
+      ...overrides
+    })
+  )
+export const jj = jjWith()
 export const boundary = (onReplay: () => void = () => {}) =>
   Layer.succeed(
     StepBoundary.StepBoundary,

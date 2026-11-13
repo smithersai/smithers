@@ -1,8 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { Action } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
-import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
+import { AttemptStore, type Ownership } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -13,6 +12,7 @@ import * as Inconsistency from "../src/Inconsistency.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { activate, jjWith } from "./CachePolicyFixtures.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "edge-host", pid: 11, nonce: "edge-process" }
@@ -24,41 +24,22 @@ const boundary: ActionPersistence.BoundaryMetadata = {
 }
 
 const jjLayer = (restores: Array<string>, snapshots: Array<string>) =>
-  Layer.succeed(
-    Jj.Jj,
-    Jj.make({
-      snapshot: () =>
-        Effect.sync(() => {
-          const changeId = `snapshot-${snapshots.length}`
-          snapshots.push(changeId)
-          // A distinct change id: the engine must journal the commit id.
-          return { commitId: changeId as never, changeId: `moving-${changeId}` as never }
-        }),
-      restore: (changeId) =>
-        Effect.sync(() => {
-          restores.push(changeId as string)
-        }),
-      diff: () => Effect.succeed(""),
-      workspaceAdd: () => Effect.void,
-      workspaceForget: () => Effect.void,
-      status: () => Effect.succeed("")
-    })
-  )
+  jjWith({
+    snapshot: () =>
+      Effect.sync(() => {
+        const changeId = `snapshot-${snapshots.length}`
+        snapshots.push(changeId)
+        // A distinct change id: the engine must journal the commit id.
+        return { commitId: changeId as never, changeId: `moving-${changeId}` as never }
+      }),
+    restore: (changeId) =>
+      Effect.sync(() => {
+        restores.push(changeId as string)
+      })
+  })
 
 const base = (restores: Array<string> = [], snapshots: Array<string> = []) =>
   Layer.mergeAll(TestStores.layer(), StepBoundary.layerTest(), jjLayer(restores, snapshots))
-
-const activate = (runId: string) =>
-  Effect.gen(function*() {
-    const runs = yield* RunStore.RunStore
-    yield* runs.create(runId, "{}")
-    const row = yield* runs.get(runId)
-    const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-    const claim = yield* runs.claim(runId, snapshot, owner, 1)
-    if (claim._tag !== "Claimed") return yield* Effect.die(new Error("claim lost"))
-    const activated = yield* runs.activate(runId, owner, claim.claimedAtMs, snapshot)
-    if (activated._tag !== "Activated") return yield* Effect.die(new Error("activation lost"))
-  })
 
 const dispatch = (options: {
   readonly runId: string
@@ -109,7 +90,7 @@ describe("cache conflict with no Inconsistency receiver provided", () => {
       const keyDigest = sha256(key)
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("default-strict")
+          yield* activate("default-strict", owner)
           yield* seedConflictingRow(keyDigest, "original")
           const error = yield* Effect.flip(dispatch({
             runId: "default-strict",
@@ -146,7 +127,7 @@ describe("cache conflict with no Inconsistency receiver provided", () => {
       )
       const error = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("vanished-conflict")
+          yield* activate("vanished-conflict", owner)
           return yield* Effect.flip(dispatch({
             runId: "vanished-conflict",
             key,
@@ -173,7 +154,7 @@ describe("cache conflict with no Inconsistency receiver provided", () => {
       const keyDigest = sha256(key)
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("noop-receiver")
+          yield* activate("noop-receiver", owner)
           yield* seedConflictingRow(keyDigest, "original")
           const value = yield* dispatch({
             runId: "noop-receiver",
@@ -221,7 +202,7 @@ describe("attempt lifecycle journal failures", () => {
       )
       const exit = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("journal-broken")
+          yield* activate("journal-broken", owner)
           return yield* Effect.exit(dispatch({
             runId: "journal-broken",
             key: "edge/journal-broken",
@@ -245,7 +226,7 @@ describe("compensable attempts that fail after snapshotting", () => {
       const snapshots: Array<string> = []
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("compensable-failure")
+          yield* activate("compensable-failure", owner)
           const first = yield* Effect.exit(dispatch({
             runId: "compensable-failure",
             key: "edge/compensable",
@@ -291,7 +272,7 @@ describe("compensable attempts that fail after snapshotting", () => {
       )
       const exit = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("finish-fence-lost")
+          yield* activate("finish-fence-lost", owner)
           return yield* Effect.exit(dispatch({
             runId: "finish-fence-lost",
             key: "edge/finish-fence-lost",
@@ -326,7 +307,7 @@ describe("boundary violations on a compensable-snapshotted attempt", () => {
     Effect.gen(function*() {
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("settle-violation")
+          yield* activate("settle-violation", owner)
           const exit = yield* Effect.exit(dispatch({
             runId: "settle-violation",
             key: "edge/settle-violation",
@@ -361,7 +342,7 @@ describe("boundary violations on a compensable-snapshotted attempt", () => {
       )
       const exit = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("settle-fence-lost")
+          yield* activate("settle-fence-lost", owner)
           return yield* Effect.exit(dispatch({
             runId: "settle-fence-lost",
             key: "edge/settle-fence-lost",
@@ -387,7 +368,7 @@ describe("cache convergence from a succeeded attempt row", () => {
       const keyDigest = sha256(key)
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("no-finish-time")
+          yield* activate("no-finish-time", owner)
           const attempts = yield* AttemptStore.AttemptStore
           // A crash between `finish` and `cache.put` can leave a succeeded row
           // whose finish time never made it to storage; convergence must still
@@ -448,7 +429,7 @@ describe("cache convergence from a succeeded attempt row", () => {
       const keyDigest = sha256(key)
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("write-proof-only")
+          yield* activate("write-proof-only", owner)
           const attempts = yield* AttemptStore.AttemptStore
           const succeeded = AttemptStore.makeNoop({
             ...attempts,
@@ -495,7 +476,7 @@ describe("compensable retries with no recorded predecessor", () => {
       const snapshots: Array<string> = []
       const value = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("no-previous")
+          yield* activate("no-previous", owner)
           // Attempt 2 with no attempt-1 row at all (the first attempt died
           // before it was ever recorded): there is nothing to roll back to.
           return yield* dispatch({
@@ -529,7 +510,7 @@ describe("boundary preparation failures", () => {
       let dispatches = 0
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("prepare-violation")
+          yield* activate("prepare-violation", owner)
           const exit = yield* Effect.exit(dispatch({
             runId: "prepare-violation",
             key: "edge/prepare-violation",
@@ -567,7 +548,7 @@ describe("boundary preparation failures", () => {
       )
       const exit = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("prepare-fence-lost")
+          yield* activate("prepare-fence-lost", owner)
           return yield* Effect.exit(dispatch({
             runId: "prepare-fence-lost",
             key: "edge/prepare-fence-lost",

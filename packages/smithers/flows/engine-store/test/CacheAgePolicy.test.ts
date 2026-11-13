@@ -118,7 +118,7 @@ describe("immutable age policy and validated fork replay", () => {
         yield* dispatch("producer", "history-read", body, policy(1000)).pipe(at(100))
         yield* activate("parent")
         yield* dispatch("parent", "history-read", body, policy(1000)).pipe(at(1099))
-        yield* activate("child", "parent")
+        yield* activate("child", owner, { parentRunId: "parent" })
         const journal = yield* Journal.Journal
         const cache = yield* CacheStore.CacheStore
         const parent = yield* journal.entries({ runId: JournalEvent.RunId.make("parent"), limit: 50 })
@@ -157,7 +157,7 @@ describe("immutable age policy and validated fork replay", () => {
           yield* dispatch("producer", "producer-fields", body, policy(1000)).pipe(at(100))
           yield* activate("parent")
           yield* dispatch("parent", "producer-fields", body, policy(1000)).pipe(at(1099))
-          yield* activate("child", "parent")
+          yield* activate("child", owner, { parentRunId: "parent" })
           const journal = yield* Journal.Journal
           const parent = yield* journal.entries({ runId: JournalEvent.RunId.make("parent"), limit: 50 })
           const ttl = parent.entries.find((entry) => (entry.payload as { action?: string }).action === "ttl")!
@@ -257,7 +257,7 @@ describe("immutable age policy and validated fork replay", () => {
         expect(bodies).toBe(1)
         await Effect.runPromise(withCrypto(
           Effect.gen(function*() {
-            yield* activate("child", "parent")
+            yield* activate("child", owner, { parentRunId: "parent" })
             const sql = yield* SqlClient.SqlClient
             const journal = yield* Journal.Journal
             const parent = yield* journal.entries({ runId: "parent" as never, limit: 50 })

@@ -14,8 +14,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { FileInput } from "@smthrs/flow/FileInput"
 import { Journal } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
-import { type Ownership, RunStore } from "@smthrs/run-store"
+import { type Ownership } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -25,6 +24,7 @@ import * as EngineStoreMetrics from "../src/EngineStoreMetrics.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { activate, jj as jjLayer } from "./CachePolicyFixtures.ts"
 import { runPromise, sha256, withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "read-set-host", pid: 21, nonce: "read-set-process" }
@@ -34,30 +34,6 @@ const declared: ActionPersistence.BoundaryMetadata = {
   writeSet: ["output.txt"],
   boundaryMode: "hard"
 }
-
-const jjLayer = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () => Effect.succeed({ commitId: "read-set-snapshot" as never, changeId: "read-set-snapshot" as never }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
-
-const activate = (runId: string) =>
-  Effect.gen(function*() {
-    const runs = yield* RunStore.RunStore
-    yield* runs.create(runId, "{}")
-    const row = yield* runs.get(runId)
-    const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-    const claim = yield* runs.claim(runId, snapshot, owner, 1)
-    if (claim._tag !== "Claimed") return yield* Effect.die(new Error("claim lost"))
-    const activated = yield* runs.activate(runId, owner, claim.claimedAtMs, snapshot)
-    if (activated._tag !== "Activated") return yield* Effect.die(new Error("activation lost"))
-  })
 
 const dispatch = (runId: string, key: string, execute: () => Effect.Effect<unknown, unknown>) =>
   ActionPersistence.make({ runId, owner, sourceId: `read-set-${runId}`, execute })({
@@ -82,7 +58,7 @@ const replayWithMeasurement = (
     let replays = 0
     const run = (runId: string, boundary: Layer.Layer<StepBoundary.Service>) =>
       Effect.gen(function*() {
-        yield* activate(runId)
+        yield* activate(runId, owner)
         return yield* dispatch(runId, key, () =>
           Effect.sync(() => {
             executions++
@@ -172,7 +148,7 @@ describe("a refused stale hit invalidates the poisoned entry (issue #99)", () =>
           const cache = yield* CacheStore.CacheStore
           const run = (runId: string, measured: ReadonlyArray<FileInput>) =>
             Effect.gen(function*() {
-              yield* activate(runId)
+              yield* activate(runId, owner)
               return yield* dispatch(runId, key, () => Effect.sync(() => results[executions++]))
             }).pipe(Effect.provide(StepBoundary.layerTest({ readSnapshot: measured })))
           const first = yield* run("stale-conflict-first", StepBoundary.exactReads(declared))
@@ -252,7 +228,7 @@ describe("the effective cache decision is metered exactly once per consult", () 
             executions++
             return "recorded"
           })
-        yield* activate("metered-emit-first")
+        yield* activate("metered-emit-first", owner)
         yield* dispatch("metered-emit-first", key, body).pipe(Effect.provide(boundary))
         const failing: Journal.Service = {
           ...journal,
@@ -261,7 +237,7 @@ describe("the effective cache decision is metered exactly once per consult", () 
               ? Effect.fail(new Journal.JournalError({ code: "sink_failed", message: "journal sink down" }))
               : journal.emitDurable(record, emitOwner)
         }
-        yield* activate("metered-emit-second")
+        yield* activate("metered-emit-second", owner)
         const failed = yield* dispatch("metered-emit-second", key, body).pipe(
           Effect.provide(boundary),
           Effect.provideService(Journal.Journal, failing),
@@ -304,7 +280,7 @@ describe("cache provenance records a refused hit (issue #90)", () => {
             recordedRunId: "recorded-run",
             recordedEventSeq: 0
           })
-          yield* activate("provenance-run")
+          yield* activate("provenance-run", owner)
           yield* dispatch("provenance-run", key, () => Effect.succeed("recorded")).pipe(
             Effect.provide(StepBoundary.layerTest({ readSnapshot: [{ path: "config.json", digest: "D2" }] }))
           )

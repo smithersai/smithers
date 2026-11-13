@@ -600,7 +600,12 @@ const spendEnumeratedKey = (budget: InertJsonBudget, key: PropertyKey): boolean 
  * failure path neither executes user code nor leaves an attempt running because
  * its error was too large for the store.
  */
-const inertJson = (value: unknown, budget: InertJsonBudget, redactText = true): unknown => {
+const inertJson = (
+  value: unknown,
+  budget: InertJsonBudget,
+  reflection: HostReflection.Reflection,
+  redactText = true
+): unknown => {
   const active = new WeakSet<object>()
 
   const reduce = (current: unknown, depth: number): InertJsonReduction => {
@@ -621,7 +626,7 @@ const inertJson = (value: unknown, budget: InertJsonBudget, redactText = true): 
       case "bigint":
         return inertJsonOmitted
       case "object": {
-        if (HostReflection.host.isProxy(current) || active.has(current)) return inertJsonRejected
+        if (reflection.isProxy(current) || active.has(current)) return inertJsonRejected
         if (ArrayBuffer.isView(current)) return arrayBufferViewMarker
         active.add(current)
         try {
@@ -650,7 +655,7 @@ const inertJson = (value: unknown, budget: InertJsonBudget, redactText = true): 
           // cleanup. Keep that own data field (also used by landing conflicts),
           // never getters, stacks or other hidden properties, under the same budget.
           const tag = Object.getOwnPropertyDescriptor(current, "_tag")
-          const preserveMessage = HostReflection.host.isNativeError(current) ||
+          const preserveMessage = reflection.isNativeError(current) ||
             (tag !== undefined && "value" in tag &&
               tag.value === WorkspaceSandbox.MaterializationConflict.identifier)
           for (const key of Reflect.ownKeys(current)) {
@@ -708,7 +713,10 @@ const inertJson = (value: unknown, budget: InertJsonBudget, redactText = true): 
  * cannot fit and returns one `Die(null)` reason, which {@link rehydrateCause}
  * decodes on replay, so even an adversarial reason count remains admissible.
  */
-const persistCause = (cause: Cause.Cause<unknown>): typeof CauseJson.Type => {
+const persistCause = (
+  cause: Cause.Cause<unknown>,
+  reflection: HostReflection.Reflection
+): typeof CauseJson.Type => {
   // The cause object and its `reasons` array are the two fixed envelope nodes.
   const budget: InertJsonBudget = { nodes: 2, characters: 0, enumeratedKeys: 0 }
   const reasons: Array<typeof CauseJson.Type.reasons[number]> = []
@@ -718,9 +726,9 @@ const persistCause = (cause: Cause.Cause<unknown>): typeof CauseJson.Type => {
       return { reasons: [{ _tag: "Die", defect: null }] }
     }
     if (Cause.isFailReason(reason)) {
-      reasons.push({ _tag: "Fail", error: inertJson(reason.error, budget, false) })
+      reasons.push({ _tag: "Fail", error: inertJson(reason.error, budget, reflection, false) })
     } else if (Cause.isDieReason(reason)) {
-      reasons.push({ _tag: "Die", defect: inertJson(reason.defect, budget) })
+      reasons.push({ _tag: "Die", defect: inertJson(reason.defect, budget, reflection) })
     } else {
       reasons.push({ _tag: "Interrupt", fiberId: reason.fiberId ?? null })
     }
@@ -734,7 +742,7 @@ const persistCause = (cause: Cause.Cause<unknown>): typeof CauseJson.Type => {
     if (site === undefined) continue
     const candidate = { ...budget }
     if (!spendNodes(candidate, 1)) continue
-    const decoded = Schema.decodeUnknownResult(FailureSiteJson)(inertJson(site, candidate))
+    const decoded = Schema.decodeUnknownResult(FailureSiteJson)(inertJson(site, candidate, reflection))
     if (decoded._tag !== "Success") continue
     reasons[index] = { ...reasons[index]!, failureSite: decoded.success }
     Object.assign(budget, candidate)
@@ -3022,7 +3030,7 @@ const failBoundaryAttempt = (dispatch: Dispatch, cause: Cause.Cause<unknown>) =>
       ...attemptId,
       state: "failed",
       finishedAtMs,
-      error: attemptPayload(persistCause(cause)),
+      error: attemptPayload(persistCause(cause, yield* HostReflection.Current)),
       meta: { ...dispatch.declarationMeta, ...(violation ? { hardViolation: true as const } : {}) }
     }, [
       ...(violation
@@ -3352,7 +3360,7 @@ const settleFailure = (dispatch: Dispatch, admitted: Admitted, cause: Cause.Caus
       ...attemptId,
       state: "failed",
       finishedAtMs,
-      error: attemptPayload(persistCause(cause)),
+      error: attemptPayload(persistCause(cause, yield* HostReflection.Current)),
       meta: attemptPayload(
         {
           ...dispatch.declarationMeta,

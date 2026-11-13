@@ -25,6 +25,7 @@ import * as Option from "effect/Option"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
+import * as HostReflection from "../src/internal/HostReflection.ts"
 import type * as ReplayOnly from "../src/ReplayOnly.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as StepSandbox from "../src/StepSandbox.ts"
@@ -676,26 +677,30 @@ describe("action executor failure paths", () => {
       }
     }))
 
-  it.effect("settles with null when inert inspection itself refuses", () =>
-    Effect.gen(function*() {
-      const defect = { stable: "hidden" }
-      const originalOwnKeys = Reflect.ownKeys
-      Reflect.ownKeys = (target) => {
-        if (target === defect) throw new Error("inspection refused")
-        return originalOwnKeys(target)
-      }
-      try {
-        const result = yield* settleDefect("inspection-refusal", defect)
+  it.effect.each(["isProxy", "isNativeError"] as const)(
+    "settles with null when host %s refuses inspection",
+    (predicate) =>
+      Effect.gen(function*() {
+        const defect = { stable: "hidden" }
+        let inspections = 0
+        const result = yield* settleDefect(`inspection-refusal-${predicate}`, defect).pipe(
+          Effect.provideService(HostReflection.Current, {
+            ...HostReflection.host,
+            [predicate]: () => {
+              inspections++
+              throw new Error("inspection refused")
+            }
+          })
+        )
 
+        expect(inspections).toBe(1)
         expect(Exit.isFailure(result.exit)).toBe(true)
         expect(Option.getOrThrow(result.row)).toMatchObject({
           state: "failed",
           error: { reasons: [{ _tag: "Die", defect: null }] }
         })
-      } finally {
-        Reflect.ownKeys = originalOwnKeys
-      }
-    }))
+      })
+  )
 
   it.effect("journals a failed finish and no hard violation when boundary.prepare refuses", () =>
     Effect.gen(function*() {

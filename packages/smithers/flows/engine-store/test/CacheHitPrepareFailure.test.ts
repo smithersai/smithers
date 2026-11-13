@@ -14,8 +14,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { RetryPolicy } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
-import { type Ownership, RunStore } from "@smthrs/run-store"
+import { type Ownership } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -25,6 +24,7 @@ import * as Option from "effect/Option"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { activate, jj as jjLayer } from "./CachePolicyFixtures.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "prepare-failure-host", pid: 31, nonce: "prepare-failure-process" }
@@ -34,31 +34,6 @@ const declared: ActionPersistence.BoundaryMetadata = {
   writeSet: ["output.txt"],
   boundaryMode: "hard"
 }
-
-const jjLayer = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () =>
-      Effect.succeed({ commitId: "prepare-failure-snapshot" as never, changeId: "prepare-failure-snapshot" as never }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
-
-const activate = (runId: string) =>
-  Effect.gen(function*() {
-    const runs = yield* RunStore.RunStore
-    yield* runs.create(runId, "{}")
-    const row = yield* runs.get(runId)
-    const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-    const claim = yield* runs.claim(runId, snapshot, owner, 1)
-    if (claim._tag !== "Claimed") return yield* Effect.die(new Error("claim lost"))
-    const activated = yield* runs.activate(runId, owner, claim.claimedAtMs, snapshot)
-    if (activated._tag !== "Activated") return yield* Effect.die(new Error("activation lost"))
-  })
 
 const dispatch = (runId: string, key: string, execute: () => Effect.Effect<unknown, unknown>) =>
   ActionPersistence.make({ runId, owner, sourceId: `prepare-failure-${runId}`, execute })({
@@ -99,13 +74,13 @@ describe("transient prepare host errors on a cache hit (issue #110)", () => {
               return "recorded"
             })
           // First run records the entry under a healthy boundary.
-          yield* activate("prepare-transient-first")
+          yield* activate("prepare-transient-first", owner)
           yield* dispatch("prepare-transient-first", key, body).pipe(
             Effect.provide(StepBoundary.layerTest({ readSnapshot: StepBoundary.exactReads(declared) }))
           )
           // Second run's host dies measuring the read set: every prepare —
           // the cache-hit gate and the dispatch path's own — fails.
-          yield* activate("prepare-transient-second")
+          yield* activate("prepare-transient-second", owner)
           const exit = yield* dispatch("prepare-transient-second", key, body).pipe(
             Effect.provide(StepBoundary.layerTest({ supported: false })),
             Effect.exit
@@ -173,11 +148,11 @@ describe("transient prepare host errors on a cache hit (issue #110)", () => {
               executions++
               return "recorded"
             })
-          yield* activate("prepare-transient-recovery-first")
+          yield* activate("prepare-transient-recovery-first", owner)
           yield* dispatch("prepare-transient-recovery-first", key, body).pipe(
             Effect.provide(StepBoundary.layerTest({ readSnapshot: StepBoundary.exactReads(declared) }))
           )
-          yield* activate("prepare-transient-recovery-second")
+          yield* activate("prepare-transient-recovery-second", owner)
           const result = yield* dispatch("prepare-transient-recovery-second", key, body).pipe(
             Effect.provide(transientBoundary())
           )
@@ -203,11 +178,11 @@ describe("transient prepare host errors on a cache hit (issue #110)", () => {
       const outcome = yield* withCrypto(
         Effect.gen(function*() {
           const cache = yield* CacheStore.CacheStore
-          yield* activate("prepare-stale-first")
+          yield* activate("prepare-stale-first", owner)
           yield* dispatch("prepare-stale-first", key, () => Effect.succeed("recorded")).pipe(
             Effect.provide(StepBoundary.layerTest({ readSnapshot: StepBoundary.exactReads(declared) }))
           )
-          yield* activate("prepare-stale-second")
+          yield* activate("prepare-stale-second", owner)
           yield* dispatch("prepare-stale-second", key, () => Effect.succeed("fresh")).pipe(
             Effect.provide(StepBoundary.layerTest({ readSnapshot: [{ path: "config.json", digest: "D2" }] }))
           )
@@ -232,7 +207,7 @@ describe("transient prepare host errors on a cache hit (issue #110)", () => {
       const outcome = yield* withCrypto(
         Effect.gen(function*() {
           const cache = yield* CacheStore.CacheStore
-          yield* activate("prepare-race-first")
+          yield* activate("prepare-race-first", owner)
           yield* dispatch("prepare-race-first", key, () => Effect.succeed("recorded")).pipe(
             Effect.provide(StepBoundary.layerTest({ readSnapshot: StepBoundary.exactReads(declared) }))
           )
@@ -242,7 +217,7 @@ describe("transient prepare host errors on a cache hit (issue #110)", () => {
           // (issue #119), so the fencing predicate inside the DELETE is what
           // protects the fresh row: the interceptor lands the replacement
           // immediately before the eviction reaches the store.
-          yield* activate("prepare-race-second")
+          yield* activate("prepare-race-second", owner)
           const swapping: typeof cache = {
             put: (entry) => cache.put(entry),
             get: (digest) => cache.get(digest),

@@ -30,6 +30,7 @@
  * @since 1.0.0
  */
 
+import * as Context from "effect/Context"
 /**
  * The part of a host this module reads.
  *
@@ -126,3 +127,17 @@ export const make = (source: BuiltinSource | undefined): Reflection => {
  * @category constants
  */
 export const host: Reflection = make((globalThis as { readonly process?: BuiltinSource }).process)
+
+/**
+ * Reflection used while persisting an action failure.
+ *
+ * Hosts retain their native predicates by default. An Effect context can
+ * provide a host whose reflection refuses inspection without changing
+ * process-wide intrinsics.
+ *
+ * @since 1.0.0
+ * @category services
+ */
+export const Current = Context.Reference<Reflection>("@smthrs/engine-store/internal/HostReflection", {
+  defaultValue: () => host
+})

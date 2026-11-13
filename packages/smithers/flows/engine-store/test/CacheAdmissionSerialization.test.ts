@@ -8,8 +8,7 @@
  * the per-key admission permit, and a verified hit returns from inside it.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Jj } from "@smthrs/kernel"
-import { type Ownership, RunStore } from "@smthrs/run-store"
+import { type Ownership } from "@smthrs/run-store"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -18,6 +17,7 @@ import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as AttemptAdmission from "../src/internal/AttemptAdmission.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { activate, jj as jjLayer } from "./CachePolicyFixtures.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "cache-serial-host", pid: 47, nonce: "cache-serial-process" }
@@ -27,31 +27,6 @@ const declared: ActionPersistence.BoundaryMetadata = {
   writeSet: ["output.txt"],
   boundaryMode: "hard"
 }
-
-const jjLayer = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () =>
-      Effect.succeed({ commitId: "cache-serial-snapshot" as never, changeId: "cache-serial-snapshot" as never }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
-
-const activate = (runId: string) =>
-  Effect.gen(function*() {
-    const runs = yield* RunStore.RunStore
-    yield* runs.create(runId, "{}")
-    const row = yield* runs.get(runId)
-    const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-    const claim = yield* runs.claim(runId, snapshot, owner, 1)
-    if (claim._tag !== "Claimed") return yield* Effect.die(new Error("claim lost"))
-    const activated = yield* runs.activate(runId, owner, claim.claimedAtMs, snapshot)
-    if (activated._tag !== "Activated") return yield* Effect.die(new Error("activation lost"))
-  })
 
 /**
  * A boundary whose every operation is an observable critical section: an
@@ -94,7 +69,7 @@ describe("the cache-hit block runs under the per-key admission permit (issue #11
       const outcome = yield* withCrypto(
         Effect.gen(function*() {
           // First run records the shared row under a healthy boundary.
-          yield* activate("cache-serial-first")
+          yield* activate("cache-serial-first", owner)
           yield* ActionPersistence.make({
             runId: "cache-serial-first",
             owner,
@@ -106,7 +81,7 @@ describe("the cache-hit block runs under the per-key admission permit (issue #11
           // Second run dispatches the same key twice, concurrently, through one
           // executor (one shared admission mutex). Both take the cache-hit
           // path; their prepare/replayOutputs spans must never overlap.
-          yield* activate("cache-serial-second")
+          yield* activate("cache-serial-second", owner)
           const boundary = observableBoundary()
           const execute = ActionPersistence.make({
             runId: "cache-serial-second",
@@ -137,7 +112,7 @@ describe("the cache-hit block runs under the per-key admission permit (issue #11
       const key = "cache-serial/attempt-skew"
       const outcome = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("cache-serial-skew-first")
+          yield* activate("cache-serial-skew-first", owner)
           yield* ActionPersistence.make({
             runId: "cache-serial-skew-first",
             owner,
@@ -146,7 +121,7 @@ describe("the cache-hit block runs under the per-key admission permit (issue #11
           })({ action: {}, attempt: 1, key, tier: "sealed", metadata: declared }).pipe(
             Effect.provide(StepBoundary.layerTest({ readSnapshot: StepBoundary.exactReads(declared) }))
           )
-          yield* activate("cache-serial-skew-second")
+          yield* activate("cache-serial-skew-second", owner)
           const boundary = observableBoundary()
           const execute = ActionPersistence.make({
             runId: "cache-serial-skew-second",
@@ -192,8 +167,8 @@ describe("a process executes one cache key once across runs (issue #3898)", () =
                   return result
                 })
             })({ action: {}, attempt: 1, key, tier: "sealed", metadata: declared })
-          yield* activate("cache-serial-running")
-          yield* activate("cache-serial-waiting")
+          yield* activate("cache-serial-running", owner)
+          yield* activate("cache-serial-waiting", owner)
           const running = yield* Effect.forkScoped(dispatchIn("cache-serial-running", "first"))
           yield* Deferred.await(entered)
           const waiting = yield* Effect.forkScoped(dispatchIn("cache-serial-waiting", "second"))

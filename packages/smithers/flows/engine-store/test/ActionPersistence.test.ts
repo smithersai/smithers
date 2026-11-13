@@ -1,8 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
-import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
+import { AttemptStore, type Ownership } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -15,6 +14,7 @@ import * as Inconsistency from "../src/Inconsistency.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { activate, jj } from "./CachePolicyFixtures.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "action-host", pid: 11, nonce: "action-process" }
@@ -24,34 +24,6 @@ const boundary: ActionPersistence.BoundaryMetadata = {
   writeSet: ["output.txt"],
   boundaryMode: "hard"
 }
-
-const jj = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () => Effect.succeed({ commitId: "action-snapshot" as never, changeId: "action-snapshot" as never }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
-
-const activate = (runId: string) =>
-  Effect.gen(function*() {
-    const runs = yield* RunStore.RunStore
-    yield* runs.create(runId, "{}")
-    const row = yield* runs.get(runId)
-    const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
-    const claim = yield* runs.claim(runId, snapshot, owner, 1)
-    if (claim._tag !== "Claimed") {
-      return yield* Effect.die(new Error(`run ${runId} claim was lost`))
-    }
-    const activated = yield* runs.activate(runId, owner, claim.claimedAtMs, snapshot)
-    if (activated._tag !== "Activated") {
-      return yield* Effect.die(new Error(`run ${runId} activation was lost`))
-    }
-  })
 
 const layer = Layer.mergeAll(TestStores.layer(), StepBoundary.layerTest(), jj)
 
@@ -69,7 +41,7 @@ describe("ActionPersistence", () => {
       Effect.gen(function*() {
         const runId = `reconcile-${policy}`, key = `${runId}/action`
         const id = { runId, stepKeyDigest: sha256(key), attempt: 1 }
-        yield* activate(runId)
+        yield* activate(runId, owner)
         const attempts = yield* AttemptStore.AttemptStore
         const tier = policy === "sealed-check" ? "sealed" : "irreversible"
         yield* attempts.put({
@@ -134,7 +106,7 @@ describe("ActionPersistence", () => {
             const runId = `key-evidence-${tier}-${keyed}-${outcome}`
             const key = `${runId}/action`
             const id = { runId, stepKeyDigest: sha256(key), attempt: 1 }
-            yield* activate(runId)
+            yield* activate(runId, owner)
             const attempts = yield* AttemptStore.AttemptStore
             // The row the body saw is captured here and asserted only after the
             // dispatch returns: an assertion that throws inside the body fails
@@ -172,7 +144,7 @@ describe("ActionPersistence", () => {
 
   it.effect("finds the earliest persisted boundary across missing attempt rows", () =>
     Effect.gen(function*() {
-      yield* activate("sparse-boundaries")
+      yield* activate("sparse-boundaries", owner)
       const attempts = yield* AttemptStore.AttemptStore
       const digest = sha256("sparse-boundary-key")
       expect(
@@ -208,7 +180,7 @@ describe("ActionPersistence", () => {
   it.effect("bounds default cache history reads per dispatch as the run grows", () =>
     withCrypto(
       Effect.gen(function*() {
-        yield* activate("incremental-cache-history")
+        yield* activate("incremental-cache-history", owner)
         const journal = yield* Journal.Journal
         let pages = 0
         let rows = 0
@@ -269,7 +241,7 @@ describe("ActionPersistence", () => {
       let dispatches = 0
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("admission-rejected")
+          yield* activate("admission-rejected", owner)
           const base = yield* AttemptStore.AttemptStore
           const execute = () =>
             Effect.sync(() => {
@@ -320,7 +292,7 @@ describe("ActionPersistence", () => {
       let dispatches = 0
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("finish-rejected")
+          yield* activate("finish-rejected", owner)
           const base = yield* AttemptStore.AttemptStore
           const exits = yield* Effect.forEach(outcomes, (outcome, index) =>
             Effect.exit(
@@ -387,7 +359,7 @@ describe("ActionPersistence", () => {
       const keyDigest = sha256(key)
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("cache-conflict-run")
+          yield* activate("cache-conflict-run", owner)
           const cache = yield* CacheStore.CacheStore
           yield* cache.put({
             keyDigest,
@@ -429,7 +401,7 @@ describe("ActionPersistence", () => {
       let dispatches = 0
       const values = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("malformed-cache-run")
+          yield* activate("malformed-cache-run", owner)
           const cache = yield* CacheStore.CacheStore
           const malformed = [
             { tier: "sealed" },
@@ -499,7 +471,7 @@ describe("ActionPersistence", () => {
       const keyDigest = sha256(key)
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("no-whole-tree-proof")
+          yield* activate("no-whole-tree-proof", owner)
           const value = yield* ActionPersistence.make({
             runId: "no-whole-tree-proof",
             owner,
@@ -534,7 +506,7 @@ describe("ActionPersistence", () => {
       const keyDigest = sha256(key)
       const result = yield* withCrypto(
         Effect.gen(function*() {
-          yield* activate("no-hermetic-read-proof")
+          yield* activate("no-hermetic-read-proof", owner)
           const value = yield* ActionPersistence.make({
             runId: "no-hermetic-read-proof",
             owner,
