@@ -11,6 +11,9 @@ describe("TimeTravelStore.makeNoop", () => {
       const store = TimeTravelStore.makeNoop()
       const calls = [
         ["snapshotAt", store.snapshotAt("run", frame)],
+        ["recordSnapshot", store.recordSnapshot({ runId: "run", frame, changeId: "change" })],
+        ["stateAt", store.stateAt("run", frame)],
+        ["attemptsAt", store.attemptsAt("run", frame)],
         ["recordSnapshots", store.recordSnapshots([])],
         ["latestSnapshots", store.latestSnapshots("run")],
         ["descendants", store.descendants("run", frame)],
@@ -27,6 +30,7 @@ describe("TimeTravelStore.makeNoop", () => {
         ["recordReceipt", store.recordReceipt({ id: "r", auditId: "a", effectId: "e", receipt: {} })]
       ] as const
 
+      expect(calls.map(([method]) => method).sort()).toEqual(Object.keys(store).sort())
       for (const [method, effect] of calls) {
         const error = yield* (Effect.flip(effect as Effect.Effect<unknown, unknown>))
         expect(error).toMatchObject({ code: "unknown", message: `${method} is unavailable` })

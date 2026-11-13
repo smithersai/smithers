@@ -5,8 +5,8 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as EngineMigrations from "@smthrs/engine-store/Migrations"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -288,17 +288,25 @@ describe("time-travel migrations", () => {
       const directory = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "flows-time-travel-alter-")))
       const filename = join(directory, "alter.sqlite")
       try {
-        const exit = yield* withDatabase(
+        const failure = yield* withDatabase(
           filename,
           Effect.gen(function*() {
             yield* EngineMigrations.run
             const sql = yield* Effect.service(SqlClient.SqlClient)
             yield* sql`CREATE VIEW flows_time_travel_snapshots AS SELECT 1 AS run_id`
-            return yield* Effect.exit(SqlTimeTravelStore.migrate)
+            return yield* Effect.flip(SqlTimeTravelStore.migrate)
           })
         )
 
-        expect(Exit.isFailure(exit)).toBe(true)
+        expect(failure).toMatchObject({
+          kind: "Failed",
+          message: "Migration \"5004_time-travel_plan_digest\" failed",
+          cause: {
+            code: "unknown",
+            message: "time-travel migration failed creating the flows_time_travel_snapshots plan_digest column"
+          }
+        })
+        expect(Cause.pretty(Cause.fail(failure))).toMatch(/cannot add a column to a view/i)
       } finally {
         yield* Effect.promise(() => rm(directory, { recursive: true, force: true }))
       }

@@ -450,6 +450,7 @@ describe("TimeTravel rewind history cap", () => {
           const refused = yield* Effect.flip(
             timeTravel.rewind({ runId: "run", frame: { lineageId: "run/root", seq: 0 } }, { maxHistoryEntries: 1 })
           )
+          expect(store.state()).toEqual(before)
           // Exactly at the cap the truncation proceeds.
           const allowed = yield* timeTravel.rewind(
             { runId: "run", frame: { lineageId: "run/root", seq: 0 } },
@@ -467,7 +468,7 @@ describe("TimeTravel rewind history cap", () => {
       // One claim: the refusal took none.
       expect(claims).toBe(1)
       expect(store.state().audits.map((audit) => audit.status)).toEqual(["completed"])
-      expect(before.records).toHaveLength(3)
+      expect(store.state().records.map((record) => record.seq)).toEqual([0])
     }))
 })
 

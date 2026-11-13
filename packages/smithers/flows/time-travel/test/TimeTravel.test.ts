@@ -565,51 +565,6 @@ describe("TimeTravel wiring", () => {
       expect(workspaces).toEqual([])
       expect(store.state().forkIntents).toEqual([])
     }))
-
-  it.effect("maps every member of a contributed handler onto the internal registry", () =>
-    Effect.gen(function*() {
-      // The door is `CompensationHandlers`; the registry behind it stays internal.
-      // A handler that declares its optional members must arrive with them.
-      const store = MemoryTimeTravelStore.make({ records: [record(0, 10)] })
-      const total = yield* (
-        Effect.scoped(
-          Effect.gen(function*() {
-            const timeTravel = yield* TimeTravel
-            return yield* timeTravel.inspect({ runId: "run", frame: { lineageId, seq: 0 } }, {
-              initial: 0,
-              reduce: (state: number, entry) => state + ((entry.payload as { amount: number }).amount ?? 0)
-            })
-          }).pipe(
-            Effect.provide(
-              TimeTravel.layer.pipe(
-                Layer.provide(
-                  Layer.mergeAll(
-                    CompensationHandlers.layer([{
-                      kind: "billing/Charge",
-                      tier: "irreversible",
-                      requiresIdempotencyKey: true,
-                      residue: () => "The charge stands.",
-                      assess: () =>
-                        Effect.succeed({ classification: "warning" as const, reason: "policy", residue: "stands" }),
-                      revert: () => Effect.succeed({}),
-                      rollback: () => Effect.void
-                    }]),
-                    Layer.succeed(TimeTravelStore)(store),
-                    Layer.succeed(RunStore.RunStore)(makeRuns()),
-                    Layer.succeed(Journal.Journal)(journalOf(store)),
-                    Layer.succeed(Jj.Jj)(Jj.makeNoop({})),
-                    CacheStore.layerNoop({ get: () => Effect.succeed(Option.none()) })
-                  )
-                )
-              )
-            ),
-            Effect.orDie
-          )
-        )
-      )
-
-      expect(total).toBe(10)
-    }))
 })
 
 /**

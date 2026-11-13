@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
+import { TestClock } from "effect/testing"
 import { forkCreatedEventType, type LineageEdge } from "../src/Frame.ts"
 import * as Memory from "../src/MemoryTimeTravelStore.ts"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
@@ -68,14 +69,14 @@ describe("truncation", () => {
       // The copied prefix plus the fork-created marker the SQL store also
       // writes at `frame.seq + 1`, naming the parent and the offset it cut at.
       expect(store.state().records.filter((record) => record.runId === fork.runId)).toEqual([
-        expect.objectContaining({ eventId: `fork:${fork.runId}:0` }),
+        expect.objectContaining({ eventId: `fork:${fork.runId}:parent-0` }),
         expect.objectContaining({
           eventId: `fork:${fork.runId}:created`,
           eventType: forkCreatedEventType,
           payload: { parentRunId: "parent", forkJournalOffset: 0, childRunId: fork.runId }
         })
       ])
-      const failed = Memory.make({ records, failAt: "recordReceipt" })
+      const failed = Memory.make({ records, failAt: "recordReceipt:commit" })
       yield* (Effect.flip(failed.recordReceipt({ id: "r", auditId: "a", effectId: "e", receipt: null })))
       expect(failed.state().receipts).toEqual([])
       const layered = yield* (
@@ -120,7 +121,7 @@ describe("truncation", () => {
       expect(store.state()).toEqual(before)
     }))
 
-  it.effect("keeps every in-memory transaction atomic at each mutation boundary", () =>
+  it.effect("leaves state unchanged for early faults and rolls back commit faults", () =>
     Effect.gen(function*() {
       const receipt = { id: "receipt", auditId: "audit", effectId: "effect", receipt: { reverted: true } }
       for (
@@ -152,7 +153,7 @@ describe("truncation", () => {
   for (const failAt of ["writeAudit", "updateAudit"] as const) {
     it.effect(`rolls back the ${failAt} in-memory persistence fault`, () =>
       Effect.gen(function*() {
-        const store = Memory.make({ failAt })
+        const store = Memory.make({ failAt: `${failAt}:commit` })
         if (failAt === "updateAudit") {
           yield* (
             store.writeAudit({
@@ -179,7 +180,7 @@ describe("truncation", () => {
 
         expect(failure).toMatchObject({
           code: "unknown",
-          message: `injected failure at ${failAt}`
+          message: `injected failure at ${failAt}:commit`
         })
         expect(store.state()).toEqual(before)
       }))
@@ -187,37 +188,41 @@ describe("truncation", () => {
 
   it.effect("rolls back a failed fork-id mint without leaking an intent or an id", () =>
     Effect.gen(function*() {
-      const store = Memory.make({ records, edges, failAt: "nextForkId" })
+      const options = { records, edges, failAt: "nextForkId:commit" }
+      const store = Memory.make(options)
       const before = store.state()
 
       const failure = yield* (
         Effect.flip(store.nextForkId("parent", { lineageId: "parent/root", seq: 0 }))
       )
 
-      expect(failure).toMatchObject({ code: "unknown", message: "injected failure at nextForkId" })
+      expect(failure).toMatchObject({ code: "unknown", message: "injected failure at nextForkId:commit" })
       // Nothing was reserved, so `forkIntents` is still empty and the next
       // mint still hands out the ordinal the failed one would have taken.
       expect(before.forkIntents).toEqual([])
       expect(store.state()).toEqual(before)
+      options.failAt = ""
+      expect(yield* store.nextForkId("parent", { lineageId: "parent/root", seq: 0 })).toBe("parent:fork:0:1")
     }))
 
   it.effect("keeps the reservation unchanged when renewal fails", () =>
     Effect.gen(function*() {
-      const store = Memory.make({ records, edges, failAt: "renewForkIntent" })
+      const store = Memory.make({ records, edges, failAt: "renewForkIntent:commit" })
       const childRunId = yield* store.nextForkId("parent", { lineageId: "parent/root", seq: 0 })
       const before = store.state()
+      yield* TestClock.adjust(10)
       const failure = yield* Effect.flip(store.renewForkIntent(childRunId))
-      expect(failure).toMatchObject({ code: "unknown", message: "injected failure at renewForkIntent" })
+      expect(failure).toMatchObject({ code: "unknown", message: "injected failure at renewForkIntent:commit" })
       expect(store.state()).toEqual(before)
     }))
 
   it.effect("keeps a reclaimed intent retryable when recording its forgotten lane fails", () =>
     Effect.gen(function*() {
-      const store = Memory.make({ records, edges, failAt: "forgetForkIntent" })
+      const store = Memory.make({ records, edges, failAt: "forgetForkIntent:commit" })
       const childRunId = yield* store.nextForkId("parent", { lineageId: "parent/root", seq: 0 })
       const pending = yield* store.abandonForkIntents(1)
       const failure = yield* Effect.flip(store.forgetForkIntent(childRunId, pending[0]!.reclaimedAtMs!))
-      expect(failure).toMatchObject({ code: "unknown", message: "injected failure at forgetForkIntent" })
+      expect(failure).toMatchObject({ code: "unknown", message: "injected failure at forgetForkIntent:commit" })
       expect(yield* store.abandonForkIntents(0)).toEqual(pending.map((intent) => ({
         ...intent,
         reclaimedAtMs: intent.reclaimedAtMs! + 1
@@ -226,7 +231,8 @@ describe("truncation", () => {
 
   it.effect("rolls back a failed intent reclaim and leaves every intent outstanding", () =>
     Effect.gen(function*() {
-      const store = Memory.make({ records, edges, failAt: "abandonForkIntents" })
+      const options = { records, edges, failAt: "abandonForkIntents:commit" }
+      const store = Memory.make(options)
       const childRunId = yield* (store.nextForkId("parent", { lineageId: "parent/root", seq: 0 }))
       const before = store.state()
       expect(before.forkIntents).toEqual([
@@ -235,8 +241,16 @@ describe("truncation", () => {
 
       const failure = yield* (Effect.flip(store.abandonForkIntents(1)))
 
-      expect(failure).toMatchObject({ code: "unknown", message: "injected failure at abandonForkIntents" })
+      expect(failure).toMatchObject({ code: "unknown", message: "injected failure at abandonForkIntents:commit" })
       expect(store.state()).toEqual(before)
+      options.failAt = ""
+      // A leaked reclaim stamp is hidden by state(); only stale reservations
+      // should be returned, so a cutoff before the reservation proves rollback.
+      expect(yield* store.abandonForkIntents(0)).toEqual([])
+      expect(yield* store.abandonForkIntents(1)).toEqual([{
+        ...before.forkIntents[0]!,
+        reclaimedAtMs: 0
+      }])
     }))
 
   it.effect("reports a missing audit without changing the stored audit history", () =>

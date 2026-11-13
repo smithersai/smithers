@@ -177,6 +177,82 @@ const withSql = <A>(
   }).pipe(Effect.provide(TestDatabase.layer))
 
 describe("TimeTravelStore conformance", () => {
+  it.effect("preserves original event identities in copied and nested fork prefixes", () =>
+    Effect.gen(function*() {
+      const exercise = (store: TimeTravelStore.Service) =>
+        Effect.gen(function*() {
+          yield* store.createFork("run", frame, "fork-child")
+          yield* store.createFork("fork-child", frame, "fork-grandchild")
+        })
+      const memory = memorySeed()
+      yield* exercise(memory)
+      const memoryEvents = memory.state().records
+        .filter((record) => record.runId === "fork-child" || record.runId === "fork-grandchild")
+        .sort((a, b) => a.runId.localeCompare(b.runId) || a.seq - b.seq)
+        .map((record) => ({ runId: record.runId, seq: record.seq, eventId: record.eventId }))
+      const sqlEvents = yield* withSql((store, sql) =>
+        Effect.gen(function*() {
+          yield* seedSql(sql)
+          yield* sql`UPDATE flows_runs SET status = 'suspended', owner_host_id = NULL,
+          owner_pid = NULL, owner_nonce = NULL, heartbeat_at_ms = NULL WHERE run_id = 'run'`
+          yield* exercise(store)
+          return yield* sql<{ readonly runId: string; readonly seq: number; readonly eventId: string }>`
+          SELECT run_id AS "runId", seq, event_id AS "eventId" FROM flows_journal_events
+          WHERE run_id IN ('fork-child', 'fork-grandchild') ORDER BY run_id, seq
+        `
+        })
+      )
+      expect(memoryEvents).toEqual(sqlEvents)
+      expect(memoryEvents).toEqual([
+        { runId: "fork-child", seq: 0, eventId: "fork:fork-child:run-0" },
+        { runId: "fork-child", seq: 1, eventId: "fork:fork-child:run-1" },
+        { runId: "fork-child", seq: 2, eventId: "fork:fork-child:created" },
+        { runId: "fork-grandchild", seq: 0, eventId: "fork:fork-grandchild:fork:fork-child:run-0" },
+        { runId: "fork-grandchild", seq: 1, eventId: "fork:fork-grandchild:fork:fork-child:run-1" },
+        { runId: "fork-grandchild", seq: 2, eventId: "fork:fork-grandchild:created" }
+      ])
+    }))
+
+  for (const liveRunId of ["run", "ancestor"]) {
+    it.effect(`returns the same live-parent refusal for ${liveRunId}`, () =>
+      Effect.gen(function*() {
+        const edge: LineageEdge = {
+          parentRunId: "ancestor",
+          parentSeq: 0,
+          childRunId: "run",
+          kind: "fork",
+          attached: false
+        }
+        const memory = MemoryTimeTravelStore.make({ edges: [edge], liveRuns: new Set([liveRunId]) })
+        const observeRefusal = (store: TimeTravelStore.Service) =>
+          Effect.gen(function*() {
+            const failure = yield* Effect.flip(store.createFork("run", frame, "refused-child"))
+            return { code: failure.code, message: failure.message }
+          })
+        const memoryRefusal = yield* observeRefusal(memory)
+        const sqlRefusal = yield* withSql((store, sql) =>
+          Effect.gen(function*() {
+            yield* seedSql(sql)
+            yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+            VALUES ('ancestor', 'suspended', 0, '{}')`
+            yield* sql`UPDATE flows_runs SET status = 'suspended', owner_host_id = NULL,
+            owner_pid = NULL, owner_nonce = NULL, heartbeat_at_ms = NULL WHERE run_id = 'run'`
+            yield* sql`UPDATE flows_runs SET status = 'running', owner_host_id = ${owner.hostId},
+            owner_pid = ${owner.pid}, owner_nonce = ${owner.nonce}, heartbeat_at_ms = 0
+            WHERE run_id = ${liveRunId}`
+            yield* sql`INSERT INTO flows_time_travel_edges (parent_run_id, parent_seq, child_run_id, kind, attached)
+            VALUES ('ancestor', 0, 'run', 'fork', 0)`
+            return yield* observeRefusal(store)
+          })
+        )
+        expect(memoryRefusal).toEqual(sqlRefusal)
+        expect(memoryRefusal).toEqual({
+          code: "live_parent",
+          message: liveRunId === "run" ? "parent run is live" : "ancestor run ancestor is live"
+        })
+      }))
+  }
+
   for (const backend of ["memory", "sqlite"] as const) {
     it.effect(`${backend} preserves the rewind prefix when an attached cycle points back to the run`, () =>
       Effect.gen(function*() {

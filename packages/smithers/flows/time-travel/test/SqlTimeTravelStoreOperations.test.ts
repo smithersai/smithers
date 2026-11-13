@@ -5,6 +5,7 @@ import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Migrations from "@smthrs/engine-store/Migrations"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
+import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -521,72 +522,96 @@ describe("SqlTimeTravelStore audits", () => {
 
   it.effect("rejects rows outside every durable time-travel boundary", () =>
     Effect.gen(function*() {
-      const outcomes = yield* run((_store, sql) => {
-        const invalidStatements = [
-          `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('', 'run', 'main', 0, 'in_progress', NULL, NULL)`,
-          `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('audit-negative', 'run', 'main', -1, 'in_progress', NULL, NULL)`,
-          `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('audit-fractional', 'run', 'main', 0.5, 'in_progress', NULL, NULL)`,
-          `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('audit-unsafe', 'run', 'main', 9007199254740992, 'in_progress', NULL, NULL)`,
-          `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('audit-status', 'run', 'main', 0, 'unknown', NULL, NULL)`,
-          `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('audit-json', 'run', 'main', 0, 'in_progress', '{', NULL)`,
-          `INSERT INTO flows_time_travel_receipts VALUES ('', 'audit', 'effect', '{}')`,
-          `INSERT INTO flows_time_travel_receipts VALUES ('receipt-audit', '', 'effect', '{}')`,
-          `INSERT INTO flows_time_travel_receipts VALUES ('receipt-effect', 'audit', '', '{}')`,
-          `INSERT INTO flows_time_travel_receipts VALUES ('receipt-json', 'audit', 'effect', '{')`,
-          `INSERT INTO flows_time_travel_snapshots VALUES ('', 'main', 0, 'change')`,
-          `INSERT INTO flows_time_travel_snapshots VALUES ('run', '', 0, 'change')`,
-          `INSERT INTO flows_time_travel_snapshots VALUES ('run', 'main', -1, 'change')`,
-          `INSERT INTO flows_time_travel_snapshots VALUES ('run', 'main', 0, '')`,
-          `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('', 0, 'child', 'child', 1)`,
-          `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('parent', -1, 'child', 'child', 1)`,
-          `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('parent', 0, '', 'child', 1)`,
-          `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('parent', 0, 'child-kind', 'unknown', 1)`,
-          `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('parent', 0, 'child-attached', 'child', 2)`,
-          `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('same', 0, 'same', 'child', 1)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('', 0, 0, 'event', 'source', 0, 0, 'type', '{}', '{}', 0)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('run', -1, 0, 'event-gen', 'source', 0, 0, 'type', '{}', '{}', 0)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('run', 0, -1, 'event', 'source', 0, 0, 'type', '{}', '{}', 0)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, '', 'source', 0, 0, 'type', '{}', '{}', 0)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-source', '', 0, 0, 'type', '{}', '{}', 0)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-seq', 'source', -1, 0, 'type', '{}', '{}', 0)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-emitted', 'source', 0, -1, 'type', '{}', '{}', 0)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-type', 'source', 0, 0, '', '{}', '{}', 0)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-payload', 'source', 0, 0, 'type', '{', '{}', 0)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-meta', 'source', 0, 0, 'type', '{}', '{', 0)`,
-          `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-archived', 'source', 0, 0, 'type', '{}', '{}', -1)`,
-          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('', 'parent', 0, 0, NULL)`,
-          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-parent', '', 0, 0, NULL)`,
-          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-seq', 'parent', -1, 0, NULL)`,
-          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-seq-fractional', 'parent', 0.5, 0, NULL)`,
-          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-reserved', 'parent', 0, -1, NULL)`,
-          `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-reclaimed', 'parent', 0, 0, -1)`,
-          ...[-1, 0.5, 9007199254740992].map((timestamp) =>
-            `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, forgotten_at_ms) VALUES ('intent-forgotten', 'parent', 0, 0, ${timestamp})`
-          )
-        ] as const
-        return Effect.forEach(invalidStatements, (statement) => Effect.exit(sql.unsafe(statement)))
-      })
-
-      expect(outcomes.every((outcome) => outcome._tag === "Failure")).toBe(true)
+      yield* run((_store, sql) =>
+        Effect.gen(function*() {
+          const validStatements = [
+            `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status) VALUES ('valid-audit', 'valid-run', 'main', 0, 'in_progress')`,
+            `INSERT INTO flows_time_travel_receipts(id,audit_id,effect_id,receipt_json) VALUES ('valid-receipt', 'valid-audit', 'effect', '{}')`,
+            `INSERT INTO flows_time_travel_snapshots(run_id,lineage_id,seq,change_id) VALUES ('valid-run', 'main', 0, 'change')`,
+            `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('valid-run', 0, 'valid-child', 'child', 1)`,
+            `INSERT INTO flows_time_travel_archive(run_id,generation,seq,event_id,source_id,source_seq,emitted_at_ms,event_type,payload_json,meta_json,archived_at_ms) VALUES ('valid-run', 0, 0, 'valid-event', 'source', 0, 0, 'type', '{}', '{}', 0)`,
+            `INSERT INTO flows_time_travel_fork_intents(child_run_id,parent_run_id,parent_seq,reserved_at_ms,reclaimed_at_ms,forgotten_at_ms) VALUES ('valid-intent', 'valid-run', 0, 0, 0, 0)`
+          ]
+          for (const statement of validStatements) {
+            expect((yield* Effect.exit(sql.unsafe(statement)))._tag, statement).toBe("Success")
+          }
+          const invalidStatements = [
+            `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('', 'run', 'main', 0, 'in_progress', NULL, NULL)`,
+            `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('audit-negative', 'run', 'main', -1, 'in_progress', NULL, NULL)`,
+            `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('audit-fractional', 'run', 'main', 0.5, 'in_progress', NULL, NULL)`,
+            `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('audit-unsafe', 'run', 'main', 9007199254740992, 'in_progress', NULL, NULL)`,
+            `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('audit-status', 'run', 'main', 0, 'unknown', NULL, NULL)`,
+            `INSERT INTO flows_time_travel_audits(id,run_id,lineage_id,seq,status,rate_limit_json,detail_json) VALUES ('audit-json', 'run', 'main', 0, 'in_progress', '{', NULL)`,
+            `INSERT INTO flows_time_travel_receipts VALUES ('', 'audit', 'effect', '{}')`,
+            `INSERT INTO flows_time_travel_receipts VALUES ('receipt-audit', '', 'effect', '{}')`,
+            `INSERT INTO flows_time_travel_receipts VALUES ('receipt-effect', 'audit', '', '{}')`,
+            `INSERT INTO flows_time_travel_receipts VALUES ('receipt-json', 'audit', 'effect', '{')`,
+            `INSERT INTO flows_time_travel_snapshots(run_id,lineage_id,seq,change_id) VALUES ('', 'main', 0, 'change')`,
+            `INSERT INTO flows_time_travel_snapshots(run_id,lineage_id,seq,change_id) VALUES ('run', '', 0, 'change')`,
+            `INSERT INTO flows_time_travel_snapshots(run_id,lineage_id,seq,change_id) VALUES ('run', 'main', -1, 'change')`,
+            `INSERT INTO flows_time_travel_snapshots(run_id,lineage_id,seq,change_id) VALUES ('run', 'main', 0, '')`,
+            `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('', 0, 'child', 'child', 1)`,
+            `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('parent', -1, 'child', 'child', 1)`,
+            `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('parent', 0, '', 'child', 1)`,
+            `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('parent', 0, 'child-kind', 'unknown', 1)`,
+            `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('parent', 0, 'child-attached', 'child', 2)`,
+            `INSERT INTO flows_time_travel_edges(parent_run_id,parent_seq,child_run_id,kind,attached) VALUES ('same', 0, 'same', 'child', 1)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('', 0, 0, 'event', 'source', 0, 0, 'type', '{}', '{}', 0)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('run', -1, 0, 'event-gen', 'source', 0, 0, 'type', '{}', '{}', 0)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('run', 0, -1, 'event', 'source', 0, 0, 'type', '{}', '{}', 0)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, '', 'source', 0, 0, 'type', '{}', '{}', 0)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-source', '', 0, 0, 'type', '{}', '{}', 0)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-seq', 'source', -1, 0, 'type', '{}', '{}', 0)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-emitted', 'source', 0, -1, 'type', '{}', '{}', 0)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-type', 'source', 0, 0, '', '{}', '{}', 0)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-payload', 'source', 0, 0, 'type', '{', '{}', 0)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-meta', 'source', 0, 0, 'type', '{}', '{', 0)`,
+            `INSERT INTO flows_time_travel_archive VALUES ('run', 0, 0, 'event-archived', 'source', 0, 0, 'type', '{}', '{}', -1)`,
+            `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('', 'parent', 0, 0, NULL)`,
+            `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-parent', '', 0, 0, NULL)`,
+            `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-seq', 'parent', -1, 0, NULL)`,
+            `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-seq-fractional', 'parent', 0.5, 0, NULL)`,
+            `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-reserved', 'parent', 0, -1, NULL)`,
+            `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms) VALUES ('intent-reclaimed', 'parent', 0, 0, -1)`,
+            ...[-1, 0.5, 9007199254740992].map((timestamp) =>
+              `INSERT INTO flows_time_travel_fork_intents (child_run_id, parent_run_id, parent_seq, reserved_at_ms, reclaimed_at_ms, forgotten_at_ms) VALUES ('intent-forgotten', 'parent', 0, 0, 0, ${timestamp})`
+            )
+          ] as const
+          for (const statement of invalidStatements) {
+            const outcome = yield* Effect.exit(sql.unsafe(statement))
+            expect(outcome._tag, statement).toBe("Failure")
+            if (outcome._tag === "Failure") {
+              expect(Cause.pretty(outcome.cause), statement).toMatch(/check constraint/i)
+            }
+          }
+        })
+      )
     }))
 })
 
 describe("SqlTimeTravelStore construction", () => {
-  it.effect("dies before exposing a store when its migration cannot run", () =>
+  it.effect("fails before exposing a store when its migration cannot run", () =>
     Effect.gen(function*() {
-      const failingSql = new Proxy(
-        () => Effect.fail("no database"),
-        { apply: () => Effect.fail("no database") }
-      ) as unknown as SqlClient.SqlClient
-      const exit = yield* (
-        Effect.exit(SqlTimeTravelStore.make.pipe(
-          Effect.provideService(SqlClient.SqlClient, failingSql),
-          Effect.provide(DatabaseModule.layerNoop)
-        ))
-      )
-
-      expect(exit._tag).toBe("Failure")
-    }))
+      yield* Migrations.run
+      const sql = yield* SqlClient.SqlClient
+      // The prerequisite probes succeed; a conflicting view prevents the
+      // time-travel migration from creating its audit-table index.
+      yield* sql`CREATE VIEW flows_time_travel_audits AS SELECT 'blocked' AS id`
+      const failure = yield* Effect.flip(SqlTimeTravelStore.make)
+      expect(failure).toMatchObject({
+        code: "unknown",
+        message: "time-travel schema migration failed"
+      })
+      expect(failure.cause).toMatchObject({
+        kind: "Failed",
+        message: "Migration \"5001_time-travel_initial\" failed",
+        cause: {
+          code: "unknown",
+          message:
+            "time-travel migration failed creating flows_time_travel_audits_status_idx on flows_time_travel_audits"
+        }
+      })
+    }).pipe(Effect.provide(TestDatabase.layer)))
 })
 
 describe("SqlTimeTravelStore persistence fault matrix", () => {

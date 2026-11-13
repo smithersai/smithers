@@ -419,6 +419,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
       }).pipe(Effect.andThen(atomic(() => {
         fail("writeAudit")
         audits.push(clone(audit, "audit"))
+        fail("writeAudit:commit")
       })))
     ),
     updateAudit: Effect.fn("TimeTravelStore.updateAudit")((id, patch) =>
@@ -429,6 +430,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
           const index = audits.findIndex((audit) => audit.id === id)
           if (index < 0) throw error("not_found", `audit ${id} was not found`)
           audits[index] = clone({ ...audits[index]!, ...patch }, "audit")
+          fail("updateAudit:commit")
         }))
       )
     ),
@@ -530,6 +532,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
               reservedAtMs: nowMs,
               forgotten: false
             })
+            fail("nextForkId:commit")
             return childRunId
           })
         )
@@ -546,6 +549,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
           forkIntents = forkIntents.map((candidate) =>
             candidate === intent ? { ...candidate, reservedAtMs: nowMs } : candidate
           )
+          fail("renewForkIntent:commit")
         }))
       )
     ),
@@ -558,6 +562,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
               ? { ...intent, reclaimedAtMs: Math.max(nowMs, (intent.reclaimedAtMs ?? -1) + 1) }
               : intent
           )
+          fail("abandonForkIntents:commit")
           return forkIntents
             .filter((intent) => intent.reclaimedAtMs !== undefined && !intent.forgotten)
             .sort((left, right) =>
@@ -576,6 +581,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
               ? { ...intent, forgotten: true }
               : intent
           )
+          fail("forgetForkIntent:commit")
         }))
       )
     ),
@@ -609,7 +615,12 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
             if (seen.has(currentRunId)) continue
             seen.add(currentRunId)
             if (liveRuns.has(currentRunId)) {
-              throw error("live_parent", `ancestor run ${currentRunId} is live`)
+              throw error(
+                "live_parent",
+                currentRunId === parentRunId
+                  ? `parent ${currentRunId} is live`
+                  : `ancestor run ${currentRunId} is live`
+              )
             }
             for (const edge of edges) {
               if (edge.childRunId === currentRunId) queue.push(edge.parentRunId)
@@ -643,7 +654,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
           forkIntents = forkIntents.filter((intent) => intent.childRunId !== runId)
           const prefix = records.filter((record) => record.runId === parentRunId && record.seq <= frame.seq)
           fail("createFork:copy")
-          records.push(...prefix.map((record) => ({ ...record, runId, eventId: `fork:${runId}:${record.seq}` })))
+          records.push(...prefix.map((record) => ({ ...record, runId, eventId: `fork:${runId}:${record.eventId}` })))
           // The fork-created marker the SQL store writes at `frame.seq + 1`,
           // naming the parent and the offset the child was cut at, so a
           // forensic walk can start from any child on either store.
@@ -715,6 +726,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
       }).pipe(Effect.andThen(atomic(() => {
         fail("recordReceipt")
         receipts.push(clone(receipt, "receipt"))
+        fail("recordReceipt:commit")
       })))
     )
   })
