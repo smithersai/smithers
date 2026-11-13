@@ -1,9 +1,10 @@
 /** @jsxImportSource react */
 import { describe, expect, test } from "bun:test";
+import fc from "fast-check";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { OutlineView, parseOutline } from "../src/vault/OutlineView";
+import { OutlineView, parseOutline, type OutlineHeading, type OutlineViewProps } from "../src/vault/OutlineView";
 
 const MD = [
   "# Title", // line 1
@@ -25,6 +26,66 @@ describe("parseOutline", () => {
       { depth: 3, text: "Nested detail", line: 8 },
       { depth: 2, text: "Second section", line: 9 },
     ]);
+  });
+
+  test("preserves heading separators, closing hashes, whitespace and line boundaries", () => {
+    const cases: Array<[string, string | null]> = [
+      ["# a###", "a"],
+      ["# a # #  ", "a #"],
+      ["# \t a \t###\t ", "a"],
+      ["######\tSix\r", "Six"],
+      ["####### Seven", null],
+      ["# \t ", ""],
+      ["# ###", ""],
+      ["# \u00a0Heading\u00a0##\u00a0", "Heading"],
+      ["# a\rb", null],
+      ["# a\u2028b", null],
+      ["# a\u2029b", null],
+      ["# a\r###\r", "a"],
+      ["# \ra", "a"],
+    ];
+    for (const [markdown, text] of cases) {
+      expect(parseOutline(markdown)).toEqual(
+        text === null ? [] : [{ depth: markdown.match(/^#+/)![0].length, text, line: 1 }],
+      );
+    }
+  });
+
+  test("parses 100,000-character whitespace and hash runs in under 50 ms", () => {
+    const spaces = " ".repeat(100_000);
+    const hashes = "#".repeat(100_000);
+    const cases: Array<[string, string]> = [
+      ["# a" + spaces + "x", "a" + spaces + "x"],
+      ["# a" + spaces, "a"],
+      ["# a" + spaces + hashes + spaces, "a"],
+      ["# a" + hashes + "x", "a" + hashes + "x"],
+      ["#" + spaces + "a", "a"],
+      ["# a" + "\t".repeat(100_000) + "x", "a" + "\t".repeat(100_000) + "x"],
+    ];
+    for (const [markdown, text] of cases) {
+      const start = performance.now();
+      const headings = parseOutline(markdown);
+      const elapsed = performance.now() - start;
+      expect(headings).toEqual([{ depth: 1, text, line: 1 }]);
+      expect(elapsed).toBeLessThan(50);
+    }
+  });
+
+  test("matches existing heading extraction across bounded whitespace and hash combinations", () => {
+    // Keep the legacy regex oracle's input short: its unbounded cost is the regression.
+    const body = fc.array(fc.constantFrom("a", "x", "#", " ", "\t", "\r", "\u00a0", "\u2028", "\u2029"), {
+      maxLength: 40,
+    }).map((chars) => chars.join(""));
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 8 }), body, (depth, text) => {
+        const markdown = "#".repeat(depth) + text;
+        const match = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(markdown);
+        expect(parseOutline(markdown)).toEqual(
+          match ? [{ depth: match[1]!.length, text: match[2]!, line: 1 }] : [],
+        );
+      }),
+      { numRuns: 2_000, seed: 5009 },
+    );
   });
 
   test("ignores headings inside fenced code", () => {
@@ -160,6 +221,55 @@ describe("OutlineView", () => {
         items()[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
       });
       expect(document.activeElement).toBe(items()[3]);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("reuses parsed headings for focus and parent renders, and refreshes changed markdown", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    let firstHeading: OutlineHeading | undefined;
+    const headingProps: NonNullable<OutlineViewProps["headingProps"]> = (heading) => {
+      if (heading.line === 1) firstHeading = heading;
+      return {};
+    };
+    try {
+      await act(async () => {
+        root.render(<OutlineView markdown={MD} headingProps={headingProps} />);
+      });
+      const original = firstHeading;
+      expect(original?.text).toBe("Title");
+      const items = () => Array.from(container.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+      await act(async () => items()[1]!.focus());
+      expect(firstHeading).toBe(original);
+      expect(items().map((item) => item.tabIndex)).toEqual([-1, 0, -1, -1]);
+      await act(async () => {
+        items()[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      });
+      expect(firstHeading).toBe(original);
+      expect(document.activeElement).toBe(items()[2]);
+
+      await act(async () => {
+        root.render(<OutlineView markdown={MD} headingProps={headingProps} className="updated" />);
+      });
+      expect(firstHeading).toBe(original);
+      expect(container.firstElementChild?.classList.contains("updated")).toBe(true);
+
+      await act(async () => {
+        root.render(<OutlineView markdown="# Updated" headingProps={headingProps} />);
+      });
+      expect(firstHeading).not.toBe(original);
+      expect(items().map((item) => item.textContent)).toEqual(["Updated"]);
+      expect(items()[0]!.tabIndex).toBe(0);
+      await act(async () => {
+        root.render(<OutlineView markdown="Plain text" headingProps={headingProps} />);
+      });
+      expect(items()).toHaveLength(0);
+      expect(container.textContent).toBe("No headings");
     } finally {
       await act(async () => root.unmount());
       container.remove();

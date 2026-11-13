@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { cn } from "@smthrs/ui-css";
 import { stepFence, type Fence } from "./fence";
 import type { VaultRowProps } from "./types";
@@ -30,9 +30,17 @@ export function parseOutline(markdown: string): OutlineHeading[] {
     const step = stepFence(line, fence);
     fence = step.fence;
     if (step.fenced) continue;
-    const match = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
+    const match = /^(#{1,6})\s+/.exec(line);
     if (match) {
-      headings.push({ depth: match[1]!.length, text: match[2]!, line: i + 1 });
+      // Strip the suffix in linear passes; overlapping whitespace quantifiers
+      // backtrack cubically on long runs followed by more heading text.
+      let text = line.slice(match[0].length).trimEnd();
+      let end = text.length;
+      while (end > 0 && text[end - 1] === "#") end--;
+      text = text.slice(0, end).trimEnd();
+      // Preserve the former dot capture's rejection of embedded line terminators.
+      if (/[\r\u2028\u2029]/.test(text)) continue;
+      headings.push({ depth: match[1]!.length, text, line: i + 1 });
     }
   }
   return headings;
@@ -66,7 +74,7 @@ export function OutlineView({
   emptyLabel = "No headings",
 }: OutlineViewProps) {
   useVaultCss();
-  const headings = parseOutline(markdown);
+  const headings = useMemo(() => parseOutline(markdown), [markdown]);
   // Roving tabindex: one tab stop into the tree, then arrows move between
   // items (Enter/Space activation is native to the <button> treeitems).
   // Headings are not collapsible, so Left/Right have no collapse/expand to
