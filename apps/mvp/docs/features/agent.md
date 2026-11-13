@@ -8,7 +8,7 @@ Smithers answers in the browser. The agent is `chat/Answer`, a `@smthrs/flow` fl
 chat/Answer { answerId }                               (execution id = answerId; no flow deadline)
   chat/LoadTurn ─ GET /api/answers/<id> ─▶ { question, history }   409 { not_your_turn, waitedMs }: retried until
                   earlier answers settle, or TurnOutOfTime once the queue before it hasn't moved for the turn wait (10 minutes)
-  chat/Respond  ─ AgentAction over @smthrs/agent's cell loop, profile "conversation", at most 8 frames
+  chat/Respond  ─ seals text, failure, final parts and usage from AgentAction over @smthrs/agent's cell loop, profile "conversation", at most 8 frames
                   each model call: a sealed ModelStep ─ ModelProxy client ─▶ POST /api/model/agent
                   each ctx.call: an app flow from the agent's catalog, as a child execution (flows.md)
                   EventSink ─▶ AnswerProgress ─ POST /api/answers/<id> { streaming, text, parts }, at most once a second
@@ -21,7 +21,7 @@ ChatApi, when it takes the question ─▶ chat/Expire { answerId } on its Durab
 
 | File | What it holds |
 |---|---|
-| `src/features/agent/flows.ts` | `chat/Answer` and its steps: `chat/LoadTurn`, `chat/Respond`, `chat/Settle`. It imports `@smthrs/agent`, so only the engine worker and the Node host load it |
+| `src/features/agent/flows.ts` | `chat/Answer` and its steps: `chat/LoadTurn`, `chat/Respond`, `chat/Settle`. The engine worker and the Node host share the same declarations |
 | `src/features/agent/close.ts` | `chat/Close` and its step `chat/CloseWrite`, which settle an answer whose run can no longer finish ([settling](#settling)), and `SETTLE_RETRY`, the settles' retry policy. It imports no agent, so the tab dispatches it by the declaration itself |
 | `src/features/agent/reference.ts` | `chat/Answer`'s reference: its tag and schemas, which the tab dispatches by and the declaration is made from ([flows](flows.md#how-a-dispatch-runs)) |
 | `src/features/agent/instructions.ts` | `CHAT_SYSTEM`, the agent's system teaching, and `SLASH_COMMANDS`, the composer's commands from the registry ([what the agent is told](#what-the-agent-is-told)) |
@@ -70,13 +70,15 @@ A writer sends each changed answer's text and parts at most once a second (`part
 
 An answer never streams forever. Every way its run ends settles it, as a step of the same run, and what the run can't settle, the server does.
 
+Before `chat/Respond` seals, it captures the final text, failure reason, parts and rounded token counts in its durable result. `chat/Settle` consumes that result on every attempt. Restarting after the agent finishes preserves usage and completed tool parts; an answer that exhausted its frames still settles `unfinished`. The streaming progress map is only for live updates and cleanup.
+
 `chat/Settle { answerId, ending }` writes, for how the run ended:
 - `done`, with the text, the parts and the tokens the run's model calls reported, when the agent answered. Token counts are whole; a provider's fractional count is rounded, where it once killed the step and left the answer streaming;
 - `failed`, `empty`, when it answered nothing;
 - `failed`, `quota`, `rate_limited` or `model_error`, when its model failed, and `unfinished` when it ran out of frames;
 - `failed`, `unfinished`, when the turn wait ran out ([turn by turn](#turn-by-turn)).
 
-A quota refusal is carried in the sealed ending, so a crash before settlement preserves its reason without another model call. A settle the routes already took is answered as taken, so a step run again after a crash changes nothing. A run resumed after its agent step sealed has no parts to send; the settle then keeps the parts the answer has.
+A quota refusal is carried in the sealed ending, so a crash before settlement preserves its reason without another model call. A settle the routes already took is answered as taken, so a step run again after a crash changes nothing. A run resumed after its agent step sealed sends its saved final parts, replacing any stale streaming parts.
 
 `chat/Answer` declares no flow `deadline`. The engine ends a run past its flow deadline with a defect, and a defect settles nothing: a plan's `Node.catch` sees typed failures only, by the engine's design (`@smthrs/flow`'s `Interpreter.ts`, the `Catch` node), and a flow's finalizers aren't durable. A plan can't race a durable timer against running work either: a member parked on a timer waits for the next drive, so a run that never parks would never see it.
 
@@ -163,7 +165,7 @@ A cell that `complete`d after calls whose steps all show `done` answered from it
 
 | Test | Proves |
 |---|---|
-| `src/features/agent/agent.test.ts` | `chat/Answer` on the Node host over the compose Postgres, against ChatApi's real model endpoint and answer routes, with a scripted model: an answer; a theme call as a journaled step whose receipt the agent answers from; text and parts streaming to the row; resume after the tab is killed, with 3 model calls (one sealed, one cut off, one after) and one theme write; replay of a settled run without a model call; answers in turn; `model_error`, `unfinished`, `empty`, `AnswerSettled`; a turn whose queue doesn't move settling `unfinished` at the turn wait with no model call; a burst's tail whose queue keeps moving waiting past the turn wait counted from its start, then answered; a run killed while it waits settling on resume by the wait Postgres recorded; fractional token counts settling `done`; the seat |
+| `src/features/agent/agent.test.ts` | `chat/Answer` on the Node host over the compose Postgres, against ChatApi's real model endpoint and answer routes, with a scripted model: an answer; a theme call as a journaled step whose receipt the agent answers from; text and parts streaming to the row; resume after the tab is killed, with 3 model calls (one sealed, one cut off, one after) and one theme write; replay of a settled run without a model call; crash after the response seals and retries before settlement, preserving successful usage, completed parts and frame exhaustion without repeating model or tool calls; answers in turn; `model_error`, `unfinished`, `empty`, `AnswerSettled`; a turn whose queue doesn't move settling `unfinished` at the turn wait with no model call; a burst's tail whose queue keeps moving waiting past the turn wait counted from its start, then answered; a run killed while it waits settling on resume by the wait Postgres recorded; fractional token counts settling `done`; the seat |
 | `worker/flows/Expire.test.ts` | `chat/Expire` on the Node host: a streaming answer settles `abandoned` with its text kept, only once its queue was still for the expiry; a burst of 25 whose answers each settle in time leaves its last answer streaming until the expiry after the one before it settled, over several rounds; the queue's last movement is an earlier answer's settle or write, or the answer's own write; a settled answer is left as it is; a missing one is `missing`; a device that comes back after it fired fails its run `AnswerSettled`; its records by outcome without the text; `ANSWER_EXPIRY` and its default |
 | `worker/Chat.test.ts` "chat/Expire" | Asking starts the expiry of the attempt that stores the answer, and a resend of a stored question starts the answer's one execution; a start the host refuses (a fault-injected `FlowStarter`) is `503`, logged and counted `not_started`, stores nothing, and the resend asks it and is `202`; a Worker lost once the start is recorded stores no answer, and the resend's attempt starts its own execution; an expiry that runs before the question commits waits for the commit and finds the answer; a caller that goes away while the expiry starts still gets the question stored with its expiry; a question ChatApi doesn't take starts nothing |
 | `worker/ExecutionHost.test.ts` "the deployed flows run chat/Expire" | The deployed host parks the expiry on its durable timer with the alarm armed for it, then settles the answer `abandoned` at the alarm |
@@ -191,7 +193,7 @@ The regression `e2e/answer-ordering.spec.ts` drives the real browser engine and 
 
 `AnswerApi.layerHttp(origin, within)` bounds each complete exchange (request and any decoded body) to 15 seconds by default. A stalled GET, PATCH, POST or refusal body becomes `AnswersUnavailable`; the existing durable action retry policy remains the only retry owner, including `chat/CloseWrite`.
 
-Progress writes run independently across answers, with one in-flight write per answer. Changes during that write coalesce into the next tick. A terminal `AnswerSettled` refusal releases the retained progress in both the streaming writer and settlement handler; transient failures retain it for a later durable retry. When settlement retries expire, the graph calls `chat/ForgetProgress` before returning the original failure.
+Progress writes run independently across answers, with one in-flight write per answer. Changes during that write coalesce into the next tick. A terminal `AnswerSettled` refusal releases the retained progress in both the streaming writer and settlement handler; transient failures retain it until the durable settlement retries finish. When settlement retries expire, the graph calls `chat/ForgetProgress` before returning the original failure.
 
 The client records `chat.answer.exchange` spans, `chat.answer.exchange.timeout` warnings and `smithers_answer_exchange_timeouts` by operation. Progress records `chat.answer.progress` spans, `chat.answer.progress.failed` warnings with answer id and status, and `smithers_answer_progress_writes` for accepted writes. No text or body is recorded. Fault-injected Effect HTTP/answer services in `answers.test.ts` and `progress.test.ts` cover stalled requests/bodies, cross-answer isolation and terminal cleanup; the NaN refusal is supplied directly as an Effect response because JSON encodes NaN as null.
 

@@ -10,7 +10,8 @@ import type { AnswerFailure, Part } from "./schema"
 // over.
 // The agent's `EventSink` records each event against its answer (the run's execution id is the answer's id), and a
 // writer sends each answer's text and parts to its row at most once a second. The sealed events are what counts: a
-// resumed run replays them through the same fold, and `chat/Settle` writes the final text and parts. Nothing here
+// resumed agent step replays them through the same fold. Before it seals, `chat/Respond` snapshots the final
+// parts, usage and failure reason for `chat/Settle`. Nothing here
 // reaches the answer but the text a person reads, flow names and how each call went: no code, no flow input, no result.
 
 /** One answer's progress: its text so far, its parts, the tokens its model calls spent, and how they ended. */
@@ -120,8 +121,8 @@ export const fold = (progress: Progress, event: AgentEvent.AgentEvent): Progress
 }
 
 /**
- * Why an answer the agent didn't finish failed: its model's failure, else it ran out of frames. A run this engine has
- * no progress for, resumed after its agent step failed, failed in its model.
+ * Why an answer the agent didn't finish failed: its model's failure, else it ran out of frames. Without any
+ * events, a failure occurred before the agent could report progress. Captured before the responding action seals.
  */
 export const failureOf = (progress: Progress | undefined): AnswerFailure =>
   progress === undefined ? "model_error" : progress.modelFailure ?? "unfinished"

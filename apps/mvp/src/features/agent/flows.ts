@@ -1,19 +1,15 @@
-import { AgentAction } from "@smthrs/agent"
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement, type Planned } from "@smthrs/plan"
 import { Schema } from "effect"
 import { AnswerSettled, AnswersUnavailable, NotYourTurn, TurnOutOfTime } from "./answers"
 import { SETTLE_RETRY } from "./close"
-import { MAX_FRAMES } from "./contract"
-import { CHAT_SYSTEM } from "./instructions"
-import { ProductWords } from "./words"
 import { AnswerReference } from "./reference"
-import { Exchange, Turn } from "./schema"
+import { AnswerFailure, Exchange, Part, Turn } from "./schema"
 
 // The agent (docs/features/agent.md): `chat/Answer`, the flow that answers one question on this device's durable
 // engine (decision 0011), started with the answer's id as its execution id:
 //
-//   chat/LoadTurn ─▶ chat/Respond (the agent: an AgentAction, @smthrs/agent's cell loop)
+//   chat/LoadTurn ─▶ chat/Respond (the agent and its complete settlement snapshot)
 //                 ─▶ chat/Settle: done, or failed with why
 //
 // Every typed way the run ends settles the answer, as a step of the same run, so a crash anywhere still settles it on
@@ -25,8 +21,8 @@ import { Exchange, Turn } from "./schema"
 // Each model call inside `chat/Respond` is a sealed `ModelStep` through the server's model endpoint, role `agent`; a
 // resumed run replays what sealed and never pays for it twice. The agent's only authority is `ctx.call` on the app's
 // own flows (src/flows/catalog.ts). What a step does is injected by the host (src/features/agent/host.ts), so the
-// same flow runs in the browser's engine worker, on the Node host and later in the native app. This module imports
-// @smthrs/agent, so only an engine's host imports it; the tab dispatches `chat/Answer` by its reference (./reference.ts).
+// same flow runs in the browser's engine worker, on the Node host and later in the native app. The tab dispatches
+// `chat/Answer` by its reference (./reference.ts).
 
 /**
  * How `chat/LoadTurn` keeps asking while an earlier answer streams, or while the routes are unreachable: until its turn
@@ -104,24 +100,26 @@ export const Prepare = Action.make("chat/Opening", {
   tier: "sealed",
 })
 
-export const Respond = AgentAction.make("chat/Respond", {
-  payload: PreparedTurn,
-  memory: ({ opening }) => opening,
-  output: ProductWords,
-  seat: "agent",
-  system: CHAT_SYSTEM,
-  profile: "conversation",
-  prompt,
-  maxFrames: MAX_FRAMES,
-  corrections: WORD_CORRECTIONS,
-})
-
 /**
- * How the run ended, for `chat/Settle`: the agent's text, or `null` when it didn't answer; and whether the turn wait
- * ran out first, which settles the answer `unfinished`.
+ * The complete ending sealed by `chat/Respond`, before settlement can retry or the engine can restart.
+ * Turn and opening failures have no agent progress.
  */
-export const Ending = Schema.Struct({ text: Schema.NullOr(Schema.String), timedOut: Schema.Boolean, failure: Schema.optional(Schema.Literal("quota")) })
+export const Ending = Schema.Struct({
+  text: Schema.NullOr(Schema.String),
+  timedOut: Schema.Boolean,
+  failure: Schema.optional(AnswerFailure),
+  parts: Schema.optional(Schema.Array(Part)),
+  inputTokens: Schema.optional(Schema.Int),
+  outputTokens: Schema.optional(Schema.Int),
+})
 export type Ending = typeof Ending.Type
+
+/** The host seals the agent's answer together with its final parts, usage and failure reason. */
+export const Respond = Action.make("chat/Respond", {
+  payload: PreparedTurn,
+  success: Ending,
+  tier: "sealed",
+})
 
 /** Settles the answer as the run ended. The answer's parts come from the run. */
 export const Settle = Action.make("chat/Settle", {
@@ -164,21 +162,13 @@ export const Answer = Flow.make(AnswerReference._tag, {
           RecallOpening.call(turn).pipe(
             Node.bindPlanned(Node.capture({ opening: Prepare.name }, (recalled) => Prepare.call(recalled))),
             Node.bindPlanned(Node.capture({ respond: Respond.name }, (prepared) => Respond.call(prepared))),
-            Node.map(Node.capture({ timedOut: false }, (text: string): Ending => ({ text, timedOut: false }))),
             // Preserve a quota refusal in the sealed ending, including after the tab loses its progress.
             // expected: a quota refusal becomes the sealed ending
             Node.catch({
-              error: Schema.Union([
-                Schema.Struct({ _tag: Schema.Literal("@smthrs/mvp/memory/OpeningFailed"), quota: Schema.Literal(true) }),
-                Schema.Struct({
-                  _tag: Schema.Literal("/harness/HarnessError"),
-                  code: Schema.Literal("model_failed"),
-                  cause: Schema.Struct({ _tag: Schema.Literal("flows/model/ModelError"), code: Schema.Literals(["quota_exceeded", "out_of_credit"]) }),
-                }),
-              ]),
+              error: Schema.Struct({ _tag: Schema.Literal("@smthrs/mvp/memory/OpeningFailed"), quota: Schema.Literal(true) }),
               onFailure: Node.capture({ failure: "quota" }, () => Node.succeed<Ending>({ text: null, timedOut: false, failure: "quota" })),
             }),
-            // The agent failed: the settle reads why from the run's progress.
+            // Opening failed before the agent ran.
             // expected: the engine records the failed step
             Node.catch({
               onFailure: Node.capture({ text: null }, () => Node.succeed<Ending>({ text: null, timedOut: false })),

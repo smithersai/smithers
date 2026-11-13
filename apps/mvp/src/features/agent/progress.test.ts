@@ -5,7 +5,7 @@ import { EventSink } from "@smthrs/agent"
 import { Context, Deferred, Effect, Exit, Layer, Logger, Scope } from "effect"
 import { describe, expect, test, vi } from "vitest"
 import { AnswerApi, AnswerSettled, AnswersUnavailable } from "./answers"
-import { settlement, settleAnswer, sink } from "./host"
+import { responseEnding, settlement, settleAnswer, sink } from "./host"
 import { AnswerProgress, empty, failureOf, fold, type Progress } from "./progress"
 import { RunReporter } from "../status/reporter"
 import { prompt } from "./flows"
@@ -125,21 +125,21 @@ describe("settlement", () => {
     outputTokens: 4,
   }
 
-  const answered = (text: string | null) => ({ text, timedOut: false })
+  const answered = (text: string | null, progress: Progress | undefined = undefined) => responseEnding(text, progress)
 
-  test("a reply settles done with the parts and tokens this engine saw, or with neither after a resume", () => {
-    expect(settlement(answered("Done."), shown)).toEqual({
+  test("a reply settles done with the sealed parts and tokens, or with neither when no events were seen", () => {
+    expect(settlement(answered("Done.", shown))).toEqual({
       status: "done",
       text: "Done.",
       parts: shown.parts,
       inputTokens: 3,
       outputTokens: 4,
     })
-    expect(settlement(answered("Done."), undefined)).toEqual({ status: "done", text: "Done." })
+    expect(settlement(answered("Done."))).toEqual({ status: "done", text: "Done." })
   })
 
   test("a provider's fractional token counts settle rounded, as the routes take them", () => {
-    expect(settlement(answered("Done."), { ...shown, inputTokens: 12.5, outputTokens: 3.2 })).toMatchObject({
+    expect(settlement(answered("Done.", { ...shown, inputTokens: 12.5, outputTokens: 3.2 }))).toMatchObject({
       status: "done",
       inputTokens: 13,
       outputTokens: 3,
@@ -147,18 +147,19 @@ describe("settlement", () => {
   })
 
   test("no reply fails as the progress says; an empty one fails empty", () => {
-    expect(settlement(answered(null), shown)).toEqual({ status: "failed", failure: "unfinished", parts: shown.parts })
-    expect(settlement(answered(null), undefined)).toEqual({ status: "failed", failure: "model_error" })
-    expect(settlement(answered("  "), shown)).toEqual({ status: "failed", failure: "empty", parts: shown.parts })
+    expect(settlement(answered(null, shown))).toEqual({ status: "failed", failure: "unfinished", parts: shown.parts })
+    expect(settlement(answered(null))).toEqual({ status: "failed", failure: "model_error" })
+    expect(settlement({ text: null, timedOut: false })).toEqual({ status: "failed", failure: "model_error" })
+    expect(settlement(answered("  ", shown))).toEqual({ status: "failed", failure: "empty", parts: shown.parts })
   })
 
   test("a run out of time fails unfinished, whatever the agent had, keeping the parts it showed", () => {
-    expect(settlement({ text: "Late.", timedOut: true }, shown)).toEqual({
+    expect(settlement({ ...answered("Late.", shown), timedOut: true })).toEqual({
       status: "failed",
       failure: "unfinished",
       parts: shown.parts,
     })
-    expect(settlement({ text: null, timedOut: true }, undefined)).toEqual({ status: "failed", failure: "unfinished" })
+    expect(settlement({ text: null, timedOut: true })).toEqual({ status: "failed", failure: "unfinished" })
   })
 })
 

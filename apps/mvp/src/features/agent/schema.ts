@@ -34,8 +34,8 @@ export type AnswerFailure = typeof AnswerFailure.Type
 /**
  * What the agent writes to an answer: its parts and the text it has written so far while it streams, then its text
  * when it settles as `done`, or its failure as `failed`. A settle without `parts` keeps the parts the answer has: a
- * run resumed after its agent step sealed doesn't see that step's events again. Token counts are what the model
- * reported for the whole answer.
+ * failure before the agent ran has no parts. The responding action seals its final parts and whole-answer token
+ * counts so settlement after a restart uses the same snapshot.
  */
 export const AnswerWrite = Schema.Union([
   Schema.Struct({

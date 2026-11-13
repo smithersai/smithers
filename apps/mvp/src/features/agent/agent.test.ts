@@ -562,6 +562,68 @@ ctx.done("Dark mode is on (" + set.mode + ").")`,
     expect(await row(runtime, answerId)).toMatchObject({ status: "failed", failure: "quota", text: "" })
   })
 
+  test.each(["success", "frames"] as const)("a sealed %s answer keeps its settlement metadata after a crash and retry", async (ending) => {
+    const reached = Effect.runSync(Deferred.make<void>())
+    let calls = 0
+    const agent = await openAgent(runtime, () => {
+      calls++
+      if (calls === 1) return Stream.make(
+        { type: "text-delta" as const, id: "t", text: cell(`await ctx.call("app/theme/set", { mode: "dark" })`) }, usage, stop,
+      )
+      return Stream.make(
+        { type: "text-delta" as const, id: "t", text: cell(ending === "success" ? `ctx.done("Dark mode is on.")` : `console.log("Continue")`) }, usage, stop,
+      )
+    }, { partsEvery: "1000000 millis" })
+    const attempted: unknown[] = []
+    const first = await agent.engine(undefined, { fetch: async (input, init) => {
+      const request = new Request(input, init)
+      if (request.method === "POST" && new URL(request.url).pathname.startsWith("/api/answers/")) {
+        const body = await request.clone().json() as { status?: string }
+        if (body.status !== "streaming") {
+          attempted.push(body)
+          Effect.runSync(Deferred.succeed(reached, undefined))
+          return new Response("{}", { status: 503 })
+        }
+      }
+      return agent.fetch(request)
+    } })
+    engines.push(first)
+    const answerId = await agent.ask("Keep the finished answer across a restart")
+    const running = agent.start(first, answerId)
+    await Effect.runPromise(Deferred.await(reached))
+    const before = calls
+    // A stale periodic write must be replaced even when the next engine saw no events.
+    await agent.fetch(`http://chat.test/api/answers/${answerId}`, { method: "POST", body: JSON.stringify({
+      status: "streaming", parts: [{ id: "0.0", kind: "step", flow: "app/theme/set", status: "running" }],
+    }) })
+    await first.crash()
+    await running.stop()
+    let retries = 0
+    const second = await agent.engine(first.schema, { fetch: async (input, init) => {
+      const request = new Request(input, init)
+      if (request.method === "POST" && new URL(request.url).pathname === `/api/answers/${answerId}` &&
+        (await request.clone().json() as { status?: string }).status !== "streaming") {
+        retries++
+        if (retries === 1) return new Response("{}", { status: 503 })
+      }
+      return agent.fetch(request)
+    } })
+    engines.push(second)
+    expect(await agent.resume(second, answerId)).toEqual(Exit.succeed({ status: ending === "success" ? "done" : "failed" }))
+    const answer = await row(runtime, answerId)
+    expect(answer.parts).toEqual([{ id: "0.0", kind: "step", flow: "app/theme/set", status: "done" }])
+    expect(answer).toMatchObject(ending === "success"
+      ? { status: "done", text: "Dark mode is on.", inputTokens: 24, outputTokens: 68 }
+      : { status: "failed", failure: "unfinished" })
+    expect(attempted).toContainEqual(ending === "success"
+      ? { status: "done", text: "Dark mode is on.", parts: answer.parts, inputTokens: 24, outputTokens: 68 }
+      : { status: "failed", failure: "unfinished", parts: answer.parts })
+    expect(retries).toBe(2)
+    expect(calls).toBe(before)
+    expect(calls).toBe(ending === "success" ? 2 : MAX_FRAMES)
+    expect(agent.painted).toEqual(["dark"])
+  })
+
   test("a sealed quota refusal keeps its reason after a crash during settlement, with no new model call", async () => {
     const reached = Effect.runSync(Deferred.make<void>())
     let calls = 0

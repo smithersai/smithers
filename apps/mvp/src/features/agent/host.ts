@@ -2,7 +2,7 @@ import type { MemoryError, Opening } from "@smthrs/memory"
 import * as OpeningMemory from "./memory"
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import type { AgentEvent } from "@smthrs/harness"
-import { Interpreter } from "@smthrs/flow"
+import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Evaluator, type Model, ModelProxy } from "@smthrs/model"
 import { Registry } from "@smthrs/registry"
 import { Duration, Effect, Layer } from "effect"
@@ -12,10 +12,12 @@ import { MODEL_ROUTE } from "../model/contract"
 import * as Close from "./close"
 import { AnswerApi, type NotYourTurn, TurnOutOfTime } from "./answers"
 import { ANSWER_TURN_WAIT, MAX_FRAMES } from "./contract"
-import { Answer, type Ending, ForgetProgress, LoadTurn, RecallOpening, Prepare, Respond, Settle } from "./flows"
+import { Answer, type Ending, ForgetProgress, LoadTurn, RecallOpening, Prepare, PreparedTurn, Respond, Settle, WORD_CORRECTIONS, prompt } from "./flows"
 import { RunReporter } from "../status/reporter"
 import { AnswerProgress, failureOf, type Progress } from "./progress"
 import type { AnswerWrite } from "./schema"
+import { ProductWords } from "./words"
+import { CHAT_SYSTEM } from "./instructions"
 
 // What the agent's flow runs on (docs/features/agent.md#the-host): one composition for every host. The host supplies
 // its engine (`FlowRuntime`), an Effect `HttpClient` and ChatApi's origin; this layer supplies the rest:
@@ -142,29 +144,61 @@ export const sink = Layer.effect(
   }),
 )
 
-/**
- * What `chat/Settle` writes for how the run ended: `unfinished` when its turn wait ran out, else the text when there is
- * one, else why the agent didn't answer; with the parts it showed. Token counts are whole, as the routes take them: a
- * provider's fractional count is rounded rather than refused, which would kill the step and leave the answer streaming.
- */
-export const settlement = (
-  ending: Ending,
-  progress: Progress | undefined,
-): Exclude<AnswerWrite, { readonly status: "streaming" }> => {
-  const shown = progress === undefined ? {} : { parts: progress.parts }
-  const { text, timedOut } = ending
+/** The final projection captured while the responding action still owns its events. */
+export const responseEnding = (text: string | null, progress: Progress | undefined): Ending => ({
+  text,
+  timedOut: false,
+  failure: failureOf(progress),
+  ...(progress === undefined ? {} : {
+    parts: progress.parts,
+    inputTokens: Math.round(progress.inputTokens),
+    outputTokens: Math.round(progress.outputTokens),
+  }),
+})
+
+// AgentAction validates only the model's text. Its registration adapter seals the host's complete ending under
+// Respond's schema in that same action, so there is no second checkpoint or gap after the text seals.
+const responseText = Action.make(Respond.name, {
+  payload: PreparedTurn,
+  success: ProductWords,
+  error: AgentAction.AgentFailure,
+})
+
+const responding = Layer.unwrap(Effect.map(AnswerProgress, (progress) => AgentAction.implement({
+  ...responseText,
+  toLayer: (generate) => Respond.toLayer((payload) => Effect.gen(function* () {
+    const { executionId } = yield* FlowRuntime.FlowInstance
+    const text = yield* generate(payload).pipe(
+      // expected: an agent failure is captured with its progress before the action seals
+      Effect.catch(() => Effect.succeed(null)),
+    )
+    return responseEnding(text, yield* progress.get(executionId))
+  })),
+}, {
+  memory: ({ opening }) => opening,
+  seat: "agent",
+  system: CHAT_SYSTEM,
+  profile: "conversation",
+  prompt,
+  maxFrames: MAX_FRAMES,
+  corrections: WORD_CORRECTIONS,
+})))
+
+/** Settlement uses only the sealed ending, independent of this engine's streaming progress. */
+export const settlement = (ending: Ending): Exclude<AnswerWrite, { readonly status: "streaming" }> => {
+  const { text, timedOut, parts, inputTokens, outputTokens } = ending
+  const shown = parts === undefined ? {} : { parts }
   if (timedOut) return { status: "failed", failure: "unfinished", ...shown }
   if (text !== null && text.trim() !== "") {
     return {
       status: "done",
       text,
       ...shown,
-      ...(progress === undefined
-        ? {}
-        : { inputTokens: Math.round(progress.inputTokens), outputTokens: Math.round(progress.outputTokens) }),
+      ...(inputTokens === undefined ? {} : { inputTokens }),
+      ...(outputTokens === undefined ? {} : { outputTokens }),
     }
   }
-  return { status: "failed", failure: text === null ? ending.failure ?? failureOf(progress) : "empty", ...shown }
+  return { status: "failed", failure: text === null ? ending.failure ?? "model_error" : "empty", ...shown }
 }
 
 /** One settlement attempt; the durable action owns retries. */
@@ -172,7 +206,7 @@ export const settleAnswer = ({ answerId, ending }: { readonly answerId: string; 
   Effect.gen(function* () {
     const api = yield* AnswerApi
     const progress = yield* AnswerProgress
-    const write = settlement(ending, yield* progress.get(answerId))
+    const write = settlement(ending)
     yield* api.write(answerId, write).pipe(
       Effect.tapErrorTag("@smthrs/mvp/agent/AnswerSettled", () => progress.forget(answerId)),
     )
@@ -217,7 +251,7 @@ export const registration = (turnWait: Duration.Input = ANSWER_TURN_WAIT) => {
       ),
       RecallOpening.toLayer(OpeningMemory.recall),
       Prepare.toLayer(OpeningMemory.prepare),
-      Respond.layer,
+      responding,
       settlementLayers,
     ),
     { onHeartbeat: (answerId) => api.heartbeat(answerId).pipe(
