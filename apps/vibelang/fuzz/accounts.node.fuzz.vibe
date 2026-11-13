@@ -241,3 +241,44 @@ it.live("accounts/worker-surface", () => run("accounts/worker-surface", Schema.S
   return me.id === input.person && me.role === (input.person === "1" ? "maintainer" : "community")
   }
 }))
+
+const BrokerSiteInput = Schema.Struct({
+  site: Schema.Literals(["https://fuzz.invalid", "http://127.0.0.1:8787", "http://fuzz.invalid"]),
+  broker: Schema.Literals(["https://broker.invalid", "http://localhost:9000", "http://broker.invalid", "https://broker.invalid/", "not-a-url"]),
+  secret: Schema.Literals([31, 32]),
+  local: Schema.Literals(["absent", "false", "true"]),
+})
+
+type BrokerSite = typeof BrokerSiteInput.Type
+const SITE_VALID: BrokerSite = { site: "https://fuzz.invalid", broker: "https://broker.invalid", secret: 32, local: "absent" }
+/** Every execution: the valid pair, loopback with and without local development, and each refusal once. */
+const SITE_WALK: ReadonlyArray<BrokerSite> = [
+  SITE_VALID, { site: "http://127.0.0.1:8787", broker: "http://localhost:9000", secret: 32, local: "true" }, { ...SITE_VALID, broker: "http://localhost:9000", local: "true" },
+  { site: "http://127.0.0.1:8787", broker: "http://localhost:9000", secret: 32, local: "false" }, { ...SITE_VALID, site: "http://fuzz.invalid", local: "true" },
+  { ...SITE_VALID, secret: 31 }, { ...SITE_VALID, broker: "https://broker.invalid/" }, { ...SITE_VALID, broker: "not-a-url" },
+]
+
+/** A broker the site may not use is no broker: sign-in is unavailable and the session says so. Both origins must be
+ * exact HTTPS origins, or loopback HTTP in local development, and the site secret must have 32 characters. */
+it.live("accounts/broker-site", () => run("accounts/broker-site", BrokerSiteInput, (input) => effect {
+  for (const each of [...SITE_WALK, input]) if (!(try brokerSite(each))) return false
+  return true
+}))
+
+effect function brokerSite(input: BrokerSite) {
+  return try scoped(effect {
+    const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+    const broker = { origin: input.broker, secret: Redacted.make("s".repeat(input.secret)), ...(input.local === "absent" ? {} : { localDevelopment: input.local === "true" }) }
+    const accounts = try Effect.provideService(Accounts.make("accounts-broker-site", raw as unknown as Objects.Storage, { ...setup("Fuzz User"), origin: input.site, broker }), HttpClient.HttpClient, offlineClient)
+    const answer = effect (path: string) => {
+      const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.make("GET")(input.site + path)))
+      return HttpServerResponse.toWeb(try Effect.provideService(accounts.fetch, HttpServerRequest.HttpServerRequest, request))
+    }
+    const allowed = (origin: string) => origin === "https://fuzz.invalid" || origin === "https://broker.invalid" || (input.local === "true" && (origin === "http://127.0.0.1:8787" || origin === "http://localhost:9000"))
+    const valid = allowed(input.site) && allowed(input.broker) && input.secret >= 32
+    const session = try answer("/api/auth/session")
+    const available = ((try promise(() => session.json())) as { readonly available?: boolean }).available
+    const signIn = try answer("/api/auth/sign-in")
+    return available === valid && (valid ? signIn.status === 302 && (signIn.headers.get("location") ?? "").startsWith(input.broker + "/") : signIn.status === 503)
+  })
+}
