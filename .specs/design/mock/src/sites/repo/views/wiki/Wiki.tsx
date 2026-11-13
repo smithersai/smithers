@@ -34,27 +34,68 @@ export const proposalDiff = (page: WikiRecord, proposal: Proposal): DiffFile[] =
   }]
 }
 
-/** Apply the proposal at its context, or its supplied hunk line when context is shortened. */
+/** Apply complete hunks at their preview coordinates, allowing shortened context on that line. */
 export const applyProposal = (body: string, diff: string) => {
-  const source = body.split("\n")
-  let cursor = source.length
-  let offset = 0
-  diff.split("\n").forEach(line => {
-    const hunk = line.match(/^@@ -(\d+)/)
-    if (hunk) {
-      cursor = Math.min(source.length, Math.max(0, Number(hunk[1]) - 1 + offset))
-    } else if (line.startsWith("+")) {
-      source.splice(cursor++, 0, line.slice(1))
-      offset++
-    } else if (line.startsWith("-")) {
-      const found = source.indexOf(line.slice(1), cursor)
-      if (found >= 0) { cursor = found; source.splice(cursor, 1); offset-- }
-    } else if (line.startsWith(" ")) {
-      const found = source.indexOf(line.slice(1), Math.max(0, cursor - 1))
-      if (found >= 0) cursor = found + 1
+  const source = body === "" ? [] : body.split("\n")
+  let fence = ""
+  const prose = source.map(line => {
+    const marker = line.match(/^\s{0,3}(`{3,}|~{3,})/)?.[1]
+    const code = Boolean(fence) || /^( {4}|\t)/.test(line) || Boolean(marker)
+    if (marker) {
+      if (!fence) fence = marker
+      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = ""
     }
+    return !code
   })
-  return source.join("\n")
+  const result: string[] = []
+  let cursor = 0
+  let hunk: { old: number; next: number } | undefined
+  const conflict = () => { throw new Error("Proposal conflicts with this page.") }
+  const finishHunk = () => {
+    if (hunk && (hunk.old !== 0 || hunk.next !== 0)) conflict()
+  }
+  const contextMatches = (actual: string, context: string) => {
+    if (actual === context) return true
+    // Only complete prose sentences may be shortened. Code context must match exactly.
+    if (!prose[cursor] || !/^[A-Z].*\.$/.test(context) || /[`=<>\[\]{}+*/|&]/.test(context)) return false
+    // Shortened prose keeps a contiguous phrase; only articles and sentence periods may differ.
+    const words = (text: string) => text.split(/\s+/)
+      .map(word => word.replace(/\.$/, ""))
+      .filter(word => word && !/^(a|an|the)$/i.test(word))
+    const short = words(context)
+    return short.length > 0 && `\0${words(actual).join("\0")}\0`.includes(`\0${short.join("\0")}\0`)
+  }
+  const lines = diff.split("\n")
+  if (lines.at(-1) === "") lines.pop()
+  for (const line of lines) {
+    const header = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$/)
+    if (header) {
+      finishHunk()
+      const old = Number(header[2] ?? 1), next = Number(header[4] ?? 1)
+      const at = Number(header[1]) - (old === 0 ? 0 : 1)
+      const target = Number(header[3]) - (next === 0 ? 0 : 1)
+      if (at < cursor || at > source.length || target !== result.length + at - cursor) conflict()
+      result.push(...source.slice(cursor, at))
+      cursor = at
+      hunk = { old, next }
+    } else {
+      if (!hunk) return conflict()
+      const text = line.slice(1)
+      if (line.startsWith("+")) {
+        result.push(text)
+        hunk.next--
+      } else if (line.startsWith("-") || line.startsWith(" ")) {
+        if (cursor >= source.length || (line.startsWith("-") ? source[cursor] !== text : !contextMatches(source[cursor], text))) conflict()
+        if (line.startsWith(" ")) { result.push(source[cursor]); hunk.next-- }
+        cursor++
+        hunk.old--
+      } else conflict()
+      if (hunk.old < 0 || hunk.next < 0) conflict()
+    }
+  }
+  if (!hunk) return conflict()
+  finishHunk()
+  return [...result, ...source.slice(cursor)].join("\n")
 }
 
 const WikiSidebar = ({ page, localPages }: { page?: WikiRecord; localPages: WikiRecord[] }) => (
@@ -290,7 +331,11 @@ export const WikiReady = ({ slug }: { slug?: string }) => {
   const decide = useCallback((proposal: Proposal, accept: boolean) => {
     if (!page || !canEdit) return
     const remaining = page.proposals?.filter(item => item !== proposal)
-    const body = accept ? applyProposal(page.body, proposal.diff) : page.body
+    let body = page.body
+    if (accept) {
+      try { body = applyProposal(page.body, proposal.diff) }
+      catch { toast("Proposal conflicts with this page."); return }
+    }
     setChanges(current => ({ ...current, [page.slug]: {
       ...page, body, proposals: remaining,
       ...(accept ? {

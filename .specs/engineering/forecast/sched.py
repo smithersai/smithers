@@ -114,19 +114,28 @@ def tail(t):
     return memo[t]
 
 
+def first_gap(available, reserved, earliest, hours):
+    start = max(available, earliest)
+    for begin, end in sorted(reserved):
+        if start + hours <= begin:
+            break
+        start = max(start, end)
+    return start
+
+
 def sim():
     dur = {t: duration(t) for t in work}
     fin, start = {}, {}
     code = [0.0] * P["lanes"] + [float(o) for o, n in P.get("extra_lanes", []) for _ in range(n)]
-    free = {"code": code, "design": [float(P.get("design_start_h", 0))] * P.get("design_lanes", 1)}
+    available = {"code": code, "design": [float(P.get("design_start_h", 0))] * P.get("design_lanes", 1)}
+    reserved = {pool: [[] for _ in lanes] for pool, lanes in available.items()}
     remaining = set(work)
     s1_done = None
     s1set = set(P.get("_s1set", []))
-    rev = [0.0] * P.get("review_lanes", 1)
-    clock_ready = {}
+    reviews = [[] for _ in range(P.get("review_lanes", 1))]
     while remaining:
         ready = [t for t in remaining if all(d in fin or d in done or d not in need for d in T[t]["deps"])]
-        ready.sort(key=lambda t: -tail(t))
+        ready.sort(key=lambda t: (-tail(t), t))
         t = ready[0]
         pool = "design" if t.startswith("T-UI-") else "code"
         # M-37 (revised 2026-10-02): after stage 1 every ticket runs as a TODO on the install unless it is a
@@ -137,10 +146,11 @@ def sim():
         if "post_lanes" in P and s1_done is not None and pool == "code" and t not in P.get("post_exceptions", []) and not outside:
             pool = "post"
         er = max([fin.get(d, 0.0) for d in T[t]["deps"] if d in need and d not in done] or [0.0])
-        lane = min(range(len(free[pool])), key=lambda i: max(free[pool][i], er))
-        s = max(free[pool][lane], er)
+        # Reservations retain earlier idle intervals, even when priority schedules future work first.
+        s, lane = min((first_gap(available[pool][i], reserved[pool][i], er, dur[t]), i)
+                      for i in range(len(available[pool])))
         work_end = s + dur[t]
-        free[pool][lane] = work_end
+        reserved[pool][lane].append((s, work_end))
         if "review_lanes" in P:
             rounds = 1
             yv = P["review_yield"]
@@ -152,17 +162,17 @@ def sim():
                 rounds += 1
             r_end = work_end
             for k in range(rounds):
-                rl = min(range(len(rev)), key=lambda i: max(rev[i], r_end))
-                rs = max(rev[rl], r_end)
                 rv = REV()
-                rev[rl] = rs + rv
+                rs, rl = min((first_gap(0.0, reviews[i], r_end, rv), i) for i in range(len(reviews)))
+                reviews[rl].append((rs, rs + rv))
                 r_end = rs + rv + (FIX() if k < rounds - 1 else 0.0)
             work_end = r_end
         start[t], fin[t] = s, work_end
         remaining.discard(t)
         if "post_lanes" in P and s1_done is None and s1set and s1set <= set(fin) | done:
             s1_done = max(fin[x] for x in s1set if x in fin) + (INTEG() if INTEG else 0.0)
-            free["post"] = [s1_done] * P["post_lanes"]
+            available["post"] = [s1_done] * P["post_lanes"]
+            reserved["post"] = [[] for _ in available["post"]]
     end = (max(fin.values()) if fin else 0.0) + (P.get("final_stage_h", 0.0)) + (INTEG() if INTEG and "post_lanes" not in P else 0.0)
     # critical chain: walk back from the last finisher through the latest-finishing dep
     t = max(fin, key=fin.get)

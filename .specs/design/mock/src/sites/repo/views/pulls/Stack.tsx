@@ -143,7 +143,7 @@ export const StackReady = ({ filter }: { filter: string }) => {
   const { decisions, decide } = useRunRecords()
   const answer = (id: string, option: string) => {
     const item = items.find(item => item.id === id && item.state === "needs-answer")
-    if (!writable || !item?.question?.options.includes(option)) return
+    if (!writable || item?.owner !== viewer() || !item.question?.options.includes(option)) return
     const approval = decisions.find(decision => sameDecision(item, decision) && decision.state === "waiting")
     if (approval && (approval.askedOf !== viewer() || !approval.options.includes(option))) return
     if (approval) decide(approval, option)
@@ -163,7 +163,7 @@ export const StackReady = ({ filter }: { filter: string }) => {
       registerSlash("stack.answer", {
         purpose: `Answer a ${stackTitle()} question`, confirm: false,
         fields: [
-          { name: "item", label: `${stackTitle()} item`, options: items.filter(item => item.state === "needs-answer").map(item => item.id) },
+          { name: "item", label: `${stackTitle()} item`, options: items.filter(item => item.state === "needs-answer" && item.owner === viewer()).map(item => item.id) },
           { name: "answer", label: "Answer", required: false }
         ],
         run: ({ item: id, answer: option }, { closeAsk }) => {
@@ -400,7 +400,7 @@ export const StackReady = ({ filter }: { filter: string }) => {
                     <div className="repo-pulls-stack-question">
                       <p>{item.question.text}</p>
                       <div className="repo-pulls-answer-options">
-                        {writable &&
+                        {writable && item.owner === viewer() &&
                           item.question.options.map((option) => (
                             <button
                               className="repo-ui-btn"

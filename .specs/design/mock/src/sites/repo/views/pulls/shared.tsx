@@ -76,11 +76,11 @@ export const passedAgentChecks = (item: Pull) => Boolean(item.state === "open" &
 export const reviewIsNext = (item: Pull) => passedAgentChecks(item) && reviewRequested(item)
 
 export const checkState = (item: Pull) =>
-  item.checks.some((check) => check.state === "failure")
+  !item.checks.length ? "unknown" : item.checks.some((check) => check.state === "failure")
     ? "failure"
     : item.checks.some((check) => check.state === "pending")
       ? "pending"
-      : "success"
+      : item.checks.every(check => check.state === "success") ? "success" : "skipped"
 
 export const FamilyNav = ({ active }: { active: "pulls" | "stack" }) => (
   <nav className="repo-pulls-family-nav" aria-label="Changes">

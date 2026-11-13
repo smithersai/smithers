@@ -2,7 +2,15 @@
 
 Version 2026-10-02 19:00 PT · Owner: engineering (smithers-8a)
 
-The date for "stage 1 passes J1 and J2" comes from a Monte Carlo list scheduler over the real dependency graph in `tickets/README.md`, not from judgement.
+The date for "stage 1 passes J1 and J2" comes from a Monte Carlo list scheduler over the real dependency graph in `tickets/README.md`, not from judgement. Jobs have longest-remaining-path priority; each code, design and review lane retains its reserved intervals, so other jobs can fill an earlier gap when their dependencies and duration allow it. Delayed lane availability and dependency completion remain lower bounds on each start.
+
+Run the deterministic resource-readiness regressions with:
+
+```sh
+python3 -m unittest discover -s .specs/engineering/forecast -p 'test_*.py'
+```
+
+The results tables below are historical snapshots from before idle intervals were preserved. Rerun the scheduler for current results.
 
 ```sh
 python3 .specs/engineering/forecast/sched.py .specs/engineering/forecast/plan-of-record.json
