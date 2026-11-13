@@ -5,9 +5,9 @@
  * Anything else in the producer slot surfaces the journal's own conflict
  * (review finding flows-engine-store-b/robustness/1).
  *
- * Every dependency is an inert memory double so each case controls the exact
- * rows the journal answers with, including the fork marker and the parent's
- * original row a real time-travel fork copies verbatim.
+ * Rejection cases inject faulty stores to control the malformed history.
+ * Successful replay of real SQL forks is covered by
+ * `time-travel/test/ForkReplayConflict.test.ts`.
  */
 import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
@@ -122,7 +122,6 @@ const replay = (
 ) =>
   Effect.gen(function*() {
     let executions = 0
-    let reads = 0
     let history: ReturnType<typeof forkFixture> | undefined
     const conflict = new Journal.JournalError({
       code: "idempotency_conflict",
@@ -150,7 +149,6 @@ const replay = (
         }),
       entries: ({ runId }) =>
         Effect.sync(() => {
-          reads++
           return { entries: (history?.rows[runId] ?? []) as never, hasMore: false }
         }),
       ...journalOverrides
@@ -177,7 +175,7 @@ const replay = (
         Effect.scoped
       )
     )
-    return { exit, executions, reads: () => reads, conflict }
+    return { exit, executions, conflict }
   })
 
 const failedWith = (exit: Exit.Exit<unknown, unknown>) => {
@@ -189,47 +187,6 @@ const failedWith = (exit: Exit.Exit<unknown, unknown>) => {
 }
 
 describe("replay validates the record occupying the terminal producer slot", () => {
-  it.effect("replays through a terminal record a retained fork copied from its parent", () =>
-    Effect.gen(function*() {
-      const outcome = yield* replay((attempted) => forkFixture(attempted))
-      expect(outcome.exit).toEqual(Exit.succeed("durable-success"))
-      expect(outcome.executions).toBe(0)
-      expect(outcome.reads()).toBeGreaterThan(0)
-    }))
-
-  it.effect("replays through a fork of a fork", () =>
-    Effect.gen(function*() {
-      const grandparent = "conflict-grandparent"
-      const outcome = yield* replay((attempted) => {
-        const base = forkFixture(attempted, {
-          mutate: (row) => ({
-            ...row,
-            payload: { ...(row["payload"] as Row), runId: grandparent },
-            meta: { ...(row["meta"] as Row), lineageId: FlowEngine.Lineage.root(grandparent) }
-          })
-        })
-        const marker = { ...base.rows[child]![1]! }
-        return {
-          rows: {
-            ...base.rows,
-            [parent]: [
-              base.rows[parent]![0]!,
-              {
-                ...marker,
-                runId: parent,
-                meta: { lineageId: FlowEngine.Lineage.root(grandparent) },
-                payload: { childRunId: parent, parentRunId: grandparent, forkJournalOffset: 0 }
-              }
-            ],
-            [grandparent]: [{ ...base.rows[parent]![0]!, runId: grandparent }]
-          },
-          parentOf: (runId: string): string | null => runId === child ? parent : runId === parent ? grandparent : null
-        }
-      })
-      expect(outcome.exit).toEqual(Exit.succeed("durable-success"))
-      expect(outcome.executions).toBe(0)
-    }))
-
   const rejected: ReadonlyArray<[string, Parameters<typeof forkFixture>[1]]> = [
     ["an unrelated event type", { mutate: (row) => ({ ...row, eventType: "unrelated.event", payload: { x: 1 } }) }],
     ["another attempt's coordinates", {

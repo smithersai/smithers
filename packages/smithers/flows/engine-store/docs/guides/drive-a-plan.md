@@ -194,6 +194,12 @@ connections, and compare exact, tree and glob file scopes against independently
 specified source and producer measurements. `RuntimeGraph.test.ts` also compares
 each frontier with an exhaustive state model.
 
+The frozen oracle covers the pre-index coordinator within its recorded limits.
+It does not model writer fences between appended generations, replay-only
+dispatch, liveness checks, preserved interruption on abort, `plan_changed`
+for conflicting plan records, or the production stall invariant. Those paths
+need production scheduler tests; a differential result does not cover them.
+
 Private work counters separate index updates, settlements, frontier snapshots,
 admission preparation and ancestor queries. Allocation counts cover explicit
 graph containers and records, not VM backing storage, closures, the shared

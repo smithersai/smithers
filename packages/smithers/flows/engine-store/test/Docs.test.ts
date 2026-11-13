@@ -160,6 +160,26 @@ describe("documentation contracts", () => {
 })
 
 describe("source documentation pointers", () => {
+  it("states the frozen scheduler oracle's production-only coverage limits", () => {
+    const oracle = readFileSync(new URL("./PlanSchedulerReference.ts", import.meta.url), "utf8")
+    const header = oracle.slice(oracle.indexOf("/**"), oracle.indexOf("*/"))
+    const guide = readDoc("guides/drive-a-plan.md")
+    for (
+      const limit of [
+        "writer fences",
+        "replay-only",
+        "liveness",
+        "preserved interruption on abort",
+        "plan_changed",
+        "stall invariant"
+      ]
+    ) {
+      expect(header).toContain(limit)
+      expect(guide).toContain(limit)
+    }
+    expect(header).not.toContain("constructs `ActionPersistence` the way the live caller does")
+  })
+
   const sourceDir = new URL("../src/", import.meta.url)
   const sources = readdirSync(sourceDir).filter((name) => name.endsWith(".ts"))
   const read = (name: string): string => readFileSync(new URL(name, sourceDir), "utf8")

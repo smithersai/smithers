@@ -1,15 +1,21 @@
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
- * Frozen pre-index Lane E scheduler oracle (2026-09-04).
+ * Frozen pre-index scheduler oracle (2026-09-04).
  * Keep control flow independent of RuntimeGraph. Relative imports,
  * test-irrelevant coverage annotations, and the corrected stop-merge
  * settlement identity differ from the captured source.
  *
- * The dispatch seam is shared with production, not frozen: this oracle
- * constructs `ActionPersistence` the way the live caller does, including
- * shared attempt admission and the run-scoped cache-age projection. Freezing
- * the seam instead would make the differential report seam read counts as
- * scheduler divergence.
+ * The dispatch seam shares production's attempt admission and run-scoped
+ * cache-age projection so their read counts do not become scheduler
+ * divergence. It does not model the live caller's liveness (`isAlive`),
+ * replay-only dispatch (`replayOnly`), or preserved interruption on abort
+ * (`preserveInterruption`).
+ *
+ * The coordinator also omits writer fences between appended generations,
+ * `plan_changed` on a conflicting plan record, and the stall invariant:
+ * when pending work has nothing in flight, it exits with unsettled nodes
+ * reported as skipped instead of dying. Differential cases must stay
+ * within these limits; production-only tests cover those paths.
  */
 /**
  * Drives a persisted plan: the node scheduler.
@@ -355,14 +361,6 @@ export interface Service {
   /** Drives the plan to completion and reports every node's outcome. */
   readonly run: (plan: Plan.Plan) => Effect.Effect<Report, SchedulerError, Requirements>
 }
-
-/**
- * Service tag for the plan scheduler.
- *
- * @since 0.1.0
- * @category services
- */
-export class PlanScheduler extends Context.Service<PlanScheduler, Service>()("@smthrs/engine-store/PlanScheduler") {}
 
 /**
  * The declared digest handed to `StepBoundary.prepare` when the scheduler is
@@ -1811,57 +1809,3 @@ export const make = (options: Options): Service => {
 
   return { record, append, run }
 }
-
-/**
- * Provides a scheduler bound to one run.
- *
- * @since 0.1.0
- * @category layers
- */
-export const layer = (options: Options): Layer.Layer<PlanScheduler> => Layer.succeed(PlanScheduler, make(options))
-
-/**
- * What {@link recertify} returns: the repaying run's id, its report, and the
- * deferring run's remaining debt after the repayment is counted.
- *
- * @since 0.1.0
- * @category models
- */
-export interface RecertifyResult {
-  readonly runId: string
-  readonly report: Report
-  readonly remaining: ReadonlyArray<Selection.DebtEntry>
-}
-
-/**
- * The recertification driver: re-drives a compiled plan under a fresh,
- * caller-supplied run with the `full` selection override — guess-free by
- * construction — then reports the deferring run's remaining debt via
- * `Selection.debt(deferringRunId, { repaidBy: [options.runId] })`.
- *
- * The design draft placed this beside the other Selection helpers; it lives
- * here because it constructs a scheduler, and `Selection` must stay
- * type-only toward this module to keep the dependency graph acyclic. The
- * deferring run's journal is never written — repayment is a read-side join.
- * Scheduling the cadence (nightly, per-merge) stays a product concern; this
- * is only the primitive one pass runs.
- *
- * @since 0.1.0
- * @category combinators
- */
-export const recertify = Effect.fn("PlanScheduler.recertify")(
-  (input: {
-    readonly plan: Plan.Plan
-    readonly deferringRunId: string
-    readonly options: Options
-  }) =>
-    Effect.gen(function*() {
-      const scheduler = make({
-        ...input.options,
-        selection: { ...input.options.selection, full: true }
-      })
-      const report = yield* scheduler.run(input.plan)
-      const remaining = yield* Selection.debt(input.deferringRunId, { repaidBy: [input.options.runId] })
-      return { runId: input.options.runId, report, remaining } satisfies RecertifyResult
-    })
-)
