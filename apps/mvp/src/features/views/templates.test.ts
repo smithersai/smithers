@@ -8,7 +8,7 @@ import { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect, Logger, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
-import { failingWorker, member, nodeDevice, openTestApp, type TabOptions } from "../../test/chatApi"
+import { failingWorker, member, nodeDevice, openTab, openTestApi, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
@@ -33,8 +33,7 @@ const WITHIN = 90_000
 type App = ManagedRuntime.ManagedRuntime<Commands | Chat | ChatStore | Views | Repo | AuthStore | IssuesStore, unknown>
 
 /** The app as `actor` (a Member unless `null`), signed in as sign-in's `load` sets it, its queries started as React does. */
-const open = async (actor: Actor | null = member, options: TabOptions = {}) => {
-  const runtime: App = openTestApp(options, { actor })
+const open = async (actor: Actor | null = member, options: TabOptions = {}, runtime: App = openTestApp(options, { actor })) => {
   runtimes.push(runtime)
   const chat = await runtime.runPromise(Effect.service(Chat))
   const views = await runtime.runPromise(Effect.service(Views))
@@ -95,6 +94,50 @@ describe("/repo and /issues", () => {
     const issues = await tab.runtime.runPromise(Effect.service(IssuesStore))
     await until(() => expect(issues.opened(repoId("octocat", "Spoon-Knife"))?.id).toBe(repoId("octocat", "Spoon-Knife")))
   }, WITHIN)
+})
+
+
+describe("leaving the conversation", () => {
+  test.each(["/acme/app/issues", "/acme/app/pulls/3/files"])(
+    "%s stops loading new repository and issues views until the conversation returns",
+    async (hiddenPath) => {
+      let path = "/app"
+      const listeners = new Set<(path: string) => void>()
+      const server = openTestApi({ actor: member })
+      runtimes.push(server)
+      const api = await server.runPromise(Effect.service(TestChatApi))
+      const runtime = openTab(api, { host: nodeDevice({
+        agent: api,
+        pathname: () => path,
+        pages: (listener) => {
+          listeners.add(listener)
+          return () => void listeners.delete(listener)
+        },
+      }) })
+      const tab = await open(member, {}, runtime)
+      const navigate = (next: string) => {
+        path = next
+        for (const listener of listeners) listener(next)
+      }
+      tab.send("/repo octocat/Spoon-Knife")
+      await until(() => expect(tab.repo.queries.embeds.toArray).toHaveLength(1))
+      const initialId = tab.rows()[0]!.id
+      const issues = await tab.runtime.runPromise(Effect.service(IssuesStore))
+
+      navigate(hiddenPath)
+      tab.send("/repo octocat/Hello-World")
+      tab.send("/issues octocat/Hello-World")
+      // Both writes reached the real device through ChatApi and Electric while chat was hidden.
+      await until(() => expect(tab.shown()).toHaveLength(3))
+      expect(tab.repo.queries.embeds.toArray.map((row) => row.embed.key)).toEqual([initialId])
+      expect(issues.opened(repoId("octocat", "Hello-World"))).toBeUndefined()
+
+      navigate("/app")
+      await until(() => expect(tab.repo.queries.embeds.toArray).toHaveLength(2))
+      await until(() => expect(issues.opened(repoId("octocat", "Hello-World"))).toBeDefined())
+    },
+    WITHIN,
+  )
 })
 
 describe("Back to chat", () => {

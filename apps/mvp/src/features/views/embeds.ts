@@ -1,4 +1,4 @@
-import { Effect, Layer, Queue, Stream } from "effect"
+import { Effect, Layer, Option, Queue, Stream } from "effect"
 import { ChatStore } from "../chat/store"
 import { IssuesStore, repoIdOf } from "../issues/store"
 import { embed } from "../repo/embed"
@@ -39,14 +39,13 @@ const pathsOf = (route: Route) =>
 
 /**
  * The conversation the tab shows, each time it changes, while the routed page may show it: with no `route`, always;
- * with one, only while `showsConversation`.
+ * with one, `None` while hidden so the follower cancels its current rows subscription.
  */
-export const shownWhileRouted = <A>(conversations: Stream.Stream<A>, route?: Route): Stream.Stream<A> =>
+export const shownWhileRouted = <A>(conversations: Stream.Stream<A>, route?: Route): Stream.Stream<Option.Option<A>> =>
   route === undefined
-    ? conversations
+    ? conversations.pipe(Stream.map(Option.some))
     : Stream.zipLatest(conversations, pathsOf(route).pipe(Stream.map(showsConversation), Stream.changes)).pipe(
-      Stream.filter(([, showing]) => showing),
-      Stream.map(([conversation]) => conversation),
+      Stream.map(([conversation, showing]) => showing ? Option.some(conversation) : Option.none()),
     )
 
 /**
@@ -65,7 +64,10 @@ export const followEmbeds = (route?: Route) => Effect.gen(function* () {
   )
   yield* shownWhileRouted(conversations, route).pipe(
     // The home conversation's views, or a branch's, which chat opened before it showed it (src/features/chat/store.ts).
-    Stream.switchMap((conversationId) => views.rowsIn(conversationId ?? undefined).rows),
+    Stream.switchMap(Option.match({
+      onNone: () => Stream.empty,
+      onSome: (conversationId) => views.rowsIn(conversationId ?? undefined).rows,
+    })),
     Stream.runForEach((rows) =>
       Effect.forEach(rows, (row) => {
         const repo = repoOf(row)
