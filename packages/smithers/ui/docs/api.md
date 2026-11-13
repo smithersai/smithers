@@ -36,7 +36,7 @@ it takes an explicit props bag instead.
 | `@smthrs/ui/app-operations/wiki` | Wiki operation declarations and person-only reasons | None |
 | `@smthrs/ui/app-operations/http` | `httpProjections` operation declarations | None |
 | `@smthrs/ui/command-line` | Command parsing and submission routing | None |
-| `@smthrs/ui/run-command` | Run references and source-card bindings | None |
+| `@smthrs/ui/run-command` | Source-card argument parsing | None |
 | `@smthrs/ui/clock` | External-store clocks and React hooks | None |
 | `@smthrs/ui/notification-policy` | Notification timing and retention | None |
 | `@smthrs/ui/copy` | Clipboard helpers and result types | None |
@@ -332,7 +332,9 @@ type RelativeTimeProps // { ts: number; title?: string; relativeUntilMs?: number
 `RelativeTime` renders a `<time>` element that follows one ref-counted
 one-second interval shared by every mounted instance and hook. A tick
 re-renders only the instances whose label changed: a label older than a day is
-an absolute date and never re-renders, however many are mounted. A timestamp
+an absolute date and never re-renders, however many are mounted.
+`relativeUntilMs` switches to a clock time on the next shared tick, retaining
+the date for timestamps at least 24 hours old. A timestamp
 outside the range `Date` can hold still renders its label and omits `dateTime`
 and `title` rather than throwing.
 
@@ -579,7 +581,9 @@ function sandboxStateToStatus(state: SandboxState): string
 
 `WebPreviewContent` takes `sandboxAllow`, a list of `WebPreviewSandboxToken`
 values, defaulting to `["allow-scripts", "allow-forms"]`. It renders the iframe
-`sandbox` attribute from that list under three rules it enforces itself:
+`sandbox` attribute from that list under three rules it enforces itself.
+`srcDoc` and permission-delegating `allow` are excluded from props and dropped
+for runtime callers:
 
 - Each entry is trimmed, lowercased, and accepted only when the whole entry is
   one of the five known keywords. An unknown or packed entry is rejected
@@ -1286,7 +1290,7 @@ interrupts `loaded` when its `url` changes or it unmounts.
 an anchor styled as a `Button` (`web-link-open`): `Open in new tab` and a
 `↵` key (`aria-keyshortcuts="Enter"`), named `Open in new tab: <title or
 host>`. The preview (`web-page-preview`) is the icon (`web-page-icon`: the
-`https:` `icon`, else the host's first letter, also when the image fails to
+host-served or `data:image/…` `icon`, else the host's first letter, also when the image fails to
 load), the title (`web-page-title`), the description
 (`web-page-description`) and the domain (`web-page-domain`): the host for an
 `https:` page, the whole origin for any other. Without a title, the domain is
@@ -1640,7 +1644,7 @@ the root only re-exports a subset.
 | `@smthrs/ui/vault` | `VaultDataAttributes` and `VaultRowProps` describe row attributes; `vaultDataAttributes` retains approved `data-*` attributes. |
 | `@smthrs/ui/flow-arguments` | `parseArgs(text)` returns `{ input }` or `{ error }`; it accepts JSON and quoted `key=value` tokens, with bare tokens as `true`. |
 | `@smthrs/ui/command-line` | `REPO_TOKEN` recognizes an owner/repository token; `canonicalCommandName` trims leading slashes; `parseCommand` splits a slash name and argument; `parseSubmit` returns a `Submit` discriminated union for empty input, a command, an unknown command, or a prompt. |
-| `@smthrs/ui/run-command` | `splitRunSource` separates `sourceCard=` from opaque arguments; `takesRunSource` identifies commands using it; `runSearchRef` and `runSearchPayload` encode/decode run search references; `runSourceCommand` binds a dispatcher to its source card. |
+| `@smthrs/ui/run-command` | `splitRunSource` separates `sourceCard=` from opaque arguments. |
 | `@smthrs/ui/clock` | `createClock(sample, intervalMs, enabled)` returns external-store `snapshot` and `subscribe` functions and stops its timer after the last unsubscribe; `useClock` returns wall time; `useObservedClock` extends a recorded timestamp by elapsed monotonic time while running. |
 | `@smthrs/ui/notification-policy` | `WORK_NOTICE_DELAY_MS` is 300; `NOTICE_SETTLE_MS` is 4000; `shouldShowSettlement(failed, shown)` retains failures and suppresses unseen successes. |
 | `@smthrs/ui/app-operations` | `OperationPayload` is the input schema constraint; `OperationMetadata` declares access and projection metadata; `debugApiOperation` is the person-only raw API declaration. These declarations grant no authority by themselves. |

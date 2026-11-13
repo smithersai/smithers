@@ -264,7 +264,8 @@ const securityReview = Smithers.SecurityReview({
         "src/agentic/InlineCitation.tsx",
         "src/chat/Attachment.tsx",
         "src/chat/Message.tsx",
-        "src/primitives/markdown.tsx"
+        "src/primitives/markdown.tsx",
+        "src/web-page/**"
       ]
     },
     {
@@ -298,7 +299,7 @@ const securityReview = Smithers.SecurityReview({
         "assembleLine writing a value positionalRead would place in another field (a multi-word value short of the final slot, JSON with whitespace, a value behind an unset slot, an optional value a required slot would take) instead of withholding it.",
         "assembleLine returning a flow args builder's line without withholding a value it writes unquoted with a --flag or sourceCard= token, or one the flow's partial does not read back.",
         "A caller that re-parses an assembled line as text (search actions) offering it with a non-empty withheld, or a display echo dropping withheld fields instead of using displayLine.",
-        "splitRunSource or runSearchPayload trusting a sourceCard or run id taken from user-typed args instead of the recorded card.",
+        "splitRunSource trusting a sourceCard or run id taken from user-typed args instead of the recorded card.",
         "parseCommand or COMMAND_NAME widening so punctuation or a typo after / executes a side-effecting flow instead of becoming a prompt."
       ],
       paths: ["src/command-line.ts", "src/run-command.ts", "src/flow-form.ts", "src/flow-arguments.ts"]

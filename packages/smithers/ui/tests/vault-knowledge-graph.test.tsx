@@ -68,8 +68,8 @@ describe("KnowledgeGraph (server render)", () => {
 
   test("empty vault renders the empty state", () => {
     const html = renderToStaticMarkup(<KnowledgeGraph notes={[]} links={[]} />);
-    expect(html).toContain("No graph");
-    expect(html).toContain("No wikilinks found across the vault.");
+    expect(html).toContain("No notes");
+    expect(html).not.toContain("No wikilinks found across the vault.");
     expect(html).not.toContain("<svg");
   });
 });

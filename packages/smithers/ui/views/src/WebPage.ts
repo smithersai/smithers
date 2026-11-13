@@ -32,6 +32,7 @@
 
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as Base64 from "effect/encoding/Base64"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
@@ -124,9 +125,20 @@ export const MAX_DESCRIPTION = 300
  */
 export const MAX_ICON_URL = 2_048
 
+const MAX_ICON_BYTES = 64 * 1024
+/**
+ * The maximum length of a host-fetched inline icon, including its data URL prefix.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const MAX_ICON_DATA_URL = 4 * Math.ceil(MAX_ICON_BYTES / 3) + 100
+
 /**
  * What a card shows for a page, read from its head: its title, a short
- * description and an `https:` icon. Each is absent when the page has none.
+ * description and an icon. The pure parser returns its `https:` URL;
+ * `check` fetches a bounded image and returns a `data:image/…` URL, or omits
+ * the icon when it cannot be safely read.
  *
  * @category models
  * @since 0.1.0
@@ -134,7 +146,7 @@ export const MAX_ICON_URL = 2_048
 export const Preview = Schema.Struct({
   title: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_TITLE))),
   description: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_DESCRIPTION))),
-  icon: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_ICON_URL)))
+  icon: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_ICON_DATA_URL)))
 })
 
 /**
@@ -546,12 +558,12 @@ export const check = (url: string, options: Options): Effect.Effect<Checked, nev
     const init = Option.getOrElse(yield* Effect.serviceOption(FetchHttpClient.RequestInit), () => ({}))
     const privateHosts = (options.privateHosts ?? []).map((host) => host.toLowerCase())
     const maxRedirects = options.maxRedirects ?? 5
-    const request = (href: string) =>
+    const request = (href: string, image = false) =>
       client.execute(HttpClientRequest.get(href, {
         headers: {
-          accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-          "sec-fetch-dest": "iframe",
-          "sec-fetch-mode": "navigate",
+          accept: image ? "image/*" : "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+          "sec-fetch-dest": image ? "image" : "iframe",
+          "sec-fetch-mode": image ? "no-cors" : "navigate",
           "sec-fetch-site": "cross-site",
           "user-agent": options.userAgent ?? "Mozilla/5.0 (compatible; web-page-check)"
         }
@@ -563,20 +575,20 @@ export const check = (url: string, options: Options): Effect.Effect<Checked, nev
       )
 
     /** Requests `current`, guarded, and follows its redirects to the page it ends on, or why it can't. */
-    const follow = (current: URL, hop: number): Effect.Effect<Answer, never, HttpClient.HttpClient> =>
+    const follow = (current: URL, hop: number, image = false): Effect.Effect<Answer, never, HttpClient.HttpClient> =>
       Effect.gen(function*() {
         const refused = refusal(current, privateHosts)
         if (refused !== undefined) {
           return { checked: unknown(hop > 0 && refused === "invalid_url" ? "redirects" : refused) }
         }
-        const answered = yield* Effect.result(request(current.href))
+        const answered = yield* Effect.result(request(current.href, image))
         if (answered._tag === "Failure") return { checked: unknown("unreachable") }
         const response = answered.success
         const location = header(response.headers, "location")
         if (!REDIRECTS.has(response.status) || location === undefined) return { response, page: current, hop }
         const next = URL.parse(location, current)
         if (hop === maxRedirects || next === null) return { checked: unknown("redirects", response.status) }
-        return yield* follow(next, hop + 1)
+        return yield* follow(next, hop + 1, image)
       })
 
     const start = URL.parse(url)
@@ -597,7 +609,39 @@ export const check = (url: string, options: Options): Effect.Effect<Checked, nev
     const head = html
       ? yield* readHead(response, options.maxBytes ?? 256 * 1024, options.headTimeout ?? "3 seconds")
       : ""
-    const shown = { ...(html ? preview(head, page.href) : {}), status: response.status }
+    const found = html ? preview(head, page.href) : {}
+    const { icon: remoteIcon, ...text } = found
+    const icon = remoteIcon === undefined ? undefined : yield* Effect.gen(function*() {
+      const result = yield* follow(new URL(remoteIcon), 0, true)
+      if ("checked" in result || result.response.status >= 300) return undefined
+      const type = mediaType(result.response.headers)
+      if (!/^image\/(?:png|jpeg|gif|webp|avif|x-icon|vnd\.microsoft\.icon|svg\+xml)$/.test(type)) return undefined
+      let length = 0
+      const chunks: Array<Uint8Array> = []
+      yield* Stream.runForEachWhile(result.response.stream, (chunk) =>
+        Effect.sync(() => {
+          length += chunk.byteLength
+          if (length > MAX_ICON_BYTES) return false
+          chunks.push(chunk)
+          return true
+        }))
+      if (length === 0 || length > MAX_ICON_BYTES) return undefined
+      const bytes = new Uint8Array(length)
+      let offset = 0
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset)
+        offset += chunk.byteLength
+      }
+      return `data:${type};base64,${Base64.encode(bytes)}`
+    }).pipe(
+      Effect.timeoutOption(options.headTimeout ?? "3 seconds"),
+      Effect.catch(() => Effect.succeed(Option.none<string>())),
+      Effect.map(Option.getOrUndefined)
+    )
+    yield* Effect.annotateCurrentSpan({
+      "web_page.icon": remoteIcon === undefined ? "absent" : icon === undefined ? "unavailable" : "inline"
+    })
+    const shown = { ...text, ...(icon === undefined ? {} : { icon }), status: response.status }
     const framed = framing(response.headers, { page: page.href, ancestors: options.ancestors })
     if (framed.framing !== "allowed") return { ...shown, ...framed }
     if (!content(response.headers)) return { ...shown, framing: "refused", reason: "content" } as const

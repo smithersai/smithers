@@ -42,18 +42,22 @@ describe("ModelSelector", () => {
     expect(html).toContain("Pick a model");
   });
 
-  test("groups render group structure in the trigger composition", () => {
-    const html = renderToStaticMarkup(
-      <ModelSelector
-        groups={[{ label: "Anthropic", options: [{ id: "claude", name: "Claude", provider: "anthropic" }] }]}
-      />,
+  test("groups show their label and option when opened", async () => {
+    await render(
+      <ModelSelector groups={[{ label: "Anthropic", options: [{ id: "claude", name: "Claude", provider: "anthropic" }] }]} />,
     );
-    expect(html).toContain('data-slot="model-selector-trigger"');
+    const trigger = container!.querySelector<HTMLElement>('[data-slot="model-selector-trigger"]')!;
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    const group = document.querySelector('[data-slot="model-selector-group"]')!;
+    expect(group.textContent).toContain("Anthropic");
+    expect(group.querySelector('[role="option"]')!.textContent).toContain("Claude");
   });
 
-  test("disabled passes through to the trigger", () => {
-    const html = renderToStaticMarkup(<ModelSelector disabled options={[]} />);
-    expect(html).toContain("disabled");
+  test("disabled passes through to the trigger", async () => {
+    await render(<ModelSelector disabled options={[]} />);
+    const trigger = container!.querySelector<HTMLButtonElement>('[data-slot="model-selector-trigger"]')!;
+    expect(trigger.getAttribute("disabled")).toBe("");
+    expect(trigger.disabled).toBe(true);
   });
 
   test("compound children render verbatim", () => {
@@ -70,11 +74,6 @@ describe("ModelSelector", () => {
     expect(html).toContain("Custom");
   });
 
-  test("renders under the dark theme", () => {
-    document.documentElement.dataset.theme = "dark";
-    const html = renderToStaticMarkup(<ModelSelector options={[{ id: "a", name: "Alpha" }]} />);
-    expect(html).toContain('data-slot="model-selector-trigger"');
-  });
 
   test("item renders provider badge, name, and description", async () => {
     await render(

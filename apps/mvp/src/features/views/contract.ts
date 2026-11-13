@@ -39,8 +39,11 @@ export const VIEW_SIZES = ["inline", "full"] as const
 /** One of {@link VIEW_TEMPLATES}. */
 export type ViewTemplate = (typeof VIEW_TEMPLATES)[number]
 
-/** The largest `POST /api/views` body for a page or a form: 8 KiB. */
+/** The largest form write or submission body: 8 KiB. */
 export const MAX_VIEW_BODY_BYTES = 8 * 1024
+
+/** The largest page write body, including a host-fetched inline icon: 96 KiB. */
+export const MAX_PAGE_BODY_BYTES = 96 * 1024
 
 /** The largest `POST /api/views` body for a generated view, whose module may be 64 KiB: 96 KiB. */
 export const MAX_GENERATED_BODY_BYTES = 96 * 1024

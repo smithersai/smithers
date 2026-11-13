@@ -390,7 +390,7 @@ export function WebPreviewAddress({
   );
 }
 
-export type WebPreviewContentProps = Omit<ComponentProps<"iframe">, "src" | "sandbox"> & {
+export type WebPreviewContentProps = Omit<ComponentProps<"iframe">, "src" | "sandbox" | "srcDoc" | "allow"> & {
   src?: string;
   sandboxAllow?: readonly WebPreviewSandboxToken[];
 };
@@ -414,6 +414,9 @@ export function WebPreviewContent({
     );
   }
   const sandboxTokens = resolveSandboxTokens(sandboxAllow);
+  const frameProps = Object.fromEntries(
+    Object.entries(props).filter(([name]) => !["src", "sandbox", "srcdoc", "allow"].includes(name.toLowerCase())),
+  );
   return (
     <div
       data-slot="web-preview-content"
@@ -423,7 +426,7 @@ export function WebPreviewContent({
     >
       {loading ? <Skeleton data-slot="web-preview-loading" className="sui-webpreview-loading" /> : null}
       <iframe
-        {...props}
+        {...frameProps}
         // Security-critical attributes come AFTER the spread: the prop types
         // omit src/sandbox, but that is compile-time only — a runtime caller
         // passing them through must never override the hardened values.

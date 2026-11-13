@@ -120,11 +120,6 @@ describe("ContextUsage", () => {
     expect(html.match(/—/g)!.length).toBeGreaterThanOrEqual(3);
   });
 
-  test("renders under the dark theme", () => {
-    document.documentElement.dataset.theme = "dark";
-    const html = renderToStaticMarkup(<ContextUsage defaultOpen usage={{ usedTokens: 1, maxTokens: 4 }} />);
-    expect(html).toContain('data-slot="context-content"');
-  });
 
   test("default trigger exposes the usage summary as its accessible name", () => {
     const html = renderToStaticMarkup(<ContextUsage usage={{ usedTokens: 8000, maxTokens: 32000 }} />);

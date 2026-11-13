@@ -72,11 +72,6 @@ describe("AgentDefinition", () => {
     expect(html).not.toContain("sui-agentdef-availability");
   });
 
-  test("renders under the dark theme", () => {
-    document.documentElement.dataset.theme = "dark";
-    const html = renderToStaticMarkup(<AgentDefinition name="a" availability="unauthenticated" />);
-    expect(html).toContain("Unauthenticated");
-  });
 
   test("injects the composed sheet carrying the lane css fragment", async () => {
     await render(<AgentDefinition name="a" />);

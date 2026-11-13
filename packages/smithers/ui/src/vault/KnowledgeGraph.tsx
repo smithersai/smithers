@@ -169,7 +169,7 @@ export function KnowledgeGraph({
   const nodeById = useMemo(() => new Map(model.nodes.map((node) => [node.id, node])), [model]);
 
   if (model.nodes.length === 0) {
-    return <EmptyState title="No graph" description="No wikilinks found across the vault." />;
+    return <EmptyState title="No notes" />;
   }
 
   if (physics === "failed") {
@@ -179,7 +179,6 @@ export function KnowledgeGraph({
         <Eyebrow>
           {model.nodes.length} notes · {model.links.length} links
         </Eyebrow>
-        <p className="sui-vault-graph-meta">Graph physics unavailable — the vault’s hub notes instead.</p>
         {hubs.map((node) => (
           <RowButton key={node.id} onClick={() => onOpenNote?.(node.id)} {...nodeProps?.(node)}>
             <span className="sui-vault-link-label">{node.label}</span>
@@ -324,9 +323,6 @@ export function KnowledgeGraph({
           })}
         </g>
       </svg>
-      <div className="sui-vault-graph-meta">
-        Drag to pan · scroll to zoom · hover to isolate a note’s neighbourhood · click to open it
-      </div>
     </div>
   );
 }

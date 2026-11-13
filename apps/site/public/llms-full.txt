@@ -50036,6 +50036,12 @@ shown in its place. See [Check a web page before framing it](https://github.com/
 | `HeaderRecord`                                 | response headers by name, in any case                                                                                                                                                        |
 | `MAX_TITLE`, `MAX_DESCRIPTION`, `MAX_ICON_URL` | 200, 300 and 2,048 UTF-16 code units                                                                                                                                                         |
 
+`WebPage.preview` returns an icon URL bounded by `MAX_ICON_URL`.
+`WebPage.check` fetches at most 64 KiB of icon bytes on the host and returns
+a `data:image/…` URL; `Preview` and `Checked` accept that larger inline value.
+
+`MAX_ICON_DATA_URL` bounds a host-fetched inline icon, including its data URL prefix.
+
 ---
 
 # CLI reference

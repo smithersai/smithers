@@ -18,7 +18,7 @@ const checked = yield* WebPage.check("https://docs.example.com/guide", {
   ancestors: ["https://app.example.com"]
 }).pipe(Effect.provide(FetchHttpClient.layer))
 
-// { framing: "allowed", status: 200, title: "Guide", description: "…", icon: "https://docs.example.com/favicon.ico" }
+// { framing: "allowed", status: 200, title: "Guide", description: "…", icon: "data:image/png;base64,…" }
 // { framing: "refused", reason: "x_frame_options", status: 200, title: "…" }
 // { framing: "unknown", reason: "timeout" }
 ```
@@ -66,7 +66,12 @@ For an HTML page, `check` reads the head, up to `</head>`, `maxBytes` or
   `twitter:description`, at most 300 UTF-16 code units;
 - `icon`: the first `rel="icon"` link, else the first `apple-touch-icon`,
   resolved against `<base href>` or the page; `/favicon.ico` for an `https:`
-  page with neither. Only an `https:` URL with no user or password is kept.
+  page with neither. The pure `preview` parser keeps only an `https:` URL
+  with no user or password. `check` fetches it on the host, guarding every
+  redirect, with a 64 KiB byte cap and the `headTimeout` deadline. It returns
+  a `data:image/…` URL for a supported image, or omits the icon on failure.
+  Viewers never request the page's icon host. The `web_page.icon` span
+  attribute is `absent`, `unavailable` or `inline`, with no URL or image data.
 
 Text is decoded and its whitespace collapsed. Long text ends in an ellipsis
 without splitting a Unicode code point, within the same limits as the

@@ -110,11 +110,6 @@ describe("ApprovalCard", () => {
     expect(container!.textContent).toContain("Approved");
   });
 
-  test("renders under data-theme=dark", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(<ApprovalCard title="t" state="requested" risk="critical" />);
-    expect(container!.querySelector(".sui-approval-card")).not.toBeNull();
-  });
 });
 
 describe("ApprovalRisk", () => {

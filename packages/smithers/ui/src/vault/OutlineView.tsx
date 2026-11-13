@@ -9,7 +9,7 @@ import { useVaultCss } from "./useVaultCss";
 export type OutlineHeading = {
   /** ATX level, 1 (h1) through 6 (h6). */
   depth: number;
-  /** Heading text with any trailing `#`s stripped. */
+  /** Heading text with a whitespace-separated closing hash sequence stripped. */
   text: string;
   /** 1-based source line, for scroll-to-heading. */
   line: number;
@@ -37,7 +37,7 @@ export function parseOutline(markdown: string): OutlineHeading[] {
       let text = line.slice(match[0].length).trimEnd();
       let end = text.length;
       while (end > 0 && text[end - 1] === "#") end--;
-      text = text.slice(0, end).trimEnd();
+      if (end === 0 || /\s/.test(text[end - 1]!)) text = text.slice(0, end).trimEnd();
       // Preserve the former dot capture's rejection of embedded line terminators.
       if (/[\r\u2028\u2029]/.test(text)) continue;
       headings.push({ depth: match[1]!.length, text, line: i + 1 });

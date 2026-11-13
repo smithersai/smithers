@@ -19,7 +19,7 @@ import {
 /** A view's template. */
 export const Template = Schema.Literals(VIEW_TEMPLATES)
 
-/** An `https:` URL with no user or password: the only icon a card loads. */
+/** An `https:` URL with no user or password: retained for decoding existing saved views. */
 const isHttpsUrl = (value: string) => {
   const url = URL.parse(value)
   return url !== null && url.protocol === "https:" && url.username === "" && url.password === ""
@@ -27,7 +27,7 @@ const isHttpsUrl = (value: string) => {
 
 /**
  * What both templates render: the outside page's URL, which the policy allowed (src/features/web/url.ts), and what
- * ChatApi's check read from the page's head (`@smthrs/views`' `WebPage.Preview`): its title, description and `https:`
+ * ChatApi's check read from the page's head (`@smthrs/views`' `WebPage.Preview`): its title, description and inline
  * icon, which a card shows, and a framed page shows until it loads. A row from before the check has the URL alone.
  */
 export const PageProps = Schema.Struct({
@@ -35,7 +35,10 @@ export const PageProps = Schema.Struct({
   title: Schema.optional(Schema.String.check(Schema.isMaxLength(WebPage.MAX_TITLE))),
   description: Schema.optional(Schema.String.check(Schema.isMaxLength(WebPage.MAX_DESCRIPTION))),
   icon: Schema.optional(
-    Schema.String.check(Schema.isMaxLength(WebPage.MAX_ICON_URL), Schema.makeFilter(isHttpsUrl)),
+    Schema.Union([
+      Schema.String.check(Schema.isMaxLength(WebPage.MAX_ICON_URL), Schema.makeFilter(isHttpsUrl)),
+      Schema.String.check(Schema.isMaxLength(WebPage.MAX_ICON_DATA_URL), Schema.isPattern(/^data:image\//i)),
+    ]),
   ),
 })
 

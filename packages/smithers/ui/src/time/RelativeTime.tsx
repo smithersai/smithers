@@ -71,7 +71,6 @@ export type RelativeTimeProps = Omit<ComponentProps<"time">, "children" | "dateT
  */
 export function RelativeTime({ ts, title, relativeUntilMs, className, ...props }: RelativeTimeProps) {
   useInjectUiCss();
-  const label = useRelativeTime(ts);
   // `new Date(NaN).toISOString()` throws `RangeError: Invalid time value`,
   // which would take down the whole render for one bad row. A timestamp
   // outside the representable range simply has no absolute instant to state.
@@ -81,9 +80,18 @@ export function RelativeTime({ ts, title, relativeUntilMs, className, ...props }
     () => date === undefined ? undefined : { dateTime: date.toISOString(), title: date.toLocaleString() },
     [date],
   );
-  const display = date !== undefined && relativeUntilMs !== undefined && Date.now() - ts >= relativeUntilMs
-    ? date.toLocaleTimeString(undefined, { timeStyle: "medium" })
-    : label;
+  const clock = useMemo(
+    () => relativeUntilMs === undefined ? undefined : date?.toLocaleTimeString(undefined, { timeStyle: "medium" }),
+    [date, relativeUntilMs],
+  );
+  const snapshot = () => {
+    const now = nowForLabels();
+    const age = now - ts;
+    return clock !== undefined && relativeUntilMs !== undefined && age >= relativeUntilMs && age < 86_400_000
+      ? clock
+      : formatRelativeTime(ts, now);
+  };
+  const display = useSyncExternalStore(subscribeRelativeTime, snapshot, snapshot);
   return (
     <time
       data-slot="relative-time"

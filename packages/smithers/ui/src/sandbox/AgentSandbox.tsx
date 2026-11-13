@@ -56,12 +56,12 @@ export type SandboxProps = Omit<ComponentProps<"div">, "children"> & {
   children?: ReactNode;
 };
 
-const STATE_EMPTY: Record<Exclude<SandboxState, "ready">, { title: string; description: string }> = {
-  provisioning: { title: "Sandbox is provisioning", description: "The sandbox environment is being set up." },
-  disconnected: { title: "Sandbox disconnected", description: "The connection to the sandbox was lost." },
-  suspended: { title: "Sandbox suspended", description: "The sandbox is paused and can be reconnected." },
-  failed: { title: "Sandbox failed", description: "The sandbox environment failed to start." },
-  destroyed: { title: "Sandbox destroyed", description: "The sandbox environment has been torn down." },
+const STATE_EMPTY: Record<Exclude<SandboxState, "ready">, { title: string }> = {
+  provisioning: { title: "Sandbox starting" },
+  disconnected: { title: "Sandbox disconnected" },
+  suspended: { title: "Sandbox paused" },
+  failed: { title: "Sandbox failed" },
+  destroyed: { title: "Sandbox stopped" },
 };
 
 /**
@@ -236,7 +236,7 @@ export function SandboxContent({ className, children, ...props }: ComponentProps
       className={cn("sui-sandbox-content", className)}
       {...props}
     >
-      {children ?? (empty ? <EmptyState title={empty.title} description={empty.description} /> : null)}
+      {children ?? (empty ? <EmptyState title={empty.title} /> : null)}
     </div>
   );
 }

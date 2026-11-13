@@ -13,7 +13,7 @@ import { stepFence, type Fence } from "./fence";
 export const NOTE_HREF = "#note/";
 
 export function splitFrontmatter(source: string): { frontmatter: string | null; body: string } {
-  const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  const match = source.match(/^---\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/);
   if (!match) return { frontmatter: null, body: source };
   return { frontmatter: match[1] ?? "", body: source.slice(match[0].length) };
 }
@@ -33,7 +33,7 @@ export function restoreWikilinks(markdown: string): string {
 }
 
 export function noteHref(path: string): string {
-  return `${NOTE_HREF}${encodeURIComponent(path)}`;
+  return `${NOTE_HREF}${encodeURIComponent(path).replace(/[()]/g, (char) => "%" + char.charCodeAt(0).toString(16))}`;
 }
 
 /** Decode a click href back to a vault path, or "" when it is not a wikilink. */

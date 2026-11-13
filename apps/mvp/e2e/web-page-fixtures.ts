@@ -119,12 +119,18 @@ export const installWebPages = () => {
         expect("reason" in checked ? checked.reason : "missing reason").toMatch(/^(x_frame_options|frame_ancestors)$/)
       }
       const html = await response.text()
-      const preview = WebPage.preview(html, url)
+      let preview = WebPage.preview(html, url)
       const documentTitle = WebPage.preview(html.match(/<title\b[^>]*>[\s\S]*?<\/title>/i)?.[0] ?? "", url).title
       if (preview.icon !== undefined) {
         const icon = await client.get(preview.icon)
         expect(icon.status(), "the fixture preview icon responds with an image").toBe(200)
         expect(icon.headers()["content-type"]).toMatch(/^image\//)
+        const type = icon.headers()["content-type"]!.split(";")[0]!.trim().toLowerCase()
+        const bytes = await icon.body()
+        expect(type, "the fixture icon uses a host-supported image format").toMatch(/^image\/(?:png|jpeg|gif|webp|avif|x-icon|vnd\.microsoft\.icon|svg\+xml)$/)
+        expect(bytes.byteLength, "the fixture icon fits the host byte limit").toBeLessThanOrEqual(64 * 1024)
+        expect(bytes.byteLength).toBeGreaterThan(0)
+        preview = { ...preview, icon: `data:${type};base64,${bytes.toString("base64")}` }
       }
       // The allowing fixture's actual heading will also be read inside the browser's real cross-origin frame.
       const headings = [...html.matchAll(/<h1\b[^>]*>([^<]+)<\/h1>/gi)]
@@ -152,7 +158,7 @@ export const installWebPages = () => {
       // The fallback journey must still prove all metadata, even if an operator changes the fixture.
       expect(refuses.preview.title).toBeTruthy()
       expect(refuses.preview.description).toBeTruthy()
-      expect(refuses.preview.icon).toMatch(/^https:/)
+      expect(refuses.preview.icon).toMatch(/^data:image\//)
       tab = target === "local"
         ? { url: `${local}/`, preview: { title: "Local test page" }, documentTitle: "Local test page" }
         : await inspect(process.env.E2E_WEB_TAB_URL ?? "https://rust-lang.org/learn/", "allowed")

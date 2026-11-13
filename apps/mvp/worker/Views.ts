@@ -10,6 +10,7 @@ import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import {
   MAX_GENERATED_BODY_BYTES,
+  MAX_PAGE_BODY_BYTES,
   MAX_VIEW_BODY_BYTES,
   MAX_VIEW_HTML_BYTES,
   MAX_VIEW_JSON_BYTES,
@@ -45,7 +46,7 @@ import * as ViewRealm from "./ViewRealm.ts"
 // as only they may ask there: a view is the browser's agent's or their own `/web`. A view is added once by the id its writer chose, so a step run again changes nothing.
 //
 // A view's props are the page's URL and what the flow's check read from its head: a title, a description and an
-// `https:` icon, each bounded (src/features/views/schema.ts). The route checks the page again, as `app/web/open` does
+// inline icon, each bounded (src/features/views/schema.ts). The route checks the page again, as `app/web/open` does
 // (src/features/web/url.ts), against the host the request came to: no row ever holds a `javascript:`, `data:`, `file:` or `blob:` URL, one with a name or password, a page of
 // the app itself, or a `webpage` that isn't `https:` on another site. A `link` may be `http:` on `localhost` only where
 // `WEB_PAGES_LOCAL_HTTP` says so: `alchemy dev` (worker/DevChatApi.ts), never a deployment unless it is set. Whatever
@@ -341,7 +342,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         fields.reason = page.reason
         return undefined
       }
-      // The page's own title, description and https icon, as the flow's check read them (ViewWrite bounds each).
+      // The page's own title, description and inline icon, as the flow's check read them (ViewWrite bounds each).
       const { url: _url, repository: _repository, path: _path, ...preview } = write.props
       return { id: write.id, template: write.template, props: { url: page.page.href, ...preview } } satisfies Stored
     }
@@ -368,8 +369,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const write = { ...decoded.value, id: decoded.value.id.toLowerCase() }
         fields.viewId = write.id
         fields.template = write.template
-        // Only a generated view's module may take more than a page's or a form's 8 KiB.
-        if (write.template !== "generated" && new TextEncoder().encode(body.success).length > MAX_VIEW_BODY_BYTES) {
+        // Page icons and generated modules have their own bounded budgets; forms keep their smaller limit.
+        const bodyLimit = write.template === "generated" ? MAX_GENERATED_BODY_BYTES
+          : write.template === "webpage" || write.template === "link" ? MAX_PAGE_BODY_BYTES : MAX_VIEW_BODY_BYTES
+        if (new TextEncoder().encode(body.success).length > bodyLimit) {
           return refusal(413, "too_large")
         }
         if (write.template === "form") {

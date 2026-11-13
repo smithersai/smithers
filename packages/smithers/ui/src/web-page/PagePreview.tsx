@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { useState } from "react";
+import { safeImageSrc } from "../internal/safeImageSrc";
 import type { WebPageTarget } from "./webPageUrl";
 
 /**
@@ -18,16 +19,9 @@ export function domainOf(target: WebPageTarget): string {
   return target.href.startsWith("https:") ? target.host : target.origin;
 }
 
-/** An `https:` icon URL with no user or password, normalized, or `null`. */
+/** A host-served image or inline image; remote icons never load in the viewer's browser. */
 export function iconTarget(icon: string | undefined): string | null {
-  if (typeof icon !== "string") return null;
-  let url: URL;
-  try {
-    url = new URL(icon.trim());
-  } catch {
-    return null;
-  }
-  return url.protocol === "https:" && url.username === "" && url.password === "" ? url.href : null;
+  return typeof icon === "string" ? safeImageSrc(icon) ?? null : null;
 }
 
 /** The page's icon, or the first letter of its host when it has none or it fails to load. */

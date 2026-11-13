@@ -118,7 +118,7 @@ Views are conversation rows (decision 0004 §8): synced like the messages to eve
 
 | Route | Answers |
 |---|---|
-| `POST /api/views { id, template, props: { url, title?, description?, icon? } }` | `202 { txid }` added; `200 { txid: null }` the same view again; `400 { code: "invalid" }` not a view; `400 { code: "refused" }` a page it won't keep; `401`, `403 { code: "forbidden" }` for a Guest or no role on the conversation's repository, or one who may only view its branch (adding is Member or above there, like asking, ruling AUTH-8); `405`; `409 { code: "id_taken" }`; `413 { code: "too_large" }` over 8 KiB; `503 { code: "unavailable" }` |
+| `POST /api/views { id, template, props: { url, title?, description?, icon? } }` | `202 { txid }` added; `200 { txid: null }` the same view again; `400 { code: "invalid" }` not a view; `400 { code: "refused" }` a page it won't keep; `401`, `403 { code: "forbidden" }` for a Guest or no role on the conversation's repository, or one who may only view its branch (adding is Member or above there, like asking, ruling AUTH-8); `405`; `409 { code: "id_taken" }`; `413 { code: "too_large" }` over 96 KiB; `503 { code: "unavailable" }` |
 | `GET /api/shapes/views` | Electric's `views`, through `ShapeProxy` |
 
 | `POST /api/web/preview { url, mode }` | `200` the page's `WebPage.Checked`; `400 { code: "refused" \| "invalid" }`; `401`; `403 { code: "forbidden" }`; `405`; `413 { code: "too_large" }` over 4 KiB; `503 { code: "unavailable" }` ([before a page is framed](#before-a-page-is-framed)) |
@@ -201,3 +201,11 @@ a model read lease. Both use `web-page-fixtures.ts`. This keeps the runner's
 isolated setup and resource checks intact while allowing person-only proof
 without a funded model connection. Run just `web-page.spec.ts` for that proof;
 run both files for the full feature.
+
+
+Page icons are fetched by the host with guarded redirects, a 64 KiB cap and a
+deadline, then stored as inline `data:image/…` URLs. A card never requests an
+icon's remote origin. Saved HTTPS icon values remain readable for older rows
+and fall back to the host's initial. The saved row shape is unchanged.
+
+Page writes allow at most `96 KiB` of JSON, including the encoded icon.

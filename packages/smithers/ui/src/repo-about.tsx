@@ -147,12 +147,12 @@ export function RepoAbout({
   ...props
 }: RepoAboutProps) {
   useInjectUiCss();
-  const home = homepage === null || homepage === undefined ? undefined : safeHref(homepage);
+  const home = homepage && /^https?:\/\//i.test(homepage.trim()) ? safeHref(homepage) : undefined;
   const shares = languageShares(languages);
   const stats = [
-    stars === null || stars === undefined ? null : { key: "stars", text: `${formatCount(stars)} stars` },
+    stars === null || stars === undefined ? null : { key: "stars", text: `${formatCount(stars)} ${stars === 1 ? "star" : "stars"}` },
     watchers === null || watchers === undefined ? null : { key: "watchers", text: `${formatCount(watchers)} watching` },
-    forks === null || forks === undefined ? null : { key: "forks", text: `${formatCount(forks)} forks` },
+    forks === null || forks === undefined ? null : { key: "forks", text: `${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}` },
     license === null || license === undefined ? null : { key: "license", text: license },
   ].filter((stat) => stat !== null);
   const releaseHref = release?.href === undefined ? undefined : safeHref(release.href);

@@ -112,7 +112,7 @@ describe("Sandbox", () => {
     await render(<Sandbox state="failed" />);
     const empty = container!.querySelector('[data-slot="agent-sandbox-content"] [data-slot="empty-state"]')!;
     expect(empty.textContent).toContain("Sandbox failed");
-    expect(empty.textContent).toContain("failed to start");
+    expect(empty.querySelector('[data-slot="empty-state-description"]')).toBeNull();
   });
 
   test("children content wins over the state EmptyState", async () => {

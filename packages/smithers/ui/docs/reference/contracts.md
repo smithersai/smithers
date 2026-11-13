@@ -78,9 +78,6 @@ its filter and stays open until a later selection.
 starting with `a/` or `b/` retain those directories, including both sides of a
 rename; a modified file does not gain a spurious `oldPath`.
 
-`runSourceCommand` dispatches once. A synchronous dispatch exception propagates
-to its caller; only malformed JSON uses the text argument fallback.
-
 `formFieldsFor` marks fields named by `FormHints.requires(payload)` required,
 including revealed hidden fields and fields with a `required: false` hint.
 Without a conditional requirement, the hint overrides schema requiredness.
@@ -196,7 +193,7 @@ render twice; only an actual ancestor cycle is reported as circular.
   plain numbers and keywords. Any other value, `url(...)` and `image-set(...)`
   included, is dropped.
 - `src/internal/safeImageSrc.ts` gates the `ToolCall` image part and the
-  `Source` and `InlineCitation` favicons. It admits `data:image/...`, `blob:`,
+  `Source`, `InlineCitation` and web-page preview icons. It admits `data:image/...`, `blob:`,
   and same-origin relative paths only, because an `<img>` fetches on render.
   A refused favicon falls back to the initial tile; a refused tool image
   renders its alt text. Proxy a remote image through your own origin.
@@ -253,6 +250,8 @@ render twice; only an actual ancestor cycle is reported as circular.
   `Math.min(64, Math.max(1, Math.trunc(maskLength) || 8))`. The prop is a fixed
   display constant that never tracks the real secret's length, so an enormous or
   non-finite value cannot allocate a proportional string.
+- `RelativeTime.relativeUntilMs` switches on the next shared tick; an instant
+  at least a day old always includes its date.
 - `src/time/RelativeTime.tsx` treats `MAX_TIME_VALUE = 8.64e15` as the range
   `Date` can hold. A timestamp outside it, `NaN` included, still renders its
   label and simply omits `dateTime` and `title` rather than throwing

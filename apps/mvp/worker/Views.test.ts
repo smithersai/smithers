@@ -44,6 +44,15 @@ const rows = () =>
       SELECT id::text AS id, template, props, position::text AS position FROM views ORDER BY position`))
 
 describe("POST /api/views", () => {
+  test.each(["webpage", "link"] as const)("stores a %s with a host-fetched inline icon larger than the form budget", async (template) => {
+    const h = await open();
+    const icon = "data:image/png;base64," + "Kioq".repeat(20_000);
+    const view = { ...page("https://example.com/", template), props: { url: "https://example.com/", icon } };
+    expect(JSON.stringify(view).length).toBeGreaterThan(MAX_VIEW_BODY_BYTES);
+    expect((await add(h, view)).status).toBe(202);
+    expect((await rows())[0]?.props).toEqual(view.props);
+  });
+
   test("adds a view by the id its writer chose, at the conversation's next position, and a resend changes nothing", async () => {
     const h = await open()
     const question = { id: crypto.randomUUID(), answerId: crypto.randomUUID(), text: "Show me example.com" }
@@ -147,7 +156,7 @@ describe("POST /api/views", () => {
     }
     const large = await add(h, "x".repeat(MAX_GENERATED_BODY_BYTES + 1))
     expect([large.status, await large.json()]).toEqual([413, { code: "too_large" }])
-    // Only a generated view's module takes more than a page's or a form's 8 KiB.
+    // Forms retain their smaller body limit when pages carry inline icons.
     const properties = Object.fromEntries(
       Array.from({ length: 200 }, (_, index) => [`field${index}`, { type: "string", title: "A field of the form" }]),
     )

@@ -66,7 +66,7 @@ export function BacklinksPanel({ backlinks, linksOut = [], onOpenNote, linkProps
   return (
     <div data-slot="vault-backlinks" className={cn("sui-vault-links", className)} style={style}>
       <LinkSection title="Backlinks" paths={backlinks} empty="No backlinks yet" onOpenNote={onOpenNote} linkProps={linkProps} />
-      <LinkSection title="Linked mentions" paths={linksOut} empty="No outgoing links yet" onOpenNote={onOpenNote} linkProps={linkProps} />
+      <LinkSection title="Links" paths={linksOut} empty="No outgoing links yet" onOpenNote={onOpenNote} linkProps={linkProps} />
     </div>
   );
 }

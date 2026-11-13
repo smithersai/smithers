@@ -39,7 +39,7 @@ const redirect = (location: string, status = 302) => (response: ServerResponse) 
 }
 
 const HEAD = `<title>Frames welcome</title><meta name="description" content="A page that lets others frame it.">` +
-  `<link rel="icon" href="https://cdn.example.com/icon.png">`
+  `<link rel="icon" href="https://127.0.0.1:1/icon.png">`
 
 const routes: Record<string, (response: ServerResponse) => void> = {
   "/allows": page(200, {}, `<!doctype html><html><head>${HEAD}</head><body>Hello</body></html>`),
@@ -48,7 +48,7 @@ const routes: Record<string, (response: ServerResponse) => void> = {
     {},
     `<head><title>İstanbul ${"🙂".repeat(200)}</title>` +
       `<meta name="description" content="🎉 ${"Big savings on everything this week. ".repeat(10)}">` +
-      `<link rel="icon" href="https://cdn.example.com/i.png"></head>`
+      `<link rel="icon" href="https://127.0.0.1:1/i.png"></head>`
   ),
   "/deny": page(200, { "x-frame-options": "DENY" }, `<head><title>Refuses</title></head>`),
   "/csp": page(200, { "content-security-policy": "frame-ancestors 'self'" }, `<title>Self only</title>`),
@@ -140,8 +140,7 @@ describe("WebPage.check: framing and previews", () => {
       framing: "allowed",
       status: 200,
       title: "Frames welcome",
-      description: "A page that lets others frame it.",
-      icon: "https://cdn.example.com/icon.png"
+      description: "A page that lets others frame it."
     })
   })
 
@@ -151,8 +150,7 @@ describe("WebPage.check: framing and previews", () => {
       framing: "allowed",
       status: 200,
       title: `İstanbul ${"🙂".repeat(95)}…`,
-      description: `🎉 ${"Big savings on everything this week. ".repeat(10).slice(0, 296).trimEnd()}…`,
-      icon: "https://cdn.example.com/i.png"
+      description: `🎉 ${"Big savings on everything this week. ".repeat(10).slice(0, 296).trimEnd()}…`
     })
     expect(Schema.decodeUnknownSync(Schema.fromJsonString(WebPage.Checked))(JSON.stringify(checked))).toEqual(checked)
   })
@@ -388,10 +386,16 @@ describe("WebPage.check: records", () => {
       Object.fromEntries(span.attributes)
     )
     expect(checks).toEqual([
-      { "http.response.status_code": 200, "web_page.redirects": 2, "web_page.framing": "allowed" },
+      {
+        "web_page.icon": "unavailable",
+        "http.response.status_code": 200,
+        "web_page.redirects": 2,
+        "web_page.framing": "allowed"
+      },
       {
         "http.response.status_code": 200,
         "web_page.redirects": 0,
+        "web_page.icon": "absent",
         "web_page.framing": "refused",
         "web_page.reason": "x_frame_options"
       },

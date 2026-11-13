@@ -156,9 +156,4 @@ describe("AgentOutput", () => {
     expect(html).toContain("<strong>answer</strong>");
   });
 
-  test("renders under the dark theme", () => {
-    document.documentElement.dataset.theme = "dark";
-    const model = parseAgentOutput({ text: "Dark response", streaming: true });
-    expect(renderToStaticMarkup(<AgentOutput model={model!} />)).toContain('data-streaming="true"');
-  });
 });

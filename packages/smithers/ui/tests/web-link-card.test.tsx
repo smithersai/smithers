@@ -83,13 +83,13 @@ describe("WebLinkCard", () => {
     expect(container!.querySelectorAll("a, iframe")).toHaveLength(1);
   });
 
-  test("shows the page's title, description, domain and https icon", async () => {
+  test("shows the page's title, description, domain and host-served icon", async () => {
     await render(
       <WebLinkCard
         url="https://www.example.com:8443/guide"
         title=" Example guide "
         description="How to frame pages, and what to do when they refuse."
-        icon="https://cdn.example.com/icon.png"
+        icon="data:image/png;base64,KioqKg=="
       />,
     );
     const card = $("[data-slot=web-link-card]")!;
@@ -100,7 +100,7 @@ describe("WebLinkCard", () => {
     expect(card.querySelector("[data-slot=web-page-domain]")!.textContent).toBe("www.example.com:8443");
     const icon = card.querySelector<HTMLImageElement>("[data-slot=web-page-icon] img")!;
     expect([icon.getAttribute("src"), icon.getAttribute("alt"), icon.getAttribute("referrerpolicy")]).toEqual([
-      "https://cdn.example.com/icon.png",
+      "data:image/png;base64,KioqKg==",
       "",
       "no-referrer",
     ]);
@@ -108,8 +108,8 @@ describe("WebLinkCard", () => {
     expect($("a")!.getAttribute("aria-label")).toBe("Open in new tab: Example guide");
   });
 
-  test("an icon that fails to load, or isn't https, shows the host's first letter", async () => {
-    await render(<WebLinkCard url="https://www.example.com/" title="Example" icon="https://cdn.example.com/missing.png" />);
+  test("an icon that fails to load, or is not host-served, shows the host's first letter", async () => {
+    await render(<WebLinkCard url="https://www.example.com/" title="Example" icon="data:image/png;base64,KioqKg==" />);
     const img = $("[data-slot=web-page-icon] img")!;
     await act(async () => {
       img.dispatchEvent(new Event("error"));
@@ -117,9 +117,9 @@ describe("WebLinkCard", () => {
     expect($("[data-slot=web-page-icon] img")).toBeNull();
     expect($("[data-slot=web-page-icon]")!.textContent).toBe("E");
     // A new icon is tried again.
-    await act(async () => root!.render(<WebLinkCard url="https://www.example.com/" title="Example" icon="https://cdn.example.com/other.png" />));
-    expect($("[data-slot=web-page-icon] img")!.getAttribute("src")).toBe("https://cdn.example.com/other.png");
-    for (const icon of ["http://cdn.example.com/i.png", "data:image/png;base64,AAAA", "https://u:p@cdn.example.com/i.png", "not a url", " "]) {
+    await act(async () => root!.render(<WebLinkCard url="https://www.example.com/" title="Example" icon="data:image/png;base64,AAAA" />));
+    expect($("[data-slot=web-page-icon] img")!.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+    for (const icon of ["http://cdn.example.com/i.png", "https://cdn.example.com/i.png", "https://u:p@cdn.example.com/i.png", " "]) {
       await act(async () => root!.render(<WebLinkCard url="https://www.example.com/" icon={icon} />));
       expect([icon, $("[data-slot=web-page-icon] img")]).toEqual([icon, null]);
     }

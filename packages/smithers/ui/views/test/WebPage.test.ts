@@ -414,3 +414,10 @@ describe("WebPage.preview", () => {
     }
   })
 })
+
+it("does not classify framing without a valid page and at least one ancestor", () => {
+  expect(WebPage.framing({}, { page: "not a URL", ancestors: ["https://app.example.com"] }))
+    .toEqual({ framing: "unknown", reason: "invalid_url" })
+  expect(WebPage.framing({}, { page: "https://example.com", ancestors: [] }))
+    .toEqual({ framing: "unknown", reason: "invalid_url" })
+})

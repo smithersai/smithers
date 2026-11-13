@@ -20,7 +20,6 @@ export const vaultCss = `
 .sui-vault-graph-node[data-tint='info'] { color:color-mix(in srgb, var(--info, #3c6879) 80%, var(--text, #211d18)); }
 .sui-vault-graph-node[data-tint='warning'] { color:color-mix(in srgb, var(--warning, #8c5a08) 80%, var(--text, #211d18)); }
 .sui-vault-graph-label { fill:var(--text-muted, #665f54); }
-.sui-vault-graph-meta { color:var(--text-muted, #665f54); font-size:11px; }
 .sui-vault-graph-fallback { min-width:0; display:grid; gap:6px; align-content:start; }
 .sui-vault-links { min-width:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
 .sui-vault-links-section { min-width:0; display:grid; gap:6px; align-content:start; }

@@ -9,7 +9,7 @@ describe("BacklinksPanel", () => {
       <BacklinksPanel backlinks={["Areas/Marketing.md", "People/Ada.md"]} linksOut={["HQ.md"]} onOpenNote={() => {}} />,
     );
     expect(html).toContain("Backlinks");
-    expect(html).toContain("Linked mentions");
+    expect(html).toContain("Links");
     // count badges
     expect(html).toContain(">2</span>");
     expect(html).toContain(">1</span>");

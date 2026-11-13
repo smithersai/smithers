@@ -110,7 +110,7 @@ describe("WebPageView", () => {
     await render(
       <WebPageView
         url="https://example.com/guide"
-        preview={{ title: "Example guide", description: "Frames welcome.", icon: "https://example.com/i.png" }}
+        preview={{ title: "Example guide", description: "Frames welcome.", icon: "data:image/png;base64,KioqKg==" }}
       />,
     );
     const figure = $("figure")!;
@@ -120,7 +120,7 @@ describe("WebPageView", () => {
     expect(pending.querySelector("[data-slot=web-page-title]")!.textContent).toBe("Example guide");
     expect(pending.querySelector("[data-slot=web-page-description]")!.textContent).toBe("Frames welcome.");
     expect(pending.querySelector("[data-slot=web-page-domain]")!.textContent).toBe("example.com");
-    expect(pending.querySelector("img")!.getAttribute("src")).toBe("https://example.com/i.png");
+    expect(pending.querySelector("img")!.getAttribute("src")).toBe("data:image/png;base64,KioqKg==");
     // The frame stays first, so the cover sits over it, and only the bar's link opens the page.
     expect(figure.lastElementChild!.firstElementChild!.tagName).toBe("IFRAME");
     expect(pending.querySelectorAll("a")).toHaveLength(0);

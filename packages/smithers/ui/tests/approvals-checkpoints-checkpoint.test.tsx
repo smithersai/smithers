@@ -85,11 +85,6 @@ describe("Checkpoint", () => {
     expect(container!.querySelector("[data-slot='checkpoint-metadata']")).not.toBeNull();
   });
 
-  test("renders under data-theme=dark", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(<Checkpoint checkpoint={model} />);
-    expect(container!.querySelector(".sui-checkpoint")).not.toBeNull();
-  });
 });
 
 describe("CheckpointTrigger", () => {

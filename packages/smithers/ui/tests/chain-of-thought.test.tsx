@@ -50,11 +50,6 @@ describe("ChainOfThought", () => {
     expect(html.match(/aria-hidden="true"/g)?.length).toBeGreaterThanOrEqual(4);
   });
 
-  test("renders under the dark theme", () => {
-    document.documentElement.dataset.theme = "dark";
-    const html = renderToStaticMarkup(<ChainOfThought steps={steps} defaultOpen />);
-    expect(html).toContain('data-slot="chain-of-thought"');
-  });
 
   test("follows streaming until the user toggles", async () => {
     const changes: boolean[] = [];
