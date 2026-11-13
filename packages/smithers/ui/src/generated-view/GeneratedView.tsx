@@ -74,9 +74,9 @@ export function GeneratedView({
   const port = useRef<MessagePort | undefined>(undefined);
   const sent = useRef({ html, theme });
 
-  // A new nonce, and so a new document, each time the frame mounts.
-  const nonce = useMemo(() => (visible ? newNonce() : ""), [visible]);
   const sheet = useMemo(() => styles ?? defaultStyles(), [styles]);
+  // Every replacement document gets its own nonce and initialization channel.
+  const nonce = useMemo(() => (visible ? newNonce() : ""), [visible, runtime, sheet]);
   const srcDoc = useMemo(
     () => (visible ? ViewCsp.frameDocument({ runtime, nonce, theme: latest.current.theme, styles: sheet }) : undefined),
     [visible, runtime, nonce, sheet],

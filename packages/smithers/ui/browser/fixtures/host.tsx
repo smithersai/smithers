@@ -12,12 +12,14 @@ interface Probe {
   readonly html: string;
   readonly interactions: Interactions.Declared;
   readonly runtime?: string;
+  readonly styles?: string;
   readonly siblings?: boolean;
 }
 
 declare global {
   interface Window {
     probe: Probe;
+    updateProbe: (props: Partial<Probe>) => void;
     log: { interactions: Array<unknown>; refusals: Array<string>; messages: Array<unknown> };
     sanitizeHtml: (html: string) => { html: string; elements: Array<string>; attributes: Array<string> };
   }
@@ -43,17 +45,23 @@ window.sanitizeHtml = (html) => {
 
 const app = document.getElementById("app");
 if (app !== null) {
-  createRoot(app).render(
-    <>{[0, ...(window.probe.siblings ? [1] : [])].map((key) => <GeneratedView key={key}
-      html={window.probe.html}
-      interactions={window.probe.interactions}
-      runtime={window.probe.runtime}
-      title="Probe"
-      theme="light"
-      size="full"
-      style={{ height: 400 }}
-      onInteraction={(interaction) => window.log.interactions.push(interaction)}
-      onRefused={(reason) => window.log.refusals.push(reason)}
-    />)}</>,
-  );
+  const root = createRoot(app);
+  window.updateProbe = (props) => {
+    window.probe = { ...window.probe, ...props };
+    root.render(
+      <>{[0, ...(window.probe.siblings ? [1] : [])].map((key) => <GeneratedView key={key}
+        html={window.probe.html}
+        interactions={window.probe.interactions}
+        runtime={window.probe.runtime}
+        styles={window.probe.styles}
+        title="Probe"
+        theme="light"
+        size="full"
+        style={{ height: 400 }}
+        onInteraction={(interaction) => window.log.interactions.push(interaction)}
+        onRefused={(reason) => window.log.refusals.push(reason)}
+      />)}</>,
+    );
+  };
+  window.updateProbe({});
 }

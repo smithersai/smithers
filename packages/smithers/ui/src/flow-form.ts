@@ -432,7 +432,7 @@ export const submissionPayload = (
         continue
       }
       const converted = asProperty(property, value, arrays, field)
-      if ("invalid" in converted) return { error: `${field.label} is not valid JSON. Fix it before submitting the form.` }
+      if ("invalid" in converted) return { error: `${field.label}: not valid JSON` }
       payload[field.name] = converted.value
       continue
     }

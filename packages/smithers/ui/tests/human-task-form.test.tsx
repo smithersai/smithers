@@ -289,7 +289,7 @@ test("JSON raw settlement preserves the stored value and secret fields never ent
   expect(container!.querySelector<HTMLInputElement>("input")!.value).toBe("[1,false,null]");
   const wait = question({ kind: "json", schema: { type: "object", properties: { secret: { type: "string", writeOnly: true } } } });
   await render(view({ ...wait, token: "secret-wait" }, answers)); await type("secret", "test-private-value"); await submit();
-  expect(answers).toEqual([]); expect(container!.querySelector("[role=alert]")!.textContent).toBe("Use secret names to answer.");
+  expect(answers).toEqual([]); expect(container!.querySelector("[role=alert]")!.textContent).toBe("Secret: use secret names");
 });
 
 // Exercise the unchanged shared conversion paths alongside the new typed choices.

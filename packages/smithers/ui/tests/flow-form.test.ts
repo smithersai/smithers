@@ -284,3 +284,9 @@ test("a quoted field stays safe beside an independently declared flag", () => {
   ) }
   expect(assembleLine(fields, builder, { text: "x --delete", delete: true })).toEqual({ args: '\"x --delete\" --delete', withheld: [] })
 })
+
+test.each(["{", "[", "not JSON"])("invalid structured input names its field concisely (%s)", (value) => {
+  const schema = Schema.Struct({ config: Schema.Struct({ retries: Schema.Number }) })
+  const fields = formFieldsFor(schema)
+  expect(fileSubmission(schema, fields, {}, { config: value })).toEqual({ error: "Config: not valid JSON" })
+})

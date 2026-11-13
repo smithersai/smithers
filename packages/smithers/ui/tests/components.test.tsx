@@ -698,3 +698,16 @@ describe("SmithersUiStyles", () => {
     expect(css).toContain(smithersUiCss);
   });
 });
+
+test.each([undefined, null, false, "", []].map((children) => ({ children })))("empty panels have no unsolicited fallback for %j", ({ children }) => {
+  const html = renderToStaticMarkup(<CollapsiblePanel title="Details">{children}</CollapsiblePanel>);
+  expect(html).not.toContain("Nothing to show yet.");
+  expect(html).not.toContain("sui-collapsible-empty");
+  expect(html).not.toContain("sui-collapsible-body");
+});
+
+test("pending panels without host copy render no fallback", () => {
+  const html = renderToStaticMarkup(<CollapsiblePanel title="Details" pending>Hidden</CollapsiblePanel>);
+  expect(html).not.toContain("Hidden");
+  expect(html).not.toContain("sui-collapsible-empty");
+});

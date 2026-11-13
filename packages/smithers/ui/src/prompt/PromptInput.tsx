@@ -271,6 +271,10 @@ export function PromptInput({
   setAttachmentsRef.current = setAttachments;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const onValueChangeRef = useRef(onValueChange);
+  onValueChangeRef.current = onValueChange;
+  const onAttachmentsChangeRef = useRef(onAttachmentsChange);
+  onAttachmentsChangeRef.current = onAttachmentsChange;
 
   /**
    * Attachment ids handed to a submission that has not settled, with how many
@@ -484,14 +488,37 @@ export function PromptInput({
     /** Accept only the submitted draft, preserving edits made while pending. */
     const accept = (): void => {
       if (!mountedRef.current) return;
-      if (valueProp === undefined && valueRevisionRef.current === submittedValueRevision) {
+      const clearValue = valueProp === undefined && valueRevisionRef.current === submittedValueRevision && value !== "";
+      if (clearValue) {
         valueRevisionRef.current += 1;
         setInnerValue("");
       }
-      if (attachmentsProp === undefined) {
-        const next = attachmentsRef.current.filter((item) => !submittedIds.has(item.id));
+      const next = attachmentsProp === undefined
+        ? attachmentsRef.current.filter((item) => !submittedIds.has(item.id))
+        : undefined;
+      const attachmentsChanged = next !== undefined && next.length !== attachmentsRef.current.length;
+      if (attachmentsChanged) {
         attachmentsRef.current = next;
         setInnerAttachments(next);
+      }
+      // Notify both observers after updating the accepted draft.
+      try {
+        if (clearValue) onValueChangeRef.current?.("");
+      } catch (cause) {
+        globalThis.reportError?.(cause);
+      }
+      try {
+        if (attachmentsChanged) onAttachmentsChangeRef.current?.(next);
+      } catch (cause) {
+        globalThis.reportError?.(cause);
+      }
+    };
+
+    const acceptAndRelease = (): void => {
+      try {
+        accept();
+      } finally {
+        releaseLeases();
       }
     };
 
@@ -500,17 +527,13 @@ export function PromptInput({
     // handler holds the draft and its blob URLs until it resolves, because the
     // attachments it was handed are only readable while those URLs live.
     if (!thenable) {
-      accept();
-      releaseLeases();
+      acceptAndRelease();
       return;
     }
     // Promise.resolve adopts the thenable; a `then` getter or method that
     // throws becomes a rejection here, never an escaped exception.
     void Promise.resolve(result).then(
-      () => {
-        accept();
-        releaseLeases();
-      },
+      acceptAndRelease,
       (cause: unknown) => {
         releaseLeases();
         reportFailure(cause);

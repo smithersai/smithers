@@ -453,3 +453,32 @@ describe("repository paths starting with a/ or b/", () => {
     }
   }
 });
+
+describe("file headers end before the first hunk", () => {
+  test.each(["\n", "\r\n"])("headerless comment edits retain caller metadata (%j)", (eol) => {
+    for (const comment of ["-- drop the table", "-- /dev/null", "++ /dev/null", "++ b/other.sql"]) {
+      const prefix = comment.startsWith("--") ? "-" : "+";
+      const hunk = prefix === "-" ? "@@ -1,2 +1 @@" : "@@ -1 +1,2 @@";
+      const patch = [hunk, prefix + comment, " keep", ""].join(eol);
+      const parsed = parseUnifiedFile(patch, { path: "db/x.sql", status: "modified" });
+      expect({ path: parsed.path, oldPath: parsed.oldPath, status: parsed.status }).toEqual({
+        path: "db/x.sql", oldPath: undefined, status: "modified",
+      });
+      const inferred = parseUnifiedFile(patch);
+      expect({ path: inferred.path, oldPath: inferred.oldPath, status: inferred.status }).toEqual({
+        path: "", oldPath: undefined, status: "modified",
+      });
+      expect(parsed.lines[1]!.text).toBe(comment);
+    }
+  });
+
+  test("real file headers win over header-shaped body lines", () => {
+    const patch = "diff --git a/db/old.sql b/db/new.sql\nrename from db/old.sql\nrename to db/new.sql\n"
+      + "--- a/db/old.sql\n+++ b/db/new.sql\n@@ -1 +1 @@\n--- /dev/null\n+++ /dev/null\n";
+    const parsed = parseUnifiedFile(patch);
+    expect({ path: parsed.path, oldPath: parsed.oldPath, status: parsed.status }).toEqual({
+      path: "db/new.sql", oldPath: "db/old.sql", status: "renamed",
+    });
+    expect({ add: parsed.add, del: parsed.del }).toEqual({ add: 1, del: 1 });
+  });
+});

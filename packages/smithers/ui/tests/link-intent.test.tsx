@@ -108,3 +108,23 @@ describe("LinkIntent", () => {
     expect(intentPath(document.createElement("span"), ORIGIN)).toBeUndefined();
   });
 });
+
+test.each(["http://[", "https://[", "http://[::1"])("malformed link %s has no intent", async (href) => {
+  const anchor = document.createElement("a");
+  anchor.setAttribute("href", href);
+  expect(intentPath(anchor, ORIGIN)).toBeUndefined();
+  const intents: string[] = [];
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => root!.render(
+    <LinkIntent delayMs={0} origin={ORIGIN} onIntent={(path) => intents.push(path)}>
+      <a href={href}><span>Invalid</span></a>
+    </LinkIntent>,
+  ));
+  const label = container.querySelector("span")!;
+  await over(label);
+  await act(async () => label.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+  await pass(10);
+  expect(intents).toEqual([]);
+});

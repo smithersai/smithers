@@ -294,3 +294,31 @@ describe("FileTree lazy and controlled", () => {
     expect(files().length).toBe(4);
   });
 });
+
+describe("FileTree receives directories after mount", () => {
+  test.each([false, true])("late nodes and lazy directories honor defaultCollapsed=%s", async (defaultCollapsed) => {
+    const toggles: Array<[string, boolean]> = [];
+    const view = (nodes: string[], directories: string[] = []) => (
+      <FileTree nodes={nodes} directories={directories} defaultCollapsed={defaultCollapsed}
+        onToggle={(path, expanded) => toggles.push([path, expanded])} />
+    );
+    await render(view([]));
+    await act(async () => root!.render(view(["src/main.ts"], ["docs"])));
+    expect(dirToggles().map((toggle) => toggle.getAttribute("aria-expanded")))
+      .toEqual(defaultCollapsed ? ["false", "false"] : ["true", "true"]);
+    const src = () => dirToggles().find((toggle) => toggle.querySelector(".sui-file-tree-dir-name")?.textContent === "src")!;
+    await click(src());
+    expect(src().getAttribute("aria-expanded")).toBe(String(defaultCollapsed));
+    await act(async () => root!.render(view(["src/main.ts", "src/lib/helper.ts"], ["docs", "assets"])));
+    expect(src().getAttribute("aria-expanded")).toBe(String(defaultCollapsed));
+    expect(dirToggles().find((toggle) => toggle.textContent?.includes("assets"))!.getAttribute("aria-expanded"))
+      .toBe(String(!defaultCollapsed));
+    if (defaultCollapsed) {
+      expect(dirToggles().find((toggle) => toggle.textContent?.includes("lib"))!.getAttribute("aria-expanded")).toBe("false");
+      expect(files().map((file) => file.textContent)).toEqual(["main.ts"]);
+    }
+    await click(src());
+    expect(src().getAttribute("aria-expanded")).toBe(String(!defaultCollapsed));
+    expect(toggles).toEqual([["src", defaultCollapsed], ["src", !defaultCollapsed]]);
+  });
+});

@@ -56,7 +56,7 @@ export function CollapsiblePanel({
   open: controlledOpen,
   onOpenChange,
   pending = false,
-  emptyText = "Nothing to show yet.",
+  emptyText,
   className,
   children,
   ...props
@@ -115,7 +115,7 @@ export function CollapsiblePanel({
       </div>
       {open ? (
         showFallback ? (
-          <div className="sui-collapsible-empty">{emptyText}</div>
+          isEmptyContent(emptyText) ? null : <div className="sui-collapsible-empty">{emptyText}</div>
         ) : (
           <div className="sui-collapsible-body">{children}</div>
         )

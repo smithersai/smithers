@@ -284,3 +284,39 @@ describe("GeneratedView mounts its frame only near the screen", () => {
     expect(observers.every((observer) => observer.disconnected)).toBe(true);
   });
 });
+
+describe("a replacement frame document gets a fresh handshake", () => {
+  test.each([
+    { runtime: "/* replacement */", styles: ".before{}" },
+    { runtime: "/* before */", styles: ".replacement{}" },
+    { runtime: undefined, styles: undefined },
+  ])("runtime and stylesheet replacements initialize again (%j)", async (replacement) => {
+    const view = await render({ runtime: "/* before */", styles: ".before{}" });
+    const originalNonce = nonceOf(iframe().srcdoc);
+    const old = await handshake();
+    expect(old.posted).toHaveLength(1);
+    await view.rerender(replacement);
+    expect(nonceOf(iframe().srcdoc)).not.toBe(originalNonce);
+    expect((await handshake({ nonce: originalNonce })).posted).toEqual([]);
+    const next = await handshake();
+    expect(next.posted).toHaveLength(1);
+    expect(next.posted[0]!.message.result.html).toBe("<p>hi</p>");
+    await send(old.port!, interaction({ event: "cell", arg: "stale" }));
+    expect(view.interactions).toEqual([]);
+    await send(next.port!, interaction({ event: "cell", arg: "current" }));
+    expect(view.interactions).toEqual([{ _tag: "State", event: { name: "cell", arg: "current" } }]);
+    expect(view.refusals).toEqual(["wrong_source"]);
+  });
+
+  test("unchanged document inputs keep the established channel", async () => {
+    const view = await render({ runtime: "/* runtime */", styles: ".same{}" });
+    const nonce = nonceOf(iframe().srcdoc);
+    const { port, received } = await handshake();
+    await view.rerender({ html: "<p>updated</p>", theme: "dark" });
+    await act(async () => { await tick(); });
+    expect(nonceOf(iframe().srcdoc)).toBe(nonce);
+    expect(received).toEqual([Bridge.hostContextChanged({ html: "<p>updated</p>", theme: "dark" })]);
+    await send(port!, interaction({ event: "cell", arg: "live" }));
+    expect(view.interactions).toHaveLength(1);
+  });
+});

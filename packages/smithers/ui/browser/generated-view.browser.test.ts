@@ -11,9 +11,11 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { build } from "esbuild";
+import vibelang from "vibelang-unplugin/esbuild";
 import * as fc from "fast-check";
 import { join } from "node:path";
 import { type Browser, chromium, type Frame, type Page } from "playwright";
+import { frameRuntime } from "../src/generated-view/runtime.generated";
 
 describe("generated-view browser probes", () => {
   const origin = "http://probe.test";
@@ -30,6 +32,7 @@ describe("generated-view browser probes", () => {
       target: "es2022",
       define: { "process.env.NODE_ENV": "\"production\"" },
       logLevel: "silent",
+      plugins: [vibelang({ root: join(import.meta.dir, "..") })],
     });
     host = result.outputFiles[0]!.text;
     browser = await chromium.launch({ headless: true });
@@ -48,7 +51,7 @@ describe("generated-view browser probes", () => {
   }
 
   /** Opens the host page with a view, and waits for the frame's runtime to show it. */
-  const open = async (probe: { html: string; interactions: Record<string, unknown>; runtime?: string; siblings?: boolean }, ready = "[data-smithers-view]"): Promise<Opened> => {
+  const open = async (probe: { html: string; interactions: Record<string, unknown>; runtime?: string; styles?: string; siblings?: boolean }, ready = "[data-smithers-view]"): Promise<Opened> => {
     const page = await browser.newPage();
     const leaks: Array<string> = [];
     const dialogs: Array<string> = [];
@@ -136,6 +139,38 @@ describe("generated-view browser probes", () => {
       await page.close();
     }, 60_000);
   });
+
+
+  test.each(["styles", "runtime"] as const)("reinitializes a live frame when %s changes", async (changed) => {
+    const { frame, page, leaks } = await open({
+      html: '<button data-event="cell:before">Before</button>',
+      interactions: { cell: { kind: "state" } },
+    }, "button");
+    try {
+      await frame.click("text=Before");
+      await page.waitForFunction(() => window.log.interactions.length === 1);
+      const navigated = page.waitForEvent("framenavigated", { predicate: (next) => next === frame });
+      await page.evaluate(({ changed, runtime }) => window.updateProbe({
+        html: '<button data-event="cell:after">After</button>',
+        ...(changed === "runtime" ? { runtime } : { styles: "button { color: rgb(1, 2, 3) }" }),
+      }), { changed, runtime: frameRuntime + "\n/* replacement runtime */" });
+      await navigated;
+      await frame.waitForSelector("text=After", { timeout: 5_000 });
+      await frame.click("text=After");
+      await page.waitForFunction(() => window.log.interactions.length === 2);
+      expect(await page.evaluate(() => window.log.interactions)).toEqual([
+        { _tag: "State", event: { name: "cell", arg: "before" } },
+        { _tag: "State", event: { name: "cell", arg: "after" } },
+      ]);
+      expect(await page.evaluate(() => window.log.refusals)).toEqual([]);
+      expect(leaks).toEqual([]);
+      if (changed === "styles") {
+        expect(await frame.locator("button").evaluate((button) => getComputedStyle(button).color)).toBe("rgb(1, 2, 3)");
+      }
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 
   /** A runtime that does what no view's HTML should be able to: runs, and tries everything. */
   const hostileRuntime = `(() => {

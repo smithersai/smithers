@@ -13,6 +13,7 @@ export function intentPath(target: EventTarget | null, origin: string): string |
   if (anchor === null || !("href" in anchor) || typeof anchor.href !== "string") return undefined;
   const opens = anchor.getAttribute("target");
   if ((opens !== null && opens !== "" && opens !== "_self") || anchor.hasAttribute("download")) return undefined;
+  if (!URL.canParse(anchor.href)) return undefined;
   const url = new URL(anchor.href);
   return url.origin === origin ? url.pathname : undefined;
 }

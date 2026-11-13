@@ -663,3 +663,198 @@ test.each([false, true])("attachment intake from a descendant mount effect keeps
     expect(revoked()).toEqual([created[0]!]);
   });
 });
+
+describe("accepted uncontrolled drafts notify their host", () => {
+  test.each([false, true])("acceptance reports cleared text and attachments (async=%s)", async (asynchronous) => {
+    const values: string[] = [];
+    const attachments: Array<readonly PromptInputAttachmentItem[]> = [];
+    let settle!: () => void;
+    let hook!: ReturnType<typeof usePromptInputAttachments>;
+    function Contents() {
+      hook = usePromptInputAttachments();
+      return <PromptInputTextarea />;
+    }
+    await render(
+      <PromptInput defaultValue="send me" onValueChange={(value) => values.push(value)}
+        onAttachmentsChange={(items) => attachments.push(items)}
+        onSubmit={() => asynchronous ? new Promise<void>((resolve) => { settle = resolve; }) : undefined}>
+        <Contents />
+      </PromptInput>,
+    );
+    await act(async () => hook.add([makeFile("note.txt", "text/plain")]));
+    attachments.length = 0;
+    await act(async () => pressEnter(textarea()));
+    if (asynchronous) {
+      expect(values).toEqual([]);
+      expect(attachments).toEqual([]);
+      await act(async () => settle());
+    }
+    expect(textarea().value).toBe("");
+    expect(hook.attachments).toEqual([]);
+    expect(values).toEqual([""]);
+    expect(attachments).toEqual([[]]);
+  });
+
+  test("acceptance reports surviving attachments without clearing a newer text draft", async () => {
+    const values: string[] = [];
+    const attachments: Array<readonly PromptInputAttachmentItem[]> = [];
+    let settle!: () => void;
+    let hook!: ReturnType<typeof usePromptInputAttachments>;
+    function Contents() {
+      hook = usePromptInputAttachments();
+      return <PromptInputTextarea />;
+    }
+    await render(
+      <PromptInput defaultValue="send me" multiple onValueChange={(value) => values.push(value)}
+        onAttachmentsChange={(items) => attachments.push(items)}
+        onSubmit={() => new Promise<void>((resolve) => { settle = resolve; })}>
+        <Contents />
+      </PromptInput>,
+    );
+    await act(async () => hook.add([makeFile("submitted.txt", "text/plain")]));
+    await act(async () => pressEnter(textarea()));
+    await act(async () => typeText("next draft"));
+    await act(async () => hook.add([makeFile("later.txt", "text/plain")]));
+    const later = hook.attachments[1]!;
+    attachments.length = 0;
+    await act(async () => settle());
+    expect(values).toEqual(["next draft"]);
+    expect(textarea().value).toBe("next draft");
+    expect(attachments).toEqual([[later]]);
+    expect(hook.attachments).toEqual([later]);
+  });
+
+  test.each(["throw", "reject"] as const)("failed submission does not report a cleared draft (%s)", async (failure) => {
+    const values: string[] = [];
+    const attachments: Array<readonly PromptInputAttachmentItem[]> = [];
+    await render(
+      <PromptInput defaultValue="keep me" onValueChange={(value) => values.push(value)}
+        onAttachmentsChange={(items) => attachments.push(items)} onError={() => {}}
+        onSubmit={() => {
+          if (failure === "throw") throw new Error("failed");
+          return Promise.reject(new Error("failed"));
+        }}>
+        <PromptInputTextarea />
+      </PromptInput>,
+    );
+    await act(async () => pressEnter(textarea()));
+    expect(textarea().value).toBe("keep me");
+    expect(values).toEqual([]);
+    expect(attachments).toEqual([]);
+  });
+});
+
+describe("draft notification failures and callback changes", () => {
+  test.each([
+    { asynchronous: false, callback: "value" },
+    { asynchronous: false, callback: "attachments" },
+    { asynchronous: true, callback: "value" },
+    { asynchronous: true, callback: "attachments" },
+    { asynchronous: false, callback: "both" },
+    { asynchronous: true, callback: "both" },
+  ] as const)("throwing %j notifications still release submission resources", async ({ asynchronous, callback }) => {
+    const reported: unknown[] = [];
+    const original = globalThis.reportError;
+    globalThis.reportError = (cause: unknown) => { reported.push(cause); };
+    try {
+      await withObjectUrls(async ({ created, revoked }) => {
+        let hook!: ReturnType<typeof usePromptInputAttachments>;
+        let settle!: () => void;
+        let submissions = 0;
+        const cause = new Error("notification failed");
+        const errors: PromptInputError[] = [];
+        const values: string[] = [];
+        const attachments: Array<readonly PromptInputAttachmentItem[]> = [];
+        function Contents() {
+          hook = usePromptInputAttachments();
+          return <PromptInputTextarea />;
+        }
+        await render(
+          <PromptInput defaultValue="send me" onError={(error) => errors.push(error)}
+            onValueChange={(value) => {
+              values.push(value);
+              if ((callback === "value" || callback === "both") && value === "") throw cause;
+            }}
+            onAttachmentsChange={(items) => {
+              attachments.push(items);
+              if ((callback === "attachments" || callback === "both") && items.length === 0) throw cause;
+            }}
+            onSubmit={() => {
+              submissions += 1;
+              return asynchronous ? new Promise<void>((resolve) => { settle = resolve; }) : undefined;
+            }}>
+            <Contents />
+          </PromptInput>,
+        );
+        await act(async () => hook.add([makeFile("image.png", "image/png")]));
+        attachments.length = 0;
+        await act(async () => pressEnter(textarea()));
+        if (asynchronous) await act(async () => settle());
+        expect(textarea().value).toBe("");
+        expect(hook.attachments).toEqual([]);
+        expect(values).toEqual([""]);
+        expect(attachments).toEqual([[]]);
+        expect(revoked()).toEqual([created[0]!]);
+        expect(errors).toEqual([]);
+        expect(reported).toEqual(callback === "both" ? [cause, cause] : [cause]);
+        await act(async () => typeText("next"));
+        await act(async () => pressEnter(textarea()));
+        if (asynchronous) await act(async () => settle());
+        expect(submissions).toBe(2);
+      });
+    } finally {
+      globalThis.reportError = original;
+    }
+  });
+
+  test("pending acceptance notifies the latest host callbacks", async () => {
+    const events: string[] = [];
+    let settle!: () => void;
+    let hook!: ReturnType<typeof usePromptInputAttachments>;
+    function Contents() {
+      hook = usePromptInputAttachments();
+      return <PromptInputTextarea />;
+    }
+    const view = (host: string) => (
+      <PromptInput defaultValue="send me"
+        onValueChange={(value) => events.push(`${host}:text:${value}`)}
+        onAttachmentsChange={(items) => events.push(`${host}:files:${items.length}`)}
+        onSubmit={() => new Promise<void>((resolve) => { settle = resolve; })}>
+        <Contents />
+      </PromptInput>
+    );
+    await render(view("previous"));
+    await act(async () => hook.add([makeFile("note.txt", "text/plain")]));
+    await act(async () => pressEnter(textarea()));
+    await act(async () => root!.render(view("current")));
+    events.length = 0;
+    await act(async () => settle());
+    expect(events).toEqual(["current:text:", "current:files:0"]);
+    expect(textarea().value).toBe("");
+    expect(hook.attachments).toEqual([]);
+  });
+});
+
+test.each(["text", "attachments"] as const)("acceptance notifies only the changed draft side (%s)", async (side) => {
+  const values: string[] = [];
+  const attachments: Array<readonly PromptInputAttachmentItem[]> = [];
+  let hook!: ReturnType<typeof usePromptInputAttachments>;
+  function Contents() {
+    hook = usePromptInputAttachments();
+    return <PromptInputTextarea />;
+  }
+  await render(
+    <PromptInput defaultValue={side === "text" ? "send me" : ""}
+      onValueChange={(value) => values.push(value)} onAttachmentsChange={(items) => attachments.push(items)}
+      onSubmit={() => {}}>
+      <Contents />
+    </PromptInput>,
+  );
+  if (side === "attachments") await act(async () => hook.add([makeFile("note.txt", "text/plain")]));
+  attachments.length = 0;
+  await act(async () => pressEnter(textarea()));
+  expect(values).toEqual(side === "text" ? [""] : []);
+  expect(attachments).toEqual(side === "attachments" ? [[]] : []);
+  expect(textarea().value).toBe("");
+  expect(hook.attachments).toEqual([]);
+});

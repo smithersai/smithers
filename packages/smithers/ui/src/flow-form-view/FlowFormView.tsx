@@ -151,7 +151,7 @@ function SchemaFormView({
       return;
     }
     if (onPayload !== undefined) {
-      const error = secrets.length > 0 ? "Use secret names to answer." : onPayload(submission.payload);
+      const error = secrets.length > 0 ? `${secrets.map((field) => field.label).join(", ")}: use secret names` : onPayload(submission.payload);
       setProblem(error);
       return;
     }
