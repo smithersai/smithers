@@ -153,7 +153,13 @@ describe("container native filesystem", () => {
       yield* fs.chown!("/file", -1, 100)
       yield* fs.chown!("/file", 1000, -1)
       yield* fs.chown!("/file", -1, -1)
-      expect(commands).toHaveLength(5)
+      expect(commands.map(({ command }) => command)).toEqual([
+        "chmod 640 -- /file",
+        "chown 1000:100 -- /file",
+        "chown :100 -- /file",
+        "chown 1000 -- /file",
+        "LC_ALL=C stat -L -c '%f %s %u %g %d %i %h %Y' -- /file"
+      ])
       for (const mode of [-1, 0o10000, NaN]) {
         expect((yield* Effect.flip(fs.chmod!("/file", mode))).reason._tag).toBe("BadArgument")
       }

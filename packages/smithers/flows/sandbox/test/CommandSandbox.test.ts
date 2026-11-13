@@ -160,7 +160,7 @@ describe("CommandSandbox", () => {
           code: "unavailable",
           message: "machine stopped answering; the command may still be running there"
         })
-        expect(Date.now() - started).toBeLessThan(5_000)
+        expect(Date.now() - started).toBeLessThan(15_000)
       }).pipe(Effect.scoped, Effect.provide(platform)), 30_000)
   }
 

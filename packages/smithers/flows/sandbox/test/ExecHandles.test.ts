@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import { collectEvery, started } from "../src/internal/execHandles.ts"
 import { GarbageCollector, layerGarbageCollectorNoop } from "../src/MicrosandboxSandbox/GarbageCollector.ts"
 
@@ -46,7 +47,8 @@ describe("exec handle release", () => {
   it.effect("provides a collector that collects nothing, for a host without one", () =>
     Effect.gen(function*() {
       const collector = yield* GarbageCollector
-      yield* collector.collect
+      expect(collector.collect).toBe(Effect.void)
+      expect(yield* Effect.exit(collector.collect)).toEqual(Exit.void)
       for (let start = 0; start < collectEvery; start++) yield* started(collector)
     }).pipe(Effect.provide(layerGarbageCollectorNoop)))
 })
