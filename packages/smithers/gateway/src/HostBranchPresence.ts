@@ -1,6 +1,6 @@
 /**
  * Host-only adapter of the existing branch protocol and lease roster.
- * The Go authorizer resolves branch, actor and socket session before forwarding.
+ * The forwarding host must authorize branch, actor and socket session.
  * The runtime bearer is required on every RPC; participant IDs confer no rights.
  *
  * @since 1.0.0
@@ -28,7 +28,7 @@ export const layer = (config: Config) =>
       activeKid: "host",
       keys: [{ kid: "host", secret: Redacted.make(crypto.randomUUID() + crypto.randomUUID()) }]
     })
-    // The authorizing Go host re-checks all source readiness on every health
+    // The forwarding host must re-check all source readiness on every health
     // call. The handler below refuses missing assertions before the lease
     // registry, whose own startup window still applies. No readiness cache.
     const presence = yield* BranchPresence.makeMemory({

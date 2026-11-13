@@ -907,7 +907,7 @@ export interface LayerOptions {
   readonly heartbeatMillis?: number | undefined
   /** The ingress policy the RPC mounts run behind. */
   readonly ingress?: IngressOptions | undefined
-  /** Enables the authenticated Go-to-Control runtime bridge. */
+  /** Enables the authenticated product coding host runtime bridge. */
   readonly runtimeBridge?: RuntimeBridge.Config | undefined
 }
 

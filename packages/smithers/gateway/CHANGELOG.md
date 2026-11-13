@@ -57,8 +57,9 @@
   after its oldest followed run by displacing that run. Before, a workspace
   past 500 runs never showed a newly launched run.
 - The runtime bridge logs the full cause of every failure the caller did not
-  cause, and runs each handler in a `runtime-bridge.command` or
-  `runtime-bridge.observe` span. The wire response is unchanged.
+  cause, and runs each handler in a `runtime-bridge.command`,
+  `runtime-bridge.observe`, or `runtime-bridge.monitor` span. Monitor failures
+  now carry their own operation label. The wire response is unchanged.
 - A gateway that enables the runtime bridge without a bearer credential now
   refuses to bind with `bind_failed`, including on loopback. It used to start
   and answer 401 to every bridge request.

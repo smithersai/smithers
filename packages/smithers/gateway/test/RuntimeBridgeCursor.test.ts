@@ -24,7 +24,7 @@ const listed = (control: Control["Service"]): Control["Service"] => ({
 })
 
 describe("RuntimeBridge observation cursors", () => {
-  it.effect("matches the shared Go/TypeScript reconnect pages", () =>
+  it.effect("matches the product coding host reconnect pages", () =>
     Effect.gen(function*() {
       const fixture = JSON.parse(
         readFileSync(new URL("../testdata/runtime-bridge-v1.json", import.meta.url), "utf8")

@@ -4,7 +4,7 @@ import * as Control from "@smthrs/control/Control"
 import * as ControlError from "@smthrs/control/ControlError"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import type { PlanCard, Principal, RunSummary } from "@smthrs/control/ControlSchema"
-import { Deferred, Effect, Fiber, Layer, Logger, Schema, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Logger, Schema, Stream, Tracer } from "effect"
 import { HttpRouter, HttpServer } from "effect/http"
 import { readFileSync } from "node:fs"
 import { createServer } from "node:http"
@@ -96,7 +96,7 @@ const directBridge = (control: Control.Service, bridgeConfig: RuntimeBridge.Conf
   )
 
 describe("RuntimeBridge", () => {
-  it("decodes the shared Go/TypeScript wire fixture", () => {
+  it("decodes the product coding host wire fixture", () => {
     const fixture = JSON.parse(readFileSync(new URL("../testdata/runtime-bridge-v1.json", import.meta.url), "utf8"))
     expect(() => Schema.decodeUnknownSync(RuntimeBridge.LaunchCommand)(fixture.launch)).not.toThrow()
     expect(() => Schema.decodeUnknownSync(RuntimeBridge.CommandResponse)(fixture.commandResponse)).not.toThrow()
@@ -1017,40 +1017,66 @@ describe("RuntimeBridge", () => {
       }))
   }
 
-  it.effect("logs the full cause of a failed launch on the host while the wire stays sanitized", () =>
-    Effect.gen(function*() {
-      const logged: Array<unknown> = []
-      const failure = new ControlError.PersistenceError({ operation: "read", message: privateMessage })
-      const result = yield* Effect.gen(function*() {
-        const server = yield* HttpServer.HttpServer
-        if (server.address._tag !== "InetAddressV4") return yield* Effect.die("expected IPv4")
-        const port = server.address.port
-        return yield* Effect.promise(async () => {
-          const response = await fetch(`http://127.0.0.1:${port}/runtime/v1/command`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(launch)
-          })
-          return { status: response.status, body: await response.json() }
+  for (const operation of ["command", "observe", "monitor"] as const) {
+    it.effect(`logs and traces failed ${operation} requests while the wire stays sanitized`, () =>
+      Effect.gen(function*() {
+        const logged: Array<unknown> = []
+        const spans: Array<Tracer.NativeSpan> = []
+        const tracer = Tracer.make({
+          span(options) {
+            const span = new Tracer.NativeSpan(options)
+            spans.push(span)
+            return span
+          }
         })
-      }).pipe(
-        Effect.provide(
-          directBridge(service({ plan: () => Effect.fail(failure) })).pipe(
-            Layer.provide(Logger.layer([Logger.make(({ message }) => {
-              logged.push(message)
-            })]))
-          )
-        ),
-        Effect.scoped
-      )
-      expect(JSON.stringify(result)).not.toContain(privateMessage)
-      expect(logged).toHaveLength(1)
-      expect(logged[0]).toMatchObject([{
-        operation: "runtime-bridge.command",
-        code: "persistence_failed",
-        cause: failure
-      }])
-    }))
+        const failure = new ControlError.PersistenceError({ operation: "read", message: privateMessage })
+        const result = yield* Effect.gen(function*() {
+          const server = yield* HttpServer.HttpServer
+          if (server.address._tag !== "InetAddressV4") return yield* Effect.die("expected IPv4")
+          const port = server.address.port
+          return yield* Effect.promise(async () => {
+            const response = await fetch(`http://127.0.0.1:${port}/runtime/v1/${operation}`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(
+                operation === "command" ? launch : {
+                  protocol: RuntimeBridge.protocol,
+                  runId: "run-1"
+                }
+              )
+            })
+            return { status: response.status, body: await response.json() }
+          })
+        }).pipe(
+          Effect.provide(
+            directBridge(service({
+              plan: () => Effect.fail(failure),
+              list: () => Effect.fail(failure)
+            })).pipe(
+              Layer.provide(Logger.layer([Logger.make(({ message }) => {
+                logged.push(message)
+              })])),
+              Layer.provide(Layer.succeed(Tracer.Tracer, tracer))
+            )
+          ),
+          Effect.scoped
+        )
+        expect(result).toMatchObject({
+          status: 503,
+          body: { ok: false, error: { code: "persistence_failed", retryable: true } }
+        })
+        expect(JSON.stringify(result)).not.toContain(privateMessage)
+        expect(logged).toHaveLength(1)
+        expect(logged[0]).toMatchObject([{
+          operation: `runtime-bridge.${operation}`,
+          code: "persistence_failed",
+          cause: failure
+        }])
+        const requests = spans.filter((span) => span.name === `runtime-bridge.${operation}`)
+        expect(requests).toHaveLength(1)
+        expect(requests[0]!.status._tag).toBe("Ended")
+      }))
+  }
 
   it.effect("refuses to bind a runtime bridge without a credential, including on loopback", () =>
     Effect.gen(function*() {

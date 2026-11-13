@@ -195,16 +195,17 @@ const journalOf = (specs: ReadonlyArray<RecordSpec>): Array<JournalRecord> => {
 /** Steps the fold one record at a time and checks every prefix against a refold of it. */
 const replay = (
   journal: ReadonlyArray<JournalRecord>,
-  status: string | ReadonlyArray<string>
+  status: string | ReadonlyArray<string>,
+  identity = run
 ): ReadonlyArray<TraceModel> => {
-  const fold = traceFold(run)
+  const fold = traceFold(identity)
   const models: Array<TraceModel> = []
   const frozen: Array<string> = []
   journal.forEach((record, index) => {
     traceFoldStep(fold, record)
     for (const phase of typeof status === "string" ? [status] : status) {
       const live = traceFoldModel(fold, phase)
-      expect(live).toEqual(traceFromJournal({ ...run, status: phase }, journal.slice(0, index + 1)))
+      expect(live).toEqual(traceFromJournal({ ...identity, status: phase }, journal.slice(0, index + 1)))
       expect(traceFoldModel(fold, phase)).toBe(live)
       models.push(live)
       frozen.push(JSON.stringify(live))
@@ -417,7 +418,18 @@ describe("traceFoldStep", () => {
   })
 
   it("equals a refold of every prefix of a recorded module run", () => {
-    for (const status of statuses) replay(moduleRunJournal, status)
+    for (const status of statuses) {
+      const model = replay(moduleRunJournal, status, { runId: "run-1", flowId: "repository-jobs/issues" }).at(-1)!
+      expect(model.root.status).toBe("completed")
+      expect(model.root.endedAt).toBe(1789905052211)
+      expect(model.milestones.map((milestone) => milestone.label)).toContain("completed")
+      const frames = model.rows.filter((row) => row.kind === "frame")
+      expect(frames).toHaveLength(2)
+      expect(frames.map((frame) => ({ status: frame.status, endedAt: frame.endedAt }))).toEqual([
+        { status: "stopped", endedAt: 1789905052211 },
+        { status: "stopped", endedAt: 1789905052211 }
+      ])
+    }
   })
 
   it("replays a native fact that supersedes earlier telemetry in place", () => {

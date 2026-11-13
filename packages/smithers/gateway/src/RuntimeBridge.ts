@@ -1,5 +1,5 @@
 /**
- * Versioned JSON boundary between the Go product backend and the canonical
+ * Versioned JSON boundary between the product coding host and the canonical
  * TypeScript Flow/Control host.
  *
  * This module adapts HTTP-shaped commands to `Control`. It owns no graph,
@@ -774,14 +774,15 @@ const errorResponse = (cause: unknown) => {
  * cause of every failure the caller did not cause, so a launch that failed in
  * storage or in the executor can be diagnosed from the host.
  */
-const respondToFailure = (operation: "runtime-bridge.command" | "runtime-bridge.observe") => (cause: unknown) => {
-  const response = errorResponse(cause)
-  if (cause instanceof BridgeError) return Effect.succeed(response)
-  const code = Schema.is(ControlError.ControlErrorSchema)(cause) ? cause.code : "internal"
-  return Effect.logError({ message: "Runtime bridge request failed", operation, code, cause }).pipe(
-    Effect.as(response)
-  )
-}
+const respondToFailure =
+  (operation: "runtime-bridge.command" | "runtime-bridge.observe" | "runtime-bridge.monitor") => (cause: unknown) => {
+    const response = errorResponse(cause)
+    if (cause instanceof BridgeError) return Effect.succeed(response)
+    const code = Schema.is(ControlError.ControlErrorSchema)(cause) ? cause.code : "internal"
+    return Effect.logError({ message: "Runtime bridge request failed", operation, code, cause }).pipe(
+      Effect.as(response)
+    )
+  }
 
 const readJson = Effect.gen(function*() {
   const request = yield* HttpServerRequest.HttpServerRequest
@@ -860,7 +861,10 @@ export const layer = (config: Config) => {
         ok: true,
         value: yield* monitor(control, input.runId, input.at)
       })
-    })).pipe(Effect.catch(respondToFailure("runtime-bridge.observe")))
+    })).pipe(
+      Effect.catch(respondToFailure("runtime-bridge.monitor")),
+      Effect.withSpan("runtime-bridge.monitor")
+    )
 
   return HttpRouter.add("POST", "/runtime/v1/command", command).pipe(
     Layer.merge(HttpRouter.add("POST", "/runtime/v1/monitor", inspection)),

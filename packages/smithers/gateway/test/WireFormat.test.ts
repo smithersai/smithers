@@ -9,8 +9,10 @@
  * addition remains compatible. Every expectation here is the whole object,
  * never a subset.
  */
-import type { ControlSchema } from "@smthrs/control"
+import { ControlFacts, ControlSchema } from "@smthrs/control"
 import * as Health from "@smthrs/control/Health"
+import { Fault } from "@smthrs/flow"
+import { ExecutionFact } from "@smthrs/journal"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { GatewayError } from "../src/GatewayError.ts"
@@ -28,6 +30,77 @@ const run: ControlSchema.RunSummary = {
   createdAt: 1_000,
   updatedAt: 2_000
 }
+
+// A fixed client-owned wire vector, independent of today's schema fields.
+const failedChildWire = {
+  runId: "child-1",
+  flowId: "deploy",
+  status: "failed",
+  lifecycleProvenance: {
+    control: "events",
+    execution: "engine-observed",
+    baseline: "created",
+    fromSequence: 1,
+    throughSequence: 10
+  },
+  executionProvenance: {
+    source: "events",
+    rootExecutionId: "execution-1",
+    humanWaits: "events",
+    humanWaitSources: [{
+      executionId: "execution-1",
+      generation: 0,
+      baseline: "created",
+      fromSequence: 1,
+      throughSequence: 10
+    }],
+    currentExecutionId: "execution-2",
+    generation: 1,
+    baseline: "created",
+    fromSequence: 2,
+    throughSequence: 10
+  },
+  statusRollup: {
+    subjectId: "run:child-1",
+    state: "failed",
+    activity: "unknown",
+    health: "healthy",
+    attention: "none",
+    freshness: "unobserved",
+    updatedAt: 2_000
+  },
+  createdAt: 1_000,
+  updatedAt: 2_000,
+  planId: "plan-1",
+  planDigest: "plan-digest",
+  parentRunId: "parent-1",
+  lineageId: "lineage-1",
+  roundOrdinal: 2,
+  waitingReason: "quota",
+  steeringPending: 1,
+  cancellation: {
+    requestedAt: 1_500,
+    source: "cascade",
+    principal: { id: "operator", kind: "bearer", stampedAt: 1_500 },
+    reason: "Stop the tree",
+    cascadedFrom: "parent-1"
+  },
+  deadlineAt: 3_000,
+  seat: "opus",
+  turns: 1,
+  calls: 1,
+  callsFailed: 1,
+  editsAttempted: 1,
+  editsSucceeded: 0,
+  inputTokens: 20,
+  outputTokens: 10,
+  verdict: "failed — quota exhausted",
+  diagnosis: "Quota exhausted",
+  finalOutput: "Partial output",
+  failureFault: "wait",
+  failureMessage: "Quota exhausted",
+  failureTag: "ModelError/quota_exhausted"
+} as const satisfies GatewayProjection.RunSummaryRow
 
 const event = (sequence: number, kind: string, payload: unknown): ControlSchema.ControlEvent => ({
   sequence,
@@ -167,21 +240,52 @@ describe("the encoded projection rows", () => {
     })
   })
 
-  it("still decodes for a client built against the row before statusRollup", () => {
-    // The previous RunSummaryRow, as a client that predates the field holds
-    // it: the same fields without `statusRollup`. Additive means such a
-    // client reads today's row and sees exactly what it always saw.
-    const { statusRollup: _added, ...previousFields } = GatewayProjection.RunSummaryRow.fields
-    const PreviousRunSummaryRow = Schema.Struct(previousFields)
-    const encoded = encode(GatewayProjection.RunSummaryRow, GatewayProjection.runSummary(run, [])) as Record<
-      string,
-      unknown
-    >
-    const { statusRollup, ...previousRow } = encoded
+  it("freezes every optional field of a failed child run summary", () => {
+    const row = Schema.decodeUnknownSync(GatewayProjection.RunSummaryRow)(failedChildWire)
+    expect(row).toEqual(failedChildWire)
+    expect(encode(GatewayProjection.RunSummaryRow, row)).toEqual(failedChildWire)
+  })
 
-    expect(statusRollup).toBeDefined()
+  it("still decodes for a client built against the row before statusRollup", () => {
+    // This literal field list belongs to the old client. Never derive it
+    // from RunSummaryRow.fields: a current rename must not update both sides.
+    const PreviousRunSummaryRow = Schema.Struct({
+      runId: Schema.String,
+      flowId: Schema.String,
+      status: ControlSchema.RunStatus,
+      lifecycleProvenance: Schema.optional(ControlFacts.LifecycleProvenance),
+      executionProvenance: Schema.optional(ExecutionFact.Provenance),
+      createdAt: Schema.Number,
+      updatedAt: Schema.Number,
+      planId: Schema.optional(Schema.String),
+      planDigest: Schema.optional(Schema.String),
+      parentRunId: Schema.optional(Schema.String),
+      lineageId: Schema.optional(Schema.String),
+      roundOrdinal: Schema.optional(Schema.Number),
+      waitingReason: Schema.optional(Schema.String),
+      steeringPending: Schema.optional(Schema.Number),
+      cancellation: Schema.optional(ControlSchema.Cancellation),
+      deadlineAt: Schema.optional(Schema.Number),
+      seat: Schema.optional(Schema.String),
+      turns: Schema.Number,
+      calls: Schema.Number,
+      callsFailed: Schema.Number,
+      editsAttempted: Schema.Number,
+      editsSucceeded: Schema.Number,
+      inputTokens: Schema.Number,
+      outputTokens: Schema.Number,
+      verdict: Schema.String,
+      diagnosis: Schema.String,
+      finalOutput: Schema.optional(Schema.String),
+      failureFault: Schema.optional(Fault.Class),
+      failureMessage: Schema.optional(Schema.String),
+      failureTag: Schema.optional(Schema.String)
+    })
+    const encoded = encode(GatewayProjection.RunSummaryRow, failedChildWire)
+    const { statusRollup: _added, ...previousRow } = failedChildWire
+
     expect(Schema.decodeUnknownSync(PreviousRunSummaryRow)(encoded)).toEqual(previousRow)
-    // New clients also accept old rows without inventing an observation.
+    // New clients accept the old client's fixed row without a new required field.
     expect(Schema.decodeUnknownSync(GatewayProjection.RunSummaryRow)(previousRow)).toEqual(previousRow)
   })
 
@@ -192,9 +296,15 @@ describe("the encoded projection rows", () => {
       event(3, "control.agent.cell-call-settled", { flowName: "write", outcome: "success", value: "wrote it" })
     ]
 
-    expect(encode(Schema.Array(GatewayProjection.RunTreeRow), GatewayProjection.runTree(run, events))).toEqual([{
+    expect(
+      encode(
+        Schema.Array(GatewayProjection.RunTreeRow),
+        GatewayProjection.runTree({ ...run, parentRunId: "parent-1" }, events)
+      )
+    ).toEqual([{
       runId: "run-1",
       nodeId: "call-1",
+      parentRunId: "parent-1",
       label: "write",
       status: "completed",
       seat: "opus",
@@ -268,6 +378,33 @@ describe("the encoded projection rows", () => {
       requestedAt: 1_000,
       status: "pending"
     }])
+  })
+
+  it("freezes a nested-wait approval with every optional field present", () => {
+    const wire: GatewayProjection.ApprovalRow = {
+      runId: "parent-1",
+      waitRunId: "child-1",
+      questionProvenance: "events",
+      requestId: "clarify#1",
+      title: "Which target?",
+      request: { kind: "ask", name: "clarify", attempt: 1, prompt: "Which target?", token: "wait-token" },
+      payload: {
+        target: {
+          _tag: "Node",
+          runId: "parent-1",
+          requestId: "clarify#1",
+          digest: "wait-token",
+          envelope: { capabilities: [], flows: [], budget: {} }
+        },
+        scope: "run",
+        idempotencyKey: "answer:wait-token"
+      },
+      requestedAt: 2_000,
+      status: "pending"
+    }
+    const row = Schema.decodeUnknownSync(GatewayProjection.ApprovalRow)(wire)
+    expect(row).toEqual(wire)
+    expect(encode(GatewayProjection.ApprovalRow, row)).toEqual(wire)
   })
 
   it("round-trips the additive call identity while accepting legacy transcript rows", () => {
