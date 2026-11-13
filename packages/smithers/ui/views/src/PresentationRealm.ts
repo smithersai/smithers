@@ -237,7 +237,7 @@ export const limitHits: Metric.Counter<number> = Metric.counter("realm.limit_hit
 
 /** Removes the realm's clock, randomness and reflection traps before the bundle loads. */
 const prelude = `"use strict";
-${QuickJSLifecycle.prelude(["WeakRef", "FinalizationRegistry"])}
+${QuickJSLifecycle.prelude(["WeakRef", "FinalizationRegistry", "InternalError"])}
 globalThis.console = Object.freeze({ log() {}, info() {}, warn() {}, error() {}, debug() {} });`
 
 interface Loaded {
@@ -245,6 +245,7 @@ interface Loaded {
   broken: boolean
   readonly runtime: QuickJSRuntime
   readonly context: QuickJSContext
+  readonly internalError: { readonly prototype: QuickJSHandle; readonly getPrototypeOf: QuickJSHandle }
   readonly render: QuickJSHandle
   readonly reduce: QuickJSHandle
   readonly components: ReadonlyArray<string>
@@ -265,6 +266,8 @@ const crossed = (limit: Limit, detail: string): Outcome<never> => failed("limit_
 const close = (loaded: Loaded): void => {
   loaded.render.dispose()
   loaded.reduce.dispose()
+  loaded.internalError.prototype.dispose()
+  loaded.internalError.getPrototypeOf.dispose()
   loaded.context.dispose()
   loaded.runtime.dispose()
 }
@@ -308,9 +311,20 @@ export const make = (
     }
 
     /** The outcome of a call that threw inside the realm, read before its handle is disposed. */
-    const thrown = (context: QuickJSContext, error: QuickJSHandle, reason: "load_failed" | "render_failed") => {
+    const thrown = (
+      context: QuickJSContext,
+      error: QuickJSHandle,
+      reason: "load_failed" | "render_failed",
+      internalError: Loaded["internalError"]
+    ) => {
       const dumped: unknown = context.dump(error)
-      error.dispose()
+      const genuine = error.consume((value) => {
+        if (hit !== undefined) return false
+        const prototype = context.callFunction(internalError.getPrototypeOf, context.undefined, value)
+        const matches = prototype.error === undefined && context.sameValue(prototype.value, internalError.prototype)
+        prototype.dispose()
+        return matches
+      })
       if (hit !== undefined) {
         return crossed(hit, hit === "time" ? "The view ran past its time limit" : "The view ran past its step limit")
       }
@@ -318,8 +332,12 @@ export const make = (
       const message = typeof dumped === "object" && dumped !== null
         ? String((dumped as { message?: unknown }).message)
         : String(dumped)
-      if (/out of memory/i.test(message)) return crossed("memory", "The view ran out of memory")
-      if (/stack overflow|call stack/i.test(message)) return crossed("stack", "The view overflowed its stack")
+      if (genuine && name === "InternalError" && message === "out of memory") {
+        return crossed("memory", "The view ran out of memory")
+      }
+      if (genuine && name === "InternalError" && message === "stack overflow") {
+        return crossed("stack", "The view overflowed its stack")
+      }
       return failed(reason, name === "" || name === "undefined" ? message : `${name}: ${message}`)
     }
 
@@ -332,7 +350,17 @@ export const make = (
         return hit !== undefined
       })
       const context = runtime.newContext()
+      const internalError = {
+        prototype: context.getProp(context.global, "InternalError").consume((constructor) =>
+          context.getProp(constructor, "prototype")
+        ),
+        getPrototypeOf: context.getProp(context.global, "Object").consume((object) =>
+          context.getProp(object, "getPrototypeOf")
+        )
+      }
       const abandon = (outcome: Outcome<never>): Outcome<never> => {
+        internalError.prototype.dispose()
+        internalError.getPrototypeOf.dispose()
         context.dispose()
         runtime.dispose()
         return outcome
@@ -340,7 +368,9 @@ export const make = (
       arm(limits.loadMs, Number.POSITIVE_INFINITY)
       for (const [code, filename] of [[prelude, "prelude.js"], [options.bundle, "presentation.js"]] as const) {
         const result = context.evalCode(code, filename)
-        if (result.error !== undefined) return abandon(thrown(context, result.error, "load_failed"))
+        if (result.error !== undefined) {
+          return abandon(thrown(context, result.error, "load_failed", internalError))
+        }
         result.value.dispose()
       }
       const installed = context.getProp(context.global, globalName)
@@ -361,6 +391,7 @@ export const make = (
           broken: false,
           runtime,
           context,
+          internalError,
           render,
           reduce,
           components: Array.isArray(components) ? components.filter((name) => typeof name === "string") : []
@@ -425,12 +456,12 @@ export const make = (
           `(function (require, module, exports) {\n${checked.compiled}\n})`,
           `view-${checked.digest.slice(0, 12)}.js`
         )
-        if (factory.error !== undefined) return thrown(context, factory.error, "render_failed")
+        if (factory.error !== undefined) return thrown(context, factory.error, "render_failed", realm.internalError)
         const handles = args.map((arg) => context.newString(arg))
         const result = context.callFunction(fn, context.undefined, factory.value, ...handles)
         for (const handle of handles) handle.dispose()
         factory.value.dispose()
-        if (result.error !== undefined) return thrown(context, result.error, "render_failed")
+        if (result.error !== undefined) return thrown(context, result.error, "render_failed", realm.internalError)
         const text = context.getString(result.value)
         result.value.dispose()
         return { ok: true, value: text }

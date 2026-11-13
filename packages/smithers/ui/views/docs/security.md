@@ -9,7 +9,7 @@ before it failed.
 | Layer         | Where                                                  | Stops                                                                                                                                                                                                                                                                                                   | Held by                                                                                                          |
 | ------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Checker       | `ViewCode.check`                                       | Imports outside three modules, dynamic `import()`, `eval`, network, storage, page, timer, clock and randomness names, `constructor` and `__proto__`, refused elements and attributes, `javascript:` URLs, HTML comment tokens, undeclared `data-event` literals                                         | `test/ViewCode.test.ts`, `test/ViewCode.property.test.ts`                                                        |
-| Realm         | `PresentationRealm`                                    | Any authority: the realm is a WebAssembly interpreter with no module loader, network, storage or host object; values cross as JSON strings. `Date`, `Math.random`, `Proxy`, `WeakRef` and `FinalizationRegistry` are removed                                                                            | `test/PresentationRealm.test.ts`                                                                                 |
+| Realm         | `PresentationRealm`                                    | Any authority: the realm is a WebAssembly interpreter with no module loader, network, storage or host object; values cross as JSON strings. `Date`, `Math.random`, `Proxy`, `WeakRef`, `FinalizationRegistry` and `InternalError` are removed                                                           | `test/PresentationRealm.test.ts`                                                                                 |
 | Bounds        | `PresentationRealm`                                    | Hangs and crashes: time, steps, memory, stack, HTML, state and props                                                                                                                                                                                                                                    | `test/PresentationRealm.test.ts`                                                                                 |
 | Render guard  | `Presentation.guardRenderer`, `Presentation.guardHost` | A refused element or attribute the checker cannot see: a spread, a computed name, an element built by hand or changed after a constructor checked it. The renderer runs the guard on each element as it emits it, on a frozen copy of its props, and `install` refuses a bundle whose renderer does not | `test/Presentation.test.ts`, `test/PresentationRealm.test.ts`, `test/ViewCode.property.test.ts`                  |
 | Fresh runtime | `PresentationRealm`                                    | One view reading another's props or changing what another renders, through anything it reaches: each render and interaction loads the bundle into a QuickJS runtime of its own, closed after the call                                                                                                   | `test/PresentationRealm.test.ts`                                                                                 |
@@ -83,6 +83,10 @@ limits and counts (`obs.content-free`).
   values, not every way HTML can be read. `GeneratedView` sanitizes the HTML
   and frames it behind the CSP as if no guard had run; another consumer of
   `realm.render` must do the same.
+- **A caught engine error can be relabelled.** The captured prototype distinguishes
+  ordinary errors from internal errors, but a view that catches a genuine internal
+  error after crossing a bound can change its message before rethrowing. The
+  reported limit follows the exact message on that internal error.
 - **The checker is depth, not the boundary.** A computed property name passes
   it; the realm, the render guard and the frame stand behind it.
 - **`detail` is the caller's to guard.** It is redacted so that printing,
@@ -97,8 +101,14 @@ cell sandbox through `QuickJSLifecycle` from `@smthrs/harness`. Presentation
 still removes weak references and hardens the bundle independently; sharing
 lifecycle code never grants a view the harness host bridge.
 
+`InternalError` is removed, and the realm checks the captured internal error
+prototype before trusting a limit message. Ordinary errors retain their own message
+in the redacted `detail`, even when it mentions memory or a call stack.
+
 The checker refuses module-level `await` and `for await`, because checked
-modules execute in a synchronous factory. Nested async functions remain valid.
+modules execute in a synchronous factory. Nested async helpers remain valid, but the default export and `reduce` must
+be synchronous, non-generator functions. The realm refuses a thenable returned
+by `reduce` before serializing state.
 Math may be used only through direct, statically named deterministic members;
 passing or destructuring the Math object and dynamic member keys are refused.
 Forbidden object keys are refused whether identifiers or quoted strings.

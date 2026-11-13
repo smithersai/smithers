@@ -251,8 +251,8 @@ const frameAncestors = (headers: HeaderRecord): Array<Array<string>> => {
  *   every ancestor is the page's origin, and conflicting values refuse.
  *
  * A report-only policy, and a policy in a `<meta>` element, never refuse
- * framing, so neither is read. Invalid page or ancestor URLs return
- * `unknown` with reason `invalid_url`.
+ * framing, so neither is read. Invalid page or ancestor URLs, or an empty
+ * ancestor list, return `unknown` with reason `invalid_url`.
  *
  * @category framing
  * @since 0.1.0
@@ -266,7 +266,7 @@ export const framing = (
 } | { readonly framing: "unknown"; readonly reason: "invalid_url" } => {
   const page = URL.parse(frame.page)
   const ancestors: Array<URL> = []
-  if (page === null) return { framing: "unknown", reason: "invalid_url" }
+  if (page === null || frame.ancestors.length === 0) return { framing: "unknown", reason: "invalid_url" }
   for (const value of frame.ancestors) {
     const ancestor = URL.parse(value)
     if (ancestor === null) return { framing: "unknown", reason: "invalid_url" }

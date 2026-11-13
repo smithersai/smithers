@@ -49515,6 +49515,8 @@ It refuses:
 - dynamic `import()`, `import.meta`, `import x = require()`, `export =`,
   `export ... from`, namespaces and `declare` blocks, `debugger`;
 - exports other than `default`, `interactions`, `reduce` and types;
+- an async or generator `default` or `reduce` function, including local
+  aliases; nested async helpers remain valid;
 - the names `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`,
   `navigator`, `localStorage`, `sessionStorage`, `indexedDB`, `caches`,
   `document`, `window`, `globalThis`, `self`, `location`, `top`, `parent`,
@@ -49525,7 +49527,9 @@ It refuses:
   `Math.random`;
 - the properties `constructor`, `__proto__`, `prototype`,
   `dangerouslySetInnerHTML`, `innerHTML`, `outerHTML`, `srcdoc`,
-  `contentWindow`, `cookie` and the other accessors in the vocabulary;
+  `contentWindow`, `cookie` and the other accessors in the vocabulary,
+  including properties in JSX member tags; forbidden names are refused as
+  JSX tag roots too;
 - the elements `script`, `iframe`, `object`, `embed`, `link`, `meta`, `base`,
   `a`, `style`, `template`, `foreignObject`, `use`, `image`, `animate`, media
   elements and the others in the vocabulary, in JSX or as a literal
@@ -49593,7 +49597,7 @@ interface Options {
 Loads a realm over the bundle for the life of the scope. It compiles the
 QuickJS build the host names (`QuickJSVariant` from `@smthrs/harness`), at most
 once per build, removes `Date`, `Math.random`, `Proxy`, `WeakRef` and
-`FinalizationRegistry`, evaluates the bundle, and fails with `load_failed` when
+`FinalizationRegistry` and `InternalError`, evaluates the bundle, and fails with `load_failed` when
 the bundle throws or installs no renderer. That runtime serves the first call;
 every later render or interaction loads the bundle into a fresh runtime, and
 each runtime closes after its call, so nothing one view changes reaches
@@ -49622,6 +49626,7 @@ interface Realm {
 - `render` evaluates the module afresh and renders its default export with
   `{ props, state }` through `renderToStaticMarkup`.
 - `interact` runs `reduce(state, event)` and renders the state it returns.
+  A thenable result fails with `render_failed` instead of replacing the state.
 - `components` is what the bundle resolves `@smthrs/ui` to, for
   `ViewCode.check`.
 
@@ -49752,7 +49757,7 @@ interface Installed {
 | `nonceAttribute`                                   | `"data-smithers-nonce"`, where the frame document carries the mount's nonce                                                                                                                                                                           |
 | `hash(script)`                                     | `'sha256-<base64>'` over the script's UTF-8                                                                                                                                                                                                           |
 | `policy(runtimeHash)`                              | the frame's CSP: `default-src 'none'`, `script-src` the hash, `script-src-attr 'none'`, `style-src 'unsafe-inline'`, `img-src data:`, `font-src data:`, and `'none'` for connect, media, object, frame, child, worker, manifest, base and form-action |
-| `frameDocument({ runtime, nonce, theme, styles })` | the frame's `srcdoc`: the policy, the styles and the runtime, with no view content. A `</script` or `</style` inside is escaped, and the hash covers the runtime as written                                                                           |
+| `frameDocument({ runtime, nonce, theme, styles })` | the frame's `srcdoc`: the policy, the styles and the runtime, with no view content. CRLF and lone CR become LF before escaping `</script` and hashing; NUL is refused. A `</style` inside styles is escaped                                           |
 
 ## `Bridge`
 
@@ -49859,19 +49864,19 @@ A docs site's `llms.txt` index: read it, find and search its pages, and fetch it
 Whether an outside page shows in a frame, asked from a server, and the card
 shown in its place. See [Check a web page before framing it](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/docs/check-a-web-page.md).
 
-| Export                                         | What it is                                                                                                                                                       |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `check(url, options)`                          | `Effect<Checked, never, HttpClient>`: requests the page as a frame would, guarded on every hop; never fails                                                      |
-| `Options`                                      | `{ ancestors, privateHosts?, maxRedirects? (5), timeout? (8 s), headTimeout? (3 s), maxBytes? (256 KiB), userAgent? }`                                           |
-| `Checked`                                      | schema and type: `{ framing, reason?, status?, title?, description?, icon? }`                                                                                    |
-| `Preview`                                      | schema and type: `{ title?, description?, icon? }`                                                                                                               |
-| `FRAMINGS`, `Framing`                          | `allowed`, `refused`, `unknown`                                                                                                                                  |
-| `REASONS`, `Reason`                            | `x_frame_options`, `frame_ancestors`, `insecure`, `content`, `status`, `invalid_url`, `private_host`, `redirects`, `timeout`, `unreachable`                      |
-| `framing(headers, { page, ancestors })`        | `{ framing: "allowed" }` or `{ framing: "refused", reason }` from headers; malformed page or ancestor URLs yield `{ framing: "unknown", reason: "invalid_url" }` |
-| `content(headers)`                             | whether a sandboxed frame shows the response: not an attachment, a PDF or an octet stream                                                                        |
-| `preview(html, pageUrl)`                       | the `Preview` read from a page's head                                                                                                                            |
-| `HeaderRecord`                                 | response headers by name, in any case                                                                                                                            |
-| `MAX_TITLE`, `MAX_DESCRIPTION`, `MAX_ICON_URL` | 200, 300 and 2,048 UTF-16 code units                                                                                                                             |
+| Export                                         | What it is                                                                                                                                                                                   |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check(url, options)`                          | `Effect<Checked, never, HttpClient>`: requests the page as a frame would, guarded on every hop; never fails                                                                                  |
+| `Options`                                      | `{ ancestors, privateHosts?, maxRedirects? (5), timeout? (8 s), headTimeout? (3 s), maxBytes? (256 KiB), userAgent? }`                                                                       |
+| `Checked`                                      | schema and type: `{ framing, reason?, status?, title?, description?, icon? }`                                                                                                                |
+| `Preview`                                      | schema and type: `{ title?, description?, icon? }`                                                                                                                                           |
+| `FRAMINGS`, `Framing`                          | `allowed`, `refused`, `unknown`                                                                                                                                                              |
+| `REASONS`, `Reason`                            | `x_frame_options`, `frame_ancestors`, `insecure`, `content`, `status`, `invalid_url`, `private_host`, `redirects`, `timeout`, `unreachable`                                                  |
+| `framing(headers, { page, ancestors })`        | `{ framing: "allowed" }` or `{ framing: "refused", reason }` from headers; malformed page or ancestor URLs, or an empty ancestor list, yield `{ framing: "unknown", reason: "invalid_url" }` |
+| `content(headers)`                             | whether a sandboxed frame shows the response: not an attachment, a PDF or an octet stream                                                                                                    |
+| `preview(html, pageUrl)`                       | the `Preview` read from a page's head                                                                                                                                                        |
+| `HeaderRecord`                                 | response headers by name, in any case                                                                                                                                                        |
+| `MAX_TITLE`, `MAX_DESCRIPTION`, `MAX_ICON_URL` | 200, 300 and 2,048 UTF-16 code units                                                                                                                                                         |
 
 ---
 

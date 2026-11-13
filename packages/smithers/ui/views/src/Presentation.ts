@@ -222,7 +222,12 @@ const build = (
     reduce: (factory, state, event) => {
       const reduce = exportsOf(factory, require).reduce
       if (typeof reduce !== "function") throw new TypeError("The module exports no reduce function")
-      const next = JSON.stringify(reduce(JSON.parse(state), JSON.parse(event)))
+      const value: unknown = reduce(JSON.parse(state), JSON.parse(event))
+      if (
+        value !== null && (typeof value === "object" || typeof value === "function") &&
+        typeof (value as { readonly then?: unknown }).then === "function"
+      ) throw new TypeError("reduce must return state synchronously")
+      const next = JSON.stringify(value)
       if (next === undefined) throw new TypeError("reduce returned no state")
       return next
     },

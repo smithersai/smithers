@@ -111,14 +111,16 @@ const attribute = (value: string): string =>
  * view content. The view's HTML arrives later over the bridge. The runtime is
  * the body's only child, so the body exists when it runs.
  *
- * The runtime is hashed exactly as it is written into the document, after any
- * `</script` in it is escaped, so the policy always admits it.
+ * The runtime's CRLF and lone CR newlines are normalized to LF before any
+ * `</script` is escaped and the written text is hashed, so the policy
+ * admits the text the HTML parser produces. A NUL throws a `TypeError`.
  *
  * @category documents
  * @since 0.1.0
  */
 export const frameDocument = (options: FrameDocumentOptions): string => {
-  const runtime = inert(options.runtime, "script")
+  if (options.runtime.includes("\0")) throw new TypeError("The frame runtime must not contain NUL")
+  const runtime = inert(options.runtime.replace(/\r\n?/g, "\n"), "script")
   return `<!doctype html><html ${nonceAttribute}="${attribute(options.nonce)}" data-theme="${
     attribute(options.theme)
   }"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${

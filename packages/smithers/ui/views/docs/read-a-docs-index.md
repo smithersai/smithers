@@ -29,13 +29,15 @@ if (fetched._tag === "Text") {
 | Field     | What it is                                                                |
 | --------- | ------------------------------------------------------------------------- |
 | `title`   | the first `#` heading, `""` when there is none                            |
-| `summary` | the first `>` line before any section                                     |
+| `summary` | the first non-empty `>` line before any section                           |
 | `pages`   | each listed page in order: `{ title, url, path, description?, section? }` |
 
 - A page's link is resolved against `indexUrl` and kept only on the index's
   own origin, so a server that fetches a page of the index fetches only from
   the host the repository named. `url` drops the query and fragment; `path`
   is its path, which names the page.
+- A fenced code block closes only on the same marker character, repeated at
+  least as many times as the opening fence, with no trailing text.
 - The first page at a path wins; links inside fenced code blocks, and lines
   that aren't `-`, `*` or `+` list items with a link, are skipped.
 - At most 1,000 pages (`maximumPages`); titles are cut at 200 characters

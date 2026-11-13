@@ -11,7 +11,7 @@ import { Effect, Exit, Redacted, Scope } from "effect"
 import * as fc from "fast-check"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { PresentationRealm, ViewCode } from "../src/index.ts"
-import { refusedElements, refusedNames } from "../src/internal/vocabulary.ts"
+import { refusedElements, refusedNames, refusedProperties } from "../src/internal/vocabulary.ts"
 import { bundle } from "./fixtures/bundle.ts"
 import { unsafeMarkup } from "./fixtures/markup.ts"
 import { components } from "./fixtures/modules.ts"
@@ -34,6 +34,9 @@ export default function View({ props }: { props: { title: string } }) {
 const lowerFirst = (text: string) => text.slice(0, 1).toLowerCase() + text.slice(1)
 
 const hostile: fc.Arbitrary<Parameters<typeof host>[0]> = fc.oneof(
+  fc.constantFrom(...refusedProperties).map((name) => ({ jsx: `<Card.${name} />` })),
+  fc.constantFrom(...refusedNames).map((name) => ({ jsx: `<${name}.View />` })),
+  fc.constantFrom(...refusedNames).filter((name) => /^[A-Z]/.test(name)).map((name) => ({ jsx: `<${name} />` })),
   fc.constantFrom(...refusedNames).map((name) => ({ body: `const value = ${name}` })),
   fc.constantFrom(...refusedNames).map((name) => ({ jsx: `{String(${name})}` })),
   fc.mixedCase(fc.constantFrom(...refusedElements)).map((element) => ({ jsx: `<${lowerFirst(element)} />` })),
@@ -103,7 +106,10 @@ describe("ViewCode.check, fuzzed", () => {
           // A tab between the scheme and its colon.
           [{ body: "const url = \"JaVaScRiPt\\t:alert(1)\"" }],
           // An SVG element whose lowercase form is refused.
-          [{ jsx: "<foreignObject />" }]
+          [{ jsx: "<foreignObject />" }],
+          [{ jsx: "<Card.constructor />" }],
+          [{ jsx: "<window.View />" }],
+          [{ jsx: "<Function />" }]
         ]
       }
     )

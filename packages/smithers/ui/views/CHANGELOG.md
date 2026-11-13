@@ -2,6 +2,17 @@
 
 ## 0.1.0 (unreleased)
 
+### Fixed
+
+- Ordinary view errors keep their correction details instead of being reported
+  as memory or stack limits.
+- Async and generator entry points are refused, and reducer thenables fail
+  instead of replacing state with an empty object.
+- Forbidden JSX member properties and root names are checked.
+- Frame runtime hashes match HTML-normalized newlines; NUL is refused.
+- Docs indexes retain their first non-empty summary and honor fence kinds and lengths.
+- Empty iframe ancestry returns `unknown` instead of allowing framing.
+
 ### Added
 
 - `ViewCode.check`: checks a renderer's TSX module (imports, exports, refused

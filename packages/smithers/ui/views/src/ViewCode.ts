@@ -356,10 +356,38 @@ const checkImport = (node: Node, components: ReadonlySet<string>, findings: Find
   }
 }
 
+/** Follows local aliases and erased wrappers to check a synchronous entry point. */
+const checkSynchronous = (
+  value: unknown,
+  name: string,
+  bindings: ReadonlyMap<string, Node>,
+  findings: Findings
+) => {
+  const seen = new Set<Node>()
+  while (isNode(value) && !seen.has(value)) {
+    seen.add(value)
+    if (value.type === "Identifier") {
+      value = bindings.get(value.name as string)
+    } else if (
+      ["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "TSInstantiationExpression"].includes(
+        value.type
+      )
+    ) {
+      value = value.expression
+    } else {
+      if (value.async === true || value.generator === true) {
+        findings.problems.push(at(value, `${name} must be a synchronous, non-generator function`))
+      }
+      return
+    }
+  }
+}
+
 /** Checks one top-level export against the module contract. */
-const checkExport = (node: Node, findings: Findings) => {
+const checkExport = (node: Node, findings: Findings, bindings: ReadonlyMap<string, Node>) => {
   if (node.type === "ExportDefaultDeclaration") {
     findings.hasDefault = true
+    checkSynchronous(node.declaration, "default", bindings, findings)
     return
   }
   if (node.type === "ExportAllDeclaration" || node.source !== null && node.source !== undefined) {
@@ -374,18 +402,20 @@ const checkExport = (node: Node, findings: Findings) => {
       names.push({ name: nameOf(id) ?? "a destructured binding", init: declarator.init, node: declarator })
     }
   } else if (isNode(declaration)) {
-    names.push({ name: String(nameOf(declaration.id as Node)), init: undefined, node: declaration })
+    names.push({ name: String(nameOf(declaration.id as Node)), init: declaration, node: declaration })
   } else {
     for (const specifier of node.specifiers as Array<Node>) {
       if (specifier.exportKind === "type") continue
       const name = nameOf(specifier.exported as Node)!
-      if (name === "default") findings.hasDefault = true
-      else names.push({ name, init: undefined, node: specifier })
+      names.push({ name, init: specifier.local, node: specifier })
     }
   }
   for (const { init, name, node: place } of names) {
-    if (name === "reduce") findings.reduces = true
-    else if (name === "interactions") {
+    if (name === "reduce" || name === "default") {
+      if (name === "reduce") findings.reduces = true
+      else findings.hasDefault = true
+      checkSynchronous(init, name, bindings, findings)
+    } else if (name === "interactions") {
       const value = literalValue(init)
       const declared = value === undefined ? Option.none() : decodeDeclared(value)
       findings.interactionsNode = place
@@ -404,6 +434,9 @@ const checkExport = (node: Node, findings: Findings) => {
 const checkElement = (node: Node, findings: Findings) => {
   const name = node.name as Node
   const element = name.type === "JSXIdentifier" ? (name.name as string) : ""
+  if (/^[A-Z]/.test(element) && refusedNames.has(element)) {
+    findings.problems.push(at(node, `${element} is refused in a view`))
+  }
   if (name.type === "JSXNamespacedName") findings.problems.push(at(node, "Namespaced elements are refused in a view"))
   if (/^[a-z]/.test(element) && isRefusedElement(element)) {
     findings.problems.push(at(node, `<${element}> is refused in a view`))
@@ -454,6 +487,18 @@ const propertyName = (node: Node): string | undefined =>
 /** Walks the module once, iteratively so a deeply nested module cannot exhaust the host's stack. */
 const walk = (program: Node, components: ReadonlySet<string>, findings: Findings) => {
   const react = new Set<string>()
+  const bindings = new Map<string, Node>()
+  for (const statement of program.body as Array<Node>) {
+    const declaration = isNode(statement.declaration) ? statement.declaration : statement
+    if (declaration.type === "VariableDeclaration") {
+      for (const binding of declaration.declarations as Array<Node>) {
+        const name = nameOf(binding.id as Node)
+        if (name !== undefined && isNode(binding.init)) bindings.set(name, binding.init)
+      }
+    } else if (declaration.type === "FunctionDeclaration" && isNode(declaration.id)) {
+      bindings.set(nameOf(declaration.id)!, declaration)
+    }
+  }
   const stack: Array<
     { readonly node: Node; readonly parent: Node; readonly key: string; readonly inFunction: boolean }
   > = []
@@ -461,7 +506,7 @@ const walk = (program: Node, components: ReadonlySet<string>, findings: Findings
     if (statement.type === "ImportDeclaration" && statement.importKind !== "type") {
       checkImport(statement, components, findings, react)
     } else if (statement.type.startsWith("Export")) {
-      if (!isTypeOnly(statement)) checkExport(statement, findings)
+      if (!isTypeOnly(statement)) checkExport(statement, findings, bindings)
     } else if (statement.type === "TSImportEqualsDeclaration" || statement.type === "TSExportAssignment") {
       findings.problems.push(at(statement, "A view may not use require-style imports or exports"))
     } else if (statement.type === "TSModuleDeclaration") {
@@ -509,11 +554,18 @@ const walk = (program: Node, components: ReadonlySet<string>, findings: Findings
         break
       }
       case "MemberExpression":
-      case "OptionalMemberExpression": {
+      case "OptionalMemberExpression":
+      case "JSXMemberExpression": {
         const property = propertyName(node)
         const object = nameOf(node.object as Node)
-        if (property !== undefined && node.computed === true && refusedProperties.has(property)) {
+        if (
+          property !== undefined && (node.computed === true || node.type === "JSXMemberExpression") &&
+          refusedProperties.has(property)
+        ) {
           findings.problems.push(at(node, `The property ${property} is refused in a view`))
+        }
+        if (node.type === "JSXMemberExpression" && object !== undefined && refusedNames.has(object)) {
+          findings.problems.push(at(node, `${object} is refused in a view`))
         }
         if (object === "Math" && property === "random") {
           findings.problems.push(at(node, "Math.random is refused in a view"))

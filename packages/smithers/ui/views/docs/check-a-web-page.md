@@ -53,7 +53,8 @@ secure upgrade, `'self'`, hosts with `*.` wildcards, ports and `*` ports),
 and when any policy has the directive, `X-Frame-Options` is ignored. A
 report-only policy and a `<meta>` policy never refuse framing, so neither is
 read. Pass every origin that holds the frame, the framing page's first; when
-a frame sits inside another frame, each must be admitted.
+a frame sits inside another frame, each must be admitted. An empty ancestor
+list returns `unknown` with reason `invalid_url`.
 
 ## The preview
 

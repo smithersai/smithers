@@ -138,22 +138,30 @@ export const parse = (text: string, indexUrl: string): Index => {
   let title = ""
   let summary: string | undefined
   let section: string | undefined
-  let fenced = false
+  let fence: { readonly character: string; readonly length: number } | undefined
   const pages: Array<Page> = []
   const paths = new Set<string>()
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim()
-    if (/^(```|~~~)/.test(line)) {
-      fenced = !fenced
+    const marker = /^(`{3,}|~{3,})(.*)$/.exec(line)
+    if (fence !== undefined) {
+      if (
+        marker !== null && marker[1]![0] === fence.character && marker[1]!.length >= fence.length &&
+        marker[2]!.trim() === ""
+      ) fence = undefined
       continue
     }
-    if (fenced) continue
+    if (marker !== null) {
+      fence = { character: marker[1]![0]!, length: marker[1]!.length }
+      continue
+    }
     if (title === "" && /^#\s/.test(line)) {
       title = cut(line.slice(2), maximumTitleLength)
       continue
     }
     if (summary === undefined && line.startsWith(">") && section === undefined) {
-      summary = cut(line.slice(1), maximumDescriptionLength)
+      const candidate = cut(line.slice(1), maximumDescriptionLength)
+      if (candidate !== "") summary = candidate
       continue
     }
     if (/^##\s/.test(line)) {
@@ -176,7 +184,7 @@ export const parse = (text: string, indexUrl: string): Index => {
       ...(section === undefined ? {} : { section })
     })
   }
-  return summary === undefined || summary === "" ? { title, pages } : { title, summary, pages }
+  return summary === undefined ? { title, pages } : { title, summary, pages }
 }
 
 /**
