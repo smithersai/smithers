@@ -318,22 +318,6 @@ describe("OpenAIChatCompletions.protocol.stream", () => {
     })
   })
 
-  it("short-circuits settlement when the state becomes settled during a step", () => {
-    let reads = 0
-    const state = Object.defineProperty(
-      { ...OpenAIChatCompletions.protocol.stream.initial(streamRequest) },
-      "settled",
-      { get: () => reads++ > 0 }
-    )
-
-    const [settled, events] = step(
-      state,
-      "{\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}"
-    )
-    expect(settled.settled).toBe(true)
-    expect(events).toEqual([])
-  })
-
   it("recovers a tool call's index from its id when the delta omits the index", () => {
     const events = replayData([
       "{\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_a\",\"function\":{\"name\":\"lookup\"}}]}}]}",

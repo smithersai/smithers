@@ -316,22 +316,19 @@ const settle = (
   state: State,
   stopReason: StopReason,
   usage: ModelEvent.ModelEvent | undefined
-): { readonly state: State; readonly events: ReadonlyArray<ModelEvent.ModelEvent> } =>
-  state.settled
-    ? { state, events: [] }
-    : {
-      state: { ...state, settled: true },
-      events: [
-        ...(state.textOpen ? [ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: TEXT_ID })] : []),
-        ...(usage === undefined ? [] : [usage]),
-        ModelEvent.ModelEvent.Settle({
-          type: "settle",
-          stopReason,
-          ...(state.responseId === undefined ? {} : { responseId: state.responseId }),
-          ...(state.servedTier === undefined ? {} : { servedTier: state.servedTier })
-        })
-      ]
-    }
+): { readonly state: State; readonly events: ReadonlyArray<ModelEvent.ModelEvent> } => ({
+  state: { ...state, settled: true },
+  events: [
+    ...(state.textOpen ? [ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: TEXT_ID })] : []),
+    ...(usage === undefined ? [] : [usage]),
+    ModelEvent.ModelEvent.Settle({
+      type: "settle",
+      stopReason,
+      ...(state.responseId === undefined ? {} : { responseId: state.responseId }),
+      ...(state.servedTier === undefined ? {} : { servedTier: state.servedTier })
+    })
+  ]
+})
 
 const toolIndex = (state: State, call: typeof ChunkToolCall.Type): number => {
   // vLLM and older Ollama builds send every complete parallel call as

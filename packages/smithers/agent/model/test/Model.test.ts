@@ -1,27 +1,15 @@
 import { Effect, Redacted, Result, Schema, Stream, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Model from "../src/Model.ts"
-import { ModelError } from "../src/ModelError.ts"
+import { ModelError, ModelErrorCode } from "../src/ModelError.ts"
 import type { ModelEvent } from "../src/ModelEvent.ts"
 import * as RequestExecutor from "../src/RequestExecutor.ts"
 import * as Route from "../src/Route.ts"
 
 describe("ModelError", () => {
   it("round-trips all stable codes and classifies retryability", () => {
-    const retryable = new Set(["rate_limited", "provider_internal", "transport"])
-    const codes = [
-      "invalid_request",
-      "no_route",
-      "authentication",
-      "rate_limited",
-      "quota_exceeded",
-      "content_policy",
-      "provider_internal",
-      "transport",
-      "invalid_provider_output",
-      "unknown"
-    ] as const
-    for (const code of codes) {
+    const retryable = new Set(["rate_limited", "provider_internal", "transport", "call_timeout"])
+    for (const code of ModelErrorCode.literals) {
       const error = new ModelError({
         code,
         message: code,

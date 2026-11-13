@@ -380,19 +380,6 @@ describe("OpenAIResponses", () => {
     ])
   })
 
-  it("short-circuits settlement when the state becomes settled during a step", () => {
-    let reads = 0
-    const state = Object.defineProperty(
-      { ...OpenAIResponses.protocol.stream.initial(streamRequest) },
-      "settled",
-      { get: () => reads++ > 0 }
-    )
-
-    const [settled, events] = step(state, "{\"type\":\"response.incomplete\",\"response\":{}}")
-    expect(settled.settled).toBe(true)
-    expect(events).toEqual([])
-  })
-
   it("reads incomplete_details.reason instead of always reporting a token limit", () => {
     // `response.incomplete` carries WHY. A safety refusal is not a token budget,
     // and `StopReason` already distinguishes the two.
@@ -615,11 +602,6 @@ describe("OpenAIResponses", () => {
     ])
   })
 
-  it("rejects malformed stream frames as typed provider output errors", () => {
-    expect(() => Schema.decodeUnknownSync(OpenAIResponses.protocol.stream.event)("not-json"))
-      .toThrow()
-  })
-
   it("classifies top-level streamed quota and authentication errors", () => {
     for (
       const [data, expected] of [
@@ -806,9 +788,28 @@ describe("OpenAIResponses", () => {
     ])
   })
 
-  it("lowers a deterministic native deferred tool-search load point", () => {
-    const first = body(request())
-    const reordered = request()
+  it("keeps a native load point stable across declaration and duplicate activation order", () => {
+    const original = request()
+    const originalResult = Request.ToolResultPart.make({
+      toolCallId: "call_loader",
+      content: "loaded",
+      addedToolNames: ["read_file", "READ_FILE"]
+    })
+    const first = body(Request.ModelRequest.make({
+      ...original,
+      messages: [...original.messages.slice(0, -1), Request.Message.tool(originalResult)]
+    }))
+    const reordered = Request.ModelRequest.make({
+      ...original,
+      tools: [...original.tools].reverse(),
+      messages: [
+        ...original.messages.slice(0, -1),
+        Request.Message.tool(Request.ToolResultPart.make({
+          ...originalResult,
+          addedToolNames: [...originalResult.addedToolNames].reverse()
+        }))
+      ]
+    })
     expect(CanonicalJson.stringify(first)).toBe(
       CanonicalJson.stringify(body(reordered))
     )

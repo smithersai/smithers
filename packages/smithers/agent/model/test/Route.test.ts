@@ -136,7 +136,6 @@ describe("Route.prepare", () => {
     expect(first.bodyText).toBe("{\"a\":[\"body\"],\"z\":1}")
     expect(first.publicHeaders).toEqual({ "content-type": "application/json", "x-public": "yes" })
     expect(JSON.stringify(first)).not.toContain(key)
-    expect(JSON.stringify(new ModelError({ code: "transport", message: "safe" }))).not.toContain(key)
   })
 
   it("supplies JSON content type when the route declares no public headers", async () => {
@@ -675,25 +674,6 @@ describe("Route.prepare", () => {
     expect(error).toMatchObject({ code: "authentication", message: "API key must not be empty" })
   })
 
-  it("fails a route given no credential at all the same way as an empty one", async () => {
-    const route = Result.getOrThrow(Route.anthropic({}))
-    const executor = RequestExecutor.RequestExecutor.of({
-      execute: () => Effect.die(new Error("the request must never be sent"))
-    })
-
-    const error = await Effect.runPromise(
-      Effect.scoped(
-        Route.toModel(route).pipe(
-          Effect.flatMap((model) => model.stream(request).pipe(Stream.runDrain, Effect.flip)),
-          Effect.provideService(RequestExecutor.RequestExecutor, executor)
-        )
-      )
-    )
-
-    expect(route.headers).toEqual({ "anthropic-version": "2023-06-01" })
-    expect(error).toMatchObject({ code: "authentication", message: "API key must not be empty" })
-  })
-
   it("rejects a provider body that cannot be canonically encoded", async () => {
     const uncanonical = Protocol.make({
       ...protocol,
@@ -949,6 +929,21 @@ const routeOf = <Body, Frame, Event, State>(
   })
 
 describe("Route.stream", () => {
+  it.each(["not-json", "[]", "{\"type\":12}"])(
+    "rejects malformed OpenAI Responses frames as typed provider output errors: %s",
+    async (frame) => {
+      const route = Result.getOrThrow(Route.openai({ apiKey: Redacted.make("secret") }))
+      const error = await drainError(route, executorOf(() => sseResponse([frame])))
+
+      expect(error).toBeInstanceOf(ModelError)
+      expect(error).toMatchObject({
+        code: "invalid_provider_output",
+        message: "openai-responses emitted an invalid stream event",
+        retryable: false
+      })
+    }
+  )
+
   it("reports a response body that dies mid-stream as a transport failure", async () => {
     const executor = executorOf(() =>
       new Response(

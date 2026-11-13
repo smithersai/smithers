@@ -461,21 +461,18 @@ const settle = (
   state: State,
   stopReason: StopReason,
   servedTier: string | undefined
-): { readonly state: State; readonly events: ReadonlyArray<ModelEvent.ModelEvent> } =>
-  state.settled
-    ? { state, events: [] }
-    : {
-      state: { ...state, settled: true },
-      events: [
-        ModelEvent.ModelEvent.Settle({
-          type: "settle",
-          stopReason,
-          responseId: state.responseId,
-          ...(servedTier === undefined ? {} : { servedTier }),
-          ...(state.itemIds.length === 0 ? {} : { itemIds: state.itemIds })
-        })
-      ]
-    }
+): { readonly state: State; readonly events: ReadonlyArray<ModelEvent.ModelEvent> } => ({
+  state: { ...state, settled: true },
+  events: [
+    ModelEvent.ModelEvent.Settle({
+      type: "settle",
+      stopReason,
+      responseId: state.responseId,
+      ...(servedTier === undefined ? {} : { servedTier }),
+      ...(state.itemIds.length === 0 ? {} : { itemIds: state.itemIds })
+    })
+  ]
+})
 
 const usage = (value: unknown): ModelEvent.Usage | undefined => {
   const item = record(value)

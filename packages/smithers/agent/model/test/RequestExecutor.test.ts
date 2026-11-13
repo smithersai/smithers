@@ -657,7 +657,7 @@ describe("RequestExecutor", () => {
     expect(requests).toHaveLength(1)
   })
 
-  it("does not classify quota-like prose without an explicit provider code", async () => {
+  it("retries rate limiting when the message contains no recognized quota-exhaustion signal", async () => {
     const requests: Array<HttpClientRequest.HttpClientRequest> = []
     const layer = executorLayer(
       Array.from({ length: 3 }, () => ({
@@ -679,6 +679,33 @@ describe("RequestExecutor", () => {
     expect(expectModelError(error).code).toBe("rate_limited")
     expect(requests).toHaveLength(3)
   })
+
+  it.each(["insufficient quota", "quota exceeded"])(
+    "classifies recognized quota-exhaustion prose without an explicit provider code: %s",
+    async (message) => {
+      const requests: Array<HttpClientRequest.HttpClientRequest> = []
+      const layer = executorLayer([{
+        status: 429,
+        body: JSON.stringify({ error: { message } }),
+        headers: { "retry-after-ms": "0" }
+      }], requests)
+
+      const error = await run(
+        Effect.gen(function*() {
+          const executor = yield* RequestExecutor.RequestExecutor
+          return yield* execute(executor, request()).pipe(Effect.flip)
+        }),
+        layer
+      )
+
+      expect(expectModelError(error)).toMatchObject({
+        code: "quota_exceeded",
+        providerCode: undefined,
+        retryable: false
+      })
+      expect(requests).toHaveLength(1)
+    }
+  )
 
   it("reuses byte-identical method, URL, headers, and body", async () => {
     const requests: Array<HttpClientRequest.HttpClientRequest> = []
