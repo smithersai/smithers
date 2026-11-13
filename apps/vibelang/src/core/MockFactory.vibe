@@ -21,7 +21,7 @@ import { type Decision, type Intent } from "./decide.vibe"
 import { recordedConversation, replayLog } from "./replayDecision.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import { TourControlBody } from "./wire.vibe"
-import { actorKey, afterCursor, draftOutcome, liveEvent, replyKind, replayedTo, restoredCounter } from "./mockFactoryDecision.vibe"
+import { actorKey, afterCursor, appliedIndexes, draftOutcome, liveEvent, replyKind, replayedTo, restoredCounter } from "./mockFactoryDecision.vibe"
 import { validTourStep } from "./clientProtocolDecision.vibe"
 import {
   PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, stoppedBy, patient, Post, postRegistration, Posts, Reply, ReplyStep, replyIdOf, StartTour, Tour, touring, tourRegistration,
@@ -182,6 +182,7 @@ effect function cryptoOf() {
 /** What a reply interrupted by a page reload reads, as a failed live reply does (worker/Reply.vibe `REASONS.failed`). */
 const INTERRUPTED = "The agent failed. Try again."
 const restoredReplies = Metric.counter("vibelang_mock_restored_replies", { description: "Mock replies a reload interrupted, failed on restore", incremental: true })
+const trimmedJournalEvents = Metric.counter("vibelang_mock_trimmed_journal_events", { description: "Retained journal events a restore dropped: numbered out of order", incremental: true })
 
 /** A tour run the room's tour sequencer owes, and the signal its waiters read when the run ends. */
 interface TourRun {
@@ -300,8 +301,15 @@ return Layer.effect(Factory, effect {
       const all = try Ref.get(rooms)
       const existing = all.get(conversation)
       if (existing !== undefined) return existing
-      const retained = try journal.read(conversation)
-      const restored = replayLog(empty, retained)
+      const journaled = try journal.read(conversation)
+      const restored = replayLog(empty, journaled)
+      // The log keeps only the events the replay applied: a repeated or skipped number would stop every reader's
+      // replay at a gap it can never close.
+      const retained = appliedIndexes(journaled.map(event => event.seq)).map(index => journaled[index]!)
+      if (retained.length < journaled.length) {
+        try Metric.update(trimmedJournalEvents, journaled.length - retained.length)
+        try Effect.logInfo("vibelang.mock.restore").pipe(Effect.annotateLogs({ outcome: "journal-trimmed", dropped: journaled.length - retained.length }))
+      }
       try Ref.update(ids, value => restoredCounter(value, restored.seq))
       const state = try Ref.make<State>({ conversation: restored, log: retained })
       const gate = try Semaphore.make(1)

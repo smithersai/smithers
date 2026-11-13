@@ -1,6 +1,7 @@
 // The mock factory's own decisions (wiki/decisions/0018-proofs.md, third-lane batch 8): which reply the scripted
 // agent gives, how a wiki draft is answered, whose journal an actor's issues and wiki use, where a restored room's ids
-// resume, which events a reader replays and then follows live, and which mock grants need the roles gate (batch 10).
+// resume, which events a reader replays and then follows live, which mock grants need the roles gate (batch 10), and
+// which of a retained journal's events a restored room keeps (vl-coverage-core).
 // `MockFactory.vibe` and `MockAccounts.vibe` call these; the engine, locks, streams and the prompt's regular expressions
 // stay outside the proof.
 //
@@ -110,4 +111,28 @@ export function selfGrant(actor: string, target: string): boolean {
 //@ ensures role != "new" ==> \result == role + id
 export function fixtureLogin(role: string, id: string): string {
   return (role === "new" ? "joss" : role) + id
+}
+
+/**
+ * Which of a retained journal's events a replay applies, by index: each one numbered one past the last it applied. A
+ * journal an older page or a person edited can repeat or skip a number; a restored room keeps only these, so its log
+ * stays the replay of its conversation and a reader's replay never stops at a gap.
+ */
+//@ verify
+//@ ensures \result.length <= seqs.length
+//@ ensures forall(j, 0 <= j && j < \result.length ==> 0 <= \result[j] && \result[j] < seqs.length && seqs[\result[j]] == j + 1)
+//@ ensures forall(a, forall(b, 0 <= a && a < b && b < \result.length ==> \result[a] < \result[b]))
+export function appliedIndexes(seqs: ReadonlyArray<number>): ReadonlyArray<number> {
+  const kept: Array<number> = []
+  let i = 0
+  while (i < seqs.length) {
+    //@ invariant 0 <= i && i <= seqs.length
+    //@ invariant kept.length <= i
+    //@ invariant forall(j, 0 <= j && j < kept.length ==> 0 <= kept[j] && kept[j] < i && seqs[kept[j]] == j + 1)
+    //@ invariant forall(a, forall(b, 0 <= a && a < b && b < kept.length ==> kept[a] < kept[b]))
+    //@ decreases seqs.length - i
+    if (seqs[i]! === kept.length + 1) kept.push(i)
+    i++
+  }
+  return kept
 }

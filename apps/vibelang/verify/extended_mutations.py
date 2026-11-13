@@ -5419,6 +5419,11 @@ cases.extend([('src/core/mockFactoryDecision.vibe', *case) for case in [
 ('mock-self-grant-own', 'selfGrant', 'return actor !== "" && actor === target', 'return actor !== ""', 'another person\'s grant needs the gate'),
 ('mock-fixture-login', 'fixtureLogin', 'return (role === "new" ? "joss" : role) + id', 'return role + id', 'a new person is joss'),
 ]])
+# Lane vl-coverage-core: the events a restored room keeps from its retained journal (0016).
+cases.extend([('src/core/mockFactoryDecision.vibe', *case) for case in [
+('mock-applied-next', 'appliedIndexes', 'if (seqs[i]! === kept.length + 1) kept.push(i)', 'if (seqs[i]! >= kept.length + 1) kept.push(i)', 'a skipped number is not kept'),
+('mock-applied-index', 'appliedIndexes', 'if (seqs[i]! === kept.length + 1) kept.push(i)', 'if (seqs[i]! === kept.length + 1) kept.push(seqs[i]!)', 'the kept value is the event\'s index'),
+]])
 # Lane vl-proveall3, batch 11 (0018 "Third-lane batch 11").
 cases.extend([('src/core/actionRunDecision.vibe', *case) for case in [
 ('run-child-id', 'replyChildId', 'return requestId + "-reply"', 'return requestId + "-child"', 'a reply run is the post id with -reply'),

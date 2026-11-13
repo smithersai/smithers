@@ -76,7 +76,6 @@ Named browser sites and status:
 | `src/web/main.vibe:1375`–`1376` (`LoadAccount` failure) | Only `startup.vibe`'s mode resolution sends `LoadAccount`; the fault pages start in mock mode without it. The same `AccountFailed` arm runs from sign-in and Visit as. |
 | `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code: 28 of the file's browser branch arms. It becomes a `spec function` when the compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`, session 24). |
 | `src/web/historyStartup.vibe` (`signedRoles`) | Runs only live: the preview has no API Worker, and the mock plays the role the page chose. The unit suite drives it through the real startup over a loopback API (`test/historyStartup.test.vibe`). |
-| `src/core/conversation.vibe` `apply`: `event.seq !== conversation.seq + 1` | Every browser caller goes through `receive`, which drops a repeated event and marks a gap before calling `apply`. The Worker's sequencer reaches it; the unit gate measures it. |
 | `src/core/conversation.vibe` `apply`: a fractional or negative walkthrough `step`, `duration` or seek | The page decodes every event with `EventSchema`, whose `Seq` is a non-negative integer, so such an event fails decoding first (vl-coverage-core: the forged fault crashed Foldkit's schema check when it sent one). The contracts keep the checks because Dafny's numbers are not integers. |
 | `src/core/conversation.vibe` `hasClientId("")` | `apply` refuses an empty client id before calling it, and `post` before that. |
 | `src/core/flowDecision.vibe` `tourLawful` (18 arms) | Called only by proof contracts, `test/decisions.coverage.test.vibe` and the fuzz oracle (`fuzz/core-flow-decisions.node.fuzz.vibe`), never by product code. It becomes a `spec function` when a compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`). |
@@ -103,12 +102,31 @@ demo conversation in localStorage; the spec seeds the journal a page leaves when
 reply's start, its first words) and loads the page with the tour active. The mock restores the conversation, fails
 the reply no execution can finish (`MockFactory` `openRoom`), and the page shows "The agent failed. Try again." under
 the partial reply (`apply`'s `ReplyFailed`, `viewDecision` `failureOf`, `view.vibe` 263). A new question is answered.
-Still open: a `ReplyFailed` with an empty reason, which no producer in the mock sends.
+A `ReplyFailed` with an empty reason, which no producer in the mock sends, arrives from a stored journal (below).
 
 **A clock the sandbox meter cannot read** (`fault=sandbox-clock`, `e2e/core-sandbox-clock.spec.ts`). After the first
 sandbox starts, the faulty factory's sandbox clock reads before 1970 for one sandbox call. `sandboxHost` `load` fails
 on it and `emergency` stops every running sandbox with real machine stops before the call fails; the page shows the
 sandbox stopped and the command wrote nothing.
+
+**A walkthrough journal with moves the machine refuses** (`e2e/core-journal.spec.ts`, vl-coverage-core session 6).
+The page decodes any schema-valid event list from localStorage (`startup.vibe`), so a journal an older page or a
+person edited reaches `apply` through the mock's restore (`MockFactory` `openRoom`, `replayLog`); `receive` is not the
+only browser caller. One journal restarts a reply, fails it with an empty reason, requests one run twice, sends a step
+with no key and a late result for an earlier attempt, cancels the run while one step runs and one waits, then settles
+it again. The page shows the reply's second text under "Answer failed", and the next question is the journal's 15th
+event. Another journal skips numbers 5 and 6.
+
+**Bug fixed.** A retained journal that skips or repeats a number stopped the page. The restored room kept every
+retained event in its log, so a reader's replay sent seq 7 after 4; the page marked a gap, replayed from 4 and met 7
+again, without end, and never handled Escape. `openRoom` now keeps only the events the replay applied
+(`mockFactoryDecision` `appliedIndexes`: proved, two mutation rows, unit cases for repeats and skips; counter
+`vibelang_mock_trimmed_journal_events`, log `vibelang.mock.restore` with outcome `journal-trimmed`). Red first:
+`core1/s6journal1` (Escape left the tour running); green: `core1/s6journal5`, 6 passed on three projects.
+
+Closed in `conversation`: `apply`'s out-of-sequence guard (its named row above is gone), the other-entry arms of
+`ReplyRestarted` and `ReplyFailed` and the empty reason, `hasRun`'s repeat, `settleRun` on a settled run, `cancelStep`,
+`stepRun`'s empty key and late attempt, and `latestAt`'s earlier step.
 
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
 
