@@ -404,6 +404,7 @@ export interface DiscoveredRuntimeOptions<I, Out, E, R> {
  *
  * @since 0.1.0
  * @private
+ * @throws {never} A refusal is a returned `PatternError`.
  */
 export const discoveredIds = (checks: unknown): ReadonlyArray<string> | PatternError => {
   if (!Array.isArray(checks) || checks.some((id) => typeof id !== "string")) {

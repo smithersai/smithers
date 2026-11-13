@@ -11,7 +11,7 @@ npm install @smthrs/errors@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-The package depends on `vibelang-runtime` `0.0.12` for its tagged-error base
+The package depends on `vibelang-runtime` `0.0.13` for its tagged-error base
 and schema matcher. `effect` is a peer dependency in the version `4.1.1`, and
 Node.js 22.19.0 or later is required, declared in `engines`.
 

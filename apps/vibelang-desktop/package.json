@@ -31,7 +31,7 @@
     "effect": "4.1.1",
     "electrobun": "1.18.1",
     "foldkit": "0.170.0",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.13"
   },
   "devDependencies": {
     "@effect/vitest": "4.1.1",
@@ -39,9 +39,9 @@
     "@playwright/test": "1.62.1",
     "@types/node": "26.4.1",
     "esbuild": "0.28.2",
-    "vibelang": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-unplugin": "0.0.13",
+    "vibelang-vite": "0.0.13",
     "vite": "8.3.4",
     "vitest": "5.0.0",
     "happy-dom": "20.13.2"

@@ -11,6 +11,37 @@ packages/*/dist-firefox/
 # VibeLang compatibility declarations are generated beside their source.
 *.d.vibe.ts
 *.d.vibex.ts
+# VibeLang 0.0.13 also writes, beside each x.vibe, the x.d.ts stock TypeScript resolves and one ownership receipt per
+# project. No pattern tells that x.d.ts from a hand-written declaration, so every hand-written one is listed below:
+# add a line for a new one, or jj leaves it untracked and the build graph leaves it out of its inputs.
+.vibelang-sidecar-*.owner
+*.d.ts
+!/.specs/design/mock/src/sites/repo/views/code/react-dom.d.ts
+!/apps/mvp/worker/quickjs-wasm.d.ts
+!/apps/site/src/env.d.ts
+!/packages/lemmascript/tools/fixtures/declared-union/messages.d.ts
+!/packages/lemmascript/tools/fixtures/host-extern/commands.d.ts
+!/packages/lemmascript/tools/fixtures/host-extern/hostlib/index.d.ts
+!/packages/lemmascript/tools/fixtures/structural/model.d.ts
+!/packages/lemmascript/tools/fixtures/update-returns/commands.d.ts
+!/packages/lemmascript/tools/fixtures/update-returns/hostlib/index.d.ts
+!/packages/lemmascript/tools/fixtures/update-returns/messages.d.ts
+!/packages/lemmascript/tools/fixtures/update-returns/msg.d.ts
+!/packages/lemmascript/tools/fixtures/update-shapes/messages.d.ts
+!/packages/repo-targets/bun-coverage/fixtures/types.d.ts
+!/packages/repo-targets/src/vibelang-eslint.d.ts
+!/packages/smithers/agent/harness/src/internal/quickjsWasm.d.ts
+!/packages/smithers/build/build-cli/src/effect-resolution.d.ts
+!/packages/smithers/build/build-cli/src/internal/js-extension-siblings.d.ts
+!/packages/smithers/build/build-cli/test/fixtures/force-spec/smithers.d.ts
+!/packages/smithers/build/build-cli/test/fixtures/viem-node-spec/smithers.d.ts
+!/packages/smithers/flows/platform-browser/src/internal/AccessHandlePoolVFS.d.ts
+!/packages/smithers/flows/platform-bun/src/Electrobun.d.ts
+!/packages/smithers/flows/platform-cloudflare/test/workerd/cloudflare-workers.d.ts
+!/packages/smithers/migrate/test/fixtures/jsx-single/mdx-assets.d.ts
+!/packages/smithers/ui/ui-styleguide/tests/bunTest.d.ts
+!/packages/smithers/ui/views/test/fixtures/wasm.d.ts
+!/packages/smithers/vendor/opentui-native/runtime.d.ts
 *.vibe.text.d.ts
 *.vibex.text.d.ts
 *.tgz

@@ -14,10 +14,12 @@ export interface WorkerModule { readonly name: string; readonly type: "esm" | "w
  * Unminified, so a measured module keeps its counters' shape. The modules in upload order, entry first.
  */
 export async function alchemyWorker(main: string, instrumented: ((path: string) => boolean) | undefined, compatibility: { readonly date: string; readonly flags: ReadonlyArray<string> }): Promise<ReadonlyArray<WorkerModule>> {
+  // Built here, where a plugin that throws rejects this function's promise.
+  const plugin = instrumented === undefined ? vibelang() : instrumentRolldown(vibelang() as never, instrumented)
   const program = Effect.flatMap(WorkerBundle, (bundler) => bundler.build({
     id: "workerd-test", main, compatibility: { date: compatibility.date, flags: [...compatibility.flags] }, entry: { kind: "external" },
     stack: { name: "vibelang", stage: "workerd-test" },
-    extraOptions: { input: { plugins: [instrumented === undefined ? vibelang() : instrumentRolldown(vibelang() as never, instrumented)] }, output: { minify: false } },
+    extraOptions: { input: { plugins: [plugin] }, output: { minify: false } },
   }))
   const output = await Effect.runPromise(Effect.provide(program, NodeServices.layer))
   const modules: Array<WorkerModule> = []

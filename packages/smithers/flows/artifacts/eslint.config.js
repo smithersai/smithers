@@ -9,7 +9,7 @@ import {
   swallowedCause,
   uninstalledSafety
 } from "../../../../eslint.invariants.js"
-import { jsdocConvention } from "../../../../eslint.jsdoc.js"
+import { jsdocConvention, vibeDeclarations } from "../../../../eslint.jsdoc.js"
 
 export default tseslint.config(
   {
@@ -17,10 +17,7 @@ export default tseslint.config(
       "**/dist",
       "**/build",
       "**/coverage",
-      "**/*.d.vibe.ts",
-      "**/*.d.vibex.ts",
-      "**/*.vibe.text.d.ts",
-      "**/*.vibex.text.d.ts"
+      ...vibeDeclarations(import.meta.dirname)
     ]
   },
   js.configs.recommended,

@@ -7,6 +7,8 @@
 // no documented category.
 
 import jsdoc from "eslint-plugin-jsdoc"
+import { readdirSync } from "node:fs"
+import { join, relative, sep } from "node:path"
 
 /**
  * Exported *declarations* only. A re-export (`export { x }`, `export * as Ns
@@ -138,4 +140,42 @@ export const jsdocConvention = [
       "jsdoc/check-tag-names": ["error", { definedTags: ["category", "since", "slop"] }]
     }
   }
+]
+
+const unlinted = new Set(["node_modules", "dist", "build", "coverage"])
+
+// A path as a pattern that matches only that path.
+const literal = (path) => path.replace(/[\\*?[\]{}()!+@]/g, "\\$&")
+
+const nativeDeclarations = (root, directory) =>
+  readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) {
+      return unlinted.has(entry.name) || entry.name.startsWith(".") ? [] : nativeDeclarations(root, path)
+    }
+    const stem = /^(.+)\.vibex?$/.exec(entry.name)?.[1]
+    return stem === undefined ? [] : [literal(relative(root, join(directory, `${stem}.d.ts`)).split(sep).join("/"))]
+  })
+
+/**
+ * The `ignores` patterns for the declarations the VibeLang compiler writes
+ * beside the sources of the package at `root`, the directory of its
+ * `eslint.config.js`. They are generated and untracked, and carry no module
+ * header, so no package lints them.
+ *
+ * Beside each `x.vibe` or `x.vibex` the compiler writes the compatibility
+ * declaration `x.d.vibe.ts` or `x.d.vibex.ts` and, from VibeLang 0.0.13, the
+ * `x.d.ts` stock TypeScript resolves, which re-exports it. A glob cannot tell
+ * that `x.d.ts` from a hand-written declaration, so each one is named from the
+ * source it sits beside and every other `.d.ts` is still linted.
+ *
+ * @param {string} root
+ * @returns {Array<string>}
+ */
+export const vibeDeclarations = (root) => [
+  "**/*.d.vibe.ts",
+  "**/*.d.vibex.ts",
+  "**/*.vibe.text.d.ts",
+  "**/*.vibex.text.d.ts",
+  ...nativeDeclarations(root, root)
 ]

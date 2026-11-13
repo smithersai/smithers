@@ -56,7 +56,7 @@
     "eslint-plugin-unicorn": "65.0.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
+    "vibelang": "0.0.13",
     "@smthrs/testing": "workspace:*"
   }
 }

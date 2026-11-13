@@ -94,8 +94,8 @@
     "tinyglobby": "0.2.17",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-unplugin": "0.0.13",
     "vite": "^8.2.2",
     "ws": "8.22.0",
     "yaml": "2.9.0"
@@ -115,10 +115,10 @@
     "vitest@5.0.0": {
       "happy-dom": "20.13.2"
     },
-    "vibelang": "0.0.12",
-    "vibelang-runtime": "0.0.12",
-    "vibelang-vite": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-runtime": "0.0.13",
+    "vibelang-vite": "0.0.13",
+    "vibelang-unplugin": "0.0.13",
     "alchemy": "2.0.0-beta.85",
     "@alchemy.run/node-utils": "2.0.0-beta.85",
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.85",
@@ -126,7 +126,6 @@
   },
   "patchedDependencies": {
     "@opentelemetry/otlp-transformer@0.222.0": "patches/@opentelemetry__otlp-transformer@0.222.0.patch",
-    "vibelang-runtime@0.0.12": "patches/vibelang-runtime@0.0.12.patch",
     "alchemy@2.0.0-beta.85": "patches/alchemy@2.0.0-beta.85.patch",
     "@alchemy.run/cloudflare@2.0.0-beta.85": "patches/@alchemy.run__cloudflare@2.0.0-beta.85.patch",
     "@tanstack/db@0.15.1": "patches/@tanstack__db@0.15.1.patch",

@@ -202,7 +202,7 @@
     "@smthrs/std": "1.0.0-rc.18",
     "esbuild": "0.28.2",
     "undici": "8.12.4",
-    "vibelang-unplugin": "0.0.12"
+    "vibelang-unplugin": "0.0.13"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -227,9 +227,9 @@
     "microsandbox": "0.6.16",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-vite": "0.0.13",
     "vitest": "5.0.0",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.13"
   }
 }

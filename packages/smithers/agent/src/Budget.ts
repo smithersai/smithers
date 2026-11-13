@@ -2091,6 +2091,7 @@ export const make = (
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never} It only builds the service.
  */
 export const makeUnbounded = (): Service =>
   Budget.of({

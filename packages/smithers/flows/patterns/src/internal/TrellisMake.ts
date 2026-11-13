@@ -227,6 +227,7 @@ export const copiedPlan = (plan: Plan): Plan => {
  *
  * @since 0.1.0
  * @private
+ * @throws {never} A refusal is a returned `TrellisError`.
  */
 export const admissionRefusal = (options: {
   readonly envelope?: Envelope | undefined

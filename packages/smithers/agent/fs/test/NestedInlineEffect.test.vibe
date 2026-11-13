@@ -1,0 +1,21 @@
+import { describe, expect, it } from "@effect/vitest"
+
+// VibeLang 0.0.12 inferred `invoke: () => 1` for an inline effect nested in a wrapper callback, so the assignment
+// below failed with TS2375. VibeLang 0.0.13 infers the effect member (smithersai/vibelang e5fcc3a7178a).
+type Shape = { invoke(): number!never }
+
+const direct: Shape = { invoke: effect () => 1 }
+const nested = Effect.try(() => ({ invoke: effect () => 1 }))
+const expected: Shape!Cause.UnknownError = nested
+
+describe("nested inline effect inference", () => {
+  it.effect("runs an inline effect member declared directly", effect () => {
+    expect(try direct.invoke()).toBe(1)
+  })
+
+  it.effect("runs an inline effect member built inside a wrapper callback", effect () => {
+    const shape = try expected
+
+    expect(try shape.invoke()).toBe(1)
+  })
+})

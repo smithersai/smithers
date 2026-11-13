@@ -58,6 +58,7 @@ export interface Seat {
  *
  * @category constructors
  * @since 1.0.0-rc.0
+ * @throws {never} It returns the given record.
  */
 export const make = (seat: Seat): Seat => seat
 

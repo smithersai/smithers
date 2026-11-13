@@ -1,8 +1,11 @@
 import assert from "node:assert/strict"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { test } from "node:test"
 import { pathToFileURL } from "node:url"
-import { jsdocConvention, moduleHeader } from "./eslint.jsdoc.js"
+import { jsdocConvention, moduleHeader, vibeDeclarations } from "./eslint.jsdoc.js"
 
 const require = createRequire(import.meta.url)
 const eslintPath = require.resolve("eslint", {
@@ -100,4 +103,43 @@ test("the repository default rejects undocumented RPC exports", async () => {
     filePath: "packages/rpc/src/Regression.ts"
   })
   assert.ok(result.messages.some((message) => message.ruleId === "jsdoc/require-jsdoc"))
+})
+
+test("only a declaration beside a VibeLang source is a generated declaration", async () => {
+  const root = mkdtempSync(join(tmpdir(), "vibe-declarations-"))
+  try {
+    for (const directory of ["src/[id]", "node_modules/dep", "dist", ".cache"]) {
+      mkdirSync(join(root, directory), { recursive: true })
+    }
+    for (
+      const file of [
+        "src/Service.vibe",
+        "src/View.vibex",
+        "src/[id]/route.vibe",
+        "src/Ambient.d.ts",
+        "node_modules/dep/Dep.vibe",
+        "dist/Built.vibe",
+        ".cache/Cached.vibe"
+      ]
+    ) {
+      writeFileSync(join(root, file), "")
+    }
+    const ignores = vibeDeclarations(root)
+    assert.deepEqual(
+      ignores.slice(0, 4),
+      ["**/*.d.vibe.ts", "**/*.d.vibex.ts", "**/*.vibe.text.d.ts", "**/*.vibex.text.d.ts"]
+    )
+    assert.deepEqual(ignores.slice(4).sort(), ["src/Service.d.ts", "src/View.d.ts", "src/\\[id\\]/route.d.ts"])
+
+    const { ESLint } = await import(pathToFileURL(eslintPath).href)
+    const eslint = new ESLint({ cwd: root, overrideConfigFile: true, overrideConfig: [{ ignores }, { files: ["**/*.ts"] }] })
+    for (const generated of ["src/Service.d.ts", "src/View.d.ts", "src/[id]/route.d.ts", "src/Service.d.vibe.ts"]) {
+      assert.equal(await eslint.isPathIgnored(join(root, generated)), true, generated)
+    }
+    for (const written of ["src/Ambient.d.ts", "src/id/route.d.ts"]) {
+      assert.equal(await eslint.isPathIgnored(join(root, written)), false, written)
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

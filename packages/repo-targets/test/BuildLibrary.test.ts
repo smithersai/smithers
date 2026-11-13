@@ -45,11 +45,19 @@ it("copies only hand-written declarations, keeping their nested paths", () => {
   write(join(root, "src/ambient.d.ts"), "declare const top: 1\n")
   write(join(root, "src/deep/er/shape.d.ts"), "export type Shape = 1\n")
   write(join(root, "src/deep/er/shape.d.ts.map"), "{}\n")
+  // VibeLang writes these beside its sources; the emitted declarations they would replace stay.
+  write(join(root, "src/Lookup.vibe"), "export const lookup = 1\n")
+  write(join(root, "src/Lookup.d.ts"), "export * from \"./Lookup.vibe\";\n")
+  write(join(root, "src/deep/View.vibex"), "export const view = 1\n")
+  write(join(root, "src/deep/View.d.ts"), "export * from \"./View.vibex\";\n")
+  write(join(root, "dist/esm/Lookup.d.ts"), "export declare const lookup = 1\n")
   copyInputDeclarations(join(root, "src"), join(root, "dist/esm"))
   expect(read(join(root, "dist/esm/ambient.d.ts"))).toBe("declare const top: 1\n")
   expect(read(join(root, "dist/esm/deep/er/shape.d.ts"))).toBe("export type Shape = 1\n")
   expect(existsSync(join(root, "dist/esm/index.ts"))).toBe(false)
   expect(existsSync(join(root, "dist/esm/deep/er/shape.d.ts.map"))).toBe(false)
+  expect(read(join(root, "dist/esm/Lookup.d.ts"))).toBe("export declare const lookup = 1\n")
+  expect(existsSync(join(root, "dist/esm/deep/View.d.ts"))).toBe(false)
 })
 
 it("mirrors ESM declarations and maps into the CommonJS branch and marks it CommonJS", () => {

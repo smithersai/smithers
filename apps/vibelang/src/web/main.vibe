@@ -1096,8 +1096,8 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         return Stream.mergeAll(ids.map((id) => actions.follow(id).pipe(
           Stream.map((run) => Message.FollowedAction({ run, epoch, generation, ids })),
           // A clean close before settlement is just as uncertain as a transport failure.
-          Stream.concat(Stream.make(Message.FailedActionFollow({ id, epoch, generation, ids }))),
-          Stream.catch(() => Stream.make(Message.FailedActionFollow({ id, epoch, generation, ids }))),
+          Stream.concat(Stream.fromEffect(message(() => Message.FailedActionFollow({ id, epoch, generation, ids })))),
+          Stream.catch(() => Stream.fromEffect(message(() => Message.FailedActionFollow({ id, epoch, generation, ids })))),
           Stream.tap((answer) => answer._tag === "FailedActionFollow" ? Effect.logWarning("Action follow ended", { runId: id, epoch, generation }) : Effect.void),
         )), { concurrency: "unbounded" })
       }),
@@ -1245,7 +1245,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
           return factory.accounts.events(from).pipe(
             Stream.map(event => Message.ReceivedRole({ event })),
             Stream.concat(Stream.fromEffect(message(() => Message.FailedRoles()))),
-            Stream.catch(() => Stream.succeed(Message.FailedRoles())),
+            Stream.catch(() => Stream.fromEffect(message(() => Message.FailedRoles()))),
           )
         }),
       },
@@ -1296,7 +1296,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
               return factory.events(conversation, from).pipe(
                 Stream.map((event) => Message.ReceivedEvent({ event })),
                 Stream.concat(Stream.make(ended)),
-                Stream.catchTag("Unavailable", (error) => Stream.make(Message.FailedEvents({ reason: error.reason }))),
+                Stream.catchTag("Unavailable", (error) => Stream.fromEffect(message(() => Message.FailedEvents({ reason: error.reason })))),
               )
             }),
             sync(() => open),

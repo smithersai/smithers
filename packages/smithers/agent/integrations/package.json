@@ -497,7 +497,7 @@
     "@smthrs/notifications": "1.0.0-rc.18",
     "@smthrs/canonical": "1.0.0-rc.18",
     "@smthrs/plan": "1.0.0-rc.18",
-    "vibelang-runtime": "0.0.12",
+    "vibelang-runtime": "0.0.13",
     "@smthrs/jj": "1.0.0-rc.18"
   },
   "peerDependencies": {
@@ -525,9 +525,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-unplugin": "0.0.13",
+    "vibelang-vite": "0.0.13",
     "vitest": "5.0.0"
   }
 }

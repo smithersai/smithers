@@ -83,5 +83,6 @@ export interface Options {
  * @stability unstable
  * @category constructors
  * @since 4.0.0
+ * @throws {never} It only records the options.
  */
 export const execution: (options?: Options) => Fuzz.Execution = Internal.execution

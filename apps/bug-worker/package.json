@@ -21,7 +21,7 @@
     "bun-types": "^1.4.0",
     "effect": "4.1.1",
     "typescript": "~5.9.3",
-    "vibelang": "0.0.12",
+    "vibelang": "0.0.13",
     "@alchemy.run/cloudflare": "2.0.0-beta.85"
   }
 }

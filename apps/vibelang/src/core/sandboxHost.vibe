@@ -118,7 +118,8 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     if (!decision.ok) return state
     return { ...state, ledger: applySandbox(state.ledger, decision.event) }
   }
-  effect function complete(state: SandboxState, pending: Pending, now: number) {
+  // A cancelled start completes again as its cancellation, so the function names its own type.
+  effect function complete(state: SandboxState, pending: Pending, now: number): SandboxState!Unavailable {
     const recorded = try store.receipt(pending.operationId)
     if (recorded !== undefined) return { ...state, pending: null }
     const id = `${state.ledger.owner}/${pending.conversation}`

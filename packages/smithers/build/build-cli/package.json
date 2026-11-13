@@ -744,17 +744,17 @@
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-vite": "0.0.13",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.1.1",
     "@effect/platform-node-shared": "4.1.1",
     "effect": "4.1.1",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.13"
   },
   "peerDependencies": {
     "effect": "4.1.1",
-    "vibelang": "0.0.12"
+    "vibelang": "0.0.13"
   },
   "peerDependenciesMeta": {
     "vibelang": {

@@ -47,10 +47,13 @@ type Declared = { readonly _tag: "Glob"; readonly pattern: string; readonly excl
   readonly path: string
 }
 
-/** Every file under `directory`, as package-relative paths. */
+/**
+ * Every file under `directory`, as package-relative paths. The VibeLang
+ * compiler's ownership receipts are its output and nothing reads them.
+ */
 const filesUnder = (directory: string): ReadonlyArray<string> =>
   readdirSync(new URL(directory, import.meta.url), { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile())
+    .filter((entry) => entry.isFile() && !/^\.vibelang-sidecar-.+\.owner$/.test(entry.name))
     .map((entry) => `${entry.parentPath.slice(packageRoot.length)}/${entry.name}`)
 
 describe("package exports", () => {

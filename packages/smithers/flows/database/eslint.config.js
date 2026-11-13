@@ -1,3 +1,4 @@
+import { vibeDeclarations } from "../../../../eslint.jsdoc.js"
 import { packageConfig } from "../../../../eslint.package.js"
 
 // The shared config types and lints `src` only. `examples` get the same rules,
@@ -5,7 +6,7 @@ import { packageConfig } from "../../../../eslint.package.js"
 const config = await packageConfig({ tsconfigRootDir: import.meta.dirname, bun: true })
 
 // VibeLang writes these declarations beside each .vibe source; they are generated and untracked.
-const vibeSidecars = { ignores: ["**/*.d.vibe.ts", "**/*.d.vibex.ts", "**/*.vibe.text.d.ts", "**/*.vibex.text.d.ts"] }
+const vibeSidecars = { ignores: vibeDeclarations(import.meta.dirname) }
 
 export default [
   vibeSidecars,

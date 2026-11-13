@@ -59,7 +59,7 @@
     "@smthrs/ui-styleguide": "workspace:*",
     "effect": "4.1.1",
     "foldkit": "0.170.0",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.13"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.85",
@@ -87,9 +87,9 @@
     "istanbul-lib-source-maps": "^5.0.6",
     "istanbul-reports": "^3.2.0",
     "miniflare": "5.20261019.0-beta",
-    "vibelang": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-unplugin": "0.0.13",
+    "vibelang-vite": "0.0.13",
     "vite": "8.3.4",
     "vitest": "5.0.0"
   },

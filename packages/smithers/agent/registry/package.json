@@ -252,7 +252,7 @@
     "@smthrs/core": "1.0.0-rc.18",
     "@smthrs/flow": "1.0.0-rc.18",
     "@smthrs/plan": "1.0.0-rc.18",
-    "vibelang-runtime": "0.0.12",
+    "vibelang-runtime": "0.0.13",
     "yaml": "2.9.0"
   },
   "devDependencies": {
@@ -280,8 +280,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-vite": "0.0.13",
     "vitest": "5.0.0"
   },
   "peerDependencies": {

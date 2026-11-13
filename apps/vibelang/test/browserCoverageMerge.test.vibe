@@ -61,7 +61,7 @@ const observe = () => observed ??= runPromise(scoped(effect {
     const attachment = path.join(root, "chromium.json")
     try fs.writeFileString(attachment, JSON.stringify([{ ...native!, source, sourceMap }]))
     const directory = path.join(root, "report")
-    const reporter = new FuzzCoverage({ sources, directory, build: [{ url, source, sourceMap }] })
+    const reporter = try Effect.try(() => new FuzzCoverage({ sources, directory, build: [{ url, source, sourceMap }] }))
     try Effect.try(() => reporter.onTestEnd(undefined, { status: "passed", attachments: [{ name: "chromium-coverage", path: attachment }] } as never))
     try tryPromise(() => reporter.onEnd({ status: "passed" } as never))
     const fuzzText = try fs.readFileString(path.join(directory, "coverage-final.json"))

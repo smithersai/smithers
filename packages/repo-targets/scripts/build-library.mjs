@@ -26,9 +26,16 @@ const files = (directory) =>
     return entry.isDirectory() ? files(path) : [path]
   })
 
+// VibeLang 0.0.13 writes `x.d.ts` beside `x.vibe` or `x.vibex` so stock TypeScript resolves the source. It re-exports
+// the source, which no release ships at that path, and the compiler emits that module's real declaration.
+const generatedDeclaration = (file) => {
+  const stem = file.slice(0, -".d.ts".length)
+  return existsSync(`${stem}.vibe`) || existsSync(`${stem}.vibex`)
+}
+
 /** Input declarations are shipped beside generated declarations in every release. */
 export const copyInputDeclarations = (source, destination) => {
-  for (const file of files(source).filter((file) => file.endsWith(".d.ts"))) {
+  for (const file of files(source).filter((file) => file.endsWith(".d.ts") && !generatedDeclaration(file))) {
     const target = join(destination, relative(source, file))
     mkdirSync(dirname(target), { recursive: true })
     cpSync(file, target)

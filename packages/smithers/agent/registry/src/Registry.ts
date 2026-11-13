@@ -733,6 +733,7 @@ export const layerFromPacks = (
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never} It only builds the stub.
  */
 export const makeNoop = (overrides: Partial<Registry> = {}): Registry => {
   const get = (name: string): Effect.Effect<FlowDescriptor, RegistryError> => Effect.fail(notFound(name, "get"))

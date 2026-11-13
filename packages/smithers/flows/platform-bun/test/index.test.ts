@@ -161,6 +161,9 @@ describe("@smthrs/platform-bun module graph", () => {
       write: false
     })
     const inputs = Object.keys(result.metafile.inputs)
-    expect(inputs.some((input) => input.includes("platform-browser"))).toBe(false)
+    expect(inputs.length).toBeGreaterThan(0)
+    // The package's own directory, as a whole path segment: pnpm names a dependency's store directory after its
+    // peers, so `vibelang-runtime@…_@effect+platform-browser@…` holds the words without being the package.
+    expect(inputs.filter((input) => /(?:^|\/)platform-browser\//.test(input))).toEqual([])
   })
 })

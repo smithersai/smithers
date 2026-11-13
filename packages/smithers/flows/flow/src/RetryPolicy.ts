@@ -426,6 +426,7 @@ export const nextDelayEffect = (
  *
  * @category attempts
  * @since 0.1.0
+ * @throws {never} A proxy trap that throws leaves the error untagged.
  */
 export const errorTag = (error: unknown): string | undefined => {
   if (typeof error !== "object" || error === null) return undefined

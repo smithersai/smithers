@@ -53,7 +53,7 @@ is on this site, and the source is
 [on GitHub](https://github.com/smithersai/smithers/tree/main/packages/errors).
 [Installation](./installation.md) has the root entry point, the two module
 subpaths, and the paths the exports map refuses. The package depends on
-`vibelang-runtime` `0.0.12`, peers `effect` `4.1.1`, and needs Node.js 22.19.0
+`vibelang-runtime` `0.0.13`, peers `effect` `4.1.1`, and needs Node.js 22.19.0
 or later.
 
 ## A small example

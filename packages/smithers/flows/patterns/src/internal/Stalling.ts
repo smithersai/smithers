@@ -27,6 +27,7 @@ export interface RuntimeOptions<A> extends Stall.Options {
  *
  * @since 1.0.0
  * @private
+ * @throws {never} A refused option is a returned `PatternError`.
  */
 export const resolve = (
   pattern: string,
