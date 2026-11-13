@@ -12,7 +12,7 @@ import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
-import { settle } from "../../../worker/flows/SandboxCall.ts"
+import { type Outcome, SandboxCall, settle as settleCall } from "../../../worker/flows/SandboxCall.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import {
   asPerson,
@@ -418,13 +418,15 @@ describe("the shared prompt", () => {
 })
 
 describe("a shared file", () => {
+  const settle = (started: typeof SandboxCall.payloadSchema.Type, outcome: Outcome) =>
+    settleCall(started.callId, outcome, started.saved)
   /** The `sandbox/Call` the routes started for `tool`, the `count`th, and its call's id. */
   const call = async (opened: Awaited<ReturnType<typeof open>>, tool: SandboxTools.Tool, count = 1) => {
-    let found: { readonly callId: string; readonly call: Record<string, unknown> } | undefined
+    let found: typeof SandboxCall.payloadSchema.Type | undefined
     await until(() => {
       const calls = opened.api.branches.starts
         .filter((start) => start.flow === "sandbox/Call")
-        .map((start) => start.payload as { readonly callId: string; readonly call: Record<string, unknown> })
+        .map((start) => start.payload as typeof SandboxCall.payloadSchema.Type)
         .filter((payload) => payload.call.tool === tool)
       expect(calls.length).toBeGreaterThanOrEqual(count)
       found = calls[count - 1]
@@ -443,7 +445,7 @@ describe("a shared file", () => {
     const read = await call(opened, "read")
     expect(read.call).toEqual({ tool: "read", path: "styles.css" })
     const content = "body {}\n"
-    await opened.run(settle(read.callId, {
+    await opened.run(settle(read, {
       status: "done",
       result: { tool: "read", path: "styles.css", content, bytes: content.length, truncated: false },
       generation: 1,
@@ -475,7 +477,7 @@ describe("a shared file", () => {
     await until(() => expect(fileOf(owner.texts(), conversation, "styles.css")?.saving).toBe(true))
     const write = await call(opened, "write")
     expect(write.call).toEqual({ tool: "write", path: "styles.css", content: merged })
-    await opened.run(settle(write.callId, {
+    await opened.run(settle(write, {
       status: "done",
       result: { tool: "write", path: "styles.css", bytes: merged.length, sequence: 1 },
       generation: 1,
@@ -497,7 +499,7 @@ describe("a shared file", () => {
     const benSaving = benTabOpen.coedit.save(fileId)
     const benWrite = await call(opened, "write", 2)
     expect(benWrite.call).toEqual({ tool: "write", path: "styles.css", content: benEdit })
-    await opened.run(settle(benWrite.callId, {
+    await opened.run(settle(benWrite, {
       status: "done",
       result: { tool: "write", path: "styles.css", bytes: benEdit.length, sequence: 2 },
       generation: 1,
@@ -520,7 +522,7 @@ describe("a shared file", () => {
     const late = `${beforeLate}/* late */\n`
     benTabOpen.coedit.type(fileId, late, { base: beforeLate, selection: { anchor: 39, head: 39 } })
     await until(() => expect(fileOf(owner.texts(), conversation, "styles.css")?.text).toBe(late))
-    await opened.run(settle(lateWrite.callId, {
+    await opened.run(settle(lateWrite, {
       status: "done",
       result: { tool: "write", path: "styles.css", bytes: beforeLate.length, sequence: 3 },
       generation: 1,
@@ -580,7 +582,7 @@ describe("a shared file", () => {
     await second.branch.actions.open("octo", "hello", "feature/one")
     await second.coedit.showFile(branchId, "index.html")
     const read = await call(opened, "read")
-    await opened.run(settle(read.callId, {
+    await opened.run(settle(read, {
       status: "done",
       result: { tool: "read", path: "index.html", content: "<p>hi</p>\n", bytes: 10, truncated: false },
       generation: 1,
@@ -602,7 +604,7 @@ describe("a shared file", () => {
     // The owner opens another; the faulty tab's save is refused.
     const fileId = (await owner.coedit.showFile(branchId, "b.txt"))!
     const read = await call(opened, "read")
-    await opened.run(settle(read.callId, {
+    await opened.run(settle(read, {
       status: "done",
       result: { tool: "read", path: "b.txt", content: "b", bytes: 1, truncated: false },
       generation: 1,
@@ -624,14 +626,14 @@ describe("a shared file", () => {
     const conversation = owner.branch.queries.current.toArray[0]!.conversationId!
     const fileId = (await owner.coedit.showFile(branchId, "notes/new.md"))!
     const read = await call(opened, "read")
-    await opened.run(settle(read.callId, { status: "failed", failure: "not_found" }))
+    await opened.run(settle(read, { status: "failed", failure: "not_found" }))
     await until(() => expect(fileOf(owner.texts(), conversation, "notes/new.md")).toMatchObject({ status: "ready", text: "" }))
     owner.coedit.type(fileId, "# New\n", { base: "", selection: { anchor: 6, head: 6 } })
     await until(() => expect(fileOf(owner.texts(), conversation, "notes/new.md")?.text).toBe("# New\n"))
     const saving = owner.coedit.save(fileId)
     const write = await call(opened, "write")
     expect(write.call).toEqual({ tool: "write", path: "notes/new.md", content: "# New\n" })
-    await opened.run(settle(write.callId, { status: "done", result: { tool: "write", path: "notes/new.md", bytes: 6, sequence: 1 }, generation: 1 }))
+    await opened.run(settle(write, { status: "done", result: { tool: "write", path: "notes/new.md", bytes: 6, sequence: 1 }, generation: 1 }))
     await saving
     expect(fileOf(owner.texts(), conversation, "notes/new.md")).toMatchObject({ saving: false, saveFailed: false, saved: true })
   }, WITHIN)
@@ -643,7 +645,7 @@ describe("a shared file", () => {
     const conversation = owner.branch.queries.current.toArray[0]!.conversationId!
     await owner.coedit.showFile(branchId, "huge.bin")
     const huge = await call(opened, "read")
-    await opened.run(settle(huge.callId, {
+    await opened.run(settle(huge, {
       status: "done",
       result: { tool: "read", path: "huge.bin", content: "x", bytes: 9_000_000, truncated: true },
       generation: 1,
@@ -652,12 +654,12 @@ describe("a shared file", () => {
 
     await owner.coedit.showFile(branchId, "dir")
     const dir = await call(opened, "read", 2)
-    await opened.run(settle(dir.callId, { status: "failed", failure: "not_a_file" }))
+    await opened.run(settle(dir, { status: "failed", failure: "not_a_file" }))
     await until(() => expect(fileOf(owner.texts(), conversation, "dir")).toMatchObject({ status: "failed", failure: "unavailable" }))
 
     const fileId = (await owner.coedit.showFile(branchId, "ok.txt"))!
     const ok = await call(opened, "read", 3)
-    await opened.run(settle(ok.callId, {
+    await opened.run(settle(ok, {
       status: "done",
       result: { tool: "read", path: "ok.txt", content: "ok", bytes: 2, truncated: false },
       generation: 1,
@@ -665,14 +667,14 @@ describe("a shared file", () => {
     await until(() => expect(fileOf(owner.texts(), conversation, "ok.txt")?.status).toBe("ready"))
     const saving = owner.coedit.save(fileId)
     const write = await call(opened, "write")
-    await opened.run(settle(write.callId, { status: "failed", failure: "unavailable" }))
+    await opened.run(settle(write, { status: "failed", failure: "unavailable" }))
     await saving
     expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: false, saveFailed: true, saved: false })
     // Trying again clears the failure while it runs, and a write that lands says Saved.
     const retry = owner.coedit.save(fileId)
     await until(() => expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: true, saveFailed: false }))
     const retried = await call(opened, "write", 2)
-    await opened.run(settle(retried.callId, { status: "done", result: { tool: "write", path: "ok.txt", bytes: 2, sequence: 1 }, generation: 1 }))
+    await opened.run(settle(retried, { status: "done", result: { tool: "write", path: "ok.txt", bytes: 2, sequence: 1 }, generation: 1 }))
     await retry
     expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: false, saveFailed: false, saved: true })
     expect(saveLabelOf(fileOf(owner.texts(), conversation, "ok.txt")!)).toBe("Saved")
@@ -688,7 +690,7 @@ describe("a shared file", () => {
     const fileId = (await owner.coedit.showFile(branchId, "styles.css"))!
     const read = await call(opened, "read")
     const content = "body {}\n"
-    await opened.run(settle(read.callId, {
+    await opened.run(settle(read, {
       status: "done",
       result: { tool: "read", path: "styles.css", content, bytes: content.length, truncated: false },
       generation: 1,
@@ -720,14 +722,14 @@ describe("a shared file", () => {
     expect(ownerWrite.call).toEqual({ tool: "write", path: "styles.css", content: x })
 
     // The machine wrote X then Y, leaving Y on disk; Y's Save hears back first, X's slow checkpoint settles last.
-    await opened.run(settle(benWrite.callId, {
+    await opened.run(settle(benWrite, {
       status: "done",
       result: { tool: "write", path: "styles.css", bytes: y.length, sequence: 2 },
       generation: 1,
     }))
     await benSaving
     await until(async () => expect((await owner.marks(fileId)).get(savedNameOf(2))).toBe(savedMarkOf(y)))
-    await opened.run(settle(ownerWrite.callId, {
+    await opened.run(settle(ownerWrite, {
       status: "done",
       result: { tool: "write", path: "styles.css", bytes: x.length, sequence: 1 },
       generation: 1,
@@ -750,14 +752,14 @@ describe("a shared file", () => {
     // A machine that answers a write without its number can't place it among the others: it marks nothing.
     const unnumbered = owner.coedit.save(fileId)
     const old = await call(opened, "write", 3)
-    await opened.run(settle(old.callId, { status: "done", result: { tool: "write", path: "styles.css", bytes: x.length }, generation: 1 }))
+    await opened.run(settle(old, { status: "done", result: { tool: "write", path: "styles.css", bytes: x.length }, generation: 1 }))
     await unnumbered
     expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ saving: false, saveFailed: false, saved: false })
 
     // Saving X again is the newest write: everyone says Saved.
     const again = owner.coedit.save(fileId)
     const newest = await call(opened, "write", 4)
-    await opened.run(settle(newest.callId, {
+    await opened.run(settle(newest, {
       status: "done",
       result: { tool: "write", path: "styles.css", bytes: x.length, sequence: 3 },
       generation: 1,
@@ -769,8 +771,8 @@ describe("a shared file", () => {
     })
   }, WITHIN)
 
-  test.fails("a reload during a Save leaves no mark: the write finishes, but nobody's screen says Saved (broken)", async () => {
-    // A reload loses the saving tab's mark after a durable write: docs/features/coedit.md#saved.
+  test("closing the saving tab still publishes the durable write's Saved mark", async () => {
+    // The remote save records its mark even after the saving tab has gone.
     const opened = await open()
     // Keep ChatApi alive when the saving tab closes.
     const owner = await opened.ownTab()
@@ -780,7 +782,7 @@ describe("a shared file", () => {
     const fileId = (await owner.coedit.showFile(branchId, "styles.css"))!
     const read = await call(opened, "read")
     const content = "body {}\n"
-    await opened.run(settle(read.callId, {
+    await opened.run(settle(read, {
       status: "done",
       result: { tool: "read", path: "styles.css", content, bytes: content.length, truncated: false },
       generation: 1,
@@ -795,12 +797,19 @@ describe("a shared file", () => {
     const write = await call(opened, "write")
     expect(write.call).toEqual({ tool: "write", path: "styles.css", content })
     await owner.close()
-    await opened.run(settle(write.callId, {
+    await opened.run(settle(write, {
       status: "done",
-      result: { tool: "write", path: "styles.css", bytes: content.length },
+      result: { tool: "write", path: "styles.css", bytes: content.length, sequence: 1 },
       generation: 1,
     }))
     await until(() => expect(fileOf(benTabOpen.texts(), conversation, "styles.css")).toMatchObject({ saved: true }), 10_000)
+    expect(await benTabOpen.marks(fileId)).toEqual(new Map([[savedNameOf(1), savedMarkOf(content)]]))
+    const reloaded = await opened.ownTab()
+    await reloaded.branch.actions.open("octo", "hello", "feature/one")
+    expect(await reloaded.coedit.showFile(branchId, "styles.css")).toBe(fileId)
+    await until(() => expect(fileOf(reloaded.texts(), conversation, "styles.css")).toMatchObject({
+      text: content, saved: true, saving: false, saveFailed: false,
+    }))
   }, WITHIN)
 })
 

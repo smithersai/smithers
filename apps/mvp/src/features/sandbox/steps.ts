@@ -94,9 +94,9 @@ export const start =
       yield* Effect.annotateCurrentSpan({ "smithers.sandbox.tool": tool, door })
       const fail = (failure: Failure) => Effect.andThen(settled(tool, callId, outcomeOf(failure)), Effect.fail(failure))
       if (target === undefined) return yield* fail(new SandboxCallRefused({ reason: "invalid" }))
-      const { conversationId: _pinned, ...fields } = input
+      const { conversationId: _pinned, save, ...fields } = input
       const call = { ...fields, tool } as SandboxTools.Call
-      const answer = yield* Effect.result((yield* SandboxClient).start({ callId, call, ...target }))
+      const answer = yield* Effect.result((yield* SandboxClient).start({ callId, call, ...target, ...(tool === "write" && save === true ? { save: true } : {}) }))
       if (answer._tag === "Failure") return yield* fail(refusalOf(answer.failure))
       if (answer.success.status === "failed") {
         return yield* fail(new SandboxCallFailed({ failure: answer.success.failure }))

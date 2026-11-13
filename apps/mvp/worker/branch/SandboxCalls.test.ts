@@ -3,6 +3,11 @@
 // Remote flow starts are recorded by the harness's `FlowStarter`; `sandbox/Call` itself runs in
 // worker/flows/SandboxCall.test.ts, so a call's row is settled here with that flow's own `settle`.
 import { Effect, Layer, Redacted } from "effect"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { SharedText } from "@smthrs/sync"
+import { Base64 } from "effect/encoding"
+import { TEXT_NAMESPACE, textName } from "../../src/features/coedit/contract.ts"
+import { savedMarkOf } from "../../src/features/coedit/saved.ts"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
@@ -84,6 +89,34 @@ describe("POST /api/sandbox/calls", () => {
       expect(h.only("sandbox.call").annotations).toMatchObject({ status: 403, code: "members_only" })
     }
     expect(await calls()).toEqual([])
+  })
+
+  test("Save pins the file and content mark in the durable call; ordinary writes and other tools do not", async () => {
+    const branch = await tracked(runtime, REPO, "feature/save")
+    const h = await open()
+    const write = { tool: "write", path: "notes.md", content: SENTINEL } as const
+    const textId = await Effect.runPromise(Uuid.v5(TEXT_NAMESPACE, textName({
+      kind: "file", conversation: branch.conversationId, path: write.path,
+    })).pipe(Effect.provide(WebCrypto.layer)))
+    const request = { callId: crypto.randomUUID(), call: write, conversationId: branch.conversationId, save: true }
+    // A mark-only document would look initialized and hide nonempty working-copy content.
+    expect(await json(await post(h, request))).toEqual([400, { code: "invalid" }])
+    expect(h.starts).toEqual([])
+    expect(await calls()).toEqual([])
+    expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT id FROM text_updates WHERE text_id = ${textId}`))).toEqual([])
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`INSERT INTO text_updates (id, scope, text_id, data, seed, person_id)
+        VALUES (${crypto.randomUUID()}, ${`branch:${branch.branchId}`}, ${textId},
+          ${Base64.encode(SharedText.seed(SENTINEL))}, true, ${member.subject.id})`))
+    const response = await post(h, request)
+    expect(response.status).toBe(202)
+    expect(h.starts[0]!.payload).toMatchObject({ saved: { textId, mark: savedMarkOf(SENTINEL) }, call: write })
+    for (const request of [{ call: write }, { call: run, save: true }]) {
+      expect((await post(h, { callId: crypto.randomUUID(), conversationId: branch.conversationId, ...request })).status).toBe(202)
+      expect(h.starts.at(-1)!.payload).not.toHaveProperty("saved")
+    }
+    expect(JSON.stringify(h.line("sandbox.call"))).not.toContain(SENTINEL)
   })
 
   test("a person's call on a branch they may edit is 202, recorded running and started as sandbox/Call", async () => {

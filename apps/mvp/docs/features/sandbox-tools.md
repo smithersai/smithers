@@ -18,7 +18,7 @@ Six client flows, all model-invocable (`src/features/sandbox/flows.ts`). Their i
 |---|---|---|---|
 | `sandbox/run` | `/run <command>` | `command`, `cwd?`, `timeoutSeconds?` (60, at most 3600: a [long command](#long-commands)) | `exitCode`, `timedOut`, `stdout`, `stderr` (64 KiB each), their sizes, `truncated` |
 | `sandbox/read` | `/read <path>` | `path` | `content` (1 MiB), `bytes`, `truncated` |
-| `sandbox/write` | `/write <path> <content>` | `path`, `content` (1 MiB) | `path`, `bytes` |
+| `sandbox/write` | `/write <path> <content>` | `path`, `content` (1 MiB), `save?` | `path`, `bytes` |
 | `sandbox/list` | `/ls [path]` | `path?` | `entries [{ name, kind, bytes }]` (1,000), `truncated` |
 | `sandbox/status` | `/status` | none | `branch`, `entries [{ path, index, worktree, from? }]` |
 | `sandbox/diff` | `/diff` | `paths?` | a unified diff from the last commit, new files included (256 KiB), `bytes`, `truncated` |
@@ -32,6 +32,7 @@ sandbox/<tool>/start: POST /api/sandbox/calls { callId, call, conversationId | a
   ─▶ sandbox/<tool>/result: GET /api/sandbox/calls/<id>, again every 250 ms to 2 s while it runs (20 minutes at most)
 ```
 
+- **A file editor's Save** sets `save: true`. ChatApi requires the file's shared content to be initialized, pins its text id and content mark in the remote call, and `sandbox/Settle` publishes its numbered [saved mark](coedit.md#saved) atomically with the result. A tab closed during the write loses no completion mark; ordinary tool writes keep their existing behavior.
 - **The call's id** is the version 5 UUID of the run's execution id (`CALL_ID_NAMESPACE`). A step run again, after a crash or with the tab closed and reopened, names the same call; ChatApi answers it as it stands, and the machine never runs it twice.
 - **Where it runs:** the agent's call is a child of its answer's run, so it names the answer, and ChatApi uses that answer's conversation's branch, however the person's tab moved since. A person's call names the conversation their tab showed (`conversationId`, pinned by `src/features/sandbox/actions.ts`; a person never types it). A call that names neither is refused `invalid`.
 - **What the agent reads:** a done call resolves in the agent's cell as the tool's answer, `{ path, bytes }` for a write, and answers `.ok` as true like any successful call's object result (`@smthrs/harness`), so a cell's `if (!result.ok)` guard reads it as done. Until 2026-10-25 it had no `ok`: gpt-4.1-mini's guard read a write the machine had made as failed, and the answer was "I couldn't write the file." (`e2e/sandbox-tools.spec.ts` "agent tools").
@@ -55,10 +56,10 @@ sandbox/<tool>/start: POST /api/sandbox/calls { callId, call, conversationId | a
 
 ## The remote flow
 
-`sandbox/Call { callId, ownerId, branch, call }` (`worker/flows/SandboxCall.ts`) runs on the `FlowExecution` Durable Object, one execution per call (`sandbox-call:<id>`):
+`sandbox/Call { callId, ownerId, branch, call, saved? }` (`worker/flows/SandboxCall.ts`) runs on the `FlowExecution` Durable Object, one execution per call (`sandbox-call:<id>`):
 
 ```
-sandbox/Tool (wake the machine, run the tool as the person's user) ─▶ sandbox/Settle (done, with the result)
+sandbox/Tool (wake the machine, run the tool as the person's user) ─▶ sandbox/Settle (done, with the result and any Save mark)
 a run: sandbox/Command (its own job, below) ───────────────────────┘
      └ refused, lost, no machine, no checkout ─▶ sandbox/ToolFailed ─▶ sandbox/Settle (failed, with why)
 ```

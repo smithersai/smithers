@@ -29,7 +29,7 @@ export class SandboxClient extends Context.Service<
   {
     /** Starts call `callId`, or reads how it stands when it started before: `202` running, `200` as it stands. */
     readonly start: (
-      request: { readonly callId: string; readonly call: SandboxTools.Call } & Target,
+      request: { readonly callId: string; readonly call: SandboxTools.Call; readonly save?: boolean } & Target,
     ) => Effect.Effect<Standing, CallRefused>
     /** How call `callId` stands. */
     readonly result: (callId: string) => Effect.Effect<Standing, CallRefused>

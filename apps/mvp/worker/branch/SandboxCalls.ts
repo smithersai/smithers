@@ -1,3 +1,6 @@
+import { Uuid as CryptoUuid, WebCrypto } from "@smthrs/crypto"
+import { TEXT_NAMESPACE, textName } from "../../src/features/coedit/contract.ts"
+import { savedMarkOf } from "../../src/features/coedit/saved.ts"
 import { forgeOf, namespaceOf } from "./Conversations.ts"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -45,6 +48,7 @@ const callRequest = Schema.Struct({
   call: ToolCall(COMMAND_LIMIT_SECONDS),
   conversationId: Schema.optional(Uuid),
   answerId: Schema.optional(Uuid),
+  save: Schema.optional(Schema.Boolean),
 })
 const isUuid = Schema.is(Uuid)
 
@@ -177,6 +181,22 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
             { status: 400, headers: noStore },
           )
         }
+        // The receipt comes from the admitted write, never from the tab that waits for it.
+        const saved = decoded.value.save === true && call.tool === "write"
+          ? {
+            textId: yield* CryptoUuid.v5(TEXT_NAMESPACE, textName({ kind: "file", conversation: conversationId, path: call.path }))
+              .pipe(Effect.provide(WebCrypto.layer), Effect.orDie),
+            mark: savedMarkOf(call.content),
+          }
+          : undefined
+        if (saved !== undefined) {
+          // A mark alone is not file content: the editor must already have its shared seed.
+          const seeded = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+            sql`SELECT id FROM text_updates
+              WHERE scope = ${`branch:${branch.branchId}`} AND text_id = ${saved.textId} AND seed = true
+              LIMIT 1`).pipe(Effect.provide(database))
+          if (seeded.length === 0) return refuse(fields, 400, "invalid")
+        }
         const ownerId = actor.value.subject.id
         const inserted = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
           sql`
@@ -194,7 +214,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
           // A resend starts the same execution, a no-op, so a call whose first start was lost still gets one.
           const started = yield* starter.start(SandboxCall, {
             executionId: callExecutionId(callId),
-            payload: { callId, ownerId, branch: { branchId: branch.branchId, owner, name, branch: branch.name, ...(namespace === "ephemeral" ? { namespace } : {}), ...(forge === undefined ? {} : { forge }) }, call },
+            payload: { callId, ownerId, branch: { branchId: branch.branchId, owner, name, branch: branch.name, ...(namespace === "ephemeral" ? { namespace } : {}), ...(forge === undefined ? {} : { forge }) }, call, ...(saved === undefined ? {} : { saved }) },
           }).pipe(Effect.result)
           if (started._tag === "Failure") {
             fields.errorCode = started.failure._tag

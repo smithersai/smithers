@@ -1,6 +1,11 @@
 import { Action, ExternalJob, Flow, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
 import { SandboxTools } from "@smthrs/sandbox"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { SharedText } from "@smthrs/sync"
+import { Base64 } from "effect/encoding"
+import { TEXT_NAMESPACE } from "../../src/features/coedit/contract.ts"
+import { savedNameOf } from "../../src/features/coedit/saved.ts"
 import { Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
@@ -64,7 +69,9 @@ const CallId = Schema.String.check(Schema.isUUID())
  * What a run is for: the call, the person it runs as, the branch whose machine runs it, and the tool's input, a command
  * of up to the job's limit.
  */
-const payload = { callId: CallId, ownerId: Schema.String, branch: SandboxBranch, call: ToolCall(COMMAND_LIMIT_SECONDS) }
+const Saved = Schema.Struct({ textId: CallId, mark: Schema.String })
+const saved = Schema.optional(Saved)
+const payload = { callId: CallId, ownerId: Schema.String, branch: SandboxBranch, call: ToolCall(COMMAND_LIMIT_SECONDS), saved }
 
 /** How a call ended: done with the tool's result on a generation of the machine, or failed and why. */
 export const Outcome = Schema.Union([
@@ -108,19 +115,19 @@ export const ToolFailed = Action.make("sandbox/ToolFailed", {
   tier: "sealed",
 })
 
-/** Records how the call ended on its row, only while it is `running`. */
+/** Records the call's outcome and any Save mark together, only while it is `running`. */
 export const Settle = Action.make("sandbox/Settle", {
-  payload: { callId: CallId, tool: Schema.String, outcome: Outcome },
+  payload: { callId: CallId, tool: Schema.String, outcome: Outcome, saved },
   success: Schema.Struct({ settled: Schema.Boolean }),
   error: SettleUnavailable,
-  capabilities: ["db:write:sandbox_calls"],
+  capabilities: ["db:write:sandbox_calls", "db:write:text_updates"],
   retryPolicy: SETTLE_RETRY,
 })
 
 /** `sandbox/Call`: runs one sandbox tool on a branch's machine and records how it ended. */
 export const SandboxCall = Flow.make("sandbox/Call", {
   description: "Run one sandbox tool on a branch's machine as the person who asked, and record its result.",
-  capabilities: ["sandbox:wake", "sandbox:exec", "db:write:sandbox_calls"],
+  capabilities: ["sandbox:wake", "sandbox:exec", "db:write:sandbox_calls", "db:write:text_updates"],
   modelInvocable: false,
   payload,
   success: Settle.successSchema,
@@ -128,7 +135,7 @@ export const SandboxCall = Flow.make("sandbox/Call", {
   error: Schema.Union([SettleUnavailable, CallError]),
   body: Node.capture(
     { tool: Tool.name, command: Command._tag, failed: ToolFailed.name, settle: Settle.name },
-    ({ callId, ownerId, branch, call }) =>
+    ({ callId, ownerId, branch, call, saved }) =>
       Node.succeed(call).pipe(
         Node.branch({
           if: Node.capture({ tool: "run" }, (asked: SandboxTools.Call) => asked.tool === "run"),
@@ -142,7 +149,7 @@ export const SandboxCall = Flow.make("sandbox/Call", {
             ToolFailed.call({ error })),
         }),
         Node.bindPlanned(Node.capture({ settle: Settle.name }, (outcome: Planned.Planned<Outcome>) =>
-          Settle.call({ callId, tool: call.tool, outcome }))),
+          Settle.call({ callId, tool: call.tool, outcome, saved }))),
       ),
   ),
 })
@@ -166,20 +173,38 @@ export const failureOf = (error: CallError): Outcome => ({
 
 /**
  * Writes `outcome` to call `callId`'s row while it is `running`: whether it did. The result is stored as JSON for the
- * person who asked; nothing logs it.
+ * person who asked; nothing logs it. A Save publishes its numbered mark in the same transaction, keyed by this call,
+ * so replay or a lost tab cannot leave a completed write without its mark.
  */
-export const settle = (callId: string, outcome: Outcome) =>
+export const settle = (callId: string, outcome: Outcome, saved?: typeof Saved.Type) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const rows = outcome.status === "done"
-      ? yield* sql`
-        UPDATE sandbox_calls SET status = 'done', result = ${JSON.stringify(outcome.result)}::jsonb,
-          generation = ${outcome.generation ?? null}, settled_at = now()
-        WHERE id = ${callId} AND status = 'running' RETURNING id`
-      : yield* sql`
-        UPDATE sandbox_calls SET status = 'failed', failure = ${outcome.failure}, settled_at = now()
-        WHERE id = ${callId} AND status = 'running' RETURNING id`
-    return { settled: rows.length > 0 }
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      const rows = outcome.status === "done"
+        ? yield* sql<{ readonly branchId: string; readonly personId: string }>`
+          UPDATE sandbox_calls SET status = 'done', result = ${JSON.stringify(outcome.result)}::jsonb,
+            generation = ${outcome.generation ?? null}, settled_at = now()
+          WHERE id = ${callId} AND status = 'running'
+          RETURNING branch_id AS "branchId", person_id AS "personId"`
+        : yield* sql<{ readonly branchId: string; readonly personId: string }>`
+          UPDATE sandbox_calls SET status = 'failed', failure = ${outcome.failure}, settled_at = now()
+          WHERE id = ${callId} AND status = 'running'
+          RETURNING branch_id AS "branchId", person_id AS "personId"`
+      const row = rows[0]
+      if (row !== undefined && saved !== undefined && outcome.status === "done" &&
+        outcome.result.tool === "write" && outcome.result.sequence !== undefined) {
+        const sequence = outcome.result.sequence
+        const update = yield* Effect.scoped(Effect.gen(function* () {
+          const replica = yield* SharedText.make
+          return (yield* replica.mark(savedNameOf(sequence), saved.mark))!
+        }))
+        const id = yield* Uuid.v5(TEXT_NAMESPACE, `saved/${callId}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+        yield* sql`
+          INSERT INTO text_updates (id, scope, text_id, data, seed, person_id)
+          VALUES (${id}, ${`branch:${row.branchId}`}, ${saved.textId}, ${Base64.encode(update)}, false, ${row.personId})`
+      }
+      return { settled: rows.length > 0 }
+    }))
   })
 
 /** The steps over the host's `Machines` and `database`; each records ids, the tool and outcomes, never content. */
@@ -200,8 +225,8 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
 
   const failed = ({ error }: typeof ToolFailed.payloadSchema.Type) => Effect.succeed(failureOf(error))
 
-  const record = ({ callId, tool, outcome }: typeof Settle.payloadSchema.Type) =>
-    settle(callId, outcome).pipe(
+  const record = ({ callId, tool, outcome, saved }: typeof Settle.payloadSchema.Type) =>
+    settle(callId, outcome, saved).pipe(
       Effect.provide(database),
       Effect.mapError(() => new SettleUnavailable()),
       Effect.tap(({ settled }) => {

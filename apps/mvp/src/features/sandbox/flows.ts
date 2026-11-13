@@ -176,7 +176,7 @@ export const Read = tool("read", {
 
 /** `sandbox/write { path, content }`. */
 export const Write = tool("write", {
-  fields: { path, content: SandboxTools.Write.fields.content },
+  fields: { path, content: SandboxTools.Write.fields.content, save: Schema.optional(Schema.Boolean) },
   success: WriteResult,
   description: "Write a file in the branch's checkout, making its folders; it replaces what was there. Answers " +
     "{ path, bytes }. The path is relative to the checkout.",

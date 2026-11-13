@@ -1,7 +1,7 @@
 import { digestSync } from "@smthrs/crypto"
 
-// A Save's mark on a file's text (docs/features/coedit.md#saved), shared by the browser, which marks what a Save
-// wrote, and ChatApi, whose resync brings a saved text to the working copy's new contents
+// A Save's mark on a file's text (docs/features/coedit.md#saved), shared by durable save settlement and ChatApi,
+// whose resync brings a saved text to the working copy's new contents
 // (docs/features/branch-publish.md#resync).
 
 /** The mark a Save leaves on a file's text: what it wrote, as its length and SHA-256, the same on every device. */

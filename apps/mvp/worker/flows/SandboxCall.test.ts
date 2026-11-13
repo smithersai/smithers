@@ -5,7 +5,12 @@
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { ExternalJob, Sleep } from "@smthrs/flow"
 import { type SandboxCommand, SandboxTools } from "@smthrs/sandbox"
-import { Cause, Effect, Exit, Layer, Logger, Metric, Schema } from "effect"
+import { SharedText } from "@smthrs/sync"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { TEXT_NAMESPACE } from "../../src/features/coedit/contract.ts"
+import { Base64 } from "effect/encoding"
+import { savedMarkOf, savedNameOf } from "../../src/features/coedit/saved.ts"
+import { Cause, Effect, Exit, Layer, Logger, Metric, Result, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -93,10 +98,11 @@ const run = async (
   started: Awaited<ReturnType<typeof running>>,
   machines: ReturnType<typeof machine>,
   call: typeof SandboxCall.SandboxCall.payloadSchema.Type["call"] = read,
+  saved?: typeof SandboxCall.SandboxCall.payloadSchema.Type["saved"],
 ) =>
   runFlow(
     SandboxCall.SandboxCall,
-    { callId: started.callId, ownerId: OWNER, branch: started.branch, call },
+    { callId: started.callId, ownerId: OWNER, branch: started.branch, call, saved },
     Layer.mergeAll(SandboxCall.registration(await database()), SandboxCommandJob.registration).pipe(
       Layer.provide(machines.layer),
     ),
@@ -121,6 +127,94 @@ describe("sandbox/Call on the Node host", () => {
       settled: true,
     })
   })
+
+  test("a durable Save settles its numbered receipt with its mark, and replay publishes it once", async () => {
+    const started = await running("write")
+    const content = "# Saved\n"
+    const saved = { textId: crypto.randomUUID(), mark: savedMarkOf(content) }
+    const write = { tool: "write", path: "README.md", content } as const
+    const result = { tool: "write", path: write.path, bytes: content.length, sequence: 7 } as const
+    const machines = machine([Effect.succeed({ result, generation: 2 })])
+    expect((await run(started, machines, write, saved)).exit).toEqual(Exit.succeed({ settled: true }))
+    const updates = () => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly data: string; readonly scope: string; readonly personId: string; readonly textId: string }>`
+        SELECT data, scope, person_id AS "personId", text_id AS "textId" FROM text_updates`))
+    const rows = await updates()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ scope: `branch:${started.branchId}`, personId: OWNER, textId: saved.textId })
+    const state = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const replica = yield* SharedText.make
+      yield* replica.apply(Result.getOrThrow(Base64.decode(rows[0]!.data)))
+      return { marks: yield* replica.marks, text: yield* replica.text }
+    })))
+    expect(state).toEqual({ marks: new Map([[savedNameOf(7), saved.mark]]), text: "" })
+    expect(await row(started.callId)).toMatchObject({ status: "done", result })
+    // A repeated settlement cannot append another update or change the first receipt.
+    expect(await runtime.runPromise(SandboxCall.settle(started.callId, { status: "done", result }, saved)))
+      .toEqual({ settled: false })
+    expect(await updates()).toEqual(rows)
+  })
+
+  test("a refused mark rolls back settlement, so the durable step can retry both together", async () => {
+    const started = await running("write")
+    const result = { tool: "write", path: "README.md", bytes: 1, sequence: 1 } as const
+    const saved = { textId: crypto.randomUUID(), mark: savedMarkOf("x") }
+    const steps = SandboxCall.steps(await database())
+    // An invalid UUID makes the real database reject the mark after the status update.
+    const failed = await observed(steps.record({
+      callId: started.callId, tool: "write", outcome: { status: "done", result },
+      saved: { ...saved, textId: "invalid" },
+    }))
+    expect(Exit.isFailure(failed.exit) && Cause.squash(failed.exit.cause)).toBeInstanceOf(SandboxCall.SettleUnavailable)
+    expect(await row(started.callId)).toMatchObject({ status: "running", result: null, settled: false })
+    expect((await observed(steps.record({
+      callId: started.callId, tool: "write", outcome: { status: "done", result }, saved,
+    }))).exit).toEqual(Exit.succeed({ settled: true }))
+    const updates = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT id FROM text_updates WHERE text_id = ${saved.textId}`))
+    expect(updates).toHaveLength(1)
+  })
+
+  test("an occupied update id cannot settle a Save without its mark", async () => {
+    const started = await running("write")
+    const id = await Effect.runPromise(Uuid.v5(TEXT_NAMESPACE, `saved/${started.callId}`).pipe(Effect.provide(WebCrypto.layer)))
+    const otherText = crypto.randomUUID()
+    const data = Base64.encode(SharedText.seed(SENTINEL))
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`INSERT INTO text_updates (id, scope, text_id, data, seed, person_id)
+        VALUES (${id}, ${`branch:${started.branchId}`}, ${otherText}, ${data}, true, ${OWNER})`))
+    const saved = { textId: crypto.randomUUID(), mark: savedMarkOf("saved") }
+    const recorded = await observed(SandboxCall.steps(await database()).record({
+      callId: started.callId, tool: "write", saved,
+      outcome: { status: "done", result: { tool: "write", path: "README.md", bytes: 5, sequence: 1 } },
+    }))
+    expect(Exit.isFailure(recorded.exit) && Cause.squash(recorded.exit.cause)).toBeInstanceOf(SandboxCall.SettleUnavailable)
+    expect(await row(started.callId)).toMatchObject({ status: "running", result: null, settled: false })
+    expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT text_id AS "textId", data FROM text_updates`))).toEqual([{ textId: otherText, data }])
+  })
+
+  test.each(["failed", "unnumbered", "not a write", "not a Save", "missing call"] as const)(
+    "%s publishes no saved mark",
+    async (scenario) => {
+      const started = await running(scenario === "not a write" ? "read" : "write")
+      const saved = { textId: crypto.randomUUID(), mark: savedMarkOf(SENTINEL) }
+      const outcome: SandboxCall.Outcome = scenario === "failed"
+        ? { status: "failed", failure: "unavailable" }
+        : {
+          status: "done",
+          result: scenario === "not a write" ? readResult
+            : { tool: "write", path: "README.md", bytes: 1, ...(scenario === "unnumbered" ? {} : { sequence: 1 }) },
+        }
+      await runtime.runPromise(SandboxCall.settle(
+        scenario === "missing call" ? crypto.randomUUID() : started.callId,
+        outcome,
+        scenario === "not a Save" ? undefined : saved,
+      ))
+      expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`SELECT id FROM text_updates WHERE text_id = ${saved.textId}`))).toEqual([])
+    },
+  )
 
   test("a command runs as its own sandbox/Command job: started once, collected, and the call settles done", async () => {
     const started = await running()
