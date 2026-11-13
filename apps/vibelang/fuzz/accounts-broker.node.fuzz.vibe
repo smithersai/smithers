@@ -69,6 +69,9 @@ effect function world(slug: boolean, brokered: boolean, named: boolean, legacy =
   const healthy = { get: storage.get, put: storage.put, delete: storage.delete, list: storage.list }
   const rejected = () => Promise.reject(new Error("storage lost"))
   const setLost = (lost: boolean) => { Object.assign(storage, lost ? { get: rejected, put: rejected, delete: rejected, list: rejected } : healthy) }
+  // The object's SQL database lost: SQLite refuses every statement (a table that does not exist) until it heals.
+  const sql = storage.sql
+  const setSqlLost = (lost: boolean) => { Object.assign(storage, { sql: lost ? { exec: () => sql.exec("SELECT lost FROM vibelang_database_lost") } : sql }) }
   const keys = try Core.CookieKeys.make({ primary: Redacted.make("fixture-only-broker-cookie-key-32-chars") }, "primary")
   let custodian = true
   const broker = try GitHub.Auth.Broker.make({
@@ -115,7 +118,7 @@ effect function world(slug: boolean, brokered: boolean, named: boolean, legacy =
     const text = options.stream !== true && (response.status === 200 || response.status >= 400) ? try promise(() => answer.text()) : ""
     return { status: response.status, location: answer.headers.get("location") ?? "", text, cookies } satisfies Answer
   }
-  return { storage, accounts, ask, jars, setLost, setCustodian: (healthy: boolean) => { custodian = healthy } }
+  return { storage, accounts, ask, jars, setLost, setSqlLost, setCustodian: (healthy: boolean) => { custodian = healthy } }
 }
 type World = Effect.Success<ReturnType<typeof world>>
 const kvOf = (w: World) => (w.storage as unknown as { readonly kv: ReadonlyMap<string, unknown> }).kv
@@ -361,6 +364,13 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
         const owner = op.person === "1" ? "1" : "99"
         const reason = try w.accounts.draftWiki(owner, "index", "ask", `draft-${op.n}`)
         if (owner === "99" ? reason !== "forbidden" : reason === "forbidden") return try refute(op.kind, 150)
+        // A draft the object's database cannot record is unavailable, never a defect.
+        if (owner === "1") {
+          w.setSqlLost(true)
+          const lost = try Effect.exit(w.accounts.draftWiki(owner, "index", "ask", `lost-${op.n}`))
+          w.setSqlLost(false)
+          if (lost._tag !== "Success" || lost.value !== "unavailable") return try refute(op.kind, 151)
+        }
         break
       }
       case "participation": {
