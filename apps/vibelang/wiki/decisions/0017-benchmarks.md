@@ -1159,3 +1159,43 @@ The final collection on main 02315e2b found two more groups. `src/core/MockFacto
 journal with a repeated or skipped event number is trimmed) has `mock-journal-trimmed`. The counter export's
 decisions `benchmarkPath` and `benchmarkAnswer` (`worker/sandboxWorkerDecision.vibe` 192, 203–205) have one
 caller, the test-stage handler `worker/sandboxBenchmark.vibe`, so they join its deployed-only row.
+
+### Source-matching live receipt (resume 12, 2026-11-13)
+
+The lead deployed main `a54642d6`, ran `pnpm bench:sandboxes-live` once (1/1) and destroyed `vl-test`; all three
+commands exited 0. The source-checked collector, unchanged, accepts all 77 deployed modules from the Worker, account
+and machine isolates under one build id (`ddfcb2ac-a68e-4507-a687-5bfd6fab2483`) against a checkout of `a54642d6`.
+All 33 deployed-only positions now run:
+
+| File | Positions | Without live counters | With live counters |
+| --- | --- | ---: | ---: |
+| `worker/SandboxAccounts.vibe` | 16, 17, 18, 20, 28, 29, 30 | 6/13 | 13/13 |
+| `worker/SandboxMachine.vibe` | 14–17 | 2/6 | 6/6 |
+| `worker/SandboxProbe.vibe` | 19, 20, 24–27 | 6/12 | 12/12 |
+| `worker/sandboxBenchmark.vibe` | 14–23 | 0/10 | 10/10 |
+| `worker/sandboxWorkerDecision.vibe` | 192, 203–205 | 36/40 | 40/40 |
+| `infra/SandboxImage.vibe` | 4, 5 | 0/2 | 2/2 |
+
+Method: a fresh benchmark-only collection on `a54642d6` (Node, workerd and Chromium), merged once without and once
+with the lead's dump; the local evidence is identical in both merges. The merge adds exactly these 33 positions and
+nothing else. `src/` + `worker/`: 9,587/9,760 → **9,618/9,760 (98.55%)**; `infra/` 10/12 → 12/12.
+
+Of the 142 open positions, 133 are specification-only (VIP-43). Four are the invariant traps
+(`HistoryObject` 149–150, `Objects` 256–257). Five are runtime code main added after the 02315e2b collection, each
+with a runtime caller and no workload yet:
+
+| Position | Caller | Workload it needs |
+| --- | --- | --- |
+| `src/web/actionModel.vibe` 35–36 | `actionView.vibe` 48, a refused write's result | The agent's door sends a blank lane and a blank note; the run's Result reads "Needs a lane." / "Needs text."; any other refusal reads its reason. |
+| `src/web/main.vibe` 1099 | the action follow stream | A follow that closes cleanly before its run settles yields `FailedActionFollow`, like a transport failure. |
+| `src/web/modelWrite.vibe` 622 | `main.vibe` 715, tour replay | A tour receipt of kind `replay`: fresh tour client, next epoch. |
+| `src/web/modelWrite.vibe` 650 | `main.vibe` 747, tour finish | A walkthrough that finishes: tour off, draft cleared. |
+
+**Live result artifacts.** Live results follow the artifact rule above: `bench/results/` is ignored, so the live JSON
+and the 6 MB counter dump stay out of the repository. Both are retained on nyc-01 under
+`~/vl/vl-bench-evidence/live-a54642d6/`, with the lead's run log and both merged maps.
+
+A collection on base `a54642d6` needs main's `bbbdcdd1` (workerd counters read `file:` URL sources as paths). Without
+it, `bench/merge-coverage.ts` exits on the first workerd dump: VibeLang 0.0.13's esbuild plugin names inline-map
+sources by `file://` URL, and Istanbul resolves them beside the module. This collection applied the same conversion
+at remap time; the remapped maps are identical.

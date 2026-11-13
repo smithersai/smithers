@@ -4715,3 +4715,51 @@ unwarmed samples, setup included. Three samples give a mean and range, not a per
 Reconnect is now the person's click, so the workload no longer contains that wait. That is a changed journey, not a
 speedup. Happy DOM rows measure the mounted Foldkit runtime without browser layout or paint. Mock and in-memory
 storage rows measure product code in process, not workerd or network latency.
+
+## Resume 12: source-matching live sandbox run (2026-11-13)
+
+### Live observation
+
+At **17:45 UTC (09:45 PST)** the lead deployed main `a54642d6` to a reserved `vl-test` stage from the Mac's vault
+wrapper, ran one instrumented lifecycle and destroyed the stage. Deploy, benchmark (1/1) and destroy each exited 0.
+
+| Measurement | Observed ms | Samples |
+| --- | ---: | ---: |
+| Full lifecycle, Stop/sweep and correctness assertions | 28,688 | 1 |
+| Lifecycle through the second Stop (metering window) | 28,174 | 1 |
+
+Method: unchanged from [resume 10](#deployed-sandbox-observation-resume-10-2026-11-12). Start, write `saved`,
+Stop/checkpoint, Start/restore, read `saved`, Stop and sweep. The run checks generations 1 and 2, the restored bytes,
+metered usage and the Container's own stopped status (`runningAfterSweep: false`). Then come bad-token 403,
+valid-token GET 405, a nonempty recording read and the counter export. The Vitest duration, 33.5 s, includes that
+later work and runner overhead.
+
+Client: Apple M3 Max, 16 logical CPUs, macOS Darwin 25.2.0 arm64, Node 26.10.0; Vitest 5.0.0, Vite 8.3.4,
+VibeLang 0.0.13, Effect 4.1.1. One lite Container, two sequential generations, 72 recorded Container calls,
+0.336 used minutes. No model tokens, no GitHub calls, no secret retained; the lead checked the probe token appears
+in no result file.
+
+Artifacts on nyc-01 under `~/vl/vl-bench-evidence/live-a54642d6/`: `2026-11-13T17-45-55.407Z-sandbox-live.json`,
+`sandbox-raw/lifecycle-1794591955380.json` (6 MB) and `lead-run.log`. The JSON records the Mac working-copy revision
+`08dec37db5df`; the lead's log names main `a54642d6`. Neither is relabeled. The collector checks every deployed
+module's embedded source byte for byte against `a54642d6` and accepts all 77.
+
+Limits: **one instrumented sample**. It is about twice resume 10's 14,891 ms, and one sample cannot say why: WAN,
+Cloudflare placement, cold start and checkpoint/restore all vary. No percentile, regression threshold or
+uninstrumented latency follows.
+
+### Coverage with the live counters
+
+Full `pnpm bench:coverage` (job `vl-bench:live12c-coverage`, Cloudflare box, node26 image, Node 26.5.0, 4 vCPU),
+source `a54642d6`, 19:53–20:39 UTC (11:53–12:39 PST): 118 files passed, 1 skipped; 259 checks passed, 5 skipped,
+none failed. The merge holds 231 files: 147 workerd-evidenced, 126 Chromium-evidenced and 77 deployed-evidenced.
+
+| Merge | `src/` + `worker/` lines | `infra/` | Open in src, worker, infra |
+| --- | ---: | ---: | ---: |
+| Local benchmarks only | 9,587/9,760 (98.23%) | 10/12 | 175 |
+| With the live dump | **9,618/9,760 (98.55%)** | 12/12 | 142 |
+
+The live dump closes all 33 deployed-only positions; the per-module table is in decision 0017. The 142 left: 133
+specification-only (VIP-43), 4 invariant traps and 5 runtime positions main added after the last collection
+(`actionModel` 35–36, `main` 1099, `modelWrite` 622 and 650). Those 5 need new workloads, not a live run; 0017 names
+each one. The strict four-metric gate still exits 1 on these positions. No threshold or exclusion changed.
