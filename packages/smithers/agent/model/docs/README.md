@@ -136,7 +136,7 @@ layer of it should start there.
 
 ## Namespaces
 
-The root entry point re-exports twenty-four namespaces. Each is also importable
+The root entry point re-exports twenty-five namespaces. Each is also importable
 on its own subpath, such as `@smthrs/model/Route`.
 
 | Namespace               | What it owns                                                         |
@@ -164,6 +164,7 @@ on its own subpath, such as `@smthrs/model/Route`.
 | `OpenAIChatGPT`         | Route construction for the ChatGPT-subscription backend.             |
 | `DeferredTools`         | Replay-safe policy for native deferred tool loading.                 |
 | `ToolStream`            | Pure accumulation of fragmented tool-call arguments.                 |
+| `WireTrace`             | Opt-in redacted wire diagnostics for model requests and responses.   |
 | `CanonicalJson`         | Deterministic JSON encoding for model-step inputs.                   |
 
 ## Where to go next

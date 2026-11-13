@@ -93,8 +93,8 @@ non-empty placeholder key: `Auth.bearer` rejects only the empty credential.
 Ollama ignores the header entirely.
 
 To ask the provider to enforce a JSON Schema on the answer, configure the
-route with `structuredOutput`. Such a route refuses a request that also
-declares tools; [Handle failures](./handle-failures.md) explains the refusal.
+route with `structuredOutput`. Tools are sent alongside `response_format`;
+use `toolChoice: "none"` to omit them.
 The Cerebras example uses the origin as `baseUrl` with the default
 `/v1/chat/completions` path described above.
 

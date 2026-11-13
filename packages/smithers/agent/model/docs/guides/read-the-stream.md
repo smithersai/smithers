@@ -82,7 +82,7 @@ is one of seven values:
 | `stopReason`     | Meaning                                                                     |
 | ---------------- | --------------------------------------------------------------------------- |
 | `stop`           | The model finished its turn.                                                |
-| `length`         | The output hit the token budget.                                            |
+| `length`         | The output hit the token budget or the context window.                      |
 | `tool-calls`     | The model asked for tools; execute them and continue.                       |
 | `content-filter` | The provider refused on safety grounds.                                     |
 | `error`          | The provider failed the turn.                                               |

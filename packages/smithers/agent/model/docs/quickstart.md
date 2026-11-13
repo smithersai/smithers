@@ -13,9 +13,13 @@ Effect code.
 
 ## 1. Get the package
 
-Add `@smthrs/model` as a workspace dependency of your package inside a clone
-of the [Smithers repository](https://github.com/smithersai/smithers).
-[Installation](./installation.md) has the steps.
+Install the package and its `effect` peer dependency:
+
+```sh
+npm install @smthrs/model@next effect
+```
+
+[Installation](./installation.md) covers requirements and import forms.
 
 ## 2. Run a stub model
 

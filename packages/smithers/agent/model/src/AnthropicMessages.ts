@@ -621,7 +621,7 @@ const startBlock = (state: State, block: Block): State => ({
 
 const mapStopReason = (reason: string | null | undefined): StopReason => {
   if (reason === "end_turn" || reason === "stop_sequence" || reason === "pause_turn") return "stop"
-  if (reason === "max_tokens") return "length"
+  if (reason === "max_tokens" || reason === "model_context_window_exceeded") return "length"
   if (reason === "tool_use") return "tool-calls"
   if (reason === "refusal") return "content-filter"
   return "unknown"

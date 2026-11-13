@@ -655,12 +655,64 @@ describe("AnthropicMessages streaming", () => {
     expect(settle("max_tokens")).toMatchObject({ stopReason: "length" })
     expect(settle("tool_use")).toMatchObject({ stopReason: "tool-calls" })
     expect(settle("refusal")).toMatchObject({ stopReason: "content-filter" })
-    expect(settle("model_context_window_exceeded")).toMatchObject({ stopReason: "unknown" })
+    expect(settle("model_context_window_exceeded")).toMatchObject({ stopReason: "length" })
+    expect(settle("future_stop_reason")).toMatchObject({ stopReason: "unknown" })
     // No message_delta at all still settles, as `unknown`.
     expect(replay(["{\"type\":\"message_stop\"}"])).toEqual([
       { type: "settle", stopReason: "unknown", responseId: undefined }
     ])
   })
+
+  it.each(["", "{\"city\":", "{\"city\":\"Rome\"}"])(
+    "preserves tool arguments %j when the context window cuts a turn short",
+    (arguments_) => {
+      const events = replay(
+        [
+          { type: "message_start", message: { id: "msg_context", usage: { input_tokens: 12 } } },
+          { type: "content_block_start", index: 0, content_block: { type: "text", text: "Partial answer" } },
+          { type: "content_block_stop", index: 0 },
+          {
+            type: "content_block_start",
+            index: 1,
+            content_block: { type: "tool_use", id: "toolu_context", name: "weather" }
+          },
+          { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: arguments_ } },
+          {
+            type: "message_delta",
+            delta: { stop_reason: "model_context_window_exceeded" },
+            usage: { output_tokens: 3 }
+          },
+          { type: "message_stop" },
+          { type: "message_stop" }
+        ].map((event) => JSON.stringify(event)),
+        true
+      )
+
+      expect(events.slice(-2)).toEqual([
+        { type: "tool-call-end", id: "toolu_context", arguments: arguments_ },
+        { type: "settle", stopReason: "length", responseId: "msg_context" }
+      ])
+      expect(events.filter((event) => event.type === "settle")).toHaveLength(1)
+      const { message, usage } = ModelEvent.settledMessage(events)
+      expect(message).toMatchObject({
+        stopReason: "length",
+        content: [
+          { type: "text", text: "Partial answer" },
+          { type: "tool-call", id: "toolu_context", name: "weather", arguments: arguments_ }
+        ]
+      })
+      expect(usage).toMatchObject({ inputTokens: 12, outputTokens: 3, totalTokens: 15 })
+      const followUp = ModelRequest.make({
+        ...streamRequest,
+        messages: [Message.user("Weather?"), message, Message.user("Continue")]
+      })
+      expect(withoutBreakpoints(body(followUp).messages)).toEqual([
+        { role: "user", content: [{ type: "text", text: "Weather?" }] },
+        { role: "assistant", content: [{ type: "text", text: "Partial answer" }] },
+        { role: "user", content: [{ type: "text", text: "Continue" }] }
+      ])
+    }
+  )
 
   it("keeps partial usage reports and their totals independent", () => {
     expect(replay([

@@ -167,9 +167,11 @@ export type ErrorBody = typeof ErrorBody.Type
  * A host's refusal to serve a request, raised by `prepare`. `status` is the
  * HTTP status the client receives (400 to 599) and `message` is shown to it as
  * written, so it must be safe to show. `code` is the `ModelError` code the
- * client fails with; without one the status chooses it (`429` is
- * `rate_limited`, `401` and `403` are `authentication`, other 4xx are
- * `invalid_request`).
+ * client fails with; without one the status chooses it: `429` is
+ * `rate_limited`, `402` is `quota_exceeded`, `401` and `403` are
+ * `authentication`, and `400`, `404`, `409`, `413` and `422` are
+ * `invalid_request`. A 5xx is `provider_internal`; other statuses are
+ * `unknown`.
  *
  * Its fault is that code's class in `ModelError.faults`, so a host and the
  * client it refused read one class: a `429` waits, a `401` asks the person.
