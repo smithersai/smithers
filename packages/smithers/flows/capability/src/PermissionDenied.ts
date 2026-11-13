@@ -9,9 +9,11 @@ import { Capability } from "./Capability.ts"
 import { capabilitySnapshot } from "./internal/capabilitySnapshot.ts"
 
 /**
- * A capability rejected by policy or by the current capability ceiling. The
- * error retains a defensive copy rather than the caller's `Capability`
- * instance, and its `capability` slot is non-writable.
+ * A capability rejected by policy or by the current capability ceiling.
+ * `permissionDenied`, `PermissionDenied.new` and `decodePermissionError` retain
+ * a defensive copy rather than the caller's `Capability` instance, and make
+ * the `capability` slot non-writable. The public class constructor and direct
+ * Effect schema decoding do not provide these guarantees.
  *
  * @category errors
  * @since 0.1.0

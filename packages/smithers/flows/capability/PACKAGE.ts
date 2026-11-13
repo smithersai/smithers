@@ -78,6 +78,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/matches.ts",
+        "src/internal/matchesResource.ts",
         "src/internal/matchesAction.ts",
         "src/internal/hasDotSegment.ts",
         "src/internal/metacharacters.ts"
@@ -96,6 +97,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/matches.ts",
+        "src/internal/matchesResource.ts",
         "src/withinMatchBudget.ts",
         "src/maxMatchWork.ts",
         "src/maxResourceLength.ts",
@@ -127,6 +129,18 @@ const securityReview = Smithers.SecurityReview({
         "literalPrefix ignoring a metacharacter that matchGlob honors."
       ],
       paths: ["src/subsumes.ts", "src/mayOverlap.ts", "src/internal/actionSubsumes.ts", "src/isLiteralResource.ts"]
+    },
+    {
+      id: "ceiling-monotone",
+      title: "Capability ceilings only narrow authority",
+      threat:
+        "A flow or agent replaces its ambient ceiling or proves a wider set contained, gaining authority it was not granted.",
+      lookFor: [
+        "attenuate replacing the parent ceiling instead of intersecting it with the requested set.",
+        "within returning true without proving containment, including an unrestricted inner set within a restricted outer set.",
+        "The ambient Context.Reference exported or otherwise replaceable by callers rather than module-private."
+      ],
+      paths: ["src/CapabilitySet.ts"]
     },
     {
       id: "parse-round-trip",

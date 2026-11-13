@@ -52,11 +52,13 @@ Permission.evaluate([policy], Capability.make("net:post", "https://api.example.t
 
 ## Entry points
 
-| Import                          | Source                                                                                                                     | Platform |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------- |
-| `@smthrs/capability`            | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/src/index.ts)           | any      |
-| `@smthrs/capability/Capability` | [src/Capability.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/src/Capability.ts) | any      |
-| `@smthrs/capability/Permission` | [src/Permission.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/src/Permission.ts) | any      |
+| Import                             | Source                                                                                                                           | Platform |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `@smthrs/capability`               | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/src/index.ts)                 | any      |
+| `@smthrs/capability/Capability`    | [src/Capability.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/src/Capability.ts)       | any      |
+| `@smthrs/capability/Permission`    | [src/Permission.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/src/Permission.ts)       | any      |
+| `@smthrs/capability/index`         | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/src/index.ts)                 | any      |
+| `@smthrs/capability/CapabilitySet` | [src/CapabilitySet.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/src/CapabilitySet.ts) | any      |
 
 ## Capability
 
@@ -270,8 +272,12 @@ const subsumes: (left: CapabilityPattern, right: CapabilityPattern) => boolean
 
 Conservatively determines whether every capability selected by `right` is also
 selected by `left`. Returns `false` for any relationship its syntactic checks
-cannot prove, and for a `right` that can select a filesystem action and whose
-resource has a `.` or `..` segment.
+cannot prove. For a `right` that can select a filesystem action, an absolute
+resource containing a `.`, `..` or empty segment (except the root `/`), or a
+relative resource climbing above its start, is never covered. A relative dot
+or empty-segment resource is covered only when `left` covers both its written
+text and its lexical normal form: `*:**` covers `fs:read:./src`, while
+`fs:read:./src` does not cover itself.
 
 An action is subsumed when `left` is `*`, the two are equal, or `left` is a
 namespace family covering `right`. A resource is subsumed when the two are
@@ -367,7 +373,7 @@ Classifies an exact capability.
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sealed`       | `fs:read`, `net:get`, `model:call`, `memory:read`, `jj:status`, `jj:diff`, `jj:root`                                                         |
 | `compensable`  | `jj:snapshot`, `jj:restore`, `jj:workspace-add`, `jj:workspace-forget`, `jj:revert`, `jj:op-restore`, and an `fs:write` inside the workspace |
-| `irreversible` | `net:post`, `proc:spawn`, `memory:write`, `remote:acquire`, and an `fs:write` that escapes the workspace                                     |
+| `irreversible` | `net:post`, `net:private`, `proc:spawn`, `memory:write`, `remote:acquire`, and an `fs:write` that escapes the workspace                      |
 
 Workspace containment is lexical, so symlinks are invisible: a caller that
 materializes workspace snapshots resolves real paths before classifying a
@@ -470,21 +476,27 @@ operation did not happen.
 | `tier`       | What performing the operation would cost to undo.  |
 | `meta`       | Journal-safe context for the person answering.     |
 
-`meta` accepts only JSON-representable values. Construction takes a cycle-safe,
-deep-frozen snapshot and does not retain the caller's object; an
+`permissionRequired`, `PermissionRequired.new` and `decodePermissionError`
+accept only JSON-representable `meta` values. These factories take a cycle-safe,
+deep-frozen snapshot and do not retain the caller's object; an
 `undefined` object property is dropped, mirroring `JSON.stringify`, while an
 `undefined` array element is rejected because serialization would change it to
-`null`. A value the journal could not encode fails at the construction site
-naming the key. Own `__proto__` data properties are preserved at every depth.
-The limits are depth 16 (the metadata root is depth 0), 1024 object properties
+`null`. The construction factories report a field-specific error for values the
+journal cannot encode. Own `__proto__` data properties are preserved at every depth.
+The factory limits are depth 16 (the metadata root is depth 0), 1024 object properties
 and array elements in total, and 64 KiB of UTF-8 JSON after dropping undefined
 properties. Omitted properties still count toward the member limit. Shared
 references reuse one frozen copy, but each occurrence counts toward depth,
 members and serialized bytes. Cycles and exceeded limits raise a field-specific
-schema error before journal encoding.
+schema error in `permissionRequired` and `PermissionRequired.new` before
+journal encoding; `decodePermissionError` returns `Option.none()` instead.
 
-The error retains a defensive copy of the capability, and its
-`capability` and `meta` slots are non-writable.
+These factories retain a defensive copy of the capability and make the
+`capability` and `meta` slots non-writable. The public class constructor
+(`new PermissionRequired(...)`) and direct Effect schema decoding
+(`Schema.decodeUnknownSync(PermissionRequired)`) do not provide these snapshot,
+slot or metadata-limit guarantees. Normalize transported data with
+`decodePermissionError` before exposing it to an approval surface.
 
 ### Permission.PermissionDenied
 
@@ -500,8 +512,10 @@ class PermissionDenied extends Schema.TaggedError<PermissionDenied>()(
 ```
 
 A capability rejected by policy or by the current capability ceiling. `reason`
-says which. Like `PermissionRequired`, it retains a defensive copy of the
-capability in a non-writable slot.
+says which. `permissionDenied`, `PermissionDenied.new` and
+`decodePermissionError` retain a defensive copy of the capability in a
+non-writable slot. The public class constructor (`new PermissionDenied(...)`)
+and direct Effect schema decoding do not provide these guarantees.
 
 ### Permission.GrantStoreErrorCode
 

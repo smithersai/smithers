@@ -16,7 +16,7 @@ import {
 
 /**
  * Validates data before constructing a yieldable permission error. Invalid
- * payloads, inspection failures, or metadata exceeding the constructor's
+ * payloads, inspection failures, or metadata exceeding the factory's
  * limits return None.
  * Construction also accepts instances from another copy of the package,
  * without relying on JavaScript instanceof identity.

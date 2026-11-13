@@ -17,9 +17,12 @@ const PermissionMeta = Schema.Record(Schema.String, Schema.Json)
 /**
  * A permission request that must be resolved by an attended surface.
  *
- * The capability is always the exact adapter request, never a wildcard. The
- * error retains neither the caller's metadata object nor the caller's
- * `Capability` instance, and its `meta` and `capability` slots are non-writable.
+ * The capability is always the exact adapter request, never a wildcard.
+ * `permissionRequired`, `PermissionRequired.new` and `decodePermissionError`
+ * retain neither the caller's metadata object nor the caller's `Capability`
+ * instance, and make the `meta` and `capability` slots non-writable.
+ * The public class constructor and direct Effect schema decoding do not
+ * provide these guarantees or enforce the metadata limits below.
  *
  * @category errors
  * @since 0.1.0
@@ -36,16 +39,19 @@ export class PermissionRequired extends Schema.TaggedError<PermissionRequired>()
     /**
      * Journal-safe permission context.
      *
-     * Only JSON-representable values survive the grant journal. Construction
-     * takes a deep-frozen snapshot and does not retain the caller's object. An
+     * Only JSON-representable values survive the grant journal. The
+     * `permissionRequired`, `PermissionRequired.new` and `decodePermissionError`
+     * factories take a deep-frozen snapshot without retaining the caller's object. An
      * undefined property value is dropped, mirroring `JSON.stringify`, so the
      * encoded payload is unchanged and a host can pass an optional field it
      * does not have, such as a spawn with no explicit cwd. Undefined array
      * elements are rejected because JSON serialization would change them to
      * null rather than omit them. Own `__proto__` data properties are preserved.
-     * Metadata is limited to depth 16 (root 0), 1024 members and 64 KiB of
+     * These factories limit metadata to depth 16 (root 0), 1024 members and 64 KiB of
      * UTF-8 JSON. Shared references retain one snapshot but count at every
-     * occurrence toward the limits. Cycles and excesses fail naming the field.
+     * occurrence toward the limits. Cycles and excesses raise a field-specific
+     * schema error in the construction factories; `decodePermissionError` returns
+     * `Option.none()` instead.
      *
      * @since 0.1.0
      * @category models

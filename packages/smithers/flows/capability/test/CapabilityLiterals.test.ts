@@ -231,17 +231,6 @@ const witnessOf = (resource: string): string =>
     .replaceAll("?", "x")
     .trim()
 
-/** One concrete action each wildcard action selector stands for. */
-const witnessActions: Readonly<Record<string, Capability.Action>> = {
-  "*": "fs:read",
-  "fs:*": "fs:read",
-  "net:*": "net:get",
-  "model:*": "model:call",
-  "proc:*": "proc:spawn",
-  "jj:*": "jj:status",
-  "remote:*": "remote:acquire"
-}
-
 /**
  * Reads a literal with the package parser that owns the pattern grammar.
  */
@@ -262,7 +251,12 @@ const refusalReason = (text: string): string | undefined => {
   const witness = witnessOf(pattern.resource)
   if (witness.length === 0) return `"${text}" permits no non-empty resource`
 
-  const action = witnessActions[pattern.action] ?? (pattern.action as Capability.Action)
+  const action = Capability.Action.literals.find((candidate) =>
+    pattern.action === "*" ||
+    pattern.action === candidate ||
+    pattern.action === `${candidate.split(":")[0]}:*`
+  )
+  if (action === undefined) return `"${text}" selects no known action`
   return Capability.matches(pattern, Capability.make(action, witness))
     ? undefined
     : `"${text}" permits nothing; it does not permit "${action}:${witness}"`
@@ -318,6 +312,14 @@ describe("HARDEN-2: the sweep sees each staged form and judges it", () => {
 
   it("reads the whole-form vocabulary off the kernel's own selectors", () => {
     expect(namespacesOf(selectors)).toEqual(["*", "fs", "jj", "memory", "model", "net", "proc", "remote"])
+  })
+
+  it.each(selectors)("accepts a staged grant for the declared selector %s", (selector) => {
+    for (const resource of ["scope", "scope/**", "command *"]) {
+      const text = `${selector}:${resource}`
+      expect(found(`new CapabilityPattern({ action: "${selector}", resource: "${resource}" })`)).toEqual([text])
+      expect(refusalReason(text)).toBeUndefined()
+    }
   })
 
   it("follows a namespace the kernel has not declared yet", () => {

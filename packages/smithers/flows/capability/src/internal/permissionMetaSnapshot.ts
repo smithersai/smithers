@@ -1,5 +1,5 @@
 /**
- * The bounded, deep-frozen JSON snapshot `PermissionRequired` takes of caller
+ * The bounded, deep-frozen JSON snapshot `PermissionRequired.new` takes of caller
  * metadata.
  *
  * @since 0.1.0

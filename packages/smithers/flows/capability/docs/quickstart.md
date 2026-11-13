@@ -103,8 +103,8 @@ console.log(Permission.formatError(suspended))
 permission_required: net:post:https://api.example.test/deploy (tier irreversible, request req-1)
 ```
 
-`meta` is journal-safe context: only JSON-representable values are accepted,
-and construction takes a deep-frozen snapshot rather than retaining your object.
+`permissionRequired` accepts only JSON-representable `meta` values and takes
+a deep-frozen snapshot rather than retaining your object.
 `Permission.formatError` escapes control characters and caps each field, so an
 agent-chosen resource cannot forge a second log line.
 

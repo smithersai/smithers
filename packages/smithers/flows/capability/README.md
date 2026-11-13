@@ -147,13 +147,16 @@ idempotency key to retry.
 
 **Errors.** `isPermissionError` validates the whole shape, not the `_tag` alone,
 because the package ships dual cjs and esm and class identity is not stable for
-a dual-package consumer. `PermissionRequired.meta` accepts only
-JSON-representable values, drops undefined-valued object properties, snapshots
-the result deeply, freezes the snapshot, and never retains the caller's object.
-Undefined array elements are still rejected. Permission failures defensively
-copy capabilities, and their `capability` and `meta` data slots are
-non-writable. A value the journal could not encode fails at the construction
-site naming the key. `formatError` escapes C0/C1 controls, Unicode format
+a dual-package consumer. `permissionRequired` and `PermissionRequired.new`
+accept only JSON-representable metadata, drop undefined-valued object properties, snapshot
+the result deeply, freeze the snapshot, and never retain the caller's object.
+Undefined array elements are still rejected. These factories and
+`permissionDenied` / `PermissionDenied.new` defensively copy capabilities
+into non-writable slots; the request's `meta` slot is non-writable too.
+`decodePermissionError` provides the same guarantees for transported data.
+Direct class construction and Effect schema decoding do not provide these
+snapshots, non-writable slots or metadata limits. A value the journal could
+not encode fails at the factory call naming the key. `formatError` escapes C0/C1 controls, Unicode format
 characters (`Cf`, including bidi controls), and line/paragraph separators
 (`Zl`/`Zp`), and doubles a literal backslash so the text `\n` never reads as a
 newline. Each encoded field is capped at `maxDisplayFieldLength`, including

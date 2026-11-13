@@ -140,9 +140,12 @@ capability resource remains in `reason.cause` and is recovered by
 
 ## Put only journal-safe context in `meta`
 
-`PermissionRequired.meta` reaches the grant journal, so it accepts only
-JSON-representable values and rejects anything else at the construction site,
-naming the key, rather than later at the persistence boundary:
+`permissionRequired`, `PermissionRequired.new` and `decodePermissionError`
+prepare `PermissionRequired.meta` for the grant journal. These factories
+accept only JSON-representable values. `permissionRequired` and
+`PermissionRequired.new` reject anything else at the factory call, naming
+the key; `decodePermissionError` returns `Option.none()` for invalid input.
+The same rules apply before journal encoding:
 
 - An object property whose value is `undefined` is dropped, mirroring
   `JSON.stringify`, so a host can pass an optional field it does not have.
@@ -158,12 +161,16 @@ naming the key, rather than later at the persistence boundary:
   punctuation and escapes, after dropping undefined properties.
 - Shared references reuse one frozen copy. Each occurrence counts toward depth,
   members and serialized bytes, so a compact graph cannot expand past the limits.
-- A cycle or exceeded limit raises a schema error naming the field at
-  construction, before journal encoding.
+- A cycle or exceeded limit raises a schema error naming the field when
+  calling `permissionRequired` or `PermissionRequired.new`;
+  `decodePermissionError` returns `Option.none()` instead.
 
-Construction takes a deep-frozen snapshot and never retains your object, and
-the `meta` and `capability` slots are non-writable. Mutating the object you
-passed does not change the failure.
+These factories take a deep-frozen snapshot without retaining your object,
+and make the `meta` and `capability` slots non-writable. Mutating the object
+you passed does not change the failure. Direct class construction and Effect
+schema decoding do not provide these snapshots, slots or metadata limits;
+pass transported data through `decodePermissionError` before displaying an
+approval request.
 
 ## Related
 

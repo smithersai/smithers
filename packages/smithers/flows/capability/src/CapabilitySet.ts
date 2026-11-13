@@ -2,10 +2,6 @@
  * Monotone capability authority represented as exact intersections of
  * wildcard languages.
  *
- * Governing design:
- * `docs/specs/Concepts/Permission Kernel.md`,
- * `docs/specs/Concepts/Step Keys.md`, and `docs/specs/Specs/Plan.md`.
- *
  * @since 1.0.0-rc.0
  */
 

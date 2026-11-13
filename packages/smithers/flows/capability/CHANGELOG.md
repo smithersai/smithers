@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Clarified which permission-error factories snapshot capabilities and enforce
+  metadata limits; corrected relative-path coverage, private-network effect
+  tiers and the documented package entry points.
+
 - Fixed exact grant derivation returning unusable grants for filesystem paths
   such as `./src`, `src/./a`, and `a/../b`. It now returns `Option.none()`
   when the literal pattern cannot match the request; `.` remains accepted.
