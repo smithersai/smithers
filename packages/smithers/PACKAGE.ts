@@ -60,7 +60,7 @@ const importRules = ImportRules({
     },
     {
       kind: "forbidCalls",
-      files: ["test/BackendSafety*.test.ts", "test/ProductApiBodies.test.ts"],
+      files: ["test/BackendSafety*.test.ts", "test/BackendStack.test.ts", "test/ProductApiBodies.test.ts"],
       callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "vi.spyOn", "jest.mock"],
       because:
         "Backend safety regressions use real transports and inject faults through Effect services. See AGENTS.md."

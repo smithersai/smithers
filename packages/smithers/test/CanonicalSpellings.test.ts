@@ -120,6 +120,7 @@ const printedTexts = (
     // Compiler-decoded text decides relevance. Escaped sources still get a
     // complete parse, without locating every import, key and unrelated string.
     if (!/(?<![\w@/.-])smthrs\b|smithers-migrate/.test(text)) return
+    if (file.endsWith("/src/internal/RetiredSkills.ts") && text === "command: smthrs create-app") return
     if (progress) progress.locations++
     texts.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, text })
   }
@@ -269,6 +270,224 @@ describe("published group children", () => {
  */
 const documentedDoors: ReadonlyArray<string> = ["migrate"]
 
+const sharedOptions = (manifest: Manifest, help: string) => {
+  const flags = new Set([...help.matchAll(/--([a-z][a-z0-9-]*)/g)].map((match) => match[1]!))
+  const values = new Set([...help.matchAll(/--([a-z][a-z0-9-]*)\s+<[^>]+>/g)].map((match) => match[1]!))
+  for (const [name, property] of Object.entries(manifest.globals?.properties ?? {})) {
+    flags.add(kebab(name))
+    if ((property as { type?: string }).type !== "boolean") values.add(kebab(name))
+  }
+  return { flags, values }
+}
+
+const validatePrinted = (
+  text: string,
+  file: string,
+  line: number,
+  canonical: ReadonlyMap<string, Manifest["commands"][number]>,
+  paths: ReadonlySet<string>,
+  topLevel: ReadonlySet<string>,
+  hidden: ReadonlySet<string>,
+  sharedFlags: ReadonlySet<string>,
+  sharedValues: ReadonlySet<string>
+): Array<string> => {
+  const alternatives = /[a-z][a-z0-9-]*(?:\|[a-z][a-z0-9-]*)+/.exec(text)
+  if (alternatives) {
+    return alternatives[0].split("|").flatMap((word) =>
+      validatePrinted(
+        text.replace(alternatives[0], word),
+        file,
+        line,
+        canonical,
+        paths,
+        topLevel,
+        hidden,
+        sharedFlags,
+        sharedValues
+      )
+    )
+  }
+  const findings: Array<string> = []
+  for (const match of text.matchAll(/(?<![\w@/.-])smthrs +(?=\S)/g)) {
+    const before = text.slice(0, match.index)
+    let after = text.slice(match.index + match[0].length)
+    // These source strings name the executable, rather than an invocation.
+    if (/(?:command -v|@jsxImportSource) $/.test(before)) continue
+    if (
+      /^(?:CLI verbs\b|from (?:the WORKSPACE\.ts|its bin)\b|results$|serves:|has no removal notice\b|wrote it\.|interrupted by\b|needs Node\b)/
+        .test(after)
+    ) continue
+    // A prose quote encloses the whole command; shell quotes enclose one argument.
+    const enclosing = before.at(-1)
+    if (enclosing && ["`", "'", "\""].includes(enclosing)) {
+      const closing = after.indexOf(enclosing)
+      if (closing >= 0) after = after.slice(0, closing)
+    }
+    const words: Array<string> = []
+    for (const token of after.matchAll(/(?:[^\s"'`]+|'[^']*'|"(?:\\.|[^"\\])*")+/g)) {
+      const raw = token[0]
+      if (["&&", "|", "#", "smthrs"].includes(raw)) break
+      const quoted = /^(['"]).*\1$/.test(raw)
+      words.push(quoted ? raw.slice(1, -1) : raw === "." ? raw : raw.replace(/[.,;:)]+$/, ""))
+      if (!quoted && /[.,;:)]$/.test(raw)) break
+    }
+    const where = `${file}:${line}: smthrs ${words.slice(0, 4).join(" ")}`
+    // Incur extracts globals before command resolution, including flags between
+    // group names. Keep their values from being mistaken for child commands.
+    const tokens: Array<string> = []
+    for (let index = 0; index < words.length; index++) {
+      const token = words[index]!
+      const flag = /^--([a-z][a-z0-9-]*)/.exec(token)?.[1]
+      if (flag && sharedFlags.has(flag)) {
+        if (!token.includes("=") && sharedValues.has(flag)) index++
+      } else tokens.push(token)
+    }
+    const first = tokens[0]
+    if (first === undefined || first === "." || first.startsWith("//")) continue
+    if (hidden.has(first)) {
+      findings.push(`${where} (hidden command ${first})`)
+      continue
+    }
+    if (first.includes(hole) || first.startsWith("<") || first.startsWith("[")) continue
+    if (!topLevel.has(first) && !paths.has(first) && !documentedDoors.includes(first)) {
+      findings.push(`${where} (unknown command ${first})`)
+      continue
+    }
+    let path = first, index = 1
+    while (index < tokens.length && paths.has(`${path} ${tokens[index]}`)) {
+      path = `${path} ${tokens[index++]}`
+    }
+    // Only executable manifest entries can consume positional arguments.
+    if (!canonical.has(path) && !documentedDoors.includes(path)) {
+      const child = tokens[index]
+      if (child === undefined || child.includes(hole) || child.startsWith("<") || child.startsWith("[")) continue
+      if (!child.startsWith("-")) {
+        findings.push(`${where} (unknown command ${path} ${child})`)
+        continue
+      }
+    }
+    const options = new Set(Object.keys(canonical.get(path)?.schema?.options?.properties ?? {}).map(kebab))
+    for (; index < tokens.length; index++) {
+      const token = tokens[index]!
+      const flag = /^--([a-z][a-z0-9-]*)/.exec(token)?.[1]
+      if (flag !== undefined && !options.has(flag)) {
+        findings.push(`${where} (undeclared option --${flag} on ${path})`)
+      }
+    }
+  }
+  return findings
+}
+
+describe("complete printed command validation", () => {
+  const commands = ["runs show", "runs list", "runs logs", "environment run", "environment remote run", "target"]
+  const canonical = new Map(commands.map((name) => [name, { name }]))
+  const paths = new Set(
+    commands.flatMap((name) => name.split(" ").map((_, i, words) => words.slice(0, i + 1).join(" ")))
+  )
+  const shared = sharedOptions({
+    commands: [],
+    globals: { properties: { root: { type: "string" }, dryRun: { type: "boolean" } } }
+  }, "--help --json --format <format> --filter-output <keys> --token-limit <n> --token-offset <n>")
+  const validate = (text: string) =>
+    validatePrinted(
+      text,
+      "fixture.ts",
+      1,
+      canonical,
+      paths,
+      new Set(["runs", "environment", "target"]),
+      new Set(["status"]),
+      shared.flags,
+      shared.values
+    )
+  it.each([
+    "smthrs runz list",
+    "smthrs --json runz list",
+    "smthrs --token-limit 100 runz list",
+    "smthrs --json runs view run-1",
+    "smthrs --format json runs view run-1",
+    "smthrs --format 'json' runz list",
+    "smthrs runs --json view run-1",
+    "smthrs runs view run-1",
+    "smthrs environment rn local",
+    "smthrs environment remote rn"
+  ])(
+    "rejects a command that cannot dispatch: %s",
+    (text) => {
+      expect(validate(text)).toHaveLength(1)
+      expect(validate(text)[0]).toContain("unknown command")
+    }
+  )
+  it.each([
+    "smthrs runs show run-1",
+    "smthrs .",
+    "Use `smthrs .` to open the checkout.",
+    "smthrs '//packages/x:test'",
+    "smthrs runs logs run-1 --json",
+    "smthrs target '//packages/x:test'",
+    "smthrs runs",
+    "Use `smthrs runs` for history.",
+    "Use `smthrs environment remote` for the remote.",
+    "smthrs --json runs list",
+    "smthrs --token-limit 100 runs list",
+    "smthrs runs --token-offset 10 list",
+    "smthrs --filter-output 'items.name' runs list",
+    "smthrs --root 'project' runs list",
+    "smthrs --dry-run runs list",
+    "smthrs runs --json list",
+    "smthrs --format 'json' runs list",
+    "smthrs --help",
+    "smthrs runs --help",
+    "smthrs runs show|logs run-1",
+    "smthrs environment remote run local"
+  ])(
+    "accepts executable commands and their positional arguments: %s",
+    (text) => expect(validate(text)).toEqual([])
+  )
+  it("scans unknown words after prose and templates through the same validator", () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-invalid-spelling-"))
+    const file = join(root, "commands.ts")
+    try {
+      writeFileSync(
+        file,
+        [
+          "const top = \"Try smthrs runz list\"",
+          "const child = `smthrs runs view ${runId}`",
+          "const shell = shellCommand(\"smthrs\", \"environment\", \"rn\", name)"
+        ].join("\n")
+      )
+      const findings = printedTexts(file).flatMap(({ text }) => validate(text))
+      expect(findings).toHaveLength(3)
+      expect(findings.join("\n")).toContain("unknown command runz")
+      expect(findings.join("\n")).toContain("unknown command runs view")
+      expect(findings.join("\n")).toContain("unknown command environment rn")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+  it.each([
+    "Build smthrs CLI verbs, and the catalog",
+    "Upload smthrs results",
+    "command -v smthrs >/dev/null 2>&1",
+    "smthrs needs Node 26 or later",
+    "Try smthrs …",
+    "Try smthrs runs <command>",
+    "Try smthrs runs [command]",
+    "Try smthrs runs " + hole,
+    "An older smthrs wrote it. Run smthrs runs list"
+  ])("distinguishes executable mentions and dynamic spellings: %s", (text) => {
+    expect(validate(text)).toEqual([])
+  })
+  it("still rejects aliases and undeclared flags", () => {
+    expect(validate("smthrs status")[0]).toContain("hidden command status")
+    expect(validate("smthrs --json status")[0]).toContain("hidden command status")
+    expect(validate("smthrs runs logs run-1 --invalid")[0]).toContain("undeclared option --invalid")
+    expect(validate("smthrs runs logs 'run-1' --invalid")[0]).toContain("undeclared option --invalid")
+    expect(validate("smthrs runs --help --invalid")[0]).toContain("undeclared option --invalid")
+    expect(validate("smthrs runs show|view run-1")[0]).toContain("unknown command runs view")
+  })
+})
+
 describe("printed command spellings", () => {
   it("name only canonical, non-hidden commands and their declared options", async () => {
     const started = Date.now()
@@ -309,15 +528,11 @@ describe("printed command spellings", () => {
       [
         ...registered,
         ...Unsupported.removedVerbs.map((verb) => verb.name)
-      ].filter((name) => !topLevel.has(name) && !canonical.has(name) && !documentedDoors.includes(name))
+      ].filter((name) => !topLevel.has(name) && !paths.has(name) && !documentedDoors.includes(name))
     )
     mark("help")
-    const sharedFlags = new Set(
-      [...(await capture(["--help"], false, (stage) => mark(`help ${stage}`))).matchAll(/--([a-z][a-z0-9-]*)/g)].map((
-        match
-      ) => match[1]!)
-    )
-    for (const name of Object.keys(manifest.globals?.properties ?? {})) sharedFlags.add(kebab(name))
+    const help = await capture(["--help"], false, (stage) => mark(`help ${stage}`))
+    const { flags: sharedFlags, values: sharedValues } = sharedOptions(manifest, help)
 
     const findings: Array<string> = []
     // Sentences that tell the reader which command migrates a project.
@@ -328,35 +543,19 @@ describe("printed command spellings", () => {
         if (/\brun "(?:smthrs migrate|smithers-migrate)"|`(?:smthrs migrate|smithers-migrate)` replaces/.test(text)) {
           migrateInstructions.push(text)
         }
-        for (const match of text.matchAll(/(?<![\w@/.-])smthrs +(?=\S)/g)) {
-          const tokens = text.slice(match.index + match[0].length).split(/\s+/)
-          const where = `${relative(packageRoot, file)}:${line}: smthrs ${tokens.slice(0, 4).join(" ")}`
-          const first = tokens[0]!.replace(/[`'".,;:)]+$/, "")
-          if (hidden.has(first)) {
-            findings.push(`${where} (hidden command ${first})`)
-            continue
-          }
-          if (!topLevel.has(first)) continue
-          let path = first
-          let index = 1
-          while (index < tokens.length && paths.has(`${path} ${tokens[index]!.replace(/[`'".,;:)]+$/, "")}`)) {
-            path = `${path} ${tokens[index]!.replace(/[`'".,;:)]+$/, "")}`
-            if (/[`'".,;:)]$/.test(tokens[index]!)) break
-            index++
-          }
-          const options = new Set(
-            Object.keys(canonical.get(path)?.schema?.options?.properties ?? {}).map(kebab)
+        findings.push(
+          ...validatePrinted(
+            text,
+            relative(packageRoot, file),
+            line,
+            canonical,
+            paths,
+            topLevel,
+            hidden,
+            sharedFlags,
+            sharedValues
           )
-          for (; index < tokens.length; index++) {
-            const token = tokens[index]!
-            if (token === "smthrs" || token === "&&" || token === "|" || token === "#") break
-            const flag = /^--([a-z][a-z0-9-]*)/.exec(token)?.[1]
-            if (flag !== undefined && !options.has(flag) && !sharedFlags.has(flag)) {
-              findings.push(`${where} (undeclared option --${flag} on ${path})`)
-            }
-            if (/[`;)]$/.test(token)) break
-          }
-        }
+        )
       }
     }
     mark("assertions")

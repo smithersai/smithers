@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 
 interface Seen {
@@ -14,8 +14,13 @@ interface Seen {
 }
 
 const cleanup: Array<() => Promise<void>> = []
+let dataHomeBefore: string | undefined
+beforeEach(() => {
+  dataHomeBefore = process.env.XDG_DATA_HOME
+})
 afterEach(async () => {
   for (const step of cleanup.splice(0).reverse()) await step()
+  expect(process.env.XDG_DATA_HOME).toBe(dataHomeBefore)
 })
 
 /**
@@ -24,13 +29,18 @@ afterEach(async () => {
  * removes hosts atomically, keeps the list lower-cased and sorted, and answers
  * each running sandbox's reload.
  */
-const backend = async (options: { status?: number; sandboxes?: Array<string>; domains?: Array<string> } = {}) => {
+const backend = async (options: {
+  status?: number
+  sandboxes?: Array<string>
+  domains?: Array<string>
+  beforePatch?: (body: { add?: Array<string>; remove?: Array<string> }) => Promise<void>
+} = {}) => {
   const seen: Array<Seen> = []
   let domains = [...(options.domains ?? [])]
   const server = createServer((req: IncomingMessage, res) => {
     let text = ""
     req.on("data", (chunk) => text += chunk)
-    req.on("end", () => {
+    req.on("end", async () => {
       const body = text ? JSON.parse(text) : undefined
       seen.push({ method: req.method!, url: req.url!, authorization: req.headers.authorization, body })
       res.setHeader("content-type", "application/json")
@@ -45,6 +55,7 @@ const backend = async (options: { status?: number; sandboxes?: Array<string>; do
         return
       }
       if (req.method === "PATCH") {
+        await options.beforePatch?.(body)
         const remove = ((body.remove ?? []) as Array<string>).map((d) => d.toLowerCase())
         domains = [...new Set([...domains, ...((body.add ?? []) as Array<string>).map((d) => d.toLowerCase())])]
           .filter((d) => !remove.includes(d)).sort()
@@ -80,21 +91,21 @@ const backend = async (options: { status?: number; sandboxes?: Array<string>; do
       mode: 0o600
     }
   )
+  // The fixture owns this process-global setting until all invocations settle.
+  const previous = process.env.XDG_DATA_HOME
+  process.env.XDG_DATA_HOME = env.XDG_DATA_HOME
+  cleanup.push(async () => {
+    if (previous === undefined) delete process.env.XDG_DATA_HOME
+    else process.env.XDG_DATA_HOME = previous
+  })
   const run = async (args: Array<string>) => {
     let output = "", code = 0
     const cli = makeCli({ environment: env, exit: (value) => void (code = value) })
-    const previous = process.env.XDG_DATA_HOME
-    process.env.XDG_DATA_HOME = env.XDG_DATA_HOME
-    try {
-      await cli.serve([...args, "--repo", "acme/app", "--json"], {
-        env,
-        stdout: (text) => void (output += text),
-        exit: (value) => void (code = value)
-      })
-    } finally {
-      if (previous === undefined) delete process.env.XDG_DATA_HOME
-      else process.env.XDG_DATA_HOME = previous
-    }
+    await cli.serve([...args, "--repo", "acme/app", "--json"], {
+      env,
+      stdout: (text) => void (output += text),
+      exit: (value) => void (code = value)
+    })
     return { output, code }
   }
   return { seen, run }
@@ -166,6 +177,28 @@ describe("smthrs egress", () => {
     expect(b.seen.filter((seen) => seen.method === "PATCH").map((seen) => seen.body)).toEqual(
       expect.arrayContaining([{ add: ["a.example.com"] }, { remove: ["b.example.com"] }])
     )
+  })
+
+  it.each(["allow", "deny"])("restores the worker data home when %s finishes first", async (first) => {
+    const gate = Promise.withResolvers<void>()
+    const b = await backend({
+      domains: ["b.example.com"],
+      beforePatch: async (body) => {
+        const verb = body.add ? "allow" : "deny"
+        if (verb !== first) await gate.promise
+      }
+    })
+    const allowed = b.run(["egress", "allow", "a.example.com"])
+    const denied = b.run(["egress", "deny", "b.example.com"])
+    const earlier = first === "allow" ? allowed : denied
+    try {
+      expect((await earlier).code).toBe(0)
+    } finally {
+      gate.resolve()
+      const settled = await Promise.allSettled([allowed, denied])
+      expect(settled.every((result) => result.status === "fulfilled" && result.value.code === 0)).toBe(true)
+    }
+    expect(JSON.parse((await b.run(["egress", "list"])).output).allow_domains).toEqual(["a.example.com"])
   })
 
   it("refuses to deny a host that is not allowed, without writing", async () => {
