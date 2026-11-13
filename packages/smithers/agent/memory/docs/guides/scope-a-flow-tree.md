@@ -61,8 +61,12 @@ const scopedCalls = Effect.gen(function*() {
   // banks and maxTokens come from the policy because the caller named none
   const rows = yield* Flows.runRecallFor(scoped, { banks: [], query: "changelog" })
 
-  // bank resolves to the policy namespace because the caller left it empty
-  const written = yield* Flows.runRememberFor(scopedRemember, { bank: "", key: "release", text: "cut 0.1.0" })
+  // Every write names a bank allowed by the policy.
+  const written = yield* Flows.runRememberFor(scopedRemember, {
+    bank: "flow-release-notes",
+    key: "release",
+    text: "cut 0.1.0"
+  })
 
   return { rows, written }
 })

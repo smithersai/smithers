@@ -1,9 +1,9 @@
 /**
  * Attach a memory policy to the `remember` and `recall` flows and call them
- * through the policy-enforcing handlers: empty banks resolve to the policy
- * namespace, and a foreign bank is refused before the store runs.
+ * through the policy-enforcing handlers: writes name a policy bank, recall
+ * defaults to the policy banks, and a foreign bank is refused before I/O.
  */
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import * as Flows from "../src/Flows.ts"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as RecallKeyword from "../src/RecallKeyword.ts"
@@ -28,8 +28,14 @@ export const scopeAFlowTree = (): Promise<{
     }).remember
     const recall = Flows.handlersFor(WithMemory.withMemory(Flows.recall, policy)).recall
 
-    // An empty bank resolves to the policy's first bank.
-    yield* remember({ bank: "", key: "release", text: "cut 0.1.0 with the changelog" })
+    // Decode the same input a bound flow accepts: every write names its bank.
+    yield* remember(
+      yield* Schema.decodeUnknownEffect(Flows.RememberInput)({
+        bank: "flow-release-notes",
+        key: "release",
+        text: "cut 0.1.0 with the changelog"
+      })
+    )
     // Empty banks recall from every policy bank.
     const rows = yield* recall({ banks: [], query: "changelog" })
 

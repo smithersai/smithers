@@ -58,8 +58,9 @@ const rows = await Effect.runPromise(program.pipe(Effect.provide(memory)))
 
 - Scoped namespace isolation across `flow`, `agent`, `user`, and `global`
   memory. Bind a policy-carrying declaration with `Flows.handlersFor` to limit
-  model-facing reads and writes to the policy namespace. Empty banks default
-  to it; explicit banks resolving to another kind or id fail with
+  model-facing reads and writes to the policy namespace. An empty recall
+  `banks` list defaults to the policy banks; `remember` requires a non-empty
+  `bank`. Banks resolving to another kind or id fail with
   `invalid_namespace` before I/O. Equivalent bank spellings are allowed.
   Bare handlers and direct recall or store APIs remain unscoped.
 - Recall as a replaceable service rather than one fixed algorithm. Keyword

@@ -330,7 +330,7 @@ export const runRecallFor = (
 /**
  * Applies the memory policy a flow carries to a memory write.
  *
- * An unnamed bank resolves to the policy namespace. An explicit foreign bank
+ * Every write names a non-empty bank allowed by the policy. A foreign bank
  * fails before the store runs. `retain: "never"` drops the write before bank
  * validation: the caller still receives the key it asked for, and nothing
  * reaches the store. The optional provenance argument is forwarded unchanged.
@@ -352,9 +352,8 @@ export const runRememberFor = (
   if (policy === undefined) return missingPolicy
   if (policy.retain === "never") return Effect.succeed({ key: input.key })
   return Effect.gen(function*() {
-    const bank = input.bank.length > 0 ? input.bank : policy.banks[0]!
-    yield* validatePolicyBank(bank, policy)
-    return yield* runRememberWith(provenance)({ ...input, bank })
+    yield* validatePolicyBank(input.bank, policy)
+    return yield* runRememberWith(provenance)(input)
   })
 }
 

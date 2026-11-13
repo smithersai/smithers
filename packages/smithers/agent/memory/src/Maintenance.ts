@@ -303,8 +303,8 @@ export const compact = <E, R>(
     for (const threadId of threadIds) {
       // Old messages still to summarize. Every window after the first also
       // carries the previous window's summary. The summary is carried
-      // explicitly: it keeps the oldest source timestamp, but under a tied
-      // timestamp its id may sort after messages it did not summarize.
+      // explicitly so custom ids may sort anywhere within a tied timestamp.
+      // Default ids sort before ordinary message ids at that timestamp.
       let unsummarized = (yield* store.countMessages({ threadId })) - keepRecent
       let carried: Message | undefined
       while (unsummarized > 0) {
@@ -326,7 +326,7 @@ export const compact = <E, R>(
           rendered: render(oldMessages)
         })
         const summaryId = options.makeSummaryId?.(threadId, oldMessages) ??
-          `summary-${
+          `\u0001summary-${
             Digest.digest(Digest.canonical({ threadId, messageIds: oldMessages.map((message) => message.id) }))
           }`
         const summary: Message = { threadId, id: summaryId, role: "system", text: summaryText, at: oldMessages[0]!.at }

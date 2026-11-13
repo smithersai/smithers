@@ -388,10 +388,48 @@ describe("Maintenance", () => {
     expect(result.remaining.map((message) => message.id)).toEqual(["two"])
   })
 
+  it("keeps message cursors and compaction ordered independently of database collation", async () => {
+    const result = await runWithDatabase(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      if (Dialect.isPostgres(sql)) {
+        yield* sql`ALTER TABLE memory_messages ALTER COLUMN id TYPE TEXT COLLATE "en-x-icu"`
+      }
+      const store = yield* MemoryStore.MemoryStore
+      for (const id of ["e", "d", "c", "b", "a"]) {
+        yield* store.appendMessage({ threadId: "collation", id, role: "user", text: id, at: 0 })
+      }
+      const compact = Maintenance.compact({
+        threadId: "collation",
+        keepRecent: 2,
+        maxMessagesPerSummary: 2,
+        summarizer: { summarize: ({ messages }) => Effect.succeed(messages.map((message) => message.text).join("+")) }
+      })
+      yield* compact
+      const messages = yield* store.listMessages({ threadId: "collation" })
+      const firstPage = yield* store.listMessages({ threadId: "collation", limit: 1 })
+      const nextPage = yield* store.listMessages({
+        threadId: "collation",
+        cursor: { at: firstPage[0]!.at, id: firstPage[0]!.id },
+        limit: 1
+      })
+      const lastPage = yield* store.listMessages({
+        threadId: "collation",
+        cursor: { at: nextPage[0]!.at, id: nextPage[0]!.id },
+        limit: 1
+      })
+      const repeated = yield* compact
+      return { messages, nextPage, lastPage, repeated, after: yield* store.listMessages({ threadId: "collation" }) }
+    }))
+    expect(result.messages.map((message) => message.text)).toEqual(["a+b+c", "d", "e"])
+    expect(result.nextPage.map((message) => message.id)).toEqual(["d"])
+    expect(result.lastPage.map((message) => message.id)).toEqual(["e"])
+    expect(result.repeated).toEqual({ compactedThreads: 0, deletedMessages: 0 })
+    expect(result.after).toEqual(result.messages)
+  })
+
   // Each summarizer call sees at most `maxMessagesPerSummary` messages; later
   // windows fold the previous summary in with the next oldest messages.
-  // A summary keeps its oldest source's timestamp, so under tied timestamps
-  // its id can sort on either side of the messages it did not summarize.
+  // A default summary precedes the recent messages even when timestamps tie.
   describe("tied timestamps", () => {
     const compactTied = (
       ids: ReadonlyArray<string>,
@@ -415,20 +453,43 @@ describe("Maintenance", () => {
           ...(makeSummaryId === undefined ? {} : { makeSummaryId })
         })
         const remaining = yield* store.listMessages({ threadId: "tied" })
-        return { summarized, compacted, remaining }
+        const repeated = yield* Maintenance.compact({
+          threadId: "tied",
+          keepRecent: 2,
+          maxMessagesPerSummary: 2,
+          summarizer: {
+            summarize: () => Effect.die("a stable summary must not summarize recent messages on a later pass")
+          },
+          ...(makeSummaryId === undefined ? {} : { makeSummaryId })
+        })
+        return { summarized, compacted, remaining, repeated }
       }))
     }
 
-    it("carries the default summary id that sorts after the remaining messages", async () => {
+    it("keeps the default summary before tied recent messages across repeated passes", async () => {
       const result = await compactTied(["a", "b", "c", "d", "e"])
-      expect(result.summarized).toEqual([["a", "b"], [expect.stringMatching(/^summary-/), "c"]])
+      expect(result.summarized).toEqual([["a", "b"], [expect.stringMatching(/^\u0001summary-/), "c"]])
       expect(result.compacted).toEqual({ compactedThreads: 1, deletedMessages: 4 })
+      expect(result.repeated).toEqual({ compactedThreads: 0, deletedMessages: 0 })
       expect(result.remaining.map((message) => [message.role, message.text])).toEqual([
+        ["system", "a+b+c"],
         ["user", "d"],
-        ["user", "e"],
-        ["system", "a+b+c"]
+        ["user", "e"]
       ])
     })
+
+    it.each(["!", "0", "A", "_", "é"])(
+      "keeps summaries stable for message ids starting with %s",
+      async (prefix) => {
+        const ids = ["a", "b", "c", "d", "e"].map((id) => prefix + id)
+        const result = await compactTied(ids)
+        expect(result.remaining.map((message) => message.text)).toEqual([
+          ids.slice(0, 3).join("+"),
+          ...ids.slice(3)
+        ])
+        expect(result.repeated).toEqual({ compactedThreads: 0, deletedMessages: 0 })
+      }
+    )
 
     it("carries a custom summary id that sorts before the remaining messages", async () => {
       const result = await compactTied(
@@ -879,7 +940,7 @@ describe("Maintenance", () => {
       ["assistant", "text-1"],
       ["user", "text-2"]
     ])
-    expect(result.afterSingle[0]?.id).toMatch(/^summary-[0-9a-f]{64}$/)
+    expect(result.afterSingle[0]?.id).toMatch(/^\u0001summary-[0-9a-f]{64}$/)
     expect(result.all).toEqual({ compactedThreads: 1, deletedMessages: 2 })
     expect(result.afterAll.map((message) => [message.role, message.text])).toEqual([
       ["system", "summary of 2"]

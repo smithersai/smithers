@@ -217,19 +217,22 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
       yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
       const limit = yield* validateLimit(input.limit, "listMessages")
       if (limit === 0) return []
+      // Summary ids use a leading control character. Locale collations can
+      // ignore it, so ordering and pagination must use the same byte order.
+      const messageId = sql.literal(Dialect.isPostgres(sql) ? "id COLLATE \"C\"" : "id COLLATE BINARY")
       const conditions: Array<Fragment> = [sql`thread_id = ${input.threadId}`]
       if (input.cursor !== undefined) {
         yield* validateTime(input.cursor.at, "message cursor at", ["cursor", "at"])
         yield* validateNonEmpty(input.cursor.id, "message cursor id", ["cursor", "id"])
         conditions.push(
-          sql`(at_ms > ${input.cursor.at} OR (at_ms = ${input.cursor.at} AND id > ${input.cursor.id}))`
+          sql`(at_ms > ${input.cursor.at} OR (at_ms = ${input.cursor.at} AND ${messageId} > ${input.cursor.id}))`
         )
       }
       const bound = limit === undefined ? sql.literal("") : sql`LIMIT ${limit}`
       const rows = yield* sql<MessageRow>`SELECT ${messageColumns}
         FROM memory_messages
         WHERE ${sql.and(conditions)}
-        ORDER BY at_ms, id
+        ORDER BY at_ms, ${messageId}
         ${bound}`.pipe(Effect.mapError(storeError("could not list memory messages")))
       return rows.map((row) => ({
         threadId: row.thread_id,

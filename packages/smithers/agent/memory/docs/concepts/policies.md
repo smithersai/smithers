@@ -31,7 +31,7 @@ Only a flow whose collaborators are data, one declared with `flows: [...]` and n
 The runtime bindings `Flows.runRecallFor` and `Flows.runRememberFor` read the policy back, and `Flows.handlersFor(flow)` is the pair a host binds. The policy banks are the only namespaces these scoped handlers may read or write:
 
 - `runRecallFor` fills an empty `banks` list with all policy banks. Every explicit bank must resolve to a policy bank, matching both `kind` and `id`. A foreign bank fails the whole request with `invalid_namespace` before the recall service runs, including requests that mix allowed and foreign banks.
-- `runRememberFor` resolves an empty bank to the first policy bank. An explicit foreign bank fails with `invalid_namespace` before the store runs.
+- `runRememberFor` requires a non-empty `bank` naming a policy bank. A foreign bank fails with `invalid_namespace` before the store runs.
 - Equivalent spellings are allowed: `release-notes` and `flow-release-notes` both resolve to `{ kind: "flow", id: "release-notes" }`. Every bank in the policy is readable and writable; use a narrower policy for delegated work.
 - `maxTokens` remains a default: the policy budget applies only when the caller omits it.
 

@@ -25,6 +25,11 @@
 
 ### Fixed
 
+- Scoped `remember` examples now name a policy bank, matching the existing
+  input schema. New compaction summaries stay before recent messages when
+  timestamps tie, including on PostgreSQL with locale collation. Memory
+  sources freeze snapshots inside the caller's Effect and share concurrent reads.
+
 - `Maintenance.layerTtlGc` logs a pass that dies and runs the next one. It
   caught typed failures only, so a defect ended the interval fiber without a
   log and expired facts were never deleted again in that process.

@@ -1,4 +1,4 @@
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Logger } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Logger, Scheduler } from "effect"
 import { TestClock } from "effect/testing"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
@@ -627,6 +627,125 @@ describe("Source", () => {
     for (const capacity of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => Source.make({ capacity })).toThrow(TypeError)
     }
+  })
+
+  it("shares cache registration when the scheduler yields during allocation", async () => {
+    let reads = 0
+    const source = Source.make()
+    const input = { lineageId: "yielding", iteration: 0, banks: ["bank"], query: "q" }
+    const store = faultyStore(() =>
+      Effect.yieldNow.pipe(Effect.andThen(Effect.sync(() => {
+        reads++
+        return [primerRow("shared")]
+      })))
+    )
+    const results = await Effect.runPromise(
+      Effect.all(Array.from({ length: 8 }, () => source.read(input)), { concurrency: "unbounded" }).pipe(
+        Effect.provideService(MemoryStore.MemoryStore, store),
+        Effect.provideService(Recall.Recall, Recall.makeNoop()),
+        Effect.provideService(Scheduler.MaxOpsBeforeYield, 4)
+      )
+    )
+    expect(reads).toBe(1)
+    expect(results.every((snapshot) => snapshot === results[0])).toBe(true)
+    expect(results[0]!.rows.map((row) => row.text)).toEqual(["shared"])
+  })
+
+  it("shares one in-flight snapshot across concurrent reads", async () => {
+    let reads = 0
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const source = Source.make()
+        const input = { lineageId: "concurrent", iteration: 0, banks: ["bank"], query: "q" }
+        const store = faultyStore(() =>
+          Effect.gen(function*() {
+            reads++
+            yield* Deferred.succeed(started, undefined)
+            yield* Deferred.await(release)
+            return [primerRow("shared")]
+          })
+        )
+        const first = yield* source.read(input).pipe(
+          Effect.provideService(MemoryStore.MemoryStore, store),
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Deferred.await(started)
+        const second = yield* source.read(input).pipe(
+          Effect.provideService(MemoryStore.MemoryStore, store),
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Deferred.succeed(release, undefined)
+        return yield* Effect.all([Fiber.join(first), Fiber.join(second)])
+      }).pipe(Effect.provideService(Recall.Recall, Recall.makeNoop()))
+    )
+    expect(result[1]).toBe(result[0])
+    expect(result[0].rows.map((row) => row.text)).toEqual(["shared"])
+    expect(reads).toBe(1)
+  })
+
+  it("does not evict a frozen snapshot for a read that is never executed", async () => {
+    const source = Source.make({ capacity: 1 })
+    const input = { lineageId: "executed", iteration: 0, banks: ["bank"], query: "q" }
+    const result = await withMemory(
+      Effect.gen(function*() {
+        yield* note("bank", "before", "before")
+        const first = yield* source.read(input)
+        const unused = source.read({ ...input, lineageId: "unused" })
+        expect(Effect.isEffect(unused)).toBe(true)
+        yield* note("bank", "after", "after")
+        return { first, replay: yield* source.read(input) }
+      }).pipe(Effect.provideService(Recall.Recall, Recall.makeNoop()))
+    )
+    expect(result.replay).toBe(result.first)
+    expect(result.replay.rows.map((row) => row.text)).toEqual(["before"])
+  })
+
+  it("freezes inputs in execution order rather than construction order", async () => {
+    const source = Source.make()
+    const input = { lineageId: "execution-order", iteration: 0, banks: [], primerBanks: [], query: "constructed first" }
+    const constructedFirst = source.read(input)
+    const executedFirst = source.read({ ...input, query: "executed first" })
+    const recall = Recall.Recall.of({
+      recall: (input) => Effect.succeed([{ bank: "bank", key: "row", text: input.query, score: 1 }])
+    })
+    const [first, replay] = await withMemory(
+      Effect.all([executedFirst, constructedFirst], { concurrency: 1 }).pipe(
+        Effect.provideService(Recall.Recall, recall)
+      )
+    )
+    expect(first.rows.map((row) => row.text)).toEqual(["executed first"])
+    expect(replay).toBe(first)
+  })
+
+  it("retries a failed snapshot by executing the same read Effect again", async () => {
+    let reads = 0
+    const source = Source.make()
+    const pending = source.read({ lineageId: "retry-effect", iteration: 0, banks: ["bank"], query: "q" })
+    const store = faultyStore(() =>
+      Effect.suspend(() => {
+        reads++
+        return reads === 1
+          ? Effect.fail(new MemoryError({ code: "store", message: "unavailable" }))
+          : Effect.succeed([primerRow("recovered")])
+      })
+    )
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const failed = yield* Effect.exit(pending)
+        const recovered = yield* pending
+        const replay = yield* pending
+        return { failed, recovered, replay }
+      }).pipe(
+        Effect.provideService(MemoryStore.MemoryStore, store),
+        Effect.provideService(Recall.Recall, Recall.makeNoop())
+      )
+    )
+    expect(failure(result.failed)).toMatchObject({ code: "store" })
+    expect(result.recovered.rows.map((row) => row.text)).toEqual(["recovered"])
+    expect(result.replay).toBe(result.recovered)
+    expect(reads).toBe(2)
   })
 
   it("evicts the least recently used snapshot at its finite capacity", async () => {

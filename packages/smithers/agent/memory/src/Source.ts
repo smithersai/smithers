@@ -245,7 +245,8 @@ export const readRows = (
  * {@link SnapshotRecorder.SnapshotRecorder} is absent, it is the process-local
  * default. When a recorder is composed, the memoized read first asks that
  * recorder for the durable value of the same `(lineageId, iteration)`
- * identity. A failed read is neither memoized nor recorded.
+ * identity. The first execution freezes the inputs; constructing a read does
+ * not occupy or evict a memo entry. A failed read is neither memoized nor recorded.
  *
  * @category constructors
  * @since 0.1.0
@@ -256,10 +257,11 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
     throw new TypeError("memory source capacity must be a positive safe integer")
   }
   type Read = ReturnType<Source["read"]>
-  const snapshots = new Map<string, {
+  type Entry = {
     readonly effect: Read
     readonly fields: Readonly<Record<string, string>>
-  }>()
+  }
+  const snapshots = new Map<string, Entry>()
   const fields = (input: Input): Readonly<Record<string, string>> => ({
     banks: canonicalJson(input.banks),
     query: canonicalJson(input.query),
@@ -269,63 +271,69 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
     primerBanks: canonicalJson(input.primerBanks),
     maxBytes: canonicalJson(input.maxBytes)
   })
+  const reuse = (key: string, existing: Entry, input: Input): Read => {
+    snapshots.delete(key)
+    snapshots.set(key, existing)
+    const currentFields = fields(input)
+    const changed = Object.keys(existing.fields).filter((field) => existing.fields[field] !== currentFields[field])
+    return changed.length === 0
+      ? existing.effect
+      : Effect.logWarning(
+        `memory source ignored changed fields for frozen snapshot ${key}: ${changed.join(", ")}`
+      ).pipe(Effect.andThen(existing.effect))
+  }
   return {
-    read: (input) => {
-      const key = `${input.lineageId}\u0000${input.iteration}`
-      const existing = snapshots.get(key)
-      if (existing !== undefined) {
-        snapshots.delete(key)
-        snapshots.set(key, existing)
-        const currentFields = fields(input)
-        const changed = Object.keys(existing.fields).filter((field) => existing.fields[field] !== currentFields[field])
-        return changed.length === 0
-          ? existing.effect
-          : Effect.logWarning(
-            `memory source ignored changed fields for frozen snapshot ${key}: ${changed.join(", ")}`
-          ).pipe(Effect.andThen(existing.effect))
-      }
-      const identity: SnapshotRecorder.Identity = {
-        lineageId: input.lineageId,
-        iteration: input.iteration
-      }
-      const current: Read = Effect.runSync(
-        Effect.cached(
-          Effect.gen(function*() {
-            const recorder = yield* Effect.serviceOption(SnapshotRecorder.SnapshotRecorder)
-            return yield* Option.match(recorder, {
-              onNone: () => readRows(input),
-              onSome: (recorder) =>
-                Effect.gen(function*() {
-                  // The recorder port accepts an infallible effect. Send typed
-                  // failures outside that boundary and cancel its pending
-                  // read, so a failure is never recorded.
-                  const failed = yield* Deferred.make<never, MemoryError | Cause.TimeoutError>()
-                  return yield* Effect.raceFirst(
-                    recorder.record(
-                      identity,
-                      readRows(input).pipe(
-                        Effect.catch((cause) => Deferred.fail(failed, cause).pipe(Effect.andThen(Effect.never)))
-                      )
-                    ),
-                    Deferred.await(failed)
-                  )
-                })
-            })
-          }).pipe(
-            // Only successful snapshots are frozen, with or without a
-            // recorder, so a retry of this identity reads again.
-            Effect.onError(() =>
-              Effect.sync(() => {
-                if (snapshots.get(key)?.effect === current) snapshots.delete(key)
+    read: (input) =>
+      Effect.suspend(() => {
+        const key = `${input.lineageId}\u0000${input.iteration}`
+        const existing = snapshots.get(key)
+        if (existing !== undefined) return reuse(key, existing, input)
+        const identity: SnapshotRecorder.Identity = {
+          lineageId: input.lineageId,
+          iteration: input.iteration
+        }
+        return Effect.gen(function*() {
+          const current: Read = yield* Effect.cached(
+            Effect.gen(function*() {
+              const recorder = yield* Effect.serviceOption(SnapshotRecorder.SnapshotRecorder)
+              return yield* Option.match(recorder, {
+                onNone: () => readRows(input),
+                onSome: (recorder) =>
+                  Effect.gen(function*() {
+                    // The recorder port accepts an infallible effect. Send typed
+                    // failures outside that boundary and cancel its pending
+                    // read, so a failure is never recorded.
+                    const failed = yield* Deferred.make<never, MemoryError | Cause.TimeoutError>()
+                    return yield* Effect.raceFirst(
+                      recorder.record(
+                        identity,
+                        readRows(input).pipe(
+                          Effect.catch((cause) => Deferred.fail(failed, cause).pipe(Effect.andThen(Effect.never)))
+                        )
+                      ),
+                      Deferred.await(failed)
+                    )
+                  })
               })
+            }).pipe(
+              // Only successful snapshots are frozen, with or without a
+              // recorder, so a retry of this identity reads again.
+              Effect.onError(() =>
+                Effect.sync(() => {
+                  if (snapshots.get(key)?.effect === current) snapshots.delete(key)
+                })
+              )
             )
           )
-        )
-      )
-      snapshots.set(key, { effect: current, fields: fields(input) })
-      while (snapshots.size > capacity) snapshots.delete(snapshots.keys().next().value!)
-      return current
-    }
+          // Allocation can yield to another reader. Publish only if no reader
+          // registered this identity while this fiber was allocating its memo.
+          const concurrent = snapshots.get(key)
+          if (concurrent !== undefined) return yield* reuse(key, concurrent, input)
+          snapshots.set(key, { effect: current, fields: fields(input) })
+          while (snapshots.size > capacity) snapshots.delete(snapshots.keys().next().value!)
+          return yield* current
+        })
+      })
   }
 }
 

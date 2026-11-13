@@ -366,7 +366,7 @@ describe("WithMemory", () => {
           query: "durable"
         })
         yield* Flows.handlersFor(boundRemember as WithMemory.Declared).remember({
-          bank: "",
+          bank: "flow-trellis",
           key: "written",
           text: "written through the bound handler"
         })
@@ -541,13 +541,32 @@ describe("WithMemory", () => {
     expect(seen).toEqual([64, 9])
   })
 
+  it("refuses an empty remember bank before storage even when called without decoding", async () => {
+    const refused = await Effect.runPromise(
+      Flows.handlersFor(WithMemory.withMemory(Flows.remember, policy)).remember({
+        bank: "",
+        key: "key",
+        text: "text"
+      }).pipe(
+        Effect.flip,
+        Effect.provideService(
+          MemoryStore.MemoryStore,
+          MemoryStore.makeNoop({
+            putFact: () => Effect.die("an empty bank must be refused before storage")
+          })
+        )
+      )
+    )
+    expect(refused.code).toBe("invalid_namespace")
+  })
+
   it("writes into the annotated namespace and writes nothing at all when retain is never", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function*() {
         const store = yield* MemoryStore.MemoryStore
         const kept = yield* Flows.runRememberFor(
           WithMemory.withMemory(Flows.remember, policy),
-          { bank: "", key: "kept", text: "policy namespace" }
+          { bank: "flow-trellis", key: "kept", text: "policy namespace" }
         )
         const dropped = yield* Flows.runRememberFor(
           WithMemory.withMemory(Flows.remember, { ...policy, retain: "never" }),

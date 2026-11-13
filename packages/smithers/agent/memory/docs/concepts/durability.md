@@ -45,7 +45,7 @@ Supersession is how an append-only log corrects itself. A new note can declare `
 
 A thread is an ordered history of messages, each with a caller-chosen id, a role, text, and a timestamp. Threads exist so agents can keep conversation history durable across runs.
 
-A message id is unique within its thread, not globally. Appending the same id with the same role, text, and timestamp is a no-op, which is what makes a retried append safe. Appending the same id with any difference fails with `idempotency_conflict` and a path to the first field that differs. `appendMessage` creates a missing thread for you, in the `global` namespace under the id `history`; call `createThread` first when the thread belongs somewhere else. Creating a thread is itself idempotent on identical creation data.
+Messages read in timestamp order, breaking ties by the binary ordering of the id independently of the database locale. A message id is unique within its thread, not globally. Appending the same id with the same role, text, and timestamp is a no-op, which is what makes a retried append safe. Appending the same id with any difference fails with `idempotency_conflict` and a path to the first field that differs. `appendMessage` creates a missing thread for you, in the `global` namespace under the id `history`; call `createThread` first when the thread belongs somewhere else. Creating a thread is itself idempotent on identical creation data.
 
 `appendMessageOnce` accepts the same identity, role and text with an optional
 timestamp and returns the stored message. The first insertion chooses the
