@@ -10,8 +10,9 @@
  * packages. It reads its dataset and workspace graph relative to this file,
  * independently of the runner's working directory.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs"
-import { dirname, join, resolve } from "node:path"
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
+import { createRequire } from "node:module"
+import { dirname, join, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
 
@@ -19,12 +20,23 @@ const roles = new Set(["system", "user", "assistant", "tool"])
 const messageKeys = new Set(["role", "content"])
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
 
+interface WorkspacePackage {
+  readonly directory: string
+  readonly exports: unknown
+}
+
+interface ImportSpecifier {
+  readonly text: string
+  readonly require: boolean
+  readonly typeOnly: boolean
+}
+
 /** Read the package names and public paths from the root's declared workspaces. */
-const workspaceExports = (): ReadonlyMap<string, ReadonlyMap<string, unknown>> => {
+const workspaceExports = (): ReadonlyMap<string, WorkspacePackage> => {
   const root = JSON.parse(readFileSync(join(workspaceRoot, "package.json"), "utf8")) as {
     workspaces: ReadonlyArray<string>
   }
-  const packages = new Map<string, ReadonlyMap<string, unknown>>()
+  const packages = new Map<string, WorkspacePackage>()
   for (const pattern of root.workspaces) {
     const directories = pattern.endsWith("/*")
       ? readdirSync(join(workspaceRoot, pattern.slice(0, -2)), { withFileTypes: true })
@@ -36,15 +48,10 @@ const workspaceExports = (): ReadonlyMap<string, ReadonlyMap<string, unknown>> =
       if (!existsSync(manifest)) continue
       const pkg = JSON.parse(readFileSync(manifest, "utf8")) as {
         name?: string
-        exports?: Record<string, unknown> | string | null
+        exports?: unknown
       }
       if (pkg.name) {
-        const exposed = pkg.exports === undefined
-          ? { ".": true }
-          : typeof pkg.exports === "object" && pkg.exports !== null
-            ? pkg.exports
-            : { ".": pkg.exports }
-        packages.set(pkg.name, new Map(Object.entries(exposed)))
+        packages.set(pkg.name, { directory: join(workspaceRoot, directory), exports: pkg.exports })
       }
     }
   }
@@ -54,27 +61,41 @@ const workspaceExports = (): ReadonlyMap<string, ReadonlyMap<string, unknown>> =
 const publicPackages = workspaceExports()
 
 /** Parse assistant TypeScript so comments and quoted examples are not imports. */
-const importSpecifiers = (code: string): ReadonlyArray<string> => {
+const importSpecifiers = (code: string): ReadonlyArray<ImportSpecifier> => {
   const source = ts.createSourceFile("assistant.ts", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-  const specifiers: string[] = []
+  const specifiers: ImportSpecifier[] = []
   const visit = (node: ts.Node): void => {
     if (
       (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
       node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)
     ) {
-      specifiers.push(node.moduleSpecifier.text)
+      const bindings = ts.isImportDeclaration(node) ? node.importClause?.namedBindings : node.exportClause
+      const typeOnly = (ts.isImportDeclaration(node) ? node.importClause?.isTypeOnly ?? false : node.isTypeOnly) ||
+        ((!ts.isImportDeclaration(node) || node.importClause?.name === undefined) &&
+          bindings !== undefined && (ts.isNamedImports(bindings) || ts.isNamedExports(bindings)) &&
+          bindings.elements.length > 0 && bindings.elements.every((element) => element.isTypeOnly))
+      specifiers.push({ text: node.moduleSpecifier.text, require: false, typeOnly })
     } else if (
       ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference) &&
       node.moduleReference.expression && ts.isStringLiteralLike(node.moduleReference.expression)
     ) {
-      specifiers.push(node.moduleReference.expression.text)
+      specifiers.push({ text: node.moduleReference.expression.text, require: true, typeOnly: node.isTypeOnly })
+    } else if (
+      ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) &&
+      ts.isStringLiteralLike(node.argument.literal)
+    ) {
+      specifiers.push({ text: node.argument.literal.text, require: false, typeOnly: true })
     } else if (
       ts.isCallExpression(node) &&
       (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
         (ts.isIdentifier(node.expression) && node.expression.text === "require")) &&
       node.arguments[0] && ts.isStringLiteralLike(node.arguments[0])
     ) {
-      specifiers.push(node.arguments[0].text)
+      specifiers.push({
+        text: node.arguments[0].text,
+        require: node.expression.kind !== ts.SyntaxKind.ImportKeyword,
+        typeOnly: false
+      })
     }
     ts.forEachChild(node, visit)
   }
@@ -82,29 +103,80 @@ const importSpecifiers = (code: string): ReadonlyArray<string> => {
   return specifiers
 }
 
-const isExposed = (exports: ReadonlyMap<string, unknown>, subpath: string): boolean => {
-  if (exports.has(subpath)) return exports.get(subpath) !== null
-  const wildcard = [...exports.keys()]
-    .filter((key) => {
-      const star = key.indexOf("*")
-      if (star < 0) return false
-      const prefix = key.slice(0, star)
-      const suffix = key.slice(star + 1)
-      return subpath.length >= prefix.length + suffix.length &&
-        subpath.startsWith(prefix) && subpath.endsWith(suffix)
-    })
-    .sort((a, b) => b.length - a.length)[0]
-  return wildcard !== undefined && exports.get(wildcard) !== null
+/** Choose the first active condition in manifest order, without loading code. */
+const conditionalTarget = (target: unknown, conditions: ReadonlySet<string>): string | null | undefined => {
+  if (typeof target === "string") {
+    const segments = target.slice(2).split("/")
+    return target.startsWith("./") &&
+        segments.every((segment) => segment !== "" && segment !== "." && segment !== ".." &&
+          segment.toLowerCase() !== "node_modules")
+      ? target
+      : null
+  }
+  if (target === null) return null
+  if (Array.isArray(target)) {
+    let fallback: null | undefined = target.length === 0 ? null : undefined
+    for (const entry of target) {
+      const selected = conditionalTarget(entry, conditions)
+      if (selected != null) return selected
+      if (selected === null) fallback = null
+    }
+    return fallback
+  } else if (isRecord(target)) {
+    for (const [condition, entry] of Object.entries(target)) {
+      if (!conditions.has(condition)) continue
+      const selected = conditionalTarget(entry, conditions)
+      if (selected !== undefined) return selected
+    }
+    return undefined
+  }
+  return null
 }
 
-const workspaceImportProblem = (specifier: string): string | undefined => {
-  if (!specifier.startsWith("@smthrs/")) return undefined
-  const parts = specifier.split("/")
+const isExposed = (pkg: WorkspacePackage, subpath: string, specifier: ImportSpecifier): boolean => {
+  if (pkg.exports === undefined) {
+    try {
+      // Legacy packages have no export-map encapsulation; Node resolves main or index.
+      return statSync(createRequire(join(pkg.directory, "package.json")).resolve(resolve(pkg.directory, subpath))).isFile()
+    } catch {
+      return false
+    }
+  }
+  const exports = isRecord(pkg.exports) && Object.keys(pkg.exports).some((key) => key.startsWith("."))
+    ? pkg.exports
+    : { ".": pkg.exports }
+  let target = exports[subpath]
+  let capture: string | undefined
+  if (!Object.hasOwn(exports, subpath)) {
+    const wildcard = Object.keys(exports)
+      .filter((key) => {
+        const star = key.indexOf("*")
+        return star >= 0 && subpath.length >= key.length &&
+          subpath.startsWith(key.slice(0, star)) && subpath.endsWith(key.slice(star + 1))
+      })
+      .sort((a, b) => b.indexOf("*") - a.indexOf("*") || b.length - a.length)[0]
+    if (wildcard === undefined) return false
+    const star = wildcard.indexOf("*")
+    const suffix = wildcard.length - star - 1
+    capture = subpath.slice(star, suffix === 0 ? undefined : -suffix)
+    target = exports[wildcard]
+  }
+  const conditions = new Set(["node", "default", specifier.require ? "require" : "import"])
+  if (specifier.typeOnly) conditions.add("types")
+  const selected = conditionalTarget(target, conditions)
+  if (selected == null || !selected.startsWith("./")) return false
+  const file = resolve(pkg.directory, capture === undefined ? selected : selected.split("*").join(capture))
+  return file.startsWith(pkg.directory + sep) && (statSync(file, { throwIfNoEntry: false })?.isFile() ?? false)
+}
+
+const workspaceImportProblem = (specifier: ImportSpecifier): string | undefined => {
+  if (!specifier.text.startsWith("@smthrs/")) return undefined
+  const parts = specifier.text.split("/")
   const name = parts.slice(0, 2).join("/")
-  const exports = publicPackages.get(name)
-  if (!exports) return `imports ${JSON.stringify(specifier)} from a missing workspace package`
+  const pkg = publicPackages.get(name)
+  if (!pkg) return `imports ${JSON.stringify(specifier.text)} from a missing workspace package`
   const subpath = parts.length === 2 ? "." : `./${parts.slice(2).join("/")}`
-  if (!isExposed(exports, subpath)) return `imports unpublished path ${JSON.stringify(specifier)}`
+  if (!isExposed(pkg, subpath, specifier)) return `imports unpublished path ${JSON.stringify(specifier.text)}`
   return undefined
 }
 

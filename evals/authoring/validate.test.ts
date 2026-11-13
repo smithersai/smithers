@@ -1,7 +1,9 @@
 import { strict as assert } from "node:assert"
-import { readFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
 import { describe, test } from "node:test"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { validateDataset } from "./validate.ts"
 
 const row = (value: unknown): string => JSON.stringify(value)
@@ -63,6 +65,137 @@ describe("validateDataset", () => {
     rejects(row(withAssistant('import Old = require("@smthrs/engine-harness")')), 'missing workspace package')
     rejects(row(withAssistant('const Old = await import("@smthrs/engine-harness")')), 'missing workspace package')
     rejects(row(withAssistant('import * as Private from "@smthrs/fs/internal/Secret"')), 'unpublished path')
+  })
+
+  test("rejects nonexistent modules behind public wildcard exports", () => {
+    rejects(
+      row(withAssistant('import * as Missing from "@smthrs/fs/DefinitelyMissingModule"')),
+      'unpublished path'
+    )
+  })
+
+  test("rejects workspace roots without an entry point", () => {
+    rejects(row(withAssistant('import * as Missing from "@smthrs/eval-authoring"')), 'unpublished path')
+  })
+
+  test("checks import types and typeof import types against workspace exports", () => {
+    for (const expression of [
+      'import("@smthrs/engine-harness").Old',
+      'typeof import("@smthrs/engine-harness")',
+      'import("@smthrs/agent/internal/Secret").Old',
+      'typeof import("@smthrs/agent/internal/Secret")',
+      'import("@smthrs/fs/DefinitelyMissingModule").Old',
+      'typeof import("@smthrs/fs/DefinitelyMissingModule")'
+    ]) {
+      rejects(row(withAssistant(`type Old = ${expression}`)),
+        expression.includes("engine-harness") ? 'missing workspace package' : 'unpublished path')
+    }
+    assert.deepEqual(validateDataset(row(withAssistant([
+      'type Command = import("@smthrs/fs/Command").Command',
+      'type Flow = typeof import("@smthrs/flow")'
+    ].join("\n")))), [])
+  })
+
+  test("resolves real workspace entry points, export conditions, and pattern precedence", async (t) => {
+    const root = mkdtempSync(join(tmpdir(), "authoring-imports-"))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    const write = (path: string, text: string) => {
+      const file = join(root, path)
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, text)
+    }
+    write("package.json", JSON.stringify({ type: "module", workspaces: ["packages/*"] }))
+    mkdirSync(join(root, "evals/authoring"), { recursive: true })
+    copyFileSync(fileURLToPath(new URL("./validate.ts", import.meta.url)), join(root, "evals/authoring/validate.ts"))
+    mkdirSync(join(root, "node_modules"), { recursive: true })
+    symlinkSync(dirname(fileURLToPath(import.meta.resolve("typescript/package.json"))), join(root, "node_modules/typescript"))
+    const pkg = (name: string, fields: Record<string, unknown>, files: ReadonlyArray<string>) => {
+      write(`packages/${name}/package.json`, JSON.stringify({ name: `@smthrs/${name}`, ...fields }))
+      for (const file of files) write(`packages/${name}/${file}`, "export {}")
+    }
+    pkg("mapped", {
+      exports: {
+        ".": { browser: "./missing.ts", node: { import: "./src/present.ts", require: "./src/require.cjs" } },
+        "./conditional": { import: "./missing.ts", require: "./src/require.cjs", default: "./src/present.ts" },
+        "./typed": { types: "./src/present.ts", default: "./missing.ts" },
+        "./inactive": { browser: "./src/present.ts" },
+        "./nested-fallback": { node: { browser: "./missing.ts" }, default: "./src/present.ts" },
+        "./invalid": 42,
+        "./invalid-active": { node: 42, default: "./src/present.ts" },
+        "./empty-active": { node: [], default: "./src/present.ts" },
+        "./inactive-array": { node: [{ browser: "./missing.ts" }], default: "./src/present.ts" },
+        "./invalid-fallback": ["../invalid.ts", "./src/present.ts"],
+        "./null-fallback": [null, "./src/present.ts"],
+        "./empty-array": [],
+        "./invalid-target": "../outside.ts",
+        "./escape": "./../outside.ts",
+        "./blocked": null,
+        "./active-block": { import: null, default: "./src/present.ts" },
+        "./array": ["./missing.ts", "./src/present.ts"],
+        "./fallback": [{ browser: "./missing.ts" }, "./src/present.ts"],
+        "./*": "./src/*.ts",
+        "./f*": null,
+        "./feature/*": "./src/present.ts",
+        "./suffix/*.js": "./src/*.ts",
+        "./private/*": null
+      }
+    }, ["src/present.ts", "src/$&.ts", "src/require.cjs", "src/blocked.ts", "src/private/Secret.ts", "src/folder/index.ts"])
+    pkg("conditional", { exports: { browser: "./missing.ts", default: "./index.ts" } }, ["index.ts"])
+    pkg("string", { exports: "./index.ts" }, ["index.ts"])
+    pkg("legacy-main", { main: "./entry.js" }, ["entry.js"])
+    pkg("legacy-index", {}, ["index.js"])
+    pkg("legacy-missing", { main: "./missing.js" }, [])
+    pkg("legacy-fallback", { main: "./missing.js" }, ["index.js"])
+    const { validateDataset: validate } = await import(pathToFileURL(join(root, "evals/authoring/validate.ts")).href)
+    const accepts = [
+      'import "@smthrs/mapped/$&"',
+      'import "@smthrs/mapped/invalid-fallback"',
+      'import "@smthrs/mapped/null-fallback"',
+      'import "@smthrs/mapped/inactive-array"',
+      'import "@smthrs/mapped"',
+      'import Value = require("@smthrs/mapped")',
+      'const value = require("@smthrs/mapped/conditional")',
+      'type Value = import("@smthrs/mapped/typed").Value',
+      'import type { Value } from "@smthrs/mapped/typed"',
+      'import { type Value } from "@smthrs/mapped/typed"',
+      'import type Value = require("@smthrs/mapped/typed")',
+      'export { type Value } from "@smthrs/mapped/typed"',
+      'export type { Value } from "@smthrs/mapped/typed"',
+      'import "@smthrs/mapped/present"',
+      'import "@smthrs/mapped/feature/Example"',
+      'import "@smthrs/mapped/suffix/present.js"',
+      'import "@smthrs/mapped/fallback"',
+      'import "@smthrs/mapped/nested-fallback"',
+      'import "@smthrs/conditional"',
+      'import "@smthrs/string"',
+      'import "@smthrs/legacy-main"',
+      'import "@smthrs/legacy-main/entry.js"',
+      'import "@smthrs/legacy-index"',
+      'import "@smthrs/legacy-fallback"'
+    ]
+    for (const code of accepts) assert.deepEqual(validate(row(withAssistant(code))), [], code)
+    for (const code of [
+      'import Value, { type T } from "@smthrs/mapped/typed"; void Value',
+      'import "@smthrs/mapped/conditional"',
+      'import "@smthrs/mapped/typed"',
+      'import "@smthrs/mapped/inactive"',
+      'import "@smthrs/mapped/invalid"',
+      'import "@smthrs/mapped/invalid-active"',
+      'import "@smthrs/mapped/empty-active"',
+      'import "@smthrs/mapped/empty-array"',
+      'import "@smthrs/mapped/invalid-target"',
+      'import "@smthrs/mapped/escape"',
+      'import "@smthrs/mapped/blocked"',
+      'import "@smthrs/mapped/active-block"',
+      'import "@smthrs/mapped/array"',
+      'import "@smthrs/mapped/private/Secret"',
+      'import "@smthrs/mapped/folder"',
+      'import "@smthrs/mapped/missing"',
+      'import "@smthrs/mapped/suffix/missing.js"',
+      'import "@smthrs/legacy-missing"'
+    ]) {
+      assert.ok(validate(row(withAssistant(code))).some((problem: string) => problem.includes("unpublished path")), code)
+    }
   })
 
   test("checks assistant code but does not treat quoted prompts or comments as imports", () => {
