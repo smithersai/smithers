@@ -16,6 +16,8 @@
  *                     as each check finishes
  *   MQ_FINISH_COMMAND optional, run as `sh -c "$MQ_FINISH_COMMAND" sh <head> <onto> <conflicted>` on each change
  *                     once it is rebased; prints the commit that stands for the change (regenerated files)
+ *   MQ_PARALLEL       how many changes are rebased and finished at once (default 1); above 1 the finish command
+ *                     must be safe to run several times at once, each call on its own commits
  *   MQ_JJ             the jj program (default `jj`)
  *   MQ_FIX_COMMAND    run as `sh -c "$MQ_FIX_COMMAND" sh <brief file> <answer file>`
  *   MQ_POLL_MS        how often to look for news (default 2000)
@@ -59,12 +61,14 @@ const services = Layer.unwrap(
     const binary = yield* Config.String("MQ_JJ").pipe(Config.withDefault("jj"))
     const fix = yield* Config.String("MQ_FIX_COMMAND")
     const poll = yield* Config.Number("MQ_POLL_MS").pipe(Config.withDefault(2000))
+    const parallel = yield* Config.Number("MQ_PARALLEL").pipe(Config.withDefault(1))
     const repository = yield* JjRepository.make({
       path: repo,
       bookmark,
       ledger: `${state}/ledger.json`,
       poll,
       binary,
+      parallel,
       finish: Option.match(finish, {
         onNone: () => undefined,
         onSome: (command) => (head: string, onto: string, conflicted: boolean) => ({

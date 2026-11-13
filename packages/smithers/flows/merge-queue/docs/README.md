@@ -205,6 +205,8 @@ export MQ_RUN_COMMAND='...'         # instead: one process per run, sh -c "$MQ_R
                                     # prints "<check> pass" or "<check> fail" as each check finishes
 export MQ_FINISH_COMMAND='...'      # optional: sh -c "$MQ_FINISH_COMMAND" sh <head> <onto> <conflicted>
                                     # prints the commit that stands for the rebased change
+export MQ_PARALLEL=4                # optional: changes rebased and finished at once (default 1); the finish
+                                    # command must then be safe to run several times at once
 export MQ_FIX_COMMAND='...'         # sh -c "$MQ_FIX_COMMAND" sh <brief file> <answer file>
 cp start.json next.json
 while :; do

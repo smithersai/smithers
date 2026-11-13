@@ -63,6 +63,12 @@ export interface Options {
   readonly ledger: string
   /** How often `wait` looks at the bookmark. */
   readonly poll: Duration.Input
+  /**
+   * How many changes may be applied at once (each replayed and finished).
+   * Defaults to 1. More than 1 needs a `finish` command that is safe to run
+   * several times at once, each call on its own commits.
+   */
+  readonly parallel?: number | undefined
   /** The `jj` program. Defaults to `jj` on the path. */
   readonly binary?: string | undefined
   /**
@@ -213,23 +219,38 @@ export const make = (
         )
       )
 
-    const jj = (args: ReadonlyArray<string>): Effect.Effect<string, Unavailable> =>
+    const exec = (
+      args: ReadonlyArray<string>
+    ): Effect.Effect<{ readonly stdout: string; readonly stderr: string }, Unavailable> =>
       Effect.gen(function*() {
         const { code, stderr, stdout } = yield* run({
           command: options.binary ?? "jj",
           args: ["-R", options.path, "--ignore-working-copy", "--no-pager", "--color=never", ...args]
         })
         if (code !== 0) return yield* unavailable(`jj ${args[0]} exited ${code}: ${stderr.trim().split("\n").at(-1)}`)
-        return stdout + stderr
+        return { stdout, stderr }
       })
 
+    /** Everything a jj command printed. `duplicate` names its new commits on stderr. */
+    const jj = (args: ReadonlyArray<string>): Effect.Effect<string, Unavailable> =>
+      Effect.map(exec(args), ({ stderr, stdout }) => stdout + stderr)
+
+    /**
+     * What a jj command printed as its answer. Commit ids are read from here
+     * only: when two commands ran at once, jj also prints "Concurrent
+     * modification detected, resolving automatically." on stderr, and that
+     * line is no commit.
+     */
+    const answer = (args: ReadonlyArray<string>): Effect.Effect<string, Unavailable> =>
+      Effect.map(exec(args), ({ stdout }) => stdout)
+
     const ids = (revset: string): Effect.Effect<ReadonlyArray<string>, Unavailable> =>
-      Effect.map(jj(["log", "--no-graph", "-r", revset, "-T", "commit_id ++ \"\\n\""]), lines)
+      Effect.map(answer(["log", "--no-graph", "-r", revset, "-T", "commit_id ++ \"\\n\""]), lines)
 
     const lines = (text: string): ReadonlyArray<string> => text.split("\n").filter((line) => line !== "")
 
     const tipCommit = Effect.map(
-      jj(["log", "--no-graph", "-r", `bookmarks(exact:"${options.bookmark}")`, "-T", "commit_id ++ \"\\n\""]),
+      answer(["log", "--no-graph", "-r", `bookmarks(exact:"${options.bookmark}")`, "-T", "commit_id ++ \"\\n\""]),
       (text) => lines(text)[0]
     )
 
@@ -274,7 +295,7 @@ export const make = (
       const ledger = yield* load
       const bookmark = `bookmarks(exact:"${options.bookmark}")`
       const behindTip = lines(
-        yield* jj([
+        yield* answer([
           "log",
           "--no-graph",
           "--reversed",
@@ -362,7 +383,12 @@ export const make = (
      * other runs that contain it there are answered at once. Entries name
      * commits, never trees, so they stay true when the starting commit moves.
      */
-    const extend = (parts: ReadonlyArray<typeof Pinned.Type>, batch: Tree) =>
+    /**
+     * One step towards the candidate for a tree, from the ledger alone: the
+     * answer when the ledger already has it, or else the one change that has
+     * to be applied next, and the commit to apply it on.
+     */
+    const nextStep = (parts: ReadonlyArray<typeof Pinned.Type>, batch: Tree) =>
       Effect.gen(function*() {
         const ledger = yield* load
         let onto = parts.at(-1)?.commit ?? ledger.genesis
@@ -378,33 +404,74 @@ export const make = (
           }
           const source = ledger.sources.find((entry) => samePart(entry, part))
           if (source === undefined) return yield* unavailable(`no commit registered for ${part.id}.${part.rev}`)
-          const applied = yield* apply(source.commit, onto)
-          if (applied === undefined) {
-            yield* save({ ...ledger, refused: [...ledger.refused, { onto, id: part.id, rev: part.rev }] })
-            return { _tag: "conflict", part } as const
-          }
-          yield* save({
-            ...ledger,
-            candidates: [...ledger.candidates, { onto, id: part.id, rev: part.rev, commit: applied.commit }],
-            pinned: [...ledger.pinned, { ...part, commit: applied.commit }],
-            interior: [...ledger.interior, ...applied.interior]
-          })
-          return { _tag: "more" } as const
+          return { _tag: "apply", part, onto, source: source.commit } as const
         }
         return { _tag: "built", commit: onto } as const
+      })
+
+    /** Whether the ledger already says what applying `part` on `onto` gives. */
+    const decided = (onto: string, part: Part) =>
+      Effect.map(load, (ledger) =>
+        ledger.refused.some((entry) => entry.onto === onto && samePart(entry, part))
+        || ledger.candidates.some((entry) => entry.onto === onto && samePart(entry, part)))
+
+    /**
+     * Records what applying `part` on `onto` gave. One application runs per
+     * commit and change (`applyOnce`), so the ledger holds no answer for it yet.
+     */
+    const recordApplied = (
+      onto: string,
+      part: Part,
+      applied: { readonly commit: string; readonly interior: ReadonlyArray<string> } | undefined
+    ) =>
+      Effect.gen(function*() {
+        const ledger = yield* load
+        yield* save(
+          applied === undefined
+            ? { ...ledger, refused: [...ledger.refused, { onto, id: part.id, rev: part.rev }] }
+            : {
+              ...ledger,
+              candidates: [...ledger.candidates, { onto, id: part.id, rev: part.rev, commit: applied.commit }],
+              pinned: [...ledger.pinned, { id: part.id, rev: part.rev, commit: applied.commit }],
+              interior: [...ledger.interior, ...applied.interior]
+            }
+        )
       })
 
     // The count this process knows the ledger has settled. Only this process moves it.
     let settledHere = 0
 
-    // One operation at a time: each reads the ledger, may run jj, and writes the
-    // ledger back, and CI builds candidates for several runs at once.
+    // One ledger operation at a time: each reads the ledger and may write it
+    // back, and CI builds candidates for several runs at once.
     const lock = yield* Semaphore.make(1)
     const one = <A>(effect: Effect.Effect<A, Unavailable>): Effect.Effect<A, Unavailable> =>
       Semaphore.withPermit(lock, effect)
 
-    // The lock is taken for one change at a time, so a short candidate is not
-    // kept waiting behind a long one that shares its first changes. The tip is
+    // Applying a change (replaying it and running `finish`) is the slow part,
+    // minutes when files are regenerated. It runs outside the ledger's lock,
+    // at most `parallel` at a time, and once per commit and change: a second
+    // builder that needs the same one waits for the first and reads its answer.
+    const applies = yield* Semaphore.make(Math.max(1, options.parallel ?? 1))
+    const applying = new Map<string, Semaphore.Semaphore>()
+    const applyOnce = (onto: string, part: Part, source: string): Effect.Effect<void, Unavailable> => {
+      const key = `${onto} ${part.id}.${part.rev}`
+      let mine = applying.get(key)
+      if (mine === undefined) {
+        mine = Semaphore.makeUnsafe(1)
+        applying.set(key, mine)
+      }
+      return Semaphore.withPermit(
+        mine,
+        Effect.gen(function*() {
+          if (yield* one(decided(onto, part))) return
+          const applied = yield* Semaphore.withPermit(applies, apply(source, onto))
+          yield* one(recordApplied(onto, part, applied))
+        })
+      ).pipe(Effect.ensuring(Effect.sync(() => void applying.delete(key))))
+    }
+
+    // The ledger's lock is taken for one look at a time, so a short candidate is
+    // not kept waiting behind a long one that shares its first changes. The tip is
     // read once: a candidate built while the bookmark moves is merely stale,
     // and a stale commit cannot land, since the bookmark only moves forwards.
     //
@@ -416,8 +483,11 @@ export const make = (
         const batch = from > ledger.settled ? undefined : strip(parts, tree.slice(ledger.settled - from))
         if (batch === undefined) return Effect.succeed({ _tag: "stale" } as const)
         const next: Effect.Effect<Candidate, Unavailable> = Effect.flatMap(
-          one(extend(parts, batch)),
-          (step) => step._tag === "more" ? next : Effect.succeed(step)
+          one(nextStep(parts, batch)),
+          (step) =>
+            step._tag === "apply"
+              ? Effect.flatMap(applyOnce(step.onto, step.part, step.source), () => next)
+              : Effect.succeed(step)
         )
         return next
       })

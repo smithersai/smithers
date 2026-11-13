@@ -276,6 +276,137 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     expect(await detail(elsewhere.tip)).toContain("could not run")
   })
 
+  it(
+    "applies changes on different commits at once when the host allows it, and each commit and change once",
+    async () => {
+      // `finish` appends "start <head>" and "end <head>" lines around a pause, so the log shows what overlapped.
+      const building = async (parallel: number | undefined) => {
+        const repo = repository()
+        const log = join(repo.path, "finish.log")
+        const queue = await run(JjRepository.make({
+          ...repo.options,
+          ...(parallel === undefined ? {} : { parallel }),
+          finish: (head) => ({
+            command: "sh",
+            args: ["-c", `echo "start $1" >> "${log}"; sleep 1; echo "end $1" >> "${log}"; echo "$1"`, "sh", head]
+          })
+        }))
+        for (const id of [1, 2, 3]) {
+          await run(queue.register({ id, rev: 0 }, repo.change(`${id}.txt`, `${id}\n`)))
+        }
+        // Three runs, each testing one change alone on the tip, and two more that both need change 1 first.
+        const built = await run(
+          Effect.all(
+            [[1], [2], [3], [1, 2], [1, 3]].map((ids) =>
+              queue.candidate(tree(...ids.map((id) => [id, 0] as const)), 0)
+            ),
+            { concurrency: "unbounded" }
+          )
+        )
+        expect(built.every((candidate) => candidate._tag === "built")).toBe(true)
+        const lines = readFileSync(log, "utf8").trim().split("\n")
+        let open = 0
+        let most = 0
+        for (const line of lines) {
+          open += line.startsWith("start") ? 1 : -1
+          most = Math.max(most, open)
+        }
+        const ledger: typeof JjRepository.Ledger.Type = JSON.parse(readFileSync(repo.options.ledger, "utf8"))
+        return { built, most, starts: lines.filter((line) => line.startsWith("start")).length, ledger, queue, repo }
+      }
+
+      const wide = await building(3)
+      // Five trees need five applications: 1, 2 and 3 on the tip, then 2 and 3 on top of 1. Change 1 on the
+      // tip is applied once though three trees start with it.
+      expect(wide.starts).toBe(5)
+      expect(wide.ledger.candidates).toHaveLength(5)
+      expect(new Set(wide.ledger.candidates.map((entry) => `${entry.onto} ${entry.id}`)).size).toBe(5)
+      expect(wide.most).toBe(3)
+      // The two longer trees share the commit of change 1, so landing one never strands the other.
+      const [one, , , oneTwo, oneThree] = wide.built.map((candidate) =>
+        candidate._tag === "built" ? candidate.commit : ""
+      )
+      const firstOf = (entry: string) => wide.ledger.candidates.find((made) => made.commit === entry)!.onto
+      expect([firstOf(oneTwo!), firstOf(oneThree!)]).toEqual([one, one])
+      await run(wide.queue.advance([], tree([1, 0], [2, 0])))
+      expect(wide.repo.files()).toEqual(["1.txt", "2.txt", "base.txt"])
+
+      // Without the option, and with 1, the same work is done one application at a time.
+      for (const parallel of [undefined, 1, 0]) {
+        const narrow = await building(parallel)
+        expect([narrow.starts, narrow.most, narrow.ledger.candidates.length]).toEqual([5, 1, 5])
+      }
+    },
+    120_000
+  )
+
+  it("does not take jj's warning about a concurrent command for a commit", async () => {
+    // When another jj command ran at the same time (a host's own import, a second builder), jj prints this
+    // line on stderr with its answer. Read as a commit id, it made a clean change look like a stack with
+    // two heads, and the change was refused. The real spawner, with the line added to every jj command.
+    const repo = repository()
+    const noisy = Layer.provideMerge(
+      Layer.effect(
+        ChildProcessSpawner,
+        Effect.map(ChildProcessSpawner, (real) =>
+          ChildProcessSpawnerModule.make((command) =>
+            real.spawn(
+              "args" in command && command.command === "jj"
+                ? ChildProcess.make(
+                  "sh",
+                  [
+                    "-c",
+                    "echo 'Concurrent modification detected, resolving automatically.' >&2; exec jj \"$@\"",
+                    "sh",
+                    ...command.args
+                  ],
+                  command.options
+                )
+                : command
+            )
+          ))
+      ),
+      host
+    )
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const queue = yield* JjRepository.make(repo.options)
+        yield* queue.register({ id: 1, rev: 0 }, repo.change("one.txt", "one\n"))
+        yield* queue.register({ id: 2, rev: 0 }, repo.change("two.txt", "two\n"))
+        const empty = yield* queue.tip
+        const built = yield* queue.candidate(tree([1, 0], [2, 0]), 0)
+        yield* queue.advance([], tree([1, 0], [2, 0]))
+        const landed = yield* queue.tip
+        yield* queue.settle(1)
+        return { empty, built, landed, settled: yield* queue.tip }
+      }).pipe(Effect.provide(noisy)) as Effect.Effect<
+        { empty: Tree; built: JjRepository.Candidate; landed: Tree; settled: Tree },
+        Unavailable
+      >
+    )
+    expect(result.empty).toEqual([])
+    expect(result.built).toMatchObject({ _tag: "built" })
+    expect(result.landed).toEqual(tree([1, 0], [2, 0]))
+    expect(result.settled).toEqual(tree([2, 0]))
+    expect(repo.files()).toEqual(["base.txt", "one.txt", "two.txt"])
+  })
+
+  it("a builder that waited for another's application reads its refusal instead of applying again", async () => {
+    const repo = repository()
+    const log = join(repo.path, "finish.log")
+    const queue = await run(JjRepository.make({
+      ...repo.options,
+      parallel: 4,
+      finish: () => ({ command: "sh", args: ["-c", `echo call >> "${log}"; sleep 1; exit 1`] })
+    }))
+    await run(queue.register({ id: 1, rev: 0 }, repo.change("one.txt", "one\n")))
+    const built = await run(
+      Effect.all([1, 2, 3].map(() => queue.candidate(tree([1, 0]), 0)), { concurrency: "unbounded" })
+    )
+    expect(built).toEqual([1, 2, 3].map(() => ({ _tag: "conflict", part: { id: 1, rev: 0 } })))
+    expect(readFileSync(log, "utf8").trim().split("\n")).toEqual(["call"])
+  })
+
   it("a fixed revision replaces the commit registered for the change", async () => {
     const repo = repository()
     const queue = await run(JjRepository.make(repo.options))
