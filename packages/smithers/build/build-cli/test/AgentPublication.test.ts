@@ -1,37 +1,58 @@
 import * as AgentTarget from "@smthrs/targets/AgentTarget"
 import * as Input from "@smthrs/targets/Input"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import { execFileSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as AgentFake from "../src/AgentFake.ts"
 import * as AgentSession from "../src/AgentSession.ts"
-import { serve } from "./helpers/ServeCli.ts"
+import { FilePublicationHost, filePublicationHostLive } from "../src/internal/FilePublicationHost.ts"
+import { executeEffect } from "../src/internal/PackageRunner.ts"
+import * as PackageDiscovery from "../src/PackageDiscovery.ts"
+import * as PackageExec from "../src/PackageExec.ts"
+import { PackageIndex } from "../src/PackageIndex.ts"
+import * as PackageLoader from "../src/PackageLoader.ts"
 
-// The fault controls reject or cancel one publication rename after earlier
-// files have been written through the real filesystem. Everything else is real IO.
-vi.mock("node:fs/promises", async (load) => {
-  const actual = await load<typeof import("node:fs/promises")>()
-  return { ...actual, rename: vi.fn(actual.rename) }
-})
+let publication = filePublicationHostLive
+const run = <A, E>(effect: Effect.Effect<A, E>) =>
+  Effect.runPromise(effect.pipe(Effect.provideService(FilePublicationHost, publication)))
+
+const runPackage = async (signal?: AbortSignal) => {
+  const index = PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)))
+  const options = {
+    index,
+    cacheDirectory: ".flows",
+    verb: "auto" as const,
+    patterns: ["//:lint"],
+    fix: true,
+    signal,
+    environment: { ...process.env, SMTHRS_AGENT_FAKE: "fake.json" }
+  }
+  const plan = await PackageExec.plan(options)
+  const logs: Array<string> = []
+  const exit = await Effect.runPromiseExit(
+    executeEffect(plan, { ...options, log: (line) => logs.push(line) }).pipe(
+      Effect.provideService(FilePublicationHost, publication)
+    ),
+    { signal }
+  )
+  if (Exit.isFailure(exit)) return { exitCode: 1, logs: logs.join("\n") }
+  const result = exit.value
+  return { exitCode: result.ok ? 0 : 1, logs: [...logs, ...result.results.map((row) => row.error ?? "")].join("\n") }
+}
 
 let root: string
 const path = (relative: string): string => NodePath.join(root, relative)
 const contents = (relative: string): Promise<string> => Fs.readFile(path(relative), "utf8")
 const mode = async (relative: string): Promise<number> => (await Fs.stat(path(relative))).mode & 0o7777
-const originalRename = (await vi.importActual<typeof Fs>("node:fs/promises")).rename
+const originalRename = Fs.rename
 
 const write = async (relative: string, text: string): Promise<void> => {
   await Fs.mkdir(NodePath.dirname(path(relative)), { recursive: true })
   await Fs.writeFile(path(relative), text)
-}
-
-const git = (...args: ReadonlyArray<string>): void => {
-  execFileSync("git", ["-C", root, "-c", "user.email=test@test", "-c", "user.name=test", ...args], {
-    stdio: "pipe"
-  })
 }
 
 const script = async (edits: ReadonlyArray<AgentTarget.CandidateEdit>): Promise<void> => {
@@ -61,6 +82,7 @@ const runLint = (edits: ReadonlyArray<AgentTarget.CandidateEdit>) =>
   }, lintPayload)
 
 beforeEach(async () => {
+  publication = filePublicationHostLive
   root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-agent-publish-")))
   await write(
     "WORKSPACE.ts",
@@ -86,14 +108,13 @@ export const Package = S.Package({ targets: { lint } })
   await write("src/a.ts", "old a\n")
   await write("src/b.ts", "old b\n")
   await write("src/input.ts", "old input\n")
-  git("init", "-q")
-  git("add", "-A")
-  git("commit", "-qm", "initial")
+  execFileSync("jj", ["git", "init", "--colocate", root], { stdio: "ignore" })
+  execFileSync("jj", ["describe", "-m", "initial"], { cwd: root, stdio: "ignore" })
+  execFileSync("jj", ["new"], { cwd: root, stdio: "ignore" })
   await write("src/input.ts", "changed input\n")
 })
 
 afterEach(async () => {
-  vi.mocked(Fs.rename).mockReset().mockImplementation(originalRename)
   await Fs.rm(root, { recursive: true, force: true })
 })
 
@@ -139,17 +160,18 @@ describe.skipIf(process.platform === "win32")("agent publication", () => {
         { path: "src/b.ts", contents: "fixed b\n" }
       ])
       let firstPublished = false
-      vi.mocked(Fs.rename).mockImplementation(async (from, to) => {
-        if (String(to) === path("src/b.ts") && String(from).includes(".tmp-")) {
-          expect(firstPublished).toBe(true)
-          throw new Error("injected later publication failure")
+      publication = {
+        ...filePublicationHostLive,
+        rename: async (from, to) => {
+          if (String(to) === path("src/b.ts") && String(from).includes(".tmp-")) {
+            expect(firstPublished).toBe(true)
+            throw new Error("injected later publication failure")
+          }
+          await originalRename(from, to)
+          if (String(to) === path("src/a.ts") && String(from).includes(".tmp-")) firstPublished = true
         }
-        await originalRename(from, to)
-        if (String(to) === path("src/a.ts") && String(from).includes(".tmp-")) firstPublished = true
-      })
-      const result = await serve(root, ["//:lint", "--fix"], {
-        environment: { ...process.env, SMTHRS_AGENT_FAKE: "fake.json" }
-      })
+      }
+      const result = await runPackage()
       expect(firstPublished).toBe(true)
       expect(result.exitCode).toBe(1)
       expect(result.logs).toContain("injected later publication failure")
@@ -185,21 +207,22 @@ describe.skipIf(process.platform === "win32")("agent publication", () => {
         { path: "src/b.ts", contents: "fixed b\n" }
       ])
       let firstPublished = false
-      vi.mocked(Fs.rename).mockImplementation(async (from, to) => {
-        if (String(to) === path("src/b.ts") && String(from).includes(".tmp-")) {
-          expect(firstPublished).toBe(true)
-          throw new Error("injected later publication failure")
+      publication = {
+        ...filePublicationHostLive,
+        rename: async (from, to) => {
+          if (String(to) === path("src/b.ts") && String(from).includes(".tmp-")) {
+            expect(firstPublished).toBe(true)
+            throw new Error("injected later publication failure")
+          }
+          await originalRename(from, to)
+          if (String(to) === path("src/a.ts") && String(from).includes(".tmp-")) {
+            firstPublished = true
+            expect(await mode("src/a.ts")).toBe(published)
+            expect(await contents("src/a.ts")).toBe("old a\n")
+          }
         }
-        await originalRename(from, to)
-        if (String(to) === path("src/a.ts") && String(from).includes(".tmp-")) {
-          firstPublished = true
-          expect(await mode("src/a.ts")).toBe(published)
-          expect(await contents("src/a.ts")).toBe("old a\n")
-        }
-      })
-      const result = await serve(root, ["//:lint", "--fix"], {
-        environment: { ...process.env, SMTHRS_AGENT_FAKE: "fake.json" }
-      })
+      }
+      const result = await runPackage()
       expect(firstPublished).toBe(true)
       expect(result.exitCode).toBe(1)
       expect(await contents("src/a.ts")).toBe("old a\n")
@@ -220,25 +243,25 @@ describe.skipIf(process.platform === "win32")("agent publication", () => {
     let firstPublished = false
     let secondPublished = false
     let activeRenames = 0
-    vi.mocked(Fs.rename).mockImplementation(async (from, to) => {
-      activeRenames += 1
-      try {
-        await originalRename(from, to)
-        if (!firstPublished && String(to) === path("src/a.ts") && String(from).includes(".tmp-")) {
-          firstPublished = true
-          controller.abort()
+    publication = {
+      ...filePublicationHostLive,
+      rename: async (from, to) => {
+        activeRenames += 1
+        try {
+          await originalRename(from, to)
+          if (!firstPublished && String(to) === path("src/a.ts") && String(from).includes(".tmp-")) {
+            firstPublished = true
+            controller.abort()
+          }
+          if (String(to) === path("src/b.ts") && String(from).includes(".tmp-")) {
+            secondPublished = await contents("src/b.ts") === "fixed b\n"
+          }
+        } finally {
+          activeRenames -= 1
         }
-        if (String(to) === path("src/b.ts") && String(from).includes(".tmp-")) {
-          secondPublished = await contents("src/b.ts") === "fixed b\n"
-        }
-      } finally {
-        activeRenames -= 1
       }
-    })
-    const result = await serve(root, ["//:lint", "--fix"], {
-      signal: controller.signal,
-      environment: { ...process.env, SMTHRS_AGENT_FAKE: "fake.json" }
-    })
+    }
+    const result = await runPackage(controller.signal)
     expect(firstPublished).toBe(true)
     expect(secondPublished).toBe(true)
     expect(activeRenames).toBe(0)
@@ -252,47 +275,50 @@ describe.skipIf(process.platform === "win32")("agent publication", () => {
   })
 })
 
-// Windows sharing conflicts arise while another atomic replacement is in flight.
-// Inject only the syscall errno; all temporary writes, reads and cleanup are real.
+// Inject the host's sharing errors; writes, reads and cleanup stay real.
 describe("verdict replacement sharing conflicts", () => {
   for (const code of ["EPERM", "EACCES", "EBUSY"]) {
     it(`retries a transient Windows ${code} without removing the old verdict`, async () => {
-      const platform = Object.getOwnPropertyDescriptor(process, "platform")!
       const store = AgentSession.makeFileVerdictStore(path("verdicts"))
-      await Effect.runPromise(store.put("same", JSON.stringify({ value: "old" })))
-      vi.mocked(Fs.rename).mockImplementationOnce(async () => {
-        expect(await contents("verdicts/same.json")).toBe(JSON.stringify({ value: "old" }))
-        throw Object.assign(new Error("sharing conflict"), { code })
-      })
-      try {
-        Object.defineProperty(process, "platform", { ...platform, value: "win32" })
-        await Effect.runPromise(store.put("same", JSON.stringify({ value: "new" })))
-        expect(await Effect.runPromise(store.get("same"))).toBe(JSON.stringify({ value: "new" }))
-        expect(await Fs.readdir(path("verdicts"))).toEqual(["same.json"])
-        expect(vi.mocked(Fs.rename)).toHaveBeenCalledTimes(3)
-      } finally {
-        Object.defineProperty(process, "platform", platform)
+      await run(store.put("same", JSON.stringify({ value: "old" })))
+      let attempts = 0
+      publication = {
+        ...filePublicationHostLive,
+        platform: "win32",
+        rename: async (from, to) => {
+          attempts++
+          if (attempts === 1) {
+            expect(await contents("verdicts/same.json")).toBe(JSON.stringify({ value: "old" }))
+            throw Object.assign(new Error("sharing conflict"), { code })
+          }
+          await originalRename(from, to)
+        }
       }
+      await run(store.put("same", JSON.stringify({ value: "new" })))
+      expect(await run(store.get("same"))).toBe(JSON.stringify({ value: "new" }))
+      expect(await Fs.readdir(path("verdicts"))).toEqual(["same.json"])
+      expect(attempts).toBe(2)
     })
   }
 
   it.each([["win32", "EPERM", 7], ["win32", "EIO", 1], ["darwin", "EPERM", 1]] as const)(
     "bounds permanent %s %s failures and preserves the destination",
     async (host, code, attempts) => {
-      const platform = Object.getOwnPropertyDescriptor(process, "platform")!
       const store = AgentSession.makeFileVerdictStore(path("verdicts"))
-      await Effect.runPromise(store.put("same", JSON.stringify({ value: "old" })))
-      vi.mocked(Fs.rename).mockClear().mockRejectedValue(Object.assign(new Error("denied"), { code }))
-      try {
-        Object.defineProperty(process, "platform", { ...platform, value: host })
-        await expect(Effect.runPromise(store.put("same", JSON.stringify({ value: "new" }))))
-          .rejects.toThrow("denied")
-        expect(await contents("verdicts/same.json")).toBe(JSON.stringify({ value: "old" }))
-        expect(await Fs.readdir(path("verdicts"))).toEqual(["same.json"])
-        expect(vi.mocked(Fs.rename)).toHaveBeenCalledTimes(attempts)
-      } finally {
-        Object.defineProperty(process, "platform", platform)
+      await run(store.put("same", JSON.stringify({ value: "old" })))
+      let calls = 0
+      publication = {
+        ...filePublicationHostLive,
+        platform: host,
+        rename: async () => {
+          calls++
+          throw Object.assign(new Error("denied"), { code })
+        }
       }
+      await expect(run(store.put("same", JSON.stringify({ value: "new" })))).rejects.toThrow("denied")
+      expect(await contents("verdicts/same.json")).toBe(JSON.stringify({ value: "old" }))
+      expect(await Fs.readdir(path("verdicts"))).toEqual(["same.json"])
+      expect(calls).toBe(attempts)
     }
   )
 })

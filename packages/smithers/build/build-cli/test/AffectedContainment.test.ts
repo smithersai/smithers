@@ -2,7 +2,7 @@ import * as Fs from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import * as Affected from "../src/Affected.ts"
 import * as ContainedProcess from "../src/internal/ContainedProcess.ts"
 
@@ -18,7 +18,6 @@ const alive = (pid: number) => {
   }
 }
 afterEach(async () => {
-  vi.restoreAllMocks()
   for (const pid of pids.splice(0)) if (alive(pid)) process.kill(pid, "SIGKILL")
   for (const root of roots.splice(0)) await Fs.rm(root, { recursive: true, force: true })
 })
@@ -161,26 +160,29 @@ it.each([1, 2, 86_399_999, 86_400_000])("accepts timeout boundary %s", async (ti
     .rejects.toHaveProperty("code", expect.stringMatching(/^(process_failed|timed_out)$/))
 })
 
-it("passes an explicit default deadline, output ceiling and caller signal on every git invocation", async () => {
-  const signal = new AbortController().signal
-  const environment = { PATH: "/test/path" }
-  const calls: Array<Parameters<typeof ContainedProcess.run>[0]> = []
-  vi.spyOn(ContainedProcess, "run").mockImplementation(async (options) => {
-    calls.push(options)
-    options.stdout(options.args[0] === "rev-parse" ? "aaaa\n" : "a/file\0")
-    return 0
-  })
-  expect(await Affected.changedPaths("/test/root", { base: "HEAD", signal, environment })).toEqual(["a/file"])
-  expect(calls).toHaveLength(3)
-  for (const call of calls) {
-    expect(call).toMatchObject({
-      command: "git",
-      cwd: "/test/root",
-      timeoutMs: 60_000,
-      maxOutputBytes: 16_777_216,
-      fatalUtf8: true
-    })
-    expect(call.signal).toBe(signal)
-    expect(call.environment).toBe(environment)
+it.skipIf(process.platform === "win32")(
+  "passes an explicit default deadline, output ceiling and caller signal on every git invocation",
+  async () => {
+    const signal = new AbortController().signal
+    const { root, environment } = await fixture(responses)
+    const calls: Array<Parameters<typeof ContainedProcess.run>[0]> = []
+    expect(
+      await Affected.changedPaths(root, { base: "HEAD", signal, environment }, async (options) => {
+        calls.push(options)
+        return ContainedProcess.run(options)
+      })
+    ).toEqual(["a/é", "new/file", "z/file"])
+    expect(calls).toHaveLength(3)
+    for (const call of calls) {
+      expect(call).toMatchObject({
+        command: "git",
+        cwd: root,
+        timeoutMs: 60_000,
+        maxOutputBytes: 16_777_216,
+        fatalUtf8: true
+      })
+      expect(call.signal).toBe(signal)
+      expect(call.environment).toBe(environment)
+    }
   }
-})
+)

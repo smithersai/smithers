@@ -48,6 +48,7 @@ import { createHash, randomBytes } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
+import { FilePublicationHost, type filePublicationHostLive } from "./internal/FilePublicationHost.ts"
 import { optionalOpenFlag } from "./internal/Fs.ts"
 import { gitPathspecBatches } from "./internal/GitPathspecBatches.ts"
 import * as Path from "./internal/Path.ts"
@@ -986,7 +987,12 @@ const overlayOf = (
 /** Waits between Windows rename retries: 10 ms, doubling, six retries. */
 const renameRetry = RetryPolicy.make({ initialMs: 10, factor: 2, maxMs: 320, maxAttempts: 7 })
 
-const publishFile = async (path: string, contents: string, mode?: number): Promise<void> => {
+const publishFile = async (
+  host: typeof filePublicationHostLive,
+  path: string,
+  contents: string,
+  mode?: number
+): Promise<void> => {
   const permissions = mode === undefined ? undefined : mode & 0o777
   const temporary = `${path}.tmp-${process.pid}-${randomBytes(12).toString("hex")}`
   const handle = await Fs.open(temporary, "wx", permissions)
@@ -1000,7 +1006,7 @@ const publishFile = async (path: string, contents: string, mode?: number): Promi
     }
     for (let attempt = 0;; attempt += 1) {
       try {
-        await Fs.rename(temporary, path)
+        await host.rename(temporary, path)
         break
       } catch (cause) {
         const code = (cause as NodeJS.ErrnoException).code
@@ -1008,7 +1014,7 @@ const publishFile = async (path: string, contents: string, mode?: number): Promi
         // Retry the same closed inode; never unlink the published destination.
         const wait = RetryPolicy.nextDelay(renameRetry, attempt + 1)
         if (
-          process.platform !== "win32" || Option.isNone(wait) ||
+          host.platform !== "win32" || Option.isNone(wait) ||
           (code !== "EPERM" && code !== "EACCES" && code !== "EBUSY")
         ) throw cause
         await new Promise((resolve) => setTimeout(resolve, wait.value))
@@ -1104,38 +1110,39 @@ export const makeLocalWriteSetApplier = (workspaceRoot: string): WriteSetApplier
         catch: (cause) => cause instanceof AgentTarget.AgentWriteEscape ? cause : sessionError("apply", cause)
       }),
     commit: (overlay) =>
-      Effect.tryPromise({
-        try: async () => {
-          const written: Array<string> = []
-          const expected = states.get(overlay)
-          // Validate the entire deferred overlay before the first write. An
-          // ordinary replacement is rejected too, not just a new symlink.
-          for (const path of overlay.files.keys()) {
-            for (const [prefix, stat] of await editPathState(workspaceRoot, path)) {
-              if (expected?.has(prefix)) {
-                const previous = expected.get(prefix)
-                if (previous?.dev !== stat?.dev || previous?.ino !== stat?.ino) {
-                  throw new Error(`candidate edit ${JSON.stringify(path)} changed before commit at ${prefix}`)
+      Effect.flatMap(FilePublicationHost, (host) =>
+        Effect.tryPromise({
+          try: async () => {
+            const written: Array<string> = []
+            const expected = states.get(overlay)
+            // Validate the entire deferred overlay before the first write. An
+            // ordinary replacement is rejected too, not just a new symlink.
+            for (const path of overlay.files.keys()) {
+              for (const [prefix, stat] of await editPathState(workspaceRoot, path)) {
+                if (expected?.has(prefix)) {
+                  const previous = expected.get(prefix)
+                  if (previous?.dev !== stat?.dev || previous?.ino !== stat?.ino) {
+                    throw new Error(`candidate edit ${JSON.stringify(path)} changed before commit at ${prefix}`)
+                  }
                 }
               }
             }
-          }
-          for (const [path, contents] of [...overlay.files.entries()].sort(([a], [b]) => a < b ? -1 : 1)) {
-            const absolute = NodePath.join(workspaceRoot, path)
-            const state = await editPathState(workspaceRoot, path)
-            if (contents === null) {
-              await Fs.rm(absolute, { force: true })
-            } else {
-              await Fs.mkdir(NodePath.dirname(absolute), { recursive: true })
-              await editPathState(workspaceRoot, path)
-              await publishFile(absolute, contents, state.get(absolute)?.mode)
+            for (const [path, contents] of [...overlay.files.entries()].sort(([a], [b]) => a < b ? -1 : 1)) {
+              const absolute = NodePath.join(workspaceRoot, path)
+              const state = await editPathState(workspaceRoot, path)
+              if (contents === null) {
+                await Fs.rm(absolute, { force: true })
+              } else {
+                await Fs.mkdir(NodePath.dirname(absolute), { recursive: true })
+                await editPathState(workspaceRoot, path)
+                await publishFile(host, absolute, contents, state.get(absolute)?.mode)
+              }
+              written.push(path)
             }
-            written.push(path)
-          }
-          return written
-        },
-        catch: (cause) => sessionError("apply", cause)
-      })
+            return written
+          },
+          catch: (cause) => sessionError("apply", cause)
+        }))
   })
 }
 
@@ -1264,14 +1271,15 @@ export const makeFileVerdictStore = (directory: string): AgentVerdictStore => ({
       catch: (cause) => sessionError("cache", cause)
     }),
   put: (key, value) =>
-    Effect.tryPromise({
-      try: async () => {
-        await Fs.mkdir(directory, { recursive: true })
-        const path = NodePath.join(directory, `${key}.json`)
-        await publishFile(path, value)
-      },
-      catch: (cause) => sessionError("cache", cause)
-    })
+    Effect.flatMap(FilePublicationHost, (host) =>
+      Effect.tryPromise({
+        try: async () => {
+          await Fs.mkdir(directory, { recursive: true })
+          const path = NodePath.join(directory, `${key}.json`)
+          await publishFile(host, path, value)
+        },
+        catch: (cause) => sessionError("cache", cause)
+      }))
 })
 
 /**

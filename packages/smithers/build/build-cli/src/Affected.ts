@@ -32,6 +32,7 @@ export class AffectedGitError extends Data.TaggedError("smithers-build/AffectedG
 }
 
 /** Collects changed paths from explicit inputs or a verified Git comparison.
+ * The optional process runner admits bounded host execution and fault injection.
  * @category querying
  * @since 0.1.0
  */
@@ -42,7 +43,7 @@ export const changedPaths = async (root: string, options: {
   readonly signal?: AbortSignal | undefined
   readonly timeoutMs?: number | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
-}): Promise<ReadonlyArray<string>> => {
+}, run: typeof ContainedProcess.run = ContainedProcess.run): Promise<ReadonlyArray<string>> => {
   if (options.signal?.aborted) {
     throw new AffectedGitError("cancelled", [], "affected discovery cancelled", options.signal.reason)
   }
@@ -56,7 +57,7 @@ export const changedPaths = async (root: string, options: {
     let stderr = ""
     let code: number
     try {
-      code = await ContainedProcess.run({
+      code = await run({
         command: "git",
         args,
         cwd: root,

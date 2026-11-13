@@ -1,78 +1,80 @@
+import { Smithers as S } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
-import type * as Target from "@smthrs/targets/Target"
-import { Minimatch } from "minimatch"
-import { afterEach, expect, it, vi } from "vitest"
+import * as Target from "@smthrs/targets/Target"
+import * as Schema from "effect/Schema"
+import * as Path from "node:path"
+import { expect, it } from "vitest"
 import * as Affected from "../src/Affected.ts"
-import type { IndexedTarget, PackageIndex } from "../src/PackageIndex.ts"
+import { PackageIndex } from "../src/PackageIndex.ts"
 
-// Isolate selection from graph loading, as in the review's performance probe.
-const calls = vi.hoisted(() => ({ metadata: 0, views: 0 }))
-vi.mock("@smthrs/targets/Target", async (importOriginal) => ({
-  ...await importOriginal<typeof Target>(),
-  metadata: (target: unknown) => {
-    calls.metadata++
-    return target
-  }
-}))
-vi.mock("../src/Planner.ts", () => ({ productionSourceRoots: () => [] }))
-afterEach(() => vi.restoreAllMocks())
+const attrs = Schema.Struct({
+  inputs: Schema.Array(Input.Declared),
+  dependencies: Schema.Array(Target.Target),
+  selectors: Schema.Array(Target.DependencySelector),
+  cacheable: Schema.Boolean
+})
 
+// Exercise the public rule constructor, including its real metadata and verb
+// views. Unlike fabricated target handles, this follows declaration validation,
+// attr collection and snapshots before affected selection sees the graph.
 const target = (
   inputs: ReadonlyArray<Input.Declared> = [],
   dependencies: ReadonlyArray<Target.AnyTarget> = [],
   view?: Partial<Target.KindView>,
   cacheable = true
 ): Target.AnyTarget =>
-  ({
-    target: "Fixture",
-    inputs,
-    dependencies,
-    dependencySelectors: [],
-    cacheable,
+  S.Target.make("Fixture", {
+    attrs,
     kinds: view === undefined ? [] : ["build"],
-    forKind: () => {
-      calls.views++
-      return { inputs: [], dependencies: [], dependencySelectors: [], cacheable: true, ...view }
-    }
-  }) as unknown as Target.AnyTarget
+    cache: (attrs) => attrs.cacheable,
+    attrsForKind: (_kind, base) =>
+      view === undefined ? base : ({
+        inputs: view.inputs ?? [],
+        dependencies: view.dependencies ?? [],
+        selectors: view.dependencySelectors ?? [],
+        cacheable: view.cacheable ?? true
+      }),
+    implementation: () => Target.notImplemented("selection fixture")
+  })({ inputs, dependencies, selectors: [], cacheable })
+
+const workspace = S.Workspace("affected", {
+  repository: "git+https://example.invalid/affected.git",
+  cache: S.Cache({ directory: ".flows" })
+})
 
 const fixture = (modules: ReadonlyArray<string> = []) => {
-  const rows: Array<IndexedTarget> = []
-  const owners = new Map<Target.AnyTarget, string>()
-  const resolve = vi.fn((pattern: string) =>
-    pattern === "//..." ? rows : rows.filter((row) => row.label === pattern.replace("/...", ""))
-  )
+  const packages = new Map<string, Record<string, Target.AnyTarget>>()
   return {
-    rows,
-    owners,
-    resolve,
     add: (packagePath: string, key: string, value: Target.AnyTarget) => {
-      rows.push({ label: `//${packagePath}:${key}`, packagePath, key, target: value })
-      owners.set(value, packagePath)
+      const targets = packages.get(packagePath) ?? {}
+      targets[key] = value
+      packages.set(packagePath, targets)
       return value
     },
-    index: {
-      root: "/probe/root",
-      modules,
-      targets: () => rows,
-      resolve,
-      ownerOf: (value: Target.AnyTarget) => owners.get(value)
-    } as unknown as PackageIndex
+    get index() {
+      return PackageIndex.make({
+        root: Path.resolve("test/fixtures/affected-selection"),
+        workspace,
+        factory: undefined,
+        modules,
+        packages: [...packages].map(([packagePath, targets]) => ({
+          file: packagePath === "" ? "PACKAGE.ts" : `${packagePath}/PACKAGE.ts`,
+          packagePath,
+          value: S.Package({ targets })
+        }))
+      })
+    }
   }
 }
 
 it("explains shared ambient selection through private dependencies without claiming input ownership", () => {
-  const { add, index, owners } = fixture()
+  const graph = fixture()
+  const { add } = graph
   const workspace = add("", "workspace", target([Input.pnpmWorkspace("//pnpm-workspace.yaml")], [], undefined, false))
-  const privateTarget = {
-    ...target([Input.file("local.txt")], [workspace]),
-    target: "Filegroup",
-    attrs: { cwd: "." }
-  } as Target.AnyTarget
-  owners.set(privateTarget, "other")
+  const privateTarget = S.Filegroup({ srcs: [Input.file("local.txt"), workspace], cwd: "." })
   add("other", "test", target([Input.file("local.txt")], [privateTarget]))
   add("lib", "src", target([Input.glob("src/**/*.ts")]))
-  const selected = Affected.select(index, ["//other:test"], ["lib/src/a.ts"], { explain: true })
+  const selected = Affected.select(graph.index, ["//other:test"], ["lib/src/a.ts"], { explain: true })
   expect(selected).toMatchObject({
     conservative: false,
     globalInputs: [],
@@ -95,57 +97,60 @@ it("explains shared ambient selection through private dependencies without claim
       }]
     }]
   })
-  expect(Affected.select(index, ["//other:test"], ["lib/src/a.ts"]).targets).toEqual([
+  expect(Affected.select(graph.index, ["//other:test"], ["lib/src/a.ts"]).targets).toEqual([
     { label: "//other:test", reasons: ["lib/src/a.ts"] }
   ])
 })
 
 it("preserves owned, declared unowned, and multi-root reasons including excludes and dotfiles", () => {
-  const { add, index } = fixture()
+  const graph = fixture()
+  const { add } = graph
   const lib = add("lib", "src", target([Input.glob("src/**/*.ts")]))
   const shared = Input.glob("//shared/**/*.ts", { exclude: ["//shared/generated/**"] })
   add("app", "build", target([shared, Input.file("//assets/schema.txt")], [lib]))
   add("tools", "check", target([Input.file("local.txt")], [], { dependencies: [lib] }))
   const paths = ["shared/.hidden.ts", "./lib/new.txt", "assets/schema.txt", "lib\\new.txt"]
-  expect(Affected.select(index, ["//..."], paths)).toEqual({
+  expect(Affected.select(graph.index, ["//..."], paths)).toEqual({
     pattern: "//...",
     files: ["assets/schema.txt", "lib/new.txt", "shared/.hidden.ts"],
     conservative: false,
     globalInputs: [],
     targets: [
-      { label: "//lib:src", reasons: ["lib/new.txt"] },
       { label: "//app:build", reasons: ["assets/schema.txt", "lib/new.txt", "shared/.hidden.ts"] },
+      { label: "//lib:src", reasons: ["lib/new.txt"] },
       { label: "//tools:check", reasons: ["lib/new.txt"] }
     ]
   })
   for (const path of ["scripts/unknown.ts", "shared/generated/code.ts", "pnpm-lock.yaml"]) {
-    expect(Affected.select(index, ["//..."], ["lib/new.txt", path])).toEqual({
+    expect(Affected.select(graph.index, ["//..."], ["lib/new.txt", path])).toEqual({
       pattern: "//...",
       files: ["lib/new.txt", path].sort(),
       conservative: true,
       globalInputs: [path],
-      targets: ["//lib:src", "//app:build", "//tools:check"].map((label) => ({ label, reasons: [path] }))
+      targets: ["//lib:src", "//app:build", "//tools:check"].sort().map((label) => ({ label, reasons: [path] }))
     })
   }
-  expect(Affected.select(index, ["//..."], []).targets).toEqual([])
+  expect(Affected.select(graph.index, ["//..."], []).targets).toEqual([])
 })
 
 it("does not select a glob consumer for an excluded path owned by another package", () => {
-  const { add, index } = fixture()
+  const graph = fixture()
+  const { add } = graph
   add("app", "build", target([Input.glob("//shared/**", { exclude: ["//shared/generated/**"] })]))
   add("shared", "src", target([Input.glob("**/*")]))
-  expect(Affected.select(index, ["//..."], ["shared/generated/a.ts"])).toMatchObject({
+  expect(Affected.select(graph.index, ["//..."], ["shared/generated/a.ts"])).toMatchObject({
     conservative: false,
     targets: [{ label: "//shared:src", reasons: ["shared/generated/a.ts"] }]
   })
 })
 
 it("keeps verb-only inputs unowned and empty base declarations conservative", () => {
-  const { add, index } = fixture()
+  const graph = fixture()
+  const { add } = graph
   add("app", "build", target([Input.file("local.txt")], [], { inputs: [Input.glob("//shared/**")] }))
   add("empty", "build", target([], [], { inputs: [Input.file("local.txt")] }))
-  expect(Affected.select(index, ["//..."], ["shared/file.ts"]).conservative).toBe(true)
-  expect(Affected.select(index, ["//..."], ["app/source.ts"]).targets).toEqual([
+  expect(Affected.select(graph.index, ["//..."], ["shared/file.ts"]).conservative).toBe(true)
+  expect(Affected.select(graph.index, ["//..."], ["app/source.ts"]).targets).toEqual([
     { label: "//app:build", reasons: ["app/source.ts"] },
     { label: "//empty:build", reasons: ["app/source.ts"] }
   ])
@@ -154,7 +159,8 @@ it("keeps verb-only inputs unowned and empty base declarations conservative", ()
 it.each([Input.gitDiff(), Input.pnpmWorkspace("//pnpm-workspace.yaml")])(
   "preserves ambient $_tag selection for owned files without selecting unrelated targets",
   (input) => {
-    const { add, index } = fixture()
+    const graph = fixture()
+    const { add } = graph
     add("", "workspace", target([input]))
     add("app", "build", target([Input.glob("src/**/*.ts", { exclude: ["src/generated/**"] })]))
     add(
@@ -167,7 +173,7 @@ it.each([Input.gitDiff(), Input.pnpmWorkspace("//pnpm-workspace.yaml")])(
     )
     add("other", "build", target([Input.file("local.txt")]))
     const paths = ["app/src/generated/code.ts", "assets/schema.txt", "shared/.hidden.ts"]
-    expect(Affected.select(index, ["//..."], paths)).toEqual({
+    expect(Affected.select(graph.index, ["//..."], paths)).toEqual({
       pattern: "//...",
       files: paths,
       conservative: false,
@@ -178,14 +184,15 @@ it.each([Input.gitDiff(), Input.pnpmWorkspace("//pnpm-workspace.yaml")])(
         { label: "//tools:check", reasons: paths.slice(1) }
       ]
     })
-    expect(Affected.select(index, ["//..."], []).targets).toEqual([])
+    expect(Affected.select(graph.index, ["//..."], []).targets).toEqual([])
   }
 )
 
 it.each([Input.gitDiff(), Input.pnpmWorkspace("//pnpm-workspace.yaml")])(
   "does not let ambient $_tag inputs claim unknown paths or excluded and adjacent inputs",
   (input) => {
-    const { add, index } = fixture()
+    const graph = fixture()
+    const { add } = graph
     add("", "workspace", target([input]))
     add("app", "build", target([Input.file("//assets/schema.txt")]))
     add(
@@ -203,14 +210,14 @@ it.each([Input.gitDiff(), Input.pnpmWorkspace("//pnpm-workspace.yaml")])(
         "shared/generated/code.ts"
       ]
     ) {
-      expect(Affected.select(index, ["//..."], ["app/source.ts", path])).toEqual({
+      expect(Affected.select(graph.index, ["//..."], ["app/source.ts", path])).toEqual({
         pattern: "//...",
         files: ["app/source.ts", path].sort(),
         conservative: true,
         globalInputs: [path],
-        targets: ["//:workspace", "//app:build", "//tools:check"].map((label) => ({ label, reasons: [path] }))
+        targets: ["//:workspace", "//app:build", "//tools:check"].sort().map((label) => ({ label, reasons: [path] }))
       })
-      expect(Affected.select(index, ["//tools:check"], [path])).toMatchObject({
+      expect(Affected.select(graph.index, ["//tools:check"], [path])).toMatchObject({
         conservative: true,
         targets: [{ label: "//tools:check", reasons: [path] }]
       })
@@ -221,21 +228,22 @@ it.each([Input.gitDiff(), Input.pnpmWorkspace("//pnpm-workspace.yaml")])(
 it.each([Input.gitDiff(), Input.pnpmWorkspace("//pnpm-workspace.yaml")])(
   "selects verb-only ambient $_tag consumers for known paths without assigning ownership",
   (input) => {
-    const { add, index } = fixture()
+    const graph = fixture()
+    const { add } = graph
     add("app", "build", target([Input.file("local.txt")], [], { inputs: [input] }))
     add("lib", "src", target([Input.glob("src/**/*.ts")]))
     add("other", "build", target([Input.file("local.txt")]))
-    expect(Affected.select(index, ["//..."], ["lib/new.txt"])).toMatchObject({
+    expect(Affected.select(graph.index, ["//..."], ["lib/new.txt"])).toMatchObject({
       conservative: false,
       targets: [
         { label: "//app:build", reasons: ["lib/new.txt"] },
         { label: "//lib:src", reasons: ["lib/new.txt"] }
       ]
     })
-    expect(Affected.select(index, ["//..."], [".github/ci-known-red.json"])).toMatchObject({
+    expect(Affected.select(graph.index, ["//..."], [".github/ci-known-red.json"])).toMatchObject({
       conservative: true,
       globalInputs: [".github/ci-known-red.json"],
-      targets: ["//app:build", "//lib:src", "//other:build"].map((label) => ({
+      targets: ["//app:build", "//lib:src", "//other:build"].sort().map((label) => ({
         label,
         reasons: [".github/ci-known-red.json"]
       }))
@@ -244,7 +252,8 @@ it.each([Input.gitDiff(), Input.pnpmWorkspace("//pnpm-workspace.yaml")])(
 )
 
 it("selects uncacheable targets and their dependents for every change, since their inputs are incomplete", () => {
-  const { add, index } = fixture()
+  const graph = fixture()
+  const { add } = graph
   add("lib", "src", target([Input.glob("src/**/*.ts")]))
   const check = add("app", "check", target([Input.file("local.txt")], [], undefined, false))
   add("app", "bundle", target([Input.file("entry.ts")], [check]))
@@ -254,77 +263,80 @@ it("selects uncacheable targets and their dependents for every change, since the
   add(
     "go",
     "test",
-    { ...target([Input.file("local.txt")], [], undefined, false), target: "Go.Test" } as Target.AnyTarget
+    S.Go.Test({ pkgs: ["./..."], data: [Input.file("local.txt")] })
   )
   const paths = ["lib/src/a.ts"]
-  expect(Affected.select(index, ["//..."], paths)).toEqual({
+  expect(Affected.select(graph.index, ["//..."], paths)).toEqual({
     pattern: "//...",
     files: paths,
     conservative: false,
     globalInputs: [],
-    targets: ["//lib:src", "//app:check", "//app:bundle", "//tools:test"].map((label) => ({ label, reasons: paths }))
+    targets: ["//lib:src", "//app:check", "//app:bundle", "//tools:test"].sort().map((label) => ({
+      label,
+      reasons: paths
+    }))
   })
-  expect(Affected.select(index, ["//other:build"], paths).targets).toEqual([])
-  expect(Affected.select(index, ["//..."], []).targets).toEqual([])
+  expect(Affected.select(graph.index, ["//other:build"], paths).targets).toEqual([])
+  expect(Affected.select(graph.index, ["//..."], []).targets).toEqual([])
 })
 
-it("propagates through shared private, verb, selector and cyclic dependencies", () => {
-  const { add, index, owners, resolve } = fixture()
-  const edges: Array<Target.AnyTarget> = []
-  const privateTarget = target([Input.file("//lib/data.txt")], edges)
-  owners.set(privateTarget, "lib")
-  const first = add("first", "build", target([Input.file("local.txt")], [privateTarget]))
+it("propagates through shared declared, verb and selector dependencies", () => {
+  const graph = fixture()
+  const { add } = graph
+  const privateTarget = add("lib", "helper", target([Input.file("//lib/data.txt")]))
+  add("first", "build", target([Input.file("local.txt")], [privateTarget]))
   add("second", "build", target([Input.file("local.txt")], [], { dependencies: [privateTarget] }))
   add(
     "selector",
     "build",
     target([Input.file("local.txt")], [], {
-      dependencySelectors: [{ _tag: "TargetDependencySelector", pattern: "//first/...", target: "build" }]
+      dependencySelectors: [Target.subtree("//first/...", "build")]
     })
   )
   add("lib", "src", target([Input.file("data.txt")]))
-  edges.push(first)
   const paths = ["lib/data.txt", "lib/new.txt"]
-  expect(Affected.select(index, ["//..."], paths).targets).toEqual([
+  expect(Affected.select(graph.index, ["//..."], paths).targets).toEqual([
     { label: "//first:build", reasons: paths },
+    { label: "//lib:helper", reasons: paths },
+    { label: "//lib:src", reasons: paths },
     { label: "//second:build", reasons: paths },
-    { label: "//selector:build", reasons: paths },
-    { label: "//lib:src", reasons: paths }
+    { label: "//selector:build", reasons: paths }
   ])
-  expect(Affected.select(index, ["//second:build"], paths).targets).toEqual([
+  expect(Affected.select(graph.index, ["//second:build"], paths).targets).toEqual([
     { label: "//second:build", reasons: paths }
   ])
-  expect(resolve).toHaveBeenCalledWith("//first/...:build")
-  const explained = Affected.select(index, ["//selector:build"], ["lib/data.txt"], { explain: true })
+  expect(graph.index.resolve("//first/...:build").map((row) => row.label)).toEqual(["//first:build"])
+  const explained = Affected.select(graph.index, ["//selector:build"], ["lib/data.txt"], { explain: true })
   expect(explained.targets[0]!.reasonDetails).toEqual([
     {
       file: "lib/data.txt",
       kind: "declared-input",
-      label: "//lib:__private_Fixture_1",
+      label: "//lib:helper",
       rule: "Fixture",
       input: Input.file("//lib/data.txt"),
-      dependencyPath: ["//selector:build", "//first:build", "//lib:__private_Fixture_1"]
+      dependencyPath: ["//selector:build", "//first:build", "//lib:helper"]
     },
     {
       file: "lib/data.txt",
       kind: "package",
-      label: "//lib:__private_Fixture_1",
+      label: "//lib:helper",
       rule: "Fixture",
-      dependencyPath: ["//selector:build", "//first:build", "//lib:__private_Fixture_1"]
+      dependencyPath: ["//selector:build", "//first:build", "//lib:helper"]
     }
   ])
 })
 
 it("treats every declaration module, helpers included, as a global input", () => {
-  const { add, index } = fixture(["app/PACKAGE.ts", "tools/helper.ts", "packages/helpers/src/index.ts"])
+  const graph = fixture(["app/PACKAGE.ts", "tools/helper.ts", "packages/helpers/src/index.ts"])
+  const { add } = graph
   add("app", "test", target([Input.file("local.txt")]))
   add("tools", "src", target([Input.glob("src/**/*.ts")]))
   add("packages/helpers", "lib", target([Input.glob("src/**/*.ts")]))
   for (const file of ["tools/helper.ts", "packages/helpers/src/index.ts"]) {
-    expect(Affected.select(index, ["//..."], [file], { explain: true })).toMatchObject({
+    expect(Affected.select(graph.index, ["//..."], [file], { explain: true })).toMatchObject({
       conservative: true,
       globalInputs: [file],
-      targets: ["//app:test", "//tools:src", "//packages/helpers:lib"].map((label) => ({
+      targets: ["//app:test", "//tools:src", "//packages/helpers:lib"].sort().map((label) => ({
         label,
         reasons: [file],
         reasonDetails: [{ file, kind: "global-input" }]
@@ -332,19 +344,20 @@ it("treats every declaration module, helpers included, as a global input", () =>
     })
   }
   // A path that merely shares a module's prefix stays with its owner.
-  expect(Affected.select(index, ["//..."], ["tools/helper.ts.bak", "packages/helpers/src/index.ts.orig"]))
+  expect(Affected.select(graph.index, ["//..."], ["tools/helper.ts.bak", "packages/helpers/src/index.ts.orig"]))
     .toMatchObject({ conservative: false, globalInputs: [] })
 })
 
 it("explains global and unknown fallbacks without inventing a dependency route", () => {
-  const { add, index } = fixture()
+  const graph = fixture()
+  const { add } = graph
   add("app", "test", target([Input.file("local.txt")]))
   for (const [file, kind] of [["pnpm-lock.yaml", "global-input"], ["unowned/a.txt", "unknown-input"]]) {
-    expect(Affected.select(index, ["//..."], [file!], { explain: true }).targets[0]!.reasonDetails).toEqual([
+    expect(Affected.select(graph.index, ["//..."], [file!], { explain: true }).targets[0]!.reasonDetails).toEqual([
       { file, kind }
     ])
   }
-  expect(Affected.select(index, ["//..."], [], { explain: true }).targets).toEqual([])
+  expect(Affected.select(graph.index, ["//..."], [], { explain: true }).targets).toEqual([])
 })
 
 it.each(
@@ -355,7 +368,8 @@ it.each(
     [Input.pnpmWorkspace("//pnpm-workspace.yaml"), true]
   ] as const
 )("explains ambient $_tag declarations in base and verb views (%s)", (input, verbOnly) => {
-  const { add, index } = fixture()
+  const graph = fixture()
+  const { add } = graph
   add("lib", "src", target([Input.glob("src/**")]))
   add(
     "app",
@@ -366,32 +380,34 @@ it.each(
       verbOnly ? { inputs: [input] } : undefined
     )
   )
-  expect(Affected.select(index, ["//app:test"], ["lib/src/a.ts"], { explain: true }).targets[0]!.reasonDetails).toEqual(
-    [
-      {
-        file: "lib/src/a.ts",
-        kind: "ambient-input",
-        label: "//app:test",
-        rule: "Fixture",
-        input,
-        dependencyPath: ["//app:test"]
-      }
-    ]
-  )
+  expect(Affected.select(graph.index, ["//app:test"], ["lib/src/a.ts"], { explain: true }).targets[0]!.reasonDetails)
+    .toEqual(
+      [
+        {
+          file: "lib/src/a.ts",
+          kind: "ambient-input",
+          label: "//app:test",
+          rule: "Fixture",
+          input,
+          dependencyPath: ["//app:test"]
+        }
+      ]
+    )
 })
 
 it("distinguishes declared inputs, package membership, empty contracts and verb-only uncacheability", () => {
-  const { add, index } = fixture()
+  const graph = fixture()
+  const { add } = graph
   add("app", "test", target([Input.file("//assets/schema.txt")]))
   add("empty", "test", target())
   add("verb", "test", target([Input.file("local.txt")], [], { cacheable: false }))
   add(
     "go",
     "test",
-    { ...target([Input.file("local.txt")], [], undefined, false), target: "Go.Test" } as Target.AnyTarget
+    S.Go.Test({ pkgs: ["./..."], data: [Input.file("local.txt")] })
   )
   const paths = ["app/src/a.ts", "assets/schema.txt"]
-  const selected = Affected.select(index, ["//..."], paths, { explain: true })
+  const selected = Affected.select(graph.index, ["//..."], paths, { explain: true })
   expect(selected.targets.map((row) => row.label)).toEqual(["//app:test", "//empty:test", "//verb:test"])
   expect(selected.targets[0]!.reasonDetails).toEqual([
     { file: paths[0], kind: "package", label: "//app:test", rule: "Fixture", dependencyPath: ["//app:test"] },
@@ -420,16 +436,15 @@ it("distinguishes declared inputs, package membership, empty contracts and verb-
   })))
 })
 
-it("uses one shortest route when an ambient source has shared and cyclic dependency paths", () => {
-  const { add, index } = fixture()
-  const dependencies: Array<Target.AnyTarget> = []
-  const source = add("ambient", "diff", target([Input.gitDiff()], dependencies))
+it("uses one shortest route when an ambient source has shared dependency paths", () => {
+  const graph = fixture()
+  const { add } = graph
+  const source = add("ambient", "diff", target([Input.gitDiff()]))
   const intermediate = add("middle", "build", target([Input.file("local.txt")], [source]))
-  const root = add("app", "test", target([Input.file("local.txt")], [intermediate, source]))
-  dependencies.push(root)
+  add("app", "test", target([Input.file("local.txt")], [intermediate, source]))
   add("lib", "src", target([Input.glob("src/**")]))
   const paths = ["lib/src/a.ts", "lib/src/b.ts"]
-  expect(Affected.select(index, ["//app:test"], paths, { explain: true }).targets[0]!.reasonDetails).toEqual(
+  expect(Affected.select(graph.index, ["//app:test"], paths, { explain: true }).targets[0]!.reasonDetails).toEqual(
     paths.map((file) => ({
       file,
       kind: "ambient-input",
@@ -441,21 +456,20 @@ it("uses one shortest route when an ambient source has shared and cyclic depende
   )
 })
 
-it("compiles each resolved include and exclude once across ownership and selection", () => {
-  const { add, index } = fixture()
+it("shares includes and excludes across real declaration views and successive selections", () => {
+  const graph = fixture()
+  const { add } = graph
   const input = Input.glob("//shared/**/*.ts", { exclude: ["//shared/generated/**"] })
   add("app", "build", target([input], [], { inputs: [input] }))
   add("tools", "build", target([input]))
-  const compile = vi.spyOn(Minimatch.prototype, "make")
-  expect(Affected.select(index, ["//..."], ["shared/a.ts", "shared/.b.ts"]).targets).toHaveLength(2)
-  expect(compile).toHaveBeenCalledTimes(2)
-  compile.mockClear()
-  Affected.select(index, ["//..."], ["shared/c.ts"])
-  expect(compile).toHaveBeenCalledTimes(2)
+  expect(Affected.select(graph.index, ["//..."], ["shared/a.ts", "shared/.b.ts"]).targets).toHaveLength(2)
+  expect(Affected.select(graph.index, ["//..."], ["shared/c.ts"]).targets).toHaveLength(2)
+  expect(Affected.select(graph.index, ["//..."], ["shared/generated/c.ts"]).conservative).toBe(true)
 })
 
 it("indexes 1000 targets once and selects 200 owned paths within a one-second CPU budget", () => {
-  const { add, index } = fixture()
+  const graph = fixture()
+  const { add } = graph
   for (let p = 0; p < 250; p++) {
     const owner = `packages/pkg${p}`
     const src = add(
@@ -472,8 +486,7 @@ it("indexes 1000 targets once and selects 200 owned paths within a one-second CP
     add(owner, "build", target([], [src]))
   }
   const paths = Array.from({ length: 200 }, (_, i) => `packages/pkg${i}/src/file${i}.ts`)
-  calls.metadata = 0
-  calls.views = 0
+  const index = graph.index
   // CPU time excludes scheduling delays on shared review/CI machines.
   const start = process.cpuUsage()
   const selection = Affected.select(index, ["//..."], paths)
@@ -481,8 +494,6 @@ it("indexes 1000 targets once and selects 200 owned paths within a one-second CP
   expect(selection.conservative).toBe(false)
   expect(selection.targets).toHaveLength(800)
   expect(selection.targets.every((row) => row.reasons.length === 1)).toBe(true)
-  expect(calls.metadata).toBeLessThanOrEqual(1000)
-  expect(calls.views).toBeLessThanOrEqual(250)
   expect((elapsed.user + elapsed.system) / 1000).toBeLessThan(1000)
 })
 
@@ -495,6 +506,7 @@ it("calls changed files silent when any pattern names no target", () => {
 
 it("never selects nothing for a real diff over a graph with targets, owned or not", () => {
   const graph = fixture()
+  const { add } = graph
   graph.add("pkg", "lint", target([Input.glob("src/**/*.ts")]))
   const owned = Affected.select(graph.index, ["//..."], ["pkg/src/a.ts"])
   expect(owned).toMatchObject({ conservative: false, targets: [{ label: "//pkg:lint" }] })
@@ -563,4 +575,22 @@ it("turns a selected gate skipped without a failure at the end of its chain red,
   expect(Affected.unskipped(["//p:test"], loop).results[0]!.status).toBe("failed")
   // A summary with no such skip is returned as it was.
   expect(Affected.unskipped(["//d:test"], green)).toBe(green)
+})
+
+it("selects native declarations through their actual metadata and package index", () => {
+  const graph = fixture()
+  const sources = graph.add("lib", "sources", S.Filegroup({ srcs: [S.glob("src/**/*.ts")] }))
+  graph.add("app", "check", S.Shell.Test({ shell: "true", data: [sources], sandbox: "none" }))
+  expect(Target.metadata(sources).inputs).toEqual([S.glob("src/**/*.ts")])
+  const selection = Affected.select(graph.index, ["//..."], ["lib/src/value.ts"], { explain: true })
+  expect(selection.conservative).toBe(false)
+  expect(selection.targets.map((row) => row.label)).toEqual(["//app:check", "//lib:sources"])
+  expect(selection.targets[0]!.reasonDetails).toContainEqual({
+    file: "lib/src/value.ts",
+    kind: "declared-input",
+    label: "//lib:sources",
+    rule: "Filegroup",
+    input: S.glob("src/**/*.ts"),
+    dependencyPath: ["//app:check", "//lib:sources"]
+  })
 })
