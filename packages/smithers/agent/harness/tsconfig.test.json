@@ -8,9 +8,5 @@
     "composite": false,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "test/**/*", "examples/**/*"],
-  // The workerd smoke is a separate project with its own runtime and its own
-  // tsconfig: it imports a `.wasm` module the bundler supplies and targets
-  // workerd rather than Node. See `test/workerd/tsconfig.json`.
-  "exclude": ["test/workerd/**"]
+  "include": ["src/**/*", "test/**/*", "examples/**/*"]
 }

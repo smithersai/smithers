@@ -17,7 +17,7 @@ const standard = BuildAndCheckTypeScriptPackage({
     example: Input.file("examples/quickstart.vibe"),
     test: Input.file("test/quickstart.test.vibe")
   }],
-  testData: ["docs/api.md"]
+  testData: ["docs/api.md", "test/workerd/*.{mjs,json,jsonc}"]
 })
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard

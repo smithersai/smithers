@@ -138,7 +138,8 @@ export default {
 ```
 
 `main` names this file. The `CompiledWasm` rule explicitly matches the package's
-extensionless `/wasm` export so Wrangler bundles it as a compiled module. The
+`#quickjs.wasm` import and extensionless `/wasm` export so Wrangler bundles
+either as a compiled module. The
 `nodejs_compat` flag is on because the packages the harness imports for
 canonical JSON and schema decoding reach Node builtins, even though the
 harness itself reaches none:
@@ -152,7 +153,7 @@ harness itself reaches none:
   "rules": [
     {
       "type": "CompiledWasm",
-      "globs": ["**/*.wasm", "@jitl/quickjs-wasmfile-release-sync/wasm"],
+      "globs": ["**/*.wasm", "#quickjs.wasm", "@jitl/quickjs-wasmfile-release-sync/wasm"],
       "fallthrough": true
     }
   ]
@@ -162,6 +163,36 @@ harness itself reaches none:
 Cell parsing and TypeScript type erasure run in JavaScript; they do not start a
 native compiler process. The smoke fixture under `test/workerd` executes the
 typed cell above and checks its exact completion output.
+
+## Run the Wrangler smoke
+
+From the repository root, install the smoke's separate Wrangler dependency:
+
+```sh
+cd packages/smithers/agent/harness/test/workerd
+npm ci
+node smoke.mjs
+```
+
+Alternatively, from the repository root after installing, run the opt-in suite:
+
+```sh
+cd packages/smithers/agent/harness
+FLOWS_WORKERD_SMOKE=1 pnpm exec vitest run test/WorkerdSmoke.test.ts --coverage.enabled=false
+```
+
+The direct command prints `workerd smoke passed` only after its own Wrangler
+instance reports ready and returns the expected cell completion. It chooses
+an available port by default. Set `FLOWS_WORKERD_PORT` to request a specific
+port, or `FLOWS_WORKERD_STARTUP_MS` to change the default `120000` ms startup
+budget. Each request, including its response body, has a timeout of at most
+`5000` ms within that budget. Completion and failure stop Wrangler's
+process tree. On POSIX systems, `SIGTERM`, `SIGINT` and `SIGHUP` also trigger cleanup.
+
+The opt-in suite also checks an occupied port, a stalled response and signal
+cleanup using real Wrangler instances and HTTP listeners. The package's
+ordinary `pnpm run check` typechecks `test/workerd/worker.ts` through
+`tsconfig.test.json`; Wrangler and esbuild bundling alone do not typecheck it.
 
 ## What a failure here means
 

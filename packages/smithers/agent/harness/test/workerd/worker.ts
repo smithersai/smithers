@@ -10,8 +10,8 @@
  * The cell calls a flow and then completes, so a passing response means the
  * types were erased, the realm opened, the host bridge settled a call, and
  * the transition came back. `test/QuickJSWorkerd.workerd.test.ts` bundles and
- * runs this worker in Miniflare; see `packages/smithers/agent/harness/README.md`
- * for running it under wrangler.
+ * runs this worker in Miniflare; see
+ * `docs/guides/workerd.md#run-the-wrangler-smoke` for running it under Wrangler.
  */
 import { Effect, Layer, Option } from "effect"
 import * as Cell from "../../src/Cell.ts"

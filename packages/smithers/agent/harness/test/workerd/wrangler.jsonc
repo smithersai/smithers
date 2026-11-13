@@ -7,12 +7,12 @@
   // canonical JSON and schema decoding do. The flag costs nothing here and
   // keeps the smoke about WebAssembly rather than about module resolution.
   "compatibility_flags": ["nodejs_compat"],
-  // The package's public WASM export has no .wasm suffix. Match that import
-  // explicitly so Wrangler collects it as a compiled module, not JavaScript.
+  // Match the package import and the public extensionless WASM export before
+  // resolution so Wrangler collects either as a compiled module.
   "rules": [
     {
       "type": "CompiledWasm",
-      "globs": ["**/*.wasm", "@jitl/quickjs-wasmfile-release-sync/wasm"],
+      "globs": ["**/*.wasm", "#quickjs.wasm", "@jitl/quickjs-wasmfile-release-sync/wasm"],
       "fallthrough": true
     }
   ]

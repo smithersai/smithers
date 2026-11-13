@@ -62188,6 +62188,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness/test/workerd/*.{mjs,json,jsonc}",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/harness/vitest.config.ts"
       }
