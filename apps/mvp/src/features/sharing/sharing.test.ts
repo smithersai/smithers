@@ -3,12 +3,14 @@
 // and shares shape (worker/branch/Shares.ts, src/test/chatApi.ts) over the compose Postgres and Electric. Changes go
 // through `branch/share` on the owner's engine; the dialog's list is the branch's, synced. `branch/share`'s client and
 // step are also driven over an injected `fetch` for the answers a valid change never gets (test.faults-by-injection).
-import { Effect, Layer, Logger, type ManagedRuntime, Metric } from "effect"
+import { Deferred, Effect, Layer, Logger, type ManagedRuntime, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { asPerson, failingWorker, member, nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { FlowDispatch, type Dispatched } from "../../flows/dispatch"
+import { change as changeSharing } from "./actions"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
 import { ShareClient, ShareRefused } from "./api"
@@ -63,13 +65,29 @@ const open = async () => {
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   api.branches.github.publish("octo", "hello", {
     defaultBranch: "main",
-    branches: { main: shaOf("main"), "feature/one": shaOf("feature/one") },
+    branches: { main: shaOf("main"), "feature/one": shaOf("feature/one"), "feature/two": shaOf("feature/two") },
   })
   const owner = await device(runtime, member.subject.id)
   const benRuntime = openTab(asPerson(api, "ben"))
   runtimes.push(benRuntime)
   const benDevice = await device(benRuntime, "ben")
   return { api, owner, ben: benDevice }
+}
+
+/** A dispatch whose reply is held back: a faulty service supplies the ordering the real engine cannot promise. */
+const delayedChange = async (owner: Awaited<ReturnType<typeof device>>) => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const reply = Effect.runSync(Deferred.make<Dispatched<"branch/share">>())
+  const pending = owner.runtime.runPromise(changeSharing({ grantee: "person-ben", access: "view" }).pipe(
+    Effect.provideService(FlowDispatch, FlowDispatch.of({
+      dispatch: () => Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(reply)) as never,
+    })),
+  ))
+  await owner.runtime.runPromise(Deferred.await(started))
+  return async (result: Dispatched<"branch/share">) => {
+    await owner.runtime.runPromise(Deferred.succeed(reply, result))
+    await pending
+  }
 }
 
 describe("sharing a branch", () => {
@@ -143,6 +161,44 @@ describe("sharing a branch", () => {
     await stopped.actions.open(crypto.randomUUID())
     await stopped.actions.add("ben", "view")
     expect(stopped.dialog()).toMatchObject({ error: "failed", pending: [] })
+  }, WITHIN)
+
+  test.each(["switch", "reopen", "overlap", "close"].flatMap((opening) =>
+    [false, true].map((success) => ({ opening, success })),
+  ))("a delayed sharing reply leaves the current dialog alone: $opening, success=$success", async ({ opening, success }) => {
+    const { owner } = await open()
+    const branchId = (await owner.branch.actions.open("octo", "hello", "feature/one"))!
+    await owner.actions.open(branchId)
+    const older = await delayedChange(owner)
+    let newer: Awaited<ReturnType<typeof delayedChange>> | undefined
+    const done = { _tag: "Done", value: { txid: null } } as const
+    try {
+      if (opening !== "overlap") await owner.actions.close()
+      if (opening === "switch") {
+        const otherBranch = (await owner.branch.actions.open("octo", "hello", "feature/two"))!
+        await owner.actions.open(otherBranch)
+      }
+      if (opening === "reopen") await owner.actions.open(branchId)
+      if (opening !== "close") {
+        newer = await delayedChange(owner)
+        // An unrelated row's newer failure must survive too, while Ben's change remains pending.
+        await owner.actions.add("nobody-here", "edit")
+        expect(owner.dialog()).toMatchObject({ pending: ["person-ben"], error: "no_person" })
+      }
+      const current = owner.dialog()
+      await older(success ? done : {
+        _tag: "Failed",
+        error: new BranchShareRefused({ reason: "forbidden" }),
+      })
+      expect(owner.dialog()).toEqual(current)
+      if (newer !== undefined) {
+        await newer(done)
+        expect(owner.dialog()).toMatchObject({ pending: [], error: "no_person" })
+      }
+    } finally {
+      await older(done)
+      await newer?.(done)
+    }
   }, WITHIN)
 
   test("a change with no dialog open asks nothing", async () => {

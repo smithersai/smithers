@@ -35,6 +35,8 @@ const mirror = (rows: ReadonlyArray<ShareRow>) =>
 export const openDialog = (branchId: string) =>
   Effect.gen(function* () {
     const store = yield* SharingStore
+    store.requests.opening += 1
+    store.requests.pending.clear()
     yield* mirror([])
     yield* setDialog({ open: true, branchId, error: null, pending: [] })
     const shares = yield* store.shares(branchId)
@@ -48,7 +50,10 @@ export const openDialog = (branchId: string) =>
 
 /** Closes the share dialog. */
 export const closeDialog = Effect.gen(function* () {
-  yield* FiberHandle.clear((yield* SharingStore).follower)
+  const store = yield* SharingStore
+  store.requests.opening += 1
+  store.requests.pending.clear()
+  yield* FiberHandle.clear(store.follower)
   yield* setDialog({ open: false, pending: [] })
 })
 
@@ -62,22 +67,31 @@ const errorOf = (reason: string | undefined): ShareError =>
 /** Applies `change` to the dialog's branch through `branch/share`; a refusal shows in the dialog. */
 export const change = (change: Change) =>
   Effect.gen(function* () {
+    const store = yield* SharingStore
     const dialog = yield* dialogNow
-    if (dialog.branchId === null) return
+    if (!dialog.open || dialog.branchId === null) return
     const branchId = dialog.branchId
     const key = keyOf(change)
+    const opening = store.requests.opening
+    const request = {}
+    store.requests.pending.set(key, request)
     yield* setDialog({ error: null, pending: [...new Set([...dialog.pending, key])] })
     const dispatched = yield* Effect.result(
       (yield* FlowDispatch).dispatch("branch/share", { branchId, change }, { door: "button" }),
     )
-    const now = yield* dialogNow
-    const pending = now.pending.filter((pending) => pending !== key)
-    if (dispatched._tag === "Success" && dispatched.success._tag === "Done") return yield* setDialog({ pending })
-    const error = dispatched._tag === "Success" && dispatched.success._tag === "Failed"
-      ? dispatched.success.error
-      : undefined
-    const reason = error?._tag === "@smthrs/mvp/sharing/BranchShareRefused" ? error.reason : undefined
-    yield* setDialog({ pending, error: errorOf(reason) })
+    yield* Effect.orDie(store.dialog.update(DIALOG, (now) => {
+      // Check and apply together: a closed/reopened dialog or a newer change owns its own pending row and error.
+      if (!now.open || now.branchId !== branchId || store.requests.opening !== opening ||
+        store.requests.pending.get(key) !== request) return
+      store.requests.pending.delete(key)
+      now.pending = now.pending.filter((pending) => pending !== key)
+      if (dispatched._tag === "Success" && dispatched.success._tag === "Done") return
+      const error = dispatched._tag === "Success" && dispatched.success._tag === "Failed"
+        ? dispatched.success.error
+        : undefined
+      const reason = error?._tag === "@smthrs/mvp/sharing/BranchShareRefused" ? error.reason : undefined
+      now.error = errorOf(reason)
+    }))
   }).pipe(Effect.withSpan("branch.share.press"), Effect.annotateLogs({ feature: "sharing" }))
 
 /** Shares the dialog's branch with the person `login`, to `access`. */

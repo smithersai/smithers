@@ -5,7 +5,7 @@
 // refusal ChatApi can answer; ChatApi's real ones, and following a run live, are proved in remote.test.ts.
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Deferred, Effect, Layer, ManagedRuntime, Logger, Metric, Option, PubSub, Stream } from "effect"
+import { Deferred, Effect, Layer, ManagedRuntime, Logger, Metric, Option, PubSub, References, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { repoAuthority } from "../../test/repoAuthority"
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
@@ -202,6 +202,54 @@ describe("readRun and readMore", () => {
     ])
     expect(warnings.every(({ annotations }) => annotations.feature === "runs")).toBe(true)
     expect(t.page("a")).toMatchObject({ state: "read", more: [] })
+  })
+
+  test.each([
+    { failure: new RemoteReadFailed({ status: 503, code: "unavailable" }), state: "unavailable" },
+    { failure: new RemoteReadFailed({ code: "timeout" }), state: "unavailable" },
+    { failure: new RemoteReadFailed({}), state: "unavailable" },
+    { failure: new RemoteReadFailed({ status: 404, code: "not_started" }), state: "not_started" },
+    { failure: new RemoteReadFailed({ status: 404, code: "not_found" }), state: "not_found" },
+    { failure: new RemoteReadFailed({ status: 403, code: "forbidden" }), state: "not_found" },
+    { failure: new RemoteReadFailed({ status: 401, code: "authentication" }), state: "not_found" },
+  ])("a generic link uses the cloud probe's answer: $state ($failure.status, $failure.code)", async ({ failure, state }) => {
+    const t = open({
+      inspect: () => refused("@smthrs/engine-store/RunNotFound"),
+      list: () => Effect.succeed({ runs: [], cursor: null }),
+      remote: () => Effect.fail(failure),
+    })
+    const count = () => Metric.value(Metric.withAttributes(reads, { read: "run", outcome: state }))
+    const before = await t.run(count())
+    await t.run(t.store.readRun("generic-run").pipe(Effect.provideService(References.MinimumLogLevel, "Debug")))
+    expect(t.page("generic-run")).toMatchObject({ state, inspection: null, more: [], hasMore: false })
+    expect((await t.run(count())).count).toBe(before.count + 1)
+    const records = t.logs.filter((log) => log.message === "run.read")
+    expect(records).toEqual([expect.objectContaining({
+      level: state === "unavailable" ? "WARN" : "DEBUG",
+      annotations: expect.objectContaining({
+        act: "run", outcome: state, errorCode: failure.code ?? failure._tag,
+        ...(failure.status === undefined ? {} : { status: failure.status }),
+      }),
+    })])
+    if (failure.status === undefined) expect(records[0]!.annotations).not.toHaveProperty("status")
+  })
+
+  test("a failed cloud probe retains an already read page and records the cloud outage", async () => {
+    let held = true
+    const t = open({
+      inspect: (id) => held ? Effect.succeed(inspection(id, [event(0)], false)) : refused("@smthrs/engine-store/RunNotFound"),
+      list: () => Effect.succeed({ runs: [], cursor: null }),
+      remote: () => Effect.fail(new RemoteReadFailed({ status: 503, code: "unavailable" })),
+    })
+    await t.run(t.store.readRun("generic-run"))
+    const shown = t.page("generic-run")
+    held = false
+    await t.run(t.store.readRun("generic-run"))
+    expect(t.page("generic-run")).toEqual(shown)
+    expect(t.logs).toContainEqual(expect.objectContaining({
+      message: "run.read", level: "WARN",
+      annotations: expect.objectContaining({ act: "run", outcome: "unavailable", errorCode: "unavailable", status: 503 }),
+    }))
   })
 
   test("More that the engine refuses keeps the page as it was", async () => {

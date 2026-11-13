@@ -35,6 +35,8 @@ export class SharingStore extends Context.Service<
     readonly shares: (branchId: string) => Effect.Effect<ElectricCollection.ElectricCollection<ShareRow>>
     /** What keeps `list` equal to the open branch's: only the latest dialog's runs. */
     readonly follower: FiberHandle.FiberHandle<void, never>
+    /** Correlates replies with one dialog opening and the latest change for each row. */
+    readonly requests: { opening: number; readonly pending: Map<string, object> }
     readonly scope: Scope.Scope
   }
 >()("@smthrs/mvp/sharing/SharingStore") {
@@ -87,6 +89,7 @@ export class SharingStore extends Context.Service<
           listState: yield* sharesQuery(list),
           shares,
           follower: yield* FiberHandle.make<void, never>(),
+          requests: { opening: 0, pending: new Map() },
           scope,
         })
       }),

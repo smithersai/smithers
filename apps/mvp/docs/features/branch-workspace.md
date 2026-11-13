@@ -153,6 +153,10 @@ A TODO's machine (`todo-<attempt id>`, [todos.md](todos.md#the-run)) checks out 
 
 A live branch (its conversation, terminals and room) is private to its owner until they share it, as in Google Docs and Figma (decision 0013, decisions 8, 9 and 12). The code stays as public as GitHub makes it.
 
+A sharing reply updates only the dialog opening and the latest change for that row that requested it. Closing or
+reopening Share, including on the same branch, keeps older replies from clearing a new change's pending indicator
+or replacing its error.
+
 ```
 Share test-branch ┌──────────────────────────────────────────────┐
                   │ [Add people        ] [Can view ▾] [Share]    │

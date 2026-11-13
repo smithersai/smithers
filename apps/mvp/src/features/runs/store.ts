@@ -437,7 +437,8 @@ export class RunsStore extends Context.Service<
             }
             return yield* recordRead("run", "read", startedAt, inspection.journal.events.length)
           }
-          const state = stateOf(read.failure)
+          let failure = read.failure
+          let state = stateOf(failure)
           // A run this device's engine never held may be one on Cloudflare, such as a system flow an Admin opened from
           // the list or a link: if ChatApi answers it, it is read and followed there from now on.
           if (state === "not_found" && !onCloud(runId)) {
@@ -451,6 +452,8 @@ export class RunsStore extends Context.Service<
               yield* Effect.forkIn(follow(runId), scope, { startImmediately: true })
               return yield* readRun(runId, changed)
             }
+            failure = there.failure
+            state = stateOf(failure)
           }
           // A read that couldn't reach the run leaves a page that has read it as it was: the next change reads it
           // again. Only an answer about the run itself (not found, not started) replaces what the page shows.
@@ -458,7 +461,7 @@ export class RunsStore extends Context.Service<
           if (state !== "unavailable" || Option.isNone(shown) || shown.value.state !== "read") {
             yield* put(pages, { id: runId, state, inspection: null, more: [], hasMore: false, repoId: undefined, personal: undefined, system: undefined })
           }
-          yield* recordRead("run", state, startedAt, undefined, read.failure)
+          yield* recordRead("run", state, startedAt, undefined, failure)
         }).pipe(Effect.orDie)
 
       const readMore = (runId: string) =>
