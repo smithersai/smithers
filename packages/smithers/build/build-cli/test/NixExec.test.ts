@@ -1,22 +1,20 @@
 /**
- * Resolving a declared Nix environment and keying targets on it.
+ * Resolving a declared Nix environment and asserting its tool versions.
  *
- * Most cases drive a fake `nix` on PATH that answers the three commands the
- * resolver runs with canned output, so the contract is exercised without a
- * Nix store: refusals are typed, resolution is memoized, declared versions
- * are asserted against the closure, and the planner folds the closure into
- * every spawning target's key. No case runs the real `nix`.
+ * Resolver cases drive a fixture `nix` on PATH without a Nix store, checking
+ * typed refusals, memoization, and declared versions. Version probe cases
+ * run real executables to check failure recovery, caller cancellation, and
+ * successful probe sharing.
  */
 import * as Input from "@smthrs/targets/Input"
 import * as Nix from "@smthrs/targets/Nix"
-import { execFileSync } from "node:child_process"
+import { getEventListeners } from "node:events"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as NixExec from "../src/NixExec.ts"
 
-const rulesModule = NodePath.resolve(import.meta.dirname, "../../targets/src/Smithers.ts")
 /** A 32-character store hash from the Nix base-32 alphabet. */
 const hash = "0123456789abcdfghijklmnpqrsvwxyz"
 
@@ -182,6 +180,125 @@ describe.skipIf(process.platform === "win32")("NixExec.resolveEnvironment", () =
       })
     await expect(NixExec.assertToolVersion(resolved, { name: "bun", requirement: ">=1.4.0" }, { root }))
       .rejects.toMatchObject({ code: "nix_tool_absent" })
+  })
+})
+
+/** A real executable whose version probe can fail or wait on a release receipt. */
+const versionEnvironment = async (body: string): Promise<NixExec.ResolvedEnvironment> => {
+  const bin = NodePath.join(root, "bin")
+  await Fs.mkdir(bin)
+  await Fs.writeFile(
+    NodePath.join(bin, "probe"),
+    `#!${process.execPath}
+const Fs = require("node:fs")
+Fs.appendFileSync(${JSON.stringify(NodePath.join(root, "probe-count"))}, "x")
+${body}
+`,
+    { mode: 0o755 }
+  )
+  return {
+    storePath: root,
+    hash,
+    path: [bin],
+    variables: {},
+    closure: [root],
+    nix: { executable: "nix", version: "2.99.0" },
+    system: NixExec.hostSystem(),
+    inputs: []
+  }
+}
+
+const probeTool = { name: "probe", requirement: ">=22.19.0" }
+
+describe.skipIf(process.platform === "win32")("NixExec.assertToolVersion recovery", () => {
+  it.each([
+    ["nonzero exit", "console.error(\"unavailable\"); process.exit(1)"],
+    ["invalid output", "console.log(\"unavailable\")"]
+  ])("retries after a probe reports %s", async (_name, failure) => {
+    const resolved = await versionEnvironment(`
+if (Fs.readFileSync(${JSON.stringify(NodePath.join(root, "probe-count"))}, "utf8") === "x") {
+  ${failure}
+} else {
+  console.log("22.20.1")
+}
+`)
+    const signal = new AbortController().signal
+    await expect(NixExec.assertToolVersion(resolved, probeTool, { root, signal })).rejects.toMatchObject({
+      code: "nix_tool_absent"
+    })
+    expect(getEventListeners(signal, "abort")).toHaveLength(0)
+    await expect(NixExec.assertToolVersion(resolved, probeTool, { root, signal })).resolves.toBe("22.20.1")
+    expect(getEventListeners(signal, "abort")).toHaveLength(0)
+    await expect(NixExec.assertToolVersion(resolved, probeTool, { root })).resolves.toBe("22.20.1")
+    expect(await Fs.readFile(NodePath.join(root, "probe-count"), "utf8")).toBe("xx")
+  })
+
+  it("retries after spawning a probe fails", async () => {
+    const resolved = await versionEnvironment("console.log(\"22.20.1\")")
+    await expect(NixExec.assertToolVersion(resolved, probeTool, { root: NodePath.join(root, "missing") }))
+      .rejects.toMatchObject({ code: "ENOENT" })
+    await expect(NixExec.assertToolVersion(resolved, probeTool, { root })).resolves.toBe("22.20.1")
+    expect(await Fs.readFile(NodePath.join(root, "probe-count"), "utf8")).toBe("x")
+  })
+
+  it.each(["first", "second"])("cancels only the %s caller sharing a probe", async (cancelled) => {
+    const started = NodePath.join(root, "probe-started")
+    const release = NodePath.join(root, "probe-release")
+    const resolved = await versionEnvironment(`
+const release = ${JSON.stringify(release)}
+const watcher = Fs.watch(${JSON.stringify(root)}, () => {
+  if (Fs.existsSync(release)) {
+    watcher.close()
+    console.log("22.20.1")
+  }
+})
+Fs.writeFileSync(${JSON.stringify(started)}, "started")
+`)
+    const controller = new AbortController()
+    const reason = new Error("version check cancelled")
+    const first = NixExec.assertToolVersion(resolved, probeTool, {
+      root,
+      ...(cancelled === "first" ? { signal: controller.signal } : {})
+    })
+    const firstResult = first.then(
+      (version) => ({ version }),
+      (error: unknown) => ({ error })
+    )
+    try {
+      await expect.poll(() => Fs.readFile(started, "utf8").catch(() => "")).toBe("started")
+      const second = NixExec.assertToolVersion(resolved, probeTool, {
+        root,
+        ...(cancelled === "second" ? { signal: controller.signal } : {})
+      })
+      const secondResult = second.then(
+        (version) => ({ version }),
+        (error: unknown) => ({ error })
+      )
+      controller.abort(reason)
+      await expect(cancelled === "first" ? firstResult : secondResult).resolves.toEqual({ error: reason })
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(0)
+      const retry = NixExec.assertToolVersion(resolved, probeTool, { root, signal: new AbortController().signal })
+      await Fs.writeFile(release, "")
+      await expect(cancelled === "first" ? secondResult : firstResult).resolves.toEqual({ version: "22.20.1" })
+      await expect(retry).resolves.toBe("22.20.1")
+      await expect(NixExec.assertToolVersion(resolved, probeTool, { root })).resolves.toBe("22.20.1")
+      expect(await Fs.readFile(NodePath.join(root, "probe-count"), "utf8")).toBe("x")
+    } finally {
+      await Fs.writeFile(release, "")
+      await firstResult
+    }
+  })
+
+  it("refuses an already aborted caller without starting a probe or poisoning its cache", async () => {
+    const resolved = await versionEnvironment("console.log(\"22.20.1\")")
+    const reason = new Error("version check cancelled")
+    await expect(NixExec.assertToolVersion(resolved, probeTool, { root, signal: AbortSignal.abort(reason) }))
+      .rejects.toBe(reason)
+    await expect(Fs.access(NodePath.join(root, "probe-count"))).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(NixExec.assertToolVersion(resolved, probeTool, { root })).resolves.toBe("22.20.1")
+    await expect(NixExec.assertToolVersion(resolved, probeTool, { root, signal: AbortSignal.abort(reason) }))
+      .rejects.toBe(reason)
+    expect(await Fs.readFile(NodePath.join(root, "probe-count"), "utf8")).toBe("x")
   })
 })
 

@@ -508,7 +508,9 @@ const measured = new Map<string, Promise<string>>()
  *
  * The tool is looked up on the closure's `PATH` alone. An absent tool and a
  * version outside the requirement are both {@link NixEnvironmentError}s that
- * name the declaration and what the closure provides.
+ * name the declaration and what the closure provides. Successful probes are
+ * shared; failed probes can be retried. Cancelling a caller stops its wait
+ * without cancelling another caller's shared probe.
  *
  * @category resolution
  * @since 0.1.0
@@ -518,6 +520,7 @@ export const assertToolVersion = async (
   tool: { readonly name: string; readonly executable?: string | undefined; readonly requirement: string },
   options: { readonly root: string; readonly signal?: AbortSignal | undefined }
 ): Promise<string> => {
+  options.signal?.throwIfAborted()
   const executable = tool.executable ?? tool.name
   const environment = { PATH: resolved.path.join(NodePath.delimiter) }
   const found = PackageTree.findOnPath(executable, environment)
@@ -534,7 +537,6 @@ export const assertToolVersion = async (
     probe = execFile(found, ["--version"], {
       cwd: options.root,
       env: { ...resolved.variables, PATH: environment.PATH },
-      signal: options.signal,
       timeoutMs: 30_000
     }).then((output) => {
       const version = parseVersion(`${output.stdout}\n${output.stderr}`)
@@ -547,8 +549,25 @@ export const assertToolVersion = async (
       return version
     })
     measured.set(key, probe)
+    void probe.catch(() => measured.delete(key))
   }
-  const version = await probe
+  // A shared probe has its own deadline; each caller owns only its wait.
+  const pending = probe
+  const version = await new Promise<string>((resolve, reject) => {
+    const signal = options.signal
+    const abort = (): void => reject(signal?.reason)
+    signal?.addEventListener("abort", abort, { once: true })
+    void pending.then(
+      (value) => {
+        signal?.removeEventListener("abort", abort)
+        resolve(value)
+      },
+      (cause: unknown) => {
+        signal?.removeEventListener("abort", abort)
+        reject(cause)
+      }
+    )
+  })
   if (!satisfies(version, tool.requirement)) {
     throw new NixEnvironmentError(
       "nix_version_mismatch",
