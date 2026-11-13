@@ -18,16 +18,22 @@ new BroadcastChannel("browser-test-log").onmessage = (event) => {
   log.push(event.data)
 }
 
+let workerClientId: string | undefined
 const runtime = ManagedRuntime.make(BrowserEngine.layer({
   name: "browser-test",
   // `?worker=broken` starts a worker that throws while it loads.
-  worker: () =>
-    new Worker(
+  worker: () => {
+    const worker = new Worker(
       `/${
         new URLSearchParams(location.search).get("worker") === "broken" ? "broken-worker" : "worker"
       }.js${location.search}`,
       { type: "module" }
     )
+    worker.addEventListener("message", (event) => {
+      if (typeof event.data?.workerClientId === "string") workerClientId = event.data.workerClientId
+    })
+    return worker
+  }
 }))
 
 const events: Array<BrowserEngine.RunEvent> = []
@@ -74,6 +80,9 @@ const hold = (name: string, steal: boolean) =>
 
 Object.assign(globalThis, {
   harness: {
+    get workerClientId() {
+      return workerClientId
+    },
     log,
     events,
     sql,

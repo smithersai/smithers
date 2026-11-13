@@ -1,8 +1,7 @@
 /**
- * The barrel and the aggregate layer. `BrowserServices.layer` has no behaviour
- * of its own, so the assertion is that every tag it promises is present and
- * that the spawner it wires up is the one talking to the filesystem it wires
- * up — the failure mode the function signature exists to prevent.
+ * The barrel and the aggregate layer. The `BrowserServices.layer` case checks that the
+ * spawner, filesystem and path service are present. Pairing the bash interpreter
+ * and filesystem with the same volume is the caller's responsibility.
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"

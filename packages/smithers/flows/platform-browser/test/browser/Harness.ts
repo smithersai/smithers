@@ -17,6 +17,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { type BrowserContext, chromium, type Page } from "playwright"
 import vibelang from "vibelang-unplugin/esbuild"
+import { expect } from "vitest"
 
 const require = createRequire(import.meta.url)
 
@@ -202,13 +203,26 @@ export const waitForStep = (page: Page, label: string): Promise<unknown> =>
     { timeout: 30_000 }
   )
 
-/** Waits until the page's engine worker leads: its tab holds the engine lock. */
-export const waitForLeader = (page: Page): Promise<unknown> =>
-  page.waitForFunction(
-    () => navigator.locks.query().then((state) => (state.held ?? []).some((lock) => lock.name === "browser-test")),
-    undefined,
+/** Waits for this page's worker in the engine lock's held or pending queue. */
+const waitForWorkerLock = (page: Page, queue: "held" | "pending"): Promise<void> =>
+  expect.poll(
+    () =>
+      page.evaluate(async (queue) => {
+        const { workerClientId } = (globalThis as unknown as {
+          harness: { readonly workerClientId?: string }
+        }).harness
+        const state = await navigator.locks.query()
+        return workerClientId !== undefined &&
+          (state[queue] ?? []).some((lock) => lock.name === "browser-test" && lock.clientId === workerClientId)
+      }, queue),
     { timeout: 30_000 }
-  )
+  ).toBe(true)
+
+/** Waits until the page's own engine worker holds the engine lock. */
+export const waitForLeader = (page: Page): Promise<void> => waitForWorkerLock(page, "held")
+
+/** Waits until the page's own worker is queued for the engine lock. */
+export const waitForFollower = (page: Page): Promise<void> => waitForWorkerLock(page, "pending")
 
 /** Waits until the page has seen the engine commit `eventType` for `executionId`. */
 export const waitForEvent = (page: Page, executionId: string, eventType: string): Promise<unknown> =>

@@ -12,6 +12,8 @@ type Harnessed = {
   readonly harness: {
     readonly start: (flow: string, executionId: string, payload: unknown) => Promise<void>
     readonly result: (flow: string, executionId: string) => Promise<unknown>
+    readonly steal: (name: string) => Promise<void>
+    readonly release: (name: string) => Promise<void>
   }
 }
 
@@ -81,6 +83,54 @@ describe("a run in the browser engine", () => {
       expect(labels(after)).toEqual(["y:two", "y:three"])
       // The follower's own worker took over and ran the rest.
       expect(after.every((entry) => entry.worker !== old)).toBe(true)
+    } finally {
+      await context.close()
+      profile.remove()
+    }
+  })
+
+  it("hands OPFS to a follower after an engine-lock steal mid-run, without repeating sealed steps", async () => {
+    const profile = Harness.profile()
+    const context = await Harness.launch(profile.directory)
+    try {
+      const leader = await Harness.open(context, server.origin, "block")
+      await Harness.waitForLeader(leader)
+      const follower = await Harness.open(context, server.origin, "finish")
+      // Its worker must be ahead of the robbed leader when that leader requeues.
+      await Harness.waitForFollower(follower)
+      const leadingWorker = leader.workers()[0]
+      const followingWorker = follower.workers()[0]
+      await follower.evaluate(() =>
+        (globalThis as unknown as Harnessed).harness.start("browser-test/Steps", "steal-1", { prefix: "s" })
+      )
+      await Harness.waitForStep(follower, "s:two")
+      const before = await Harness.logged(follower)
+      expect(labels(before)).toEqual(["s:one", "s:two"])
+      const old = before[0]!.worker
+
+      // Both tabs and their workers stay alive. The page takes the engine's
+      // actual lock, forcing the robbed worker to close its OPFS handles.
+      await follower.evaluate(() => (globalThis as unknown as Harnessed).harness.steal("browser-test"))
+      await follower.evaluate(() => (globalThis as unknown as Harnessed).harness.release("browser-test"))
+      await Harness.waitForLeader(follower)
+      expect(leader.isClosed()).toBe(false)
+      expect(
+        await follower.evaluate(() =>
+          (globalThis as unknown as Harnessed).harness.result("browser-test/Steps", "steal-1")
+        )
+      ).toEqual({ ok: true, value: "s:three" })
+      const after = await Harness.logged(follower)
+      // Only the interrupted, unsealed step repeats, in a different worker.
+      expect(labels(after)).toEqual(["s:one", "s:two", "s:two", "s:three"])
+      expect(after.slice(2).every((entry) => entry.worker !== old)).toBe(true)
+      expect(
+        await leader.evaluate(() =>
+          (globalThis as unknown as Harnessed).harness.result("browser-test/Steps", "steal-1")
+        )
+      ).toEqual({ ok: true, value: "s:three" })
+      expect(await Harness.logged(follower)).toEqual(after)
+      expect(leader.workers()).toContain(leadingWorker)
+      expect(follower.workers()).toContain(followingWorker)
     } finally {
       await context.close()
       profile.remove()

@@ -85,11 +85,45 @@ describe("SharedSqlite in Chromium", () => {
       await sql(b, "INSERT INTO t (id) VALUES (1)")
       await sql(a, "BEGIN IMMEDIATE")
       await sql(a, "INSERT INTO t (id) VALUES (2)")
+      // Waiting for B must not settle while A's worker still owns the lock.
+      const leading = Harness.waitForLeader(b).then(() => "leading")
+      expect(await within(leading, 500)).toBe("pending")
       await a.close()
       // B's own worker now leads, over the same OPFS file.
-      await Harness.waitForLeader(b)
+      await leading
       expect(await sql(b, "SELECT id FROM t")).toEqual({ ok: true, rows: [{ id: 1 }] })
       expect(await sql(b, "INSERT INTO t (id) VALUES (2)")).toEqual({ ok: true, rows: [] })
+    } finally {
+      await context.close()
+      profile.remove()
+    }
+  })
+
+  it("rolls back a follower's open transaction when its tab closes, while the leader stays alive", async () => {
+    const profile = Harness.profile()
+    const context = await Harness.launch(profile.directory)
+    const fetched = wasmRequests(context)
+    try {
+      const leader = await Harness.open(context, server.origin, "finish")
+      await Harness.waitForLeader(leader)
+      const follower = await Harness.open(context, server.origin, "finish")
+      expect(await sql(leader, "CREATE TABLE t (id INTEGER PRIMARY KEY)")).toEqual({ ok: true, rows: [] })
+      expect(await sql(leader, "INSERT INTO t (id) VALUES (1)")).toEqual({ ok: true, rows: [] })
+      expect(await sql(follower, "BEGIN IMMEDIATE")).toEqual({ ok: true, rows: [] })
+      expect(await sql(follower, "INSERT INTO t (id) VALUES (2)")).toEqual({ ok: true, rows: [] })
+
+      // The leader's statement must wait for the other tab's transaction.
+      const write = sql(leader, "INSERT INTO t (id) VALUES (3)")
+      expect(await within(write, 500)).toBe("pending")
+      await follower.close()
+      expect(await write).toEqual({ ok: true, rows: [] })
+      expect(await sql(leader, "SELECT id FROM t ORDER BY id")).toEqual({
+        ok: true,
+        rows: [{ id: 1 }, { id: 3 }]
+      })
+      await Harness.waitForLeader(leader)
+      // No takeover or database close caused the rollback: the same worker serves it.
+      expect(fetched).toHaveLength(1)
     } finally {
       await context.close()
       profile.remove()

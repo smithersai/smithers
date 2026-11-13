@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -24,6 +25,34 @@ const holders = (lockName: string) =>
       pending: (state.pending ?? []).filter((info) => info.name === lockName).length
     }))
   )
+
+/**
+ * Real Web Locks with only grant delivery paused, so interruption precedes
+ * the adapter's callback. Acquisition, stealing and release stay native.
+ */
+const delayedGrant = () =>
+  Effect.gen(function*() {
+    const granted = yield* Deferred.make<void>()
+    const delivery = yield* Deferred.make<void>()
+    const settled = yield* Deferred.make<void>()
+    yield* Effect.addFinalizer(() => Deferred.succeed(delivery, undefined))
+    const lock = WebLock.make({
+      request: (name, options, callback) =>
+        navigator.locks.request(name, options, async (held) => {
+          Deferred.doneUnsafe(granted, Exit.void)
+          await Effect.runPromise(Deferred.await(delivery))
+          return callback(held)
+        }).finally(() => {
+          Deferred.doneUnsafe(settled, Exit.void)
+        })
+    })
+    return {
+      lock,
+      granted: Deferred.await(granted),
+      deliver: Deferred.succeed(delivery, undefined),
+      settled: Deferred.await(settled).pipe(Effect.timeout("5 seconds"))
+    }
+  })
 
 describe("WebLock over navigator.locks", () => {
   it.live("grants the lock to one holder at a time, and to the next when the holder lets go", () =>
@@ -97,6 +126,65 @@ describe("WebLock over navigator.locks", () => {
       yield* Scope.close(second, Exit.void)
       yield* Scope.close(yield* Fiber.join(third), Exit.void)
     }).pipe(Effect.provide(WebLock.layer)))
+
+  it.live("an interrupted steal still robs the holder and gives the granted lock back", () =>
+    Effect.gen(function*() {
+      const lock = yield* WebLock.WebLock
+      const lockName = name()
+      const first = yield* lock.hold(lockName)
+      const delayed = yield* delayedGrant()
+      const stealing = yield* delayed.lock.hold(lockName, { steal: true }).pipe(
+        Effect.scoped,
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* delayed.granted
+      yield* Fiber.interrupt(stealing)
+      yield* first.lost
+      // Native ownership has moved, but the interrupted adapter has not seen the grant.
+      expect(yield* holders(lockName)).toEqual({ held: 1, pending: 0 })
+      yield* delayed.deliver
+      yield* delayed.settled
+      expect(yield* holders(lockName)).toEqual({ held: 0, pending: 0 })
+      // A subsequent waiter can acquire and release it normally.
+      yield* lock.hold(lockName).pipe(Effect.scoped)
+    }).pipe(Effect.scoped, Effect.provide(WebLock.layer)))
+
+  it.live("an interrupted tryHold on a free lock leaves no holder or waiter", () =>
+    Effect.gen(function*() {
+      const lock = yield* WebLock.WebLock
+      const lockName = name()
+      const delayed = yield* delayedGrant()
+      const taking = yield* delayed.lock.tryHold(lockName).pipe(
+        Effect.scoped,
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* delayed.granted
+      yield* Fiber.interrupt(taking)
+      expect(yield* holders(lockName)).toEqual({ held: 1, pending: 0 })
+      yield* delayed.deliver
+      yield* delayed.settled
+      expect(yield* holders(lockName)).toEqual({ held: 0, pending: 0 })
+      yield* lock.hold(lockName).pipe(Effect.scoped)
+    }).pipe(Effect.scoped, Effect.provide(WebLock.layer)))
+
+  it.live("an interrupted tryHold on a held lock leaves its holder undisturbed", () =>
+    Effect.gen(function*() {
+      const lock = yield* WebLock.WebLock
+      const lockName = name()
+      const first = yield* lock.hold(lockName)
+      const lost = yield* Effect.forkChild(first.lost)
+      const delayed = yield* delayedGrant()
+      const taking = yield* delayed.lock.tryHold(lockName).pipe(
+        Effect.scoped,
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* delayed.granted
+      yield* Fiber.interrupt(taking)
+      yield* delayed.deliver
+      yield* delayed.settled
+      expect(yield* holders(lockName)).toEqual({ held: 1, pending: 0 })
+      expect(lost.pollUnsafe()).toBeUndefined()
+    }).pipe(Effect.scoped, Effect.provide(WebLock.layer)))
 
   it.live("steals a lock nobody holds, and a lock held to the end is never lost", () =>
     Effect.gen(function*() {

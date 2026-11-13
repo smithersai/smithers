@@ -10,6 +10,13 @@ import { flows, registration } from "../../fixtures/Flows.ts"
 
 const mode = new URLSearchParams(self.location.search).get("mode")
 const worker = crypto.randomUUID()
+// Querying a lock unique to this worker gives its real Web Locks client id.
+// The page compares it with the engine lock's owner, even after a takeover.
+const identity = "browser-test-worker:" + worker
+await navigator.locks.request(identity, async () => {
+  const state = await navigator.locks.query()
+  self.postMessage({ workerClientId: state.held!.find((lock) => lock.name === identity)!.clientId })
+})
 const log = new BroadcastChannel("browser-test-log")
 BrowserRuntime.run({
   name: "browser-test",
