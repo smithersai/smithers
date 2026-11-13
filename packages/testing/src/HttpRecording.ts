@@ -206,14 +206,62 @@ const replaceSecrets = (value: unknown, secrets: ReadonlyArray<string>): unknown
   return value
 }
 
-const scrubUrl = (url: string): string => {
-  const parsed = new URL(url)
+const scrubUrl = (url: string, base?: string): string => {
+  const parsed = new URL(url, base)
   parsed.username = ""
   parsed.password = ""
   for (const name of [...parsed.searchParams.keys()]) {
     if (sensitiveQuery.test(name)) parsed.searchParams.set(name, placeholder)
   }
   return parsed.toString()
+}
+
+// Resolve URI references for credential scrubbing, but retain the reference
+// form a client uses to resolve a Location against the request.
+const scrubLocation = (value: string, requestUrl: string): string => {
+  try {
+    // Match the URL parser's whitespace normalization before classifying
+    // schemes and authority references, including its special slash forms.
+    let normalized = value.replace(/[\t\n\r]/g, "")
+    let start = 0
+    let end = normalized.length
+    while (normalized.charCodeAt(start) <= 0x20) start++
+    while (normalized.charCodeAt(end - 1) <= 0x20) end--
+    normalized = normalized.slice(start, end)
+    const scrubbed = new URL(scrubUrl(normalized, requestUrl))
+    if (/^[a-z][a-z\d+.-]*:/i.test(normalized)) return scrubbed.toString()
+    if (/^[\\/]{2}/.test(normalized)) return scrubbed.toString().slice(scrubbed.protocol.length)
+    const fragmentStart = normalized.indexOf("#")
+    const reference = fragmentStart === -1 ? normalized : normalized.slice(0, fragmentStart)
+    const queryStart = reference.indexOf("?")
+    if (queryStart === -1) return normalized
+    const fragment = fragmentStart === -1 ? "" : normalized.slice(fragmentStart)
+    return reference.slice(0, queryStart) + (scrubbed.search || "?") + fragment
+  } catch {
+    // A malformed service header must neither fail a live request nor leak
+    // credentials the URL parser could not identify.
+    return placeholder
+  }
+}
+
+const responseText = (bytes: ArrayBuffer, contentType: string | undefined): string => {
+  const mediaType = contentType?.split(";")[0]!.trim().toLowerCase()
+  if (
+    bytes.byteLength > 0 && mediaType !== undefined &&
+    !mediaType.startsWith("text/") && mediaType !== "application/json" && !mediaType.endsWith("+json")
+  ) {
+    throw new Error(
+      `HttpRecording cannot record a ${contentType} response body: only UTF-8 text and JSON are supported`
+    )
+  }
+  try {
+    // Keep a UTF-8 BOM as data, so rebuilding the live answer preserves it.
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes)
+  } catch {
+    throw new Error(
+      `HttpRecording cannot record a ${contentType ?? "unspecified content type"} response body: invalid UTF-8`
+    )
+  }
 }
 
 const parsed = (text: string): unknown => {
@@ -259,7 +307,11 @@ export const scrubExchange = (exchange: Exchange, options: Pick<Options, "secret
   const headers: Record<string, string> = {}
   for (const [name, value] of Object.entries(exchange.response.headers)) {
     const lower = name.toLowerCase()
-    if (keptHeaders.has(lower)) headers[lower] = lower === "location" ? scrubUrl(value) : value
+    if (keptHeaders.has(lower)) {
+      headers[lower] = lower === "location"
+        ? scrubLocation(value, exchange.request.url)
+        : value
+    }
   }
   return {
     request: scrubRequest(exchange.request, options),
@@ -414,7 +466,8 @@ export const record = (
       Effect.gen(function*() {
         const keyed = recordedRequest(request, url)
         const response = yield* live.execute(request)
-        const liveText = yield* response.text.pipe(Effect.orDie)
+        const bytes = yield* response.arrayBuffer.pipe(Effect.orDie)
+        const liveText = responseText(bytes, response.headers["content-type"])
         const headers: Record<string, string> = {}
         for (const [name, value] of Object.entries(response.headers)) headers[name] = value
         // A pruned body is what the code under test sees too, so recording and replay run on the same answer.

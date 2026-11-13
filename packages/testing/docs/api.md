@@ -1329,7 +1329,12 @@ answers from the recording and never reaches a network: each exchange is
 claimed once, in recorded order per method, URL and body, and a request with no
 answer left dies with `UnrecordedRequestError`. A missing or malformed
 recording file, a missing `live` client, and a streamed or binary request body
-are defects.
+are defects. Recording a nonempty response requires UTF-8 text or JSON
+(`text/*`, `application/json`, or `application/*+json`); a missing
+`Content-Type` is accepted when the bytes are valid UTF-8. Unsupported media
+types and invalid UTF-8 cause a defect naming the content type and leave the
+previous recording intact. Relative `Location` headers retain their reference
+form after credential scrubbing; malformed values become `[REDACTED]`.
 
 `label` is the run's identity, fixed at record time and written into the
 recording: a test puts it in the names it creates on the service, so a real run

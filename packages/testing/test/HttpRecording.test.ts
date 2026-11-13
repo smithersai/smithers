@@ -34,6 +34,19 @@ const serve = (): Promise<Service> =>
           response.end(JSON.stringify({ note: "hunter2" }))
           return
         }
+        if (request.url?.startsWith("/location?")) {
+          const location = new URL(request.url, "http://localhost").searchParams.get("value")!
+          response.writeHead(201, { "content-type": "application/json", location })
+          response.end("{\"created\":true}")
+          return
+        }
+        if (request.url?.startsWith("/body?")) {
+          const params = new URL(request.url, "http://localhost").searchParams
+          const contentType = params.get("content-type")
+          response.writeHead(200, contentType === null ? {} : { "content-type": contentType })
+          response.end(Buffer.from(params.get("hex")!, "hex"))
+          return
+        }
         if (request.url === "/empty") {
           response.writeHead(204)
           response.end()
@@ -166,6 +179,134 @@ describe("HttpRecording", () => {
         expect(service.hits()).toBe(1)
         expect(readFileSync(path, "utf8")).not.toContain("hunter2")
         expect((yield* HttpRecording.load(path)).exchanges[0]?.response.body).toEqual({ note: "[REDACTED]" })
+      })
+    ))
+
+  it.live("records relative Location headers and replays their scrubbed URI references", () =>
+    withService((service) =>
+      Effect.gen(function*() {
+        const client = yield* live
+        const locations = [
+          [
+            "https://person:private@api.example.test/item?code=opaque&page=2",
+            "https://api.example.test/item?code=%5BREDACTED%5D&page=2"
+          ],
+          [
+            "//person:private@api.example.test/item?code=opaque#part",
+            "//api.example.test/item?code=%5BREDACTED%5D#part"
+          ],
+          ["/repos/o/r/issues/5?code=opaque&page=2", "/repos/o/r/issues/5?code=%5BREDACTED%5D&page=2"],
+          ["../issues/5?sig=opaque#detail", "../issues/5?sig=%5BREDACTED%5D#detail"],
+          ["./issues/5?code=one&code=two&state=open", "./issues/5?code=%5BREDACTED%5D&state=open"],
+          ["issues/5?code=opaque", "issues/5?code=%5BREDACTED%5D"],
+          ["?code=opaque&state=open", "?code=%5BREDACTED%5D&state=open"],
+          ["\\\\person:private@api.example.test/item?code=opaque", "//api.example.test/item?code=%5BREDACTED%5D"],
+          ["/\\person:private@api.example.test/item", "//api.example.test/item"],
+          ["\\/person:private@api.example.test/item", "//api.example.test/item"],
+          ["h\tttps://person:private@api.example.test/item", "https://api.example.test/item"],
+          ["#detail?code=opaque", "#detail?code=opaque"],
+          ["?", "?"],
+          ["", ""],
+          ["http://[invalid?code=opaque", "[REDACTED]"]
+        ] as const
+        for (const [location, expected] of locations) {
+          const path = join(directory(), "location.json")
+          const url = `${service.url}/location?value=${encodeURIComponent(location)}`
+          yield* Effect.scoped(Effect.gen(function*() {
+            const recorder = yield* HttpRecording.record(path, { live: client })
+            const response = yield* recorder.get(url)
+            expect(response.status).toBe(201)
+            expect(response.headers.location).toBe(location)
+            expect(yield* response.json).toEqual({ created: true })
+          }))
+          const recording = yield* HttpRecording.load(path)
+          expect(recording.exchanges[0]!.response.headers.location, location).toBe(expected)
+          const replayed = yield* HttpRecording.replay(recording).get(url)
+          expect(replayed.headers.location, location).toBe(expected)
+          expect(yield* replayed.json).toEqual({ created: true })
+        }
+        expect(service.hits()).toBe(locations.length)
+      })
+    ))
+
+  it.effect("normalizes URL-parser whitespace without retaining authority credentials", () =>
+    Effect.sync(() => {
+      for (
+        const [location, expected] of [
+          [" \u0000//person:private@api.example.test/item\u001F ", "//api.example.test/item"],
+          [" \t\r\n ", ""],
+          ["\u00A0/item", "\u00A0/item"]
+        ]
+      ) {
+        const scrubbed = HttpRecording.scrubExchange({
+          request: { method: "GET", url: "https://api.example.test/" },
+          response: { status: 201, headers: { location: location! }, body: "" }
+        })
+        expect(scrubbed.response.headers.location).toBe(expected)
+      }
+    }))
+
+  it.live("refuses binary or invalid UTF-8 responses without replacing a recording", () =>
+    withService((service) =>
+      Effect.gen(function*() {
+        const client = yield* live
+        const bodies = [
+          ["application/octet-stream", "616263"],
+          ["image/png", "fffefd00"],
+          ["text/plain; charset=utf-8", "fffe"],
+          ["application/json", "c328"],
+          [undefined, "e282"]
+        ] as const
+        for (const [contentType, hex] of bodies) {
+          const path = join(directory(), "binary.json")
+          const previous = "{\"exchanges\":[]}\n"
+          if (contentType !== undefined) writeFileSync(path, previous)
+          const query = new URLSearchParams({ hex })
+          if (contentType !== undefined) query.set("content-type", contentType)
+          const exit = yield* Effect.exit(Effect.scoped(Effect.gen(function*() {
+            const recorder = yield* HttpRecording.record(path, { live: client })
+            yield* recorder.get(`${service.url}/body?${query}`)
+          })))
+          const defect = defectOf(exit)
+          expect(defect).toBeInstanceOf(Error)
+          expect((defect as Error).message).toContain("HttpRecording cannot record")
+          expect((defect as Error).message).toContain(contentType ?? "unspecified content type")
+          if (contentType === undefined) expect(existsSync(path)).toBe(false)
+          else expect(readFileSync(path, "utf8")).toBe(previous)
+        }
+        expect(service.hits()).toBe(bodies.length)
+      })
+    ))
+
+  it.live("records and replays UTF-8 text and JSON without losing bytes", () =>
+    withService((service) =>
+      Effect.gen(function*() {
+        const client = yield* live
+        const bodies = [
+          ["text/plain; charset=utf-8", "café ☕"],
+          ["application/json; charset=utf-8", "{\"message\":\"café ☕\"}"],
+          ["Application/Problem+JSON", "{\"message\":\"café ☕\"}"],
+          [undefined, "café ☕"],
+          ["text/plain", "\uFEFFcafé ☕"],
+          ["application/octet-stream", ""]
+        ] as const
+        for (const [contentType, text] of bodies) {
+          const path = join(directory(), "text.json")
+          const bytes = Buffer.from(text, "utf8")
+          const query = new URLSearchParams({ hex: bytes.toString("hex") })
+          if (contentType !== undefined) query.set("content-type", contentType)
+          const url = `${service.url}/body?${query}`
+          const recorded = yield* Effect.scoped(Effect.gen(function*() {
+            const recorder = yield* HttpRecording.record(path, { live: client })
+            const response = yield* recorder.get(url)
+            return new Uint8Array(yield* response.arrayBuffer)
+          }))
+          expect(recorded).toEqual(new Uint8Array(bytes))
+          const recording = yield* HttpRecording.load(path)
+          const response = yield* HttpRecording.replay(recording).get(url)
+          expect(new Uint8Array(yield* response.arrayBuffer)).toEqual(new Uint8Array(bytes))
+        }
+        expect(service.hits()).toBe(bodies.length)
       })
     ))
 

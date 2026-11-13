@@ -60,7 +60,9 @@ written:
    `retry-after`. `Set-Cookie`, request ids and rate-limit counters are dropped.
 3. URL user information is removed, and query parameters named like a
    credential (`access_token`, `code`, `sig`, `signature` and others)
-   are replaced.
+   are replaced. A relative `Location` is resolved against the request URL
+   for scrubbing and kept in its original relative form. A malformed
+   `Location` is replaced with `[REDACTED]`.
 4. Each nonempty value the suite passes in `secrets` is replaced wherever it
    appears, regardless of length. Empty strings are ignored.
 5. Bodies go through `@smthrs/journal/Redaction`'s `redact`: a field named like
@@ -76,6 +78,15 @@ recording, because a recording of a failed run would replay that failure.
 The scrubber does not know your data. A password inside an issue body in a
 shape no rule knows is recorded. Record against a test account and test data
 you can publish, and read the file before you commit it.
+
+## Response bodies
+
+Recording supports UTF-8 text and JSON (`text/*`, `application/json`, and
+`application/*+json`). A response without `Content-Type` is accepted when
+its bytes are valid UTF-8. Empty bodies are accepted regardless of media type.
+Other media types and invalid UTF-8 cause a defect naming the content type,
+before the code under test receives an altered answer. A failed recording
+run leaves the previous file intact. Use `passthrough` for binary downloads.
 
 ## Keep a recording small
 
