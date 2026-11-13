@@ -113,7 +113,7 @@ export interface ModuleReference {
 }
 
 /**
- * One call whose callee is a name or ends in a member name.
+ * One call whose callee is a name or ends in a member name, or an optional function reference.
  *
  * @category models
  * @since 0.1.0
@@ -133,6 +133,8 @@ export interface Call {
    */
   readonly callee: string
   readonly line: number
+  /** Present for a function value taken without a call when reference analysis is enabled. */
+  readonly reference?: true
 }
 
 /**
@@ -144,7 +146,11 @@ export interface Call {
 export interface Analysis {
   /** Every module reference, in source order. */
   readonly references: ReadonlyArray<ModuleReference>
-  /** Every call whose callee is a name or ends in a member name, outermost first, in source order. */
+  /**
+   * Every call whose callee is a name or ends in a member name, outermost
+   * first, in source order. With reference analysis enabled, also function
+   * values marked by `reference`; named imports precede the source walk.
+   */
   readonly calls: ReadonlyArray<Call>
 }
 
@@ -223,6 +229,10 @@ const calleeText = (expression: ts.Expression): string | undefined => {
  * JSX, `.ts`, `.mts` and `.cts` as TypeScript, VibeLang's `.vibe` with
  * VibeLang's own parser, anything else as JavaScript.
  *
+ * With `includeReferences`, also records identifier and member reads, destructured properties
+ * and value imports as function references. A named import uses
+ * `<module>.<export>` so an alias retains its exported name.
+ *
  * A TypeScript syntax error does not throw; the parser recovers and the rest
  * is read. A `.vibe` syntax error throws, because no parser can read past it.
  *
@@ -235,10 +245,10 @@ const calleeText = (expression: ts.Expression): string | undefined => {
  * @category analysis
  * @since 0.1.0
  */
-export const analyze = (file: string, text: string): Analysis =>
-  file.endsWith(".vibe") ? analyzeVibe(file, text) : analyzeTypeScript(file, text)
+export const analyze = (file: string, text: string, includeReferences = false): Analysis =>
+  file.endsWith(".vibe") ? analyzeVibe(file, text, includeReferences) : analyzeTypeScript(file, text, includeReferences)
 
-const analyzeTypeScript = (file: string, text: string): Analysis => {
+const analyzeTypeScript = (file: string, text: string, includeReferences: boolean): Analysis => {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKind(file))
   const lineOf = (node: ts.Node): number => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
   const entries: Array<Entry> = []
@@ -277,6 +287,11 @@ const analyzeTypeScript = (file: string, text: string): Analysis => {
         })
       }
     }
+    if (includeReferences) {
+      for (const name of names) {
+        if (!name.typeOnly) calls.push({ callee: `${node.moduleSpecifier.text}.${name.name}`, line: name.line, reference: true })
+      }
+    }
     const reference = add(node, node.moduleSpecifier.text, "import", typeOnly, names)
     if (clause?.name !== undefined) bindings.set(clause.name.text, reference)
     if (named !== undefined && ts.isNamespaceImport(named)) bindings.set(named.name.text, reference)
@@ -312,8 +327,8 @@ const analyzeTypeScript = (file: string, text: string): Analysis => {
     declared.add(statement)
   }
 
-  /** The names an object pattern takes, or undefined when it takes the rest or a computed key. */
-  const patternNames = (pattern: ts.ObjectBindingPattern): Array<ReferencedName> | undefined => {
+  /** The names an object pattern takes; keepKnown retains known properties beside rest or computed keys. */
+  const patternNames = (pattern: ts.ObjectBindingPattern, keepKnown = false): Array<ReferencedName> | undefined => {
     const names: Array<ReferencedName> = []
     for (const element of pattern.elements) {
       const key = element.propertyName ?? element.name
@@ -324,7 +339,10 @@ const analyzeTypeScript = (file: string, text: string): Analysis => {
         : ts.isComputedPropertyName(key) && ts.isStringLiteralLike(key.expression)
         ? key.expression.text
         : undefined
-      if (name === undefined) return undefined
+      if (name === undefined) {
+        if (keepKnown) continue
+        return undefined
+      }
       names.push({ name, typeOnly: false, line: lineOf(element) })
     }
     return names
@@ -396,6 +414,18 @@ const analyzeTypeScript = (file: string, text: string): Analysis => {
   }
 
   const visit = (node: ts.Node): void => {
+    if (includeReferences) {
+      if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+        const value = outermost(node)
+        const called = ts.isCallExpression(value.parent) && value.parent.expression === value
+        const callee = calleeText(node)
+        if (!called && callee !== undefined) calls.push({ callee, line: lineOf(node), reference: true })
+      } else if (ts.isVariableDeclaration(node) && node.initializer !== undefined && ts.isObjectBindingPattern(node.name)) {
+        for (const name of patternNames(node.name, true)!) {
+          calls.push({ callee: `${receiverText(node.initializer)}.${name.name}`, line: name.line, reference: true })
+        }
+      }
+    }
     if (declared.has(node)) {
       // Already read above; its children hold no other reference.
     } else if (isModuleImport(node)) {
@@ -453,6 +483,11 @@ const analyzeTypeScript = (file: string, text: string): Analysis => {
     ) {
       loaders.add(node.name.text)
     } else if (ts.isIdentifier(node)) {
+      if (includeReferences && isReference(node)) {
+        const value = outermost(node)
+        const called = ts.isCallExpression(value.parent) && value.parent.expression === value
+        if (!called) calls.push({ callee: node.text, line: lineOf(node), reference: true })
+      }
       const reference = bindings.get(node.text)
       if (reference !== undefined) use(node, reference)
     }
@@ -523,7 +558,7 @@ const esCallee = (node: EsNode): string | undefined => {
 }
 
 /** {@link analyze} for a `.vibe` module, from VibeLang's parser. It records what the TypeScript walk records. */
-const analyzeVibe = (file: string, text: string): Analysis => {
+const analyzeVibe = (file: string, text: string, includeReferences: boolean): Analysis => {
   const program: EsNode = parseESTree(text, file)
   const lineOf = (node: EsNode): number => text.slice(0, node.range[0]).split("\n").length
   const entries: Array<Entry> = []
@@ -560,6 +595,11 @@ const analyzeVibe = (file: string, text: string): Analysis => {
         })
       }
     }
+    if (includeReferences) {
+      for (const name of names) {
+        if (!name.typeOnly) calls.push({ callee: `${node.source.value}.${name.name}`, line: name.line, reference: true })
+      }
+    }
     const reference = add(node, node.source.value, "import", typeOnly, names)
     for (const specifier of node.specifiers) {
       if (specifier.type !== "ImportSpecifier") bindings.set(specifier.local.name, reference)
@@ -584,8 +624,8 @@ const analyzeVibe = (file: string, text: string): Analysis => {
     declared.add(statement)
   }
 
-  /** The names an object pattern takes, or undefined when it takes the rest or a computed key. */
-  const patternNames = (pattern: EsNode): Array<ReferencedName> | undefined => {
+  /** The names an object pattern takes; keepKnown retains known properties beside rest or computed keys. */
+  const patternNames = (pattern: EsNode, keepKnown = false): Array<ReferencedName> | undefined => {
     const names: Array<ReferencedName> = []
     for (const property of pattern.properties as ReadonlyArray<EsNode>) {
       const key = property.key
@@ -596,7 +636,10 @@ const analyzeVibe = (file: string, text: string): Analysis => {
         : key.type === "Identifier"
         ? key.name
         : String(key.value)
-      if (name === undefined) return undefined
+      if (name === undefined) {
+        if (keepKnown) continue
+        return undefined
+      }
       names.push({ name, typeOnly: false, line: lineOf(property) })
     }
     return names
@@ -672,6 +715,18 @@ const analyzeVibe = (file: string, text: string): Analysis => {
   }
 
   const visit = (node: EsNode): void => {
+    if (includeReferences) {
+      if (node.type === "MemberExpression") {
+        const parent = parents.get(outermost(node))!
+        const called = parent.node.type === "CallExpression" && parent.key === "callee"
+        const callee = esCallee(node)
+        if (!called && callee !== undefined) calls.push({ callee, line: lineOf(node), reference: true })
+      } else if (node.type === "VariableDeclarator" && node.init != null && node.id.type === "ObjectPattern") {
+        for (const name of patternNames(node.id, true)!) {
+          calls.push({ callee: `${esReceiver(node.init)}.${name.name}`, line: name.line, reference: true })
+        }
+      }
+    }
     if (declared.has(node)) return
     if (node.type === "ImportDeclaration") {
       addImport(node)
@@ -715,6 +770,11 @@ const analyzeVibe = (file: string, text: string): Analysis => {
     ) {
       loaders.add(node.id.name)
     } else if (node.type === "Identifier" && parents.has(node)) {
+      if (includeReferences && isReference(node)) {
+        const parent = parents.get(outermost(node))!
+        const called = parent.node.type === "CallExpression" && parent.key === "callee"
+        if (!called) calls.push({ callee: node.name, line: lineOf(node), reference: true })
+      }
       const reference = bindings.get(node.name)
       if (reference !== undefined) use(node, reference)
     }

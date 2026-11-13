@@ -61,6 +61,49 @@ describe("SdkRules", () => {
     expect(found("app-library")).toEqual(found("library"))
   })
 
+  it.each(["library", "app-library", "host", "components"] as const)(
+    "%s checks Effect runner calls and references in TypeScript and VibeLang",
+    (role) => {
+      const rules = importRulesOf(SdkRules({ cwd: "packages/x", role }).importRules)
+      const runners = ["runPromise", "runPromiseExit", "runSync", "runSyncExit", "runFork", "runCallback"]
+      for (const extension of ["ts", "vibe"]) {
+        for (const runner of runners) {
+          const forms = [
+            `import { Effect } from "effect"; Effect.${runner}(program)`,
+            `import { Effect } from "effect"; program.pipe(Effect.${runner})`,
+            `import { Effect } from "effect"; programs.map(Effect.${runner})`,
+            `import { ${runner} } from "effect/Effect"; ${runner}(program)`,
+            `import { ${runner} as run } from "effect/Effect"; run(program)`,
+            `import { Effect } from "effect"; const { ${runner}: run } = Effect; run(program)`,
+            `import { Effect } from "effect"; const run = Effect.${runner}; run(program)`,
+            `import { Effect } from "effect"; const { ${runner}: run, ...rest } = Effect; run(program)`,
+            `import { Effect } from "effect"; const { ${runner}: run, [key]: other } = Effect; run(program)`,
+            `${runner}(program)`,
+            `program.pipe(${runner})`,
+            `programs.map(${runner})`,
+            `const run = ${runner}; run(program)`
+          ]
+          for (const text of forms) {
+            const violations = check(rules, [{ path: `src/Boundary.${extension}`, text }])
+            if (role === "components") expect.soft(violations, text).toEqual([])
+            else {
+              expect.soft(violations, `${role} .${extension}: ${text}`).not.toHaveLength(0)
+              expect(violations).toEqual(violations.map(() =>
+                expect.objectContaining({ line: 1, because: expect.stringContaining("effect.boundary-only") })))
+            }
+          }
+        }
+        for (const text of [
+          'import { Effect } from "effect"; Effect.runPromiseWith(context)(program)',
+          'runPromiseWith(context)(program)',
+          'const run = runPromiseWith(context); run(program)'
+        ]) {
+          expect(check(rules, [{ path: `src/Bridge.${extension}`, text }])).toEqual([])
+        }
+      }
+    }
+  )
+
   it("rejects nested host specifiers and all bare builtins through parsed imports", () => {
     const specifiers = [...builtinModules, "node:fs/promises", "node:assert/strict", "node:test/reporters", "node:future/nested", "fs/promises", "assert/strict", "stream/web", "timers/promises", "http", "v8", "vm", "worker_threads", "bun:ffi/nested", "bun"]
     const forms = [

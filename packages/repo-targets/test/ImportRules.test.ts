@@ -77,6 +77,7 @@ describe("validateRules", () => {
       [{ kind: "forbidCalls", callees: ["page.route", entry], because }],
       `ImportRules rule 0: \`callees\` entry "${entry}" must be a callee or \`*.<member>\``
     ]),
+    ["a non-boolean reference option", [{ kind: "forbidCalls", callees: ["*.run"], includeReferences: "yes", because }], "ImportRules rule 0: `includeReferences` must be a boolean"],
     ["a non-boolean type option", [{ ...valid, allowTypeOnly: "yes" }], "ImportRules rule 0: `allowTypeOnly` must be a boolean"]
   ])("refuses %s", (_case, rules, message) => {
     expect(() => validateRules(rules)).toThrow(new TypeError(message))
@@ -268,6 +269,53 @@ describe("check: rootImportsOnly", () => {
   })
 })
 
+describe.each(["tsx", "vibe"])("import escape forms in .%s", (extension) => {
+  const path = `src/Boundary.${extension}`
+
+  it.each<ImportRule>([
+    { kind: "forbid", files: ["src/**/*.tsx", "src/**/*.vibe"], modules: ["effect", "effect/**"], because },
+    { kind: "forbidHostModules", files: ["src/**/*.tsx", "src/**/*.vibe"], because },
+    { kind: "rootImportsOnly", files: ["src/**/*.tsx", "src/**/*.vibe"], packages: ["effect"], because }
+  ])("$kind rejects dynamic imports with options", (rule) => {
+    const specifier = rule.kind === "forbidHostModules" ? "node:fs" : "effect/Schema"
+    expect(violations([rule], { [path]: `const loaded = import("${specifier}", {})` })).toEqual([
+      `${path}:1 imports "${specifier}"${rule.kind === "rootImportsOnly" ? ', not the root "effect"' : ""} (${rule.kind}) #0`
+    ])
+    if (rule.kind === "forbid") {
+      expect(violations([rule], { [path]: 'const loaded = import("effect", {})' })).toEqual([
+        `${path}:1 imports "effect" (forbid) #0`
+      ])
+    }
+    if (rule.kind === "rootImportsOnly") {
+      expect(violations([rule], { [path]: 'const loaded = import("effect", {})' })).toEqual([])
+    }
+    expect(violations([rule], { [path]: 'const loaded = import("allowed", {})' })).toEqual([])
+  })
+
+  it.each([
+    ['import * as React from "react"; const { useState, useEffect } = React', [
+      'uses React.useState from "react"', 'uses React.useEffect from "react"'
+    ]],
+    ['import * as React from "react"; React["useState"](0)', ['uses React.useState from "react"']],
+    ['const { useState } = await import("react")', ['imports every name of "react"']],
+    ['require("react").useState', ['imports every name of "react"']]
+  ] as const)("forbidNames rejects %s", (text, usages) => {
+    const rule: ImportRule = {
+      kind: "forbidNames",
+      files: ["src/**/*.tsx", "src/**/*.vibe"],
+      modules: ["react"],
+      names: ["useState", "useEffect"],
+      because
+    }
+    expect(violations([rule], { [path]: text })).toEqual(
+      usages.map((usage) => `${path}:1 ${usage} (forbidNames) #0`)
+    )
+    expect(violations([rule], {
+      [path]: 'import * as React from "react"; const { useMemo } = React; React["useMemo"](() => 0)'
+    })).toEqual([])
+  })
+})
+
 describe("check: forbidCalls", () => {
   it("fails a call by its dotted callee text, and cannot see one reached through a variable", () => {
     expect(violations([{ kind: "forbidCalls", callees: ["Model.stream"], because }], {
@@ -278,6 +326,37 @@ describe("check: forbidCalls", () => {
         "const other = Stream.stream(request)"
       ].join("\n")
     })).toEqual(["worker/Answer.ts:1 calls Model.stream (forbidCalls) #0"])
+  })
+
+  it.each(["ts", "vibe"])("checks function references only when requested in .%s", (extension) => {
+    const path = `src/Functions.${extension}`
+    const source = { [path]: [
+      'import { run as alias, type Run } from "runtime"',
+      'import type { run as typeRun } from "types"',
+      'const { run: renamed } = service',
+      'const refs = [service.run, service["run"], service[key]]',
+      'const { run: first, ...rest } = service',
+      'const { [key]: unknown, run: second } = service',
+      'const read = Model.stream',
+      'Model.stream(); Model.stream()'
+    ].join("\n") }
+    const rule: ImportRule = { kind: "forbidCalls", callees: ["*.run", "Model.stream"], because }
+    expect(violations([rule], source)).toEqual([
+      `${path}:8 calls Model.stream (forbidCalls) #0`,
+      `${path}:8 calls Model.stream (forbidCalls) #0`
+    ])
+    expect(violations([{ ...rule, includeReferences: false }], source)).toEqual(violations([rule], source))
+    expect(violations([{ ...rule, includeReferences: true }], source)).toEqual([
+      `${path}:1 references runtime.run (forbidCalls) #0`,
+      `${path}:3 references service.run (forbidCalls) #0`,
+      `${path}:4 references service.run (forbidCalls) #0`,
+      `${path}:4 references service.run (forbidCalls) #0`,
+      `${path}:5 references service.run (forbidCalls) #0`,
+      `${path}:6 references service.run (forbidCalls) #0`,
+      `${path}:7 references Model.stream (forbidCalls) #0`,
+      `${path}:8 calls Model.stream (forbidCalls) #0`,
+      `${path}:8 calls Model.stream (forbidCalls) #0`
+    ])
   })
 
   const interception = [

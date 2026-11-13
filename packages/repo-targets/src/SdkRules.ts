@@ -94,7 +94,8 @@ const effectFirst: ReadonlyArray<Role> = ["library", "app-library", "host"]
 const platformNeutral: ReadonlyArray<Role> = ["library", "app-library"]
 const generic: ReadonlyArray<Role> = ["library", "host"]
 
-const runCalls = ["*.runPromise", "*.runPromiseExit", "*.runSync", "*.runSyncExit", "*.runFork", "*.runCallback"]
+const runnerNames = ["runPromise", "runPromiseExit", "runSync", "runSyncExit", "runFork", "runCallback"]
+const runCalls = runnerNames.flatMap((name) => [name, `*.${name}`])
 
 /** The `@smthrs/*` glob that leaves out the packages a declaration still deep-imports. */
 const rootImportPackages = (known: KnownDeepImports | undefined): string => {
@@ -137,6 +138,7 @@ const importRulesFor = (
       kind: "forbidCalls" as const,
       files: ["src/**"],
       callees: runCalls,
+      includeReferences: true,
       because: "effect.boundary-only: a library returns Effects and runs none; the program's boundary runs them. A " +
         "callback a third-party library calls captures Effect.context() and uses Effect.runPromiseWith. See " +
         "apps/mvp/docs/rules.md."

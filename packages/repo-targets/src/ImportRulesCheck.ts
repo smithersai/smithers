@@ -111,7 +111,7 @@ export interface RootImportsOnlyRule extends RuleScope, TypeOnlyOption {
  * Forbids calls by the callee's text, such as `Model.stream`, or by the
  * callee's final member name, such as `*.route`.
  *
- * The match is syntactic. `Model.stream` sees `Model.stream(request)` and not
+ * By default the match sees calls only. `Model.stream` sees `Model.stream(request)` and not
  * `const model = yield* Model.Model; model.stream(request)`, nor a callee
  * reached through destructuring, an alias or a parameter. `*.route` sees every
  * call of a `route` member whatever its receiver, including one reached
@@ -122,6 +122,14 @@ export interface RootImportsOnlyRule extends RuleScope, TypeOnlyOption {
  */
 export interface ForbidCallsRule extends RuleScope {
   readonly kind: "forbidCalls"
+  /**
+   * Also forbid taking a matching function as a value: identifiers, member
+   * reads, statically named destructured properties and named imports (matched as `<module>.<export>`).
+   * This catches callbacks and aliases at the point the function is taken.
+   *
+   * @default false
+   */
+  readonly includeReferences?: boolean | undefined
   /**
    * Callees, each one of:
    *
@@ -219,7 +227,7 @@ const kindKeys: Readonly<Record<ImportRule["kind"], ReadonlyArray<string>>> = {
   forbidHostModules: ["allowTypeOnly"],
   forbidNames: ["modules", "names", "allowTypeOnly"],
   rootImportsOnly: ["packages", "allowTypeOnly"],
-  forbidCalls: ["callees"]
+  forbidCalls: ["callees", "includeReferences"]
 }
 
 /** The non-empty string list a rule names at `key`, or a reason it is not one. */
@@ -274,8 +282,8 @@ export const validateRules = (rules: unknown): ReadonlyArray<ImportRule> => {
       }
     }
     for (const key of kindKeys[kind as ImportRule["kind"]]) {
-      if (key === "allowTypeOnly") {
-        if (rule[key] !== undefined && typeof rule[key] !== "boolean") refuse("`allowTypeOnly` must be a boolean")
+      if (key === "allowTypeOnly" || key === "includeReferences") {
+        if (rule[key] !== undefined && typeof rule[key] !== "boolean") refuse("`" + key + "` must be a boolean")
         continue
       }
       const list = stringList(rule, key)
@@ -348,8 +356,9 @@ const breaches = (
 ): ReadonlyArray<{ readonly line: number; readonly usage: string }> => {
   if (rule.kind === "forbidCalls") {
     return analysis.calls
-      .filter((call) => rule.callees.some((entry) => namesCallee(entry, call.callee)))
-      .map((call) => ({ line: call.line, usage: `calls ${call.callee}` }))
+      .filter((call) => (rule.includeReferences === true || !call.reference) &&
+        rule.callees.some((entry) => namesCallee(entry, call.callee)))
+      .map((call) => ({ line: call.line, usage: `${call.reference ? "references" : "calls"} ${call.callee}` }))
   }
   const allowTypeOnly = rule.allowTypeOnly === true
   const found: Array<{ readonly line: number; readonly usage: string }> = []
@@ -401,6 +410,8 @@ const breaches = (
  * Every violation of `rules` in `sources`, by file, then line, then rule.
  *
  * Each source is parsed at most once, and only when a rule reads it.
+ * Function references are read only when a `forbidCalls` rule sets
+ * `includeReferences`.
  * Throws before parsing if any rule covers no source, naming every empty
  * rule and its patterns. An omitted `files` means `**\/*` for this report.
  *
@@ -417,13 +428,14 @@ export const check = (rules: ReadonlyArray<ImportRule>, sources: ReadonlyArray<S
     `ImportRules rule ${index} (${rule.kind}) matches no source files; files: ${JSON.stringify(rule.files ?? ["**/*"])}. ${rule.because}`
   )
   if (empty.length > 0) throw new Error(empty.join("\n"))
+  const references = rules.some((rule) => rule.kind === "forbidCalls" && rule.includeReferences === true)
   const analyses = new Map<string, ImportAnalysis.Analysis>()
   const violations: Array<Violation> = []
   scopes.forEach(({ rule, index, sources: scoped }) => {
     for (const source of scoped) {
       let analysis = analyses.get(source.path)
       if (analysis === undefined) {
-        analysis = ImportAnalysis.analyze(source.path, source.text)
+        analysis = ImportAnalysis.analyze(source.path, source.text, references)
         analyses.set(source.path, analysis)
       }
       for (const { line, usage } of breaches(rule, analysis)) {
