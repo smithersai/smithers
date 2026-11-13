@@ -470,6 +470,16 @@ function containsEffects(node) {
     && ['scrollTop', 'scrollLeft', 'innerHTML', 'textContent'].includes(node.left.property?.name)) return true;
   return children(node).some(containsEffects);
 }
+// A lemma: a proved function whose executable body is `return true`, or `return <base> ? true : <itself>(...)`, its
+// induction. The contract and its assertions are the proof; no executable decision is left for a mutant to change.
+function lemmaBody(node, name) {
+  const body = node.body?.type === 'BlockStatement' ? node.body.body : [];
+  if (body.length !== 1 || body[0].type !== 'ReturnStatement') return false;
+  const truth = value => value?.type === 'Literal' && value.value === true;
+  const value = body[0].argument;
+  return truth(value) || (value?.type === 'ConditionalExpression' && truth(value.consequent)
+    && value.alternate?.type === 'CallExpression' && value.alternate.callee?.type === 'Identifier' && value.alternate.callee.name === name);
+}
 // The contract block LemmaScript reads sits directly above its function: `//@` lines, optionally after a doc comment.
 // `pnpm verify` checks every file holding a `//@ verify` directive (verify/sources.py), so such a function is proved.
 const VERIFY = /^[ \t]*\/\/@[ \t]+verify\b/;
@@ -523,7 +533,8 @@ function inventorySource(file, source) {
         || (proved ? 'Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`).' : undefined) || (category === 'wiring'
         ? 'Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision.'
         : 'Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof.');
-      rows.push({ file: rel, line, label, category, why });
+      rows.push({ file: rel, line, label, category, why, proof: parents.length === 0 ? proved : false,
+        lemma: parents.length === 0 && proved === 'contract' && lemmaBody(node, name) });
       next = [...parents, name];
     }
     for (const child of children(node)) walk(child, node, next, proved);
@@ -536,15 +547,20 @@ function sourceFiles() {
   // Build output is not source: `pnpm wiki:build` writes the gitignored src/assets/wiki.generated.vibe (data only).
   return ['src', 'worker', 'scripts'].flatMap(d => scan(path.join(app, d))).filter(file => !file.endsWith('.generated.vibe'));
 }
+const MARKERS = /<!-- inventory:start -->[\s\S]*?<!-- inventory:end -->/;
+/** The decision text with its inventory table regenerated from `rows`. */
+function withTable(before, rows) {
+  const table = `<!-- inventory:start -->\n${rows.length} executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.\n\n| File and line | Function | Class | Proof or reason |\n| --- | --- | --- | --- |\n${rows.map(row => `| \`${row.file}:${row.line}\` | \`${row.label}\` | ${row.category} | ${row.why} |`).join('\n')}\n<!-- inventory:end -->`;
+  if (!MARKERS.test(before)) throw Error('Missing inventory markers');
+  return before.replace(MARKERS, () => table);
+}
 function main() {
   const rows = sourceFiles().flatMap(file => inventorySource(file, fs.readFileSync(file, 'utf8')));
-  const table = `<!-- inventory:start -->\n${rows.length} executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.\n\n| File and line | Function | Class | Proof or reason |\n| --- | --- | --- | --- |\n${rows.map(row => `| \`${row.file}:${row.line}\` | \`${row.label}\` | ${row.category} | ${row.why} |`).join('\n')}\n<!-- inventory:end -->`;
   const before = fs.readFileSync(decision, 'utf8');
-  if (!/<!-- inventory:start -->[\s\S]*?<!-- inventory:end -->/.test(before)) throw Error('Missing inventory markers');
-  const after = before.replace(/<!-- inventory:start -->[\s\S]*?<!-- inventory:end -->/, () => table);
+  const after = withTable(before, rows);
   if (process.argv.includes('--write')) fs.writeFileSync(decision, after);
   else if (before !== after) { console.error('Function inventory is stale: node verify/inventory.cjs --write'); process.exitCode = 1; }
   console.log(`${rows.length} executable functions, callbacks and effect blocks inventoried`);
 }
-module.exports = { inventorySource, sourceFiles };
+module.exports = { inventorySource, sourceFiles, withTable, functionBoundaries, decision };
 if (require.main === module) main();

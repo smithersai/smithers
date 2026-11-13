@@ -171,10 +171,50 @@ cases += [
 ('src/core/sandboxDecision.vibe', 'meter-rollover-carry', 'meterStep', 'month: boundary, used: prior }', 'month: boundary, used: charged }', 'a new month starts from its own usage, never the old month\'s'),
 ('src/core/sandboxDecision.vibe', 'meter-step-count', 'meterStep', 'intervalUsageMilliseconds(count, ', 'intervalUsageMilliseconds(1, ', 'every running sandbox accrues the interval'),
 ]
+# Lane vl-proveall3, landing check (0018): the first mutant of each contract that had none. verify/landing.cjs now
+# refuses a contract with no case, unless it is a lemma or restates its table.
+cases += [
+('src/core/conversation.vibe','lc-run-open-running','runOpen','state === "queued" || state === "running"','state === "queued"','a running action run is still open'),
+('src/core/conversation.vibe','lc-review-unanswered','unansweredSpecificationReview','revision: 0','revision: 1','an unanswered review names no revision'),
+('src/core/conversation.vibe','lc-acceptance-kept','retainSpecificationAcceptance','  return { ...spec, accepted: { astra: spec.astra, sol: spec.sol, fable: spec.fable, opus: spec.opus } }','  return spec','a specification accepted under keep records its acceptance'),
+('src/core/issueGraphDecision.vibe','lc-noted-appends','noted','[...issue.notes, { age: "just now", author, text, event }]','issue.notes','a note appends exactly one entry'),
+('src/core/sandboxDecision.vibe','lc-may-start-contributor','mayStart','role === "contributor" || role === "maintainer"','role === "maintainer"','a contributor may start a sandbox'),
+('src/core/sandboxDecision.vibe','lc-interval-usage','intervalUsageMilliseconds','return running * elapsed','return running + elapsed','an interval accrues running times elapsed'),
+('src/core/sandboxDecision.vibe','lc-accumulate-usage','accumulateUsageMilliseconds','return previous + added','return previous','accrued usage adds the interval'),
+('src/core/sandboxDecision.vibe','lc-lease-floor','leaseMilliseconds','if (milliseconds <= 1000) return 1000','if (milliseconds <= 1000) return milliseconds','a lease is at least one second'),
+('src/core/toolRefusalDecision.vibe','lc-code-head','codeHead','unit <= 122','unit <= 123','a code starts with a lowercase ASCII letter'),
+('src/core/wikiBuildDecision.vibe','lc-rulings-digits','rulingsFrom','[text.slice(at, end), ...rulingsFrom(text, end)]','[text.slice(at, end) + "x", ...rulingsFrom(text, end)]','a ruling is VL- and digits only'),
+('src/core/wikiLinkDecision.vibe','lc-folded-prefix-dot','foldedPrefix','count === 0 ? [] :','count === 0 ? ["."] :','a folded path holds no empty or dot segment'),
+('src/history/areaDecision.vibe','lc-lower-unit','lowerUnit','unit <= 122','unit <= 123','a lowercase unit is a to z'),
+('src/history/bucketDecision.vibe','lc-none-marked','noneMarked','marks.push(false)','marks.push(true)','no commit starts marked'),
+('src/history/bucketDecision.vibe','lc-bucket-order-strict','bucketOrder','return bucketed(owned.owner).order','return [...bucketed(owned.owner).order, ...bucketed(owned.owner).order]','buckets come in strict step then commit order'),
+('src/history/flowMachine.vibe','lc-begin-phase','begin','phase: "begun"','phase: "authorized"','a run begins unauthorized'),
+('src/history/flowMachine.vibe','lc-lawful-once','lawful','run.records <= 1','run.records <= 2','only a fold records more than once'),
+('src/history/flowMachine.vibe','lc-signed-role-live','signedRole','mode === "live" ? signed : current','mode === "live" ? current : current','live mode takes the signed role'),
+('src/history/trailerDecision.vibe','lc-digit-unit','digitUnit','unit <= 57','unit <= 58','a digit is 0 to 9'),
+('src/history/trailerDecision.vibe','lc-name-at-outside','nameAt','mythicalNameSpec(lines[at]!) : ""','mythicalNameSpec(lines[at]!) : "x"','a line outside the message names nothing'),
+('src/web/accountViewDecision.vibe','lc-people-toggle','peopleToggleLabel','people === "max" ? "Minimize People"','people === "max" ? "Maximize People"','a maximized People pane offers Minimize'),
+('src/web/accountViewDecision.vibe','lc-role-option-new','roleOptionDisabled','return role === "new"','return role === "viewer"','only the new role is not assignable'),
+('src/web/actionViewDecision.vibe','lc-mode-command-title','modeCommandTitle','to === "mock" ? "Mock mode"','to === "mock" ? "Live mode"','the mock command is titled Mock mode'),
+('src/web/historyViewDecision.vibe','lc-step-marker-muted','stepMarker','status === "run" ? "●" : ""','status === "run" ? "●" : "✓"','a step not reached shows no marker'),
+('src/web/historyViewDecision.vibe','lc-blank-or-busy','blankOrBusy','busy || text.trim() === ""','busy && text.trim() === ""','a busy form cannot submit'),
+('src/web/issueDecision.vibe','lc-operation-read','issueIsOperation','return action === "read" || action === "new"','return action === "new"','read is an issue operation'),
+('src/web/issueDecision.vibe','lc-known-operation','issueKnownAction','return issueIsOperation(action) || action === "retry"','return action === "retry"','every operation is a known action'),
+('src/web/issuesViewDecision.vibe','lc-issues-title','issuesTitle','? "Issues" : kind','? "All" : kind','All and Issues are titled Issues'),
+('src/web/issuesViewDecision.vibe','lc-cell-fallback','cellText','text === "" ? fallback : text','text === "" ? text : text','an empty cell shows its fallback'),
+('src/web/wikiViewDecision.vibe','lc-wiki-status-class','wikiStatusClass','status === "Accepted" ? "sui-badge sui-badge-success"','status === "Accepted" ? "sui-badge sui-badge-outline"','an accepted page has the success badge'),
+('worker/mainLogDecision.vibe','lc-ancestry-starts','ancestryShas','ancestry.add(starts[i]!)','ancestry.add(starts[0]!)','every start is in the ancestry'),
+]
 cases += web_cases
 cases += worker_cases
 cases += arm_cases
-if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...] [--module src/x.vibe ...] [--check]')
+def source_of(module,fn):
+    """The module a case's function lives in: decide and its constructors moved out of conversation.vibe."""
+    return 'src/core/decide.vibe' if module=='src/core/conversation.vibe' and fn in {'decide','accepted','refused'} else module
+# --cases prints each case's module, function and name as JSON and writes nothing (verify/landing.cjs reads it).
+if sys.argv[1:]==['--cases']:
+    print(json.dumps([[source_of(module,fn),fn,name] for module,name,fn,*_ in cases])); sys.exit(0)
+if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...] [--module src/x.vibe ...] [--check] | --cases')
 out=pathlib.Path(sys.argv[1]).resolve()
 args=sys.argv[2:]; modules=set(); names=[]
 # --check names every case whose production text no longer matches exactly once, and writes no mutant.
@@ -221,7 +261,7 @@ def stage_dependencies(text,dependencies,out):
 
 manifest={}
 for module,name,fn,old,new,claim in cases:
-    if module=='src/core/conversation.vibe' and fn in {'decide','accepted','refused'}: module='src/core/decide.vibe'
+    module=source_of(module,fn)
     if modules and module not in modules: continue
     source=(root.parent/module).read_text()
     if selected and name not in selected: continue
