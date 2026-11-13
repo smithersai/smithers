@@ -347,8 +347,14 @@ export const select = (
     .filter((path) => path !== ".." && !path.startsWith("../") && !Path.isAbsolute(path))
   const workspaceInputs = index.workspace === undefined ? [] : managerFilesOf(index.workspace)
   const indirectWorkspace = workspaceInputs.some(indirectFile)
+  // A declaration helper builds other packages' targets as a PACKAGE.ts does:
+  // every module the declarations import, directly or by name, is a global input.
+  // Named workspace imports also cover their source directory, including new files.
+  const declarationModules = new Set(index.modules)
+  const declarationRoots = index.moduleRoots ?? []
   const global = normalized.filter((path) =>
-    globalPath(path) || workspaceInputs.includes(path) || indirectWorkspace ||
+    globalPath(path) || workspaceInputs.includes(path) || indirectWorkspace || declarationModules.has(path) ||
+    declarationRoots.some((directory) => directory === "." || path === directory || path.startsWith(`${directory}/`)) ||
     implementationRoots.some((directory) => path === directory || path.startsWith(`${directory}/`))
   )
   // An unowned file may be an ambient input; conservatively invalidate the graph.

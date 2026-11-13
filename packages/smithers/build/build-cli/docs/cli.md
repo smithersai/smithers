@@ -663,7 +663,12 @@ It compares `--base` (default `HEAD`) with `--head`, or with the working tree
 and untracked files when `--head` is absent. Repeatable `--files` bypasses Git
 discovery, and `--list` explains the selection without executing it. Unknown
 or ambient inputs conservatively select the graph, and so does a changed
-`PACKAGE.ts` or `PACKAGE.vibe`, which `--list` reports in `globalInputs`. Any change selects every
+declaration: a `PACKAGE.ts` or `PACKAGE.vibe`, or any workspace module one
+evaluates, whether imported by relative path or by package name, directly or
+through another such module. A helper builds targets in other packages exactly
+as a `PACKAGE.ts` does, so its edit is never confined to the package that holds
+it. For a workspace package imported by name, its entry module's source directory
+is global too, including newly added files. `--list` reports these paths in `globalInputs`. Any change selects every
 uncacheable target and its dependents, because only a cache key declares
 complete inputs.
 
@@ -688,7 +693,7 @@ identities; pointing outside the workspace does not add an any-change cause.
 
 Other rules retain package selection, including generated-output checks,
 services that run unconfined, host-side implementations, and dynamic input discovery.
-`PACKAGE.ts` changes still select globally.
+`PACKAGE.ts` and declaration helper changes still select globally.
 
 Each detail names the file and selection mechanism; target-local causes also
 name the culprit's label and rule and a shortest `dependencyPath` from the

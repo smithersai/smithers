@@ -35,13 +35,15 @@ import * as Target from "@smthrs/targets/Target"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
+import { isBuiltin, registerHooks } from "node:module"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Diagnostic from "./Diagnostic.ts"
 import { importDeclarationModule } from "./effect-resolution.js"
 import { type LoadedFactory, validateFactoryModule } from "./FactoryLoader.ts"
 import { assertDeclarationDependencies } from "./internal/DeclarationDependencies.ts"
+import { containedRelative } from "./internal/Path.ts"
 import { byCodeUnit, posix } from "./internal/Text.ts"
 import type { Discovery } from "./PackageDiscovery.ts"
 import { PackageError } from "./PackageError.ts"
@@ -74,6 +76,16 @@ export interface LoadedGraph {
   /** The factory declared beside the workspace, when `FACTORY.ts` exists. */
   readonly factory: LoadedFactory | undefined
   readonly packages: ReadonlyArray<LoadedPackage>
+  /**
+   * Every statically scanned declaration module, workspace-relative and
+   * sorted: the declaration files, `WORKSPACE.ts`, `FACTORY.ts`, the helpers
+   * they import by relative specifier, and the workspace modules they reach
+   * by name. Editing any of them can change any target. A graph built
+   * without a scan omits it, and then no helper is known.
+   */
+  readonly modules?: ReadonlyArray<string> | undefined
+  /** Source directories of workspace packages imported by name, workspace-relative and sorted. */
+  readonly moduleRoots?: ReadonlyArray<string> | undefined
 }
 
 /** The base name of a workspace-relative declaration path: `PACKAGE.ts` or `PACKAGE.vibe`. */
@@ -336,6 +348,106 @@ interface StaticScan {
   readonly edges: ReadonlyMap<string, ReadonlyArray<string>>
   /** Every scanned module file — declaration files plus helpers — sorted. */
   readonly files: ReadonlyArray<string>
+}
+
+const resolveProbe = "smthrs-declaration-resolve:"
+
+/**
+ * The URL `specifier` resolves to when imported from `parentURL`, through the
+ * process's registered module hooks with `import` conditions, exactly as the
+ * declaration evaluation resolves it, or undefined when nothing resolves.
+ * `import.meta.resolve` ignores a parent argument, so a momentary hook hands
+ * the request to the rest of the chain with the parent set.
+ */
+const resolveImport = (specifier: string, parentURL: string): string | undefined => {
+  let url: string | undefined
+  const hooks = registerHooks({
+    resolve(request, context, nextResolve) {
+      if (request !== resolveProbe) return nextResolve(request, context)
+      try {
+        url = nextResolve(specifier, { ...context, parentURL }).url
+      } catch {
+        // An unresolvable import fails the evaluation, which reports it.
+      }
+      return { url: "node:module", shortCircuit: true }
+    }
+  })
+  try {
+    import.meta.resolve(resolveProbe)
+  } finally {
+    hooks.deregister()
+  }
+  return url
+}
+
+/**
+ * The workspace-relative module files the scanned declaration modules reach
+ * through imports by name, sorted, with everything those reach in turn: a
+ * workspace package, linked into `node_modules`, is followed into its own
+ * files; an installed dependency, whose real path lies under `node_modules`,
+ * and anything outside the workspace end the walk. The walk only collects
+ * paths and source directories; the declaration rules apply to the relative
+ * closure alone.
+ */
+const scanNamedImports = async (
+  root: string,
+  files: ReadonlyArray<string>
+): Promise<{ readonly files: ReadonlyArray<string>; readonly roots: ReadonlyArray<string> }> => {
+  const texts = new Map<string, Promise<string | undefined>>()
+  const read = (file: string): Promise<string | undefined> => {
+    let text = texts.get(file)
+    if (text === undefined) {
+      // An unreadable module stays a recorded path; only its imports go unseen.
+      text = SafeFs.readText(NodePath.join(root, file), { root, what: file, maximumBytes: SafeFs.maximumTextBytes })
+        .catch(() => undefined)
+      texts.set(file, text)
+    }
+    return text
+  }
+  const known = new Set(files)
+  const found = new Set<string>()
+  const roots = new Set<string>()
+  const queue = [...files]
+  const reach = (file: string) => {
+    if (known.has(file)) return
+    known.add(file)
+    found.add(file)
+    queue.push(file)
+  }
+  while (queue.length > 0) {
+    const file = queue.shift()!
+    const text = await read(file)
+    if (text === undefined) continue
+    for (const specifier of importSpecifiers(text)) {
+      if (specifier.startsWith("./") || specifier.startsWith("../")) {
+        const resolved = resolveRelative(file, specifier)
+        if (resolved.startsWith("../") || NodePath.isAbsolute(resolved)) continue
+        for (const candidate of moduleCandidates(resolved)) {
+          if (await read(candidate) === undefined) continue
+          reach(candidate)
+          break
+        }
+        continue
+      }
+      if (specifier.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(specifier) || isBuiltin(specifier)) continue
+      const url = resolveImport(specifier, pathToFileURL(NodePath.join(root, file)).href)
+      if (url === undefined || !url.startsWith("file:")) continue
+      let absolute: string
+      try {
+        absolute = await Fs.realpath(fileURLToPath(url))
+      } catch {
+        continue
+      }
+      const relative = containedRelative(root, absolute)
+      if (relative === undefined) continue
+      const reached = posix(relative)
+      if (!reached.split("/").includes("node_modules")) {
+        roots.add(NodePath.posix.dirname(reached))
+        reach(reached)
+      }
+    }
+  }
+  return { files: [...found].sort(byCodeUnit), roots: [...roots].sort(byCodeUnit) }
 }
 
 /**
@@ -604,7 +716,11 @@ const undefinedNamespaceHint = (message: string): string => {
     `If that value is S.<Name>, this loader exports no such namespace; it exports: ${surfaceNamespaces()}`
 }
 
-const importGraph = async (discovery: Discovery): Promise<LoadedGraph> => {
+const importGraph = async (
+  discovery: Discovery,
+  modules: ReadonlyArray<string>,
+  moduleRoots: ReadonlyArray<string>
+): Promise<LoadedGraph> => {
   const entryDirectory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-package-entry-"))
   const lines: Array<string> = []
   const bindings: Array<string> = []
@@ -661,14 +777,21 @@ const importGraph = async (discovery: Discovery): Promise<LoadedGraph> => {
       value: validatePackageModule(namespace, file)
     })
   }
-  return { root: discovery.root, workspace, factory, packages }
+  return {
+    root: discovery.root,
+    workspace,
+    factory,
+    packages,
+    modules,
+    moduleRoots
+  }
 }
 
 /**
  * Evaluates and validates every discovered declaration module, once per
  * content digest per process. The digest covers the transitive
- * relative-import closure — helper modules included — so editing any module
- * a PACKAGE.ts imports re-keys the load.
+ * declaration import closure, including named workspace imports, so editing
+ * any helper a PACKAGE.ts imports re-keys the load and refreshes its inputs.
  *
  * @category loading
  * @since 0.1.0
@@ -677,11 +800,13 @@ export const load = async (discovery: Discovery): Promise<LoadedGraph> => {
   const scan = await scanImports(discovery)
   checkCycles(scan, discovery.packageFiles)
   assertDeclarationDependencies(scan.files.map((file) => NodePath.join(discovery.root, file)), { bootstrap: true })
-  const digest = await graphDigest(discovery, scan.files)
-  const key = `${discovery.root}\0${digest}`
+  const named = await scanNamedImports(discovery.root, scan.files)
+  const modules = [...scan.files, ...named.files].sort(byCodeUnit)
+  const digest = await graphDigest(discovery, modules)
+  const key = `${discovery.root}\0${digest}\0${JSON.stringify(named.roots)}`
   const existing = loads.get(key)
   if (existing !== undefined) return existing
-  const loaded = importGraph(discovery)
+  const loaded = importGraph(discovery, modules, named.roots)
   loads.set(key, loaded)
   // A failed load must not pin its rejection for the process lifetime: the
   // next command re-evaluates after the author fixes the file.

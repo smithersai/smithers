@@ -130,6 +130,10 @@ export class PackageIndex {
   readonly factory: LoadedFactory | undefined
   /** The cwd's package path, or undefined when cwd is outside the workspace. */
   readonly currentPackage: string | undefined
+  /** Every declaration module, helpers and named workspace imports included; see `LoadedGraph.modules`. */
+  readonly modules: ReadonlyArray<string>
+  /** Source directories reached by named declaration imports; see `LoadedGraph.moduleRoots`. */
+  readonly moduleRoots: ReadonlyArray<string>
   private readonly rows: ReadonlyArray<IndexedTarget>
   private readonly byLabel: ReadonlyMap<string, IndexedTarget>
   private readonly labelsByTarget: ReadonlyMap<Target.AnyTarget, string>
@@ -142,6 +146,8 @@ export class PackageIndex {
     workspace: WorkspaceDeclaration.WorkspaceDeclaration,
     factory: LoadedFactory | undefined,
     currentPackage: string | undefined,
+    modules: ReadonlyArray<string>,
+    moduleRoots: ReadonlyArray<string>,
     rows: ReadonlyArray<IndexedTarget>,
     byLabel: ReadonlyMap<string, IndexedTarget>,
     labelsByTarget: ReadonlyMap<Target.AnyTarget, string>,
@@ -153,6 +159,8 @@ export class PackageIndex {
     this.workspace = workspace
     this.factory = factory
     this.currentPackage = currentPackage
+    this.modules = Object.freeze([...modules])
+    this.moduleRoots = Object.freeze([...moduleRoots])
     // The class documents itself as immutable and used to store, and hand
     // back, the caller's live array. `ReadonlyArray` is erased at runtime, so
     // that promise held for TypeScript consumers and for nothing else: a
@@ -358,6 +366,8 @@ export class PackageIndex {
       graph.workspace,
       graph.factory,
       Label.currentPackageOrUndefined(graph.root, cwd),
+      graph.modules ?? [],
+      graph.moduleRoots ?? [],
       rows,
       byLabel,
       labelsByTarget,

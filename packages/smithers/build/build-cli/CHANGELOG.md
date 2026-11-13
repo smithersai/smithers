@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `affected` selects the whole graph when a declaration helper changes: any
+  workspace module a `PACKAGE.ts` evaluates, imported by relative path or by
+  package name, directly or through another such module. Such a helper builds
+  targets in other packages, so its edit was wrongly confined to the package
+  that holds it, and the cacheable targets it re-keyed elsewhere never ran
+  (#5087).
+
 - Generated `CODEOWNERS` and `OWNERS` include workspace defaults even without
   a root `PACKAGE.ts`. A child repository without its own `.git` runs
   uncached instead of borrowing an enclosing checkout's clean status.

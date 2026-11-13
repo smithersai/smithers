@@ -36,7 +36,7 @@ const target = (
     }
   }) as unknown as Target.AnyTarget
 
-const fixture = () => {
+const fixture = (modules: ReadonlyArray<string> = []) => {
   const rows: Array<IndexedTarget> = []
   const owners = new Map<Target.AnyTarget, string>()
   const resolve = vi.fn((pattern: string) =>
@@ -53,6 +53,7 @@ const fixture = () => {
     },
     index: {
       root: "/probe/root",
+      modules,
       targets: () => rows,
       resolve,
       ownerOf: (value: Target.AnyTarget) => owners.get(value)
@@ -312,6 +313,27 @@ it("propagates through shared private, verb, selector and cyclic dependencies", 
       dependencyPath: ["//selector:build", "//first:build", "//lib:__private_Fixture_1"]
     }
   ])
+})
+
+it("treats every declaration module, helpers included, as a global input", () => {
+  const { add, index } = fixture(["app/PACKAGE.ts", "tools/helper.ts", "packages/helpers/src/index.ts"])
+  add("app", "test", target([Input.file("local.txt")]))
+  add("tools", "src", target([Input.glob("src/**/*.ts")]))
+  add("packages/helpers", "lib", target([Input.glob("src/**/*.ts")]))
+  for (const file of ["tools/helper.ts", "packages/helpers/src/index.ts"]) {
+    expect(Affected.select(index, ["//..."], [file], { explain: true })).toMatchObject({
+      conservative: true,
+      globalInputs: [file],
+      targets: ["//app:test", "//tools:src", "//packages/helpers:lib"].map((label) => ({
+        label,
+        reasons: [file],
+        reasonDetails: [{ file, kind: "global-input" }]
+      }))
+    })
+  }
+  // A path that merely shares a module's prefix stays with its owner.
+  expect(Affected.select(index, ["//..."], ["tools/helper.ts.bak", "packages/helpers/src/index.ts.orig"]))
+    .toMatchObject({ conservative: false, globalInputs: [] })
 })
 
 it("explains global and unknown fallbacks without inventing a dependency route", () => {
