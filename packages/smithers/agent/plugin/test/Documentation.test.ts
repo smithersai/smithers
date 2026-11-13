@@ -44,9 +44,16 @@ describe("reference documentation matches admission", () => {
     const block = /## Example\n\n```ts\n([\s\S]*?)```/.exec(read("docs/api.md"))![1]!
     // Run the published code unchanged in a fresh module, without the test's
     // own Effect binding or the suite's module cache.
-    const result = spawnSync(process.execPath, ["--input-type=module", "--eval", block], {
+    const result = spawnSync(process.execPath, [
+      "--import",
+      import.meta.resolve("vibelang/register"),
+      "--input-type=module",
+      "--eval",
+      block
+    ], {
       cwd: packageRoot,
-      encoding: "utf8"
+      encoding: "utf8",
+      env: { ...process.env, NODE_OPTIONS: "" }
     })
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain("{ editor: { readOnly: false } }")

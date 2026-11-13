@@ -10,6 +10,8 @@ describe("manifest type-test gate", () => {
     // Load the declaration in Node so build-tool types do not join this
     // package's ordinary test compilation (or its manifest augmentation).
     const result = execFileSync(process.execPath, [
+      "--import",
+      import.meta.resolve("vibelang/register"),
       "--input-type=module",
       "-e",
       `
@@ -27,7 +29,12 @@ describe("manifest type-test gate", () => {
           dependsOnLib: gate.dependencies.includes(Package.lib)
         }))
       `
-    ], { cwd: packageRoot, encoding: "utf8", timeout: 30_000 })
+    ], {
+      cwd: packageRoot,
+      encoding: "utf8",
+      env: { ...process.env, NODE_OPTIONS: "" },
+      timeout: 30_000
+    })
 
     expect(JSON.parse(result)).toEqual({
       kinds: ["build"],
