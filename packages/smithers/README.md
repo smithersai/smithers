@@ -179,9 +179,9 @@ Every export of every namespace is on the [API reference](https://github.com/smi
 
 Control servers bind `127.0.0.1` by default. See the [control-plane guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/serve-the-workspace-gateway.md) before opting into a non-loopback bind.
 
-`SMITHERS_API_KEY` is the preferred credential channel. The compatibility
-flag `--credential` warns on stderr, even under `--quiet`, because argv is
-visible in process listings and may remain in shell history.
+`SMITHERS_TOKEN` is the preferred credential channel and overrides the saved
+login for remote commands. Without it, remote commands use the login saved by
+`smthrs auth login`. Credentials are not accepted as command-line flags.
 
 ## Exit codes
 
@@ -206,7 +206,7 @@ rc.0 reads a closed set of variables, all listed by `Environment.names`. The one
 | Variable                                 | Meaning                                                                                             |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `SMITHERS_REMOTE`                        | Fallback for `--remote`.                                                                            |
-| `SMITHERS_API_KEY`                       | Preferred credential channel; avoids argv exposure.                                                 |
+| `SMITHERS_TOKEN`                         | Preferred credential channel; avoids argv exposure.                                                 |
 | `SMITHERS_MCP_CONFIG`                    | Fallback for `--mcp-config`.                                                                        |
 | `SMITHERS_GITHUB_CREDENTIAL_IDS`         | Comma-separated stored credential IDs the host authorizes for GitHub diagnostics; empty by default. |
 | `SMITHERS_CREDENTIAL_KEY`                | Base64-encoded 32-byte host key for encrypted credential add, rotate, and resolution.               |

@@ -63,7 +63,7 @@ const configured = NodeControl.config.pipe(
   control runtime, the journal, the run store, and the memory store.
 - The run executor, with the kernel-guarded filesystem and shell, durable
   memory, and the MCP servers `--mcp-config` named.
-- The flow registry discovered from `<root>/flows`.
+- The flow registry discovered from `<root>/.smithers/flows`.
 - `Output`, the deterministic renderer, wired to publish its status as
   `process.exitCode`.
 - `Project.ProjectRoot`, `Project.MigrationRoot`, and `Project.LegacyState`.

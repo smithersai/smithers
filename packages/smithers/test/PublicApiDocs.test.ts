@@ -10,3 +10,13 @@ it("documents only available root namespaces", () => {
     expect(Object.hasOwn(Root, match[1]!), match[1]).toBe(true)
   }
 })
+
+it("documents credential settings the CLI reads", () => {
+  const environment = readme.split("## Environment")[1]!.split("\n## ")[0]!
+  const names = new Set(Root.Environment.names.map(({ name }) => name))
+  const documented = [...environment.matchAll(/^\| `(SMITHERS_\w+)`/gm)].map((match) => match[1]!)
+  expect(documented).toContain("SMITHERS_TOKEN")
+  for (const name of documented) expect(names.has(name), name).toBe(true)
+  expect(readme).not.toContain("`SMITHERS_API_KEY`")
+  expect(readme).not.toContain("`--credential`")
+})
