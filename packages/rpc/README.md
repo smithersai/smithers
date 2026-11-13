@@ -4,6 +4,8 @@
 
 Shared product contracts for the local host, browser, and server. Import them from the root, where each module is a namespace: `import { LocalApp, TargetGraph } from "@smthrs/rpc"`. The root reaches no `node:` or `bun:` built-in. One module stays off it: `FormInstructions.generated.ts`, whose `FORM_INSTRUCTION_FIELDS` is part of `UiInstruction`. The `@smthrs/rpc/<Module>` subpaths still resolve because existing TUI, package and site files import them; new code uses the root.
 
+`FileRead.parseFileReadArgs` accepts line and column anchors only from `1` through `Number.MAX_SAFE_INTEGER`, refusing zero and unsafe integers before a File card is built.
+
 `FileRead` card IDs retain their readable repository-path@revision form, escaping `%` and repository `-` / path `@` delimiters so names cannot collide. `decodeFilePage` rejects malformed base64 with `FilePageRejected` (`invalid_encoding`); valid binary content stays opaque. `LocalLsp` validates definition paths with the request's repository-relative path rule, and diagnostic responses require `items` and `total` to be null together. `Refusal` accepts only positive finite explicit retry seconds, rounded up, and attributes a missing response to the client unless an origin is stated.
 
 ## Route ownership

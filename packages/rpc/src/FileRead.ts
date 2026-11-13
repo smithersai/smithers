@@ -133,7 +133,10 @@ export const parseFileReadArgs = (
   if (path === "") return { error: "file needs a file path" }
   const line = anchor === null ? undefined : Number(anchor[2])
   const column = anchor?.[3] === undefined ? undefined : Number(anchor[3])
-  if (line === 0 || column === 0) {
+  if (
+    (line !== undefined && (!Number.isSafeInteger(line) || line < 1)) ||
+    (column !== undefined && (!Number.isSafeInteger(column) || column < 1))
+  ) {
     return { error: "file lines and columns count from 1: /file <path>[:<line>[:<col>]]" }
   }
   return {

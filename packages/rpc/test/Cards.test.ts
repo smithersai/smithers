@@ -309,14 +309,6 @@ describe("held Review PR form request", () => {
   })
 })
 
-/*
- * Lane citc (ADR 0002), completed by lane L3: the workspace card carries the
- * plue DTO. plue#446 landed, so `workspaceKind`, `head`, `ahead`, `behind`,
- * `startedAt`, `environment`, `persistence` and `sshHost` ARE part of the
- * contract — every one optional, so the payload a card persisted before that
- * lane carries parses and states none of them. The service-log contract
- * lands with it.
- */
 test("recorded workspace cards retain their title and retire their controls", () => {
   const card = CardSchema.parse({
     ...base,
@@ -329,7 +321,7 @@ test("recorded workspace cards retain their title and retire their controls", ()
 })
 
 describe("the service-log card", () => {
-  test("carries the service, its lines, and the follow state", () => {
+  test("retires stored service logs while preserving their recorded content", () => {
     const card = CardSchema.parse({
       ...base,
       kind: "service-log",
@@ -371,7 +363,7 @@ describe("the file card", () => {
 
   test("a card persisted before code intelligence parses and states no anchor, diagnostics, hover, or server", () => {
     const card = CardSchema.parse({ ...base, kind: "file", payload })
-    if (card.kind !== "file") return
+    if (card.kind !== "file") throw new Error("Expected a file card")
     expect(card.payload.line).toBeUndefined()
     expect(card.payload.column).toBeUndefined()
     expect(card.payload.diagnostics).toBeUndefined()
@@ -396,7 +388,7 @@ describe("the file card", () => {
         intel: { state: "missing", note: "npm i -g typescript-language-server typescript" }
       }
     })
-    if (card.kind !== "file") return
+    if (card.kind !== "file") throw new Error("Expected a file card")
     expect(card.payload.line).toBe(317)
     expect(card.payload.column).toBe(62)
     expect(card.payload.diagnostics).toEqual([diagnostic])
@@ -406,7 +398,7 @@ describe("the file card", () => {
 
   test("a hover the server had nothing for is null, which is not the same as never asked", () => {
     const card = CardSchema.parse({ ...base, kind: "file", payload: { ...payload, hover: null } })
-    if (card.kind !== "file") return
+    if (card.kind !== "file") throw new Error("Expected a file card")
     expect(card.payload.hover).toBeNull()
   })
 
@@ -492,7 +484,7 @@ describe("the agent cards", () => {
         given: { id: "implement", harness: "codex" }
       }
     })
-    if (card.kind !== "flow-form") return
+    if (card.kind !== "flow-form") throw new Error("Expected a flow form card")
     expect(card.payload.fields[1]?.options?.[1]).toEqual({
       value: "opencode",
       label: "OpenCode",
@@ -621,9 +613,7 @@ describe("card patch validation", () => {
 
 describe("card patches never invent defaults", () => {
   test("an empty payload patch stays empty for every current card kind", () => {
-    const currentPayloads = CardSchema.options.filter((option) =>
-      !(CUT_KINDS as readonly string[]).includes(option.shape.kind.value)
-    )
+    const currentPayloads = CardSchema.options
     expect(currentPayloads.some((option) => option.shape.kind.value === "agents")).toBe(true)
     for (const option of currentPayloads) {
       const kind = option.shape.kind.value
@@ -719,13 +709,14 @@ describe("the run trace card's graph view", () => {
  * marked "optional so cards persisted before the lane parse", which is a
  * promise about payloads nobody can rewrite.
  *
- * Every kind therefore carries two fixtures: `minimal` is the payload with
+ * Every current kind therefore carries two fixtures: `minimal` is the payload with
  * only the fields the schema requires (what a card written before every later
  * lane holds) and `full` is the payload with every field the schema accepts.
  * Both must parse, both must come back unchanged, and a minimal payload must
  * gain nothing on the way through. Making an optional field required,
  * renaming a kind or tightening an enum breaks a fixture here instead of a
- * reader's transcript.
+ * reader's transcript. Legacy kinds have one opaque stored payload each in
+ * fixtures/LegacyCards.ts; no live schema is claimed for their contents.
  */
 
 /** A canonical non-nil gateway workspace id (GatewayWorkspace.ts). */
@@ -758,95 +749,14 @@ const statusRollup = (subjectId: string, state: string, activity: string) => ({
   updatedAt: 1_757_000_000_000
 })
 
-/*
- * Repository setup, a legacy card kind (`LEGACY_CARD_KINDS`). A draft is a required payload
- * field, so both fixtures carry one; `choreEvent` is stated because it is
- * defaulted, and a fixture that left it out would not equal what decoding
- * produces. `setupReceipt` is the host's evidence for one executed operation.
- */
-const setupDraft = {
-  steps: [{ id: "research", name: "Research issue", mode: "automatic", prompt: "Classify the issue." }],
-  checks: [],
-  cases: [],
-  replies: "draft",
-  landing: "ask",
-  scope: "future",
-  label: "",
-  schedule: "",
-  choreEvent: "none",
-  budgetMinutes: 10,
-  connectIssues: false,
-  trialTitle: "[Smithers test] Handle issues",
-  trialBody: "A scoped setup trial."
-}
-
-const setupDigest = "0".repeat(64)
-
-const setupReceipt = (requestId: string, operation: string, phase: string) => ({
-  requestId,
-  runId: `run-${requestId}`,
-  jobRunId: `job-${requestId}`,
-  revision: 1,
-  operation,
-  phase,
-  digest: setupDigest,
-  updatedAt: 1_757_000_000_000,
-  results: [{
-    caseId: "case-1",
-    status: "passed",
-    observed: "the reply cited the failing line",
-    evidence: ["https://example.invalid/run/1"],
-    executionId: "exec-1"
-  }],
-  evidence: ["https://example.invalid/run/1"],
-  error: "the workspace went away",
-  trialIssue: { source: "github", number: 12, url: "https://example.invalid/issues/12" },
-  registrationId: "registration-1",
-  sourceRevision: "abc1234"
-})
-
 type KindFixtures = {
   /** Only the fields the schema requires: what a card persisted before every later lane carries. */
   readonly minimal: Record<string, unknown>
   /** Every field the schema accepts, including the ones later lanes added. */
   readonly full: Record<string, unknown>
-  /** What decoding must produce when it rewrites the payload (the env card redacts). */
-  readonly decodedFull?: Record<string, unknown>
 }
 
-const CUT_KINDS = [
-  "repository-setup",
-  "admin-health",
-  "registration",
-  "notifications",
-  "connect",
-  "agent",
-  "explain",
-  "grant-confirm"
-] as const
-
-const FIXTURES: Record<
-  | Card["kind"]
-  | Exclude<
-    typeof LEGACY_CARD_KINDS[number],
-    | "factory"
-    | "repo-onboarding"
-    | "repo-home"
-    | "agent-models"
-    | "agent-form"
-    | "history"
-    | "experimental"
-    | "request-queue"
-    // Retired by 263c41d3; their tombstone decoding is in fixtures/LegacyCards.ts.
-    | "account"
-    | "registration"
-    | "provider-accounts"
-    | "repo-import"
-    | "connector-setup"
-    | "env"
-  >,
-  KindFixtures
-> = {
+const FIXTURES: Record<Card["kind"], KindFixtures> = {
   todo: {
     minimal: { n: 12, requests: [] },
     full: {
@@ -896,11 +806,6 @@ const FIXTURES: Record<
     }
   },
   setup: { minimal: {}, full: {} },
-  /* #3730's host-launched agent session, retired with the launcher (T-AGT-02): a stored one decodes as a tombstone. */
-  "agent-session": {
-    minimal: { agent: "codex", session: "0199e2e0-0000-7000-8000-00000000a11c" },
-    full: { agent: "codex", session: "0199e2e0-0000-7000-8000-00000000a11c" }
-  },
   settings: { minimal: {}, full: {} },
   members: { minimal: {}, full: {} },
   commands: { minimal: {}, full: {} },
@@ -1102,22 +1007,6 @@ const FIXTURES: Record<
   status: {
     minimal: {},
     full: { progress: 0.5, note: "reading the route" }
-  },
-  "grant-confirm": {
-    minimal: { login: "ada", amountUsd: 25, phase: "confirm" },
-    full: { login: "ada", amountUsd: 25, phase: "failed", grantId: "grant-1", error: "the grant call failed (500)" }
-  },
-  "admin-health": {
-    minimal: { services: [] },
-    full: { services: [{ name: "database", status: "ok", detail: "12ms" }] }
-  },
-  connect: {
-    minimal: { github: { connected: false, login: null }, nativeAvailable: false },
-    full: {
-      provider: "github",
-      github: { connected: true, login: "will" },
-      nativeAvailable: true
-    }
   },
   world: {
     minimal: { documents: [] },
@@ -1404,15 +1293,6 @@ const FIXTURES: Record<
       }]
     }
   },
-  "workflow-repo": {
-    minimal: { intent: "create", description: "a flow that lands the change", repos: [], chosen: null },
-    full: {
-      intent: "create",
-      description: "a flow that lands the change",
-      repos: ["smithersai/smithers", "will/plue"],
-      chosen: "smithersai/smithers"
-    }
-  },
   "issue-list": {
     minimal: { repo: "smithersai/smithers", filter: "open", issues: [] },
     full: {
@@ -1605,20 +1485,6 @@ const FIXTURES: Record<
       }]
     }
   },
-  notifications: {
-    minimal: { unread: 0, items: [] },
-    full: {
-      unread: 1,
-      items: [{
-        id: "n-1",
-        title: "review requested",
-        repo: "smithersai/smithers",
-        reason: "review_requested",
-        createdAt: "2026-09-05T09:00:00Z",
-        read: false
-      }]
-    }
-  },
   stack: {
     minimal: { repo: "smithersai/smithers", failure: null },
     full: {
@@ -1653,109 +1519,6 @@ const FIXTURES: Record<
       }]
     }
   },
-  models: {
-    minimal: { models: [], seats: [], credentials: [], tests: [], testing: [], host: "unavailable" },
-    full: {
-      models: [
-        {
-          id: "cerebras",
-          protocol: "openai-chat",
-          baseUrl: "https://api.cerebras.ai",
-          modelId: "gpt-oss-120b",
-          credential: "CEREBRAS_API_KEY",
-          builtin: true
-        },
-        {
-          id: "ollama",
-          protocol: "openai-chat",
-          baseUrl: "http://127.0.0.1:11434",
-          path: "/v1/chat/completions",
-          modelId: "llama3",
-          credential: "OLLAMA"
-        }
-      ],
-      seats: [
-        { id: "explainer", recordId: "ollama", resolvable: true },
-        { id: "recommend", recordId: null, resolvable: true }
-      ],
-      credentials: [
-        { name: "CEREBRAS_API_KEY", present: false, origins: ["https://api.cerebras.ai"] },
-        { name: "OLLAMA", present: true, origins: ["http://127.0.0.1:11434"] }
-      ],
-      tests: [
-        { id: "ollama", testedAt: 1, result: { ok: true, latencyMs: 41, sample: "ok" } },
-        {
-          id: "cerebras",
-          testedAt: 2,
-          result: {
-            ok: false,
-            latencyMs: 0,
-            failure: { code: "credential_missing", credential: "CEREBRAS_API_KEY" },
-            fault: "user"
-          }
-        }
-      ],
-      testing: ["ollama"],
-      refresh: { state: "requested" },
-      enrollment: { available: true },
-      credentialRequests: [],
-      host: "observed",
-      selected: "ollama",
-      attention: { kind: "test-failed", recordId: "cerebras" },
-      error: "The host did not list its models."
-    }
-  },
-  "model-call": {
-    minimal: {
-      model: "ollama",
-      request: { kind: "generation", system: "", prompt: "Reply with the single word: ok", maxTokens: 32 }
-    },
-    full: {
-      model: "judge",
-      request: {
-        kind: "decision",
-        state: [
-          { key: "path", kind: "path", value: "src/a.ts" },
-          { key: "diff", kind: "diff", value: "@@ -1 +1 @@\n-a\n+b" },
-          { key: "passed", kind: "boolean", value: "true" }
-        ],
-        questions: {
-          ok: { type: "boolean", instructions: "Did it pass?", criteria: { true: "it passed", false: "it failed" } },
-          which: { type: "choice", instructions: "Which file?", criteria: { a: "src/a.ts", b: "src/b.ts" } },
-          risk: { type: "score", instructions: "How risky?", criteria: ["low", "high"] }
-        }
-      },
-      response: {
-        askedAt: 7,
-        request: {
-          kind: "decision",
-          state: [{ key: "text", kind: "text", value: "The sky is blue." }],
-          questions: { ok: { type: "boolean", instructions: "Does it mention a color?" } }
-        },
-        result: {
-          ok: true,
-          latencyMs: 41,
-          sample: "true 0.97",
-          output: { kind: "decision", answers: { ok: { type: "boolean", value: true, probability: 0.97 } } }
-        },
-        binding: { protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" }
-      },
-      pending: {
-        requestId: "6f0a2c1e-ask-0001",
-        request: { kind: "generation", system: "", prompt: "A", maxTokens: 32, temperature: "0.2" },
-        binding: {
-          protocol: "openai-chat",
-          baseUrl: "http://127.0.0.1:4010",
-          modelId: "e2e-slow",
-          credential: "LOOPBACK"
-        },
-        owner: null
-      },
-      asking: true,
-      fixture: "Evaluator.layerScripted(() => ({ [\"ok\"]: { probability: 0.97 } }))"
-    }
-  },
-
   "sync-ops": {
     minimal: { subject: "Mirror · smithersai/smithers", source: "github-mirror", runState: null, ops: [] },
     full: {
@@ -1789,10 +1552,6 @@ const FIXTURES: Record<
       rateLimit,
       error: "the retry refused (500)"
     }
-  },
-  branches: {
-    minimal: { repo: "smithersai/smithers", bookmarks: [] },
-    full: { repo: "smithersai/smithers", bookmarks: [{ name: "main", head: "4e87ac15" }, { name: "wip", head: null }] }
   },
   "file-list": {
     minimal: { repo: "smithersai/smithers", path: "packages/rpc", entries: [] },
@@ -2105,69 +1864,6 @@ const FIXTURES: Record<
       error: "Reading the diff failed (500)"
     }
   },
-  workspace: {
-    minimal: {
-      workspaceId: "ws-1",
-      repo: "will/smithers",
-      name: "review",
-      targetBookmark: null,
-      status: "pending",
-      provisioningStage: null,
-      bookmarkHead: null,
-      sessions: []
-    },
-    full: {
-      workspaceId: "ws-1",
-      snapshot: true,
-      repo: "will/smithers",
-      name: "review",
-      targetBookmark: "main",
-      status: "failed",
-      failureCode: "egress_proxy_unavailable",
-      failureMessage: "the egress proxy is unavailable",
-      provisioningStage: "provisioning_workspace",
-      suspendedAt: "2026-09-05T08:00:00Z",
-      bookmarkHead: { changeId: "qupxosqw", commitId: "c0ffee1" },
-      workspaceKind: "desktop",
-      agentSessionId: "sess-1",
-      head: { changeId: "ronvznsk", commitId: "deadbee" },
-      ahead: 2,
-      behind: 1,
-      startedAt: "2026-09-05T08:00:00Z",
-      environment: {
-        source: ".smithers/environment.nix",
-        revision: "4e87ac15",
-        closureHash: "sha256-9f1c",
-        image: "registry.jjhub.tech/env:4e87ac15"
-      },
-      persistence: "persistent",
-      sshHost: "ws-1@ssh.jjhub.tech",
-      sessions: [{ id: "sess-1", status: "running", createdAt: null, kind: "lsp", language: "typescript" }],
-      lspLanguages: ["typescript"],
-      files: [{ name: "src", path: "src", type: "dir", size: null }],
-      filesPath: "",
-      services: [{ name: "web", state: "running", port: 8787, url: "http://localhost:8787" }],
-      egress: [{
-        occurredAt: "2026-09-05T09:00:00Z",
-        host: "api.openai.com",
-        method: "POST",
-        path: "/v1/responses",
-        status: 200,
-        allowed: true,
-        swappedSecretNames: ["OPENAI_API_KEY"]
-      }],
-      egressCursor: "cursor-1",
-      desktop: { ready: true, streamUrl: "/vnc", session: { id: "vnc-1", expiresAt: "2026-09-05T09:05:00Z" } },
-      desktopRefusal: { status: 503, message: "desktop not ready", code: "desktop_not_ready", retryAfterSeconds: 5 },
-      desktopStage: "starting",
-      desktopProgress: "Starting desktop",
-      terminalRefusal: { status: 503, message: "guest not ready", code: "guest_not_ready", retryAfterSeconds: 3 },
-      facet: "desktop",
-      terminalSessionId: "pty-1",
-      error: "Resume refused (409)",
-      egressProxyUnavailable: true
-    }
-  },
   "environment-images": {
     minimal: { repo: "smithersai/smithers", images: [] },
     full: {
@@ -2183,343 +1879,6 @@ const FIXTURES: Record<
         platformBase: false,
         coldPull: true
       }]
-    }
-  },
-  "service-log": {
-    minimal: { workspaceId: "ws-1", repo: "will/smithers", service: "web", lines: [], follow: false },
-    full: { workspaceId: "ws-1", repo: "will/smithers", service: "web", lines: ["listening"], follow: true }
-  },
-  "theme-picker": {
-    minimal: { selected: "ember" },
-    full: { selected: "ember" }
-  },
-  targets: {
-    minimal: { repoId: "repo-1", repoName: "smithers", status: "pending", targets: [], warnings: [] },
-    full: {
-      repoId: "repo-1",
-      repoKey: "/work/smithers",
-      repoName: "smithers",
-      status: "done",
-      targets: [{
-        id: "t-1",
-        label: "//packages/rpc:test",
-        target: "test",
-        kinds: ["test"],
-        package: "//packages/rpc",
-        name: "test",
-        workspace: ".",
-        summary: "the rpc suite",
-        featured: true
-      }],
-      warnings: ["one declaration failed to load"],
-      highlighted: "//packages/rpc:test",
-      view: {
-        mode: "all",
-        query: "rpc",
-        kinds: ["test"],
-        states: ["passed"],
-        workspace: ".",
-        selected: "//packages/rpc:test",
-        expanded: ["//...:test"],
-        picked: { "//...:test": ["//packages/rpc:test"] }
-      },
-      runs: [{
-        runId: "run-1",
-        repoId: "repo-1",
-        label: "//packages/rpc:test",
-        labels: ["//packages/rpc:test"],
-        status: "done",
-        startedAt: 1_757_000_000_000,
-        endedAt: 1_757_000_004_900,
-        exitCode: 0,
-        summary: {
-          total: 1,
-          hit: 0,
-          ran: 1,
-          failed: 0,
-          skipped: 0,
-          durationMs: 4900,
-          ok: true,
-          criticalPath: ["//packages/rpc:test"]
-        },
-        journal: { state: "degraded", error: "one frame was lost" }
-      }],
-      details: {
-        "//packages/rpc:test": {
-          status: "done",
-          node: {
-            label: "//packages/rpc:test",
-            package: "//packages/rpc",
-            name: "test",
-            rule: "Vitest",
-            kinds: ["test"],
-            private: false,
-            plan: { mode: "execute", cacheable: true, key: "9f1c", argv: ["vitest", "run"] },
-            source: { file: "packages/rpc/PACKAGE.ts", line: 12 }
-          },
-          deps: ["//packages/rpc:build"],
-          rdeps: ["//:ci"],
-          error: "the plan refused"
-        }
-      },
-      starred: ["//packages/rpc:test"]
-    }
-  },
-  "target-run": {
-    minimal: {
-      runId: "run-1",
-      repoId: "repo-1",
-      label: "//packages/rpc:test",
-      status: "running",
-      exitCode: null,
-      output: ""
-    },
-    full: {
-      runId: "run-1",
-      repoId: "repo-1",
-      label: "//packages/rpc:test",
-      verb: "ci",
-      pattern: "//packages/...",
-      status: "done",
-      exitCode: 0,
-      output: "1 passed",
-      startedAt: 1_757_000_000_000,
-      endedAt: 1_757_000_004_900,
-      nodes: [{
-        label: "//packages/rpc:test",
-        status: "ran",
-        startedAt: 1_757_000_000_000,
-        endedAt: 1_757_000_004_900,
-        durationMs: 4900,
-        key: "9f1c",
-        reason: "the host bin is absent",
-        exitCode: 0,
-        rule: "Vitest"
-      }],
-      summary: {
-        total: 1,
-        hit: 0,
-        ran: 1,
-        failed: 0,
-        skipped: 0,
-        durationMs: 4900,
-        ok: true,
-        criticalPath: ["//packages/rpc:test"]
-      },
-      nodeOutput: { "//packages/rpc:test": "1 passed" }
-    }
-  },
-  repo: {
-    minimal: {
-      repo: {
-        id: "repo-1",
-        path: "/Users/will/smithers",
-        name: "smithers",
-        git: null,
-        warnings: [],
-        smithers: {
-          detected: false,
-          workspaceFile: null,
-          declarationFiles: [],
-          reason: "no .smithers/WORKSPACE.ts",
-          workspaces: []
-        }
-      }
-    },
-    full: {
-      repo: {
-        id: "repo-1",
-        path: "/Users/will/smithers",
-        name: "smithers",
-        git: { branch: "main", remote: "origin" },
-        jj: { changeId: "qupxosqw", commitId: "a03f5f1e", ahead: 2, bookmark: "main" },
-        warnings: ["one declaration failed to load"],
-        smithers: {
-          detected: true,
-          workspaceFile: ".smithers/WORKSPACE.ts",
-          declarationFiles: ["packages/rpc/PACKAGE.ts"],
-          reason: "",
-          workspaces: [{ path: ".", title: "smithers" }]
-        }
-      }
-    }
-  },
-  graph: {
-    minimal: { repoId: "repo-1", repoName: "smithers", status: "pending" },
-    full: {
-      repoId: "repo-1",
-      repoName: "smithers",
-      status: "done",
-      graph: {
-        repoId: "repo-1",
-        nodes: [{
-          label: "//packages/rpc:test",
-          package: "//packages/rpc",
-          name: "test",
-          rule: "Vitest",
-          kinds: ["test"],
-          private: false,
-          plan: {
-            mode: "execute",
-            cacheable: true,
-            key: "9f1c",
-            refusal: "the host bin is absent",
-            argv: ["vitest", "run"],
-            sandbox: "seatbelt",
-            outDirs: ["dist"],
-            outFiles: ["dist/index.js"],
-            inputs: ["src/**"]
-          },
-          source: { file: "packages/rpc/PACKAGE.ts", line: 12 }
-        }],
-        edges: [{ from: "//packages/rpc:test", to: "//packages/rpc:build", kind: "deps" }],
-        warnings: [],
-        generatedAt: "2026-09-05T09:00:00Z",
-        digest: "sha256-9f1c",
-        durationMs: 1
-      },
-      error: "graph load failed: exit 1",
-      focus: "//packages/rpc:test",
-      view: { query: "rpc", showPrivate: true },
-      runId: "run-1",
-      run: {
-        nodes: [{ label: "//packages/rpc:test", status: "ran", durationMs: 4900 }],
-        summary: {
-          total: 1,
-          hit: 0,
-          ran: 1,
-          failed: 0,
-          skipped: 0,
-          durationMs: 4900,
-          ok: true,
-          criticalPath: ["//packages/rpc:test"]
-        }
-      }
-    }
-  },
-  "run-timeline": {
-    minimal: { repoId: "repo-1", runId: "run-1", label: "//packages/rpc:test", status: "pending", nodes: [] },
-    full: {
-      repoId: "repo-1",
-      runId: "run-1",
-      label: "//packages/rpc:test",
-      status: "done",
-      nodes: [{ label: "//packages/rpc:test", status: "ran", durationMs: 4900 }],
-      summary: {
-        total: 1,
-        hit: 0,
-        ran: 1,
-        failed: 0,
-        skipped: 0,
-        durationMs: 4900,
-        ok: true,
-        criticalPath: ["//packages/rpc:test"]
-      },
-      cursor: 1_757_000_002_000,
-      extent: { start: 1_757_000_000_000, end: 1_757_000_004_900 },
-      logs: { "//packages/rpc:test": "1 passed" },
-      error: "the stream failed"
-    }
-  },
-  "run-history": {
-    minimal: { repoId: "repo-1", status: "pending", runs: [] },
-    full: {
-      repoId: "repo-1",
-      status: "done",
-      runs: [{
-        runId: "run-1",
-        repoId: "repo-1",
-        label: "//packages/rpc:test",
-        labels: ["//packages/rpc:test"],
-        status: "failed",
-        startedAt: 1_757_000_000_000,
-        endedAt: 1_757_000_004_900,
-        exitCode: 1,
-        summary: {
-          total: 1,
-          hit: 0,
-          ran: 1,
-          failed: 1,
-          skipped: 0,
-          durationMs: 4900,
-          ok: false,
-          criticalPath: ["//packages/rpc:test"]
-        },
-        journal: { state: "degraded", error: "one frame was lost" }
-      }],
-      selected: "run-1",
-      error: "the history read failed"
-    }
-  },
-  affected: {
-    minimal: { repoId: "repo-1", status: "pending" },
-    full: {
-      repoId: "repo-1",
-      status: "done",
-      result: {
-        repoId: "repo-1",
-        base: "origin/main",
-        changedFiles: ["packages/rpc/src/Cards.ts"],
-        affected: [{ label: "//packages/rpc:test", reason: "packages/rpc/src/Cards.ts" }],
-        signal: "declared inputs",
-        limits: ["the CLI does not expose every input"],
-        durationMs: 12
-      },
-      error: "not a git repo"
-    }
-  },
-  "ci-matrix": {
-    minimal: { repoId: "repo-1", status: "pending" },
-    full: {
-      repoId: "repo-1",
-      status: "done",
-      result: {
-        repoId: "repo-1",
-        workflows: [{
-          name: "ci",
-          path: ".github/workflows/ci.yml",
-          yaml: "name: ci\n",
-          source: "scratch-render",
-          jobs: [{ name: "test", targets: ["//packages/rpc:test"], matrix: { shard: ["1/4", "2/4"] } }]
-        }],
-        warnings: ["one workflow could not be rendered"],
-        durationMs: 12
-      },
-      error: "the render failed"
-    }
-  },
-  agent: {
-    minimal: {
-      harnessId: "codex",
-      displayName: "Codex",
-      tabId: "pty-1",
-      sessionId: "pty-1",
-      cwd: "/tmp",
-      phase: "running",
-      exitCode: null
-    },
-    full: {
-      statusRollup: statusRollup("session:pty-1", "exited", "idle"),
-      harnessId: "codex",
-      displayName: "Reviewer · GPT-6.1 Sol",
-      roleId: "implement",
-      purpose: "Reviews diffs.",
-      task: "review the rpc change",
-      tabId: "pty-1",
-      sessionId: "pty-1",
-      cwd: "/tmp",
-      phase: "exited",
-      exitCode: 0
-    }
-  },
-  explain: {
-    minimal: { question: "what is a change?", answer: "", phase: "asking", answeredBy: "" },
-    full: {
-      question: "what is a change?",
-      answer: "A document with revisions.",
-      phase: "failed",
-      answeredBy: "kimi-for-coding/k3",
-      error: "the explainer refused (503)"
     }
   },
   agents: {
@@ -2677,149 +2036,7 @@ const FIXTURES: Record<
       not_found: "missing"
     }
   },
-  "commit-list": {
-    minimal: { repo: "smithersai/smithers", branch: null, commits: [] },
-    full: {
-      repo: "smithersai/smithers",
-      branch: "main",
-      commits: [{
-        commitId: "a1b2c3d4",
-        changeId: "kkmpptxz",
-        title: "Serve repository files",
-        author: {
-          name: "Will",
-          email: "will@example.com",
-          login: "will",
-          avatarUrl: "https://avatars.githubusercontent.com/u/2"
-        },
-        authoredAt: "2026-09-05T09:00:00Z",
-        status: "success",
-        verified: true
-      }],
-      truncated: true,
-      error: "the history read stopped at its cap"
-    }
-  },
-  commit: {
-    minimal: {
-      repo: "smithersai/smithers",
-      commit: {
-        commitId: "a1b2c3d4",
-        changeId: null,
-        title: "Serve repository files",
-        author: { name: null, email: null },
-        authoredAt: null
-      },
-      message: "Serve repository files",
-      parents: [],
-      files: []
-    },
-    full: {
-      repo: "smithersai/smithers",
-      commit: {
-        commitId: "a1b2c3d4",
-        changeId: "kkmpptxz",
-        title: "Serve repository files",
-        author: { name: "Will", email: "will@example.com" },
-        authoredAt: "2026-09-05T09:00:00Z"
-      },
-      message: "Serve repository files\n\nOne bounded route.",
-      committer: { name: "Will", email: "will@example.com" },
-      parents: [{ changeId: "zzzzzzzz", commitId: "0000aaaa" }],
-      files: [{
-        path: "src/files.ts",
-        oldPath: "src/read.ts",
-        changeType: "renamed",
-        isBinary: false,
-        additions: 12,
-        deletions: 3,
-        patch: "@@ -1 +1 @@"
-      }],
-      diffError: "the diff exceeded its cap",
-      error: "the status read failed"
-    }
-  },
-  /* The tutorial's repository chooser: every field is required, so both fixtures name all six. */
-  "repository-setup": {
-    minimal: {
-      repo: "smithersai/smithers",
-      job: "issues",
-      revision: 1,
-      owner: null,
-      draft: setupDraft,
-      view: "flows",
-      selectedStep: "research",
-      sources: [],
-      previousReceipts: []
-    },
-    full: {
-      repo: "smithersai/smithers",
-      job: "issues",
-      revision: 2,
-      owner: "will",
-      workspaceId: "9f1d4d7e-6d1f-4a2b-8d0e-2f3a4b5c6d7e",
-      draft: setupDraft,
-      view: "work",
-      selectedStep: "research",
-      manualDraft: { stepId: "research", prompt: "Look at the flake", source: "github", number: 12 },
-      guidance: { id: "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed", state: "admitted", error: "the model refused" },
-      sources: [{ path: "CONTRIBUTING.md", status: "read", summary: "states the review rules", revision: "abc1234" }],
-      inspectedAt: 1_757_000_000_000,
-      request: {
-        id: "request-1",
-        operation: "run",
-        revision: 2,
-        digest: setupDigest,
-        state: "running",
-        error: "the host refused the request",
-        manual: {
-          stepId: "research",
-          prompt: "Look at the flake",
-          subject: { source: "github", kind: "issue", number: 12 }
-        },
-        observeOnly: false
-      },
-      evaluation: setupReceipt("evaluate-1", "evaluate", "completed"),
-      trial: setupReceipt("trial-1", "trial", "completed"),
-      receipt: setupReceipt("apply-1", "apply", "running"),
-      previousReceipts: [setupReceipt("inspect-1", "inspect", "completed")],
-      active: {
-        revision: 1,
-        digest: setupDigest,
-        registrationId: "registration-1",
-        sourceRevision: "abc1234",
-        enabled: true,
-        owned: true,
-        draft: setupDraft,
-        schedule: { expression: "0 9 * * 1", nextFireAt: "2026-09-21T09:00:00+00:00" }
-      },
-      recovery: {
-        id: "recovery-1",
-        baseRevision: 1,
-        baseDigest: setupDigest,
-        adoptDraft: true,
-        state: "completed",
-        registrationState: "known",
-        error: "the registry did not answer",
-        trialRegistration: {
-          registrationId: "registration-1",
-          workspaceId: "9f1d4d7e-6d1f-4a2b-8d0e-2f3a4b5c6d7e",
-          revision: 1,
-          digest: setupDigest,
-          sourceRevision: "abc1234",
-          enabled: false,
-          owned: true,
-          draft: setupDraft,
-          schedule: { expression: "0 9 * * 1", nextFireAt: "2026-09-21T09:00:00+00:00" }
-        }
-      }
-    }
-  },
-  retired: { minimal: {}, full: { was: "explain", recorded: { text: "Saved explanation" } } },
-  "plugin-library": {
-    minimal: { tutorial: false },
-    full: { tutorial: true }
-  }
+  retired: { minimal: {}, full: { was: "explain", recorded: { text: "Saved explanation" } } }
 }
 
 test("repository home schema decodes every resolution and refuses unsafe paths", () => {
@@ -2840,9 +2057,7 @@ test("repository home schema decodes every resolution and refuses unsafe paths",
 
 /* mvp.md §8: old Cut cards decode inertly; retained kinds keep their schema audits. */
 
-const kinds = CardSchema.options.map((option) => option.shape.kind.value).filter((kind) =>
-  !(LEGACY_CARD_KINDS as readonly string[]).includes(kind)
-)
+const kinds = CardSchema.options.map((option) => option.shape.kind.value)
 const card = (kind: string, payload: unknown): unknown => ({
   ...base,
   kind,
@@ -2873,7 +2088,7 @@ const objectKinds = kinds.filter((kind) => payloadFields(kind) !== null)
 
 describe("every persisted card kind", () => {
   test("has fixtures: a kind added to the union without them is the gap this table closes", () => {
-    expect(Object.keys(FIXTURES).filter((kind) => !(LEGACY_CARD_KINDS as readonly string[]).includes(kind)).sort())
+    expect(Object.keys(FIXTURES).sort())
       .toEqual(
         [...kinds].sort()
       )
@@ -2899,7 +2114,7 @@ describe("every persisted card kind", () => {
   })
 
   test.each(kinds)("%s parses at its minimum and at its maximum, and neither is rewritten", (kind) => {
-    const { decodedFull, full, minimal } = FIXTURES[kind]
+    const { full, minimal } = FIXTURES[kind]
 
     const lean = CardSchema.parse(card(kind, minimal))
     expect(lean.kind).toBe(kind)
@@ -2912,7 +2127,7 @@ describe("every persisted card kind", () => {
     expect(Object.keys(lean.payload).sort()).toEqual(Object.keys(minimal).sort())
 
     const rich = CardSchema.parse(card(kind, full))
-    expect(rich.payload).toEqual(decodedFull ?? full)
+    expect(rich.payload).toEqual(full)
 
     /* Decoding is idempotent: a card read back off disk decodes to itself. */
     expect(CardSchema.parse(lean)).toEqual(lean)
@@ -2939,7 +2154,7 @@ describe("every persisted card kind", () => {
       card: {
         ...base,
         kind: "explain",
-        payload: FIXTURES.explain.full
+        payload: legacyCards.find((fixture) => fixture.row.kind === "explain")!.row.payload
       }
     })
     expect(frame).toEqual({
@@ -2950,7 +2165,10 @@ describe("every persisted card kind", () => {
         kind: "retired",
         loading: false,
         status: "acted",
-        payload: { was: "explain", recorded: FIXTURES.explain.full }
+        payload: {
+          was: "explain",
+          recorded: legacyCards.find((fixture) => fixture.row.kind === "explain")!.row.payload
+        }
       }
     })
   })
@@ -3091,7 +2309,16 @@ describe("the targets table's view and detail", () => {
   })
 
   test("a full view round-trips, and a mode or run state outside the enums is refused", () => {
-    const view = FIXTURES.targets.full.view
+    const view = {
+      mode: "all",
+      query: "rpc",
+      kinds: ["test"],
+      states: ["passed"],
+      workspace: ".",
+      selected: "//packages/rpc:test",
+      expanded: ["//...:test"],
+      picked: { "//...:test": ["//packages/rpc:test"] }
+    }
     expect(TargetsViewSchema.parse(view)).toEqual(view)
     expect(TargetsViewSchema.safeParse({ mode: "starred" }).success).toBe(false)
     expect(TargetsViewSchema.safeParse({ states: ["flaky"] }).success).toBe(false)
@@ -3117,39 +2344,6 @@ describe("a GitHub call's rate limit", () => {
     expect(GitHubRateLimitSchema.safeParse({ limit: 5000, remaining: 42 }).success).toBe(false)
   })
 })
-
-/** Cloud observations retain routing, unknown provider, and transcript identity through persistence. */
-const cloudAgentFixtures: KindFixtures = {
-  minimal: {
-    cloud: true,
-    displayName: "Agent session",
-    sessionId: "session-1",
-    repo: "org/repo",
-    provider: null,
-    workspaceId: null,
-    state: "active",
-    transcript: []
-  },
-  full: {
-    cloud: true,
-    statusRollup: statusRollup("session:session-1", "completed", "idle"),
-    displayName: "Review the change",
-    sessionId: "session-1",
-    repo: "org/repo",
-    provider: "codex",
-    workspaceId: "workspace-1",
-    state: "completed",
-    task: "Review the change",
-    transcript: [{
-      id: 7,
-      role: "assistant",
-      sequence: 2,
-      createdAt: "2026-09-15T00:00:00Z",
-      parts: [{ type: "text", text: "The change is ready." }]
-    }],
-    error: "The status refresh failed"
-  }
-}
 
 describe("removed presentation compatibility", () => {
   // Pin the Cut contract independently of the schema and retirement registry.
@@ -3195,25 +2389,9 @@ describe("removed presentation compatibility", () => {
     body: "Old content",
     loading: true
   })
-  const retired = [
-    ...LEGACY_CARD_KINDS.filter((kind): kind is keyof typeof FIXTURES & typeof LEGACY_CARD_KINDS[number] =>
-      kind in FIXTURES
-    ).flatMap((kind) => [saved(kind, FIXTURES[kind].minimal), saved(kind, FIXTURES[kind].full)]),
-    saved("agent", cloudAgentFixtures.full),
-    ...["factory", "repo-onboarding", "repo-home", "agent-models", "agent-form", "experimental"].map((kind) =>
-      saved(kind, { draft: "old data" })
-    ),
-    saved("history", {
-      repo: "smithersai/smithers",
-      defaultBookmark: "main",
-      mainCommits: null,
-      mythical: { state: "absent" }
-    }),
-    saved("request-queue", {
-      requests: [{ login: "ada", note: null, createdAt: "2026-09-05T09:00:00Z" }],
-      approving: null
-    })
-  ]
+  const retired = legacyCards
+    .filter((fixture) => (LEGACY_CARD_KINDS as readonly string[]).includes(fixture.row.kind))
+    .map((fixture) => saved(fixture.row.kind, fixture.row.payload))
   test.each(retired)("retires $kind without losing the card identity", (row) => {
     const result = CardSchema.parse(JSON.parse(JSON.stringify(row)))
     expect(result).toEqual({
@@ -3221,7 +2399,12 @@ describe("removed presentation compatibility", () => {
       title: row.title,
       kind: "retired",
       status: "acted",
-      payload: { was: row.kind, recorded: row.payload },
+      payload: {
+        was: row.kind,
+        recorded: row.kind === "env"
+          ? { ...row.payload as Record<string, unknown>, vars: [{ name: "DATABASE_URL" }, { name: "PIN" }] }
+          : row.payload
+      },
       body: row.body,
       loading: false
     })
@@ -3230,9 +2413,9 @@ describe("removed presentation compatibility", () => {
     expect(z.object({ cards: z.array(CardSchema) }).parse({ cards: [row] }).cards).toEqual([result])
     expect(CardPatchSchema.safeParse({ kind: row.kind, payload: row.payload }).success).toBe(false)
   })
-  test("the old snapshot facet becomes a terminal while internal snapshot provenance survives", () => {
+  test("the old snapshot facet retires while its recorded snapshots survive", () => {
     const old = saved("workspace", {
-      ...FIXTURES.workspace.minimal,
+      workspaceId: "ws-1",
       facet: "snapshots",
       snapshot: true,
       snapshots: [{ id: "old", name: "Old", createdAt: null }]
@@ -3240,7 +2423,6 @@ describe("removed presentation compatibility", () => {
     const result = CardSchema.parse(old)
     expect(result.kind).toBe("retired")
     expect(result.payload).toEqual({ was: "workspace", recorded: old.payload })
-    expect(result.payload).not.toHaveProperty("snapshots")
   })
 })
 

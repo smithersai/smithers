@@ -1,4 +1,6 @@
-/** Pinned stored rows copied from Cards.test.ts compatibility fixtures.
+/** Pinned stored rows for compatibility decoding.
+ * Current kinds retain their schema-checked payloads; each legacy kind has one
+ * opaque recorded payload, with no claim about a live schema for its contents.
  * @since 1.0.0
  */
 export const legacyCards = [

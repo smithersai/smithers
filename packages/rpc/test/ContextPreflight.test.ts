@@ -37,6 +37,18 @@ test("file and wiki candidates require revisions and preflight excludes issue ca
     expect(ContextCandidateSchema.safeParse({ item: { kind, label: "Source", ref: "source" }, text: "data" }).success)
       .toBe(false)
   }
+  for (const kind of ["file", "page"] as const) {
+    const candidate = { item: { kind, label: "Source", ref: "source", revision: "abc" }, text: "data" }
+    expect(ContextCandidateSchema.parse(candidate)).toEqual(candidate)
+  }
+  const todo = { item: { kind: "todo", label: "Source", ref: "source" }, text: "data" }
+  expect(ContextCandidateSchema.parse(todo)).toEqual(todo)
+  expect(
+    ContextCandidateSchema.safeParse({
+      item: { kind: "issue", label: "Source", ref: "source", revision: "abc" },
+      text: "data"
+    }).success
+  ).toBe(false)
 })
 test("owner budget defaults to 24000 and can exceed it without changing recall's byte contract", () => {
   const base = { prompt: "Retry?", author: "ben", branch: "main", state: "synced", recent: [], candidates: [] }

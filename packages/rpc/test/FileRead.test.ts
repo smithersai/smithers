@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest"
+import { CardSchema } from "../src/Cards.ts"
 import {
   CARD_CONTENT_CAP,
   decodeFilePage,
@@ -98,6 +99,34 @@ describe("the file flow every host binds", () => {
       expect(parseFileReadArgs(args)).toEqual({ error })
     }
   })
+
+  test.each(["0", "9007199254740992", "9007199254740993", "99999999999999999999", "9".repeat(400)])(
+    "the grammar refuses unsafe or zero line and column anchors: %s",
+    (anchor) => {
+      const error = "file lines and columns count from 1: /file <path>[:<line>[:<col>]]"
+      expect(parseFileReadArgs(`a.ts:${anchor}`)).toEqual({ error })
+      expect(parseFileReadArgs(`a.ts:1:${anchor}`)).toEqual({ error })
+    }
+  )
+
+  test.each(["1", "0001", "9007199254740991"])(
+    "accepted anchors survive File card schema decoding: %s",
+    (anchor) => {
+      for (const suffix of [anchor, `${anchor}:${anchor}`]) {
+        const parsed = parseFileReadArgs(`a.ts:${suffix} org/repo --ref abc`)
+        if ("error" in parsed) throw new Error(parsed.error)
+        expect(parsed.payload).toEqual({
+          path: "a.ts",
+          line: Number(anchor),
+          ...(suffix.includes(":") ? { column: Number(anchor) } : {}),
+          repo: "org/repo",
+          ref: "abc"
+        })
+        const { card } = fileReadCard({ ...parsed.payload, repo: "org/repo", content: "", binary: false }, 0, 0)
+        expect(CardSchema.parse(card)).toEqual(card)
+      }
+    }
+  )
 
   test("the model reads the card's text, its truncation and binary stated", () => {
     expect(fileValue("acme/app", "JOURNEY.md", { content: "Add a greeting\n", truncated: false }))
