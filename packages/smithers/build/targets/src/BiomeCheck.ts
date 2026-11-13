@@ -4,10 +4,12 @@
  * @since 0.1.0
  */
 
+import type { Action } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Exec from "./Exec.ts"
+import * as Filegroup from "./Filegroup.ts"
 import * as Input from "./Input.ts"
 import * as PackageManager from "./PackageManager.ts"
 import * as Target from "./Target.ts"
@@ -60,44 +62,18 @@ export const BiomeReport = Schema.Struct({
  */
 export type BiomeReport = typeof BiomeReport.Type
 
-const globMagic = /[*?[\]{}!()|@+]/
-
-/**
- * Reduces declared sources to the path arguments Biome accepts.
- *
- * Biome walks paths itself and does not expand glob patterns, so a glob
- * contributes its static directory prefix, a file contributes its path, and
- * a git diff contributes nothing. With no usable source Biome checks `cwd`.
- */
-const biomePaths = (cwd: string, sources: ReadonlyArray<Input.Declared>): ReadonlyArray<string> => {
-  const paths: Array<string> = []
-  for (const source of sources) {
-    if (source._tag === "File") paths.push(Input.rootRelative(cwd, source.path))
-    if (source._tag !== "Glob") continue
-    const rooted = source.pattern.startsWith("//")
-    const pattern = rooted ? source.pattern.slice(2) : source.pattern
-    const segments: Array<string> = []
-    for (const segment of pattern.split("/")) {
-      if (globMagic.test(segment)) break
-      segments.push(segment)
-    }
-    const prefix = segments.join("/")
-    paths.push(Input.rootRelative(cwd, rooted ? `//${prefix}` : prefix === "" ? "." : prefix))
-  }
-  const unique = [...new Set(paths)]
-  return unique.length === 0 ? ["."] : unique
-}
-
 /**
  * Plans Biome lint and format checks without writing files.
  *
- * The body records one `biome check` run when `lint` is enabled and one
+ * The body records one `biome lint` run when `lint` is enabled and one
  * `biome format` run in its default check mode when `format` is enabled,
  * both from `cwd` through the shared {@link Exec.Exec} action with the
  * declared configuration passed as `--config-path`. Tools resolve through
  * `pnpm exec`, matching the pnpm workspace install target. Key material
  * contains source and configuration digests, dependency keys, and the enabled
- * check families. Executing the plan requires {@link Exec.ExecLive}.
+ * check families. Globs expand to exactly their declared files, including
+ * exclusions; an empty expansion runs no checks. Executing a glob plan also
+ * requires {@link Filegroup.ExpandFilegroupLive}, alongside {@link Exec.ExecLive}.
  *
  * @category targets
  * @since 0.1.0
@@ -107,39 +83,53 @@ export const BiomeCheck = Target.make("BiomeCheck", {
   workspaceAttrs: ["packageManager"],
   kinds: ["lint"],
   success: BiomeReport,
-  error: Exec.ExecError,
+  error: Schema.Union([Exec.ExecError, Filegroup.FilegroupError]),
   implementation: (attrs) => {
-    const shared = [
-      `--config-path=${Input.rootRelative(attrs.cwd, attrs.config.path)}`,
-      ...biomePaths(attrs.cwd, attrs.sources)
-    ]
-    if (!attrs.lint) {
-      return attrs.format
-        ? Exec.runTool({
-          cwd: attrs.cwd,
-          argv: PackageManager.exec(attrs.packageManager, ["biome", "format", ...shared])
-        }).pipe(Node.map((format) => ({ check: null, format })))
-        : Node.succeed({ check: null, format: null })
-    }
-    const checked = Exec.runTool({
-      cwd: attrs.cwd,
-      argv: PackageManager.exec(attrs.packageManager, [
-        "biome",
-        "check",
-        ...shared
-      ])
-    })
-    if (!attrs.format) {
-      return checked.pipe(Node.map((check) => ({ check, format: null })))
-    }
-    return checked.pipe(
-      Node.bindPlanned((check) =>
-        Exec.runTool({
-          cwd: attrs.cwd,
-          argv: PackageManager.exec(attrs.packageManager, ["biome", "format", ...shared]),
-          after: check
-        }).pipe(Node.bindPlanned((format) => Node.succeed({ check, format })))
+    if (!attrs.lint && !attrs.format) return Node.succeed({ check: null, format: null })
+    const config = `--config-path=${Input.rootRelative(attrs.cwd, attrs.config.path)}`
+    const lintPrefix = PackageManager.exec(attrs.packageManager, ["biome", "lint", config])
+    const formatPrefix = PackageManager.exec(attrs.packageManager, ["biome", "format", config])
+    const run = (
+      lintArgv: Exec.CallPayload["argv"],
+      formatArgv: Exec.CallPayload["argv"]
+    ): Node.Node<BiomeReport, Exec.ExecError, Action.Requirement<"smithers-build/exec">> => {
+      if (!attrs.lint) {
+        return Exec.runTool({ cwd: attrs.cwd, argv: formatArgv })
+          .pipe(Node.map((format) => ({ check: null, format })))
+      }
+      const checked = Exec.runTool({ cwd: attrs.cwd, argv: lintArgv })
+      if (!attrs.format) return checked.pipe(Node.map((check) => ({ check, format: null })))
+      return checked.pipe(
+        Node.bindPlanned((check) =>
+          Exec.runTool({ cwd: attrs.cwd, argv: formatArgv, after: check })
+            .pipe(Node.bindPlanned((format) => Node.succeed({ check, format })))
+        )
       )
+    }
+    const sources = attrs.sources.filter((source): source is Filegroup.Source =>
+      source._tag === "File" || source._tag === "Glob"
+    )
+    if (!sources.some((source) => source._tag === "Glob")) {
+      const paths = sources.map((source) => Input.rootRelative(attrs.cwd, (source as Input.File).path))
+      const selected = paths.length === 0 ? ["."] : [...new Set(paths)]
+      return run([...lintPrefix, ...selected], [...formatPrefix, ...selected])
+    }
+    return Filegroup.ExpandFilegroup.call({
+      sources: Filegroup.sources({ srcs: sources, cwd: attrs.cwd })
+    }).pipe(
+      Node.map(Node.capture({ cwd: attrs.cwd, lintPrefix, formatPrefix }, function(files: Filegroup.Files) {
+        const paths = files.map((file) => Input.rootRelative(this.cwd, `//${file.path}`))
+        return {
+          empty: paths.length === 0,
+          lintArgv: [...this.lintPrefix, ...paths],
+          formatArgv: [...this.formatPrefix, ...paths]
+        }
+      })),
+      Node.branch({
+        if: (commands) => !commands.empty,
+        then: (commands) => run(commands.lintArgv, commands.formatArgv),
+        else: () => Node.succeed({ check: null, format: null })
+      })
     )
   }
 })

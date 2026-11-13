@@ -109,6 +109,25 @@ describe("a build target as a tool edge", () => {
 })
 
 describe("Cargo.Build", () => {
+  it("resolves crate-set binaries against every selected manifest", () => {
+    const attrs = { crates: {}, bins: ["generator"], target: "x86_64-pc-windows-msvc", profile: "release" }
+    expect(Cargo.binaries(attrs, [
+      { _tag: "Manifest", path: "apps/alpha/Cargo.toml" },
+      { _tag: "Manifest", path: "apps/beta/Cargo.toml" }
+    ])).toEqual([
+      "apps/alpha/target/x86_64-pc-windows-msvc/release/generator.exe",
+      "apps/beta/target/x86_64-pc-windows-msvc/release/generator.exe"
+    ])
+    expect(Cargo.binaries(attrs, [])).toEqual([])
+    expect(Cargo.binaries(attrs)).toEqual([])
+  })
+
+  it("keeps a root manifest's binaries relative to the workspace", () => {
+    expect(Cargo.binaries({ bins: ["generator"], target: "aarch64-apple-darwin" }, [
+      { _tag: "Manifest", path: "Cargo.toml" }
+    ])).toEqual(["target/aarch64-apple-darwin/debug/generator"])
+  })
+
   it.each([
     [{ bins: ["tool"] }, [`target/debug/tool${process.platform === "win32" ? ".exe" : ""}`]],
     [{ bins: ["tool"], target: "aarch64-apple-darwin" }, ["target/aarch64-apple-darwin/debug/tool"]],

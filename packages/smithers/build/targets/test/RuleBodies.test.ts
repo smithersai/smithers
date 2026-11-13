@@ -308,7 +308,7 @@ describe("success shapes a rule maps out of its runs", () => {
   it("BiomeCheck reports exactly the families the declaration enabled", () => {
     const base = {
       packageManager,
-      sources: [Input.glob("src/**/*.ts")],
+      sources: [Input.file("src/main.ts")],
       deps: [],
       config: Input.file("biome.json"),
       cwd: "packages/example"
@@ -329,7 +329,7 @@ describe("success shapes a rule maps out of its runs", () => {
       "biome",
       "format",
       "--config-path=biome.json",
-      "src"
+      "src/main.ts"
     ])
 
     const lintOnly = plannedValue(
@@ -339,16 +339,16 @@ describe("success shapes a rule maps out of its runs", () => {
       "pnpm",
       "exec",
       "biome",
-      "check",
+      "lint",
       "--config-path=biome.json",
-      "src"
+      "src/main.ts"
     ])
     expect(lintOnly["format"]).toBeNull()
 
     const both = plannedValue(
       BiomeCheck.BiomeCheck({ ...base, lint: true, format: true })
     ) as Record<string, unknown>
-    expect(argvOf(both["check"])).toContain("check")
+    expect(argvOf(both["check"])).toContain("lint")
     expect(argvOf(both["format"])).toContain("format")
   })
 

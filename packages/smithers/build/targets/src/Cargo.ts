@@ -468,12 +468,18 @@ export const packageArgs = (
  * which is what lets another target take it as a tool edge
  * (`S.Shell.Build({ bin: sdk.buildCli })`). A build that names none produces
  * nothing addressable, and the planner refuses the tool edge by name rather
- * than guessing.
+ * than guessing. Resolved manifest selections place outputs under each
+ * manifest's directory. A crate set without resolved selections exposes no
+ * binary paths; a workspace or package selection uses the workspace target
+ * directory.
  *
  * @category accessors
  * @since 0.1.0
  */
-export const binaries = (attrs: unknown): ReadonlyArray<string> => {
+export const binaries = (
+  attrs: unknown,
+  selections?: ReadonlyArray<CrateSelection>
+): ReadonlyArray<string> => {
   const values = (typeof attrs === "object" && attrs !== null ? attrs : {}) as Record<string, unknown>
   const profile = typeof values["profile"] === "string" ? values["profile"] : "dev"
   const directory = profile === "dev" || profile === "test" ? "debug" : profile === "bench" ? "release" : profile
@@ -483,9 +489,14 @@ export const binaries = (attrs: unknown): ReadonlyArray<string> => {
     : /-windows(?:-|$)/.test(target)
     ? ".exe"
     : ""
-  return optionalArray(values["bins"]).map((bin) =>
-    `target/${target === undefined ? "" : `${target}/`}${directory}/${bin}${suffix}`
-  )
+  const resolved = selections ?? (values["crates"] === undefined ? [{ _tag: "Workspace" } as const] : [])
+  return resolved.flatMap((selection) => {
+    const manifestDirectory = selection._tag === "Manifest" ? selection.path.split("/").slice(0, -1).join("/") : ""
+    const prefix = manifestDirectory === "" ? "" : `${manifestDirectory}/`
+    return optionalArray(values["bins"]).map((bin) =>
+      `${prefix}target/${target === undefined ? "" : `${target}/`}${directory}/${bin}${suffix}`
+    )
+  })
 }
 
 /**

@@ -264,7 +264,9 @@ and the build becomes an ordinary dependency, so the generator is built before
 its consumer runs and the generator's identity keys everything it produced. It
 takes no `runtimeArgs`: those are flags for the JavaScript runtime a built
 binary is not, and a declaration that passes them is refused rather than run
-with a different argv.
+with a different argv. Cargo tool edges require a workspace or package selector
+and exactly one named bin. A crate-set build cannot be a tool edge; each
+selected manifest's binaries live under that crate's own `target/` directory.
 
 `Shell.Build({ cache: false, ... })` always executes instead of replaying a
 stored result. Use it when external toolchains or dependencies lack complete

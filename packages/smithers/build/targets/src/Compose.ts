@@ -157,9 +157,11 @@ export const attachFiles = <T extends Target.AnyTarget>(target: T): T & { readon
 }
 
 /**
- * Attrs for {@link Generate}. Three observed forms share the schema: a
- * literal `emit` map, a `script` writing inside `changes`, and a `bin`
- * printing to `stdout` — exactly one of the three selectors is present.
+ * Attrs for {@link Generate}. Exactly one executable form is present:
+ * a literal `emit` map, a `script`, a `bin`, or `command` shell text.
+ * Process forms declare their write set through `changes` or `stdout`.
+ * Only `bin` accepts separate `args`;
+ * `command` and `script` refuse them rather than dropping them.
  *
  * `mode` is the write/check pair every generated-file target carries. It
  * defaults to `write`, and the `lint` verb maps it to `check`, so a declaration
@@ -183,7 +185,14 @@ export const GenerateAttrs = Schema.Struct({
   data: Schema.optional(Attr.Data),
   changes: Schema.optional(Schema.Array(Schema.NonEmptyString)),
   mode: GeneratedFile.Mode
-})
+}).check(Schema.makeFilter((attrs) => {
+  if (attrs.args === undefined) return undefined
+  if (attrs.command !== undefined) {
+    return "Generate command cannot take args; put arguments in command or use bin"
+  }
+  if (attrs.script !== undefined) return "Generate script cannot take args; use bin to pass arguments"
+  return undefined
+}))
 
 /**
  * Payload for one generator drift check: the process the write form spawns,

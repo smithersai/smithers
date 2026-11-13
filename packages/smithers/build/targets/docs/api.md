@@ -77,9 +77,12 @@ stays narrowed to that file; the default returns its parent directory.
 `EsLint`, `BiomeCheck`, and `Dprint` render configuration paths this way. For
 example, `//eslint.config.js` becomes `../../eslint.config.js` under
 `cwd: "packages/foo"`. ESLint also renders source files and glob patterns.
-Biome renders source files and each glob's static directory prefix;
-`//**/*.ts` selects the workspace root. Paths without `//` remain relative to
-`cwd`. Declared inputs retain their original paths for keying.
+Biome expands globs to the exact declared files, respecting exclusions and
+file extensions; an empty expansion runs no checks. Paths without `//` remain
+relative to `cwd`. Declared inputs retain their original paths for keying.
+`BiomeCheck` runs `biome lint` when `lint` is enabled and `biome format`
+when `format` is enabled, independently. Its glob plans use
+`Filegroup.ExpandFilegroupLive` as well as `Exec.ExecLive`.
 
 `DeclaredOutputs` is the complete tree a target promises one execution
 produces. It is target metadata, not something read back out of an action
@@ -262,6 +265,9 @@ default, `--write` applies, and check mode restores the declared write set
 including file type and permissions), `Suite`, `Alias`, `Materialize`, and
 `Files.Test`. `PackageDefaults` applies a function you provide to matching
 package directories. Keep shared package conventions in your repository.
+`Generate` accepts separate `args` only with `bin`. The `command` form
+contains complete shell text, including arguments; `command` and `script`
+reject separate `args` instead of silently dropping them.
 
 `Compose.checkGenerator` and `Compose.GenerateCheckLive` back up declared outputs
 outside the workspace before running the generator. Copies use eight workers,
@@ -368,6 +374,10 @@ The executable is under `target/debug/` by default. An explicit Cargo `target`
 places it under `target/<target>/debug/`; `profile: "release"` uses `release/`,
 `profile: "test"` also uses `debug/`, `profile: "bench"` uses `release/`, other
 profile names use their own directory, and Windows targets add `.exe`.
+A tool edge requires a workspace or package selector and exactly one named bin.
+Crate-set builds are refused as tools, because each selected crate has its own
+target directory. `Cargo.binaries(attrs, selections)` reports those paths
+from resolved manifest selections; an unresolved crate set reports no binaries.
 
 ## Shell selector migration
 

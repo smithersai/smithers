@@ -208,7 +208,7 @@ Constructs a Package value from an explicit target map. Each map key is the targ
 - **Signature:** `Generate(attrs: Compose.GenerateAttrs): Target`
 - **Since:** `0.1.0`
 
-A generated-output target: check by default, `--write` applies. The attrs declare `emit`, `script`, `bin`, `command`, `args`, `env`, `secrets`, `sandbox`, `stdout`, `deps`, `data`, `changes`, and `mode`, and exactly one of `emit`, `script`, `bin`, or `command` is required along with a write set. `mode` defaults to `"write"`. The rule joins the `run` and `lint` verbs, is not cacheable, and fails with `ExecError`, `DriftError`, or `NotImplemented`.
+A generated-output target: check by default, `--write` applies. The attrs declare `emit`, `script`, `bin`, `command`, `args`, `env`, `secrets`, `sandbox`, `stdout`, `deps`, `data`, `changes`, and `mode`, and exactly one of `emit`, `script`, `bin`, or `command` is required along with a write set. `mode` defaults to `"write"`. The rule joins the `run` and `lint` verbs, is not cacheable, and fails with `ExecError`, `DriftError`, or `NotImplemented`. Only `bin` accepts separate `args`; `command` contains complete shell text, and `command` and `script` reject separate arguments.
 
 ### `Smithers.Agents`
 

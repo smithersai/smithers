@@ -304,8 +304,7 @@ const generatedFromScript = S.Generate({
   changes: ["generated/**"]
 })
 const generatedFromCommand = S.Generate({
-  command: "node",
-  args: ["scripts/generate.mjs"],
+  command: "node scripts/generate.mjs",
   data: [sources],
   changes: ["generated/**"]
 })
@@ -364,6 +363,9 @@ const nightly = S.Cron({
   run: [goldenTest]
 })
 ```
+
+Only the `bin` form accepts separate `args`. Put arguments directly in
+`command` shell text; `command` and `script` reject separate `args`.
 
 ## TypeScript, testing, linting, and documentation
 

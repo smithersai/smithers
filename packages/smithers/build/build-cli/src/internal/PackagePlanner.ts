@@ -853,6 +853,11 @@ const targetExecutable = (
   const metadata = Target.metadata(target)
   const label = labelOf(context, target)
   if (metadata.target === "Cargo.Build") {
+    if (attrMember(metadata.attrs, "crates") !== undefined) {
+      return {
+        problem: `bin names ${label}, which uses a crate set; a tool edge requires a workspace or package selector`
+      }
+    }
     const paths = Cargo.binaries(metadata.attrs)
     if (paths.length !== 1) {
       return {
@@ -1869,6 +1874,7 @@ const visit = async (
   const timeoutMs = typeof timeout === "string" ? Shell.durationMs(timeout) : Shell.packageExecTimeoutMs
   let commands: ReadonlyArray<ReadonlyArray<string>> | undefined
   let cargoCrates: ReadonlyArray<CrateRow> | undefined
+  let cargoSelections: ReadonlyArray<Cargo.CrateSelection> | undefined
   let cargoOutFiles: ReadonlyArray<string> = []
   const absoluteEnv: Array<string> = []
   const spawnedTools: Array<string> = []
@@ -2368,6 +2374,7 @@ const visit = async (
         selections = crates.map((row) => ({ _tag: "Manifest", path: row.manifest }))
       }
     }
+    cargoSelections = selections
     if (selections !== undefined && refusal === undefined) {
       const config = attrMember(attrs, "config")
       const commandAttrs = rule === "Cargo.Deny" && typeof config === "object" && config !== null &&
@@ -2895,7 +2902,7 @@ const visit = async (
             commands: commands ?? [],
             outFiles: cargoOutFiles,
             crates: cargoCrates,
-            binaries: rule === "Cargo.Build" ? Cargo.binaries(attrs) : []
+            binaries: rule === "Cargo.Build" ? Cargo.binaries(attrs, cargoSelections) : []
           }
         }
         break

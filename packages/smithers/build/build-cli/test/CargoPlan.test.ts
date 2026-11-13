@@ -249,6 +249,58 @@ describe.skipIf(!hasCargo)("cargo build-system planning", () => {
     expect(commandsOf(fetch).map((command) => command.slice(1))).toEqual([["fetch"]])
   })
 
+  it.each([0, 1, 2])("reports binary paths for a set of %i crates and refuses tool edges", async (count) => {
+    const root = await fixture()
+    const pattern = count === 0 ?
+      "missing/Cargo.toml" :
+      count === 1
+      ? "alpha/Cargo.toml"
+      : "*/Cargo.toml"
+    await write(
+      root,
+      "apps/PACKAGE.ts",
+      appsPackage.replace(
+        "S.glob([\"*/Cargo.toml\"])",
+        `S.glob(${JSON.stringify(pattern)})`
+      ).replace(
+        "targets: { compile, fetch, format, srcs }",
+        "targets: { allApps, compile, fetch, format, srcs }"
+      )
+    )
+    await write(
+      root,
+      "sdk/PACKAGE.ts",
+      "import { Package as apps } from \"../apps/PACKAGE.js\"\n" +
+        sdkPackage.replace("package: \"aomi-sdk\",", "crates: apps.allApps,")
+    )
+    const compile = nodeOf(await planOf(root, "//sdk:buildCli"), "//sdk:buildCli")
+    expect(compile.refusal).toBeUndefined()
+    expect(compile.lane?.kind).toBe("cargo")
+    if (compile.lane?.kind !== "cargo") throw new Error("expected cargo lane")
+    expect(compile.lane.binaries).toEqual(
+      ["alpha", "beta"].slice(0, count).map((name) =>
+        `apps/${name}/target/debug/aomi-build${process.platform === "win32" ? ".exe" : ""}`
+      )
+    )
+    for (
+      const consumer of [
+        "S.Shell.Build({ bin: sdk.buildCli, args: [\"compile\"], outDirs: [\"plugins\"] })",
+        "S.Generate({ bin: sdk.buildCli, args: [\"compile\"], changes: [\"plugins/**\"] })"
+      ]
+    ) {
+      await write(
+        root,
+        "PACKAGE.ts",
+        `import { Smithers as S } from "@smthrs/targets"
+import { Package as sdk } from "./sdk/PACKAGE.js"
+export const Package = S.Package({ targets: { plugins: ${consumer} } })`
+      )
+      const plugins = nodeOf(await planOf(root, "//:plugins"), "//:plugins")
+      expect(plugins.refusal).toContain("uses a crate set; a tool edge requires a workspace or package selector")
+      expect(plugins.targetExecutablePaths ?? []).toEqual([])
+    }
+  })
+
   it("takes a cargo build target as a shell tool edge and spawns the binary it declares", async () => {
     const root = await fixture()
     const planned = await planOf(root, "//:plugins")
