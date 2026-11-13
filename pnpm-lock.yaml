@@ -5188,9 +5188,6 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
-      '@smthrs/core':
-        specifier: 1.0.0-rc.18
-        version: link:../core
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

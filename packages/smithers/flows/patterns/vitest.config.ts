@@ -25,9 +25,9 @@ export default defineConfig({
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-patterns-coverage-${process.pid}`),
       include: ["src/**"],
-      // Frozen 1.0 command contract: deferred declaration callbacks are executed by the
-      // pure core test runtime, so the same 100% gate covers both topology and
-      // value behavior.
+      // Declaration tests use Flow.execute over Interpreter.layer and the
+      // in-memory FlowEngine (test/Execute.ts), so the same 100% gate covers
+      // both topology and value behavior.
       thresholds: {
         branches: 100,
         functions: 100,

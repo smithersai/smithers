@@ -10,9 +10,9 @@
  * escalating fixer, and a saga that unwinds a half-finished deploy. Plain
  * Effect recovers a typed rejection and releases the lock even on interruption.
  */
-import { Node } from "@smthrs/core"
 import { Flow, Graph } from "@smthrs/flow"
 import { Bounded, Escalation, type PatternError, Quarantine, Saga } from "@smthrs/patterns"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
@@ -39,8 +39,11 @@ export const deployment = Saga.make({
   onFailure: "compensate"
 })
 
+/** The deploy plan, including the input every step receives. */
+export const deploymentGraph = Graph.build(deployment, { input: { release: "v1" } })
+
 /** Every call the declaration reaches, forward steps then compensations. */
-export const declaredCalls: ReadonlyArray<string> = Graph.nodes(Graph.build(deployment, { release: "v1" }))
+export const declaredCalls: ReadonlyArray<string> = Graph.nodes(deploymentGraph)
   .filter((node) => node.kind === "FlowCall" && node.id !== "root")
   .map((node) => (node.draft.material.body as { readonly flow: string }).flow)
 

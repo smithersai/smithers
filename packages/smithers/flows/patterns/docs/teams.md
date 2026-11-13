@@ -50,7 +50,7 @@ const supervisor = Supervisor.make({
 Unlike `run`, which delegates the tasks returned by `plan`, `make` fixes its worker topology from the flow input's `tasks` before the boss plan runs. The plan call is journaled and passed to workers, but its returned task list does not select the workers. A declaration without input `tasks` fails during graph building before the boss is called; supply the intended tasks in the input:
 
 ```ts
-Graph.build(supervisor, { goal: "ship the feature", tasks: [{ id: "api", workerType: "coder" }] })
+Graph.build(supervisor, { input: { goal: "ship the feature", tasks: [{ id: "api", workerType: "coder" }] } })
 ```
 
 `make` builds one plan call, then `maxRounds` repetitions of "one call per task, then review", with a finalize call on each review's accepted arm. Each decision is a `Node.branch` on the real value, so an executed declaration makes the calls `run` makes and settles to the same `Completed` or `Exhausted` result: a typed worker failure is a `Failed` outcome, a later round calls only the tasks the review named retriable, and an exhausted supervision does not finalize. Each task is routed to the worker its `workerType` names, and the member is named by the task id. Worker calls are batched into `Node.all` groups of `concurrency` members, and the batches are sequenced, so the declared plan never admits more parallel worker calls than the bound. Every call carries a `phase` field (`"plan"`, `"work"`, `"review"`, `"finalize"`) so a built graph names what each node does.

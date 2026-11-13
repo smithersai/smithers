@@ -1,10 +1,11 @@
 import { expect, it } from "@effect/vitest"
+import { Graph } from "@smthrs/flow"
 import { PatternError } from "@smthrs/patterns"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
-import { declaredCalls, main, protectRelease } from "../../examples/30-failure-control.ts"
+import { declaredCalls, deploymentGraph, main, protectRelease } from "../../examples/30-failure-control.ts"
 
 it("declares the deploy's compensations in reverse order", () => {
   expect(declaredCalls).toEqual([
@@ -15,6 +16,14 @@ it("declares the deploy's compensations in reverse order", () => {
     "delete",
     "release"
   ])
+})
+
+it("passes the release input to every declared action and compensation", () => {
+  const calls = Graph.nodes(deploymentGraph).filter((node) => node.kind === "FlowCall" && node.id !== "root")
+  expect(calls).toHaveLength(6)
+  for (const call of calls) {
+    expect(call.payload).toMatchObject({ input: { release: "v1" } })
+  }
 })
 
 it.effect("bounds checks, isolates a flake, escalates once, and unwinds the deploy", () =>
