@@ -327,7 +327,7 @@ it.each([
     "liveSecret42"
   ],
   ["astral characters", "const cfg = {\"password\": \"abc\u{1F600}def42\"}\n", "abc\u{1F600}def42"],
-  ["a fetch mode word under another name", "const cfg = {\"password\": \"include\"}\n", "include\""],
+  ["a fetch mode word under another name", "const cfg = {\"password\": \"include\"}\n", ": \\\"include"],
   ["an uninterpolated brace", "const cfg = {\"password\": \"correct${horse}staple\"}\n", "correct${horse}staple"],
   ["a value several names end in", `const service_account_private_key = "${"k".repeat(600)}"\n`, "k".repeat(600)],
   ["overlapping values", "const SECRET_DSN = \"amqp://svc:p4ss,w0rd;x@mq/\"\n", ",w0rd;x"],
@@ -361,7 +361,7 @@ it.each([
   ["dotenv key", "API_KEY=short-secret\n", "short-secret"],
   ["hash inside an unquoted value", "DB_PASSWORD=Hx8#1kPq0LmN3aa\n", "1kPq0LmN3aa"],
   ["ampersand inside an unquoted value", "DB_PASSWORD=ab1&cd34ef\n", "cd34ef"]
-])("masks %s before provider delivery", async (_label, source, credential) => {
+])("masks %s before provider delivery", async (label, source, credential) => {
   await Fs.writeFile(Path.join(root, "src/a.ts"), source)
   const executable = Path.join(root, "short-reviewer.mjs")
   const record = Path.join(root, "short-prompt.txt")
@@ -383,7 +383,11 @@ it.each([
     batchSize: 1,
     failOn: "error"
   })))
-  expect(await Fs.readFile(record, "utf8")).not.toContain(credential)
+  const delivered = await Fs.readFile(record, "utf8")
+  expect(delivered).not.toContain(credential)
+  if (label === "a fetch mode word under another name") {
+    expect(delivered).toContain(String.raw`\"password\": \"<credential:`)
+  }
   expect(JSON.stringify(outcome)).not.toContain(credential)
   expect(outcome._tag).toBe("Failure")
   expect(JSON.stringify(outcome)).toContain("Rotate")

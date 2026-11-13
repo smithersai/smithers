@@ -99,7 +99,8 @@ it.each(["stdout", "stderr", "stdin", "status"] as const)("reports review transp
       timeoutMs: 1000
     }, { engine: "claude", model: "test", prompt: "inspect" })).pipe(Effect.provideService(Process, service))
   )
-  expect(error._tag).toBe("smithers-build/LlmReviewError")
+  expect(error).toMatchObject({ _tag: "smithers-build/LlmReviewError", phase: "review" })
+  expect(error.message).toContain(name + " failed")
 })
 
 it("does not turn an unsettled platform status into exit zero", async () => {

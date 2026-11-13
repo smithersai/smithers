@@ -930,8 +930,12 @@ describe("generated fields, cache, and refresh", () => {
     await Fs.writeFile(path, Buffer.alloc(maximumFieldCacheBytes + 1, 0x20))
     await run(withGenerated())
 
+    const validEnvelope = JSON.stringify({ ...original, fields: different })
+    await Fs.writeFile(path, validEnvelope, "utf8")
+    expect((await failure(withGenerated())).message).toContain("description: expected \"different\"")
+
     await Fs.unlink(path)
-    await Fs.writeFile(NodePath.join(root, "cache-target.json"), "{}", "utf8")
+    await Fs.writeFile(NodePath.join(root, "cache-target.json"), validEnvelope, "utf8")
     await Fs.symlink(NodePath.relative(directory, NodePath.join(root, "cache-target.json")), path)
     await run(withGenerated())
   })

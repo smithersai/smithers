@@ -10,6 +10,7 @@ import * as Runtime from "../src/Runtime.ts"
 import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"
 import * as WorkspaceDeclaration from "../src/WorkspaceDeclaration.ts"
+import { plannedCalls } from "./plan.ts"
 
 const lint = Shell.Test({
   bin: { _tag: "NodeModuleBin", package: "@biomejs/biome" },
@@ -289,19 +290,15 @@ describe("unknown attr keys are rejected, never stripped", () => {
   })
 })
 
-describe("construct-only implementations", () => {
-  it("marks every flavor with the NotImplemented stub body, never fake success", () => {
-    const target = Shell.Run({ shell: "echo hi" })
+describe("unsupported file sets", () => {
+  it("plans a typed refusal for a Test operand without a resolvable file set", () => {
     const test = Test({
       expect: Files.difference(lint, lint),
       toBe: "empty"
     })
-    for (const value of [target, test]) {
-      expect(Target.isTarget(value)).toBe(true)
-    }
-    // The plan-time body records the shared NotImplemented action; executing
-    // it without a real implementation layer fails with the typed error.
-    expect(Target.notImplemented("Shell.Run")).toBeDefined()
-    expect(Target.catalogNotImplemented()).toBeDefined()
+    expect(plannedCalls(test)).toEqual([{
+      action: "smithers-build/not-implemented",
+      payload: { target: "Test: target Shell.Test does not expose a resolvable file set yet" }
+    }])
   })
 })

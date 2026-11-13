@@ -21,13 +21,16 @@ const read = (path: string) => Fs.readFile(NodePath.join(repositoryRoot, path), 
 describe("the repository's dependency patches", () => {
   it("declares the upstream fixes and includes every patch in install inputs", async () => {
     const manifest = await read("pnpm-workspace.yaml")
-    const patches = [
-      "patches/@vitest__coverage-v8@5.0.0.patch"
-    ]
+    const declared: Record<string, string> = Yaml.parse(manifest).patchedDependencies
+    const patches = Object.values(declared)
+    expect(patches.length).toBeGreaterThan(0)
+    const files = (await Fs.readdir(NodePath.join(repositoryRoot, "patches")))
+      .filter((name) => name.endsWith(".patch"))
+      .map((name) => `patches/${name}`)
+    expect([...new Set(patches)].sort()).toEqual(files.sort())
     const inputs = await Input.expandPnpmWorkspace(repositoryRoot, "", Input.pnpmWorkspace("//pnpm-workspace.yaml"))
     for (const patch of patches) {
-      expect(manifest).toContain(patch)
-      expect(await read(patch)).toContain("diff --git")
+      expect(await read(patch)).toMatch(/^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m)
       expect(inputs).toContain(patch)
     }
     expect(await read("pnpm-lock.yaml")).toMatch(/^patchedDependencies:/m)

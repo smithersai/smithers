@@ -1027,23 +1027,22 @@ const installed = (executable: string): boolean =>
   spawnSync(executable, ["--version"], { encoding: "utf8", timeout: 30_000 }).status === 0
 
 describe("LlmLint engine argv conformance with the installed CLIs", () => {
-  it.each(
-    [
-      ["codex", ["exec"]],
-      ["claude", []]
-    ] as const
-  )("passes only flags the installed %s CLI documents", async (engine, subcommand) => {
-    if (!installed(engine)) return
-    const cli = await fakeCli(`conformance-${engine}`, engine === "codex" ? codexEnvelope("ok") : claudeEnvelope("ok"))
-    await Effect.runPromise(LlmLint.promptEngine(
-      { workspaceRoot: root, executable: cli.executable },
-      { engine, model: "model", prompt: "prompt" }
-    ))
-    const flags = (await cli.calls())[0]?.args.filter((arg) => /^--[a-z]/.test(arg)) ?? []
-    expect(flags.length).toBeGreaterThan(0)
-    const documented = documentedFlags(engine, subcommand)
-    expect(flags.filter((flag) => !documented.has(flag))).toEqual([])
-  })
+  for (const [engine, subcommand] of [["codex", ["exec"]], ["claude", []]] as const) {
+    it.skipIf(!installed(engine))(`passes only flags the installed ${engine} CLI documents`, async () => {
+      const cli = await fakeCli(
+        `conformance-${engine}`,
+        engine === "codex" ? codexEnvelope("ok") : claudeEnvelope("ok")
+      )
+      await Effect.runPromise(LlmLint.promptEngine(
+        { workspaceRoot: root, executable: cli.executable },
+        { engine, model: "model", prompt: "prompt" }
+      ))
+      const flags = (await cli.calls())[0]?.args.filter((arg) => /^--[a-z]/.test(arg)) ?? []
+      expect(flags.length).toBeGreaterThan(0)
+      const documented = documentedFlags(engine, subcommand)
+      expect(flags.filter((flag) => !documented.has(flag))).toEqual([])
+    })
+  }
 })
 
 describe("LlmLint.review resource and filesystem boundaries", () => {
@@ -1289,24 +1288,29 @@ describe("LlmLint.review resource and filesystem boundaries", () => {
       "let stdin = \"\"\n" +
         "process.stdin.setEncoding(\"utf8\")\n" +
         "for await (const chunk of process.stdin) stdin += chunk\n" +
-        "const leaked = process.env.SMITHERS_TEST_SECRET ?? process.env.SMITHERS_CACHE_TOKEN\n" +
+        "const leaked = process.env.ANTHROPIC_API_KEY ?? process.env.SMITHERS_CACHE_TOKEN\n" +
         "process.stdout.write(JSON.stringify({ result: leaked === undefined ? \"[]\" : leaked }))"
     )
-    const previousSecret = process.env["SMITHERS_TEST_SECRET"]
+    const previousSecret = process.env["ANTHROPIC_API_KEY"]
     const previousToken = process.env["SMITHERS_CACHE_TOKEN"]
-    process.env["SMITHERS_TEST_SECRET"] = "must-not-leak"
+    process.env["ANTHROPIC_API_KEY"] = "must-not-leak"
     process.env["SMITHERS_CACHE_TOKEN"] = "also-must-not-leak"
     try {
+      const allowed = await Effect.runPromise(LlmLint.promptEngine(
+        { workspaceRoot: root, executable },
+        { engine: "claude", model: "model", prompt: "prompt" }
+      ))
+      expect(allowed).toBe("must-not-leak")
       const report = await Effect.runPromise(
         LlmLint.review(
-          { workspaceRoot: root, executable, sensitiveEnv: ["SMITHERS_TEST_SECRET"] },
+          { workspaceRoot: root, executable, sensitiveEnv: ["ANTHROPIC_API_KEY"] },
           payload()
         )
       )
       expect(report.findings).toEqual([])
     } finally {
-      if (previousSecret === undefined) delete process.env["SMITHERS_TEST_SECRET"]
-      else process.env["SMITHERS_TEST_SECRET"] = previousSecret
+      if (previousSecret === undefined) delete process.env["ANTHROPIC_API_KEY"]
+      else process.env["ANTHROPIC_API_KEY"] = previousSecret
       if (previousToken === undefined) delete process.env["SMITHERS_CACHE_TOKEN"]
       else process.env["SMITHERS_CACHE_TOKEN"] = previousToken
     }
@@ -1527,24 +1531,29 @@ describe("LlmLint.promptEngine protocol boundary", () => {
     expect(await cli.calls()).toEqual([])
   })
 
-  it("deduplicates sensitive names while withholding their values", async () => {
+  it("withholds an authentication credential listed more than once", async () => {
     const executable = await scriptCli(
       "prompt-sensitive",
       "let stdin = \"\"\n" +
         "for await (const chunk of process.stdin) stdin += chunk\n" +
-        "process.stdout.write(JSON.stringify({ result: String(process.env.PROMPT_SECRET) }))"
+        "process.stdout.write(JSON.stringify({ result: String(process.env.ANTHROPIC_API_KEY) }))"
     )
-    const previous = process.env["PROMPT_SECRET"]
-    process.env["PROMPT_SECRET"] = "must-not-leak"
+    const previous = process.env["ANTHROPIC_API_KEY"]
+    process.env["ANTHROPIC_API_KEY"] = "must-not-leak"
     try {
+      const allowed = await Effect.runPromise(LlmLint.promptEngine(
+        { workspaceRoot: root, executable },
+        { engine: "claude", model: "model", prompt: "prompt" }
+      ))
+      expect(allowed).toBe("must-not-leak")
       const answer = await Effect.runPromise(LlmLint.promptEngine(
-        { workspaceRoot: root, executable, sensitiveEnv: ["PROMPT_SECRET", "PROMPT_SECRET"] },
+        { workspaceRoot: root, executable, sensitiveEnv: ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"] },
         { engine: "claude", model: "model", prompt: "prompt" }
       ))
       expect(answer).toBe("undefined")
     } finally {
-      if (previous === undefined) delete process.env["PROMPT_SECRET"]
-      else process.env["PROMPT_SECRET"] = previous
+      if (previous === undefined) delete process.env["ANTHROPIC_API_KEY"]
+      else process.env["ANTHROPIC_API_KEY"] = previous
     }
   })
 
