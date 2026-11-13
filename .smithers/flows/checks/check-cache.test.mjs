@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
-import { partitionOf, toolIdentity, trim } from "./check-cache.mjs"
+import { copyMissing, partitionOf, toolIdentity, trim } from "./check-cache.mjs"
 
 const script = resolve(import.meta.dirname, "check-cache.mjs")
 
@@ -112,6 +112,107 @@ test("trim removes the oldest entries until the partition fits", () => {
     }
     assert.equal(trim(partition, 250), 1)
     assert.deepEqual(readdirSync(join(partition, "ee")).sort(), ["middle.json", "new.json"])
+  } finally {
+    f.cleanup()
+  }
+})
+
+for (const command of ["seed", "save"]) {
+  for (const component of ["root", "ancestor", "shard", "nested-shard"]) {
+    test(`${command} refuses a linked destination ${component} without writing outside the cache`, () => {
+      const f = fixture()
+      try {
+        const workspace = f.workspace("workspace")
+        f.cache("seed", workspace)
+        const partition = partitionOf(f.environment.SMITHERS_CHECK_CACHE_DIR, toolIdentity(f.environment))
+        const local = join(workspace, ".flows", "cache")
+        const [source, destination] = command === "seed" ? [partition, local] : [local, partition]
+        const shard = component === "nested-shard" ? join("aa", "nested") : "aa"
+        mkdirSync(join(source, shard), { recursive: true })
+        writeFileSync(join(source, shard, "result.json"), '{"ran":true}')
+        const outside = join(f.root, "outside")
+        mkdirSync(outside)
+        const target = component === "root" ? destination
+          : component === "ancestor" ? (command === "seed" ? join(workspace, ".flows") : f.environment.SMITHERS_CHECK_CACHE_DIR)
+          : join(destination, shard)
+        rmSync(target, { recursive: true, force: true })
+        mkdirSync(resolve(target, ".."), { recursive: true })
+        symlinkSync(outside, target, "dir")
+        const result = spawnSync(process.execPath, [script, command, workspace], { env: f.environment, encoding: "utf8" })
+        assert.notEqual(result.status, 0, result.stderr)
+        assert.match(result.stderr, /without symlinks/)
+        assert.deepEqual(readdirSync(outside), [])
+        assert.equal(lstatSync(target).isSymbolicLink(), true)
+      } finally {
+        f.cleanup()
+      }
+    })
+  }
+}
+
+test("copying refuses linked source roots and ancestors and ignores linked source entries", () => {
+  const f = fixture()
+  try {
+    const source = join(f.root, "source")
+    const target = join(f.root, "target")
+    const outside = join(f.root, "outside")
+    mkdirSync(source)
+    mkdirSync(outside)
+    writeFileSync(join(outside, "result.json"), "{}")
+    symlinkSync(outside, join(source, "linked"), "dir")
+    symlinkSync(join(outside, "result.json"), join(source, "linked.json"))
+    assert.equal(copyMissing(source, target), 0)
+    assert.equal(existsSync(target), false)
+    symlinkSync(outside, join(f.root, "linked-root"), "dir")
+    assert.throws(() => copyMissing(join(f.root, "linked-root"), target), /without symlinks/)
+    mkdirSync(join(outside, "nested"))
+    writeFileSync(join(outside, "nested", "result.json"), "{}")
+    assert.throws(() => copyMissing(join(f.root, "linked-root", "nested"), target), /without symlinks/)
+    assert.equal(existsSync(target), false)
+    assert.equal(copyMissing(join(f.root, "missing"), target), 0)
+  } finally {
+    f.cleanup()
+  }
+})
+
+for (const kind of ["valid", "corrupt", "dangling", "directory"]) {
+  test(`copying refuses a ${kind} destination entry without replacing it`, () => {
+    const f = fixture()
+    try {
+      const source = join(f.root, "source")
+      const target = join(f.root, "target")
+      const outside = join(f.root, "outside.json")
+      mkdirSync(source)
+      mkdirSync(target)
+      writeFileSync(join(source, "result.json"), "{}")
+      if (kind === "directory") mkdirSync(join(target, "result.json"))
+      else {
+        if (kind !== "dangling") writeFileSync(outside, kind === "valid" ? "{}" : "truncated")
+        symlinkSync(outside, join(target, "result.json"))
+      }
+      assert.throws(() => copyMissing(source, target), /regular file without symlinks/)
+      const stat = lstatSync(join(target, "result.json"))
+      assert.equal(kind === "directory" ? stat.isDirectory() : stat.isSymbolicLink(), true)
+      assert.equal(existsSync(outside), kind === "valid" || kind === "corrupt")
+      if (existsSync(outside)) assert.equal(readFileSync(outside, "utf8"), kind === "valid" ? "{}" : "truncated")
+      assert.deepEqual(readdirSync(target), ["result.json"])
+    } finally {
+      f.cleanup()
+    }
+  })
+}
+
+test("copying refuses a regular file used as a directory component", () => {
+  const f = fixture()
+  try {
+    const source = join(f.root, "source")
+    const target = join(f.root, "target")
+    mkdirSync(join(source, "aa"), { recursive: true })
+    mkdirSync(target)
+    writeFileSync(join(source, "aa", "result.json"), "{}")
+    writeFileSync(join(target, "aa"), "keep")
+    assert.throws(() => copyMissing(source, target), /directory without symlinks/)
+    assert.equal(readFileSync(join(target, "aa"), "utf8"), "keep")
   } finally {
     f.cleanup()
   }

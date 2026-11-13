@@ -19,7 +19,7 @@
 // a later comment with a `Released by ...` line, or at its expiry; a stale claim may be
 // taken over. Release removes the label and, when it ends a live claim, comments
 // `Released by <NAME> on <host> at <UTC>: <note>`. `comment --release` appends that line
-// to the receipt or failure comment instead of posting a second one; `--close` then closes
+// to a new receipt, or posts a separate release when that receipt already exists; `--close` then closes
 // the issue (`--pr`: the pull request). A body already on the issue is never posted again.
 //
 // Every GitHub call goes through the machine's GitHub proxy (.smithers/flows/issue-claim/github-proxy.mjs, started
@@ -51,6 +51,7 @@ export const REFRESH_AFTER = 3600_000
 export const TRANSIENT = 75
 const CLAIM = /^Claimed by (.+) on (\S+) at (\S+); expires (\S+?)\.?(?:\s|$)/
 const RELEASE = /^Released by /m
+const RELEASE_SUFFIX = /^\n\nReleased by .+ on \S+ at (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z):(?: [\s\S]*)?$/
 const LIMITED = /secondary rate limit|rate limit exceeded|abuse detection|HTTP 429/i
 
 export const parseRef = (ref) => {
@@ -239,15 +240,20 @@ export const run = (argv, { gh = defaultGh, now = () => new Date(), env = proces
       const body = (option("--body") ?? (option("--body-file") ? readFileSync(option("--body-file"), "utf8") : "")).trim()
       if (!body) throw new Error("comment needs --body TEXT or --body-file PATH")
       const release = flag("--release") && (!blocked || flag("--force"))
-      const posted = initial.comments.some((comment) => (comment.body ?? "").trim().startsWith(body))
+      const posted = initial.comments.some((comment) => {
+        const existing = (comment.body ?? "").trim()
+        if (existing === body) return true
+        if (!existing.startsWith(body)) return false
+        const suffix = RELEASE_SUFFIX.exec(existing.slice(body.length))
+        return suffix !== null && Number.isFinite(Date.parse(suffix[1])) && new Date(suffix[1]).toISOString() === suffix[1]
+      })
       const close = flag("--close") && initial.state !== "closed"
       const unlabeling = release && initial.labeled
-      admit(Number(unlabeling) + Number(!posted) + Number(close))
+      const line = release && live ? releaseBody({ ...me, now: now(), note: option("--note") }) : ""
+      const comment = posted ? line : body + (line ? `\n\n${line}` : "")
+      admit(Number(unlabeling) + Number(Boolean(comment)) + Number(close))
       if (unlabeling) write(unlabel)
-      if (!posted) {
-        const line = release && live ? `\n\n${releaseBody({ ...me, now: now(), note: option("--note") })}` : ""
-        write(["api", `${base}/comments`, "-f", `body=${body}${line}`])
-      }
+      if (comment) write(["api", `${base}/comments`, "-f", `body=${comment}`])
       if (close) {
         write(flag("--pr")
           ? ["api", "--method", "PATCH", `repos/${issue.repo}/pulls/${issue.number}`, "-f", "state=closed"]

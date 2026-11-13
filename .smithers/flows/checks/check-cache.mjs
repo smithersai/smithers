@@ -12,7 +12,9 @@
 //
 // Trust: one workspace VM, one repository, one owner. Code a check runs has
 // the same uid and could write this directory; an entry here is evidence for
-// this host only, like a developer's own `.flows`.
+// this host only, like a developer's own `.flows`. Directory components and
+// entry types must remain stable while copying; symlinks and special files
+// are refused rather than followed.
 import { createHash, randomBytes } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -80,10 +82,38 @@ const parses = (file) => {
   }
 }
 
+// Check every component, including ancestors of the supplied cache root.
+// Creating one directory at a time avoids following an existing linked parent.
+const directory = (name, create = false) => {
+  const absolute = path.resolve(name)
+  const parent = path.dirname(absolute)
+  if (parent !== absolute && !directory(parent, create)) return false
+  let stat = fs.lstatSync(absolute, { throwIfNoEntry: false })
+  if (!stat && create) {
+    try {
+      fs.mkdirSync(absolute)
+    } catch (cause) {
+      if (cause.code !== "EEXIST") throw cause
+    }
+    stat = fs.lstatSync(absolute)
+  }
+  if (!stat) return false
+  if (!stat.isDirectory()) throw new Error(`check cache: expected a directory without symlinks: ${absolute}`)
+  return true
+}
+
+const regularFile = (file) => {
+  const stat = fs.lstatSync(file, { throwIfNoEntry: false })
+  if (stat && !stat.isFile()) throw new Error(`check cache: expected a regular file without symlinks: ${file}`)
+  return Boolean(stat)
+}
+
 /** Copies regular files from `from` into `to` that `to` lacks or holds corrupt; returns the count. */
 export const copyMissing = (from, to) => {
   let copied = 0
   const walk = (source, target) => {
+    if (!directory(source)) return
+    directory(target)
     let entries
     try {
       entries = fs.readdirSync(source, { withFileTypes: true })
@@ -101,9 +131,9 @@ export const copyMissing = (from, to) => {
         continue
       }
       if (!entry.isFile()) continue
-      const exists = fs.existsSync(targetPath)
+      const exists = regularFile(targetPath)
       if (exists && (!entry.name.endsWith(".json") || parses(targetPath) || !parses(sourcePath))) continue
-      fs.mkdirSync(target, { recursive: true })
+      directory(target, true)
       const temporary = path.join(target, `.${entry.name}.${randomBytes(6).toString("hex")}.tmp`)
       try {
         // A clone or copy, never a hard link: the export's copy stays private.
@@ -196,9 +226,11 @@ const main = (argv, environment = process.env) => {
   // Save publishes only into the partition the run was seeded from: a tool
   // replaced mid-check must not carry old-tool verdicts into the new partition.
   const marker = path.join(path.resolve(workspace), ".flows", "check-cache-partition")
+  directory(partition, command === "seed")
+  directory(path.dirname(marker), command === "seed")
+  directory(local)
+  regularFile(marker)
   if (command === "seed") {
-    fs.mkdirSync(partition, { recursive: true })
-    fs.mkdirSync(path.dirname(marker), { recursive: true })
     fs.writeFileSync(marker, partition)
     // The partition directory's mtime records its last use for pruning.
     const now = new Date()

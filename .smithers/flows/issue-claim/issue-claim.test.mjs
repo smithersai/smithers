@@ -565,6 +565,80 @@ describe("issue-claim, gh and the GitHub proxy end to end", { skip: hasGh ? fals
     } finally { await api.close() }
   })
 
+  it("releases an already-posted plain receipt and frees each new claim independently", async () => {
+    const api = await fakeApi()
+    try {
+      await withProxy(api, { SMITHERS_GITHUB_WRITE_SPACING_MS: "1" }, async (cli) => {
+        const issueRef = "o/r#11"
+        assert.equal((await cli("claim", issueRef, "--by", "agent-a")).code, 0)
+        assert.equal((await cli("comment", issueRef, "--body", "Fixed the bug")).out.action, "commented")
+        const args = ["comment", issueRef, "--by", "agent-a", "--body", "Fixed the bug", "--release"]
+        for (let round = 0; round < 2; round++) {
+          if (round) assert.equal((await cli("claim", issueRef, "--by", "agent-a")).code, 0)
+          const done = await cli(...args)
+          assert.deepEqual([done.code, done.out.action, done.out.released], [0, "already-commented", true], done.stderr)
+          const issue = api.issues.get(11)
+          assert.deepEqual(issue.labels, [])
+          assert.match(issue.comments.at(-1).body, /^Released by agent-a on \S+ at \S+: done$/)
+          assert.equal(issue.comments.filter((comment) => comment.body === "Fixed the bug").length, 1)
+          const checked = await cli("check", issueRef, "--by", "agent-b")
+          assert.deepEqual([checked.code, checked.out.free, checked.out.holder], [0, true, null], checked.stderr)
+          const count = issue.comments.length
+          assert.equal((await cli(...args)).out.action, "already-commented")
+          assert.equal(issue.comments.length, count, "a completed release is not posted again")
+        }
+      })
+    } finally { await api.close() }
+  })
+
+  it("retains distinct prefix-related comments and deduplicates complete normalized bodies", async () => {
+    const api = await fakeApi()
+    try {
+      await withProxy(api, { SMITHERS_GITHUB_WRITE_SPACING_MS: "1" }, async (cli) => {
+        const pairs = [
+          ["Fixed the bug", "Fixed"],
+          ["Result: 10 tests", "Result: 1"],
+          ["Fixed\n\nReleased by incomplete", "Fixed"],
+          ["Fixed\n\nReleased by agent on host at invalid: done", "Fixed"],
+          ["Fixed\n\nReleased by agent on host at 2026-99-29T00:00:00.000Z: done", "Fixed"],
+          ["Fixed\n\nReleased by agent on host at 2026-02-30T00:00:00.000Z: done", "Fixed"],
+          ["Fixed extra\n\nReleased by agent on host at 2026-09-29T00:00:00.000Z: done", "Fixed"]
+        ]
+        for (const [index, [existing, requested]] of pairs.entries()) {
+          const issueRef = `o/r#${20 + index}`
+          assert.equal((await cli("comment", issueRef, "--body", existing)).code, 0)
+          const posted = await cli("comment", issueRef, "--body", requested)
+          assert.deepEqual([posted.code, posted.out.action], [0, "commented"], posted.stderr)
+          const retried = await cli("comment", issueRef, "--body", `  ${requested}\n `)
+          assert.deepEqual([retried.code, retried.out.action], [0, "already-commented"], retried.stderr)
+          assert.deepEqual(api.issues.get(20 + index).comments.map((comment) => comment.body), [existing, requested])
+        }
+      })
+    } finally { await api.close() }
+  })
+
+  it("recognizes folded release suffixes with multiline or blank notes on retry", async () => {
+    const api = await fakeApi()
+    try {
+      await withProxy(api, { SMITHERS_GITHUB_WRITE_SPACING_MS: "1" }, async (cli) => {
+        for (const [index, note] of ["done\nEvidence retained", "   "].entries()) {
+          const number = 12 + index
+          const issueRef = `o/r#${number}`
+          assert.equal((await cli("claim", issueRef, "--by", "agent-a")).code, 0)
+          const args = ["comment", issueRef, "--by", "agent-a", "--body", "Fixed", "--release", "--note", note]
+          assert.equal((await cli(...args)).out.action, "commented")
+          assert.equal((await cli(...args)).out.action, "already-commented")
+          assert.equal(api.issues.get(number).comments.length, 2)
+          assert.equal((await cli("claim", issueRef, "--by", "agent-a")).code, 0)
+          assert.equal((await cli(...args)).out.released, true)
+          const checked = await cli("check", issueRef, "--by", "agent-b")
+          assert.deepEqual([checked.code, checked.out.holder], [0, null], checked.stderr)
+          assert.equal(api.issues.get(number).comments.length, 4, "the new claim needs its own release")
+        }
+      })
+    } finally { await api.close() }
+  })
+
   it("spaces the writes of concurrent processes through the one proxy", async () => {
     const api = await fakeApi()
     try {
