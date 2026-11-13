@@ -207,6 +207,14 @@ Still open in `LiveFactory`, both reached only from Node:
 | `pathOf`'s invalid conversation | The page's conversation ids are generated session UUIDs. Only the CLI and the MCP server pass an id a person typed; the unit gate covers it. |
 | `read` | No browser code calls `Factory.read`: the page follows `events`. Only the CLI reads (`src/surfaces/commands.vibe`). Taking `read` off the browser's `Factory` is the lead's call (asked on the board). |
 
+**Two sandboxes in one allowance** (`e2e/core-sandbox-two.spec.ts`, session 7). Learn more moves the page to the
+tab's tour conversation, and it stays there after the tour, so a contributor's sandbox at home and another in the tour
+conversation share one ledger: two entries, both running, with distinct ids and separate machines (a file written in
+one is missing in the other). It closes `sandboxDecision`'s comparisons against another entry (`distinctFrom`,
+`validSandboxes`), `replaceSandbox` and `sandboxIndex` passing another entry, and `meterDelay`'s share between two
+running sandboxes. `runningCountPrefix` (4 arms) is called only by contracts; it becomes a `spec function` when a
+compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`).
+
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
 
 The lead's two decisions: move `decide`'s non-blank guarantee into the outline's schema, and make the session type
