@@ -303,6 +303,8 @@ function valueTruthyCond(value: Expr, ty: Ty): Expr | null {
   switch (ty.kind) {
     case "int": case "nat":
       return { kind: "binop", op: "≠", left: value, right: { kind: "num", value: 0 } };
+    case "real":
+      return { kind: "binop", op: "≠", left: value, right: { kind: "toReal", expr: { kind: "num", value: 0 } } };
     case "string":
       return { kind: "binop", op: ">", left: { kind: "field", obj: value, field: "length" }, right: { kind: "num", value: 0 } };
     case "bool":
@@ -471,8 +473,8 @@ function asCondition(e: TExpr): TExpr {
   if (e.kind === "binop" && (e.op === "&&" || e.op === "||"))
     return { ...e, left: asCondition(e.left), right: asCondition(e.right), ty: bool };
   if (e.ty.kind === "bool") return e;
-  if (e.ty.kind === "int" || e.ty.kind === "nat")
-    return { kind: "binop", op: "!==", left: e, right: { kind: "num", value: 0, ty: e.ty }, ty: bool };
+  if (e.ty.kind === "int" || e.ty.kind === "nat" || e.ty.kind === "real")
+    return { kind: "binop", op: "!==", left: e, right: { kind: "num", value: 0, ty: e.ty.kind === "real" ? { kind: "int" } : e.ty }, ty: bool };
   if (e.ty.kind === "string")
     return { kind: "binop", op: ">",
       left: { kind: "field", obj: e, field: "length", ty: { kind: "nat" } },
@@ -584,8 +586,10 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
         };
       }
       // Number truthiness: !n → n == 0
-      if (e.op === "!" && (e.expr.ty.kind === "int" || e.expr.ty.kind === "nat"))
-        return { kind: "binop", op: "=", left: lowerExpr(e.expr, binds), right: { kind: "num", value: 0 } };
+      if (e.op === "!" && (e.expr.ty.kind === "int" || e.expr.ty.kind === "nat" || e.expr.ty.kind === "real"))
+        return { kind: "binop", op: "=", left: lowerExpr(e.expr, binds), right: e.expr.ty.kind === "real"
+          ? { kind: "toReal", expr: { kind: "num", value: 0 } }
+          : { kind: "num", value: 0 } };
       // String-union truthiness: !c → c == its `""` member.
       if (e.op === "!" && e.expr.ty.kind === "user" && hasEmptyStringMember(_typeDecls, e.expr.ty))
         return { kind: "binop", op: "=", left: lowerExpr(e.expr, binds), right: { kind: "constructor", name: "", type: e.expr.ty.name, args: [] } };

@@ -173,7 +173,7 @@ export function presentFact(cond: TExpr): PresentFact | null {
  * @category utilities
  */
 export const isFalsyCapableTy = (ty: Ty, decls: TypeDecls): boolean =>
-  ["int", "nat", "string", "bool"].includes(ty.kind) || hasEmptyStringMember(decls, ty);
+  ["int", "nat", "real", "string", "bool"].includes(ty.kind) || hasEmptyStringMember(decls, ty);
 
 // `Some(0)` / `Some("")` / `Some(false)` are falsy, so a truthiness check
 // (`if (o)`, `!o`, `o ? :`) over a nullable primitive must still test the bound

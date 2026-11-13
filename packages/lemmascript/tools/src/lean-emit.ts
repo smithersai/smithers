@@ -851,13 +851,13 @@ function emitDecl(d: Decl): string {
       }
       // Mirror Dafny's `function {:axiom}`: an uninterpreted total function.
       // In Lean that is an `opaque` declaration (sound — it commits to no body,
-      // only to the type being inhabited). Any `requires`/`ensures` the source
-      // carried become a characterizing `axiom`; `\result` was already replaced
+      // only to the type being inhabited). Nonempty postconditions become a
+      // characterizing `axiom` under the preconditions; `\result` was already replaced
       // by the call expression in the transform, so ensures reference `name args`.
       const tp = d.typeParams.length > 0 ? ` {${d.typeParams.join(" ")} : Type}` : "";
       const params = d.params.map(p => `(${escapeName(p.name)} : ${tyToLean(p.type)})`).join(" ");
       const sig = `opaque ${escapeName(d.name)}${tp}${params ? ` ${params}` : ""} : ${tyToLean(d.returnType)}`;
-      if (d.requires.length === 0 && d.ensures.length === 0) return sig;
+      if (d.ensures.length === 0) return sig;
       // Spec axiom: ∀ params, req1 → … → (ens1 ∧ … ∧ ensN). Tagged `@[grind]` so
       // the proof automation can use it, matching the ghost-function convention.
       // Parenthesize each clause: an unwrapped `∀ k, P` would otherwise swallow
