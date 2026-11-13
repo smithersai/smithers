@@ -10,6 +10,7 @@ import { finishDispatch, probeDispatch } from "../worker/liveDispatchDecision.vi
 import { completion } from "../worker/replyProgressDecision.vibe"
 import { connectReturn, resumeToken } from "../worker/accountsDecision.vibe"
 import { sandboxConversation } from "../src/core/sandboxHostDecision.vibe"
+import { cleanupStep, driveRewakes, settledReported } from "../worker/workerDecision.vibe"
 import { run, Int } from "./run.vibe"
 
 const OPS = ["new", "propose", "split", "link", "commit", "comment", "accept", "decline", "uncommit"] as const
@@ -103,3 +104,15 @@ it.live("decisions/sandbox-conversation", () => run("decisions/sandbox-conversat
   return sandboxConversation(id) === /^[a-zA-Z0-9._-]{1,120}$/.test(id)
 }))
 
+const Cleanup = Schema.Struct({
+  tag: Schema.Literals(["Settled", "Forgotten", "Running", "Suspended", "Failed", "", "settled", "Forgotten "]),
+  reported: Schema.Boolean, unanswered: Schema.Boolean,
+})
+
+/** The reply's cleanup alarm (worker/workerDecision.vibe): only a settled flow re-arms and returns, only a forgotten one
+ * re-arms and goes on, anything else returns as is; a main drive re-arms only when settled; a receipt closes as reported
+ * when its usage was reported or its admission never answered. */
+it.live("decisions/reply-cleanup", () => run("decisions/reply-cleanup", Cleanup, ({ tag, reported, unanswered }) => {
+  const step = tag === "Settled" ? "rewake-return" : tag === "Forgotten" ? "rewake-continue" : "return"
+  return cleanupStep(tag) === step && driveRewakes(tag) === (tag === "Settled") && settledReported(reported, unanswered) === (reported || unanswered)
+}))
