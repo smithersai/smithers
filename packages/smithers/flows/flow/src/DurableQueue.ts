@@ -312,6 +312,11 @@ const externalParent = (item: {
     ? Tracer.externalSpan({ traceId: item.traceId, spanId: item.spanId, sampled: item.sampled })
     : undefined
 
+/**
+ * From half a second, growing by half, to a minute between tries, without a
+ * limit: how a failed offer is retried, and how the `handle` step runs a
+ * handler again after an interrupt-only exit.
+ */
 const defaultRetrySchedule = Schedule.min([
   Schedule.exponential(500, 1.5),
   Schedule.spaced("1 minute")
@@ -394,7 +399,9 @@ const itemExecutionOf = <Payload extends Schema.Top, Success extends Schema.Top,
     // The handler changes the world; until its exit is recorded a crash runs it again, as before, so its repeat
     // must be safe (the queue's documented at-least-once). Once recorded, it is never run again.
     tier: "irreversible",
-    idempotencyKey: "handler"
+    idempotencyKey: "handler",
+    // An interrupt-only handler exit is no result: the step runs the handler again, after a delay and without a limit.
+    interruptRetryPolicy: defaultRetrySchedule
   })
   const complete = Action.make(`DurableQueue/${self.name}/complete`, {
     payload: { token, exit: recorded },
@@ -454,10 +461,12 @@ const makeWorkerEffect = Effect.fnUntraced(
                 exit.cause.reasons,
                 Filter.fromPredicate(Cause.isInterruptReason)
               )
-              // Match DurableDeferred.into: interruption alone is not a durable outcome. The step stops unrecorded,
-              // and the item's next delivery runs the handler again.
+              // Match DurableDeferred.into: interruption alone is not a durable outcome. Ending the step interrupted
+              // would settle the execution as cancelled, and every redelivery would replay that without running the
+              // handler. The marker is spent by the step's `interruptRetryPolicy`, which runs the handler again and
+              // never gives up, so it is never the step's error.
               if (interrupts.length === exit.cause.reasons.length) {
-                return yield* Effect.failCause(Cause.fromReasons<never>(interrupts))
+                return yield* (Effect.fail(new Action.InfraInterrupt({})) as Effect.Effect<never>)
               }
               return interrupts.length > 0 ? Exit.failCause(Cause.fromReasons(reasons)) : exit
             })
@@ -587,7 +596,9 @@ const makeWorkerEffect = Effect.fnUntraced(
  * to record the result never runs the handler again, and the caller always
  * receives the handler's exit once the store records it. Until the handler's
  * exit is recorded, a crash runs the handler again, so its side effects must
- * be idempotent.
+ * be idempotent. A handler that exits with interruption alone records nothing:
+ * the same step runs it again, from half a second up to a minute between
+ * tries and without a limit, while the worker keeps the item.
  *
  * `concurrency` defaults to one and must be a positive safe integer. It is
  * checked before the persisted queue is opened.

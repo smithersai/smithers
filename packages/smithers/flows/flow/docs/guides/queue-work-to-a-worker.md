@@ -81,8 +81,9 @@ it itself.
 The handler's exit is what the waiting flow receives. A handler that fails with
 the queue's declared error type resumes the caller with that typed failure; a
 handler that dies resumes it with a defect. An interrupt-only handler exit records
-nothing and requeues the item without consuming an attempt. Mixed failures are
-recorded with interrupt reasons removed.
+nothing: the same step runs the handler again, from half a second up to a minute
+between tries and without a limit, while the worker keeps the item. Mixed
+failures are recorded with interrupt reasons removed.
 
 Each item runs as a durable execution named by the deferred it completes. Its
 first step runs the handler and records the handler's exit; its second records
