@@ -1557,6 +1557,7 @@
         "@smthrs/views": "1.0.0-rc.18",
         "ignore": "7.0.8",
         "minimatch": "10.2.6",
+        "smol-toml": "1.8.0",
         "yaml": "2.9.0",
       },
       "devDependencies": {

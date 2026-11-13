@@ -39,16 +39,18 @@ describe("shell gate discovery", () => {
 })
 
 describe("Cargo metadata parsing", () => {
-  it("parses quoted package names, decimal metadata and quoted keys while ignoring array tables", () => {
+  it("parses quoted package names, decimal metadata, quoted keys and array tables", () => {
     expect(Cargo.manifestFacts(`[package]
 name = 'widget'
 [package.metadata.values]
 ratio = 1.5
 'name' = 'quoted'
-[[package.metadata.ignored]]
+[[package.metadata.entries]]
 arrayValue = true
-[unfinished
-`)).toEqual({ name: "widget", metadata: { values: { ratio: 1.5, name: "quoted" } } })
+`)).toEqual({ name: "widget", metadata: { values: { ratio: 1.5, name: "quoted" }, entries: [{ arrayValue: true }] } })
+  })
+  it("rejects malformed table headers instead of returning partial metadata", () => {
+    expect(() => Cargo.manifestFacts("[package.metadata]\nenabled = true\n[unfinished")).toThrow()
   })
   it.each([null, [], 0, "value"])("does not match scalar or array metadata as an object", (metadata) => {
     expect(Cargo.metadataMatches(metadata, { enabled: true })).toBe(false)

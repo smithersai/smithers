@@ -385,7 +385,7 @@ describe("Cargo manifest facts", () => {
     expect(Cargo.manifestFacts("[package]\nname = \"plain\"\n")).toEqual({ name: "plain", metadata: {} })
   })
 
-  it("ignores comments, quoted keys, and inline tables it cannot use", () => {
+  it("reads quoted keys and ignores comments", () => {
     const noisy = [
       "# [package.metadata.aomi]",
       "[package]",
@@ -395,6 +395,71 @@ describe("Cargo manifest facts", () => {
       ""
     ].join("\n")
     expect(Cargo.manifestFacts(noisy)).toEqual({ name: "quoted", metadata: { aomi: { skip: false } } })
+  })
+
+  it.each([
+    "[package.metadata.aomi]\nskip = true",
+    "[package.metadata]\naomi = { skip = true }",
+    "[package.metadata]\naomi.skip = true",
+    "[package]\nmetadata.aomi.skip = true",
+    "[package]\nmetadata = { aomi = { skip = true } }",
+    "package.metadata.aomi.skip = true"
+  ])("matches equivalent metadata declarations: %s", (declaration) => {
+    const facts = Cargo.manifestFacts(declaration)
+    expect(facts.metadata).toEqual({ aomi: { skip: true } })
+    expect(Cargo.metadataMatches(facts.metadata, { aomi: { skip: true } })).toBe(true)
+    expect(Cargo.metadataMatches(facts.metadata, { aomi: { skip: false } })).toBe(false)
+  })
+
+  it.each(["\"\"\"", "'''"])("keeps keys and table headers inside multiline %s strings", (quote) => {
+    const manifest = [
+      "[package]",
+      "name = \"real\"",
+      "description = " + quote,
+      "name = \"spoofed\"",
+      "[package.metadata.aomi]",
+      "skip = true",
+      quote,
+      "[package.metadata.ci]",
+      "test = true"
+    ].join("\n")
+    const facts = Cargo.manifestFacts(manifest)
+    expect(facts).toEqual({ name: "real", metadata: { ci: { test: true } } })
+    expect(Cargo.metadataMatches(facts.metadata, { aomi: { skip: true } })).toBe(false)
+    expect(Cargo.metadataMatches(facts.metadata, { ci: { test: true } })).toBe(true)
+  })
+
+  it("decodes strings, quoted dotted keys, numeric forms and metadata arrays", () => {
+    const facts = Cargo.manifestFacts([
+      "[package]",
+      "name = \"real\"",
+      "[package.metadata.\"aomi.app\"]",
+      "display = \"a \\\"quoted\\\" # label\"",
+      "\"ci.test\" = true",
+      "labels = [\"fast\", \"unit\"]",
+      "limit = 1_024",
+      "ratio = 1e2",
+      "release = +2"
+    ].join("\n"))
+    expect(facts).toEqual({
+      name: "real",
+      metadata: {
+        "aomi.app": {
+          display: "a \"quoted\" # label",
+          "ci.test": true,
+          labels: ["fast", "unit"],
+          limit: 1024,
+          ratio: 100,
+          release: 2
+        }
+      }
+    })
+    expect(Cargo.metadataMatches(facts.metadata, { "aomi.app": { "ci.test": true, limit: 1024 } })).toBe(true)
+  })
+
+  it("fails closed on invalid TOML instead of returning partial facts", () => {
+    expect(() => Cargo.manifestFacts("[package]\nname = \"one\"\nname = \"two\"")).toThrow()
+    expect(() => Cargo.manifestFacts("[package.metadata]\naomi = { skip = true")).toThrow()
   })
 
   it("matches a filter as a subset of the declared metadata", () => {

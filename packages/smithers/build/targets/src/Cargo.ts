@@ -5,6 +5,7 @@
  */
 
 import * as Schema from "effect/Schema"
+import { parse as parseToml } from "smol-toml"
 import * as Attr from "./Attr.ts"
 import * as Compose from "./Compose.ts"
 import * as Input from "./Input.ts"
@@ -576,12 +577,11 @@ export const metadataMatches = (
 /**
  * The crate name and `[package.metadata]` table one `Cargo.toml` declares.
  *
- * This reads exactly the two things a crate set needs and nothing else: the
- * planner never resolves a dependency graph out of a manifest, and a manifest
- * feature this does not understand is ignored rather than guessed at. Table
- * headers, bare and quoted keys, and the scalar value forms TOML spells the
- * same way JSON does are read; arrays, inline tables, and multi-line strings
- * are skipped, because no crate-set decision has ever depended on one.
+ * A TOML parser keeps table headers, dotted keys and inline tables equivalent,
+ * and never interprets multiline string contents as declarations. Metadata
+ * tables are copied to null-prototype records with the same reserved-key and
+ * nesting checks regardless of their source syntax. Invalid TOML raises
+ * instead of silently dropping a crate from a filtered set.
  *
  * @category parsing
  * @since 0.1.0
@@ -589,96 +589,27 @@ export const metadataMatches = (
 export const manifestFacts = (
   text: string
 ): { readonly name: string | undefined; readonly metadata: Record<string, unknown> } => {
-  let name: string | undefined
-  const metadata: Record<string, unknown> = Object.create(null) as Record<string, unknown>
-  let path: ReadonlyArray<string> | undefined
-  const refuseReserved = (segment: string): void => {
-    if (reservedMetadataKeys.has(segment)) {
-      throw new Error(`Cargo.toml names the reserved key ${JSON.stringify(segment)} under [package.metadata]`)
-    }
-  }
-  const unquote = (token: string): string =>
-    (token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) ||
-      (token.startsWith("'") && token.endsWith("'") && token.length >= 2)
-      ? token.slice(1, -1)
-      : token
-  const splitHeader = (header: string): ReadonlyArray<string> => {
-    const parts: Array<string> = []
-    let current = ""
-    let quote: string | undefined
-    for (const character of header) {
-      if (quote !== undefined) {
-        if (character === quote) quote = undefined
-        else current += character
-        continue
+  const manifest = parseToml(text, { maxDepth: maximumMetadataDepth + 2 })
+  const isTable = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Date)
+  const copyMetadata = (value: unknown, depth: number): unknown => {
+    if (typeof value !== "object" || value === null || value instanceof Date) return value
+    if (depth > maximumMetadataDepth) throw new RangeError("Cargo.toml metadata table is too deep")
+    if (Array.isArray(value)) return value.map((item) => copyMetadata(item, depth + 1))
+    const table: Record<string, unknown> = Object.create(null) as Record<string, unknown>
+    for (const [key, item] of Object.entries(value)) {
+      if (reservedMetadataKeys.has(key)) {
+        throw new Error(`Cargo.toml names the reserved key ${JSON.stringify(key)} under [package.metadata]`)
       }
-      if (character === "\"" || character === "'") {
-        quote = character
-        continue
-      }
-      if (character === ".") {
-        parts.push(current.trim())
-        current = ""
-        continue
-      }
-      current += character
+      table[key] = copyMetadata(item, depth + 1)
     }
-    parts.push(current.trim())
-    return parts
+    return table
   }
-  const scalar = (raw: string): unknown => {
-    const token = raw.trim()
-    if (token === "true") return true
-    if (token === "false") return false
-    if (/^-?\d+$/.test(token)) return Number(token)
-    if (/^-?\d+\.\d+$/.test(token)) return Number(token)
-    if (
-      (token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) ||
-      (token.startsWith("'") && token.endsWith("'") && token.length >= 2)
-    ) return token.slice(1, -1)
-    return undefined
-  }
-  for (const rawLine of text.split("\n")) {
-    const line = rawLine.trim()
-    if (line === "" || line.startsWith("#")) continue
-    if (line.startsWith("[")) {
-      const end = line.indexOf("]")
-      if (end === -1) continue
-      // `[[array.of.tables]]` is not a table this reader models.
-      path = line.startsWith("[[") ? undefined : splitHeader(line.slice(1, end))
-      continue
-    }
-    const separator = line.indexOf("=")
-    if (separator === -1 || path === undefined) continue
-    const key = unquote(line.slice(0, separator).trim())
-    // A `#` inside a quoted value is not a comment; strip only a trailing one.
-    const rest = line.slice(separator + 1)
-    const quoted = /^\s*(?:"[^"]*"|'[^']*')/.exec(rest)
-    const value = scalar(quoted === null ? rest.split("#")[0]! : quoted[0])
-    if (value === undefined) continue
-    if (path.length === 1 && path[0] === "package" && key === "name" && typeof value === "string") {
-      name = value
-      continue
-    }
-    if (path.length < 3 || path[0] !== "package" || path[1] !== "metadata") continue
-    if (path.length - 2 > maximumMetadataDepth) throw new RangeError("Cargo.toml metadata table is too deep")
-    refuseReserved(key)
-    let table = metadata
-    for (const segment of path.slice(2)) {
-      refuseReserved(segment)
-      // Own properties only: a plain read would follow the prototype chain and
-      // hand the walk an object it is about to write through.
-      const existing = Object.hasOwn(table, segment) ? table[segment] : undefined
-      if (typeof existing === "object" && existing !== null && !Array.isArray(existing)) {
-        table = existing as Record<string, unknown>
-      } else {
-        const created: Record<string, unknown> = Object.create(null) as Record<string, unknown>
-        table[segment] = created
-        table = created
-      }
-    }
-    table[key] = value
-  }
+  const pkg = manifest["package"]
+  const name = isTable(pkg) && typeof pkg["name"] === "string" ? pkg["name"] : undefined
+  const metadata = isTable(pkg) && isTable(pkg["metadata"])
+    ? copyMetadata(pkg["metadata"], 0) as Record<string, unknown>
+    : Object.create(null) as Record<string, unknown>
   return { name, metadata }
 }
 

@@ -236,7 +236,9 @@ const compile = S.Cargo.Build({ crates: S.Files.difference(allApps, skipped), li
 
 The planner expands the set at plan time, keys the consuming target on the
 manifests it found and their contents, and renders one cargo command per
-selected crate.
+selected crate. Table headers, dotted keys and inline tables in
+`Cargo.toml` describe the same metadata. Multiline strings remain string
+values; invalid TOML fails planning instead of silently changing the set.
 
 `Cargo.Clippy` and `Cargo.Test` construct targets with exactly one crate
 selector: `workspace: true`, `package: "<name>"`, or `crates: <set>`.

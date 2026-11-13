@@ -97,3 +97,71 @@ describe("Cargo selector validation", () => {
     expect(Target.isTarget(Cargo.Test({ package: "aomi-sdk", noRun: true, data: [] }) as never)).toBe(true)
   })
 })
+
+describe("Cargo manifest TOML metadata safety", () => {
+  it.each(["__proto__", "constructor", "prototype"])("refuses reserved %s keys in every table form", (key) => {
+    for (
+      const declaration of [
+        "[package.metadata]\n" + key + " = 1",
+        "[package]\nmetadata." + key + " = 1",
+        "[package]\nmetadata = { " + key + " = 1 }",
+        "[package.metadata]\naomi = { " + key + " = true }",
+        "[package.metadata]\nentries = [{ " + key + " = true }]",
+        "[[package.metadata.entries]]\n" + key + " = true"
+      ]
+    ) {
+      expect(() => Cargo.manifestFacts(declaration)).toThrow(/reserved/)
+    }
+    expect(({} as Record<string, unknown>)["smithersPolluted"]).toBeUndefined()
+  })
+
+  it("copies arrays of tables to null-prototype records and preserves date values", () => {
+    const facts = Cargo.manifestFacts([
+      "[package.metadata]",
+      "released = 2026-01-02",
+      "values = [1, [true], { skip = false }]",
+      "[[package.metadata.entries]]",
+      "name = \"first\"",
+      "[[package.metadata.entries]]",
+      "name = \"second\""
+    ].join("\n"))
+    expect(facts.metadata["released"]).toBeInstanceOf(Date)
+    expect((facts.metadata["released"] as Date).toISOString()).toBe("2026-01-02")
+    expect(facts.metadata["values"]).toEqual([1, [true], { skip: false }])
+    expect(facts.metadata["entries"]).toEqual([{ name: "first" }, { name: "second" }])
+    for (const entry of facts.metadata["entries"] as Array<object>) expect(Object.getPrototypeOf(entry)).toBeNull()
+    expect(Object.getPrototypeOf((facts.metadata["values"] as Array<unknown>)[2] as object)).toBeNull()
+  })
+
+  it.each(["", "package = 1", "[[package]]\nname = 'array'", "[package]\nname = 1\nmetadata = false"])(
+    "returns no invented facts for %s",
+    (manifest) => {
+      const facts = Cargo.manifestFacts(manifest)
+      expect(facts).toEqual({ name: undefined, metadata: {} })
+      expect(Object.getPrototypeOf(facts.metadata)).toBeNull()
+    }
+  )
+
+  it("accepts metadata tables at the nesting bound", () => {
+    const path = Array.from({ length: Cargo.maximumMetadataDepth }, () => "nested")
+    const facts = Cargo.manifestFacts("[package.metadata." + path.join(".") + "]\nleaf = true")
+    let table = facts.metadata
+    for (const key of path) {
+      table = table[key] as Record<string, unknown>
+      expect(Object.getPrototypeOf(table)).toBeNull()
+    }
+    expect(table["leaf"]).toBe(true)
+  })
+
+  it("bounds nested inline tables and arrays before walking them", () => {
+    const depth = Cargo.maximumMetadataDepth + 5
+    for (
+      const value of [
+        "{ n = ".repeat(depth) + "true" + " }".repeat(depth),
+        "[".repeat(depth) + "true" + "]".repeat(depth)
+      ]
+    ) {
+      expect(() => Cargo.manifestFacts("[package.metadata]\nvalue = " + value)).toThrow(/excessively nested/)
+    }
+  })
+})
