@@ -7200,3 +7200,36 @@ most are the next scope: `src/surfaces/signin.vibe` (27), `src/core/sandboxHost.
 "Open" rows are decisions that hold no row of their own and are not "Not yet proved", so the landing check cannot
 see them. They are the next proof batches, in the order above (authority first). The audit scripts and their full
 output (file, line, row, condition) are in the lane report (`~/vl/vl-proveall3.REPORT.md`, nyc-01).
+
+## Final stamp: the whole gate on main `07185eed` (vl-proveall3, 2026-11-13)
+
+The revision holds vl-proveall's last `update` arms (batch 55, `e9b08d1a`), vl-coverage-core's orphan settlement in
+`worker/Sandboxes.vibe` with `recoveryOf`'s new contract (`b49d96d4`), and third-lane batches 40 to 42. Driver
+`~/vl/proveall3-gate/driver3.py`, shards `shards-r4.json`, results `r4-07185eed1099/` (nyc-01); 12 shards, at most
+4 boxes, 18:49 to 20:54 UTC, every exit 0.
+
+| Gate | Result |
+| --- | --- |
+| `pnpm verify`, 84 production sources | 92 Dafny runs (84 sources and 8 dependencies re-proved inside their shards), 20,379 obligations, 0 errors |
+| `verify:broken`, 84 modules | 2,964/2,964 rejected; 0 survived, 0 invalid, 0 missing |
+| `runtime_broken.py` | exit 0 |
+| Inventory and landing check | 4,073 rows, 0 "Not yet proved", 1,115 contracts each with a mutant, 0 stale cases |
+
+| Shard | Files | Box job | Command s | Result |
+| --- | ---: | --- | ---: | --- |
+| proof-heavy | 7 | `449d41b72ee2a98d5d663471` | 2,681 | 7/7 verified |
+| proof-1 | 26 | `348f47e57b432aeaef123714` | 271 | 27/27 |
+| proof-2 | 26 | `f12cdcd6d41ff127d2e2e082` | 273 | 30/30 |
+| proof-3 (+ runtime) | 25 | `b2999479b114f8a1ca3535f0` | 305 | 28/28; runtime 0 |
+| broken-conversation | 1 | `4c67116b3215e664fb000e13` | 4,713 | 219/219 |
+| broken-heavy | 6 | `fd82b65499fa2c838631ff83` | 3,079 | 257/257 |
+| broken-1 | 11 | `607c73130b3bd8d977985fb9` | 1,604 | 414/414 |
+| broken-2 | 13 | `d4568571a98382949a3c5ea2` | 1,820 | 416/416 |
+| broken-3 | 13 | `5fe62a00d135e7dc1fd0ac99` | 873 | 414/414 |
+| broken-4 | 14 | `59e06f0e1a2357e556b9773a` | 986 | 415/415 (first box `744521a4…` interrupted by SIGTERM, rerun; no verdict taken from it) |
+| broken-5 | 13 | `67332b935611465b259864b6` | 861 | 415/415 |
+| broken-6 | 13 | `5194721047b203cfd0c9a5cd` | 1,260 | 414/414 |
+
+`sandboxHostDecision` and `sandboxWorkerDecision`, which vl-coverage-core asked to be rerun, are in the run. After
+this revision, batches 43 to 45 (`openOperation`, `cursorAccepted`, `mayConnect`) each passed their module's proof
+and mutants on a box before landing (2/2 each).
