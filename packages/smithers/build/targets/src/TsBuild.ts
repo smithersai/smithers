@@ -186,6 +186,8 @@ const buildArgv = (attrs: Attrs): ReadonlyArray<string> => {
         attrs.format === "dual" ? "esm,cjs" : attrs.format,
         "--out-dir",
         attrs.outDir,
+        "--tsconfig",
+        Input.rootRelative(attrs.cwd, attrs.tsconfig.path),
         ...attrs.tool.external.flatMap((name) => ["--external", name])
       ])
   }

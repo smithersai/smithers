@@ -297,9 +297,10 @@ describe("TsBuild", () => {
   it.each(
     [
       ["dual", "esm,cjs"],
+      ["esm", "esm"],
       ["cjs", "cjs"]
     ] as const
-  )("renders a %s tsup distribution and every external", (format, renderedFormat) => {
+  )("renders a %s tsup distribution with its declared tsconfig and every external", (format, renderedFormat) => {
     const target = TsBuild({
       ...base,
       tool: { name: "tsup", external: ["effect", "vitest"] },
@@ -314,6 +315,8 @@ describe("TsBuild", () => {
       renderedFormat,
       "--out-dir",
       "dist",
+      "--tsconfig",
+      "tsconfig.build.json",
       "--external",
       "effect",
       "--external",
@@ -335,8 +338,19 @@ describe("TsBuild", () => {
     }
     expect(plannedArgv(TsBuild({ ...rooted, tool: { name: "tsc" }, format: "esm" })))
       .toEqual(["pnpm", "exec", "vibelang", "-p", "../../tsconfig.build.json"])
-    expect(plannedArgv(TsBuild({ ...rooted, tool: { name: "tsup", external: [] }, format: "esm" })).slice(2, 4))
-      .toEqual(["tsup", "src/index.ts"])
+    expect(plannedArgv(TsBuild({ ...rooted, tool: { name: "tsup", external: [] }, format: "esm" })))
+      .toEqual([
+        "pnpm",
+        "exec",
+        "tsup",
+        "src/index.ts",
+        "--format",
+        "esm",
+        "--out-dir",
+        "dist",
+        "--tsconfig",
+        "../../tsconfig.build.json"
+      ])
   })
 })
 
