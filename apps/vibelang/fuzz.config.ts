@@ -10,7 +10,9 @@ const measured = process.env.WORKERD_COVERAGE === "1" ? 5 : 1
 export default defineConfig({
   plugins: [vibelang(), quickjsModule],
   test: {
-    testTimeout: Math.max(120_000 * measured, Duration.toMillis(Duration.fromInputUnsafe((process.env.FUZZ_BUDGET ?? "250 millis") as Duration.Input)) + 30_000), hookTimeout: 120_000 * measured,
+    // A target checks its budget only between executions, so the slack covers one more: `api-objects/world` takes about
+    // 12 s per execution on nyc-01 and outlasted 30 s of slack on a loaded 4-vCPU box (campaign16, 2026-11-13).
+    testTimeout: Math.max(120_000 * measured, Duration.toMillis(Duration.fromInputUnsafe((process.env.FUZZ_BUDGET ?? "250 millis") as Duration.Input)) + 120_000), hookTimeout: 120_000 * measured,
     maxWorkers: 2,
     projects: [
       { extends: true, test: { name: "fuzz", environment: "happy-dom", include: ["fuzz/*.fuzz.vibe"], exclude: [...configDefaults.exclude, "fuzz/*.workerd.fuzz.vibe", "fuzz/*.node.fuzz.vibe"], server: { deps: { inline: ["foldkit"] } } } },

@@ -1,7 +1,8 @@
 // The sandbox host (src/core/sandboxHost.vibe) while a command runs on the machine, against 0024: a command whose
 // generation stops meanwhile is refused `stale-generation`; one the machine loses is `command-uncertain`; a second
-// writer over the same storage (a Durable Object's next incarnation) that meets the running command records it
-// `command-uncertain`; and whichever writer records an operation first decides its one answer for every caller. A
+// writer over the same storage that meets the running command leaves it to its fiber, which answers it (b49d96d4: only
+// the Worker's store settles a command no fiber runs); and whichever writer records an operation first decides its
+// one answer for every caller. A
 // refused command adds nothing to the terminal's output; an answered one adds its line. `failureReason` names an
 // Unavailable by its own reason, anything else tagged by its tag, and the rest `defect`.
 import { it } from "@effect/vitest"
@@ -73,8 +74,8 @@ effect function scenario(name: typeof Scenarios[number], text: string) {
     const answered = answer(join running)
     const replay = answer(try Effect.exit(first.command("c", "held", text, generation)))
     const output = (try second.snapshot("c")).output
-    const expected = name === "answered" ? `ok held:${text.length}`
-      : name === "machine-lost" || name === "other-writer-meets" ? "command-uncertain"
+    const expected = name === "answered" || name === "other-writer-meets" ? `ok held:${text.length}`
+      : name === "machine-lost" ? "command-uncertain"
       : name === "stopped" ? "stale-generation"
       : other!
     if (name === "other-writer-answers" && other !== `ok held:${text.length}`) return false

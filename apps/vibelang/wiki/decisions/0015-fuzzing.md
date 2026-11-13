@@ -1787,6 +1787,7 @@ mutant caught:
 | `Reply.vibe` 384-385 | `reply/answers` | a start the conversation refuses, every execution (the target runs about 7 executions in 5 s, so the draw missed it) | the refusal composes |
 | `Issues.vibe` 365 | `issues/journaled-writes` | a malformed recovery key, every execution, writing nothing | the key check removed |
 | `LiveIssues.vibe` 14, `LiveWiki.vibe` 15 | `clients/issues-wiki-replies` | each of the four calls over a 200 that is not JSON and one that is not a state | `protocol` answered as `unavailable`, in each client |
+| `ReplyAccounting.vibe` 100, 103 | `objects/reply-cleanup` (new) | a reply whose settlement transport is interrupted for 1 to 3 alarms, with 0 to 20 checkpointed tokens: the main drive settles, each interrupted alarm tries the charge once and keeps the hold and its receipt, the recovered cleanup settles in its own alarm, the next forgets the main intent, and exactly the checkpointed tokens are spent | the cleanup's early return removed (a second charge attempt in one alarm); the settled cleanup's return removed (the main intent forgotten in the same alarm) |
 | `apiObjects.vibe` 153, 167 | `api-objects/history-publish` (new) | the History object with a drawn export setting and token, then its alarm or a page: publishing on stores the Publish intent with its first round due, and an alarm drives that round, which finds GitHub offline and schedules the next later; publishing off stores no intent | the start removed; the start made unconditional; the alarm made a no-op |
 
 `fuzz2-full14` (job on base `bbe14456`) falsified `sandbox/host-recovery` after 615 executions at seed 20261107: a
@@ -1795,6 +1796,24 @@ host leaves a pending command to its fiber, and only the Worker's store settles 
 expected the removed `settle-command` arm, so the suite, not the product, was wrong. The oracle now requires a pending
 command to stay pending with no receipt, unless the meter finds the allowance spent and stops the sandbox (an
 `exhaust/` receipt, as for a viewer's running sandbox). Mutant caught: the host completing a pending command.
+`sandbox/host-races` (`fuzz/sandbox-races.node.fuzz.vibe`) failed `full14` on its first execution for the same
+reason: a second writer whose read meets the running command no longer records it `command-uncertain`; the command's
+fiber answers it. Mutant caught: the same.
+
+The 30-minute campaign (`campaign16`, `node26` box, job `3f32518c9d5a6ae9379977dc`, seed `fuzz2-20261113`, 150 s per
+target, the 23 targets of the 8 files this session changed, 1,856 s): 20 passed and 2 falsified, 4,211,415
+executions over 22 receipts; `api-objects/world` wrote none. All three failures were in the suite, none in the
+product:
+
+- `mock/factory-edges` (5 executions): a seek to the walkthrough's last stop lets it finish on its own before the
+  target ends it, and `endTour` is then refused `not-replying`, as it should be. The target accepts that refusal
+  (check 16) and still requires the post behind the tour to be answered.
+- `accounts/broker-sequences` (7 executions): the `reads` and `queued` steps hold rules for one state each (signed in
+  and unconnected; connected), which only the walk guaranteed. Drawn in another state they refuted (checks 240, 250).
+  Each now skips a state its rule does not describe.
+- `api-objects/world`: no receipt; the test timed out. A target checks its budget only between executions, and one
+  execution of this target takes about 12 s on nyc-01, more on a loaded box, past the 30 s of slack `fuzz.config.ts`
+  gave. The slack is now 120 s. At the same seed on nyc-01 it passed, 13 executions in 157 s.
 
 ## Complete browser sources and settled history receipts
 

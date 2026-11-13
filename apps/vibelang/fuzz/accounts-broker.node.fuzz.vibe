@@ -469,13 +469,16 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
       case "reads": {
         // Signed in without a connection: issue and wiki reads from an unreachable GitHub are unavailable, an issue
         // write passes its role check and is asked to connect, and a merge a community member cannot make is refused
-        // by the role policy before any flow runs. Virtual time.
+        // by the role policy before any flow runs. Virtual time. A drawn step in any other state (signed out, an agent,
+        // connected, a maintainer who may merge) is skipped.
+        if (signedIn === undefined || signedIn.agent || kvOf(w).has("delegation/" + signedIn.id)) break
+        if (((try parsed((try w.ask(SITE + "/api/auth/session")).text)) as { readonly role: Role }).role === "maintainer") break
         const issue = (op2: string, key: string) => JSON.stringify({ op: op2, number: 0, parent: 0, title: "Fuzzed", text: "Fuzzed", assignee: "", example: "", prior: "", key })
         const issues = try seen(try stepped(w.ask(SITE + "/api/issues"), 20))
         const wiki = try seen(try stepped(w.ask(SITE + "/api/wiki?page=index"), 20))
         const write = try seen(try stepped(w.ask(SITE + "/api/issues", { method: "POST", origin: SITE, body: issue("new", `r${op.n}`) }), 20))
         const merge = try seen(try stepped(w.ask(SITE + "/api/issues", { method: "POST", origin: SITE, body: issue("spec-revise", `m${op.n}`) }), 20))
-        if (signedIn === undefined || issues.status !== 503 || wiki.status !== 503 || write.status !== 401 || !write.text.includes(`"connect"`) || merge.status !== 403) return try refute(op.kind, 240)
+        if (issues.status !== 503 || wiki.status !== 503 || write.status !== 401 || !write.text.includes(`"connect"`) || merge.status !== 403) return try refute(op.kind, 240)
         break
       }
       case "propose": {
@@ -512,7 +515,8 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
       case "queued": {
         // Connected, a write waits on an unreachable GitHub holding the issue lock; a read queued behind it is answered
         // unavailable at its 13-second queue deadline, never left waiting. The write is then abandoned. Virtual time.
-        if (!brokered) break
+        // Only a connected person's write reaches GitHub and holds the lock; a drawn step in any other state is skipped.
+        if (!brokered || signedIn === undefined || signedIn.agent || !kvOf(w).has("delegation/" + signedIn.id)) break
         const body = JSON.stringify({ op: "new", number: 0, parent: 0, title: "Fuzzed", text: "Fuzzed", assignee: "", example: "", prior: "", key: `q${op.n}` })
         const { read, waited } = try stepped(effect {
           const writer = fork w.ask(SITE + "/api/issues", { method: "POST", origin: SITE, body })

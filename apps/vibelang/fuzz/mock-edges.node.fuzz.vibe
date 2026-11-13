@@ -114,7 +114,9 @@ it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, st
     try factory.post(room, "q", "Ada", "install")
     const asked = (try factory.read(room, 0)).entries.find((entry) => entry.clientId === "q")
     if (asked === undefined) throw new Refuted({ check: 9 })
-    try factory.endTour(room)
+    // A seek to the last stop lets the walkthrough finish on its own first; ending it then is refused as no tour.
+    const ended = try exit(factory.endTour(room))
+    if (ended._tag === "Failure" && !(Cause.squash(ended.cause) instanceof Refused && (Cause.squash(ended.cause) as Refused).refusal === "not-replying")) throw new Refuted({ check: 16 })
     try settled(factory, room, asked.id)
     if ((try reply(factory, room, asked.id))?.done !== true) throw new Refuted({ check: 10 })
 

@@ -8,6 +8,11 @@ import { Reply, touring } from "../src/core/flows.vibe"
 import { wikiPath } from "../src/core/wiki.vibe"
 import type { HistoryReader } from "../src/history/tools.vibe"
 import * as Objects from "../worker/Objects.vibe"
+import * as Daily from "../worker/Budget.vibe"
+import * as Accounting from "../worker/ReplyAccounting.vibe"
+import { readerOver } from "../worker/HistoryObject.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
 import { run, same, Finding, Int, TextOrBoundary, REPLAY_FLOOR } from "./run.vibe"
 import { scriptedModel } from "./model-server.vibe"
 
@@ -252,3 +257,46 @@ it.live("objects/steered-host", () => run("objects/steered-host", Scenario, ({ p
   for (const scenario of OBJECT_SCENARIOS) try objectScenario(scenario, pick, text, admit)
   return true
 }, undefined, { minimum: REPLAY_FLOOR }))
+
+const Cleanup = Schema.Struct({ tokens: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 20 })), interruptions: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 })) })
+
+/**
+ * The reply's accounting cleanup (worker/ReplyAccounting.vibe `alarm`) when its settlement is interrupted: the main
+ * drive settles first; each alarm while the transport is interrupted retries the charge once, keeping the hold and
+ * its receipt; once it recovers, the cleanup settles in its own alarm, the next forgets the main intent, and the hold
+ * is released with exactly the checkpointed tokens spent.
+ */
+it.live("objects/reply-cleanup", () => run("objects/reply-cleanup", Cleanup, ({ tokens, interruptions }) => effect {
+  const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+  const daily = try Objects.budget(storage, 100)
+  let interrupted = true
+  let attempts = 0
+  const trace: Array<string> = []
+  const transport = {
+    admit: (_day: string, key: string, ceiling: number) => daily.admit(key, ceiling),
+    spend: effect (_day: string, key: string, used: number, reported: boolean, ceiling: number) => {
+      attempts++
+      if (interrupted) return try Effect.interrupt
+      try daily.spend(key, used, reported, ceiling)
+    },
+  }
+  const tracked = Accounting.tracked(storage, "reply/m1", transport)
+  if (!(try tracked.admit("day", "model/one", 20))) return false
+  try tracked.checkpoint!("day", "model/one", tokens, true, 20)
+  const sequencer = try Objects.conversation(storage)
+  try Objects.post("cleanup", storage, sequencer, "a1", "Ada", "Question")
+  const history = readerOver(() => Effect.fail(new Unreachable({ what: "history" })), () => Effect.fail(new Unreachable({ what: "history" })))
+  const model = { model: undefined, unusable: "unset" }
+  const alarm = () => Effect.tap(Objects.alarm("cleanup", storage, sequencer, transport, model, history), (r) => Effect.sync(() => { trace.push(`${r._tag}:${attempts}`); attempts = 0 }))
+  try alarm()
+  for (let turn = 0; turn < interruptions; turn++) try alarm()
+  if ((try promise(() => storage.get(Daily.RESERVED))) !== 20 || (try promise(() => storage.list({ prefix: "reply-accounting/" }))).size !== 1) return false
+  interrupted = false
+  for (let turn = 0; turn < 5; turn++) try alarm()
+  // One alarm is one step: the main drive settles, each interrupted alarm tries the charge once, the recovered cleanup
+  // settles in its own alarm, and only the next one forgets the main intent.
+  const expected = ["Settled:0", ...Array.from({ length: interruptions }, () => "Retrying:1"), "Settled:1", "Forgotten:0"]
+  if (expected.some((step, at) => trace[at] !== step)) return false
+  return (try promise(() => storage.get(Daily.RESERVED))) === 0 && ((try promise(() => storage.get(Daily.SPENT))) ?? 0) === tokens
+    && (try promise(() => storage.list({ prefix: "reply-accounting/" }))).size === 0
+}))
