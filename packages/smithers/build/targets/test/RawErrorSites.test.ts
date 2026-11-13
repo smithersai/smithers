@@ -53,13 +53,15 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   ["src/RepoTarget.ts", 3],
   ["src/Runtime.ts", 6],
   ["src/RustToolchain.ts", 3],
-  ["src/SafeFs.ts", 27],
+  ["src/SafeFs.ts", 26],
   ["src/Secret.ts", 2],
   ["src/SecretProxy.ts", 2],
   ["src/Shell.ts", 2],
   ["src/Target.ts", 2],
   ["src/WorkspaceDeclaration.ts", 3],
   ["src/internal/PrivateStore.ts", 5],
+  // The existing SafeFs directory-overflow error moved with the shared reader.
+  ["src/internal/ReadDirectory.ts", 1],
   ["src/internal/ReviewBatches.ts", 1],
   ["src/internal/ReviewModel.ts", 9]
 ]

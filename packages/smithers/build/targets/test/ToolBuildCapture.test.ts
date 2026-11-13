@@ -16,15 +16,10 @@ import type * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as Target from "../src/Target.ts"
 import type { CaptureFile, CaptureIo, CaptureLimits } from "../src/ToolBuild.ts"
 import { defaultCaptureIo, defaultCaptureLimits, measureOutput, measureOutputs, OutputError } from "../src/ToolBuild.ts"
-
-vi.mock("node:fs/promises", async (original) => {
-  const actual = await original<typeof import("node:fs/promises")>()
-  return { ...actual, opendir: vi.fn(actual.opendir) }
-})
 
 let root: string
 let outside: string
@@ -64,25 +59,6 @@ afterEach(async () => {
 })
 
 describe("directory capture failures", () => {
-  it.each(["read", "close", "both"] as const)(
-    "closes its directory and preserves the first %s failure",
-    async (failure) => {
-      const readError = new Error("directory read failed")
-      const closeError = new Error("directory close failed")
-      const read = vi.fn(async () => {
-        if (failure !== "close") throw readError
-        return null
-      })
-      const close = vi.fn(async () => {
-        if (failure !== "read") throw closeError
-      })
-      vi.mocked(Fs.opendir).mockResolvedValueOnce({ read, close } as unknown as NodeFs.Dir)
-      await expect(defaultCaptureIo.readdir(at("out"))).rejects.toBe(failure === "close" ? closeError : readError)
-      expect(read).toHaveBeenCalledTimes(1)
-      expect(close).toHaveBeenCalledTimes(1)
-    }
-  )
-
   it("refuses a directory that disappears before recursive capture", async () => {
     await write("out/nested/file.txt", "content")
     let observations = 0

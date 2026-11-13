@@ -30,6 +30,7 @@ import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as NodeUtil from "node:util/types"
+import { readDirectory } from "./internal/ReadDirectory.ts"
 
 /**
  * The size of the reusable buffer content streams through.
@@ -98,7 +99,7 @@ export interface OpenFile {
 /**
  * The filesystem seam confined reads go through.
  *
- * Nothing in this module calls `node:fs` directly; it calls this. Production
+ * Confined reads call this seam rather than `node:fs` directly. Production
  * supplies {@link defaultIo}, and a test supplies a wrapper that swaps a path
  * between two named calls. A traversal race is therefore reproduced by
  * choosing when the swap happens rather than by racing a timer, so the
@@ -151,30 +152,8 @@ export const defaultIo: Io = {
   realpath: (path) => Fs.realpath(path),
   readlink: defaultReadlink,
   lstat: (path) => Fs.lstat(path, { bigint: true }),
-  readdir: async (path, limit = maximumDirectoryEntries) => {
-    const directory = await Fs.opendir(path)
-    const entries: Array<NodeFs.Dirent> = []
-    let primary: unknown
-    try {
-      while (true) {
-        const entry = await directory.read()
-        if (entry === null) break
-        if (entries.length >= limit) {
-          throw new Error(`directory contains more than ${limit} entries: ${path}`)
-        }
-        entries.push(entry)
-      }
-    } catch (cause) {
-      primary = cause
-    }
-    try {
-      await directory.close()
-    } catch (cause) {
-      primary ??= cause
-    }
-    if (primary !== undefined) throw primary
-    return entries
-  },
+  readdir: async (path, limit = maximumDirectoryEntries) =>
+    readDirectory(await Fs.opendir(path), limit, `directory contains more than ${limit} entries: ${path}`),
   open: async (path) => {
     const handle = await Fs.open(path, openFlags)
     return {
@@ -904,6 +883,19 @@ export const readText = async (
   })
 }
 
+/**
+ * Operations used to flush and release an open directory descriptor.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface DirectorySyncIo {
+  readonly open: (path: string, flags: "r") => Promise<{
+    readonly sync: () => Promise<void>
+    readonly close: () => Promise<void>
+  }>
+}
+
 const directorySyncUnsupported = new Set(["ENOTSUP", "EOPNOTSUPP", "EINVAL", "ENOSYS"])
 
 /**
@@ -913,6 +905,8 @@ const directorySyncUnsupported = new Set(["ENOTSUP", "EOPNOTSUPP", "EINVAL", "EN
  * reports directory sync as unsupported has nothing to flush; both count as
  * done. Any other sync failure, and a close failure after the sync, is
  * reported, because the entry the caller just published may not be durable.
+ * The optional operations and platform arguments let callers inject faults
+ * without replacing filesystem modules or changing the process platform.
  * Every durable publication in the workspace, generated files, scaffolded
  * packages, and redacted deployment state, ends with this call. A supplied
  * filesystem opens the directory through the caller's publication capability.
@@ -920,8 +914,12 @@ const directorySyncUnsupported = new Set(["ENOTSUP", "EOPNOTSUPP", "EINVAL", "EN
  * @category publication
  * @since 0.1.0
  */
-export const syncDirectory = async (directory: string, io: Pick<typeof Fs, "open"> = Fs): Promise<void> => {
-  if (process.platform === "win32") return
+export const syncDirectory = async (
+  directory: string,
+  io: DirectorySyncIo = Fs,
+  platform: NodeJS.Platform = process.platform
+): Promise<void> => {
+  if (platform === "win32") return
   const handle = await io.open(directory, "r")
   let primary: unknown
   try {

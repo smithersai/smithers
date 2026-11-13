@@ -18,6 +18,7 @@ import * as NodeUtil from "node:util/types"
 import * as Exec from "./Exec.ts"
 import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
+import { readDirectory } from "./internal/ReadDirectory.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Shell from "./Shell.ts"
 import * as Target from "./Target.ts"
@@ -302,27 +303,7 @@ const openFlags = NodeFs.constants.O_RDONLY |
 export const defaultCaptureIo: CaptureIo = {
   realpath: (path) => Fs.realpath(path),
   lstat: (path) => Fs.lstat(path, { bigint: true }),
-  readdir: async (path, remaining = defaultCaptureLimits.entries) => {
-    const directory = await Fs.opendir(path)
-    const entries: Array<NodeFs.Dirent> = []
-    let failure: unknown
-    try {
-      while (entries.length <= remaining) {
-        const entry = await directory.read()
-        if (entry === null) break
-        entries.push(entry)
-      }
-    } catch (cause) {
-      failure = cause
-    }
-    try {
-      await directory.close()
-    } catch (cause) {
-      if (failure === undefined) failure = cause
-    }
-    if (failure !== undefined) throw failure
-    return entries
-  },
+  readdir: async (path, remaining = defaultCaptureLimits.entries) => readDirectory(await Fs.opendir(path), remaining),
   openFile: async (path) => {
     const handle = await Fs.open(path, openFlags)
     return {

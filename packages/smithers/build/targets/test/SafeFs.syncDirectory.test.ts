@@ -1,77 +1,41 @@
-/**
- * Directory sync faults need a module-boundary fault: every other filesystem
- * call reaches the real host, and only the one directory handle each case
- * selects misbehaves.
- */
-import type * as FsPromises from "node:fs/promises"
-import * as RealFs from "node:fs/promises"
+/** Directory sync faults are injected without changing the host filesystem or platform. */
+import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as SafeFs from "../src/SafeFs.ts"
-
-const { fault } = vi.hoisted(() => ({
-  fault: {
-    target: undefined as string | undefined,
-    syncCode: undefined as string | undefined,
-    syncWithoutCode: false,
-    closeFails: false
-  }
-}))
-
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const original = await importOriginal<typeof FsPromises>()
-  const failing = (message: string, code?: string) => async () => {
-    throw code === undefined ? new Error(message) : Object.assign(new Error(message), { code })
-  }
-  return {
-    ...original,
-    default: original,
-    open: async (
-      path: Parameters<typeof original.open>[0],
-      flags: Parameters<typeof original.open>[1],
-      mode?: Parameters<typeof original.open>[2]
-    ) => {
-      const handle = await original.open(path, flags, mode)
-      if (String(path) !== fault.target) return handle
-      const overrides: Record<PropertyKey, unknown> = {}
-      if (fault.syncCode !== undefined) overrides["sync"] = failing("directory sync unavailable", fault.syncCode)
-      if (fault.syncWithoutCode) overrides["sync"] = failing("directory sync failed")
-      if (fault.closeFails) overrides["close"] = failing("directory close failed")
-      return new Proxy(handle, {
-        get(inner, property) {
-          if (property in overrides) return overrides[property]
-          const value: unknown = Reflect.get(inner, property, inner)
-          return typeof value === "function" ? value.bind(inner) : value
-        }
-      })
-    }
-  }
-})
 
 let root: string
 
 beforeEach(async () => {
-  root = await RealFs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-safefs-sync-"))
-  fault.target = undefined
-  fault.syncCode = undefined
-  fault.syncWithoutCode = false
-  fault.closeFails = false
+  root = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-safefs-sync-"))
 })
 
 afterEach(async () => {
-  await RealFs.rm(root, { recursive: true, force: true })
+  await Fs.rm(root, { recursive: true, force: true })
 })
 
-const withPlatform = async (platform: string, run: () => Promise<void>): Promise<void> => {
-  const descriptor = Object.getOwnPropertyDescriptor(process, "platform")
-  if (descriptor === undefined) throw new Error("process.platform is not an own property")
-  Object.defineProperty(process, "platform", { ...descriptor, value: platform })
-  try {
-    await run()
-  } finally {
-    Object.defineProperty(process, "platform", descriptor)
+/** Each invocation owns its fault and records the operations that actually ran. */
+const directoryIo = (faults: { readonly open?: Error; readonly sync?: Error; readonly close?: Error } = {}) => {
+  const events: Array<string> = []
+  const io: SafeFs.DirectorySyncIo = {
+    open: async (path, flags) => {
+      expect(flags).toBe("r")
+      events.push(`open:${path}`)
+      if (faults.open !== undefined) throw faults.open
+      return {
+        sync: async () => {
+          events.push("sync")
+          if (faults.sync !== undefined) throw faults.sync
+        },
+        close: async () => {
+          events.push("close")
+          if (faults.close !== undefined) throw faults.close
+        }
+      }
+    }
   }
+  return { io, events }
 }
 
 describe("SafeFs.syncDirectory", () => {
@@ -80,34 +44,64 @@ describe("SafeFs.syncDirectory", () => {
   })
 
   it("opens nothing where the platform has no directory descriptor", async () => {
-    await withPlatform("win32", async () => {
-      await expect(SafeFs.syncDirectory(NodePath.join(root, "absent"))).resolves.toBeUndefined()
-    })
+    const { io, events } = directoryIo()
+    await expect(SafeFs.syncDirectory(root, io, "win32")).resolves.toBeUndefined()
+    expect(events).toEqual([])
   })
 
   it.skipIf(process.platform === "win32")("reports a directory it cannot open", async () => {
     await expect(SafeFs.syncDirectory(NodePath.join(root, "absent"))).rejects.toThrow(/ENOENT/)
   })
 
-  it.skipIf(process.platform === "win32").each(["ENOTSUP", "EOPNOTSUPP", "EINVAL", "ENOSYS"])(
-    "tolerates a filesystem that reports %s for directory sync",
+  it("opens, syncs and closes through the supplied operations", async () => {
+    const { io, events } = directoryIo()
+    await expect(SafeFs.syncDirectory(root, io, "linux")).resolves.toBeUndefined()
+    expect(events).toEqual([`open:${root}`, "sync", "close"])
+  })
+
+  it("reports an injected open failure without syncing or closing", async () => {
+    const open = new Error("directory open failed")
+    const { io, events } = directoryIo({ open })
+    await expect(SafeFs.syncDirectory(root, io, "linux")).rejects.toBe(open)
+    expect(events).toEqual([`open:${root}`])
+  })
+
+  it.each(["ENOTSUP", "EOPNOTSUPP", "EINVAL", "ENOSYS"])(
+    "tolerates %s from directory sync and still closes the handle",
     async (code) => {
-      fault.target = root
-      fault.syncCode = code
-      await expect(SafeFs.syncDirectory(root)).resolves.toBeUndefined()
+      const { io, events } = directoryIo({ sync: Object.assign(new Error("unsupported"), { code }) })
+      await expect(SafeFs.syncDirectory(root, io, "linux")).resolves.toBeUndefined()
+      expect(events).toEqual([`open:${root}`, "sync", "close"])
     }
   )
 
-  it.skipIf(process.platform === "win32").each(
+  it.each(["ENOTSUP", "EOPNOTSUPP", "EINVAL", "ENOSYS"])(
+    "reports a close failure after an unsupported %s sync",
+    async (code) => {
+      const close = new Error("directory close failed")
+      const { io, events } = directoryIo({ sync: Object.assign(new Error("unsupported"), { code }), close })
+      await expect(SafeFs.syncDirectory(root, io, "linux")).rejects.toBe(close)
+      expect(events).toEqual([`open:${root}`, "sync", "close"])
+    }
+  )
+
+  it.each(
     [
-      ["a sync that fails outright", { syncCode: "EIO" }, /directory sync unavailable/],
-      ["a sync failure that carries no code", { syncWithoutCode: true }, /directory sync failed/],
-      ["a handle that will not close", { closeFails: true }, /directory close failed/],
-      ["a sync failure over a close failure", { syncCode: "EIO", closeFails: true }, /directory sync unavailable/]
+      ["a sync that fails outright", Object.assign(new Error("directory sync failed"), { code: "EIO" })],
+      ["a sync failure that carries no code", new Error("directory sync failed")]
     ] as const
-  )("reports %s", async (_case, how, expected) => {
-    fault.target = root
-    Object.assign(fault, how)
-    await expect(SafeFs.syncDirectory(root)).rejects.toThrow(expected)
+  )("reports %s before any close failure", async (_case, sync) => {
+    for (const close of [undefined, new Error("directory close failed")]) {
+      const { io, events } = directoryIo({ sync, ...(close === undefined ? {} : { close }) })
+      await expect(SafeFs.syncDirectory(root, io, "linux")).rejects.toBe(sync)
+      expect(events).toEqual([`open:${root}`, "sync", "close"])
+    }
+  })
+
+  it("reports a handle that will not close after a successful sync", async () => {
+    const close = new Error("directory close failed")
+    const { io, events } = directoryIo({ close })
+    await expect(SafeFs.syncDirectory(root, io, "linux")).rejects.toBe(close)
+    expect(events).toEqual([`open:${root}`, "sync", "close"])
   })
 })
