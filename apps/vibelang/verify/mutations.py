@@ -187,6 +187,10 @@ while args:
         modules.add(args.pop(0))
     else: names.append(arg)
 
+# The manifest and the mutant files are keyed by name: a second case with a used name would silently replace the
+# first in a full run (route-wiki, 2026-11-13: 2,879 of 2,880 mutants ran unsharded).
+duplicates=sorted({name for _,name,*_ in cases if sum(other==name for _,other,*_ in cases)>1})
+if duplicates: raise SystemExit('Duplicate mutation names: '+', '.join(duplicates))
 selected=set(names)
 unknown=selected-{name for module,name,*_ in cases}
 if unknown: raise SystemExit('Unknown mutations: '+', '.join(sorted(unknown)))

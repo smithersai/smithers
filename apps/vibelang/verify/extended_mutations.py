@@ -5737,7 +5737,7 @@ cases.extend([('worker/apiObjectDecision.vibe', *case) for case in [
 ('draft-owner', 'draftForbidden', 'return owner === ""', 'return owner !== ""', 'only an owner-less draft is refused'),
 ('route-issues', 'signedOutRoute', 'if (path === "/api/issues") return "issues"', 'if (path === "/api/issues") return "disabled"', 'signed-out issues read'),
 ('bootstrap-any', 'bootstrapsHistory', 'return seq === 0', 'return seq >= 0', 'a history with events is never reseeded'),
-('route-wiki', 'signedOutRoute', 'if (path === "/api/wiki") return "wiki"', 'if (path.startsWith("/api/wiki")) return "wiki"', 'only the wiki route reads the wiki'),
+('api-route-wiki', 'signedOutRoute', 'if (path === "/api/wiki") return "wiki"', 'if (path.startsWith("/api/wiki")) return "wiki"', 'only the wiki route reads the wiki'),
 ]])
 
 # Lane vl-proveall3, batch 22: main's commit order over Map and Set (worker/mainLogDecision.vibe).

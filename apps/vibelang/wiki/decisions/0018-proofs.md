@@ -6856,3 +6856,11 @@ preconditions that `pnpm verify` sets up were missing, because the gate ran the 
 The image is not at fault. `harness_test.py`'s `setUpModule` now runs `lsc_fresh.main()` and stops with one message
 naming the missing generated modules; `test_a_tree_without_the_generated_wiki_modules_is_named` checks the names.
 Checked in a `node26` box: a bare run before `wiki:build` stops on that message, and after it all tests pass.
+
+## Third-lane batch 39: a mutant name used twice ran once
+
+`mutations.py` keys the manifest and the mutant files by name. `route-wiki` named a `protocolDecision` case and a
+`apiObjectDecision` case, so an unsharded `verify:broken` wrote 2,879 mutants for 2,880 cases and never ran the first.
+A run by module ran both. `mutations.py` now stops on a duplicate name, so `MutationRegistry` (the `--check` run) fails
+first; the worker case is `api-route-wiki`. Both mutants rejected.
+
