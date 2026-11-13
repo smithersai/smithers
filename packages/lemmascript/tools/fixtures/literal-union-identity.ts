@@ -34,3 +34,11 @@ export function opened(): Screen {
 export function paneMax(model: Model): boolean {
   return model.pane === "max"
 }
+
+// A parameter typed by an indexed access to a literal-union field (`Model["size"]`, `NonNullable<Model["pane"]>`) is
+// that union, not a plain string, so writing it back into the field needs no cast.
+//@ verify
+//@ ensures \result == { ...model, size: size, pane: pane }
+export function placed(model: Model, size: Model["size"], pane: NonNullable<Model["pane"]>): Model {
+  return { ...model, size, pane }
+}

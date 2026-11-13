@@ -291,6 +291,9 @@ export type RawStmt = RawLet | RawAssign | RawReturn | RawBreak | RawContinue | 
 export interface RawParam {
   name: string;
   tsType: string;
+  /** A parameter whose computed type is a string-literal union (`size: Model["size"]`), read as `string` until
+   *  `unifyLiteralUnions` names it: its members, sorted. Deleted there. */
+  literalValues?: string[];
 }
 
 /** One original TS parameter, before `params` flattens it for the provers

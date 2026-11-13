@@ -1461,7 +1461,7 @@ function literalUnionValues(type: Type): string[] | undefined {
  * union); an inline union field with those members names it.
  * A union no alias names stays `string`, as before.
  */
-function unifyLiteralUnions(typeDecls: TypeDeclInfo[]): void {
+function unifyLiteralUnions(typeDecls: TypeDeclInfo[], functions: RawFunction[]): void {
   const key = (values: string[]) => JSON.stringify([...values].sort());
   const canonical = new Map<string, string>();
   const unions = typeDecls.filter(d => d.kind === "string-union" && !d.typeParams && d.values).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
@@ -1477,6 +1477,11 @@ function unifyLiteralUnions(typeDecls: TypeDeclInfo[]): void {
       if (name !== undefined) f.tsType = f.tsType.replace(/\bstring\b/, name);
       delete f.literalValues;
     }
+  }
+  for (const p of functions.flatMap(fn => fn.params)) {
+    const name = p.literalValues ? canonical.get(key(p.literalValues)) : undefined;
+    if (name !== undefined) p.tsType = p.tsType.replace(/\bstring\b/, name);
+    delete p.literalValues;
   }
 }
 
@@ -2872,7 +2877,12 @@ function extractFunctionInner(fn: FunctionDeclaration, parentAnnotations?: Annot
       // (e.g., `eof = false` infers `boolean` from the default value).
       const tn = p.getTypeNode();
       let tsType: string;
-      if (tn && Node.isUnionTypeNode(tn)) {
+      let literalValues: string[] | undefined;
+      if (tn && !Node.isTypeLiteral(tn) && computedTypeNode(tn) && (literalValues = literalUnionValues(p.getType()))) {
+        // A computed type that resolves to a string-literal union (`size: Model["size"]`, `NonNullable<Model["pane"]>`)
+        // is that union: `string` until `unifyLiteralUnions` names it, as a record field of the same members is.
+        tsType = p.getType().getUnionTypes().some(m => m.isUndefined() || m.isNull()) ? "string | undefined" : "string";
+      } else if (tn && Node.isUnionTypeNode(tn)) {
         tsType = _eraseGenerics(_tsTypeFromUnionNode(tn));
       } else if (tn && (Node.isTypeLiteral(tn) || computedTypeNode(tn))) {
         // An inline record type (`model: { readonly k: number }`) has no name for a datatype: synthesize one. A computed
@@ -2883,8 +2893,8 @@ function extractFunctionInner(fn: FunctionDeclaration, parentAnnotations?: Annot
       } else {
         tsType = _eraseGenerics(typeToString(p.getType()));
       }
-      if (p.hasQuestionToken()) tsType = `${tsType} | undefined`;
-      return [{ name: p.getName(), tsType }];
+      if (p.hasQuestionToken() && !tsType.endsWith(" | undefined")) tsType = `${tsType} | undefined`;
+      return [{ name: p.getName(), tsType, ...(literalValues ? { literalValues } : {}) }];
     }),
     returnType: (() => {
       // `async` with no `await`: the `Promise<T>` wrapper is just the calling
@@ -3677,7 +3687,7 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
     classes.push({ name: cls.getName() ?? "Anonymous", fields, methods });
   }
 
-  unifyLiteralUnions(typeDecls);
+  unifyLiteralUnions(typeDecls, [...functions, ...classes.flatMap(c => c.methods)]);
   unifyStructuralTypes({ typeDecls, externs: Array.from(_externs.values()), constants, functions, classes });
 
   // Clear the synth-union accumulator so typeToString reverts to plain
