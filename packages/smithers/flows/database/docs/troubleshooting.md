@@ -113,10 +113,11 @@ to be unique only among the sets composed into one database.
 
 ### `Invalid migration id offset <offset> for namespace <namespace>`
 
-**Cause:** the offset is negative, fractional, outside the safe integer range,
+**Cause:** the offset is negative, fractional, above the ledger limit `2147483647`,
 or not a multiple of `idBlock` (1000). The message says which.
 
-**Fix:** use `Migrations.idBlock * n`.
+**Fix:** use `Migrations.idBlock * n`, with every resulting global id at most
+`2147483647`.
 
 ### `Malformed migration key "<key>" in namespace <namespace>`
 

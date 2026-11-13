@@ -65,9 +65,14 @@ engine needs.
 `loader(sets)` resolves the sets into one list ordered by global id, and fails
 the migration rather than returning a list that would quietly lose a table. It
 rejects a duplicate namespace, a duplicate offset, an offset that is not a
-non-negative safe integer aligned to `idBlock`, a malformed key, a local id at
+non-negative integer in `0..2147483647` aligned to `idBlock`, a global id
+above `2147483647`, a malformed key, a local id at
 or above `idBlock`, and two keys in one set that realize the same id
 (`0001_first` beside `01_second`).
+
+The same limit applies on SQLite and PostgreSQL: existing PostgreSQL ledgers
+use a 32-bit `INTEGER`. Validation rejects an invalid plan before running any
+migration body.
 
 Every one of those is a mis-declaration a developer can fix. The next one is
 subtler.

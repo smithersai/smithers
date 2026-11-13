@@ -34,6 +34,14 @@
 
 ### Fixed
 
+- Bun defers PostgreSQL selection and configuration defects until layer build.
+- Node SQLite and PostgreSQL drivers declare exact optional peer versions;
+  Bun configuration uses local types and needs no Bun SQL peer.
+- Migration plans reject ids above the PostgreSQL ledger's 32-bit integer
+  limit before any migration runs, on SQLite as well as PostgreSQL.
+- Prefixed PostgreSQL stores retain their schema names and record basename
+  ownership, refusing sanitized aliases instead of sharing tables.
+
 - `PostgresDatabase` is correct behind transaction-pooling proxies such as
   Cloudflare Hyperdrive and PgBouncer with `pool_mode=transaction`. It no longer
   runs `SET search_path` or `SET default_transaction_read_only` on a session:

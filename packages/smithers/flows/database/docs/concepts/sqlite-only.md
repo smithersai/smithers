@@ -67,7 +67,19 @@ therefore selects another schema.
 
 For stable deployment identity, set `SMITHERS_POSTGRES_SCHEMA`. The adapter
 appends the sanitized filename basename, so `control.db` and `engine.db`
-remain separate stores. The directory is not part of the name, so two
+remain separate stores. The schema records the original basename in a single
+ownership row on its first writable open, including for an existing schema
+without metadata. Data and schema names stay unchanged. Different basenames
+that sanitize to the same name, such as `cache.db`, `cache-db` and `cache_db`,
+are refused with `UnsupportedDatabase` code `postgres_schema_collision`
+instead of sharing tables. The error names both basenames and the schema.
+Read-only opens check an existing ownership row but never create one; a legacy
+schema remains unclaimed until its first writable open. Every role reopening a claimed schema, including a writer, needs `SELECT`
+on `flows_store_owner`; missing permission refuses the open instead of treating
+ownership as absent. The first writable claimant needs schema `CREATE` and
+metadata `INSERT` permission as well. An explicit
+`postgres://…?schema=<schema>` URL still addresses that schema directly.
+The directory is not part of the name, so two
 workspaces with the same prefix and a `smithers.db` each share one schema. Use a
 distinct prefix per workspace. PostgreSQL stores
 SQL records; artifacts, native process state, and workspaces still need durable
@@ -255,3 +267,7 @@ workspaces, forks, and rewind receipts through the same injected stores.
 The SQLite file guard still refuses a populated pre-1.0 file without
 `flows_migrations`. PostgreSQL selection does not convert such a file; choose a
 fresh schema or an explicitly managed migration of application data.
+
+A PostgreSQL copy for `smthrs runs verify` copies store data but leaves out
+`flows_store_owner`, which belongs to the original schema. Opening the copy
+claims its own basename without changing the source ownership row.

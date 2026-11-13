@@ -30,10 +30,13 @@ npm install @smthrs/database@next effect
 version as your `effect`:
 
 ```sh
-npm install @effect/sql-sqlite-node
+npm install @effect/sql-sqlite-node@4.1.1
 ```
 
-PostgreSQL requires the optional `@effect/sql-pg` peer, at the same version as
+Bun uses the bundled SQLite client and local configuration types, so no
+`@effect/sql-sqlite-bun` peer is needed.
+
+PostgreSQL requires the optional `@effect/sql-pg@4.1.1` peer, at the same version as
 your `effect`. The root installs no SQL adapter: `PostgresDatabase.layer` takes
 the `@effect/sql-pg` module as its `driver`, so the root imports no socket code
 and still bundles for browsers. Two

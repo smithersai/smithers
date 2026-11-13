@@ -129,6 +129,11 @@ it("copies a PostgreSQL schema whole, continues its identities and drops the cop
     expect(new Set(before.engine.map((row) => row.kind))).toEqual(
       new Set(["column", "constraint", "index", "trigger", "function"])
     )
+    expect(await on(engine, Effect.flatMap(SqlClient, (sql) => sql`SELECT basename FROM flows_store_owner`))).toEqual([{
+      basename: "engine.db"
+    }])
+    expect(await on(engineCopy, Effect.flatMap(SqlClient, (sql) => sql`SELECT basename FROM flows_store_owner`)))
+      .toEqual([{ basename: "copy_engine.db" }])
     expect(await counts(engineCopy)).toEqual(before.counts)
     // A row the copy appends takes the next identity, and the triggers fire there.
     await on(

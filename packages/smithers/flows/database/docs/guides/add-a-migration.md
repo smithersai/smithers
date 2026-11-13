@@ -133,7 +133,8 @@ describe("migrations", () => {
 
 Assert the block too, so a mis-declared offset fails a test rather than a
 deployment: the offset is a multiple of `idBlock`, no set composed beside it
-claims the same offset, and every local id is below `idBlock`.
+claims the same offset, every local id is below `idBlock`, and each global id
+(`idOffset + localId`) is at most `2147483647` on every driver.
 
 ## What a failed migration leaves behind
 

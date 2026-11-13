@@ -158,3 +158,8 @@ in place of the Node driver. Both expose the same Effect SqlClient and use the
 same schema guard and bounded startup retries. The `DurableWriter` and migration
 layers above them remain identical. Flow and product services receive those
 services through Effect; they do not construct a second database for their state.
+
+Backend selection for `BunDatabase.layer` and `NodeDatabase.layer` runs when
+the layer is built, so environment configuration may be supplied after layer
+construction. Invalid PostgreSQL selection is an `UnsupportedDatabase` defect
+that the same `Effect.catchDefect` handler can inspect.

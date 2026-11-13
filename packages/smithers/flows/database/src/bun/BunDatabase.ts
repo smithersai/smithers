@@ -3,7 +3,6 @@
  * @since 1.0.0
  */
 
-import type * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient"
 import { constants, Database } from "bun:sqlite"
 import { type Duration, Effect, Layer } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
@@ -22,7 +21,7 @@ export interface BunDatabaseOptions {
   readonly filename: string
   /** Synchronous lock wait. Defaults to one second for read-only opens, zero otherwise; overrides sqlite.busyTimeout when supplied. */
   readonly busyTimeout?: Duration.Input | undefined
-  readonly sqlite?: Omit<SqliteClient.SqliteClientConfig, "filename"> | undefined
+  readonly sqlite?: Omit<BunSqliteClient.SqliteClientConfig, "filename"> | undefined
   /** Opens an existing store for reading only, as `NodeDatabase` does. */
   readonly readOnly?: boolean | undefined
 }
@@ -87,12 +86,13 @@ const client = (options: BunDatabaseOptions): Layer.Layer<SqlClient.SqlClient> =
  * @since 1.0.0
  * @category layers
  */
-export const layer = (options: BunDatabaseOptions): Layer.Layer<SqlClient.SqlClient> => {
-  const readOnly = options.readOnly === true
-  return PostgresSelection.layer(options.filename, readOnly) ?? SqliteOpen.layer(
-    options.filename,
-    readTableNames,
-    client(readOnly ? { ...options, sqlite: { ...options.sqlite, readonly: true, disableWAL: true } } : options),
-    readOnly
-  )
-}
+export const layer = (options: BunDatabaseOptions): Layer.Layer<SqlClient.SqlClient> =>
+  Layer.unwrap(Effect.sync(() => {
+    const readOnly = options.readOnly === true
+    return PostgresSelection.layer(options.filename, readOnly) ?? SqliteOpen.layer(
+      options.filename,
+      readTableNames,
+      client(readOnly ? { ...options, sqlite: { ...options.sqlite, readonly: true, disableWAL: true } } : options),
+      readOnly
+    )
+  }))

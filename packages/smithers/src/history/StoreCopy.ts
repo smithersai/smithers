@@ -11,7 +11,8 @@
  * copy is one moment of the source and a failed copy leaves no schema. A copy
  * that would still reach into the source (a sequence or function it does not
  * own, a function pinned to another search path or naming the source) is
- * refused and rolled back.
+ * refused and rolled back. Schema-specific basename ownership is left behind;
+ * the copy claims its own identity when opened.
  *
  * @since 1.0.0
  */
@@ -112,7 +113,8 @@ const copySchema = (url: string, from: string, to: string) =>
           (SELECT string_agg(quote_ident(a.attname), ', ' ORDER BY a.attnum) FROM pg_attribute a
             WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped AND a.attgenerated = '') AS columns
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = ${from} AND c.relkind IN ('r', 'p') ORDER BY c.relname`
+        WHERE n.nspname = ${from} AND c.relkind IN ('r', 'p')
+          AND c.relname <> 'flows_store_owner' ORDER BY c.relname`
       for (const table of tables) {
         // Indexes and their constraints come after the rows, under their own names.
         yield* sql.unsafe(
@@ -133,7 +135,7 @@ const copySchema = (url: string, from: string, to: string) =>
       const identities = yield* sql<{ name: string; column: string }>`
         SELECT quote_ident(c.relname) AS name, a.attname AS column FROM pg_attribute a
         JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = ${from} AND a.attidentity <> '' AND NOT a.attisdropped ORDER BY c.relname, a.attnum`
+        WHERE n.nspname = ${from} AND c.relname <> 'flows_store_owner' AND a.attidentity <> '' AND NOT a.attisdropped ORDER BY c.relname, a.attnum`
       for (const identity of identities) {
         const [position] = yield* sql<{ lastValue: number | null }>`
           SELECT s.last_value AS "lastValue" FROM pg_sequences s
@@ -148,7 +150,7 @@ const copySchema = (url: string, from: string, to: string) =>
         SELECT quote_ident(con.conname) AS name, quote_ident(c.relname) AS table,
           pg_get_constraintdef(con.oid) AS definition FROM pg_constraint con
         JOIN pg_class c ON c.oid = con.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = ${from} AND con.contype IN ('p', 'u', 'x', 'f')
+        WHERE n.nspname = ${from} AND c.relname <> 'flows_store_owner' AND con.contype IN ('p', 'u', 'x', 'f')
         ORDER BY con.contype = 'f', c.relname, con.conname`
       for (const constraint of constraints) {
         yield* sql.unsafe(
@@ -160,14 +162,15 @@ const copySchema = (url: string, from: string, to: string) =>
       const indexes = yield* sql<{ definition: string }>`
         SELECT pg_get_indexdef(i.indexrelid) AS definition FROM pg_index i
         JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = ${from}
+        JOIN pg_class t ON t.oid = i.indrelid
+        WHERE n.nspname = ${from} AND t.relname <> 'flows_store_owner'
           AND NOT EXISTS (SELECT 1 FROM pg_constraint con WHERE con.conindid = i.indexrelid)
         ORDER BY c.relname`
       for (const row of indexes) yield* sql.unsafe(requalify(row.definition, source, target))
       const triggers = yield* sql<{ definition: string }>`
         SELECT pg_get_triggerdef(t.oid) AS definition FROM pg_trigger t
         JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = ${from} AND NOT t.tgisinternal ORDER BY c.relname, t.tgname`
+        WHERE n.nspname = ${from} AND c.relname <> 'flows_store_owner' AND NOT t.tgisinternal ORDER BY c.relname, t.tgname`
       for (const row of triggers) yield* sql.unsafe(requalify(row.definition, source, target))
       yield* isolated(from, to)
     }))

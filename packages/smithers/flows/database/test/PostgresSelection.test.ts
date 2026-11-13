@@ -88,7 +88,9 @@ it("locates a store's schema the way the layer opens it", () => {
   expect(Selection.location("/copy/.flows/engine.db")?.schema).not.toBe(hashed?.schema)
   vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", "workspace")
   // Prefixed, only the basename does: a copy needs a name of its own.
+  // Sanitized aliases keep this mapping but the layer refuses a different recorded basename.
   expect(Selection.location("/project/.flows/engine.db")?.schema).toBe("workspace_engine_db")
+  expect(Selection.location("engine-db")?.schema).toBe("workspace_engine_db")
   expect(Selection.location("/copy/.flows/engine.db")?.schema).toBe("workspace_engine_db")
   expect(Selection.location("/copy/.flows/verify_ab_engine.db")?.schema).toBe("workspace_verify_ab_engine_db")
 })

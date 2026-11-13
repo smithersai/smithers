@@ -337,7 +337,7 @@ package's.
 | Field               | Meaning                                                                                                                                                                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `namespace`         | Prefixes every migration name in the ledger. Unique among the sets composed together.                                                                                                                                                       |
-| `idOffset`          | A non-negative safe integer multiple of `idBlock`, unique among the sets composed together. Lifts the set's local ids into the block it reserves.                                                                                           |
+| `idOffset`          | A non-negative integer multiple of `idBlock` in `0..2147483647`, unique among the sets composed together. Lifts the set's local ids into the block it reserves.                                                                             |
 | `migrations`        | Keyed `<localId>_<name>`, with the local id in `0..idBlock - 1`.                                                                                                                                                                            |
 | `previousNames`     | Optional exact former names of equivalent migrations, keyed by current migration key, without the namespace prefix. Use only after verifying the historical schema; changed behavior needs a new id. Existing ledger rows keep their names. |
 | `immediateTriggers` | Optional owned `Dialect.DeferredTrigger` definitions whose constraint checks run at statement end during every migration in the pass, across all sets. PostgreSQL only; other constraints retain their modes.                               |
@@ -369,6 +369,8 @@ rather than returning a list the migrator would quietly mishandle:
 | Duplicate offset                     | `Duplicate migration id offset <offset> for namespace <namespace>`                                             |
 | Negative or fractional offset        | `... an id offset must be a non-negative integer`                                                              |
 | Unsafe integer offset                | `... an id offset must be a safe integer in the range 0..<max>`                                                |
+| Offset above the ledger limit        | `... an id offset must be in the ledger range 0..2147483647`                                                   |
+| Global id above the ledger limit     | `Migration id <id> for key "<key>" in namespace <namespace> is outside the ledger range 0..2147483647`         |
 | Misaligned offset                    | `... an id offset must be a multiple of idBlock (1000)`                                                        |
 | Malformed key                        | `Malformed migration key "<key>" in namespace <namespace>`                                                     |
 | Local id at or above `idBlock`       | `Local migration id <id> ... is outside the block range 0..999 and would claim a neighbouring package's block` |
@@ -566,7 +568,9 @@ const postgresLocation: (filename: string) => { readonly url: string; readonly s
 
 Where `layer` would open `filename` on PostgreSQL: the connection URL without
 its `schema` parameter, and the schema. It is `undefined` for a store SQLite
-keeps, and it raises the same `UnsupportedDatabase` refusals `layer` does.
+keeps. Invalid selection raises `UnsupportedDatabase` immediately here;
+`layer` defers selection until it is built. Schema ownership collisions are
+checked only when opening the database.
 `postgres://…?schema=<schema>` opens that exact schema, so a caller that copies
 a store into another schema addresses the copy by URL.
 
@@ -599,7 +603,8 @@ const UnsupportedDatabaseCode: Schema.Literals<[
   "database_locked",
   "postgres_url_missing",
   "postgres_url_invalid",
-  "postgres_schema_invalid"
+  "postgres_schema_invalid",
+  "postgres_schema_collision"
 ]>
 type UnsupportedDatabaseCode = typeof UnsupportedDatabaseCode.Type
 ```
@@ -626,6 +631,7 @@ constructor, code schema and refinement.
 | `postgres_url_missing`      | `SMITHERS_BACKEND=postgres` with no PostgreSQL URL set             | `PostgreSQL requires SMITHERS_POSTGRES_URL or DATABASE_URL`                                                    |
 | `postgres_url_invalid`      | the selected URL is not a parseable `postgres://` URL              | `PostgreSQL configuration requires a postgres:// or postgresql:// URL`, or `Invalid PostgreSQL connection URL` |
 | `postgres_schema_invalid`   | `PostgresDatabase.layer` gets an empty, NUL or over-63-byte schema | `PostgreSQL schema must contain 1 to 63 UTF-8 bytes and no NUL`                                                |
+| `postgres_schema_collision` | a prefixed schema records a different original store basename      | `PostgreSQL schema "<schema>" belongs to store "<owner>", not "<requested>"`                                   |
 
 ### isUnsupportedDatabase
 
@@ -645,7 +651,7 @@ a `bun:sqlite` client with the same schema guard, bounded open retries and
 failed-commit recovery as NodeDatabase. As on Node, `.raw` on a write without
 result columns returns `{ changes, lastInsertRowid }`, so `affectedRows` reads
 its count; the upstream `@effect/sql-sqlite-bun` client returns `[]` there.
-Options contain `filename`, optional `sqlite` settings from that Bun driver,
+Options contain `filename`, optional `sqlite` settings from the bundled client,
 `busyTimeout`, and `readOnly`, which behave as on `NodeDatabase`.
 The synchronous `busyTimeout` defaults to `0` for writable opens and one
 second for read-only opens, including `sqlite.readonly`. A top-level
@@ -653,8 +659,12 @@ second for read-only opens, including `sqlite.readonly`. A top-level
 A nonzero timeout blocks the Bun event loop during contention. A new plain-path database is created
 with mode `0o600`, masked by the process umask, and its WAL and SHM sidecars
 inherit that mode. Existing files, `file:` URIs, temporary databases and opens
-whose settings disable creation are left to SQLite. Install its matching optional peer;
-consumers using only Node do not need it. It re-exports the same
+whose settings disable creation are left to SQLite. No `@effect/sql-sqlite-bun`
+peer is required, including for the configuration types. The `sqlite` settings
+are `readonly`, `readwrite`, `create`, `disableWAL`, `busyTimeout`,
+`spanAttributes`, `transformResultNames` and `transformQueryNames`.
+Backend selection and its environment are evaluated when the layer is built;
+invalid PostgreSQL configuration reaches `Effect.catchDefect` then. It re-exports the same
 `UnsupportedDatabase` constructor and refinement as `NodeDatabase`.
 
 ## TestDatabase

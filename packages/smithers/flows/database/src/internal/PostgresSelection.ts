@@ -3,7 +3,7 @@
  */
 
 import { Effect, Layer } from "effect"
-import type { SqlClient } from "effect/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { createHash } from "node:crypto"
 import { basename, resolve } from "node:path"
 import * as PostgresDatabase from "../postgres/PostgresDatabase.ts"
@@ -73,12 +73,59 @@ export const location = (filename: string): { readonly url: string; readonly sch
  * @since 1.0.0
  * @private
  */
-export const layer = (filename: string, readOnly = false): Layer.Layer<SqlClient> | undefined => {
+export const layer = (filename: string, readOnly = false): Layer.Layer<SqlClient.SqlClient> | undefined => {
   const selected = location(filename)
   if (selected === undefined) return undefined
+  const owner = !isUrl(filename) && process.env.SMITHERS_POSTGRES_SCHEMA ? basename(filename) : undefined
   return Layer.unwrap(
     Effect.promise(() => import("@effect/sql-pg")).pipe(
-      Effect.map((driver) => PostgresDatabase.layer({ url: selected.url, schema: selected.schema, readOnly, driver }))
+      Effect.map((driver) => {
+        const database = PostgresDatabase.layer({ url: selected.url, schema: selected.schema, readOnly, driver })
+        if (owner === undefined) return database
+        return Layer.effect(
+          SqlClient.SqlClient,
+          Effect.gen(function*() {
+            const sql = yield* SqlClient.SqlClient
+            const verify = Effect.gen(function*() {
+              const [recorded] = yield* sql<
+                { readonly basename: string }
+              >`SELECT basename FROM flows_store_owner WHERE id = 1`
+              if (recorded !== undefined && recorded.basename !== owner) {
+                return yield* Effect.die(
+                  new UnsupportedDatabase({
+                    code: "postgres_schema_collision",
+                    message:
+                      `PostgreSQL schema "${selected.schema}" belongs to store "${recorded.basename}", not "${owner}"`
+                  })
+                )
+              }
+              return recorded !== undefined
+            })
+            // Catalog visibility is independent of table grants: an unreadable
+            // ownership row must fail closed, not look like an unclaimed store.
+            const [table] = yield* sql<{ readonly found: boolean }>`
+              SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = ${selected.schema} AND c.relname = 'flows_store_owner') AS found
+            `
+            // Reopening a claimed schema takes no writer lock, as with direct
+            // PostgreSQL opens. Read-only legacy opens never claim ownership.
+            if (table!.found && (yield* verify)) return sql
+            if (!readOnly) {
+              // The schema writer lock serializes concurrent first claims; the row
+              // survives pool closure and rejects aliases before any store is exposed.
+              yield* sql.withTransaction(Effect.gen(function*() {
+                yield* sql`CREATE TABLE IF NOT EXISTS flows_store_owner (
+                id INTEGER PRIMARY KEY CHECK (id = 1), basename TEXT NOT NULL
+              )`
+                yield* sql`INSERT INTO flows_store_owner (id, basename) VALUES (1, ${owner}) ON CONFLICT (id) DO NOTHING`
+                yield* verify
+              }))
+            }
+            return sql
+          }).pipe(Effect.orDie)
+        ).pipe(Layer.provide(database))
+      })
     )
   )
 }

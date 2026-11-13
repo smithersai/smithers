@@ -52,6 +52,9 @@ import * as WriteRetry from "./internal/WriteRetry.ts"
  */
 export const table = "flows_migrations"
 
+// Existing PostgreSQL ledgers use INTEGER (int4); validate the same bound on every driver.
+const maxMigrationId = 2_147_483_647
+
 /**
  * One package's migrations, namespaced so they cannot collide with another
  * package's.
@@ -386,6 +389,12 @@ const resolvePlan = (sets: ReadonlyArray<PlannedMigrationSet>): Effect.Effect<
             `an id offset must be a safe integer in the range 0..${Number.MAX_SAFE_INTEGER}`
         ))
       }
+      if (set.idOffset > maxMigrationId) {
+        return Effect.fail(fail(
+          `Invalid migration id offset ${set.idOffset} for namespace ${set.namespace}: ` +
+            `an id offset must be in the ledger range 0..${maxMigrationId}`
+        ))
+      }
       if (set.idOffset % idBlock !== 0) {
         return Effect.fail(fail(
           `Invalid migration id offset ${set.idOffset} for namespace ${set.namespace}: ` +
@@ -417,10 +426,10 @@ const resolvePlan = (sets: ReadonlyArray<PlannedMigrationSet>): Effect.Effect<
           ))
         }
         const id = set.idOffset + localId
-        if (!Number.isSafeInteger(id)) {
+        if (id > maxMigrationId) {
           return Effect.fail(fail(
-            `Migration id ${id} for key "${key}" in namespace ${set.namespace} is outside the safe integer range ` +
-              `0..${Number.MAX_SAFE_INTEGER}`
+            `Migration id ${id} for key "${key}" in namespace ${set.namespace} is outside the ledger range ` +
+              `0..${maxMigrationId}`
           ))
         }
         // Both claimants are named by key as well as namespace, because the

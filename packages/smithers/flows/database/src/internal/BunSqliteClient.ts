@@ -18,7 +18,6 @@
  * @since 1.0.0
  */
 
-import type { SqliteClientConfig } from "@effect/sql-sqlite-bun/SqliteClient"
 import { constants, Database } from "bun:sqlite"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
@@ -34,6 +33,22 @@ import type { Connection } from "effect/sql/SqlConnection"
 import { classifySqliteError, SqlError } from "effect/sql/SqlError"
 import * as Statement from "effect/sql/Statement"
 import * as Stream from "effect/Stream"
+
+/** Configuration supported by the bundled Bun SQLite client.
+ * @since 1.0.0
+ * @private
+ */
+export interface SqliteClientConfig {
+  readonly filename: string
+  readonly readonly?: boolean | undefined
+  readonly create?: boolean | undefined
+  readonly readwrite?: boolean | undefined
+  readonly disableWAL?: boolean | undefined
+  readonly busyTimeout?: Duration.Input | undefined
+  readonly spanAttributes?: Record<string, unknown> | undefined
+  readonly transformResultNames?: ((str: string) => string) | undefined
+  readonly transformQueryNames?: ((str: string) => string) | undefined
+}
 
 const MAX_BUSY_TIMEOUT = 2_147_483_647
 const NANOS_PER_MILLI = BigInt(1_000_000)

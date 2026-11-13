@@ -20,22 +20,25 @@ optional peer, needed by `node/NodeDatabase` and
 at the same version as your `effect`, when selecting either subpath:
 
 ```bash
-npm install @effect/sql-sqlite-node
+npm install @effect/sql-sqlite-node@4.1.1
 ```
 
+Bun uses its bundled SQLite client and configuration types; it needs no
+`@effect/sql-sqlite-bun` peer.
+
 The root needs no SQLite adapter. `PostgresDatabase`, on the root, needs the
-optional `@effect/sql-pg` peer at the same version, passed in as its `driver`.
+optional `@effect/sql-pg@4.1.1` peer at the same version, passed in as its `driver`.
 Mixing two copies
 of `effect` splits the `SqlClient` service identity, and a writer built against
 one copy cannot see a client provided from the other.
 
 ## Requirements
 
-| Requirement | Value               | Why                                                                                                                       |
-| ----------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Node.js     | 22.19.0 or later    | `NodeDatabase` opens the database through the built-in `node:sqlite` module.                                              |
-| Bun         | 1.4.0 or later      | Select `BunDatabase` and the tested `@effect/sql-sqlite-bun@4.1.1` peer. NodeDatabase deliberately refuses use under Bun. |
-| Database    | SQLite / PostgreSQL | SQLite is the default; PostgreSQL uses the optional `@effect/sql-pg` adapter.                                             |
+| Requirement | Value               | Why                                                                                                                                   |
+| ----------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Node.js     | 22.19.0 or later    | `NodeDatabase` opens the database through the built-in `node:sqlite` module.                                                          |
+| Bun         | 1.4.0 or later      | Select `BunDatabase`; its SQLite client is bundled, with no Bun SQL peer to install. NodeDatabase deliberately refuses use under Bun. |
+| Database    | SQLite / PostgreSQL | SQLite is the default; PostgreSQL uses the optional `@effect/sql-pg` adapter.                                                         |
 
 ## Import subpaths
 

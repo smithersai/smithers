@@ -16,6 +16,7 @@ import { Schema } from "effect"
  * held it for longer than the open ladder waits. `postgres_url_missing`,
  * `postgres_url_invalid` and `postgres_schema_invalid` refuse a PostgreSQL
  * selection whose connection URL or schema cannot be used.
+ * `postgres_schema_collision` refuses a prefixed schema owned by another basename.
  *
  * @category models
  * @since 1.0.0
@@ -26,7 +27,8 @@ export const UnsupportedDatabaseCode = Schema.Literals([
   "database_locked",
   "postgres_url_missing",
   "postgres_url_invalid",
-  "postgres_schema_invalid"
+  "postgres_schema_invalid",
+  "postgres_schema_collision"
 ])
 
 /**

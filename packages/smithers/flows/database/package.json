@@ -229,14 +229,12 @@
     "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "@effect/sql-sqlite-bun": "4.1.1",
+    "@effect/sql-sqlite-node": "4.1.1",
+    "@effect/sql-pg": "4.1.1",
     "effect": "4.1.1"
   },
   "peerDependenciesMeta": {
     "@effect/sql-sqlite-node": {
-      "optional": true
-    },
-    "@effect/sql-sqlite-bun": {
       "optional": true
     },
     "@effect/sql-pg": {

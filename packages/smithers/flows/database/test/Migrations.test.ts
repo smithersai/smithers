@@ -546,9 +546,9 @@ describe("composed migrations", () => {
       )
     }))
 
-  it.effect("rejects a realized migration id outside the safe integer range", () =>
+  it.effect("rejects a realized migration id outside the ledger integer range", () =>
     Effect.gen(function*() {
-      const offset = Math.floor(Number.MAX_SAFE_INTEGER / Migrations.idBlock) * Migrations.idBlock
+      const offset = 2_147_483_000
       const invalid: Migrations.MigrationSet = {
         namespace: "overflow",
         idOffset: offset,
@@ -558,8 +558,8 @@ describe("composed migrations", () => {
 
       expect(failure.kind).toBe("BadState")
       expect(failure.message).toBe(
-        `Migration id 9007199254741000 for key "0999_tail" in namespace overflow is outside the safe integer range ` +
-          `0..${Number.MAX_SAFE_INTEGER}`
+        `Migration id 2147483999 for key "0999_tail" in namespace overflow is outside the ledger range ` +
+          `0..2147483647`
       )
     }))
 
