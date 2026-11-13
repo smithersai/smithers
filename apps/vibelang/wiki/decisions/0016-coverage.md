@@ -3200,3 +3200,13 @@ grant, issue load, act, details and refresh), `src/actions/MockActions.vibe`'s G
 supply failing ones (`test/commands.coverage.test.vibe` `closed`) or delete the case that tested only the guard;
 `test/support/overlaid.vibe` can no longer remove a required service. Fuzz changes: 0015.
 
+### `src/web/main.vibe` after session 31's gate (622/718 branches)
+
+`e2e/actions.spec.ts` "a command picked from the slash menu starts its run and clears the composer" closes `PickedSlash`'s
+action arm and `launchAction`'s slash text. Two classes of the remaining arms have no browser input:
+
+| Class | Example | Reason |
+| --- | --- | --- |
+| A response to a pane the page never opened | `IssuesLoaded` and `IssuesFailed`'s `model.issues ?? initialIssues` (lines 401, 416) | Every `LoadIssues` sender (`init` with `openIssues`, `OpenIssueCard`, `ClickedIssues`) writes `model.issues` first, and no update clears it. The fuzz targets that send any Message in any Model (`fuzz/pane-messages.fuzz.vibe`) reach them. |
+| A role-less issue answer | `?? IssueDecision.issueDefaultRole(...)` (lines 384, 1449, 1461) | Both hosts answer with `role` (session 31's `issueDecision` table). |
+

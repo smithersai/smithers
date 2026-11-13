@@ -180,3 +180,18 @@ test("a lost action follow exposes Reconnect and resumes the same run", async ({
   await pane.getByRole("button", { name: "Cancel", exact: true }).click()
   await expect(pane.getByText("Cancelled", { exact: true }).first()).toBeVisible()
 })
+
+test("a command picked from the slash menu starts its run and clears the composer", async ({ page }) => {
+  await chat(page)
+  await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+  const composer = page.locator('form[data-docked="true"]')
+  const input = composer.getByRole("textbox", { name: "Message", exact: true })
+  await input.fill("/post What is a tuple?")
+  await composer.getByRole("option", { name: "/post Ask the agent", exact: true }).click()
+  await expect(page.getByRole("button", { name: /Open Post run/ })).toBeVisible()
+  await page.getByRole("button", { name: /Open Post run/ }).click()
+  const pane = page.getByRole("region", { name: "Actions", exact: true })
+  await expect(pane.getByText("Passed", { exact: true }).first()).toBeVisible()
+  await expect(input).toHaveValue("")
+})
+
