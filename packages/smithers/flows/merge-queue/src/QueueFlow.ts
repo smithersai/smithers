@@ -7,18 +7,27 @@
  * crashes resumes at the last recorded position, and a round that crashed
  * before it was recorded runs again, which `Driver.round` makes safe.
  *
- * The flow has no pause, hold or freeze. It ends only when the inbox was
- * closed and every change has ended.
+ * The flow has no pause, hold or freeze. The queue ends only when the inbox
+ * was closed and every change has ended.
+ *
+ * One run of the flow is one lineage of the queue, and a lineage is bounded:
+ * after `lineage` rounds the run ends and leaves its position with the
+ * `Handover` service, and the host starts the next run from it. Every round of
+ * a run stays in the engine's store and in the run's tree while the run lives,
+ * so an unbounded lineage costs the engine more with every round. A hand-over
+ * changes nothing the queue decides: the next lineage starts from exactly the
+ * position the last round would have passed to its next round.
  *
  * @since 0.1.0
  */
 
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Driver from "./Driver.ts"
 import { Config, Ending, State } from "./Schema.ts"
-import { TargetDiverged, Unavailable } from "./Services.ts"
+import { Handover, TargetDiverged, Unavailable } from "./Services.ts"
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
@@ -38,8 +47,21 @@ export const Payload = Schema.Struct({
   ended: Schema.Array(Ending),
   /** How many parts of the target's tree the queue has cut from its state. Start with 0. */
   settled: Natural,
-  round: Natural
+  /** This round's number in its lineage. A lineage starts with 0. */
+  round: Natural,
+  /** How many rounds one lineage runs before it hands over; at least 1. {@link lineageRounds} unless a host says otherwise. */
+  lineage: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 })
+
+/**
+ * What a lineage ends with: whether the queue is done, and the start value of
+ * the next lineage (round 0 of it), which is also what the `Handover` service
+ * was given.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const End = Schema.Struct({ done: Schema.Boolean, position: Payload })
 
 /**
  * What a round ends with: the queue's next position, and whether it is done.
@@ -53,8 +75,20 @@ export const Outcome = Schema.Struct({
   closed: Schema.Boolean,
   ended: Schema.Array(Ending),
   settled: Natural,
-  done: Schema.Boolean
+  done: Schema.Boolean,
+  /** Whether this round was its lineage's last and left its position with the `Handover` service. */
+  handedOver: Schema.Boolean,
+  /** What the lineage ends with if this round is its last: the next lineage's start value. */
+  end: End
 })
+
+/**
+ * The rounds one lineage runs unless a host says otherwise.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const lineageRounds = 200
 
 /**
  * Why a round attempt failed. The engine retries it; nothing was decided.
@@ -96,13 +130,43 @@ export const Round = Action.make("@smthrs/merge-queue/Round", {
  * @category layers
  * @since 0.1.0
  */
-export const layer = Round.toLayer(({ closed, config, cursor, ended, settled, state }) =>
-  Driver.round(config, { state, cursor, closed, ended, settled })
+export const layer = Round.toLayer((payload) =>
+  Effect.gen(function*() {
+    const { closed, config, cursor, ended, settled, state } = payload
+    const outcome = yield* Driver.round(config, { state, cursor, closed, ended, settled })
+    const handedOver = outcome.done || payload.round + 1 >= payload.lineage
+    const end = { done: outcome.done, position: next(payload, outcome) }
+    // Saved inside the round, so a round that is recorded as its lineage's
+    // last has left its position. A round that runs again saves again.
+    if (handedOver) yield* (yield* Handover).save(end)
+    return { ...outcome, handedOver, end }
+  })
 )
 
 /**
- * The most rounds one queue lineage runs before the engine stops it. A queue
- * that reaches it is started again from its last position.
+ * The start value of the lineage that follows a round: the round's outcome as
+ * a position, at round 0.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const next = (
+  payload: typeof Payload.Type,
+  outcome: Driver.Outcome
+): typeof Payload.Type => ({
+  config: payload.config,
+  state: outcome.state,
+  cursor: outcome.cursor,
+  closed: outcome.closed,
+  ended: outcome.ended,
+  settled: outcome.settled,
+  round: 0,
+  lineage: payload.lineage
+})
+
+/**
+ * The engine's own bound on the rounds of one run. A lineage hands over long
+ * before it (`Payload.lineage`), so the queue never reaches it.
  *
  * @category constants
  * @since 0.1.0
@@ -118,15 +182,17 @@ export const maxRounds = 1_000_000_000
 export type QueueFlow<Tag extends string = "@smthrs/merge-queue/Queue"> = Flow.Flow<
   Tag,
   typeof Payload,
-  typeof State,
+  typeof End,
   typeof RoundError,
   any
 >
 
 /**
  * The queue. Start it with `{ config, state: empty, cursor: 0, closed: false,
- * ended: [], settled: 0, round: 0 }`; it succeeds with the final state once the inbox is
- * closed, every change has ended and every ending is in the record.
+ * ended: [], settled: 0, round: 0, lineage: lineageRounds }`. A run succeeds
+ * when its lineage ends: with `done` once the inbox is closed, every change
+ * has ended and every ending is in the record, and otherwise with the
+ * `position` to start the next run with.
  *
  * @category flows
  * @since 0.1.0
@@ -134,7 +200,7 @@ export type QueueFlow<Tag extends string = "@smthrs/merge-queue/Queue"> = Flow.F
 export const Queue: QueueFlow = Flow.make("@smthrs/merge-queue/Queue", {
   description: "A merge queue: lands changes on a target branch only as trees whose every required check passed.",
   payload: Payload,
-  success: State,
+  success: End,
   error: RoundError,
   maxRounds,
   // The body names the flow it is the body of, which is what makes one round
@@ -142,8 +208,8 @@ export const Queue: QueueFlow = Flow.make("@smthrs/merge-queue/Queue", {
   body: ((payload: typeof Payload.Type) =>
     Round.call(payload).pipe(
       Node.branch({
-        if: Node.capture({}, (outcome: typeof Outcome.Type) => outcome.done),
-        then: (outcome) => Flow.done(outcome.state),
+        if: Node.capture({}, (outcome: typeof Outcome.Type) => outcome.handedOver),
+        then: (outcome) => Flow.done(outcome.end),
         else: (outcome) =>
           Queue.to({
             config: payload.config,
@@ -152,7 +218,8 @@ export const Queue: QueueFlow = Flow.make("@smthrs/merge-queue/Queue", {
             closed: outcome.closed,
             ended: outcome.ended,
             settled: outcome.settled,
-            round: payload.round + 1
+            round: payload.round + 1,
+            lineage: payload.lineage
           })
       })
     )) as never

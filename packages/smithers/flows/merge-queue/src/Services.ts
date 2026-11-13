@@ -29,7 +29,7 @@ import { Part } from "./Schema.ts"
  * @since 0.1.0
  */
 export class Unavailable extends Schema.TaggedError<Unavailable>()("@smthrs/merge-queue/Unavailable", {
-  service: Schema.Literals(["inbox", "ci", "fixer", "target", "endings"]),
+  service: Schema.Literals(["inbox", "ci", "fixer", "target", "endings", "handover"]),
   detail: Schema.String
 }) {}
 
@@ -247,3 +247,30 @@ export class Endings extends Context.Service<
     readonly record: (endings: ReadonlyArray<Ending>) => Effect.Effect<void, Unavailable>
   }
 >()("@smthrs/merge-queue/Endings") {}
+
+/**
+ * Where a lineage of the queue leaves its position when it ends, for the host
+ * to start the next lineage from, or to see that the queue is done.
+ *
+ * A lineage is one run of the queue flow. Every round of it stays in the
+ * engine's store and in the run's tree for as long as the run lives, so a
+ * queue that never ended its run would cost the engine more with every round.
+ * The queue therefore ends its lineage after a fixed number of rounds and hands
+ * its whole position over. `position` is JSON: the next lineage's start value.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export class Handover extends Context.Service<
+  Handover,
+  {
+    /**
+     * Keeps the position a lineage ended on, replacing the one before. `done`
+     * says the queue is finished and no lineage follows. Saving the same
+     * position twice is saving it once.
+     */
+    readonly save: (
+      handover: { readonly done: boolean; readonly position: unknown }
+    ) => Effect.Effect<void, Unavailable>
+  }
+>()("@smthrs/merge-queue/Handover") {}

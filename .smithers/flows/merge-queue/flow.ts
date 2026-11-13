@@ -24,6 +24,14 @@
  *
  *   {"_tag":"enqueue","id":42,"priority":0,"commit":"<commit id>"}
  *
+ * One run is one lineage of the queue: after `lineage` rounds (200 in the start value below) the run ends and
+ * leaves `{"done":false,"position":{...}}` in `$MQ_STATE/position.json`. Start the next run with that position
+ * (`--data` the `position` object); `"done":true` means the queue has finished. A host loops:
+ *
+ *   while :; do smthrs flow start merge-queue --data @next.json --wait || break
+ *     jq -e '.done' "$MQ_STATE/position.json" >/dev/null && break
+ *     jq '.position' "$MQ_STATE/position.json" > next.json; done
+ *
  * Read how each change ended from `$MQ_STATE/endings.jsonl`: one line per change, merged (with the run and
  * results that landed it), unmergeable (with the reason for its author) or withdrawn.
  */
@@ -33,10 +41,10 @@ import {
   CommandCi,
   CommandFixer,
   FileEndings,
+  FileHandover,
   FileInbox,
   JjRepository,
-  QueueFlow,
-  QueueSchema
+  QueueFlow
 } from "@smthrs/merge-queue"
 import { Config, Effect, Layer, Option } from "effect"
 
@@ -73,6 +81,7 @@ const services = Layer.unwrap(
         register: (id, commit) => repository.register({ id, rev: 0 }, commit)
       }),
       FileEndings.layer({ path: `${state}/endings.jsonl` }),
+      FileHandover.layer({ path: `${state}/position.json` }),
       JjRepository.target(repository, poll),
       Option.match(run, {
         onNone: () =>
@@ -111,7 +120,7 @@ export default Flow.make("merge-queue", {
   effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
   modelInvocable: false,
   payload: QueueFlow.Payload,
-  success: QueueSchema.State,
+  success: QueueFlow.End,
   error: QueueFlow.RoundError,
   body: (payload) => QueueFlow.Queue.child(payload)
 })

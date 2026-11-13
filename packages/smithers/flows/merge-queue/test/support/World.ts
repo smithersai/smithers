@@ -12,9 +12,9 @@
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import type { Answer, Config, Ending, Finished, FixBrief, Job, Letter, Part, Tree } from "../../src/index.ts"
-import { Ci, Endings, Fixer, Inbox, sameTree, Target, Unavailable } from "../../src/index.ts"
+import { Ci, Endings, Fixer, Handover, Inbox, sameTree, Target, Unavailable } from "../../src/index.ts"
 
-type Service = "inbox" | "ci" | "fixer" | "target" | "endings"
+type Service = "inbox" | "ci" | "fixer" | "target" | "endings" | "handover"
 
 /** What decides the world's behaviour. */
 export interface Script {
@@ -41,7 +41,9 @@ interface RunRecord {
 
 /** The world, its services and what tests read from it. */
 export interface World {
-  readonly layer: Layer.Layer<Inbox | Ci | Fixer | Target | Endings>
+  readonly layer: Layer.Layer<Inbox | Ci | Fixer | Target | Endings | Handover>
+  /** Every hand-over a lineage left, oldest first. */
+  readonly handovers: Array<{ readonly done: boolean; readonly position: unknown }>
   /** Only the inbox, the fix agents and the record, for tests whose CI and target are real. */
   readonly people: Layer.Layer<Inbox | Fixer | Endings>
   /** The record of endings, oldest first. */
@@ -124,7 +126,8 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
   const pushed: Array<Tree> = []
   const recorded: Array<Ending> = []
   const foreigners: Array<number> = []
-  const faults: Record<Service, number> = { inbox: 0, ci: 0, fixer: 0, target: 0, endings: 0 }
+  const handovers: Array<{ readonly done: boolean; readonly position: unknown }> = []
+  const faults: Record<Service, number> = { inbox: 0, ci: 0, fixer: 0, target: 0, endings: 0, handover: 0 }
   let calls = 0
   let failAt = -1
   let settled = 0
@@ -279,6 +282,8 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
       })
   })
 
+  const handover = Handover.of({ save: (given) => call("handover", () => void handovers.push(given)) })
+
   const send = (letter: Letter): void => {
     letters.push(letter)
     bump()
@@ -290,8 +295,10 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
       Layer.succeed(Ci, ci),
       Layer.succeed(Fixer, fixer),
       Layer.succeed(Target, target),
-      Layer.succeed(Endings, endings)
+      Layer.succeed(Endings, endings),
+      Layer.succeed(Handover, handover)
     ),
+    handovers,
     people: Layer.mergeAll(Layer.succeed(Inbox, inbox), Layer.succeed(Fixer, fixer), Layer.succeed(Endings, endings)),
     endings: recorded,
     log,

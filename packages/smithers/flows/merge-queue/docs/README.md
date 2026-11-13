@@ -97,7 +97,7 @@ policy can waste CI time and cannot land an untested tree.
 ## The driver
 
 `Driver.round(config, position)` is one round of the queue against the world,
-through five services a host provides: `Inbox` (changes handed in and taken
+through five services a host provides (the flow adds a sixth, `Handover`): `Inbox` (changes handed in and taken
 back), `Ci`, `Fixer` (fix agents), `Target` (the branch) and `Endings` (the
 record of how each change ended).
 
@@ -162,19 +162,32 @@ whole state lives in the flow's journal, so a host that dies resumes at the
 last recorded position on another engine over the same store. A round that
 fails because a service is down is retried from 200 ms up to every 30 s,
 without end: an outage delays landings and loses nothing. The flow has no
-pause or hold; it ends only when the inbox was closed and every change ended.
+pause or hold; the queue ends only when the inbox was closed and every change
+ended.
+
+One run of the flow is one **lineage** of the queue, and a lineage is bounded.
+Every round of a run stays in the engine's store and in the run's tree while
+the run lives, so the engine's work per second grows with the rounds of a live
+run (measured: about 0.11% of a core per round). After `lineage` rounds (200 by
+default, `QueueFlow.lineageRounds`) the run ends with `{ done: false, position }`
+and leaves the same value with the `Handover` service; the host starts the
+next run with `position`. Nothing the queue decides changes at a hand-over:
+the next lineage starts from exactly what the last round would have passed to
+its next round, endings to record included. What the host must know: CI runs
+and fix agents that live in the host's process end with it and are started
+again by the next run, on the same candidate commits.
 
 ```ts
 import { Action, Interpreter } from "@smthrs/flow"
 import { empty, QueueFlow } from "@smthrs/merge-queue"
 
 const layer = Layer.mergeAll(QueueFlow.layer, Interpreter.layer(QueueFlow.Queue)).pipe(
-  Layer.provideMerge(services), // Inbox, Ci, Fixer, Target, Endings
+  Layer.provideMerge(services), // Inbox, Ci, Fixer, Target, Endings, Handover
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(engine)
 )
 QueueFlow.Queue.execute(
-  { config, state: empty, cursor: 0, closed: false, ended: [], settled: 0, round: 0 },
+  { config, state: empty, cursor: 0, closed: false, ended: [], settled: 0, round: 0, lineage: QueueFlow.lineageRounds },
   { executionId: "main" }
 )
 ```
@@ -186,18 +199,23 @@ the five services from the environment and starts the queue.
 
 ```sh
 export MQ_REPO=/srv/repo            # the jj repository
-export MQ_STATE=/srv/queue          # inbox, ledger, fix briefs and the record of endings
+export MQ_STATE=/srv/queue          # inbox, ledger, fix briefs, the record of endings, position.json
 export MQ_CHECK_COMMAND='...'       # sh -c "$MQ_CHECK_COMMAND" sh <check> <commit>; exit 0 passes
 export MQ_RUN_COMMAND='...'         # instead: one process per run, sh -c "$MQ_RUN_COMMAND" sh <commit> <check>...
                                     # prints "<check> pass" or "<check> fail" as each check finishes
 export MQ_FINISH_COMMAND='...'      # optional: sh -c "$MQ_FINISH_COMMAND" sh <head> <onto> <conflicted>
                                     # prints the commit that stands for the rebased change
 export MQ_FIX_COMMAND='...'         # sh -c "$MQ_FIX_COMMAND" sh <brief file> <answer file>
-smthrs flow start merge-queue --data @start.json
+cp start.json next.json
+while :; do
+  smthrs flow start merge-queue --data @next.json --wait || break   # one lineage
+  jq -e '.done' "$MQ_STATE/position.json" > /dev/null && break      # the queue has finished
+  jq '.position' "$MQ_STATE/position.json" > next.json              # the next lineage's start value
+done
 ```
 
 `start.json` is `{ "config": {...}, "state": <the empty state>, "cursor": 0,
-"closed": false, "ended": [], "settled": 0, "round": 0 }`. Hand a change in by appending one line to
+"closed": false, "ended": [], "settled": 0, "round": 0, "lineage": 200 }`. Hand a change in by appending one line to
 `$MQ_STATE/inbox.jsonl`:
 
 ```json
