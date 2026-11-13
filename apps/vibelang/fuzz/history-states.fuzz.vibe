@@ -83,6 +83,9 @@ it.live("screens/history-states", () => run("screens/history-states", Input, ({ 
   const whole = try render(loaded("viewer", { open: ["e1"], pages: [{ ...pages[0]!, total: 2 }] }))
   try check("read epic", whole.all("ul[aria-label='Compiler'] li").length === 2 && !whole.buttons().includes("Show more"))
   // An epic, and a commit not read yet.
+  // A loaded history without epics says there is none yet.
+  const none = try render(loaded("viewer", { outline: { seq: 5, main: "abc1234def", epics: [], open: [] } }))
+  try check("empty history", same(none.texts(".sui-empty-title"), ["No mythical history yet."]))
   const epic = try render(loaded("viewer", { hash: "e1", pages }))
   try check("epic page", same(epic.texts("h1"), ["Compiler"]))
   try check("epic title", V.historyTitle(false, "", true, "Compiler") === "Compiler · History")

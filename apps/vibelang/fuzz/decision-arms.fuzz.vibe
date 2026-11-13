@@ -12,6 +12,7 @@ import { escapeScreen, wikiDraft, wikiRequest } from "../src/web/screenRead.vibe
 import { initialIssues, issuesUpdate } from "../src/web/issues.vibe"
 import { historyRefusal } from "../src/history/flowMachine.vibe"
 import { Note, Start } from "../src/history/flows.vibe"
+import * as HistoryViewD from "../src/web/historyViewDecision.vibe"
 import * as IssuesView from "../src/web/issuesViewDecision.vibe"
 import * as Markdown from "../src/web/markdownDecision.vibe"
 import * as ModelD from "../src/web/modelDecision.vibe"
@@ -103,6 +104,12 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
   }
   for (const toured of [false, true]) for (const kind of ["ReplyFinished", "WalkthroughDriven"]) {
     try check("completeScreenTour", same(Screen.completeScreenTour(screen, toured, kind), { ...screen, tour: toured ? false : screen.tour, docs: toured && kind !== "ReplyFinished" ? "pane" : screen.docs }))
+  }
+  // A loaded history without epics is empty whatever else is set; a wiki submit is ignored while busy, unchanged
+  // without an edit, and otherwise saved, proposed or refused by the person's rights.
+  try check("historyBody empty", HistoryViewD.historyBody("ready", 0, true, true, false, true, true) === "empty" && HistoryViewD.historyBody("ready", 1, false, false, false, false, false) === "list")
+  for (const [busy, edited, save, propose, plan] of [[true, true, true, true, "ignore"], [false, false, true, true, "no-changes"], [false, true, true, true, "save"], [false, true, false, true, "propose"], [false, true, false, false, "refuse"]] as const) {
+    try check(`wikiSubmitPlan ${plan}`, Pane.wikiSubmitPlan(busy, edited ? `${text}!` : text, text, save, propose) === plan)
   }
   // An accepted sandbox action keeps a maximized docs pane maximized and opens any other at pane size.
   for (const docs of ["pane", "max"] as const) {

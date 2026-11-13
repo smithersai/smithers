@@ -450,6 +450,7 @@ const UPDATES = [
   "assignees-without-agent", "submit-without-request", "began-stale", "walkthrough-posted", "learn-more-palette", "control-clears-error",
   "pane-closes-editor", "scroll-stale", "tour-gap", "sandbox-polled-failure", "chat-from-splash",
   "account-retries", "sign-in-unavailable", "action-failures", "learn-more-same-conversation",
+  "tour-late-dismissed", "wiki-saved-without-review",
 ] as const
 const UpdateArms = Schema.Struct({ flags: Flags, step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), seek: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), overlay: Schema.Boolean, text: Text })
 
@@ -473,7 +474,9 @@ function names(result: { readonly commands?: ReadonlyArray<{ readonly name: stri
  * has a message, and does nothing before. Retry repeats the failed account command (people, a grant, sign-out) and
  * resumes a lost role stream under the next epoch, and each failure names its own words; live sign-in the server calls
  * unavailable is refused without a command; a failed action names its input, permission or operation. Learn more in the
- * tour's own conversation keeps its messages; from another conversation it starts with none.
+ * tour's own conversation keeps its messages; from another conversation it starts with none. A tour start that lands
+ * after the person dismissed it ends it; one that lands after any other end does not. A save that opened no review
+ * closes the editor and links no review; one that opened a review links it for its page.
  */
 function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.Type): boolean {
   const base: Model = { ...init(input.flags).model, mode: "mock", surface: "chat" }
@@ -639,6 +642,18 @@ function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.
       const elsewhere = update({ ...posted, tour: false, conversation: "fuzz-other" }, Message.ClickedLearnMore())
       const kept = posted.client.conversation.entries.length
       return valid(again.model) && again.model.tour === true && kept > 0 && again.model.client.conversation.entries.length === kept && elsewhere.model.client.conversation.entries.length === 0
+    }
+    case "tour-late-dismissed": {
+      const dismissed = update({ ...base, tour: false, tourDismissed: true }, Message.SucceededTour())
+      const replayed = update({ ...base, tour: false, tourDismissed: false }, Message.SucceededTour())
+      return valid(dismissed.model) && same(names(dismissed), ["EndTour"]) && names(replayed).length === 0
+    }
+    case "wiki-saved-without-review": {
+      const model: Model = { ...base, wikiEdit: { page: "index", base: "# A", text: `# B${input.text}`, busy: true, error: "" }, wikiEditRequest: 3 }
+      const saved = (review: string) => update(model, Message.CompletedWikiEdit({ request: 3, page: "index", source: `# B${input.text}`, revision: "r1", review }))
+      const plain = saved("")
+      const linked = saved("https://github.com/o/r/pull/1")
+      return valid(plain.model) && plain.model.wikiEdit === undefined && plain.model.wikiReview === undefined && same(linked.model.wikiReview, { page: "index", url: "https://github.com/o/r/pull/1" })
     }
     case "walkthrough-posted": {
       const seq = base.client.conversation.seq

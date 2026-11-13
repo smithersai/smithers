@@ -85,11 +85,11 @@ it.live("screens/wiki-and-people", () => run("screens/wiki-and-people", Schema.S
   const unmatched = try render(model({ wikiQuery: "\u0000no page\u0000" }))
   try check("no match", unmatched.all(".vl-wiki-content .sui-empty").length === 1 && unmatched.all(".vl-wiki-content .sui-md").length === 0)
   // The account menu's keys.
-  for (const [key, moves] of [["ArrowDown", true], ["ArrowUp", true], ["x", false], ["Enter", false]] as const) {
-    const pressed = try Effect.try(() => moves ? [keydown("#vl-account-out", key)] : [keydown("#vl-account-out", key), expectIgnored()])
+  for (const item of ["#vl-account-people", "#vl-account-out"]) for (const [key, moves] of [["ArrowDown", true], ["ArrowUp", true], ["x", false], ["Enter", false]] as const) {
+    const pressed = try Effect.try(() => moves ? [keydown(item, key)] : [keydown(item, key), expectIgnored()])
     const menu = try render(model({ account: { ...accountOf(model({})), menu: true } }), ...pressed)
     const focused = try Effect.try(() => Message.FocusedPrompt())
-    try check(`menu key ${key}`, same(menu.seen, moves ? [focused] : []))
+    try check(`menu key ${item} ${key}`, same(menu.seen, moves ? [focused] : []))
   }
   // A person's role in the People pane.
   const members = [{ id: "p2", login: "bo", role: "community" as const }]
