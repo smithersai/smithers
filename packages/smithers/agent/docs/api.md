@@ -324,6 +324,12 @@ the field's byte count and digest. This includes completion `output` nested in
 `cell-settled.outcome.transition` and `transition-applied.transition`; the
 containing outcome and transition retain their tags.
 
+A completed prompt's `agent/run` result contains `output` and, when present,
+`value`, each bounded by `maxTracedBytes` with the same truncation marker.
+It does not collect event tags or streamed deltas. Shutdown completes an
+in-flight trail batch before flushing newer records, including when opening
+memory or instructions fails before the agent starts.
+
 Two records hold what a step was asked, so a reader can reopen one step:
 
 | Event type                       | Payload                                                                                                                                                                                                                                     |
@@ -1347,6 +1353,10 @@ whole interval again. The ceiling counts active time only: time the run spends
 suspended on an approval, a question, or a budget raise is recorded durably and
 subtracted, including across a process restart. That includes a native module
 execution suspended on a `HumanTask`, an approval, or a timer.
+
+A `maxMillis: 0` ceiling refuses the first new call, including calls in the
+same millisecond. An explicit `onExceeded: "warn"` permits the call with a
+warning. Positive ceilings still admit a call exactly at the limit.
 
 A USD budget admits calls as a token budget does, in dollars: each call costs
 its `Pricing.cost`, the provider's reported charge or its usage at the rate

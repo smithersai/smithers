@@ -1797,7 +1797,7 @@ export const make = (
         let warned: Verdict | undefined
         const latency = policy.latency
         const active = now - run.startedAt - run.suspendedMillis
-        if (latency !== undefined && active > latency.maxMillis) {
+        if (latency !== undefined && (latency.maxMillis === 0 || active > latency.maxMillis)) {
           const verdict = yield* settle(
             run,
             runId,

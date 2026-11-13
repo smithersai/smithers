@@ -102,3 +102,35 @@ it("fails closed when uncached ledger charges cannot be read", async () => {
     expect((yield* budget.usageOf("unknown").pipe(Effect.exit))._tag).toBe("Failure")
   }))
 })
+
+it.each(["fail", "warn", "park", "skip-remaining"] as const)(
+  "enforces a zero latency ceiling on the first call with %s",
+  async (onExceeded) => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const budget = yield* Budget.make({ latency: { maxMillis: 0, onExceeded } })
+        for (const key of ["first", "same-millisecond"]) {
+          const verdict = yield* Effect.scoped(budget.reserve(key))
+          expect(verdict).toMatchObject({
+            _tag: onExceeded === "warn" ? "warn" : "refuse",
+            exceeded: { scope: "latency", onExceeded, used: 0, max: 0 }
+          })
+          expect((yield* budget.check(key))._tag).toBe(verdict._tag)
+        }
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+  }
+)
+
+it("admits a call exactly at a positive latency ceiling and refuses after it", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const budget = yield* Budget.make({ latency: { maxMillis: 5 } })
+      expect((yield* budget.check("first"))._tag).toBe("proceed")
+      yield* TestClock.adjust("5 millis")
+      expect((yield* Effect.scoped(budget.reserve("at-limit")))._tag).toBe("proceed")
+      yield* TestClock.adjust("1 millis")
+      expect((yield* budget.check("past-limit"))._tag).toBe("refuse")
+    }).pipe(Effect.provide(TestClock.layer()))
+  )
+})

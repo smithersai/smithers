@@ -35,6 +35,7 @@ import { HarnessError } from "@smthrs/harness/HarnessError"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
+import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import * as Descriptor from "@smthrs/registry/Descriptor"
@@ -323,6 +324,8 @@ const answeringAgent = (answers: Array<unknown>): Agent.Service =>
 type EngineService = FlowRuntime.FlowRuntime["Service"]
 
 interface ScenarioOptions {
+  readonly memory?: AgentSession.Options["memory"]
+  readonly instructions?: AgentSession.Options["instructions"]
   readonly nowMs?: number
   readonly logs?: Array<string>
   readonly logDetails?: Array<Readonly<Record<string, unknown>>>
@@ -371,6 +374,8 @@ const withExecutor = <A>(
 ): Promise<A> =>
   Effect.gen(function*() {
     const executor = yield* AgentSession.make({
+      memory: options.memory,
+      instructions: options.instructions,
       canExecute: options.canExecute,
       authorizeReleasedChildren: options.authorizeReleasedChildren,
       reenterModules: options.reenterModules,
@@ -3938,6 +3943,136 @@ describe("retained TODO checkpoint admission", () => {
       if (name === "unreadable child") expect(record.statuses).toEqual([])
       expect(checked).toEqual(Array.from({ length: checkpoints }, () => ({ runId, flowId: "todo" })))
       expect(record.journaled.some((entry) => entry.eventType === "control.module.launched")).toBe(false)
+    }
+  )
+})
+
+describe("prompt settlement and trail shutdown", () => {
+  it.each(["memory", "instructions"] as const)("flushes the rendered prompt when opening %s fails", async (opening) => {
+    const record = recorder()
+    const trail: Array<string> = []
+    let calls = 0
+    const result = await launchedAndJoined(record, {
+      [opening]: () => Effect.fail("opening refused"),
+      agent: Agent.makeNoop({
+        run: () => {
+          calls++
+          return completed
+        }
+      }),
+      journal: {
+        emitLossy: (input) =>
+          Effect.sync(() => {
+            trail.push(input.eventType)
+            return accepted
+          })
+      }
+    })
+    expect(result.status).toBe("failed")
+    expect(calls).toBe(0)
+    expect(trail).toEqual(["control.agent.prompt-rendered"])
+  })
+
+  it("finishes an interrupted trail batch before the final flush", async () => {
+    const record = recorder()
+    const writing = Deferred.makeUnsafe<Fiber.Fiber<unknown, unknown>>()
+    const releaseWrite = Deferred.makeUnsafe<void>()
+    const finish = Deferred.makeUnsafe<void>()
+    const registered = Deferred.makeUnsafe<Fiber.Fiber<unknown, unknown>>()
+    const trail: Array<string> = []
+    await withExecutor(record, {
+      runtime: {
+        registerFiber: (_id, fiber) => Deferred.succeed(registered, fiber).pipe(Effect.asVoid)
+      },
+      agent: Agent.makeNoop({
+        run: () => Stream.concat(completed, Stream.fromEffect(Deferred.await(finish)).pipe(Stream.drain))
+      }),
+      journal: {
+        emitLossy: (input) =>
+          Effect.gen(function*() {
+            if (input.eventType === "control.agent.prompt-rendered") {
+              yield* Effect.withFiber((fiber) => Deferred.succeed(writing, fiber))
+              yield* Deferred.await(releaseWrite)
+            }
+            trail.push(input.eventType)
+            return accepted
+          })
+      }
+    }, (executor) =>
+      Effect.gen(function*() {
+        yield* executor.launch(launchInput)
+        const writer = yield* Deferred.await(writing)
+        // Start the interruption synchronously while the journal write is held.
+        const interrupting = yield* Effect.forkChild(Fiber.interrupt(writer), { startImmediately: true })
+        yield* Deferred.succeed(releaseWrite, undefined)
+        yield* Fiber.join(interrupting)
+        yield* Deferred.succeed(finish, undefined)
+        yield* Fiber.await(yield* Deferred.await(registered))
+      }).pipe(Effect.timeout("10 seconds")))
+    expect(record.statuses).toEqual(["completed"])
+    expect(trail).toEqual(["control.agent.prompt-rendered", "control.agent.transition-applied"])
+  })
+
+  it.each([
+    { output: "", value: undefined },
+    { output: "done", value: { answer: 42 } },
+    { output: "done", value: null },
+    { output: "x".repeat(AgentSession.maxTracedBytes), value: false },
+    { output: "é".repeat(AgentSession.maxTracedBytes), value: { text: "x".repeat(AgentSession.maxTracedBytes) } }
+  ])(
+    "settles a streamed prompt with its bounded completion ($output.length characters)",
+    async ({ output, value }) => {
+      const record = recorder()
+      const settlements: Array<unknown> = []
+      const delta = new AgentEvent.ModelDelta({
+        eventType: "flows.harness.model-delta.v1",
+        delta: ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "answer", text: "." })
+      })
+      const result = await launchedAndJoined(record, {
+        agent: Agent.makeNoop({
+          run: () =>
+            Stream.concat(
+              Stream.fromIterable(Array.from({ length: 4096 }, () => delta)),
+              Stream.make(
+                new AgentEvent.TransitionApplied({
+                  eventType: "flows.harness.transition-applied.v1",
+                  transition: new Cell.Complete({ output, value })
+                })
+              )
+            )
+        }),
+        engine: (engine) => {
+          const register: EngineService["register"] = (flow, execute, options) =>
+            engine.register(flow, (payload, executionId) =>
+              execute(payload, executionId).pipe(
+                Effect.tap((success) =>
+                  Effect.sync(() => {
+                    settlements.push(success)
+                  })
+                )
+              ), options)
+          return { ...engine, register }
+        }
+      })
+      expect(result.status).toBe("completed")
+      const bytes = new TextEncoder().encode(output).byteLength
+      expect(settlements).toEqual([{
+        output: bytes <= AgentSession.maxTracedBytes ? output : {
+          truncated: true,
+          bytes,
+          digest: Digest.digest(JSON.stringify(output))
+        },
+        ...(value === undefined ? {} : {
+          value: new TextEncoder().encode(JSON.stringify(value)).byteLength <= AgentSession.maxTracedBytes
+            ? value
+            : {
+              truncated: true,
+              bytes: new TextEncoder().encode(JSON.stringify(value)).byteLength,
+              digest: expect.any(String)
+            }
+        })
+      }])
+      expect(JSON.stringify(settlements).length).toBeLessThan(2 * AgentSession.maxTracedBytes + 512)
     }
   )
 })

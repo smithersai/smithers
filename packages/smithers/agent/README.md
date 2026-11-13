@@ -226,6 +226,12 @@ the flow up in the registry, loads its markdown prompt body, resolves its
 declared seat through `SeatResolver`, and runs the `Agent` service as the body
 of one durable flow execution whose id is the control run id.
 
+A completed prompt stores its `output` and optional structured `value` as the
+execution result. Each field uses the trail's `maxTracedBytes` limit; larger
+fields become byte-count and digest markers. Streamed deltas do not accumulate
+in the result. Trail shutdown finishes the current batch and flushes pending
+records on success, failure, or interruption, including opening failures.
+
 The composition declares everything a control-plane host has to supply: explicit
 `Sandbox.Limits` (never unlimited), a `Steering.Source` over the journal-backed
 notification queue `Control.steer` admits into, and an approval `ask` gated in

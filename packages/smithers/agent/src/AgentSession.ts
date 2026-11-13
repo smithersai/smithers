@@ -621,10 +621,11 @@ export const traceIdentity = (
 export { callId } from "./internal/CallIdentity.ts"
 
 /**
- * The largest free-text or value field one trail record carries.
+ * The largest free-text or value field one trail record or prompt settlement carries.
  *
  * Completion outputs are bounded inside both cell settlements and applied
- * transitions, preserving the containing outcome and transition tags.
+ * transitions, preserving the containing outcome and transition tags. Prompt
+ * settlements apply the same limit to their output and structured value.
  *
  * The trail is a durable journal row, and a cell may read a multi-megabyte
  * file into one result. Bounding the field limits both that row's storage and
@@ -4033,7 +4034,6 @@ export const make = (
         const engineServices = yield* Effect.context<
           (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
         >()
-        const tags: Array<string> = []
         // The trail is buffered in memory and written by a fiber of its own,
         // never by the stream's consumer.
         //
@@ -4108,7 +4108,7 @@ export const make = (
             journalVersion: Transcript.journalVersion
           }
         })
-        const flush = Effect.suspend(() =>
+        const flush = Effect.uninterruptible(Effect.suspend(() =>
           Effect.forEach(
             pending.splice(0, pending.length),
             // Contained per entry rather than per batch: one refused event must
@@ -4116,7 +4116,7 @@ export const make = (
             (entry) => Effect.ignore(trail(payload.runId, entry.sourceSeq, entry.eventType, entry.payload)),
             { discard: true }
           )
-        )
+        ))
         // Journaling is best-effort on purpose: a full or rejecting journal
         // must not fail an agent run that is otherwise making progress.
         // Occurrence time is stamped into the payload because the pump
@@ -4141,7 +4141,6 @@ export const make = (
         const record = (event: AgentEvent.AgentEvent): Effect.Effect<void> =>
           Effect.flatMap(Clock.currentTimeMillis, (at) =>
             Effect.sync(() => {
-              tags.push(event._tag)
               if (event._tag === "turn-opened") {
                 frame += 1
                 ordinal = 0
@@ -4169,143 +4168,155 @@ export const make = (
                 })
               }
             }))
-        const pump = yield* Effect.forkChild(
-          Effect.forever(Effect.andThen(Effect.sleep(Duration.millis(250)), flush))
+        return yield* Effect.acquireUseRelease(
+          Effect.forkChild(
+            Effect.forever(Effect.andThen(Effect.sleep(Duration.millis(250)), flush)),
+            { uninterruptible: false }
+          ),
+          () =>
+            Effect.gen(function*() {
+              const freshContext = options.freshContext?.(descriptor) === true
+              const memory = freshContext || options.memory === undefined ? undefined : yield* Action.make({
+                name: "agent/opening-memory",
+                tier: "sealed",
+                idempotencyKey: `${payload.runId}:opening-memory`,
+                success: Schema.Struct({ rows: MemorySnapshot.Snapshot.fields.rows, digest: Schema.String }),
+                error: Schema.Unknown,
+                execute: options.memory({
+                  runId: payload.runId,
+                  prompt: rendered.text,
+                  history: [],
+                  capabilities: card.envelope.capabilities
+                })
+              })
+              const instructions = freshContext || options.instructions === undefined ? [] : yield* Action.make({
+                name: "agent/opening-instructions",
+                implementationVersion: "1",
+                tier: "sealed",
+                idempotencyKey: `${payload.runId}:opening-instructions`,
+                success: Schema.Array(Schema.String),
+                error: Schema.Unknown,
+                execute: options.instructions({
+                  descriptor,
+                  text: flowBody._tag === "Prompt" ? flowBody.text : rendered.text,
+                  capabilities: card.envelope.capabilities
+                })
+              })
+              const system = freshContext
+                ? []
+                : [...(options.system ?? []), ...instructions, ...(routing?.variant ?? [])]
+              const hostFlows = sandboxed?.flows ?? options.flows ?? []
+              // A child is offered the run's host flows and not `wait` or `ask`:
+              // either would park this run on the child's behalf. Its records join
+              // this run's trail through the same buffer and pump.
+              const childRecord = childTracer()
+              const children = options.markdownChildren !== true ? undefined : {
+                flows: hostFlows,
+                seats,
+                self: descriptor.name,
+                observe: (child: Child, event: AgentEvent.AgentEvent) =>
+                  Effect.flatMap(Clock.currentTimeMillis, (at) =>
+                    Effect.sync(() => {
+                      const row = childRecord(child, event)
+                      if (row !== undefined) {
+                        pending.push({
+                          sourceSeq: row.sourceSeq,
+                          eventType: row.eventType,
+                          payload: { ...row.payload, at, journalVersion: Transcript.journalVersion }
+                        })
+                      }
+                    }))
+              }
+              const outcome = yield* agent.run({
+                memory,
+                instructions: freshContext ? [] : options.workspaceInstructions,
+                pinnedSources: options.pinnedSources,
+                contextWindowTokensFor: contextWindowResolver(seats),
+                session: payload.runId,
+                seat,
+                fallbackSeats,
+                modelParams: ModelRequest.GenerationParams.make({
+                  reasoningEffort: effortFor(descriptor, options.reasoningEffort)
+                }),
+                capacity: options.capacity,
+                prompt: rendered.text,
+                // The host's own system text stays first; a routed run's variant
+                // follows it.
+                system,
+                environment: options.environment,
+                registry,
+                promptRunner: options.promptRunner,
+                children,
+                flows: [
+                  ...hostFlows,
+                  StandardFlows.clock(engineServices),
+                  StandardFlows.approval(options.asks === "refuse" ? StandardFlows.askerNoop() : asker(payload.runId))
+                ],
+                // A refusing host registers no approval and parks on nothing.
+                ...(options.asks === "refuse" ? {} : { authorize: authorize(payload.runId, instance) }),
+                capabilityEnvelope: patterns(card.envelope.capabilities),
+                limits: options.limits,
+                maxFrames: options.maxFrames,
+                // A task run's frames are supposed to change something, so hold it
+                // to a rhythm of acting rather than only reading.
+                readOnlyCap: options.readOnlyCap ?? CellTurn.defaultReadOnlyFrames,
+                // Passed straight through rather than defaulted here: unlike the
+                // read-only cap, the controller's own default is the one this
+                // executor wants, and a second copy of the number would be a second
+                // thing to keep true. The repeat cap is passed the same way.
+                modelCallMs: options.modelCallMs,
+                repeatCap: options.repeatCap,
+                narrowingCap: options.narrowingCap,
+                unmovedCap: options.unmovedCap,
+                unresolvedCap: options.unresolvedCap,
+                approvalChannel: options.approvalChannel ?? false,
+                supervisor: options.supervisor,
+                judged: options.judged
+              }).pipe(
+                // A routed run's decision opens its trail; a declared seat adds nothing.
+                (stream) =>
+                  routing === undefined ? stream : Stream.concat(
+                    Stream.fromIterable(
+                      SeatRouter.events(routing.decision, { scope: payload.runId, modelId: seat.modelId })
+                    ),
+                    stream
+                  ),
+                (stream) => agentOutcome(stream, record),
+                // A refusing host registers no approval, so its `park` budget fails.
+                (effect) =>
+                  options.asks === "refuse"
+                    ? effect
+                    : Effect.provideService(effect, Budget.Parking, parking(payload.runId, envelope)),
+                Effect.provide(options.budget(envelope)),
+                Effect.provide(options.quotaPolicy),
+                Effect.provide(QuickJSSandbox.layer),
+                Effect.provideService(Steering.Source, steering),
+                // The host's workspace observer and checkpoint store measure and pin
+                // the host tree, which a sandboxed run's tools never touch: the run
+                // is unobserved and has nowhere to pin, and says so.
+                (effect) =>
+                  sandboxed === undefined
+                    ? effect
+                    : Effect.updateContext(effect, Context.omit(WorkspaceObservation.Observer, Checkpoints.Checkpoints))
+              )
+              if (outcome._tag === "FramesExhausted") {
+                return yield* new HarnessError.HarnessError({
+                  code: "model_failed",
+                  message:
+                    `The agent session "${payload.runId}" ended without a completed answer after ${outcome.frames} frames`,
+                  cause: outcome
+                })
+              }
+              return {
+                output: tracedField(outcome.output),
+                ...(outcome.value === undefined ? {} : { value: tracedField(outcome.value) })
+              }
+            }),
+          // Let an in-flight batch finish before draining newer records.
+          // Acquiring the pump and installing cleanup are atomic, and cleanup
+          // also covers opening memory or instructions failing before agent.run.
+          (pump) => Effect.andThen(Fiber.interrupt(pump), flush)
         )
-        const freshContext = options.freshContext?.(descriptor) === true
-        const memory = freshContext || options.memory === undefined ? undefined : yield* Action.make({
-          name: "agent/opening-memory",
-          tier: "sealed",
-          idempotencyKey: `${payload.runId}:opening-memory`,
-          success: Schema.Struct({ rows: MemorySnapshot.Snapshot.fields.rows, digest: Schema.String }),
-          error: Schema.Unknown,
-          execute: options.memory({
-            runId: payload.runId,
-            prompt: rendered.text,
-            history: [],
-            capabilities: card.envelope.capabilities
-          })
-        })
-        const instructions = freshContext || options.instructions === undefined ? [] : yield* Action.make({
-          name: "agent/opening-instructions",
-          implementationVersion: "1",
-          tier: "sealed",
-          idempotencyKey: `${payload.runId}:opening-instructions`,
-          success: Schema.Array(Schema.String),
-          error: Schema.Unknown,
-          execute: options.instructions({
-            descriptor,
-            text: flowBody._tag === "Prompt" ? flowBody.text : rendered.text,
-            capabilities: card.envelope.capabilities
-          })
-        })
-        const system = freshContext ? [] : [...(options.system ?? []), ...instructions, ...(routing?.variant ?? [])]
-        const hostFlows = sandboxed?.flows ?? options.flows ?? []
-        // A child is offered the run's host flows and not `wait` or `ask`:
-        // either would park this run on the child's behalf. Its records join
-        // this run's trail through the same buffer and pump.
-        const childRecord = childTracer()
-        const children = options.markdownChildren !== true ? undefined : {
-          flows: hostFlows,
-          seats,
-          self: descriptor.name,
-          observe: (child: Child, event: AgentEvent.AgentEvent) =>
-            Effect.flatMap(Clock.currentTimeMillis, (at) =>
-              Effect.sync(() => {
-                const row = childRecord(child, event)
-                if (row !== undefined) {
-                  pending.push({
-                    sourceSeq: row.sourceSeq,
-                    eventType: row.eventType,
-                    payload: { ...row.payload, at, journalVersion: Transcript.journalVersion }
-                  })
-                }
-              }))
-        }
-        const outcome = yield* agent.run({
-          memory,
-          instructions: freshContext ? [] : options.workspaceInstructions,
-          pinnedSources: options.pinnedSources,
-          contextWindowTokensFor: contextWindowResolver(seats),
-          session: payload.runId,
-          seat,
-          fallbackSeats,
-          modelParams: ModelRequest.GenerationParams.make({
-            reasoningEffort: effortFor(descriptor, options.reasoningEffort)
-          }),
-          capacity: options.capacity,
-          prompt: rendered.text,
-          // The host's own system text stays first; a routed run's variant
-          // follows it.
-          system,
-          environment: options.environment,
-          registry,
-          promptRunner: options.promptRunner,
-          children,
-          flows: [
-            ...hostFlows,
-            StandardFlows.clock(engineServices),
-            StandardFlows.approval(options.asks === "refuse" ? StandardFlows.askerNoop() : asker(payload.runId))
-          ],
-          // A refusing host registers no approval and parks on nothing.
-          ...(options.asks === "refuse" ? {} : { authorize: authorize(payload.runId, instance) }),
-          capabilityEnvelope: patterns(card.envelope.capabilities),
-          limits: options.limits,
-          maxFrames: options.maxFrames,
-          // A task run's frames are supposed to change something, so hold it
-          // to a rhythm of acting rather than only reading.
-          readOnlyCap: options.readOnlyCap ?? CellTurn.defaultReadOnlyFrames,
-          // Passed straight through rather than defaulted here: unlike the
-          // read-only cap, the controller's own default is the one this
-          // executor wants, and a second copy of the number would be a second
-          // thing to keep true. The repeat cap is passed the same way.
-          modelCallMs: options.modelCallMs,
-          repeatCap: options.repeatCap,
-          narrowingCap: options.narrowingCap,
-          unmovedCap: options.unmovedCap,
-          unresolvedCap: options.unresolvedCap,
-          approvalChannel: options.approvalChannel ?? false,
-          supervisor: options.supervisor,
-          judged: options.judged
-        }).pipe(
-          // A routed run's decision opens its trail; a declared seat adds nothing.
-          (stream) =>
-            routing === undefined ? stream : Stream.concat(
-              Stream.fromIterable(SeatRouter.events(routing.decision, { scope: payload.runId, modelId: seat.modelId })),
-              stream
-            ),
-          (stream) => agentOutcome(stream, record),
-          // A refusing host registers no approval, so its `park` budget fails.
-          (effect) =>
-            options.asks === "refuse"
-              ? effect
-              : Effect.provideService(effect, Budget.Parking, parking(payload.runId, envelope)),
-          Effect.provide(options.budget(envelope)),
-          Effect.provide(options.quotaPolicy),
-          Effect.provide(QuickJSSandbox.layer),
-          Effect.provideService(Steering.Source, steering),
-          // The host's workspace observer and checkpoint store measure and pin
-          // the host tree, which a sandboxed run's tools never touch: the run
-          // is unobserved and has nowhere to pin, and says so.
-          (effect) =>
-            sandboxed === undefined
-              ? effect
-              : Effect.updateContext(effect, Context.omit(WorkspaceObservation.Observer, Checkpoints.Checkpoints)),
-          // The pump is interrupted before the final flush so the two never
-          // race for the same buffered entries, and the flush runs on the way
-          // out of every exit — settled, failed, or parked — because a parked
-          // run's trail is the one an operator most needs to read.
-          Effect.onExit(() => Effect.andThen(Fiber.interrupt(pump), flush))
-        )
-        if (outcome._tag === "FramesExhausted") {
-          return yield* new HarnessError.HarnessError({
-            code: "model_failed",
-            message:
-              `The agent session "${payload.runId}" ended without a completed answer after ${outcome.frames} frames`,
-            cause: outcome
-          })
-        }
-        return tags
       })
 
     const activeBodies = new Map<string, Fiber.Fiber<unknown, unknown>>()
