@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, it } from "vitest"
 
-// Enough probes that one missed stamp branch stays above every global floor,
+// Enough probes that one missed stamp branch stays above the 99.97% branch floor,
 // while ten unexercised probes fall below all four.
-const actions = 200
+const actions = 2000
 
 it("rejects coverage below the measured floors and accepts complete behavioral coverage", async ({ signal }) => {
   const root = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-coverage-policy-"))
@@ -82,7 +82,7 @@ it("exercises both outcomes of every admitted action", () => {
     const incomplete = await run(actions - 10)
     expect(incomplete.code, incomplete.output).toBe(1)
     for (
-      const [metric, floor] of Object.entries({ branches: 99.28, functions: 99.48, lines: 99.8, statements: 99.71 })
+      const [metric, floor] of Object.entries({ branches: 99.97, functions: 100, lines: 100, statements: 100 })
     ) {
       expect(incomplete.output).toContain(`Coverage for ${metric}`)
       expect(incomplete.output).toContain(`threshold (${floor}%)`)

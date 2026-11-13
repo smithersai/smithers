@@ -201,21 +201,26 @@ export interface MemoryCli {
   }>
 }
 
-const executableCandidates = (name: string): ReadonlyArray<string> =>
-  process.platform === "win32" ? [`${name}.exe`, `${name}.cmd`, `${name}.bat`, name] : [name]
+const executableCandidates = (name: string, platform: NodeJS.Platform): ReadonlyArray<string> =>
+  platform === "win32" ? [`${name}.exe`, `${name}.cmd`, `${name}.bat`, name] : [name]
 
 /**
  * The default locator: scans PATH for an executable `smithers`.
  *
+ * `platform` is there so a POSIX host can ask for the Windows answer.
+ *
  * @category constructors
  * @since 0.1.0
  */
-export const pathLocator = (environment: Readonly<Record<string, string | undefined>>): CliLocator => ({
+export const pathLocator = (
+  environment: Readonly<Record<string, string | undefined>>,
+  platform: NodeJS.Platform = process.platform
+): CliLocator => ({
   find: async () => {
     const path = environment["PATH"] ?? ""
     for (const directory of path.split(NodePath.delimiter)) {
       if (directory === "") continue
-      for (const candidate of executableCandidates("smithers")) {
+      for (const candidate of executableCandidates("smithers", platform)) {
         const absolute = NodePath.join(directory, candidate)
         try {
           await Fs.access(absolute, Fs.constants.X_OK)

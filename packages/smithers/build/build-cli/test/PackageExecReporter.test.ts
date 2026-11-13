@@ -159,6 +159,27 @@ describe("PackageExec reporter hooks", () => {
     expect(reporter.events.some((event) => event.startsWith("tool "))).toBe(false)
   })
 
+  it("writes a repository child's live view to its own pipes when it was given no terminals", async () => {
+    const root = await fixture("printf 'hello private-value\\n'; printf 'error detail\\n' >&2")
+    const driver = NodePath.resolve(import.meta.dirname, "fixtures/repository-child/run-without-terminals.ts")
+    const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
+      NodeChildProcess.execFile(
+        process.execPath,
+        ["--import", "tsx", "--import", "vibelang/register", driver, root],
+        {
+          cwd: NodePath.resolve(import.meta.dirname, ".."),
+          env: { ...process.env, API_TOKEN: "private-value" },
+          timeout: 90_000
+        },
+        (error, stdout, stderr) => resolve({ code: error === null ? 0 : (error.code as number | null), stdout, stderr })
+      )
+    })
+    expect(result.code, result.stderr).toBe(0)
+    expect(result.stdout).toContain("hello [REDACTED]")
+    expect(result.stderr).toContain("error detail")
+    expect(result.stdout + result.stderr).not.toContain("private-value")
+  }, 100_000)
+
   it("bounds the live lines a repository child writes to the parent process", async () => {
     const root = await fixture("i=0; while [ $i -lt 250 ]; do echo \"line$i\"; i=$((i+1)); done")
     const reporter = recorder()

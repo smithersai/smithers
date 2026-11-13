@@ -713,12 +713,12 @@ const checkedRead = async (handle: OpenFile, buffer: Uint8Array, what: string): 
 }
 
 /**
- * Streams one file's SHA-256 through a bounded, reusable buffer.
+ * Streams one admitted file's SHA-256 through a bounded, reusable buffer.
  *
- * Returns undefined when the file does not exist, so a declared-but-missing
- * input still contributes deterministic key material. Every other failure —
+ * Every failure rejects, including an entry removed since it was admitted:
  * a permission error, a FIFO, a device, a link out of the workspace, a file
- * that changed while it was read — is reported.
+ * that changed while it was read. {@link digestFile} is the reader that
+ * answers undefined for a missing file.
  *
  * With `options.digests`, an entry whose status equals a remembered row's is
  * answered from the row without opening the file, and a file read here is
@@ -730,7 +730,7 @@ const checkedRead = async (handle: OpenFile, buffer: Uint8Array, what: string): 
 export const digestEntry = async (
   entry: Entry,
   options: Options = {}
-): Promise<string | undefined> => {
+): Promise<string> => {
   const maximumBytes = options.maximumBytes
   if (
     maximumBytes !== undefined &&

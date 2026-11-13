@@ -39,6 +39,7 @@ import { CacheCredentials } from "./internal/CacheCredentials.ts"
 import * as DigestIndexFile from "./internal/DigestIndexFile.ts"
 import * as GoCache from "./internal/GoCache.ts"
 import type { TreeInputReads } from "./internal/PackageOptions.ts"
+import * as PackagePlanner from "./internal/PackagePlanner.ts"
 import * as RemoteCi from "./internal/RemoteCi.ts"
 import * as Shards from "./internal/Shards.ts"
 import { requireRecorded } from "./internal/UnrecordedGates.ts"
@@ -215,7 +216,7 @@ interface CiFlags extends ExecutionFlags {
  * @slop
  */
 export interface RuntimeConfig {
-  /** Scoped discovery and receipt I/O; omitted, the CLI uses its real host. */
+  /** Scoped discovery, CI plan-time and receipt I/O; omitted, the CLI uses its real host. */
   readonly services?: Layer.Layer<never> | undefined
   readonly cliName?: string | undefined
   readonly cliVersion?: string | undefined
@@ -965,28 +966,31 @@ const runCi = async (
           try {
             packagePlans.push({
               kind,
-              plan: await PackageExec.plan({
-                index,
-                cacheDirectory,
-                ...(remoteCache === undefined ? {} : { remoteCache }),
-                verb: kind,
-                patterns: remaining,
-                plan: flags.plan,
-                includeExclusive: flags.includeExclusive,
-                lifecycle: flags.lifecycle,
-                jobs: flags.jobs,
-                readCache: flags.cache,
-                signal: config.signal,
-                reporter,
-                ...terminalsOf(config),
-                environment: config.environment,
-                approvals: config.approvals,
-                // CI never spawns an agent: the docs-verb page writers stay out.
-                unattended: true,
-                digests,
-                treeInputs,
-                walks
-              })
+              // Plan-time host services (the Nix closure) come from the invocation's layer.
+              plan: await Effect.runPromise(
+                PackagePlanner.planEffect({
+                  index,
+                  cacheDirectory,
+                  ...(remoteCache === undefined ? {} : { remoteCache }),
+                  verb: kind,
+                  patterns: remaining,
+                  plan: flags.plan,
+                  includeExclusive: flags.includeExclusive,
+                  lifecycle: flags.lifecycle,
+                  jobs: flags.jobs,
+                  readCache: flags.cache,
+                  signal: config.signal,
+                  reporter,
+                  ...terminalsOf(config),
+                  environment: config.environment,
+                  approvals: config.approvals,
+                  // CI never spawns an agent: the docs-verb page writers stay out.
+                  unattended: true,
+                  digests,
+                  treeInputs,
+                  walks
+                }).pipe(Effect.provide(config.services ?? Layer.empty))
+              )
             })
             for (const pattern of remaining) accepted.add(pattern)
             break

@@ -24,23 +24,42 @@ const options = {
 }
 
 for (const extension of ["mjs", "cjs", "js"]) {
-  it.runIf(process.platform === "win32")(
-    `launches a Windows .${extension} module with literal Node argv`,
-    async () => {
-      const command = Path.join(directory(), `literal module.${extension}`)
-      Fs.writeFileSync(command, "process.stdout.write(JSON.stringify(process.argv.slice(2)));process.exitCode=23")
-      const args = ["space argument", "$(never-evaluate)", "a\"b", "trailing\\", "é"]
-      let stdout = ""
-      expect(await ContainedProcess.run({ ...options, command, args, stdout: (text) => stdout += text })).toBe(23)
-      expect(JSON.parse(stdout)).toEqual(args)
-    }
-  )
+  it(`launches a Windows .${extension} module with literal Node argv`, async () => {
+    const command = Path.join(directory(), `literal module.${extension}`)
+    Fs.writeFileSync(command, "process.stdout.write(JSON.stringify(process.argv.slice(2)));process.exitCode=23")
+    const args = ["space argument", "$(never-evaluate)", "a\"b", "trailing\\", "é"]
+    let stdout = ""
+    expect(
+      await ContainedProcess.run({ ...options, command, args, platform: "win32", stdout: (text) => stdout += text })
+    ).toBe(23)
+    expect(JSON.parse(stdout)).toEqual(args)
+  })
 }
+
+it.runIf(process.platform !== "win32")("leaves a POSIX module to the host's own launch rules", async () => {
+  // Not executable, so only the Windows Node launch could have run it.
+  const command = Path.join(directory(), "module.mjs")
+  Fs.writeFileSync(command, "process.exitCode = 23", { mode: 0o644 })
+  await expect(ContainedProcess.run({ ...options, command, platform: "linux" })).rejects.toMatchObject({
+    code: "process_failed"
+  })
+  expect(await ContainedProcess.run({ ...options, command, platform: "win32" })).toBe(23)
+})
+
+it("leaves a relative Windows module name to the host's PATH search", async () => {
+  const cwd = directory()
+  Fs.writeFileSync(Path.join(cwd, "relative-module.mjs"), "process.exitCode = 23", { mode: 0o644 })
+  await expect(ContainedProcess.run({ ...options, command: "relative-module.mjs", cwd, platform: "win32" }))
+    .rejects.toMatchObject({ code: "process_failed" })
+})
 
 it.each(["missing.mjs", "directory.mjs"])("preserves native spawn refusal for %s", async (name) => {
   const command = Path.join(directory(), name)
   if (name === "directory.mjs") Fs.mkdirSync(command)
   await expect(ContainedProcess.run({ ...options, command })).rejects.toMatchObject({ code: "process_failed" })
+  await expect(ContainedProcess.run({ ...options, command, platform: "win32" })).rejects.toMatchObject({
+    code: "process_failed"
+  })
 })
 
 it.each([false, true])(

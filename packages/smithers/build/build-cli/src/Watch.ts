@@ -37,9 +37,8 @@ export const makeServices = (options: { readonly entry?: string } = {}): Service
   notifier: (root, changed, failed) =>
     Effect.try({
       try: () => {
-        const watcher = watch(root, { recursive: true }, (_event, filename) => {
-          changed(filename === null ? null : filename.toString())
-        }).on("error", failed)
+        // The default utf8 encoding names the file as a string, or null when the platform cannot.
+        const watcher = watch(root, { recursive: true }, (_event, filename) => changed(filename)).on("error", failed)
         return () => watcher.close()
       },
       // node:fs watch reports a bad argument or a failed start only as an Error.

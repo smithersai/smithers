@@ -167,7 +167,8 @@ export const probeVersion = (
  * The probe goes through the exec boundary's spawn shape, so a resolved
  * Windows batch shim is identified the same way it is run. Probing
  * `pnpm.cmd` directly would throw: Node has refused to spawn `.bat` and
- * `.cmd` without a shell since the v18 hardening.
+ * `.cmd` without a shell since the v18 hardening. `options.platform` is
+ * there so a POSIX host can ask for the Windows answer.
  *
  * @category tools
  * @since 0.1.0
@@ -178,13 +179,14 @@ export const probeCommand = (
   options?: {
     readonly cwd?: string | undefined
     readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+    readonly platform?: NodeJS.Platform | undefined
   }
 ): Promise<Probe> =>
   new Promise((resolve) => {
-    const shape = Exec.spawnShape(
-      [path, ...args],
-      options?.environment === undefined ? {} : { env: options.environment }
-    )
+    const shape = Exec.spawnShape([path, ...args], {
+      ...(options?.environment === undefined ? {} : { env: options.environment }),
+      ...(options?.platform === undefined ? {} : { platform: options.platform })
+    })
     NodeChildProcess.execFile(
       shape.file,
       [...shape.args],
@@ -341,9 +343,10 @@ const parseStatusZ = (raw: string): Array<StatusEntry> => {
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]!
     if (part === "") continue
+    // Porcelain v1 always follows the two status letters and a space with a
+    // non-empty path.
     const status = part.slice(0, 2)
     const path = part.slice(3)
-    if (path === "") continue
     entries.push({ status, path })
     // A rename/copy row carries the original path as the next NUL field.
     if (status.startsWith("R") || status.startsWith("C")) index += 1
@@ -943,10 +946,13 @@ export interface IgnoredSnapshot {
 }
 
 /** The identity of one gitignored path now, or undefined once it is gone. */
-const identityOf = async (absolute: string): Promise<IgnoredEntry | undefined> => {
+const identityOf = async (
+  absolute: string,
+  lstat: TreeIo["lstat"] = Fs.lstat
+): Promise<IgnoredEntry | undefined> => {
   let stats: NodeFs.Stats
   try {
-    stats = await Fs.lstat(absolute)
+    stats = await lstat(absolute)
   } catch {
     return undefined
   }
@@ -1002,7 +1008,8 @@ const walkIgnored = async (
   directory: string,
   entries: Map<string, IgnoredEntry>,
   limits: IgnoredLimits,
-  hostTrees: ReadonlyArray<string>
+  hostTrees: ReadonlyArray<string>,
+  lstat: TreeIo["lstat"]
 ): Promise<void> => {
   let dirents: Array<NodeFs.Dirent>
   try {
@@ -1011,7 +1018,8 @@ const walkIgnored = async (
     throw new IgnoredCensusError("unreadable", directory, limits, { cause })
   }
   if (dirents.some((dirent) => dirent.name === ".git")) {
-    const entry = await identityOf(NodePath.join(root, directory))
+    // A nested repository removed after its parent was listed is not recorded.
+    const entry = await identityOf(NodePath.join(root, directory), lstat)
     if (entry !== undefined) recordIgnored(entries, directory, entry, limits)
     return
   }
@@ -1020,10 +1028,10 @@ const walkIgnored = async (
     if (skipStatusPath(cacheDirectory, path, hostTrees)) continue
     if (dirent.isDirectory()) {
       if (runtimeDirectory(path)) continue
-      await walkIgnored(root, cacheDirectory, path, entries, limits, hostTrees)
+      await walkIgnored(root, cacheDirectory, path, entries, limits, hostTrees, lstat)
       continue
     }
-    const entry = await identityOf(NodePath.join(root, path))
+    const entry = await identityOf(NodePath.join(root, path), lstat)
     if (entry !== undefined && !(entry.kind === "file" && runtimeFile(path))) {
       recordIgnored(entries, path, entry, limits)
     }
@@ -1034,7 +1042,8 @@ const listIgnored = async (
   root: string,
   cacheDirectory: string,
   limits: IgnoredLimits,
-  hostTrees: ReadonlyArray<string> = []
+  hostTrees: ReadonlyArray<string> = [],
+  lstat: TreeIo["lstat"] = Fs.lstat
 ): Promise<Map<string, IgnoredEntry>> => {
   // The failure propagates instead of reading as an empty census. This runs
   // once before the body and once after: swallowing a failure after leaves the
@@ -1055,7 +1064,7 @@ const listIgnored = async (
   // Without a local `.git` the whole tree is walked (see `censusedByGit`).
   const entries = new Map<string, IgnoredEntry>()
   if (!censusedByGit(root)) {
-    await walkIgnored(root, cacheDirectory, "", entries, limits, hostTrees)
+    await walkIgnored(root, cacheDirectory, "", entries, limits, hostTrees, lstat)
     return entries
   }
   const raw = await statusZ(root, true)
@@ -1066,10 +1075,10 @@ const listIgnored = async (
     if (path === "" || skipStatusPath(cacheDirectory, path, hostTrees)) continue
     if (directory) {
       if (runtimeDirectory(path)) continue
-      await walkIgnored(root, cacheDirectory, path, entries, limits, hostTrees)
+      await walkIgnored(root, cacheDirectory, path, entries, limits, hostTrees, lstat)
       continue
     }
-    const entry = await identityOf(NodePath.join(root, path))
+    const entry = await identityOf(NodePath.join(root, path), lstat)
     if (entry !== undefined && !(entry.kind === "file" && runtimeFile(path))) {
       recordIgnored(entries, path, entry, limits)
     }
@@ -1330,9 +1339,8 @@ const resolveFromExistingAncestor = async (absolute: string): Promise<string> =>
     } catch (cause) {
       const code = errno(cause)
       if (code !== "ENOENT" && code !== "ENOTDIR") throw cause
-      const parent = NodePath.dirname(ancestor)
-      if (parent === ancestor) throw cause
-      ancestor = parent
+      // Callers pass absolute paths, so the climb ends at `/`, which resolves.
+      ancestor = NodePath.dirname(ancestor)
     }
   }
 }
@@ -1379,8 +1387,8 @@ const listTrackedSymlinks = async (root: string): Promise<Array<string>> => {
   const paths: Array<string> = []
   for (const part of raw.split("\0")) {
     if (part === "") continue
+    // `ls-files -s` always separates `<mode> <object> <stage>` from the path with a tab.
     const tab = part.indexOf("\t")
-    if (tab < 0) continue
     if (part.slice(0, tab).startsWith("120000")) paths.push(part.slice(tab + 1))
   }
   return paths
@@ -1420,10 +1428,9 @@ export const snapshotPortals = async (
   const candidates = new Set<string>(await listTrackedSymlinks(root))
   const statusRaw = await statusZ(root)
   for (const entry of parseStatusZ(statusRaw)) {
-    const path = entry.path.endsWith("/") ? entry.path.slice(0, -1) : entry.path
-    if (path !== "") candidates.add(path)
+    candidates.add(entry.path.endsWith("/") ? entry.path.slice(0, -1) : entry.path)
   }
-  const ignoredEntries = ignored?.entries ?? await listIgnored(root, cacheDirectory, ignoredLimits, hostTrees)
+  const ignoredEntries = ignored?.entries ?? await listIgnored(root, cacheDirectory, ignoredLimits, hostTrees, io.lstat)
   for (const [path, entry] of ignoredEntries) {
     if (entry.kind === "link") candidates.add(path)
   }
@@ -1891,11 +1898,9 @@ const confinedAncestor = async (root: string, absolute: string, path: string): P
       if (code !== "ENOENT" && code !== "ENOTDIR") {
         throw new Error(`declared output ${path} has no readable parent directory`, { cause })
       }
-      const parent = NodePath.dirname(ancestor)
-      if (parent === ancestor) {
-        throw new Error(`declared output ${path} has no readable parent directory`, { cause })
-      }
-      ancestor = parent
+      // The climb ends at `/`, or at `.` for a relative root, and both exist:
+      // `realpath(root)` above needed the working directory.
+      ancestor = NodePath.dirname(ancestor)
       continue
     }
     let realAncestor: string

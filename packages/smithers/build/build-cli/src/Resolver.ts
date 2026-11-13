@@ -222,7 +222,6 @@ const readWorkspaceText = async (
   // readText decodes UTF-8 and removes its BOM. Hash the original bytes, and
   // revalidate the original entry so changes between the two reads fail closed.
   const digest = await SafeFs.digestEntry(entry, { ...options, maximumBytes: options.limit })
-  if (digest === undefined) throw new Error(`${options.what} disappeared: ${path}`)
   return { text, digest }
 }
 

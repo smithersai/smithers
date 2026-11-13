@@ -155,6 +155,9 @@ describe("openCache", () => {
     await expect(openCache(accessor as never)).rejects.toThrow(/endpoint must be an enumerable data property/)
     expect(invoked).toBe(false)
     await expect(openCache({ workspaceRoot: root, surprise: true } as never)).rejects.toThrow(/unknown property/)
+    await expect(openCache({ workspaceRoot: root, platform: 32 } as never)).rejects.toThrow(
+      new TypeError("cache platform must be a string")
+    )
     await expect(Fs.stat(NodePath.join(root, ".flows"))).rejects.toMatchObject({ code: "ENOENT" })
   })
 
@@ -1158,6 +1161,86 @@ describe("openCache", () => {
         code: "ENOSPC",
         message: expect.stringMatching(/ENOSPC.*EPERM/)
       })
+      await cache.close()
+    })
+
+    /**
+     * Windows exposes no directory descriptor through Node, so the rename's
+     * directory barrier is skipped there. The entry handle is the only handle
+     * synced on Windows; POSIX syncs the entry and then the directory.
+     */
+    it.each([["win32", 1], ["linux", 2]] as const)(
+      "on %s syncs %i handles per publication",
+      async (platform, count) => {
+        let syncs = 0
+        const cache = await openCache({
+          workspaceRoot: root,
+          platform,
+          io: {
+            syncHandle: (handle) => {
+              syncs += 1
+              return handle.sync()
+            }
+          }
+        })
+        await cache.put(result.key, result)
+        expect(syncs).toBe(count)
+        expect(await cache.get(result.key)).toEqual(result)
+        await cache.close()
+      }
+    )
+
+    /**
+     * Windows refuses a rename onto a destination another process holds open.
+     * Entries are content addressed, so an existing destination that decodes
+     * for the key is the same publication and the refused temp is removed.
+     */
+    it.each(
+      [
+        ["win32", "EPERM", true, "resolves"],
+        ["win32", "EACCES", true, "resolves"],
+        ["win32", "EBUSY", true, "resolves"],
+        ["win32", "EBUSY", false, "rejects"],
+        ["win32", "EXDEV", true, "rejects"],
+        ["linux", "EPERM", true, "rejects"]
+      ] as const
+    )("on %s a %s rename with a published entry %s %s", async (platform, code, published, outcome) => {
+      if (published) {
+        const first = await openCache({ workspaceRoot: root })
+        await first.put(result.key, result)
+        await first.close()
+      }
+      const cache = await openCache({
+        workspaceRoot: root,
+        platform,
+        io: { rename: () => Promise.reject(failing(code)) }
+      })
+      const put = cache.put(result.key, result)
+      if (outcome === "resolves") await expect(put).resolves.toBeUndefined()
+      else await expect(put).rejects.toMatchObject({ code })
+      // The refused temp is removed either way; only a published entry remains.
+      expect(await Fs.readdir(NodePath.join(root, ".flows/cache/al"))).toEqual(published ? ["alpha.json"] : [])
+      await cache.close()
+    })
+
+    it("on win32 reports a refused temp it cannot remove after the same entry was published", async () => {
+      const first = await openCache({ workspaceRoot: root })
+      await first.put(result.key, result)
+      await first.close()
+      const cache = await openCache({
+        workspaceRoot: root,
+        platform: "win32",
+        io: {
+          rename: () => Promise.reject(failing("EBUSY")),
+          removeTemp: () => Promise.reject(failing("EPERM"))
+        }
+      })
+      const put = cache.put(result.key, result)
+      await expect(put).rejects.toThrow(
+        /^the entry was published but the temporary file .*alpha\.json\.[^ ]+ could not be removed: EPERM$/
+      )
+      // The published entry still serves the key; only the refused temp is left behind.
+      expect(await cache.get(result.key)).toEqual(result)
       await cache.close()
     })
   })

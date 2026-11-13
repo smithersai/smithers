@@ -40,6 +40,7 @@ const indexLimit = 32 * 1024 * 1024
 
 const git = async (
   root: string,
+  platform: NodeJS.Platform,
   args: ReadonlyArray<string>,
   limit = indexLimit,
   accepted: ReadonlyArray<number> = [0]
@@ -47,7 +48,7 @@ const git = async (
   let stdout = ""
   const environment: Record<string, string> = {
     PATH: process.env["PATH"] ?? "/usr/bin:/bin",
-    GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+    GIT_CONFIG_GLOBAL: platform === "win32" ? "NUL" : "/dev/null",
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_NO_REPLACE_OBJECTS: "1",
     GIT_NO_LAZY_FETCH: "1",
@@ -177,10 +178,10 @@ export interface ReviewSource {
 }
 
 /** The source the review command reads: Git objects, with no working-tree bytes. */
-const gitSource = (root: string): ReviewSource => ({
+const gitSource = (root: string, platform: NodeJS.Platform): ReviewSource => ({
   tree: async (revision) => {
     const entries = new Map<string, SourceEntry>()
-    for (const record of (await git(root, ["ls-tree", "-r", "-z", revision])).split("\0")) {
+    for (const record of (await git(root, platform, ["ls-tree", "-r", "-z", revision])).split("\0")) {
       if (record === "") continue
       const tab = record.indexOf("\t")
       if (tab < 0) throw new Error("Invalid review snapshot path")
@@ -192,10 +193,11 @@ const gitSource = (root: string): ReviewSource => ({
     }
     return entries
   },
-  read: (_revision, _path, entry, limit) => git(root, ["cat-file", "blob", entry.id.split(" ")[2]!], limit),
+  read: (_revision, _path, entry, limit) => git(root, platform, ["cat-file", "blob", entry.id.split(" ")[2]!], limit),
   grep: async (revision, patterns) =>
     (await git(
       root,
+      platform,
       ["grep", "-l", "-z", "-I", "-E", ...patterns.flatMap((pattern) => ["-e", pattern]), revision, "--"],
       indexLimit,
       [0, 1]
@@ -227,6 +229,8 @@ export interface Options {
   readonly credentialReceiver?: string | undefined
   /** The credential receiver's environment; `process.env` when omitted. */
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  /** The host whose Git and receiver launch rules apply; a POSIX host can ask for the Windows answer. */
+  readonly platform?: NodeJS.Platform | undefined
 }
 
 /**
@@ -257,12 +261,15 @@ export const prepare = async (options: Options) => {
   const found = await PackageDiscovery.findWorkspaceRoot(options.workspace)
   if (found === undefined) throw new Error("No workspace found")
   const root = await Fs.realpath(found)
+  const platform = options.platform ?? process.platform
   const policyRevision =
-    (await git(root, ["rev-parse", "--verify", "--end-of-options", `${options.policyRevision}^{commit}`])).trim()
+    (await git(root, platform, ["rev-parse", "--verify", "--end-of-options", `${options.policyRevision}^{commit}`]))
+      .trim()
   if (policyRevision !== options.policyRevision) throw new Error("Policy revision must identify a commit directly")
   const selected = options.revision ?? "HEAD"
   if (selected !== "HEAD" && !hash.test(selected)) throw new Error("--revision must be HEAD or a full commit SHA")
-  const revision = (await git(root, ["rev-parse", "--verify", "--end-of-options", `${selected}^{commit}`])).trim()
+  const revision = (await git(root, platform, ["rev-parse", "--verify", "--end-of-options", `${selected}^{commit}`]))
+    .trim()
   if (!hash.test(revision)) throw new Error("Git returned an invalid review revision")
   const current = NodePath.relative(root, NodePath.resolve(options.workspace)).split(NodePath.sep).join("/")
   const patterns = (options.patterns.length === 0 ? ["//..."] : options.patterns).map((pattern) =>
@@ -270,7 +277,12 @@ export const prepare = async (options: Options) => {
   )
   return {
     root,
-    ...(await prepareSource(gitSource(root), { policyRevision, revision, patterns, required: options.required }))
+    ...(await prepareSource(gitSource(root, platform), {
+      policyRevision,
+      revision,
+      patterns,
+      required: options.required
+    }))
   }
 }
 
@@ -555,15 +567,16 @@ export class CredentialReceiverError extends Data.TaggedError("smithers-build/Cr
 const receiverTimeoutMs = 10 * 60_000
 
 /** Windows Node modules are interpreted by the current host, without a shell. */
-const nodeReceiver = (path: string): boolean => process.platform === "win32" && /\.(?:mjs|cjs|js)$/.test(path)
+const nodeReceiver = (path: string, platform: NodeJS.Platform): boolean =>
+  platform === "win32" && /\.(?:mjs|cjs|js)$/.test(path)
 
 /** Refuses a receiver path that is not an absolute executable file, before any review starts. */
-const receiverPath = async (path: string): Promise<string> => {
+const receiverPath = async (path: string, platform: NodeJS.Platform): Promise<string> => {
   const usable = NodePath.isAbsolute(path) &&
     await Fs.stat(path).then((stat) => stat.isFile(), () => false) &&
-    (nodeReceiver(path)
+    (nodeReceiver(path, platform)
       ? await Fs.access(path, Fs.constants.R_OK).then(() => true, () => false)
-      : (process.platform !== "win32" || /\.(?:exe|com)$/i.test(path)) &&
+      : (platform !== "win32" || /\.(?:exe|com)$/i.test(path)) &&
         await Fs.access(path, Fs.constants.X_OK).then(() => true, () => false))
   if (!usable) {
     throw new CredentialReceiverError({
@@ -584,7 +597,8 @@ const deliverCredentials = (
   executable: string,
   cwd: string,
   revision: string,
-  environment: Readonly<Record<string, string | undefined>>
+  environment: Readonly<Record<string, string | undefined>>,
+  platform: NodeJS.Platform
 ) =>
 (discoveries: ReadonlyArray<LlmLint.CredentialDiscovery>) =>
   Schema.encodeEffect(LlmLint.CredentialDelivery)({ revision, discoveries }).pipe(
@@ -596,6 +610,7 @@ const deliverCredentials = (
         environment,
         stdin: JSON.stringify(document),
         timeoutMs: receiverTimeoutMs,
+        platform,
         stdout: () => {},
         stderr: () => {}
       })
@@ -633,14 +648,17 @@ export const reviewPrepared = async (
     readonly signal?: AbortSignal | undefined
     readonly credentialReceiver?: string | undefined
     readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+    readonly platform?: NodeJS.Platform | undefined
   }
 ) => {
+  const platform = options.platform ?? process.platform
   const restricted = <A extends Restrictable>(value: A) => restrictFindings(options.findingsStore, value)
   const onCredentials = options.credentialReceiver === undefined ? undefined : deliverCredentials(
-    await receiverPath(options.credentialReceiver),
+    await receiverPath(options.credentialReceiver, platform),
     options.root,
     prepared.revision,
-    options.environment ?? process.env
+    options.environment ?? process.env,
+    platform
   )
   const reviews = []
   for (const { label, payload, snapshot } of prepared.policies) {
@@ -681,13 +699,14 @@ export const reviewPrepared = async (
  * @since 1.0.0
  */
 export const run = async (options: Options) => {
-  if (options.credentialReceiver !== undefined) await receiverPath(options.credentialReceiver)
+  const platform = options.platform ?? process.platform
+  if (options.credentialReceiver !== undefined) await receiverPath(options.credentialReceiver, platform)
   const prepared = await prepare(options)
   const findingsStore = options.findingsStore ??
     NodePath.join(
       NodePath.resolve(
         prepared.root,
-        (await git(prepared.root, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim()
+        (await git(prepared.root, platform, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim()
       ),
       "smithers",
       "review-findings"
@@ -713,7 +732,8 @@ export const run = async (options: Options) => {
     root: prepared.root,
     findingsStore,
     credentialReceiver: options.credentialReceiver,
-    environment: options.environment
+    environment: options.environment,
+    platform
   })
   return { ...receipt, findingsStore, ok, planned: false as const, reviews }
 }

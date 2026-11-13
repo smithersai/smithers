@@ -1252,16 +1252,10 @@ const packagePathOf = (context: Pick<PlanContext, "root" | "index">, target: Tar
   return context.index.ownerOf(target) ?? ""
 }
 
-const labelOf = (context: PlanContext, target: Target.AnyTarget): string => {
-  const labeled = context.index.labelOf(target)
-  if (labeled !== undefined) return labeled
-  const known = context.privateLabels.get(target)
-  if (known !== undefined) return known
-  throw new PackageError(
-    "invalid_target_value",
-    `no declaration position for private target ${Target.metadata(target).target}`
-  )
-}
+// Planning reaches a target only through a listed row's base or verb-view
+// dependencies, and declarationLabels positions every one of those.
+const labelOf = (context: PlanContext, target: Target.AnyTarget): string =>
+  context.index.labelOf(target) ?? context.privateLabels.get(target)!
 
 /** The tree inputs a plan reads once: everything declared but a git diff. */
 type TreeInput = Exclude<Input.Declared, Input.GitDiff>

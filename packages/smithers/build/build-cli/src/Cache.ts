@@ -600,7 +600,9 @@ const localPath = (cacheRoot: string, key: string): string => {
  * Every failure is a miss. A cache is an optimization; it never gets to fail a
  * run, and it never gets to consume unbounded memory.
  */
-const readEntryFile = async (path: string): Promise<unknown> => {
+const readEntryFile = async (path: string, io: CacheIo = {}): Promise<unknown> => {
+  const statHandle = io.statHandle ?? statHandleLive
+  const closeHandle = io.closeHandle ?? closeHandleLive
   let text: string | undefined
   // A concurrent writer publishes by renaming a new file onto this path, which
   // loses the identity check against a file that no longer exists. That is a
@@ -627,7 +629,7 @@ const readEntryFile = async (path: string): Promise<unknown> => {
     }
     let candidate: string | undefined
     try {
-      const opened = await handle.stat({ bigint: true })
+      const opened = await statHandle(handle)
       if (
         opened.isFile() &&
         opened.dev === expected.dev &&
@@ -648,7 +650,7 @@ const readEntryFile = async (path: string): Promise<unknown> => {
           if (bytesRead === 0) break
           total += bytesRead
         }
-        const after = await handle.stat({ bigint: true })
+        const after = await statHandle(handle)
         if (
           after.isFile() &&
           after.dev === opened.dev &&
@@ -666,7 +668,7 @@ const readEntryFile = async (path: string): Promise<unknown> => {
       candidate = undefined
     }
     try {
-      await handle.close()
+      await closeHandle(handle)
     } catch {
       candidate = undefined
     }
@@ -680,17 +682,19 @@ const readEntryFile = async (path: string): Promise<unknown> => {
   }
 }
 
-const readLocal = async (cacheRoot: string, key: string): Promise<CachedResult | null> => {
+const readLocal = async (cacheRoot: string, key: string, io: CacheIo): Promise<CachedResult | null> => {
   const path = localPath(cacheRoot, key)
   await confineDirectory(cacheRoot, NodePath.dirname(path), "cache shard directory")
-  return decodeFor(key, await readEntryFile(path))
+  return decodeFor(key, await readEntryFile(path, io))
 }
 
 /**
  * Fault-injection seams for the local store. Production callers omit this and
  * get the real filesystem. Tests substitute individual operations to reproduce
  * failures a real filesystem cannot produce deterministically — a directory
- * that refuses fsync, a close that fails, a temp file that cannot be removed.
+ * that refuses fsync, a close that fails, a temp file that cannot be removed,
+ * a temp name already taken, an entry a concurrent writer replaces mid-read.
+ * `statHandle` and `closeHandle` also serve entry reads.
  * Injection replaces which operation runs, never what the store does with its
  * result, so the tested policy is the production policy.
  *
@@ -699,6 +703,8 @@ const readLocal = async (cacheRoot: string, key: string): Promise<CachedResult |
  * @slop
  */
 export interface CacheIo {
+  readonly openTemp?: (temp: string) => Promise<Fs.FileHandle>
+  readonly statHandle?: (handle: Fs.FileHandle) => Promise<NodeFs.BigIntStats>
   readonly rename?: (from: string, to: string) => Promise<void>
   readonly writeContents?: (handle: Fs.FileHandle, contents: string) => Promise<void>
   readonly openDirectory?: (directory: string) => Promise<Fs.FileHandle>
@@ -707,9 +713,11 @@ export interface CacheIo {
   readonly removeTemp?: (temp: string) => Promise<void>
 }
 
+const openTempLive = (temp: string): Promise<Fs.FileHandle> => Fs.open(temp, "wx")
+const statHandleLive = (handle: Fs.FileHandle): Promise<NodeFs.BigIntStats> => handle.stat({ bigint: true })
 const writeContentsLive = (handle: Fs.FileHandle, contents: string): Promise<void> => handle.writeFile(contents, "utf8")
-const openDirectoryLive = (directory: string): Promise<Fs.FileHandle | undefined> =>
-  process.platform === "win32" ? Promise.resolve(undefined) : Fs.open(directory, "r")
+const openDirectoryLive = (platform: NodeJS.Platform) => (directory: string): Promise<Fs.FileHandle | undefined> =>
+  platform === "win32" ? Promise.resolve(undefined) : Fs.open(directory, "r")
 const syncHandleLive = (handle: Fs.FileHandle): Promise<void> => handle.sync()
 const closeHandleLive = (handle: Fs.FileHandle): Promise<void> => handle.close()
 const removeTempLive = (temp: string): Promise<void> => Fs.rm(temp, { force: true })
@@ -727,12 +735,13 @@ const removeTempLive = (temp: string): Promise<void> => Fs.rm(temp, { force: tru
  */
 const createTemp = async (
   directory: string,
-  base: string
+  base: string,
+  openTemp: (temp: string) => Promise<Fs.FileHandle>
 ): Promise<{ readonly handle: Fs.FileHandle; readonly temp: string }> => {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const temp = NodePath.join(directory, `.${base}.${process.pid.toString(36)}.${randomUUID()}.tmp`)
     try {
-      return { handle: await Fs.open(temp, "wx"), temp }
+      return { handle: await openTemp(temp), temp }
     } catch (error) {
       if (errorCode(error) !== "EEXIST") throw error
     }
@@ -800,7 +809,8 @@ const renameTolerantly = async (
   temp: string,
   path: string,
   key: string,
-  rename: (from: string, to: string) => Promise<void>
+  rename: (from: string, to: string) => Promise<void>,
+  platform: NodeJS.Platform
 ): Promise<boolean> => {
   try {
     await rename(temp, path)
@@ -808,7 +818,7 @@ const renameTolerantly = async (
   } catch (error) {
     const code = errorCode(error)
     if (
-      process.platform === "win32" &&
+      platform === "win32" &&
       (code === "EPERM" || code === "EACCES" || code === "EBUSY") &&
       decodeFor(key, await readEntryFile(path)) !== null
     ) return false
@@ -836,12 +846,14 @@ const writeLocal = async (
   cacheRoot: string,
   key: string,
   result: CachedResult,
-  io: CacheIo
+  io: CacheIo,
+  platform: NodeJS.Platform
 ): Promise<void> => {
   // Both callers pass a result already normalized or decoded for `key`.
   const rename = io.rename ?? Fs.rename
+  const openTemp = io.openTemp ?? openTempLive
   const writeContents = io.writeContents ?? writeContentsLive
-  const openDirectory = io.openDirectory ?? openDirectoryLive
+  const openDirectory = io.openDirectory ?? openDirectoryLive(platform)
   const syncHandle = io.syncHandle ?? syncHandleLive
   const closeHandle = io.closeHandle ?? closeHandleLive
   const removeTemp = io.removeTemp ?? removeTempLive
@@ -857,7 +869,7 @@ const writeLocal = async (
   // directory swapped for an outside link between open and put must not
   // publish outside the workspace.
   await confineDirectory(cacheRoot, directory, "cache shard directory")
-  const { handle, temp } = await createTemp(directory, NodePath.basename(path))
+  const { handle, temp } = await createTemp(directory, NodePath.basename(path), openTemp)
   let tempConsumed = false
   let primary: { readonly cause: unknown } | undefined
   try {
@@ -875,7 +887,7 @@ const writeLocal = async (
   }
   if (primary === undefined) {
     try {
-      tempConsumed = await renameTolerantly(temp, path, key, rename)
+      tempConsumed = await renameTolerantly(temp, path, key, rename, platform)
     } catch (cause) {
       primary = { cause }
     }
@@ -1093,6 +1105,8 @@ export interface OpenCacheOptions {
   /** Overrides metadata and artifact request deadlines; each includes its body. */
   readonly timeouts?: { readonly get: number; readonly put: number } | undefined
   readonly io?: CacheIo | undefined
+  /** The host whose publication rules apply; a POSIX host can ask for the Windows answer. */
+  readonly platform?: NodeJS.Platform | undefined
 }
 
 interface NormalizedOpenCacheOptions {
@@ -1107,6 +1121,7 @@ interface NormalizedOpenCacheOptions {
   readonly timeouts: { readonly get: number; readonly put: number }
   readonly artifactTimeouts: { readonly get: number; readonly put: number }
   readonly io: CacheIo
+  readonly platform: NodeJS.Platform
 }
 
 /** A rejected cache setting with a diagnostic the operator can act on. */
@@ -1153,6 +1168,8 @@ const normalizeCacheIo = (value: unknown): CacheIo => {
   if (value === undefined) return Object.freeze({})
   const record = plainDataRecord(value, "cache I/O overrides")
   const names = [
+    "openTemp",
+    "statHandle",
     "rename",
     "writeContents",
     "openDirectory",
@@ -1169,6 +1186,10 @@ const normalizeCacheIo = (value: unknown): CacheIo => {
     }
   }
   return Object.freeze({
+    ...(methods["openTemp"] === undefined ? {} : { openTemp: methods["openTemp"] as NonNullable<CacheIo["openTemp"]> }),
+    ...(methods["statHandle"] === undefined
+      ? {}
+      : { statHandle: methods["statHandle"] as NonNullable<CacheIo["statHandle"]> }),
     ...(methods["rename"] === undefined ? {} : { rename: methods["rename"] as NonNullable<CacheIo["rename"]> }),
     ...(methods["writeContents"] === undefined
       ? {}
@@ -1247,7 +1268,8 @@ const normalizeOpenCacheOptions = (value: OpenCacheOptions): NormalizedOpenCache
       "fetch",
       "warn",
       "timeouts",
-      "io"
+      "io",
+      "platform"
     ]),
     "cache options"
   )
@@ -1261,6 +1283,7 @@ const normalizeOpenCacheOptions = (value: OpenCacheOptions): NormalizedOpenCache
   const writeToken = dataMember(record, "writeToken", "cache options") ?? readToken
   const fetch = dataMember(record, "fetch", "cache options") ?? globalThis.fetch
   const warn = dataMember(record, "warn", "cache options") ?? ((line: string) => process.stderr.write(`${line}\n`))
+  const platform = dataMember(record, "platform", "cache options") ?? process.platform
   if (
     typeof workspaceRoot !== "string" ||
     workspaceRoot.length === 0 ||
@@ -1280,6 +1303,7 @@ const normalizeOpenCacheOptions = (value: OpenCacheOptions): NormalizedOpenCache
   if (typeof writeToken !== "function") throw new TypeError("remote cache writeToken must be a function")
   if (typeof fetch !== "function") throw new TypeError("remote cache fetch must be a function")
   if (typeof warn !== "function") throw new TypeError("remote cache warn must be a function")
+  if (typeof platform !== "string") throw new TypeError("cache platform must be a string")
   return Object.freeze({
     workspaceRoot,
     cacheDirectory: Config.normalizeCacheDirectory(cacheDirectory ?? Config.defaultCacheDirectory),
@@ -1291,7 +1315,8 @@ const normalizeOpenCacheOptions = (value: OpenCacheOptions): NormalizedOpenCache
     warn: warn as (line: string) => void,
     timeouts,
     artifactTimeouts: timeoutOverride === undefined ? remoteArtifactTimeouts : timeouts,
-    io: normalizeCacheIo(dataMember(record, "io", "cache options"))
+    io: normalizeCacheIo(dataMember(record, "io", "cache options")),
+    platform: platform as NodeJS.Platform
   })
 }
 
@@ -1849,7 +1874,7 @@ export const openCache = async (opts: OpenCacheOptions): Promise<CacheStore> => 
   }
   return {
     async get(key: string): Promise<CachedResult | null> {
-      const local = await readLocal(cacheRoot, key)
+      const local = await readLocal(cacheRoot, key, options.io)
       let result = local ?? (remote === null ? null : await remote.get(key))
       if (result === null) return null
       if (remote !== null) {
@@ -1866,14 +1891,16 @@ export const openCache = async (opts: OpenCacheOptions): Promise<CacheStore> => 
           return local
         }
       }
-      if (result !== local) await writeLocal(cacheRoot, key, result, options.io).catch(() => undefined)
+      if (result !== local) {
+        await writeLocal(cacheRoot, key, result, options.io, options.platform).catch(() => undefined)
+      }
       return result
     },
     async put(key: string, r: CachedResult, putOptions?: { readonly shared?: boolean | undefined }): Promise<void> {
       sanitizeKey(key)
       const result = normalizeCachedResult(key, r)
       if (!result.exitOk) throw new TypeError("only successful results may be cached")
-      await writeLocal(cacheRoot, key, result, options.io)
+      await writeLocal(cacheRoot, key, result, options.io, options.platform)
       if (remote !== null && putOptions?.shared !== false) {
         // Remote preparation may fail; the complete local result is already safe.
         await ensureContentRoot().then((cas) => remote.put(key, result, cas)).catch(() => undefined)

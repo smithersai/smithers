@@ -406,6 +406,25 @@ describe("diff slice against a scripted git", () => {
     expect(await trace()).toEqual(["list", "U0", "U0"])
     expect(Date.now() - started).toBeLessThan(5_000)
   })
+
+  /** Git reads no user config: Windows names its null device `NUL`, POSIX `/dev/null`. */
+  it.each([["win32", "NUL"], ["linux", "/dev/null"]] as const)(
+    "on %s points Git's global config at %s",
+    async (platform, device) => {
+      await writeExecutable(
+        NodePath.join(bin, "git"),
+        "#!/usr/bin/env node\n" +
+          "if (process.argv.includes(\"--name-only\")) process.stdout.write(process.env.GIT_CONFIG_GLOBAL + \"\\0\")\n"
+      )
+      const slice = await Effect.runPromise(AgentSession.expandDiffSlice(
+        root,
+        [Input.gitDiff({ base: "HEAD" })],
+        10_000,
+        { environment: { PATH: [bin, NodePath.dirname(process.execPath)].join(NodePath.delimiter) }, platform }
+      ))
+      expect(slice.files).toEqual([device])
+    }
+  )
 })
 
 describe("write-set applier boundaries", () => {

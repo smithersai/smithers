@@ -20,15 +20,20 @@ import * as NodePath from "node:path"
  * dots is inside, and an absolute `NodePath.relative` result (a different
  * Windows volume) is outside. Neither path is resolved through symlinks: a
  * caller that needs real containment resolves both with `realpath` first.
+ * `path` is there so a POSIX host can ask for the Windows answer.
  *
  * @category paths
  * @since 0.1.0
  */
-export const contains = (root: string, candidate: string): boolean => {
-  const relative = NodePath.relative(root, candidate)
+export const contains = (
+  root: string,
+  candidate: string,
+  path: Pick<typeof NodePath, "relative" | "isAbsolute" | "sep"> = NodePath
+): boolean => {
+  const relative = path.relative(root, candidate)
   if (relative === "" || relative === ".") return true
-  if (NodePath.isAbsolute(relative)) return false
-  const [first] = relative.split(NodePath.sep)
+  if (path.isAbsolute(relative)) return false
+  const [first] = relative.split(path.sep)
   return first !== ".."
 }
 

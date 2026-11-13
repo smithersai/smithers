@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
+import { byCodeUnit } from "./Text.ts"
 
 /**
  * One refusal to measure or change the compile cache.
@@ -183,7 +184,7 @@ export const entries = async (
     }
   }
   // Every entry has its own path, so no two compare equal.
-  return result.sort((a, b) => a.path < b.path ? -1 : 1)
+  return result.sort((a, b) => byCodeUnit(a.path, b.path))
 }
 
 /**

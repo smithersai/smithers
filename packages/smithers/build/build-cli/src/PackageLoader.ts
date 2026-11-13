@@ -741,7 +741,8 @@ const importGraph = async (
   try {
     entry = await importDeclarationModule(pathToFileURL(entryPath).href, import.meta.url) as typeof entry
   } catch (cause) {
-    if (cause instanceof PackageError) throw cause
+    // A PackageError the declaration code throws is wrapped too: only module
+    // evaluation runs in this try, so every failure here is the declaration's.
     // The cause's own message carries what the author needs — a rejected
     // declaration names its PACKAGE.ts path, line, and the failing attr —
     // so fold it in rather than blaming WORKSPACE.ts for every failure.

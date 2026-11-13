@@ -253,6 +253,17 @@ describe("cache prune under a size cap", () => {
     expect(await Promise.all([foreign, object].map(present))).toEqual([false, false])
   })
 
+  it("judges leases as this machine at the prune time when no lease host is given", async () => {
+    const root = await temporary()
+    const own = await leaseFile(root, "own", { pid: process.pid, host: Os.hostname(), startedAt: now - 12 * hour })
+    const object = await compiled(root, "a", 100, 11 * hour)
+    expect(await prune(root, 0, { leaseHost: undefined })).toMatchObject({ goBuild: { removed: 0, inUse: 1 } })
+    expect(await Promise.all([own, object].map(present))).toEqual([true, true])
+    // A day later the same lease has expired, judged at the prune's own time.
+    expect(await prune(root, 0, { leaseHost: undefined, now: now + day })).toMatchObject({ goBuild: { removed: 1 } })
+    expect(await Promise.all([own, object].map(present))).toEqual([false, false])
+  })
+
   it("leaves an entry go used or replaced after it was listed", async () => {
     const root = await temporary()
     const used = await compiled(root, "a", 100, 2 * day)

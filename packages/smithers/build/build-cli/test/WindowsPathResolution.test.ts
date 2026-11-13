@@ -113,6 +113,26 @@ describe("windows path resolution", () => {
    * goes through the same shape. This asserts the ordinary interpreter probe
    * is untouched by that; the shim branch is the Windows answer above.
    */
+  /**
+   * The probe runs a resolved shim through `ComSpec` exactly as the spawn
+   * would. A POSIX script stands in for `cmd.exe` and echoes the line it got.
+   */
+  it.runIf(process.platform !== "win32")("probes a Windows shim through ComSpec", async () => {
+    const shim = NodePath.join(bin, "tool.cmd")
+    const shell = NodePath.join(bin, "cmd.sh")
+    await Fs.writeFile(shim, "#!/bin/sh\nprintf direct\n", { mode: 0o755 })
+    await Fs.writeFile(shell, "#!/bin/sh\nprintf '%s|' \"$@\"\n", { mode: 0o755 })
+    const environment = { ...windowsEnvironment(), ComSpec: shell }
+    expect(await PackageTree.probeCommand(shim, ["--version"], { environment, platform: "win32" })).toEqual({
+      exitCode: 0,
+      output: `/d|/s|/c|""${shim}" "--version""|`
+    })
+    expect(await PackageTree.probeCommand(shim, ["--version"], { environment, platform: "linux" })).toEqual({
+      exitCode: 0,
+      output: "direct"
+    })
+  })
+
   it("still probes an ordinary executable through the unchanged path", async () => {
     const probe = await PackageTree.probeCommand(process.execPath, ["-e", "process.stdout.write('ok')"])
     expect(probe).toEqual({ exitCode: 0, output: "ok" })

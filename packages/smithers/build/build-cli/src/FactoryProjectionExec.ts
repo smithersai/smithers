@@ -109,21 +109,19 @@ type ProjectionError =
   | GeneratedFile.WriteFileError
   | GeneratedFile.DriftError
 
-/** Reports whether a workspace-relative file exists as a regular file. */
-const present = (workspaceRoot: string, path: string): Effect.Effect<boolean, Factory.FactoryProjectionError> =>
-  Effect.tryPromise({
-    try: async () => {
+/**
+ * Reports whether a workspace-relative file exists as a regular file. A root
+ * that no longer resolves holds no file; the projection just published or
+ * checked through that same root, so only a concurrent removal reaches it.
+ */
+const present = (workspaceRoot: string, path: string): Effect.Effect<boolean> =>
+  Effect.promise(async () => {
+    try {
       const root = await SafeFs.canonicalRoot(workspaceRoot)
-      try {
-        return (await Fs.lstat(NodePath.join(root, ...path.split("/")))).isFile()
-      } catch {
-        return false
-      }
-    },
-    catch: (cause) =>
-      new Factory.FactoryProjectionError({
-        message: `${path} could not be read: ${GeneratedFile.failureMessage(cause)}`
-      })
+      return (await Fs.lstat(NodePath.join(root, ...path.split("/")))).isFile()
+    } catch {
+      return false
+    }
   })
 
 /**

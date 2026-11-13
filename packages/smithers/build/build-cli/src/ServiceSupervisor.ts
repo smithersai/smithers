@@ -64,6 +64,17 @@ export const Output = Context.Reference<(spec: ServiceSpec) => OutputStream.Obse
 )
 
 /**
+ * The host whose environment conventions a service starts under; a POSIX host
+ * can ask for the Windows answer.
+ * @private
+ * @since 1.0.0
+ */
+export const HostPlatform = Context.Reference<NodeJS.Platform>(
+  "smithers-build/ServiceSupervisor/HostPlatform",
+  { defaultValue: () => process.platform }
+)
+
+/**
  * The readiness probe of a Serve target: an open TCP port on the loopback
  * interface, or an HTTP GET whose response status below 500 means ready.
  * Structurally identical to the decoded `Attr.Readiness` union, so executor
@@ -978,7 +989,8 @@ interface ServiceSecretBoundary {
 }
 
 const serviceSecretBoundary = (
-  spec: ServiceSpec
+  spec: ServiceSpec,
+  platform: NodeJS.Platform
 ): Effect.Effect<ServiceSecretBoundary, ServiceError, Scope.Scope> => {
   if (
     (spec.secrets === undefined || spec.secrets.length === 0) &&
@@ -1026,7 +1038,7 @@ const serviceSecretBoundary = (
           for (const [name, value] of Object.entries(spec.env ?? {})) {
             if (brokered(value) !== value) environment[name] = brokered(value)
           }
-          if (process.platform !== "win32") {
+          if (platform !== "win32") {
             environment["http_proxy"] = proxy.endpoint
             environment["https_proxy"] = proxy.endpoint
           }
@@ -1327,7 +1339,7 @@ const startService = (
         Effect.fail(new ServiceError({ key, reason, message, outputTail: tail.read() }))
       )
     }
-    const secretBoundary = yield* serviceSecretBoundary(parsed.spec)
+    const secretBoundary = yield* serviceSecretBoundary(parsed.spec, yield* HostPlatform)
     const environment = { ...parsed.spec.env, ...secretBoundary.environment }
     const observer = (yield* Output)(parsed.spec)
     yield* Effect.addFinalizer(() =>

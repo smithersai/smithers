@@ -42,6 +42,20 @@ const raw = (path: string, line: string) =>
   })
 
 describe("approval bridge", () => {
+  it("listens on a named pipe on Windows and a private Unix socket elsewhere", async () => {
+    const pipe = await ApprovalBridge.endpoint("win32")
+    expect(pipe.path).toMatch(/^\\\\\.\\pipe\\smthrs-approvals-[0-9a-f]{32}$/)
+    // A named pipe leaves no file behind, so removing it touches nothing.
+    await expect(pipe.remove()).resolves.toBeUndefined()
+    const socket = await ApprovalBridge.endpoint("linux")
+    const directory = Path.dirname(socket.path)
+    expect(Path.basename(socket.path)).toBe("s")
+    expect(Path.basename(directory)).toMatch(/^smthrs-approvals-/)
+    expect((await Fs.stat(directory)).isDirectory()).toBe(true)
+    await socket.remove()
+    await expect(Fs.stat(directory)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
   it("serves no store as an empty environment, and a child without one has no store", async () => {
     const bridge = await ApprovalBridge.serve(undefined)
     expect(bridge.environment).toEqual({})

@@ -21,6 +21,32 @@ import * as NodePath from "node:path"
 import type { TargetApprovalRequest, TargetApprovals } from "./PackageOptions.ts"
 
 /**
+ * Where the bridge listens and how its address is removed afterwards.
+ *
+ * Windows names a named pipe, which leaves nothing behind. Elsewhere it is a
+ * Unix socket in a private temporary directory. `platform` is there so a POSIX
+ * host can ask for the Windows answer.
+ *
+ * @category execution
+ * @since 1.0.0
+ * @private
+ */
+export const endpoint = async (
+  platform: NodeJS.Platform
+): Promise<{ readonly path: string; readonly remove: () => Promise<void> }> => {
+  if (platform === "win32") {
+    return { path: `\\\\.\\pipe\\smthrs-approvals-${randomBytes(16).toString("hex")}`, remove: async () => {} }
+  }
+  // Socket paths are limited to about 100 bytes; a long TMPDIR falls back to /tmp.
+  const base = NodeOs.tmpdir().length > 60 ? "/tmp" : NodeOs.tmpdir()
+  const directory = await Fs.mkdtemp(NodePath.join(base, "smthrs-approvals-"))
+  return {
+    path: NodePath.join(directory, "s"),
+    remove: () => Fs.rm(directory, { recursive: true, force: true })
+  }
+}
+
+/**
  * The child environment variable naming the parent's store: `<token>@<socket>`.
  *
  * @category constants
@@ -96,21 +122,10 @@ export const serve = async (store: TargetApprovals | undefined): Promise<Bridge>
   if (store === undefined) return { environment: {}, close: async () => {} }
   const token = randomBytes(32).toString("hex")
   const expected = Buffer.from(token)
-  let directory: string | undefined
-  let path: string
-  if (process.platform === "win32") {
-    path = `\\\\.\\pipe\\smthrs-approvals-${randomBytes(16).toString("hex")}`
-  } else {
-    // Socket paths are limited to about 100 bytes; a long TMPDIR falls back to /tmp.
-    const base = NodeOs.tmpdir().length > 60 ? "/tmp" : NodeOs.tmpdir()
-    directory = await Fs.mkdtemp(NodePath.join(base, "smthrs-approvals-"))
-    path = NodePath.join(directory, "s")
-  }
+  const { path, remove } = await endpoint(process.platform)
   const sockets = new Set<Net.Socket>()
-  let closing = false
   // Half-open, so a child that ends its side early still receives its refusal.
   const server = Net.createServer({ allowHalfOpen: true }, (socket) => {
-    if (closing) return socket.destroy()
     sockets.add(socket)
     socket.once("close", () => sockets.delete(socket))
     // A child that vanishes before its answer is written must not crash the
@@ -148,12 +163,11 @@ export const serve = async (store: TargetApprovals | undefined): Promise<Bridge>
   return {
     environment: { [environmentName]: `${token}@${path}` },
     close: async () => {
-      closing = true
       const closed = new Promise<void>((resolve) => server.close(() => resolve()))
       // A child that never finished its question must not hold the parent open.
       for (const socket of sockets) socket.destroy()
       await closed
-      if (directory !== undefined) await Fs.rm(directory, { recursive: true, force: true })
+      await remove()
     }
   }
 }

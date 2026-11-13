@@ -1,5 +1,5 @@
 diff --git a/dist/index.js b/dist/index.js
-index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..bd777c458c5d57a55be33c950041c06bb6bcd054 100644
+index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..c9f6e4d7938eb3f7e0dbe22e47ac5ea8046e66cc 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -4,11 +4,89 @@ import { existsSync } from 'node:fs';
@@ -108,16 +108,18 @@ index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..bd777c458c5d57a55be33c950041c06b
  				result.push(entry);
  			}
  		}
-@@ -56,20 +141,46 @@ const mod = {
+@@ -56,20 +141,53 @@ const mod = {
  				await rm(path);
  				return content;
  			}));
-+			// A child's script is remapped against the file's own text (or Vite's transform of it). A loader such as
++			// A child's script indexes the file as written, never Vite's transform of it. A loader such as
 +			// `node --import=vibelang/register` runs other code under the same URL, and merging its offsets into a
 +			// worker's script of that URL corrupts both. Keep a child's script when Node ran the file as written:
 +			// its top-level range spans exactly the file's length. A JavaScript or TypeScript script a loader such
 +			// as tsx rewrote is kept when Node recorded the loader's source map: its ranges move to the file's own
-+			// offsets, which Vitest's type stripping preserves. Other rewritten scripts are dropped.
++			// offsets, which Vitest's type stripping preserves. Other rewritten scripts are dropped. Every kept
++			// script converts apart from a worker's script of the same file (addLoaderCoverage): Vite's SSR
++			// transform rewrites imports, so a worker's offsets differ from the file's even for plain JavaScript.
 +			const fileTexts = new Map();
 +			const fileText = async (url) => {
 +				let path;
@@ -140,6 +142,11 @@ index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..bd777c458c5d57a55be33c950041c06b
 +							}
 +							entry.url = remapped.url;
 +							entry.functions = remapped.functions;
++						} else {
++							const url = new URL(entry.url);
++							url.search = "";
++							url.hash = "";
++							entry.url = `${url.href}?loader-source-map`;
 +						}
  						entry.startOffset = 0;
  						entry.isExtendedContext = true;
@@ -157,14 +164,14 @@ index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..bd777c458c5d57a55be33c950041c06b
  	async stopCoverage({ isolate }) {
  		if (isolate === false) {
 diff --git a/dist/provider.js b/dist/provider.js
-index 07ecd376670f3d648d0745632862debc22cba049..cef50e113d437e299e3aca1c68dbda8502af2a88 100644
+index 07ecd376670f3d648d0745632862debc22cba049..bcefd1ec3d39f8527b7fe8486b46e6871fb4250e 100644
 --- a/dist/provider.js
 +++ b/dist/provider.js
 @@ -16,6 +16,37 @@ import 'node:fs/promises';
  var version = "5.0.0";
  
  const FILE_PROTOCOL = "file://";
-+// Marks a child script that index.js remapped through a module loader's source map.
++// Marks a child script that indexes the file as written: run natively, or remapped through a loader's source map.
 +const LOADER_SOURCE_MAP = "?loader-source-map";
 +/**
 +* Adds remapped child-process coverage to the coverage of the same files. A file no worker loaded through Vite keeps

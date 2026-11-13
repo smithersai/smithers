@@ -126,6 +126,14 @@ describe("pathLocator", () => {
     const locator = MemoryBackend.pathLocator({})
     expect(await locator.find()).toBeUndefined()
   })
+
+  it("prefers a Windows launcher extension over the bare name only on Windows", async () => {
+    const bin = await temporaryRoot()
+    await Fs.writeFile(NodePath.join(bin, "smithers"), "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+    await Fs.writeFile(NodePath.join(bin, "smithers.cmd"), "@echo off\n", { mode: 0o755 })
+    expect(await MemoryBackend.pathLocator({ PATH: bin }, "win32").find()).toBe(NodePath.join(bin, "smithers.cmd"))
+    expect(await MemoryBackend.pathLocator({ PATH: bin }, "linux").find()).toBe(NodePath.join(bin, "smithers"))
+  })
 })
 
 const sha = "1234567890abcdef1234567890abcdef12345678"

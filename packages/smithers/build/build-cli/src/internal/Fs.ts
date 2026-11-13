@@ -18,13 +18,16 @@ import * as NodeUtil from "node:util/types"
  * Returns an open(2) flag the platform may not provide.
  *
  * Windows builds of libuv define neither `O_NOFOLLOW` nor `O_NONBLOCK`; a
- * missing flag contributes nothing rather than crashing the open.
+ * missing flag contributes nothing rather than crashing the open. `constants` is
+ * there so a POSIX host can ask for the Windows answer.
  *
  * @category constants
  * @since 0.1.0
  */
-export const optionalOpenFlag = (name: "O_NOFOLLOW" | "O_NONBLOCK"): number =>
-  (NodeFs.constants as Partial<Record<string, number>>)[name] ?? 0
+export const optionalOpenFlag = (
+  name: "O_NOFOLLOW" | "O_NONBLOCK",
+  constants: Readonly<Partial<Record<string, number>>> = NodeFs.constants
+): number => constants[name] ?? 0
 
 /**
  * Reads a rejected value's own `code` data property, or undefined.

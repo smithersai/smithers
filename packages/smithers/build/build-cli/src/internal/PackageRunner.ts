@@ -3548,7 +3548,9 @@ export const executeEffect = (
         const installations = installationDependencies(node.dependencies, planned.nodes)
         if (installations.length === 0) return node
         yield* verifyExecutables(node)
-        if (installations.some((label) => !["ran", "hit"].includes(reports.get(label)?.status ?? ""))) {
+        // Every installation is an execution dependency of this node (a
+        // service's are hoisted into its consumer), so each was reported first.
+        if (installations.some((label) => !["ran", "hit"].includes(reports.get(label)!.status))) {
           return "installation dependency has no successful execution receipt"
         }
         const refreshed = yield* joined((signal) =>
@@ -3569,8 +3571,9 @@ export const executeEffect = (
             planned.nodes
           )
         )
-        const current = refreshed.nodes.get(node.label)
-        if (current === undefined) return "target disappeared after installation"
+        // A refresh plans exactly this declaration, and its label derives from
+        // the same index, so the refreshed plan always holds it.
+        const current = refreshed.nodes.get(node.label)!
         // Retain authority captured before install. Newly created local
         // directories are expected; a new external alias is never a grant.
         const local = nodeModulesDirectories([node.cwd, node.packagePath])

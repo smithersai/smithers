@@ -91,6 +91,20 @@ const options = (root: string, policyRevision: string, revision?: string) => ({
 })
 
 describe("TrustedReview Git boundary", () => {
+  /**
+   * Git reads no user config: Windows names its null device `NUL`, POSIX
+   * `/dev/null`. On a POSIX host `NUL` is an ordinary relative file, so a
+   * malformed one in the repository shows which name Git was given.
+   */
+  it.runIf(process.platform !== "win32")("points Git's global config at NUL only for Windows", async () => {
+    const { root, trusted } = await fixture()
+    await write(root, "NUL", "[unterminated\n")
+    await expect(run({ ...options(root, trusted), platform: "linux" })).resolves.toMatchObject({ planned: true })
+    await expect(run({ ...options(root, trusted), platform: "win32" })).rejects.toThrow(
+      "Cannot read the pinned review revision from Git"
+    )
+  })
+
   it("uses the pinned policy and committed source without executing candidate declarations", async () => {
     const { root, trusted } = await fixture()
     const marker = NodePath.join(root, "candidate-executed")
@@ -884,6 +898,49 @@ describe("TrustedReview credential receiver", () => {
     })
     expect(result.ok).toBe(true)
     expect(await target.deliveries()).toEqual([])
+  })
+
+  it("launches a Windows Node receiver through the current Node, without an execute bit", async () => {
+    const { prepared, root, store } = await leaked()
+    const target = await receiver(0)
+    await Fs.chmod(target.path, 0o644)
+    const review = (platform: NodeJS.Platform) =>
+      reviewPrepared(prepared, {
+        root,
+        findingsStore: store,
+        credentialReceiver: target.path,
+        platform,
+        transport: seat(() => "[]", [])
+      })
+    if (process.platform !== "win32") {
+      await expect(review("linux")).rejects.toMatchObject({ code: "unusable_receiver" })
+      // The current Node must still be able to read the module it interprets.
+      await Fs.chmod(target.path, 0o200)
+      if (process.getuid?.() !== 0) await expect(review("win32")).rejects.toMatchObject({ code: "unusable_receiver" })
+      await Fs.chmod(target.path, 0o644)
+      expect(await target.deliveries()).toEqual([])
+    }
+    await review("win32")
+    expect((await target.deliveries()).map(({ stdin }) => JSON.parse(stdin) as unknown)).toEqual([{
+      revision: prepared.revision,
+      discoveries: [{ file: "src/service.ts", line: 1, name: "REPOHOST_TOKEN" }]
+    }])
+  })
+
+  it("accepts only an .exe or .com image as a Windows receiver", async () => {
+    const { root, trusted } = await fixture()
+    for (const name of ["receiver.EXE", "receiver.com", "receiver.sh"]) {
+      await Fs.writeFile(NodePath.join(root, name), "#!/bin/sh\n", { mode: 0o755 })
+    }
+    for (const name of ["receiver.EXE", "receiver.com"]) {
+      const credentialReceiver = NodePath.join(root, name)
+      await expect(run({ ...options(root, trusted), credentialReceiver, platform: "win32" })).resolves.toMatchObject({
+        planned: true
+      })
+    }
+    await expect(
+      run({ ...options(root, trusted), credentialReceiver: NodePath.join(root, "receiver.sh"), platform: "win32" })
+    ).rejects.toThrow("--credential-receiver must be an absolute path to an executable file")
   })
 
   it("refuses a receiver that is not an absolute executable file before reviewing", async () => {

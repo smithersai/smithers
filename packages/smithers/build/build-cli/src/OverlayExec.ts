@@ -141,12 +141,17 @@ export const resolve = async (options: {
 /** Applies replacements to a scratch workspace without touching the source tree.
  * Paths must stay inside scratch. Destination directory links are refused;
  * an internal final file link is replaced, leaving its target untouched.
+ * `io` is the metadata seam admission reads through; it defaults to the host.
  *
  * @category execution
  * @since 0.1.0
  */
-export const apply = async (root: string, replacements: ReadonlyArray<Replacement>): Promise<void> => {
-  const canonical = await SafeFs.canonicalRoot(root)
+export const apply = async (
+  root: string,
+  replacements: ReadonlyArray<Replacement>,
+  io: SafeFs.Io = SafeFs.defaultIo
+): Promise<void> => {
+  const canonical = await SafeFs.canonicalRoot(root, io)
   for (const replacement of replacements) {
     const source = NodePath.join(canonical, ...replacement.source.split("/"))
     const destination = NodePath.join(canonical, ...replacement.path.split("/"))
@@ -155,7 +160,7 @@ export const apply = async (root: string, replacements: ReadonlyArray<Replacemen
         throw new Error(`Overlay ${what} is outside the scratch workspace: ${path}`)
       }
     }
-    const admitted = await SafeFs.resolveFile(source, { root: canonical, what: "Overlay source" })
+    const admitted = await SafeFs.resolveFile(source, { root: canonical, io, what: "Overlay source" })
     if (admitted === undefined) throw new Error(`Overlay source is missing: ${source}`)
 
     // Admit every existing parent before recursive mkdir: a missing descendant
@@ -164,8 +169,10 @@ export const apply = async (root: string, replacements: ReadonlyArray<Replacemen
     let ancestor = canonical
     for (const part of NodePath.relative(canonical, parent).split(NodePath.sep).filter(Boolean)) {
       ancestor = NodePath.join(ancestor, part)
-      if (await SafeFs.resolveDirectory(ancestor, { root: canonical, what: "Overlay destination directory" })) continue
-      const entry = await Fs.lstat(ancestor).catch((cause: unknown) => {
+      if (await SafeFs.resolveDirectory(ancestor, { root: canonical, io, what: "Overlay destination directory" })) {
+        continue
+      }
+      const entry = await io.lstat(ancestor).catch((cause: unknown) => {
         if (SafeFs.errorCode(cause) === "ENOENT") return undefined
         throw cause
       })
@@ -174,9 +181,9 @@ export const apply = async (root: string, replacements: ReadonlyArray<Replacemen
       }
       break
     }
-    const existing = await SafeFs.resolveFile(destination, { root: canonical, what: "Overlay destination" })
+    const existing = await SafeFs.resolveFile(destination, { root: canonical, io, what: "Overlay destination" })
     if (existing === undefined) {
-      const entry = await Fs.lstat(destination).catch((cause: unknown) => {
+      const entry = await io.lstat(destination).catch((cause: unknown) => {
         if (SafeFs.errorCode(cause) === "ENOENT") return undefined
         throw cause
       })

@@ -5,6 +5,7 @@
  * cycle rules applied to the scanned closure. Every assertion reads the loaded
  * graph's `modules`, a typed `PackageError`, or the probe result.
  */
+import { spawnSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import { createRequire, registerHooks } from "node:module"
 import * as Os from "node:os"
@@ -355,6 +356,27 @@ ${validPackage}`)
       code: "module_import_failed",
       message: expect.stringContaining("module_missing: thrown by the declaration"),
       cause: { code: "module_missing", path: "elsewhere.ts" }
+    })
+  })
+
+  it("wraps a declaration's PackageError in the CLI, where it is the loader's own class", async () => {
+    // In the CLI process the declaration imports the same PackageError module
+    // the loader does; under vitest it is a second copy.
+    const source = NodePath.resolve(import.meta.dirname, "../src/PackageError.ts")
+    const root = await fixture(`import { PackageError } from ${JSON.stringify(pathToFileURL(source).href)}
+throw new PackageError("module_missing", "thrown by the declaration", { path: "elsewhere.ts" })
+${validPackage}`)
+    const main = NodePath.resolve(import.meta.dirname, "../src/main.js")
+    const child = spawnSync(process.execPath, [main, "targets", "--workspace", root, "--format", "json"], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 120_000
+    })
+    expect(child.status, child.stderr).toBe(1)
+    expect(JSON.parse(child.stdout + child.stderr)).toEqual({
+      code: "targets_failed",
+      message: "module_import_failed: evaluating the workspace's declaration modules failed: " +
+        "module_missing: thrown by the declaration [elsewhere.ts]"
     })
   })
 

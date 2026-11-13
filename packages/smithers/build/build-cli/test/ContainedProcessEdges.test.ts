@@ -63,4 +63,35 @@ describe("contained process edges", () => {
     ))
     expect(error).toMatchObject({ _tag: "smithers-build/ProcessError", code: "process_failed", cause: failure })
   })
+  it("reports a failed cleanup rather than cancellation when the caller aborted the run", async () => {
+    const controller = new AbortController()
+    const failure = PlatformError.systemError({ _tag: "Unknown", module: "ChildProcess", method: "kill" })
+    let kills = 0
+    const spawner = {
+      spawn: (options: ScopedProcess.Options) =>
+        ScopedProcess.spawn(options).pipe(Effect.map((handle) => ({
+          ...handle,
+          kill: (options: Parameters<typeof handle.kill>[0]) =>
+            handle.kill(options).pipe(
+              Effect.andThen(Effect.sync(() => {
+                kills += 1
+              })),
+              Effect.andThen(Effect.fail(failure))
+            )
+        })))
+    }
+    const pending = ContainedProcess.run({
+      ...base,
+      args: ["-e", "process.stdout.write('started'); setInterval(() => {}, 1000)"],
+      signal: controller.signal,
+      stdout: () => controller.abort(new Error("caller stopped"))
+    }, spawner)
+    await expect(pending).rejects.toMatchObject({
+      _tag: "smithers-build/ProcessError",
+      code: "cleanup_failed",
+      cause: failure
+    })
+    expect(controller.signal.aborted).toBe(true)
+    expect(kills).toBe(1)
+  })
 })

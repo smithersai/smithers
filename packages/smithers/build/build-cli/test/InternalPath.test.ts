@@ -43,4 +43,9 @@ describe("internal path containment", () => {
     expect(Path.contains(root, parent)).toBe(false)
     expect(Path.containedRelative(root, parent)).toBeUndefined()
   })
+
+  it("refuses a path on another Windows volume, whose relative form is absolute", () => {
+    expect(Path.contains("C:\\work\\repo", "D:\\work\\repo\\file.txt", NodePath.win32)).toBe(false)
+    expect(Path.contains("C:\\work\\repo", "C:\\work\\repo\\file.txt", NodePath.win32)).toBe(true)
+  })
 })

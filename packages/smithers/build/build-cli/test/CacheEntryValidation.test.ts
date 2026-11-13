@@ -317,3 +317,113 @@ describe("local reads and writes report real filesystem refusals", () => {
     expect(await cache.get("alpha")).toEqual(result)
   })
 })
+
+describe("local reads and temp names survive concurrent writers", () => {
+  // A second writer of the same key publishes by renaming identical bytes
+  // onto the entry path. The seams run that writer at the exact step under
+  // test, so each interleaving is deterministic.
+  const republish = async (key: string): Promise<void> => {
+    const next = `${entryPath(key)}.next`
+    await Fs.writeFile(next, await Fs.readFile(entryPath(key)))
+    await Fs.rename(next, entryPath(key))
+  }
+
+  /** Republishes before the chosen descriptor stats: 1 after open, 2 after the read. */
+  const racingStats = (key: string, when: (stat: 1 | 2, attempt: number) => boolean) => {
+    const seen = new Map<Fs.FileHandle, 1 | 2>()
+    const calls: Array<1 | 2> = []
+    const statHandle = async (handle: Fs.FileHandle) => {
+      const stat = seen.has(handle) ? 2 : 1
+      seen.set(handle, stat)
+      calls.push(stat)
+      if (when(stat, seen.size)) await republish(key)
+      return handle.stat({ bigint: true })
+    }
+    return { calls, statHandle }
+  }
+
+  const stored = async (): Promise<void> => {
+    const cache = await openCache({ workspaceRoot: root })
+    await cache.put("alpha", result)
+  }
+
+  it("rereads an entry republished between its lstat and open", async () => {
+    await stored()
+    const race = racingStats("alpha", (stat, attempt) => stat === 1 && attempt === 1)
+    const cache = await openCache({ workspaceRoot: root, io: { statHandle: race.statHandle } })
+    expect(await cache.get("alpha")).toEqual(result)
+    // The first descriptor named the replaced file and was refused before any
+    // read; the second named the new entry and was read and rechecked.
+    expect(race.calls).toEqual([1, 1, 2])
+  })
+
+  it("misses an entry replaced after every open, after three attempts", async () => {
+    await stored()
+    const race = racingStats("alpha", (stat) => stat === 1)
+    const cache = await openCache({ workspaceRoot: root, io: { statHandle: race.statHandle } })
+    expect(await cache.get("alpha")).toBeNull()
+    expect(race.calls).toEqual([1, 1, 1])
+    expect(await (await openCache({ workspaceRoot: root })).get("alpha")).toEqual(result)
+  })
+
+  it("misses an entry replaced during every read instead of trusting the stale bytes", async () => {
+    await stored()
+    const race = racingStats("alpha", (stat) => stat === 2)
+    const cache = await openCache({ workspaceRoot: root, io: { statHandle: race.statHandle } })
+    expect(await cache.get("alpha")).toBeNull()
+    expect(race.calls).toEqual([1, 2, 1, 2, 1, 2])
+  })
+
+  it("misses an entry whose read descriptor cannot be closed", async () => {
+    await stored()
+    let closes = 0
+    const cache = await openCache({
+      workspaceRoot: root,
+      io: {
+        closeHandle: async (handle) => {
+          closes += 1
+          await handle.close()
+          throw failing("close lost", "EIO")
+        }
+      }
+    })
+    expect(await cache.get("alpha")).toBeNull()
+    expect(closes).toBe(3)
+    expect(await (await openCache({ workspaceRoot: root })).get("alpha")).toEqual(result)
+  })
+
+  it("draws a fresh temporary name when one is already taken", async () => {
+    const names: Array<string> = []
+    const cache = await openCache({
+      workspaceRoot: root,
+      io: {
+        openTemp: (temp) => {
+          names.push(temp)
+          return names.length < 3 ? Promise.reject(failing("taken", "EEXIST")) : Fs.open(temp, "wx")
+        }
+      }
+    })
+    await cache.put("alpha", result)
+    expect(new Set(names).size).toBe(3)
+    expect(await cache.get("alpha")).toEqual(result)
+    expect(await Fs.readdir(NodePath.dirname(entryPath("alpha")))).toEqual(["alpha.json"])
+  })
+
+  it("refuses to publish once four temporary names are taken", async () => {
+    const names: Array<string> = []
+    const cache = await openCache({
+      workspaceRoot: root,
+      io: {
+        openTemp: (temp) => {
+          names.push(temp)
+          return Promise.reject(failing("taken", "EEXIST"))
+        }
+      }
+    })
+    await expect(cache.put("alpha", result)).rejects.toThrow(
+      `could not create a unique temporary file in ${NodePath.dirname(entryPath("alpha"))}`
+    )
+    expect(new Set(names).size).toBe(4)
+    expect(await Fs.readdir(NodePath.dirname(entryPath("alpha")))).toEqual([])
+  })
+})

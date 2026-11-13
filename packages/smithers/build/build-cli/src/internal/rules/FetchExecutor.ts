@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import type * as Layer from "effect/Layer"
 import * as Stream from "effect/Stream"
 import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
@@ -191,6 +192,13 @@ interface DownloadedFile {
   readonly sha256: string
 }
 
+/** The transport, file and clock a download runs on; tests substitute faulty ones. */
+interface DownloadIo {
+  readonly transport: Layer.Layer<HttpClient.HttpClient>
+  readonly open: (path: string) => Promise<Fs.FileHandle>
+  readonly deadlineMs: number
+}
+
 const writeFailure = (destination: string, cause: unknown): FetchError =>
   new FetchError(
     "write_failed",
@@ -216,14 +224,15 @@ const downloadedFile = async (
   temporary: string,
   destination: string,
   limitBytes: number,
-  checkParent: () => Promise<void>
+  checkParent: () => Promise<void>,
+  io: DownloadIo
 ): Promise<DownloadedFile> => {
   const safeUrl = redactUrl(url)
   let handle: Fs.FileHandle | undefined
   const openTemporary = async (): Promise<Fs.FileHandle> => {
     if (handle !== undefined) return handle
     await checkParent()
-    handle = await Fs.open(temporary, "wx", 0o644)
+    handle = await io.open(temporary)
     return handle
   }
   const effect = Effect.scoped(Effect.gen(function*() {
@@ -296,11 +305,11 @@ const downloadedFile = async (
     // A declared Fetch is outbound traffic like any other: it leaves through
     // the egress proxy this build's environment names, and directly when it
     // names none.
-    Effect.provide(EgressHttpClient.layer(process.env)),
+    Effect.provide(io.transport),
     // A declared Fetch may carry no signal at all, so the request owns a
     // deadline of its own rather than trusting the caller to interrupt it.
     Effect.timeoutOrElse({
-      duration: fetchDeadlineMs,
+      duration: io.deadlineMs,
       orElse: () => Effect.fail(new FetchError("request_failed", `Fetch request for ${safeUrl} did not finish in time`))
     })
   )
@@ -365,6 +374,12 @@ export const download = async (options: {
   readonly signal?: AbortSignal | undefined
   /** Internal test seam; production callers use {@link maximumFetchBytes}. */
   readonly limitBytes?: number | undefined
+  /** Internal test seam; production callers use the egress client for `process.env`. */
+  readonly transport?: Layer.Layer<HttpClient.HttpClient> | undefined
+  /** Internal test seam; production callers create the temporary file with `node:fs`. */
+  readonly openTemporary?: ((path: string) => Promise<Fs.FileHandle>) | undefined
+  /** Internal test seam; production callers use {@link fetchDeadlineMs}. */
+  readonly deadlineMs?: number | undefined
 }): Promise<Result> => {
   const destination = NodePath.join(options.root, ...options.outFile.split("/"))
   try {
@@ -375,7 +390,12 @@ export const download = async (options: {
         temporary,
         destination,
         options.limitBytes ?? maximumFetchBytes,
-        checkParent
+        checkParent,
+        {
+          transport: options.transport ?? EgressHttpClient.layer(process.env),
+          open: options.openTemporary ?? ((path) => Fs.open(path, "wx", 0o644)),
+          deadlineMs: options.deadlineMs ?? fetchDeadlineMs
+        }
       )
       if (downloaded.sha256 !== options.sha256) {
         throw new FetchError(

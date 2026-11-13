@@ -47,6 +47,8 @@ export interface Options {
   readonly fatalUtf8?: boolean | undefined
   /** Written to the command's stdin, which is then closed; without it stdin is ignored. */
   readonly stdin?: string | undefined
+  /** The host whose launch rules apply; a POSIX host can ask for the Windows answer. */
+  readonly platform?: NodeJS.Platform | undefined
   readonly stdout: (text: string) => void
   readonly stderr: (text: string) => void
 }
@@ -69,7 +71,7 @@ export const runEffect = (options: Omit<Options, "signal">): Effect.Effect<numbe
       const handle = yield* Effect.uninterruptibleMask(() =>
         Effect.gen(function*() {
           const nodeModule = yield* Effect.try(() =>
-            process.platform === "win32" && NodePath.isAbsolute(options.command) &&
+            (options.platform ?? process.platform) === "win32" && NodePath.isAbsolute(options.command) &&
             /\.(?:mjs|cjs|js)$/.test(options.command) &&
             Fs.statSync(options.command, { throwIfNoEntry: false })?.isFile() === true
           )
@@ -154,11 +156,15 @@ export const runEffect = (options: Omit<Options, "signal">): Effect.Effect<numbe
   })
 
 /** Promise boundary for command APIs that accept an AbortSignal.
+ * `spawner` replaces the real spawn, so fault layers can fail cleanup.
  * @category execution
  * @since 1.0.0-rc.0
  */
-export const run = async (options: Options): Promise<number> => {
-  const result = await Effect.runPromiseExit(runEffect(options), { signal: options.signal })
+export const run = async (options: Options, spawner?: ProcessSpawner["Service"]): Promise<number> => {
+  const effect = spawner === undefined
+    ? runEffect(options)
+    : runEffect(options).pipe(Effect.provideService(ProcessSpawner, spawner))
+  const result = await Effect.runPromiseExit(effect, { signal: options.signal })
   if (Exit.isSuccess(result)) return result.value
   const cause = processError(Cause.squash(result.cause))
   if (cause.code === "cleanup_failed") throw cause

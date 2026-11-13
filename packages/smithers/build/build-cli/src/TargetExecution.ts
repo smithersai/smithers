@@ -61,11 +61,11 @@ export const runTarget = (
   Effect.suspend(() => {
     // Decode and lower before acquiring services or probing executables. The
     // exact validated attrs select both the action plan and its tool checks.
+    // A target's attrs schema is a struct schema, which makes a record or throws.
     const validated = Target.metadata(target).attrsSchema.make(attrs, {
       parseOptions: { onExcessProperty: "error" }
-    })
+    }) as Readonly<Record<string, unknown>>
     const planned: Node.Node<unknown, unknown, never> = Target.plan(target, validated)
-    if (typeof validated !== "object" || validated === null) throw new TypeError("target attrs must be a record")
     const flow = Flow.make(target._tag, {
       payload: {},
       success: Schema.Unknown,

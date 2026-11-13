@@ -18,6 +18,7 @@ import * as CacheAdmin from "../src/CacheAdmin.ts"
 import { approvalRevision, makeCli, normalizeArgv, openPackageIndex, type RuntimeConfig } from "../src/Cli.ts"
 import { CliServices, cliServicesLive } from "../src/index.ts"
 import { CacheCredentials } from "../src/internal/CacheCredentials.ts"
+import { PlanningServices, planningServicesLive } from "../src/internal/PackagePlanner.ts"
 import type * as Reporter from "../src/Reporter.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -866,6 +867,59 @@ export const Package = S.Package({ targets: { good: S.Shell.Test({ bin: S.Host.b
     expect(result.exitCode, result.envelope).toBe(0)
     expect(result.data.targets[0].nixEnvironment.path).toEqual(["/usr/bin", "/bin"])
   }, 120_000)
+
+  it("projects the Nix environment the invocation's plan-time services resolve into a public plan", async () => {
+    const root = await packageFixture()
+    // No runtime or package manager: the closure is asked for no tool versions.
+    await write(
+      root,
+      "WORKSPACE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Workspace = S.Workspace("fixture", {
+  repository: "git+https://example.invalid/fixture.git",
+  cache: S.Cache({ directory: ".flows" }),
+  environment: S.Nix.Environment({ file: S.file("//environment.nix") })
+})
+`
+    )
+    await write(root, "environment.nix", "{}\n")
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { good: S.Shell.Test({ shell: "true", sandbox: "none" }) } })
+`
+    )
+    const bin = NodePath.join(root, "closure", "bin")
+    await Fs.mkdir(bin, { recursive: true })
+    const closure = {
+      storePath: NodePath.join(root, "closure"),
+      hash: "0".repeat(32),
+      path: [bin],
+      variables: { CLOSURE_MARK: "from-nix" },
+      closure: [NodePath.join(root, "closure")],
+      nix: { executable: "nix", version: "nix (Nix) 2.99.0" },
+      system: "x86_64-linux",
+      inputs: []
+    }
+    const result = await jsonCommand(root, ["ci", "//...", "--plan"], (config) => ({
+      ...config,
+      services: Layer.succeed(PlanningServices, {
+        ...planningServicesLive,
+        resolveNixEnvironment: () => Effect.succeed(closure)
+      })
+    }))
+    expect(result.exitCode, result.envelope).toBe(0)
+    expect(result.data.targets).toHaveLength(1)
+    // The public plan carries the closure identity and PATH, not the resolver's private evaluation facts.
+    expect(result.data.targets[0].nixEnvironment).toEqual({
+      storePath: closure.storePath,
+      hash: closure.hash,
+      closure: closure.closure,
+      path: [bin],
+      variables: { CLOSURE_MARK: "from-nix" }
+    })
+  })
 
   it("explains a bundler key whose final identity depends on its resolved graph", async () => {
     const root = await packageFixture()

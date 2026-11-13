@@ -49,6 +49,7 @@ import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as Environment from "./Environment.ts"
+import { ProcessSpawner } from "./internal/ContainedProcess.ts"
 import { FilePublicationHost, type filePublicationHostLive } from "./internal/FilePublicationHost.ts"
 import { optionalOpenFlag } from "./internal/Fs.ts"
 import { gitPathspecBatches } from "./internal/GitPathspecBatches.ts"
@@ -300,7 +301,8 @@ const subprocessError = (error: PlatformError.PlatformError): Error =>
 const spawnEnvironment = (
   sensitiveEnv: ReadonlyArray<string>,
   git: boolean,
-  environment: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
+  environment: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment(),
+  platform: NodeJS.Platform = process.platform
 ): NodeJS.ProcessEnv => {
   const env: NodeJS.ProcessEnv = { ...environment }
   delete env["NODE_OPTIONS"]
@@ -313,7 +315,7 @@ const spawnEnvironment = (
   env["NO_COLOR"] = "1"
   if (git) {
     for (const name of Object.keys(env)) if (name.startsWith("GIT_")) delete env[name]
-    env["GIT_CONFIG_GLOBAL"] = process.platform === "win32" ? "NUL" : "/dev/null"
+    env["GIT_CONFIG_GLOBAL"] = platform === "win32" ? "NUL" : "/dev/null"
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     env["GIT_OPTIONAL_LOCKS"] = "0"
     env["GIT_PAGER"] = "cat"
@@ -328,6 +330,7 @@ interface SpawnOptions {
   readonly timeoutMs: number
   readonly sensitiveEnv: ReadonlyArray<string>
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  readonly platform?: NodeJS.Platform | undefined
   readonly git: boolean
 }
 
@@ -335,7 +338,8 @@ interface SpawnOptions {
  * Spawns one executable in the workspace root, never through a shell, with a
  * deadline, bounded stdout, and a bounded stderr tail. Interruption kills the
  * process group. Same discipline as the LlmLint spawn, re-stated here so the
- * agent stack owns its own protocol boundary.
+ * agent stack owns its own protocol boundary. A provided ProcessSpawner
+ * replaces the real spawn, so fault layers can fail a real process's pipes.
  */
 const spawnText = (
   cwd: string,
@@ -344,11 +348,15 @@ const spawnText = (
   options: SpawnOptions
 ): Effect.Effect<Spawned, Error> =>
   Effect.gen(function*() {
-    const child = yield* ScopedProcess.spawn({
+    const spawner = Option.getOrElse(
+      yield* Effect.serviceOption(ProcessSpawner),
+      () => ({ spawn: ScopedProcess.spawn })
+    )
+    const child = yield* spawner.spawn({
       command: executable,
       args,
       cwd,
-      env: spawnEnvironment(options.sensitiveEnv, options.git, options.environment),
+      env: spawnEnvironment(options.sensitiveEnv, options.git, options.environment, options.platform),
       stdin: options.stdin === undefined ? "ignore" : "pipe",
       killSignal: "SIGKILL",
       forceKillAfter: 0,
@@ -583,6 +591,8 @@ export interface CliSessionOptions {
   readonly timeoutMs?: number | undefined
   readonly sensitiveEnv?: ReadonlyArray<string> | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  /** The host whose null device Git's global config names; a POSIX host can ask for the Windows answer. */
+  readonly platform?: NodeJS.Platform | undefined
 }
 
 /**
@@ -680,13 +690,14 @@ const runGit = (
   workspaceRoot: string,
   args: ReadonlyArray<string>,
   timeoutMs: number,
-  options: Pick<CliSessionOptions, "environment" | "sensitiveEnv">
+  options: Pick<CliSessionOptions, "environment" | "sensitiveEnv" | "platform">
 ): Effect.Effect<string, AgentTarget.AgentSessionError> =>
   spawnText(workspaceRoot, "git", ["-c", "core.fsmonitor=false", ...args], {
     stdoutBytes: maximumGitOutputBytes,
     timeoutMs,
     sensitiveEnv: options.sensitiveEnv ?? [],
     environment: options.environment,
+    platform: options.platform,
     git: true
   }).pipe(
     Effect.mapError((error) => sessionError("diff", error)),
@@ -703,7 +714,7 @@ const runGitWithPaths = (
   args: ReadonlyArray<string>,
   paths: ReadonlyArray<string>,
   timeoutMs: number,
-  options: Pick<CliSessionOptions, "environment" | "sensitiveEnv">
+  options: Pick<CliSessionOptions, "environment" | "sensitiveEnv" | "platform">
 ): Effect.Effect<string, AgentTarget.AgentSessionError> =>
   Effect.gen(function*() {
     const parts: Array<string> = []
@@ -824,7 +835,7 @@ export const expandDiffSlice = (
   workspaceRoot: string,
   diffs: ReadonlyArray<Input.GitDiff>,
   timeoutMs: number = defaultGitTimeoutMs,
-  options: Pick<CliSessionOptions, "environment" | "sensitiveEnv"> = {}
+  options: Pick<CliSessionOptions, "environment" | "sensitiveEnv" | "platform"> = {}
 ): Effect.Effect<DiffSlice, AgentTarget.AgentSessionError> =>
   Effect.gen(function*() {
     const union = new Map<string, string>()
@@ -1836,7 +1847,9 @@ const runCandidateLoop = (
     return yield* Effect.fail(
       new AgentTarget.AgentRoundsExhausted({
         rounds: payload.maxRounds,
-        diff: overlay?.render() ?? "",
+        // A decoded payload's maxRounds is a RoundCount (at least 1), so the
+        // loop above assigned an overlay before it could exhaust.
+        diff: overlay!.render(),
         gateReport: report,
         message: `the candidate/gate loop exhausted ${payload.maxRounds} round(s) without a green gate set`
       })

@@ -93,4 +93,11 @@ describe("optionalOpenFlag", () => {
   it.each(["O_NOFOLLOW", "O_NONBLOCK"] as const)("uses the platform value of %s when available", (name) => {
     expect(optionalOpenFlag(name)).toBe((NodeFs.constants as Partial<Record<string, number>>)[name] ?? 0)
   })
+
+  it("contributes nothing for a flag a Windows libuv build does not define", () => {
+    const windows = { O_RDONLY: 0, O_CREAT: 256 }
+    expect(optionalOpenFlag("O_NOFOLLOW", windows)).toBe(0)
+    expect(optionalOpenFlag("O_NONBLOCK", windows)).toBe(0)
+    expect(optionalOpenFlag("O_NOFOLLOW", { O_NOFOLLOW: 131072 })).toBe(131072)
+  })
 })

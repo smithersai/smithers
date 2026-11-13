@@ -161,9 +161,12 @@ export const remove = async (options: {
   const cutoff = options.olderThanDays === undefined ? Infinity : now - options.olderThanDays * 86_400_000
   const results = await entries(options.root, options.cacheDirectory)
   const candidates = results.filter((entry) => Date.parse(entry.modifiedAt) < cutoff)
-  const compiled = options.maxSizeBytes === undefined
-    ? []
-    : await GoCache.entries(options.root, options.cacheDirectory, options.environment)
+  // A statement, not an awaited conditional operand: V8 credits the code after
+  // an `await` in one operand to that operand alone, through the size-cap block.
+  let compiled: ReadonlyArray<GoCache.Entry> = []
+  if (options.maxSizeBytes !== undefined) {
+    compiled = await GoCache.entries(options.root, options.cacheDirectory, options.environment)
+  }
   const goBuild = { candidates: 0, candidateBytes: 0, removed: 0, bytes: 0, inUse: 0, inUseBytes: 0 }
   const evicted: Array<GoCache.Entry> = []
   const before = [...results, ...compiled].reduce((sum, entry) => sum + entry.bytes, 0)

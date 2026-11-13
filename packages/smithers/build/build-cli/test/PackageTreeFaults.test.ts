@@ -393,6 +393,25 @@ describe.skipIf(process.platform === "win32")("portal census", () => {
       await PackageTree.releasePortals(snapshot)
     }
   })
+
+  it("skips an ignored nested repository that vanishes between its listing and its lstat", async () => {
+    await repository({ ".gitignore": "vendor/\n" })
+    const nested = NodePath.join(root, "vendor", "nested")
+    await Fs.mkdir(NodePath.join(nested, ".git"), { recursive: true })
+    await Fs.symlink(outside, NodePath.join(root, "vendor", "portal"))
+    // The walk lists `vendor/nested` with its `.git`, then the repository is
+    // gone when its own identity is read.
+    const io: PackageTree.TreeIo = {
+      ...Fs,
+      lstat: (path) => String(path) === nested ? Promise.reject(errnoError("ENOENT")) : Fs.lstat(path)
+    }
+    const snapshot = await PackageTree.snapshotPortals(root, ".flows", undefined, [], io)
+    try {
+      expect(snapshot.portals.map((portal) => portal.link)).toEqual(["vendor/portal"])
+    } finally {
+      await PackageTree.releasePortals(snapshot)
+    }
+  })
 })
 
 describe("output capture boundaries", () => {

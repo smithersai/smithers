@@ -112,7 +112,7 @@ const cliParentUrl = (() => {
  */
 const ownerOf = (specifier) => {
   if (specifier === "effect" || specifier.startsWith("effect/")) return cliParentUrl
-  for (const [name, owner] of globalThis[ownership] ?? []) {
+  for (const [name, owner] of globalThis[ownership]) {
     if (specifier === name || specifier.startsWith(`${name}/`)) return owner
   }
   return cliOwnedPackages.some((name) => specifier === name || specifier.startsWith(`${name}/`))
@@ -347,9 +347,7 @@ const formatHooks = {
  * @slop
  */
 const reassert = () => {
-  const previous = globalThis[registration]
-  if (previous === undefined) return
-  previous.deregister()
+  globalThis[registration].deregister()
   globalThis[registration] = registerHooks(parentHooks)
 }
 

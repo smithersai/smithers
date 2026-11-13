@@ -111,7 +111,8 @@ const localSourceRefusal = async (
   if (NodePath.dirname(real) === real || within(real, home)) {
     return `Git submodule ${path} url names ${source}, a root or home directory a submodule cannot read`
   }
-  const workspace = await Fs.realpath(root).catch(() => root)
+  // The plan already ran git inside `root`, so it resolves.
+  const workspace = await Fs.realpath(root)
   if (!within(workspace, real) && !allowed.some((directory) => within(directory, real))) {
     return `Git submodule ${path} url names local path ${source}, which is outside the workspace; ` +
       `list its directory in ${submoduleSourcesVariable} to admit it`

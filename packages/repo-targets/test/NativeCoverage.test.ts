@@ -156,3 +156,71 @@ it("takes one arm here and the other in a tsx child", () => {
     rmSync(root, { recursive: true, force: true })
   }
 }, 90_000)
+
+it("keeps a child's native script of a worker-imported file off Vite's transformed offsets", () => {
+  // Vite's SSR transform rewrites `import` and every imported binding, so a worker's script of `shared.js` indexes
+  // other offsets than a child's native script of the same file. Merging the two scripts read one through the
+  // other's offsets: a function the child called stayed uncalled while blocks around it gained hits.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "vitest-native-child-coverage-")))
+  const require = createRequire(import.meta.url)
+  try {
+    symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
+    writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }))
+    writeFileSync(join(root, "shared.js"), `import { basename } from "node:path"
+
+export const neverCalled = (name) => {
+  return basename(name).toUpperCase()
+}
+
+export const inWorker = (n) => {
+  if (n > 0) return basename("w" + n)
+  return "none"
+}
+
+export const inChild = (n) => {
+  if (n > 0) return basename("c" + n)
+  return "none"
+}
+`)
+    writeFileSync(join(root, "vitest.config.mjs"), `export default {
+  test: {
+    include: ["probe.test.ts"],
+    coverage: { enabled: true, provider: "v8", autoAttachSubprocess: true, include: ["shared.js"], reporter: ["json"] }
+  }
+}`)
+    writeFileSync(join(root, "probe.test.ts"), `import { execFileSync } from "node:child_process"
+import { expect, it } from "vitest"
+import { inWorker } from "./shared.js"
+it("calls one function here and another in a native child", () => {
+  expect(inWorker(1)).toBe("w1")
+  const child = "import { inChild } from './shared.js'; console.log(inChild(1))"
+  expect(execFileSync(process.execPath, ["--input-type=module", "-e", child], { encoding: "utf8" }).trim()).toBe("c1")
+})
+`)
+    execFileSync(process.execPath, [join(dirname(require.resolve("vitest/package.json")), "vitest.mjs"), "run", "--root", root, "--maxWorkers=1"], {
+      cwd: root,
+      timeout: 60_000,
+      stdio: "pipe",
+      env: { ...process.env, FORCE_COLOR: "0" }
+    })
+    const coverage = JSON.parse(readFileSync(join(root, "coverage/coverage-final.json"), "utf8"))
+    const file = coverage[join(root, "shared.js")]
+    const hits = (line: number) =>
+      (Object.entries(file.statementMap) as Array<[string, { start: { line: number } }]>)
+        .filter(([, location]) => location.start.line === line).map(([id]) => file.s[id])
+    const calls = (line: number) =>
+      (Object.entries(file.fnMap) as Array<[string, { loc: { start: { line: number } } }]>)
+        .filter(([, fn]) => fn.loc.start.line === line).map(([id]) => file.f[id])
+    expect(Object.keys(file.f), "functions").toHaveLength(3)
+    expect(calls(3), "uncalled function").toEqual([0])
+    expect(hits(4), "uncalled body").toEqual([0])
+    expect(calls(7), "worker's call").toEqual([1])
+    expect(hits(8), "worker's test and return").toEqual([1, 1])
+    expect(hits(9), "worker's fallback").toEqual([0])
+    expect(calls(12), "child's call").toEqual([1])
+    expect(hits(13), "child's test and return").toEqual([1, 1])
+    expect(hits(14), "child's fallback").toEqual([0])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)

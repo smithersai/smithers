@@ -1,4 +1,5 @@
 import { Smithers as S } from "@smthrs/targets"
+import * as SafeFs from "@smthrs/targets/SafeFs"
 import * as Target from "@smthrs/targets/Target"
 import * as Schema from "effect/Schema"
 import * as ChildProcess from "node:child_process"
@@ -76,6 +77,35 @@ describe("apply", () => {
     await Fs.symlink(target, NodePath.join(root, path.split("/")[0]!))
     await expect(OverlayExec.apply(root, [replacement(path)])).rejects.toThrow(/Overlay destination/)
     await expect(Fs.lstat(target)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  // An entry SafeFs just reported missing can reappear as something the
+  // dangling-link probe cannot read. The seam answers that probe with EIO; the
+  // overlay must refuse instead of reading "unreadable" as "absent".
+  const unreadableOnSecondLstat = (path: string): SafeFs.Io => {
+    let calls = 0
+    return {
+      ...SafeFs.defaultIo,
+      lstat: (candidate) => {
+        if (candidate === path && (calls += 1) === 2) {
+          return Promise.reject(Object.assign(new Error("probe lost"), { code: "EIO" }))
+        }
+        return SafeFs.defaultIo.lstat(candidate)
+      }
+    }
+  }
+
+  it.each([
+    ["a missing destination directory", "new/destination.txt", "new"],
+    ["a missing destination file", "destination.txt", "destination.txt"]
+  ])("propagates an unreadable probe of %s without creating it", async (_name, path, probed) => {
+    const io = unreadableOnSecondLstat(NodePath.join(root, probed))
+    await expect(OverlayExec.apply(root, [replacement(path)], io)).rejects.toMatchObject({
+      code: "EIO",
+      message: "probe lost"
+    })
+    await expect(Fs.lstat(NodePath.join(root, probed))).rejects.toMatchObject({ code: "ENOENT" })
+    expect((await Fs.readdir(root)).sort()).toEqual(["original.txt", "replacement.txt"])
   })
 
   it("refuses an internal directory link without changing its target", async () => {

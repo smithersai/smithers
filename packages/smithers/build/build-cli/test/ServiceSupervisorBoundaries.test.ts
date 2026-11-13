@@ -317,6 +317,47 @@ describe("secret boundary", () => {
         "no declared secret is bound to http://127.0.0.1:2"
     )
   })
+
+  /** Windows environment names are case-insensitive, so only POSIX gets the lowercase proxy duplicates. */
+  it.each([["win32", false], ["linux", true]] as const)(
+    "on %s sets lowercase proxy variables: %s",
+    async (platform, lowercase) => {
+      const record = NodePath.join(await scratch(), "proxy.json")
+      const writer = "const e = process.env; require('node:fs').writeFileSync(process.env.PROXY_RECORD, " +
+        "JSON.stringify({ upper: e.HTTPS_PROXY, http: e.http_proxy ?? null, https: e.https_proxy ?? null }));" +
+        idle
+      const proxies = await run(
+        Effect.scoped(Effect.gen(function*() {
+          const supervisor = yield* ServiceSupervisor.make
+          yield* supervisor.acquire({
+            ...base,
+            key: `//x:proxy-${platform}`,
+            argv: [process.execPath, "-e", writer],
+            env: { PROXY_RECORD: record },
+            secrets: [Secret.HttpSecret(Secret.Secret("PROXY_CASE_SECRET"), ["http://127.0.0.1:1"])],
+            readiness: {
+              exec: [process.execPath, "-e", `require('node:fs').statSync(${JSON.stringify(record)})`],
+              timeout: "10s"
+            },
+            stop: { signal: "SIGTERM", grace: "100ms" }
+          })
+          return JSON.parse(yield* Effect.promise(() => Fs.readFile(record, "utf8"))) as {
+            readonly upper: string
+            readonly http: string | null
+            readonly https: string | null
+          }
+        })).pipe(Effect.provideService(ServiceSupervisor.HostPlatform, platform))
+      )
+      expect(proxies.upper).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+      expect(proxies).toEqual(
+        lowercase ? { upper: proxies.upper, http: proxies.upper, https: proxies.upper } : {
+          upper: proxies.upper,
+          http: null,
+          https: null
+        }
+      )
+    }
+  )
 })
 
 describe("health loop after exit", () => {
