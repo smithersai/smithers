@@ -32,7 +32,7 @@ const errors: string[] = [];
 page.on("pageerror", error => errors.push(error.message));
 try {
   for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 390, height: 844 }]) {
-    for (const state of size.width === 390 ? ["long"] : ["short", "medium", "long"]) for (const theme of ["light", "dark"]) {
+    for (const state of size.width === 390 ? ["long"] : ["short", "medium", "long"]) for (const theme of ["light", "dark"] as const) {
       await page.setViewportSize(size);
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       const name = `${fullApp ? "full-app-" : ""}${state}-${size.width}-${theme}`;

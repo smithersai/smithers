@@ -188,7 +188,7 @@ describe("FlowDraftView before its first round: the form", () => {
     expect(names).toEqual(["release-notes"]);
     expect(requests).toEqual(["Summarize merged PRs"]);
     // A form submitted with no request starts nothing.
-    await act(async () => $("form")!.requestSubmit());
+    await act(async () => container!.querySelector<HTMLFormElement>("form")!.requestSubmit());
     expect(started).toBe(0);
 
     await render(<FlowDraftView {...props} request="Summarize merged PRs" />);

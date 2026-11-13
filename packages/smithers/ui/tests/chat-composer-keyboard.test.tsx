@@ -63,7 +63,7 @@ describe("ChatComposer keyboard contract", () => {
   test("Enter submits the trimmed value", async () => {
     const submitted: string[] = [];
     await render(
-      <ChatComposer value="  hello  " onValueChange={() => {}} onSubmit={(next) => submitted.push(next)} />,
+      <ChatComposer value="  hello  " onValueChange={() => {}} onSubmit={(next) => void submitted.push(next)} />,
     );
     await press("Enter");
     expect(submitted).toEqual(["hello"]);
@@ -71,7 +71,7 @@ describe("ChatComposer keyboard contract", () => {
 
   test("Shift+Enter does not submit and leaves the default newline behavior alone", async () => {
     const submitted: string[] = [];
-    await render(<ChatComposer value="hello" onValueChange={() => {}} onSubmit={(n) => submitted.push(n)} />);
+    await render(<ChatComposer value="hello" onValueChange={() => {}} onSubmit={(n) => void submitted.push(n)} />);
     const event = await press("Enter", { shiftKey: true });
     expect(submitted).toEqual([]);
     expect(event.defaultPrevented).toBe(false);
@@ -79,21 +79,21 @@ describe("ChatComposer keyboard contract", () => {
 
   test("Enter while an IME composition is open does not submit", async () => {
     const submitted: string[] = [];
-    await render(<ChatComposer value="にほんご" onValueChange={() => {}} onSubmit={(n) => submitted.push(n)} />);
+    await render(<ChatComposer value="にほんご" onValueChange={() => {}} onSubmit={(n) => void submitted.push(n)} />);
     await press("Enter", { isComposing: true });
     expect(submitted).toEqual([]);
   });
 
   test("a whitespace-only value never submits", async () => {
     const submitted: string[] = [];
-    await render(<ChatComposer value="   " onValueChange={() => {}} onSubmit={(n) => submitted.push(n)} />);
+    await render(<ChatComposer value="   " onValueChange={() => {}} onSubmit={(n) => void submitted.push(n)} />);
     await press("Enter");
     expect(submitted).toEqual([]);
   });
 
   test("disabled blocks submission", async () => {
     const submitted: string[] = [];
-    await render(<ChatComposer value="hello" disabled onValueChange={() => {}} onSubmit={(n) => submitted.push(n)} />);
+    await render(<ChatComposer value="hello" disabled onValueChange={() => {}} onSubmit={(n) => void submitted.push(n)} />);
     await act(async () => {
       textarea().form!.requestSubmit();
     });
@@ -107,7 +107,7 @@ describe("ChatComposer keyboard contract", () => {
         value="hello"
         lifecycleStatus="streaming"
         onValueChange={() => {}}
-        onSubmit={(n) => submitted.push(n)}
+        onSubmit={(n) => void submitted.push(n)}
       />,
     );
     await act(async () => {
@@ -120,7 +120,7 @@ describe("ChatComposer keyboard contract", () => {
     const submitted: string[] = [];
     let stops = 0;
     await render(<ChatComposer value="steer" lifecycleStatus="streaming" submitWhileBusy
-      onValueChange={() => {}} onSubmit={text => submitted.push(text)} onStop={() => { stops++; }} />);
+      onValueChange={() => {}} onSubmit={text => void submitted.push(text)} onStop={() => { stops++; }} />);
     await press("Enter");
     expect(submitted).toEqual(["steer"]);
     await press("Escape");
@@ -163,7 +163,7 @@ describe("ChatComposer keyboard contract", () => {
       <ChatComposer
         value="hello"
         onValueChange={() => {}}
-        onSubmit={(n) => submitted.push(n)}
+        onSubmit={(n) => void submitted.push(n)}
         textareaProps={{
           onKeyDown: (event) => {
             seen.push(event.key);
@@ -184,7 +184,7 @@ describe("ChatComposer keyboard contract", () => {
       <ChatComposer
         value="hello"
         onValueChange={() => {}}
-        onSubmit={(n) => submitted.push(n)}
+        onSubmit={(n) => void submitted.push(n)}
         textareaProps={{ onKeyDown: (event) => seen.push(event.key) }}
       />,
     );

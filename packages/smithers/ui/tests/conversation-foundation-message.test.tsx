@@ -393,7 +393,7 @@ describe("Bubble compound", () => {
             { key: "up", label: "👍", count: 2, pressed: true },
             { key: "down", label: "👎" },
           ]}
-          onToggle={(key) => toggled.push(key)}
+          onToggle={(key) => { expect(typeof key).toBe("string"); if (typeof key === "string") toggled.push(key); }}
         />
       </Bubble>,
     );
@@ -433,7 +433,7 @@ describe("CompactGroup", () => {
     const content = container!.querySelector<HTMLElement>('[data-slot="compact-group-content"]')!;
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(content.getAttribute("role")).toBe("region");
-    expect(content.id).toBe(trigger.getAttribute("aria-controls"));
+    expect(trigger.getAttribute("aria-controls")).toBe(content.id);
     expect(content.textContent).toContain("older turn");
   });
 

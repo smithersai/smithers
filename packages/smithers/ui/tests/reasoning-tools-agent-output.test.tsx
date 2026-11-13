@@ -99,12 +99,11 @@ describe("reasoning summary safety boundary", () => {
     expect(model?.reasoningSummary).toBe("Visible summary");
   });
 
-  test("renderer prefers reasoningSummary over the deprecated alias", () => {
+  test("renderer displays the reasoning summary", () => {
     const html = renderToStaticMarkup(
       <AgentOutput
         model={{
           reasoningSummary: "Safe summary",
-          reasoning: "legacy alias",
           toolCalls: [],
           streaming: false,
         }}

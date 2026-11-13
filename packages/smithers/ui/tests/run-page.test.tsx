@@ -83,7 +83,7 @@ const step = (id: string, overrides: Partial<StepRow> = {}): StepRow => ({
 
 describe("the run vocabulary", () => {
   test("every state reads as one word, and a requested stop reads Stopping until it settles", () => {
-    const table: ReadonlyArray<readonly [RunState, boolean, string]> = [
+    const table: ReadonlyArray<readonly [RunState, boolean, ReturnType<typeof runWord>]> = [
       ["pending", false, "Queued"],
       ["pending", true, "Stopping"],
       ["running", false, "Working"],

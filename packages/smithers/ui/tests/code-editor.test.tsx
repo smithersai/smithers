@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { act } from "react"
 import { EditorView } from "@codemirror/view"
+import { StateEffect } from "@codemirror/state"
 import { CodeEditorView, minimalChange } from "../src/adapters/code-editor"
 const { createRoot } = await import("react-dom/client")
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -27,8 +28,12 @@ test('CodeMirror read-only updates preserve identity, scroll and cursor in one d
   const { host, view, root, props } = mount()
   act(() => view.dispatch({ selection: { anchor: 23 } }))
   view.scrollDOM.scrollTop = 45; view.scrollDOM.scrollLeft = 12
-  const transactions: unknown[] = [], dispatch = view.dispatch.bind(view)
-  view.dispatch = (...args: Parameters<typeof view.dispatch>) => { if ('changes' in args[0]) transactions.push(args[0]); dispatch(...args) }
+  const transactions: unknown[] = []
+  view.dispatch({ effects: StateEffect.appendConfig.of(EditorView.updateListener.of(update => {
+    for (const transaction of update.transactions) transaction.changes.iterChanges((from, to, _fromB, _toB, inserted) => {
+      transactions.push({ changes: { from, to, insert: inserted.toString() } })
+    })
+  })) })
   act(() => root.render(<CodeEditorView {...props} text={'const emoji = "😀"\nsecond\nTHIRD'} />))
   expect(EditorView.findFromDOM(host.querySelector('.cm-editor')!)).toBe(view)
   expect(view.state.selection.main.head).toBe(23)
@@ -84,7 +89,12 @@ test('Ctrl pointer hover emits once per position and resets when released or lea
   const { view, actions } = mount()
   // happy-dom has no text layout; isolate only the browser coordinate lookup.
   let pos: number | null = 2
-  view.posAtCoords = () => pos
+  function positionAtCoords(coords: { x: number; y: number }, precise: false): number
+  function positionAtCoords(coords: { x: number; y: number }): number | null
+  function positionAtCoords(_coords: { x: number; y: number }, precise?: false): number | null {
+    return precise === false ? pos ?? 0 : pos
+  }
+  view.posAtCoords = positionAtCoords
   const move = (ctrlKey: boolean) => {
     const event = new MouseEvent('mousemove', { ctrlKey, bubbles: true, cancelable: true })
     act(() => view.contentDOM.dispatchEvent(event))

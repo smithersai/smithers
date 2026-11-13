@@ -63,7 +63,7 @@ describe("CodeBlock", () => {
     jest.useFakeTimers();
     try {
       const copied: string[] = [];
-      await render(<CodeBlock code="copy me" copiedDurationMs={1_000} onCopyCode={(code) => copied.push(code)} />);
+      await render(<CodeBlock code="copy me" copiedDurationMs={1_000} onCopyCode={(code) => void copied.push(code)} />);
       const block = container!.querySelector('[data-slot="code-block"]')!;
       const button = container!.querySelector('[data-slot="code-block-copy"]')!;
 
@@ -167,7 +167,7 @@ describe("CodeBlock", () => {
       expect(copied).toEqual(["clipboard fallback"]);
     } finally {
       if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor);
-      else delete (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+      else Reflect.deleteProperty(navigator, "clipboard");
     }
   });
 
@@ -184,7 +184,7 @@ describe("CodeBlock", () => {
       expect(html).not.toContain('data-slot="code-block-copy"');
     } finally {
       if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor);
-      else delete (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+      else Reflect.deleteProperty(navigator, "clipboard");
     }
   });
 });

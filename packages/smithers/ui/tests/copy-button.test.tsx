@@ -2,7 +2,7 @@
 // CopyButton under happy-dom: the host's `onCopy` decides, and the button says what happened. Snippet's copy button
 // takes a name of its own (`copyLabel`).
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, type ReactElement } from "react";
+import { act, Activity, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { CopyButton, Snippet } from "../src/index";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -100,14 +100,52 @@ describe("CopyButton", () => {
     expect(button().hasAttribute("data-copy-failed")).toBe(false);
   });
 
-  test("a copy that settles after the button is gone changes nothing", async () => {
+  test.each(["resolve", "reject"] as const)("a copy that %ss after unmount leaves no feedback", async (outcome) => {
     let release = () => {};
-    await render(<CopyButton onCopy={() => new Promise<void>((resolve) => (release = resolve))}>Copy</CopyButton>);
+    const errors: unknown[][] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => { errors.push(args); };
+    try {
+      await render(<CopyButton onCopy={() => new Promise<void>((resolve, reject) => {
+        release = outcome === "resolve" ? resolve : () => reject(new Error("copy refused"));
+      })}>Copy</CopyButton>);
+      await click();
+      const detached = button();
+      expect(detached.getAttribute("data-copying")).toBe("true");
+      const pendingMarkup = detached.outerHTML;
+      await act(async () => root!.unmount());
+      root = undefined;
+      expect(container!.childElementCount).toBe(0);
+      await act(async () => release());
+      await settle();
+      expect(errors).toEqual([]);
+      expect(container!.childElementCount).toBe(0);
+      expect(detached.outerHTML).toBe(pendingMarkup);
+      expect(detached.isConnected).toBe(false);
+    } finally {
+      console.error = originalError;
+    }
+  });
+
+  test.each(["resolve", "reject"] as const)("a copy that %ss after effect cleanup preserves state when shown again", async (outcome) => {
+    let release = () => {};
+    const view = (mode: "visible" | "hidden") => <Activity mode={mode}>
+      <CopyButton onCopy={() => new Promise<void>((resolve, reject) => {
+        release = outcome === "resolve" ? resolve : () => reject(new Error("copy refused"));
+      })}>Copy</CopyButton>
+    </Activity>;
+    await render(view("visible"));
     await click();
-    await act(async () => root!.unmount());
-    root = undefined;
+    expect(button().getAttribute("data-copying")).toBe("true");
+    // Activity runs real effect cleanup while retaining state, making a late
+    // state update observable when the same button is shown again.
+    await act(async () => root!.render(view("hidden")));
     await act(async () => release());
-    await settle();
+    await act(async () => root!.render(view("visible")));
+    expect(button().textContent).toBe("Copy");
+    expect(button().getAttribute("data-copying")).toBe("true");
+    expect(button().getAttribute("data-copied")).toBe("false");
+    expect(button().hasAttribute("data-copy-failed")).toBe(false);
   });
 });
 

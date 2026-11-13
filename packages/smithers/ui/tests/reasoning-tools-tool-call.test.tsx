@@ -124,7 +124,7 @@ describe("ToolCall compound anatomy", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     const content = container!.querySelector('[data-slot="tool-call-content"]')!;
     expect(content.getAttribute("role")).toBe("region");
-    expect(content.id).toBe(trigger.getAttribute("aria-controls"));
+    expect(trigger.getAttribute("aria-controls")).toBe(content.id);
     expect(container!.querySelector('[data-slot="tool-call-input"]')!.textContent).toContain('"query"');
     expect(container!.querySelector('[data-slot="tool-call-output"]')!.textContent).toContain('"hits"');
   });

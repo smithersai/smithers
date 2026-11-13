@@ -33,7 +33,7 @@ const flushMicrotasks = () => new Promise((resolve) => setTimeout(resolve, 0));
 describe("createAutosaveDoc", () => {
   test("starts clean with the initial value", () => {
     const doc = createAutosaveDoc({ initialValue: "hello", save: async () => {} });
-    expect(doc.getSnapshot()).toEqual({ value: "hello", state: "clean", mtimeMs: undefined });
+    expect(doc.getSnapshot()).toEqual({ value: "hello", state: "clean", mtimeMs: undefined, failure: undefined });
   });
 
   test("an edit marks dirty and the debounce fires exactly one save with the latest value", async () => {

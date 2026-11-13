@@ -79,8 +79,11 @@ const nonceOf = (srcdoc: string) => new RegExp(`${ViewCsp.nonceAttribute}="([^"]
 async function handshake(options: { readonly nonce?: string; readonly source?: unknown } = {}) {
   const frameWindow = iframe().contentWindow!;
   const posted: Array<{ message: any; transfer: Array<MessagePort> }> = [];
-  frameWindow.postMessage = ((message: unknown, _origin: string, transfer: Array<MessagePort>) =>
-    posted.push({ message, transfer })) as typeof frameWindow.postMessage;
+  frameWindow.postMessage = (message: unknown, originOrOptions?: string | WindowPostMessageOptions, transfer?: Transferable[]) => {
+    const transferred = typeof originOrOptions === "object" ? originOrOptions.transfer : transfer;
+    const ports = (transferred ?? []).filter((item): item is MessagePort => "postMessage" in item);
+    posted.push({ message, transfer: ports });
+  };
   await act(async () => {
     window.dispatchEvent(
       new MessageEvent("message", {

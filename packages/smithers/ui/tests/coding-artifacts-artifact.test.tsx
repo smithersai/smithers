@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { afterEach, describe, expect, test } from "bun:test";
+import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
@@ -30,6 +31,7 @@ afterEach(async () => {
   container?.remove();
   container = undefined;
   delete document.documentElement.dataset.theme;
+  removeDarkThemeStyles();
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -87,20 +89,22 @@ describe("Artifact family", () => {
   });
 
   test("renders under data-theme=dark", async () => {
+    installDarkThemeStyles();
     document.documentElement.dataset.theme = "dark";
     await render(
       <Artifact>
         <ArtifactContent>dark</ArtifactContent>
       </Artifact>,
     );
-    expect(container!.querySelector('[data-slot="artifact"]')!.textContent).toContain("dark");
+    const element = container!.querySelector<HTMLElement>("[data-slot=artifact]")!;
+    expect(getComputedStyle(element).backgroundColor).toBe("#131b1a");
   });
 });
 
 describe("Snippet", () => {
   test("renders code and routes copies through onCopyCode", async () => {
     const copied: string[] = [];
-    await render(<Snippet code="pnpm add react" language="sh" onCopyCode={(code) => copied.push(code)} />);
+    await render(<Snippet code="pnpm add react" language="sh" onCopyCode={(code) => void copied.push(code)} />);
     expect(container!.querySelector(".sui-snippet-code")!.textContent).toBe("pnpm add react");
     const button = container!.querySelector('[data-slot="snippet-copy"]') as HTMLButtonElement;
     await act(async () => button.click());

@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { afterEach, describe, expect, test } from "bun:test";
+import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { parseStackTrace, StackTrace, type StackFrameData } from "../src/artifacts/StackTrace";
@@ -18,6 +19,7 @@ afterEach(async () => {
   container?.remove();
   container = undefined;
   delete document.documentElement.dataset.theme;
+  removeDarkThemeStyles();
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -97,8 +99,10 @@ describe("StackTrace", () => {
   });
 
   test("renders under data-theme=dark", async () => {
+    installDarkThemeStyles();
     document.documentElement.dataset.theme = "dark";
     await render(<StackTrace frames={frames} defaultOpen />);
-    expect(container!.querySelector('[data-slot="stack-trace"]')).not.toBeNull();
+    const element = container!.querySelector<HTMLElement>("[data-slot=stack-trace]")!;
+    expect(getComputedStyle(element).backgroundColor).toBe("#131b1a");
   });
 });

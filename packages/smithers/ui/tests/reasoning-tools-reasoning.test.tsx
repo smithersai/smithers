@@ -48,7 +48,7 @@ describe("Reasoning composed anatomy", () => {
     const content = container!.querySelector('[data-slot="reasoning-content"]')!;
     expect(content.getAttribute("role")).toBe("region");
     expect(content.textContent).toContain("Provider summary text");
-    expect(content.id).toBe(trigger.getAttribute("aria-controls"));
+    expect(trigger.getAttribute("aria-controls")).toBe(content.id);
   });
 
   test("composed mode honors controlled open", () => {

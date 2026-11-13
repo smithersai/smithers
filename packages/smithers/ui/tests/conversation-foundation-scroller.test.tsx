@@ -293,6 +293,7 @@ describe("MessageScroller compound", () => {
     class RecordingIntersectionObserver implements IntersectionObserver {
       readonly root: Element | Document | null;
       readonly rootMargin = "0px";
+      readonly scrollMargin = "0px";
       readonly thresholds = [0, 0.5];
       constructor(_callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
         this.root = options?.root ?? null;

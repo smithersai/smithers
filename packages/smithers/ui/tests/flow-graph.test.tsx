@@ -65,7 +65,7 @@ test("graph shows every state, typed edges, selection and inspector keyboard act
   await render(<FlowGraph nodes={nodes} edges={[...edges, { from: "absent", to: "a" }]} selected="b" onSelect={(id) => selected.push(id)} onInspect={(id) => inspected.push(id)} />);
   expect(all("[data-node]")).toHaveLength(5);
   expect(get('[data-node="c"]').getAttribute("aria-label")).toBe("Check, Failed");
-  expect(get('[data-edge-kind="failure"]')).toBeDefined();
+  expect(get('[data-edge-kind="failure"]')).not.toBeNull();
   await click('[data-node="a"]');
   await key('[data-node="b"]', "Enter");
   await key('[data-node="b"]', " ");
@@ -78,18 +78,46 @@ test("graph shows every state, typed edges, selection and inspector keyboard act
   await act(() => get('[data-node="a"]').dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
   expect(selected).toEqual(["a", "b", "b", "a", "c"]);
   expect(inspected).toEqual(["b", "b", "b", "b", "a"]);
-  await click('[aria-label="Zoom in"]'); await click('[aria-label="Zoom out"]');
-  await act(() => all("button").find((b) => b.textContent === "Fit")!.click());
-  await render(<FlowGraph nodes={nodes} edges={edges} />);
-  await key('svg', "Enter"); await key('svg', "ArrowRight"); await key('[data-node="a"]', "Enter"); await click('[data-node="a"]');
-  await act(() => get('[data-node="a"]').dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-  await act(() => get('svg').dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 10, clientY: 10 })));
-  await act(() => get('[data-node="a"]').dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
-  await act(() => get('svg').dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 10, clientY: 10 })));
-  await act(() => get('svg').dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 20, clientY: 30 })));
-  await act(() => get('svg').dispatchEvent(new PointerEvent("pointerup", { bubbles: true })));
-  await act(() => get('svg').dispatchEvent(new PointerEvent("pointercancel", { bubbles: true })));
-  await render(<FlowGraph nodes={[]} edges={[]} />); await key('svg', "ArrowLeft");
+});
+test("graph zoom, pan, pointer completion and Fit update the camera", async () => {
+  await render(<FlowGraph nodes={[nodes[0]!]} edges={[]} />);
+  const viewBox = () => get("svg").getAttribute("viewBox")!.split(" ").map(Number);
+  const expectView = (expected: number[]) => {
+    const actual = viewBox();
+    expect(actual).toHaveLength(4);
+    expected.forEach((value, index) => expect(actual[index]).toBeCloseTo(value, 8));
+  };
+  const pointer = (selector: string, type: string, x: number, y: number) =>
+    act(() => get(selector).dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, pointerId: 1 })));
+  expectView([0, 0, 248, 136]);
+  await click('[aria-label="Zoom in"]');
+  expectView([0, 0, 198.4, 108.8]);
+  await click('[aria-label="Zoom out"]');
+  expectView([0, 0, 248, 136]);
+  // The DOM emulator reports a zero-size viewport, clamped to one CSS pixel.
+  await pointer("svg", "pointermove", 10, 10);
+  expectView([0, 0, 248, 136]);
+  await pointer('[data-node="a"]', "pointerdown", 10, 10);
+  await pointer("svg", "pointermove", 20, 30);
+  expectView([0, 0, 248, 136]);
+  await pointer("svg", "pointerdown", 10, 10);
+  await pointer("svg", "pointermove", 20, 30);
+  expectView([-2480, -2720, 248, 136]);
+  await pointer("svg", "pointerup", 20, 30);
+  await pointer("svg", "pointermove", 40, 50);
+  expectView([-2480, -2720, 248, 136]);
+  await pointer("svg", "pointerdown", 20, 30);
+  await pointer("svg", "pointercancel", 20, 30);
+  await pointer("svg", "pointermove", 40, 50);
+  expectView([-2480, -2720, 248, 136]);
+  await click('[aria-label="Zoom in"]');
+  expectView([-2480, -2720, 198.4, 108.8]);
+  await act(() => all("button").find((button) => button.textContent === "Fit")!.click());
+  expectView([0, 0, 248, 136]);
+  await render(<FlowGraph nodes={[]} edges={[]} />);
+  await key("svg", "ArrowLeft");
+  expect(all("[data-node]")).toHaveLength(0);
+  expectView([0, 0, 32, 32]);
 });
 const ticks = [1, 3, 7].map((seq, i) => ({ seq, emittedAtMs: seq * 100, eventType: i === 1 ? "flows.engine.node-settled" : "other" }));
 test("scrubber walks sparse sequences, step boundaries and live without mutating history", async () => {
@@ -116,13 +144,26 @@ test("scrubber walks sparse sequences, step boundaries and live without mutating
   expect((get("input") as HTMLInputElement).disabled).toBe(true);
 });
 const value = { text: '{"ok":true}', bytes: 11, clipped: false };
+const inputValue = { text: '{"request":"load"}', bytes: 18, clipped: false };
 const step = { id: "a", label: "Load", kind: "action", state: "completed" as const, startedAtMs: 100, endedAtMs: 300, depth: 1, attempts: 2, failedAttempts: 1 };
 test("inspector shows values as text, logs, timing, attempts and waits", async () => {
-  await render(<StepInspector step={step} input={value} output={value} logs={[value]} attempts={[{ attempt: 1, state: "failed", error: "unavailable", startedAtMs: 100, finishedAtMs: 200 }, { attempt: 2, state: "running", error: null, startedAtMs: 200, finishedAtMs: null }]} now={400} wait={{ kind: "human", sinceMs: 100, wakeAtMs: null }} actions={<button>Open</button>} />);
+  await render(<StepInspector step={step} input={inputValue} output={value} logs={[{ text: "Loading records", bytes: 15, clipped: false }]} attempts={[{ attempt: 1, state: "failed", error: "unavailable", startedAtMs: 100, finishedAtMs: 200 }, { attempt: 2, state: "running", error: null, startedAtMs: 200, finishedAtMs: null }]} now={400} wait={{ kind: "human", sinceMs: 100, wakeAtMs: null }} actions={<button>Open</button>} />);
   expect(get('[data-slot="step-inspector"]').textContent).toContain("200 ms");
-  for (const tab of ["Input", "Logs", "Attempts", "Output"]) {
+  for (const [tab, next, text] of [
+    ["Input", "Logs", "Loading records"],
+    ["Logs", "Attempts", "unavailable"],
+    ["Attempts", "Output", "Output"],
+    ["Output", "Input", "request"],
+  ] as const) {
     await act(() => all('[role="tab"]').find((t) => t.textContent!.startsWith(tab))!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })));
-    await key(`[role="tab"][data-state="active"]`, "ArrowRight");
+    expect(get('[role="tab"][data-state="active"]').textContent).toStartWith(tab);
+    await key('[role="tab"][data-state="active"]', "ArrowRight");
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const active = get('[role="tab"][aria-selected="true"]');
+    expect(active.textContent).toStartWith(next);
+    const panel = get('[role="tabpanel"][data-state="active"]');
+    expect(panel.getAttribute("aria-labelledby")).toBe(active.id);
+    expect(panel.textContent).toContain(text);
   }
   await render(<StepInspector step={{ ...step, state: "pending" }} input={null} output={null} logs={[]} attempts={[]} now={400} />);
   expect(get('.sui-step-inspector-time').textContent).toContain("0 ms");
@@ -140,7 +181,10 @@ test("waterfall accepts attempt segments, waits, children and replay cursor with
  test("failed inspection exposes its recorded reason before changing tabs", async () => {
   await render(<StepInspector step={{ ...step, state: "failed" }} input={null} output={null} logs={[]} attempts={[{ attempt: 1, state: "failed", error: "Provider unavailable", startedAtMs: 100, finishedAtMs: 200 }]} now={400} />);
   expect(get('[data-slot="span-detail"]').textContent).toContain("Provider unavailable");
-  expect(get('[role="tabpanel"][data-state="active"]').getAttribute("data-state")).toBe("active");
+  expect(get('[role="tab"][aria-selected="true"]').textContent).toBe("Output");
+  const panel = get('[role="tabpanel"][data-state="active"]');
+  expect(panel.getAttribute("aria-labelledby")).toBe(get('[role="tab"][aria-selected="true"]').id);
+  expect(panel.textContent).toBe("");
 });
 
 test("a skipped graph node uses the inspector's state word", async () => {

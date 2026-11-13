@@ -68,7 +68,7 @@ describe("ChainOfThought compound mode", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     const detail = step.querySelector(".sui-cot-step-detail")!;
     expect(detail.getAttribute("role")).toBe("region");
-    expect(detail.id).toBe(trigger.getAttribute("aria-controls"));
+    expect(trigger.getAttribute("aria-controls")).toBe(detail.id);
     expect(trigger.id).toBeTruthy();
     expect(detail.getAttribute("aria-labelledby")).toBe(trigger.id);
     expect(detail.textContent).toContain("Edited 3 files");

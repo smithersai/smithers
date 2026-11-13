@@ -185,23 +185,29 @@ describe("<Terminal> headless rendering", () => {
   });
 
   test("follows reduced-motion preference changes while mounted", async () => {
-    const listeners = new Set<(event: { matches: boolean }) => void>();
-    window.matchMedia = ((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener() {},
-      removeListener() {},
-      addEventListener(_type: string, listener: (event: { matches: boolean }) => void) {
-        listeners.add(listener);
-      },
-      removeEventListener(_type: string, listener: (event: { matches: boolean }) => void) {
-        listeners.delete(listener);
-      },
-      dispatchEvent() {
-        return true;
-      },
-    })) as typeof window.matchMedia;
+    const listeners = new Set<EventListenerOrEventListenerObject>();
+    const mediaQueries: MediaQueryList[] = [];
+    window.matchMedia = (query: string): MediaQueryList => {
+      const events = new EventTarget();
+      const add = events.addEventListener.bind(events), remove = events.removeEventListener.bind(events);
+      const media = Object.assign(events, {
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener() {},
+        removeListener() {},
+        addEventListener(type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
+          if (listener) listeners.add(listener);
+          add(type, listener, options);
+        },
+        removeEventListener(type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | EventListenerOptions) {
+          if (listener) listeners.delete(listener);
+          remove(type, listener, options);
+        },
+      });
+      mediaQueries.push(media);
+      return media;
+    };
     let term: XTerminal | null = null;
     await render(<Terminal cursorBlink onReady={(next) => (term = next)} />);
     const ready = await waitFor(() => term);
@@ -209,13 +215,13 @@ describe("<Terminal> headless rendering", () => {
     expect(listeners.size).toBeGreaterThan(0);
 
     await act(async () => {
-      for (const listener of listeners) listener({ matches: true });
+      for (const media of mediaQueries) media.dispatchEvent(new MediaQueryListEvent("change", { matches: true }));
       await Promise.resolve();
     });
     expect(ready.options.cursorBlink).toBe(false);
 
     await act(async () => {
-      for (const listener of listeners) listener({ matches: false });
+      for (const media of mediaQueries) media.dispatchEvent(new MediaQueryListEvent("change", { matches: false }));
       await Promise.resolve();
     });
     expect(ready.options.cursorBlink).toBe(true);
@@ -231,7 +237,7 @@ describe("<Terminal> startup failure", () => {
   test("a module load failure reports terminal-start-failed and renders a visible alert", async () => {
     const cause = new Error("chunk load failed");
     const errors: TerminalError[] = [];
-    await render(<Terminal loadModules={() => Promise.reject(cause)} onError={(error) => errors.push(error)} />);
+    await render(<Terminal loadModules={() => Promise.reject(cause)} onError={(error) => { expect("code" in error).toBe(true); if ("code" in error) errors.push(error); }} />);
     const alert = await waitFor(() => container!.querySelector<HTMLElement>('[data-slot="terminal-error"]'));
     expect(alert.getAttribute("role")).toBe("alert");
     expect(container!.querySelector('[data-slot="terminal"]')!.getAttribute("data-state")).toBe("failed");
@@ -246,7 +252,7 @@ describe("<Terminal> startup failure", () => {
         stream={() => {
           throw cause;
         }}
-        onError={(error) => errors.push(error)}
+        onError={(error) => { expect("code" in error).toBe(true); if ("code" in error) errors.push(error); }}
       />,
     );
     await waitFor(() => errors.length > 0);

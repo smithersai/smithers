@@ -129,7 +129,7 @@
     "src/"
   ],
   "scripts": {
-    "check": "vibelang -p tsconfig.json --noEmit",
+    "check": "vibelang -p tsconfig.json --noEmit && vibelang -p tsconfig.test.json --noEmit",
     "test": "bun test tests"
   },
   "dependencies": {

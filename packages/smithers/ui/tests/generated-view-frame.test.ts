@@ -34,7 +34,7 @@ const connect = async (opened: ReturnType<typeof frame>, result: Record<string, 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 /** A click as a person makes one: trusted. */
-const click = (opened: ReturnType<typeof frame>, element: Element) => {
+const click = (opened: ReturnType<typeof frame>, element: ReturnType<ReturnType<typeof frame>["document"]["createElement"]>) => {
   const event = new opened.window.MouseEvent("click", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "isTrusted", { value: true });
   element.dispatchEvent(event as never);
@@ -140,7 +140,7 @@ describe("the frame runtime", () => {
     click(opened, clone!);
     click(opened, cancel!);
     click(opened, nothing!);
-    const enter = (target: Element, key = "Enter", trusted = true) => {
+    const enter = (target: ReturnType<ReturnType<typeof frame>["document"]["createElement"]>, key = "Enter", trusted = true) => {
       const event = new opened.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
       if (trusted) Object.defineProperty(event, "isTrusted", { value: true });
       target.dispatchEvent(event as never);

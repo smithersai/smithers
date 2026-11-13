@@ -151,7 +151,7 @@ describe("AgentStatusPill", () => {
     expect(button.dataset.tracking).toBe("answer-status");
     expect(button.tabIndex).toBe(-1);
     expect(button.style.marginLeft).toBe("7px");
-    expect(host).toBe(button);
+    expect(host === button).toBe(true);
     await act(async () => {
       button.focus();
       button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));

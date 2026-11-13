@@ -382,7 +382,7 @@ describe("RepositoryHome: hero", () => {
 
   test("Copy puts the install command on the clipboard the host gives, says Copied, and says when it failed", async () => {
     const copied: Array<string> = [];
-    await render(<RepositoryHome sections={one([hero])} onCopy={(text) => void copied.push(text)} />);
+    await render(<RepositoryHome sections={one([hero])} onCopy={(text) => { expect(typeof text).toBe("string"); if (typeof text === "string") copied.push(text); }} />);
     const copy = block("hero")!.querySelector<HTMLButtonElement>(".sui-rh-copy")!;
     expect(copy.getAttribute("aria-label")).toBe("Copy npm install effect");
     await act(async () => copy.click());
@@ -412,7 +412,7 @@ describe("RepositoryHome: code", () => {
 
   test("a figure named by its file, with its title, the source as text, colored, and Copy", async () => {
     const copied: Array<string> = [];
-    await render(<RepositoryHome sections={one([code])} onCopy={(text) => void copied.push(text)} />);
+    await render(<RepositoryHome sections={one([code])} onCopy={(text) => { expect(typeof text).toBe("string"); if (typeof text === "string") copied.push(text); }} />);
     const drawn = block("code")!;
     expect(drawn.querySelector("h3")!.textContent).toBe("Example");
     const figure = drawn.querySelector("figure")!;
@@ -537,7 +537,7 @@ describe("RepositoryHome: cards", () => {
   });
 
   test("four columns for a count four divides and three doesn't, else three", async () => {
-    const cards = (count: number): Home.Block => ({ type: "cards", cards: Array.from({ length: count }, (_, index) => ({ title: `c${index}` })) });
+    const cards = (count: number): Home.Block => ({ type: "cards", cards: [{ title: "c0" }, ...Array.from({ length: count - 1 }, (_, index) => ({ title: `c${index + 1}` }))] });
     const columns = [];
     for (const count of [1, 4, 6, 8, 12]) {
       await render(<RepositoryHome sections={one([cards(count)])} />);

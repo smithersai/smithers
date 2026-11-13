@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { afterEach, describe, expect, test } from "bun:test";
+import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
@@ -30,6 +31,7 @@ afterEach(async () => {
   container?.remove();
   container = undefined;
   delete document.documentElement.dataset.theme;
+  removeDarkThemeStyles();
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -203,8 +205,10 @@ describe("TestResults (model mode)", () => {
   });
 
   test("renders under data-theme=dark", async () => {
+    installDarkThemeStyles();
     document.documentElement.dataset.theme = "dark";
     await render(<TestResults suites={suites} />);
-    expect(container!.querySelector('[data-slot="test-results"]')).not.toBeNull();
+    const element = container!.querySelector<HTMLElement>("[data-slot=test-results]")!;
+    expect(getComputedStyle(element).backgroundColor).toBe("#131b1a");
   });
 });

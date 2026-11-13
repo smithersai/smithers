@@ -68,7 +68,7 @@ afterEach(async () => {
   if (originalClipboardDescriptor) {
     Object.defineProperty(navigator, "clipboard", originalClipboardDescriptor);
   } else {
-    delete (navigator as Navigator & { clipboard?: Clipboard; }).clipboard;
+    Reflect.deleteProperty(navigator, "clipboard");
   }
 });
 

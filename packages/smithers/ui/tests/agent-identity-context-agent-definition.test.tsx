@@ -217,7 +217,7 @@ describe("AgentCard", () => {
 
   test("host onClick composes with onSelect instead of replacing it", async () => {
     const calls: string[] = [];
-    const onClick = (event: MouseEvent<HTMLDivElement>) => {
+    const onClick = (event: MouseEvent<HTMLButtonElement>) => {
       calls.push(event.currentTarget.tagName === "BUTTON" ? "click" : "unexpected");
     };
     await render(<AgentCard name="coder" onSelect={() => calls.push("select")} onClick={onClick} />);

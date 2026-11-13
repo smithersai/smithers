@@ -43,8 +43,8 @@ for (const block of [
         ? Effect.fail(new Error("permission denied: private diagnostic"))
         : Effect.tryPromise({ try: () => navigator.clipboard.writeText(text), catch: () => new Error("clipboard unavailable") }),
     });
-    const onCopy = (text: string) => Effect.runPromise(
-      Effect.flatMap(Clipboard, (service) => service.write(text)).pipe(Effect.provideService(Clipboard, clipboard)),
+    const onCopy = (text: string | React.ClipboardEvent<HTMLElement>) => Effect.runPromise(
+      Effect.flatMap(Clipboard, (service) => typeof text === "string" ? service.write(text) : Effect.fail(new Error("expected copied text"))).pipe(Effect.provideService(Clipboard, clipboard)),
     );
     await render(<RepositoryHome sections={sections([block])} onCopy={onCopy} />);
     const button = container!.querySelector<HTMLButtonElement>(".sui-rh-copy")!;
@@ -83,7 +83,7 @@ for (const intercept of [false, true]) {
       <RepositoryHome
         sections={sections([
           { type: "prompt", flow: selected },
-          { type: "app", flow: selected, title: "Release" },
+          { type: "app", flow: selected, title: "Release", picture: "review" },
           { type: "flows" },
           { type: "prompt" },
         ])}

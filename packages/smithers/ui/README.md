@@ -115,14 +115,15 @@ resolve, and no file in this package may name the unscoped specifier.
 
 ```sh
 pnpm --filter @smthrs/ui test    # bun test tests
-pnpm --filter @smthrs/ui run check    # tsc -p tsconfig.json --noEmit
+pnpm --filter @smthrs/ui run check    # vibelang checks src/ and tests/
 ```
 
 Both are declared in `PACKAGE.ts` as `//packages/smithers/ui:unitTests` and
-`//packages/smithers/ui:check`. This package does not run vitest, coverage thresholds,
-eslint or dprint; `PACKAGE.ts` records the package-specific tooling boundary.
+`//packages/smithers/ui:check`. The latter depends on `checkTests`, which checks
+all of `src/` and `tests/` using `tsconfig.test.json`. This package does not run
+vitest, coverage thresholds, eslint or dprint; `PACKAGE.ts` records the package-specific tooling boundary.
 
-Every export condition points at a `.ts` or `.tsx` source, so `tsc --noEmit` is
+Every export condition points at a `.ts` or `.tsx` source, so `vibelang --noEmit` is
 the only thing between a type error and a consumer's build.
 
 Four suites hold the invariants the docs promise:

@@ -63,7 +63,7 @@ describe("ModelSelector", () => {
           <SelectValue placeholder="Custom" />
         </ModelSelectorTrigger>
         <ModelSelectorContent>
-          <ModelSelectorItem option={{ id: "x", name: "X-Ray", provider: "acme", description: "Fast" }} />
+          <ModelSelectorItem value="x" option={{ id: "x", name: "X-Ray", provider: "acme", description: "Fast" }} />
         </ModelSelectorContent>
       </ModelSelector>,
     );
@@ -83,7 +83,7 @@ describe("ModelSelector", () => {
           <SelectValue placeholder="Models" />
         </ModelSelectorTrigger>
         <ModelSelectorContent>
-          <ModelSelectorItem option={{ id: "x", name: "X-Ray", provider: "acme", description: "Fast" }} />
+          <ModelSelectorItem value="x" option={{ id: "x", name: "X-Ray", provider: "acme", description: "Fast" }} />
         </ModelSelectorContent>
       </Select>,
     );
@@ -101,7 +101,7 @@ describe("ModelSelector", () => {
           <SelectValue placeholder="Models" />
         </ModelSelectorTrigger>
         <ModelSelectorContent>
-          <ModelSelectorItem option={{ id: "x", name: "X-Ray", disabled: true }} />
+          <ModelSelectorItem value="x" option={{ id: "x", name: "X-Ray", disabled: true }} />
         </ModelSelectorContent>
       </Select>,
     );

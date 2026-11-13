@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { afterEach, describe, expect, test } from "bun:test";
+import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
@@ -33,6 +34,7 @@ afterEach(async () => {
   container?.remove();
   container = undefined;
   delete document.documentElement.dataset.theme;
+  removeDarkThemeStyles();
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -156,8 +158,10 @@ describe("ChangeSummary", () => {
   });
 
   test("renders under data-theme=dark", async () => {
+    installDarkThemeStyles();
     document.documentElement.dataset.theme = "dark";
     await render(<ChangeSummary additions={1} deletions={0} filesChanged={1} />);
-    expect(container!.querySelector('[data-slot="change-summary"]')).not.toBeNull();
+    const element = container!.querySelector<HTMLElement>(".sui-changesum-add")!;
+    expect(getComputedStyle(element).color).toBe("#7fbfb3");
   });
 });

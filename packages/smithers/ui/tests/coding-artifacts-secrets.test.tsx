@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { afterEach, describe, expect, test } from "bun:test";
+import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { EnvironmentVariable, EnvironmentVariables } from "../src/artifacts/EnvironmentVariables";
@@ -18,6 +19,7 @@ afterEach(async () => {
   container?.remove();
   container = undefined;
   delete document.documentElement.dataset.theme;
+  removeDarkThemeStyles();
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -61,7 +63,7 @@ describe("SecretField", () => {
 
   test("reveal toggles via aria-pressed and reports through onRevealedChange", async () => {
     const changes: boolean[] = [];
-    await render(<SecretField value="s3cr3t" onRevealedChange={(r) => changes.push(r)} onCopy={() => {}} />);
+    await render(<SecretField value="s3cr3t" onRevealedChange={(r) => void changes.push(r)} onCopy={() => {}} />);
     const toggle = container!.querySelector('[data-slot="secret-field-toggle"]') as HTMLButtonElement;
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
     expect(toggle.getAttribute("aria-label")).toBe("Reveal secret");
@@ -83,7 +85,7 @@ describe("SecretField", () => {
 
   test("copy routes the value through onCopy WITHOUT revealing", async () => {
     const copied: string[] = [];
-    await render(<SecretField value="super-secret-value" onCopy={(v) => copied.push(v)} />);
+    await render(<SecretField value="super-secret-value" onCopy={(v) => void copied.push(v)} />);
     const copy = container!.querySelector('[data-slot="secret-field-copy"]') as HTMLButtonElement;
     await act(async () => copy.click());
     expect(copied).toEqual(["super-secret-value"]);
@@ -263,8 +265,10 @@ describe("EnvironmentVariables", () => {
   });
 
   test("renders under data-theme=dark", async () => {
+    installDarkThemeStyles();
     document.documentElement.dataset.theme = "dark";
     await render(<EnvironmentVariables variables={[{ name: "A", value: "1" }]} />);
-    expect(container!.querySelector('[data-slot="environment-variables"]')).not.toBeNull();
+    const element = container!.querySelector<HTMLElement>("[data-slot=environment-variables]")!;
+    expect(getComputedStyle(element).backgroundColor).toBe("#131b1a");
   });
 });

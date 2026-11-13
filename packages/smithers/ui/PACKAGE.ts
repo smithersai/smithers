@@ -13,8 +13,9 @@
  * synthesis (`PackageDefaults` skips a directory holding a `PACKAGE.ts`) and puts
  * its real gates in the graph instead of targets that cannot pass.
  *
- * Two of the four standard gates are honored here: the `bun test` suite and a
- * `vibelang --noEmit` typecheck over `src/`. The eslint and dprint halves are NOT
+ * Two of the four standard gates are honored here: the `bun test` suite and
+ * `vibelang --noEmit` typechecks over `src/` and `tests/`. The eslint and
+ * dprint halves are NOT
  * declared, because this package carries neither an `eslint.config.js` nor a
  * `dprint.json` and both tools are per-package devDependencies elsewhere in the
  * workspace; wiring them requires package tooling that this target does not
@@ -30,6 +31,22 @@ const sources = [
   Smithers.glob("//packages/smithers/ui/src/**/*.ts"),
   Smithers.glob("//packages/smithers/ui/src/**/*.tsx")
 ]
+
+/** Test sources checked before the source check can pass. */
+const testSources = [
+  Smithers.glob("//packages/smithers/ui/tests/**/*.ts"),
+  Smithers.glob("//packages/smithers/ui/tests/**/*.tsx")
+]
+
+/** Typecheck test fixtures and component calls with the same strict options. */
+const checkTests = Smithers.Typecheck({
+  srcs: [...sources, ...testSources],
+  deps: [],
+  tsconfig: Smithers.file("tsconfig.test.json"),
+  buildMode: false,
+  incremental: false,
+  cwd
+})
 
 /**
  * What generated views are built from beyond `src/`: the script that
@@ -59,7 +76,7 @@ const cssSources = Smithers.Target.subtree("//packages/smithers/ui/ui-css/...", 
  */
 const check = Smithers.Typecheck({
   srcs: sources,
-  deps: [],
+  deps: [checkTests],
   tsconfig: Smithers.file("tsconfig.json"),
   buildMode: false,
   incremental: false,
@@ -79,8 +96,7 @@ const unitTests = Smithers.NodeTest({
   srcs: [
     ...sources,
     ...generatedViewInputs,
-    Smithers.glob("//packages/smithers/ui/tests/**/*.ts"),
-    Smithers.glob("//packages/smithers/ui/tests/**/*.tsx")
+    ...testSources
   ],
   deps: [viewsSources, cssSources],
   cwd
@@ -328,6 +344,7 @@ export const Package = Smithers.Package({
   targets: {
     solidCodegenInputs,
     check,
+    checkTests,
     docs,
     docsFiles,
     sourceFiles,

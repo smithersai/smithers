@@ -36,7 +36,7 @@ const file = (overrides: Partial<DiffFile> = {}): DiffFile => ({
   ...overrides,
 });
 
-const diff = (files: DiffFile[]): Diff => ({ files });
+const diff = (files: DiffFile[]): Diff => ({ id: "diff", title: "Changes", files, totalAdd: 0, totalDel: 0 });
 
 describe("parseHunks line accounting", () => {
   test("a newline-terminated patch produces no phantom trailing context row", () => {

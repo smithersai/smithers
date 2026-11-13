@@ -91,7 +91,7 @@ describe("PromptInput", () => {
   test("uncontrolled input submits text on Enter and clears", async () => {
     const submitted: PromptInputMessage[] = [];
     await render(
-      <PromptInput onSubmit={(message) => submitted.push(message)}>
+      <PromptInput onSubmit={(message) => void submitted.push(message)}>
         <PromptInputTextarea />
       </PromptInput>,
     );
@@ -107,7 +107,7 @@ describe("PromptInput", () => {
   test("controlled value round-trips through onValueChange without self-managing", async () => {
     const seen: string[] = [];
     const view = (value: string) => (
-      <PromptInput value={value} onValueChange={(next) => seen.push(next)} onSubmit={() => {}}>
+      <PromptInput value={value} onValueChange={(next) => void seen.push(next)} onSubmit={() => {}}>
         <PromptInputTextarea />
       </PromptInput>
     );
@@ -123,7 +123,7 @@ describe("PromptInput", () => {
   test("Shift+Enter inserts a newline instead of submitting", async () => {
     const submitted: PromptInputMessage[] = [];
     await render(
-      <PromptInput defaultValue="line one" onSubmit={(message) => submitted.push(message)}>
+      <PromptInput defaultValue="line one" onSubmit={(message) => void submitted.push(message)}>
         <PromptInputTextarea />
       </PromptInput>,
     );
@@ -135,7 +135,7 @@ describe("PromptInput", () => {
   test("mod-enter submitKey makes bare Enter a newline and mod+Enter submit", async () => {
     const submitted: PromptInputMessage[] = [];
     await render(
-      <PromptInput defaultValue="draft" submitKey="mod-enter" onSubmit={(message) => submitted.push(message)}>
+      <PromptInput defaultValue="draft" submitKey="mod-enter" onSubmit={(message) => void submitted.push(message)}>
         <PromptInputTextarea />
       </PromptInput>,
     );
@@ -259,7 +259,7 @@ describe("PromptInput", () => {
         return <PromptInputTextarea />;
       }
       await render(
-        <PromptInput onSubmit={(message) => submitted.push(message)} multiple>
+        <PromptInput onSubmit={(message) => void submitted.push(message)} multiple>
           <Harness />
         </PromptInput>,
       );
@@ -333,7 +333,7 @@ describe("PromptInput", () => {
         defaultValue="hi"
         defaultAttachments={seed}
         status={status}
-        onSubmit={(message) => submitted.push(message)}
+        onSubmit={(message) => void submitted.push(message)}
       >
         <PromptInputTextarea />
       </PromptInput>
@@ -576,7 +576,7 @@ for (const submitKey of ["enter", "mod-enter"] as const) {
     test(`PromptInput ${submitKey} keeps IME confirmation as input: ${JSON.stringify(ime)}`, async () => {
       const submitted: PromptInputMessage[] = [];
       await render(
-        <PromptInput defaultValue="draft" submitKey={submitKey} onSubmit={(message) => submitted.push(message)}>
+        <PromptInput defaultValue="draft" submitKey={submitKey} onSubmit={(message) => void submitted.push(message)}>
           <PromptInputTextarea />
         </PromptInput>,
       );

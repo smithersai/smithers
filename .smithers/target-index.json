@@ -90924,6 +90924,49 @@
       }
     ],
     "outputs": [],
+    "dependencies": [
+      "//packages/smithers/ui:checkTests"
+    ],
+    "source": {
+      "file": "packages/smithers/ui/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/ui:checkTests",
+    "package": "packages/smithers/ui",
+    "name": "checkTests",
+    "rule": "Typecheck",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/ui/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/ui/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/ui/tests/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/ui/tests/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/tsconfig.test.json"
+      }
+    ],
+    "outputs": [],
     "dependencies": [],
     "source": {
       "file": "packages/smithers/ui/PACKAGE.ts"
