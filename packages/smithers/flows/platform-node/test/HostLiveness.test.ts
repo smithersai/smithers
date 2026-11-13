@@ -33,8 +33,8 @@ describe("HostLiveness.isAlive", () => {
     Effect.gen(function*() {
       const isAlive = HostLiveness.isAlive({ hostId: "engine" })
 
-      // Pid 0 is the caller's own process group on POSIX and never a process,
-      // so the probe is asked about a pid that cannot be a running owner.
+      // This pid exceeds the supported kernels' pid ceilings, so the
+      // native probe reports ESRCH rather than a running owner.
       expect(yield* isAlive({ hostId: "engine", pid: 2_147_483_646 })).toBe(false)
     }))
 

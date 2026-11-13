@@ -111,6 +111,7 @@ describe("a signalled host", () => {
     // The handler shuts the runtime down; it does not let the default
     // behavior kill the process, which would leave the row `running`.
     expect(result.signal).toBeNull()
+    expect(result.code).toBe(0)
     expect(
       readBack(
         filename,

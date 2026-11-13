@@ -25,7 +25,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
 })
 
 /**
- * The atomic filesystem and Windows job suites run real helper processes and inject faults as
+ * The native host suites run real processes and inject faults as
  * parameters; module mocks and stubbed globals prove behaviour against a double.
  *
  * @since 1.0.0
@@ -35,7 +35,14 @@ const importRules = ImportRules({
   cwd,
   rules: [{
     kind: "forbidCalls",
-    files: ["test/AtomicFileSystem*.test.ts", "test/WindowsProcessJob.test.ts"],
+    files: [
+      "test/AtomicFileSystem*.test.ts",
+      "test/WindowsProcessJob.test.ts",
+      "test/NativeProcessOptions.test.ts",
+      "test/PipedProcess.test.ts",
+      "test/EgressHttpClient.test.ts",
+      "test/NodeRuntime.test.ts"
+    ],
     callees: ["vi.mock", "vi.doMock", "vi.spyOn", "vi.stubGlobal", "vi.fn", "vi.hoisted", "jest.mock"],
     because: "TEST-2/TEST-7: no mocks; unhappy paths inject a faulty seam, happy paths run the real helper."
   }]

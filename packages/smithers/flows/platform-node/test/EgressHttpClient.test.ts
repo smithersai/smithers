@@ -17,6 +17,7 @@ import * as GrantStore from "@smthrs/kernel/GrantStore"
 import { Destination, ResolveHost } from "@smthrs/kernel/HttpClient"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Effect } from "effect"
+import * as Context from "effect/Context"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as HttpClient from "effect/http/HttpClient"
@@ -27,6 +28,7 @@ import type { AddressInfo } from "node:net"
 import type { Duplex } from "node:stream"
 import { describe, expect, it } from "vitest"
 import * as EgressHttpClient from "../src/EgressHttpClient.ts"
+import { AgentFactory } from "../src/internal/EgressAgent.ts"
 
 interface Listener {
   readonly url: string
@@ -349,7 +351,8 @@ const pinnedReach = (
   url: string,
   destination: { readonly origin: string; readonly addresses: ReadonlyArray<string> },
   headers: Record<string, string> = {},
-  timeout: "5 seconds" | "100 millis" = "5 seconds"
+  timeout: "5 seconds" | "100 millis" = "5 seconds",
+  agentFactory = Context.get(Context.empty(), AgentFactory)
 ) =>
   Effect.runPromise(
     Effect.result(Effect.flatMap(HttpClient.HttpClient, (client) =>
@@ -357,7 +360,8 @@ const pinnedReach = (
         Effect.timeout(timeout)
       ))).pipe(
         Effect.provideService(Destination, destination),
-        Effect.provide(EgressHttpClient.layer(environment))
+        Effect.provide(EgressHttpClient.layer(environment)),
+        Effect.provideService(AgentFactory, agentFactory)
       )
   )
 
@@ -488,25 +492,40 @@ describe("authorized destination connections", () => {
     const undici = (await import("undici/index.js")).default
     const Original = undici.EnvHttpProxyAgent
     let family: 4 | 6 = 4
-    undici.EnvHttpProxyAgent = class extends Original {
-      constructor(options: ConstructorParameters<typeof Original>[0]) {
-        const connect = options?.connect
-        super(
-          connect === undefined || typeof connect === "function"
-            ? options
-            : { ...options, connect: { ...connect, family } as typeof connect }
-        )
-      }
-    }
+    const agentFactory = (_undici: unknown, options: ConstructorParameters<typeof Original>[0]) =>
+      new class extends Original {
+        constructor(options: ConstructorParameters<typeof Original>[0]) {
+          const connect = options?.connect
+          super(
+            connect === undefined || typeof connect === "function"
+              ? options
+              : { ...options, connect: { ...connect, family } as typeof connect }
+          )
+        }
+      }(options)
     const origin = await listen((_, response) => response.end("v4"))
     try {
       const url = `http://families.invalid:${origin.port}`
       // The first approved address is IPv6, where nothing listens.
-      const chosen = await pinnedReach({}, `${url}/v4`, { origin: url, addresses: ["::1", "127.0.0.1"] })
+      const chosen = await pinnedReach(
+        {},
+        `${url}/v4`,
+        { origin: url, addresses: ["::1", "127.0.0.1"] },
+        {},
+        "5 seconds",
+        agentFactory
+      )
       expect(chosen._tag).toBe("Success")
       if (chosen._tag === "Success") expect(await Effect.runPromise(chosen.success.text)).toBe("v4")
       family = 6
-      const refused = await pinnedReach({}, `${url}/v6`, { origin: url, addresses: ["127.0.0.1"] })
+      const refused = await pinnedReach(
+        {},
+        `${url}/v6`,
+        { origin: url, addresses: ["127.0.0.1"] },
+        {},
+        "5 seconds",
+        agentFactory
+      )
       expect(refused._tag).toBe("Failure")
       if (refused._tag === "Failure") {
         expect(refused.failure).toMatchObject({
@@ -523,7 +542,6 @@ describe("authorized destination connections", () => {
       }
       expect(origin.seen).toEqual(["GET /v4"])
     } finally {
-      undici.EnvHttpProxyAgent = Original
       await origin.close()
     }
   })
@@ -564,7 +582,11 @@ describe("authorized destination connections", () => {
     try {
       setDefaultAutoSelectFamily(true)
       const url = `http://multiple-addresses.invalid:${origin.port}`
-      const result = await pinnedReach({}, url, { origin: url, addresses: ["::1", "127.0.0.1"] })
+      const result = await pinnedReach(
+        {},
+        url,
+        { origin: url, addresses: ["::1", "127.0.0.1"] }
+      )
       expect(result._tag).toBe("Success")
       if (result._tag === "Success") expect(await Effect.runPromise(result.success.text)).toBe("fallback")
       expect(origin.seen).toEqual(["GET /"])
@@ -705,19 +727,21 @@ describe("pinned agent ownership under interruption", () => {
     const agents: Array<InstanceType<typeof Original>> = []
     let fiber: Fiber.Fiber<unknown, unknown> | undefined
     // The shared pool is the first agent; the second is the request's pinned one.
-    undici.EnvHttpProxyAgent = class extends Original {
-      constructor(options: ConstructorParameters<typeof Original>[0]) {
-        super(options)
-        agents.push(this)
-        if (agents.length === 2) fiber!.interruptUnsafe()
-      }
-    }
+    const agentFactory = (_undici: unknown, options: ConstructorParameters<typeof Original>[0]) =>
+      new class extends Original {
+        constructor(options: ConstructorParameters<typeof Original>[0]) {
+          super(options)
+          agents.push(this)
+          if (agents.length === 2) fiber!.interruptUnsafe()
+        }
+      }(options)
     try {
       const url = `http://interrupted.invalid:${origin.port}`
       fiber = Effect.runFork(
         Effect.flatMap(HttpClient.HttpClient, (client) => client.get(url)).pipe(
           Effect.provideService(Destination, { origin: url, addresses: ["127.0.0.1"] }),
-          Effect.provide(EgressHttpClient.layer({}))
+          Effect.provide(EgressHttpClient.layer({})),
+          Effect.provideService(AgentFactory, agentFactory)
         )
       )
       const exit = await Effect.runPromise(Fiber.await(fiber))
@@ -730,7 +754,6 @@ describe("pinned agent ownership under interruption", () => {
       ])
       expect(origin.seen).toEqual([])
     } finally {
-      undici.EnvHttpProxyAgent = Original
       await origin.close()
     }
   })
@@ -745,19 +768,27 @@ describe("pinned agent release after a response", () => {
     const undici = (await import("undici/index.js")).default
     const Original = undici.EnvHttpProxyAgent
     const agents: Array<InstanceType<typeof Original>> = []
-    undici.EnvHttpProxyAgent = class extends Original {
-      constructor(options: ConstructorParameters<typeof Original>[0]) {
-        super(options)
-        agents.push(this)
-      }
-      override close(_callback?: () => void): Promise<void> {
-        return Promise.reject(new Error("close refused"))
-      }
-    }
+    const agentFactory = (_undici: unknown, options: ConstructorParameters<typeof Original>[0]) =>
+      new class extends Original {
+        constructor(options: ConstructorParameters<typeof Original>[0]) {
+          super(options)
+          agents.push(this)
+        }
+        override close(_callback?: () => void): Promise<void> {
+          return Promise.reject(new Error("close refused"))
+        }
+      }(options)
     const origin = await listen()
     try {
       const url = `http://close-refused.invalid:${origin.port}`
-      const result = await pinnedReach({}, url, { origin: url, addresses: ["127.0.0.1"] })
+      const result = await pinnedReach(
+        {},
+        url,
+        { origin: url, addresses: ["127.0.0.1"] },
+        {},
+        "5 seconds",
+        agentFactory
+      )
       expect(result._tag).toBe("Success")
       if (result._tag === "Success") expect(result.success.status).toBe(204)
       expect(origin.connections).toHaveLength(1)
@@ -767,7 +798,6 @@ describe("pinned agent release after a response", () => {
       expect((agents[1] as unknown as { readonly destroyed: boolean }).destroyed).toBe(true)
       expect(origin.seen).toEqual(["GET /"])
     } finally {
-      undici.EnvHttpProxyAgent = Original
       await origin.close()
     }
   })

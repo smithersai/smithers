@@ -2,11 +2,9 @@ import { Deferred, Effect, Sink, Stream } from "effect"
 import type * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as Native from "node:child_process"
-import NativeMutable from "node:child_process"
 import { EventEmitter } from "node:events"
-import { syncBuiltinESMExports } from "node:module"
 import { Duplex, PassThrough } from "node:stream"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import * as PipedProcess from "../src/internal/PipedProcess.ts"
 
 const bytes = (value: string) => new TextEncoder().encode(value)
@@ -25,21 +23,18 @@ const spawn = (args: ReadonlyArray<string>, options: ChildProcess.CommandOptions
   return PipedProcess.spawn(ChildProcess.make(process.execPath, bounded, options), undefined)
 }
 
-// Failure ordering uses native public EventEmitter/stream contracts, with no
-// operating-system process and no numeric PID signal. Real I/O cases below do
-// not use this fixture.
+// Faulty native streams are scoped through an Effect service. Real I/O
+// and platform contracts below always run against this operating system.
 const withNativePipes = async (
   modes: ReadonlyArray<Native.IOType>,
   test: (
     child: Native.ChildProcess,
     pipes: ReadonlyArray<Duplex | null>,
-    calls: Array<Parameters<typeof Native.spawn>>
+    run: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>
   ) => Promise<void>
 ) => {
   const pipes = modes.map((mode, fd) => {
     if (mode !== "pipe" && mode !== "overlapped") return null
-    // Model independent stream directions. The platform-specific test below
-    // verifies Windows never requests named-pipe shutdown before output ends.
     return fd < 3 ? new PassThrough() : new Duplex({
       read() {},
       write(_chunk, _encoding, callback) {
@@ -53,100 +48,95 @@ const withNativePipes = async (
     stdout: pipes[1],
     stderr: pipes[2],
     stdio: pipes,
-    kill: vi.fn(() => {
+    kill: () => {
       queueMicrotask(() => child.emit("exit", 0, null))
       return true
-    }),
-    ref: vi.fn(),
-    unref: vi.fn()
+    },
+    ref: () => {},
+    unref: () => {}
   })
-  const mocked = vi.spyOn(NativeMutable, "spawn").mockImplementation(() => {
+  const nativeSpawn: PipedProcess.NativeSpawn = () => {
     queueMicrotask(() => child.emit("spawn"))
     return child as unknown as Native.ChildProcess
-  })
-  syncBuiltinESMExports()
+  }
+  const run = <A, E>(effect: Effect.Effect<A, E>) =>
+    Effect.runPromise(effect.pipe(Effect.provideService(PipedProcess.NativeSpawn, nativeSpawn)))
   try {
-    await test(child as unknown as Native.ChildProcess, pipes, mocked.mock.calls)
+    await test(child as unknown as Native.ChildProcess, pipes, run)
   } finally {
     for (const pipe of pipes) pipe?.destroy()
-    mocked.mockRestore()
-    syncBuiltinESMExports()
+  }
+}
+
+// Observe options while still creating an actual operating-system process.
+const observeNative = () => {
+  const options: Array<Native.SpawnOptions> = []
+  const nativeSpawn: PipedProcess.NativeSpawn = (command, args, config) => {
+    options.push(config)
+    return Native.spawn(command, args, config)
+  }
+  return {
+    options,
+    run: <A, E>(effect: Effect.Effect<A, E>) =>
+      Effect.runPromise(effect.pipe(Effect.provideService(PipedProcess.NativeSpawn, nativeSpawn)))
   }
 }
 
 describe("native public process I/O options", () => {
-  it("maps Windows owner streams above custom descriptors and preserves public stream handles", async () => {
-    const original = Object.getOwnPropertyDescriptor(process, "platform")!
-    Object.defineProperty(process, "platform", { ...original, value: "win32" })
-    try {
-      await withNativePipes(
-        ["ignore", "ignore", "ignore", "pipe", "pipe", "pipe", "pipe"],
-        async (child, pipes, calls) => {
-          await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-            const handle = yield* PipedProcess.spawn(
-              ChildProcess.make("owner", [], {
-                additionalFds: { fd3: { type: "output" } }
-              }),
-              undefined,
-              true
-            )
-            expect(calls[0]![2]?.stdio).toEqual(["ignore", "ignore", "ignore", "pipe", "pipe", "pipe", "pipe"])
-            expect(PipedProcess.standardFdsOf(handle)).toEqual([4, 5, 6])
-            for (const [fd, value] of [[3, "custom"], [5, "out"], [6, "err"]] as const) {
-              pipes[fd]!.push(bytes(value))
-              pipes[fd]!.push(null)
-            }
-            yield* Stream.run(input("in"), handle.stdin)
-            expect(pipes[4]!.writableEnded).toBe(true)
-            child.emit("exit", 0, null)
-            expect(yield* output(handle.stdout)).toBe("out")
-            expect(yield* output(handle.stderr)).toBe("err")
-            expect(yield* output(handle.getOutputFd(3))).toBe("custom")
-          })))
-        }
-      )
-      await withNativePipes(
-        ["ignore", "ignore", "ignore", "ignore", "ignore", "ignore"],
-        async (_child, _pipes, calls) => {
-          await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-            const handle = yield* PipedProcess.spawn(
-              ChildProcess.make("owner", [], {
-                stdin: "ignore",
-                stdout: "inherit",
-                stderr: "ignore"
-              }),
-              undefined,
-              true
-            )
-            expect(calls[0]![2]?.stdio).toEqual(["ignore", "ignore", "ignore", "ignore", 1, "ignore"])
-            expect(PipedProcess.standardFdsOf(handle)).toEqual(["ignore", 4, "ignore"])
-          })))
-        }
-      )
-    } finally {
-      Object.defineProperty(process, "platform", original)
+  it.skipIf(process.platform !== "win32")(
+    "maps real Windows owner streams above custom descriptors",
+    async () => {
+      const observed = observeNative()
+      const result = await observed.run(Effect.scoped(
+        Effect.gen(function*() {
+          const target =
+            "setTimeout(()=>process.exit(97),5000).unref();const fs=require('node:fs');process.stdin.on('data',b=>process.stdout.write(b));process.stdin.on('end',()=>{process.stderr.write('err');fs.writeSync(3,'custom')})"
+          const owner = "const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e'," +
+            JSON.stringify(target) +
+            "],{stdio:[4,5,6,3]});const deadline=setTimeout(()=>child.kill('SIGKILL'),5000).unref();child.on('exit',code=>{clearTimeout(deadline);process.exitCode=code??97})"
+          const handle = yield* PipedProcess.spawn(
+            ChildProcess.make(process.execPath, ["-e", owner], { additionalFds: { fd3: { type: "output" } } }),
+            undefined,
+            true
+          )
+          expect(PipedProcess.standardFdsOf(handle)).toEqual([4, 5, 6])
+          return yield* Effect.all([
+            output(handle.stdout),
+            output(handle.stderr),
+            output(handle.getOutputFd(3)),
+            handle.exitCode,
+            Stream.run(input("in"), handle.stdin)
+          ], { concurrency: "unbounded" })
+        }).pipe(Effect.timeout("10 seconds"))
+      ))
+      expect(result).toEqual(["in", "err", "custom", 0, undefined])
+      await observed.run(Effect.scoped(Effect.gen(function*() {
+        const handle = yield* PipedProcess.spawn(
+          ChildProcess.make(process.execPath, ["-e", ""], {
+            stdin: "ignore",
+            stdout: "inherit",
+            stderr: "ignore"
+          }),
+          undefined,
+          true
+        )
+        expect(PipedProcess.standardFdsOf(handle)).toEqual(["ignore", 4, "ignore"])
+        expect(yield* handle.exitCode).toBe(0)
+      })))
+      expect(observed.options[0]?.stdio).toEqual(["ignore", "ignore", "ignore", "pipe", "pipe", "pipe", "pipe"])
+      expect(observed.options[1]?.stdio).toEqual(["ignore", "ignore", "ignore", "ignore", 1, "ignore"])
     }
-  })
+  )
 
-  it.each(["linux", "win32"])("keeps the extra output reader alive on %s", async (platform) => {
-    const original = Object.getOwnPropertyDescriptor(process, "platform")!
-    Object.defineProperty(process, "platform", { ...original, value: platform })
-    try {
-      await withNativePipes(["pipe", "pipe", "pipe", "pipe"], async (child, pipes) => {
-        await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-          const handle = yield* spawn([], { additionalFds: { fd3: { type: "output" } } })
-          expect(pipes[3]!.writableEnded).toBe(platform !== "win32")
-          expect(pipes[3]!.destroyed).toBe(false)
-          pipes[3]!.push(bytes("retained output"))
-          pipes[3]!.push(null)
-          child.emit("exit", 0, null)
-          expect(yield* output(handle.getOutputFd(3))).toBe("retained output")
-          expect(yield* handle.exitCode).toBe(0)
-        })))
-      })
-    } finally {
-      Object.defineProperty(process, "platform", original)
-    }
+  it("keeps a real extra output reader alive until the child writes", async () => {
+    const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const handle = yield* spawn(
+        ["-e", "setTimeout(()=>require('node:fs').writeSync(3,'retained output'),25)"],
+        { additionalFds: { fd3: { type: "output" } } }
+      )
+      return yield* Effect.all([output(handle.getOutputFd(3)), handle.exitCode], { concurrency: "unbounded" })
+    })))
+    expect(result).toEqual(["retained output", 0])
   })
 
   it("automatically feeds a direct stdin Stream and closes it at the actual EOF", async () => {
@@ -224,51 +214,46 @@ describe("native public process I/O options", () => {
   })
 
   it("preserves sparse custom fd directions, automatic input, output transforms and direct handle access", async () => {
-    const native = vi.spyOn(NativeMutable, "spawn")
-    syncBuiltinESMExports()
-    try {
-      const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const handle = yield* spawn([
-          "-e",
-          "const fs=require('node:fs');const net=require('node:net');const read=fd=>new Promise((resolve,reject)=>{const chunks=[];const s=new net.Socket({fd,readable:true,writable:false});s.on('data',b=>chunks.push(b));s.on('error',reject);s.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')))});Promise.all([read(3),read(4)]).then(([a,b])=>{fs.writeSync(6,a);fs.writeSync(9,b);process.stdout.write('finished')})"
-        ], {
-          additionalFds: {
-            fd9: { type: "output", sink: transform("auto:") },
-            fd4: { type: "input", stream: input("configured 🙂") },
-            fd6: { type: "output" },
-            fd3: { type: "input" }
-          }
-        })
-        expect(yield* output(handle.getOutputFd(3))).toBe("")
-        expect(yield* output(handle.getOutputFd(5))).toBe("")
-        yield* Stream.run(input("discarded"), handle.getInputFd(6))
-        yield* Stream.run(input("discarded"), handle.getInputFd(5))
-        return yield* Effect.all([
-          output(handle.getOutputFd(6)),
-          output(handle.getOutputFd(9)),
-          output(handle.stdout),
-          handle.exitCode,
-          Stream.run(input("manual é"), handle.getInputFd(3)),
-          output(handle.stderr)
-        ], { concurrency: "unbounded" })
-      })))
-      expect(result).toEqual(["manual é", "auto:configured 🙂", "finished", 0, undefined, ""])
-      expect(native.mock.calls[0]?.[2]?.stdio).toEqual([
-        "pipe",
-        "pipe",
-        "pipe",
-        "pipe",
-        "pipe",
-        "ignore",
-        "pipe",
-        "ignore",
-        "ignore",
-        "pipe"
-      ])
-    } finally {
-      native.mockRestore()
-      syncBuiltinESMExports()
-    }
+    const observed = observeNative()
+    const result = await observed.run(Effect.scoped(Effect.gen(function*() {
+      const handle = yield* spawn([
+        "-e",
+        "const fs=require('node:fs');const net=require('node:net');const read=fd=>new Promise((resolve,reject)=>{const chunks=[];const s=new net.Socket({fd,readable:true,writable:false});s.on('data',b=>chunks.push(b));s.on('error',reject);s.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')))});Promise.all([read(3),read(4)]).then(([a,b])=>{fs.writeSync(6,a);fs.writeSync(9,b);process.stdout.write('finished')})"
+      ], {
+        additionalFds: {
+          fd9: { type: "output", sink: transform("auto:") },
+          fd4: { type: "input", stream: input("configured 🙂") },
+          fd6: { type: "output" },
+          fd3: { type: "input" }
+        }
+      })
+      expect(yield* output(handle.getOutputFd(3))).toBe("")
+      expect(yield* output(handle.getOutputFd(5))).toBe("")
+      yield* Stream.run(input("discarded"), handle.getInputFd(6))
+      yield* Stream.run(input("discarded"), handle.getInputFd(5))
+      return yield* Effect.all([
+        output(handle.getOutputFd(6)),
+        output(handle.getOutputFd(9)),
+        output(handle.stdout),
+        handle.exitCode,
+        Stream.run(input("manual é"), handle.getInputFd(3)),
+        output(handle.stderr)
+      ], { concurrency: "unbounded" })
+    })))
+    expect(result).toEqual(["manual é", "auto:configured 🙂", "finished", 0, undefined, ""])
+
+    expect(observed.options[0]?.stdio).toEqual([
+      "pipe",
+      "pipe",
+      "pipe",
+      "pipe",
+      "pipe",
+      "ignore",
+      "pipe",
+      "ignore",
+      "ignore",
+      "pipe"
+    ])
   })
 
   it("uses native overlapped pipes without changing their byte contract", async () => {
@@ -288,17 +273,15 @@ describe("native public process I/O options", () => {
   })
 
   it.each(["inherit", "ignore"] as const)("forwards native %s and exposes empty local streams", async (mode) => {
-    await withNativePipes([mode, mode, mode], async (child, pipes, calls) => {
-      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const handle = yield* spawn([], { stdin: mode, stdout: mode, stderr: { stream: mode } })
-        yield* Stream.run(input("not a local pipe"), handle.stdin)
-        expect(yield* output(handle.all)).toBe("")
-        child.emit("exit", 0, null)
-        expect(yield* handle.exitCode).toBe(0)
-      })))
-      expect(calls[0]?.[2]?.stdio).toEqual([mode, mode, mode])
-      expect(pipes).toEqual([null, null, null])
-    })
+    const observed = observeNative()
+    await observed.run(Effect.scoped(Effect.gen(function*() {
+      const handle = yield* spawn(["-e", ""], { stdin: mode, stdout: mode, stderr: { stream: mode } })
+      yield* Stream.run(input("not a local pipe"), handle.stdin)
+      expect(yield* output(handle.all)).toBe("")
+      expect(yield* handle.exitCode).toBe(0)
+    })))
+
+    expect(observed.options[0]?.stdio).toEqual([mode, mode, mode])
   })
 
   it.each([
@@ -308,50 +291,44 @@ describe("native public process I/O options", () => {
   ])(
     "refuses an %s descriptor before native spawn or sparse allocation",
     async (_label, name) => {
-      const native = vi.spyOn(NativeMutable, "spawn")
-      syncBuiltinESMExports()
-      try {
-        const error = await Effect.runPromise(Effect.scoped(Effect.flip(spawn([], {
-          additionalFds: { [name]: { type: "output" as const } }
-        }))))
-        expect(error.reason.method).toBe("spawn")
-        expect(error.cause).toBeInstanceOf(RangeError)
-        expect(error.cause).toMatchObject({ message: "Additional file descriptors must be below 65536" })
-        expect(native).not.toHaveBeenCalled()
-      } finally {
-        native.mockRestore()
-        syncBuiltinESMExports()
+      const nativeSpawn: PipedProcess.NativeSpawn = () => {
+        throw new Error("native spawn must not run")
       }
+      const error = await Effect.runPromise(
+        Effect.scoped(Effect.flip(spawn([], {
+          additionalFds: { [name]: { type: "output" as const } }
+        }))).pipe(Effect.provideService(PipedProcess.NativeSpawn, nativeSpawn))
+      )
+      expect(error.reason.method).toBe("spawn")
+      expect(error.cause).toBeInstanceOf(RangeError)
+      expect(error.cause).toMatchObject({ message: "Additional file descriptors must be below 65536" })
     }
   )
 
-  it("uses the public fd-name parser and does not expose malformed or reserved descriptor names", async () => {
-    await withNativePipes(["pipe", "pipe", "pipe", "ignore", "pipe"], async (child, _pipes, calls) => {
-      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const handle = yield* spawn([], {
-          additionalFds: {
-            fd2: { type: "output" },
-            "fd-3": { type: "input" },
-            fd3x: { type: "input" },
-            fd04: { type: "output" }
-          } as ChildProcess.CommandOptions["additionalFds"]
-        })
-        expect(yield* output(handle.getOutputFd(2))).toBe("")
-        yield* Stream.run(input("discarded"), handle.getInputFd(3))
-        const pipe = child.stdio[4] as Duplex
-        pipe.push(bytes("valid fd04"))
-        pipe.push(null)
-        child.emit("exit", 0, null)
-        expect(yield* output(handle.getOutputFd(4))).toBe("valid fd04")
-      })))
-      expect(calls[0]?.[2]?.stdio).toEqual(["pipe", "pipe", "pipe", "ignore", "pipe"])
-    })
+  it("uses the public fd-name parser without exposing malformed or reserved names", async () => {
+    const observed = observeNative()
+    await observed.run(Effect.scoped(Effect.gen(function*() {
+      const handle = yield* spawn(["-e", "require('node:fs').writeSync(4,'valid fd04')"], {
+        additionalFds: {
+          fd2: { type: "output" },
+          "fd-3": { type: "input" },
+          fd3x: { type: "input" },
+          fd04: { type: "output" }
+        } as ChildProcess.CommandOptions["additionalFds"]
+      })
+      expect(yield* output(handle.getOutputFd(2))).toBe("")
+      yield* Stream.run(input("discarded"), handle.getInputFd(3))
+      expect(yield* output(handle.getOutputFd(4))).toBe("valid fd04")
+      expect(yield* handle.exitCode).toBe(0)
+    })))
+
+    expect(observed.options[0]?.stdio).toEqual(["pipe", "pipe", "pipe", "ignore", "pipe"])
   })
 
   it("retains lifetime error listeners after custom pipe consumers finish and after scope cleanup", async () => {
-    await withNativePipes(["pipe", "pipe", "pipe", "ignore", "pipe", "pipe"], async (child, pipes) => {
+    await withNativePipes(["pipe", "pipe", "pipe", "ignore", "pipe", "pipe"], async (child, pipes, run) => {
       const late = Object.assign(new Error("late pending native write"), { code: "EPIPE" })
-      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      await run(Effect.scoped(Effect.gen(function*() {
         const handle = yield* spawn([], { additionalFds: { fd4: { type: "input" }, fd5: { type: "output" } } })
         expect(pipes[4]!.writableEnded).toBe(false)
         expect(pipes[5]!.writableEnded).toBe(process.platform !== "win32")
@@ -378,9 +355,9 @@ describe("native public process I/O options", () => {
   })
 
   it.each(["input", "output"] as const)("preserves an active custom %s pipe failure", async (direction) => {
-    await withNativePipes(["pipe", "pipe", "pipe", "pipe"], async (child, pipes) => {
+    await withNativePipes(["pipe", "pipe", "pipe", "pipe"], async (child, pipes, run) => {
       const broken = Object.assign(new Error("custom pipe failed"), { code: "EIO" })
-      const error = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const error = await run(Effect.scoped(Effect.gen(function*() {
         const handle = yield* spawn([], { additionalFds: { fd3: { type: direction } } })
         pipes[3]!.destroy(broken)
         child.emit("exit", 0, null)
@@ -403,9 +380,9 @@ describe("native public process I/O options", () => {
       [5, "fd5 output"]
     ] as const
   )("retains fd%i %s failure emitted before any consumer subscribes", async (fd, _label) => {
-    await withNativePipes(["pipe", "pipe", "pipe", "ignore", "pipe", "pipe"], async (child, pipes) => {
+    await withNativePipes(["pipe", "pipe", "pipe", "ignore", "pipe", "pipe"], async (child, pipes, run) => {
       const broken = Object.assign(new Error("pipe failed before consumption"), { code: "EIO" })
-      const error = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const error = await run(Effect.scoped(Effect.gen(function*() {
         const handle = yield* spawn([], { additionalFds: { fd4: { type: "input" }, fd5: { type: "output" } } })
         yield* Effect.promise(() =>
           new Promise<void>((resolve) => {
@@ -428,8 +405,8 @@ describe("native public process I/O options", () => {
   })
 
   it.each(["finished", "destroyed"] as const)("refuses a %s stdin writable without waiting for drain", async (mode) => {
-    await withNativePipes(["pipe", "pipe", "pipe"], async (child, pipes) => {
-      const error = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    await withNativePipes(["pipe", "pipe", "pipe"], async (child, pipes, run) => {
+      const error = await run(Effect.scoped(Effect.gen(function*() {
         const handle = yield* spawn([], { stdin: "pipe" })
         if (mode === "finished") yield* Stream.run(input("first write"), handle.stdin)
         else {

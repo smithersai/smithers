@@ -46,6 +46,7 @@ import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import { lookup } from "node:dns/promises"
 import { isIP } from "node:net"
+import { AgentFactory } from "./internal/EgressAgent.ts"
 
 /**
  * A pinned connection asked for an address family none of the authorized
@@ -182,9 +183,9 @@ export const dispatcher = (
     // package entry also avoids Bun's incomplete built-in "undici" substitute.
     return Effect.acquireRelease(
       Effect.map(
-        loadUndici,
-        (undici) => {
-          const pool = new undici.EnvHttpProxyAgent({
+        Effect.all([loadUndici, AgentFactory]),
+        ([undici, makeAgent]) => {
+          const pool = makeAgent(undici, {
             httpProxy: invalidProxy === undefined ? httpProxy : "",
             httpsProxy: invalidProxy === undefined ? httpsProxy : "",
             noProxy,
@@ -434,12 +435,13 @@ const pinnedClient = (
             )
           }
           const undici = yield* loadUndici
+          const makeAgent = yield* AgentFactory
           const addresses = destination.addresses.map((address) => ({ address, family: isIP(address) }))
           // Construction and its disposal are one uninterruptible step: an
           // interruption that lands after the agent exists but before the request
           // owns it would otherwise leave the agent neither destroyed nor closed.
           return yield* Effect.uninterruptibleMask((restore) => {
-            const pinned = new undici.EnvHttpProxyAgent({
+            const pinned = makeAgent(undici, {
               httpProxy: environment.http_proxy ?? environment.HTTP_PROXY ?? "",
               httpsProxy: environment.https_proxy ?? environment.HTTPS_PROXY ?? "",
               noProxy: exclusions(environment.no_proxy ?? environment.NO_PROXY ?? ""),

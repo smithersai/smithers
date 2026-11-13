@@ -1,15 +1,13 @@
 import { Cause, Effect, Exit, Redacted, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as Native from "node:child_process"
-import NativeMutable from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { EventEmitter } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
-import { syncBuiltinESMExports } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PassThrough } from "node:stream"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import * as PipedProcess from "../src/internal/PipedProcess.ts"
 
 const text = (stream: Stream.Stream<Uint8Array, unknown>) => stream.pipe(Stream.decodeText(), Stream.mkString)
@@ -28,44 +26,61 @@ const identity = (pid: number) => {
 
 // Native failure schedules use real streams and public ChildProcess events,
 // with no OS process or numerical PID signalling.
+const injected = (nativeSpawn: PipedProcess.NativeSpawn) => ({
+  promise: <A, E>(effect: Effect.Effect<A, E>) =>
+    Effect.runPromise(effect.pipe(Effect.provideService(PipedProcess.NativeSpawn, nativeSpawn))),
+  exit: <A, E>(effect: Effect.Effect<A, E>) =>
+    Effect.runPromiseExit(effect.pipe(Effect.provideService(PipedProcess.NativeSpawn, nativeSpawn)))
+})
+
+// Only failure ordering is synthetic. Happy paths below use real processes.
 const withNativeFailure = async (
-  test: (child: ReturnType<typeof fakeChild>) => Promise<void>,
+  test: (child: ReturnType<typeof faultyChild>, run: ReturnType<typeof injected>) => Promise<void>,
   startError?: Error
 ) => {
-  const child = fakeChild()
-  // A native startup failure never creates a process identity.
+  const child = faultyChild()
   if (startError !== undefined) child.pid = undefined
-  const spawn = vi.spyOn(NativeMutable, "spawn").mockImplementation(() => {
+  const nativeSpawn: PipedProcess.NativeSpawn = () => {
     queueMicrotask(() => child.emit(startError === undefined ? "spawn" : "error", startError))
-    return child as unknown as ReturnType<typeof Native.spawn>
-  })
-  syncBuiltinESMExports()
+    return child as unknown as ReturnType<PipedProcess.NativeSpawn>
+  }
   try {
-    await test(child)
+    await test(child, injected(nativeSpawn))
   } finally {
     child.stdin.destroy()
     child.stdout.destroy()
     child.stderr.destroy()
-    spawn.mockRestore()
-    syncBuiltinESMExports()
   }
 }
 
-const fakeChild = () =>
-  Object.assign(new EventEmitter(), {
+const faultyChild = () => {
+  const signals: Array<string | undefined> = []
+  const references: Array<"ref" | "unref"> = []
+  return Object.assign(new EventEmitter(), {
     pid: 12345 as number | undefined,
     exitCode: null as number | null,
     signalCode: null as NodeJS.Signals | null,
     stdin: new PassThrough(),
     stdout: new PassThrough(),
     stderr: new PassThrough(),
+    signals,
+    references,
     get stdio(): Array<PassThrough> {
       return [this.stdin, this.stdout, this.stderr]
     },
-    kill: vi.fn((_signal?: string) => true),
-    ref: vi.fn(),
-    unref: vi.fn()
+    deliver: (_signal?: string): boolean => true,
+    kill(signal?: string) {
+      signals.push(signal)
+      return this.deliver(signal)
+    },
+    ref: () => {
+      references.push("ref")
+    },
+    unref: () => {
+      references.push("unref")
+    }
   })
+}
 
 describe("native pipe adapter", () => {
   it("keeps opaque words out of a real missing-executable error", async () => {
@@ -125,27 +140,27 @@ describe("native pipe adapter", () => {
   )
 
   it("rereferencing a native handle restores finalizer ownership", async () => {
-    await withNativeFailure(async (child) => {
-      child.kill.mockImplementation(() => {
+    await withNativeFailure(async (child, run) => {
+      child.deliver = () => {
         queueMicrotask(() => child.emit("exit", 0, null))
         return true
-      })
-      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      }
+      await run.promise(Effect.scoped(Effect.gen(function*() {
         const handle = yield* PipedProcess.spawn(ChildProcess.make("fixture"), undefined)
         const reref = yield* handle.unref
-        expect(child.unref).toHaveBeenCalledOnce()
+        expect(child.references.filter((ref) => ref === "unref")).toHaveLength(1)
         yield* reref
-        expect(child.ref).toHaveBeenCalledOnce()
+        expect(child.references.filter((ref) => ref === "ref")).toHaveLength(1)
       })))
-      expect(child.kill).toHaveBeenCalledWith("SIGKILL")
+      expect(child.signals).toContain("SIGKILL")
     })
   })
 
   it.each(["running", "exited", "signalled"] as const)(
     "observes a returned native handle after its spawn event was emitted early (%s)",
     async (state) => {
-      const child = fakeChild()
-      const spawn = vi.spyOn(NativeMutable, "spawn").mockImplementation(() => {
+      const child = faultyChild()
+      const nativeSpawn: PipedProcess.NativeSpawn = () => {
         // Bun's cold-start ordering is observable before spawn returns. The
         // public pid and status fields survive even when the events are missed.
         child.emit("spawn")
@@ -156,11 +171,10 @@ describe("native pipe adapter", () => {
           child.signalCode = "SIGTERM"
           child.emit("exit", null, "SIGTERM")
         }
-        return child as unknown as ReturnType<typeof Native.spawn>
-      })
-      syncBuiltinESMExports()
+        return child as unknown as ReturnType<PipedProcess.NativeSpawn>
+      }
       try {
-        await Effect.runPromise(
+        await injected(nativeSpawn).promise(
           Effect.scoped(Effect.gen(function*() {
             const handle = yield* PipedProcess.spawn(ChildProcess.make("fixture"), undefined)
             expect(handle.pid).toBe(12345)
@@ -171,30 +185,32 @@ describe("native pipe adapter", () => {
             } else expect(yield* handle.exitCode).toBe(state === "exited" ? 17 : 0)
           })).pipe(Effect.timeout("3 seconds"))
         )
-        expect(child.kill).not.toHaveBeenCalled()
+        expect(child.signals).toEqual([])
       } finally {
         child.stdin.destroy()
         child.stdout.destroy()
         child.stderr.destroy()
-        spawn.mockRestore()
-        syncBuiltinESMExports()
       }
     }
   )
 
   it.each([false, true])("matches native argv and streams with windowsVerbatimArguments=%s", async (verbatim) => {
+    const options: Array<Native.SpawnOptions> = []
+    const nativeSpawn: PipedProcess.NativeSpawn = (command, args, config) => {
+      options.push(config)
+      return Native.spawn(command, args, config)
+    }
     const directory = await mkdtemp(join(tmpdir(), "scoped-pipes-"))
-    const spawn = vi.spyOn(NativeMutable, "spawn")
-    syncBuiltinESMExports()
     try {
-      const args = [
+      const words = [
         "-e",
         "process.stdin.on('data',b=>process.stdout.write(b));process.stdin.on('end',()=>{process.stderr.write(JSON.stringify({args:process.argv.slice(1),cwd:process.cwd(),env:process.env}));process.exitCode=23})",
         "a b",
         "literal;$value",
         "☃"
       ]
-      const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const args = verbatim && process.platform === "win32" ? words.map((word) => JSON.stringify(word)) : words
+      const result = await injected(nativeSpawn).promise(Effect.scoped(Effect.gen(function*() {
         const handle = yield* PipedProcess.spawn(
           ChildProcess.make(process.execPath, [args[0]!, args[1]!, Redacted.make(args[2]!), ...args.slice(3)], {
             cwd: directory,
@@ -226,14 +242,12 @@ describe("native pipe adapter", () => {
         encoding: "utf8"
       })
       expect(result).toEqual({ code: native.status, stdout: native.stdout, stderr: native.stderr })
-      if (!verbatim) expect(JSON.parse(result.stderr).args).toEqual(["a b", "literal;$value", "☃"])
-      expect(spawn.mock.calls[0]?.[2]).toMatchObject({
+      expect(JSON.parse(result.stderr).args).toEqual(["a b", "literal;$value", "☃"])
+      expect(options[0]).toMatchObject({
         windowsVerbatimArguments: verbatim,
         stdio: ["pipe", "pipe", "pipe"]
       })
     } finally {
-      spawn.mockRestore()
-      syncBuiltinESMExports()
       await rm(directory, { recursive: true, force: true })
     }
   })
@@ -344,34 +358,46 @@ describe("native pipe adapter", () => {
     }
   })
 
-  it("preserves synchronous native spawn errors", async () => {
+  it("preserves synchronous errors from the injected native service", async () => {
     const denied = Object.assign(new Error("executable denied"), { code: "EACCES" })
-    const spawn = vi.spyOn(NativeMutable, "spawn").mockImplementation(() => {
+    const nativeSpawn: PipedProcess.NativeSpawn = () => {
       throw denied
-    })
-    syncBuiltinESMExports()
-    try {
-      const error = await Effect.runPromise(Effect.scoped(Effect.flip(PipedProcess.spawn(
-        ChildProcess.make("fixture"),
-        undefined
-      ))))
-      expect(error.reason._tag).toBe("PermissionDenied")
-      expect(error.cause).toBe(denied)
-    } finally {
-      spawn.mockRestore()
-      syncBuiltinESMExports()
     }
+    const error = await injected(nativeSpawn).promise(Effect.scoped(Effect.flip(PipedProcess.spawn(
+      ChildProcess.make("fixture"),
+      undefined
+    ))))
+    expect(error.reason._tag).toBe("PermissionDenied")
+    expect(error.cause).toBe(denied)
+  })
+
+  it("keeps injected spawn failures separate from concurrent real processes", async () => {
+    const native = Native.spawn
+    const denied = Object.assign(new Error("only this scope is denied"), { code: "EACCES" })
+    const faulty: PipedProcess.NativeSpawn = () => {
+      throw denied
+    }
+    const [failure, code] = await Promise.all([
+      injected(faulty).promise(Effect.scoped(Effect.flip(PipedProcess.spawn(ChildProcess.make("fixture"), undefined)))),
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const handle = yield* PipedProcess.spawn(ChildProcess.make(process.execPath, ["-e", ""]), undefined)
+        return yield* handle.exitCode
+      })))
+    ])
+    expect(failure.cause).toBe(denied)
+    expect(code).toBe(0)
+    expect(Native.spawn).toBe(native)
   })
 
   it("releases every pipe after an asynchronous startup failure without signalling a nonexistent child", async () => {
     const denied = Object.assign(new Error("cwd denied"), { code: "EACCES" })
-    await withNativeFailure(async (child) => {
-      const error = await Effect.runPromise(Effect.scoped(Effect.flip(PipedProcess.spawn(
+    await withNativeFailure(async (child, run) => {
+      const error = await run.promise(Effect.scoped(Effect.flip(PipedProcess.spawn(
         ChildProcess.make("fixture"),
         undefined
       ))))
       expect(error.cause).toBe(denied)
-      expect(child.kill).not.toHaveBeenCalled()
+      expect(child.signals).toEqual([])
       expect([child.stdin, child.stdout, child.stderr].every((pipe) => pipe.destroyed)).toBe(true)
     }, denied)
   })
@@ -379,16 +405,16 @@ describe("native pipe adapter", () => {
   it.each(["explicit", "finalizer"] as const)(
     "waits for a queued native exit after %s kill returns false",
     async (kind) => {
-      await withNativeFailure(async (child) => {
+      await withNativeFailure(async (child, run) => {
         let exitObserved = false
-        child.kill.mockImplementation(() => {
+        child.deliver = () => {
           setTimeout(() => {
             exitObserved = true
             child.emit("exit", 0, null)
           }, 30)
           return false
-        })
-        await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        }
+        await run.promise(Effect.scoped(Effect.gen(function*() {
           const handle = yield* PipedProcess.spawn(ChildProcess.make("fixture"), undefined)
           if (kind === "explicit") {
             yield* handle.kill({ killSignal: "SIGINT", forceKillAfter: 500 })
@@ -396,7 +422,7 @@ describe("native pipe adapter", () => {
           }
         })))
         expect(exitObserved).toBe(true)
-        expect(child.kill).toHaveBeenCalledWith(kind === "explicit" ? "SIGINT" : "SIGKILL")
+        expect(child.signals).toContain(kind === "explicit" ? "SIGINT" : "SIGKILL")
       })
     }
   )
@@ -404,13 +430,13 @@ describe("native pipe adapter", () => {
   it.each(["explicit", "finalizer"] as const)(
     "preserves a live native signal denial during %s cleanup",
     async (kind) => {
-      await withNativeFailure(async (child) => {
+      await withNativeFailure(async (child, run) => {
         const denied = Object.assign(new Error("signal denied"), { code: "EPERM" })
-        child.kill.mockImplementation(() => {
+        child.deliver = () => {
           child.emit("error", denied)
           return false
-        })
-        const result = await Effect.runPromiseExit(Effect.scoped(Effect.gen(function*() {
+        }
+        const result = await run.exit(Effect.scoped(Effect.gen(function*() {
           const handle = yield* PipedProcess.spawn(ChildProcess.make("fixture"), undefined)
           if (kind === "explicit") {
             const error = yield* Effect.flip(handle.kill())
@@ -426,8 +452,8 @@ describe("native pipe adapter", () => {
   )
 
   it("does not certify a kill that reports delivery but never produces an exit", async () => {
-    await withNativeFailure(async (child) => {
-      const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    await withNativeFailure(async (child, run) => {
+      const result = await run.promise(Effect.scoped(Effect.gen(function*() {
         const handle = yield* PipedProcess.spawn(ChildProcess.make("fixture", { forceKillAfter: 0 }), undefined)
         const error = yield* Effect.flip(handle.kill())
         expect(yield* handle.isRunning).toBe(true)
@@ -438,15 +464,15 @@ describe("native pipe adapter", () => {
       })))
       expect(result.reason.method).toBe("kill")
       expect(result.cause).toMatchObject({ _tag: "TimeoutError" })
-      expect(child.kill.mock.calls.map(([signal]) => signal)).toEqual(["SIGTERM", "SIGKILL"])
-      expect(child.unref).toHaveBeenCalledOnce()
+      expect(child.signals).toEqual(["SIGTERM", "SIGKILL"])
+      expect(child.references.filter((ref) => ref === "unref")).toHaveLength(1)
     })
   })
 
   it.each(["stdin", "stdout", "stderr"] as const)("preserves a %s pipe failure", async (pipe) => {
-    await withNativeFailure(async (child) => {
+    await withNativeFailure(async (child, run) => {
       const broken = Object.assign(new Error(`${pipe} broken`), { code: "EIO" })
-      const error = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const error = await run.promise(Effect.scoped(Effect.gen(function*() {
         const handle = yield* PipedProcess.spawn(ChildProcess.make("fixture", { stdin: "pipe" }), undefined)
         child[pipe].destroy(broken)
         child.emit("exit", 0, null)
@@ -462,20 +488,20 @@ describe("native pipe adapter", () => {
   })
 
   it.each(["stdin", "stdout", "stderr"] as const)("preserves a failure during active %s I/O", async (pipe) => {
-    await withNativeFailure(async (child) => {
+    await withNativeFailure(async (child, run) => {
       const broken = Object.assign(new Error(`${pipe} failed during I/O`), { code: "EIO" })
-      const error = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const error = await run.promise(Effect.scoped(Effect.gen(function*() {
         const handle = yield* PipedProcess.spawn(ChildProcess.make("fixture", { stdin: "pipe" }), undefined)
         // Native stream hooks run only after the adapter has subscribed. This
         // schedule exercises an I/O failure, not the before-consumption guard.
         if (pipe === "stdin") {
-          vi.spyOn(child.stdin, "_write").mockImplementation((_chunk, _encoding, callback) => {
+          child.stdin._write = (_chunk, _encoding, callback) => {
             callback(broken)
-          })
+          }
         } else {
-          vi.spyOn(child[pipe], "_read").mockImplementation(() => {
+          child[pipe]._read = () => {
             child[pipe].destroy(broken)
-          })
+          }
         }
         const error = yield* Effect.flip(
           pipe === "stdin"

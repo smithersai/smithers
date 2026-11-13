@@ -5,6 +5,7 @@
 
 import * as NodeSink from "@effect/platform-node/NodeSink"
 import * as NodeStream from "@effect/platform-node/NodeStream"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
@@ -15,6 +16,28 @@ import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import * as Native from "node:child_process"
 import { NativeProcessError } from "./ProcessFault.ts"
+
+/**
+ * The standard-command spawn shape the adapter consumes.
+ * @private
+ * @since 0.1.0
+ */
+export type NativeSpawn = (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: Native.SpawnOptions
+) => Native.ChildProcess
+
+/**
+ * Native process creation. Failure schedules inject this service; ordinary
+ * commands keep Node's own implementation and process-wide bindings intact.
+ * @private
+ * @since 0.1.0
+ */
+export const NativeSpawn = Context.Reference<NativeSpawn>(
+  "@smthrs/platform-node/PipedProcess/NativeSpawn",
+  { defaultValue: () => Native.spawn }
+)
 
 const ownerDescriptors = new WeakMap<ChildProcessHandle, ReadonlyArray<number | "ignore">>()
 
@@ -142,6 +165,7 @@ export const spawn = (
 ): Effect.Effect<ChildProcessHandle, PlatformError.PlatformError, Scope.Scope> =>
   Effect.gen(function*() {
     yield* refuseNul(command)
+    const nativeSpawn = yield* NativeSpawn
     const descriptors = yield* Effect.try({
       try: () => descriptorConfig(command.options),
       catch: (cause) => failure("spawn", cause)
@@ -171,7 +195,7 @@ export const spawn = (
             recordExit = resolve
           })
           const options = command.options
-          const child = Native.spawn(
+          const child = nativeSpawn(
             command.command,
             command.args.map(plain),
             {
