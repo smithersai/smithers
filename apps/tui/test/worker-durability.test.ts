@@ -93,7 +93,12 @@ describe("worker durability", () => {
       await flush()
       const parked = f.workspace.snapshot().tabs[0]!
       expect(parked).toMatchObject({ status: "parked", wakeAt, parks: 1 })
-      expect(f.workspace.panel("review").summary).toBe("waits for OpenAI reset · 14:20")
+      const localWakeTime = new Date(wakeAt).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      })
+      expect(f.workspace.panel("review").summary).toBe("waits for OpenAI reset · " + localWakeTime)
       expect(f.workspace.read("review")).toMatchObject({ status: "parked", wakeAt: new Date(wakeAt).toISOString() })
       jest.advanceTimersByTime(599_999)
       await flush()

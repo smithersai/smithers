@@ -49,6 +49,7 @@ const setup = (
 ) => {
   const inputs: Array<Host.TurnInput> = []
   const finishes: Array<(outcome: Host.Outcome) => void> = []
+  const turns: Array<Host.Turn> = []
   const loads: Array<{ name: string; resolve: (body: Flows.Body) => void; reject: (error: unknown) => void }> = []
   const records: Array<Session.Record> = []
   /** A pending Jev pick per `auto` launch; the fake host reports it as `Host.run` does. */
@@ -78,7 +79,9 @@ const setup = (
           (error: Seat.SeatUnrouted) => finish({ _tag: "failed", message: error.message, detail: "", error })
         )
       }
-      return { done, cancel: () => finishes.at(-1)?.({ _tag: "cancelled" }) }
+      const turn = { done, cancel: () => finish({ _tag: "cancelled" }) }
+      turns.push(turn)
+      return turn
     }
   }
   let current = listed
@@ -114,6 +117,7 @@ const setup = (
     host,
     inputs,
     finishes,
+    turns,
     loads,
     records,
     routers,
@@ -358,6 +362,39 @@ describe("custom agents", () => {
       expect(f.workspace.requestChild(parent, revised).status).toBe("running")
       expect(f.inputs).toHaveLength(3)
       f.workspace.dispose()
+    }
+  )
+
+  it.each([true, false])(
+    "settles each worker handle on disposal, stopping the older worker first: %p",
+    async (stopFirst) => {
+      const f = setup()
+      const outcomes: Array<Host.Outcome | undefined> = [undefined, undefined]
+      try {
+        f.workspace.request({ id: "first", title: "First", prompt: "Review the first file." })
+        await tick()
+        f.workspace.request({ id: "second", title: "Second", prompt: "Review the second file." })
+        await tick()
+        expect(f.inputs.map((input) => input.source)).toEqual(["first", "second"])
+        for (const [index, turn] of f.turns.entries()) {
+          void turn.done.then((outcome) => {
+            outcomes[index] = outcome
+          })
+        }
+        expect(f.workspace.read("first").status).toBe("running")
+        expect(f.workspace.read("second").status).toBe("running")
+        if (stopFirst) {
+          f.workspace.cancel("first")
+          await tick()
+          expect(outcomes).toEqual([{ _tag: "cancelled" }, undefined])
+          expect(f.workspace.read("first").status).toBe("cancelled")
+          expect(f.workspace.read("second").status).toBe("running")
+        }
+      } finally {
+        f.workspace.dispose()
+      }
+      await tick()
+      expect(outcomes).toEqual([{ _tag: "cancelled" }, { _tag: "cancelled" }])
     }
   )
 
