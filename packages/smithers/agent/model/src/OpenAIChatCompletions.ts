@@ -126,6 +126,7 @@ export const Body = Schema.Struct({
   max_tokens: Schema.optional(Schema.Finite),
   temperature: Schema.optional(Schema.Finite),
   top_p: Schema.optional(Schema.Finite),
+  stop: Schema.optional(Schema.Array(Schema.String)),
   stream: Schema.Literal(true),
   stream_options: Schema.optional(Schema.Struct({ include_usage: Schema.Literal(true) }))
 })
@@ -218,6 +219,9 @@ const buildBody = (
   ...(request.params.maxTokens === undefined ? {} : { max_tokens: request.params.maxTokens }),
   ...(request.params.temperature === undefined ? {} : { temperature: request.params.temperature }),
   ...(request.params.topP === undefined ? {} : { top_p: request.params.topP }),
+  ...(request.params.stopSequences === undefined || request.params.stopSequences.length === 0
+    ? {}
+    : { stop: request.params.stopSequences }),
   stream: true,
   stream_options: { include_usage: true }
 })

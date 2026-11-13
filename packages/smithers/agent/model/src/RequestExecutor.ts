@@ -45,6 +45,7 @@ import { ModelError } from "./ModelError.ts"
 
 const BODY_LIMIT = 16_384
 const RAW_BODY_LIMIT = 65_536
+const ERROR_BODY_READ_MS = 5_000
 const MAX_BODY_DEPTH = 12
 const MAX_RETRIES = 2
 const BASE_DELAY_MS = 500
@@ -513,8 +514,8 @@ const responseBody = (
 // nothing beyond the limit is ever held, parsed, walked or redacted. A cut that
 // lands inside a multibyte sequence drops the partial sequence rather than
 // flushing it as U+FFFD, so what is kept is a prefix of what was sent. A read
-// that fails part way keeps what arrived; a read that fails with nothing has no
-// body, which is what the caller's `undefined` means.
+// that fails or exceeds five seconds keeps what arrived; a read that fails
+// with nothing has no body, which is what the caller's `undefined` means.
 const cappedBody = (
   response: HttpClientResponse.HttpClientResponse
 ): Effect.Effect<string | undefined> =>
@@ -534,6 +535,7 @@ const cappedBody = (
         })
     ).pipe(
       Effect.as(false),
+      Effect.timeout(Duration.millis(ERROR_BODY_READ_MS)),
       Effect.catch(() => Effect.succeed(true)),
       Effect.map((failed) => {
         if (bytes < RAW_BODY_LIMIT) text += decoder.decode()

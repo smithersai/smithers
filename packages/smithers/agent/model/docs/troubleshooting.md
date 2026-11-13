@@ -156,7 +156,9 @@ The `request` line has the route, the
 remembered `x-codex-turn-state` rides along), a short hash of the
 instructions, a hash and kind for each input item, and `commonPrefixItems`:
 how many leading input items match the previous request on the same cache
-key. Neither line contains the signed credential, a request header, or item
+key. History retains the 1,024 most recently used cache keys (or route ids
+when no cache key is stated); an evicted key has no previous items to compare.
+Neither line contains the signed credential, a request header, or item
 content. The request's `bytes` is the UTF-8 body size, matching
 `timing.requestBytes` on the response even for non-ASCII text. Both lines'
 `at` timestamps use the caller's Effect `Clock`.

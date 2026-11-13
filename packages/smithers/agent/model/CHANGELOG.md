@@ -154,6 +154,15 @@
 
 ### Fixed
 
+- Failed HTTP responses whose bodies stall now stop being read after five
+  seconds, preserving partial diagnostics and allowing status-based retries.
+- Wire-trace prefix history retains the 1,024 most recently used conversations
+  instead of growing for the lifetime of the process.
+- Chat Completions now sends non-empty `stopSequences` as `stop` instead of
+  silently dropping them. Omitted and empty lists leave request bytes unchanged.
+  Requests that state stop sequences now have different canonical bytes and
+  sealed-step keys.
+
 - A stream the provider fails with "This content was flagged for possible
   cybersecurity risk" is classified `content_policy`. It was `unknown`, so a
   run it ended read as an unexplained fault instead of a refusal of the

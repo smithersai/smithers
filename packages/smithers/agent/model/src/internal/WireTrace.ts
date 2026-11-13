@@ -46,6 +46,7 @@ interface Body {
 type Item = { readonly type?: unknown; readonly role?: unknown } | null
 
 const previous = new Map<string, ReadonlyArray<string>>()
+const historyLimit = 1024
 
 /**
  * The trace line for one prepared request; `history` is per process.
@@ -69,7 +70,9 @@ export const line = (
   const before = history.get(slot) ?? []
   let common = 0
   while (common < before.length && before[common] === items[common]) common++
+  history.delete(slot)
   history.set(slot, items)
+  if (history.size > historyLimit) history.delete(history.keys().next().value!)
   return {
     at: new Date(at).toISOString(),
     kind: "request",

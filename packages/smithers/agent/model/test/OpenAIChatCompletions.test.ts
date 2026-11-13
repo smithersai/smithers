@@ -55,6 +55,29 @@ const inlineError = (payload: string): ModelError =>
   ))
 
 describe("OpenAIChatCompletions.protocol.body", () => {
+  it.each([{ sequences: ["END"] }, { sequences: ["END", "\n\n", "終わり"] }])(
+    "sends nonempty stop sequences $sequences through the body schema",
+    ({ sequences }) => {
+      const request = Request.ModelRequest.make({
+        ...streamRequest,
+        params: Request.GenerationParams.make({ stopSequences: sequences })
+      })
+      const encoded = Schema.encodeSync(OpenAIChatCompletions.protocol.body.schema)(body(request))
+      expect(encoded).toHaveProperty("stop", sequences)
+    }
+  )
+
+  it("keeps canonical bytes unchanged for omitted or empty stop sequences", () => {
+    const empty = Request.ModelRequest.make({
+      ...streamRequest,
+      params: Request.GenerationParams.make({ stopSequences: [] })
+    })
+    expect(body(streamRequest)).not.toHaveProperty("stop")
+    expect(body(empty)).not.toHaveProperty("stop")
+    const encode = Schema.encodeSync(OpenAIChatCompletions.protocol.body.schema)
+    expect(JSON.stringify(encode(body(empty)))).toBe(JSON.stringify(encode(body(streamRequest))))
+  })
+
   it("lowers system, user, assistant tool-call, and tool-result messages", () => {
     const request = Request.ModelRequest.make({
       modelId: "gemini-2.5-flash-lite",

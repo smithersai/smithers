@@ -416,8 +416,9 @@ export type ReasoningEffort = typeof ReasoningEffort.Type
  * budget.
  *
  * Dropping a knob is a separate rule from defaulting one. A protocol with no
- * wire field for a stated knob leaves it out of the body, so `topK`,
- * `stopSequences`, and `thinkingBudget` are absent from both OpenAI bodies.
+ * wire field for a stated knob leaves it out of the body: `topK` and
+ * `thinkingBudget` are absent from both OpenAI bodies. Non-empty
+ * `stopSequences` become `stop` on Chat Completions and are dropped on Responses.
  * Anthropic lowers `reasoningEffort` to `output_config.effort`, clamped to the
  * levels the model accepts, and drops it for a model with no effort control.
  * The stated knobs that fail instead of being dropped are `maxTokens` on the

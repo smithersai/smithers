@@ -34,7 +34,7 @@ describe("generation parameter contract", () => {
     expect(chat).not.toHaveProperty("max_tokens")
   })
 
-  it("drops a stated knob the protocol has no wire field for, which is not a provider default", () => {
+  it("lowers supported stop sequences and drops only knobs with no wire field", () => {
     const stated = ModelRequest.make({
       modelId: "gpt-5",
       system: [],
@@ -45,9 +45,10 @@ describe("generation parameter contract", () => {
     const responses = Effect.runSync(OpenAIResponses.protocol.body.from(stated, { native: true }))
     const chat = Effect.runSync(OpenAIChatCompletions.protocol.body.from(stated, { native: false }))
 
+    expect(responses).not.toHaveProperty("stop")
+    expect(chat).toHaveProperty("stop", ["STOP"])
     for (const body of [responses, chat] as ReadonlyArray<Record<string, unknown>>) {
       expect(body).not.toHaveProperty("top_k")
-      expect(body).not.toHaveProperty("stop")
       expect(body).not.toHaveProperty("thinking")
     }
   })

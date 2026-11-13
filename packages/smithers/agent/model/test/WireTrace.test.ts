@@ -27,6 +27,31 @@ const prepared = (body: Record<string, unknown>, key?: string) => {
 const user = (text: string) => ({ role: "user", content: [{ type: "input_text", text }] })
 
 describe("WireTrace.line", () => {
+  it("bounds history and refreshes a reused key before evicting the least recent", () => {
+    const history = new Map<string, ReadonlyArray<string>>()
+    const body = { input: [user("begin")] }
+    for (let index = 0; index < 1_024; index += 1) {
+      WireTrace.line(prepared(body, `key-${index}`), 0, history)
+    }
+    expect(history.size).toBe(1_024)
+    expect(WireTrace.line(prepared(body, "key-0"), 0, history)).toMatchObject({
+      commonPrefixItems: 1,
+      previousItems: 1
+    })
+    expect(history.size).toBe(1_024)
+    WireTrace.line(prepared(body, "new-key"), 0, history)
+    expect(history.size).toBe(1_024)
+    expect(history.has("key-0")).toBe(true)
+    expect(history.has("key-1")).toBe(false)
+    expect(history.has("key-2")).toBe(true)
+    expect(WireTrace.line(prepared(body, "key-1"), 0, history)).toMatchObject({
+      commonPrefixItems: 0,
+      previousItems: 0
+    })
+    expect(history.size).toBe(1_024)
+    expect(history.has("key-2")).toBe(false)
+  })
+
   it.each(["go", "héllo 世界 🎉", "e\u0301", "\ud800"])("reports UTF-8 body bytes for %j", (text) => {
     const request = prepared({ input: [user(text)] })
     expect(WireTrace.line(request, 0, new Map())["bytes"]).toBe(new TextEncoder().encode(request.bodyText).byteLength)
