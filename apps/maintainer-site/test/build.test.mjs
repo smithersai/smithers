@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { splitFrontmatter } from "../markdown.mjs"
+import { hasHomeCounts } from "../screenshot-checks.mjs"
 
 const siteSource = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const workSource = resolve(siteSource, "../mvp/docs/work")
@@ -81,4 +82,11 @@ test("repository work-note status values use the board vocabulary", () => {
     if (data && "status" in data && !statuses.includes(data.status)) invalid.push({ path, status: data.status })
   }
   assert.deepEqual(invalid, [])
+})
+
+test("the home screenshot check requires all three positive counts", () => {
+  assert.equal(hasHomeCounts(["1", "2", "3"]), true)
+  assert.equal(hasHomeCounts([" 12 ", "100", "9"]), true)
+  for (const counts of [[], ["1"], ["1", "2"], ["1", "2", "3", "4"], ["1", "0", "3"], ["1", "-2", "3"], ["1", "", "3"], ["1", "notes", "3"]])
+    assert.equal(hasHomeCounts(counts), false, JSON.stringify(counts))
 })

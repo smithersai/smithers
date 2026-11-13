@@ -9,6 +9,7 @@ import { mkdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { hasHomeCounts } from "./screenshot-checks.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const site = resolve(process.env.MAINTAINER_SITE_OUT ?? join(homedir(), "Desktop/smithers-maintainer"))
@@ -48,7 +49,7 @@ const shot = (page, name) => page.screenshot({ path: join(shots, `${name}.png`) 
 // Desktop, light.
 const page = await open({ colorScheme: "light" })
 await go(page, "#/")
-check((await page.locator(".stat-n").allTextContents()).every((text) => Number(text) > 0), "home shows note, flow and link counts")
+check(hasHomeCounts(await page.locator(".stat-n").allTextContents()), "home shows note, flow and link counts")
 check((await page.locator(".decisions li").count()) > 0, "home lists decisions")
 await shot(page, "home")
 

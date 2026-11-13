@@ -1,11 +1,13 @@
 // Real queue/server/browser regressions for attachment selection and old-line review notes.
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { after, before, test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { startServer } from "../serve.mjs"
+import { hasHomeCounts } from "../screenshot-checks.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const { default: playwright } = await import(pathToFileURL(join(here, "../../mvp/node_modules/@playwright/test/index.mjs")).href)
@@ -134,4 +136,21 @@ test("code comparisons retain pinned old lines and three lines of context", asyn
       await expect(page.locator(".q-diff-count")).toHaveText(counts)
     })
   }
+})
+
+test("the built home renders three counts and the screenshot check rejects their removal", async (t) => {
+  const site = mkdtempSync(join(tmpdir(), "maintainer-home-"))
+  t.after(() => rmSync(site, { recursive: true, force: true }))
+  const built = spawnSync(process.execPath, [join(here, "../build.mjs")], {
+    encoding: "utf8",
+    env: { ...process.env, MAINTAINER_SITE_OUT: site, MAINTAINER_SITE_GIFS: join(here, "fixtures/repo/gifs") },
+  })
+  assert.equal(built.status, 0, built.stderr)
+  const page = await browser.newPage()
+  t.after(() => page.close())
+  await page.goto(pathToFileURL(join(site, "index.html")).href)
+  await page.waitForSelector(".stat-n")
+  assert.equal(hasHomeCounts(await page.locator(".stat-n").allTextContents()), true)
+  await page.locator(".stat-n").evaluateAll((nodes) => nodes.forEach((node) => node.remove()))
+  assert.equal(hasHomeCounts(await page.locator(".stat-n").allTextContents()), false)
 })

@@ -177,7 +177,8 @@ export function isHidden(item, stacks, now) {
   const top = stacks.get(item.id)?.at(-1)
   if (!top) return false
   const at = Date.parse(top.at)
-  if (item.addedAt && Date.parse(item.addedAt) > at) return false
+  // Explicit generations survive clock skew; historical records use their save time.
+  if (item.addedAt && (top.addedAt ? item.addedAt !== top.addedAt : Date.parse(item.addedAt) > at)) return false
   if (top.action === "later") return now - at < SNOOZE_MS
   return true
 }
@@ -520,6 +521,9 @@ export function startServer(options = {}) {
     // The curator replaced the item after Will opened it: refuse, and send the version now queued.
     if (item && action !== "undo" && VERSION_FIELDS.some((field) => (input[field] ?? null) !== (item[field] ?? null)))
       return send(response, 409, { error: "changed since you opened it", item: queued(item, current.answers) })
+    // The check and fsynced append run without yielding: another tab or a retry cannot add a second answer.
+    if (action !== "undo" && isHidden(item ?? { id: itemId }, current.stacks, current.at))
+      return send(response, 409, { error: "already answered" })
     const record = {
       itemId,
       at: new Date(now()).toISOString(),
@@ -528,6 +532,7 @@ export function startServer(options = {}) {
       ...(input.scope === "all" && action !== "undo" ? { scope: "all", kind: item?.kind ?? (typeof input.kind === "string" ? input.kind.slice(0, 40) : null) } : {}),
       text,
       revision: item?.revision ?? (typeof input.revision === "string" ? input.revision : undone?.revision ?? null),
+      ...(item?.addedAt ? { addedAt: item.addedAt } : {}),
       title: item?.title ?? (typeof input.title === "string" ? input.title.slice(0, 200) : undone?.title ?? ""),
     }
     append(record)
@@ -610,7 +615,13 @@ export function startServer(options = {}) {
       return sendFile(response, join(clientDir, name))
     }
     if (!existsSync(join(site, "index.html"))) return send(response, 404, "Build the site first: node apps/maintainer-site/build.mjs\n", "text/plain; charset=utf-8")
-    return staticUnder(response, site, path === "/" ? "/index.html" : decodeURIComponent(path))
+    let decoded
+    try {
+      decoded = decodeURIComponent(path)
+    } catch {
+      return send(response, 400, { error: "bad path" })
+    }
+    return staticUnder(response, site, decoded === "/" ? "/index.html" : decoded)
   }
 
   const server = createServer((request, response) => {

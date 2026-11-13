@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { after, before, describe, test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { VERSION_FIELDS, coveragePercent, readAnswers, refusalFor, renderDocument, replay, resolveFile, startServer } from "../serve.mjs"
+import { VERSION_FIELDS, coveragePercent, isHidden, readAnswers, refusalFor, renderDocument, replay, resolveFile, startServer } from "../serve.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, "fixtures")
@@ -180,7 +180,7 @@ describe("POST /api/answer", () => {
     const after = answersText()
     assert.ok(after.startsWith(before), "the file is appended to, never rewritten")
     const line = JSON.parse(after.slice(before.length))
-    assert.deepEqual(Object.keys(line), ["itemId", "at", "action", "option", "text", "revision", "title"])
+    assert.deepEqual(Object.keys(line), ["itemId", "at", "action", "option", "text", "revision", "addedAt", "title"])
     assert.equal(line.at, new Date(clock.now).toISOString())
     assert.equal(line.title, "Read rows through Electric shapes, not polling")
     assert.equal(line.text, "Shapes, with a retry.")
@@ -202,7 +202,7 @@ describe("POST /api/answer", () => {
     const response = await post({ itemId: "code:shape-stream@3f2a", action: "changes", scope: "all", kind: "design", text: "Show a diagram first." })
     assert.equal(response.status, 200)
     const line = JSON.parse(answersText().slice(before.length))
-    assert.deepEqual(Object.keys(line), ["itemId", "at", "action", "scope", "kind", "text", "revision", "title"])
+    assert.deepEqual(Object.keys(line), ["itemId", "at", "action", "scope", "kind", "text", "revision", "addedAt", "title"])
     assert.equal(line.scope, "all")
     assert.equal(line.kind, "code", "the kind comes from the item, not the client")
     assert.ok(!(await visibleIds()).includes("code:shape-stream@3f2a"))
@@ -218,10 +218,33 @@ describe("POST /api/answer", () => {
     assert.equal(answersText(), before)
   })
 
-  test("two undos retract two answers, newest first", async () => {
-    await post({ itemId: "design:status-pill@9124", action: "changes", text: "first" })
-    clock.now += 1000
-    await post({ itemId: "design:status-pill@9124", action: "approve", text: "second" })
+  test("concurrent answers and a lost-response retry append only one decision; one undo retracts it", async () => {
+    const itemId = "design:status-pill@9124"
+    const input = { itemId, action: "changes", text: "Use the shared component." }
+    const before = answersText()
+    const statsBefore = (await call("/api/stats")).json
+    const responses = await Promise.all([post(input), post(input)])
+    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 409])
+    assert.deepEqual(responses.find((response) => response.status === 409).json, { error: "already answered" })
+    const saved = answersText()
+    assert.equal(saved.slice(before.length).trim().split("\n").length, 1)
+    assert.equal((await post(input)).status, 409, "retry after a lost response cannot append twice")
+    assert.equal((await post({ ...input, action: "approve" })).status, 409, "a second tab cannot replace a standing answer")
+    assert.equal(answersText(), saved)
+    assert.equal((await call("/api/stats")).json.doneToday, statsBefore.doneToday + 1)
+    assert.equal((await post({ itemId, action: "undo" })).status, 200)
+    assert.ok((await visibleIds()).includes(itemId))
+    assert.equal((await call("/api/stats")).json.doneToday, statsBefore.doneToday)
+    assert.equal((await post(input)).status, 200, "answering again after undo is allowed")
+    await post({ itemId, action: "undo" })
+  })
+
+  test("historical duplicate answers remain undoable, newest first", async () => {
+    const records = [
+      { itemId: "design:status-pill@9124", action: "changes", text: "first", at: new Date(clock.now).toISOString() },
+      { itemId: "design:status-pill@9124", action: "approve", text: "second", at: new Date(clock.now + 1000).toISOString() },
+    ]
+    writeFileSync(join(queueDir, "answers.jsonl"), records.map((record) => JSON.stringify(record) + "\n").join(""), { flag: "a" })
     const { stacks } = replay(readAnswers(join(queueDir, "answers.jsonl")))
     assert.deepEqual(stacks.get("design:status-pill@9124").map((answer) => answer.text), ["first", "second"])
     await post({ itemId: "design:status-pill@9124", action: "undo" })
@@ -235,15 +258,18 @@ describe("POST /api/answer", () => {
     const start = clock.now
     await post({ itemId: "gif:chat-shortcut@bf47", action: "later" })
     assert.ok(!(await visibleIds()).includes("gif:chat-shortcut@bf47"))
+    assert.equal((await post({ itemId: "gif:chat-shortcut@bf47", action: "approve" })).status, 409, "a standing snooze must be undone before answering")
     clock.now = start + 23 * HOUR
     assert.ok(!(await visibleIds()).includes("gif:chat-shortcut@bf47"))
     clock.now = start + 24 * HOUR + 1
     assert.ok((await visibleIds()).includes("gif:chat-shortcut@bf47"))
+    assert.equal((await post({ itemId: "gif:chat-shortcut@bf47", action: "approve" })).status, 200, "an expired snooze permits an answer")
+    await post({ itemId: "gif:chat-shortcut@bf47", action: "undo" })
     clock.now = start
     await post({ itemId: "gif:chat-shortcut@bf47", action: "undo" })
   })
 
-  test("an item the curator re-adds after the answer shows again", async () => {
+  test("an item the curator re-adds after the answer can be answered once again", async () => {
     await post({ itemId: "verify:shape-stream-limit", action: "approve" })
     assert.ok(!(await visibleIds()).includes("verify:shape-stream-limit"))
     const queue = JSON.parse(readFileSync(join(queueDir, "queue.json"), "utf8"))
@@ -251,16 +277,37 @@ describe("POST /api/answer", () => {
     writeFileSync(join(queueDir, "queue.json.tmp"), JSON.stringify(queue))
     renameSync(join(queueDir, "queue.json.tmp"), join(queueDir, "queue.json"))
     assert.ok((await visibleIds()).includes("verify:shape-stream-limit"))
+    assert.equal((await post({ itemId: "verify:shape-stream-limit", action: "changes", text: "New version." })).status, 200)
+    assert.ok(!(await visibleIds()).includes("verify:shape-stream-limit"), "the recorded generation hides the item even when the curator's clock is ahead")
+    assert.equal((await post({ itemId: "verify:shape-stream-limit", action: "approve" })).status, 409)
+    await post({ itemId: "verify:shape-stream-limit", action: "undo" })
+    assert.ok((await visibleIds()).includes("verify:shape-stream-limit"))
     copyFileSync(join(fixtures, "queue.json"), join(queueDir, "queue.json"))
     await post({ itemId: "verify:shape-stream-limit", action: "undo" })
   })
 
+  test("new answer generations and legacy timestamps both distinguish curator re-additions", () => {
+    const item = { id: "generation", addedAt: "2026-10-20T14:00:00.000Z" }
+    const legacy = { itemId: item.id, action: "approve", at: "2026-10-20T15:00:00.000Z" }
+    const stacks = new Map([[item.id, [legacy]]])
+    assert.equal(isHidden(item, stacks, clock.now), true)
+    const readded = { ...item, addedAt: "2026-10-20T16:00:00.000Z" }
+    assert.equal(isHidden(readded, stacks, clock.now), false)
+    stacks.set(item.id, [{ ...legacy, addedAt: readded.addedAt }])
+    assert.equal(isHidden(readded, stacks, clock.now), true, "generation identity survives clock skew")
+    assert.equal(isHidden({ ...readded, addedAt: "2026-10-20T17:00:00.000Z" }, stacks, clock.now), false)
+  })
+
   test("an answer to a version the curator replaced is refused with the new version, and writes nothing", async () => {
     const opened = seen("code:shape-stream@3f2a")
+    let queueMtime = statSync(join(queueDir, "queue.json")).mtimeMs
     const replace = (change) => {
       const queue = JSON.parse(readFileSync(join(fixtures, "queue.json"), "utf8"))
       Object.assign(queue.items.find((item) => item.id === "code:shape-stream@3f2a"), { title: "Changed after review opened" }, change)
       writeFileSync(join(queueDir, "queue.json.tmp"), JSON.stringify(queue))
+      // Give each simulated curator edit its own cache identity, including equal-sized edits in one clock tick.
+      queueMtime += 1000
+      utimesSync(join(queueDir, "queue.json.tmp"), queueMtime / 1000, queueMtime / 1000)
       renameSync(join(queueDir, "queue.json.tmp"), join(queueDir, "queue.json"))
     }
     try {
@@ -276,7 +323,7 @@ describe("POST /api/answer", () => {
       }
       replace({ revision: "new-digest" })
       const response = await post({ itemId: "code:shape-stream@3f2a", action: "approve", ...opened, revision: "new-digest" })
-      assert.equal(response.status, 200)
+      assert.equal(response.status, 200, response.text)
       assert.equal(response.json.answer.revision, "new-digest")
       await post({ itemId: "code:shape-stream@3f2a", action: "undo" })
     } finally {
@@ -369,6 +416,30 @@ describe("GET /api/events", () => {
     await next
     stream.close()
     await post({ itemId: "gif:chat-shortcut@bf47", action: "undo" })
+  })
+})
+
+describe("built-site paths", () => {
+  test("malformed percent-encoding is a bad path on the site and file routes", async () => {
+    for (const method of ["GET", "HEAD"]) {
+      for (const path of ["/%E0%A4%A", "/%", "/%GG", "/%C0%AF"]) {
+        for (const route of [path, "/api/file" + path]) {
+          const response = await call(route, { method })
+          assert.equal(response.status, 400, method + " " + route)
+          if (method === "GET") assert.deepEqual(response.json, { error: "bad path" })
+          else assert.equal(response.text, "")
+        }
+      }
+    }
+  })
+
+  test("root, plain and percent-encoded site paths still serve files", async () => {
+    writeFileSync(join(dir, "site", "a b.html"), "<title>Encoded</title>")
+    for (const path of ["/", "/index.html", "/%69ndex.html", "/a%20b.html"]) {
+      const response = await call(path)
+      assert.equal(response.status, 200, path)
+      assert.match(response.text, /<title>(Site|Encoded)<\/title>/)
+    }
   })
 })
 
