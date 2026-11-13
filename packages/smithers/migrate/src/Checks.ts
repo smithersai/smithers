@@ -279,30 +279,109 @@ export interface ReportedEntry {
  */
 export const marker = "TODO(migrate-smithers-v1)"
 
-const reactImport = /from\s+["'](react|react-dom)(?:\/[^"']*)?["']/g
-
 /**
- * The escape hatches the contract forbids, one pattern per kind.
- *
- * They are counted per kind rather than in aggregate. A unit that deletes an
- * `as any` and adds a `@ts-ignore` on the next line leaves the total unchanged
- * while hiding exactly what the contract says it must report.
+ * Only comments can carry compiler directives or migration markers. Mask
+ * literal tokens before scanning trivia so examples, regular expressions,
+ * JSX text and template tails cannot become comments. Interpolations remain
+ * code because their expressions are separate nodes in the syntax tree.
  */
-const escapeHatches: ReadonlyArray<readonly [string, RegExp]> = [
-  ["as any", /\bas\s+any\b/g],
-  ["as unknown as", /\bas\s+unknown\s+as\b/g],
-  ["@ts-ignore", /@ts-ignore\b/g],
-  ["@ts-expect-error", /@ts-expect-error\b/g]
-]
+const inspectSource = (file: string, text: string) => {
+  const source = Ts.parse(file, text)
+  const code = text.split("")
+  Ts.forEachNode(source, (node) => {
+    if (
+      !ts.isStringLiteral(node) && !ts.isTemplateLiteralLikeNode(node) &&
+      !ts.isRegularExpressionLiteral(node) && !ts.isJsxText(node)
+    ) return
+    for (let index = node.getStart(source); index < node.end; index++) {
+      if (code[index] !== "\n" && code[index] !== "\r") code[index] = " "
+    }
+  })
+  const comments = text.replace(/[^\r\n]/g, " ").split("")
+  const scanner = ts.createScanner(false, source.languageVariant, code.join(""))
+  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFile; token = scanner.scan()) {
+    if (token !== ts.SyntaxKind.SingleLineCommentTrivia && token !== ts.SyntaxKind.MultiLineCommentTrivia) continue
+    for (let index = scanner.getTokenStart(); index < scanner.getTokenEnd(); index++) comments[index] = text[index]!
+  }
+  return { source, comments: comments.join(""), directives: scanner.getCommentDirectives() ?? [] }
+}
 
-const sqliteAccess =
-  /new\s+Database\s*\(|from\s+["'](?:bun:sqlite|node:sqlite)["']|require\(["'](?:bun:sqlite|node:sqlite)["']\)/g
+type InspectedSource = ReturnType<typeof inspectSource>
+type Finding = CheckResult["findings"][number]
 
-const schedulerLoop = /setInterval\s*\(|while\s*\(\s*(?:true|1)\s*\)/g
+const findNodes = (
+  file: string,
+  source: ts.SourceFile,
+  message: (node: ts.Node) => string | undefined
+): ReadonlyArray<Finding> => {
+  const findings: Array<Finding> = []
+  Ts.forEachNode(source, (node) => {
+    const found = message(node)
+    if (found !== undefined) findings.push({ file, line: Ts.positionOf(source, node).line, message: found })
+  })
+  return findings
+}
+
+const unparenthesized = (expression: ts.Expression): ts.Expression =>
+  ts.isParenthesizedExpression(expression) ? unparenthesized(expression.expression) : expression
+
+/** Count real assertions and compiler directives separately for each kind. */
+const escapeHatches = (file: string, inspected: InspectedSource): ReadonlyMap<string, ReadonlyArray<Finding>> => {
+  const { source, directives } = inspected
+  return new Map([
+    [
+      "as any",
+      findNodes(file, source, (node) =>
+        ts.isAsExpression(node) && node.type.kind === ts.SyntaxKind.AnyKeyword
+          ? "as any hides a construct instead of reporting it"
+          : undefined)
+    ],
+    [
+      "as unknown as",
+      findNodes(file, source, (node) => {
+        if (!ts.isAsExpression(node)) return undefined
+        const inner = unparenthesized(node.expression)
+        return ts.isAsExpression(inner) && inner.type.kind === ts.SyntaxKind.UnknownKeyword
+          ? "as unknown as hides a construct instead of reporting it"
+          : undefined
+      })
+    ],
+    ...(["@ts-ignore", "@ts-expect-error"] as const).map((kind) =>
+      [
+        kind,
+        directives.filter((directive) =>
+          directive.type ===
+            (kind === "@ts-ignore" ? ts.CommentDirectiveType.Ignore : ts.CommentDirectiveType.ExpectError)
+        ).map((directive) => ({
+          file,
+          line: Fs.positionAt(source.text, directive.range.pos).line,
+          message: `${kind} hides a construct instead of reporting it`
+        }))
+      ] as const
+    )
+  ])
+}
+
+const schedulerLoop = (node: ts.Node): string | undefined => {
+  if (ts.isCallExpression(node)) {
+    const callee = unparenthesized(node.expression)
+    const name = ts.isIdentifier(callee)
+      ? callee.text
+      : ts.isPropertyAccessExpression(callee)
+      ? callee.name.text
+      : undefined
+    if (name === "setInterval") return `${callee.getText()}( is a run loop; the engine owns scheduling`
+  }
+  if (ts.isWhileStatement(node)) {
+    const condition = unparenthesized(node.expression)
+    if (condition.kind === ts.SyntaxKind.TrueKeyword || (ts.isNumericLiteral(condition) && condition.text === "1")) {
+      return `while (${condition.getText()}) is a run loop; the engine owns scheduling`
+    }
+  }
+  return undefined
+}
 
 const jsxPragma = /@jsx(?:ImportSource|Runtime)\b/g
-
-const seatLiteral = /\bseat\s*:\s*["'`]([^"'`]+)["'`]/g
 
 const findAll = (
   file: string,
@@ -360,6 +439,9 @@ export const run = (
 
     const inFlows = (file: string): boolean => file === flowsDir || file.startsWith(`${flowsDir}/`)
     const isSource = /\.(ts|tsx|js|jsx|mjs|mts|cjs|cts)$/
+    const sources = new Map(
+      [...texts].filter(([file]) => isSource.test(file)).map(([file, text]) => [file, inspectSource(file, text)])
+    )
 
     const results: Array<CheckResult> = []
     const check = (
@@ -371,9 +453,8 @@ export const run = (
 
     check(
       "no old import remains",
-      [...texts].flatMap(([file, text]) => {
-        if (!isSource.test(file)) return []
-        return Ts.moduleSpecifiers(Ts.parse(file, text))
+      [...sources].flatMap(([file, { source }]) => {
+        return Ts.moduleSpecifiers(source)
           .filter((record) => Detect.isOldSpecifier(record.specifier, specifierContext))
           .map((record) => ({
             file,
@@ -385,51 +466,65 @@ export const run = (
 
     check(
       "no JSX pragma remains",
-      [...texts].flatMap(([file, text]) =>
-        isSource.test(file) ? findAll(file, text, jsxPragma, (match) => `${match} has no JSX runtime to point at`) : []
+      [...sources].flatMap(([file, { comments }]) =>
+        findAll(file, comments, jsxPragma, (match) => `${match} has no JSX runtime to point at`)
       )
     )
 
     check(
       "no react import under the flows directory",
-      [...texts].flatMap(([file, text]) =>
-        inFlows(file) && isSource.test(file)
-          ? findAll(file, text, reactImport, (match) => `${match.trim()} does not belong in a flow`)
+      [...sources].flatMap(([file, { source }]) =>
+        inFlows(file)
+          ? Ts.moduleSpecifiers(source).filter((record) => /^(?:react|react-dom)(?:\/|$)/.test(record.specifier)).map(
+            (record) => ({
+              file,
+              line: record.line,
+              message: `${record.form} "${record.specifier}" does not belong in a flow`
+            })
+          )
           : []
       )
     )
 
     check(
       "no escape hatch introduced",
-      [...texts].flatMap(([file, text]) => {
-        if (!isSource.test(file)) return []
-        const before = checkpointFiles.sources.get(file) ?? ""
-        // Per kind, so swapping one hatch for another is caught: only the
-        // occurrences of a kind beyond what the file already carried are new.
-        return escapeHatches.flatMap(([kind, pattern]) => {
-          const beforeCount = (before.match(new RegExp(pattern.source, pattern.flags)) ?? []).length
-          const found = findAll(file, text, pattern, () => `${kind} hides a construct instead of reporting it`)
-          return found.slice(beforeCount)
-        }).sort((left, right) => left.line - right.line)
+      [...sources].flatMap(([file, inspected]) => {
+        const before = escapeHatches(file, inspectSource(file, checkpointFiles.sources.get(file) ?? ""))
+        // Per kind, so swapping one hatch for another is caught. Examples in
+        // old prompts do not grant an allowance for new executable hatches.
+        return [...escapeHatches(file, inspected)].flatMap(([kind, found]) => found.slice(before.get(kind)!.length))
+          .sort((left, right) => left.line - right.line)
       })
     )
 
     check(
       "no scheduler loop under the flows directory",
-      [...texts].flatMap(([file, text]) =>
-        inFlows(file) && isSource.test(file)
-          ? findAll(file, text, schedulerLoop, (match) => `${match.trim()} is a run loop; the engine owns scheduling`)
-          : []
-      )
+      [...sources].flatMap(([file, { source }]) => inFlows(file) ? findNodes(file, source, schedulerLoop) : [])
     )
 
     check(
       "no direct database access under the flows directory",
-      [...texts].flatMap(([file, text]) =>
-        inFlows(file) && isSource.test(file)
-          ? findAll(file, text, sqliteAccess, (match) => `${match.trim()} opens storage the host owns`)
-          : []
-      )
+      [...sources].flatMap(([file, { source }]) => {
+        if (!inFlows(file)) return []
+        const imports = Ts.moduleSpecifiers(source).filter((record) =>
+          record.specifier === "bun:sqlite" || record.specifier === "node:sqlite"
+        ).map((record) => ({
+          file,
+          line: record.line,
+          message: `${record.form} "${record.specifier}" opens storage the host owns`
+        }))
+        return [
+          ...imports,
+          ...findNodes(
+            file,
+            source,
+            (node) =>
+              ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "Database"
+                ? "new Database( opens storage the host owns"
+                : undefined
+          )
+        ].sort((left, right) => left.line - right.line)
+      })
     )
 
     // Amendment 4 and 5: there is no default seat. Every seat a migrated file
@@ -439,13 +534,14 @@ export const run = (
     const sourceText = [...checkpointFiles.sources.values()].join("\n")
     check(
       "every seat comes from the source or from a decision",
-      [...texts].flatMap(([file, text]) => {
-        if (!isSource.test(file)) return []
-        const regexp = new RegExp(seatLiteral.source, seatLiteral.flags)
-        const findings: Array<{ file: string; line: number; message: string }> = []
-        let match = regexp.exec(text)
-        while (match !== null) {
-          const seat = match[1] ?? ""
+      [...sources].flatMap(([file, { source }]) =>
+        findNodes(file, source, (node) => {
+          if (
+            !ts.isPropertyAssignment(node) ||
+            !(ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) || node.name.text !== "seat" ||
+            !(ts.isStringLiteral(node.initializer) || ts.isNoSubstitutionTemplateLiteral(node.initializer))
+          ) return undefined
+          const seat = node.initializer.text
           const model = seat.includes(":") ? seat.slice(seat.indexOf(":") + 1) : seat
           // The model has to appear as a string the old source wrote, not as a
           // substring of prose: a seat `openai:gpt` is not justified by the
@@ -453,17 +549,11 @@ export const run = (
           const quoted = [`"${model}"`, `'${model}'`, `\`${model}\``, `("${model}")`, `('${model}')`]
           const justified = quoted.some((token) => sourceText.includes(token)) ||
             decisions.some((answer) => answer.includes(seat))
-          if (!justified) {
-            findings.push({
-              file,
-              line: Fs.positionAt(text, match.index).line,
-              message: `seat "${seat}" names a model that is in neither the unit's source nor a recorded decision`
-            })
-          }
-          match = regexp.exec(text)
-        }
-        return findings
-      })
+          return justified
+            ? undefined
+            : `seat "${seat}" names a model that is in neither the unit's source nor a recorded decision`
+        })
+      )
     )
 
     const flowModules = changedFiles.filter((file) => inFlows(file) && file.endsWith("/flow.ts"))
@@ -491,7 +581,12 @@ export const run = (
     check(
       "every TODO marker is reported",
       [...texts].flatMap(([file, text]) =>
-        findAll(file, text, new RegExp(`${marker.replace(/[()]/g, "\\$&")}:?\\s*([^\\n]*)`, "g"), (match) => match)
+        findAll(
+          file,
+          sources.get(file)?.comments ?? text,
+          new RegExp(`${marker.replace(/[()]/g, "\\$&")}:?\\s*([^\\n]*)`, "g"),
+          (match) => match
+        )
           .flatMap((finding) => {
             const construct = finding.message.slice(marker.length).replace(/^:\s*/, "").trim()
             return reportedFiles.has(`${file}::${construct}`)

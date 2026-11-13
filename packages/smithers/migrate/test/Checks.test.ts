@@ -268,6 +268,193 @@ describe("Checks.run finds each defect on its own", () => {
       expect(named(results, "no scheduler loop under the flows directory").findings).toHaveLength(2)
     }))
 
+  it.effect("accepts code examples in prompt literals without weakening the checks", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single.migrated")
+      const examples = [
+        "setInterval(() => poll(), 1000)",
+        "while (true) { poll() }; while (1) { poll() }",
+        "import React from \"react\"; export { render } from \"react-dom/client\"",
+        "new Database(\"state.db\"); require(\"bun:sqlite\"); import(\"node:sqlite\")",
+        "value as any; value as unknown as string",
+        "@ts-ignore; @ts-expect-error; @jsxImportSource; @jsxRuntime",
+        "seat: \"openai:invented\"",
+        "TODO(migrate-smithers-v1): Example"
+      ].join("\n")
+      const literals = [
+        JSON.stringify(examples),
+        "'" + examples.replaceAll("'", "\\'").replaceAll("\n", "\\n") + "'",
+        "`" + examples + "`",
+        "String.raw`" + examples + "`",
+        "`" + examples + "${topic}" + examples + "`",
+        "`outer ${`" + examples + "`} tail`"
+      ]
+      for (const literal of literals) {
+        const file = writeFlow(root, "export const prompt = " + literal, ".smithers/flows/lesson/helper.ts")
+        expect((yield* run(root, [file])).filter((result) => !result.ok), literal).toEqual([])
+      }
+    }))
+
+  it.effect("accepts runtime examples in comments and non-call syntax", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single.migrated")
+      const example =
+        "setInterval(() => poll(), 1000); while (true) {}; while (1) {}; new Database(\"state.db\"); from \"react\"; as any; as unknown as string; seat: \"openai:invented\""
+      const file = writeFlow(
+        root,
+        [
+          "// " + example,
+          "/* " + example + " */",
+          "function setInterval(callback: () => void) {}",
+          "const methods = { setInterval() {}, Database() {} }",
+          "while (false) {}",
+          "while (remaining) { break }"
+        ].join("\n"),
+        ".smithers/flows/lesson/helper.ts"
+      )
+      expect((yield* run(root, [file])).filter((result) => !result.ok)).toEqual([])
+    }))
+
+  it.effect("checks executable template interpolations and reports their source lines", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single.migrated")
+      const file = writeFlow(
+        root,
+        [
+          "export const prompt = `setInterval(() => poll(), 1000) is unsafe.",
+          "${setInterval(() => poll(), 1000)}",
+          "${(() => { while (true) { poll() }; while (1) { poll() } })()}",
+          "${new Database(\"state.db\")}",
+          "${import(\"node:sqlite\")}",
+          "${require(\"react\")}",
+          "${value as any}",
+          "${value as unknown as string}",
+          "${({ seat: \"openai:invented\" })}",
+          "`"
+        ].join("\n"),
+        ".smithers/flows/lesson/helper.ts"
+      )
+      const results = yield* run(root, [file])
+      expect(named(results, "no scheduler loop under the flows directory").findings.map((finding) => finding.line))
+        .toEqual([2, 3, 3])
+      expect(
+        named(results, "no direct database access under the flows directory").findings.map((finding) => finding.line)
+      )
+        .toEqual([4, 5])
+      expect(named(results, "no react import under the flows directory").findings.map((finding) => finding.line))
+        .toEqual([6])
+      expect(named(results, "no escape hatch introduced").findings.map((finding) => finding.line))
+        .toEqual([7, 8])
+      expect(
+        named(results, "every seat comes from the source or from a decision").findings.map((finding) => finding.line)
+      )
+        .toEqual([9])
+    }))
+
+  it.effect("does not count quoted escape hatches as an existing allowance", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single.migrated")
+      const before = "export const prompt = \"value as any\""
+      const file = writeFlow(root, before + "\nconst value = input as any", ".smithers/flows/lesson/helper.ts")
+      const results = yield* run(root, [file], { sources: new Map([[file, before]]), digests: new Map() })
+      expect(named(results, "no escape hatch introduced").findings.map((finding) => finding.line)).toEqual([2])
+      writeFlow(root, "const value = input as any", file)
+      const replaced = yield* run(root, [file], { sources: new Map([[file, before]]), digests: new Map() })
+      expect(named(replaced, "no escape hatch introduced").findings.map((finding) => finding.line)).toEqual([1])
+    }))
+
+  it.effect("keeps checking real calls and imports around literal and comment trivia", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single.migrated")
+      const files = ["ts", "tsx", "js", "jsx", "mjs", "mts", "cjs", "cts"]
+      for (const extension of files) {
+        const file = writeFlow(
+          root,
+          [
+            "export const prompt = \"Explain setInterval() and while (true).\"",
+            "globalThis.setInterval /* explanation */ (() => poll(), 1000);",
+            "(setInterval)(() => poll(), 1000)",
+            "while /* explanation */ ((true)) { poll() }",
+            "while ((1)) { poll() }",
+            "import \"react\"",
+            "export { render } from \"react-dom/client\"",
+            "const sqlite = require(`bun:sqlite`)",
+            "const loaded = import(\"node:sqlite\")",
+            "new Database /* explanation */ (\"state.db\")"
+          ].join("\r\n"),
+          ".smithers/flows/lesson/helper." + extension
+        )
+        const results = yield* run(root, [file])
+        expect(named(results, "no scheduler loop under the flows directory").findings.map((finding) => finding.line))
+          .toEqual([2, 3, 4, 5])
+        expect(named(results, "no react import under the flows directory").findings.map((finding) => finding.line))
+          .toEqual([6, 7])
+        expect(
+          named(results, "no direct database access under the flows directory").findings.map((finding) => finding.line)
+        )
+          .toEqual([8, 9, 10])
+      }
+    }))
+
+  it.effect("recognizes real comment directives while ignoring regex and JSX text", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single.migrated")
+      const file = writeFlow(
+        root,
+        [
+          "const expression = /as any|@ts-ignore|@jsxImportSource|seat: \"invented\"/",
+          "const view = <p>setInterval(); while (true); as any; @ts-expect-error</p>",
+          "const prompt = `/* ${\"//\"} @jsxRuntime */`",
+          "// @ts-ignore",
+          "const a = input",
+          "/* @ts-expect-error */",
+          "const b = input",
+          "/** @jsxRuntime automatic */",
+          "const c = input as /* explanation */ any",
+          "const d = (input as unknown) as string"
+        ].join("\n"),
+        ".smithers/flows/lesson/helper.tsx"
+      )
+      const results = yield* run(root, [file])
+      expect(named(results, "no scheduler loop under the flows directory").ok).toBe(true)
+      expect(named(results, "every seat comes from the source or from a decision").ok).toBe(true)
+      expect(named(results, "no escape hatch introduced").findings.map((finding) => finding.line)).toEqual([
+        4,
+        6,
+        9,
+        10
+      ])
+      expect(named(results, "no JSX pragma remains").findings.map((finding) => finding.line)).toEqual([8])
+      const existing = yield* run(root, [file], {
+        sources: new Map([[file, readFileSync(join(root, file), "utf8")]]),
+        digests: new Map()
+      })
+      expect(named(existing, "no escape hatch introduced").ok).toBe(true)
+    }))
+
+  it.effect("scopes runtime rules to flows and keeps markers in non-source reports", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single.migrated")
+      const file = writeFlow(
+        root,
+        [
+          "import React from \"react\"",
+          "new Database(\"state.db\")",
+          "setInterval(() => poll(), 1000)"
+        ].join("\n"),
+        "src/helper.ts"
+      )
+      expect((yield* run(root, [file])).filter((result) => !result.ok)).toEqual([])
+      const note = writeFlow(root, "TODO(migrate-smithers-v1): Worktree", "migration.md")
+      expect(named(yield* run(root, [note]), "every TODO marker is reported").ok).toBe(false)
+      expect(
+        named(
+          yield* run(root, [note], emptyCheckpoint, [{ construct: "Worktree", file: note }]),
+          "every TODO marker is reported"
+        ).ok
+      ).toBe(true)
+    }))
+
   it.effect("fails when a flow opens a database", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
