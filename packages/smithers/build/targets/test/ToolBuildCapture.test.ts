@@ -768,10 +768,41 @@ describe("declared output paths", () => {
     ["an empty path", ""],
     ["the cache and result store", ".flows/cache"],
     ["the cache root itself", ".flows"],
-    ["the git directory", ".git/objects"]
+    ["the git directory", ".git/objects"],
+    ["the git root in uppercase", ".GIT"],
+    ["the git hooks in uppercase", ".GIT/hooks"],
+    ["the git config in mixed case", ".gIt/config"],
+    ["the cache root in mixed case", ".Flows"],
+    ["the cache store in mixed case", ".fLoWs/store"],
+    ["a reserved root after a dot segment", "./.GIT/hooks"],
+    ["a reserved root with backslash separators", ".GIT\\hooks"]
   ])("refuses %s", (_name, path) => {
     expect(Target.declaredOutputFailure(".", path)).toBeTypeOf("string")
     expect(() => Target.declaredOutputs("Example", { cwd: ".", paths: [path] })).toThrow()
+  })
+
+  it.each([
+    [".GIT", "hooks"],
+    [".gIt/hooks", "pre-commit"],
+    [".Flows", "store"],
+    ["./.fLoWs/store", "entry"]
+  ])("refuses a reserved root resolved through cwd %s", (cwd, path) => {
+    expect(Target.declaredOutputFailure(cwd, path)).toMatch(/reserved directory/)
+    expect(() => Target.declaredOutputs("Example", { cwd, paths: [path] })).toThrow(/reserved directory/)
+  })
+
+  it.each([
+    [".", ".GIT/hooks"],
+    [".", ".Flows/store"],
+    [".GIT", "hooks"],
+    [".Flows", "store"]
+  ])("refuses a reserved root at capture with cwd %s and path %s", async (cwd, path) => {
+    await write(NodePath.join(cwd, path), "must not be captured")
+
+    await expect(measureOutput(root, cwd, path))
+      .rejects.toMatchObject({ path, message: expect.stringContaining("reserved directory") })
+    await expect(measureOutputs(root, cwd, [path]))
+      .rejects.toMatchObject({ path, message: expect.stringContaining("reserved directory") })
   })
 
   it("refuses the workspace root reached through cwd", () => {
@@ -788,6 +819,9 @@ describe("declared output paths", () => {
     expect(Target.declaredOutputFailure(".", "dist")).toBeUndefined()
     expect(Target.declaredOutputFailure("packages/alpha", "dist/esm")).toBeUndefined()
     expect(Target.declaredOutputFailure(".", "build/artifact.tar.gz")).toBeUndefined()
+    expect(Target.declaredOutputFailure(".", ".github/workflows/ci.yml")).toBeUndefined()
+    expect(Target.declaredOutputFailure(".", ".Flows-backup/artifact")).toBeUndefined()
+    expect(Target.declaredOutputFailure("packages/alpha", ".GIT/hooks")).toBeUndefined()
   })
 
   it("refuses two declarations that resolve to the same output", () => {

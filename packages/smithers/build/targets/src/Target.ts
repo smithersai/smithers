@@ -116,7 +116,9 @@ const segmentsOf = (value: string): ReadonlyArray<string> | string => {
  * a cache admission would then verify a stored entry against a copy of itself.
  * `.git` is refused for the same structural reason.
  */
-const reservedRoots: ReadonlySet<string> = new Set([Config.defaultCacheDirectory, ".git"])
+const reservedRoots: ReadonlySet<string> = new Set(
+  [Config.defaultCacheDirectory, ".git"].map((root) => root.normalize("NFC").toLowerCase())
+)
 
 /**
  * Returns the reason one declared output path is unusable, or undefined.
@@ -135,7 +137,7 @@ export const declaredOutputFailure = (cwd: string, path: string): string | undef
   if (typeof own === "string") return `the output path ${JSON.stringify(path)} ${own}`
   if (own.length === 0) return `the output path ${JSON.stringify(path)} names its own directory rather than an output`
   const resolved = [...base, ...own]
-  if (reservedRoots.has(resolved[0]!)) {
+  if (reservedRoots.has(resolved[0]!.normalize("NFC").toLowerCase())) {
     return `the output path ${JSON.stringify(path)} resolves inside the reserved directory ${resolved[0]}`
   }
   return undefined
