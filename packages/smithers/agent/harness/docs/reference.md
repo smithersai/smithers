@@ -7,49 +7,55 @@ This page lists every public module and the exports it publishes, one table
 per module. Behavior, signatures, and error semantics for each module are in
 the [API reference](./api.md); this page is the lookup table.
 
-The root barrel `@smthrs/harness` re-exports every module below as a
-namespace, except `QuickJSSandbox`, which is imported from its own subpath
-because it carries an embedded WebAssembly build. Every module is also
-importable as `@smthrs/harness/<Module>`, except `DoneText`, `QuickJSVariant`,
-`RealmFlow` and `QuickJSLifecycle`, which are on the root only.
+The root barrel `@smthrs/harness` exposes 38 namespaces.
+`QuickJSSandbox` and `QuickJSWorkerd` are imported only from their platform
+subpaths, `@smthrs/harness/QuickJSSandbox` and `@smthrs/harness/QuickJSWorkerd`.
+Every root namespace is also importable as `@smthrs/harness/<Module>`, except
+`DoneText`, `QuickJSVariant`, `QuickJSLifecycle` and `RealmFlow`, which are on
+the root only.
 
 | Module | Public exports | Description |
 | --- | --- | --- |
 | `HarnessError` | `HarnessErrorCode`, `HarnessError` | Stable failures reported at the harness translation boundary. |
-| `AgentEvent` | `Observer`, `Journal`, `RelevanceKind`, `CompactionMark`, `CompactionPin`, `CompactionCause`, `MonitorKind`, `Stance`, `Suppression`, `UnjudgedReason`, `DisciplineArmed`, `TurnOpened`, `ModelRequested`, `SeatFailedOver`, `ModelParked`, `ModelUnparked`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `FailedCallDemanded`, `UnobservedDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `DecisionAnswer`, `decisionAnswers`, `DecisionSettled`, `SupervisorSettled`, `SupervisorUnjudged`, `DecisionUnjudged`, `RelevanceSettled`, `RelevanceRestored`, `SeatRouted`, `SupervisorMemoryFailed`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters. |
+| `AgentEvent` | `Observer`, `Journal`, `RelevanceKind`, `CompactionMark`, `CompactionPin`, `CompactionCause`, `MonitorKind`, `Stance`, `Suppression`, `UnjudgedReason`, `DisciplineArmed`, `TurnOpened`, `ModelRequested`, `ModelSelected`, `SeatFailedOver`, `ModelParked`, `ModelUnparked`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `ModelFailed`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `FailedCallDemanded`, `OutputDemanded`, `UnobservedDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `DecisionAnswer`, `decisionAnswers`, `DecisionSettled`, `SupervisorSettled`, `SupervisorUnjudged`, `DecisionUnjudged`, `RelevanceSettled`, `RelevanceRestored`, `SeatPanel`, `SeatRouted`, `SupervisorMemoryFailed`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters. |
 | `Plan` | `Child`, `Batch`, `ChildResult`, `ChildProgress`, `ChildSettled`, `SpliceEvent` | Local structural plan nodes used at the harness-to-engine boundary. |
-| `EngineLike` | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `Binding`, `Resolved`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `resolve`, `makeNoop`, `layerNoop` | Narrow engine port consumed by the built-in harness. |
+| `EngineLike` | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Paid`, `SpendPurpose`, `SpendReading`, `Spend`, `FailedTimings`, `Observation`, `Snapshot`, `Binding`, `Resolved`, `CaptureRequest`, `EngineLike`, `make`, `callSubject`, `TimedOut`, `Guard`, `layer`, `resolve`, `makeNoop`, `layerNoop` | Narrow engine port consumed by the built-in harness. |
 | `Tokens` | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine` | Deterministic token accounting for context windows. |
 | `ContextWindow` | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `Mark`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactMarked`, `compactPrefix`, `compact`, `render` | The immutable, provider-neutral context assembled for one model request. |
 | `Transcript` | `journalVersion`, `controlEventPrefix`, `ControlEventType`, `validateJournal`, `decodeClaude`, `decodeCodex`, `ExternalDecoded`, `ExternalEntry` | Journal compatibility validation and external transcript decoders. |
 | `Compaction` | `summaryInstruction`, `summaryTurn`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `judgedAbove`, `consultsJudge`, `selectPrefix`, `declare`, `summaryRequest`, `apply` | Declarations for sealed transcript-summary steps. |
-| `Steering` | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `empty`, `enqueue`, `drainAtClose`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop` | Turn-boundary steering values and their source contract. |
-| `Notifications` | `Options`, `make`, `layer` | Adapter from the durable notification queue to harness turn boundaries. |
-| `Cell` | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `TreeEpoch`, `LiveTree`, `CallIdentity`, `declarationDigest`, `Call`, `callOf`, `displayDescriptor`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract` | The cell contract. |
-| `Sandbox` | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `EvaluationLimits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printStatementFloor`, `printRetainedBytes`, `withDefaults`, `evaluationLimits`, `Intent`, `replTransition`, `RealmEvaluation`, `FrameBoundary`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome` | The deterministic script sandbox port. |
-| `CellTurn` | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `modelCallMsFor`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultClaimDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `MemoryRow`, `Memory`, `make`, `Environment`, `Profile`, `teach`, `instructionsSegment`, `memorySegment`, `run` | The cell-first controller. |
+| `Steering` | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `empty`, `enqueue`, `drainAtClose`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop`, `timeLeft`, `withTimeLeft` | Turn-boundary steering values and their source contract. |
+| `Notifications` | `Options`, `text`, `precedence`, `make`, `layer`, `layerForExecution` | Adapter from the durable notification queue to harness turn boundaries. |
+| `Cell` | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `FailureKind`, `failureKind`, `Failures`, `callFailureHint`, `TreeEpoch`, `LiveTree`, `CallIdentity`, `declarationDigest`, `Call`, `callOf`, `displayDescriptor`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract` | The cell contract. |
+| `Sandbox` | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `EvaluationLimits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printRetainedBytes`, `printStatementFloor`, `withDefaults`, `evaluationLimits`, `Intent`, `replTransition`, `RealmEvaluation`, `FrameBoundary`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `callLimit`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome` | The deterministic script sandbox port. |
+| `CellTurn` | `defaultMaxFrames`, `defaultReadOnlyFrames`, `defaultModelCallMs`, `modelCallMsFor`, `defaultRepeatFrames`, `defaultNarrowingDemands`, `defaultUnmovedDemands`, `defaultUnresolvedDemands`, `defaultClaimDemands`, `defaultRevalidations`, `defaultMaxCheckpoints`, `State`, `Input`, `OutputCheck`, `MemoryRow`, `Memory`, `memorySegment`, `instructionsSegment`, `make`, `Environment`, `Profile`, `teach`, `run` | The cell-first controller. |
 | `DoneText` | `project` | The answer text of a reply that is still streaming. |
 | `CellHistory` | `ExecutedCell`, `Service`, `CellHistory`, `make`, `makeCells`, `makeNoop`, `layer`, `layerCells`, `layerNoop` | The source of every cell the current turn executed. |
 | `CellCalls` | `Implementation`, `Prompt`, `PromptRunner`, `Options`, `Resolver`, `make` | Registry-backed resolution for the flow calls a cell makes. |
-| `FlowBinding` | `Declared`, `DescriptorOptions`, `descriptorOf`, `Binding`, `Options`, `make`, `provide`, `Source`, `source`, `Catalog`, `empty`, `catalogResult`, `catalog`, `registry` | The executable-flow binding contract. |
+| `FlowBinding` | `Declared`, `DescriptorOptions`, `descriptorOf`, `Binding`, `Options`, `decodeInput`, `make`, `provide`, `Source`, `source`, `Catalog`, `empty`, `catalogResult`, `catalog`, `registry` | The executable-flow binding contract. |
 | `StructuredOutput` | `StructuredOutputFailureCode`, `OutputIssueCode`, `OutputIssue`, `StructuredOutputFailure`, `maxIssues`, `jsonSchema`, `digest`, `instructions`, `issuesDigest`, `correction`, `lastBalanced`, `candidates`, `decode` | Turning one agent's final text into a value the declared output schema accepts, or into a typed failure. |
 | `TruncatedOutput` | `flagSuffix`, `droppedSuffix`, `flagKey`, `minimumBytes`, `retained`, `Capture`, `Reuse`, `captures`, `reuse`, `refusal`, `retain`, `Ledger` | The truncation ledger: which bytes this run was handed as a fragment. |
 | `CallLedger` | `bound`, `width`, `members`, `depth`, `distinct`, `resultWidth`, `Entry`, `Ledger`, `subject`, `sole`, `target`, `digest`, `payload`, `Settlement`, `entry`, `settled`, `remember`, `render` | The call ledger: what this run has already asked, rendered every frame. |
 | `NarrowedCheck` | `retained`, `maxTerms`, `labelWidth`, `label`, `targeting`, `names`, `lex`, `terms`, `conditions`, `Check`, `Narrowing`, `check`, `narrows`, `find`, `demand`, `Only`, `findOnly`, `demandOnly`, `remember`, `Ledger` | The narrowing ledger: which checks this run has run, and over which tree. |
 | `CellValidation` | `Validation`, `normalize`, `validate` | Cell validation at the boundary. |
+| `UnmovedTree` | `Unmoved`, `find`, `demand` | The completion with nothing behind it. |
+| `FailedCall` | `cap`, `heading`, `stated`, `Failure`, `reason`, `inspects`, `find`, `demand`, `state` | The completion its own cell wrote before a call in it failed. |
+| `UnresolvedFailure` | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand` | The failing check a completion stepped around. |
+| `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `Check`, `Ran`, `leafBytes`, `resultBytes`, `receipt`, `Reported`, `Settled`, `record`, `checksRunLimit`, `Evidence`, `classifier`, `sentenceLimit`, `sentences`, `passages`, `sentenceMarker`, `sentenceOf`, `sentenceClassifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `UnjudgedReason`, `unjudged`, `refusedBytes`, `refused`, `refusedIn`, `unproven`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
+| `Judgement` | `Unjudged`, `unconfigured`, `Asked`, `Read`, `measured`, `read`, `maxStateBytes`, `ItemQuestions`, `ItemAnswers`, `PerItemOptions`, `ItemState`, `ItemsRead`, `PerItem`, `perItem`, `decision`, `unjudgedEvent`, `Recorded`, `recorded`, `emitRecorded`, `taskBytes`, `task` | The one way this package asks Jev a question. |
+| `Intake` | `withheldPlaceholder`, `ignoreConfidence`, `injectionProbability`, `maximumStateBytes`, `maximumStates`, `Source`, `State`, `classifier`, `Text`, `texts`, `redact`, `Answer`, `Screening`, `Coverage`, `Screened`, `Unscreened`, `screen` | What an agent is shown of an inbound repository event's author text. |
+| `Relevance` | `Kind`, `Item`, `Context`, `withholdAt`, `itemBytes`, `reader`, `Verdict`, `Reading`, `judge`, `settled`, `flowItem`, `Document`, `Chunk`, `chunks`, `render` | What a run is shown of the human-provided items it could be shown. |
 | `Supervisor` | `frameBytes`, `recentFrames`, `recalledLimit`, `closeGraceMs`, `thrashingAt`, `offTargetAt`, `suspectAt`, `contextAt`, `Level`, `levels`, `Help`, `emotions`, `Emotion`, `Frame`, `Signals`, `Recalled`, `skillLimit`, `skillBytes`, `calledLimit`, `Skill`, `skill`, `Snapshot`, `monitorPrefix`, `MonitorQuestions`, `classifierFor`, `classifier`, `Reading`, `read`, `Memory`, `MemoryFailure`, `memoryNone`, `triggers`, `Triggerable`, `Trigger`, `triggered`, `contextTriggers`, `ContextTrigger`, `crosses`, `compacting`, `nudge`, `recalledInsert`, `head`, `tail`, `prose` | The reading Jev takes of a run while it is still running. |
 | `Monitor` | `Kind`, `Common`, `Questioned`, `Derived`, `Monitor`, `Budget`, `Input`, `budgets`, `idPattern`, `questionId`, `make`, `InvalidMonitor`, `validate`, `lint`, `paranoidText`, `carefulText`, `stepBackText`, `clarifyText`, `moods`, `defaults`, `skillText`, `skills`, `useJevText`, `useJev`, `questions`, `Row`, `Candidate`, `Evaluation`, `evaluate`, `Entry`, `Ledger`, `fresh`, `Gated`, `gate` | What one supervisor reading can put in front of the run, and when. |
-| `Judgement` | `Unjudged`, `unconfigured`, `Asked`, `Read`, `measured`, `read`, `maxStateBytes`, `ItemQuestions`, `ItemAnswers`, `PerItemOptions`, `ItemState`, `ItemsRead`, `PerItem`, `perItem`, `decision`, `unjudgedEvent`, `Recorded`, `recorded`, `emitRecorded`, `taskBytes`, `task` | The one way this package asks Jev a question. |
-| `Relevance` | `Kind`, `Item`, `Context`, `withholdAt`, `itemBytes`, `reader`, `Verdict`, `Reading`, `judge`, `settled`, `flowItem`, `Document`, `Chunk`, `chunks`, `render` | What a run is shown of the human-provided items it could be shown. |
-| `Intake` | `withheldPlaceholder`, `ignoreConfidence`, `injectionProbability`, `maximumStateBytes`, `maximumStates`, `Source`, `State`, `classifier`, `Text`, `texts`, `redact`, `Answer`, `Screening`, `Coverage`, `Screened`, `Unscreened`, `screen` | What an agent is shown of an inbound repository event's author text. |
-| `UnmovedTree` | `Unmoved`, `find`, `demand` | The completion with nothing behind it. |
-| `UnresolvedFailure` | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand` | The failing check a completion stepped around. |
-| `FailedCall` | `cap`, `heading`, `stated`, `Failure`, `reason`, `inspects`, `find`, `demand`, `state` | The completion its own cell wrote before a call in it failed. |
-| `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `leafBytes`, `resultBytes`, `receipt`, `Reported`, `Settled`, `record`, `checksRunLimit`, `Check`, `Ran`, `Evidence`, `classifier`, `sentenceLimit`, `sentences`, `passages`, `sentenceMarker`, `sentenceOf`, `sentenceClassifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `UnjudgedReason`, `unjudged`, `refusedBytes`, `refused`, `refusedIn`, `unproven`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
-| `Sufficiency` | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation` | The evidence that is already complete. |
+| `Sufficiency` | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `unanswered`, `observation` | The evidence that is already complete. |
 | `VacuousVerification` | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation` | The proof that was already true before anything changed. |
 | `VariablesPanel` | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render` | The variables panel: what the realm holds, stated every frame. |
-| `QuickJSSandbox` *(subpath)* | `cacheSuccessful`, `VariantService`, `Variant`, `layerVariantLive`, `layerVariant`, `ComputeClockService`, `ComputeClock`, `layerClockLive`, `loadModule`, `makeWithVariant`, `makeWithClock`, `make`, `layerWithVariant`, `layer` | The QuickJS-WASM sandbox binding. |
+| `QuickJSSandbox` *(subpath)* | `cacheSuccessful`, `layerVariant`, `loadModule`, `Variant`, `VariantService`, `layerVariantLive`, `ComputeClockService`, `ComputeClock`, `layerClockLive`, `makeWithVariant`, `makeWithClock`, `make`, `layerWithVariant`, `layer` | The QuickJS-WASM sandbox binding. |
+| `QuickJSLifecycle` | `stackBytes`, `prelude`, `abandon`, `isQuarantined`, `interruptBudget`, `utf8Length` | Portable lifecycle primitives shared by cell and presentation realms. Security policy remains with each consumer: these helpers neither install a host bridge nor harden presentation objects. |
+| `RealmFlow` | `Request`, `Receipt`, `Input`, `Result`, `agentAction`, `AgentPayload`, `RealmFlowError`, `version`, `step`, `layerDefaultVariant` | Fresh, bounded execution of pinned Flow.make modules. Action requests, agent steps included, cross the realm as data; the caller journals their outcomes. |
+| `ExternalTranscript` | `AgentKind`, `EditedFile`, `Part`, `Entry`, `ExternalTranscriptErrorCode`, `ExternalTranscriptError`, `codexReleases`, `CodexState`, `CodexCall`, `codexStart`, `Decoded`, `decodeCodex`, `claudeReleases`, `ClaudeCall`, `ClaudeState`, `claudeStart`, `decodeClaude` | The conversations of agents a person runs beside Smithers, decoded from the agent's own transcript file into ordered, read-only entries (mvp.md M-38, ui-components.md T-UI-07 S2). |
+| `QuickJSVariant` | `cacheSuccessful`, `VariantService`, `Variant`, `layerVariant`, `loadModule`, `compiledModule` | The QuickJS build a host names, and its compiled WebAssembly module. |
+| `QuickJSWorkerd` *(subpath)* | `variantFrom`, `variant` | The QuickJS build on Cloudflare's workerd, for a Worker or Durable Object that runs an agent's cells. |
 
 ## HarnessError
 
@@ -83,12 +89,14 @@ Serializable events emitted by harness adapters.
 | `DisciplineArmed` | class | events | The loop discipline a run was armed with, journaled once when it starts. |
 | `TurnOpened` | class | events | The serializable snapshot fixed when a turn opens. |
 | `ModelRequested` | class | events | What one model call was asked, written before the call is made. |
+| `ModelSelected` | class | events | The host selected the seat that will receive this capacity attempt. |
 | `SeatFailedOver` | class | events | A capacity refusal moved the current frame to another seat. |
 | `ModelParked` | class | events | All configured model seats are cooling until this instant. |
 | `ModelUnparked` | class | events | A parked model frame may issue a new request. |
 | `ModelDelta` | class | events | One provider-neutral model progress event. |
 | `ModelRetried` | class | events | A transport-only model retry taken before the sealed step settled. |
 | `ModelSettled` | class | events | The complete recorded model settlement and usage. |
+| `ModelFailed` | class | events | A model call that began and did not settle: it failed, or the run was interrupted inside it. |
 | `CellProduced` | class | events | The cell source recovered from one model settlement. |
 | `CellRejectedInFrame` | class | events | One reply the boundary parse refused, answered inside the frame it arrived in rather than by ending the frame. |
 | `CellCallStarted` | class | events | One flow call opened from inside a running cell. |
@@ -103,20 +111,21 @@ Serializable events emitted by harness adapters.
 | `UnmovedDemanded` | class | events | The controller refusing one completion with no change behind it. |
 | `UnresolvedDemanded` | class | events | The controller refusing one completion that stepped around a failing check. |
 | `FailedCallDemanded` | class | events | The controller handing back a completion its own cell wrote before a call in that cell failed. |
-| `UnobservedDemanded` | class | events | The controller handing back a completion its own cell wrote before reading the calls it made. |
 | `OutputDemanded` | class | events | The controller handing back a completion whose output does not fit the shape the host declared for it. |
+| `UnobservedDemanded` | class | events | The controller handing back a completion its own cell wrote before reading the calls it made. |
 | `NarrowOnlyDemanded` | class | events | The controller refusing one completion that holds a single reading. |
 | `ClaimDemanded` | class | events | What Jev read off one completion claim, whether or not it braked. |
+| `DecisionAnswer` | const | models | One classifier answer as `decision-settled` journals it, tagged by kind. |
+| `decisionAnswers` | const | conversions | The answers of one evaluation in the shape `DecisionSettled` carries. |
+| `DecisionSettled` | class | events | One decision a classifier made, with everything a reader needs to make it again: the state it read, the questions it was asked, and what it answered. |
 | `SupervisorSettled` | class | events | What Jev read off one frame of a running run, whether or not it nudged. |
 | `SupervisorUnjudged` | class | events | A supervisor snapshot nobody could judge, and why. |
 | `DecisionUnjudged` | class | events | A Jev reading that could not be judged, outside the supervisor. |
 | `RelevanceSettled` | class | events | Which human-provided items a relevance reading kept and which it withheld. |
 | `RelevanceRestored` | class | events | A withheld flow restored because the run called it by name. |
+| `SeatPanel` | const | schemas | A panel a routed run fans out to: each member seat, with the backups it fails over to, answers the task, and `merger` merges their answers. |
 | `SeatRouted` | class | events | The seat a run with no declared model was routed to, and who chose it. |
 | `SupervisorMemoryFailed` | class | events | A memory read or write the store refused: a supervisor recall, or a run-end transcript write. |
-| `DecisionAnswer` | const | models | One classifier answer as `decision-settled` journals it, tagged by kind. |
-| `decisionAnswers` | const | conversions | The answers of one evaluation in the shape `DecisionSettled` carries. |
-| `DecisionSettled` | class | events | One decision a classifier made, with everything a reader needs to make it again: the state it read, the questions it was asked, and what it answered. |
 | `SufficiencyObserved` | class | events | The controller telling a run that its own evidence is complete. |
 | `VacuousVerificationObserved` | class | events | The controller telling a run that its stored proof was already green. |
 | `MutationObserved` | class | events | What one frame did to the workspace, and how the controller knows. |
@@ -168,6 +177,11 @@ and [step keys and the model layer](./concepts.md#step-keys-and-the-model-layer)
 | `BoundaryIdentity` | interface | models | The durable identity of one journaled controller boundary. |
 | `DurableSchema` | type | models | A schema that decodes without services, the only kind a durable store can reconstruct a journaled value with. |
 | `RecordBoundary` | interface | models | One nondeterministic read the controller must perform exactly once per run. |
+| `Paid` | interface | models | One model's share of what a recorded boundary paid. |
+| `SpendPurpose` | type | models | What a paid engine call is for: `frame` (the agent's own model call), `compaction` (a compaction's summary call), `judge` (a supervisor reading), `marks` (compaction marks), `claim` (a completion check), `relevance` (a relevance reading, at run start or over recalled memory) and `reading` (an evaluator reading a cell's own flow call asked for). |
+| `SpendReading` | interface | models | One metered reading inside a boundary that pays for readings of more than one purpose. |
+| `Spend` | interface | models | What the controller says the engine call it is making is for. |
+| `FailedTimings` | const | services | Where a host reports the wire timing of a model try that failed. |
 | `Observation` | class | models | One measurement of the workspace the run is changing. |
 | `Snapshot` | class | models | One pinned tree the run can come back to. |
 | `Binding` | class | models | The names of the route one model request resolves to. |
@@ -175,6 +189,9 @@ and [step keys and the model layer](./concepts.md#step-keys-and-the-model-layer)
 | `CaptureRequest` | interface | models | A request to pin the workspace as it stands right now. |
 | `EngineLike` | interface | services | The engine operations required by harness translation. |
 | `make` | const | constructors | Constructs an engine port from an implementation. |
+| `callSubject` | const | constructors | The subject of one cell call: its session, frame and settled boundary. A host keys what the guard decided for a call (how many times the operator chose Continue) by the subject the controller admits it under. |
+| `TimedOut` | interface | models | One operation that ran past its time limit, as the controller reports it to . |
+| `Guard` | interface | models | A host's runaway guard for tool-call and cell timeouts; see . |
 | `layer` | const | layers | Provides an engine port implementation. |
 | `resolve` | const | conversions | What one request resolves to on this engine. |
 | `makeNoop` | const | constructors | Constructs an unavailable engine stub, optionally overriding operations. |
@@ -241,6 +258,10 @@ the model saw is what it said plus what the harness answered, in journal order.
 | `controlEventPrefix` | const | constants | The event-type namespace a session journals its controller events under. |
 | `ControlEventType` | type | models | An event type under `controlEventPrefix`. |
 | `validateJournal` | const | validation | Refuses history whose replay could address different sealed model steps. |
+| `decodeClaude` | const | decoding | Decode the next chunk of a Claude Code session transcript. Pass `claudeStart` with the first chunk and the returned state with each following one; any partition of the same bytes yields the same entries. |
+| `decodeCodex` | const | decoding | Decode the next chunk of a Codex rollout. Pass `codexStart` with the first chunk and the returned state with each following one; any partition of the same bytes yields the same entries. |
+| `ExternalDecoded` | interface | models | A decoded chunk: the entries it completed and the state to pass with the next chunk. |
+| `ExternalEntry` | const | models | One read-only entry of an external conversation, in source order. |
 
 ## Compaction
 
@@ -294,6 +315,8 @@ Turn-boundary steering values and their source contract. Governing design:
 | `makeNoop` | const | constructors | Creates a source that always returns an empty queue. |
 | `layer` | const | layers | Provides a steering source as a layer. |
 | `layerNoop` | const | layers | Provides an empty steering source as a layer. |
+| `timeLeft` | const | conversions | What a run with `budgetMs` to work in is told when `leftMs` of it is left, in whole minutes rounded down. |
+| `withTimeLeft` | const | combinators | `source`, with the time a run has left as a note () at each boundary the run continues through, so an agent with a deadline can pace itself: `startedAt` is when its `budgetMs` began, by the `Clock`. |
 
 ## Notifications
 
@@ -305,8 +328,11 @@ Governing contract: [notification queue](./concepts.md#notification-queue).
 | Export | Kind | Category | Summary |
 | --- | --- | --- | --- |
 | `Options` | interface | models | Which run and lineage this steering source draws notifications for. |
+| `text` | const | rendering | What a model reads for one notification: a header naming it, who sent it, from where and their attribution, then for anything but a system event, then its words. An agent outside Smithers, such as one on a runner, gets the same text. |
+| `precedence` | const | constants | How a person's message reads to the model: what they said while the run worked is newer than the task the run was given, so where the two conflict the model follows the message. Without it a model weighs a steer like any earlier line and keeps to the task's "change nothing else". A system event is a fact, not an instruction, and gets none. |
 | `make` | const | constructors | Captures the journal-backed queue as the harness steering source for one run lineage. |
 | `layer` | const | layers | Provides `Source` backed by the durable notification queue for one run lineage. |
+| `layerForExecution` | const | layers | Provides backed by the durable notification queue for whichever flow execution is draining it. |
 
 ## Cell
 
@@ -340,6 +366,9 @@ made inside one. Nothing here executes anything. Governing designs:
 | `project` | const | conversions | Projects a discovered descriptor into the cell-visible catalog entry. |
 | `CallFailureCode` | const | models | Why one flow call failed, as a closed set a cell may branch on. |
 | `defaultCallFailureCode` | const | constants | The code a failure carries when nothing classified it. |
+| `FailureKind` | interface | models | Public classification of a handler failure. |
+| `failureKind` | const | conversions | The of one handler failure, read without trusting it: only explicitly allowlisted public identifiers pass. Throwing accessors disclose nothing. With no allowlist, every failure stays opaque. |
+| `Failures` | const | services | Where a flow binding reports the of a handler failure. The controller provides it around each flow call and journals what arrives on that call's settlement; outside a call it does nothing. It tells the cell nothing: the call result is unchanged. |
 | `callFailureHint` | const | constants | The one action that recovers each failure class, stated to the cell. |
 | `TreeEpoch` | const, type | models | Which version of the live tree a sealed call reads; see `Call.epoch`. |
 | `LiveTree` | type | models | The tree a frame's sealed readings stand on: a measured digest, or the run and frame. |
@@ -358,8 +387,6 @@ made inside one. Nothing here executes anything. Governing designs:
 | `decodeCallResult` | const | decoders | Decodes a host or persisted result before the cell can observe it. |
 | `decodeOutcome` | const | decoders | Refuses contradictory or incomplete recorded evaluation outcomes. |
 | `decodeTransition` | const | decoders | Refuses contradictory or incomplete recorded transitions. |
-| `CallSuccess`, `CallFailure`, `CallResultVariant` | const | schemas | Discriminated JSON results; success cannot carry a failure code. |
-| `decodeCallResult`, `decodeOutcome`, `decodeTransition` | const | decoders | Validate host or recorded values, preserving original causes in typed errors. |
 | `callFailure` | const | conversions | The failure envelope a cell observes when a flow call does not succeed. |
 | `Extracted` | interface | models | One reply's cell program, and how many fenced blocks it was written in. |
 | `extract` | const | conversions | Extracts the cell program one model settlement emitted. |
@@ -391,8 +418,8 @@ acquired once per run and every cell of that run is evaluated in it.
 | `minimumTimeMs` | const | constants | Smallest wall-clock budget, in milliseconds, a binding can enter a realm under. |
 | `minimumMemoryBytes` | const | constants | Smallest heap ceiling the QuickJS binding can initialize and tear down safely. |
 | `printFrameBytes` | const | constants | How many UTF-8 bytes of one frame's whole print buffer reach the next model turn. |
-| `printStatementFloor` | const | constants | The smallest UTF-8-byte share of `printFrameBytes` one print statement is given. |
 | `printRetainedBytes` | const | constants | How many UTF-8 bytes of one frame's print buffer the host keeps while the cell still runs. |
+| `printStatementFloor` | const | constants | The smallest UTF-8-byte share of `printFrameBytes` one print statement is given. |
 | `withDefaults` | const | constructors | Fills omitted ceilings from `defaultLimits` for limits a binding can enforce. |
 | `evaluationLimits` | const | constructors | Merges and validates one frame's limits without changing the realm defaults. |
 | `Intent` | type | models | What a REPL cell asked the controller to do. |
@@ -409,6 +436,7 @@ acquired once per run and every cell of that run is evaluated in it.
 | `layerNoop` | const | layers | Provides an unavailable sandbox stub. |
 | `realmUnsupported` | const | constructors | Refuses a run on a binding that has no persistent realm. |
 | `callTimedOut` | const | constructors | Settles one overrunning flow call as a resolved failure. |
+| `callLimit` | const | constructors | The wall-clock ceiling one call runs under, in milliseconds. |
 | `compile` | const | conversions | Erases type-only syntax from a cell without evaluating or resolving modules. |
 | `PendingCall` | interface | models | A queued call awaiting resolution by a binding's driver. |
 | `driveCell` | const | constructors | Drives one externally compiled cell to settlement. |
@@ -438,19 +466,22 @@ Governing design: [durable cell loop](./concepts.md#durable-cell-loop).
 | `defaultMaxCheckpoints` | const | constants | Default number of trees one run may pin with `ctx.checkpoint()`. |
 | `State` | class | models | The serializable state carried across cell frames. |
 | `Input` | interface | models | Runtime declarations used to interpret serializable controller state. |
+| `OutputCheck` | interface | models | A host's check of a completion's output. |
 | `MemoryRow` | interface | models | One opening memory row: `key` is its relevance id. |
 | `Memory` | interface | models | Opening memory as the host declared it: its rows, the digest the opening window declares, and how the host renders rows. |
+| `memorySegment` | const | constructors | The prefix segment that carries opening memory under its declared digest. |
+| `instructionsSegment` | const | constructors | The prefix segment that carries human-provided instruction files, every chunk not withheld kept. |
 | `make` | const | constructors | Constructs an initial controller state. |
 | `Environment` | type | models | Host-measured container facts accepted by `teach`. |
 | `Profile` | type | models | The contract profile `teach` renders: `workspace`, the default, or `conversation`. |
 | `teach` | const | constructors | Prepends the cell contract and the callable-flow catalog to a context window. |
-| `instructionsSegment` | const | constructors | The prefix segment that carries human-provided instruction files, every chunk not withheld kept. |
-| `memorySegment` | const | constructors | The prefix segment that carries opening memory under its declared digest. |
 | `run` | const | streams | Runs the cell loop until it completes, parks, or exhausts its budget. |
 
 ## DoneText
 
-`import { DoneText } from "@smthrs/harness"` (on the root only, with no subpath)
+`import { DoneText } from "@smthrs/harness"`
+
+(on the root only, with no subpath)
 
 The answer text of a reply that is still streaming: the decoded prefix of the
 literal a cell passes to `ctx.done`, for display before the run settles.
@@ -511,6 +542,7 @@ The executable-flow binding contract. Governing designs:
 | `descriptorOf` | const | conversions | Projects an ordinary flow declaration into a registry descriptor. |
 | `Binding` | interface | models | One flow declaration and the code that runs it. |
 | `Options` | interface | models | Everything one executable binding declares. |
+| `decodeInput` | const | decoding | The decoder a binding runs on cell input before its handler, exactly. |
 | `make` | const | constructors | Binds one flow declaration to its runtime implementation. |
 | `provide` | const | combinators | Supplies a binding's remaining requirements from a context the host built. |
 | `Source` | interface | models | A named producer of executable bindings. |
@@ -608,6 +640,8 @@ check is only evidence for the tree it ran over.
 | --- | --- | --- | --- |
 | `retained` | const | constants | How many distinct checks one run carries forward. |
 | `maxTerms` | const | constants | Most distinct terms one recorded check may carry. |
+| `labelWidth` | const | constants | How many UTF-8 bytes of a check's input the demand may quote back. |
+| `label` | const | conversions | An input as its label quotes it: canonical JSON, the longest string member last. |
 | `targeting` | const | predicates | Whether a term names a target rather than a condition. |
 | `names` | const | predicates | Whether a term names a target a reader would recognise as one. |
 | `lex` | const | conversions | The terms of one call input in the order the canonical document states them. |
@@ -615,8 +649,6 @@ check is only evidence for the tree it ran over.
 | `conditions` | const | conversions | The terms of one call input that could be conditions its author added. |
 | `Check` | class | models | One check this run has run, and the tree it ran over. |
 | `Narrowing` | interface | models | A check this frame ran, paired with the broader one it stands in for. |
-| `labelWidth` | const | constants | How many UTF-8 bytes of a check's input the demand may quote back. |
-| `label` | const | conversions | An input as its label quotes it: canonical JSON, the longest string member last. |
 | `check` | const | constructors | Records one settled call as a check, unless its input is a payload. |
 | `narrows` | const | predicates | Whether one call's terms are a strict narrowing of another's. |
 | `find` | const | conversions | Finds the broadest check a completing frame narrowed and did not re-run. |
@@ -702,6 +734,8 @@ The completion nothing in the record contradicts.
 | `overclaimedAt` | const | constants | At or above this probability of "overclaims", the claim is handed back. |
 | `unsupportedAt` | const | constants | At or above this probability of "invented", the claim is handed back. |
 | `inventedAt` | const | constants | At or above this probability of "invented", the claim ends the run. |
+| `Check` | const | models | The last check the completing frame ran, with its verbatim result. |
+| `Ran` | const | models | One command this run ran, the tail of what it reported, and what it reported before when that differed. |
 | `leafBytes` | const | constants | The most of one string in a listed check's result `receipt` keeps, newest kept. |
 | `resultBytes` | const | constants | The most of one listed check's whole result `receipt` keeps. |
 | `receipt` | const | conversions | What `Evidence.checksRun` says a check reported: each string's tail, the whole bounded. |
@@ -709,8 +743,6 @@ The completion nothing in the record contradicts.
 | `Settled` | interface | models | One settled call as `record` reads it. |
 | `record` | const | combinators | Folds one frame's calls into the commands this run ran, writes included, with the outcome each reported before it changed. |
 | `checksRunLimit` | const | constants | The most checks `Evidence.checksRun` lists, newest kept. |
-| `Check` | const | models | The last check the completing frame ran, with its verbatim result. |
-| `Ran` | const | models | One command this run ran, the tail of what it reported, and what it reported before when that differed. |
 | `Evidence` | const | schemas | Everything the brake sends, and the whole of it. |
 | `classifier` | const | classifiers | The one classifier this brake asks, declared once. |
 | `sentenceLimit` | const | constants | The most parts `sentences` splits one claim into. |
@@ -925,6 +957,7 @@ The evidence that is already complete.
 | `remember` | const | combinators | Records one frame's failing checks against the epoch it ran in. |
 | `Sufficient` | interface | models | A failure this run has answered, and the check that answered it. |
 | `find` | const | conversions | Finds a failing-before, passing-after pair this frame has completed. |
+| `unanswered` | const | conversions | The remembered failures that no passing check has answered yet. |
 | `observation` | const | constructors | States that the run holds both halves of its own evidence. |
 
 ## VacuousVerification
@@ -962,7 +995,9 @@ The variables panel: what the realm holds, stated every frame.
 
 ## QuickJSSandbox
 
-`import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"` (not
+`import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"`
+
+(not
 re-exported from the root)
 
 The QuickJS-WASM sandbox binding. The cell runs inside a QuickJS interpreter
@@ -976,20 +1011,19 @@ a build whose module came from its toolchain.
 | Export | Kind | Category | Summary |
 | --- | --- | --- | --- |
 | `cacheSuccessful` | const | constructors | Caches only a successful asynchronous load; a rejection may be retried. |
-| `VariantService` | interface | models | The QuickJS build the sandbox compiles. |
-| `Variant` | class | services | The QuickJS build the sandbox compiles. |
-| `layerVariantLive` | const | layers | Provides the single-file build, which Node and a browser both compile. |
 | `layerVariant` | const | layers | Provides a build the host names. |
+| `loadModule` | const | constructors | Loads a QuickJS module through the sandbox's typed failure boundary. |
+| `Variant` | class | services | The QuickJS build the sandbox compiles. |
+| `VariantService` | interface | models | The QuickJS build the sandbox compiles. |
+| `layerVariantLive` | const | layers | Provides the single-file build, which Node and a browser both compile. |
 | `ComputeClockService` | interface | models | Synchronous monotonic-enough clock required by QuickJS's interrupt callback. |
 | `ComputeClock` | class | services | Synchronous monotonic-enough clock required by QuickJS's interrupt callback. |
 | `layerClockLive` | const | layers | Provides the browser-safe host clock behind the QuickJS clock seam. |
-| `loadModule` | const | constructors | Loads a QuickJS module through the sandbox's typed failure boundary. |
 | `makeWithVariant` | const | constructors | Constructs the QuickJS sandbox over the build the host names, compiling the WebAssembly module once. |
 | `makeWithClock` | const | constructors | Constructs the QuickJS sandbox over the single-file build. |
 | `make` | const | constructors | Constructs the QuickJS sandbox with the live clock layer. |
 | `layerWithVariant` | const | layers | Provides the QuickJS sandbox over the build the host names. |
 | `layer` | const | layers | Provides the QuickJS sandbox over the single-file build. |
-
 
 ## QuickJSLifecycle
 
@@ -1004,19 +1038,80 @@ Quarantine is shared by compiled module identity and permits at most one
 abandoned runtime. These utilities install no host bridge or object hardening;
 each consumer retains its security policy.
 
+| Export | Kind | Category | Summary |
+| --- | --- | --- | --- |
+| `stackBytes` | const | models | Keep the interpreter under the host stack: each QuickJS byte costs roughly three host bytes. A host overflow leaves an unsafe, undisposable runtime. |
+| `prelude` | const | constructors | Deterministic globals removed by both consumers. Presentation also removes weak references; the harness retains its own persistent-realm policy. |
+| `abandon` | const | mutations | Refuse further allocations after one runtime becomes unsafe to dispose. Shared across every consumer and service using the same compiled module. |
+| `isQuarantined` | const | predicates | Whether the module may allocate another runtime. |
+| `interruptBudget` | const | constructors | A resettable synchronous interrupt deadline and poll budget. Paused host calls refund compute time, while each consumer keeps its total wall clock. |
+| `utf8Length` | const | conversions | UTF-8 length without allocating an encoded buffer. Lone surrogates count as the three-byte replacement character, matching TextEncoder. |
+
 ## RealmFlow
 
 `import { RealmFlow } from "@smthrs/harness"`
 
-| Export | Kind | Contract |
-| --- | --- | --- |
-| `Request` | interface | `{ _tag: "Action"; key: string; name: string; payload: unknown }`, addressed by the canonical interpreter node. |
-| `Receipt` | interface | Extends Request with `outcome`: Success carrying `value`, or Failure carrying `error`. Immutable host-journaled progress. |
-| `Input` | interface | Pinned `source`, `expectedTag`, decoded `payload`, `allowedActions`, optional prior `receipts`. |
-| `Result` | type | Request, or `{ _tag: "Complete"; value: unknown }` after success-schema validation. |
-| `agentAction` | constant | `"@smthrs/agent/AgentAction"`; offer it in allowedActions to admit agent steps. |
-| `AgentPayload` | schema | `{ step: string; seat: string; prompt: string }`; the host owns the model and limits. |
-| `RealmFlowError` | tagged error | Sanitized `code`: invalid_source, execution_failed, limit_exceeded, runtime_failed, forbidden_import, action_not_allowed. Source and values stay out of diagnostics. |
-| `version` | constant | Digest of the pinned compiler/runtime inputs used to identify realm semantics. |
-| `step` | function | `(input: Input) => Effect<Result, RealmFlowError, QuickJSVariant.Variant>`; a fresh bounded realm runs the actual SDK interpreter. The host journals each returned action before invoking step again. |
-| `layerDefaultVariant` | layer | The default single-file QuickJS variant, required by step. |
+| Export | Kind | Category | Summary |
+| --- | --- | --- | --- |
+| `Request` | interface | models | `{ _tag: "Action"; key: string; name: string; payload: unknown }`, addressed by the canonical interpreter node. |
+| `Receipt` | interface | models | Extends Request with `outcome`: Success carrying `value`, or Failure carrying `error`. Immutable host-journaled progress. |
+| `Input` | interface | models | Pinned `source`, `expectedTag`, decoded `payload`, `allowedActions`, optional prior `receipts`. |
+| `Result` | type | models | Request, or `{ _tag: "Complete"; value: unknown }` after success-schema validation. |
+| `agentAction` | constant | constants | `"@smthrs/agent/AgentAction"`; offer it in allowedActions to admit agent steps. |
+| `AgentPayload` | schema | models | `{ step: string; seat: string; prompt: string }`; the host owns the model and limits. |
+| `RealmFlowError` | tagged error | models | Sanitized `code`: invalid_source, execution_failed, limit_exceeded, runtime_failed, forbidden_import, action_not_allowed. Source and values stay out of diagnostics. |
+| `version` | constant | identity | Digest of the pinned compiler/runtime inputs used to identify realm semantics. |
+| `step` | function | execution | `(input: Input) => Effect<Result, RealmFlowError, QuickJSVariant.Variant>`; a fresh bounded realm runs the actual SDK interpreter. The host journals each returned action before invoking step again. |
+| `layerDefaultVariant` | layer | models | The default single-file QuickJS variant, required by step. |
+
+## ExternalTranscript
+
+`import * as ExternalTranscript from "@smthrs/harness/ExternalTranscript"`
+
+The conversations of agents a person runs beside Smithers, decoded from the agent's own transcript file into ordered, read-only entries (mvp.md M-38, ui-components.md T-UI-07 S2).
+
+| Export | Kind | Category | Summary |
+| --- | --- | --- | --- |
+| `AgentKind` | const | models | The agents whose transcripts decode here. |
+| `EditedFile` | const | models | One edited file as the agent reported it: its path, the kind of change and the unified diff. |
+| `Part` | const | models | What one entry says. Tool parts keep the agent's correlation id; edits keep the path and the reported outcome; a body the agent encrypted is a placeholder in its place, never dropped. |
+| `Entry` | const | models | One read-only entry of an external conversation, in source order. |
+| `ExternalTranscriptErrorCode` | const | errors | Why a transcript did not decode. |
+| `ExternalTranscriptError` | class | errors | A transcript this module refuses to read, with the line it stopped at. |
+| `codexReleases` | const | constants | The Codex CLI releases whose rollout shape this module reads, by `major.minor`. |
+| `CodexState` | interface | models | What a Codex decode remembers between chunks. |
+| `CodexCall` | interface | models | A Codex code-mode request waiting for its output: the tool's name and the script it was given. |
+| `codexStart` | const | constructors | The state before the first byte. |
+| `Decoded` | interface | models | A decoded chunk: the entries it completed and the state to pass with the next chunk. |
+| `decodeCodex` | const | decoding | Decode the next chunk of a Codex rollout. Pass `codexStart` with the first chunk and the returned state with each following one; any partition of the same bytes yields the same entries. |
+| `claudeReleases` | const | constants | The Claude Code release lines whose transcript shape this module reads, by `major.minor`. |
+| `ClaudeCall` | interface | models | A Claude Code tool call waiting for its result: the tool's name, its input and when the agent asked. |
+| `ClaudeState` | interface | models | What a Claude Code decode remembers between chunks. |
+| `claudeStart` | const | constructors | The state before the first byte. |
+| `decodeClaude` | const | decoding | Decode the next chunk of a Claude Code session transcript. Pass `claudeStart` with the first chunk and the returned state with each following one; any partition of the same bytes yields the same entries. |
+
+## QuickJSVariant
+
+`import { QuickJSVariant } from "@smthrs/harness"`
+
+The QuickJS build a host names, and its compiled WebAssembly module.
+
+| Export | Kind | Category | Summary |
+| --- | --- | --- | --- |
+| `cacheSuccessful` | const | constructors | Caches only a successful asynchronous load; a rejection may be retried. |
+| `VariantService` | interface | models | The QuickJS build a realm compiles. |
+| `Variant` | class | services | The QuickJS build a realm compiles. |
+| `layerVariant` | const | layers | Provides a build the host names. |
+| `loadModule` | const | constructors | Loads a QuickJS module through the sandbox's typed failure boundary. |
+| `compiledModule` | const | constructors | The module for the build the host names, compiled on first use and shared by every realm over the same variant. A failed compile is retried on the next use. |
+
+## QuickJSWorkerd
+
+`import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"`
+
+The QuickJS build on Cloudflare's workerd, for a Worker or Durable Object that runs an agent's cells.
+
+| Export | Kind | Category | Summary |
+| --- | --- | --- | --- |
+| `variantFrom` | const | layers | The separate-file build over the compiled module `load` gives. A load that fails is the sandbox failing to build, `SandboxError` with code `runtime_failed`, and is tried again the next time the layer is built. |
+| `variant` | const | layers | The build on workerd: the `.wasm` module the Worker's bundle carries. |

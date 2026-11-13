@@ -14,7 +14,10 @@ never becomes a score, even when its result contains a reward.
 
 Each placement refusal retains its trial, task and exception message. Retried
 attempts in `<job-name>.infra` remain in the recent infrastructure check but do
-not count again in the current trial denominator. A health exit of `0` does not
+not count again in the current trial denominator. The infrastructure rate uses only `graded`, `agent` and `infra` outcomes
+finished within the last hour, excluding `CancelledError` from both the count
+and denominator. Placement refusals never dilute it. At least two infrastructure
+failures and a rate strictly above `20%` trip the check. A health exit of `0` does not
 prove every task placed or that a benchmark is complete.
 
 Keep the original job and task roster when qualifying resources. The four

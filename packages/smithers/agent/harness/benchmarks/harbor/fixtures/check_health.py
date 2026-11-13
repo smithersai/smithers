@@ -8,6 +8,7 @@ no Harbor installation, network, or model seat is needed.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -162,8 +163,30 @@ class HealthCLI(unittest.TestCase):
         self.trial("pending__one", finished=False)
         report = self.report()
         self.assert_counts(report, 0, 7, 0, 0, 0, 0)
-        self.assertIn("infra last hour: 0 of 4 finished (0%)", report)
+        self.assertIn("infra last hour: 0 of 0 finished (0%)", report)
         self.assertNotIn("## TRIPPED", report)
+
+    def test_excluded_outcomes_cannot_dilute_infrastructure_rate(self) -> None:
+        for aside in (False, True):
+            for exception in ("PlueUnplaceable", "CancelledError"):
+                with self.subTest(aside=aside, exception=exception):
+                    for directory in self.jobs.iterdir():
+                        shutil.rmtree(directory)
+                    (self.jobs / "current").mkdir()
+                    self.trial("infra__one", exception="PlueError")
+                    self.trial("infra__two", exception="PlueError", aside=True)
+                    for index in range(9):
+                        self.trial(f"excluded-{index}__one", exception=exception, aside=aside)
+                    self.trial("running__one", finished=False)
+                    self.trial("old__one", reward=1, age=7200)
+                    report = self.report(3)
+                    self.assertIn("infra last hour: 2 of 2 finished (100%)", report)
+                    self.assertIn("current: 2 of 2 trials finished in the last hour were infra (100%)", report)
+                    # Graded agent outcomes belong in the eligible denominator.
+                    for index in range(8):
+                        self.trial(f"agent-{index}__one", reward=0, exception="AgentTimeoutError")
+                    report = self.report()
+                    self.assertIn("infra last hour: 2 of 10 finished (20%)", report)
 
     def test_broken_trip_keeps_wall_and_container_command_boundaries(self) -> None:
         self.trial("boundary__one", reward=0, wall=60)

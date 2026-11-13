@@ -33,9 +33,10 @@ The `exports` map publishes these subpaths:
 
 | Import                           | What it is                                                                                                                                                           |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@smthrs/harness`                | The root barrel: 27 namespaces, each re-exporting one module.                                                                                                        |
-| `@smthrs/harness/<Module>`       | Any top-level module directly, for example `@smthrs/harness/CellTurn`.                                                                                               |
+| `@smthrs/harness`                | The root barrel: 38 namespaces, each re-exporting one module.                                                                                                        |
+| `@smthrs/harness/<Module>`       | A module with a published subpath, for example `@smthrs/harness/CellTurn`.                                                                                           |
 | `@smthrs/harness/QuickJSSandbox` | The QuickJS-WASM `Sandbox` binding. Deliberately not re-exported from the root, because it carries an embedded WebAssembly build; only hosts that want it import it. |
+| `@smthrs/harness/QuickJSWorkerd` | The QuickJS variant for Cloudflare workerd, imported only by its host.                                                                                               |
 | `@smthrs/harness/package.json`   | The package manifest.                                                                                                                                                |
 
 The `./internal/*` and `./*/index` subpaths map to `null` and do not resolve.
@@ -44,7 +45,7 @@ Nothing under `src/internal/` is public.
 ## The namespaces on the root
 
 Every namespace on the root barrel is also importable from its own subpath,
-except `DoneText`, `QuickJSVariant` and `QuickJSLifecycle`, which are on the root only.
+except `DoneText`, `QuickJSVariant`, `QuickJSLifecycle` and `RealmFlow`, which are on the root only.
 The complete list, with what each one is for, is the
 [module index](./api.md#module-index) of the API reference.
 

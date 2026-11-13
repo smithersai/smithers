@@ -400,6 +400,20 @@ def check_durable_exec_and_workdir() -> None:
             raise OSError("registry down")
         assert image_config.working_dir("r/z@sha256:3", cache=cache, fetch=broken) is None, "a lookup failure is no WORKDIR"
         assert image_config.parse("harborframework/terminal-bench:t@sha256:ab") == ("registry-1.docker.io", "harborframework/terminal-bench", "sha256:ab")
+        # Mutable references must ignore legacy tag entries and observe a
+        # republished image's current workdir and user on every lookup.
+        for image in ("ubuntu:24.04", "ubuntu", "ghcr.io/o/r:latest"):
+            cache.write_text(json.dumps({image: {"WorkingDir": "/stale", "User": "old"}}))
+            fetched.clear()
+            def mutable_fetch(reference):
+                fetched.append(reference)
+                return {"config": {"WorkingDir": f"/app-{len(fetched)}", "User": str(len(fetched))}}
+            assert image_config.run_config(image, cache=cache, fetch=mutable_fetch) == {"WorkingDir": "/app-1", "User": "1"}
+            assert image_config.working_dir(image, cache=cache, fetch=mutable_fetch) == "/app-2"
+            assert fetched == [image, image], "a mutable reference is always fetched"
+            assert image_config.working_dir(image, cache=cache, fetch=broken) is None, "no stale tag fallback on a registry fault"
+            assert json.loads(cache.read_text())[image]["WorkingDir"] == "/stale", "a tag lookup is never cached"
+
         assert image_config.parse("ubuntu:24.04") == ("registry-1.docker.io", "library/ubuntu", "24.04")
         assert image_config.parse("ghcr.io/o/r:1") == ("ghcr.io", "o/r", "1")
 

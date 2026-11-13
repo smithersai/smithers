@@ -5,7 +5,8 @@ CLI's default directory unless told otherwise, and plue does not report the
 image's config. This reads it from the registry (anonymous pull token, the
 linux/amd64 manifest of an index) and caches it by image reference in
 PLUE_IMAGE_CONFIG_CACHE (default ~/.cache/plue-image-config.json). A digest-
-pinned reference never changes, so the cache never expires.
+pinned reference never changes, so its cache never expires. Mutable references
+are fetched on every lookup and never read from or written to the cache.
 
     working_dir("harborframework/terminal-bench:x@sha256:…") -> "/app" | None
 """
@@ -101,6 +102,17 @@ def _cache_path() -> Path:
 def run_config(image: str, *, cache: Path | None = None,
                fetch: Callable[[str], dict[str, Any]] = fetch_config) -> dict[str, Any] | None:
     """`config` of the image (WorkingDir, User, …), or None when unreadable."""
+    def read() -> dict[str, Any] | None:
+        try:
+            config = (fetch(image) or {}).get("config") or {}
+        except Exception:  # noqa: BLE001 - a registry fault is "unknown", never a trial failure
+            return None
+        return {"WorkingDir": config.get("WorkingDir") or "", "User": config.get("User") or ""}
+
+    if "@sha256:" not in image:
+        # A tag can be re-pushed with another WORKDIR, so it is read from the
+        # registry each time, outside the cache and its lock.
+        return read()
     path = cache or _cache_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path.with_suffix(path.suffix + ".lock"), "a+") as lock:
@@ -111,11 +123,10 @@ def run_config(image: str, *, cache: Path | None = None,
             known = {}
         if image in known:
             return known[image]
-        try:
-            config = (fetch(image) or {}).get("config") or {}
-        except Exception:  # noqa: BLE001 - a registry fault is "unknown", never a trial failure
+        value = read()
+        if value is None:
             return None
-        known[image] = {"WorkingDir": config.get("WorkingDir") or "", "User": config.get("User") or ""}
+        known[image] = value
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(known, indent=1, sort_keys=True))
         tmp.replace(path)

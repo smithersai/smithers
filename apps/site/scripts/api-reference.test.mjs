@@ -2,6 +2,7 @@
 import assert from "node:assert/strict"
 import { existsSync, readFileSync } from "node:fs"
 import { test } from "node:test"
+import ts from "typescript"
 
 const read = (path) => {
   const url = new URL(`../../../${path}`, import.meta.url)
@@ -152,6 +153,75 @@ test("harness API index matches every public root namespace", () => {
   assert.match(docs, new RegExp(`${names.length} public root modules`))
   for (const name of names) assert.ok(docs.includes(`\`${name}\``), `harness index: ${name}`)
   assert.ok(read(`${dir}/docs/reference.md`).includes("RealmFlow"))
+})
+
+const harnessDir = "packages/smithers/agent/harness"
+const harnessNamespaces = () => [...read(`${harnessDir}/src/index.ts`).matchAll(/export \* as (\w+) from/g)].map((match) => match[1])
+const harnessManifest = () => JSON.parse(read(`${harnessDir}/package.json`))
+const section = (docs, name) => docs.split(`\n## ${name}\n`)[1]?.split(/\n## /)[0] ?? ""
+
+test("harness entry points distinguish root-only namespaces and platform subpaths", () => {
+  const names = harnessNamespaces()
+  const manifest = harnessManifest()
+  const rootOnly = names.filter((name) => !manifest.exports[`./${name}`])
+  for (const page of ["installation", "api", "reference"]) {
+    const docs = read(`${harnessDir}/docs/${page}.md`)
+    assert.match(docs, new RegExp(`${names.length} (?:public root modules|namespaces)`), `${page}: namespace count`)
+    for (const name of rootOnly) {
+      assert.ok(docs.includes(`\`${name}\``), `${page}: root-only ${name}`)
+      assert.ok(!docs.includes(`from "@smthrs/harness/${name}"`), `${page}: unresolvable ${name} import`)
+    }
+    for (const name of ["QuickJSSandbox", "QuickJSWorkerd"]) {
+      assert.ok(docs.includes(`@smthrs/harness/${name}`), `${page}: platform subpath ${name}`)
+    }
+    assert.doesNotMatch(docs, /Every module is also\s+importable|Any top-level module directly/)
+  }
+})
+
+test("harness inventory covers every public module and export from the source", () => {
+  const names = [...new Set([...harnessNamespaces(), ...Object.keys(harnessManifest().exports)
+    .filter((key) => /^\.\/[A-Z]\w*$/.test(key)).map((key) => key.slice(2))])]
+  const docs = read(`${harnessDir}/docs/reference.md`)
+  for (const name of names) {
+    const body = section(docs, name)
+    assert.ok(body, `missing inventory module ${name}`)
+    const source = ts.createSourceFile(`${name}.ts`, read(`${harnessDir}/src/${name}.ts`), ts.ScriptTarget.Latest, true)
+    const exported = new Set()
+    for (const statement of source.statements) {
+      if (ts.getJSDocTags(statement).some((tag) => ["internal", "private"].includes(tag.tagName.text))) continue
+      if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+        for (const member of statement.exportClause.elements) exported.add(member.name.text)
+      } else if (statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) {
+        if (ts.isVariableStatement(statement)) {
+          for (const declaration of statement.declarationList.declarations) exported.add(declaration.name.getText(source))
+        } else if (statement.name) exported.add(statement.name.text)
+      }
+    }
+    const table = body.split("\n").filter((line) => line.startsWith("|"))
+    const columns = (row) => row.split(/(?<!\\)\|/).length
+    for (const row of table) assert.equal(columns(row), columns(table[0]), `${name}: table columns`)
+    const documented = [...body.matchAll(/^\| `(\w+)` \|/gm)].map((match) => match[1])
+    assert.deepEqual(documented.sort(), [...exported].sort(), `${name}: inventory exports`)
+  }
+})
+
+test("harness event table, failure count and host requirements match the source", () => {
+  const docs = reference(harnessDir)
+  const events = read(`${harnessDir}/src/AgentEvent.ts`)
+  const pairs = [...events.split("export const eventType = {")[1].split("} as const")[0]
+    .matchAll(/(\w+): "(flows\.harness\.([^"]+)\.v\d+)"/g)]
+  const rows = [...docs.matchAll(/^\| `([^`]+)`\s*\| `(\w+)`\s*\| `(flows\.harness\.[^`]+)`\s*\|/gm)]
+  assert.deepEqual(rows.map((row) => [row[1], row[2], row[3]]).sort(),
+    pairs.map((pair) => [pair[3], pair[1], pair[2]]).sort())
+  assert.match(docs, new RegExp(`tagged union of all ${pairs.length}\\b`))
+  const codes = [...read(`${harnessDir}/src/Cell.ts`).split("export const CallFailureCode = Schema.Literals([")[1]
+    .split("])")[0].matchAll(/"([^"]+)"/g)]
+  assert.match(docs, new RegExp(`maps each of the ${codes.length} codes`))
+  const run = section(docs, "CellTurn").match(/export const run:[\s\S]*?```/)?.[0]
+  assert.match(run ?? "", /Steering.Source \| Evaluator.Evaluator/)
+  const engine = section(docs, "EngineLike").split("```ts")[1]?.split("```")[0]
+  assert.match(engine ?? "", /readonly recoverCall\?/)
+  assert.match(engine ?? "", /readonly isSuspended\?/)
 })
 
 test("build API tables cover public install, manager, and runtime helpers", () => {

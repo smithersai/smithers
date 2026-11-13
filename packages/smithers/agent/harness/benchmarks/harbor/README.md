@@ -250,7 +250,9 @@ beside NodeSource's nodejs (SWE-bench Pro V2 openlibrary), and apt-get's exit
   unfinished trials, including unreadable or truncated `result.json` files,
   to `<job>.infra/` and `harbor jobs resume -p <job>` re-runs them. Their
   original result files stay with the saved attempts. `health.py` trips when infra is
-  over 20% of a job's trials finished in the last hour. `PlueUnplaceable` is neither retried nor
+  over 20% of a job's eligible trials finished in the last hour, with at least
+  two infrastructure failures. `CancelledError` and `PlueUnplaceable` are excluded
+  from both the count and denominator. `PlueUnplaceable` is neither retried nor
   scored: the guest cannot fit this cluster.
 - When no healthy account is left the pool PAUSES: a lease waits
   (`SMITHERS_CODEX_POOL_WAIT_SEC`, default six hours) for a reset or a new
