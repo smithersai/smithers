@@ -1,7 +1,7 @@
 import { Smithers } from "@smthrs/targets"
 import { Package as registryPackage } from "../smithers/agent/registry/PACKAGE.ts"
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "./src/index.ts"
-import { listFiles } from "./contracts/check-tracked-hygiene.mjs"
+import * as Input from "@smthrs/targets/Input"
 import { repoRoot } from "./scripts/workspace-packages.mjs"
 
 const cwd = "packages/repo-targets"
@@ -53,7 +53,7 @@ const test = Smithers.Vitest({
 
 /** The whole checkout is the subject of repository-wide engineering gates. */
 const repositoryPackages = Object.fromEntries(
-  [...new Set(["", ...listFiles(repoRoot, { includeUntracked: true })
+  [...new Set(["", ...(await Input.expandGlob(repoRoot, "", "//**/PACKAGE.ts", { packageScoped: false }))
     .filter((path) => path === "PACKAGE.ts" || path.endsWith("/PACKAGE.ts"))
     .map((path) => path === "PACKAGE.ts" ? "" : path.slice(0, -"/PACKAGE.ts".length))])]
     .sort()
@@ -704,26 +704,14 @@ const securityReview = Smithers.SecurityReview({
       paths: ["src/BuildAndCheckTypeScriptPackage.ts"]
     },
     {
-      id: "ci-bootstrap-downloads",
-      title: "Every tool the Cloud CI bootstrap downloads and executes is pinned by version and digest",
-      threat:
-        "A compromised or spoofed release host swaps a jj, ripgrep, Foundry, rustup or Node binary that then runs with the CI task's repository access.",
-      lookFor: [
-        "A download() or curl that reaches tar/chmod/exec without download_verified, which checks node_digest or tool_digest with sha256sum -c and exits on a mismatch.",
-        "A version read from a repository file used unvalidated in a URL or shell word.",
-        "apt or npm installs that run lifecycle scripts or use sudo in a Cloud task."
-      ],
-      paths: ["contracts/require-toolchain.mjs"]
-    },
-    {
       id: "script-subprocess-args",
       title: "Scripts spawn processes with argument vectors, never shell strings built from inputs",
       threat:
         "A crafted CLI flag, environment value, commit message or git ref makes an operator script run arbitrary shell commands on a maintainer or CI host.",
       lookFor: [
         "exec, execSync or spawn with shell:true, or sh -c, interpolating argv, environment variables, file contents or git output.",
-        "A string option split on spaces and executed, like rebase-cache --install.",
-        "An unvalidated positional argument placed into go build -ldflags or a similar command-line flag string."
+        "A check-known-red-coverage.mjs --issues path or repository input interpolated into gh issue list instead of passed as one argument.",
+        "A bun-coverage child command or preload path reconstructed as a shell string instead of preserving the spawn argument vector."
       ],
       paths: ["contracts/check-known-red-coverage.mjs", "bun-coverage/**"]
     },

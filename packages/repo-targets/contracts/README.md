@@ -48,7 +48,7 @@ These are explicit transitional exceptions owned by the corresponding app, not
 zero-percent thresholds or completed coverage work. A future numeric gate must
 first measure all production sources, add missing behavior tests and establish
 a baseline. Existing package floors and ignore rationales remain in
-`coverage-conformance.md` and the flows coverage-isolation suite. The lower
+[`conformance/coverage.test.ts`](../conformance/coverage.test.ts) and the flows coverage-isolation suite. The lower
 build-cli, std, migrate and CLI branch floors remain behavioral test debt owned
 by those packages; this lane changes none of their thresholds or exclusions.
 

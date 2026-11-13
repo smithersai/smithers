@@ -1,5 +1,6 @@
 import * as Yaml from "yaml"
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, it } from "node:test"
@@ -397,8 +398,11 @@ describe("ci conformance", () => {
     assert.ok(!Object.hasOwn(ci.jobs, "node-windows"))
   })
 
-  it("keeps every CI step a target invocation, never a hand-written command", () => {
-    const commands = Object.values(readCi().jobs).flatMap((job) => job.steps)
+  const assertCiCommands = (steps: ReadonlyArray<CiStep>) => {
+    for (const step of steps) {
+      if (step.run?.includes("\n")) assert.doesNotMatch(step.run, /\bsmthrs\b|\bsmithers-build\b/)
+    }
+    const commands = steps
       .flatMap((step) => step.run === undefined || step.run.includes("\n") ? [] : [step.run])
     assert.ok(commands.length > 0)
     const derived = [
@@ -409,6 +413,45 @@ describe("ci conformance", () => {
     ]
     const resultsInit = "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
     assert.deepEqual(commands.filter((command) => command !== resultsInit && !derived.some((shape) => shape.test(command))), [])
+  }
+
+  it("keeps every CI step a target invocation, never a hand-written command", () => {
+    assertCiCommands(Object.values(readCi().jobs).flatMap((job) => job.steps))
+  })
+
+  it("rejects target commands hidden inside multi-line setup steps", () => {
+    const setup: CiStep = { run: "pnpm install --frozen-lockfile --ignore-scripts" }
+    assertCiCommands([setup, { run: "echo setup\nnode --version\n" }])
+    for (const run of [
+      "pnpm exec smthrs test '//packages/...' || true\n",
+      "echo setup\npnpm exec smthrs test '//packages/...' --verbose\n",
+      "echo setup\npnpm exec smithers-build test '//packages/...' --verbose\n"
+    ]) assert.throws(() => assertCiCommands([setup, { run }]), run)
+  })
+
+  it("loads repository declarations without a version-control executable", () => {
+    const entry = new URL("../PACKAGE.ts", import.meta.url).href
+    const child = spawnSync(process.execPath, [
+      "--import", import.meta.resolve("vibelang/register"),
+      "--input-type=module", "--eval",
+      `const { Package } = await import(${JSON.stringify(entry)}); console.log(Object.keys(Package).includes("repositoryInputs"))`
+    ], {
+      env: { ...process.env, PATH: "" },
+      encoding: "utf8",
+      timeout: 60_000
+    })
+    assert.equal(child.status, 0, child.stderr || String(child.error))
+    assert.equal(child.stdout.trim(), "true")
+  })
+
+  it("the Cloud download security review reads the bootstrap it protects", () => {
+    const declaration = readFileSync(new URL("../../../PACKAGE.ts", import.meta.url), "utf8")
+    const review = declaration.match(/id: "ci-bootstrap-downloads",[\s\S]*?paths: \[([^\]]+)\]/)?.[1]
+    assert.ok(review?.includes('".github/scripts/ci/cloud.sh"'))
+    const bootstrap = readFileSync(new URL("../../../.github/scripts/ci/cloud.sh", import.meta.url), "utf8")
+    assert.match(bootstrap, /download_verified/)
+    const local = readFileSync(new URL("../PACKAGE.ts", import.meta.url), "utf8")
+    assert.doesNotMatch(local, /id: "ci-bootstrap-downloads"/)
   })
 
   it("pins the CI triggers and forbids step conditions on enforcement (issue #176)", () => {

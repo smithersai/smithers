@@ -10,9 +10,10 @@
  * specifier must not resolve into another workspace package's `src/`, which
  * a tarball consumer can only reach through that package's export map.
  *
- * Test files, config files, and anything under a `scripts/` directory may use
- * `devDependencies`; everything else may use only runtime, peer, and optional
- * dependencies, or validated private adapters vendored into the distribution.
+ * Unpublished test files, config files, and package scripts may use
+ * `devDependencies`; exports, bin entries and files-matched sources are runtime
+ * modules regardless of directory names. Other imports require runtime, peer
+ * or optional dependencies, or validated private adapters vendored into the distribution.
  *
  * It also enforces "Everything is a durable flow" in the root `AGENTS.md`: no
  * source file in any workspace member or any `.smithers` directory (tests,
@@ -25,7 +26,7 @@
  */
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { builtinModules } from "node:module"
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path"
+import { basename, dirname, extname, join, matchesGlob, relative, resolve, sep } from "node:path"
 
 import { privateEffectAdapters } from "../scripts/private-effect-adapters.mjs"
 import { isMain, repoRoot, workspacePackages } from "../scripts/workspace-packages.mjs"
@@ -118,11 +119,11 @@ export const durableFlowRule = "every action, model calls included, runs as an @
  */
 const bannedPackages = [
   { names: ["ai", "@ai-sdk/"], runtime: "the Vercel AI SDK" },
-  { names: ["@temporalio/"], runtime: "Temporal" },
-  { names: ["inngest"], runtime: "Inngest" },
+  { names: ["@temporalio/", "temporalio"], runtime: "Temporal" },
+  { names: ["inngest", "@inngest/"], runtime: "Inngest" },
   { names: ["@trigger.dev/"], runtime: "Trigger.dev" },
   { names: ["langchain", "@langchain/"], runtime: "LangChain" },
-  { names: ["@mastra/"], runtime: "Mastra" }
+  { names: ["@mastra/", "mastra"], runtime: "Mastra" }
 ]
 
 /**
@@ -190,7 +191,7 @@ function bannedRuntimeForUnnamed(specifier) {
 
 /** @typedef {{ file: string; line: number; specifier: string; name?: string; usage: string; runtime: string }} BannedImport */
 
-/** @typedef {{ dir: string; name: string; manifestPath: string; manifest: Record<string, unknown> }} WorkspacePackage */
+/** @typedef {{ dir: string; name: string; manifestPath: string; manifest: Record<string, unknown>; inheritedRuntimeFiles?: ReadonlySet<string> }} WorkspacePackage */
 
 /** @param {string} path */
 function readJson(path) {
@@ -315,8 +316,8 @@ export function collectGraphFiles(dir, memberDirs, out) {
   }
 }
 
-/** @param {WorkspacePackage} pkg @param {Set<string>} [memberDirs] @returns {{ files: string[]; nestedPackageDirs: string[] }} */
-function filesForPackage(pkg, memberDirs = new Set()) {
+/** @param {WorkspacePackage} pkg @param {Set<string>} [memberDirs] @returns {{ files: string[]; nestedPackageDirs: string[]; runtimeFiles: Set<string>; nestedRuntimeFiles: Map<string, Set<string>> }} */
+export function filesForPackage(pkg, memberDirs = new Set()) {
   /** @type {string[]} */
   const files = []
   /** @type {string[]} */
@@ -334,7 +335,35 @@ function filesForPackage(pkg, memberDirs = new Set()) {
     // node_modules, dist, and coverage.
     collectSourceFiles(pkg.dir, files, nestedPackageDirs)
   }
-  return { files: files.sort(), nestedPackageDirs: nestedPackageDirs.sort() }
+  // Executable code may ship beside src, including bin and exported test support.
+  const candidates = [...files]
+  const children = [...nestedPackageDirs]
+  if (pkg.dir !== "." && isDirectory(join(repoRoot, pkg.dir, "src"))) {
+    collectSourceFiles(pkg.dir, candidates, children)
+  }
+  const nestedSources = new Map()
+  for (const child of new Set(children)) {
+    const childSources = []
+    collectSourceFiles(child, childSources)
+    nestedSources.set(child, childSources)
+    candidates.push(...childSources)
+  }
+  const runtimeFiles = publicationClosure(pkg, [...new Set(candidates)])
+  const nestedRuntimeFiles = new Map()
+  for (const [child, childSources] of nestedSources) {
+    const selected = new Set(childSources.filter((file) => runtimeFiles.has(file)))
+    if (selected.size > 0) {
+      nestedPackageDirs.push(child)
+      nestedRuntimeFiles.set(child, selected)
+    }
+  }
+  return {
+    files: [...new Set([...files, ...runtimeFiles])]
+      .filter((file) => !children.some((child) => file.startsWith(child + sep))).sort(),
+    nestedPackageDirs: [...new Set(nestedPackageDirs)].sort(),
+    runtimeFiles,
+    nestedRuntimeFiles
+  }
 }
 
 /** @param {string} specifier */
@@ -505,6 +534,64 @@ function dependencyNames(manifest, section) {
   return deps && typeof deps === "object" && !Array.isArray(deps) ? new Set(Object.keys(deps)) : new Set()
 }
 
+/** All paths in a conditional export map or a bin declaration. */
+const publicationPaths = (value) =>
+  typeof value === "string" ? [value] :
+  value !== null && typeof value === "object" ? Object.values(value).flatMap(publicationPaths) : []
+
+/** A publication pattern can name a file, a directory, or a glob of either. */
+const publicationMatch = (file, raw) => {
+  const pattern = raw.replace(/^\.\//, "").replace(/\/$/, "")
+  const parts = file.split("/")
+  return parts.some((_, index) => matchesGlob(parts.slice(0, index + 1).join("/"), pattern))
+}
+
+/** Whether the manifest ships this source, regardless of its directory name. */
+function isPublishedFile(file, pkg) {
+  if (pkg === undefined || pkg.manifest.private === true) return false
+  const path = relative(pkg.dir, file).split(sep).join("/")
+  if (path.startsWith("../")) return false
+  const manifest = pkg.manifest
+  // Node export targets use string substitution: "*" also spans directories.
+  const exported = [...publicationPaths(manifest.exports), ...publicationPaths(manifest.publishConfig?.exports)]
+  if (exported.some((target) =>
+    new RegExp("^" + target.replace(/^\.\//, "").split("*").map(RegExp.escape).join(".*") + "$").test(path)
+  )) return true
+  const entries = [manifest.main, manifest.module, ...publicationPaths(manifest.bin)]
+  if (entries.some((pattern) => typeof pattern === "string" && publicationMatch(path, pattern))) return true
+  let included = false
+  for (const pattern of manifest.files ?? ["**"]) {
+    const excluded = pattern.startsWith("!")
+    if (publicationMatch(path, excluded ? pattern.slice(1) : pattern)) included = !excluded
+  }
+  return included
+}
+
+/** Runtime roots also own the local support modules their imports reach. */
+function publicationClosure(pkg, files) {
+  const candidates = new Set(files)
+  const shipped = new Set(files.filter((file) => pkg.inheritedRuntimeFiles?.has(file) || isPublishedFile(file, pkg)))
+  const pending = [...shipped]
+  while (pending.length > 0) {
+    const file = pending.shift()
+    for (const specifier of scanFile(file).specifiers) {
+      if (!specifier.startsWith(".")) continue
+      const target = relative(repoRoot, resolve(repoRoot, dirname(file), specifier))
+      // Source imports can name their emitted JavaScript extension.
+      const stem = target.replace(/\.[cm]?js$/, "")
+      for (const candidate of [target, ...[...sourceExtensions].flatMap((extension) =>
+        [stem + extension, join(target, "index" + extension)]
+      )]) {
+        if (candidates.has(candidate) && !shipped.has(candidate)) {
+          shipped.add(candidate)
+          pending.push(candidate)
+        }
+      }
+    }
+  }
+  return shipped
+}
+
 /**
  * True for a file that only ever runs from a workspace install: tests, configs,
  * package scripts, and build-graph declarations. Such a file may use
@@ -514,8 +601,11 @@ function dependencyNames(manifest, section) {
  * no tarball contains one.
  *
  * @param {string} file
+ * @param {WorkspacePackage} [pkg]
+ * @param {ReadonlySet<string>} [runtimeFiles]
  */
-function isDevOnlyFile(file) {
+export function isDevOnlyFile(file, pkg, runtimeFiles = new Set()) {
+  if (runtimeFiles.has(file) || isPublishedFile(file, pkg)) return false
   const base = basename(file)
   const parts = file.split(sep)
   return (
@@ -558,14 +648,14 @@ export function dependencySets(pkg) {
   ])
   const dev = new Set([...declared, ...dependencyNames(pkg.manifest, "devDependencies")])
   const runtime = pkg.manifest.private === true ? dev : declared
-  return { runtime, dev }
+  return { runtime, dev, published: declared }
 }
 
 /**
  * Every file the durable-flow ban reads, deduplicated across nested members.
  *
  * The ban covers every source file of every workspace member, not only the
- * `src/` tree the declaration rule reads, and not only `packages/` and `apps/`:
+ * source and publication trees the declaration rule reads, and not only `packages/` and `apps/`:
  * a Worker entry, a test, a script, an eval suite and the root flow workspaces
  * (`.smithers/flows`) run our code too. It also reads every `.smithers`
  * directory, the root one included, because that is where file flows live.
@@ -602,15 +692,18 @@ function main() {
   while (packageQueue.length > 0) {
     const pkg = packageQueue.shift()
     checkedPackageCount += 1
-    const { files, nestedPackageDirs } = filesForPackage(pkg, memberDirs)
+    const { files, nestedPackageDirs, runtimeFiles, nestedRuntimeFiles } = filesForPackage(pkg, memberDirs)
     for (const nestedDir of nestedPackageDirs) {
       const nestedPkg = readPackage(nestedDir)
-      if (nestedPkg) packageQueue.push(nestedPkg)
+      if (nestedPkg) {
+        nestedPkg.inheritedRuntimeFiles = nestedRuntimeFiles.get(nestedDir)
+        packageQueue.push(nestedPkg)
+      }
     }
     const deps = dependencySets(pkg)
     for (const file of files) {
-      const devOnly = isDevOnlyFile(file)
-      const allowed = devOnly ? deps.dev : deps.runtime
+      const devOnly = isDevOnlyFile(file, pkg, runtimeFiles)
+      const allowed = devOnly ? deps.dev : runtimeFiles.has(file) ? deps.published : deps.runtime
       const expectedSection = devOnly ? "devDependencies" : "dependencies"
       for (const specifier of scanFile(file).specifiers) {
         const reached = packageSourceReachedBy(file, specifier, memberDirs)

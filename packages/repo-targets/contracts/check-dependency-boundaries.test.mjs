@@ -12,6 +12,8 @@ import {
   collectSourceFiles,
   dependencySets,
   durableFlowRule,
+  filesForPackage,
+  isDevOnlyFile,
   packageNameForSpecifier,
   packageSourceReachedBy,
   partitionBannedImports,
@@ -469,4 +471,188 @@ test("a VibeLang source is read like a TypeScript one: an undeclared import and 
     failed.stderr.includes("- apps/chat/src/Answer.vibe imports @smthrs/fs; declare @smthrs/fs as a"),
     failed.stderr
   )
+})
+
+test("all published spellings of the prohibited runtimes are rejected", () => {
+  for (const [specifier, runtime] of [
+    ["@inngest/agent-kit", "Inngest"],
+    ["@inngest/workflow-kit", "Inngest"],
+    ["@inngest/realtime", "Inngest"],
+    ["mastra", "Mastra"],
+    ["mastra/tools", "Mastra"],
+    ["temporalio", "Temporal"],
+    ["temporalio/client", "Temporal"]
+  ]) {
+    assert.equal(bannedRuntimeForSpecifier(specifier), runtime)
+    assert.equal(scanSource("src/main.ts", `import "${specifier}"`).banned.length, 1)
+  }
+})
+
+test("published test and script modules require runtime dependencies", () => {
+  const pkg = {
+    dir: "packages/example",
+    manifest: {
+      files: ["src/**/*.ts", "bin/**"],
+      exports: { "./test/contract": { types: "./helpers/test/contract.ts", default: "./helpers/test/contract.mjs" } }
+    }
+  }
+  for (const file of ["src/test/HostContract.ts", "src/tests/helper.ts", "src/scripts/runner.ts",
+    "bin/scripts/run.mjs", "helpers/test/contract.ts", "helpers/test/contract.mjs"]) {
+    assert.equal(isDevOnlyFile(join(pkg.dir, file), pkg), false, file)
+  }
+  for (const file of ["test/private.ts", "scripts/build.mjs", "vitest.config.ts"]) {
+    assert.equal(isDevOnlyFile(join(pkg.dir, file), pkg), true, file)
+  }
+})
+
+test("the declaration scan includes shipped source outside src", () => {
+  const directory = mkdtempSync(join(repoRoot, "packages/boundary-contract-"))
+  const dir = directory.slice(repoRoot.length + 1)
+  try {
+    for (const file of ["src/index.ts", "bin/run.mjs", "helpers/test/contract.ts", "scripts/build.mjs"]) {
+      mkdirSync(dirname(join(directory, file)), { recursive: true })
+      writeFileSync(join(directory, file), 'import "only-dev"\n')
+    }
+    const pkg = { dir, manifest: { files: ["src/**", "bin/**"], exports: { "./test": "./helpers/test/contract.ts" } } }
+    assert.deepEqual(filesForPackage(pkg).files, [
+      join(dir, "bin/run.mjs"), join(dir, "helpers/test/contract.ts"), join(dir, "src/index.ts")
+    ])
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test("publication declarations cover bin, entry files, directory patterns and exclusions", () => {
+  const dir = "packages/example"
+  for (const manifest of [
+    { bin: "./test/cli.mjs", files: [] },
+    { bin: { cli: "./test/cli.mjs" }, files: [] },
+    { main: "./test/cli.mjs", files: [] },
+    { module: "./test/cli.mjs", files: [] },
+    { exports: "./test/cli.mjs", files: [] },
+    { files: ["test/"] },
+    { files: ["./test/**", "!test/private/**"] },
+    {}
+  ]) {
+    assert.equal(isDevOnlyFile(join(dir, "test/cli.mjs"), { dir, manifest }), false)
+  }
+  const pkg = { dir, manifest: { files: ["src/**", "!src/test/**"] } }
+  assert.equal(isDevOnlyFile(join(dir, "src/test/private.ts"), pkg), true)
+  assert.equal(isDevOnlyFile(join(dir, "src/test/private.ts"), { ...pkg, manifest: { private: true } }), true)
+  assert.equal(isDevOnlyFile("packages/other/test/helper.ts", pkg), true)
+  assert.equal(isDevOnlyFile(join(dir, "test/unpublished.ts"), { dir, manifest: { files: [], exports: { "./hidden": null } } }), true)
+})
+
+test("export wildcards include nested support modules outside src", () => {
+  const directory = mkdtempSync(join(repoRoot, "packages/boundary-contract-"))
+  const dir = directory.slice(repoRoot.length + 1)
+  const manifest = { exports: { "./*": "./helpers/*.mjs" }, files: [] }
+  try {
+    for (const file of ["src/index.ts", "helpers/test/contract.mjs", "helpers/test/contract.mjs.backup"]) {
+      mkdirSync(dirname(join(directory, file)), { recursive: true })
+      writeFileSync(join(directory, file), 'import "only-dev"\n')
+    }
+    const pkg = { dir, manifest }
+    assert.equal(isDevOnlyFile(join(dir, "helpers/test/contract.mjs"), pkg), false)
+    assert.deepEqual(filesForPackage(pkg).files, [join(dir, "helpers/test/contract.mjs"), join(dir, "src/index.ts")])
+    assert.equal(isDevOnlyFile(join(dir, "helpers/test/contract.mjs.backup"), pkg), true)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test("published entry points make relative support imports runtime dependencies", () => {
+  const directory = mkdtempSync(join(repoRoot, "packages/boundary-contract-"))
+  const dir = directory.slice(repoRoot.length + 1)
+  const pkg = { dir, manifest: { files: ["dist/**"], exports: { "./test": "./src/test/index.ts" } } }
+  try {
+    const sources = {
+      "src/test/index.ts": 'export * from "./support.js"\n',
+      "src/test/support.ts": 'export * from "../../helpers/test/contract.mjs"\n',
+      "helpers/test/contract.mjs": 'import "./cycle.mjs"\n',
+      "helpers/test/cycle.mjs": 'import "./contract.mjs"\n',
+      "src/test/unpublished.ts": 'import "only-dev"\n'
+    }
+    for (const [file, source] of Object.entries(sources)) {
+      mkdirSync(dirname(join(directory, file)), { recursive: true })
+      writeFileSync(join(directory, file), source)
+    }
+    const { files, runtimeFiles } = filesForPackage(pkg)
+    for (const file of Object.keys(sources).filter((file) => !file.endsWith("unpublished.ts"))) {
+      assert.ok(files.includes(join(dir, file)), file)
+      assert.equal(isDevOnlyFile(join(dir, file), pkg, runtimeFiles), false, file)
+    }
+    assert.equal(isDevOnlyFile(join(dir, "src/test/unpublished.ts"), pkg, runtimeFiles), true)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test("only publication-selected nested packages outside src are checked under their own manifests", () => {
+  const directory = mkdtempSync(join(repoRoot, "packages/boundary-contract-"))
+  const dir = directory.slice(repoRoot.length + 1)
+  try {
+    mkdirSync(join(directory, "src"))
+    for (const child of ["helpers/plugin", "test/fixture"]) {
+      mkdirSync(join(directory, child, "src"), { recursive: true })
+      writeFileSync(join(directory, child, "package.json"), JSON.stringify({ name: child, files: ["src/**"] }))
+      writeFileSync(join(directory, child, "src/index.ts"), 'import "child-runtime"\n')
+    }
+    const { nestedPackageDirs } = filesForPackage({ dir, manifest: { files: ["helpers/**"] } })
+    assert.deepEqual(nestedPackageDirs, [join(dir, "helpers/plugin")])
+    const exported = filesForPackage({ dir, manifest: { files: [], exports: { "./plugin": "./helpers/plugin/src/index.ts" } } })
+    assert.deepEqual(exported.nestedPackageDirs, [join(dir, "helpers/plugin")])
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test("nested packages inherit parent runtime selections without inheriting parent dependencies", () => {
+  const directory = mkdtempSync(join(repoRoot, "packages/boundary-contract-"))
+  const dir = directory.slice(repoRoot.length + 1)
+  const child = join(dir, "helpers/plugin")
+  const childManifest = { name: "embedded-plugin", private: true, files: ["src/**"],
+    dependencies: { "child-runtime": "1" }, devDependencies: { "only-dev": "1" } }
+  try {
+    mkdirSync(join(directory, "src"))
+    for (const file of ["src/index.ts", "test/contract.mjs", "test/support.mjs"]) {
+      mkdirSync(dirname(join(repoRoot, child, file)), { recursive: true })
+      writeFileSync(join(repoRoot, child, file), file.endsWith("contract.mjs") ? 'import "./support.mjs"\n' : 'import "only-dev"\n')
+    }
+    writeFileSync(join(repoRoot, child, "package.json"), JSON.stringify(childManifest))
+    const parent = filesForPackage({ dir, manifest: { files: [], exports: { "./plugin": "./helpers/plugin/test/contract.mjs" } } })
+    assert.deepEqual(parent.nestedPackageDirs, [child])
+    const pkg = { dir: child, manifest: childManifest, inheritedRuntimeFiles: parent.nestedRuntimeFiles.get(child) }
+    const scanned = filesForPackage(pkg)
+    assert.ok(scanned.files.includes(join(child, "test/contract.mjs")))
+    assert.ok(scanned.files.includes(join(child, "test/support.mjs")))
+    assert.equal(isDevOnlyFile(join(child, "test/support.mjs"), pkg, scanned.runtimeFiles), false)
+    assert.ok(dependencySets(pkg).runtime.has("child-runtime"))
+    assert.equal(dependencySets(pkg).published.has("only-dev"), false)
+    assert.ok(dependencySets(pkg).runtime.has("only-dev"))
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test("the real gate checks embedded runtime imports and preserves private unpublished dev imports", () => {
+  using fixture = gateFixture()
+  const { write, run } = fixture
+  write("apps/chat/package.json", JSON.stringify({
+    name: "chat", files: [], exports: { "./plugin": "./helpers/plugin/test/contract.mjs" }
+  }))
+  write("apps/chat/helpers/plugin/package.json", JSON.stringify({
+    name: "embedded-plugin", private: true, files: ["src/**"],
+    dependencies: { "child-runtime": "1" }, devDependencies: { "only-dev": "1" }
+  }))
+  write("apps/chat/helpers/plugin/src/index.ts", 'import "only-dev"\n')
+  write("apps/chat/helpers/plugin/test/contract.mjs", 'import "./support.mjs"\n')
+  write("apps/chat/helpers/plugin/test/support.mjs", 'import "only-dev"\n')
+  const failed = run()
+  assert.equal(failed.status, 1, failed.stderr)
+  assert.match(failed.stderr, /helpers\/plugin\/test\/support\.mjs imports only-dev/)
+  assert.doesNotMatch(failed.stderr, /plugin\/src\/index\.ts imports only-dev/)
+  write("apps/chat/helpers/plugin/test/support.mjs", 'import "child-runtime"\n')
+  const clean = run()
+  assert.equal(clean.status, 0, clean.stderr)
 })

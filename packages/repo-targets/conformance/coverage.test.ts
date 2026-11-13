@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, isAbsolute, join, matchesGlob, relative, resolve, sep } from "node:path"
 import { describe, it } from "node:test"
 import { pathToFileURL } from "node:url"
@@ -16,7 +17,7 @@ describe("coverage conformance", () => {
     }
   }
   const readText = (path: string) => isFile(path) ? readFileSync(path, "utf8") : ""
-  /** Every `.ts` or `.vibe` module under a directory, or none when it is absent. */
+  /** Every regular file in src/** can hold a coverage hint, regardless of extension. */
   const sourcesUnder = (directory: string): Array<string> => {
     let entries
     try {
@@ -27,11 +28,24 @@ describe("coverage conformance", () => {
     return entries.flatMap((entry) =>
       entry.isDirectory()
         ? sourcesUnder(join(directory, entry.name))
-        : /\.(?:ts|vibe)$/.test(entry.name)
+        : entry.isFile()
         ? [join(directory, entry.name)]
         : []
     )
   }
+  it("inventories every source extension in the broad coverage denominator", () => {
+    const directory = mkdtempSync(join(tmpdir(), "coverage-inventory-"))
+    try {
+      mkdirSync(join(directory, "nested"))
+      const names = ["a.ts", "b.vibe", "c.tsx", "d.js", "e.jsx", "f.mjs", "g.cjs", "h.mts", "i.cts", "j.svelte", "k.vue", "l.custom"]
+      for (const name of names) writeFileSync(join(directory, "nested", name), "/* v8 ignore next */")
+      assert.deepEqual(sourcesUnder(directory).map((file) => relative(directory, file)).sort(),
+        names.map((name) => join("nested", name)).sort())
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it("finds every package's vitest config", () => {
     const names = configs.map((config) => config.name)
     assert.ok(names.includes("smithers/flows"))
@@ -231,7 +245,7 @@ describe("coverage conformance", () => {
     const categories = [...thresholds.matchAll(/\b(branches|functions|lines|statements):\s*(\d+)/g)]
     const includes = /\binclude\s*:\s*\[([^\]]*)\]/.exec(coverage)?.[1] ?? ""
     return isFile(join(packagesDir, name, pattern)) &&
-      /\benabled:\s*true/.test(coverage) && /\bprovider:\s*"v8"/.test(coverage) &&
+      /\benabled:\s*true\s*,/.test(coverage) && /\bprovider:\s*"v8"/.test(coverage) &&
       !/\bexclude\s*:/.test(coverage) &&
       includes.includes("\"../smithers/flows/kernel/src/test/HostContract.ts\"") &&
       categories.length === 4 && categories.every((match) => match[2] === "100") &&
@@ -308,7 +322,7 @@ describe("coverage conformance", () => {
         coverage!,
         name === "smithers/flows/platform-bun"
           ? /\benabled:\s*!process\.versions\.bun\s*,/
-          : /\benabled:\s*true/
+          : /\benabled:\s*true\s*,/
       )
     }
     assert.match(coverage!, /\bprovider:\s*"v8"/)
@@ -372,6 +386,7 @@ describe("coverage conformance", () => {
         coverage.replace("[\"src/**\"]", "[\"src/**\"].map((pattern) => join(import.meta.dirname, pattern))"),
         coverage.replace("[\"src/**\"]", "[\"src/**\", \"!src/Hidden.ts\"]"),
         coverage.replace("enabled: true", "enabled: false"),
+        coverage.replace("enabled: true", "enabled: true && false"),
         coverage.replace("provider: \"v8\"", "provider: \"istanbul\""),
         coverage.replace(" }", ", exclude: [\"src/Hidden.ts\"] }"),
         coverage.replace(" }", ", exclude: [\"**/testing/**\"] }"),
@@ -416,6 +431,7 @@ describe("coverage conformance", () => {
       const mutated of [
         destination.replace("\"../smithers/flows/kernel/src/test/HostContract.ts\"", "\"../another.ts\""),
         destination.replace("enabled: true", "enabled: false"),
+        destination.replace("enabled: true", "enabled: true && false"),
         destination.replace("branches: 100", "branches: 99"),
         destination.replace(
           "coverage: {",
@@ -873,25 +889,9 @@ describe("coverage conformance", () => {
       // awaitResult arms a settlement after recording execution metadata.
       "testing/src/FlowEngineLike.ts": 3
     }
-    const sourceFiles = (directory: string): Array<string> => {
-      let entries
-      try {
-        entries = readdirSync(directory, { withFileTypes: true })
-      } catch {
-        return []
-      }
-      return entries.flatMap((entry) =>
-        entry.isDirectory()
-          ? sourceFiles(join(directory, entry.name))
-          // A VibeLang module carries hints the way a TypeScript one does.
-          : /\.(?:ts|vibe)$/.test(entry.name)
-          ? [join(directory, entry.name)]
-          : []
-      )
-    }
     const found: Record<string, number> = {}
     for (const name of packages) {
-      for (const path of sourceFiles(join(packagesDir, name, "src"))) {
+      for (const path of sourcesUnder(join(packagesDir, name, "src"))) {
         const source = readFileSync(path, "utf8")
         const file = relative(packagesDir, path)
         let count = 0

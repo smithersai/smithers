@@ -905,6 +905,18 @@ const securityReview = Smithers.SecurityReview({
   ],
   checks: [
     {
+      id: "ci-bootstrap-downloads",
+      title: "Every tool the Cloud CI bootstrap downloads and executes is pinned by version and digest",
+      threat:
+        "A compromised or spoofed release host swaps a jj, ripgrep, Foundry, rustup or Node binary that then runs with the CI task's repository access.",
+      lookFor: [
+        "A download() or curl that reaches tar/chmod/exec without download_verified, which checks node_digest or tool_digest with sha256sum -c and exits on a mismatch.",
+        "A version read from a repository file used unvalidated in a URL or shell word.",
+        "apt or npm installs that run lifecycle scripts or use sudo in a Cloud task."
+      ],
+      paths: [".github/scripts/ci/cloud.sh"]
+    },
+    {
       id: "gha-untrusted-trigger-secrets",
       title: "Jobs a fork pull request or a comment can start hold no write credential",
       threat:

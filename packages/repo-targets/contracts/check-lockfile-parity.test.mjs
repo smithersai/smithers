@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import test from "node:test"
-import { declaredRanges } from "./check-lockfile-parity.mjs"
+import { declaredRanges, lockfileProblems } from "./check-lockfile-parity.mjs"
 import { repoRoot } from "../scripts/workspace-packages.mjs"
 
 test("an optional peer named only in peerDependenciesMeta is a peer of any version, as Bun records it", () => {
@@ -32,4 +32,34 @@ test("pnpm locks one @cloudflare/workers-types, the copy alchemy's declarations 
   const lock = readFileSync(join(repoRoot, "pnpm-lock.yaml"), "utf8")
   const versions = [...lock.matchAll(/^ {2}'@cloudflare\/workers-types@([^']+)':$/gm)].map((match) => match[1])
   assert.equal(new Set(versions).size, 1, `locked versions: ${[...new Set(versions)].join(", ")}`)
+})
+
+test("lockfile parity includes the root manifest, overrides, patches and retired members", () => {
+  const root = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"))
+  const lock = {
+    workspaces: { "": { devDependencies: root.devDependencies } },
+    overrides: structuredClone(root.overrides),
+    patchedDependencies: structuredClone(root.patchedDependencies)
+  }
+  assert.deepEqual(lockfileProblems(lock, []), [])
+  for (const mutate of [
+    (copy) => { delete copy.workspaces[""] },
+    (copy) => { copy.workspaces[""].devDependencies.effect = "0.0.0" },
+    (copy) => { copy.workspaces[""].devDependencies.retired = "1" },
+    (copy) => { copy.overrides.effect = "0.0.0" },
+    (copy) => { delete copy.overrides.effect },
+    (copy) => { copy.overrides.retired = "1" },
+    (copy) => { copy.overrides["vitest@5.0.0"]["happy-dom"] = "0.0.0" },
+    (copy) => { delete copy.patchedDependencies[Object.keys(root.patchedDependencies)[0]] },
+    (copy) => { copy.patchedDependencies[Object.keys(root.patchedDependencies)[0]] = "patches/wrong.patch" },
+    (copy) => { copy.patchedDependencies.retired = "patches/retired.patch" },
+    (copy) => { copy.workspaces["packages/retired"] = {} }
+  ]) {
+    const copy = structuredClone(lock)
+    mutate(copy)
+    assert.ok(lockfileProblems(copy, []).length > 0, String(mutate))
+  }
+  const reordered = structuredClone(lock)
+  reordered.overrides = Object.fromEntries(Object.entries(reordered.overrides).reverse())
+  assert.deepEqual(lockfileProblems(reordered, []), [])
 })

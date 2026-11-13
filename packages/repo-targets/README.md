@@ -30,7 +30,15 @@ The default globs name VibeLang `.vibe` files beside `.ts` ones, `src/**/*.{ts,v
 `pnpm --filter @smthrs/repo-targets test` enforces 100% V8 coverage across `src/**`. Both required CI package selections reach its declared Vitest target, `//packages/repo-targets:test`. The suite checks the actual CLI discovery result and the target's runner configuration, so a declared test script alone cannot satisfy that contract.
 
 The repository contracts also check runtime dependency declarations, both lockfiles,
-reviewed public export additions and the test-pin register. Decision-queue source
+reviewed public export additions and the test-pin register. Publication exports,
+bin entries and `files` patterns determine whether source needs runtime dependencies,
+including shipped test helpers, their relative support imports and executables
+outside `src/`. Embedded packages retain their own dependency ownership. Lockfile parity
+compares the root manifest, workspace membership, overrides and patches as well as
+member dependencies. Repository input discovery uses filesystem globs; loading
+declarations does not invoke version control. CI conformance rejects multi-line
+target commands, and the coverage-ignore inventory includes every source extension
+that the broad coverage denominator measures. Decision-queue source
 snapshots are displayed data; their imports do not become maintainer-site runtime
 dependencies. The private repository-view and terminal-frame packages retain their
 Bun coverage gates and source exports. Published workspace references resolve to
