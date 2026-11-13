@@ -2,15 +2,14 @@ import { useState } from "react"
 
 import {
   AGENTS,
-  ATTEMPTS,
   JEV_ROUTE,
   JEVS,
-  journalFor,
   OUTPUTS,
   PREDICTIONS,
   TRIGGER,
   type AgentDetail,
-  type JevDetail
+  type JevDetail,
+  type NodeEvidence
 } from "../detail.ts"
 import { formatDuration, type FlowNodeSpec, type NodeState } from "../flow.ts"
 import { AST_PATH, FLOW_SOURCE, TRIGGER_SOURCE } from "../source.ts"
@@ -35,18 +34,18 @@ const TAB_LABEL: Record<Tab, string> = {
 const SETTLED: readonly NodeState[] = ["built", "clean"]
 
 /** A tab with nothing behind it never appears. */
-const tabsFor = (spec: FlowNodeSpec, state: NodeState, scripted: boolean): Tab[] => {
+const tabsFor = (spec: FlowNodeSpec, state: NodeState, scripted: boolean, evidence?: NodeEvidence): Tab[] => {
   if (spec.kind === "trigger") return ["schedule", "code"]
   const tabs: Tab[] = []
   if (scripted && spec.kind === "agent" && AGENTS[spec.id] && state !== "idle") tabs.push("frames")
   if (scripted && spec.kind === "jev" && JEVS[spec.id] && SETTLED.includes(state)) tabs.push("questions")
-  if (spec.kind === "human") tabs.push("question")
+  if (spec.kind === "human" && spec.question) tabs.push("question")
   if (scripted && SETTLED.includes(state) && OUTPUTS[spec.id]) tabs.push("output")
   if (spec.payload.length > 0) tabs.push("input")
   if (scripted && FLOW_SOURCE.ranges[spec.id]) tabs.push("code")
   tabs.push("key")
-  if (scripted && ATTEMPTS[spec.id] && state !== "idle") tabs.push("attempts")
-  if (scripted && state === "built") tabs.push("events")
+  if (evidence?.attempts.length) tabs.push("attempts")
+  if (evidence?.journal.length) tabs.push("events")
   return tabs
 }
 
@@ -216,16 +215,17 @@ interface DrawerProps {
   readonly rekeyed: boolean
   readonly settledMs: number | undefined
   readonly scripted: boolean
+  readonly evidence?: NodeEvidence
   readonly onClose: () => void
   readonly onSelect: (id: string) => void
 }
 
-export const Drawer = ({ spec, state, rekeyed, settledMs, scripted, onClose, onSelect }: DrawerProps) => {
+export const Drawer = ({ spec, state, rekeyed, settledMs, scripted, evidence, onClose, onSelect }: DrawerProps) => {
   const [picked, setPicked] = useState<Tab | null>(null)
   const [max, setMax] = useState(false)
   if (!spec || !state) return null
 
-  const tabs = tabsFor(spec, state, scripted)
+  const tabs = tabsFor(spec, state, scripted, evidence)
   const tab = picked && tabs.includes(picked) ? picked : tabs[0]
   const Glyph = KIND_ICON[spec.kind]
   const prediction = PREDICTIONS[spec.tag]
@@ -265,7 +265,7 @@ export const Drawer = ({ spec, state, rekeyed, settledMs, scripted, onClose, onS
         {tabs.map((name) => (
           <button key={name} type="button" role="tab" aria-selected={tab === name} className="tab" data-active={tab === name ? "true" : undefined} onClick={() => setPicked(name)}>
             {TAB_LABEL[name]}
-            {name === "attempts" ? <i>{ATTEMPTS[spec.id].length}</i> : null}
+            {name === "attempts" ? <i>{evidence?.attempts.length}</i> : null}
           </button>
         ))}
       </nav>
@@ -277,14 +277,7 @@ export const Drawer = ({ spec, state, rekeyed, settledMs, scripted, onClose, onS
 
         {tab === "question" ? (
           <section className="dblock">
-            <pre className="printed">{`{
-  "task": "human",
-  "name": "approve-change",
-  "kind": "confirm",
-  "prompt": "Land a failing test on a new change?",
-  "attempt": 1,
-  "maxAttempts": 10
-}`}</pre>
+            <pre className="printed">{JSON.stringify(spec.question, null, 2)}</pre>
             <p className="dnote">flows_runs.waiting_request · one durable wait point per attempt</p>
           </section>
         ) : null}
@@ -359,21 +352,21 @@ export const Drawer = ({ spec, state, rekeyed, settledMs, scripted, onClose, onS
         {tab === "attempts" ? (
           <section className="dblock">
             <ol className="attempts">
-              {ATTEMPTS[spec.id].map((row) => (
+              {evidence?.attempts.map((row) => (
                 <li key={row.attempt} data-state={row.state}>
-                  <div><span className="frame-n">{row.attempt}</span><strong>{row.state}</strong><em>{formatDuration(row.ms)}</em></div>
+                  <div><span className="frame-n">{row.attempt}</span><strong>{row.state}</strong><em>{row.ms === undefined ? "—" : formatDuration(row.ms)}</em></div>
                   {row.error ? <pre className="printed" data-tone="danger">{row.error}</pre> : null}
                 </li>
               ))}
             </ol>
-            <p className="dnote">retry 200ms × 1.5, max 30s · bounds are per step key and survive process death</p>
+            {scripted && spec.id === "test" ? <p className="dnote">retry 200ms × 1.5, max 30s · bounds are per step key and survive process death</p> : null}
           </section>
         ) : null}
 
         {tab === "events" ? (
           <section className="dblock">
             <ul className="journal">
-              {journalFor(spec.id, spec.key).map((row) => (
+              {evidence?.journal.map((row) => (
                 <li key={row.seq}><em>{row.seq}</em><code>{row.type}</code><span>{row.payload}</span></li>
               ))}
             </ul>

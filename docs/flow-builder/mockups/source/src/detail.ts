@@ -230,16 +230,9 @@ export const JEVS: Readonly<Record<string, JevDetail>> = {
 
 export interface AttemptRow {
   readonly attempt: number
-  readonly state: string
-  readonly ms: number
+  readonly state: "running" | "failed" | "succeeded"
+  readonly ms?: number
   readonly error?: string
-}
-
-export const ATTEMPTS: Readonly<Record<string, readonly AttemptRow[]>> = {
-  test: [
-    { attempt: 1, state: "failed", ms: 61_000, error: 'SpawnError { code: "exit", exitCode: 1, stderr: "error: could not resolve \\"@tevm/state\\" — cold cache" }' },
-    { attempt: 2, state: "succeeded", ms: 64_000 }
-  ]
 }
 
 export interface JournalRow {
@@ -248,13 +241,10 @@ export interface JournalRow {
   readonly payload: string
 }
 
-export const journalFor = (id: string, key: string): readonly JournalRow[] => [
-  { seq: 1, type: "flows.engine.node-scheduled", payload: `{ nodeId: "${id}", planKey: "${key}", priority: 0 }` },
-  { seq: 2, type: "flows.engine.attempt-started", payload: `{ stepKeyDigest: "${key}", attempt: 1 }` },
-  { seq: 3, type: "flows.engine.v2.attempt-lifecycle", payload: '{ lifecycle: { _tag: "succeeded" } }' },
-  { seq: 4, type: "flows.engine.attempt-finished", payload: `{ stepKeyDigest: "${key}", attempt: 1, state: "succeeded" }` },
-  { seq: 5, type: "flows.engine.node-settled", payload: `{ nodeId: "${id}", outcome: "built", attempts: 1, rebases: 0 }` }
-]
+export interface NodeEvidence {
+  readonly attempts: readonly AttemptRow[]
+  readonly journal: readonly JournalRow[]
+}
 
 export const OUTPUTS: Readonly<Record<string, string>> = {
   issues: `[

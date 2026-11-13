@@ -6,9 +6,11 @@ Open `flow-builder.html`. One self-contained file, no network, no server.
 open docs/flow-builder/mockups/flow-builder.html
 ```
 
-Space plays and pauses. `1` `2` `3` jump to an act. `←` `→` step a frame. The
+`Space` plays and pauses. `1` `2` `3` jump to an act. `←` `→` step a frame. The
 scrubber scrubs. Click any node for its inspector. The sun/moon at the bottom of
-the rail switches theme.
+the rail switches theme. Playback shortcuts apply on the canvas and background;
+focused controls keep their native keys. Closing the inspector dismisses the
+selection until another node is picked or the demo is scrubbed, stepped or restarted.
 
 ## What it argues
 
@@ -41,7 +43,10 @@ Act 3 is the product. Acts 1 and 2 are the setup.
   stream, usage, armed ceilings), `Questions` for Jev (typed questions,
   per-option probability, the 0.8 / 0.2 thresholds), `Schedule` for the trigger
   (cron narrated, next 5 runs in zone and UTC, last 14 outcomes), then
-  `Output · Input · Code · Key · Attempts · Events`. Maximize fills the pane.
+  `Output · Input · Code · Key · Attempts · Events`. Attempt and event records
+  belong to the current frame, including unfinished attempts and cached settlements;
+  scrubbing restores that snapshot. A human node shows `Question` only when its
+  own question evidence is supplied. Maximize fills the pane.
 - **Code tab.** The real `flows/morning-triage/flow.ts`, the node's declaration
   highlighted and scrolled to, with its plan node id as an AST path. Line
   anchoring needs the `declaredAt` engine lane (decisions.md D-037).
@@ -87,7 +92,12 @@ cd source && npm install && npx vite build
 ```
 
 `vite-plugin-singlefile` inlines the JS, CSS and font subsets into one HTML
-file. The canvas is `@xyflow/react` laid out with `dagre`, the same two
+file. Copy `source/dist/index.html` to `flow-builder.html` after a build.
+Run `npm run check` and `npm test` from `source` to check the types and exercise
+the generated HTML in Chromium. Install Chromium with `npx playwright-core install chromium`,
+or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an existing Chromium executable.
+
+The canvas is `@xyflow/react` laid out with `dagre`, the same two
 dependencies `apps/app` already has installed and unimported.
 
 ## Figures

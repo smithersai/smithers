@@ -41,6 +41,15 @@ export interface PortField {
   readonly literal?: string
 }
 
+export interface HumanQuestion {
+  readonly task: "human"
+  readonly name: string
+  readonly kind: "confirm"
+  readonly prompt: string
+  readonly attempt: number
+  readonly maxAttempts: number
+}
+
 export interface FlowNodeSpec {
   readonly id: string
   readonly kind: NodeKind
@@ -49,6 +58,7 @@ export interface FlowNodeSpec {
   readonly tag: string
   readonly tier: Tier
   readonly summary: string
+  readonly question?: HumanQuestion
   readonly seat?: string
   readonly model?: string
   /** Rendered in the inspector as the typed payload. */
@@ -240,6 +250,14 @@ const MORNING_TRIAGE_NODES: readonly FlowNodeSpec[] = [
     tag: "system/human-task",
     tier: "sealed",
     summary: "kind: confirm · attempt 1 of 10",
+    question: {
+      task: "human",
+      name: "approve-change",
+      kind: "confirm",
+      prompt: "Land a failing test on a new change?",
+      attempt: 1,
+      maxAttempts: 10
+    },
     payload: [
       { name: "kind", type: '"confirm"', literal: '"confirm"' },
       { name: "prompt", type: "String", literal: '"Land a failing test on a new change?"' },

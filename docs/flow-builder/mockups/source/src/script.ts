@@ -15,6 +15,8 @@ import {
   type NodeState
 } from "./flow.ts"
 
+import type { AttemptRow, NodeEvidence } from "./detail.ts"
+
 export type Act = 1 | 2 | 3
 
 export interface JevAnswer {
@@ -82,6 +84,7 @@ export interface Frame {
   readonly nodes: Readonly<Record<string, NodeState>>
   readonly captions: Readonly<Record<string, string>>
   readonly attempts: Readonly<Record<string, number>>
+  readonly evidence: Readonly<Record<string, NodeEvidence>>
   readonly settled: Readonly<Record<string, number>>
   readonly activeEdges: readonly string[]
   readonly doneEdges: readonly string[]
@@ -100,6 +103,7 @@ interface Draft {
   nodes: Record<string, NodeState>
   captions: Record<string, string>
   attempts: Record<string, number>
+  evidence: Record<string, NodeEvidence>
   settled: Record<string, number>
   activeEdges: string[]
   doneEdges: string[]
@@ -124,6 +128,7 @@ export const buildFrames = (): Frame[] => {
     nodes: Object.fromEntries(NODES.map((node) => [node.id, "hidden" as NodeState])),
     captions: {},
     attempts: {},
+    evidence: {},
     settled: {},
     activeEdges: [],
     doneEdges: [],
@@ -144,6 +149,7 @@ export const buildFrames = (): Frame[] => {
       nodes: { ...draft.nodes },
       captions: { ...draft.captions },
       attempts: { ...draft.attempts },
+      evidence: { ...draft.evidence },
       settled: { ...draft.settled },
       activeEdges: [...draft.activeEdges],
       doneEdges: [...draft.doneEdges],
@@ -272,18 +278,50 @@ export const buildFrames = (): Frame[] => {
     )
   }
 
+  const record = (id: string, type: string, payload: string) => {
+    const current = draft.evidence[id] ?? { attempts: [], journal: [] }
+    draft.evidence[id] = {
+      ...current,
+      journal: [...current.journal, { seq: current.journal.length + 1, type: `flows.engine.${type}`, payload }]
+    }
+  }
+
+  const keyFor = (id: string) => draft.act === 3 ? NODE_BY_ID[id].rekey ?? NODE_BY_ID[id].key : NODE_BY_ID[id].key
+
+  const scheduled = (id: string) =>
+    record(id, "node-scheduled", `{ nodeId: "${id}", planKey: "${keyFor(id)}", priority: 0 }`)
+
+  const finishAttempt = (id: string, state: "failed" | "succeeded", ms: number, error?: string) => {
+    const current = draft.evidence[id]
+    const attempt = current.attempts.length
+    const row: AttemptRow = { attempt, state, ms, ...(error ? { error } : {}) }
+    draft.evidence[id] = { ...current, attempts: [...current.attempts.slice(0, -1), row] }
+    record(id, "v2.attempt-lifecycle", `{ attempt: ${attempt}, lifecycle: { _tag: "${state}" } }`)
+    record(id, "attempt-finished", `{ stepKeyDigest: "${keyFor(id)}", attempt: ${attempt}, state: "${state}" }`)
+  }
+
   const settle = (id: string, state: NodeState = "built") => {
     draft.nodes[id] = state
     delete draft.captions[id]
-    draft.settled[id] = NODE_BY_ID[id].ms
+    const ms = draft.act === 3 ? NODE_BY_ID[id].rekeyMs ?? NODE_BY_ID[id].ms : NODE_BY_ID[id].ms
+    draft.settled[id] = ms
     draft.activeEdges = draft.activeEdges.filter((edge) => !edgesInto(id).includes(edge))
     if (state === "built") {
       built += 1
-      elapsed += NODE_BY_ID[id].ms
+      elapsed += ms
+      const previousMs = draft.evidence[id].attempts.reduce((total, row) => total + (row.ms ?? 0), 0)
+      finishAttempt(id, "succeeded", ms - previousMs)
+      record(id, "node-settled", `{ nodeId: "${id}", outcome: "built", attempts: ${draft.evidence[id].attempts.length}, rebases: 0 }`)
     }
   }
 
   const start = (id: string, caption?: string) => {
+    if (!draft.evidence[id]) scheduled(id)
+    const current = draft.evidence[id]
+    const attempt = current.attempts.length + 1
+    draft.attempts[id] = attempt
+    draft.evidence[id] = { ...current, attempts: [...current.attempts, { attempt, state: "running" }] }
+    record(id, "attempt-started", `{ stepKeyDigest: "${keyFor(id)}", attempt: ${attempt} }`)
     draft.nodes[id] = "running"
     draft.activeEdges = [...new Set([...draft.activeEdges, ...edgesInto(id)])]
     if (caption) draft.captions[id] = caption
@@ -333,8 +371,8 @@ export const buildFrames = (): Frame[] => {
   updateRunCard("running")
   push("Running the suite", 1_000)
 
+  finishAttempt("test", "failed", 61_000, 'SpawnError { code: "exit", exitCode: 1, stderr: "error: could not resolve @tevm/state — cold cache" }')
   draft.nodes.test = "failed"
-  draft.attempts.test = 1
   draft.captions.test = "exit 1 · cold Bun cache"
   updateRunCard("running")
   push("Attempt 1 fails", 900)
@@ -343,14 +381,13 @@ export const buildFrames = (): Frame[] => {
   draft.captions.test = "attempt 2 in 200ms"
   push("Retry", 800)
 
-  draft.attempts.test = 2
   start("test", "bun test --filter @tevm/state")
   push("Attempt 2", 800)
 
   settle("test")
   draft.nodes.bundle = "skipped"
+  start("approve")
   draft.nodes.approve = "waiting"
-  draft.activeEdges = [...new Set([...draft.activeEdges, ...edgesInto("approve")])]
   draft.chat.push({
     id: nextId(),
     kind: "approval",
@@ -471,6 +508,8 @@ export const buildFrames = (): Frame[] => {
 
   built = 0
   elapsed = 0
+  draft.evidence = {}
+  draft.attempts = {}
   draft.selected = null
   draft.focus = null
   draft.zoom = 0.6
@@ -489,6 +528,8 @@ export const buildFrames = (): Frame[] => {
   for (const id of cacheOrder) {
     draft.nodes[id] = "clean"
     draft.settled[id] = 0
+    scheduled(id)
+    record(id, "node-settled", `{ nodeId: "${id}", outcome: "clean", attempts: 0, rebases: 0 }`)
     cleanCount += 1
     push(`Cache hit ${NODE_BY_ID[id].tag}`, id === "writetest" ? 700 : 190)
   }
@@ -501,7 +542,7 @@ export const buildFrames = (): Frame[] => {
     clean: cleanCount,
     skipped: 2,
     elapsedMs: 0,
-    total: 3,
+    total: cleanCount + REKEYED.length,
     title: "morning-triage · from checks"
   })
   const rerunIndex = draft.chat.length - 1
@@ -517,17 +558,11 @@ export const buildFrames = (): Frame[] => {
   push("8 cache hits", 1_100)
 
   for (const id of REKEYED) {
-    draft.nodes[id] = "running"
-    draft.activeEdges = [...new Set([...draft.activeEdges, ...edgesInto(id)])]
+    start(id)
     if (id === "checks") draft.captions[id] = "7 maintainer rules × 4 hunks"
     push(`Re-runs ${NODE_BY_ID[id].tag}`, 700)
 
-    draft.nodes[id] = "built"
-    delete draft.captions[id]
-    draft.settled[id] = NODE_BY_ID[id].rekeyMs ?? NODE_BY_ID[id].ms
-    draft.activeEdges = draft.activeEdges.filter((edge) => !edgesInto(id).includes(edge))
-    built += 1
-    elapsed += NODE_BY_ID[id].rekeyMs ?? NODE_BY_ID[id].ms
+    settle(id)
     updateRerun("running")
     push(`Built ${NODE_BY_ID[id].tag}`, 450)
   }

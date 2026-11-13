@@ -41,6 +41,7 @@ const settledFrame = (flow: LibraryFlow): Frame => ({
   nodes: flow.settled as Record<string, NodeState>,
   captions: {},
   attempts: {},
+  evidence: {},
   settled: Object.fromEntries(flow.nodes.map((node) => [node.id, node.ms])),
   activeEdges: [],
   doneEdges: [],
@@ -56,7 +57,8 @@ export const App = () => {
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(true)
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1)
-  const [pick, setPick] = useState<string | null>(null)
+  // Undefined follows the script; null is an explicit dismissal.
+  const [pick, setPick] = useState<string | null | undefined>(undefined)
   const [dark, setDark] = useState(true)
   const [flowId, setFlowId] = useState<string>(MORNING_TRIAGE.id)
   const [menu, setMenu] = useState(false)
@@ -86,32 +88,39 @@ export const App = () => {
 
   const jump = useCallback((act: Act) => {
     setFlowId(MORNING_TRIAGE.id)
-    setPick(null)
+    setPick(undefined)
     setIndex(ACT_STARTS[act])
     setPlaying(true)
   }, [])
 
   const restart = useCallback(() => {
-    setPick(null)
+    setPick(undefined)
     setIndex(0)
     setPlaying(true)
   }, [])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return
+      if (event.target instanceof Element && event.target.closest(
+        'button, input, select, textarea, a[href], summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="tab"], [role="option"], [role="slider"], [role="textbox"], [role="combobox"], [role="menuitem"], [role="checkbox"], [role="radio"], [role="switch"], [role="spinbutton"]'
+      )) return
       if (event.key === " ") {
         event.preventDefault()
         setPlaying((value) => !value)
       }
-      if (event.key === "ArrowRight") setIndex((value) => Math.min(FRAMES.length - 1, value + 1))
-      if (event.key === "ArrowLeft") setIndex((value) => Math.max(0, value - 1))
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        event.preventDefault()
+        setPick(undefined)
+        setIndex((value) => Math.max(0, Math.min(FRAMES.length - 1, value + (event.key === "ArrowRight" ? 1 : -1))))
+      }
       if (event.key === "1" || event.key === "2" || event.key === "3") jump(Number(event.key) as Act)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [jump])
 
-  const selected = pick ?? (scripted ? frame.selected : null)
+  const selected = pick === undefined ? (scripted ? frame.selected : null) : pick
   const meta = ACT_META[frame.act - 1]
   const elapsedShare = useMemo(() => index / (FRAMES.length - 1), [index])
 
@@ -200,7 +209,7 @@ export const App = () => {
                           role="option"
                           aria-selected={flow.id === flowId}
                           data-active={flow.id === flowId ? "true" : undefined}
-                          onClick={() => { setFlowId(flow.id); setMenu(false); setPick(null); if (flow.id !== MORNING_TRIAGE.id) setPlaying(false) }}
+                          onClick={() => { setFlowId(flow.id); setMenu(false); setPick(undefined); if (flow.id !== MORNING_TRIAGE.id) setPlaying(false) }}
                         >
                           <strong>{flow.summary}</strong>
                           <code>{flow.pattern ? `${flow.pattern}.make` : "flows/morning-triage/flow.ts"}</code>
@@ -219,6 +228,7 @@ export const App = () => {
               rekeyed={Boolean(scripted && selected && frame.act === 3 && REKEYED.includes(selected))}
               settledMs={selected ? frame.settled[selected] : undefined}
               scripted={scripted}
+              evidence={selected ? frame.evidence[selected] : undefined}
               onClose={() => setPick(null)}
               onSelect={(id) => { if (nodesById[id]) setPick(id) }}
             />
@@ -246,7 +256,7 @@ export const App = () => {
               value={index}
               onChange={(event) => {
                 setPlaying(false)
-                setPick(null)
+                setPick(undefined)
                 setIndex(Number(event.target.value))
               }}
               aria-label="Scrub the demo"
