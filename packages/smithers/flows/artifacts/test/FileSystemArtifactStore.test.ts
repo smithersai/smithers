@@ -606,10 +606,8 @@ describe("the orphan sweep (issue #138)", () => {
 
   it.effect("reclaims tombstones and leaves lock ownership to the lease protocol", () =>
     Effect.gen(function*() {
-      // A lock file is otherwise reclaimed only when another acquirer contends
-      // for the same digest, and a digest nobody publishes again never gets
-      // one. Without this the `.locks` directory grows without bound, which is
-      // the exact failure the temp sweep exists to prevent.
+      // Scratch cleanup reclaims stale tombstones by age. Lock files survive
+      // regardless of age; only the lease protocol reclaims them on contention.
       yield* TestClock.adjust("2 hours")
       const now = yield* Clock.currentTimeMillis
       const dead = now - 2 * 60 * 60 * 1000
@@ -1187,26 +1185,59 @@ describe("filesystem capability refusals", () => {
       expect(text(host.files.get(blobPath))).toBe(artifact)
     }))
 
-  it.effect("skips unreadable orphan directories and foreign nested entries", () =>
+  it.effect("skips unreadable orphan directories and continues cleanup", () =>
     Effect.gen(function*() {
-      const host = memoryFs({ seed: { ".flows/objects/aa/old.tmp-dead": "keep", ".flows/objects/README": "foreign" } })
-      for (const entries of [undefined, ["../victim.tmp-dead", "..\\victim.tmp-dead"]]) {
+      yield* TestClock.adjust("2 hours")
+      const now = yield* Clock.currentTimeMillis
+      const orphan = ".flows/objects/aa/old.tmp-dead"
+      const readable = ".flows/objects/bb/old.tmp-dead"
+      const host = memoryFs({
+        seed: { [orphan]: "keep", [readable]: "stale", ".flows/objects/README": "foreign" },
+        mtimes: { [readable]: now - 2 * 60 * 60 * 1000 }
+      })
+      const fs = {
+        ...host.fs,
+        readDirectory: (path: string) =>
+          path.endsWith("/aa")
+            ? Effect.fail(
+              PlatformError.systemError({ _tag: "PermissionDenied", module: "test", method: "readDirectory" })
+            )
+            : host.fs.readDirectory(path)
+      }
+      yield* withCrypto(ArtifactStore.makeFileSystem(fs, hostPath, { coordination: "process" }).put(bytes(artifact)))
+      expect(text(host.files.get(orphan))).toBe("keep")
+      expect(host.files.has(readable)).toBe(false)
+      expect(text(host.files.get(".flows/objects/README"))).toBe("foreign")
+    }))
+
+  for (const separator of ["/", "\\"]) {
+    it.effect(`skips foreign orphan entries containing ${JSON.stringify(separator)}`, () =>
+      Effect.gen(function*() {
+        yield* TestClock.adjust("2 hours")
+        const now = yield* Clock.currentTimeMillis
+        const orphan = ".flows/objects/aa/old.tmp-dead"
+        const victim = ".flows/objects/victim.tmp-dead"
+        const host = memoryFs({
+          seed: { [orphan]: "stale", [victim]: "keep", ".flows/objects/README": "foreign" },
+          mtimes: { [orphan]: now - 2 * 60 * 60 * 1000, [victim]: now - 2 * 60 * 60 * 1000 }
+        })
+        // Model a host that resolves parent traversal through either separator.
+        const normalize = (path: string) => posix.normalize(path.replaceAll("\\", "/"))
         const fs = {
           ...host.fs,
           readDirectory: (path: string) =>
             path.endsWith("/aa")
-              ? entries === undefined
-                ? Effect.fail(
-                  PlatformError.systemError({ _tag: "PermissionDenied", module: "test", method: "readDirectory" })
-                )
-                : Effect.succeed(entries)
-              : host.fs.readDirectory(path)
+              ? Effect.succeed([`..${separator}victim.tmp-dead`, "old.tmp-dead"])
+              : host.fs.readDirectory(path),
+          stat: (path: string) => host.fs.stat(normalize(path)),
+          remove: (path: string) => host.fs.remove(normalize(path))
         }
-        const body = entries === undefined ? artifact : "second"
-        yield* withCrypto(ArtifactStore.makeFileSystem(fs, hostPath, { coordination: "process" }).put(bytes(body)))
-      }
-      expect(text(host.files.get(".flows/objects/aa/old.tmp-dead"))).toBe("keep")
-    }))
+        yield* withCrypto(ArtifactStore.makeFileSystem(fs, hostPath, { coordination: "process" }).put(bytes(artifact)))
+        expect(host.files.has(orphan)).toBe(false)
+        expect(text(host.files.get(victim))).toBe("keep")
+        expect(text(host.files.get(".flows/objects/README"))).toBe("foreign")
+      }))
+  }
 
   for (const replacement of ["directory", "missing", "file"] as const) {
     it.live(`refuses a fanout replaced with ${replacement} after scratch sync`, () =>

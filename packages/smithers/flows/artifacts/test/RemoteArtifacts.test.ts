@@ -1,5 +1,4 @@
 import * as Hex from "effect/encoding/Hex"
-import * as Redacted from "effect/Redacted"
 /**
  * The dumb-HTTP CAS protocol: `GET`/`PUT`/`HEAD /cas/{digest}` and
  * `POST /cas/findMissing`, mirroring
@@ -1271,7 +1270,3 @@ describe("transport failures", () => {
       expect(failure.message).not.toContain("secret")
     }))
 })
-
-/** Native test hosts inspect the arguments they actually execute. */
-const plainWord = (value: string | Redacted.Redacted<string>): string =>
-  Redacted.isRedacted(value) ? Redacted.value(value) : value

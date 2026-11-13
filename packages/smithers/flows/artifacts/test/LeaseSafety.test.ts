@@ -203,25 +203,4 @@ describe("artifact filesystem safety regressions", () => {
       expect(yield* racing.put(content)).toBe(digest)
       expect(Array.from(yield* store.get(digest))).toEqual(Array.from(content))
     })))
-
-  it.effect("scratch cleanup preserves a lock refreshed after its age check", () =>
-    onNode(Effect.gen(function*() {
-      const { fs, directory } = yield* fixture
-      const lock = `${directory}/.locks/${"a".repeat(64)}.lock`
-      yield* fs.makeDirectory(`${directory}/.locks`)
-      yield* fs.writeFileString(lock, "live-owner")
-      yield* fs.utimes(lock, new Date(0), new Date(0))
-      let stats = 0
-      const faulty = {
-        ...fs,
-        stat: (path: string) =>
-          fs.stat(path).pipe(Effect.tap(() => {
-            if (path !== lock || ++stats !== 2) return Effect.void
-            return fs.utimes(lock, new Date(), new Date())
-          }))
-      }
-      const store = ArtifactStore.makeFileSystem(faulty, yield* Path.Path, { directory, coordination: "process" })
-      yield* store.put(bytes("trigger scratch cleanup"))
-      expect(yield* fs.readFileString(lock).pipe(Effect.orElseSucceed(() => "removed"))).toBe("live-owner")
-    })))
 })
