@@ -536,11 +536,34 @@ const localSmithersUnit = Smithers.NodeTest({
   deps: []
 })
 
+/** Real HTTP children prove deadline, cancellation, exit and ownership cleanup. */
+const serveStartup = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/test/support/serve-startup.test.mjs")]),
+  srcs: [
+    Smithers.file("//packages/smithers/test/support/serve-startup.ts"),
+    Smithers.file("//packages/smithers/test/fixtures/readiness-server.mjs")
+  ],
+  deps: []
+})
+
+/** Cold npx and bunx installs must execute and identify the exact candidate pack. */
+const nodeRuntimeMatrix = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/test/node-runtime-matrix.test.mjs")]),
+  srcs: [
+    Smithers.file("//packages/smithers/test/node-runtime-matrix.mjs"),
+    Smithers.file("//packages/smithers/test/support/runtime-matrix-identity.mjs"),
+    Smithers.file("//.smithers/flows/release/release-registry.mjs")
+  ],
+  deps: []
+})
+
 export const Package = Smithers.Package({
   targets: {
     importRules,
     localSmithers,
     localSmithersUnit,
+    serveStartup,
+    nodeRuntimeMatrix,
     tuiSources,
     check,
     circular,

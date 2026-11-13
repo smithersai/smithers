@@ -20,6 +20,7 @@
 // Run: node packages/smithers/test/support/check-local-smithers.mjs
 
 import { readFileSync, readdirSync, statSync } from "node:fs"
+import ts from "typescript"
 import { join, relative, sep } from "node:path"
 
 import { isMain, repoRoot } from "../../../repo-targets/scripts/workspace-packages.mjs"
@@ -50,7 +51,7 @@ export const SCANNED_PATHS = [
 ]
 
 /** Extensions worth scanning; everything else in those trees is prose or data. */
-export const SCANNED_EXTENSIONS = [".mjs", ".js", ".cjs", ".ts", ".tsx", ".json", ".sh", ".toml"]
+export const SCANNED_EXTENSIONS = [".mjs", ".js", ".cjs", ".ts", ".tsx", ".vibe", ".json", ".sh", ".toml"]
 
 /** Never descend into these directory names. */
 const SKIPPED_DIRECTORIES = new Set([
@@ -72,7 +73,7 @@ export const ALLOWLIST = {
 }
 
 /** Package managers that fetch and run the published CLI. */
-const RUNNERS = ["bunx", "npx", "pnpm dlx", "yarn dlx", "deno run -A npm:"]
+const PUBLISHED_COMMAND = /\b(?:(?:bunx|npx|pnpm\s+dlx|yarn\s+dlx)\s+(?:--?[\w=-]+\s+)*|deno\s+run\s+(?:--?[\w=-]+\s+)*npm:)(?:smthrs|@smthrs\/cli)(?:@[^\s"'`;]+)?(?=$|[\s"'`;])/
 
 /** Config files whose every line is a command the harness will execute. */
 const EXECUTED_CONFIG_FILES = new Set([".mcp.json", "monitors.json"])
@@ -107,7 +108,7 @@ export function isCommentLine(line) {
  * @param {string} line
  */
 function mentionsPublishedCli(line) {
-  return RUNNERS.some((runner) => line.includes(`${runner} smthrs`))
+  return PUBLISHED_COMMAND.test(line)
 }
 
 /**
@@ -142,15 +143,81 @@ export function findViolationsInFile(path, contents) {
       }))
   }
 
-  const everyLineExecutes = fileName.endsWith(".sh") || EXECUTED_CONFIG_FILES.has(fileName)
   const violations = []
   const lines = contents.split("\n")
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index]
-    if (isCommentLine(line) || !mentionsPublishedCli(line)) continue
-    if (!everyLineExecutes && !EXECUTION_CALLS.some((call) => line.includes(call))) continue
-    violations.push({ path, line: index + 1, text: line.trim() })
+  const report = (line, text) => {
+    if (!violations.some((violation) => violation.line === line)) violations.push({ path, line, text })
   }
+
+  // MCP servers execute command + args, often written on separate JSON lines.
+  // Decode those fields rather than treating descriptions as executable text.
+  if (EXECUTED_CONFIG_FILES.has(fileName)) {
+    let config
+    try {
+      config = JSON.parse(contents)
+    } catch {
+      return []
+    }
+    const visit = (value) => {
+      if (value === null || typeof value !== "object") return
+      if (typeof value.command === "string") {
+        const command = [value.command, ...(Array.isArray(value.args) ? value.args : [])].join(" ")
+        if (mentionsPublishedCli(command)) {
+          const line = lines.findIndex((line) => line.includes(JSON.stringify(value.command))) + 1
+          report(line, command)
+        }
+      }
+      for (const entry of Object.values(value)) visit(entry)
+    }
+    visit(config)
+    return violations
+  }
+
+  if (fileName.endsWith(".sh")) {
+    for (let index = 0; index < lines.length; index++) {
+      if (!isCommentLine(lines[index]) && mentionsPublishedCli(lines[index])) report(index + 1, lines[index].trim())
+    }
+    return violations
+  }
+
+  // Parse literal process arguments so multiline argv calls are checked without
+  // interpreting quoted examples in prompts as source code.
+  const source = ts.createSourceFile(path, contents, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const literal = (node) => {
+    if (!node) return undefined
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text
+    if (ts.isTemplateExpression(node)) {
+      return node.head.text + node.templateSpans.map((span) =>
+        (literal(span.expression) ?? "<dynamic>") + span.literal.text).join("")
+    }
+    return undefined
+  }
+  const argv = (node) => node && ts.isArrayLiteralExpression(node) ? node.elements.map(literal).join(" ") : ""
+  const visit = (node) => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression.getText(source)
+      const operation = ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : callee
+      if (EXECUTION_CALLS.some((call) => call.endsWith("(") && operation === call.slice(0, -1))) {
+        const [command, args] = node.arguments
+        let executed = literal(command)
+        if (executed !== undefined) executed += " " + argv(args)
+        else if (command && ts.isArrayLiteralExpression(command)) executed = argv(command)
+        else if (command && ts.isObjectLiteralExpression(command)) {
+          const cmd = command.properties.find((entry) =>
+            ts.isPropertyAssignment(entry) && entry.name.getText(source).replace(/["']/g, "") === "cmd")
+          if (cmd) executed = argv(cmd.initializer)
+        }
+        if (executed && mentionsPublishedCli(executed)) {
+          report(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, node.getText(source))
+        }
+      }
+    } else if (ts.isTaggedTemplateExpression(node) &&
+        ["$", "Bun.$"].includes(node.tag.getText(source)) && mentionsPublishedCli(node.template.getText(source))) {
+      report(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, node.getText(source))
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
   return violations
 }
 

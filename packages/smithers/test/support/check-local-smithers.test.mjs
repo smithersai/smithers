@@ -83,6 +83,64 @@ describe("findViolationsInFile", () => {
     assert.equal(findViolationsInFile("examples/.mcp.json", contents).length, 1)
   })
 
+  it("decodes command and argv in real MCP configurations", () => {
+    for (const [command, args] of [
+      ["bunx", ["smthrs", "--mcp"]],
+      ["npx", ["--yes", "smthrs@next", "--mcp"]],
+      ["pnpm", ["dlx", "smthrs", "--mcp"]],
+      ["deno", ["run", "-A", "npm:smthrs", "--mcp"]],
+    ]) {
+      const contents = JSON.stringify({ mcpServers: { smithers: { command, args } } }, null, 2)
+      const violations = findViolationsInFile("example/.mcp.json", contents)
+      assert.equal(violations.length, 1, contents)
+      assert.ok(violations[0].line > 0)
+    }
+  })
+
+  it("flags literal argv process calls, including multiline calls and Bun cmd arrays", () => {
+    for (const source of [
+      'spawn("bunx", ["smthrs", "--version"])',
+      'spawnSync("npx", ["--yes", "smthrs@next", "--version"])',
+      'execFile(\n  "pnpm",\n  ["dlx", "smthrs", "--version"]\n)',
+      'execFileSync("yarn", ["dlx", "smthrs", "--version"])',
+      'Bun.spawn(["bunx", "smthrs", "--version"])',
+      'Bun.spawn({ cmd: ["bunx", "smthrs", "--version"] })',
+      'execa("deno", ["run", "-A", "npm:smthrs@next", "--version"])',
+    ]) assert.equal(findViolationsInFile("example/tool.mjs", source).length, 1, source)
+  })
+
+  it("checks namespaced process calls and statically known template command segments", () => {
+    for (const source of [
+      'cp.execSync("bunx smthrs --version")',
+      'childProcess.spawn("bunx", ["smthrs"])',
+      'cp.spawnSync("bunx", ["smthrs"])',
+      'execSync(`bunx smthrs ${args}`)',
+      'execFile("bunx", [`smthrs@${version}`, "--version"])',
+      'execSync(`bunx ${"smthrs"} --version`)',
+    ]) assert.equal(findViolationsInFile("tool.mjs", source).length, 1, source)
+    assert.deepEqual(findViolationsInFile("tool.mjs",
+      'const prompt = `cp.execSync("bunx smthrs ${args}")`'), [])
+  })
+
+  it("matches Deno npm specifiers without a space after the colon", () => {
+    assert.equal(findViolationsInFile("a.sh", "deno run -A npm:smthrs --version").length, 1)
+    assert.equal(findViolationsInFile("a.sh", "deno run -A npm:@smthrs/cli@next --version").length, 1)
+  })
+
+  it("ignores local argv, unrelated packages, config descriptions and quoted prompts", () => {
+    for (const source of [
+      'spawn("node", ["packages/smithers/bin/smithers.mjs", "--version"])',
+      'spawn("bunx", ["smthrs-unrelated", "--version"])',
+      'const prompt = \'spawn("bunx", ["smthrs"])\'',
+      '// spawn("bunx", ["smthrs"])',
+    ]) assert.deepEqual(findViolationsInFile("tool.mjs", source), [], source)
+    assert.deepEqual(findViolationsInFile("a.sh", "bunx smthrs-unrelated --version"), [])
+    assert.deepEqual(findViolationsInFile("example/.mcp.json", JSON.stringify({
+      description: "bunx smthrs", mcpServers: { local: { command: "node", args: [SOURCE_ENTRY] } },
+    })), [])
+    assert.deepEqual(findViolationsInFile("example/.mcp.json", "{bad json"), [])
+  })
+
   it("returns nothing for an allowlisted path", () => {
     const [allowlisted] = Object.keys(ALLOWLIST)
     assert.deepEqual(findViolationsInFile(allowlisted, "bunx smthrs ps\n"), [])

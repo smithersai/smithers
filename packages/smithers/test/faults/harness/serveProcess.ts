@@ -30,6 +30,7 @@ import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { createServer } from "node:net"
 import { dirname, join, resolve } from "node:path"
+import { waitForServe } from "../../support/serve-startup.ts"
 import { type TrackedWebSockets, trackingWebSocketConstructor } from "./dropWebSocket.ts"
 
 /**
@@ -95,30 +96,6 @@ const freePort = (): Promise<number> =>
     })
   })
 
-const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
-
-/**
- * Whether the control RPC route is mounted and answering on `port`.
- *
- * A TCP connection is not the readiness signal: the HTTP server accepts before
- * the RPC router is attached, so a suite that raced on `connect` would send its
- * first plan into a 404. The probe therefore asks the route itself, and treats
- * any answer other than "no such route" as served.
- */
-const serving = async (port: number): Promise<boolean> => {
-  try {
-    const response = await fetch(`http://127.0.0.1:${port}/rpc`, {
-      method: "POST",
-      headers: { "content-type": "application/ndjson" },
-      body: "\n"
-    })
-    await response.text()
-    return response.status !== 404
-  } catch {
-    return false
-  }
-}
-
 /**
  * A running `smthrs serve`.
  *
@@ -155,6 +132,8 @@ export interface ServeOptions {
   readonly credential?: string | undefined
   /** How long the verb gets to bind and mount its routes. */
   readonly timeoutMs?: number | undefined
+  /** Interrupt startup and release its child before ownership is returned. */
+  readonly signal?: AbortSignal | undefined
 }
 
 /**
@@ -173,11 +152,8 @@ export const startServe = async (root: string, options: ServeOptions = {}): Prom
     cwd: root,
     env: { ...process.env, SMITHERS_TOKEN: token }
   })
-  const pid = process_.pid
-  if (pid === undefined) throw new Error("smthrs serve has no pid")
 
   let stderr = ""
-  let exited: number | null | undefined
   process_.stderr?.setEncoding("utf8")
   process_.stderr?.on("data", (chunk: string) => {
     stderr += chunk
@@ -186,23 +162,10 @@ export const startServe = async (root: string, options: ServeOptions = {}): Prom
   process_.stdout?.on("data", (chunk: string) => {
     stderr += chunk
   })
-  process_.once("exit", (code) => {
-    exited = code
-  })
-
-  const command = `${process.execPath} ${argv.join(" ")}`
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    if (exited !== undefined) {
-      throw new Error(`smthrs serve exited with ${String(exited)} before it served\n${command}\n${stderr}`)
-    }
-    if (await serving(port)) break
-    if (Date.now() >= deadline) {
-      process_.kill("SIGKILL")
-      throw new Error(`smthrs serve never answered on ${port} within ${timeoutMs}ms\n${command}\n${stderr}`)
-    }
-    await sleep(100)
-  }
+  const command = [process.execPath, ...argv].join(" ")
+  await waitForServe(process_, { port, timeoutMs, command, output: () => stderr, signal: options.signal })
+  const pid = process_.pid
+  if (pid === undefined) throw new Error("smthrs serve has no pid")
 
   let stopped = false
   return {

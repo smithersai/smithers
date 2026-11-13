@@ -91893,6 +91893,39 @@
     }
   },
   {
+    "label": "//packages/smithers:nodeRuntimeMatrix",
+    "package": "packages/smithers",
+    "name": "nodeRuntimeMatrix",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/test/node-runtime-matrix.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/test/node-runtime-matrix.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/test/support/runtime-matrix-identity.mjs"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/release/release-registry.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers:reviewDocsAgainstCode",
     "package": "packages/smithers",
     "name": "reviewDocsAgainstCode",
@@ -92045,6 +92078,35 @@
         "kind": "glob",
         "pattern": "packages/smithers/scripts/**",
         "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers:serveStartup",
+    "package": "packages/smithers",
+    "name": "serveStartup",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/test/support/serve-startup.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/test/support/serve-startup.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/test/fixtures/readiness-server.mjs"
       }
     ],
     "outputs": [],

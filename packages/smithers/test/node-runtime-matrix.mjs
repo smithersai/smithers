@@ -11,6 +11,7 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { releaseRegistry } from "../../../.smithers/flows/release/release-registry.mjs"
+import { installedIdentity, packedIdentity } from "./support/runtime-matrix-identity.mjs"
 
 const root = process.env.MATRIX_OUTPUT ?? mkdtempSync(join(tmpdir(), "smthrs-node-matrix-"))
 mkdirSync(root, { recursive: true })
@@ -34,7 +35,8 @@ const must = async (command, args, options) => {
 }
 const record = (version, command, r, expected = 0, receipt = true) => {
   const row = { version, command, status: r.status, signal: r.signal, error: r.error,
-    expected, receipt, passed: r.status === expected, output: `${r.stdout}\n${r.stderr}`.slice(-6000) }
+    identity: r.identity, identityError: r.identityError,
+    expected, receipt, passed: r.status === expected && r.identityError === undefined, output: `${r.stdout}\n${r.stderr}`.slice(-6000) }
   results.push(row)
   console.log(JSON.stringify(row))
 }
@@ -58,8 +60,12 @@ process.on("exit", () => {
 let registry, proxy
 let spec = candidate ?? "@smthrs/cli@next"
 let registryUrl
+let expectedIdentity = candidate && !statSync(candidate).isDirectory() ? packedIdentity(candidate) : undefined
 if (candidate && statSync(candidate).isDirectory()) {
   const entries = JSON.parse(readFileSync(join(candidate, "manifest.json"), "utf8"))
+  const cliEntry = entries.find(entry => entry.name === "@smthrs/cli")
+  if (!cliEntry) throw new Error("Release pack has no @smthrs/cli candidate")
+  expectedIdentity = packedIdentity(join(candidate, cliEntry.filename))
   registry = await releaseRegistry(candidate, entries)
   const names = new Set(entries.map(entry => entry.name))
   // Serve the existing release registry's exact packs; ordinary third-party
@@ -111,7 +117,11 @@ try {
     writeFileSync(join(directory, "install.log"), `${installed.stdout}\n${installed.stderr}`)
     record(version, "npm install packed CLI", installed)
     if (installed.status !== 0) continue
-    const cli = join(consumer, "node_modules/@smthrs/cli/bin/smithers.mjs")
+    const cliDirectory = join(consumer, "node_modules/@smthrs/cli")
+    const identity = installedIdentity(cliDirectory)
+    expectedIdentity ??= identity
+    if (JSON.stringify(identity) !== JSON.stringify(expectedIdentity)) throw new Error("Installed CLI differs from candidate")
+    const cli = join(cliDirectory, identity.bin)
     if (discover) {
       const guard = join(consumer, "node_modules/@smthrs/cli/dist/esm/internal/NodeVersion.js")
       writeFileSync(guard, readFileSync(guard, "utf8").replace(/minimum = "[^"]+"/, 'minimum = "0.0.0"'))
@@ -135,9 +145,20 @@ try {
     for (const runner of ["npx", "bunx"]) {
       const cwd = join(directory, runner); mkdirSync(cwd)
       if (registryUrl) writeFileSync(join(cwd, ".npmrc"), `registry=${registryUrl}\n`)
-      const r = await run(runner === "npx" ? join(bin, "npx") : "bunx", ["smthrs@next", "generate", "flow", "coding"], { cwd, env: cleanEnv(`${runner}-home`) })
-      writeFileSync(join(directory, `${runner}.log`), `${r.stdout}\n${r.stderr}`)
-      record(version, `${runner} smthrs@next generate flow coding`, r, supported ? 0 : 1)
+      const args = runner === "npx"
+        ? ["--yes", "--package", spec, "--", identity.executable, "generate", "flow", "coding"]
+        : ["--package", spec, identity.executable, "generate", "flow", "coding"]
+      const identityFile = join(directory, runner + "-identity.json")
+      rmSync(identityFile, { force: true })
+      const runnerEnv = cleanEnv(runner + "-home")
+      runnerEnv.MATRIX_IDENTITY_FILE = identityFile
+      runnerEnv.NODE_OPTIONS = "--import " + JSON.stringify(new URL("./support/runtime-matrix-identity.mjs", import.meta.url).href)
+      const r = await run(runner === "npx" ? join(bin, "npx") : "bunx", args, { cwd, env: runnerEnv })
+      if (existsSync(identityFile)) r.identity = JSON.parse(readFileSync(identityFile, "utf8"))
+      const identityMatches = JSON.stringify(r.identity) === JSON.stringify(expectedIdentity)
+      if (!identityMatches) r.identityError = "Runner did not execute the candidate CLI identity"
+      writeFileSync(join(directory, runner + ".log"), r.stdout + "\n" + r.stderr)
+      record(version, [runner, ...args].join(" "), r, supported ? 0 : 1)
       if (!discover && !supported && !r.stderr.includes(`smthrs needs Node ${floor} or later`)) results.at(-1).passed = false
       if (!discover && supported && !existsSync(join(cwd, ".smithers/flows/coding/flow.ts"))) results.at(-1).passed = false
     }
