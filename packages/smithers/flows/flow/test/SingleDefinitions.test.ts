@@ -6,11 +6,7 @@
  * cases assert the same object, so a reintroduced copy fails here rather than
  * in a digest six packages away.
  */
-import * as PlanCachePolicy from "@smthrs/plan/CachePolicy"
-import * as Effects from "@smthrs/plan/Effects"
-import * as FileSet from "@smthrs/plan/FileSet"
-import * as Node from "@smthrs/plan/Node"
-import * as Plan from "@smthrs/plan/Plan"
+import { CachePolicy as PlanCachePolicy, Effects, FileSet, Node, Plan } from "@smthrs/plan"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { Tier } from "../src/Action/Action.ts"

@@ -100,7 +100,9 @@ and owns a private `cursors` view seeded at entry and merged back on exit, so a
 concurrent sibling never rewinds another block's mid-flight cursor.
 
 **The tier** distinguishes an unsealed key from a compensable or irreversible
-one. `StepIdentity.invocationKey` is the single derivation.
+one. `StepIdentity.invocationKey` is the single derivation. Omitting
+`parentScope` or passing `parentScope: undefined` derives the same unscoped
+key; a present scope must be a non-empty string.
 
 Concurrent dispatch of one allocation scope is refused with
 `Action.ConcurrentKeylessDispatch`, because arrival order would otherwise decide

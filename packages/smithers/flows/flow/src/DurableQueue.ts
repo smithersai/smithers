@@ -13,7 +13,7 @@
  * @since 0.1.0
  */
 
-import * as Node from "@smthrs/plan/Node"
+import { Node } from "@smthrs/plan"
 import * as Arr from "effect/Array"
 import * as Cause from "effect/Cause"
 import type * as EffectDigest from "effect/crypto/Digest"

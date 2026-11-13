@@ -6,11 +6,12 @@
  * data the engine reads, exactly like the placement and effect declarations.
  */
 import { Action } from "@smthrs/flow"
-import { CachePolicy, CachePolicyAnnotation, cachePolicyOf, CacheScope, withCache } from "@smthrs/flow/CacheEnvironment"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
+
+const { CachePolicy, CachePolicyAnnotation, cachePolicyOf, CacheScope, withCache } = Action
 
 const decode = Schema.decodeUnknownResult(CachePolicy)
 

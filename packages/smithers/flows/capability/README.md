@@ -13,7 +13,11 @@ as `fs:write` on `/workspace/**`. One pure function reduces ordered rules over
 those two values into `allow`, `deny`, or `ask`, and three typed failures carry
 the answer back to a caller.
 
-The package holds no state. It reads no files, opens no sockets, and enforces
+The package also exports `CapabilitySet` from its root. It represents
+intersections of capability-pattern groups; `CapabilitySet.attenuate` narrows
+the ambient ceiling for an Effect without widening its parent authority.
+
+The package performs no I/O. It reads no files, opens no sockets, and enforces
 nothing. Its one runtime dependency is
 [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs), and
 [`effect`](https://effect.website) is a peer in the range `effect@4.1.1`.
@@ -73,13 +77,14 @@ Permission.formatError(Permission.permissionRequired({
 
 ## Modules
 
-Both are re-exported from the root entry point and are also importable from
-`@smthrs/capability/Capability` and `@smthrs/capability/Permission`.
+Import `Capability`, `CapabilitySet` and `Permission` from the
+`@smthrs/capability` root entry point.
 
-| Module       | Contents                                                                                                                                                                                                                                                                                                         |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Capability` | `Capability`, `CapabilityPattern`, `Action`, `PatternAction`, `EffectTier`, `TierOptions`, `maxResourceLength`, `maxMatchWork`, `make`, `format`, `parse`, `parsePattern`, `patternFromCapability`, `withinMatchBudget`, `matches`, `subsumes`, `tierOf`, `requiresIdempotencyKey`.                              |
-| `Permission` | `PermissionRequired`, `PermissionDenied`, `GrantStoreError`, `GrantStoreErrorCode`, the `PermissionError` union and its schema, `Rule`, `RuleEffect`, `evaluate`, `permissionRequired`, `permissionDenied`, `isPermissionError`, `formatError`, `maxDisplayFieldLength`, `toPlatformError`, `fromPlatformError`. |
+| Module          | Contents                                                                                                                                                                                                                                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Capability`    | `Capability`, `CapabilityPattern`, `Action`, `PatternAction`, `EffectTier`, `TierOptions`, `maxResourceLength`, `maxMatchWork`, `make`, `format`, `parse`, `parsePattern`, `patternFromCapability`, `withinMatchBudget`, `matches`, `subsumes`, `tierOf`, `requiresIdempotencyKey`.                              |
+| `CapabilitySet` | Capability-pattern group intersections, authority comparisons and scoped attenuation.                                                                                                                                                                                                                            |
+| `Permission`    | `PermissionRequired`, `PermissionDenied`, `GrantStoreError`, `GrantStoreErrorCode`, the `PermissionError` union and its schema, `Rule`, `RuleEffect`, `evaluate`, `permissionRequired`, `permissionDenied`, `isPermissionError`, `formatError`, `maxDisplayFieldLength`, `toPlatformError`, `fromPlatformError`. |
 
 Full reference: <https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/docs/api.md>.
 

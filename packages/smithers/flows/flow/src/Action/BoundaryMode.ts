@@ -11,7 +11,7 @@
  * @since 0.1.0
  */
 
-import * as FileSet from "@smthrs/plan/FileSet"
+import { FileSet } from "@smthrs/plan"
 
 /**
  * Schema for how strictly an action's filesystem boundary is enforced.

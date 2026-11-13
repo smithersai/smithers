@@ -3,7 +3,7 @@
  * @since 1.0.0
  */
 
-import * as BoundedJson from "@smthrs/canonical/BoundedJson"
+import { BoundedJson } from "@smthrs/canonical"
 
 /** Resource limits for one human-task value.
  * @private

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Capability, type CapabilityPattern } from "@smthrs/capability/Capability"
-import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
+import { Capability, CapabilitySet } from "@smthrs/capability"
 import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Arbitrary, Context, Effect, Layer, Schema } from "effect"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
-const capability = (action: Capability["action"], resource: string) => new Capability({ action, resource })
+const capability = (action: Capability.Capability["action"], resource: string) =>
+  new Capability.Capability({ action, resource })
 const read = capability("fs:read", "src/main.ts")
 const write = capability("fs:write", "src/main.ts")
 const other = capability("fs:read", "test/main.ts")
@@ -133,7 +133,7 @@ describe("flow capability ceilings", () => {
       const outcome = interpretation.value as {
         readonly _tag: "To"
         readonly flow: string
-        readonly capabilityCeilings: ReadonlyArray<ReadonlyArray<CapabilityPattern>>
+        readonly capabilityCeilings: ReadonlyArray<ReadonlyArray<Capability.CapabilityPattern>>
       }
       expect(outcome._tag).toBe("To")
       expect(outcome.flow).toBe(Target._tag)
@@ -175,7 +175,7 @@ const Ceiling = Schema.Array(Schema.Array(Schema.Literals(PATTERNS)).check(Schem
 const ceilings = Arbitrary.schema(Ceiling)
 const authority = (groups: ReadonlyArray<ReadonlyArray<string>>) =>
   CapabilitySet.fromGroups(Flow.parseCapabilityCeilings(groups))
-const allows = (groups: ReadonlyArray<ReadonlyArray<string>>, wanted: Capability) =>
+const allows = (groups: ReadonlyArray<ReadonlyArray<string>>, wanted: Capability.Capability) =>
   CapabilitySet.allows(authority(groups), wanted)
 const property = <A>(arbitrary: Arbitrary.Arbitrary<A>, holds: (value: A) => boolean) =>
   Effect.gen(function*() {

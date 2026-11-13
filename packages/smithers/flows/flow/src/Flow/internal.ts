@@ -6,7 +6,7 @@
  */
 
 import { Sha256 } from "@smthrs/crypto"
-import * as Node from "@smthrs/plan/Node"
+import { Node } from "@smthrs/plan"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as SecureRandom from "effect/crypto/SecureRandom"

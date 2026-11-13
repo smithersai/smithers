@@ -34,3 +34,11 @@ export * as Capability from "./Capability.ts"
 export * as Permission from "./Permission.ts"
 
 export { decodePermissionError } from "./decodePermissionError.ts"
+
+/**
+ * Monotone intersections of capability-pattern groups and the ambient ceiling.
+ *
+ * @category namespace exports
+ * @since 1.0.0
+ */
+export * as CapabilitySet from "./CapabilitySet.ts"

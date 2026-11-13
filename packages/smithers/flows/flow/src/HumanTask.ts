@@ -38,7 +38,7 @@
  * @since 0.1.0
  */
 
-import * as Node from "@smthrs/plan/Node"
+import { Node } from "@smthrs/plan"
 import * as Clock from "effect/Clock"
 import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"

@@ -43,13 +43,9 @@
  */
 
 import { Canonical, canonicalize, isRecord } from "@smthrs/canonical"
-import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
+import { CapabilitySet } from "@smthrs/capability"
 import { DerivedKey, digest } from "@smthrs/keys"
-import { isFatalDiagnostic } from "@smthrs/plan/GraphBuildError"
-import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
-import * as Node from "@smthrs/plan/Node"
-import * as Planned from "@smthrs/plan/Planned"
-import * as StepKey from "@smthrs/plan/StepKey"
+import { GraphBuildError, KeyMaterial, Node, Planned, StepKey } from "@smthrs/plan"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import type * as EffectDigest from "effect/crypto/Digest"
@@ -847,7 +843,7 @@ const buildRefusal = (name: string, cause: unknown): InterpreterError => {
  * @private
  */
 const fatalRefusal = (name: string, graph: Graph.Graph): InterpreterError | undefined => {
-  const fatal = graph.diagnostics.find(isFatalDiagnostic)
+  const fatal = graph.diagnostics.find(GraphBuildError.isFatalDiagnostic)
   if (fatal === undefined) return undefined
   return refusal(
     name,

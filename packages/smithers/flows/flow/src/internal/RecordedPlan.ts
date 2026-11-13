@@ -10,8 +10,8 @@
  * @internal
  */
 
-import { isRecord } from "@smthrs/canonical/Record"
-import type * as Plan from "@smthrs/plan/Plan"
+import { isRecord } from "@smthrs/canonical"
+import type { Plan } from "@smthrs/plan"
 import * as Graph from "../Graph.ts"
 
 /**

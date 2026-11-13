@@ -4,9 +4,12 @@
  * @since 0.1.0
  */
 
-import { Filegroup, makeFilegroup } from "@smthrs/plan/FileSet"
+import { FileSet } from "@smthrs/plan"
+
+const { Filegroup, makeFilegroup } = FileSet
+type Filegroup = FileSet.Filegroup
 export { Filegroup }
-export type { Filegroup as Type } from "@smthrs/plan/FileSet"
+export type { Filegroup as Type }
 /**
  * Creates a named filegroup.
  *

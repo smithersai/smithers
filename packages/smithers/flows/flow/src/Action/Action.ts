@@ -6,9 +6,7 @@
  * @since 0.1.0
  */
 
-import * as Effects from "@smthrs/plan/Effects"
-import type * as Node from "@smthrs/plan/Node"
-import type * as Planned from "@smthrs/plan/Planned"
+import { Effects, type Node, type Planned } from "@smthrs/plan"
 import type * as Context from "effect/Context"
 import type * as EffectDigest from "effect/crypto/Digest"
 import type * as Effect from "effect/Effect"

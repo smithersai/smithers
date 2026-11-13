@@ -1,8 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
+import { Capability, CapabilitySet as CapabilitySets } from "@smthrs/capability"
 import { Effect, Fiber, Latch, Ref } from "effect"
 import * as FastCheck from "fast-check"
-import * as CapabilitySets from "../src/CapabilitySet.ts"
+
+const { Capability: CapabilityValue, CapabilityPattern } = Capability
+type CapabilityPattern = Capability.CapabilityPattern
 
 const actions = [
   "fs:read",
@@ -67,7 +69,7 @@ const capabilityArbitrary = FastCheck
     FastCheck.constantFrom(...actions),
     FastCheck.constantFrom(...capabilityResources)
   )
-  .map(([action, resource]) => new Capability({ action, resource }))
+  .map(([action, resource]) => new CapabilityValue({ action, resource }))
 
 const unrestricted = Effect.runSync(CapabilitySets.current)
 
@@ -115,8 +117,8 @@ describe("CapabilitySet", () => {
   it("snapshots and freezes every authority pattern", () => {
     const input = new CapabilityPattern({ action: "net:get", resource: "safe.example" })
     const set = CapabilitySets.fromPatterns([input])
-    const safe = new Capability({ action: "net:get", resource: "safe.example" })
-    const evil = new Capability({ action: "net:get", resource: "evil.example" })
+    const safe = new CapabilityValue({ action: "net:get", resource: "safe.example" })
+    const evil = new CapabilityValue({ action: "net:get", resource: "evil.example" })
     ;(input as { resource: string }).resource = "**"
     expect(CapabilitySets.allows(set, safe)).toBe(true)
     expect(CapabilitySets.allows(set, evil)).toBe(false)
@@ -139,11 +141,11 @@ describe("CapabilitySet", () => {
 
     expect(CapabilitySets.allows(
       set,
-      new Capability({ action: "fs:read", resource: "src/index.ts" })
+      new CapabilityValue({ action: "fs:read", resource: "src/index.ts" })
     )).toBe(true)
     expect(CapabilitySets.allows(
       set,
-      new Capability({ action: "net:get", resource: "api.example.com" })
+      new CapabilityValue({ action: "net:get", resource: "api.example.com" })
     )).toBe(false)
   })
 
@@ -217,11 +219,11 @@ describe("CapabilitySet", () => {
         new CapabilityPattern({ action: "proc:spawn", resource: "**" })
       ]
       const capabilities = [
-        new Capability({ action: "fs:read", resource: "src/index.ts" }),
-        new Capability({ action: "fs:write", resource: "src/index.ts" }),
-        new Capability({ action: "net:get", resource: "api.example.com" }),
-        new Capability({ action: "proc:spawn", resource: "git" }),
-        new Capability({ action: "fs:read", resource: "README.md" })
+        new CapabilityValue({ action: "fs:read", resource: "src/index.ts" }),
+        new CapabilityValue({ action: "fs:write", resource: "src/index.ts" }),
+        new CapabilityValue({ action: "net:get", resource: "api.example.com" }),
+        new CapabilityValue({ action: "proc:spawn", resource: "git" }),
+        new CapabilityValue({ action: "fs:read", resource: "README.md" })
       ]
 
       const result = yield* (
@@ -249,11 +251,11 @@ describe("CapabilitySet", () => {
       )).toBe(true)
       expect(CapabilitySets.allows(
         result.nested.child,
-        new Capability({ action: "fs:read", resource: "src/index.ts" })
+        new CapabilityValue({ action: "fs:read", resource: "src/index.ts" })
       )).toBe(true)
       expect(CapabilitySets.allows(
         result.nested.child,
-        new Capability({ action: "net:get", resource: "api.example.com" })
+        new CapabilityValue({ action: "net:get", resource: "api.example.com" })
       )).toBe(false)
     }))
 
@@ -261,8 +263,8 @@ describe("CapabilitySet", () => {
     Effect.gen(function*() {
       const filePatterns = [new CapabilityPattern({ action: "fs:read", resource: "src/**" })]
       const networkPatterns = [new CapabilityPattern({ action: "net:get", resource: "*.example.com" })]
-      const file = new Capability({ action: "fs:read", resource: "src/index.ts" })
-      const network = new Capability({ action: "net:get", resource: "api.example.com" })
+      const file = new CapabilityValue({ action: "fs:read", resource: "src/index.ts" })
+      const network = new CapabilityValue({ action: "net:get", resource: "api.example.com" })
 
       const result = yield* (
         Effect.gen(function*() {
@@ -294,9 +296,9 @@ describe("CapabilitySet", () => {
 
   it.effect("attenuateGroups intersects every group and preserves the parent scope", () =>
     Effect.gen(function*() {
-      const read = new Capability({ action: "fs:read", resource: "src/index.ts" })
-      const write = new Capability({ action: "fs:write", resource: "src/index.ts" })
-      const other = new Capability({ action: "fs:read", resource: "test/index.ts" })
+      const read = new CapabilityValue({ action: "fs:read", resource: "src/index.ts" })
+      const write = new CapabilityValue({ action: "fs:write", resource: "src/index.ts" })
+      const other = new CapabilityValue({ action: "fs:read", resource: "test/index.ts" })
       const parent = [new CapabilityPattern({ action: "fs:*", resource: "src/**" })]
       const groups = [
         [new CapabilityPattern({ action: "fs:read", resource: "**" })],
@@ -313,7 +315,7 @@ describe("CapabilitySet", () => {
 
   it.effect("an empty group denies, while zero groups inherit", () =>
     Effect.gen(function*() {
-      const allowed = new Capability({ action: "fs:read", resource: "src/index.ts" })
+      const allowed = new CapabilityValue({ action: "fs:read", resource: "src/index.ts" })
       const parent = [new CapabilityPattern({ action: "fs:read", resource: "src/**" })]
       const inherited = yield* CapabilitySets.attenuate(parent)(
         CapabilitySets.attenuateGroups([])(CapabilitySets.current)
@@ -342,7 +344,7 @@ describe("CapabilitySet", () => {
 
     for (const action of actions) {
       for (const resource of capabilityResources) {
-        expect(CapabilitySets.allows(ambient, new Capability({ action, resource }))).toBe(true)
+        expect(CapabilitySets.allows(ambient, new CapabilityValue({ action, resource }))).toBe(true)
       }
     }
     // It is the identity element: attenuating from it yields exactly the
@@ -376,7 +378,7 @@ describe("CapabilitySet", () => {
     // still rejects an absolute resource with a dot segment.
     expect(CapabilitySets.within(declared, unrestricted)).toBe(true)
     expect(CapabilitySets.within(unrestricted, declared)).toBe(false)
-    const dotted = new Capability({ action: "fs:read", resource: "/w/../secret" })
+    const dotted = new CapabilityValue({ action: "fs:read", resource: "/w/../secret" })
     expect(CapabilitySets.allows(unrestricted, dotted)).toBe(true)
     expect(CapabilitySets.allows(declared, dotted)).toBe(false)
     expect(CapabilitySets.within(declared, declared)).toBe(true)
@@ -405,7 +407,7 @@ describe("CapabilitySet", () => {
       FastCheck.tuple(
         FastCheck.constantFrom(...actions),
         FastCheck.constantFrom("/w/../secret", "src/../secret", "./src/main.ts", "/workspace/./file.txt", "..")
-      ).map(([action, resource]) => new Capability({ action, resource }))
+      ).map(([action, resource]) => new CapabilityValue({ action, resource }))
     )
     const withUnrestricted = FastCheck.oneof(setArbitrary, FastCheck.constant(unrestricted))
     check(

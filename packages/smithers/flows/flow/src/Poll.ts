@@ -30,8 +30,7 @@
  * @since 0.1.0
  */
 
-import * as Node from "@smthrs/plan/Node"
-import type * as Repetition from "@smthrs/plan/Repetition"
+import { Node, type Repetition } from "@smthrs/plan"
 import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"

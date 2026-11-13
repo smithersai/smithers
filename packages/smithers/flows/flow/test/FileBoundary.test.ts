@@ -8,12 +8,12 @@
  * makes the absence legitimate, and that only means anything while the two
  * sets stay disjoint.
  */
-import { FileBoundary } from "@smthrs/flow/FileBoundary"
+import { Action } from "@smthrs/flow"
 import { FileSet } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 
-const decode = Schema.decodeUnknownResult(FileBoundary)
+const decode = Schema.decodeUnknownResult(Action.FileBoundary)
 
 const expectSchemaFailure = (input: unknown) => {
   const result = decode(input)
@@ -89,7 +89,7 @@ describe("FileBoundary", () => {
     // Optional with no default value materialized: rows persisted before
     // `removes` existed decode unchanged, which is the whole point of it being
     // optional rather than required-with-`[]`.
-    expect((decoded as { success: FileBoundary }).success.removes).toBeUndefined()
+    expect((decoded as { success: Action.FileBoundary }).success.removes).toBeUndefined()
   })
 
   it("decodes disjoint writes and removals", () => {

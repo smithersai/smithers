@@ -12,7 +12,7 @@
  * the tarball integrity. Nothing here was regenerated under a newer `effect`,
  * so a case that goes red means the upgrade moved the identity.
  */
-import { canonicalize } from "@smthrs/canonical/Serializer"
+import { canonicalize } from "@smthrs/canonical"
 import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"

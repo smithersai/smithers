@@ -10,7 +10,7 @@
  * @since 0.1.0
  */
 
-import * as FileSet from "@smthrs/plan/FileSet"
+import { FileSet } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
 
 /**

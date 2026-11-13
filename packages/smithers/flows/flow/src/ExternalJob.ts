@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 
-import * as Node from "@smthrs/plan/Node"
+import { Node } from "@smthrs/plan"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"

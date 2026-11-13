@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import * as Capability from "@smthrs/capability/Capability"
+import { Capability } from "@smthrs/capability"
 import { Action, Flow, Graph } from "@smthrs/flow"
 import { Effects, GraphBuildError } from "@smthrs/plan"
 import { Context, Option, Schema } from "effect"

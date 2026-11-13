@@ -6,8 +6,7 @@
  * @since 0.1.0
  */
 
-import type * as Effects from "@smthrs/plan/Effects"
-import * as Node from "@smthrs/plan/Node"
+import { type Effects, Node } from "@smthrs/plan"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"

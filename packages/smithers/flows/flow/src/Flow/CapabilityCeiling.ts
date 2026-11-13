@@ -2,8 +2,7 @@
  * @since 1.0.0
  */
 
-import * as Capability from "@smthrs/capability/Capability"
-import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
+import { Capability, CapabilitySet } from "@smthrs/capability"
 import * as Context from "effect/Context"
 import * as Option from "effect/Option"
 import { Capabilities } from "./Annotations.ts"

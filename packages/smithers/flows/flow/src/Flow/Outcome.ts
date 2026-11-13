@@ -8,8 +8,8 @@
  * @since 0.1.0
  */
 
-import type { CapabilityPattern } from "@smthrs/capability/Capability"
-import * as Node from "@smthrs/plan/Node"
+import type { Capability } from "@smthrs/capability"
+import { Node } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
 import { WaitingAnnotation } from "../FlowRuntime/WaitingAnnotation.ts"
 import { OutcomeNodeTypeId, OutcomeValueTypeId } from "../internal/OutcomeMarker.ts"
@@ -50,7 +50,7 @@ export interface Done<A> {
 export interface To<Payload> {
   readonly _tag: "To"
   readonly flow: string
-  readonly capabilityCeilings?: ReadonlyArray<ReadonlyArray<CapabilityPattern>>
+  readonly capabilityCeilings?: ReadonlyArray<ReadonlyArray<Capability.CapabilityPattern>>
   /**
    * The next round's payload in its author-facing form. The engine encodes it
    * with the target flow's payload schema at settlement, before persisting the

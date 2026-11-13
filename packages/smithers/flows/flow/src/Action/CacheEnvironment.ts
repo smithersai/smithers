@@ -15,7 +15,7 @@
  * @since 0.1.0
  */
 
-import * as PlanCachePolicy from "@smthrs/plan/CachePolicy"
+import { CachePolicy as PlanCachePolicy } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
 
 /**
@@ -147,11 +147,10 @@ export const cachePolicyOf = PlanCachePolicy.cachePolicyOf
  * @example
  * ```ts
  * import { Action } from "@smthrs/flow"
- * import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
  * import * as Effect from "effect/Effect"
  * import * as Schema from "effect/Schema"
  *
- * const compile = CacheEnvironment.withCache(
+ * const compile = Action.withCache(
  *   Action.make({
  *     name: "build/compile",
  *     success: Schema.String,

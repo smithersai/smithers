@@ -10,10 +10,11 @@
  * distinct identities never alias, and identical identities are stable
  * across repeated derivation.
  */
-import { StepIdentity } from "@smthrs/flow"
+import { Action, StepIdentity } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
+import * as fc from "fast-check"
 import { describe, expect, it } from "vitest"
-import { runSync } from "./Crypto.ts"
+import { invocationKey as canonicalInvocationKey, runSync } from "./Crypto.ts"
 
 // Total extraction for test material known to be canonical; the typed
 // failure surface of `allocationScope` is exercised by "fails with a typed
@@ -190,5 +191,57 @@ describe("StepIdentity.allocationScope", () => {
       allocationScope({ kind: "action", name: "notify" })
     ]
     expect(new Set(scopes).size).toBe(3)
+  })
+})
+
+describe("StepIdentity.invocationKey", () => {
+  const tiers = ["unsealed", "compensable", "irreversible"] as const
+
+  it.each(tiers)("treats an undefined parent scope as absent for %s keys", (tier) => {
+    const input = { runId: "run", ordinal: 0, tier }
+    const expected = canonicalInvocationKey(input)
+    expect(runSync(StepIdentity.invocationKey(input))).toBe(expected)
+    expect(runSync(StepIdentity.invocationKey({ ...input, parentScope: undefined }))).toBe(expected)
+    expect(runSync(Action.invocationKey({ ...input, parentScope: undefined }))).toBe(expected)
+  })
+
+  it.each(tiers)("preserves the canonical scoped %s key", (tier) => {
+    const input = { runId: "run", parentScope: "action/3:pay/g:4:root", ordinal: 1, tier }
+    expect(runSync(StepIdentity.invocationKey(input))).toBe(canonicalInvocationKey(input))
+    const { parentScope: _parentScope, ...unscoped } = input
+    expect(runSync(StepIdentity.invocationKey(input))).not.toBe(canonicalInvocationKey(unscoped))
+  })
+
+  it.each([
+    { parentScope: "" },
+    { parentScope: null },
+    { parentScope: 1 },
+    { runId: "" },
+    { ordinal: -1 },
+    { ordinal: 0.5 },
+    { ordinal: Infinity },
+    { tier: "sealed" }
+  ])("retains typed validation failures for invalid coordinates %j", (invalid) => {
+    const input = { runId: "run", ordinal: 0, tier: "unsealed", ...invalid }
+    const error = runSync(
+      StepIdentity.invocationKey(input as Parameters<typeof StepIdentity.invocationKey>[0]).pipe(Effect.flip)
+    )
+    expect(Schema.isSchemaError(error)).toBe(true)
+  })
+
+  it("normalizes absent scope throughout generated invocation coordinates", () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[a-zA-Z0-9/:_-]{1,40}$/),
+        fc.integer({ min: 0, max: 1_000_000 }),
+        fc.constantFrom(...tiers),
+        (runId, ordinal, tier) => {
+          const input = { runId, ordinal, tier }
+          expect(runSync(StepIdentity.invocationKey({ ...input, parentScope: undefined })))
+            .toBe(canonicalInvocationKey(input))
+        }
+      ),
+      { seed: 4620, numRuns: 100 }
+    )
   })
 })

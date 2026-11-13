@@ -3,15 +3,12 @@ title: "API reference"
 description: "Every public export of @smthrs/capability: the Capability value and its glob pattern, the closed action vocabulary, effect tiers, policy rules and evaluate, and the three typed permission failures."
 ---
 
-`@smthrs/capability` exports `decodePermissionError` and two modules from its
-root entry point. Each module is also importable from
-`@smthrs/capability/<Module>`:
+`@smthrs/capability` exports `decodePermissionError` and the `Capability`,
+`CapabilitySet` and `Permission` modules from its root entry point. Import
+these modules from the package root:
 
 ```ts
-import { Capability, decodePermissionError, Permission } from "@smthrs/capability"
-// or
-import * as Capability from "@smthrs/capability/Capability"
-import * as Permission from "@smthrs/capability/Permission"
+import { Capability, CapabilitySet, decodePermissionError, Permission } from "@smthrs/capability"
 ```
 
 `@smthrs/capability/internal/*` and `@smthrs/capability/*/index` are not

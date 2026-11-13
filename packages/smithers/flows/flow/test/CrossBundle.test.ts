@@ -17,8 +17,7 @@ it("shares live metadata across bundles while serialized ASTs remain inert", asy
     const outfile = join(scratch, "copy.mjs")
     await build({
       stdin: {
-        contents:
-          "export * as Node from \"@smthrs/plan/Node\"; export * as Flow from \"@smthrs/flow/Flow\"; export * as Graph from \"@smthrs/flow/Graph\";",
+        contents: "export { Node } from \"@smthrs/plan\"; export { Flow, Graph } from \"@smthrs/flow\";",
         resolveDir: import.meta.dirname
       },
       outfile,

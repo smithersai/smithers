@@ -4,5 +4,10 @@
  * @since 0.1.0
  */
 
-export { Glob, matchesGlob, matchesPattern, Pattern } from "@smthrs/plan/FileSet"
-export type { Glob as Type } from "@smthrs/plan/FileSet"
+import { FileSet } from "@smthrs/plan"
+
+const { Glob, matchesGlob, matchesPattern, Pattern } = FileSet
+type Glob = FileSet.Glob
+
+export { Glob, matchesGlob, matchesPattern, Pattern }
+export type { Glob as Type }

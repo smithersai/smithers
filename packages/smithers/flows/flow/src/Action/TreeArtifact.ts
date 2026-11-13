@@ -4,5 +4,10 @@
  * @since 0.1.0
  */
 
-export { TreeArtifact } from "@smthrs/plan/FileSet"
-export type { TreeArtifact as Type } from "@smthrs/plan/FileSet"
+import { FileSet } from "@smthrs/plan"
+
+const { TreeArtifact } = FileSet
+type TreeArtifact = FileSet.TreeArtifact
+
+export { TreeArtifact }
+export type { TreeArtifact as Type }
