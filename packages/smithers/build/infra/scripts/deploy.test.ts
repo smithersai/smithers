@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { stateSyncVariable } from "../deployment.ts"
 import { deploy as deployWrapper, type DeployOptions, developmentStage, resolveDeployOptions } from "./deploy.ts"
 import { defaultStateDirectory, redactAlchemyState } from "./redact-state.ts"
-import { memoryStateBucket, type StateBucket } from "./remote-state.ts"
+import { memoryStateBucket, r2StateBucket, type StateBucket } from "./remote-state.ts"
 import { acquireStateOwnership } from "./state-ownership.ts"
 
 const infraRoot = NodePath.resolve(fileURLToPath(new URL("..", import.meta.url).href))
@@ -975,6 +975,184 @@ describe("deploy wrapper remote state", () => {
       expect(process.listenerCount(signal)).toBe(0)
     }
   )
+
+  it.each(["SIGTERM", "SIGINT", "SIGHUP"] as const)(
+    "cancels a permanently stalled pull on %s and releases both locks", async signal => {
+      const bucket = memoryStateBucket()
+      const state = stateDirectory("stalled-" + signal)
+      let resume: (() => void) | undefined
+      let pulling = false
+      let pullSignal: AbortSignal | undefined
+      const stuck: StateBucket = {
+        ...bucket,
+        get: async (_key, signal) => {
+          pullSignal = signal
+          pulling = true
+          await new Promise<void>(resolve => { resume = resolve })
+          return undefined
+        }
+      }
+      await withIsolatedSignals(async () => {
+        const pending = run(stuck, "0", { stateDirectory: state })
+        try {
+          await vi.waitFor(() => expect(pulling).toBe(true))
+          expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(true)
+          process.emit(signal)
+          process.emit(signal)
+          const result = await Promise.race([
+            pending,
+            new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), 300))
+          ])
+          expect(result?.code).toBe(signal === "SIGTERM" ? 143 : signal === "SIGINT" ? 130 : 129)
+          expect(result?.seen).toBeUndefined()
+          expect(existsSync(NodePath.join(state, "prod", "CacheWorker.json"))).toBe(false)
+          expect(pullSignal?.aborted).toBe(true)
+          expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+          const ownership = await acquireStateOwnership(state)
+          await ownership.release()
+        } finally {
+          resume?.()
+          await pending
+        }
+      })
+    }
+  )
+
+  it.each(["response", "body"] as const)(
+    "reconciles an accepted lock whose PUT %s stalls during termination", async stage => {
+      const state = stateDirectory("lock-put-" + stage)
+      let lockBody: string | undefined
+      let accepted = false
+      let deleted = false
+      const bucket = r2StateBucket({
+        accountId: "acct", bucket: "state", accessKeyId: "key", secretAccessKey: "secret",
+        fetch: async (input, init) => {
+          const request = new Request(input, init)
+          if (request.method === "PUT") {
+            lockBody = await request.text()
+            accepted = true
+            if (stage === "response") return new Promise(() => {})
+            return new Response(new ReadableStream({
+              cancel() {
+                process.emit("SIGTERM")
+                return new Promise(() => {})
+              }
+            }))
+          }
+          if (request.method === "DELETE") {
+            deleted = true
+            return new Response(null, { status: 204 })
+          }
+          expect(new URL(request.url).pathname.endsWith(".lock")).toBe(true)
+          return new Response(lockBody, { headers: { etag: '"lock"' } })
+        }
+      })
+      await withIsolatedSignals(async () => {
+        const result = run(bucket, "0", { stateDirectory: state })
+        if (stage === "response") {
+          await vi.waitFor(() => expect(accepted).toBe(true))
+          process.emit("SIGTERM")
+        }
+        const finished = await result
+        expect(finished.code).toBe(143)
+        expect(deleted).toBe(true)
+        expect(existsSync(NodePath.join(state, "prod", "CacheWorker.json"))).toBe(false)
+        const ownership = await acquireStateOwnership(state)
+        await ownership.release()
+      })
+    }
+  )
+
+  it("cancels a permanently pending signed response body on termination", async () => {
+    let locked = false
+    let reading = false
+    let cancelled = false
+    let requestSignal: AbortSignal | undefined
+    const bucket = r2StateBucket({
+      accountId: "acct", bucket: "state", accessKeyId: "key", secretAccessKey: "secret",
+      fetch: async (input, init) => {
+        const request = new Request(input, init)
+        if (request.method === "PUT") {
+          locked = true
+          return new Response(null)
+        }
+        if (request.method === "DELETE") {
+          locked = false
+          return new Response(null, { status: 204 })
+        }
+        reading = true
+        requestSignal = request.signal
+        return new Response(new ReadableStream({ cancel() { cancelled = true } }), { headers: { etag: '"v1"' } })
+      }
+    })
+    await withIsolatedSignals(async () => {
+      const result = run(bucket, "0")
+      await vi.waitFor(() => expect(reading).toBe(true))
+      expect(locked).toBe(true)
+      process.emit("SIGTERM")
+      const finished = await result
+      expect(finished.code).toBe(143)
+      expect(finished.seen).toBeUndefined()
+      expect(requestSignal?.aborted).toBe(true)
+      expect(cancelled).toBe(true)
+      expect(locked).toBe(false)
+    })
+  })
+
+  it.each(["initialization", "pull", "interrupted-cleanup", "final-cleanup"] as const)(
+    "bounds a stalled %s and frees local ownership", async stage => {
+      const memory = memoryStateBucket()
+      const state = stateDirectory("deadline-" + stage)
+      let signal: AbortSignal | undefined
+      const bucket: StateBucket = {
+        ...memory,
+        get: async (_key, s) => {
+          if (stage === "interrupted-cleanup") process.emit("SIGTERM")
+          if (stage === "final-cleanup") return undefined
+          signal = s
+          return new Promise(() => {})
+        },
+        delete: async (key, s) => {
+          if (stage === "pull") return memory.delete(key)
+          signal = s
+          if (stage === "final-cleanup") process.emit("SIGTERM")
+          return new Promise(() => {})
+        }
+      }
+      const result = await withIsolatedSignals(() => run(bucket, "0", {
+        stateDirectory: state,
+        remoteStateTimeoutMs: 20,
+        remoteState: async s => {
+          if (stage !== "initialization") return { bucket, key: "alchemy/Test.json" }
+          signal = s
+          return new Promise(() => {})
+        }
+      }))
+      expect(result.code).toBe(1)
+      expect(result.stderr).toContain("timed out after 20ms")
+      expect(signal?.aborted).toBe(true)
+      expect(memory.objects.has("alchemy/Test.json.lock")).toBe(stage.endsWith("cleanup"))
+      const ownership = await acquireStateOwnership(state)
+      await ownership.release()
+      for (const signal of ["SIGHUP", "SIGINT", "SIGTERM"]) expect(process.listenerCount(signal)).toBe(0)
+    }
+  )
+
+  it("cancels a stalled state factory before any lock or child exists", async () => {
+    const bucket = memoryStateBucket()
+    let signal: AbortSignal | undefined
+    const result = await withIsolatedSignals(() => run(bucket, "0", {
+      remoteState: async s => {
+        signal = s
+        process.emit("SIGTERM")
+        return new Promise(() => {})
+      }
+    }))
+    expect(result.code).toBe(143)
+    expect(result.seen).toBeUndefined()
+    expect(signal?.aborted).toBe(true)
+    expect(bucket.objects.size).toBe(0)
+  })
 
   it("fails an interrupted run whose remote lock cannot be released", async () => {
     const bucket = memoryStateBucket()

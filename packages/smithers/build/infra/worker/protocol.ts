@@ -1662,12 +1662,14 @@ export const createHandler = (dependencies: ProtocolDependencies, admission = ma
             await discardBody(request.body)
             return busy("too many simultaneous findMissing requests")
           }
-          if (!(await charge(request, credential.digest, "findMissing"))) {
-            await discardBody(request.body)
-            return throttled("this credential's findMissing budget is spent")
-          }
+          // Reserve before the asynchronous budget check, so overlapping
+          // checks cannot all claim the same remaining materialization slot.
           admission.activeFindMissingRequests += 1
           try {
+            if (!(await charge(request, credential.digest, "findMissing"))) {
+              await discardBody(request.body)
+              return throttled("this credential's findMissing budget is spent")
+            }
             return await handleFindMissing(request, contentStore)
           } finally {
             admission.activeFindMissingRequests -= 1

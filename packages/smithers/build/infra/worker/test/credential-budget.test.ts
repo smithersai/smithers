@@ -7,6 +7,7 @@ import {
   createHandler,
   type CredentialBudget,
   type CredentialBudgetRoute,
+  maxConcurrentFindMissingRequests,
   type ProtocolDependencies
 } from "../protocol.ts"
 
@@ -107,6 +108,53 @@ const rawRequest = (path: string, token: string, body: unknown, method = "POST")
   }) as Request
 
 describe("per-credential budget", () => {
+  it("reserves findMissing slots before concurrent budget checks finish", async () => {
+    const waiting: Array<(allowed: boolean) => void> = []
+    let released = false
+    const { handler, touched } = makeHandler({
+      charge: async (_digest, route) => route === "request" || released
+        ? true
+        : new Promise<boolean>(resolve => waiting.push(resolve))
+    })
+    const replies: Array<Response> = []
+    const burst = Array.from({ length: maxConcurrentFindMissingRequests + 4 }, () =>
+      handler(findMissing(readToken)).then(response => { replies.push(response); return response }))
+    try {
+      await vi.waitFor(() => expect(waiting.length + replies.length).toBe(burst.length))
+      expect(waiting).toHaveLength(maxConcurrentFindMissingRequests)
+      expect(replies.map(response => response.status)).toEqual([429, 429, 429, 429])
+      expect(touched.probes).toBe(0)
+    } finally {
+      released = true
+      for (const resume of waiting) resume(true)
+      await Promise.all(burst)
+    }
+    expect((await handler(findMissing(readToken))).status).toBe(200)
+  })
+
+  it.each(["refusal", "failure", "abort"])("returns findMissing slots after a budget %s", async mode => {
+    let failed = false
+    const controller = new AbortController()
+    const { handler } = makeHandler({
+      charge: async (_digest, route) => {
+        if (route === "request" || failed) return true
+        failed = true
+        if (mode === "failure") throw new Error("budget unavailable")
+        if (mode === "abort") {
+          controller.abort()
+          return new Promise<boolean>(() => {})
+        }
+        return false
+      }
+    })
+    const first = findMissing(readToken)
+    const response = await handler(new Request(first, { signal: controller.signal }))
+    expect(response.status).toBe(mode === "refusal" ? 429 : 503)
+    const recovered = await Promise.all(Array.from({ length: maxConcurrentFindMissingRequests }, () =>
+      handler(findMissing(readToken))))
+    expect(recovered.map(reply => reply.status)).toEqual(Array(maxConcurrentFindMissingRequests).fill(200))
+  })
+
   it("charges each admitted request to the digest of the credential that presented it", async () => {
     const { charges, budget } = makeBudget()
     const { handler } = makeHandler(budget)

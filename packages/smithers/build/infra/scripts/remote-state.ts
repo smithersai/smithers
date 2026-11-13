@@ -20,13 +20,85 @@
 
 import { errorCode } from "@smthrs/targets/SafeFs"
 import { AwsClient } from "aws4fetch"
+import * as Cause from "effect/Cause"
 import * as Data from "effect/Data"
-import { createHash } from "node:crypto"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import { createHash, randomUUID } from "node:crypto"
 import type { Dirent } from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { stackName } from "../deployment.ts"
+import { failureMessage } from "./failure-message.ts"
 import { resolveStateRoot } from "./state-root.ts"
+
+/** Default deadline for one remote state operation, including its response body.
+ * @category constants
+ * @since 0.1.0
+ */
+export const remoteStateTimeoutMs = 30_000
+
+/** Cancellation and deadline for remote state initialization or one request.
+ * @category models
+ * @since 0.1.0
+ */
+export interface RemoteStateRequestOptions {
+  readonly signal?: AbortSignal | undefined
+  readonly timeoutMs?: number | undefined
+}
+
+/**
+ * The Promise boundary for the operator's remote state adapter.
+ *
+ * Effect owns the deadline and interruption: even a faulty adapter that ignores
+ * its signal cannot trap the wrapper. Failures keep their original identity.
+ * Operation names identify the stage without logging signed URLs or credentials.
+ * @category utilities
+ * @since 0.1.0
+ */
+export const remoteStateRequest = async <A>(
+  operation: string,
+  start: (signal: AbortSignal) => Promise<A>,
+  options: RemoteStateRequestOptions = {}
+): Promise<A> => {
+  const timeoutMs = options.timeoutMs ?? remoteStateTimeoutMs
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new RangeError("remote state deadline must be finite and positive")
+  }
+  options.signal?.throwIfAborted()
+  const exit = await Effect.runPromiseExit(
+    Effect.tryPromise({ try: start, catch: (error) => error }).pipe(Effect.timeoutOrElse({
+      duration: timeoutMs,
+      orElse: () => Effect.fail(new Error(operation + " timed out after " + timeoutMs + "ms"))
+    })),
+    { signal: options.signal }
+  )
+  if (Exit.isSuccess(exit)) return exit.value
+  if (options.signal?.aborted === true) throw options.signal.reason
+  throw Cause.squash(exit.cause)
+}
+
+const responseText = async (response: Response, signal: AbortSignal): Promise<string> => {
+  if (response.body === null) return ""
+  const reader = response.body.getReader()
+  const cancel = (): void => {
+    void reader.cancel().catch(() => undefined)
+  }
+  signal.addEventListener("abort", cancel, { once: true })
+  if (signal.aborted) cancel()
+  const decoder = new TextDecoder()
+  let text = ""
+  try {
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done) return text + decoder.decode()
+      text += decoder.decode(chunk.value, { stream: true })
+    }
+  } finally {
+    signal.removeEventListener("abort", cancel)
+    reader.releaseLock()
+  }
+}
 
 /**
  * The R2 bucket holding the deployment's Alchemy state.
@@ -78,11 +150,11 @@ export interface StateObject {
  */
 export interface StateBucket {
   /** Reads an object, or `undefined` when none exists. */
-  readonly get: (key: string) => Promise<StateObject | undefined>
+  readonly get: (key: string, signal?: AbortSignal) => Promise<StateObject | undefined>
   /** Writes an object when `condition` holds; `false` when it does not. */
-  readonly put: (key: string, body: string, condition: PutCondition) => Promise<boolean>
+  readonly put: (key: string, body: string, condition: PutCondition, signal?: AbortSignal) => Promise<boolean>
   /** Deletes an object; an absent object is already deleted. */
-  readonly delete: (key: string) => Promise<void>
+  readonly delete: (key: string, signal?: AbortSignal) => Promise<void>
 }
 
 /**
@@ -130,6 +202,8 @@ export const memoryStateBucket = (): StateBucket & { readonly objects: Map<strin
  * @since 0.1.0
  */
 export interface R2StateBucketOptions {
+  /** Deadline for signing, fetching, and consuming each response. */
+  readonly timeoutMs?: number | undefined
   readonly accountId: string
   readonly bucket: string
   readonly accessKeyId: string
@@ -159,8 +233,10 @@ export class WeakEtagError extends Data.TaggedError("@smthrs/build-infra/WeakEta
 
 const isWeakEtag = (etag: string): boolean => etag.startsWith("W/")
 
-const describeFailure = async (method: string, key: string, response: Response): Promise<Error> =>
-  new Error(`R2 state ${method} ${key} answered ${response.status}: ${(await response.text()).slice(0, 200)}`)
+const describeFailure = async (method: string, key: string, response: Response, signal: AbortSignal): Promise<Error> =>
+  new Error(
+    `R2 state ${method} ${key} answered ${response.status}: ${(await responseText(response, signal)).slice(0, 200)}`
+  )
 
 /**
  * A {@link StateBucket} over R2's S3 API, which honours `If-Match` and
@@ -187,66 +263,78 @@ export const r2StateBucket = (options: R2StateBucketOptions): StateBucket => {
     `https://${options.accountId}.r2.cloudflarestorage.com/${options.bucket}/${
       key.split("/").map(encodeURIComponent).join("/")
     }`
-  const send = async (key: string, init: RequestInit): Promise<Response> => fetch(await client.sign(url(key), init))
+  const send = async (key: string, init: RequestInit): Promise<Response> => {
+    const request = await client.sign(url(key), init)
+    request.signal.throwIfAborted()
+    return fetch(request)
+  }
   return {
-    get: async (key) => {
-      const response = await send(key, { method: "GET", headers: { "accept-encoding": "identity" } })
-      if (response.status === 404) {
+    get: (key, signal) =>
+      remoteStateRequest("R2 state GET " + key, async (signal) => {
+        const response = await send(key, { method: "GET", headers: { "accept-encoding": "identity" }, signal })
+        if (response.status === 404) {
+          await response.body?.cancel()
+          return undefined
+        }
+        if (!response.ok) throw await describeFailure("GET", key, response, signal)
+        const etag = response.headers.get("etag")
+        const body = await responseText(response, signal)
+        if (etag === null) throw new Error(`R2 state GET ${key} returned no ETag, so no write can be conditioned on it`)
+        if (isWeakEtag(etag)) throw new WeakEtagError({ key, etag })
+        return { body, etag }
+      }, { signal, timeoutMs: options.timeoutMs }),
+    put: (key, body, condition, signal) =>
+      remoteStateRequest("R2 state PUT " + key, async (signal) => {
+        if ("ifMatch" in condition && isWeakEtag(condition.ifMatch)) {
+          throw new WeakEtagError({ key, etag: condition.ifMatch })
+        }
+        const headers = "ifAbsent" in condition ? { "if-none-match": "*" } : { "if-match": condition.ifMatch }
+        const response = await send(key, {
+          method: "PUT",
+          body,
+          signal,
+          headers: { ...headers, "content-type": "application/json" }
+        })
+        if (response.status === 412) {
+          await response.body?.cancel()
+          return false
+        }
+        if (!response.ok) throw await describeFailure("PUT", key, response, signal)
+        // A successful conditional write is already committed. Disposal of
+        // its unused response must not hide that ownership from the caller.
+        void response.body?.cancel().catch(() => undefined)
+        return true
+      }, { signal, timeoutMs: options.timeoutMs }),
+    delete: (key, signal) =>
+      remoteStateRequest("R2 state DELETE " + key, async (signal) => {
+        const response = await send(key, { method: "DELETE", signal })
+        if (!response.ok && response.status !== 404) throw await describeFailure("DELETE", key, response, signal)
         await response.body?.cancel()
-        return undefined
-      }
-      if (!response.ok) throw await describeFailure("GET", key, response)
-      const etag = response.headers.get("etag")
-      const body = await response.text()
-      if (etag === null) throw new Error(`R2 state GET ${key} returned no ETag, so no write can be conditioned on it`)
-      if (isWeakEtag(etag)) throw new WeakEtagError({ key, etag })
-      return { body, etag }
-    },
-    put: async (key, body, condition) => {
-      if ("ifMatch" in condition && isWeakEtag(condition.ifMatch)) {
-        throw new WeakEtagError({ key, etag: condition.ifMatch })
-      }
-      const headers = "ifAbsent" in condition ? { "if-none-match": "*" } : { "if-match": condition.ifMatch }
-      const response = await send(key, {
-        method: "PUT",
-        body,
-        headers: { ...headers, "content-type": "application/json" }
-      })
-      if (response.status === 412) {
-        await response.body?.cancel()
-        return false
-      }
-      if (!response.ok) throw await describeFailure("PUT", key, response)
-      await response.body?.cancel()
-      return true
-    },
-    delete: async (key) => {
-      const response = await send(key, { method: "DELETE" })
-      if (!response.ok && response.status !== 404) throw await describeFailure("DELETE", key, response)
-      await response.body?.cancel()
-    }
+      }, { signal, timeoutMs: options.timeoutMs })
   }
 }
 
 const verifiedTokenId = async (
   fetch: typeof globalThis.fetch,
   url: string,
-  apiToken: string
-): Promise<string | undefined> => {
-  const response = await fetch(url, { headers: { authorization: `Bearer ${apiToken}` } })
-  const text = await response.text()
-  // A rate limit or server error says nothing about the token, so it must not
-  // read as a refusal or send the caller on to the user-token endpoint.
-  const outage = new Error(`Cloudflare token verification ${url} answered ${response.status}: ${text.slice(0, 200)}`)
-  if (response.status === 429 || response.status >= 500) throw outage
-  let payload: { success?: boolean; result?: { id?: unknown } }
-  try {
-    payload = JSON.parse(text) as typeof payload
-  } catch {
-    throw outage
-  }
-  return payload.success === true && typeof payload.result?.id === "string" ? payload.result.id : undefined
-}
+  apiToken: string,
+  options: RemoteStateRequestOptions
+): Promise<string | undefined> =>
+  remoteStateRequest("Cloudflare token verification", async (signal) => {
+    const response = await fetch(url, { headers: { authorization: `Bearer ${apiToken}` }, signal })
+    const text = await responseText(response, signal)
+    // A rate limit or server error says nothing about the token, so it must not
+    // read as a refusal or send the caller on to the user-token endpoint.
+    const outage = new Error(`Cloudflare token verification ${url} answered ${response.status}: ${text.slice(0, 200)}`)
+    if (response.status === 429 || response.status >= 500) throw outage
+    let payload: { success?: boolean; result?: { id?: unknown } }
+    try {
+      payload = JSON.parse(text) as typeof payload
+    } catch {
+      throw outage
+    }
+    return payload.success === true && typeof payload.result?.id === "string" ? payload.result.id : undefined
+  }, options)
 
 /**
  * Derives R2 S3 credentials from a Cloudflare API token.
@@ -262,15 +350,21 @@ const verifiedTokenId = async (
  * @category constructors
  * @since 0.1.0
  */
-export const r2CredentialsFromApiToken = async (options: {
-  readonly apiToken: string
-  readonly accountId: string
-  readonly fetch: typeof globalThis.fetch
-}): Promise<{ readonly accessKeyId: string; readonly secretAccessKey: string }> => {
+export const r2CredentialsFromApiToken = async (
+  options: RemoteStateRequestOptions & {
+    readonly apiToken: string
+    readonly accountId: string
+    readonly fetch: typeof globalThis.fetch
+  }
+): Promise<{ readonly accessKeyId: string; readonly secretAccessKey: string }> => {
   const api = "https://api.cloudflare.com/client/v4"
-  const accessKeyId =
-    (await verifiedTokenId(options.fetch, `${api}/accounts/${options.accountId}/tokens/verify`, options.apiToken)) ??
-      (await verifiedTokenId(options.fetch, `${api}/user/tokens/verify`, options.apiToken))
+  const accessKeyId = (await verifiedTokenId(
+    options.fetch,
+    `${api}/accounts/${options.accountId}/tokens/verify`,
+    options.apiToken,
+    options
+  )) ??
+    (await verifiedTokenId(options.fetch, `${api}/user/tokens/verify`, options.apiToken, options))
   if (accessKeyId === undefined) {
     throw new Error("Cloudflare did not verify CLOUDFLARE_API_TOKEN, so it cannot reach the R2 state bucket")
   }
@@ -286,7 +380,8 @@ export const r2CredentialsFromApiToken = async (options: {
  */
 export const remoteStateFromEnvironment = async (
   env: NodeJS.ProcessEnv = process.env,
-  fetch: typeof globalThis.fetch = globalThis.fetch
+  fetch: typeof globalThis.fetch = globalThis.fetch,
+  options: RemoteStateRequestOptions = {}
 ): Promise<RemoteState> => {
   const apiToken = env["CLOUDFLARE_API_TOKEN"]
   const accountId = env["CLOUDFLARE_ACCOUNT_ID"]
@@ -296,9 +391,9 @@ export const remoteStateFromEnvironment = async (
   if (accountId === undefined || accountId === "") {
     throw new Error("CLOUDFLARE_ACCOUNT_ID is required to reach the R2 state bucket")
   }
-  const credentials = await r2CredentialsFromApiToken({ apiToken, accountId, fetch })
+  const credentials = await r2CredentialsFromApiToken({ apiToken, accountId, fetch, ...options })
   return {
-    bucket: r2StateBucket({ accountId, bucket: stateBucketName, ...credentials, fetch }),
+    bucket: r2StateBucket({ accountId, bucket: stateBucketName, ...credentials, fetch, timeoutMs: options.timeoutMs }),
     key: stateObjectKey
   }
 }
@@ -579,12 +674,52 @@ const readMarker = async (path: string): Promise<UnpublishedMarker | undefined> 
 export const openRemoteState = async (
   remote: RemoteState,
   directory: string,
-  holder: LockHolder
+  holder: LockHolder,
+  options: RemoteStateRequestOptions = {}
 ): Promise<RemoteStateSession> => {
   await resolveStateRoot(directory)
   const lockKey = `${remote.key}.lock`
-  if (!(await remote.bucket.put(lockKey, JSON.stringify(holder), { ifAbsent: true }))) {
-    const current = await remote.bucket.get(lockKey)
+  const lockBody = JSON.stringify({ ...holder, attempt: randomUUID() })
+  // Cleanup has a fresh deadline and no initialization signal: cancellation
+  // of acquisition or the pull must still allow our lock to be deleted.
+  const cleanup = { timeoutMs: options.timeoutMs }
+  const release = (): Promise<void> =>
+    remoteStateRequest("remote state lock DELETE", (signal) => remote.bucket.delete(lockKey, signal), cleanup)
+  const cleanupFailure = (error: unknown, releaseError: unknown): AggregateError =>
+    new AggregateError(
+      [error, releaseError],
+      failureMessage(error) + "; Remote Alchemy state lock was not released: " + failureMessage(releaseError)
+    )
+  let attempted = false
+  let acquired: boolean
+  try {
+    acquired = await remoteStateRequest("remote state lock PUT", (signal) => {
+      attempted = true
+      return remote.bucket.put(lockKey, lockBody, { ifAbsent: true }, signal)
+    }, options)
+  } catch (error) {
+    // A refused or interrupted response does not prove the conditional PUT
+    // failed. Reconcile under a fresh deadline, deleting only this holder.
+    if (attempted) {
+      try {
+        const current = await remoteStateRequest(
+          "remote state lock ownership GET",
+          (signal) => remote.bucket.get(lockKey, signal),
+          cleanup
+        )
+        if (current?.body === lockBody) await release()
+      } catch (releaseError) {
+        throw cleanupFailure(error, releaseError)
+      }
+    }
+    throw error
+  }
+  if (!acquired) {
+    const current = await remoteStateRequest(
+      "remote state lock GET",
+      (signal) => remote.bucket.get(lockKey, signal),
+      options
+    )
     if (current === undefined) {
       throw new Error(`remote Alchemy state lock ${lockKey} was released while it was read; retry the deployment`)
     }
@@ -593,13 +728,16 @@ export const openRemoteState = async (
         `only once that deployment is gone`
     )
   }
-  const release = (): Promise<void> => remote.bucket.delete(lockKey)
   const markerPath = NodePath.join(directory, unpublishedMarker)
   let pulled: StateObject | undefined
   let baseline: string
   try {
     const marker = await readMarker(markerPath)
-    pulled = await remote.bucket.get(remote.key)
+    pulled = await remoteStateRequest(
+      "remote state snapshot GET",
+      (signal) => remote.bucket.get(remote.key, signal),
+      options
+    )
     const unpublished = marker !== undefined && digest(await readStateSnapshot(directory)) !== marker.baseline
     if (unpublished) {
       if ((pulled?.etag ?? null) !== marker.etag) {
@@ -619,11 +757,12 @@ export const openRemoteState = async (
         { encoding: "utf8", mode: 0o600 }
       )
     }
+    options.signal?.throwIfAborted()
   } catch (error) {
     try {
       await release()
-    } catch {
-      // Preserve the initialization failure if lock cleanup also fails.
+    } catch (releaseError) {
+      throw cleanupFailure(error, releaseError)
     }
     throw error
   }
@@ -635,7 +774,13 @@ export const openRemoteState = async (
         return "unchanged"
       }
       const condition: PutCondition = pulled === undefined ? { ifAbsent: true } : { ifMatch: pulled.etag }
-      if (!(await remote.bucket.put(remote.key, snapshot, condition))) {
+      if (
+        !(await remoteStateRequest(
+          "remote state snapshot PUT",
+          (signal) => remote.bucket.put(remote.key, snapshot, condition, signal),
+          cleanup
+        ))
+      ) {
         throw new Error(
           `remote Alchemy state ${remote.key} changed during this deployment; local state was kept in ${directory}`
         )

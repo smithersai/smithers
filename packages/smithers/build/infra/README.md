@@ -106,6 +106,17 @@ run fails the command and names the cause. A lock left by a killed deployment
 names its host and process id; delete that object only once that process is
 gone.
 
+Each remote operation has a 30-second deadline, including token verification,
+request signing, response bodies, and lock deletion. Termination during
+initialization cancels the pending request and releases local ownership without
+starting Alchemy. An acquired remote lock is deleted with a fresh deadline
+independent of that cancellation. If a lock write's outcome is unknown, cleanup
+reads its holder and deletes it only when its unique attempt identifier matches
+this deployment attempt.
+A failed or timed-out deletion reports the
+cleanup stage and leaves the lock for operator inspection; termination handlers
+stay installed until cleanup finishes.
+
 Snapshot replacement supports well-formed Unicode filenames on local POSIX
 filesystems whose aliases are limited to case folding and canonical equivalence,
 using Unicode tables no newer than the running Node version's. This includes
@@ -447,6 +458,10 @@ artifacts. The self-hosted service reads each artifact whole from Postgres, so
 it keeps two transfers of either kind. Excess work returns
 `429` with `Retry-After: 1` and its request body is cancelled without waiting
 for a hostile cancellation promise.
+
+A `findMissing` request reserves its route slot before its asynchronous
+credential-budget check. Refusal, failure, cancellation, and completion return
+that slot, so overlapping budget checks share the same eight-request ceiling.
 
 Admitted request bodies have a 10-second idle deadline and a 60-second total
 deadline. Storage operations and readiness checks have a 30-second deadline.

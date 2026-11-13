@@ -16,7 +16,9 @@ import {
   openRemoteState,
   type RemoteState,
   remoteStateFromEnvironment,
-  type RemoteStateSession
+  remoteStateRequest,
+  type RemoteStateSession,
+  remoteStateTimeoutMs
 } from "./remote-state.ts"
 import { acquireStateOwnership, type StateOwnership } from "./state-ownership.ts"
 import { resolveStateRoot } from "./state-root.ts"
@@ -86,7 +88,9 @@ export interface DeployOptions {
   readonly redact?: ((options: RedactAlchemyStateOptions) => Promise<number>) | undefined
   readonly escalationDelayMs?: number | undefined
   /** Where the durable copy of the state lives; defaults to the production R2 bucket. */
-  readonly remoteState?: (() => Promise<RemoteState>) | undefined
+  readonly remoteState?: ((signal?: AbortSignal) => Promise<RemoteState>) | undefined
+  /** Deadline for each remote operation, including independent lock cleanup. */
+  readonly remoteStateTimeoutMs?: number | undefined
 }
 
 /**
@@ -101,7 +105,8 @@ export interface ResolvedDeployOptions {
   readonly stateDirectory: string
   readonly redact: (options: RedactAlchemyStateOptions) => Promise<number>
   readonly escalationDelayMs: number
-  readonly remoteState: () => Promise<RemoteState>
+  readonly remoteState: (signal?: AbortSignal) => Promise<RemoteState>
+  readonly remoteStateTimeoutMs: number
 }
 
 /**
@@ -118,7 +123,9 @@ export const resolveDeployOptions = (options: DeployOptions): ResolvedDeployOpti
   stateDirectory: options.stateDirectory ?? defaultStateDirectory,
   redact: options.redact ?? redactAlchemyState,
   escalationDelayMs: options.escalationDelayMs ?? escalationDelayMs,
-  remoteState: options.remoteState ?? (() => remoteStateFromEnvironment())
+  remoteState: options.remoteState ??
+    ((signal) => remoteStateFromEnvironment(process.env, globalThis.fetch, { signal })),
+  remoteStateTimeoutMs: options.remoteStateTimeoutMs ?? remoteStateTimeoutMs
 })
 
 /**
@@ -211,7 +218,15 @@ export const deploy = async (
   args: ReadonlyArray<string> = process.argv.slice(2),
   options: DeployOptions = {}
 ): Promise<number> => {
-  const { cli, cwd, escalationDelayMs: escalationDelay, redact, remoteState, stateDirectory } = resolveDeployOptions(
+  const {
+    cli,
+    cwd,
+    escalationDelayMs: escalationDelay,
+    redact,
+    remoteState,
+    remoteStateTimeoutMs: timeoutMs,
+    stateDirectory
+  } = resolveDeployOptions(
     options
   )
   const target = { cli, cwd }
@@ -230,6 +245,7 @@ export const deploy = async (
     process.stderr.write(`Alchemy deployment refused: ${failureMessage(error)}\n`)
     return 1
   }
+  const initialization = new AbortController()
   let activeChild: ChildProcess | undefined
   let requestedSignal: NodeJS.Signals | undefined
   let escalationTimer: ReturnType<typeof setTimeout> | undefined
@@ -259,6 +275,7 @@ export const deploy = async (
     const handler = (): void => {
       if (requestedSignal === undefined) {
         requestedSignal = signal
+        initialization.abort(new Error("remote state initialization cancelled"))
         forward(signal)
       } else {
         forward("SIGKILL")
@@ -276,31 +293,25 @@ export const deploy = async (
   // later deployment to trip over. A signal before Alchemy starts cancels it.
   let remote: RemoteStateSession
   try {
-    remote = await openRemoteState(await remoteState(), stateDirectory, {
+    const requestOptions = { signal: initialization.signal, timeoutMs }
+    const state = await remoteStateRequest(
+      "remote state initialization",
+      (signal) => remoteState(signal),
+      requestOptions
+    )
+    remote = await openRemoteState(state, stateDirectory, {
       host: NodeOs.hostname(),
       pid: process.pid,
       startedAt: new Date().toISOString()
-    })
+    }, requestOptions)
   } catch (error) {
-    removeHandlers()
-    await ownership.release()
-    process.stderr.write(`Alchemy deployment refused: ${failureMessage(error)}\n`)
-    return 1
-  }
-  if (requestedSignal !== undefined) {
-    let releaseFailure: unknown
     try {
-      await remote.release()
-    } catch (error) {
-      releaseFailure = error
+      await ownership.release()
+    } finally {
+      removeHandlers()
     }
-    removeHandlers()
-    await ownership.release()
-    if (releaseFailure !== undefined) {
-      process.stderr.write(`Remote Alchemy state lock was not released: ${failureMessage(releaseFailure)}\n`)
-      return 1
-    }
-    return signalExitCode(requestedSignal)
+    process.stderr.write(`Alchemy deployment refused: ${failureMessage(error)}\n`)
+    return requestedSignal !== undefined && error === initialization.signal.reason ? signalExitCode(requestedSignal) : 1
   }
 
   let command: CommandResult | undefined
@@ -346,13 +357,17 @@ export const deploy = async (
     }
   } finally {
     clearEscalation()
-    removeHandlers()
     try {
       await remote.release()
     } catch (error) {
       publicationFailure ??= error
+    } finally {
+      try {
+        await ownership.release()
+      } finally {
+        removeHandlers()
+      }
     }
-    await ownership.release()
   }
 
   if (commandFailure !== undefined) {
