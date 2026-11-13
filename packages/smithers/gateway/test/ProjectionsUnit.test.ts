@@ -1177,32 +1177,36 @@ describe("Projections subscriptions", () => {
       }
     }))
 
-  it.effect("checks workspace replay positions without scanning the retained history", () =>
+  it.effect("consumes the workspace replay once without re-reading the control service", () =>
     Effect.gen(function*() {
       const history = Array.from({ length: 200 }, (_, index) => event(index >> 1, "control.run.accepted", null))
-      let following = false
-      let visits = 0
-      const originalMap = Array.prototype.map
+      const reads = { lists: 0, histories: 0, historyEvents: 0, follows: 0, followedEvents: 0 }
       const projections = make(control({
-        list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+        list: () => {
+          reads.lists += 1
+          return Effect.succeed({ _tag: "runs", items: [run] })
+        },
         watch: (filter) => {
-          if (filter.follow) following = true
-          return Stream.fromIterable(history)
+          if (filter.follow) reads.follows += 1
+          else reads.histories += 1
+          return Stream.fromIterable(history).pipe(Stream.tap(() =>
+            Effect.sync(() => {
+              if (filter.follow) reads.followedEvents += 1
+              else reads.historyEvents += 1
+            })
+          ))
         }
       }))
-      try {
-        Array.prototype.map = function(this: Array<ControlEvent>, callback, thisArg) {
-          if (following && this.length === history.length && this[0]?.kind === "control.run.accepted") {
-            visits += this.length
-          }
-          return originalMap.call(this, callback, thisArg)
-        } as typeof Array.prototype.map
-        const frames = yield* Stream.runCollect(projections.subscribe({ _tag: "workspace-runs" }))
-        expect(frames.filter((frame) => frame._tag === "delta")).toEqual([])
-        expect(visits).toBe(0)
-      } finally {
-        Array.prototype.map = originalMap
-      }
+      const frames = yield* Stream.runCollect(projections.subscribe({ _tag: "workspace-runs" }))
+      expect(reads).toEqual({
+        lists: 2,
+        histories: 1,
+        historyEvents: history.length,
+        follows: 1,
+        followedEvents: history.length
+      })
+      expect(frames.filter((frame) => frame._tag === "row")).toHaveLength(1)
+      expect(frames.filter((frame) => frame._tag === "delta")).toEqual([])
     }))
 
   it.effect("does not let irrelevant followed runs exhaust the approvals inbox", () =>

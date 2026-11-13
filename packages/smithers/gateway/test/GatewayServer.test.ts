@@ -23,6 +23,7 @@
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeSocket from "@effect/platform-node/NodeSocket"
+import * as NodeStream from "@effect/platform-node/NodeStream"
 import { describe, expect, it } from "@effect/vitest"
 import { ControlRpcs } from "@smthrs/control"
 import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
@@ -41,6 +42,7 @@ import { RpcClient, RpcSerialization } from "effect/rpc"
 import { readFileSync } from "node:fs"
 import { createServer } from "node:http"
 import { connect } from "node:net"
+import { Readable } from "node:stream"
 import { compileFunction } from "node:vm"
 import { GatewayError, GatewayErrorCode, type GatewayErrorCode as GatewayErrorCodeValue } from "../src/GatewayError.ts"
 import { GatewayRpcs } from "../src/GatewayRpcs.ts"
@@ -742,6 +744,25 @@ describe("telling a size overflow from every other body-read failure", () => {
     // never the problem.
     expect(GatewayServer.exceededBodyLimit(error)).toBe(expected)
   })
+
+  it.effect("recognizes an overflow produced by reading a real Node stream", () =>
+    Effect.gen(function*() {
+      const maxBytes = 64
+      const read = (bytes: number) =>
+        NodeStream.toString(() => Readable.from([Buffer.alloc(32, "x"), Buffer.alloc(bytes - 32, "x")]), {
+          maxBytes,
+          onError: httpServerError
+        })
+
+      expect(yield* read(maxBytes)).toBe("x".repeat(maxBytes))
+      // The adapter produces the cause; no error message is supplied by this test.
+      // No socket or content-length shortcut can hide a changed upstream error.
+      const error = yield* read(maxBytes + 1).pipe(Effect.flip)
+      expect(GatewayServer.exceededBodyLimit(error)).toBe(true)
+      const refusal = GatewayServer.bodyRefusal("/rpc", maxBytes, error)
+      expect(refusal.status).toBe(413)
+      expect(refusal.error.code).toBe("request_too_large")
+    }))
 
   it("answers 413 for the overflow and 400 for every other read failure", () => {
     // A truncated body cannot be provoked over a socket the client can still
