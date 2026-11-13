@@ -1,63 +1,112 @@
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as Audience from "@smthrs/build-cli/Audience"
-import { Control, type ControlSchema } from "@smthrs/control"
-import { Effect, Stream } from "effect"
+import { NodeRuntime } from "@smthrs/platform-node"
+import { Effect } from "effect"
 import { Cli } from "incur"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { mkdtemp, readdir, realpath, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import type * as Bridge from "../src/cli/ControlBridge.ts"
 import * as RunTiming from "../src/cli/RunTiming.ts"
 import { appendRunTiming } from "../src/cli/RunTimingCommand.ts"
+import * as NodeControl from "../src/NodeControl.ts"
 
-const ports = vi.hoisted(() => ({
-  read: vi.fn(),
-  project: vi.fn(),
-  hasRecords: vi.fn(),
-  list: vi.fn(),
-  watch: vi.fn(),
-  reconcile: vi.fn(),
-  localRoot: vi.fn()
-}))
-vi.mock("../src/cli/ControlBridge.ts", async (load) => ({
-  ...await load<typeof import("../src/cli/ControlBridge.ts")>(),
-  read: ports.read,
-  project: ports.project,
-  hasRecords: ports.hasRecords
-}))
-vi.mock("../src/history/History.ts", async (load) => ({
-  ...await load<typeof import("../src/history/History.ts")>(),
-  reconcile: ports.reconcile
-}))
-vi.mock("../src/Project.ts", async (load) => ({
-  ...await load<typeof import("../src/Project.ts")>(),
-  localRoot: ports.localRoot
-}))
+const directories: Array<string> = []
+let root: string
+const temporary = async () => {
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "smthrs-timing-command-")))
+  directories.push(directory)
+  return directory
+}
 
-beforeEach(() => {
-  for (const port of Object.values(ports)) port.mockReset()
-  ports.read.mockImplementation((effect: Effect.Effect<unknown, unknown, Control.Control>) =>
-    Effect.runPromise(
-      Effect.gen(function*() {
-        const base = yield* Control.Control
-        return yield* effect.pipe(
-          Effect.provideService(Control.Control, { ...base, list: ports.list, watch: ports.watch })
-        )
-      }).pipe(Effect.provide(Control.layerNoop))
-    )
-  )
-  ports.project.mockResolvedValue(undefined)
-  ports.hasRecords.mockReturnValue(true)
-  ports.localRoot.mockImplementation((options) => options.root ?? process.cwd())
-  ports.list.mockReturnValue(
-    Effect.succeed({
-      _tag: "runs",
-      items: [{ runId: "run-1", flowId: "demo/ship", status: "completed", createdAt: 0, updatedAt: 9_000 }]
-    })
-  )
-  ports.watch.mockReturnValue(Stream.fromIterable(events))
+afterEach(async () => {
+  await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
 })
 
-const event = (sequence: number, kind: string, at: number, payload: Record<string, unknown> = {}) =>
-  ({ sequence, kind, runId: "run-1", occurredAt: at, payload: { ...payload, at } }) as ControlSchema.ControlEvent
+/** Real migrated stores, with durable control receipts for a finished run. */
+const recorded = async (planned = false) => {
+  const directory = await temporary()
+  await Effect.runPromise(Effect.void.pipe(
+    Effect.provide(NodeRuntime.storage(join(directory, ".flows", "engine.db"), directory)),
+    Effect.provide(NodeServices.layer),
+    Effect.provide(NodeCrypto.layer)
+  ))
+  await Effect.runPromise(Effect.void.pipe(Effect.provide(NodeControl.engineDurable(directory).runtime)))
+  const database = new DatabaseSync(join(directory, ".flows", "control.db"))
+  try {
+    database.prepare(
+      "INSERT INTO control_plans(plan_id,card_json,decoded_input_json,decision) VALUES('plan-7','{}','{}','approved')"
+    ).run()
+    database.prepare("INSERT INTO flows_runs(run_id,status,created_at_ms,state_json) VALUES('run-1','completed',0,?)")
+      .run(JSON.stringify({
+        runId: "run-1",
+        flowId: "demo/ship",
+        ...(planned ? { planId: "plan-7" } : {}),
+        status: "completed",
+        createdAt: 5_000,
+        updatedAt: 14_000
+      }))
+    const receipts = planned
+      ? [
+        {
+          sequence: 0,
+          kind: "control.plan.created",
+          runId: "plan:plan-7",
+          occurredAt: 0,
+          payload: { planId: "plan-7" }
+        },
+        { sequence: 1, kind: "control.approval.approved", runId: "plan:plan-7", occurredAt: 3_000, payload: {} },
+        ...events
+      ]
+      : events
+    const insert = database.prepare(
+      "INSERT INTO flows_journal_events(run_id,seq,event_id,source_id,source_seq,emitted_at_ms,event_type,payload_json,meta_json) VALUES(?,?,?,'fixture',?,?,?,?,'{}')"
+    )
+    for (const [index, receipt] of receipts.entries()) {
+      insert.run(
+        receipt.runId,
+        receipt.sequence + 1,
+        `event-${index}`,
+        index + 1,
+        receipt.occurredAt,
+        receipt.kind,
+        JSON.stringify({ ...receipt.payload, at: receipt.occurredAt })
+      )
+    }
+  } finally {
+    database.close()
+  }
+  return directory
+}
+
+/** Compare persisted contents, including schema and every row, rather than a repair spy. */
+const snapshot = (directory: string, name = "control.db") => {
+  const database = new DatabaseSync(join(directory, ".flows", name), { readOnly: true })
+  try {
+    const schema = database.prepare("SELECT name, sql FROM sqlite_master ORDER BY name").all()
+    const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<
+      { name: string }
+    >
+    return { schema, rows: tables.map(({ name }) => [name, database.prepare(`SELECT * FROM "${name}"`).all()]) }
+  } finally {
+    database.close()
+  }
+}
+
+beforeEach(async () => {
+  root = await recorded()
+})
+
+const event = (sequence: number, kind: string, at: number, payload: Record<string, unknown> = {}) => ({
+  sequence,
+  kind,
+  runId: "run-1",
+  occurredAt: at + 5_000,
+  payload: { ...payload, at: at + 5_000 }
+})
 
 /** Two frames: the second call carries wire timing and leaves the workspace changed. */
 const events = [
@@ -107,7 +156,7 @@ const events = [
   event(17, "control.run.completed", 9_000, { runId: "run-1", status: "completed" })
 ]
 
-const invoke = async (args: Array<string>, tty = false) => {
+const invoke = async (args: Array<string>, tty = false, signal?: AbortSignal) => {
   const result = { stdout: "", stderr: "", codes: [] as Array<number> }
   const terminal = (key: "stdout" | "stderr") => ({
     isTTY: tty,
@@ -116,9 +165,14 @@ const invoke = async (args: Array<string>, tty = false) => {
       result[key] += text
     }
   })
-  const runtime: Bridge.Runtime = { environment: {}, stdout: terminal("stdout"), stderr: terminal("stderr") }
+  const runtime: Bridge.Runtime = {
+    signal,
+    environment: { SMITHERS_BACKEND: "sqlite" },
+    stdout: terminal("stdout"),
+    stderr: terminal("stderr")
+  }
   const presentation = Audience.fromArguments(args, { env: runtime.environment, stdout: tty, stderr: tty })
-  await makeCli({ ...runtime, presentation }).serve(Audience.incurArguments(args, presentation), {
+  await makeCli({ ...runtime, presentation }).serve(Audience.incurArguments([...args, "--root", root], presentation), {
     env: runtime.environment,
     stdout: (text) => {
       result.stdout += text
@@ -132,12 +186,12 @@ const invoke = async (args: Array<string>, tty = false) => {
 
 describe("runs show --timing", { timeout: 120_000 }, () => {
   it("returns the timing report of the requested run as JSON", async () => {
-    const result = await invoke(["runs", "show", "run-1", "--timing", "--root", "/fixture", "--json"])
+    const before = snapshot(root)
+    const engineBefore = snapshot(root, "engine.db")
+    const result = await invoke(["runs", "show", "run-1", "--timing", "--json"])
     expect(result.codes).toEqual([])
-    expect(ports.list).toHaveBeenCalledExactlyOnceWith({ _tag: "runs", filters: { runId: "run-1" } })
-    expect(ports.watch).toHaveBeenCalledExactlyOnceWith({ runId: "run-1", follow: false })
-    // The report reads; it never repairs the store it is pointed at.
-    expect(ports.reconcile).not.toHaveBeenCalled()
+    expect(snapshot(root)).toEqual(before)
+    expect(snapshot(root, "engine.db")).toEqual(engineBefore)
     const report = JSON.parse(result.stdout) as RunTiming.Report
     expect(report).toMatchObject({
       runId: "run-1",
@@ -170,52 +224,23 @@ describe("runs show --timing", { timeout: 120_000 }, () => {
     const card = JSON.parse(result.stdout)
     expect(card).toMatchObject({ runId: "run-1", flowId: "demo/ship", diagnosis: { turns: 2 } })
     expect(card.wallMs).toBeUndefined()
-    expect(ports.reconcile).toHaveBeenCalledOnce()
   })
 
-  it("refuses a run the store does not hold, and a project with no store, without reading events", async () => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [] }))
+  it("refuses a run the selected store does not hold without changing it", async () => {
+    const before = snapshot(root)
     const missing = await invoke(["runs", "show", "run-2", "--timing", "--json"])
     expect(missing.codes).toEqual([1])
     expect(JSON.parse(missing.stdout)).toMatchObject({ code: "run_not_found", message: "Unknown run run-2" })
-    ports.hasRecords.mockReturnValue(false)
-    const empty = await invoke(["runs", "show", "run-1", "--timing", "--json"])
-    expect(empty.codes).toEqual([1])
-    expect(JSON.parse(empty.stdout)).toMatchObject({ code: "run_not_found", message: "Unknown run run-1" })
-    expect(ports.watch).not.toHaveBeenCalled()
+    expect(snapshot(root)).toEqual(before)
   })
 
   it("counts from the plan's creation when the store holds the plan's events", async () => {
-    ports.list.mockReturnValue(
-      Effect.succeed({
-        _tag: "runs",
-        items: [{
-          runId: "run-1",
-          flowId: "demo/ship",
-          planId: "plan-7",
-          status: "completed",
-          createdAt: 0,
-          updatedAt: 9_000
-        }]
-      })
-    )
-    ports.watch.mockImplementation(({ runId }: { runId: string }) =>
-      Stream.fromIterable(
-        runId === "plan:plan-7"
-          ? [
-            { sequence: 0, kind: "control.plan.created", runId, occurredAt: -5_000, payload: { planId: "plan-7" } },
-            { sequence: 1, kind: "control.approval.approved", runId, occurredAt: -2_000, payload: {} }
-          ]
-          : events
-      )
-    )
+    root = await recorded(true)
+    const before = snapshot(root)
     const result = await invoke(["runs", "show", "run-1", "--timing", "--json"])
-    expect(ports.watch.mock.calls.map(([filter]) => filter)).toEqual([
-      { runId: "plan:plan-7", follow: false },
-      { runId: "run-1", follow: false }
-    ])
+    expect(result.codes).toEqual([])
+    expect(snapshot(root)).toEqual(before)
     const report = JSON.parse(result.stdout) as RunTiming.Report
-    // Five seconds passed between planning the run and its first event.
     expect(report).toMatchObject({
       status: "completed",
       wallMs: 14_000,
@@ -225,11 +250,17 @@ describe("runs show --timing", { timeout: 120_000 }, () => {
     expect(report.calls[0]).toMatchObject({ startMs: 5_500 })
   })
 
-  it("refuses a listing that is not a run listing", async () => {
-    ports.list.mockReturnValue(Effect.succeed({ _tag: "flows", items: [] }))
-    const result = await invoke(["runs", "show", "run-1", "--timing", "--json"])
+  it("honors host cancellation while observing a real store", async () => {
+    const before = snapshot(root)
+    const controller = new AbortController()
+    controller.abort(new Error("Timing request cancelled"))
+    const result = await invoke(["runs", "show", "run-1", "--timing", "--json"], false, controller.signal)
     expect(result.codes).toEqual([1])
-    expect(result.stdout).toContain("Unknown run run-1")
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      code: "interrupted",
+      message: "Timing request cancelled before the command finished."
+    })
+    expect(snapshot(root)).toEqual(before)
   })
 
   it("mounts only on a runs group that has the status command", () => {
@@ -241,4 +272,12 @@ describe("runs show --timing", { timeout: 120_000 }, () => {
     expect(help.stdout).toMatch(/^ +--timing +Report where the run's time and tokens went$/m)
     expect(help.stdout).toMatch(/^ +--root <string> +Project directory; defaults to the nearest Smithers project$/m)
   })
+})
+
+it("does not borrow a run from another project when the selected root has no store", async () => {
+  root = await temporary()
+  const result = await invoke(["runs", "show", "run-1", "--timing", "--json"])
+  expect(result.codes).toEqual([1])
+  expect(JSON.parse(result.stdout)).toMatchObject({ code: "run_not_found", message: "Unknown run run-1" })
+  expect(await readdir(root)).toEqual([])
 })

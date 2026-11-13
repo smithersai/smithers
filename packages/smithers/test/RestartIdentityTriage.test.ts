@@ -1,8 +1,12 @@
 /** B12: a bundled registry and an external module survive a real host restart. */
+import { NodeRuntime } from "@smthrs/platform-node"
 import { build } from "esbuild"
 import { spawn } from "node:child_process"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
+import vibelang from "vibelang-unplugin/esbuild"
 import { expect, it } from "vitest"
 
 // Receipts use real files outside the engine so killing a host cannot erase evidence.
@@ -43,7 +47,7 @@ import { Executable, ModuleFlow, Graph } from "./loader.mjs"
 import { Action, Graph as ExternalGraph } from "@smthrs/flow"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
-import { Effect, FileSystem, Layer, Option } from "effect"
+import { Cause, Effect, Exit, FileSystem, Layer, Option } from "effect"
 import { resolve } from "node:path"
 if (Graph.build === ExternalGraph.build) throw new Error("expected independent package copies")
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
@@ -67,7 +71,11 @@ const program = Effect.gen(function*() {
   )
   console.log("RESULT=" + JSON.stringify(result))
 }).pipe(Effect.provide(platform), Effect.provide(Action.layerImplementations), Effect.provide(host), Effect.scoped)
-await Effect.runPromise(program)
+const exit = await Effect.runPromiseExit(program)
+if (Exit.isFailure(exit)) {
+  if (!Cause.hasInterruptsOnly(exit.cause)) throw Cause.squash(exit.cause)
+  process.exitCode = NodeRuntime.signalExitCode("SIGTERM")
+}
 `
 
 const start = (directory: string) => {
@@ -89,13 +97,21 @@ const start = (directory: string) => {
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
     errors += chunk
   })
+  let watchdogExpired = false
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
     child.once("error", reject)
-    child.once("close", (code, signal) => resolve({ code, signal }))
+    child.once("close", (code, signal) => {
+      if (watchdogExpired) {
+        reject(new Error(`restart watchdog expired: ${JSON.stringify({ code, signal })}\n${output}\n${errors}`))
+      } else resolve({ code, signal })
+    })
   })
   // Kill only this incarnation, before Vitest's test timeout, so the awaits
   // settle and finally can remove the SQLite database and fixture directory.
-  const watchdog = setTimeout(() => child.kill("SIGKILL"), 12_000)
+  const watchdog = setTimeout(() => {
+    watchdogExpired = true
+    child.kill("SIGKILL")
+  }, 12_000)
   void exited.then(() => clearTimeout(watchdog), () => clearTimeout(watchdog))
   return { child, inFlight, exited, output: () => output, errors: () => errors }
 }
@@ -122,6 +138,7 @@ it.each(["SIGKILL", "SIGTERM"] as const)(
         },
         outfile: join(directory, "loader.mjs"),
         bundle: true,
+        plugins: [vibelang({ root: import.meta.dirname })],
         format: "esm",
         platform: "node",
         external: ["effect", "effect/*", "@effect/*"],
@@ -144,7 +161,20 @@ it.each(["SIGKILL", "SIGTERM"] as const)(
       expect(await readFile(join(directory, "effects.log"), "utf8")).toBe("A\nB\n")
       expect(first.child.kill(signal)).toBe(true)
       const killed = await first.exited
-      if (signal === "SIGKILL") expect(killed.signal).toBe(signal)
+      if (signal === "SIGKILL") expect(killed).toEqual({ code: null, signal })
+      else {
+        expect(killed, first.errors()).toEqual({ code: NodeRuntime.signalExitCode("SIGTERM"), signal: null })
+        const database = new DatabaseSync(join(directory, "engine.db"), { readOnly: true })
+        try {
+          expect(
+            database.prepare(
+              "SELECT status, waiting_reason, owner_host_id FROM flows_runs WHERE run_id = 'triage-1'"
+            ).get()
+          ).toMatchObject({ status: "suspended", waiting_reason: "released", owner_host_id: null })
+        } finally {
+          database.close()
+        }
+      }
       await writeFile(join(directory, "resume"), "")
       second = start(directory)
       expect((await second.exited).code, second.errors()).toBe(0)
@@ -155,9 +185,32 @@ it.each(["SIGKILL", "SIGTERM"] as const)(
     } finally {
       first?.child.kill("SIGKILL")
       second?.child.kill("SIGKILL")
-      await first?.exited
-      await second?.exited
+      await Promise.allSettled([first?.exited, second?.exited])
       await rm(directory, { recursive: true, force: true })
     }
   }
 )
+
+it("rejects watchdog cleanup when a child ignores SIGTERM", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "smthrs-restart-watchdog-"))
+  let child: Incarnation | undefined
+  try {
+    await writeFile(
+      join(directory, "runner.mjs"),
+      `
+process.on("SIGTERM", () => {})
+console.log("EFFECT=B")
+setInterval(() => {}, 1000)
+`
+    )
+    child = start(directory)
+    await Promise.race([child.inFlight, child.exited])
+    expect(child.child.kill("SIGTERM")).toBe(true)
+    await expect(child.exited).rejects.toThrow("watchdog expired")
+    expect(child.child.signalCode).toBe("SIGKILL")
+  } finally {
+    child?.child.kill("SIGKILL")
+    await Promise.allSettled([child?.exited])
+    await rm(directory, { recursive: true, force: true })
+  }
+})
