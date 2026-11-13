@@ -2,7 +2,7 @@
 // and crash states from what the store holds after a process dies.
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "@effect/vitest"
-import { failureReason, makeSandboxHost, type Machines } from "../src/core/sandboxHost.vibe"
+import { failureReason, makeSandboxHost, sandboxSnapshot, type Machines } from "../src/core/sandboxHost.vibe"
 import { mockPolicy, SandboxPolicy } from "../src/core/sandboxPolicy.vibe"
 import { Unavailable } from "../src/core/Factory.vibe"
 import { ALLOWANCE, BEYOND_CALENDAR, change, failureOf, holding, pendingOf, world } from "./support/sandboxWorld.vibe"
@@ -165,7 +165,7 @@ describe("sandbox writer boundaries", () => {
     try Effect.try(() => { expect(stopped).toEqual(["mock-person/away"]); expect(saved.pending).toBeNull(); expect(w.receipts.has("start-away")).toBe(false) })
   })
 
-  it.effect("marks a command orphaned by a crash as uncertain and refuses its replay", () => effect {
+  it.effect("leaves a pending command to its fiber: settling one no fiber runs is its store's", () => effect {
     provide mockPolicy("contributor") {
       const w = try world()
       const first = try makeSandboxHost(w.store, w.machines)
@@ -173,12 +173,10 @@ describe("sandbox writer boundaries", () => {
       try change(w, (state) => ({ ...state, pending: pendingOf("command", "orphan", "home", started.generation, "echo lost") }))
       const recovered = try makeSandboxHost(w.store, w.machines)
       try recovered.tick()
-      const replay = try Effect.result(recovered.command("home", "orphan", "echo lost", started.generation))
       const saved = (try Ref.get(w.state))!
       try Effect.try(() => {
-        expect(saved.pending).toBeNull()
-        expect(w.receipts.get("orphan")?.refusal).toBe("command-uncertain")
-        expect(failureOf(replay)).toMatchObject({ reason: "command-uncertain" })
+        expect(saved.pending?.operationId).toBe("orphan")
+        expect(w.receipts.has("orphan")).toBe(false)
       })
     }
   })
@@ -234,7 +232,7 @@ describe("sandbox writer boundaries", () => {
     }
   })
 
-  it.effect("a held command reports the uncertainty another host recorded for it", () => effect {
+  it.effect("a held command reports the uncertainty its store recorded for it", () => effect {
     provide mockPolicy("contributor") {
       const w = try world()
       const { held, entered, release } = try holding(w.machines)
@@ -242,8 +240,8 @@ describe("sandbox writer boundaries", () => {
       const started = try host.start("home", "start-home")
       const running = try Effect.forkChild(Effect.result(host.command("home", "slow", "echo late", started.generation)))
       try Deferred.await(entered)
-      const other = try makeSandboxHost(w.store, w.machines)
-      try other.tick()
+      const state = (try Ref.get(w.state))!
+      try w.store.write({ ...state, pending: null }, { request: state.pending!, snapshot: sandboxSnapshot(state, "home"), output: "", refusal: "command-uncertain" })
       try Deferred.succeed(release, undefined)
       const result = try Fiber.join(running)
       try Effect.try(() => expect(failureOf(result)).toMatchObject({ reason: "command-uncertain" }))

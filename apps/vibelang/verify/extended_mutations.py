@@ -5949,7 +5949,7 @@ cases.extend([('src/core/sandboxHostDecision.vibe', *case) for case in [
 ('sandbox-host-stop-minutes', 'mustStopAll', 'return remaining === 0 || !mayStart', 'return !mayStart', 'exhausted minutes stop every sandbox'),
 ('sandbox-host-lease-ceiling', 'leaseShare', 'return Math.ceil(remaining / running)', 'return Math.floor(remaining / running)', 'a lease share rounds up'),
 ('sandbox-host-recovery-role', 'recoveryOf', 'if (kind === "start" && !mayStart) return "drop-start"', 'if (kind === "start") return "drop-start"', 'a permitted start completes'),
-('sandbox-host-recovery-active', 'recoveryOf', 'return active ? "await-command" : "settle-command"', 'return "settle-command"', 'a running command is left to its fiber'),
+('sandbox-host-recovery-command', 'recoveryOf', 'if (kind === "command") return "await-command"', 'if (kind === "cancel-start") return "await-command"', 'a pending command is left to its fiber; the store settles one no fiber runs'),
 ('sandbox-host-unit-dot', 'conversationUnit', ' || unit === 46 || unit === 95', ' || unit === 95', 'a dot is a conversation unit'),
 ('sandbox-host-unit-slash', 'operationUnit', 'return conversationUnit(unit) || unit === 47', 'return conversationUnit(unit)', 'a slash is an operation unit'),
 ('sandbox-host-operation-empty', 'operationKey', 'if (id.length < 1 || id.length > 160) return false', 'if (id.length > 160) return false', 'an empty operation id is refused'),

@@ -45,9 +45,9 @@ describe("sandbox host decisions", () => {
   it("leases each running box its whole share of the remaining minutes, rounded up", () => {
     expect([leaseShare(10, 3), leaseShare(9, 3), leaseShare(0, 2), leaseShare(1, 4)]).toEqual([4, 3, 0, 1])
   })
-  it("recovers a pending step by kind, role and whether its command still runs", () => {
-    expect([recoveryOf("start", false, false), recoveryOf("start", true, false), recoveryOf("command", true, false), recoveryOf("command", true, true), recoveryOf("stop", false, false), recoveryOf("cancel-start", false, true)])
-      .toEqual(["drop-start", "complete", "settle-command", "await-command", "complete", "complete"])
+  it("recovers a pending step by kind and role, and leaves a command to its fiber", () => {
+    expect([recoveryOf("start", false), recoveryOf("start", true), recoveryOf("command", true), recoveryOf("command", false), recoveryOf("stop", false), recoveryOf("cancel-start", false)])
+      .toEqual(["drop-start", "complete", "await-command", "await-command", "complete", "complete"])
   })
   it("admits operation ids and conversations of the allowed units and lengths", () => {
     expect([operationKey("start-home"), operationKey("exhaust/2026/x.y_z"), operationKey(""), operationKey("a".repeat(160)), operationKey("a".repeat(161)), operationKey("a b"), operationKey("é")])

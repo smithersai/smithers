@@ -5,8 +5,9 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Sandboxes from "../worker/Sandboxes.vibe"
 import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
 import { Refused, Unavailable, type SandboxSnapshot } from "../src/core/Factory.vibe"
-import type { Machines } from "../src/core/sandboxHost.vibe"
+import type { Machines, SandboxState } from "../src/core/sandboxHost.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
+import { holding } from "./support/sandboxWorld.vibe"
 
 /** A Machines host that records its calls and fails the named kinds. */
 function fakeMachines(failures: ReadonlyArray<"start" | "stop" | "command" | "lease"> = []) {
@@ -37,6 +38,12 @@ effect function openAs(role: "viewer" | "maintainer", machines: Machines) {
   const storage = (try Effect.try(() => objectStorage())) as unknown as Sandboxes.SandboxStorage
   const host = try Effect.provide(Sandboxes.open(storage, machines), mockPolicy(role))
   return { storage, host }
+}
+
+/** The pending operation the object's SQLite holds. */
+effect function pendingIn(storage: Sandboxes.SandboxStorage) {
+  const saved = try Effect.try(() => JSON.parse(storage.sql.exec<{ body: string }>("SELECT body FROM vibelang_sandbox_state WHERE id = 1").toArray()[0]!.body) as SandboxState)
+  return saved.pending
 }
 
 /** `tag:detail` of the Refused or Unavailable an execute fails with, or `ok`. */
@@ -119,6 +126,69 @@ describe("the sandbox object", () => {
       expect(failedCommand).toBe("Unavailable:command-uncertain")
       expect(replayed).toBe("Unavailable:command-uncertain")
       expect(calls.filter((call) => call.startsWith("command:"))).toHaveLength(1)
+    })
+  }, 60_000)
+
+  it.live("settles a command an evicted incarnation left running as uncertain, and never runs it again", () => effect {
+    const { calls, machines } = fakeMachines()
+    const { held, entered, release } = try holding(machines)
+    const storage = (try Effect.try(() => objectStorage())) as unknown as Sandboxes.SandboxStorage
+    const evicted = try Effect.provide(Sandboxes.open(storage, held), mockPolicy("maintainer"))
+    const started = (try Sandboxes.execute("h", storage, evicted, "start", "c-1", "op-1", 0, "")) as SandboxSnapshot
+    const running = try Effect.forkChild(Effect.result(evicted.command("c-1", "op-2", "make", started.generation)).pipe(Effect.provide(mockPolicy("maintainer"))))
+    try Deferred.await(entered)
+    const before = try pendingIn(storage)
+    const next = try Effect.provide(Sandboxes.open(storage, machines), mockPolicy("maintainer"))
+    try Effect.provide(next.tick(), mockPolicy("maintainer"))
+    const after = try pendingIn(storage)
+    try Deferred.succeed(release, undefined)
+    const answered = try Fiber.join(running)
+    const replayed = try failed(Sandboxes.execute("h", storage, next, "command", "c-1", "op-2", started.generation, "make"))
+    try Effect.try(() => {
+      expect(before?.operationId).toBe("op-2")
+      expect(after).toBeNull()
+      expect(answered._tag === "Failure" ? (answered.failure as { readonly reason?: string }).reason : "ran").toBe("command-uncertain")
+      expect(replayed).toBe("Unavailable:command-uncertain")
+      expect(calls.filter((call) => call.startsWith("command:"))).toEqual(["command:mock-person/c-1:1:op-2"])
+    })
+  }, 60_000)
+
+  it.live("settles a command whose fiber was interrupted as uncertain", () => effect {
+    const { calls, machines } = fakeMachines()
+    const { held, entered } = try holding(machines)
+    const { storage, host } = try openAs("maintainer", held)
+    const started = (try Sandboxes.execute("h", storage, host, "start", "c-1", "op-1", 0, "")) as SandboxSnapshot
+    const running = try Effect.forkChild(host.command("c-1", "op-2", "make", started.generation).pipe(Effect.provide(mockPolicy("maintainer"))))
+    try Deferred.await(entered)
+    try Fiber.interrupt(running)
+    try Effect.provide(host.tick(), mockPolicy("maintainer"))
+    const settled = try pendingIn(storage)
+    const replayed = try failed(Sandboxes.execute("h", storage, host, "command", "c-1", "op-2", started.generation, "make"))
+    try Effect.try(() => {
+      expect(settled).toBeNull()
+      expect(replayed).toBe("Unavailable:command-uncertain")
+      expect(calls.filter((call) => call.startsWith("command:"))).toHaveLength(1)
+    })
+  }, 60_000)
+
+  it.live("leaves a running command to its fiber, even after a refused copy of it", () => effect {
+    const { machines } = fakeMachines()
+    const { held, entered, release } = try holding(machines)
+    const { storage, host } = try openAs("maintainer", held)
+    const started = (try Sandboxes.execute("h", storage, host, "start", "c-1", "op-1", 0, "")) as SandboxSnapshot
+    const running = try Effect.forkChild(host.command("c-1", "op-2", "make", started.generation).pipe(Effect.provide(mockPolicy("maintainer"))))
+    try Deferred.await(entered)
+    const copy = try failed(Effect.provide(host.command("c-1", "op-2", "make", started.generation), mockPolicy("maintainer")))
+    try Effect.provide(host.tick(), mockPolicy("maintainer"))
+    const during = try pendingIn(storage)
+    try Deferred.succeed(release, undefined)
+    const output = try Fiber.join(running)
+    const end = try pendingIn(storage)
+    try Effect.try(() => {
+      expect(copy).toBe("Refused:busy")
+      expect(during?.operationId).toBe("op-2")
+      expect(output).toBe("ran make")
+      expect(end).toBeNull()
     })
   }, 60_000)
 })

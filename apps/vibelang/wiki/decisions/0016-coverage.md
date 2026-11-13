@@ -157,12 +157,16 @@ refusal, writes nothing, and the next command runs. Closed: `sandboxHost` `admit
 `command`'s receipt answer; `sandboxHostDecision` `replayConflict` (all five comparisons) and `replayAnswer`'s conflict
 and replay arms.
 
-`sandboxHost` `current`'s `settle-command` arm runs only for a pending command no fiber of this host instance runs:
-after a Durable Object eviction, or when the command fiber is interrupted or dies. The browser's mock builds one host
-per in-memory store, its flows have no step timeout, and `memoryMachines` cannot fail a command except with
-`Unavailable`, which the command records itself; a failing store write is a defect and ends in Foldkit's crash view
-(session 5). No browser input reaches it. It moves to the Worker, which alone outlives a command fiber; the move changes
-`sandboxHostDecision.recoveryOf`'s proved contract, posted to vl-proveall3 on the platform board (2026-11-13 07:45Z).
+Orphan settlement lives in the Worker (2026-11-13, the lead's approval of 08:44Z). `sandboxHost` `current` had a
+`settle-command` arm for a pending command no fiber of the host instance runs: after a Durable Object eviction, or when
+the command fiber is interrupted or dies. No browser input reached it: the browser's mock builds one host per in-memory
+store, its flows have no step timeout, and `memoryMachines` cannot fail a command except with `Unavailable`, which the
+command records itself; a failing store write is a defect and ends in Foldkit's crash view (session 5). Only the
+Worker's store outlives a command fiber, so `worker/Sandboxes.vibe` `open` now counts the command ids its incarnation's
+fibers run and settles any other pending command as `command-uncertain` on the read that finds it
+(`test/sandboxesObject.coverage.test.vibe`: an evicted incarnation, an interrupted fiber, and a running command left
+to its fiber after a refused copy). `sandboxHostDecision.recoveryOf` no longer takes `active` and proves that a pending
+command is always awaited; mutation row `sandbox-host-recovery-command` replaces `sandbox-host-recovery-active`.
 
 `fault=post-empty` now loses the post's text on the way instead of faking the refusal, so the mock's sequencer refuses
 it itself (`decide`'s empty post); the page shows "Empty message" and Retry as before (`e2e/recovery.spec.ts`).

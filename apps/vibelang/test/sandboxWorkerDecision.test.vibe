@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { callShape, erasedWord, executionKind, gatewayChoice, leaseMillis, leaseRunning, probeAdmitted, probeConversationKnown, probeOwnerOf, probeOwnerShaped, probeRole, probeRoute, recordSlot, refusalStatus, sandboxVerb, scriptArgument, sandboxWrite, serialized, stillRunning } from "../worker/sandboxWorkerDecision.vibe"
+import { callShape, erasedWord, executionKind, gatewayChoice, leaseMillis, leaseRunning, probeAdmitted, probeConversationKnown, probeOwnerOf, probeOwnerShaped, probeRole, probeRoute, recordSlot, refusalStatus, sandboxVerb, scriptArgument, sandboxWrite, serialized, stillRunning, orphanedCommand } from "../worker/sandboxWorkerDecision.vibe"
 import { PROBE_WINDOW_MS, deadlineOf, probeOwner } from "../worker/sandboxProbeFetch.vibe"
 
 describe("the server's sandbox decisions", () => {
@@ -34,5 +34,6 @@ describe("the server's sandbox decisions", () => {
     expect([gatewayChoice(true, "start"), gatewayChoice(false, "read"), gatewayChoice(false, "stop")]).toEqual(["ask", "signed-out-read", "forbidden"])
     expect([executionKind("read"), executionKind("start"), executionKind("command")]).toEqual(["meter", "start", "command"])
     expect([serialized("command"), serialized("stop"), leaseRunning("running"), leaseRunning("stopped")]).toEqual([false, true, true, false])
+    expect([orphanedCommand(true, false), orphanedCommand(true, true), orphanedCommand(false, false), orphanedCommand(false, true)]).toEqual([true, false, false, false])
   })
 })

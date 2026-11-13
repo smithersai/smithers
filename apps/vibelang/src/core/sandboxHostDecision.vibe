@@ -131,20 +131,20 @@ export function leaseShare(remaining: number, running: number): number {
   return Math.ceil(remaining / running)
 }
 
-export type Recovery = "drop-start" | "settle-command" | "await-command" | "complete"
+export type Recovery = "drop-start" | "await-command" | "complete"
 
 /**
- * What a read does with a pending operation it finds: a start the role may no longer make is dropped, a command whose
- * fiber is gone settles as uncertain, a running command is left to its fiber, and anything else completes.
+ * What a read does with a pending operation it finds: a start the role may no longer make is dropped, a command is
+ * left to its fiber, and anything else completes. A command no fiber runs is its store's to settle: only the Worker's
+ * store outlives a command fiber, and it settles one as uncertain before the host reads it (worker/Sandboxes.vibe).
  */
 //@ verify
 //@ ensures kind == "start" && !mayStart ==> \result == "drop-start"
-//@ ensures kind == "command" && !active ==> \result == "settle-command"
-//@ ensures kind == "command" && active ==> \result == "await-command"
+//@ ensures kind == "command" ==> \result == "await-command"
 //@ ensures !(kind == "start" && !mayStart) && kind != "command" ==> \result == "complete"
-export function recoveryOf(kind: PendingKind, mayStart: boolean, active: boolean): Recovery {
+export function recoveryOf(kind: PendingKind, mayStart: boolean): Recovery {
   if (kind === "start" && !mayStart) return "drop-start"
-  if (kind === "command") return active ? "await-command" : "settle-command"
+  if (kind === "command") return "await-command"
   return "complete"
 }
 

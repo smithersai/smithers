@@ -204,3 +204,13 @@ export function benchmarkAnswer(owner: string, method: string): BenchmarkAnswer 
   if (method !== "POST") return "method"
   return "counts"
 }
+
+/**
+ * A read settles a pending operation as an uncertain command only when it is a command and no fiber of this
+ * incarnation runs it (Sandboxes.open): a running command is its fiber's to finish.
+ */
+//@ verify
+//@ ensures \result == (command && !running)
+export function orphanedCommand(command: boolean, running: boolean): boolean {
+  return command && !running
+}

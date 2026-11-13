@@ -30,6 +30,10 @@ function outputOf(state: SandboxState, conversation: string): string {
   const value = state.outputs[conversation]
   return storedText(typeof value === "string", typeof value === "string" ? value : "")
 }
+/** What `conversation`'s sandbox looks like in `state`: the snapshot every receipt records. */
+export function sandboxSnapshot(state: SandboxState, conversation: string): SandboxSnapshot {
+  return snapshotOf(state.ledger, conversation, generationOf(state, conversation), outputOf(state, conversation))
+}
 
 export interface Store {
   read(): (SandboxState | undefined)!!
@@ -96,9 +100,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     const state: SandboxState = saved ?? { ledger, months: {}, generations: {}, outputs: {}, pending: null }
     return { state, principal, now }
   }
-  function view(state: SandboxState, conversation: string) {
-    return snapshotOf(state.ledger, conversation, generationOf(state, conversation), outputOf(state, conversation))
-  }
+  const view = sandboxSnapshot
   effect function arm(state: SandboxState) {
     const count = runningCount(state.ledger.sandboxes)
     const now = try Clock.currentTimeMillis
@@ -209,15 +211,12 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     let next: SandboxState = { ...state, ...measured, ledger: { ...measured.ledger, role: principal.role } }
     try store.write(next)
     if (next.pending !== null) {
-      const recovery = recoveryOf(next.pending.kind, mayStart(principal.role), activeCommands.has(next.pending.operationId))
+      // A pending command is left to its fiber: the store settles one no fiber runs before this read sees it.
+      const recovery = recoveryOf(next.pending.kind, mayStart(principal.role))
       if (recovery === "drop-start") {
         try machines.stop(`${next.ledger.owner}/${next.pending.conversation}`, next.pending.generation)
         next = { ...next, pending: null }
         try store.write(next)
-      } else if (recovery === "settle-command") {
-        const receipt: Receipt = { request: next.pending, snapshot: view(next, next.pending.conversation), output: "", refusal: "command-uncertain" }
-        next = { ...next, pending: null }
-        try store.write(next, receipt)
       } else if (recovery === "complete") next = try complete(next, next.pending, now)
     }
     return { state: try metered(next, now, principal.role), principal, now }

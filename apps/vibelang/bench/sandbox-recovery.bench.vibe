@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The sandbox writer's retained operations: exhausted minutes, lost leases, failed stops, revoked starts and uncertain commands.
 import { it, expect } from "@effect/vitest"
 import { TestClock } from "effect/testing"
@@ -5,6 +6,8 @@ import { makeSandboxHost, type Machines } from "../src/core/sandboxHost.vibe"
 import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
 import { Unavailable } from "../src/core/Factory.vibe"
 import { ALLOWANCE, BEYOND_CALENDAR, change, failureOf, holding, pendingOf, world } from "../test/support/sandboxWorld.vibe"
+import * as Sandboxes from "../worker/Sandboxes.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
 import { artifact, workload, slow } from "./artifact.vibe"
 
 effect function exhausted() {
@@ -82,24 +85,25 @@ effect function revokedStart() {
   })
 }
 
+/** The Worker's store settles a command its evicted incarnation left running; the next incarnation never reruns it. */
 effect function uncertainCommand() {
   const w = try world()
   let commands = 0
   const machines: Machines = { ...w.machines, command: (id, generation, operation, command) => { commands++; return w.machines.command(id, generation, operation, command) } }
   const { held, entered, release } = try holding(machines)
-  const first = try makeSandboxHost(w.store, held)
-  const home = try first.start("home", "home")
-  const running = try Effect.forkScoped(Effect.result(first.command("home", "held", "echo late", home.generation)))
+  const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Sandboxes.SandboxStorage
+  const evicted = try Sandboxes.open(storage, held)
+  const home = try evicted.start("home", "home")
+  const running = try Effect.forkScoped(Effect.result(evicted.command("home", "held", "echo late", home.generation)))
   try Deferred.await(entered)
-  const other = try makeSandboxHost(w.store, machines)
-  try ensuring(other.tick(), Deferred.succeed(release, undefined))
+  const next = try Sandboxes.open(storage, machines)
+  try ensuring(next.tick(), Deferred.succeed(release, undefined))
   const answered = try Fiber.join(running)
-  const repeated = try Effect.result(other.command("home", "held", "echo late", home.generation))
+  const repeated = try Effect.result(next.command("home", "held", "echo late", home.generation))
   try Effect.try(() => {
     expect(failureOf(answered)).toMatchObject({ reason: "command-uncertain" })
     expect(failureOf(repeated)).toMatchObject({ reason: "command-uncertain" })
     expect(commands).toBe(1)
-    expect(w.receipts.get("held")?.refusal).toBe("command-uncertain")
   })
 }
 
@@ -113,5 +117,5 @@ it("sandbox recovery persists actual stops and never repeats an uncertain comman
       try uncertainCommand()
     }).pipe(Effect.provide(mockPolicy("contributor")), Effect.provide(TestClock.layer())))
   }).run(slow)
-  await runPromise(artifact("sandbox-host-recovery", "Vitest built-in bench; the production sandbox writer with its retained memory store, real product memoryMachines and explicit faulty Machines services. Five fresh worlds per callback: two running sandboxes exhaust their allowance and get Stop receipts; a lost lease is stopped; an invalid clock and failed emergency stop keep the operation pending until a healthy host recovers it; a recovered start loses permission; a held command becomes uncertain at another host and its exact replay never calls the machine again. Check ledger states, precise stop receipts, pending operations, refusals and one actual command execution. Three samples, setup and assertions included.", ["TestClock time and in-memory host/machines; no real Container, disk persistence, eviction, scheduler delay or billing duration. Two host instances in one process represent recovery; the held command is an injected faulty Effect service, not request interception."], result))
+  await runPromise(artifact("sandbox-host-recovery", "Vitest built-in bench; the production sandbox writer with its retained memory store, real product memoryMachines and explicit faulty Machines services. Five fresh worlds per callback: two running sandboxes exhaust their allowance and get Stop receipts; a lost lease is stopped; an invalid clock and failed emergency stop keep the operation pending until a healthy host recovers it; a recovered start loses permission; a held command becomes uncertain when the Worker's SQLite store (node:sqlite) is opened by its next incarnation, and its exact replay never calls the machine again. Check ledger states, precise stop receipts, pending operations, refusals and one actual command execution. Three samples, setup and assertions included.", ["TestClock time and in-memory host/machines; no real Container, disk persistence, eviction, scheduler delay or billing duration. Two host instances in one process represent recovery, and two Worker store openings over one node:sqlite database represent an eviction; the held command is an injected faulty Effect service, not request interception."], result))
 }, 120_000)

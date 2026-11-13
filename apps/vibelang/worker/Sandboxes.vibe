@@ -2,30 +2,55 @@
 import { FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { SandboxHost, SandboxStart, SandboxStop, SandboxCommand, SandboxMeter, sandboxRegistration } from "../src/core/flows.vibe"
-import { makeSandboxHost, type Machines, type SandboxState, type Receipt } from "../src/core/sandboxHost.vibe"
+import { makeSandboxHost, observed, sandboxSnapshot, type Machines, type SandboxState, type Receipt } from "../src/core/sandboxHost.vibe"
 import { EXECUTION_RETENTION, postExecutionId, type Storage } from "./Objects.vibe"
+import { orphanedCommand } from "./sandboxWorkerDecision.vibe"
 
 export interface SandboxStorage extends Storage { transactionSync<A>(body: () => A): A }
+/**
+ * Opens one incarnation's host. A command is pending from before its machine call until its receipt, and only a fiber
+ * of the incarnation that admitted it can finish it. A pending command no fiber of this incarnation runs (the object
+ * was evicted mid-command, or the command's fiber was interrupted) may have run, so the read that finds it settles it
+ * as `command-uncertain`; its replay is refused and the machine never runs it again.
+ */
 export effect function open(storage: SandboxStorage, machines: Machines) {
   try Effect.orDie(Effect.try(() => storage.sql.exec("CREATE TABLE IF NOT EXISTS vibelang_sandbox_state (id INTEGER PRIMARY KEY, body TEXT NOT NULL)")))
   try Effect.orDie(Effect.try(() => storage.sql.exec("CREATE TABLE IF NOT EXISTS vibelang_sandbox_receipts (id TEXT PRIMARY KEY, body TEXT NOT NULL)")))
-  return try makeSandboxHost({
+  /** Command operation ids this incarnation's fibers run, with how many calls hold each. */
+  const running = new Map<string, number>()
+  const hold = (id: string, by: 1 | -1) => sync(() => {
+    const count = (running.get(id) ?? 0) + by
+    if (count === 0) running.delete(id)
+    else running.set(id, count)
+  })
+  const write = (next: SandboxState, receipt?: Receipt) => Effect.orDie(Effect.try(() => storage.transactionSync(() => {
+    storage.sql.exec("INSERT OR REPLACE INTO vibelang_sandbox_state (id, body) VALUES (1, ?)", JSON.stringify(next))
+    if (receipt) storage.sql.exec("INSERT OR REPLACE INTO vibelang_sandbox_receipts (id, body) VALUES (?, ?)", receipt.request.operationId, JSON.stringify(receipt))
+  })))
+  const host = try makeSandboxHost({
     read: effect () => {
       const rows = try Effect.orDie(Effect.try(() => storage.sql.exec<{ body: string }>("SELECT body FROM vibelang_sandbox_state WHERE id = 1").toArray()))
       if (!rows[0]) return undefined
-      return try Effect.orDie(Effect.try(() => JSON.parse(rows[0]!.body) as SandboxState))
+      const saved = try Effect.orDie(Effect.try(() => JSON.parse(rows[0]!.body) as SandboxState))
+      const pending = saved.pending
+      if (pending === null || !orphanedCommand(pending.kind === "command", running.has(pending.operationId))) return saved
+      const settled: SandboxState = { ...saved, pending: null }
+      try observed("settle-command", write(settled, { request: pending, snapshot: sandboxSnapshot(settled, pending.conversation), output: "", refusal: "command-uncertain" }))
+      return settled
     },
     receipt: effect (id) => {
       const rows = try Effect.orDie(Effect.try(() => storage.sql.exec<{ body: string }>("SELECT body FROM vibelang_sandbox_receipts WHERE id = ?", id).toArray()))
       if (!rows[0]) return undefined
       return try Effect.orDie(Effect.try(() => JSON.parse(rows[0]!.body) as Receipt))
     },
-    write: (next, receipt) => Effect.orDie(Effect.try(() => storage.transactionSync(() => {
-      storage.sql.exec("INSERT OR REPLACE INTO vibelang_sandbox_state (id, body) VALUES (1, ?)", JSON.stringify(next))
-      if (receipt) storage.sql.exec("INSERT OR REPLACE INTO vibelang_sandbox_receipts (id, body) VALUES (?, ?)", receipt.request.operationId, JSON.stringify(receipt))
-    }))),
+    write,
     alarm: (at) => at === null ? promise(() => storage.deleteAlarm()) : promise(() => storage.setAlarm(at)),
   }, machines)
+  return {
+    ...host,
+    command: (conversation: string, operationId: string, text: string, generation: number) =>
+      Effect.acquireUseRelease(hold(operationId, 1), () => host.command(conversation, operationId, text, generation), () => hold(operationId, -1)),
+  }
 }
 
 export function runtime(hostId: string, executionId: string, flow: string, storage: Storage, host: SandboxHost.Shape, retention: CloudflareRuntime.Retention = EXECUTION_RETENTION) {

@@ -115,6 +115,8 @@ cases += [
 (B, 'sandbox-gateway-read', 'gatewayChoice', 'kind === "read" ? "signed-out-read" : "forbidden"', '"signed-out-read"', 'a signed-out write is forbidden'),
 (B, 'sandbox-kind-meter', 'executionKind', 'kind === "read" ? "meter" : kind', 'kind === "read" ? "meter" : kind === "stop" ? "meter" : kind', 'a stop runs as a stop'),
 (B, 'sandbox-serialized', 'serialized', 'kind !== "command"', 'kind !== "stop"', 'commands run beside the gate'),
+(B, 'sandbox-orphan-running', 'orphanedCommand', 'command && !running', 'command', 'a running command is left to its fiber'),
+(B, 'sandbox-orphan-command', 'orphanedCommand', 'command && !running', '!running', 'only a command settles as uncertain'),
 (B, 'sandbox-lease-running', 'leaseRunning', 'status === "running"', 'status !== "stopped"', 'only running is live'),
 ]
 
