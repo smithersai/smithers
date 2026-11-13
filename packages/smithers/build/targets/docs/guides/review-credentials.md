@@ -8,7 +8,9 @@ sidebar:
 Reviews scan every bounded changed and context file, including host-supplied
 immutable snapshots, and the review prompt and rubric before inference. Detected
 values become stable typed placeholders in prompts, policy, answers and
-diagnostics. Findings contain names and locations without values. Sample-like
+diagnostics. Multi-line values retain their original line breaks, so credential
+locations and model findings use the source file's line numbers. Findings
+contain names and locations without values. Sample-like
 values, such as `test-` prefixes, paths and URLs, are masked without a finding.
 References such as `${TOKEN}`, `$(command)` and `%s`, environment variable
 names, literals such as `null` or `true`, unquoted expressions in source files,

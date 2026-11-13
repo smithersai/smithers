@@ -182,10 +182,12 @@ directory. The directory is owner-only and never committed, and a store inside
 the workspace is never reviewed, whatever the include patterns. Each batch's findings and attempts are written when the batch
 completes, so a later failure keeps them. A failed or incomplete run resumes
 from its completed batches; a completed run is never reused, and an unchanged
-rerun reviews everything again.
+rerun reviews everything again. Unexpected defects also mark the run as failed,
+with a generic diagnostic that omits private failure details.
 
 Each finding has a stable fingerprint from its file, check and flagged line
-text, so moving the line keeps it. A finding the same owner and policy no
+text, so moving the line keeps it. A stored finding whose source line is absent
+fails with a typed `LlmReviewError` in the `store` phase. A finding the same owner and policy no
 longer reports after reviewing its file becomes `fixed-pending-retest`; it
 closes only through `closeFinding` with a trusted host's receipt of the
 reproduced fix, and reopens if reported again. The review receipt and console

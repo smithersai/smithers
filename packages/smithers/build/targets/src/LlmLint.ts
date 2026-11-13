@@ -1270,7 +1270,8 @@ class CredentialMask {
   /**
    * Replaces every known value in text sent to a provider, raw or JSON escaped,
    * in one linear pass. Overlapping values are masked as one span, so masking
-   * one value never leaves part of another in the text.
+   * one value never leaves part of another in the text. Original line breaks
+   * stay in place so findings and fingerprints refer to source-file lines.
    */
   sanitize(text: string): string {
     if (this.values.size === 0) return text
@@ -1287,7 +1288,7 @@ class CredentialMask {
       const [start, end, placeholder] = spans[index]!
       let until = end
       while (index < spans.length && spans[index]![0] < until) until = Math.max(until, spans[index++]![1])
-      safe += text.slice(cursor, start) + placeholder
+      safe += text.slice(cursor, start) + placeholder + text.slice(start, until).replace(/[^\r\n]/g, "")
       cursor = until
     }
     return safe + text.slice(cursor)
@@ -3148,39 +3149,46 @@ export const review = (
       [...context, ...changed, ...relations.files.values()].map((file) => [file.path, file.contents])
     )
     const fingerprintOf = (finding: Finding) =>
-      digest(
-        `${finding.file}\0${finding.security?.checkId ?? ""}\0${
-          mask.sanitize(sources.get(finding.file)!.split("\n")[finding.line - 1]!).trim()
-        }`
-      )
+      Effect.gen(function*() {
+        const line = sources.get(finding.file)?.split("\n")[finding.line - 1]
+        if (line === undefined) {
+          return yield* Effect.fail(
+            new LlmReviewError({ phase: "store", message: "Finding has no reviewed source line" })
+          )
+        }
+        return digest(`${finding.file}\0${finding.security?.checkId ?? ""}\0${mask.sanitize(line).trim()}`)
+      })
     const record = (reported: ReadonlyArray<Finding>) =>
-      storeRoot === undefined ? Effect.void : Effect.try({
-        try: () => {
-          for (const finding of reported) {
-            const fingerprint = fingerprintOf(finding)
-            const recordName = `findings/${fingerprint}.json`
-            const stored = PrivateStore.read(storeRoot, recordName)
-            const prior = stored === undefined ? undefined : decodeFindingRecord(stored)
-            // Within one run a weaker report of the same flaw never replaces a stronger one.
-            if (prior !== undefined && prior.lastSeenRun === runKey && strength(prior.finding) >= strength(finding)) {
-              continue
+      storeRoot === undefined ? Effect.void : Effect.gen(function*() {
+        const fingerprints = yield* Effect.forEach(reported, fingerprintOf)
+        yield* Effect.try({
+          try: () => {
+            for (const [index, finding] of reported.entries()) {
+              const fingerprint = fingerprints[index]!
+              const recordName = `findings/${fingerprint}.json`
+              const stored = PrivateStore.read(storeRoot, recordName)
+              const prior = stored === undefined ? undefined : decodeFindingRecord(stored)
+              // Within one run a weaker report of the same flaw never replaces a stronger one.
+              if (prior !== undefined && prior.lastSeenRun === runKey && strength(prior.finding) >= strength(finding)) {
+                continue
+              }
+              const next: FindingRecord = {
+                fingerprint,
+                ...(store?.owner === undefined ? {} : { owner: store.owner }),
+                policy,
+                state: "open",
+                reproductionSteps: finding.security?.nextConfirmationStep ??
+                  `Review line ${finding.line} of ${finding.file} against the rubric again.`,
+                firstSeenRun: prior?.firstSeenRun ?? runKey,
+                lastSeenRun: runKey,
+                updatedAt: now(),
+                finding
+              }
+              PrivateStore.write(storeRoot, recordName, next)
             }
-            const next: FindingRecord = {
-              fingerprint,
-              ...(store?.owner === undefined ? {} : { owner: store.owner }),
-              policy,
-              state: "open",
-              reproductionSteps: finding.security?.nextConfirmationStep ??
-                `Review line ${finding.line} of ${finding.file} against the rubric again.`,
-              firstSeenRun: prior?.firstSeenRun ?? runKey,
-              lastSeenRun: runKey,
-              updatedAt: now(),
-              finding
-            }
-            PrivateStore.write(storeRoot, recordName, next)
-          }
-        },
-        catch: storeError
+          },
+          catch: storeError
+        })
       })
     const reviewed: Array<string> = []
     const findings: Array<Finding> = []
@@ -3302,7 +3310,11 @@ export const review = (
           })
         })
       }
-      const stored = storeRoot === undefined ? {} : { run: runKey, manifest, fingerprints: findings.map(fingerprintOf) }
+      const stored = storeRoot === undefined ? {} : {
+        run: runKey,
+        manifest,
+        fingerprints: yield* Effect.forEach(findings, fingerprintOf)
+      }
       if (storeRoot !== undefined) {
         yield* record(findings)
         // A finding the latest review of its file no longer reports awaits a reproduced retest.
@@ -3353,13 +3365,15 @@ export const review = (
       }
     })
     return yield* execute.pipe(
-      Effect.tapError((error) =>
-        settled ? Effect.void : persist({ status: "failed", error: error.message }).pipe(Effect.ignore)
-      ),
-      // A call cut short by interruption was still charged; a resume must not get it back.
-      Effect.onInterrupt(() =>
-        settled ? Effect.void : persist({ status: "failed", error: "Review interrupted" }).pipe(Effect.ignore)
-      )
+      // Every unsuccessful exit records the spend, including defects and interruption.
+      Effect.onExit((exit) => {
+        if (settled || exit._tag === "Success") return Effect.void
+        const failure = exit.cause.reasons.find(Cause.isFailReason)
+        const error = Cause.hasDies(exit.cause)
+          ? "Review failed unexpectedly"
+          : failure?.error.message ?? "Review interrupted"
+        return persist({ status: "failed", error }).pipe(Effect.ignore)
+      })
     )
   })
 
