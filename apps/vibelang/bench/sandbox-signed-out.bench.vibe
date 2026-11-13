@@ -1,0 +1,58 @@
+// @vitest-environment node
+// Two sandbox paths no workerd benchmark reaches since the workerd world binds the account objects (794817bc). The
+// signed-out gateway (worker/SandboxHttp.vibe) answers the Worker's sandbox routes when no verified principal or sandbox
+// image is bound (worker/Http.vibe's default, worker/SandboxAccounts.vibe without an image); it is served here on a
+// loopback server. The binding classes' counter export (worker/benchmarkCounters.vibe) wraps every sandbox object.
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer } from "effect/http"
+import { sandboxRequest, signedOutGateway } from "../worker/SandboxHttp.vibe"
+import { withCounters } from "../worker/benchmarkCounters.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+/** The status and JSON body of one answer. */
+effect function answerOf(http: HttpClient.HttpClient, request: HttpClientRequest.HttpClientRequest) {
+  const response = try http.execute(request)
+  return { status: response.status, body: (try response.json) as unknown }
+}
+
+it("a signed-out person reads a viewer's sandbox, and every sandbox write is forbidden", async ({ bench }) => {
+  const result = await workload(bench, "sandbox-signed-out", "async", () => runPromise(scoped(effect {
+    provide NodeHttpServer.layerTest {
+      try HttpServer.serveEffect(sandboxRequest(signedOutGateway))
+      const address = (try HttpServer.HttpServer).address
+      const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+      provide FetchHttpClient.layer {
+        const http = try HttpClient.HttpClient
+        const post = (route: string, body: unknown) => answerOf(http, HttpClientRequest.post(`${origin}/api/sandboxes/c-1/${route}`).pipe(HttpClientRequest.bodyText(JSON.stringify(body))))
+        const read = try answerOf(http, HttpClientRequest.get(`${origin}/api/sandboxes/c-1`))
+        const writes = [
+          try post("start", { operationId: "op-1" }),
+          try post("stop", { operationId: "op-2", generation: 0 }),
+          try post("command", { operationId: "op-3", generation: 0, command: "echo denied" }),
+        ]
+        try Effect.try(() => {
+          expect(read).toMatchObject({ status: 200, body: { id: "", generation: 0, role: "viewer", status: "stopped", allowance: 0, remaining: 0, output: "" } })
+          expect(writes).toEqual([0, 1, 2].map(() => ({ status: 403, body: { refusal: "forbidden" } })))
+        })
+      }
+    }
+  }))).run(quick)
+  await runPromise(artifact("sandbox-signed-out", "Vitest built-in bench; worker/SandboxHttp.vibe's sandboxRequest over the production signed-out gateway on a real Node loopback server, one fresh server per sample. Reads the sandbox, then posts start, stop and command. Checks the read is the empty viewer snapshot and each write answers 403 forbidden.", ["Node HTTP server, not workerd; the Worker's routing to this gateway is not in the measurement.", "No account object or container."], result))
+})
+
+it("a sandbox object with the counter export keeps its members and answers this isolate's counters", async ({ bench }) => {
+  const result = await workload(bench, "sandbox-counter-export", "async", () => runPromise(effect {
+    const object = { apply: (kind: string) => succeed(`applied ${kind}`) }
+    const exported = withCounters(object)
+    const applied = try exported.apply("start")
+    const counters = try exported.benchmarkCoverage()
+    try Effect.try(() => {
+      expect(exported.apply).toBe(object.apply)
+      expect(applied).toBe("applied start")
+      // A Node process has no Istanbul instrumenter and no test-stage build id: the export answers none.
+      expect(counters).toEqual({ buildId: null, coverage: {} })
+    })
+  })).run(quick)
+  await runPromise(artifact("sandbox-counter-export", "Vitest built-in bench; worker/benchmarkCounters.vibe's withCounters over an object with one Effect member, as the account and machine binding classes wrap theirs. Checks the member is the same function and still answers, and benchmarkCoverage answers this isolate's counters: no build id and no Istanbul counters in Node.", ["Wrapping cost only; the deployed test stage's counters are measured by pnpm bench:sandboxes-live."], result))
+})

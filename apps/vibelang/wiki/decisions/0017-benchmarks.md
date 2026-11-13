@@ -1184,12 +1184,46 @@ Of the 142 open positions, 133 are specification-only (VIP-43). Four are the inv
 (`HistoryObject` 149–150, `Objects` 256–257). Five are runtime code main added after the 02315e2b collection, each
 with a runtime caller and no workload yet:
 
-| Position | Caller | Workload it needs |
-| --- | --- | --- |
-| `src/web/actionModel.vibe` 35–36 | `actionView.vibe` 48, a refused write's result | The agent's door sends a blank lane and a blank note; the run's Result reads "Needs a lane." / "Needs text."; any other refusal reads its reason. |
-| `src/web/main.vibe` 1099 | the action follow stream | A follow that closes cleanly before its run settles yields `FailedActionFollow`, like a transport failure. |
-| `src/web/modelWrite.vibe` 622 | `main.vibe` 715, tour replay | A tour receipt of kind `replay`: fresh tour client, next epoch. |
-| `src/web/modelWrite.vibe` 650 | `main.vibe` 747, tour finish | A walkthrough that finishes: tour off, draft cleared. |
+| Position | Caller | Workload it needs | Workload (resume 13) |
+| --- | --- | --- | --- |
+| `src/web/actionModel.vibe` 35–36 | `actionView.vibe` 48, a refused write's result | The agent's door sends a blank lane and a blank note; the run's Result reads "Needs a lane." / "Needs text."; any other refusal reads its reason. | `web-refused-blank-writes` |
+| `src/web/main.vibe` 1099 | the action follow stream | A follow that closes cleanly before its run settles yields `FailedActionFollow`, like a transport failure. | `web-action-follow-closed` |
+| `src/web/modelWrite.vibe` 622 | `main.vibe` 715, tour replay | A tour receipt of kind `replay`: fresh tour client, next epoch. | `web-tour-replay-finish` |
+| `src/web/modelWrite.vibe` 650 | `main.vibe` 747, tour finish | A walkthrough that finishes: tour off, draft cleared. | `web-tour-replay-finish` |
+
+### Keeping up with main (resume 13, 2026-11-13)
+
+**The five runtime positions.** `bench/web-dom.bench.vibe` runs the real app in happy-dom.
+`web-refused-blank-writes` uses the mock page's backend (`BrowserFactory` forced to mock, which gives the mock agent
+the page's Actions as its door). The agent runs `/start` with a blank lane, `/note` with blank text and `/start` on a
+missing commit, and each Result reads "Needs a lane.", "Needs text." or "No such epic or commit.".
+`web-action-follow-closed` injects `test/support/FaultyActions.vibe`'s `follow-close`: the run stays queued and reads
+Disconnected, and Reconnect follows it again. `bench/web-actions.bench.vibe`'s `web-tour-replay-finish` sends the
+reducer a tour event past a gap (a fresh tour client and the next epoch), then the last stop (tour off, draft
+cleared). Each workload failed with its line mutated (the refusal words, the clean-close `FailedActionFollow`, the
+replay epoch), and passed after the source was restored.
+
+**Full collection on main `6f779528`.** `pnpm bench:coverage` (job `vl-bench:r13b-coverage`, cfbox node26, Node
+26.5.0, 22:07–22:49 UTC): 118 files passed, 1 skipped. Local merge: `src/` + `worker/` **9,605/9,777 (98.24%)**,
+`infra/` 10/12. All five positions run. The live dump from `a54642d6` no longer merges: the collector refuses
+`worker/SandboxMachine.vibe` ("source mismatch; redeploy this source") because main's `c8d32448` moved the binding
+classes' counter export into `worker/benchmarkCounters.vibe`.
+
+**Two paths main's changes left without a workload.** Main's `794817bc` binds the account and machine objects in the
+workerd world, so the forged-role sandbox writes in `sandbox-workerd` now reach the account object. No benchmark ran
+the signed-out gateway's start, stop and command refusals (`worker/SandboxHttp.vibe` 22–24) any more. `withCounters`
+(`worker/benchmarkCounters.vibe` 7) is new. `bench/sandbox-signed-out.bench.vibe` holds `sandbox-signed-out` (the
+gateway on a Node loopback server: viewer snapshot, three 403 forbidden) and `sandbox-counter-export`. A focused
+coverage run of that file counts all four positions. With them, 9,609/9,777 (98.28%); a full merge confirms this with
+the next batch.
+
+**Deployed-only positions, moved.** The same code as the resume 12 table, with new line numbers:
+`worker/SandboxAccounts.vibe` 17, 18, 19, 21, 29, 30, 31; `worker/SandboxMachine.vibe` 15–18;
+`worker/SandboxProbe.vibe` 19, 20, 24–27; `worker/sandboxBenchmark.vibe` 14–23; `worker/sandboxWorkerDecision.vibe`
+192, 203–205; `infra/SandboxImage.vibe` 4, 5 (31 in `src/` + `worker/`, 2 in `infra/`). They need a live run of the
+current source: the lead deploys a main that contains `c8d32448`, runs `pnpm bench:sandboxes-live` once, and destroys
+`vl-test`, as in resume 12. The 168 open positions in `src/` + `worker/`: 133 specification-only (VIP-43), 4 invariant
+traps and these 31.
 
 **Live result artifacts.** Live results follow the artifact rule above: `bench/results/` is ignored, so the live JSON
 and the 6 MB counter dump stay out of the repository. Both are retained on nyc-01 under

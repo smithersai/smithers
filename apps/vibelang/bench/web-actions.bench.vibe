@@ -2,6 +2,7 @@ import { it, expect as assert } from "@effect/vitest"
 import { scene, given, expect, role, text } from "foldkit/scene"
 import { init, keyMessage, Message, type Model, update, viewTransition } from "../src/web/main.vibe"
 import { view, failureOf } from "../src/web/view.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("web actions, recovery and tour controls", async ({ bench }) => {
@@ -97,4 +98,31 @@ it("post and connection failure views", async ({ bench }) => {
     scene({ update, view }, given(busy), expect(role("textbox", { name: "Message" })).toExist(), expect(text("Agent busy")).toExist())
   }).run(quick)
   await runPromise(artifact("failure-views", "Vitest built-in bench; render every declared post failure and connection/tour failure with accessible retry/reconnect controls.", ["Scenes from state-machine client fixtures; no transport interception."], result))
+})
+
+// modelWrite.tourReplayWrite and tourFinishWrite through main.vibe's receiveTour and driveWalkthrough.
+it("a tour event past a gap replays the tour, and its last stop finishes the walkthrough", async ({ bench }) => {
+  const result = await workload(bench, "web-tour-replay-finish", "sync", () => {
+    let model = init({ session: "s", mode: "mock", name: "Ada" }).model
+    const send = (message: Message) => { const next = update(model, message); model = next.model; return next }
+    send(Message.ClickedLearnMore())
+    send(Message.SucceededTour())
+    send(Message.ReceivedTourEvent({ event: { type: "TourStarted", seq: 1, id: "t1" } }))
+    const epoch = model.epoch
+    assert(model.tourClient?.conversation.seq).toBe(1)
+    send(Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", seq: 3, id: "t1", step: 1, target: WALKTHROUGH[0]!.target, at: 0, duration: WALKTHROUGH[0]!.duration } }))
+    assert(model.tourClient?.conversation.seq).toBe(0)
+    assert(model.tourClient?.gap).toBe(false)
+    assert(model.epoch).toBe(epoch + 1)
+    assert(model.tour).toBe(true)
+    send(Message.ReceivedTourEvent({ event: { type: "TourStarted", seq: 1, id: "t1" } }))
+    model = { ...model, draft: "typed during the tour" }
+    const last = WALKTHROUGH[WALKTHROUGH.length - 1]!
+    const finished = send(Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", seq: 2, id: "t1", step: WALKTHROUGH.length, target: last.target, at: 0, duration: last.duration } }))
+    assert(model.tourClient?.conversation.walkthrough?.step).toBe(WALKTHROUGH.length)
+    assert(model.tour).toBe(false)
+    assert(model.draft).toBe("")
+    assert(finished.commands.map(command => command.name)).toEqual(["PresentTour", "FocusComposer"])
+  }).run(quick)
+  await runPromise(artifact("web-tour-replay-finish", "Vitest built-in bench; the product update over tour events. A tour event one past the next seq replays: a fresh tour client and the next epoch, tour still on. After the replayed start, the walkthrough's last stop finishes the tour: tour off, draft cleared, PresentTour and FocusComposer only.", ["Reducer cost, no browser layout or agent timing; events are the agent's shapes, built in the bench."], result))
 })

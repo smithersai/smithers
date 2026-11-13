@@ -16,6 +16,9 @@ import { container, remove } from "../test/support/browser.ts"
 import { click, focusedId, focusedIndex, hrefs, keyOn, press, steps } from "./dom-input.ts"
 import { artifact, workload, slow } from "./artifact.vibe"
 import { faultyFactory, trace, type Fault } from "../test/support/FaultyFactory.vibe"
+import { faultyActions } from "../test/support/FaultyActions.vibe"
+import { FetchHttpClient } from "effect/http"
+import { BrowserFactory } from "../src/web/backend.vibe"
 
 const flags = { session: "links", name: "Ada", mode: "mock" as const }
 const ROADMAP_DRAFT = "Draft an edit to the roadmap wiki page."
@@ -24,7 +27,7 @@ const REVIEW_LINK = ".sui-chat-bubble a[href='#wiki-draft-roadmap']"
 const drafted = `${(pages.find(entry => entry.id === "roadmap")?.source ?? "").trimEnd()}\n\n${ROADMAP_DRAFT}\n`
 
 /** The real app embedded in a fresh container; `latest` is the model as update leaves it, `send` the test channel. */
-effect function app(actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" }), factory: Layer.Layer<Factory> = MockFactory) {
+effect function app(actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" }), factory: Layer.Layer<Factory> = MockFactory, resources: Layer.Layer<Actions | Factory> = actions.pipe(Layer.provideMerge(factory))) {
   const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
   const input = try Effect.try(() => steps<Message>())
   let latest: Model = init(flags).model
@@ -34,7 +37,7 @@ effect function app(actions: Layer.Layer<Actions, never, Factory> = MockActions(
     update: (model, message) => { const next = update(model, message); latest = next.model; return next },
     subscriptions: Subscription.aggregate(subscriptions(node.ownerDocument, node.ownerDocument), Subscription.make<Model, Message>()(() => ({
       steps: Subscription.persistentEntry(Dom.streamFromEvent({ target: input.target, type: "step", mapEvent: input.read })),
-    }))), resources: actions.pipe(Layer.provideMerge(factory)), container: node,
+    }))), resources, container: node,
   }))
   try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
   const send = (make: () => Message) => Effect.try(() => input.send(make()))
@@ -298,4 +301,60 @@ it("a lost action follow reconnects and delivers the current run and its cancell
     try Effect.try(() => expect(counts.follows).toBe(2))
   }))).run(slow)
   await runPromise(artifact("web-action-follow-recovery", "Vitest built-in bench: the actual Foldkit app/view/update/subscriptions over product MockFactory and MockActions. A typed faulty Actions service delegates all operations to MockActions, fails only the first follow, then follows the real run. Start Tour; require one failed subscription, the run shown Disconnected with the Connection lost alert, then the person clicks Reconnect; require exactly two subscriptions and a delivered current running snapshot; open the run card, cancel, and require a second delivered snapshot and the Cancelled card. No message or HTTP request is intercepted. Three fresh scoped apps; setup, reconnect click and all assertions included.", ["happy-dom execution, no browser layout/paint or network latency. Reconnect is a click by the person, not a timed retry; this is not throughput."], result))
+})
+
+// actionModel.resultText's blank-field words: only the agent's door sends a blank lane or note.
+it("the agent's blank Start and Note read Needs a lane and Needs text, and an unknown commit its reason, in the run's Result", async ({ bench }) => {
+  const result = await workload(bench, "web-refused-blank-writes", "async", () => runPromise(effect {
+    // Each request on its own page, as the person reloads: one Result in the document.
+    for (const [ask, flow, words, refusal] of [
+      ['Run /start {"id":"m1","lane":" "}', "vibelang/history/Start", "Needs a lane.", "empty"],
+      ['Run /note {"id":"m1","section":"evidence","text":" "}', "vibelang/history/Note", "Needs text.", "empty"],
+      ['Run /start {"id":"m-none","lane":"lane-a"}', "vibelang/history/Start", "No such epic or commit.", "unknown"],
+    ] as const) try scoped(effect {
+      // The mock page's backend: BrowserFactory gives the mock agent the page's own Actions as its door.
+      const { page, latest: current, send } = try app(undefined, undefined, BrowserFactory("http://benchmark.invalid", true, "maintainer").pipe(Layer.provide(FetchHttpClient.layer)))
+      try send(() => Message.ChoseIdentity({ role: "maintainer" }))
+      try wait(() => expect(accountOf(current()).identity.role).toBe("maintainer"))
+      try send(() => Message.ClickedAsk())
+      try send(() => Message.UpdatedDraft({ value: ask }))
+      try send(() => Message.SubmittedDraft())
+      try wait(() => expect(current().actions?.runs.find(run => run.flow === flow)?.result ?? "").not.toBe(""))
+      const run = current().actions!.runs.find(each => each.flow === flow)!
+      try Effect.try(() => expect(JSON.parse(run.result)).toMatchObject({ refusal }))
+      try send(() => Message.SelectedRun({ id: run.id, flow: run.flow }))
+      try wait(() => expect(Array.from(page.querySelectorAll("[aria-label='Result']")).map(node => node.textContent)).toEqual([words]))
+    })
+  })).run(slow)
+  await runPromise(artifact("web-refused-blank-writes", "Vitest built-in bench, real Foldkit runtime/update/view/subscriptions in happy-dom over the mock page's backend (BrowserFactory forced to mock: MockFactory, MockActions, the agent's door). A maintainer asks the mock agent to run /start with a blank lane, then, on a fresh page, /note with blank text; the agent's door starts each history flow, the sequencer refuses it as empty, and the person opens the run. A third page asks for /start on a commit that does not exist. Checks each run's answer is the expected refusal and its Result reads Needs a lane., Needs text. and No such epic or commit.", ["happy-dom, no browser layout; Chromium covers the same journey in e2e/actions.spec.ts.", "Mock agent and Mythical history; no model or GitHub."], result))
+})
+
+// main.vibe's actionRuns subscription: a follow that ends cleanly before its run settles is a lost follow.
+it("a follow that closes before its run settles shows the run disconnected, and Reconnect follows it again", async ({ bench }) => {
+  const result = await workload(bench, "web-action-follow-closed", "async", () => runPromise(scoped(effect {
+    const followed: Array<string> = []
+    const { page, latest: current, send } = try app(faultyActions(MockActions({ actor: "person" }), "follow-close", followed))
+    try send(() => Message.ChoseIdentity({ role: "maintainer" }))
+    try wait(() => expect(accountOf(current()).identity.role).toBe("maintainer"))
+    try send(() => Message.ClickedActions())
+    try wait(() => expect(current().actions?.commands.some(entry => entry.name === "vibelang/Tour")).toBe(true))
+    try send(() => Message.SelectedAction({ name: "vibelang/Tour" }))
+    try wait(() => expect(current().actions?.loading).toBe(false))
+    try send(() => Message.ClickedRunAction())
+    try wait(() => {
+      const run = current().actions?.runs[0]
+      expect(run?.state).toBe("queued")
+      expect(current().actions?.disconnected).toEqual([run?.id])
+      expect(page.textContent).toContain("Disconnected")
+    })
+    const { id, flow } = current().actions!.runs[0]!
+    try Effect.try(() => expect(followed).toEqual([id]))
+    try Effect.try(() => Array.from(page.querySelectorAll("button")).find(button => button.textContent === "Reconnect")!.click())
+    try wait(() => { expect(followed).toEqual([id, id]); expect(current().actions?.disconnected).toEqual([]) })
+    try send(() => Message.SelectedRun({ id, flow }))
+    try wait(() => expect(current().actions?.run).toBe(id))
+    try send(() => Message.ClickedCancelAction())
+    try wait(() => { expect(current().actions?.runs.find(run => run.id === id)?.state).toBe("cancelled"); expect(page.textContent).toContain("Cancelled") })
+  }))).run(slow)
+  await runPromise(artifact("web-action-follow-closed", "Vitest built-in bench, real Foldkit runtime/update/view/subscriptions in happy-dom over product MockFactory and MockActions. The typed faulty Actions service (test/support/FaultyActions.vibe, follow-close) ends the first follow with no receipt; every other call is MockActions. A maintainer starts Tour; checks the run stays running and reads Disconnected, Reconnect follows it a second time and clears the disconnection, and Cancel settles it as Cancelled.", ["happy-dom, no browser layout.", "The clean close is injected by a faulty service, not a real transport."], result))
 })
