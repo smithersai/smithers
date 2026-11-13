@@ -143,6 +143,23 @@ test("render action carries failed review diagnostics into HTML", async () => {
   expect(html).not.toContain("findings <strong>0</strong>")
 })
 
+test("render action marks a truncated file as a coverage gap", async () => {
+  const out = outputPath()
+  const reason = "File review prompt was truncated at 60000 of 66134 diff characters; characters 60001-66134 were not reviewed."
+  const result = await render(out, {
+    ...review,
+    status: "completed_with_warnings",
+    warnings: [{ file: "a.ts", type: "diff_truncated", message: reason }]
+  })
+  const html = fs.readFileSync(out, "utf8")
+  const file = html.match(/<article[^>]*data-path="a.ts"[\s\S]*?<\/article>/)?.[0] ?? ""
+  expect(file).toContain("not reviewed")
+  expect(file).toContain(reason)
+  expect(html).toContain("Review incomplete")
+  expect(result.ui.html).toBe(html)
+  expect(fs.readFileSync(result.walkthrough.artifactPath, "utf8")).toBe(html)
+})
+
 test("each render retains its own artifact when the user-facing output is replaced", async () => {
   const out = outputPath()
   const first = await render(out)

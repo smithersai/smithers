@@ -9,6 +9,7 @@ import { ReviewRunOutput } from "../workflow/reviewRunOutputSchema.ts"
 import { ReviewSummary } from "../workflow/reviewSummarySchema.ts"
 import type { ReviewWarning } from "../workflow/reviewWarningSchema.ts"
 import { anchorFinding } from "./anchorFinding.ts"
+import { reviewDiffLimit } from "./buildFileReviewPrompt.ts"
 import { dedupeFindings } from "./dedupeFindings.ts"
 import type { NativeReviewFileResult } from "./nativeReviewFileResult.ts"
 import { rankSeverity } from "./rankSeverity.ts"
@@ -62,6 +63,8 @@ function normalizedComment(comment: ReviewComment, path: string) {
  * de-duplicated, and counted. A file whose review failed becomes a
  * `subtask_error` warning; the run fails only when every file review fails.
  * Incomplete statuses preserve their messages as file-scoped warnings.
+ * Truncated file prompts retain their omitted range as a coverage warning and
+ * do not count as fully reviewed, even when the seat reports success.
  * Results must explicitly pair each output with its reviewed file.
  *
  * @since 1.0.0
@@ -84,6 +87,15 @@ export function finalizeNativeReview(
   const warnings: Array<ReviewWarning> = [...prepared.warnings]
   const comments: Array<ReviewComment> = []
   let failedFiles = 0
+  const truncatedFiles = prepared.files.filter((file) => file.diff.length > reviewDiffLimit)
+  for (const file of truncatedFiles) {
+    warnings.push({
+      file: file.path,
+      type: "diff_truncated",
+      message:
+        `File review prompt was truncated at ${reviewDiffLimit} of ${file.diff.length} diff characters; characters ${reviewDiffLimit + 1}-${file.diff.length} were not reviewed.`
+    })
+  }
 
   for (const result of orderedResults) {
     if (!result.output) {
@@ -156,7 +168,7 @@ export function finalizeNativeReview(
   // Agents fabricate token counts in their structured output; leave usage unknown rather
   // than presenting fiction as telemetry in a metered product.
   const summary = decodeSummary({
-    filesReviewed: prepared.reviewableFiles,
+    filesReviewed: prepared.reviewableFiles - truncatedFiles.length,
     comments: finalComments.length,
     totalTokens: null,
     inputTokens: null,
@@ -175,6 +187,8 @@ export function finalizeNativeReview(
     reviewer: "smithers-native",
     message: status === "failed"
       ? `All ${prepared.files.length} file review(s) failed.`
+      : truncatedFiles.length > 0
+      ? `Review incomplete: ${truncatedFiles.length} file diff(s) truncated; ${finalComments.length} comment(s). See diagnostics.`
       : finalComments.length > 0
       ? `Reviewed ${prepared.reviewableFiles} file(s) and produced ${finalComments.length} comment(s).`
       : status === "completed_with_warnings"

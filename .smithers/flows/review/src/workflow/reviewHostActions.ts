@@ -69,15 +69,16 @@ export const renderWalkthroughLayer = Layer.unwrap(Effect.gen(function*() {
               status: review.status,
               warnings: review.warnings,
               files: changes.files.map((file) => {
-                const errors = review.warnings.filter((warning) =>
-                  warning.file === file.path && warning.type === "subtask_error"
+                const gaps = review.warnings.filter((warning) =>
+                  warning.file === file.path &&
+                  (warning.type === "subtask_error" || warning.type === "diff_truncated")
                 )
                 const reason = !file.reviewed ?
                   file.excludeReason || "outside review scope"
                   : review.status === "skipped" ?
                   "review skipped"
-                  : errors.length > 0 ?
-                  errors.map((warning) => warning.message || "file review failed or incomplete").join("; ")
+                  : gaps.length > 0 ?
+                  gaps.map((warning) => warning.message || "file review failed or incomplete").join("; ")
                   : review.status === "failed" ?
                   "review failed"
                   : ""

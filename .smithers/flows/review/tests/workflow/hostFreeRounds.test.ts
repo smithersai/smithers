@@ -122,3 +122,49 @@ describe("the package root's rounds", () => {
     expect(result.ui.html).toBe("")
   }, 120_000)
 })
+
+test("a truncated comparison stays incomplete after an empty reviewer answer", async () => {
+  const asks: Array<string> = []
+  const answer = (ask: string) => {
+    asks.push(ask)
+    return { status: "success", message: "", summary: null, comments: [], warnings: [] }
+  }
+  const input = Schema.decodeUnknownSync(ReviewInput)({ narrate: false })
+  const snapshot = comparisonSnapshot({
+    input,
+    repository: "acme/widgets",
+    base: "a".repeat(40),
+    head: "b".repeat(40),
+    files: [{
+      filename: "src/large.ts",
+      status: "added",
+      additions: 2,
+      deletions: 0,
+      patch: '@@ -0,0 +1,2 @@\n+' + "x".repeat(66_000) + '\n+throw new Error("BUG_AFTER_LIMIT");'
+    }, {
+      filename: "src/small.ts",
+      status: "added",
+      additions: 1,
+      deletions: 0,
+      patch: "@@ -0,0 +1 @@\n+export const ok = 1"
+    }],
+    truncated: false
+  })
+  const result = await Effect.runPromise(
+    ReviewFiles.execute({ input, prepared: preparedReviewOf(snapshot), offset: 0, outcomes: [] }, {
+      executionId: `truncated-rounds-${Math.random()}`
+    }).pipe(Effect.provide(layer.pipe(Layer.provideMerge(host(scriptedSeats(answer))))), Effect.orDie)
+  )
+  expect(asks).toHaveLength(2)
+  expect(asks.some((ask) => ask.includes("[diff truncated for prompt size]"))).toBe(true)
+  expect(asks.every((ask) => !ask.includes("BUG_AFTER_LIMIT"))).toBe(true)
+  expect(result.verdict).toBe("incomplete")
+  expect(result.review.status).toBe("completed_with_warnings")
+  expect(result.review.summary?.filesReviewed).toBe(1)
+  expect(result.review.warnings).toContainEqual(expect.objectContaining({
+    file: "src/large.ts",
+    type: "diff_truncated",
+    message: expect.stringContaining("were not reviewed")
+  }))
+  expect(result.review.comments).toEqual([])
+}, 120_000)

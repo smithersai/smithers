@@ -7,9 +7,11 @@ import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.
 import type { ReviewTarget } from "../workflow/reviewTargetSchema.ts"
 import { reviewChecklistForPath } from "./reviewChecklistForPath.ts"
 
-// One file per prompt, so the reviewer affords far more of it than the prompts
-// that carry the whole change set.
-const reviewDiffLimit = 60_000
+/**
+ * The diff characters a per-file reviewer can see. Finalization uses the same
+ * bound to report any omitted suffix as incomplete coverage.
+ */
+export const reviewDiffLimit = 60_000
 
 function changedFileLine(diff: DiffRecord) {
   const status = diff.isNew
