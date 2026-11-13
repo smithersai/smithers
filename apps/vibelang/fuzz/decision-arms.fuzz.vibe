@@ -4,10 +4,11 @@
 // (0015, eighteenth session).
 import { it } from "@effect/vitest"
 import * as AccountView from "../src/web/accountViewDecision.vibe"
+import * as ActionFollow from "../src/web/actionFollowDecision.vibe"
 import { actionsOf, completions, initial as initialActions, resultText } from "../src/web/actionModel.vibe"
 import { accountOf, init, type Model } from "../src/web/main.vibe"
-import { escapeWrite, escapeWritesIssues, screenKept } from "../src/web/modelWrite.vibe"
-import { escapeScreen } from "../src/web/screenRead.vibe"
+import { escapeWrite, escapeWritesIssues, screenKept, wikiFailedWrite } from "../src/web/modelWrite.vibe"
+import { escapeScreen, wikiDraft, wikiRequest } from "../src/web/screenRead.vibe"
 import { initialIssues, issuesUpdate } from "../src/web/issues.vibe"
 import { historyRefusal } from "../src/history/flowMachine.vibe"
 import * as IssuesView from "../src/web/issuesViewDecision.vibe"
@@ -156,5 +157,65 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
   // A saved page replaces what was known of it and comes last, once.
   const pages: ReadonlyArray<WikiEditor.WikiPage> = [{ id: "a", source: "A", revision: "1" }, { id: "p", source: "P", revision: "1" }, { id: "b", source: text, revision: "2" }]
   try check("savedWikiPages", same(WikiEditor.savedWikiPages(pages, "p", other, "3"), [pages[0], pages[2], { id: "p", source: other, revision: "3" }]))
+  try arms(text, other, home, failed)
   return true
 }))
+
+/**
+ * Arms the full runs at seeds 20261286 and 20261287 reached in only one seed or neither (0015, twentieth session):
+ * the action follow's uncertainty (#5348), a demotion, the People size control, a repeated issue request, the issue
+ * form's steps and kind keys, and the wiki editor's waiting submission, failure and request round trip.
+ */
+effect function arms(text: string, other: string, home: Model, failed: typeof initialIssues) {
+  const runs = [{ id: "q", state: "queued" }, { id: "r", state: "running" }, { id: "p", state: "passed" }]
+  for (const id of ["q", "r", "p", "x"]) for (const known of [[], ["q"], ["r"], ["q", "r"]] as ReadonlyArray<ReadonlyArray<string>>) {
+    const live = id === "q" || id === "r"
+    try check(`ActionFollow.failed ${id} ${known}`, same(ActionFollow.failed(known, id, runs), !live || known.includes(id) ? known : [...known, id]))
+  }
+  for (const known of [[], ["q", "p"], ["p", "x", "r"]] as ReadonlyArray<ReadonlyArray<string>>) {
+    try check(`ActionFollow.settled ${known}`, same(ActionFollow.settled(known, runs), known.filter((id) => id !== "p")))
+  }
+  for (const [left, right, equal] of [[[], [], true], [["a"], [], false], [["a", "b"], ["a", "b"], true], [["a", "b"], ["a", "c"], false], [["a"], ["b"], false]] as const) {
+    try check(`ActionFollow.same ${left} ${right}`, ActionFollow.same(left, right) === equal)
+  }
+  for (const found of [false, true]) for (const [person, target] of [["maintainer", "contributor"], ["contributor", "maintainer"], ["maintainer", "maintainer"]] as const) {
+    const verb = found && AccountView.roleRank(target) < AccountView.roleRank(person) ? "Demote" : "Promote"
+    try check(`roleDialog ${found} ${person} ${target}`, AccountView.roleDialog(found, person, target, "t", "").verb === verb && (found && person === "maintainer" && target === "contributor") === (verb === "Demote"))
+  }
+  try check("peopleToggled", ModelD.peopleToggled("max") === "pane" && ModelD.peopleToggled("pane") === "max")
+  for (const action of ["retry", "spec-review", "spec-revise", "comment", text]) for (const hasRetry of [false, true]) {
+    const expected = action === "retry" && hasRetry ? "retry" : action === "spec-review" ? "spec-review" : action === "spec-revise" ? "spec-revise" : "op"
+    try check(`issueRequestKind ${action} ${hasRetry}`, IssuesView.issueRequestKind(action, hasRetry) === expected)
+  }
+  for (let index = 0; index < 4; index++) for (const key of ["ArrowRight", "ArrowLeft", text.startsWith("Arrow") ? "x" : text]) {
+    try check(`kindKey ${index} ${key}`, IssuesView.kindKey(index, key) === (key === "ArrowRight" ? (index + 1) % 4 : key === "ArrowLeft" ? (index + 3) % 4 : -1))
+  }
+  for (const vip of [false, true]) for (const step of [1, 2, 3, 4]) {
+    const form = IssuesView.issueForm(vip, step)
+    try check(`issueForm ${vip} ${step}`, form.submit === (vip ? (step < 4 ? "continue" : "propose") : "new") && form.label === (vip ? (step < 4 ? "Continue" : "Submit VIP") : "New issue"))
+  }
+  // Retry resends the saved request under its own key, with a fresh recovery key.
+  const saved = { op: "comment" as const, number: 3, parent: 0, title: "", text: other || "x", example: "", prior: "", assignee: "VibeLang agent", key: "-4" }
+  const retried = issuesUpdate({ ...failed, retry: saved, error: "e" }, "retry", "")
+  try check(`issues retry ${JSON.stringify(retried.request ?? null)}`, retried.request !== undefined && same({ ...retried.request, recovery: undefined }, { ...saved, recovery: undefined }) && typeof retried.request.recovery === "string" && retried.request.recovery.endsWith(`-${retried.ui.serial}`))
+  // The wiki editor: a waiting submission resends with a new recovery key; a failure clears it only when unwritten.
+  const editing: Pane.WikiEditScreen = { page: "p", base: "b", text, busy: true, error: "" }
+  const waiting: WikiEditor.WikiDraft = { op: "save", page: "p", base: "a", text: other, key: "k1", recovery: "" }
+  for (const isWaiting of [false, true]) {
+    const step = WikiEditor.submittedWikiEdit(editing, "save", 2, isWaiting, waiting, "k2", "r2")
+    try check(`submittedWikiEdit ${isWaiting}`, step.serial === 3 && same(step.submission, isWaiting ? { ...waiting, recovery: "r2" } : { op: "save", page: "p", base: "b", text, key: "k2", recovery: "" }))
+  }
+  for (const unwritten of [false, true]) {
+    const failure = Pane.failedWikiEdit(editing, other, unwritten)
+    try check(`failedWikiEdit ${unwritten}`, failure.submission === (unwritten ? "clear" : "keep") && same(failure.state, { ...editing, busy: false, error: other }))
+    const model = { ...home, wikiEdit: { ...editing, submission: { op: "save" as const, page: "p", base: "a", text: other, key: "k1" } } }
+    const written = wikiFailedWrite(model, model.wikiEdit, failure.state, unwritten)
+    try check(`wikiFailedWrite ${unwritten}`, (written.wikiEdit?.submission === undefined) === unwritten && written.wikiEdit?.error === other)
+  }
+  try check("wikiDraft none", same(wikiDraft(undefined), { op: "save", page: "", base: "", text: "", key: "", recovery: "" }))
+  for (const recovery of [undefined, "r1"]) {
+    const request = { op: "save" as const, page: "p", base: "b", text: other, key: "k", ...(recovery === undefined ? {} : { recovery }) }
+    const draft = wikiDraft(request)
+    try check(`wikiDraft ${recovery}`, draft.recovery === (recovery ?? "") && same(wikiRequest(draft), request))
+  }
+}

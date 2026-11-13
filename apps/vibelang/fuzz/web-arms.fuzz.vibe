@@ -8,6 +8,7 @@ import { Factory, Refused, Unavailable } from "../src/core/Factory.vibe"
 import { IssueFailure, IssueRequest } from "../src/core/issueSchemas.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { pages, wikiEditable } from "../src/core/wiki.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { actionsOf } from "../src/web/actionModel.vibe"
 import {
@@ -67,7 +68,7 @@ const SCENARIOS = [
   "load-bare", "load-faulty", "load-roleless", "load-resumed", "act-live-kept", "act-live", "act-bare", "refresh-bare", "refresh-faulty", "grant",
   "sign-out-bare", "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-bare", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
   "control-tour", "read-action", "actions-faulty-epoch", "act-roleless", "draft-link", "theatre-keys", "auto-tour", "tour-events",
-  "wiki-bare", "wiki-unlisted", "details-bare", "sign-in-mock", "wiki-link",
+  "wiki-bare", "wiki-unlisted", "wiki-unwritten", "details-bare", "sign-in-mock", "wiki-link",
   "end-tour", "run-without-epoch", "issue-count", "details-mock",
   "sandbox-poll-unreachable", "open-wiki", "grant-bare", "run-json-blank", "people-bare", "people-faulty",
 ] as const
@@ -242,10 +243,21 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
         const home = init(FLAGS).model
         const model: Model = { ...home, actions: { ...actionsOf(home), runs: [run] } }
         const stream = try subscriptionOf("actionRuns", model)
+        // Before any loss: the clock ticks for the live run, and its first snapshot leaves nothing disconnected.
+        const document = try (try Experimental.Document.Document).current
+        const clock = (subscriptions(document, document) as unknown as Entries)["actionTime"]!
+        const { disconnected: _none, ...older } = actionsOf(model)
+        if (!same(clock.modelToDependencies(model), { active: true }) || !same(clock.modelToDependencies({ ...model, actions: older }), { active: true })) return false
+        for (const state of ["running", "passed"] as const) {
+          if (!same(clock.modelToDependencies({ ...model, actions: { ...older, runs: [{ ...run, state }] } }), { active: state === "running" })) return false
+        }
+        const first = try Effect.provide(Stream.runHead(stream), Layer.merge(Layer.succeed(Actions, actions), Layer.succeed(Factory, try Factory)))
+        if (Option.isNone(first) || first.value._tag !== "FollowedAction" || actionsOf(update(model, first.value).model).disconnected?.length !== 0) return false
         const got = try Effect.provide(Stream.runHead(stream), services)
         if (Option.isNone(got) || got.value._tag !== "FailedActionFollow") return false
         const lost = update(model, got.value).model
-        if (!actionsOf(lost).disconnected?.includes(id)) return false
+        // A run whose follow was lost is not shown as live: its clock stops.
+        if (!actionsOf(lost).disconnected?.includes(id) || !same(clock.modelToDependencies(lost), { active: false })) return false
         const again = try Effect.try(() => update(lost, Message.ReconnectedActions()).model)
         const recovered = try Effect.provide(Stream.runHead(try subscriptionOf("actionRuns", again)), services)
         if (Option.isNone(recovered) || recovered.value._tag !== "FollowedAction" || recovered.value.run.id !== id) return false
@@ -353,6 +365,13 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
         const got = try answer(() => SubmitWikiEdit({ request: { op: "save", page, base: opened.source, text: `${opened.source}\n${input.text.toWellFormed()}x`, key: `${input.key}-${input.number}` }, serial: input.number }))
         return got._tag === "CompletedWikiEdit" && got.revision === "" && got.review === ""
       }
+    }
+    case "wiki-unwritten": {
+      // A save the wiki refuses as certainly not written says so, so the editor may submit it afresh.
+      const page = pages.filter((entry) => wikiEditable(entry.id))[input.number % 2]!.id
+      const refusing = backendChanged(role, (factory) => ({ wiki: Object.assign(Object.create(factory.wiki!), { act: () => fail(new WikiFailure({ reason: "conflict", unwritten: true })) }) }))
+      const got = try Effect.provide(answer(() => SubmitWikiEdit({ request: { op: "save", page, base: "# A", text: "# B", key: input.key }, serial: input.number })), refusing)
+      return got._tag === "FailedWikiEdit" && got.reason === "conflict" && got.unwritten === true
     }
     case "details-bare": {
       const got = try Effect.provide(answer(() => LoadIssueDetails({ number: input.number + 1, key: input.key })), backend("bare", role))

@@ -454,3 +454,34 @@ it.live("screens/issues-chosen", () => scoped(effect {
     return true
   })
 }))
+
+/**
+ * Arms of the issues view that runs 20261286 and 20261287 reached in one seed or neither (0015, twentieth session): an
+ * issue with a parent names it in its tree and one without does not; the specification's failure offers Retry exactly
+ * when a request is saved; the kind control ignores a key that is not an arrow.
+ */
+it.live("screens/issue-arms", () => scoped(effect {
+  const records = try mockItems()
+  const child = records.find(item => item.parent !== 0 && item.vip === "")
+  const parent = records.find(item => item.parent === 0 && item.vip === "" && records.some(other => other.parent === item.number))
+  if (child === undefined || parent === undefined) throw new Finding({ report: "the mock records have no parent and child" })
+  try run("screens/issue-arms", Schema.Struct({ error: Text }), ({ error }) => effect {
+    const base = init({ session: "00000000-0000-4000-8000-000000000000", mode: "mock", name: "fuzz" }).model
+    const as = (ui: Partial<IssuesUi>): Model => ({ ...base, surface: "chat", issues: { ...initialIssues, open: true, status: "ready", role: "maintainer", data: { seq: 1, items: records }, ...ui }, account: { ...accountOf(base), identity: { ...accountOf(base).identity, role: "maintainer" } } })
+    const failure = `e${error}`
+    const saved = { op: "spec-revise" as const, number: 0, parent: 0, title: "", text: "S", assignee: "", example: "", prior: "", key: "k-1", revision: 0 }
+    const cases: ReadonlyArray<readonly [string, Model, (html: Html) => boolean]> = [
+      ["a child names its parent", as({ screen: "detail", selected: child.number }), html => findAll(html, ".ix-tree-parent").length === 1],
+      ["a parent names none", as({ screen: "detail", selected: parent.number }), html => findAll(html, ".ix-tree-parent").length === 0 && findAll(html, ".ix-tree-row").length > 0],
+      ["a failed revision without a saved request", as({ screen: "specification", error: failure }), html => count(html, "alert", /./) === 1 && count(html, "button", "Retry") === 0],
+      ["a failed revision with one", as({ screen: "specification", error: failure, retry: saved }), html => count(html, "alert", /./) === 1 && count(html, "button", "Retry") === 1],
+    ]
+    for (const [name, model, holds] of cases) {
+      let shown = false
+      try Effect.try(() => scene({ update, view }, given(model), (simulation: SceneSimulation<Model, Message>) => { shown = holds(simulation.html); return simulation }))
+      if (!shown) throw new Finding({ report: name })
+    }
+    try Effect.try(() => scene({ update, view }, given(as({ screen: "list" })), ...pressSteps({ target: "#ix-kind-All", handled: false }, "x")))
+    return true
+  })
+}))

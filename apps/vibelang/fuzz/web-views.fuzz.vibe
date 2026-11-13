@@ -314,5 +314,13 @@ it.live("web/issue-decisions", () => run("web/issue-decisions", IssueDecisionInp
     const again = issueAction(SCREEN, op, "", { ...FACTS, retryOp: op })
     if (again.request !== "saved" || !again.state.busy || again.state.serial !== SCREEN.serial) throw new Finding({ report: `${op} again` })
   }
+  // Retry recovers the saved action only when idle, with one saved and allowed; a VIP without a name asks for one.
+  for (const busy of [false, true]) for (const retryOp of ["", "comment"]) for (const retryAllowed of [false, true]) {
+    const retried = issueAction({ ...SCREEN, busy }, "retry", "", { ...FACTS, retryOp, retryAllowed })
+    const recovers = !busy && retryOp !== "" && retryAllowed
+    if (retried.request !== (recovers ? "recovery" : "idle") || retried.state.serial !== SCREEN.serial + (recovers ? 1 : 0)) throw new Finding({ report: `retry ${busy} ${retryOp} ${retryAllowed}` })
+  }
+  const unnamed = issueAction({ ...SCREEN, screen: "vip" }, "propose", "", { ...FACTS, blankTitle: true })
+  if (unnamed.request !== "none" || unnamed.state.error !== "Name the feature.") throw new Finding({ report: "an unnamed VIP" })
   return true
 }))

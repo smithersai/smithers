@@ -75,6 +75,13 @@ it.live("screens/wiki-and-people", () => run("screens/wiki-and-people", Schema.S
   const missing = try render(model({ client: { ...model({}).client, conversation: { ...model({}).client.conversation, pane: "/wiki/fuzz-missing" } } }))
   try check("missing page", missing.all(".vl-wiki-content").length === 1 && [".sui-md", ".sui-empty", ".sui-skeleton", ".vl-wiki-meta"].every((part) => missing.all(`.vl-wiki-content ${part}`).length === 0))
   // A query no page matches says so.
+  // A page opened from a reply shows right after that reply in the transcript, and not there while the docs are maximized.
+  const reply = { id: "e1", seq: 1, clientId: "", inReplyTo: "", author: "agent" as const, name: "Agent", text: "See the wiki", done: true, error: "" }
+  for (const docs of ["pane", "max"] as const) {
+    const placed = model({ docs, wikiAfter: "e1" })
+    const after = try render({ ...placed, client: { ...placed.client, conversation: { ...placed.client.conversation, entries: [reply] } } })
+    try check(`wiki after a reply ${docs}`, after.all("[aria-label='Conversation'] .vl-wiki-content").length === (docs === "pane" ? 1 : 0))
+  }
   const unmatched = try render(model({ wikiQuery: "\u0000no page\u0000" }))
   try check("no match", unmatched.all(".vl-wiki-content .sui-empty").length === 1 && unmatched.all(".vl-wiki-content .sui-md").length === 0)
   // The account menu's keys.

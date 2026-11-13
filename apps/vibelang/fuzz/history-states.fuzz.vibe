@@ -8,7 +8,7 @@ import { it } from "@effect/vitest"
 import { scene, given, change, keydown, findAll, getAllByRole, textContent, type as typeInto, type SceneSimulation } from "foldkit/scene"
 import type { Commit } from "../src/history/mythical.vibe"
 import type { CommitPage, EpicCount, EpicPage, Head } from "../src/history/pages.vibe"
-import { HistoryMessage, HistoryModel, init, NEW_EPIC, update } from "../src/web/historyApp.vibe"
+import { HistoryMessage, HistoryModel, type HistoryRead, init, NEW_EPIC, update } from "../src/web/historyApp.vibe"
 import { view } from "../src/web/historyView.vibe"
 import * as V from "../src/web/historyViewDecision.vibe"
 import { run, same, Finding, Text } from "./run.vibe"
@@ -138,6 +138,20 @@ it.live("screens/history-states", () => run("screens/history-states", Input, ({ 
   const ready = loaded("viewer", { pages })
   const late = try Effect.try(() => update(ready, HistoryMessage.GotOutline({ outline: { seq: 4, main: "old", epics: [], open: [] } })))
   try check("late outline", late.model === ready && (late.commands ?? []).length === 0)
+  // Read failures (#5344) show where their read belongs, each with its own Retry: the outline's and an open epic's on
+  // the list (not a commit's elsewhere or a blank filter's), a commit's on its page, a filter's over its matches.
+  const failures = (reads: ReadonlyArray<HistoryRead>) => reads.map((each) => ({ read: each, reason: "unavailable" }))
+  const epicRead: HistoryRead = { kind: "epic", id: "e1", from: 0 }
+  const outlineRead: HistoryRead = { kind: "outline", id: "", from: 0 }
+  const listed = try render(loaded("viewer", { open: ["e1", "e2"], readFailures: failures([epicRead, outlineRead, { kind: "commit", id: "m9", from: 0 }, { kind: "matches", id: "par", from: 0 }]) }), (simulation) => simulation)
+  try check("list read failures", listed.all("[role='alert']").length === 2 && listed.buttons().filter((name) => name === "Retry").length === 2
+    && listed.all("ul[aria-label='Compiler'][aria-busy='false']").length === 1 && listed.all("ul[aria-label='Docs'][aria-busy='true']").length === 1)
+  const blank = try render(loaded("viewer", { filter: " ", readFailures: failures([{ kind: "matches", id: " ", from: 0 }]) }))
+  try check("blank filter failure", blank.all("[role='alert']").length === 0)
+  const commitFailed = try render(loaded("viewer", { hash: "m7", readFailures: failures([{ kind: "commit", id: "m7", from: 0 }]) }))
+  try check("commit read failure", commitFailed.all("[role='alert']").length === 1 && commitFailed.buttons().includes("Retry") && commitFailed.all("h1").length === 0)
+  const matchFailed = try render(loaded("viewer", { filter: "par", matches: { seq: 5, query: "", commits: [] }, readFailures: failures([{ kind: "matches", id: "par", from: 0 }]) }))
+  try check("matches read failure", matchFailed.all("ul[aria-label='Matching commits'][aria-busy='false']").length === 1 && matchFailed.all("[role='alert']").length === 1)
   // Epic pages: in order, stale, detached.
   const base = loaded("viewer", { pages })
   const third = head("m4", "planned", "Third")

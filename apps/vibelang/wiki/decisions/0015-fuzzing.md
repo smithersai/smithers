@@ -546,6 +546,20 @@ lost event stream and one that ends both deliver `FailedEvents` after the outlin
 named `Signing in…` while an account request runs. Mutants caught: an ended stream that never disconnects; a
 sign-in button that stays enabled.
 
+Runs 20261286 and 20261287 at `41e3b5a8` passed all 293 tests; 45 arms in 13 `src/web` files were reached by one
+seed or neither, most of them in code landed that day (#5344 read failures, #5348 action follows). Each is now a
+chosen case: `web/decision-arms` holds `actionFollowDecision` (`failed`, `settled`, `same`), a demotion, the People
+size control, `issueRequestKind`, `kindKey`, `issueForm`, a retried issue request, and the wiki editor's waiting
+submission, failure and request round trip to their contracts; `web/issue-decisions` holds `issueAction`'s retry
+guards and an unnamed VIP; `screens/history-states` shows each read failure where its read belongs; the new
+`screens/issue-arms` renders a child's parent link, the specification's failure with and without Retry, and a
+non-arrow key on the kind control; `web/command-arms` adds the action clock (queued, running, finished, lost, and
+actions without a disconnected list), a follow's first snapshot, and a wiki save refused as unwritten
+(`wiki-unwritten`); `screens/wiki-and-people` shows the wiki pane after the reply that opened it, and not while the
+docs are maximized. All 45 arms are hit at seeds 20261293 and 20261294. Mutants caught (7 of 7): `failed` appending
+a known id, ArrowLeft moving right, retry ignoring `retryAllowed`, every commit failure shown on the list, no parent
+link, the clock ticking for a lost follow, no wiki pane after its reply.
+
 ### Product findings fixed
 
 | Finding | Target | Fix and regression |
