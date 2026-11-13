@@ -1,8 +1,9 @@
-import type { BrowserContext, Page, Route } from "@playwright/test"
+import type { Page } from "@playwright/test"
 import { statSync } from "node:fs"
 import { join } from "node:path"
 import { serveBuilds } from "./builds"
 import { expect, step, test } from "./fixtures"
+import { serverFaults } from "./server-faults"
 import { shapeRows } from "./shape"
 import { dropWord } from "./stackWrites"
 import { oldBuildDir, requires, stackRepository } from "./target"
@@ -37,23 +38,6 @@ const WEBKIT_ENDED = [
 expectServerError(403, "/api/repos/*/stack")
 expectServerError(409, "/api/model/summary")
 expectOfflineErrors()
-
-/** Holds every request to the stack's TODO shape that `hold` says to: it is never answered while held. */
-const holdTodos = async (context: BrowserContext, hold: (url: URL) => boolean) => {
-  const held: Array<Route> = []
-  const handler = async (route: Route) => {
-    const url = new URL(route.request().url())
-    if (url.pathname === "/api/shapes/todos" && hold(url)) held.push(route)
-    else await route.fallback()
-  }
-  await context.route("**/api/shapes/todos*", handler)
-  return {
-    release: async () => {
-      await context.unroute("**/api/shapes/todos*", handler)
-      for (const route of held.splice(0)) await route.abort().catch(() => undefined)
-    },
-  }
-}
 
 test(
   "deploy: the deployed build's queued, Requested and Not sent stack changes are this build's, and the queued one is sent once",
@@ -95,7 +79,8 @@ test(
       await draft.getByRole("button", { name: "Commit" }).click()
     }
     // Electric's live updates are held from the start, so a commit the route takes stays Requested.
-    let live = await holdTodos(context, (url) => url.searchParams.get("live") === "true")
+    const faults = serverFaults(context)
+    await faults.shapes.hold("todos-live")
     try {
       await step("Open the deployed build's stack", openStack)
       await step("Commit one the route takes: Requested, and Electric hasn't shown it", async () => {
@@ -104,16 +89,10 @@ test(
         await expect.poll(() => onServer(requested), { timeout: 30_000 }).toBe(1)
       })
       await step("Commit one the route refuses: Not sent", async () => {
-        const refuse = async (route: Route) => {
-          const body = route.request().postDataJSON() as { readonly title?: string } | null
-          if (route.request().method() === "POST" && body?.title === refused) {
-            await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ code: "forbidden" }) })
-          } else await route.fallback()
-        }
-        await context.route(`**/api/repos/${repo}/stack`, refuse)
+        await faults.stack.refuse()
         await commit(page, refused)
         await expect(notSent.getByRole("listitem").filter({ hasText: refused })).toContainText("Not allowed", { timeout: 30_000 })
-        await context.unroute(`**/api/repos/${repo}/stack`, refuse)
+        await faults.stack.heal()
         expect(await onServer(refused)).toBe(0)
       })
       await step("Go offline and commit one more: it waits in the outbox", async () => {
@@ -128,8 +107,7 @@ test(
 
       await step("Deploy: the origin serves this build, and Electric's TODO shape is held entirely", async () => {
         builds.use("new")
-        await live.release()
-        live = await holdTodos(context, () => true)
+        await faults.shapes.hold("todos")
       })
       await step("This build sends the queued commit once, and shows all three of the device's changes", async () => {
         await openStack()
@@ -139,7 +117,7 @@ test(
         await expect(notSent.getByRole("listitem").filter({ hasText: refused })).toContainText("Not allowed")
       })
       await step("With Electric's answer, both commits are numbered once, and the refused one is still Not sent", async () => {
-        await live.release()
+        await faults.shapes.heal()
         await page.reload()
         await expect(stack).toBeVisible({ timeout: 60_000 })
         for (const title of [requested, queued]) {
@@ -155,7 +133,8 @@ test(
       // lists them, and only a run whose every step passed excuses them.
       for (const text of WEBKIT_ENDED) expectConsoleError(text)
     } finally {
-      await live.release().catch(() => undefined)
+      await faults.stack.heal()
+      await faults.shapes.heal()
       // Off the front before it closes, so no request of the page's dies with it.
       await page.goto("about:blank").catch(() => undefined)
       await builds.close()

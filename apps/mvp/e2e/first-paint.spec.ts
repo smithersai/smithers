@@ -4,25 +4,17 @@
 import type { Page } from "@playwright/test"
 import type { EndRecord } from "../src/firstPaint/shell"
 import { expect, test } from "./fixtures"
-import { requires, target } from "./target"
+import { serverFaults } from "./server-faults"
+import { requires } from "./target"
 import { expectServerError } from "./watch"
-import { WEB_ANALYTICS_ANNOTATION, WEB_ANALYTICS_BROKEN } from "./browser-analytics.ts"
 
-if (target === "deployment") requires("trackingRepository")
-else requires("noGitHubApp")
+requires("localServer", "noGitHubApp")
 
-const repo = target === "local" ? "octocat/Spoon-Knife" : process.env.E2E_TRACKING_REPOSITORY ?? ""
+const repo = "octocat/Spoon-Knife"
 const painted = "smithers.first_paint.painted"
-
-test.beforeEach(async ({ browserName }, info) => {
-  if (target === "deployment" && browserName === "webkit") {
-    info.annotations.push({ type: WEB_ANALYTICS_ANNOTATION, description: WEB_ANALYTICS_BROKEN })
-  }
-})
 
 // Local development seeds its own real synced issue through the normal issues read.
 test.beforeAll(async ({ request }) => {
-  if (target !== "local") return
   const response = await request.get(`/api/repos/${repo}/issues?state=all&limit=1`)
   expect(response.status()).toBe(200)
   expect((await response.json()).length).toBeGreaterThan(0)
@@ -45,9 +37,9 @@ test.afterEach(async ({ page }, info) => {
 expectServerError(404, `/api/repos/${repo}/about`)
 expectServerError(404, `/api/repos/${repo}/refs`)
 
-test("a list still syncing: the painted rows sit under search and New issue, which both work", async ({ page }) => {
+test("a list still syncing: the painted rows sit under search and New issue, which both work", async ({ page, context }) => {
   // The page's own rows never arrive during this test.
-  await page.route("**/api/shapes/item-summaries*", () => undefined)
+  await serverFaults(context).shapes.hold("issues")
   await page.goto(`/${repo}/issues`)
   await expect(page.locator("#first-paint li").first()).toBeVisible({ timeout: 30_000 })
   const search = page.getByRole("textbox", { name: "Search issues" })
@@ -64,18 +56,16 @@ test("a list still syncing: the painted rows sit under search and New issue, whi
   await expect(page.locator("#first-paint")).toHaveCount(0)
 })
 
-test("typing a search takes the painted rows away: they were never its answer", async ({ page }) => {
-  await page.route("**/api/shapes/item-summaries*", () => undefined)
+test("typing a search takes the painted rows away: they were never its answer", async ({ page, context }) => {
+  await serverFaults(context).shapes.hold("issues")
   await page.goto(`/${repo}/issues`)
   await expect(page.locator("#first-paint li").first()).toBeVisible({ timeout: 30_000 })
   await page.getByRole("textbox", { name: "Search issues" }).fill("#1", { timeout: 30_000 })
   await expect(page.locator("#first-paint")).toHaveCount(0)
 })
 
-test("an issue still syncing: its painted title sits in the page, whose links work", async ({ page, request }) => {
-  await page.route("**/api/shapes/item-summaries*", () => undefined)
-  // Nor does the issue's own shape: its answer settles the page, which ends the paint as handed over before the click.
-  await page.route("**/api/shapes/items?*", () => undefined)
+test("an issue still syncing: its painted title sits in the page, whose links work", async ({ page, context, request }) => {
+  await serverFaults(context).shapes.hold("issues")
   const [issue] = (await (await request.get(`/api/repos/${repo}/issues?state=all&limit=1`)).json()) as Array<{ number: number; title: string }>
   await page.goto(`/${repo}/issues/${issue!.number}`)
   // The shell's placed title or the page's early read: both are real, authorized content while Electric is held.

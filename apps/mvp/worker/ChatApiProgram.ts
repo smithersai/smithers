@@ -80,6 +80,7 @@ import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
 import * as SocketAccess from "./SocketAccess.ts"
 import * as SocketChecks from "./SocketChecks.ts"
+import type { Sessions } from "./Actor.ts"
 import * as StackApi from "./stack/Api.ts"
 import * as IssueRead from "./stack/IssueRead.ts"
 import * as Stack from "./stack/Stack.ts"
@@ -132,6 +133,10 @@ const pools = { request: ChatDatabase, engine: EngineDatabase } as const
  * docs/features/agent-status.md#development).
  */
 export interface ProgramOptions {
+  /** A host may decorate sign-in's service; only the development host installs fault switches. */
+  readonly sessions?: Layer.Layer<Sessions, never, Sessions>
+  /** A host's shape transport, injected for old and new browser builds alike. */
+  readonly electricUpstream?: Layer.Layer<never, never, HttpServerRequest.HttpServerRequest>
   readonly fallback?: SignIn.Signed
   readonly teammates?: Readonly<Record<string, SignIn.Signed>>
   readonly newcomer?: (name: string) => SignIn.Signed | undefined
@@ -490,7 +495,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
               // Who is asking, and their role on a branch's repository for every branch check (decision 0079).
               const signedIn = Layer.mergeAll(
                 checks,
-                signIn.sessions.pipe(Layer.provide(checks)),
+                (options.sessions === undefined ? signIn.sessions : options.sessions.pipe(Layer.provideMerge(signIn.sessions))).pipe(Layer.provide(checks)),
                 BranchRoles.layer(roles)
               )
               // After the response, never before it: no request waits on a claim or a start (ctx.waitUntil).
@@ -654,7 +659,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         Effect.provideService(SocketAccess.roleFreshMs, roleFreshMs),
         // Every shape route calls Electric through the gateway's service binding in production (infra/ElectricUpstream.ts).
         Effect.provide(
-          Layer.unwrap(Effect.map(Effect.service(Cloudflare.WorkerEnvironment), ElectricUpstream.upstream))
+          Layer.mergeAll(
+            Layer.unwrap(Effect.map(Effect.service(Cloudflare.WorkerEnvironment), ElectricUpstream.upstream)),
+            options.electricUpstream ?? Layer.empty,
+          )
         ),
         Effect.provide(logs)
       )

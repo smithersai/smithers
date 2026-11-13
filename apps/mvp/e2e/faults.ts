@@ -5,10 +5,11 @@ import type { Switches } from "../src/test/e2e"
 import type { QuestionFault } from "../src/test/faults"
 import { guard } from "./target"
 
-// The only way an e2e test makes ChatApi or Electric fail (docs/rules.md, test.faults-by-injection): it opens the app
-// on its faulty services and throws their switches (src/test/e2e.ts). Nothing intercepts a request. A page at
-// `/app?faults` runs the real services behind those switches, healthy until a test throws one; `/app?faults=down`
-// opens it with sync already down. Happy paths open `/app`, on the real services alone.
+// Unhappy paths inject faulty Effect services (docs/rules.md, test.faults-by-injection). This helper switches the
+// browser's clients: a page at `/app?faults` runs the real services behind switches, healthy until a test throws one;
+// `/app?faults=down` opens it with sync already down. Happy paths open `/app`, on the real services alone.
+// `server-faults.ts` switches the development host's services for proofs shared by old and current browser builds.
+// Neither helper intercepts requests.
 
 /**
  * The app on its faulty services, healthy, or opened with a switch already thrown: a shape switch, or `session-503`,

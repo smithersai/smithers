@@ -822,6 +822,20 @@ describe("the specs", () => {
     return Promise.all(names.map(async (name) => ({ name, source: await readFile(join(dir, name), "utf8") })))
   }
 
+  it("docs search declares its separately hosted docs site before navigation", async () => {
+    const source = (await specs()).find(({ name }) => name === "docs-search-titles.spec.ts")!.source
+    expect(source).toMatch(/requires\("docsSite"\)/)
+    expect(source.indexOf('requires("docsSite")')).toBeLessThan(source.indexOf("page.goto"))
+  })
+
+  it("upgrade and first-paint faults never intercept requests", async () => {
+    const selected = (await specs()).filter(({ name }) => ["device-upgrade-todos.spec.ts", "first-paint.spec.ts"].includes(name))
+    expect(selected).toHaveLength(2)
+    for (const { source } of selected) {
+      expect(source).not.toMatch(/\.(route|routeFromHAR|routeWebSocket)\s*\(/)
+    }
+  })
+
   it("skip only by declaring a need", async () => {
     const offenders = (await specs()).filter(({ source }) => /\btest\.skip\(/.test(source)).map(({ name }) => name)
     expect(offenders, "use requires(...) from e2e/target.ts instead of test.skip").toEqual([])

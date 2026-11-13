@@ -28,7 +28,7 @@
     "test:worker-io-lint": "node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 eslint.worker-inflight.test.mjs",
     "test:failure-lint": "node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 eslint.frontend-failures.test.mjs",
     "test:mobile:visitors": "playwright test mobile.spec.ts --project=deployment --no-deps --grep 'signed out.*(curated-home|branch|doc-page|docs|home):'",
-    "test:production-runner": "node --import=vibelang/register --test e2e/resource-locks.test.mjs e2e/browserCapabilities.test.mjs",
+    "test:production-runner": "node --import=vibelang/register --test e2e/resource-locks.test.mjs e2e/browserCapabilities.test.mjs e2e/feed-turn.test.mjs",
     "deploy:install": "node infra/deploy/filter.mjs --install",
     "deploy:check": "node infra/deploy/filter.mjs --verify",
     "test:deploy": "node --test infra/deploy/*.test.mjs",

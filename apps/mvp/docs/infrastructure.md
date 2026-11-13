@@ -422,10 +422,24 @@ cd apps/mvp && ~/vault-ws-deployer/bin/mvp-prod-env node ops/deploy-smoke/run.ts
 It runs a short list of specs (`SPECS`, `ops/deploy-smoke/run.ts`) one after another, in Chromium and in WebKit, through `node e2e/prod.mjs`, each under its declared resource leases, prints one pass or fail line per spec with its log's path, and exits non-zero on any failure, having run them all. It finds production's Neon project itself: the one in `NEON_ORG_ID` that Alchemy named for the stage. Each spec on it proves a failure that reached production once:
 
 - `e2e/cold-path.spec.ts`: a person back after their role row expired, aged deterministically by `ops/role-age/expire.ts` (one row's `checked_at`, its role untouched): the first paint's read answers in time, `/role` and `/refs` never answer 503, and the next visit paints.
-- `e2e/first-paint.spec.ts`: search and New issue take a real click while a page still syncs, and nothing covers them.
+- `e2e/first-paint.spec.ts`: search and New issue take a real click while a page still syncs, and nothing covers them. It needs the development host's injected shape holds (`localServer`).
 - `e2e/runner-registration.spec.ts`, in Chromium alone (`{ spec, project }` in `SPECS`): the test account registers a runner and names a non-coding agent on its scratch repository through the fenced routes, each counts (the runner's receipt says it was set; the agent reads, which needs `reconfirm_at` null), and both are retired when the test ends, however it ended, and it fails if they can't be. The agent goes first and the runner only after it, because the sweep finds an agent through its runner. It never claims, so it doesn't prove `repo_authorized_at` (`e2e/agent-runner.spec.ts` does): a claim marks a runner seen, and a seen runner gone quiet raises a Runner offline alert. A killed worker skips that cleanup: its runner, never seen and holding no token, stays until the next deployment run's setup sweeps `e2e-` names, since registrations have no expiry. The same setup removes the agent of a retired `e2e-smoke-` runner, which a write that never answered can leave. It starts no runner and never asks for a git credential. The name is new each run. What stays is one removed `runners` row a run and the change records and receipts every Admin action keeps.
 
 Add a spec here only for a failure that shipped, and keep the list to a few minutes.
+
+### Faults shared by browser builds
+
+`e2e/server-faults.ts` switches the development Worker's injected `Sessions` and `ShapeProxy.Upstream` services.
+Its context-scoped fault headers hold selected shapes after authorization, keeping a cancellable clock event pending so
+workerd does not reject the hold as hung, or make the real stack handler refuse a write
+as a Guest. Fault selection adds no session cookies or device-binding requirement to older builds. Healing changes subsequent requests; navigate away or reload to cancel an already held request.
+`DevChatApi` alone installs these services. First-paint and device-upgrade fault proofs declare `localServer`;
+the old and new builds use the same host services, without browser request interception.
+The separately hosted docs-search proof declares `docsSite`, so local and `workers.dev` runs report that prerequisite.
+
+The factory-feed proof uses `ResourceLocks` through `FeedTurn` for each repository. A contender whose setup fails
+does no feed cleanup. The owner cleans its documents before releasing its nonce-checked lease, including when cleanup
+fails; a dead owner fails closed and is never reclaimed automatically.
 
 ### Against a deployment
 

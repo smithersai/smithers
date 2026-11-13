@@ -2,6 +2,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import { GitHub } from "@smthrs/integrations"
 import type * as Actor from "./Actor.ts"
 import { program, props } from "./ChatApi.ts"
+import * as DevFaults from "./DevFaults.ts"
 import { DEV_ASK_TOKEN } from "./AsksDev.ts"
 import { DEV_FEED_KEY } from "./feeds/dev.ts"
 import { repositoryOf } from "./github/Config.ts"
@@ -126,6 +127,8 @@ export default class DevChatApi extends Cloudflare.Worker<DevChatApi>()(
   "ChatApi",
   { ...props, main: "worker/DevChatApi.ts" },
   program({
+    sessions: DevFaults.sessions,
+    electricUpstream: DevFaults.electric,
     fallback,
     teammates,
     newcomer,

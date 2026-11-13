@@ -60,6 +60,8 @@ export default defineConfig({
         // runs only under Alchemy's bundle, so the workerd test proves it through ExecutionHost.ts instead.
         "worker/ExecutionHost.ts",
         "worker/index.ts",
+        // Injected development-host fault boundaries used by old and new browser builds.
+        "worker/DevFaults.ts",
         "worker/ci/*.ts",
         "worker/flows/**/*.{ts,vibe}",
         // External agents on runners (docs/features/agent-runners.md): their routes, store and Admin writes.

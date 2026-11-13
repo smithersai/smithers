@@ -1,4 +1,7 @@
 import { expect, test } from "./fixtures"
+import { requires } from "./target"
+
+requires("docsSite")
 
 test.use({ storageState: { cookies: [], origins: [] } })
 test("docs search shows each page title once and retains section matches", async ({ page }) => {
