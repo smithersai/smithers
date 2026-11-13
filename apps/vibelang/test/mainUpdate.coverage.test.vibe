@@ -120,17 +120,17 @@ describe("account", () => {
 })
 
 describe("issues", () => {
-  const data = (seq: number) => ({ seq, items: [] })
+  const data = (seq: number, role: "maintainer" | "viewer" = "maintainer") => ({ seq, items: [], role })
   it("a projection older than the one on screen is ignored", () => {
     const model: Model = { ...chat, issues: { ...initialIssues, data: data(5) } }
     expect(update(model, Message.IssueProjectionLoaded({ data: data(4) })).model).toBe(model)
     expect(update(model, Message.IssueProjectionLoaded({ data: data(6) })).model.issues?.data.seq).toBe(6)
   })
-  it("a first projection is applied closed, as maintainer on mock and viewer on live", () => {
-    const mock = update(chat, Message.IssueProjectionLoaded({ data: data(0) })).model.issues
-    const live = update({ ...chat, mode: "live" }, Message.IssueProjectionLoaded({ data: data(0) })).model.issues
-    expect(mock).toMatchObject({ open: false, role: "maintainer" })
-    expect(live).toMatchObject({ open: false, role: "viewer" })
+  it("a first projection is applied closed, with the role its host names", () => {
+    const maintainer = update({ ...chat, mode: "live" }, Message.IssueProjectionLoaded({ data: data(0, "maintainer") })).model.issues
+    const viewer = update(chat, Message.IssueProjectionLoaded({ data: data(0, "viewer") })).model.issues
+    expect(maintainer).toMatchObject({ open: false, role: "maintainer" })
+    expect(viewer).toMatchObject({ open: false, role: "viewer" })
   })
   it("opening a card loads details only on live", () => {
     expect(names(update(chat, Message.OpenIssueCard({ number: 3 })))).toEqual(["LoadIssues"])

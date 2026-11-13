@@ -2,12 +2,12 @@
 import { Factory, Unavailable, Refused } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { AccountUnavailable } from "../src/core/roles.vibe"
-import { IssueFailure, IssuesState, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { IssueFailure } from "../src/core/issueSchemas.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 
-export const Backend = Schema.Literals(["mock", "live", "bare", "faulty", "closing", "roleless"])
+export const Backend = Schema.Literals(["mock", "live", "bare", "faulty", "closing"])
 export const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
 export type Backend = typeof Backend.Type
 
@@ -48,22 +48,16 @@ function closingRoles(accounts: NonNullable<Factory.Shape["accounts"]>): NonNull
   return Object.assign(Object.create(accounts), { events: () => Stream.empty })
 }
 
-/** Issues whose answers carry no role, as a server that omits it: the client falls back to its mode's default. */
-function rolelessIssues(issues: NonNullable<Factory.Shape["issues"]>): NonNullable<Factory.Shape["issues"]> {
-  const strip = (state: typeof IssuesState.Type) => { const { role: _, ...rest } = state; return rest }
-  return Object.assign(Object.create(issues), { read: () => map(issues.read(), strip), act: (request: IssueRequest) => map(issues.act(request), strip) })
-}
-
 /** The same service object with some members replaced; a service's methods do not survive an object spread. */
 function changedFactory(factory: Factory.Shape, change: Record<string, unknown>): Factory.Shape {
   return Object.assign(Object.create(factory) as Factory.Shape, change)
 }
 
-/** The real mock Factory and Actions, the same seen as live, without the tour control, failing everywhere, with a role stream the server closes, or with role-less issue answers. */
+/** The real mock Factory and Actions, the same seen as live, without the tour control, failing everywhere, or with a role stream the server closes. */
 export function backend(kind: Backend, role: typeof Role.Type) {
   if (kind === "faulty") return Layer.merge(Layer.succeed(Factory, faulty), Layer.succeed(Actions, noActions))
   const mock = mockFactoryFor(role)
-  const changed = Layer.effect(Factory, map(Factory, (factory) => kind === "live" ? changedFactory(factory, { mode: "live" }) : kind === "bare" ? changedFactory(factory, { controlTour: undefined }) : kind === "closing" ? changedFactory(factory, { accounts: closingRoles(factory.accounts) }) : kind === "roleless" ? changedFactory(factory, { issues: rolelessIssues(factory.issues) }) : factory)).pipe(Layer.provide(mock))
+  const changed = Layer.effect(Factory, map(Factory, (factory) => kind === "live" ? changedFactory(factory, { mode: "live" }) : kind === "bare" ? changedFactory(factory, { controlTour: undefined }) : kind === "closing" ? changedFactory(factory, { accounts: closingRoles(factory.accounts) }) : factory)).pipe(Layer.provide(mock))
   return Layer.provideMerge(MockActions({ actor: "person" }), changed)
 }
 

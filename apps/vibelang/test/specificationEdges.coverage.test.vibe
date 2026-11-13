@@ -127,7 +127,8 @@ describe("the chat agent's review request", () => {
   it.effect("names the seat with no verdict when an issues service answers without a specification", () => effect {
     // A faulty issues service: it accepts the request but its state carries no specification at all.
     const asked: Array<IssueRequest> = []
-    const api: IssuesApi = { read: () => succeed(emptyIssues), act: (request) => sync(() => { asked.push(request); return emptyIssues }) }
+    const answer = { ...emptyIssues, role: "maintainer" as const }
+    const api: IssuesApi = { read: () => succeed(answer), act: (request) => sync(() => { asked.push(request); return answer }) }
     const reply = try requestedSpecificationReview(api, "Specification review by Claude Fable, please", "chat-2")
     try Effect.try(() => {
       expect(reply).toBe("Claude Fable ·  ·  · r0")

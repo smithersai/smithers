@@ -4874,7 +4874,6 @@ cases.extend([
  ('src/web/issueDecision.vibe', 'issue-card-live', 'issueCardLoadsDetails', 'mode === "live"', 'mode !== "live"', 'only live loads comments'),
  ('src/web/issueDecision.vibe', 'issue-clicked', 'clickedIssuesLoads', '!busy', 'busy', 'a mutation is not raced'),
  ('src/web/issueDecision.vibe', 'issue-projection', 'issueProjectionApplies', 'incoming >= current', 'incoming > current', 'an equal projection applies'),
- ('src/web/issueDecision.vibe', 'issue-role', 'issueDefaultRole', '"maintainer" : "viewer"', '"viewer" : "maintainer"', 'mock acts as maintainer'),
  ('src/web/issueDecision.vibe', 'issue-data-draft', 'issueDataApplies', '!hasDraft && ', '', 'a draft does not replace the data'),
  ('src/web/issueDecision.vibe', 'issue-data-seq', 'issueDataApplies', ' && incoming >= current', '', 'stale data does not replace the shown data'),
  ('src/web/issueDecision.vibe', 'issue-assignee-after', 'issueAssigneeAfter', 'present ? current : agent', 'present ? agent : current', 'a present assignee stays'),

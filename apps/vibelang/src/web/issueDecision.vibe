@@ -257,14 +257,6 @@ export function issueProjectionApplies(incoming: number, current: number): boole
   return incoming >= current
 }
 
-/** Without a server role, mock mode acts as maintainer and live mode as a viewer. */
-//@ verify
-//@ ensures mode == "mock" ==> \result == "maintainer"
-//@ ensures mode != "mock" ==> \result == "viewer"
-export function issueDefaultRole(mode: string): "maintainer" | "viewer" {
-  return mode === "mock" ? "maintainer" : "viewer"
-}
-
 /** A loaded projection replaces the data unless it is a draft or older than the one shown. */
 //@ verify
 //@ ensures \result == (!hasDraft && incoming >= current)

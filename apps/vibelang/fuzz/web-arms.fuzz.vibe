@@ -65,9 +65,9 @@ effect function answer(make: () => AnyCommand) {
 }
 
 const SCENARIOS = [
-  "load-faulty", "load-roleless", "load-resumed", "act-live-kept", "act-live", "refresh-faulty", "grant",
+  "load-faulty", "load-resumed", "act-live-kept", "act-live", "refresh-faulty", "grant",
   "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
-  "control-tour", "read-action", "actions-faulty-epoch", "act-roleless", "draft-link", "theatre-keys", "auto-tour", "tour-events",
+  "control-tour", "read-action", "actions-faulty-epoch", "draft-link", "theatre-keys", "auto-tour", "tour-events",
   "wiki-unlisted", "wiki-unwritten", "sign-in-mock", "wiki-link",
   "end-tour", "run-without-epoch", "issue-count", "details-mock", "details-faulty",
   "sandbox-poll-unreachable", "open-wiki", "run-json-blank", "people-faulty",
@@ -143,10 +143,8 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
   const role = input.role
   try goTo("/")
   switch (scenario) {
-    case "load-faulty": case "load-roleless": {
-      const layer = scenario === "load-faulty" ? backend("faulty", role) : backend("roleless", role)
-      const got = try Effect.provide(answer(() => LoadIssues({})), layer)
-      if (scenario === "load-roleless") return got._tag === "IssuesLoaded" && got.role === "maintainer"
+    case "load-faulty": {
+      const got = try Effect.provide(answer(() => LoadIssues({})), backend("faulty", role))
       return got._tag === "IssuesFailed" && got.reason === "unavailable"
     }
     case "load-resumed": {
@@ -281,13 +279,6 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
     case "actions-faulty-epoch": {
       const got = try Effect.provide(answer(() => LoadActions({ flow: "", epoch: input.number })), backend("faulty", role))
       return got._tag === "FailedActions" && got.code === "fault" && got.epoch === input.number
-    }
-    case "act-roleless": {
-      provide backend("roleless", "maintainer") {
-        const request = { op: "comment" as const, number: try issueNumber(input.number), parent: 0, title: "", text: "Looks right.", assignee: "", example: "", prior: "", key: input.key }
-        const got = try answer(() => ActOnIssue({ request }))
-        return got._tag === "IssuesLoaded" && got.role === "maintainer"
-      }
     }
     case "draft-link": {
       const document = try (try Experimental.Document.Document).current

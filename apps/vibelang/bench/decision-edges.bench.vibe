@@ -3,7 +3,7 @@
 // expected values written out here, not computed by the code under test.
 import { it, expect } from "@effect/vitest"
 import { accountFailureText, actionsEpochCurrent, actionsFailureApplies, slashHighlight, maximizedActions, updatedActionInput, retriedActions, failedActions, type ActionScreen } from "../src/web/modelDecision.vibe"
-import { issueAction, issueDefaultRole, issueAssigneeAfter, issueLoaded, type IssueScreen, type IssueFacts } from "../src/web/issueDecision.vibe"
+import { issueAction, issueAssigneeAfter, issueLoaded, type IssueScreen, type IssueFacts } from "../src/web/issueDecision.vibe"
 import { readOffsets, closesDialog } from "../src/web/historyDecision.vibe"
 import { docsPath } from "../src/core/tourDecision.vibe"
 import { recordSpecificationReview, type Specification, type SpecificationReview } from "../src/core/conversation.vibe"
@@ -51,8 +51,6 @@ function check() {
   expect(issueAction(screen, "spec-review", "sol", { ...facts, retryOp: "comment" })).toEqual({ state: { ...screen, error: "Retry the saved action." }, request: "none", focusCommit: false })
   expect(issueAction({ ...screen, busy: true }, "spec-review", "sol", facts)).toEqual({ state: { ...screen, busy: true }, request: "idle", focusCommit: false })
   expect(issueAction(screen, "spec-review", "sol", { ...facts, allowed: false })).toEqual({ state: screen, request: "idle", focusCommit: false })
-  expect(issueDefaultRole("mock")).toBe("maintainer")
-  expect(issueDefaultRole("live")).toBe("viewer")
   expect(issueAssigneeAfter(true, "will", "agent")).toBe("will")
   expect(issueAssigneeAfter(false, "will", "agent")).toBe("agent")
   // A settled creation opens the new issue; an unsettled load keeps the draft and the dialog.

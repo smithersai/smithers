@@ -14,6 +14,7 @@ const OP = Schema.Literals(["read", "new", "comment", "split", "propose", "draft
 const Step = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("open-card"), number: Int }),
   Schema.Struct({ kind: Schema.Literal("clicked-issues") }),
+  // A projection names its role, as every host does; saved inputs from before that carry none, and answer as a viewer.
   Schema.Struct({ kind: Schema.Literal("projection"), seq: Int, role: Schema.optionalKey(ROLE), items: Int }),
   Schema.Struct({ kind: Schema.Literal("issue-ui"), action: Schema.Literals(["select", "retry", "close", "new-form", "vip-form", "title", "new", "comment", "back", "list", "unknown", "commit-dialog", "split-dialog", "link-dialog", "cancel", "commit", "uncommit", "assignee"]), value: Schema.Union([Schema.Literals(["1", "2", "45", ""]), Text]) }),
   Schema.Struct({ kind: Schema.Literal("loaded"), seq: Int, items: Int, created: Schema.Boolean, role: ROLE, op: Schema.optionalKey(OP), key: Schema.optionalKey(Schema.Literals(["k", "s-1"])), draft: Schema.Boolean, saved: Schema.optionalKey(Schema.Literals(["running", "failed", "completed"])), agent: Schema.Boolean, selected: Schema.optionalKey(Int) }),
@@ -75,7 +76,7 @@ function messageOf(step: Exclude<Step, Restore | Dialog>, items: ReadonlyArray<I
     case "open-card": return Message.OpenIssueCard({ number: step.number })
     case "account": return Message.AccountLoaded({ identity: { id: step.person === 0 ? "" : `p${step.person}`, login: `p${step.person}`, role: step.role } })
     case "clicked-issues": return Message.ClickedIssues()
-    case "projection": return Message.IssueProjectionLoaded({ data: { seq: step.seq, items: records(step.items), ...(step.role === undefined ? {} : { role: step.role }) } })
+    case "projection": return Message.IssueProjectionLoaded({ data: { seq: step.seq, items: records(step.items), role: step.role ?? "viewer" } })
     case "issue-ui": return Message.IssueUi({ action: step.action, value: step.value })
     case "loaded": {
       const request = { op: step.op ?? "new", number: 0, parent: 0, title: "T", text: "S", assignee: "", example: "", prior: "", key: step.key ?? "k" }

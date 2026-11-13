@@ -1,5 +1,5 @@
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { IssueFailure, type IssueRequest, IssuesState, type IssuesApi } from "./issueSchemas.vibe"
+import { IssueFailure, type IssueRequest, IssuesAnswer, type IssuesApi } from "./issueSchemas.vibe"
 import { exactOk } from "./liveAnswerDecision.vibe"
 export effect function liveIssues(origin: string): IssuesApi!!HttpClient.HttpClient {
   const client = try HttpClient.HttpClient
@@ -12,7 +12,7 @@ export effect function liveIssues(origin: string): IssuesApi!!HttpClient.HttpCli
       throw new IssueFailure(Option.isSome(failure) ? failure.value : { reason: "unavailable" })
     }
     const body = try response.json.pipe(Effect.mapError(() => new IssueFailure({ reason: "protocol" })))
-    return try Schema.decodeUnknownEffect(IssuesState)(body).pipe(Effect.mapError(() => new IssueFailure({ reason: "protocol" })))
+    return try Schema.decodeUnknownEffect(IssuesAnswer)(body).pipe(Effect.mapError(() => new IssueFailure({ reason: "protocol" })))
   }
   return { read: () => call(), act: call }
 }

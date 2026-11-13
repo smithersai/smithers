@@ -261,8 +261,6 @@ it.live("web/command-bodies", () => run("web/command-bodies", Bodies, ({ backend
   const expected = ANSWERS[body.command]
   if (answer._tag !== expected.failed && !expected.ok.includes(answer._tag)) return false
   if (mustFail(kind, wiki, body.command) && answer._tag !== expected.failed) return false
-  // An issue answer without a role takes the mock's default, maintainer (IssueDecision.issueDefaultRole).
-  if (kind === "roleless" && answer._tag === "IssuesLoaded" && answer.role !== "maintainer") return false
   if (body.command === "RunAction" && body.format === "json" && body.text.trim() !== "" && Exit.isFailure(Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Json))(body.text))) {
     if (answer._tag !== "FailedActions" || answer.code !== "input") return false
   }

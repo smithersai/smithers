@@ -285,9 +285,6 @@ it.effect("issue commands load the projection, act, and report outages without a
       Effect.provideService(run(() => LoadIssues({})), Factory, broken),
       Effect.provideService(run(() => ActOnIssue({ request: read })), Factory, broken),
     ])
-    const roleless = { read: () => succeed({ seq: 0, items: [] }), act: () => succeed({ seq: 0, items: [] }) }
-    const mockDefault = try Effect.provideService(run(() => LoadIssues({})), Factory, overlaid(factory, { issues: roleless }))
-    const mockActDefault = try Effect.provideService(run(() => ActOnIssue({ request: read })), Factory, overlaid(factory, { issues: roleless }))
     const noDetails = try Effect.provideService(run(() => LoadIssueDetails({ number: 2, key: "x" })), Factory, broken)
     const refreshDown = try Effect.provideService(run(() => RefreshIssueProjection({})), Factory, broken)
     try Effect.try(() => {
@@ -297,8 +294,6 @@ it.effect("issue commands load the projection, act, and report outages without a
       expect(details._tag).toBe("IssueDetailsLoaded")
       expect(refreshed._tag).toBe("IssueProjectionLoaded")
       for (const failure of failures) expect(failure).toMatchObject({ _tag: "IssuesFailed", reason: "unavailable" })
-      expect(mockDefault).toMatchObject({ _tag: "IssuesLoaded", role: "maintainer" })
-      expect(mockActDefault).toMatchObject({ _tag: "IssuesLoaded", role: "maintainer", created: false })
       expect(noDetails).toEqual({ _tag: "IssueDetailsFailed", number: 2 })
       expect(refreshDown).toEqual({ _tag: "IssueDialogFocused" })
     })
@@ -341,7 +336,7 @@ it.live("the palette opens and closes a real dialog, docks focus on the composer
 describe("live issue writes keep their way back in the address", () => {
   const write: IssueRequest = { op: "new", number: 0, parent: 0, title: "t", text: "b", assignee: "", example: "", prior: "", key: "k1" }
   const resume = "/?issues=1&resume-op=new&resume-key=k1"
-  const state = { seq: 1, items: [] }
+  const state = { seq: 1, items: [], role: "viewer" as const }
   /** The address while the write runs and after it answers. */
   effect function addresses(request: IssueRequest, answer: typeof state!IssueFailure) {
     const factory = try Factory
@@ -351,7 +346,7 @@ describe("live issue writes keep their way back in the address", () => {
     const message = try Effect.provideService(run(() => ActOnIssue({ request })), Factory, overlaid(factory, { mode: "live", issues: api }))
     return { during, after: try sync(fullLocation), message }
   }
-  it.effect("a finished write clears its resume address and opens as a viewer without a role", () => effect {
+  it.effect("a finished write clears its resume address and opens as the viewer its host names", () => effect {
     provide MockFactory {
       const { during, after, message } = try addresses(write, succeed(state))
       try Effect.try(() => {
@@ -384,7 +379,7 @@ describe("live issue writes keep their way back in the address", () => {
     provide MockFactory {
       const factory = try Factory
       const load = (saved: { readonly status: "running" | "completed" }, recovered: boolean) => effect {
-        const data = { seq: 1, items: [], saved: { request: write, status: saved.status, unwritten: false, selected: 1 } }
+        const data = { seq: 1, items: [], saved: { request: write, status: saved.status, unwritten: false, selected: 1 }, role: "viewer" as const }
         const api = { read: () => succeed(data), act: () => succeed(data) }
         try sync(() => setLocation(resume))
         const message = try Effect.provideService(run(() => recovered ? LoadIssues({ resumeOp: "new", resumeKey: "k1", resumeRecovery: "r" }) : LoadIssues({ resumeOp: "new", resumeKey: "k1" })), Factory, overlaid(factory, { mode: "live", issues: api }))

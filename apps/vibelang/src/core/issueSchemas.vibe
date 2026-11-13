@@ -24,11 +24,14 @@ export const IssueRequest = Schema.Struct({
 })
 export const IssuesState = Schema.Struct({ specification: Schema.optionalKey(Specification), specificationHistory: Schema.optionalKey(Schema.Array(SpecificationEvent)), saved: Schema.optionalKey(Schema.Struct({ request: IssueRequest, status: Schema.Literals(["running", "failed", "completed"]), unwritten: Schema.Boolean, selected: Seq })), absoluteDates: Schema.optionalKey(Schema.Boolean), reviewers: Schema.optionalKey(Schema.Array(Schema.String)), seq: Seq, connected: Schema.optionalKey(Schema.Boolean), selected: Schema.optionalKey(Seq), assignees: Schema.optionalKey(Schema.Array(Schema.Struct({ login: Schema.String, label: Schema.String }))), items: Schema.Array(IssueRecord), role: Schema.optionalKey(Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])), stale: Schema.optionalKey(Seq), draft: Schema.optionalKey(Schema.Struct({ title: Schema.String, summary: Schema.String, example: Schema.String, prior: Schema.String })) })
 
+/** A host's answer: the projection and the caller's role. Every host names the role (the mock's and the Worker's). */
+export const IssuesAnswer = Schema.Struct({ ...IssuesState.fields, role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]) })
+
 export type IssueRequest = typeof IssueRequest.Type
 export schema error IssueFailure { reason: string; unwritten?: boolean; code?: string; retryAfterMillis?: number }
 export interface IssuesApi {
-  readonly read: () => typeof IssuesState.Type!IssueFailure
-  readonly act: (request: IssueRequest) => typeof IssuesState.Type!IssueFailure
+  readonly read: () => typeof IssuesAnswer.Type!IssueFailure
+  readonly act: (request: IssueRequest) => typeof IssuesAnswer.Type!IssueFailure
 }
 
 /** Person-readable Markdown, persisted in the repository, one feature per review. */

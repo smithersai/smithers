@@ -42,7 +42,7 @@ describe("issue changes", () => {
     const draft = { title: "A VIP", summary: "Why", example: "x", prior: "none" }
     const factory = only({ issues: {
       read: () => Effect.die("read"),
-      act: (request) => Effect.sync(() => { asked.push(request); return { seq: 3, items: [], draft } }),
+      act: (request) => Effect.sync(() => { asked.push(request); return { seq: 3, items: [], draft, role: "maintainer" as const } }),
     } })
     const base = { op: "draft", title: "A VIP", text: "Why", key: "k" }
     const resumed = try Effect.provideService(Issue.render({ ...base, resumeOp: "draft", resumeKey: "k0", resumeRecovery: "r0", recovery: "r1" }, false), Factory, factory)

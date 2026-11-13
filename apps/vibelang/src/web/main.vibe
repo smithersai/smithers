@@ -8,7 +8,7 @@ import { WALKTHROUGH, DEMO_QUESTION } from "../core/walkthroughSteps.vibe"
 import { TourPresentation, presentation } from "./theatre.vibe"
 import { surfaceTransition, toggleSandbox, maximizeSandbox, currentSandbox, canSandboxAction } from "./viewDecision.vibe"
 import { IssuesUi, initialIssues, issueScreen, issuesUpdate } from "./issues.vibe"
-import { IssueFailure, IssueRequest, IssuesState, IssueOperation } from "../core/issueSchemas.vibe"
+import { IssueFailure, IssueRequest, IssuesAnswer, IssuesState, IssueOperation } from "../core/issueSchemas.vibe"
 // The web app's Foldkit program: Model, Messages, update, Commands and Subscriptions. The view is `view.vibe`. Every
 // change to the conversation goes through the shared machine (`../core/conversation.vibe`); this file only adds what a
 // screen needs on top of it (wiki/decisions/0003-one-state-machine.md).
@@ -200,7 +200,7 @@ export const Message = defineMessageUnion({
   IssuesFailed: { unwritten: Schema.optionalKey(Schema.Boolean), reason: Schema.String, op: Schema.optionalKey(IssueOperation), key: Schema.optionalKey(Schema.String) },
   IssueDialogFocused: {},
   OpenIssueCard: { number: Schema.Number },
-  IssueProjectionLoaded: { data: IssuesState },
+  IssueProjectionLoaded: { data: IssuesAnswer },
   IssueDetailsLoaded: { data: IssuesState, number: Schema.Number },
   IssueDetailsFailed: { number: Schema.Number },
   ResolvedMode: { mode: Schema.Literals(["mock", "live"]) },
@@ -374,7 +374,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     RetriedAccount: () => ModelDecision.accountRetryPlan(accountOf(model).retry) === "sign-in" ? update(model, Message.ClickedSignIn()) : runAccount(model, ModelDecision.retriedAccount(accountScreen(model), accountOf(model).ledger.conversation.seq)),
     DismissedAccountError: () => runAccount(model, ModelDecision.dismissedAccountError(accountScreen(model))),
     OpenIssueCard: ({ number }) => ({ model: ModelWrite.issueScreenWrite(model, model.issues ?? initialIssues, IssueDecision.openedIssueCard(issueScreen(model.issues ?? initialIssues), number)), commands: [LoadIssues({}), ...(IssueDecision.issueCardLoadsDetails(model.mode) ? [LoadIssueDetails({ number, key: `${model.session}-card-${number}-${(model.issues?.serial ?? 0) + 1}` })] : [])] }),
-    IssueProjectionLoaded: ({ data }) => !IssueDecision.issueProjectionApplies(data.seq, model.issues?.data.seq ?? 0) ? { model } : { model: ModelWrite.issueProjectionWrite(model, model.issues ?? { ...initialIssues, open: false }, data, data.role ?? IssueDecision.issueDefaultRole(model.mode)) },
+    IssueProjectionLoaded: ({ data }) => !IssueDecision.issueProjectionApplies(data.seq, model.issues?.data.seq ?? 0) ? { model } : { model: ModelWrite.issueProjectionWrite(model, model.issues ?? { ...initialIssues, open: false }, data, data.role) },
     ClickedIssues: () => ({ model: ModelWrite.issuesOpenedWrite(model, model.issues ?? initialIssues), commands: IssueDecision.clickedIssuesLoads(model.issues?.busy === true) ? [LoadIssues({})] : [] }),
     IssueUi: ({ action, value }) => {
       const before = issueStateOf(model)
@@ -1439,7 +1439,7 @@ export const LoadIssues = Command.define("LoadIssues", {
       return resumeOp === undefined || resumeKey === undefined ? try factory.issues.read() : try factory.issues.act({ op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: `resume-${try Clock.currentTimeMillis}`, resumeOp, resumeKey, ...(resumeRecovery === undefined ? {} : { resumeRecovery }) })
     })
     if (factory.mode === "live" && result._tag === "Success" && result.success.saved?.status === "completed") try Navigation.replaceUrl("/?issues=1")
-    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: false, role: result.success.role ?? IssueDecision.issueDefaultRole(factory.mode) }) : Message.IssuesFailed({ reason: result.failure.reason }))
+    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: false, role: result.success.role }) : Message.IssuesFailed({ reason: result.failure.reason }))
   },
 })
 export const ActOnIssue = Command.define("ActOnIssue", {
@@ -1451,7 +1451,7 @@ export const ActOnIssue = Command.define("ActOnIssue", {
       return try factory.issues.act(request)
     })
     if (factory.mode === "live" && request.op !== "read" && request.op !== "draft" && (result._tag === "Success" || result.failure.unwritten === true)) try Navigation.replaceUrl("/?issues=1")
-    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: ["new", "split", "propose"].includes(request.op), op: request.op, key: request.key, role: result.success.role ?? IssueDecision.issueDefaultRole(factory.mode) }) : Message.IssuesFailed({ reason: result.failure.reason, op: request.op, key: request.key, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
+    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: ["new", "split", "propose"].includes(request.op), op: request.op, key: request.key, role: result.success.role }) : Message.IssuesFailed({ reason: result.failure.reason, op: request.op, key: request.key, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
   },
 })
 export const ShowIssueDialog = Command.define("ShowIssueDialog", {
