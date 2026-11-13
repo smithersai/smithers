@@ -19,7 +19,8 @@ import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as JournalMigrations from "@smthrs/journal/Migrations"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
-import { Effect, Fiber, Layer, Option, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Option, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import * as RunCatalog from "../src/RunCatalog.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as SyncProtocol from "../src/SyncProtocol.ts"
@@ -223,21 +224,16 @@ describe("SyncServer bounded fan-out liveness", () => {
       expect(Option.isSome(settled)).toBe(true)
     }))
 
-  it.live("serves an entry committed in this process before the tail interval elapses", () =>
+  it.effect("serves an entry committed in this process without a tail interval tick", () =>
     Effect.gen(function*() {
-      // The tail interval is the freshness policy for runs another process
-      // owns, which reach this one only through the database. It must not also
-      // be what a follower waits for an entry written beside it: the journal
-      // publishes every committed entry on `Journal.changes`, so a workspace
-      // subscription that covers the run is woken at once, exactly as a
-      // run-scoped subscription is. The interval here is two hundred times the
-      // budget, so arrival inside the budget cannot come from a tick.
+      // Freeze the interval while real journal commits run. Completion then
+      // requires a journal wake, and the catalog count proves no full
+      // interval round was needed.
       const runs = 5
-      const tailIntervalMs = 5000
-      const arrivalBudgetMs = 2000
       const { ids } = workspace(runs)
       const { record, seen } = recorder()
-      let elapsed = Number.NaN
+      const replayed = yield* Deferred.make<void>()
+      let lists = 0
       const database = Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename: ":memory:" }))
       const journal = SqlJournal.layer({ capacity: 64, overflow: "reject" }).pipe(
         Layer.provide(Layer.provideMerge(JournalMigrations.layer, database))
@@ -248,43 +244,52 @@ describe("SyncServer bounded fan-out liveness", () => {
             disableChecks: true
           })
         )
-      const live = yield* (
+      yield* (
         Effect.gen(function*() {
           const durable = yield* Journal.Journal
           for (const id of ids) yield* append(durable, id, "created")
-          const server = yield* SyncServer.makeLiveWith({ concurrency: 2, tailIntervalMs })
+          const server = yield* SyncServer.makeLiveWith({ concurrency: 2, tailIntervalMs: 5000 })
           const follower = yield* Effect.forkChild(
             Stream.runDrain(
               server.subscribe({ protocolVersion: 1, scope: { _tag: "Workspace" }, cursors: [], credit: runs * 2 })
                 .pipe(
-                  Stream.tap(record)
+                  Stream.tap((frame) =>
+                    record(frame).pipe(
+                      Effect.andThen(() => seen.length === runs ? Deferred.succeed(replayed, undefined) : Effect.void)
+                    )
+                  )
                 )
             ),
             { startImmediately: true }
           )
-          // The seeded round has to be done, or the wait below would be
-          // measuring the first round rather than the wake.
-          yield* Effect.sleep("10 millis").pipe(
-            Effect.repeat({ until: () => seen.length >= runs, times: 200 })
-          )
-          const startedAt = Date.now()
+          yield* Deferred.await(replayed)
+          const openingLists = lists
+          expect(openingLists).toBeGreaterThan(0)
           for (const id of ids) yield* append(durable, id, "live")
-          const joined = yield* Fiber.join(follower).pipe(Effect.timeoutOption(`${arrivalBudgetMs} millis`))
-          elapsed = Date.now() - startedAt
-          return joined
+          yield* Fiber.join(follower)
+          expect(lists).toBe(openingLists)
         }).pipe(
           Effect.provide(Layer.mergeAll(
             journal,
-            RunCatalog.layerStatic(ids),
+            Layer.succeed(
+              RunCatalog.RunCatalog,
+              RunCatalog.RunCatalog.of({
+                changes: Stream.empty,
+                list: Effect.sync(() => {
+                  lists++
+                  return ids
+                })
+              })
+            ),
             SyncPrincipal.layerWorkspace("fan-out-suite")
           )),
+          Effect.provide(TestClock.layer()),
           Effect.scoped
         )
       )
 
+      expect(seen.slice(0, runs).sort()).toEqual(["run-0", "run-1", "run-2", "run-3", "run-4"])
       expect(seen.slice(runs).sort()).toEqual(["run-0", "run-1", "run-2", "run-3", "run-4"])
-      expect(Option.isSome(live)).toBe(true)
-      expect(elapsed).toBeLessThan(tailIntervalMs)
     }))
 
   it.live("walks one run's backlog one page per woken round, in sequence order", () =>

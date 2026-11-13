@@ -181,11 +181,12 @@ describe("subscription lifetime", () => {
   // admission to a yes threw the expiry away, so a branch found this way
   // streamed for as long as the subscription lived: the exact revocation hole
   // the deadline exists to close, reached by the one door still open.
-  it.live("ends a subscription when a branch admitted after it opened expires", () =>
+  it.effect("ends a subscription when a branch admitted after it opened expires", () =>
     Effect.gen(function*() {
-      const listed = new Set<JournalEvent.RunId>()
+      const admitted = yield* Deferred.make<void>()
+      let lists = 0
       const served: Array<string> = []
-      const outcome = yield* (
+      const [inWindow, failure] = yield* (
         Effect.gen(function*() {
           const share = yield* BranchShare.BranchShare
           const capability = yield* share.mint({
@@ -211,19 +212,19 @@ describe("subscription lifetime", () => {
                       if (frame._tag === "Entries") {
                         for (const value of frame.entries) served.push(`${value.runId}:${value.seq}`)
                       }
-                    })
+                    }).pipe(Effect.andThen(() => Deferred.succeed(admitted, undefined)))
                 )
               )
             ),
             { startImmediately: true }
           )
-          // The branch appears while the subscription is live and inside its
-          // capability's window, so reconciliation is what admits it and the
-          // next round serves it.
-          listed.add(branchRun)
-          yield* Effect.sleep("500 millis")
+          // Crypto and catalog reconciliation finish with the clock frozen,
+          // so the branch is served before its signed expiry under any load.
+          yield* Deferred.await(admitted)
           const inWindow = [...served]
-          // Now past the capability's own expiry.
+          yield* TestClock.adjust(capability.claims.expiresAtMs - (yield* Clock.currentTimeMillis) - 1)
+          expect(following.pollUnsafe()).toBeUndefined()
+          yield* TestClock.adjust(1)
           return [inWindow, yield* Fiber.join(following)] as const
         }).pipe(
           Effect.provide(
@@ -234,25 +235,27 @@ describe("subscription lifetime", () => {
               }),
               Layer.succeed(
                 RunCatalog.RunCatalog,
-                RunCatalog.RunCatalog.of({ changes: Stream.empty, list: Effect.sync(() => Array.from(listed)) })
+                RunCatalog.RunCatalog.of({
+                  changes: Stream.empty,
+                  // Empty at open; reconciliation discovers the branch.
+                  list: Effect.sync(() => ++lists === 1 ? [] : [branchRun])
+                })
               ),
               shareLayer,
               SyncPrincipal.layerWorkspace("late-branch-owner")
             )
           ),
-          Effect.scoped,
-          Effect.timeoutOption("10 seconds")
+          Effect.provide(TestClock.layer()),
+          Effect.scoped
         )
       )
 
-      expect(outcome._tag).toBe("Some")
-      const [inWindow, failure] = outcome._tag === "Some" ? outcome.value : [[], undefined]
       // The branch WAS served inside its window, so the case is about expiry
       // and not about the run never becoming visible.
       expect(inWindow).toContain(`${branchRun}:0`)
-      expect(failure !== undefined && SyncError.is(failure)).toBe(true)
-      expect((failure as SyncError).code).toBe("unauthorized")
-      expect((failure as SyncError).message).toContain("expired")
+      expect(SyncError.is(failure)).toBe(true)
+      expect(failure.code).toBe("unauthorized")
+      expect(failure.message).toContain("expired")
     }))
 
   // Reconciliation lowers the deadline when it admits a branch, but the
@@ -263,13 +266,13 @@ describe("subscription lifetime", () => {
   // returned kept the subscription open for good. The interrupt now re-arms
   // whenever the deadline moves, so it ends the stream at the branch's expiry
   // whatever the round is doing.
-  it.live("emits nothing from a late-admitted branch once its capability expires mid-read", () =>
+  it.effect("emits nothing from a late-admitted branch once its capability expires mid-read", () =>
     Effect.gen(function*() {
       const entered = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
       const served: Array<string> = []
       let lists = 0
-      const outcome = yield* (
+      const failure = yield* (
         Effect.gen(function*() {
           const share = yield* BranchShare.BranchShare
           const capability = yield* share.mint({
@@ -296,12 +299,13 @@ describe("subscription lifetime", () => {
             ),
             { startImmediately: true }
           )
-          // The branch's first page is being read when its capability
-          // expires; the read returns only afterwards.
+          // Expiry must interrupt even a read that never returns. Wait for
+          // cancellation before releasing the held page.
           yield* Deferred.await(entered)
-          yield* Effect.sleep(`${capability.claims.expiresAtMs - (yield* Clock.currentTimeMillis) + 100} millis`)
+          yield* TestClock.adjust(capability.claims.expiresAtMs - (yield* Clock.currentTimeMillis))
+          const failure = yield* Fiber.join(following)
           yield* Deferred.succeed(release, undefined)
-          return yield* Fiber.join(following)
+          return failure
         }).pipe(
           Effect.provide(
             Layer.mergeAll(
@@ -326,16 +330,14 @@ describe("subscription lifetime", () => {
               SyncPrincipal.layerWorkspace("mid-read-owner")
             )
           ),
-          Effect.scoped,
-          Effect.timeoutOption("10 seconds")
+          Effect.provide(TestClock.layer()),
+          Effect.scoped
         )
       )
 
-      expect(outcome._tag).toBe("Some")
-      const failure = outcome._tag === "Some" ? outcome.value : undefined
       expect(lists).toBeGreaterThan(1)
-      expect(failure !== undefined && SyncError.is(failure)).toBe(true)
-      expect((failure as SyncError).code).toBe("unauthorized")
+      expect(SyncError.is(failure)).toBe(true)
+      expect(failure.code).toBe("unauthorized")
       expect(served).toEqual([])
     }))
 })

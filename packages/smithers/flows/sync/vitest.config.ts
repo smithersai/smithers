@@ -22,15 +22,10 @@ export default defineConfig({
     // an --expose-gc that never reached the worker looks.
     pool: "forks",
     execArgv: ["--expose-gc"],
-    // Vitest's 5 s default is a wall-clock budget, but no suite in this repo
-    // asserts on elapsed time — each is bounded by an explicit iteration,
-    // cycle, or completion count. The real gate runs those counts under v8
-    // coverage instrumentation across parallel workers, where cases that
-    // finish in well under a second in isolation have been measured 6-12x
-    // slower; that machine-load multiplier, not the workload, is what put
-    // correct suites over the default wall. Raise the budget instead of
-    // trimming the workload, and keep it FINITE so a genuine hang still
-    // fails the run rather than hanging the gate forever.
+    // Vitest's timeout bounds the real duration of every case, including
+    // asynchronous I/O under coverage and parallel workers. Keep it finite
+    // so a stalled suite fails. This does not extend a case's own live-clock
+    // timeout or capability lifetime; use TestClock when asserting timing.
     testTimeout: 30_000,
     hookTimeout: 30_000,
     coverage: {

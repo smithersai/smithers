@@ -3,9 +3,8 @@
  *
  * @since 0.1.0
  */
-// Every case here runs on real elapsed time — subprocess spawns, file locks,
-// mtimes, and poll loops — so the suite uses `it.live`; `it.effect`'s
-// TestClock never advances for them.
+// These in-memory RPC fault cases use `it.live` for their stall and reconnect
+// timeouts. They exercise socket queues without subprocesses or filesystem I/O.
 
 import { describe, expect, it } from "@effect/vitest"
 import { Journal, JournalEvent } from "@smthrs/journal"
