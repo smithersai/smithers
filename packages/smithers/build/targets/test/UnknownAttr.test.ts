@@ -10,6 +10,7 @@
  * remedy into the message.
  */
 import { describe, expect, it } from "vitest"
+import * as Attr from "../src/Attr.ts"
 import { Smithers } from "../src/index.ts"
 
 describe("an attr the rule does not have", () => {
@@ -49,5 +50,27 @@ describe("an attr the rule does not have", () => {
     // A type failure is not a spelling failure; the guidance must not fire.
     expect(() => Smithers.Filegroup({ srcs: "not-an-array" } as never))
       .not.toThrow(/unknown property/)
+  })
+})
+
+describe("shared Shell executable selectors", () => {
+  it("accepts every selector the Shell schema accepts", () => {
+    expect(Attr.executableSelectors).toEqual(["bin", "bun", "shell", "script"])
+    for (const selector of ["bin", "bun", "shell", "script"]) {
+      expect(() => Attr.requireOneExecutable("Shell", { [selector]: "program" })).not.toThrow()
+    }
+  })
+
+  it("rejects the removed command selector, missing selectors, and competing selectors", () => {
+    for (const attrs of [{ command: "echo hello" }, {}, { bin: "node", shell: "echo hello" }]) {
+      expect(() => Attr.requireOneExecutable("Shell", attrs)).toThrow(/exactly one of bin, bun, shell, script/)
+    }
+  })
+
+  it("keeps custom selector sets for generated-output declarations", () => {
+    expect(() => Attr.requireOneExecutable("Generate", { command: "echo hello" }, ["emit", "script", "bin", "command"]))
+      .not.toThrow()
+    expect(() => Attr.requireOneExecutable("Generate", { shell: "echo hello" }, ["emit", "script", "bin", "command"]))
+      .toThrow(/exactly one of emit, script, bin, command/)
   })
 })

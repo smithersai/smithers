@@ -620,7 +620,7 @@ const sources = S.glob("src/**/*.ts")
 const tests = S.glob("test/**/*.test.ts")
 const credential = S.HttpSecret(S.Secret("GITHUB_TOKEN"), ["https://api.github.com"])
 
-// Shell rules require exactly one of bin, bun, command, or script
+// Shell rules require exactly one of bin, bun, shell, or script
 const shellBuild = S.Shell.Build({
   bin: S.NodeModule.Bin("vocs"),
   args: ["build"],
@@ -828,7 +828,6 @@ const cargoBuild = S.Cargo.Build({
   lib: true,
   profile: "release",
   target: "x86_64-unknown-linux-gnu",
-  container: "docker",
   data: [cargoFetch, rustSources],
   outDirs: ["target/release"]
 })
@@ -1218,6 +1217,7 @@ const apt = S.CiToolchain.Apt({ packages: ["libssl-dev", "pkg-config"] })
 const go = S.CiToolchain.Go({ release: "1.26.0" })
 const foundry = S.CiToolchain.Foundry({ release: "v1.8.1" })
 const postgres = S.CiToolchain.Postgres({ release: "18" })
+// CI toolchain schemas validate these values even in plain-object declarations.
 const docker = S.CiToolchain.Docker({ imageStore: "containerd" })
 const jj = S.CiToolchain.Jj({ release: "0.39.0" })
 const rust = S.CiToolchain.Rust({

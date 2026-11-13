@@ -72,7 +72,7 @@ const sharedFields = {
   timeout: Schema.optional(Duration)
 } as const
 
-const executableSelectors = ["bin", "bun", "shell", "script"] as const
+const executableSelectors = Attr.executableSelectors
 
 const executableIssue = (attrs: ExecAttrs): string | undefined => {
   const selected = executableSelectors.filter((selector) => attrs[selector] !== undefined)

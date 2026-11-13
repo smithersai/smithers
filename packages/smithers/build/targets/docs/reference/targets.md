@@ -23,7 +23,7 @@ directly. Both packages are on npm under the `next` tag.
 
 ## Entry points
 
-The `exports` map publishes the index, every module under `src` through the `./*` subpath, and the manifest:
+The `exports` map publishes the root index, explicit public module subpaths, and the manifest. Internal source modules are not all exported:
 
 | Import                         | Source          | Platform         |
 | ------------------------------ | --------------- | ---------------- |
@@ -272,7 +272,7 @@ The manifest form reads `packageManager: "pnpm@<version>"`. An explicit `version
 - **Type:** the `Cargo` module
 - **Since:** `0.1.0`
 
-The cargo surface: `Cargo.Fetch`, `Cargo.Build`, `Cargo.Test`, `Cargo.Nextest`, `Cargo.Clippy`, `Cargo.Fmt`, `Cargo.Doc`, `Cargo.Deny`, and the `Cargo.AppSet` crate set. `Cargo.Build`, `Cargo.Test`, `Cargo.Nextest`, `Cargo.Clippy`, and `Cargo.Doc` construct targets with exactly one selector: `workspace: true`, `package: "<name>"`, or `crates: <set>`. `Cargo.Fmt` takes an attrs object with at most one of `workspace: true` or `crates: <set>`; omitting both uses the current workspace. `Cargo.Fetch` accepts at most one of `manifest` or `crates`. It is the one network-enabled cargo rule: its first `outDirs` entry becomes the `CARGO_HOME` every dependent reads.
+The cargo surface: `Cargo.Fetch`, `Cargo.Build`, `Cargo.Test`, `Cargo.Nextest`, `Cargo.Clippy`, `Cargo.Fmt`, `Cargo.Doc`, `Cargo.Deny`, and the `Cargo.AppSet` crate set. `Cargo.Build`, `Cargo.Test`, `Cargo.Nextest`, `Cargo.Clippy`, and `Cargo.Doc` construct targets with exactly one selector: `workspace: true`, `package: "<name>"`, or `crates: <set>`. `Cargo.Fmt` takes an attrs object with at most one of `workspace: true` or `crates: <set>`; omitting both uses the current workspace. `Cargo.Fetch` accepts at most one of `workspace` or `crates`. It is the one network-enabled cargo rule: its first `outDirs` entry becomes the `CARGO_HOME` every dependent reads.
 
 ### `Smithers.Shell`
 

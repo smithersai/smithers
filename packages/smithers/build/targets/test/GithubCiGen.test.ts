@@ -2234,3 +2234,100 @@ describe("per-commit drift workflow", () => {
     expect(Object.keys(Job.fields)).not.toContain("trustedSetupRevision")
   })
 })
+
+describe("toolchain schema admission", () => {
+  const fields = [
+    {
+      name: "registry mirror",
+      bad: ["x'; printf injected; '", "http://mirror.example", "https://mirror.example/a'b", ""],
+      good: ["https://mirror.example", "https://mirror.example:443/cache/path"],
+      needs: (value: string) => ({ docker: { imageStore: "containerd" as const, registryMirrors: [value] } }),
+      make: (value: string) => CiToolchain.DockerSetup.make({ imageStore: "containerd", registryMirrors: [value] })
+    },
+    {
+      name: "browser executable",
+      bad: ["chrome; printf injected", "-chrome", "chrome*", "/usr/../bin/chrome", ""],
+      good: ["chrome", "/usr/bin/chromium", "./bin/chrome"],
+      needs: (value: string) => ({ browser: { executable: value, reason: "browser tests" } }),
+      make: (value: string) => CiToolchain.SystemBrowser.make({ executable: value, reason: "browser tests" })
+    },
+    {
+      name: "artifact source",
+      bad: ["reports'; printf injected; '", "../reports", "reports/../private", ""],
+      good: ["reports/results.xml", "reports/*.xml"],
+      needs: (value: string) => ({ artifacts: { artifact: "evidence", sources: [{ from: value }] } }),
+      make: (value: string) => CiToolchain.ArtifactSource.make({ from: value })
+    },
+    {
+      name: "artifact destination",
+      bad: ["reports'; printf injected; '", "../reports", ""],
+      good: ["results", "reports/results.xml"],
+      needs: (value: string) => ({ artifacts: { artifact: "evidence", sources: [{ from: "reports", as: value }] } }),
+      make: (value: string) => CiToolchain.ArtifactSource.make({ from: "reports", as: value })
+    },
+    {
+      name: "artifact name",
+      bad: ["evidence'; printf injected; '", "../evidence", ""],
+      good: ["evidence", "test-results"],
+      needs: (value: string) => ({ artifacts: { artifact: value, sources: [] } }),
+      make: (value: string) => CiToolchain.ArtifactUpload.make({ artifact: value, sources: [] })
+    },
+    {
+      name: "workflow path",
+      bad: ["ci.yml'; printf injected; '", "../ci.yml", ""],
+      good: [".github/workflows/ci.yml", ".github/workflows/*.yml"],
+      needs: (value: string) => ({
+        workflowLint: { release: "1.7.11" as const, workflows: [value] }
+      }),
+      make: (value: string) => CiToolchain.WorkflowLint.make({ release: "1.7.11", workflows: [value] })
+    },
+    {
+      name: "Node version file",
+      bad: ["/version", "../.node-version", "sub/../../version", "version'; printf injected; '", ""],
+      good: [".node-version", "toolchain/node-version", "node..version"],
+      needs: (value: string) => ({
+        runtimes: [{ name: "node" as const, versionFile: value, cachePackageStore: true }]
+      }),
+      make: (value: string) => Schema.decodeUnknownSync(CiToolchain.NodeVersionFile)(value)
+    }
+  ]
+
+  it.each(fields)("refuses unsafe $name values through every schema entry point", ({ bad, needs, make }) => {
+    for (const value of bad) {
+      const raw = { ...CiToolchain.Needs(), ...needs(value) }
+      expect(() => make(value), value).toThrow()
+      expect(() => CiToolchain.Needs(raw), value).toThrow()
+      expect(() => CiToolchain.Toolchain.make(raw), value).toThrow()
+      expect(() => Schema.decodeUnknownSync(CiToolchain.Toolchain)(raw), value).toThrow()
+    }
+  })
+
+  it.each(fields)("admits usable $name values through every schema entry point", ({ good, needs, make }) => {
+    for (const value of good) {
+      const raw = { ...CiToolchain.Needs(), ...needs(value) }
+      expect(() => make(value), value).not.toThrow()
+      expect(CiToolchain.Needs(raw)).toMatchObject(raw)
+      expect(CiToolchain.Toolchain.make(raw)).toMatchObject(raw)
+      expect(Schema.decodeUnknownSync(CiToolchain.Toolchain)(raw)).toMatchObject(raw)
+    }
+  })
+
+  it("refuses a raw mirror payload before it can enter a generated shell script", () => {
+    const unsafe = {
+      ...CiToolchain.Needs({ runtimes: [node] }),
+      docker: { imageStore: "containerd" as const, registryMirrors: ["x'; printf injected; '"] }
+    }
+    expect(() =>
+      render({
+        ...goldenAttrs,
+        gates: [],
+        jobs: [{
+          id: "test",
+          runsOn: "ubuntu-latest",
+          toolchain: unsafe,
+          steps: [{ verb: Verb.Test, pattern: "//..." }]
+        }]
+      })
+    ).toThrow()
+  })
+})

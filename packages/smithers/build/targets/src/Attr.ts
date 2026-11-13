@@ -248,7 +248,7 @@ export const Stop = Schema.Struct({
  * @category constants
  * @since 0.1.0
  */
-export const executableSelectors = ["bin", "bun", "command", "script"] as const
+export const executableSelectors = ["bin", "bun", "shell", "script"] as const
 
 /**
  * Requires exactly one executable selector among the present attrs.

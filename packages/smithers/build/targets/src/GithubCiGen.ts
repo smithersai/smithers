@@ -972,7 +972,7 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
     // daemon.json is merged rather than replaced, because the hosted image
     // configures the daemon there and dropping that would change every other
     // docker invocation in the job.
-    const mirrors = needs.docker.registryMirrors ?? []
+    const mirrors = CiToolchain.DockerSetup.make(needs.docker).registryMirrors ?? []
     steps.push({
       name: "Enable the containerd image store",
       shell: "bash",
@@ -993,7 +993,7 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
         // With mirrors the daemon is restarted whenever the merged
         // configuration differs from the current one, whatever its storage
         // driver: a daemon already on containerd still needs the mirrors.
-        // `CiToolchain.Docker` admits only plain https URLs, so the JSON list
+        // The DockerSetup schema admits only plain https URLs, so the JSON list
         // is safe inside single quotes.
         : [
           "if command -v docker >/dev/null 2>&1 && [ \"$(uname -s)\" = Linux ]; then",

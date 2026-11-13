@@ -66,7 +66,12 @@ export type NodeRelease = typeof NodeRelease.Type
  * @category schemas
  * @since 1.0.0
  */
-export const NodeVersionFile = Schema.String
+export const NodeVersionFile = Schema.String.check(
+  Schema.makeFilter((value) =>
+    /^[\w.][\w./-]*$/.test(value) && !value.split("/").includes("..")
+    || "Node version file must be workspace-relative"
+  )
+)
 
 /**
  * A workspace-relative file naming the Node release to install.
@@ -220,7 +225,7 @@ export const Node = (options: {
   // that climbs out of the workspace names something the runner does not have.
   if (
     options.versionFile !== undefined
-    && (!/^[\w.][\w./-]*$/.test(options.versionFile) || options.versionFile.split("/").includes(".."))
+    && !Schema.is(NodeVersionFile)(options.versionFile)
   ) {
     throw new Error(`CiToolchain.Node: versionFile must be workspace-relative: ${JSON.stringify(options.versionFile)}`)
   }
@@ -462,6 +467,10 @@ export const PostgresSetup = Schema.Struct({ release: PostgresRelease })
  */
 export type PostgresSetup = typeof PostgresSetup.Type
 
+const registryMirrorSchema = Schema.String.check(
+  Schema.isPattern(/^https:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?(?:\/[A-Za-z0-9._~/-]*)?$/)
+)
+
 /**
  * Schema for the docker daemon configuration a job needs.
  *
@@ -484,7 +493,7 @@ export type PostgresSetup = typeof PostgresSetup.Type
  */
 export const DockerSetup = Schema.Struct({
   imageStore: Schema.Literal("containerd"),
-  registryMirrors: Schema.optional(Schema.Array(Schema.String))
+  registryMirrors: Schema.optional(Schema.Array(registryMirrorSchema))
 })
 
 /**
@@ -582,7 +591,7 @@ export const Docker = (options: {
 }): DockerSetup => {
   const mirrors = options.registryMirrors ?? []
   for (const mirror of mirrors) {
-    if (!/^https:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?(?:\/[A-Za-z0-9._~/-]*)?$/.test(mirror)) {
+    if (!Schema.is(registryMirrorSchema)(mirror)) {
       throw new TypeError(`CiToolchain.Docker: registry mirror ${JSON.stringify(mirror)} is not an https URL`)
     }
   }
@@ -752,6 +761,10 @@ export const Nix = (options: {
  */
 export const pathShape: RegExp = Input.stepPathShape
 
+const stepPathSchema = Schema.NonEmptyString.check(
+  Schema.makeFilter((value) => pathShape.test(value) && !value.includes("..") || "is not a usable step path")
+)
+
 /**
  * Validates one declared path, or throws naming what rejected it.
  *
@@ -759,7 +772,7 @@ export const pathShape: RegExp = Input.stepPathShape
  * @since 0.1.0
  */
 export const validatePath = (value: string, what: string): string => {
-  if (!pathShape.test(value) || value.includes("..")) {
+  if (!Schema.is(stepPathSchema)(value)) {
     throw new Error(`CiToolchain: ${JSON.stringify(value)} is not a usable ${what}`)
   }
   return value
@@ -779,6 +792,10 @@ export const validatePath = (value: string, what: string): string => {
  */
 export const executableShape = /^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/
 
+const executableSchema = Schema.NonEmptyString.check(
+  Schema.makeFilter((value) => executableShape.test(value) && !value.includes("..") || "is not a usable executable")
+)
+
 /**
  * Validates one declared executable path, or throws naming what rejected it.
  *
@@ -786,7 +803,7 @@ export const executableShape = /^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/
  * @since 0.1.0
  */
 export const validateExecutable = (value: string, what: string): string => {
-  if (!executableShape.test(value) || value.includes("..")) {
+  if (!Schema.is(executableSchema)(value)) {
     throw new Error(`CiToolchain: ${JSON.stringify(value)} is not a usable ${what}`)
   }
   return value
@@ -803,7 +820,7 @@ export const validateExecutable = (value: string, what: string): string => {
  * @since 0.1.0
  */
 export const SystemBrowser = Schema.Struct({
-  executable: Schema.NonEmptyString,
+  executable: executableSchema,
   reason: Schema.NonEmptyString
 })
 
@@ -858,8 +875,8 @@ export const Playwright = (options: PlaywrightSetup): PlaywrightSetup => Playwri
  * @since 0.1.0
  */
 export const ArtifactSource = Schema.Struct({
-  from: Schema.NonEmptyString,
-  as: Schema.optional(Schema.NonEmptyString),
+  from: stepPathSchema,
+  as: Schema.optional(stepPathSchema),
   /** Fail collection if this path is missing or this glob has no existing matches. */
   required: Schema.optional(Schema.Boolean)
 })
@@ -879,7 +896,7 @@ export type ArtifactSource = typeof ArtifactSource.Type
  * @since 0.1.0
  */
 export const ArtifactUpload = Schema.Struct({
-  artifact: Schema.NonEmptyString,
+  artifact: stepPathSchema,
   sources: Schema.Array(ArtifactSource)
 })
 
@@ -947,7 +964,7 @@ export type ActionlintRelease = typeof ActionlintRelease.Type
  */
 export const WorkflowLint = Schema.Struct({
   release: ActionlintRelease,
-  workflows: Schema.Array(Schema.NonEmptyString)
+  workflows: Schema.Array(stepPathSchema)
 })
 
 /**

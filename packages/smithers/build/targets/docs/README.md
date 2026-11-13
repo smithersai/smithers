@@ -108,7 +108,7 @@ switching either is one edit to `WORKSPACE.ts`.
 
 ## What the catalog covers
 
-The catalog holds 105 rules. They group roughly like this:
+The catalog holds 108 rules. They group roughly like this:
 
 | Family                  | Rules                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------ |
@@ -120,7 +120,7 @@ The catalog holds 105 rules. They group roughly like this:
 | Agents and model review | `Agent.Lint`, `Agent.Diff`, `Agent.Pr`, `LlmLint`, `SecurityReview`            |
 | Composition             | `Filegroup`, `Suite`, `Alias`, `Test`, `Materialize`                           |
 
-[Catalog rules](./rules.md) lists all 105 with the verbs each one joins,
+[Catalog rules](./rules.md) lists all 108 with the verbs each one joins,
 whether its result may be replayed from the cache, and whether it declares an
 output tree.
 
