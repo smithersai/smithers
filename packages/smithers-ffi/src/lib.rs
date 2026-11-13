@@ -27,6 +27,7 @@ use jj_lib::conflicts::{
     extract_as_single_hunk, materialize_merge_result_to_bytes, ConflictMarkerStyle,
     ConflictMaterializeOptions,
 };
+use jj_lib::diff::{ContentDiff, DiffHunkKind};
 use jj_lib::git::GitImportOptions;
 use jj_lib::gitignore::GitIgnoreFile;
 use jj_lib::matchers::{EverythingMatcher, FilesMatcher, NothingMatcher};
@@ -3129,42 +3130,28 @@ fn status_code_from_diff(before_absent: bool, after_absent: bool) -> &'static st
     }
 }
 
-/// Count added/deleted lines between two blobs with a minimal LCS-free heuristic:
-/// lines present only in the new content are additions, lines present only in the
-/// old content are deletions. This matches the magnitude `git`/`jj` report closely
-/// enough for the status dashboard's `+/-` badges without pulling in a diff crate.
+/// Count added/deleted UTF-8 lines with jj's order-sensitive line diff.
 fn line_delta(before: Option<&[u8]>, after: Option<&[u8]>) -> (u32, u32) {
-    fn lines(bytes: Option<&[u8]>) -> Vec<&str> {
-        match bytes {
-            Some(b) => std::str::from_utf8(b)
-                .ok()
-                .map(|s| s.lines().collect())
-                .unwrap_or_default(),
-            None => Vec::new(),
+    // Preserve status's logical-line handling of CRLF and unterminated lines.
+    fn normalized_lines(bytes: Option<&[u8]>) -> String {
+        let mut text = String::new();
+        if let Some(content) = bytes.and_then(|b| std::str::from_utf8(b).ok()) {
+            for line in content.lines() {
+                text.push_str(line);
+                text.push('\n');
+            }
         }
+        text
     }
-    let before_lines = lines(before);
-    let after_lines = lines(after);
-    let mut before_counts: HashMap<&str, i64> = HashMap::new();
-    for line in &before_lines {
-        *before_counts.entry(line).or_default() += 1;
-    }
-    let mut after_counts: HashMap<&str, i64> = HashMap::new();
-    for line in &after_lines {
-        *after_counts.entry(line).or_default() += 1;
-    }
-    let mut add: u32 = 0;
-    let mut del: u32 = 0;
-    for (line, after_n) in &after_counts {
-        let before_n = before_counts.get(line).copied().unwrap_or(0);
-        if after_n > &before_n {
-            add += (after_n - before_n) as u32;
-        }
-    }
-    for (line, before_n) in &before_counts {
-        let after_n = after_counts.get(line).copied().unwrap_or(0);
-        if before_n > &after_n {
-            del += (before_n - after_n) as u32;
+    let before = normalized_lines(before);
+    let after = normalized_lines(after);
+    let diff = ContentDiff::by_line([before.as_bytes(), after.as_bytes()]);
+    let mut add = 0;
+    let mut del = 0;
+    for hunk in diff.hunks() {
+        if hunk.kind == DiffHunkKind::Different {
+            del += hunk.contents[0].split_inclusive(|b| *b == b'\n').count() as u32;
+            add += hunk.contents[1].split_inclusive(|b| *b == b'\n').count() as u32;
         }
     }
     (add, del)
@@ -6694,6 +6681,77 @@ mod tests {
                 .is_some_and(|error| error.contains("ambiguous")),
             "{response}"
         );
+    }
+
+    #[test]
+    fn line_delta_preserves_order_and_duplicate_lines() {
+        for (before, after, expected) in [
+            ("a\nb\n", "b\na\n", (1, 1)),
+            ("a\na\nb\n", "a\nb\na\n", (1, 1)),
+            // jj aligns repeated occurrences before counting the changed hunks.
+            ("a\nb\na\nb\n", "b\na\nb\na\n", (2, 2)),
+            ("a\nb\nc\nd\n", "c\nd\na\nb\n", (2, 2)),
+            ("a\na\nb\n", "a\nb\nb\n", (1, 1)),
+            ("a\na\n", "a\na\na\n", (1, 0)),
+            ("a\na\na\n", "a\na\n", (0, 1)),
+            ("a\nb\n", "a\nx\nb\n", (1, 0)),
+            ("a\nx\nb\n", "a\nb\n", (0, 1)),
+            ("a\nb\n", "a\nx\n", (1, 1)),
+            ("a\na\n", "a\na\n", (0, 0)),
+            ("", "", (0, 0)),
+            ("", "\n", (1, 0)),
+            ("\n", "", (0, 1)),
+            ("a\nb\n", "a\nb", (0, 0)),
+            ("a\r\nb\r\n", "a\nb\n", (0, 0)),
+            ("a\r\nb", "b\r\na", (1, 1)),
+        ] {
+            assert_eq!(
+                line_delta(Some(before.as_bytes()), Some(after.as_bytes())),
+                expected,
+                "{before:?} -> {after:?}"
+            );
+        }
+        assert_eq!(line_delta(None, Some(b"a\nb")), (2, 0));
+        assert_eq!(line_delta(Some(b"a\nb"), None), (0, 2));
+        assert_eq!(line_delta(None, None), (0, 0));
+        assert_eq!(line_delta(Some(b"\xff"), Some(b"\xfe")), (0, 0));
+        assert_eq!(line_delta(Some(b"\xff"), Some(b"a\n")), (1, 0));
+        assert_eq!(line_delta(Some(b"a\n"), Some(b"\xff")), (0, 1));
+    }
+
+    #[test]
+    fn ffi_working_tree_status_counts_reordered_and_duplicate_lines() {
+        let tmp = TempDir::new().expect("tempdir");
+        let repo_path = repo_path(&tmp);
+        let repo_path_c = c_path(&repo_path);
+        init_repo(&repo_path).expect("initialize repository");
+        seed_committed_baseline_with_empty_wc(
+            &repo_path,
+            &[
+                ("reordered.txt", "a\nb\n"),
+                ("duplicates.txt", "a\na\nb\n"),
+                ("unchanged.txt", "a\na\n"),
+            ],
+        );
+        std::fs::write(repo_path.join("reordered.txt"), b"b\na\n").expect("reorder lines");
+        std::fs::write(repo_path.join("duplicates.txt"), b"a\nb\na\n")
+            .expect("reorder duplicate lines");
+
+        let status = unsafe { take_json(smithers_get_working_tree_status(repo_path_c.as_ptr())) };
+        let changes = status["changes"].as_array().expect("changes array");
+        assert_eq!(changes.len(), 2, "{status}");
+        for path in ["reordered.txt", "duplicates.txt"] {
+            let file = changes
+                .iter()
+                .find(|file| file["path"] == path)
+                .expect(path);
+            assert_eq!(file["status"], "modified", "{file}");
+            assert_eq!(file["add"], 1, "{file}");
+            assert_eq!(file["del"], 1, "{file}");
+        }
+        let status_again =
+            unsafe { take_json(smithers_get_working_tree_status(repo_path_c.as_ptr())) };
+        assert_eq!(status, status_again);
     }
 
     #[test]
