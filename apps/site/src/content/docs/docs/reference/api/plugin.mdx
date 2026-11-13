@@ -555,8 +555,11 @@ runs and a proxy cannot change the value after admission. It then decodes with
 that carries both alternatives, such as a keybinding with `command` and
 `event`. `$defs` keys follow JSON Schema convention (`Option`, `Note`) and may
 start with a capital. A `FlowTag` is at most 256 characters. A refusal's path
-keeps the first 64 characters of a key, then `...`, so a hostile key cannot
-make it long. A `RelativePath` (`flows`, `skills`, a `view` or `app`
+uses identifiers of at most 64 characters and anonymous `[key:n]` segments
+for other keys, so arbitrary key text is never echoed. `Args` keys follow the
+field grammar: a letter or underscore, then letters, digits, underscores or
+hyphens, at most 64 characters. In decode refusals, `n` is the path-segment
+index; binding and schema walks use the object's entry index. A `RelativePath` (`flows`, `skills`, a `view` or `app`
 render's `module`) is portable and stays inside the plugin root: `/`-separated
 segments of letters, digits and `._@+-`, with no leading `/`, no empty, `.` or
 `..` segment, no scheme and no backslash. A view's `path` is empty or such a
@@ -586,7 +589,11 @@ folds, its flow `catalog` (`FlowFacts`: `capabilities`, `minimum`,
 `personOnly`, `system`, optional resolved `payload`), core query row schemas in
 `queries`, `tierCap`, which capabilities each tier may declare, and optional
 `slash`, the slash names its own commands hold: a plugin command naming one
-refuses `conflict`. A
+refuses `conflict`. `loadablePoints` is the frozen list `views`, `slots`,
+`commands`, `keybindings` and `flows`; its element type, `LoadablePoint`,
+bounds `HostFacts.points`. The other seven `Contribution.Point` values are
+reserved; a non-empty one refuses `unsupported_point` even if an untyped host
+advertises it, with a detail naming the loader's loadable set. A
 `Candidate` is a `tier`, an undecoded `manifest`, and the `flows` it owns as
 `OwnedFlow` facts. `Loaded` is `{ contributions, refused }`.
 
@@ -594,25 +601,32 @@ refuses `conflict`. A
 lower-tier holders of a shared id or owned flow tag (all holders if the highest
 tier ties), orders the rest by `requires.plugins` (ties by tier then id),
 then checks and folds each plugin against the host and the plugins before it.
-Tiers rank `built-in`, `repository`, then `personal`. A repository or personal
+A `uses` entry owned by another plugin requires that owner's id in
+`requires.plugins`, independently of spelling or input order; otherwise it
+refuses `missing_dependency` at `uses[n]`. Own flows and core catalog flows
+need no plugin dependency. Tiers rank `built-in`, `repository`, then `personal`. A repository or personal
 plugin owns only flow tags starting with its `<id>/` prefix. Collision refusals
 name both plugins and their tiers. Refusals are ordered by plugin id. `maximumHeaderEntries` (6) bounds
 `shell.header` across all plugins. The checks and their reasons are listed in
 [Plugin manifests](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/manifests.md#what-the-loader-checks).
 
+A plugin layer must have a callable `build`. Missing or non-callable builders
+refuse `invalid_plugin` at admission; a builder that throws synchronously is
+reported as `layer_failed` with the plugin's name, like any other build failure.
+
 ## Contribution
 
-| Export                                               | Summary                                                                                                           |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `Reason`                                             | The closed refusal reasons.                                                                                       |
-| `Refusal`                                            | `Schema.TaggedError` `"plugin/Refusal"`: `{ plugin?, reason, path?, detail }`. Carries no manifest value but ids. |
-| `Tier`                                               | `"built-in" \| "repository" \| "personal"`.                                                                       |
-| `Point`                                              | The twelve contribution points a host may advertise.                                                              |
-| `Contributions`, `empty`                             | `{ plugins, views, slots, commands, keybindings }`, folded; `empty` has none.                                     |
-| `Active`                                             | A loaded plugin: `id`, `version`, `title`, `tier`, `capabilities`, `uses`, `owns`.                                |
-| `View`, `Event`, `FlowEvent`, `LocalEvent`           | A view with its events; a flow event's `payload` is resolved and carries `personOnly`.                            |
-| `Slot`, `Command`                                    | The manifest entries plus `plugin` and `tier`.                                                                    |
-| `Keybinding`, `CommandKeybinding`, `EventKeybinding` | A binding with parsed `keys` and `when`; an event binding names its `view` and `personOnly`.                      |
+| Export                                               | Summary                                                                                                                        |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `Reason`                                             | The closed refusal reasons.                                                                                                    |
+| `Refusal`                                            | `Schema.TaggedError` `"plugin/Refusal"`: `{ plugin?, reason, path?, detail }`. Carries only ids and bounded field identifiers. |
+| `Tier`                                               | `"built-in" \| "repository" \| "personal"`.                                                                                    |
+| `Point`                                              | The twelve-point vocabulary; only `Load.LoadablePoint` values load today.                                                      |
+| `Contributions`, `empty`                             | `{ plugins, views, slots, commands, keybindings }`, folded; `empty` has none.                                                  |
+| `Active`                                             | A loaded plugin: `id`, `version`, `title`, `tier`, `capabilities`, `uses`, `owns`.                                             |
+| `View`, `Event`, `FlowEvent`, `LocalEvent`           | A view with its events; a flow event's `payload` is resolved and carries `personOnly`.                                         |
+| `Slot`, `Command`                                    | The manifest entries plus `plugin` and `tier`.                                                                                 |
+| `Keybinding`, `CommandKeybinding`, `EventKeybinding` | A binding with parsed `keys` and `when`; an event binding names its `view` and `personOnly`.                                   |
 
 ## JsonSchema
 

@@ -29,6 +29,7 @@ import {
   type Tier,
   type View
 } from "./Contribution.ts"
+import * as Path from "./internal/path.ts"
 import * as Patterns from "./internal/patterns.ts"
 import * as JsonSchema from "./JsonSchema.ts"
 import * as Keys from "./Keys.ts"
@@ -65,6 +66,23 @@ export interface OwnedFlow extends FlowFacts {
 }
 
 /**
+ * Contribution points this loader can fold, shared by runtime admission and
+ * the host declaration type. View events are part of `views`.
+ *
+ * @category constants
+ * @since 1.1.0
+ */
+export const loadablePoints = Object.freeze(["views", "slots", "commands", "keybindings", "flows"] as const)
+
+/**
+ * A point this loader can fold.
+ *
+ * @category models
+ * @since 1.1.0
+ */
+export type LoadablePoint = typeof loadablePoints[number]
+
+/**
  * What the host implements and knows.
  *
  * @category models
@@ -73,8 +91,8 @@ export interface OwnedFlow extends FlowFacts {
 export interface HostFacts {
   /** The host's plugin API, `Manifest.PLUGIN_API`. */
   readonly api: string
-  /** The points the host implements; any other non-empty point refuses `unsupported_point`. */
-  readonly points: ReadonlyArray<Point>
+  /** The loadable points the host implements; other non-empty points refuse `unsupported_point`. */
+  readonly points: ReadonlyArray<LoadablePoint>
   /** Every flow already in the app's one catalog, plugin-owned flows excluded. */
   readonly catalog: ReadonlyMap<string, FlowFacts>
   /** Core queries' row schemas, such as `core/waits`. */
@@ -117,7 +135,7 @@ export interface Loaded {
 export const maximumHeaderEntries = 6
 
 const digits = [0, 1, 2, 3, 4, 5, 6, 7, 8]
-const folded: ReadonlySet<Point> = new Set(["views", "slots", "commands", "keybindings"])
+const folded: ReadonlySet<Point> = new Set(loadablePoints)
 const otherPoints = ["cards", "settings", "triggers", "hooks", "taps", "modelRoles", "records"] as const
 const ranks: Readonly<Record<Manifest.Minimum, number>> = { anyone: 0, guest: 1, member: 2, maintainer: 3, admin: 4 }
 
@@ -241,6 +259,7 @@ const order = (plugins: ReadonlyArray<Decoded>) => {
 interface State {
   readonly slash: Set<string>
   readonly owned: Map<string, FlowFacts>
+  readonly owners: ReadonlyMap<string, string>
   readonly versions: Map<string, string>
   header: number
   readonly plugins: Array<Active>
@@ -264,7 +283,7 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
     const id = manifest.id
     const tier = candidate.tier
     const contributes = manifest.contributes ?? {}
-    const advertised = new Set(host.points)
+    const advertised: ReadonlySet<Point> = new Set(host.points)
     const uses = manifest.uses ?? []
     const defs = manifest.$defs ?? {}
 
@@ -273,7 +292,13 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
     for (const point of [...folded, ...otherPoints]) {
       const entries = (contributes as Readonly<Record<string, ReadonlyArray<unknown> | undefined>>)[point]
       if (entries !== undefined && entries.length > 0 && !(advertised.has(point) && folded.has(point))) {
-        return yield* fail("unsupported_point", `contributes.${point}`, `the host does not implement ${point}`)
+        return yield* fail(
+          "unsupported_point",
+          Path.append("contributes", point),
+          folded.has(point)
+            ? `the host does not implement ${point}`
+            : `this loader does not fold ${point} yet; loadable points: ${loadablePoints.join(", ")}`
+        )
       }
     }
     const ownedFlows = candidate.flows ?? []
@@ -302,6 +327,10 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
     const known = (tag: string): FlowFacts | undefined => own.get(tag) ?? state.owned.get(tag) ?? host.catalog.get(tag)
 
     for (const [index, tag] of uses.entries()) {
+      const owner = host.catalog.has(tag) ? undefined : state.owners.get(tag)
+      if (owner !== undefined && owner !== id && !Object.hasOwn(manifest.requires.plugins ?? {}, owner)) {
+        return yield* fail("missing_dependency", `uses[${index}]`, `${owner} must be declared in requires.plugins`)
+      }
       if (known(tag) === undefined) return yield* fail("undeclared_use", `uses[${index}]`, `${tag} is not a known flow`)
     }
     for (const [index, capability] of manifest.capabilities.entries()) {
@@ -398,7 +427,7 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
         const facts = yield* flowOf(event.flow, `${where}.flow`)
         yield* atLeast(view.minimum, facts, `${at}.minimum`, event.flow)
         for (const reference of yield* Effect.fromResult(Bind.references(event.args, `${where}.args`))) {
-          const path = `${where}.args.${reference.at}`
+          const path = Path.prefix(`${where}.args`, reference.at)
           // Any index reaches `items`; `[$event.x]` is checked as a payload field below.
           const steps = reference.path.map((segment) => typeof segment === "object" ? 0 : segment)
           const reaches = (schemas: ReadonlyArray<JsonSchema.Resolved>) =>
@@ -417,12 +446,16 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
           for (const [key, value] of Object.entries(event.args)) {
             const target = JsonSchema.property(facts.payload, key)
             if (target === undefined) {
-              return yield* fail("invalid", `${where}.args.${key}`, `${event.flow} takes no such field`)
+              return yield* fail("invalid", Path.append(`${where}.args`, key), `${event.flow} takes no such field`)
             }
             // The whole args already parsed, so one arg's references cannot fail.
             const literal = Result.getOrThrow(Bind.references({ [key]: value })).length === 0
             if (literal && Option.isSome(JsonSchema.validate(target, value))) {
-              return yield* fail("invalid", `${where}.args.${key}`, `the value fails ${event.flow}'s payload`)
+              return yield* fail(
+                "invalid",
+                Path.append(`${where}.args`, key),
+                `the value fails ${event.flow}'s payload`
+              )
             }
           }
           for (const key of facts.payload.required ?? []) {
@@ -517,19 +550,23 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
           ? JsonSchema.property(event.payload, key)
           : undefined
         if (target === undefined) {
-          return yield* fail("invalid", `${at}.fields.${key}`, "the event's payload has no such field")
+          return yield* fail("invalid", Path.append(`${at}.fields`, key), "the event's payload has no such field")
         }
         targets.set(key, target)
       }
       const references = yield* Effect.fromResult(Bind.references(fields, `${at}.fields`))
       for (const reference of references) {
         if (reference.root !== "key" || reference.path.join(".") !== "index") {
-          return yield* fail("invalid", `${at}.fields.${reference.at}`, "a key fills fields only from $key.index")
+          return yield* fail(
+            "invalid",
+            Path.prefix(`${at}.fields`, reference.at),
+            "a key fills fields only from $key.index"
+          )
         }
         if (
           !keys.success.strokes.some((stroke) => stroke.key === "digit")
         ) {
-          return yield* fail("invalid", `${at}.fields.${reference.at}`, "$key.index needs a digit key")
+          return yield* fail("invalid", Path.prefix(`${at}.fields`, reference.at), "$key.index needs a digit key")
         }
       }
       // Every digit the key can fill, `$key.index` 0 to 8, must fit; a literal is checked once.
@@ -537,7 +574,7 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
         const filled = Result.getOrThrow(Bind.bind(fields, { item: undefined, event: undefined, key: { index } }))
         for (const [key, target] of targets) {
           if (Option.isSome(JsonSchema.validate(target, filled[key]))) {
-            return yield* fail("invalid", `${at}.fields.${key}`, "the field fails the event's payload")
+            return yield* fail("invalid", Path.append(`${at}.fields`, key), "the field fails the event's payload")
           }
         }
       }
@@ -637,6 +674,11 @@ export const load = (host: HostFacts, candidates: ReadonlyArray<Candidate>): Eff
     const state: State = {
       slash: new Set(host.slash),
       owned: new Map(),
+      owners: new Map(
+        uniqueFlows.flatMap(({ candidate, manifest }) =>
+          (candidate.flows ?? []).map(({ tag }) => [tag, manifest.id] as const)
+        )
+      ),
       versions: new Map(),
       header: 0,
       plugins: [],

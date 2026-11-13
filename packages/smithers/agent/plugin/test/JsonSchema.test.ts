@@ -232,3 +232,18 @@ describe("JsonSchema.property and JsonSchema.at", () => {
     expect(JsonSchema.at(row, ["missing", "x"])).toBeUndefined()
   })
 })
+
+describe("schema diagnostic keys", () => {
+  it("redacts unknown keywords, secret property names and invalid value keys", async () => {
+    for (const key of ["<script>\nforged", "my password is private", "x".repeat(65), "a.b", ""]) {
+      expect(await refused({ type: "object", [key]: true })).toEqual(["schema_unresolved", "s[key:1]"])
+      expect(await refused({ properties: { safe: {}, ["password " + key]: {} } }))
+        .toEqual(["secret_field", "s.properties[key:1]"])
+      expect(JsonSchema.validate({ additionalProperties: false }, { safe: true, [key]: 1 }))
+        .toEqual(Option.some("$.safe"))
+      expect(JsonSchema.validate({ properties: { safe: {} }, additionalProperties: false }, { safe: true, [key]: 1 }))
+        .toEqual(Option.some("$[key:1]"))
+      expect(JsonSchema.validate({ required: [key] }, {})).toEqual(Option.some("$[key:0]"))
+    }
+  })
+})

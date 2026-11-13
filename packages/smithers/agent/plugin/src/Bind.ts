@@ -96,7 +96,9 @@ const walk = (
   } else if (Array.isArray(value)) {
     value.forEach((member, index) => walk(member, Path.append(at, index), visit))
   } else if (typeof value === "object" && value !== null) {
-    for (const [key, member] of Object.entries(value)) walk(member, Path.append(at, key), visit)
+    for (const [index, [key, member]] of Object.entries(value).entries()) {
+      walk(member, Path.append(at, key, index), visit)
+    }
   }
 }
 
@@ -114,14 +116,14 @@ export const references = (
 ): Result.Result<ReadonlyArray<Reference>, Refusal> => {
   const found: Array<Reference> = []
   let refused: Refusal | undefined
-  for (const [key, value] of Object.entries(args)) {
-    walk(value, key, (text, written) => {
+  for (const [index, [key, value]] of Object.entries(args).entries()) {
+    walk(value, Path.append("", key, index), (text, written) => {
       const parsed = parseReference(text)
       if (parsed !== undefined) found.push({ ...parsed, at: written })
       else {
         refused ??= new Refusal({
           reason: "invalid",
-          path: at === "" ? written : `${at}.${written}`,
+          path: Path.prefix(at, written),
           detail: "the reference is outside the binding grammar"
         })
       }

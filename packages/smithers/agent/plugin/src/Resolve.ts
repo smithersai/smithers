@@ -308,7 +308,10 @@ const snapshotPlugin = <H>(
     values.apply !== undefined && values.apply !== "engine" && values.apply !== "harness" &&
     typeof values.apply !== "function"
   ) throw invalidPlugin(`${path}.apply`, "must be engine, harness, or a predicate", { plugin: name })
-  if (values.layer !== undefined && !Layer.isLayer(values.layer)) {
+  if (
+    values.layer !== undefined &&
+    (!Layer.isLayer(values.layer) || !("build" in values.layer) || typeof values.layer.build !== "function")
+  ) {
     throw invalidPlugin(`${path}.layer`, "must be an Effect Layer", { plugin: name })
   }
 

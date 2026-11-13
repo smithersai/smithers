@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { Reason, Refusal } from "../src/Contribution.ts"
 import * as Load from "../src/Load.ts"
 import * as Manifest from "../src/Manifest.ts"
-import { host, queueManifest } from "./support/hostFacts.ts"
+import { host, minimal, owned, queueManifest } from "./support/hostFacts.ts"
 
 /** mulberry32: a small seeded generator, so every run tries the same inputs. */
 const generator = (seed: number) => () => {
@@ -172,6 +172,46 @@ describe("fuzzed decoding", () => {
       const cut = text.slice(0, Math.floor(random() * (text.length + 1)))
       const exit = Effect.runSync(Effect.exit(Manifest.parse(cut)))
       if (Exit.isFailure(exit)) expect(Cause.hasDies(exit.cause)).toBe(false)
+    }
+  })
+})
+
+describe("manifest diagnostic and dependency mutations", () => {
+  it("never echoes arbitrary keys from argument or schema mutations", async () => {
+    const random = generator(0x4872)
+    for (let index = 0; index < 96; index++) {
+      const key = pick(random, ["password ", "<img>\n", "\u202e", "x".repeat(65), "a.b "]) + index
+      const manifest = queueManifest()
+      if (random() < 0.5) manifest.contributes.views[0].events[0].args[key] = "$item.missing"
+      else manifest.$defs.Note.properties[key] = { type: "string", writeOnly: true }
+      const loaded = await Effect.runPromise(Load.load(host(), [{ tier: "built-in", manifest }]))
+      expect(loaded.refused).toHaveLength(1)
+      expect(JSON.stringify(loaded.refused)).not.toContain(key)
+      expect(loaded.refused[0]!.path).toContain("[key:")
+    }
+  })
+
+  it("admits cross-plugin uses exactly when the owner is a declared dependency", async () => {
+    const random = generator(0x487208)
+    for (let index = 0; index < 96; index++) {
+      const owner = pick(random, ["aa", "zz"]) + index
+      const consumer = pick(random, ["bb", "yy"]) + index
+      const declared = random() < 0.5
+      const candidates: Array<Load.Candidate> = [
+        { tier: "built-in", manifest: minimal(owner), flows: [owned(owner + "/act")] },
+        {
+          tier: pick(random, ["built-in", "repository", "personal"] as const),
+          manifest: minimal(consumer, {
+            uses: [owner + "/act"],
+            requires: { api: "*", ...(declared ? { plugins: { [owner]: "*" } } : {}) }
+          })
+        }
+      ]
+      if (random() < 0.5) candidates.reverse()
+      const loaded = await Effect.runPromise(Load.load(host({ points: ["flows"] }), candidates))
+      expect(loaded.contributions.plugins.map(({ id }) => id)).toEqual(declared ? [owner, consumer] : [owner])
+      expect(loaded.refused.map(({ plugin, reason, path }) => [plugin, reason, path]))
+        .toEqual(declared ? [] : [[consumer, "missing_dependency", "uses[0]"]])
     }
   })
 })

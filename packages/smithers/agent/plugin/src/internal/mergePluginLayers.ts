@@ -27,7 +27,7 @@ export const mergePluginLayers = <H>(
   const layers = plugins.flatMap((plugin) =>
     plugin.layer
       ? [
-        Layer.catchCause(plugin.layer, (cause) =>
+        Layer.catchCause(Layer.unwrap(Effect.sync(() => plugin.layer!)), (cause) =>
           Layer.effectDiscard(
             Effect.fail(
               new PluginError({

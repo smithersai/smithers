@@ -231,12 +231,14 @@ export type QueryRef = typeof QueryRef.Type
 
 /**
  * Values the host fills, in the closed grammar of the `Bind` module: a JSON
- * literal, or a reference rooted at `$item`, `$event` or `$key`.
+ * literal, or a reference rooted at `$item`, `$event` or `$key`. Keys follow
+ * the field grammar: at most 64 letters, digits, underscores or hyphens,
+ * starting with a letter or underscore.
  *
  * @category schemas
  * @since 1.1.0
  */
-export const Args = Schema.Record(Schema.String, Schema.Json)
+export const Args = Schema.Record(Schema.String.check(Schema.isPattern(Patterns.field)), Schema.Json)
 
 /**
  * Values the host fills.

@@ -166,9 +166,9 @@ const node = (walk: Walk, schema: Json, path: string): Resolved => {
   if (schema["format"] === "password" || schema["writeOnly"] === true) {
     throw new Stop("secret_field", path, "a plugin schema never collects a secret")
   }
-  for (const key of Object.keys(schema)) {
+  for (const [index, key] of Object.keys(schema).entries()) {
     if (!keywords.has(key)) {
-      throw new Stop("schema_unresolved", Path.append(path, key), "the keyword is outside the closed subset")
+      throw new Stop("schema_unresolved", Path.append(path, key, index), "the keyword is outside the closed subset")
     }
   }
   if (walk.depth >= maximumDepth) throw new Stop("invalid", path, `a schema nests at most ${maximumDepth} deep`)
@@ -218,8 +218,8 @@ const keyword = (walk: Walk, key: string, value: Json, path: string): unknown =>
     case "properties": {
       if (!isObject(value)) throw new Stop("invalid", path, "expected an object of schemas")
       return Object.fromEntries(
-        Object.entries(value).map(([name, member]) => {
-          const at = Path.append(path, name)
+        Object.entries(value).map(([name, member], index) => {
+          const at = Path.append(path, name, index)
           if (secretName.test(name)) throw new Stop("secret_field", at, "a plugin schema never collects a secret")
           return [name, node(walk, member, at)]
         })
@@ -385,12 +385,12 @@ const check = (schema: Resolved, value: unknown, path: string): string | undefin
     }
   }
   if (isObject(value)) {
-    for (const name of schema.required ?? []) {
-      if (!Object.hasOwn(value, name)) return Path.append(path, name)
+    for (const [index, name] of (schema.required ?? []).entries()) {
+      if (!Object.hasOwn(value, name)) return Path.append(path, name, index)
     }
     const declared = schema.properties ?? {}
-    for (const [name, member] of Object.entries(value)) {
-      const at = Path.append(path, name)
+    for (const [index, [name, member]] of Object.entries(value).entries()) {
+      const at = Path.append(path, name, index)
       if (Object.hasOwn(declared, name)) {
         const failure = check(declared[name]!, member, at)
         if (failure !== undefined) return failure

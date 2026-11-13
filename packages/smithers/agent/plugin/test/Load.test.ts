@@ -1,5 +1,5 @@
 import { Effect, Result } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Bind from "../src/Bind.ts"
 import type * as Contribution from "../src/Contribution.ts"
 import * as Keys from "../src/Keys.ts"
@@ -437,7 +437,7 @@ describe("load refuses a plugin and loads the rest", () => {
             })
           )
         ],
-        host({ points: ["cards"] })
+        host({ points: ["cards"] as unknown as Load.HostFacts["points"] })
       )
     ).toEqual([["carded", "unsupported_point", "contributes.cards"]])
   })
@@ -1003,4 +1003,65 @@ describe("load refuses a plugin and loads the rest", () => {
     ])
     expect(contributions.plugins.map((plugin) => plugin.id)).toEqual(["queue"])
   })
+})
+
+describe("plugin flow dependency admission", () => {
+  for (const [owner, consumer] of [["aa", "zz"], ["zz", "aa"]] as const) {
+    for (const reverse of [false, true]) {
+      it(`requires the actual flow owner regardless of order (${owner}, reverse=${reverse})`, async () => {
+        const candidates = [
+          builtIn(minimal(owner), [owned("shared/act")]),
+          builtIn(minimal(consumer, { uses: ["shared/act"] }))
+        ]
+        const result = await load(reverse ? candidates.reverse() : candidates, host({ points: ["flows"] }))
+        expect(result.contributions.plugins.map(({ id }) => id)).toEqual([owner])
+        expect(result.refused).toMatchObject([{
+          plugin: consumer,
+          reason: "missing_dependency",
+          path: "uses[0]"
+        }])
+        expect(result.refused[0]!.detail).toContain(owner)
+      })
+    }
+    it(`loads a declared dependency on ${owner} and an own-flow use`, async () => {
+      const result = await load([
+        builtIn(minimal(consumer, { uses: ["shared/act"], requires: { api: "*", plugins: { [owner]: "*" } } })),
+        builtIn(minimal(owner, { uses: ["shared/act"] }), [owned("shared/act")])
+      ], host({ points: ["flows"] }))
+      expect(result.refused).toEqual([])
+      expect(result.contributions.plugins.map(({ id }) => id)).toEqual([owner, consumer])
+    })
+  }
+
+  it("identifies a refused owner's undeclared use as a missing dependency", async () => {
+    const result = await load([
+      builtIn(minimal("zz", { capabilities: ["denied"] }), [owned("zz/act")]),
+      builtIn(minimal("aa", { uses: ["zz/act"] }))
+    ], host({ points: ["flows"], tierCap: { ...host().tierCap, "built-in": () => false } }))
+    expect(result.refused).toMatchObject([
+      { plugin: "aa", reason: "missing_dependency", path: "uses[0]" },
+      { plugin: "zz", reason: "capability_exceeded" }
+    ])
+  })
+})
+
+describe("loader contribution vocabulary", () => {
+  it("attributes an unimplemented point to the loader, even when an untyped host advertises it", async () => {
+    const result = await load([builtIn(minimal("carded", {
+      contributes: {
+        cards: [{ kind: "carded/c", payload: {}, sizes: [], render: { kind: "blocks", blocks: [] } }]
+      }
+    }))], host({ points: ["cards"] as unknown as Load.HostFacts["points"] }))
+    expect(result.refused).toMatchObject([{ reason: "unsupported_point", path: "contributes.cards" }])
+    expect(result.refused[0]!.detail).toBe(
+      "this loader does not fold cards yet; loadable points: views, slots, commands, keybindings, flows"
+    )
+  })
+})
+
+it("types the host points from the loader's runtime vocabulary", () => {
+  expectTypeOf<Load.HostFacts["points"][number]>().toEqualTypeOf<Load.LoadablePoint>()
+  expectTypeOf<Load.LoadablePoint>().toEqualTypeOf<"views" | "slots" | "commands" | "keybindings" | "flows">()
+  expect(Load.loadablePoints).toEqual(["views", "slots", "commands", "keybindings", "flows"])
+  expect(Object.isFrozen(Load.loadablePoints)).toBe(true)
 })

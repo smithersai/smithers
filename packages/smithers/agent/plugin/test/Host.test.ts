@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Host from "../src/Host.ts"
 
 describe("PluginRefused", () => {
@@ -48,21 +48,11 @@ describe("Settled", () => {
 })
 
 describe("query parameters", () => {
-  it("reach the host's query, and an item names the ones its query was asked with", async () => {
-    const asked: Array<[string, Host.QueryParams | undefined]> = []
-    const rows = [{ id: "acme/widgets:lanes" }]
-    const host: Pick<Host.PluginHost, "query"> = {
-      query: <R>(name: string, params?: Host.QueryParams) =>
-        Effect.sync(() => {
-          asked.push([name, params])
-          return { current: () => rows as unknown as ReadonlyArray<R>, subscribe: () => () => {} }
-        })
-    }
-    const live = await Effect.runPromise(host.query<{ readonly id: string }>("core/feeds", { repo: "acme/widgets" }))
-    await Effect.runPromise(host.query("core/waits"))
-    const item: Host.ItemRef = { query: "core/feeds", key: live.current()[0]!.id, params: { repo: "acme/widgets" } }
-    expect(asked).toEqual([["core/feeds", { repo: "acme/widgets" }], ["core/waits", undefined]])
-    expect(item).toEqual({ query: "core/feeds", key: "acme/widgets:lanes", params: { repo: "acme/widgets" } })
+  it("are an optional part of the public query and item contracts", () => {
+    expectTypeOf<Host.PluginHost["query"]>().toEqualTypeOf<
+      <R>(name: string, params?: Host.QueryParams) => Effect.Effect<Host.Live<R>, Host.PluginRefused>
+    >()
+    expectTypeOf<Host.ItemRef["params"]>().toEqualTypeOf<Host.QueryParams | undefined>()
   })
 })
 

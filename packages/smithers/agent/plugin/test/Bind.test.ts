@@ -74,3 +74,14 @@ describe("Bind.bind", () => {
     expect(Bind.bind({ v: "$nope" }, scope)).toEqual(Result.fail("$nope is outside the binding grammar"))
   })
 })
+
+describe("binding diagnostic keys", () => {
+  it("redacts untrusted keys at the root and inside objects and arrays", () => {
+    for (const key of ["<img src=x>\nforged", "my password is private", "x".repeat(65), "a.b", ""]) {
+      expect(refused({ [key]: "$bad" }, "args").path).toBe("args[key:0]")
+      expect(refused({ good: [{ fixed: true, [key]: "$bad" }] }, "args").path).toBe("args.good[0][key:1]")
+      expect(references({ [key]: "$item.missing" })[0]!.at).toBe("[key:0]")
+    }
+    expect(refused({ ["a".repeat(64)]: "$bad" }, "args").path).toBe("args." + "a".repeat(64))
+  })
+})

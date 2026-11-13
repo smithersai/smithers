@@ -283,3 +283,31 @@ describe("Plugins.makeNoop", () => {
     expect(await run(dispatcher.waterfall("config", {}, Config.merge))).toEqual({})
   })
 })
+
+describe("foreign plugin layers", () => {
+  it("refuses a Layer brand without a callable build", async () => {
+    for (const build of [undefined, 1]) {
+      const error = await run(
+        Resolve.resolve({
+          name: "lookalike",
+          layer: { "~effect/Layer": 1, build }
+        } as unknown as FlowsPlugin).pipe(Effect.flip)
+      )
+      expect(error).toMatchObject({ code: "invalid_plugin", plugin: "lookalike", path: "$.layer" })
+    }
+  })
+
+  it("attributes a synchronous build throw to the plugin", async () => {
+    const problem = new Error("foreign build failed")
+    const layer = {
+      "~effect/Layer": 1,
+      build() {
+        throw problem
+      }
+    } as unknown as Layer.Layer<never>
+    const kernel = await resolvedLayer([{ name: "foreign", layer }])
+    const error = await run(Effect.void.pipe(Effect.provide(kernel.layer), Effect.flip))
+    expect(error).toBeInstanceOf(PluginError)
+    expect(error).toMatchObject({ code: "layer_failed", plugin: "foreign" })
+  })
+})

@@ -4,8 +4,9 @@
  *
  * The public package contract is documented at
  * {@link https://smithers.sh/docs/reference/api/plugin}, with the shipped host catalog in
- * `packages/smithers/agent/src/CellPlugin.ts`. D14 in
- * `docs/pages/design-decisions.md` keeps durable policy outside these hooks.
+ * `packages/smithers/agent/src/CellPlugin.ts`. Decision 0017 in
+ * `apps/mvp/docs/decisions/0017-everything-is-a-plugin.md` describes the kernel
+ * and its host-owned hooks.
  *
  * Order of operations, per the spec:
  *

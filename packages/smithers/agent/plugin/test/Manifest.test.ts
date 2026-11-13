@@ -115,11 +115,11 @@ describe("Manifest.decode", () => {
     })
   })
 
-  it("quotes a key that is not an identifier in the path", async () => {
+  it("redacts a key that is not an identifier in the path", async () => {
     const refused = await refusal(
       Manifest.decode({ ...minimal("keys"), userOnly: { "not a tag": "Because." } })
     ) as { path: string }
-    expect(refused.path).toBe(`userOnly["not a tag"]`)
+    expect(refused.path).toBe("userOnly[key:1]")
   })
 
   it("bounds the path and detail of a refused over-long key or accessor", async () => {
@@ -188,5 +188,25 @@ describe("Manifest.parse", () => {
     expect(Manifest.PLUGIN_API).toBe("1.0.0")
     expect(Manifest.RESERVED).toContain("core")
     expect(Object.isFrozen(Manifest.RESERVED)).toBe(true)
+  })
+})
+
+describe("argument field names", () => {
+  it("accepts the field grammar and refuses arbitrary argument and keybinding keys without echoing them", async () => {
+    for (const key of ["<img src=x>\nforged", "my password is private", "x".repeat(65), "a.b", ""]) {
+      for (const target of ["args", "fields"]) {
+        const manifest = queueManifest()
+        if (target === "args") manifest.contributes.views[0].events[0].args = { [key]: 1 }
+        else manifest.contributes.keybindings[1].fields = { [key]: 1 }
+        const error = await Effect.runPromise(Manifest.decode(manifest).pipe(Effect.flip))
+        expect(error.reason).toBe("invalid")
+        if (target === "args") expect(error.path).toContain("[key:")
+        else expect(error.path).toMatch(/^contributes\.keybindings\[1\]/)
+        if (key !== "") expect(JSON.stringify(error)).not.toContain(key)
+      }
+    }
+    const manifest = queueManifest()
+    manifest.contributes.views[0].events[0].args = { Field_1: 1, ["a".repeat(64)]: null, "field-name": false }
+    expect((await Effect.runPromise(Manifest.decode(manifest))).id).toBe("queue")
   })
 })

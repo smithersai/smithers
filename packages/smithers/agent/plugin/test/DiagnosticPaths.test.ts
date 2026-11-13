@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { Kernel, make, type PluginError, type PluginInput } from "../src/index.ts"
+import * as Path from "../src/internal/path.ts"
 
 const refusal = (input: PluginInput, options: Parameters<typeof Kernel.make>[2] = {}): Promise<PluginError> =>
   Effect.runPromise(Kernel.make(input, {}, options).pipe(Effect.flip))
@@ -49,4 +50,9 @@ describe("diagnostic paths point at the refused preset entry", () => {
     const error = await refusal(make({ name: "solo" }), { cacheEnvironment: { layers: [], capabilities: {} } })
     expect(error).toMatchObject({ code: "cache_environment_invalid", path: "$.version" })
   })
+})
+
+it("redacts non-string keys in manifest paths without exposing their description", () => {
+  expect(Path.join(["views", 0, Symbol("private data")])).toBe("views[0][key:2]")
+  expect(Path.append("", "name")).toBe("name")
 })

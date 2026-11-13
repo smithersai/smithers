@@ -53,8 +53,8 @@ export type Reason = typeof Reason.Type
  *
  * `plugin` is the manifest's id when it could be read, `path` the failing
  * field (`contributes.keybindings[2].event`), and `detail` a short sentence.
- * A refusal never carries a manifest value other than an id, and a path keeps
- * the first 64 characters of a key, so it is bounded and safe to log and show.
+ * A refusal carries only ids and bounded field identifiers from the manifest.
+ * Other keys become anonymous `[key:n]` segments, so paths are safe to log and show.
  *
  * @category errors
  * @since 1.1.0
@@ -84,7 +84,9 @@ export const Tier = Schema.Literals(["built-in", "repository", "personal"])
 export type Tier = typeof Tier.Type
 
 /**
- * A contribution point a host may advertise. View events are part of `views`.
+ * The full contribution vocabulary. The loader folds only `views`, `slots`,
+ * `commands`, `keybindings` and `flows`; the other seven points are reserved
+ * for future loading. View events are part of `views`.
  *
  * @category models
  * @since 1.1.0
@@ -105,7 +107,7 @@ export const Point = Schema.Literals([
 ])
 
 /**
- * A contribution point a host may advertise.
+ * A contribution point; hosts advertise only `Load.LoadablePoint` values.
  *
  * @category models
  * @since 1.1.0
