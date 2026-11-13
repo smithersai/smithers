@@ -7157,3 +7157,38 @@ It runs in two places:
 
 To fix a refusal: prove the row (contract and mutation case), or give its inventory reason; run
 `node verify/inventory.cjs --write`; rerun `node verify/landing.cjs`.
+
+## Decisions in shell rows (vl-proveall3, 2026-11-13)
+
+"0 rows not proved" covers the rows the inventory lists, and every function in `src/`, `worker/` and `scripts/` has
+a row. A shell row, though, carries one reason ("Calls the proved X; host boundaries: Y"), often for a whole file
+(`shellBoundaries`), and a new branch in that shell inherits the reason. An audit (pass 1: every `if`, conditional,
+`match`, comparison and `Match`/`Option`/`Effect` choice call; pass 2: only branches whose condition calls no proved
+function) over `worker/` found:
+
+| Measure | Count |
+| --- | ---: |
+| Decision nodes in unproved `worker/` rows | 1,731 |
+| Module-level decisions (outside any function) | 0 (5 schema decoder constructions) |
+| Branches whose condition calls no proved function | 560 |
+| Of those, absence and tag tests (`=== undefined`, `_tag`, `Option.isNone`, a variable holding a proved result) | 410 |
+| Rows whose reason itself says "not proved" or "tested" (whole app) | 876 rows, 42 reasons, 21 files |
+
+The remaining branches, by kind:
+
+| Kind | Where | Disposition |
+| --- | --- | --- |
+| Dispatch on a proved route, kind or step | `Accounts.vibe:247–380` (`accountsRoute`), `ActionsHttp.vibe:33–63`, `Http.vibe:84–164`, `HistoryObject.vibe:232–246`, `machineObject.vibe:48–59`, `index.vibe:26–27`, `apiObjects.vibe:184–185` | No decision: the branch picks the handler the proved classification named |
+| Delegation refusal reason and retry code | `Issues.vibe:66`, `Wiki.vibe:37` | Proved, batch 40 (`refusalReason`) |
+| Issue write refusals before any write | `Issues.vibe:194` (five checks at 194 to 237 before batch 41) | Proved, batch 41 (`issueWriteRefusal`) |
+| Issues and wiki authority: read is open, any other operation needs a signed-in person | `Accounts.vibe:428, 446` | Open |
+| Request body limits and methods | `Accounts.vibe:456, 467` (2,048 bytes), `Issues.vibe:289–291` (GET or POST, 32 KiB), `Http.vibe:104` (1,024 units) | Open |
+| Agent and anonymous refusals | `Accounts.vibe:185, 273` (an agent has no connection and may not connect), `Accounts.vibe:466, 486` (no actor id) | Open |
+| Cursor and text admission | `Http.vibe:75` (`afterOf`: a safe nonnegative decimal), `Http.vibe:146` (an empty history write) | Open |
+| Budget accounting in the object | `Budget.vibe:64–96`, `CallBudget.vibe:58, 64` | Open: the kernel (`budgetDecision`) is proved; the record-or-hold and over-ceiling choices around it are not |
+| Run and machine lifecycle | `ActionRuns.vibe:138, 140`, `ActionDirectory.vibe:61, 79, 91, 100`, `machineObject.vibe:64–66` | Open |
+| Assignee membership and approval | `Issues.vibe:239, 245` (case-insensitive login match), `Issues.vibe:251–253` | Host boundary for `toLowerCase` (Unicode casing); the "accept needs Accepted" check reads the proved `approveVip` |
+
+"Open" rows are decisions that hold no row of their own and are not "Not yet proved", so the landing check cannot
+see them. They are the next proof batches, in the order above (authority first). The audit scripts and their full
+output (file, line, row, condition) are in the lane report (`~/vl/vl-proveall3.REPORT.md`, nyc-01).
