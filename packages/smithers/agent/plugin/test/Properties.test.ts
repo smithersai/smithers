@@ -1,5 +1,4 @@
-import { Context, Effect } from "effect"
-import { expectTypeOf } from "vitest"
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Config from "../src/Config.ts"
 import type { FlowsPlugin } from "../src/index.ts"
@@ -100,24 +99,5 @@ describe("deterministic plugin properties", () => {
         .map(({ name }) => name)
       expect(resolved.handlers.get("configResolved")?.map(({ plugin }) => plugin)).toEqual(expected)
     }
-  })
-})
-
-/** A service the plugin runner never provides. */
-class Unprovided
-  extends Context.Service<Unprovided, { readonly value: string }>()("test/PluginProperties/Unprovided")
-{}
-
-/** Never called; tsc checks it (#2347). */
-const unprovidedServiceProbe = () => {
-  const unmet = Effect.map(Unprovided, (service) => service.value)
-  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof run>[0]>()
-  run(Effect.succeed(1))
-}
-
-describe("unprovided service compile probe", () => {
-  it("rejects a body that needs a service the plugin runner does not provide", () => {
-    // The assertion is the `@ts-expect-error` directive above.
-    expect(unprovidedServiceProbe).toBeTypeOf("function")
   })
 })

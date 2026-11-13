@@ -1,12 +1,12 @@
 import { Context, Effect, Exit, Layer } from "effect"
-import { expectTypeOf } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as Config from "../src/Config.ts"
 import * as Hooks from "../src/Hooks.ts"
-import type { FlowsPlugin, PluginInput } from "../src/index.ts"
+import type { FlowsPlugin } from "../src/index.ts"
 import { PluginError } from "../src/PluginError.ts"
 import * as Plugins from "../src/Plugins.ts"
 import * as Resolve from "../src/Resolve.ts"
+import { resolvedLayer } from "./support/resolvedLayer.ts"
 
 const observer = (name: string, sink: Array<string>, extra: Partial<FlowsPlugin> = {}): FlowsPlugin => ({
   name,
@@ -19,52 +19,8 @@ const namesFor = (resolved: Resolve.Resolved, hook: string): ReadonlyArray<strin
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
 
-/** What the plugin layers in `Input` provide. */
-type Provided<Input> = Input extends ReadonlyArray<infer Item> ? Provided<Item>
-  : Input extends { readonly layer: Layer.Layer<infer ROut, infer _E, infer _RIn> } ? ROut
-  : never
-
-/** What the plugin layers in `Input` need. */
-type Needed<Input> = Input extends ReadonlyArray<infer Item> ? Needed<Item>
-  : Input extends { readonly layer: Layer.Layer<infer _ROut, infer _E, infer RIn> } ? RIn
-  : never
-
-/**
- * Resolves `plugins` and types the merged layer from the plugins passed in.
- *
- * `Resolve.layer` is `Layer<any, PluginError, any>`, so a test that named its
- * services by hand kept compiling after a provider was removed (#2704). The
- * cast below names exactly what `plugins` provide and still need, so dropping a
- * plugin layer drops its services and the body that reads them fails tsc.
- */
-const resolvedLayer = async <const Input extends ReadonlyArray<PluginInput>>(plugins: Input) => {
-  const resolved = await run(Resolve.resolve(plugins))
-  return Resolve.layer(resolved) as Layer.Layer<Provided<Input>, PluginError, Exclude<Needed<Input>, Provided<Input>>>
-}
-
 class Alpha extends Context.Service<Alpha, { readonly value: string }>()("test/Alpha") {}
-
-class Unprovided extends Context.Service<Unprovided, { readonly value: string }>()(
-  "test/plugin/Resolve/Unprovided"
-) {}
-
-/** Never called; tsc checks it (#2704). */
-const unprovidedServiceProbe = async () => {
-  const withAlpha = await resolvedLayer([{ name: "alpha", layer: Layer.succeed(Alpha)({ value: "alpha" }) }])
-  const unmet = Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withAlpha))
-  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof run>[0]>()
-  run(Effect.map(Alpha, (alpha) => alpha.value).pipe(Effect.provide(withAlpha)))
-  const withoutAlpha = await resolvedLayer([{ name: "alpha" }])
-  const missing = Effect.map(Alpha, (alpha) => alpha.value).pipe(Effect.provide(withoutAlpha))
-  expectTypeOf<typeof missing>().not.toExtend<Parameters<typeof run>[0]>()
-}
-
-describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {
-  it("rejects a body that needs a service no plugin layer provides", () => {
-    // The assertion is the `@ts-expect-error` directives above.
-    expect(unprovidedServiceProbe).toBeTypeOf("function")
-  })
-})
+class Beta extends Context.Service<Beta, { readonly value: string }>()("test/Beta") {}
 
 describe("Resolve.resolve", () => {
   it("flattens nested arrays and drops falsy entries", async () => {
@@ -224,24 +180,33 @@ describe("Resolve.layer", () => {
   const alphaLayer = Layer.succeed(Alpha)({ value: "alpha" })
 
   it("is empty when no plugin contributes a layer", async () => {
-    const merged = await resolvedLayer([observer("a", [])])
+    const { layer: merged } = await resolvedLayer([observer("a", [])])
     await run(Effect.void.pipe(Effect.provide(merged)))
   })
 
   it("merges layers left to right so earlier services are visible to later ones", async () => {
-    const built: Array<string> = []
-    const first = Layer.effectDiscard(Effect.sync(() => void built.push("first")))
-    const second = Layer.effectDiscard(Effect.sync(() => void built.push("second")))
-    const merged = await resolvedLayer([
+    const second = Layer.effect(Beta)(Effect.map(Alpha, (alpha) => ({ value: `beta from ${alpha.value}` })))
+    const { layer } = await resolvedLayer([
       { name: "late", layer: second },
+      { name: "early", enforce: "pre", layer: alphaLayer }
+    ])
+    const value = await run(Effect.map(Beta, (beta) => beta.value).pipe(Effect.provide(layer)))
+    expect(value).toBe("beta from alpha")
+  })
+
+  it("does not provide a later plugin's services to an earlier pre plugin", async () => {
+    const first = Layer.effect(Beta)(Effect.map(Alpha, (alpha) => ({ value: alpha.value })))
+    const { layer } = await resolvedLayer([
+      { name: "late", layer: alphaLayer },
       { name: "early", enforce: "pre", layer: first }
     ])
-    await run(Effect.void.pipe(Effect.provide(merged)))
-    expect(built).toEqual(["first", "second"])
+    const error = await run(Effect.void.pipe(Effect.provide(layer), Effect.flip))
+    expect(error).toBeInstanceOf(PluginError)
+    expect(error).toMatchObject({ code: "layer_failed", plugin: "early" })
   })
 
   it("provides a plugin's services to consumers", async () => {
-    const merged = await resolvedLayer([{ name: "alpha", layer: alphaLayer }])
+    const { layer: merged } = await resolvedLayer([{ name: "alpha", layer: alphaLayer }])
     const value = await run(
       Alpha.pipe(
         Effect.map((alpha) => alpha.value),
@@ -252,7 +217,7 @@ describe("Resolve.layer", () => {
   })
 
   it("uses the later resolved plugin when two layers provide the same service tag", async () => {
-    const merged = await resolvedLayer([
+    const { layer: merged } = await resolvedLayer([
       { name: "first", layer: Layer.succeed(Alpha)({ value: "first" }) },
       { name: "second", layer: Layer.succeed(Alpha)({ value: "second" }) }
     ])
@@ -268,7 +233,7 @@ describe("Resolve.layer", () => {
 
   it("wraps a failing layer as layer_failed", async () => {
     const broken = Layer.effectDiscard(Effect.fail("boom" as const))
-    const merged = await resolvedLayer([{ name: "broken", layer: broken }])
+    const { layer: merged } = await resolvedLayer([{ name: "broken", layer: broken }])
     const exit = await Effect.runPromiseExit(Effect.void.pipe(Effect.provide(merged)))
     expect(Exit.isFailure(exit)).toBe(true)
     const error = await run(

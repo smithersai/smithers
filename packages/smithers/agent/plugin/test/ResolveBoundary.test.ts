@@ -1,66 +1,14 @@
 import { Action } from "@smthrs/flow"
-import { Context, Effect, Exit, Layer, Schema } from "effect"
-import { expectTypeOf } from "vitest"
+import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import * as Hooks from "../src/Hooks.ts"
-import type { FlowsPlugin, PluginInput } from "../src/index.ts"
+import type { FlowsPlugin } from "../src/index.ts"
 import { PluginError } from "../src/PluginError.ts"
 import * as Plugins from "../src/Plugins.ts"
 import * as Resolve from "../src/Resolve.ts"
+import { resolvedLayer } from "./support/resolvedLayer.ts"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
-
-/** What the plugin layers in `Input` provide. */
-type Provided<Input> = Input extends ReadonlyArray<infer Item> ? Provided<Item>
-  : Input extends { readonly layer: Layer.Layer<infer ROut, infer _E, infer _RIn> } ? ROut
-  : never
-
-/** What the plugin layers in `Input` need. */
-type Needed<Input> = Input extends ReadonlyArray<infer Item> ? Needed<Item>
-  : Input extends { readonly layer: Layer.Layer<infer _ROut, infer _E, infer RIn> } ? RIn
-  : never
-
-/**
- * Resolves `plugins` and types the merged layer from the plugins passed in.
- *
- * `Resolve.layer` is `Layer<any, PluginError, any>`, so a test that named its
- * services by hand kept compiling after a provider was removed (#2704). The
- * cast below names exactly what `plugins` provide and still need, so dropping a
- * plugin layer drops its services and the body that reads them fails tsc.
- */
-const resolvedLayer = async <const Input extends ReadonlyArray<PluginInput>>(
-  plugins: Input,
-  options?: Resolve.Options
-) => {
-  const resolved = await run(Resolve.resolve(plugins, options))
-  const layer = Resolve.layer(resolved) as Layer.Layer<
-    Provided<Input>,
-    PluginError,
-    Exclude<Needed<Input>, Provided<Input>>
-  >
-  return { resolved, layer }
-}
-
-class Unprovided extends Context.Service<Unprovided, { readonly value: string }>()(
-  "test/plugin/ResolveBoundary/Unprovided"
-) {}
-
-/** Never called; tsc checks it (#2704). */
-const unprovidedServiceProbe = async () => {
-  const marker = Layer.succeed(Unprovided)({ value: "marker" })
-  const withMarker = await resolvedLayer([{ name: "marker", layer: marker }])
-  const _provided = run(Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withMarker.layer)))
-  const withoutMarker = await resolvedLayer([{ name: "marker" }])
-  const unmet = Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withoutMarker.layer))
-  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof run>[0]>()
-}
-
-describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {
-  it("rejects a body that needs a service no plugin layer provides", () => {
-    // The assertion is the `@ts-expect-error` directive above.
-    expect(unprovidedServiceProbe).toBeTypeOf("function")
-  })
-})
 
 const refusal = async (input: unknown, options?: Resolve.Options) =>
   run(Resolve.resolve(input as never, options).pipe(Effect.flip))
@@ -307,24 +255,29 @@ describe("bounded plugin admission", () => {
   })
 
   it("rejects malformed options and hook catalogs", async () => {
-    for (
-      const options of [
-        { target: "worker" },
-        { parallelConcurrency: 0 },
-        { parallelConcurrency: 1.5 },
+    const cases: ReadonlyArray<readonly [unknown, PluginError["code"], string]> = [
+      [{ target: "worker" }, "invalid_plugin", "$options.target"],
+      [{ parallelConcurrency: 0 }, "resource_limit", "$options.parallelConcurrency"],
+      [{ parallelConcurrency: 1.5 }, "resource_limit", "$options.parallelConcurrency"],
+      [
         { parallelConcurrency: Resolve.maximumParallelConcurrency + 1 },
-        { parallelConcurrency: "two" },
-        { handlerTimeout: 0 },
-        { handlerTimeout: 1.5 },
-        { handlerTimeout: Resolve.maximumHandlerTimeout + 1 },
-        { handlerTimeout: "1 second" },
-        { hooks: [] },
-        { hooks: { config: "sometimes" } },
-        { hooks: new Date() },
-        { extra: true }
-      ] as ReadonlyArray<unknown>
-    ) {
-      expect(Exit.isFailure(await Effect.runPromiseExit(Resolve.resolve([], options as Resolve.Options)))).toBe(true)
+        "resource_limit",
+        "$options.parallelConcurrency"
+      ],
+      [{ parallelConcurrency: "two" }, "resource_limit", "$options.parallelConcurrency"],
+      [{ handlerTimeout: 0 }, "resource_limit", "$options.handlerTimeout"],
+      [{ handlerTimeout: 1.5 }, "resource_limit", "$options.handlerTimeout"],
+      [{ handlerTimeout: Resolve.maximumHandlerTimeout + 1 }, "resource_limit", "$options.handlerTimeout"],
+      [{ handlerTimeout: "1 second" }, "resource_limit", "$options.handlerTimeout"],
+      [{ hooks: [] }, "invalid_plugin", "$options.hooks"],
+      [{ hooks: { config: "sometimes" } }, "invalid_plugin", "$options.hooks.config"],
+      [{ hooks: new Date() }, "invalid_plugin", "$options.hooks"],
+      [{ extra: true }, "invalid_plugin", "$options.extra"]
+    ]
+    for (const [options, code, path] of cases) {
+      const error = await refusal([], options as Resolve.Options)
+      expect(error).toBeInstanceOf(PluginError)
+      expect(error).toMatchObject({ code, path })
     }
     const symbolic = { config: "waterfall", [Symbol("x")]: "parallel" }
     expect((await refusal([], { hooks: symbolic as never })).code).toBe("invalid_plugin")

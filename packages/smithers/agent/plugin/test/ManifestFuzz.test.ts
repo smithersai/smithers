@@ -1,6 +1,6 @@
-import { Cause, Effect, Exit } from "effect"
+import { Cause, Effect, Exit, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { Refusal } from "../src/Contribution.ts"
+import { Reason, Refusal } from "../src/Contribution.ts"
 import * as Load from "../src/Load.ts"
 import * as Manifest from "../src/Manifest.ts"
 import { host, queueManifest } from "./support/hostFacts.ts"
@@ -61,6 +61,58 @@ const mutate = (random: Random, value: any, depth = 0): unknown => {
   return copy
 }
 
+/** Keeps manifest shapes valid while varying the loader's contribution checks. */
+const mutateContribution = (random: Random): unknown => {
+  const manifest = queueManifest()
+  const { commands, keybindings, slots, views } = manifest.contributes
+  const view = views[0]
+  const event = pick<any>(random, view.events.filter((entry: any) => "flow" in entry))
+  // Portable renderers let repository and personal plugins reach the same checks.
+  if (random() < 0.5) {
+    view.render = { kind: "blocks", blocks: [] }
+    slots[0].render = { kind: "blocks", blocks: [] }
+  }
+  switch (Math.floor(random() * 12)) {
+    case 0:
+      view.id = pick(random, ["queue/queue", "queue/detail", "other/view", "core/view"])
+      break
+    case 1:
+      event.flow = pick(random, ["run/answer", "app/navigate", "missing/flow"])
+      break
+    case 2:
+      event.args.runId = pick(random, ["$item.runId", "$item.missing", "$event.note", "$key.index", "literal", 0])
+      break
+    case 3:
+      event.payload = { $ref: pick(random, ["#/$defs/Option", "#/$defs/Note", "#/$defs/Missing"]) }
+      break
+    case 4:
+      keybindings[1].when = pick(random, ["", "view == queue/queue", "view == queue/detail", "item.question &&"])
+      break
+    case 5:
+      keybindings[1].fields.index = pick(random, ["$key.index", "$event.index", "$item.version", 0, 8, 9])
+      break
+    case 6:
+      keybindings[1].key = pick(random, ["digit", "g q", "mod+enter", "unknown+key"])
+      break
+    case 7:
+      commands[0].flow = pick(random, ["app/navigate", "run/answer", "missing/flow"])
+      break
+    case 8:
+      commands[0].args.to = pick(random, ["/app/queue", "$item.runId", 0, null])
+      break
+    case 9:
+      view.minimum = pick(random, ["anyone", "guest", "member", "maintainer", "admin"])
+      break
+    case 10:
+      event.name = pick(random, ["option", "reply", "next", "custom"])
+      break
+    case 11:
+      slots[0].when = pick(random, ["", "view == queue/queue", "item.question &&"])
+      break
+  }
+  return manifest
+}
+
 /** Decoding either succeeds or fails with a Refusal: it never throws or dies. */
 const settles = (input: unknown) => {
   const exit = Effect.runSync(Effect.exit(Manifest.decode(input)))
@@ -77,19 +129,41 @@ describe("fuzzed decoding", () => {
     for (let run = 0; run < 2_000; run++) settles(json(random, 5))
   })
 
-  it("mutated queue manifests only decode or refuse, and load without failing", async () => {
-    const random = generator(2026)
-    const candidates: Array<Load.Candidate> = []
-    let decoded = 0
-    for (let run = 0; run < 1_500; run++) {
-      const manifest = mutate(random, queueManifest())
-      if (settles(manifest)) decoded++
-      if (run % 10 === 0) candidates.push({ tier: "built-in", manifest })
+  it.each(["built-in", "repository", "personal"] as const)(
+    "mutated queue manifests reach loader admission at the %s tier without failing",
+    async (tier) => {
+      const random = generator(2026)
+      let decoded = 0
+      let active = 0
+      let admissionRefusals = 0
+      const refusedPoints = new Set<string>()
+      for (let run = 0; run < 1_500; run++) {
+        const manifest = run % 2 === 0 ? mutateContribution(random) : mutate(random, queueManifest())
+        if (!settles(manifest)) continue
+        decoded++
+        // Loading one candidate prevents duplicate ids from bypassing admission.
+        const { contributions, refused } = await Effect.runPromise(Load.load(host(), [{ tier, manifest }]))
+        expect(contributions.plugins.length + refused.length).toBe(1)
+        if (contributions.plugins.length === 1) {
+          expect(refused).toEqual([])
+          expect(contributions.plugins[0]).toMatchObject({ tier })
+          active++
+        } else {
+          expect(refused).toHaveLength(1)
+          expect(refused[0]).toBeInstanceOf(Refusal)
+          expect(Schema.is(Reason)(refused[0]!.reason)).toBe(true)
+          if (refused[0]!.path?.startsWith("contributes.")) {
+            admissionRefusals++
+            refusedPoints.add(refused[0]!.path.split(/[.\[]/)[1]!)
+          }
+        }
+      }
+      expect(decoded).toBeGreaterThan(600)
+      expect(active).toBeGreaterThan(30)
+      expect(admissionRefusals).toBeGreaterThan(100)
+      expect([...refusedPoints].sort()).toEqual(["commands", "keybindings", "slots", "views"])
     }
-    expect(decoded).toBeGreaterThan(0)
-    const { contributions, refused } = await Effect.runPromise(Load.load(host(), candidates))
-    expect(contributions.plugins.length + refused.length).toBe(candidates.length)
-  })
+  )
 
   it("random text only parses or refuses", () => {
     const random = generator(99)
