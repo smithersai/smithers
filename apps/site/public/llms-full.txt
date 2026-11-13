@@ -20815,6 +20815,10 @@ This is a host adapter used by `GatewayServer`, rather than a package export pat
 
 `inspectionForest([{ runId, events }, ...])` merges related runs' recorded evidence by timestamp, execution identity and native sequence, exposing a presentation cursor while retaining the original envelope sequence and source identity. Step and call facts preserve the source coordinates required by the canonical agent-cell fold. A host must freeze the read snapshot while replaying: newly discovered child evidence can otherwise change presentation ordinals.
 
+### Monitor diagnostics and labels
+
+Requests to `/runtime/v1/monitor` open a `runtime-bridge.monitor` span. Host failure logs use that same operation name; wire errors remain sanitized. Transcript call labels use the recorded presentation's subject format: paths show their basename, patches name their files, and test selections list their entries. Unknown historical action names remain text, including names that match JavaScript prototype keys. Incremental trace snapshots retain the same cell and call state as a fresh fold of the journal.
+
 ---
 
 # @smthrs/harness

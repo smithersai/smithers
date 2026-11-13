@@ -1017,6 +1017,37 @@ describe("RuntimeBridge", () => {
       }))
   }
 
+  it.effect("traces successful monitor requests under their own operation", () =>
+    Effect.gen(function*() {
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options)
+          spans.push(span)
+          return span
+        }
+      })
+      const result = yield* Effect.gen(function*() {
+        const server = yield* HttpServer.HttpServer
+        if (server.address._tag !== "InetAddressV4") return yield* Effect.die("expected IPv4")
+        const port = server.address.port
+        return yield* Effect.promise(async () => {
+          const response = await fetch(`http://127.0.0.1:${port}/runtime/v1/monitor`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ protocol: RuntimeBridge.protocol, runId: "run-1" })
+          })
+          return { status: response.status, body: await response.json() }
+        })
+      }).pipe(
+        Effect.provide(directBridge(service()).pipe(Layer.provide(Layer.succeed(Tracer.Tracer, tracer)))),
+        Effect.scoped
+      )
+      expect(result).toMatchObject({ status: 200, body: { ok: true } })
+      expect(spans.filter((span) => span.name === "runtime-bridge.monitor")).toHaveLength(1)
+      expect(spans.filter((span) => span.name === "runtime-bridge.observe")).toHaveLength(0)
+    }))
+
   for (const operation of ["command", "observe", "monitor"] as const) {
     it.effect(`logs and traces failed ${operation} requests while the wire stays sanitized`, () =>
       Effect.gen(function*() {

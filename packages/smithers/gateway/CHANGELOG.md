@@ -24,6 +24,12 @@
 
 ### Changed
 
+- Transcript labels now show patch files and test selections, keep historical
+  action names such as `constructor` as text, and refresh root-attached cells
+  and calls as new records arrive. Node and Bun both default omitted TCP ports
+  to `7331`, and admitted bind options omit session approval tokens.
+  The README now lists every root namespace (#4924).
+
 - Successfully resumed runs clear their previous failure cause and fault from
   the diagnosis card, including across retained event windows. The gateway docs
   list every edge-authenticated mount and every approval submission error (#4915).

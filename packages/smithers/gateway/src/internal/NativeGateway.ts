@@ -135,6 +135,7 @@ export const listenOptions = (options: ServerOptions): Effect.Effect<ListenOptio
     const {
       allowedHosts: _allowedHosts,
       credential: _credential,
+      operatorToken: _operatorToken,
       heartbeatMillis: _cadence,
       listen: _listen,
       maxRequestBodyBytes: _maxBody,
@@ -142,7 +143,11 @@ export const listenOptions = (options: ServerOptions): Effect.Effect<ListenOptio
       requestScheme: _requestScheme,
       ...node
     } = options
-    return Effect.succeed({ ...node, host: node.host ?? "127.0.0.1" })
+    return Effect.succeed({
+      ...node,
+      host: node.host ?? "127.0.0.1",
+      ...(node.path === undefined ? { port: node.port ?? 7331 } : {})
+    })
   })
 
 /**

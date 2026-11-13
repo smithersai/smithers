@@ -1314,9 +1314,11 @@ const foldStep = (state: FoldState, record: JournalRecord): void => {
   if (top !== undefined) dirty.add(top)
   /** Marks the run's child that `span` sits under as changed. */
   const touch = (span: Builder): void => {
-    // Both callers retrieve spans registered in topOf when they were opened.
+    // Live cells and calls record their root child when they are opened.
     dirty.add(topOf.get(span)!)
   }
+  // A cell opened before any frame remains a separate child of the run.
+  if (cell !== undefined) touch(cell)
   /** Where a new span attaches: the open cell, else the open frame, else the run. */
   const parent = (): Builder => cell ?? frame ?? root
   const closeCell = (at: number, status: SpanStatus): void => {
@@ -1406,6 +1408,7 @@ const foldStep = (state: FoldState, record: JournalRecord): void => {
             fields: restOf(payload, ["text", "language"])
           }
         )
+        topOf.set(cell, frame ?? cell)
         ;(frame ?? root).children.push(cell)
         break
       }
@@ -1420,7 +1423,7 @@ const foldStep = (state: FoldState, record: JournalRecord): void => {
           fields: restOf(payload, ["flowName", "input"])
         })
         openCalls.push({ flowName, callId: asString(payload.callId), span })
-        topOf.set(span, frame ?? cell ?? span)
+        topOf.set(span, cell === undefined ? frame ?? span : topOf.get(cell)!)
         parent().children.push(span)
         break
       }
@@ -2326,13 +2329,11 @@ const cellText = (value: unknown): string | undefined => {
 /** The recorded presentation of a tool call: "Read t5.md", "Failed to write t5.md". */
 const callCellLabel = (started: Extract<CallFact.Fact, { phase: "invoked" }>, failed: boolean): string => {
   const descriptor = asRecord(started.descriptor)
-  const presentation = asRecord(descriptor.presentation)
-  const verbs = asRecord(presentation.verb)
+  const presentation = Schema.is(CallPresentation)(descriptor.presentation) ? descriptor.presentation : undefined
   const name = started.flowName
-  const verb = asString(failed ? verbs.failure : verbs.success) ?? (failed ? `failed ${name}` : name)
-  const subjectKey = asString(presentation.subject)
-  const subject = subjectKey === undefined ? undefined : asString(asRecord(started.input)[subjectKey])
-  const text = subject === undefined ? verb : `${verb} ${subject}`
+  const verb = (failed ? presentation?.verb.failure : presentation?.verb.success) ?? (failed ? `failed ${name}` : name)
+  const subject = callSubject(started.input, presentation?.subject)
+  const text = subject === "" ? verb : `${verb} ${subject}`
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 

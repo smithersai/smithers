@@ -1475,6 +1475,19 @@ describe("what the journal did not say", () => {
 })
 
 describe("Appendix C Inspect labels", () => {
+  test.each(["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"])(
+    "retains the historical action name %s as text",
+    (name) => {
+      for (const tag of [name, `<cell-call:${name}>`]) {
+        expect(inspectLabel(tag)).toBe(name)
+        const trace = traceFromJournal(RUN, oneCall(tag, {}))
+        expect(trace.rows.find((row) => row.kind === "call")?.label).toBe(name)
+        expect(JSON.parse(JSON.stringify(trace)).rows.find((row: { kind: string }) => row.kind === "call").label)
+          .toBe(name)
+      }
+    }
+  )
+
   test("recorded coding actions use literal past-tense titles on every replay", () => {
     const journal = [
       at(1, "control.agent.cell-call-started", { flowName: "coding/edit-atom", callId: "edit" }, 1000),
@@ -1796,6 +1809,7 @@ describe("native step transcripts and metered dispatches", () => {
     )
   const verbs = (verb: string, failure: string) => ({
     subject: "path",
+    result: "none",
     verb: { success: verb, failure, pending: verb }
   })
   const journal: Array<JournalRecord> = [
@@ -2071,6 +2085,62 @@ describe("native step transcripts and metered dispatches", () => {
         (cell) => cell.label
       )
     ).toEqual(["Named", "Call"])
+  })
+
+  test.each([
+    ["read", "path", { path: "src/deep/t5.md" }, "t5.md"],
+    [
+      "apply_patch",
+      "patch",
+      { input: "*** Begin Patch\n*** Update File: src/views.py\n@@\n-old\n+new\n*** End Patch" },
+      "views.py"
+    ],
+    ["test", "selection", { selection: ["a.test.ts", "b.test.ts"] }, "a.test.ts b.test.ts"],
+    ["bash", "command", { command: "pnpm test" }, "pnpm test"],
+    ["grep", "pattern", { pattern: "needle" }, "needle"],
+    ["custom", "none", { path: "hidden.ts" }, ""],
+    ["read", "path", {}, ""]
+  ])("formats %s transcript subjects from the recorded %s presentation", (name, subject, input, expected) => {
+    for (const outcome of [undefined, "success", "failure"]) {
+      const invoked = call(2, CALL_READ, "invoked", {
+        flowName: name,
+        input,
+        descriptor: {
+          name,
+          presentation: {
+            verb: { pending: "doing", success: "did", failure: "failed to do" },
+            subject,
+            result: "none"
+          }
+        }
+      })
+      const records = [
+        journal[0]!,
+        invoked,
+        ...(outcome === undefined ? [] : [call(3, CALL_READ, "settled", { flowName: name, outcome, value: null })]),
+        journal[11]!
+      ]
+      const label = outcome === "failure" ? "Failed to do" : "Did"
+      expect(monitorFromJournal(run, records).attempts[0]!.phases[0]!.cells[0]?.label)
+        .toBe(expected === "" ? label : `${label} ${expected}`)
+    }
+  })
+
+  test("ignores invalid transcript presentation and uses the shared inferred subject", () => {
+    const invoked = call(2, CALL_READ, "invoked", {
+      flowName: "read",
+      input: { path: "src/deep/t5.md", privateField: "private" },
+      descriptor: {
+        name: "read",
+        presentation: {
+          verb: { success: "wrong", failure: "wrong", pending: "wrong" },
+          subject: "privateField",
+          result: "none"
+        }
+      }
+    })
+    expect(monitorFromJournal(run, [journal[0]!, invoked, journal[11]!]).attempts[0]!.phases[0]!.cells[0]?.label)
+      .toBe("Read t5.md")
   })
 
   test("invalid call envelopes cannot create transcript cells", () => {

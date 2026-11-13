@@ -217,6 +217,49 @@ const replay = (
 }
 
 describe("traceFoldStep", () => {
+  it("closes a root-attached cell when a later turn closes the frame", () => {
+    const journal: Array<JournalRecord> = [
+      { sequence: 1, kind: "control.agent.cell-produced", payload: { at: 100, text: "await write()" } },
+      { sequence: 2, kind: "control.agent.turn-opened", payload: { at: 200 } },
+      { sequence: 3, kind: "control.agent.turn-opened", payload: { at: 300 } }
+    ]
+    const models = replay(journal, "running")
+    expect(models.at(-1)!.rows.find((row) => row.kind === "cell")).toMatchObject({
+      status: "completed",
+      endedAt: 300
+    })
+    expect(models[1]!.rows.find((row) => row.kind === "cell")?.endedAt).toBeUndefined()
+  })
+
+  it("refreshes root-attached cells and their calls across later turns", () => {
+    FastCheck.assert(
+      FastCheck.property(
+        FastCheck.array(FastCheck.constantFrom("print", "call", "settle", "cell", "turn"), { maxLength: 15 }),
+        (events) => {
+          const journal: Array<JournalRecord> = [
+            { sequence: 1, kind: "control.agent.cell-produced", payload: { at: 100 } },
+            { sequence: 2, kind: "control.agent.turn-opened", payload: { at: 200 } }
+          ]
+          for (const event of events) {
+            const sequence = journal.length + 1
+            const [kind, payload] = event === "print" ?
+              ["cell-printed", { text: "printed" }]
+              : event === "call" ?
+              ["cell-call-started", { callId: "call", flowName: "read" }]
+              : event === "settle" ?
+              ["cell-call-settled", { callId: "call", outcome: "success", value: "read" }]
+              : event === "cell"
+              ? ["cell-produced", { text: "await read()" }]
+              : ["turn-opened", {}]
+            journal.push({ sequence, kind: `control.agent.${kind}`, payload: { ...payload, at: sequence * 100 } })
+          }
+          replay(journal, "running")
+        }
+      ),
+      { numRuns: 100, seed: 4924 }
+    )
+  })
+
   it("keeps replayed call events from creating or settling a second call", () => {
     const started: JournalRecord = {
       sequence: 1,

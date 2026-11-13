@@ -28,8 +28,13 @@ const importRules = ImportRules({
   }, {
     kind: "forbidCalls",
     files: ["test/DefectRedaction.test.ts"],
-    callees: ["setTimeout", "*.sleep", "*.waitForTimeout", "vi.mock", "vi.doMock", "jest.mock"],
+    callees: ["setTimeout", "*.sleep", "*.waitForTimeout"],
     because: "test.behavioral: defect redaction uses real HTTP handlers and faulty Effect services."
+  }, {
+    kind: "forbidCalls",
+    files: ["test/**"],
+    callees: ["vi.mock", "vi.doMock", "jest.mock", "jest.doMock"],
+    because: "test.behavioral: gateway tests use real hosts and inject faults through Effect services."
   }]
 })
 

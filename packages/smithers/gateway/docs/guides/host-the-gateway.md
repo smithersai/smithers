@@ -151,3 +151,5 @@ authentication layer.
 Splitting them is for hosts with an existing router, not for dropping a mount:
 the ingress guard reads `rpcPaths` and `protectedPaths`, which name all three
 RPC mounts, and a surface that serves fewer of them still pays the same guard.
+
+Both adapters default omitted TCP ports to `7331`, even when other options are supplied. An explicit `port: 0` requests an available port. `listenOptions` removes gateway credentials and session approval tokens before returning socket bind options.

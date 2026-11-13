@@ -14,5 +14,5 @@ import { ACTION_RENDERINGS } from "./actionRenderings.ts"
  */
 export const inspectLabel = (tag: string): string => {
   const tool = /^<cell-call:(.+)>$/.exec(tag)?.[1] ?? tag
-  return ACTION_RENDERINGS[tool] ?? tool
+  return Object.hasOwn(ACTION_RENDERINGS, tool) ? ACTION_RENDERINGS[tool] ?? tool : tool
 }

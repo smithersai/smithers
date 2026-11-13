@@ -17,16 +17,8 @@ import * as Fs from "node:fs"
 import * as Path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Diagnosis from "../src/Diagnosis.ts"
-import * as GatewayError from "../src/GatewayError.ts"
-import * as GatewayProjection from "../src/GatewayProjection.ts"
-import * as GatewayRpcs from "../src/GatewayRpcs.ts"
-import * as GatewaySchema from "../src/GatewaySchema.ts"
-import * as GatewayServer from "../src/GatewayServer.ts"
+import * as Gateway from "../src/index.ts"
 import * as NodeGateway from "../src/node/NodeGateway.ts"
-import * as Projections from "../src/Projections.ts"
-import * as RunHistory from "../src/RunHistory.ts"
-import * as RuntimeBridge from "../src/RuntimeBridge.ts"
 
 const packageRoot = Path.join(Path.dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -38,7 +30,7 @@ const declaredTypes = (file: string): ReadonlyArray<string> =>
 /** The export list the README records for one module row. */
 const documented = (module: string): ReadonlyArray<string> => {
   const readme = Fs.readFileSync(Path.join(packageRoot, "README.md"), "utf8")
-  const row = readme.split("\n").find((line) => line.startsWith(`| \`${module}\``))
+  const row = readme.split("\n").find((line) => line.startsWith("| `" + module + "`"))
   if (row === undefined) throw new Error(`README has no row for ${module}`)
   return (row.split("|")[2] ?? "").split(",").map((cell) => cell.trim().replaceAll("`", "")).filter((cell) =>
     cell.length > 0
@@ -46,15 +38,8 @@ const documented = (module: string): ReadonlyArray<string> => {
 }
 
 const modules = [
-  ["GatewayError", GatewayError, declaredTypes("GatewayError.ts")],
-  ["GatewaySchema", GatewaySchema, declaredTypes("GatewaySchema.ts")],
-  ["Diagnosis", Diagnosis, declaredTypes("Diagnosis.ts")],
-  ["GatewayProjection", GatewayProjection, declaredTypes("GatewayProjection.ts")],
-  ["GatewayRpcs", GatewayRpcs, declaredTypes("GatewayRpcs.ts")],
-  ["GatewayServer", GatewayServer, declaredTypes("GatewayServer.ts")],
-  ["Projections", Projections, declaredTypes("Projections.ts")],
-  ["RunHistory", RunHistory, declaredTypes("RunHistory.ts")],
-  ["RuntimeBridge", RuntimeBridge, declaredTypes("RuntimeBridge.ts")],
+  ...Object.entries(Gateway).filter(([name]) => name !== "Sync")
+    .map(([name, module]) => [name, module, declaredTypes(`${name}.ts`)] as const),
   ["node/NodeGateway", NodeGateway, declaredTypes("node/NodeGateway.ts")]
 ] as const
 

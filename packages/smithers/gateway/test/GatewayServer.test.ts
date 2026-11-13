@@ -2440,6 +2440,43 @@ describe("gateway bind policy", () => {
       expect(error).toMatchObject({ code: "bind_failed" })
     }).pipe(Effect.scoped))
 
+  it.effect("defaults every TCP bind to port 7331 and preserves explicit ports and socket paths", () =>
+    Effect.gen(function*() {
+      for (const options of [{}, { host: "localhost" }, { credential: "test-credential" }]) {
+        expect(yield* NodeGateway.listenOptions(options)).toEqual({
+          host: "127.0.0.1",
+          ...("host" in options ? { host: options.host } : {}),
+          port: 7331
+        })
+      }
+      expect(yield* NodeGateway.listenOptions({ port: 0 })).toEqual({ host: "127.0.0.1", port: 0 })
+      expect(yield* NodeGateway.listenOptions({ port: 8443 })).toEqual({ host: "127.0.0.1", port: 8443 })
+      expect(yield* NodeGateway.listenOptions({ path: "gateway.sock" })).toEqual({
+        host: "127.0.0.1",
+        path: "gateway.sock"
+      })
+    }))
+
+  it.effect("passes only bind keys to the server without gateway secrets or policy", () =>
+    Effect.gen(function*() {
+      expect(
+        yield* NodeGateway.listenOptions({
+          host: "localhost",
+          port: 0,
+          backlog: 12,
+          exclusive: true,
+          allowedHosts: ["localhost"],
+          credential: "test-credential",
+          operatorToken: "test-operator-token",
+          heartbeatMillis: 100,
+          listen: true,
+          maxRequestBodyBytes: 1024,
+          requestScheme: "https:",
+          runtimeBridge: { runtimeArtifactDigest: "digest", sourceRevision: "revision", ownerGeneration: 1 }
+        })
+      ).toEqual({ host: "localhost", port: 0, backlog: 12, exclusive: true })
+    }))
+
   it.effect("defaults a bind with no host to loopback", () =>
     Effect.gen(function*() {
       expect(yield* NodeGateway.listenOptions({ port: 0 })).toEqual({ port: 0, host: "127.0.0.1" })
