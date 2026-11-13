@@ -27,6 +27,7 @@ import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import type * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Judgement from "@smthrs/harness/Judgement"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -915,8 +916,38 @@ describe("the jev flow", () => {
     expect(judge.asked).toHaveLength(0)
   })
 
+  it.each([
+    ["ASCII", "x".repeat(122_878)],
+    ["UTF-8", "é".repeat(61_439)],
+    ["JSON escaping", "\"".repeat(61_439)]
+  ])("admits exactly 120 KiB of %s JSON and refuses one byte more before the gateway", async (_, state) => {
+    const judge = recording(() => ({ auth: { probability: 0.8 } }))
+    const binding = await bindingOf(StandardFlows.jev(judge.services))
+    const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength
+    expect(bytes(state)).toBe(122_880)
+    const accepted = await Effect.runPromise(
+      binding.run(callOf("jev", { state, questions: { auth: questions.auth } }))
+    )
+    expect(accepted).toMatchObject({ outcome: "success", value: { answers: { auth: { probability: 0.8 } } } })
+    expect(judge.asked).toHaveLength(1)
+    expect(judge.asked[0]!.state).toBe(state)
+
+    expect(bytes(state + "x")).toBe(122_881)
+    const refused = await Effect.runPromise(
+      binding.run(callOf("jev", { state: state + "x", questions: { auth: questions.auth } }))
+    )
+    expect(refused).toMatchObject({ outcome: "failure", code: "flow_failed" })
+    expect(refused.message).toContain("jev refuses a state of 122881 bytes")
+    expect(refused.message).toContain("this host's ceiling is 122880 bytes")
+    expect(refused.message).toContain("Send shorter excerpts, or split the items across calls.")
+    expect(judge.asked).toHaveLength(1)
+    expect(StandardFlows.defaultMaxJevStateBytes).toBe(Judgement.maxStateBytes)
+    expect(binding.descriptor.description).toContain("state is capped at 120 KiB of JSON")
+    expect(JSON.stringify(binding.descriptor.input)).toContain("At most 120 KiB as JSON")
+  })
+
   it("only lowers the state ceiling: a larger or non-finite value keeps the default", async () => {
-    // The public contract is the description's 256 KiB; a host cannot raise it
+    // The public contract is the description's 120 KiB; a host cannot raise it
     // by passing a bigger number, and cannot remove it by passing NaN. A state
     // one byte over the default is refused under every such request, and the
     // refusal names the default ceiling rather than the one the host asked for.

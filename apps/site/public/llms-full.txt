@@ -6791,7 +6791,10 @@ const parseDelay: (message: string) => number | undefined
 The delay a refusal's message names, in milliseconds, read from prose forms
 such as "try again in 30 seconds", "retry-after: 2 minutes", and "resets in 1
 hour". `undefined` means the text named none, which is not the same as naming
-zero: the caller falls back to its configured default.
+zero: the caller falls back to its configured default. Bare `Retry-After`
+values must be complete seconds counts. Dates, clock times, grouped numbers
+such as `3,600`, and unknown units such as `120ms` use the configured default
+rather than a numeric prefix.
 
 ### QuotaPolicy.modelErrorOf
 
@@ -22874,7 +22877,7 @@ asks the same questions about each of many items. Each question is built from
 the item's index, and its id is `${key}_${index}`. `classifierFor(n)` is the
 classifier for `n` items, the same object for the same `n`. Its state is
 `{ context, items }`. `read(context, items)` packs items in order, greedily,
-into requests whose encoded state fits `maxStateBytes` (by default 262,144
+into requests whose encoded state fits `maxStateBytes` (by default 122,880
 bytes, the `jev` flow's ceiling). Each request numbers its items from 0, and
 requests run at most `concurrency` (`Classifier.defaultConcurrency`) at once.
 Answers come back one record per item in input order, with every request's

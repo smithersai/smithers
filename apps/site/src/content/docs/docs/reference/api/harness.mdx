@@ -2038,7 +2038,7 @@ asks the same questions about each of many items. Each question is built from
 the item's index, and its id is `${key}_${index}`. `classifierFor(n)` is the
 classifier for `n` items, the same object for the same `n`. Its state is
 `{ context, items }`. `read(context, items)` packs items in order, greedily,
-into requests whose encoded state fits `maxStateBytes` (by default 262,144
+into requests whose encoded state fits `maxStateBytes` (by default 122,880
 bytes, the `jev` flow's ceiling). Each request numbers its items from 0, and
 requests run at most `concurrency` (`Classifier.defaultConcurrency`) at once.
 Answers come back one record per item in input order, with every request's

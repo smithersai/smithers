@@ -131,15 +131,18 @@ describe("judge", () => {
     expect(jev.asked).toEqual([])
   })
 
-  // Each item is about 1 KiB sent, so 300 of them take two requests.
+  // Each item is about 1 KiB sent, so 300 of them take three 120 KiB requests.
   const many = Array.from({ length: 300 }, (_, n) => item(`m${n}`, "y".repeat(1000)))
 
   it("sums the usage of every request", async () => {
     const jev = scripted(() => 0.2, { usage: { inputTokens: 10, outputTokens: 2 } })
     const reading = await Effect.runPromise(Relevance.judge(context, many).pipe(Effect.provide(jev.layer)))
-    expect(jev.asked).toHaveLength(2)
+    expect(jev.asked).toHaveLength(3)
     expect(reading.verdicts).toHaveLength(300)
-    expect(reading.usage).toEqual({ inputTokens: 20, outputTokens: 4 })
+    expect(reading.usage).toEqual({ inputTokens: 30, outputTokens: 6 })
+    for (const request of jev.asked) {
+      expect(new TextEncoder().encode(JSON.stringify(request.state)).byteLength).toBeLessThanOrEqual(122_880)
+    }
   })
 
   it("fails timeout with no verdicts when one request times out", async () => {

@@ -1278,7 +1278,10 @@ const parseDelay: (message: string) => number | undefined
 The delay a refusal's message names, in milliseconds, read from prose forms
 such as "try again in 30 seconds", "retry-after: 2 minutes", and "resets in 1
 hour". `undefined` means the text named none, which is not the same as naming
-zero: the caller falls back to its configured default.
+zero: the caller falls back to its configured default. Bare `Retry-After`
+values must be complete seconds counts. Dates, clock times, grouped numbers
+such as `3,600`, and unknown units such as `120ms` use the configured default
+rather than a numeric prefix.
 
 ### QuotaPolicy.modelErrorOf
 

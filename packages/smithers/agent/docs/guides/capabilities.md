@@ -134,7 +134,7 @@ const authFiles = files.filter((file) => judged.answers[file].probability >= 0.8
   evidence (its hit lines, an excerpt, its output) in `state` under the same
   id. One instruction sent to many items reads the same for each when no id
   names them: on 2026-10-14 every file pick posed that way came back flat.
-- `state` is any JSON up to 256 KiB (`defaultMaxJevStateBytes`; a host may
+- `state` is any JSON up to 120 KiB (`defaultMaxJevStateBytes`; a host may
   only lower it). `questions` is a map of boolean, choice or score questions,
   decoded through `Classifier.Question`, so a malformed question is refused as
   `invalid_input` before any transport is asked.

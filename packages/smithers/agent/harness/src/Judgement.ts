@@ -186,12 +186,14 @@ export const read = <Id extends string, S extends Schema.Codec<any, any>, Qs ext
 
 /**
  * The largest state one reading sends, in UTF-8 bytes of its JSON: the
- * ceiling the `jev` flow applies to a cell's own calls.
+ * ceiling the `jev` flow applies to a cell's own calls. The gateway accepted
+ * 120 KiB of repository text but rejected 256 KiB; requests stay within the
+ * measured safe size.
  *
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const maxStateBytes = 262_144
+export const maxStateBytes = 122_880
 
 /**
  * The questions {@link perItem} asks about each item, each built for the

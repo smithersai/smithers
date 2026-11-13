@@ -199,8 +199,9 @@ export const layerUnclassified = (): Layer.Layer<QuotaClassifier> => Layer.succe
  * `Retry-After: 120ms` a `(?!\s*[a-z])` tail backtracked the capture to `12`
  * and parked for twelve seconds, and `Retry after 12 days` parked for one.
  * Both are exactly the misread this comment says the module refuses to make.
- * The dot is refused only when a digit follows it, so a truncated `1` out of
- * `1.5ms` cannot pass while a sentence-ending `Retry-After: 3.` still reads
+ * Numeric separators (`.`, `,`, `:`, `-` and `/`) are refused when a digit
+ * follows, so dates, clock times and grouped numbers cannot become seconds.
+ * A truncated `1` out of `1.5ms` cannot pass while `Retry-After: 3.` still reads
  * as three seconds. Horizontal whitespace, not `\s`, separates the number
  * from a unit word: a unit sits on the number's own line, so `Retry-After: 30`
  * followed by a new line of prose keeps its thirty seconds.
@@ -212,7 +213,7 @@ const textualDelays: ReadonlyArray<{ readonly pattern: RegExp; readonly unitMill
   { pattern: /retry[- ]after[:=]?\s*(\d+(?:\.\d+)?)\s*(?:seconds?|secs?|s)\b/i, unitMillis: 1_000 },
   { pattern: /retry[- ]after[:=]?\s*(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\b/i, unitMillis: 60_000 },
   { pattern: /retry[- ]after[:=]?\s*(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/i, unitMillis: 3_600_000 },
-  { pattern: /retry[- ]after[:=]?\s*(\d+(?:\.\d+)?)(?!\d|\.\d|[^\S\r\n]*[a-z])/i, unitMillis: 1_000 },
+  { pattern: /retry[- ]after[:=]?\s*(\d+(?:\.\d+)?)(?!\d|[.,:\-/]\d|[^\S\r\n]*[a-z])/i, unitMillis: 1_000 },
   { pattern: /resets?\s+in\s+(\d+(?:\.\d+)?)\s*(?:seconds?|secs?|s)\b/i, unitMillis: 1_000 },
   { pattern: /resets?\s+in\s+(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\b/i, unitMillis: 60_000 },
   { pattern: /resets?\s+in\s+(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/i, unitMillis: 3_600_000 }

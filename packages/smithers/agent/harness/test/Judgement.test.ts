@@ -200,6 +200,23 @@ describe("perItem", () => {
     ])
   })
 
+  it("defaults to a 120 KiB encoded state, accepting the boundary and refusing one byte over", async () => {
+    const jev = scripted(() => ({ remove_0: { probability: 0.1 }, keep_0: { probability: 0.9 } }))
+    const perItem = declare()
+    const overhead = new TextEncoder().encode(JSON.stringify({ context: "c", items: [""] })).byteLength
+    const item = "x".repeat(122_880 - overhead)
+    const reading = await Effect.runPromise(perItem.read("c", [item]).pipe(Effect.provide(jev.layer)))
+    expect(reading.answers[0]!.keep.probability).toBe(0.9)
+    expect(jev.asked).toHaveLength(1)
+    expect(new TextEncoder().encode(JSON.stringify(jev.asked[0]!.state)).byteLength).toBe(122_880)
+
+    expect(await failure(perItem.read("c", [item + "x"]).pipe(Effect.provide(jev.layer)))).toEqual({
+      reason: "invalid_question",
+      detail: "Item 0 alone makes a 122881-byte state; one reading sends at most 122880 bytes."
+    })
+    expect(jev.asked).toHaveLength(1)
+  })
+
   it("sends every item in one request when they fit", async () => {
     const jev = byItem()
     const reading = await Effect.runPromise(declare().read("c", items).pipe(Effect.provide(jev.layer)))

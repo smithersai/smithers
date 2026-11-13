@@ -966,9 +966,9 @@ export const select = (input: Input, options: Options): Effect.Effect<Selection,
       : { task: Judgement.task(input.task), query: Judgement.task(input.query) }
     const state: Judging = { asked: [], unjudged: undefined }
 
-    // Seeds: named paths that exist, kept whole and never judged. They are
-    // the repository's, so they are read only when `repo` is a source; a
-    // named commit is read only when `commits` is.
+    // Seeds: named paths that exist, never judged and subject to packing
+    // byte limits. They are read only when `repo` is a source; a named
+    // commit is read only when `commits` is.
     const named = !sources.has("repo") ? [] : [
       ...new Set([
         ...(input.paths ?? []).flatMap((value) => {

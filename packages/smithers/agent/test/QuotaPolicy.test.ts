@@ -609,6 +609,22 @@ describe("the default classifier", () => {
     expect(QuotaPolicy.parseDelay("retry-after: 3 weeks")).toBeUndefined()
   })
 
+  it.each([
+    "Rate limited. Retry after 2026-11-11T00:00:00Z",
+    "retry after 10:30 UTC",
+    "Retry-After: 3,600",
+    "Retry-After: 120ms",
+    "Retry after 11/11/2026",
+    "Retry after 10-30",
+    "Retry-After: 1.5ms"
+  ])("uses the default wait instead of reading a numeric prefix from %s", (message) => {
+    expect(QuotaPolicy.parseDelay(message)).toBeUndefined()
+    expect(Option.getOrUndefined(classify(
+      new ModelError({ code: "rate_limited", message }),
+      1_000
+    ))).toEqual({ wakeAt: 61_000, source: "default" })
+  })
+
   it("keeps the bare Retry-After forms whose number is complete", () => {
     // The digit guard must not cost the forms that were already right: a
     // fractional value, a value ending a sentence, and a value whose line

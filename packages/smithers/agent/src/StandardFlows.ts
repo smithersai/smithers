@@ -843,7 +843,9 @@ export const defaultMaxJevStateBytes = Judgement.maxStateBytes
 export const JevInput = Schema.Struct({
   state: Schema.Json.annotate({
     description:
-      "The JSON every question is about: each item with the evidence its question needs (hit lines, an excerpt, output), under the id that question is keyed by. At most 256 KiB as JSON."
+      `The JSON every question is about: each item with the evidence its question needs (hit lines, an excerpt, output), under the id that question is keyed by. At most ${
+        defaultMaxJevStateBytes / 1024
+      } KiB as JSON.`
   }),
   questions: Schema.Record(Schema.String, Classifier.Question).annotate({
     description:
@@ -894,7 +896,9 @@ export const JevOutput = Schema.Struct({
 export const jevFlow = {
   name: "jev",
   description:
-    "Ask Jev, a fast typed decision model, any number of boolean, choice or score questions about one JSON state, all answered in parallel in one request of about 300 ms, far cheaper than reading the items yourself. Answers are typed, never free text. Use it for every enumerable judgment over many items (classify, triage, rank, filter, yes/no, pick-one, score): put each item's evidence in state and write one question per item, keyed by the item's id; one call carries hundreds of questions. Calls from one cell settle one at a time and a cell's calls are capped, so pack the items into one call rather than firing a call per item. state is capped at 256 KiB of JSON. Not for generating text or code, and not for a question whose answer must be quoted. It never guesses: a judge that fails answers { ok: false } with the failure code first in error.message.",
+    `Ask Jev, a fast typed decision model, any number of boolean, choice or score questions about one JSON state, all answered in parallel in one request of about 300 ms, far cheaper than reading the items yourself. Answers are typed, never free text. Use it for every enumerable judgment over many items (classify, triage, rank, filter, yes/no, pick-one, score): put each item's evidence in state and write one question per item, keyed by the item's id; one call carries hundreds of questions. Calls from one cell settle one at a time and a cell's calls are capped, so pack the items into one call rather than firing a call per item. state is capped at ${
+      defaultMaxJevStateBytes / 1024
+    } KiB of JSON. Not for generating text or code, and not for a question whose answer must be quoted. It never guesses: a judge that fails answers { ok: false } with the failure code first in error.message.`,
   input: JevInput,
   output: JevOutput,
   capabilities: [`model:call:${Evaluator.defaultModel}`],

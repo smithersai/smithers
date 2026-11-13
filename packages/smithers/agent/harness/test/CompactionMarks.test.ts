@@ -326,15 +326,16 @@ describe("read", () => {
     expect((jev.asked[0]!.state as unknown as Sent).context).toEqual(context)
   })
 
-  // Each item is about 2 KiB sent, so 200 of them take two requests.
+  // Each item is about 2 KiB sent, so 200 of them take four 120 KiB requests.
   const many = Array.from({ length: 200 }, (_, n) => item(`m${n}`, 1000))
 
   it("asks one request at a time, both questions per item", async () => {
     const jev = scripted(() => ({ remove: 0, keep: 1 }))
     const reading = await Effect.runPromise(Marks.read(context, many).pipe(Effect.provide(jev.layer)))
-    expect(jev.asked).toHaveLength(2)
+    expect(jev.asked).toHaveLength(4)
     expect(reading.answers).toHaveLength(200)
     for (const request of jev.asked) {
+      expect(new TextEncoder().encode(JSON.stringify(request.state)).byteLength).toBeLessThanOrEqual(122_880)
       const n = (request.state as unknown as Sent).items.length
       expect(Object.keys(request.questions).sort()).toEqual(
         Array.from({ length: n }, (_, i) => [`keep_${i}`, `remove_${i}`]).flat().sort()
