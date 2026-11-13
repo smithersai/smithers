@@ -72,11 +72,6 @@ export const validateFactoryModule = (namespace: unknown, file: string): LoadedF
           { path: file }
         )
       }
-      if (factory !== undefined) {
-        throw new PackageError("factory_export_duplicate", "FACTORY.ts exports more than one factory declaration", {
-          path: file
-        })
-      }
       factory = value
       continue
     }
@@ -87,11 +82,6 @@ export const validateFactoryModule = (namespace: unknown, file: string): LoadedF
           `a home declaration is exported as ${JSON.stringify(name)}; the one legal export name is home`,
           { path: file }
         )
-      }
-      if (home !== undefined) {
-        throw new PackageError("factory_export_duplicate", "FACTORY.ts exports more than one home declaration", {
-          path: file
-        })
       }
       home = value
       continue

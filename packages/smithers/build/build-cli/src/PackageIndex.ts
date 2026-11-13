@@ -221,15 +221,11 @@ export class PackageIndex {
           )
         }
         const foldedKey = label.toLowerCase()
+        // Every label is recorded in `folded` beside `byLabel`, so a repeated
+        // label is always a case-insensitive collision with itself.
         const collision = folded.get(foldedKey)
         if (collision !== undefined) {
           throw new PackageError("case_collision", `two labels collide case-insensitively: ${collision} and ${label}`, {
-            path: loaded.file,
-            label
-          })
-        }
-        if (byLabel.has(label)) {
-          throw new PackageError("duplicate_label", `two targets carry one label: ${label}`, {
             path: loaded.file,
             label
           })

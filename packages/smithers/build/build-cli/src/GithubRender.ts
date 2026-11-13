@@ -31,6 +31,7 @@ import * as NodeCrypto from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as GitHooks from "./GitHooks.ts"
+import { byCodeUnit } from "./internal/Text.ts"
 
 /**
  * The refusal codes one render, check, or write can fail with.
@@ -778,9 +779,8 @@ export const render = (options: {
     } catch (cause) {
       throw new GithubRenderError(
         "not_a_workflow",
-        `CiGen workflows entries must be Github.Workflow targets: ${
-          cause instanceof Error ? cause.message : String(cause)
-        }`
+        // workflowAttrsOf throws only Target.metadata's or attrsOf's TypeError.
+        `CiGen workflows entries must be Github.Workflow targets: ${(cause as TypeError).message}`
       )
     }
     if (!workflowName.test(workflow.name)) {
@@ -807,9 +807,8 @@ export const render = (options: {
       } catch (cause) {
         throw new GithubRenderError(
           "not_a_setup",
-          `a workflow setup attr must be a Github.Setup target: ${
-            cause instanceof Error ? cause.message : String(cause)
-          }`
+          // setupAttrsOf throws only Target.metadata's or attrsOf's TypeError.
+          `a workflow setup attr must be a Github.Setup target: ${(cause as TypeError).message}`
         )
       }
     }
@@ -886,7 +885,7 @@ export const render = (options: {
       )
     }
   }
-  files.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+  files.sort((left, right) => byCodeUnit(left.path, right.path))
   return {
     label,
     packageDir: options.packageDir,
@@ -1009,7 +1008,7 @@ export const check = async (root: string, rendered: CiRender): Promise<CheckRepo
     }
     if (insideWriteSet(patterns, path)) entries.push({ path, status: "unexpected" })
   }
-  entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+  entries.sort((left, right) => byCodeUnit(left.path, right.path))
   return {
     clean: entries.every((entry) => entry.status === "clean" || entry.status === "preserved"),
     entries
@@ -1097,7 +1096,8 @@ export const write = async (root: string, rendered: CiRender): Promise<WriteRepo
     } catch (cause) {
       throw new GithubRenderError(
         "write_failed",
-        `stale generated file ${path} could not be removed: ${cause instanceof Error ? cause.message : String(cause)}`
+        // fs.promises.rm rejects only with a Node system Error.
+        `stale generated file ${path} could not be removed: ${(cause as Error).message}`
       )
     }
     removed.push(path)

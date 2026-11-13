@@ -112,6 +112,44 @@ describe("audience-aware progress", () => {
     expect(term.text()).not.toContain("\u001b[")
   })
 
+  it("frames a forced-colorless live human run with Clack and no color codes", () => {
+    const term = terminal(true)
+    const env = { TERM: "xterm-256color", FORCE_COLOR: "0" }
+    const reporter = Reporter.make({
+      renderer: "tty",
+      terminal: term,
+      env,
+      presentation: Audience.resolve({ env, audience: "human", stdout: true, stderr: true })
+    })
+    expect(reporter.renderer).toBe("tty")
+    reporter.begin({ ...run, verb: "auto" })
+    for (const entry of results) {
+      if (entry.status !== "skipped") reporter.targetStarted(entry.label)
+      reporter.targetFinished(entry)
+    }
+    reporter.summary(summary)
+    reporter.close()
+    const text = term.text()
+    // An auto run is introduced by its pattern alone.
+    expect(text).toContain("//...")
+    expect(text).not.toContain("auto //...")
+    expect(text).toContain("4 targets · 2 jobs")
+    expect(text).toContain("Targets failed; see diagnostics above")
+    expect(text).not.toMatch(/\u001b\[[0-9;]*m/)
+  })
+
+  it("renders a human plain run without an explicit environment", () => {
+    const term = terminal(true)
+    const reporter = Reporter.make({
+      renderer: "plain",
+      terminal: term,
+      presentation: Audience.resolve({ env: {}, audience: "human", stdout: true, stderr: true })
+    })
+    replay(reporter)
+    expect(term.text()).toContain("Running //:alpha")
+    expect(term.text()).not.toContain("\u001b[")
+  })
+
   it("never emits cursor motion on redirected or dumb human terminals", () => {
     for (const [isTTY, env] of [[false, {}], [true, { TERM: "dumb" }]] as const) {
       const term = terminal(isTTY)

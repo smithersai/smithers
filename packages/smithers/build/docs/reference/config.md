@@ -33,12 +33,11 @@ The CLI looks for `.smithers/WORKSPACE.ts` first, then a root `WORKSPACE.ts`.
 The first one it finds is the workspace declaration.
 
 The module may export other declarations, as the example exports `runtime` and
-`packageManager`, but three exports are refused:
+`packageManager`, but two exports are refused:
 
 | Export                                     | Refusal                                                                                   |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | A workspace declaration under another name | `a workspace declaration is exported as "x"; the one legal export name is Workspace`      |
-| A second workspace declaration             | `WORKSPACE.ts exports more than one workspace declaration`                                |
 | A target, or a `Package` value             | `WORKSPACE.ts exports a naked target "x"`; targets are addressable only through a package |
 
 A module with no `Workspace` export fails with `WORKSPACE.ts has no Workspace

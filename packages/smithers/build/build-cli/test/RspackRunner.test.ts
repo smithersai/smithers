@@ -12,6 +12,7 @@
  * loudly rather than skipping.
  */
 import * as BundlerTarget from "@smthrs/targets/BundlerTarget"
+import * as Exec from "@smthrs/targets/Exec"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -138,6 +139,45 @@ describe("refusals", () => {
       { configPath: "rsbuild.config.mjs", entries: ["main.ts"], mode: "development" }
     ))
     expect(error.stderr).toContain("must be absolute")
+  })
+  it("refuses a relative scratch directory for a build too", async () => {
+    const error = await flipped(runBuild(
+      { workspaceRoot: Os.tmpdir(), scratchDirectory: "relative/scratch" },
+      { configPath: "rsbuild.config.mjs", environment: "web", mode: "development", env: {}, outDirs: ["dist"] }
+    ))
+    expect(error.stderr).toBe("the bundler scratch directory must be absolute: relative/scratch")
+  })
+
+  it("truncates a refusal longer than the stderr tail to exactly the tail", async () => {
+    const scratchDirectory = `relative/${"x".repeat(Exec.stderrTailLimit)}`
+    const error = await flipped(resolveGraph(
+      { workspaceRoot: Os.tmpdir(), scratchDirectory },
+      { configPath: "rsbuild.config.mjs", entries: ["main.ts"], mode: "development" }
+    ))
+    expect(error.stderr).toHaveLength(Exec.stderrTailLimit)
+    expect(error.stderr).toBe(
+      `the bundler scratch directory must be absolute: ${scratchDirectory}`.slice(0, Exec.stderrTailLimit)
+    )
+  })
+
+  it("reports a non-Error thrown while preparing the request as its string form", async () => {
+    const scratch = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-rspack-prepare-"))
+    try {
+      const entries = ["main.ts"]
+      Object.defineProperty(entries, "0", {
+        get: () => {
+          throw "request entries are unreadable"
+        }
+      })
+      const error = await flipped(resolveGraph(
+        { workspaceRoot: Os.tmpdir(), scratchDirectory: scratch },
+        { configPath: "rsbuild.config.mjs", entries, mode: "development" }
+      ))
+      expect(error.stderr).toBe("request entries are unreadable")
+      expect(await Fs.readdir(scratch)).toEqual([])
+    } finally {
+      await Fs.rm(scratch, { recursive: true, force: true })
+    }
   })
 })
 
@@ -375,4 +415,43 @@ describe("rsbuild-mini end to end", () => {
     },
     120_000
   )
+
+  /** A config that, once the runner loads it, plays the child's response step itself and exits green. */
+  const respondingConfig = (configPath: string, respond: string) =>
+    Fs.writeFile(
+      NodePath.join(workspace, configPath),
+      [
+        "import * as fs from \"node:fs\"",
+        "const { responsePath } = JSON.parse(fs.readFileSync(process.argv[2], \"utf8\"))",
+        respond,
+        "process.exit(0)",
+        "export default {}"
+      ].join("\n")
+    )
+
+  it("refuses a response path the child left as something other than a regular file", async () => {
+    const configPath = "directory-response.config.mjs"
+    await respondingConfig(configPath, "fs.mkdirSync(responsePath)")
+    try {
+      const error = await flipped(resolveGraph(options(), { configPath, entries: ["main.ts"], mode: "development" }))
+      expect(error.stderr).toBe("the bundler response exceeds 134217728 bytes")
+    } finally {
+      await Fs.rm(NodePath.join(workspace, configPath), { force: true })
+    }
+  }, 120_000)
+
+  it.each([
+    ["unsorted", ["zod", "effect"], "\"effect\""],
+    ["duplicated", ["effect", "effect"], "\"effect\""]
+  ])("refuses %s package names in a resolve response", async (_name, packages, at) => {
+    const configPath = "unsorted-response.config.mjs"
+    const response = { kind: "resolve", environments: ["web"], moduleCount: 0, files: [], packages }
+    await respondingConfig(configPath, `fs.writeFileSync(responsePath, ${JSON.stringify(JSON.stringify(response))})`)
+    try {
+      const error = await flipped(resolveGraph(options(), { configPath, entries: ["main.ts"], mode: "development" }))
+      expect(error.stderr).toBe(`the bundler response package names are not sorted and unique at ${at}`)
+    } finally {
+      await Fs.rm(NodePath.join(workspace, configPath), { force: true })
+    }
+  }, 120_000)
 })

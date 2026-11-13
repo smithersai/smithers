@@ -169,12 +169,15 @@ const execFile = (
         ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs })
       },
       (error, stdout, stderr) => {
-        if (error !== null && !("code" in error && typeof error.code === "number")) {
+        if (error === null) {
+          resolve({ stdout: String(stdout), stderr: String(stderr), exitCode: 0 })
+          return
+        }
+        if (typeof error.code !== "number") {
           reject(error)
           return
         }
-        const exitCode = error === null ? 0 : typeof error.code === "number" ? error.code : 1
-        resolve({ stdout: String(stdout), stderr: String(stderr), exitCode })
+        resolve({ stdout: String(stdout), stderr: String(stderr), exitCode: error.code })
       }
     )
   })

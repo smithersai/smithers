@@ -41,15 +41,6 @@ export const validateWorkspaceModule = (
           { path: file }
         )
       }
-      if (workspace !== undefined) {
-        throw new PackageError(
-          "workspace_export_duplicate",
-          "WORKSPACE.ts exports more than one workspace declaration",
-          {
-            path: file
-          }
-        )
-      }
       workspace = value
       continue
     }

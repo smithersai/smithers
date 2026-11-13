@@ -13,7 +13,9 @@ import { realpathSync } from "node:fs"
 import { findPackageJSON } from "node:module"
 import { dirname } from "node:path"
 import { pathToFileURL } from "node:url"
+import * as Diagnostic from "../Diagnostic.ts"
 import { PackageError } from "../PackageError.ts"
+import * as Fs from "./Fs.ts"
 
 const sharedPackages = ["effect", "@smthrs/targets", "@smthrs/plan", "@smthrs/core", "@smthrs/flow"] as const
 
@@ -28,12 +30,8 @@ const sharedPackages = ["effect", "@smthrs/targets", "@smthrs/plan", "@smthrs/co
  * a message that withholds the one fact that differs per host, so the cause
  * travels in the message too.
  */
-const describeCause = (cause: unknown): string => {
-  if (typeof cause !== "object" || cause === null) return String(cause)
-  const code = "code" in cause && typeof cause.code === "string" ? `${cause.code}: ` : ""
-  const message = "message" in cause && typeof cause.message === "string" ? cause.message : String(cause)
-  return `${code}${message}`
-}
+const describeCause = (cause: unknown): string =>
+  [Fs.errorCode(cause), Diagnostic.message(cause, String(cause))].filter((part) => part !== undefined).join(": ")
 
 /**
  * Refuses a declaration closure that would select another physical runtime.
@@ -58,25 +56,22 @@ export const assertDeclarationDependencies = (
       let expected: string
       let actual: string
       try {
-        const cli = findPackageJSON(dependency, import.meta.url)
-        if (cli === undefined) throw new Error(`the CLI cannot locate ${dependency}`)
+        // Every shared package is a bare specifier, for which Node answers the
+        // package's manifest path or throws; it never answers undefined.
+        const cli = findPackageJSON(dependency, import.meta.url)!
         // Self-resolution can return an extended Windows path. Node's
         // JavaScript realpath walker misreads its drive root on supported
         // releases; the native resolver preserves the physical-file check.
         expected = realpathSync.native(cli)
-        let declared: string | undefined
+        let declared: string
         try {
-          declared = findPackageJSON(dependency, pathToFileURL(file))
+          declared = findPackageJSON(dependency, pathToFileURL(file))!
         } catch (cause) {
           if (
             options.bootstrap && typeof cause === "object" && cause !== null &&
             "code" in cause && cause.code === "ERR_MODULE_NOT_FOUND"
           ) continue
           throw cause
-        }
-        if (declared === undefined) {
-          if (options.bootstrap) continue
-          throw new Error(`the declaration cannot locate ${dependency}`)
         }
         actual = realpathSync.native(declared)
       } catch (cause) {

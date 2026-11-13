@@ -317,14 +317,15 @@ interface ParsedSpec {
   readonly canonical: string
 }
 
-/** Reads one caller field without invoking an accessor. */
+/**
+ * Reads one caller field without invoking an accessor.
+ *
+ * Every caller passes an object `dataKeys` already accepted: not a proxy and
+ * without symbol keys, which excludes module namespaces. No other object's
+ * own-property lookup can throw, so the lookup is not guarded.
+ */
 const dataMember = (object: object, key: string, what: string): unknown => {
-  let descriptor: PropertyDescriptor | undefined
-  try {
-    descriptor = Object.getOwnPropertyDescriptor(object, key)
-  } catch {
-    throw new TypeError(`${what} could not be inspected safely`)
-  }
+  const descriptor = Object.getOwnPropertyDescriptor(object, key)
   if (descriptor === undefined) return undefined
   if (!("value" in descriptor) || descriptor.enumerable !== true) {
     throw new TypeError(`${what} must be an enumerable data property`)
@@ -332,15 +333,14 @@ const dataMember = (object: object, key: string, what: string): unknown => {
   return descriptor.value
 }
 
-/** Returns inert own string keys, rejecting hooks that JSON could execute. */
+/**
+ * Returns inert own string keys, rejecting hooks that JSON could execute.
+ * Only a proxy's own-key enumeration can run caller code or throw, and a
+ * proxy is refused first.
+ */
 const dataKeys = (value: object, what: string): ReadonlyArray<string> => {
   if (NodeUtil.isProxy(value)) throw new TypeError(`${what} must not be a proxy`)
-  let keys: Array<string | symbol>
-  try {
-    keys = Reflect.ownKeys(value)
-  } catch {
-    throw new TypeError(`${what} could not be inspected safely`)
-  }
+  const keys = Reflect.ownKeys(value)
   if (keys.some((key) => typeof key === "symbol")) {
     throw new TypeError(`${what} must not contain symbol properties`)
   }
@@ -349,9 +349,25 @@ const dataKeys = (value: object, what: string): ReadonlyArray<string> => {
   return strings
 }
 
-/** Rejects nested caller objects that could execute while being inspected. */
+/**
+ * Rejects nested caller values that could execute while being inspected,
+ * converted, or rendered: functions, accessors, and objects whose prototype
+ * is not a plain-data prototype, at any depth. Validation messages render
+ * and convert these values (`JSON.stringify`, `.trim()`, `new URL`, regex
+ * tests), so only inert plain data may reach them.
+ */
 const inspectNested = (value: unknown, what: string): unknown => {
-  if (typeof value === "object" && value !== null) dataKeys(value, what)
+  if (typeof value === "function") throw new TypeError(`${what} must not be a function`)
+  if (typeof value !== "object" || value === null) return value
+  const keys = dataKeys(value, what)
+  const prototype = Object.getPrototypeOf(value) as object | null
+  if (prototype !== Object.prototype && prototype !== Array.prototype && prototype !== null) {
+    throw new TypeError(`${what} must be plain data`)
+  }
+  for (const key of keys) {
+    if (key === "length" && Array.isArray(value)) continue
+    inspectNested(dataMember(value, key, `${what}.${key}`), `${what}.${key}`)
+  }
   return value
 }
 
@@ -365,22 +381,11 @@ const snapshotArray = (
     throw new TypeError(`${what} must not be a proxy`)
   }
   if (!Array.isArray(value)) return inspectNested(value, what)
-  let prototype: object | null
-  try {
-    prototype = Object.getPrototypeOf(value) as object | null
-  } catch {
-    throw new TypeError(`${what} could not be inspected safely`)
-  }
-  if (prototype !== Array.prototype) throw new TypeError(`${what} must be an array`)
+  // A non-proxy array's prototype read cannot run caller code or throw, and
+  // its `length` is always a non-negative integer data property.
+  if (Object.getPrototypeOf(value) !== Array.prototype) throw new TypeError(`${what} must be an array`)
   const keys = dataKeys(value, what)
-  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length")
-  if (
-    lengthDescriptor === undefined || !("value" in lengthDescriptor) ||
-    !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0
-  ) {
-    throw new TypeError(`${what} has an invalid length`)
-  }
-  const length = lengthDescriptor.value as number
+  const length = value.length
   if (keys.length !== length + 1) {
     throw new TypeError(`${what} must be a dense array without extra properties`)
   }
@@ -400,19 +405,14 @@ const snapshotRecord = (
   value: unknown,
   what: string,
   allowed: ReadonlySet<string> | undefined,
-  copy: (key: string, member: unknown) => unknown = (_key, member) => inspectNested(member, what)
+  copy: (key: string, member: unknown) => unknown = (key, member) => inspectNested(member, `${what}.${key}`)
 ): unknown => {
   if (typeof value === "object" && value !== null && NodeUtil.isProxy(value)) {
     throw new TypeError(`${what} must not be a proxy`)
   }
   if (typeof value !== "object" || value === null) return value
   if (Array.isArray(value)) throw new TypeError(`${what} must be a plain object`)
-  let prototype: object | null
-  try {
-    prototype = Object.getPrototypeOf(value) as object | null
-  } catch {
-    throw new TypeError(`${what} could not be inspected safely`)
-  }
+  const prototype = Object.getPrototypeOf(value) as object | null
   if (prototype !== Object.prototype && prototype !== null) {
     throw new TypeError(`${what} must be a plain object`)
   }
@@ -474,8 +474,7 @@ const serviceSpecFields: { readonly [K in keyof ServiceSpec]-?: SpecField } = {
   },
   env: {
     snapshot: (value) => snapshotRecord(value, "service spec env", undefined),
-    canonical: (spec) =>
-      Object.fromEntries(Object.entries(spec.env ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+    canonical: (spec) => Object.fromEntries(Object.entries(spec.env ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)))
   },
   secrets: {
     snapshot: (value) => snapshotArray(value, "service spec secrets"),
@@ -553,7 +552,7 @@ const canonicalize = (spec: ServiceSpec): string =>
   JSON.stringify(Object.fromEntries(
     Object.entries(serviceSpecFields)
       .flatMap(([key, field]) => field.canonical === undefined ? [] : [[key, field.canonical(spec)] as const])
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .sort(([a], [b]) => (a < b ? -1 : 1))
   ))
 
 /**
@@ -577,12 +576,7 @@ const snapshotSpec = (caller: ServiceSpec): ServiceSpec => {
   if (typeof caller !== "object" || caller === null || Array.isArray(caller) || NodeUtil.isProxy(caller)) {
     throw new TypeError("a service spec must be a plain object")
   }
-  let prototype: object | null
-  try {
-    prototype = Object.getPrototypeOf(caller) as object | null
-  } catch {
-    throw new TypeError("a service spec could not be inspected safely")
-  }
+  const prototype = Object.getPrototypeOf(caller) as object | null
   if (prototype !== Object.prototype && prototype !== null) {
     throw new TypeError("a service spec must be a plain object")
   }
@@ -741,9 +735,8 @@ const parseSpec = (caller: ServiceSpec): ParsedSpec => {
 // Output capture
 // ---------------------------------------------------------------------------
 
-/** Whether slicing `text` at `index` would split a surrogate pair. */
+/** Whether slicing `text` at `index`, strictly inside it, would split a surrogate pair. */
 const splitsPair = (text: string, index: number): boolean => {
-  if (index <= 0 || index >= text.length) return false
   const high = text.charCodeAt(index - 1)
   const low = text.charCodeAt(index)
   return high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff
@@ -796,10 +789,7 @@ interface ProbeContext {
 }
 
 /** Retains the native diagnostic instead of the platform wrapper's generic tag. */
-const processError = (cause: unknown): string => {
-  const error = cause instanceof Error && cause.cause instanceof Error ? cause.cause : cause
-  return error instanceof Error ? error.message : String(error)
-}
+const processError = (cause: Error): string => (cause.cause instanceof Error ? cause.cause : cause).message
 
 /** Distinguishes an expired bound from the command's own failure. */
 class CommandTimeout extends Data.TaggedError("smithers-build/CommandTimeout")<{ readonly message: string }> {}
@@ -904,7 +894,8 @@ const probeOnce = (
     )
     : Effect.callback<Probe>((resume) => {
       let settled = false
-      let cleanup: () => void = () => {}
+      // Both branches assign this before any event or finalizer can call it.
+      let cleanup: () => void
       const settle = (result: Probe): void => {
         if (settled) return
         settled = true
@@ -923,7 +914,8 @@ const probeOnce = (
         const get = url.protocol === "https:" ? NodeHttps.get : NodeHttp.get
         const request = get(url, (response) => {
           response.resume()
-          const status = response.statusCode ?? 0
+          // A client response always carries the parsed status code.
+          const status = response.statusCode!
           settle(status > 0 && status < 500 ? { ok: true } : miss(`GET ${readiness.http} answered ${status}`))
         })
         cleanup = () => {
@@ -965,13 +957,13 @@ interface ServiceState {
  * spec's declared variables, mirroring the exec boundary rather than the
  * whole ambient `process.env`.
  */
-const serviceEnvironment = (declared: Readonly<Record<string, string>> | undefined): NodeJS.ProcessEnv => {
+const serviceEnvironment = (declared: Readonly<Record<string, string>>): NodeJS.ProcessEnv => {
   const env = Object.create(null) as NodeJS.ProcessEnv
   for (const name of inheritedEnvironmentNames) {
     const value = process.env[name]
     if (value !== undefined) env[name] = value
   }
-  for (const [name, value] of Object.entries(declared ?? {})) env[name] = value
+  for (const [name, value] of Object.entries(declared)) env[name] = value
   return env
 }
 
@@ -997,11 +989,13 @@ const serviceSecretBoundary = (
   const vault = SecretProxy.makeVault()
   const minted: Record<string, string> = {}
   for (const credential of spec.secrets ?? []) minted[credential.secret.env] = vault.mint(credential)
+  // The proxy rejects only with Error values: listen failures and the
+  // TypeErrors of audience normalization, origin binding, and urlFor.
   const boundaryFailed = (what: string) => (cause: unknown) =>
     new ServiceError({
       key: spec.key,
       reason: "spawn-failed",
-      message: `service ${spec.key} ${what}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      message: `service ${spec.key} ${what}: ${(cause as Error).message}`,
       outputTail: ""
     })
   return Effect.flatMap(
@@ -1475,10 +1469,9 @@ export const make: Effect.Effect<ServiceSupervisor, never, Scope.Scope> = Effect
   const services = yield* RcMap.make({
     lookup: (key: string): Effect.Effect<RunningService, ServiceError, Scope.Scope> =>
       Effect.gen(function*() {
-        const parsed = specs.get(key)
-        if (parsed === undefined) {
-          return yield* Effect.die(new Error(`service ${key} was looked up before its spec was registered`))
-        }
+        // `acquire` registers the spec synchronously before `RcMap.get`, and
+        // registrations are never removed.
+        const parsed = specs.get(key)!
         const address = parsed.spec.readiness === undefined ? undefined : probeAddress(parsed.spec.readiness)
         if (address !== undefined) {
           // Different keys (including candidate trees) must never probe each
@@ -1509,11 +1502,13 @@ export const make: Effect.Effect<ServiceSupervisor, never, Scope.Scope> = Effect
     Effect.gen(function*() {
       const parsed = yield* Effect.try({
         try: () => parseSpec(spec),
+        // Validation runs no caller code, so it throws only its own Errors
+        // and the TypeError/RangeError of rendering or nesting plain data.
         catch: (cause) =>
           new ServiceError({
             key: diagnosticKey(spec),
             reason: "invalid-spec",
-            message: cause instanceof Error ? cause.message : String(cause),
+            message: (cause as Error).message,
             outputTail: ""
           })
       })

@@ -108,10 +108,14 @@ export const serve = async (store: TargetApprovals | undefined): Promise<Bridge>
   }
   const sockets = new Set<Net.Socket>()
   let closing = false
-  const server = Net.createServer((socket) => {
+  // Half-open, so a child that ends its side early still receives its refusal.
+  const server = Net.createServer({ allowHalfOpen: true }, (socket) => {
     if (closing) return socket.destroy()
     sockets.add(socket)
     socket.once("close", () => sockets.delete(socket))
+    // A child that vanishes before its answer is written must not crash the
+    // parent; the child's own read already fails closed.
+    socket.on("error", () => {})
     void (async () => {
       let answer: { readonly granted: boolean } | { readonly error: string }
       try {

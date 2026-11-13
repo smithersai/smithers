@@ -42,7 +42,8 @@ export const makeServices = (options: { readonly entry?: string } = {}): Service
         }).on("error", failed)
         return () => watcher.close()
       },
-      catch: (cause) => cause instanceof Error ? cause : new Error("filesystem watch failed", { cause })
+      // node:fs watch reports a bad argument or a failed start only as an Error.
+      catch: (cause) => cause as Error
     }),
   digest: (root, relevant) =>
     Effect.tryPromise({
@@ -231,8 +232,8 @@ export const run = async (options: {
  */
 const digest = async (root: string, relevant: (path: string) => boolean): Promise<string> => {
   const hash = createHash("sha256")
-  const skipped = (cause: unknown) =>
-    ["ENOENT", "ENOTDIR", "EACCES", "EPERM"].includes((cause as NodeJS.ErrnoException).code ?? "")
+  const skippedCodes: ReadonlyArray<string | undefined> = ["ENOENT", "ENOTDIR", "EACCES", "EPERM"]
+  const skipped = (cause: unknown) => skippedCodes.includes((cause as NodeJS.ErrnoException).code)
   const visit = async (directory: string): Promise<void> => {
     const entries = await readdir(directory === "" ? root : `${root}/${directory}`, { withFileTypes: true })
       .catch((cause) => {
@@ -242,7 +243,8 @@ const digest = async (root: string, relevant: (path: string) => boolean): Promis
     const paths = entries
       .map((entry) => ({ entry, path: directory === "" ? entry.name : `${directory}/${entry.name}` }))
       .filter(({ path }) => relevant(path))
-      .sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+      // Entry names are unique within one directory, so two paths never compare equal.
+      .sort((left, right) => left.path < right.path ? -1 : 1)
     const stats = await Promise.all(
       paths.map(({ path }) =>
         lstat(`${root}/${path}`, { bigint: true }).catch((cause) => {

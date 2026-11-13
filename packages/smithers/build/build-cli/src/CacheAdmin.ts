@@ -8,6 +8,7 @@ import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { type CachedResult, entryLimit, sanitizeKey } from "./Cache.ts"
 import * as GoCache from "./internal/GoCache.ts"
+import { byCodeUnit } from "./internal/Text.ts"
 
 /** Metadata for an individually removable local action-result file.
  * @category models
@@ -59,7 +60,7 @@ export const entries = async (root: string, cacheDirectory: string): Promise<Rea
       }
     }
   }
-  return result.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+  return result.sort((a, b) => byCodeUnit(a.path, b.path))
 }
 
 /** Reads only metadata from the requested local result, without hydrating or creating state.

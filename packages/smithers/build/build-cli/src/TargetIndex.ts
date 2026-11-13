@@ -194,7 +194,7 @@ export const build = async (
   return { pattern, targets: targets.sort((left, right) => byCodeUnit(left.label, right.label)) }
 }
 
-const kindColor: Record<string, keyof Ansi.Palette> = {
+const kindColor: Record<Target.Kind, keyof Ansi.Palette> = {
   build: "blue",
   test: "green",
   lint: "yellow",
@@ -203,10 +203,8 @@ const kindColor: Record<string, keyof Ansi.Palette> = {
   review: "red"
 }
 
-const kind = (name: string, style: Ansi.Palette): string => {
-  const color = kindColor[name]
-  return color === undefined ? name : (style[color] as (text: string) => string)(name)
-}
+const kind = (name: Target.Kind, style: Ansi.Palette): string =>
+  (style[kindColor[name]] as (text: string) => string)(name)
 
 /**
  * Renders the index for a person: aligned `LABEL RULE KINDS` columns, the

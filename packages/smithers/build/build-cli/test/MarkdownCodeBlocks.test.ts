@@ -74,4 +74,38 @@ describe("MarkdownCodeBlocks.extract", () => {
       MarkdownCodeBlocks.extract("```ts\nexport {}\n```\n```ts title=\"block-0.ts\"\nexport {}\n```\n", ["ts"])
     ).toThrow(/block-0\.ts/)
   })
+
+  it("expands js to javascript and matches any other language by its own name only", () => {
+    const markdown = [
+      "```javascript title=app.js",
+      "export const a = 1",
+      "```",
+      "```tsx",
+      "export const b = <i />",
+      "```",
+      "```ts",
+      "export const c = 3",
+      "```"
+    ].join("\n")
+    expect(MarkdownCodeBlocks.extract(markdown, ["JS", "tsx"])).toEqual({
+      files: [
+        { path: "app.js", content: "export const a = 1\n" },
+        { path: "block-1.ts", content: "export const b = <i />\n" }
+      ],
+      blocks: 2,
+      standalone: 1,
+      titled: 1,
+      fragments: 0
+    })
+  })
+})
+
+describe("MarkdownCodeBlocks.parseMeta", () => {
+  it("reads fragment only as a bare flag and ignores metas it does not know", () => {
+    expect(MarkdownCodeBlocks.parseMeta("fragment=yes title='x.ts' frame=none")).toEqual({
+      title: "x.ts",
+      fragment: false
+    })
+    expect(MarkdownCodeBlocks.parseMeta("title fragment")).toEqual({ title: undefined, fragment: true })
+  })
 })

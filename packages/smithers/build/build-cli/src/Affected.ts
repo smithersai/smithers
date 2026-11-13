@@ -222,7 +222,7 @@ export const select = (
     }
     return compiled
   }
-  const cacheDirectory = options.cacheDirectory ?? index.workspace?.cache.directory ?? ".flows"
+  const cacheDirectory = options.cacheDirectory ?? index.workspace.cache.directory
   let realRoot = index.root
   let rootPresent = true
   try {
@@ -332,22 +332,15 @@ export const select = (
     const packagePath = index.ownerOf(target) ?? ""
     const packagePrefix = packagePath === "" ? undefined : `${packagePath}/`
     const inputs = metadata.inputs.map((input) => compileInput(input, inputPackage(metadata, packagePath), glob))
-    const matches = new Map<string, boolean>()
     value = {
       metadata,
       packagePath,
       ambient: metadata.inputs.some(ambientInput),
       declaredPath: (path) => inputs.some((input) => input(path)),
-      ownsPath: (path) => {
-        let result = matches.get(path)
-        if (result === undefined) {
-          // Membership catches new files, implicit compiler inputs and config lookups.
-          result = packagePrefix !== undefined && path.startsWith(packagePrefix) ||
-            inputs.some((input) => input(path))
-          matches.set(path, result)
-        }
-        return result
-      }
+      // Membership catches new files, implicit compiler inputs and config lookups.
+      // Each (target, path) pair is asked once: rows hold distinct targets and paths are deduplicated.
+      ownsPath: (path) =>
+        packagePrefix !== undefined && path.startsWith(packagePrefix) || inputs.some((input) => input(path))
     }
     entries.set(target, value)
     return value
@@ -356,13 +349,13 @@ export const select = (
     Path.relative(index.root, source.directory).replaceAll("\\", "/")
   )
     .filter((path) => path !== ".." && !path.startsWith("../") && !Path.isAbsolute(path))
-  const workspaceInputs = index.workspace === undefined ? [] : managerFilesOf(index.workspace)
+  const workspaceInputs = managerFilesOf(index.workspace)
   const indirectWorkspace = workspaceInputs.some(indirectFile)
   // A declaration helper builds other packages' targets as a PACKAGE.ts does:
   // every module the declarations import, directly or by name, is a global input.
   // Named workspace imports also cover their source directory, including new files.
   const declarationModules = new Set(index.modules)
-  const declarationRoots = index.moduleRoots ?? []
+  const declarationRoots = index.moduleRoots
   const global = normalized.filter((path) =>
     globalPath(path) || workspaceInputs.includes(path) || indirectWorkspace || declarationModules.has(path) ||
     declarationRoots.some((directory) => directory === "." || path === directory || path.startsWith(`${directory}/`)) ||
@@ -402,7 +395,7 @@ export const select = (
       const readsPackage = RulePolicy.readsPackage(
         metadata.target,
         [metadata.attrs, ...views.map((view) => view.attrs)],
-        index.workspace?.sandboxes
+        index.workspace.sandboxes
       )
       const sandboxDirectories = RulePolicy.sandboxReadDirectories(
         metadata.target,
@@ -533,7 +526,8 @@ export const select = (
     targets: selected.filter((row) => reasons.has(row.label)).map((row) => ({
       label: row.label,
       reasons: [...reasons.get(row.label)!].sort(),
-      ...(options.explain ? { reasonDetails: reasonDetails.get(row.target) ?? [] } : {})
+      // Explaining records details for every target it gives a reason.
+      ...(options.explain ? { reasonDetails: reasonDetails.get(row.target)! } : {})
     }))
   }
 }

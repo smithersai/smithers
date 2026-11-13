@@ -14,6 +14,7 @@
 import * as Data from "effect/Data"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
+import { errorCode } from "./Fs.ts"
 
 /** A shared tool directory that holds other tools than the target declares. */
 class ToolDirectoryClash extends Data.TaggedError("smithers-build/ToolDirectoryClash")<{ readonly message: string }> {}
@@ -28,9 +29,6 @@ export interface Tool {
   readonly name: string
   readonly path: string
 }
-
-const errorCode = (cause: unknown): unknown =>
-  typeof cause === "object" && cause !== null ? (cause as { readonly code?: unknown }).code : undefined
 
 const holds = async (directory: string, tools: ReadonlyArray<Tool>): Promise<boolean> => {
   let names: Array<string>

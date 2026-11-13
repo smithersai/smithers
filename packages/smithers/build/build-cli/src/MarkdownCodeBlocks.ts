@@ -129,7 +129,8 @@ export const extract = (markdown: string, languages: ReadonlyArray<string>): Ext
     const index = blocks
     blocks += 1
     const meta = parseMeta(match[1] ?? "")
-    const body = match[2] ?? ""
+    // Group 2 is not optional, so every match captures a (possibly empty) body.
+    const body = match[2]!
     if (meta.fragment) {
       fragments += 1
       continue

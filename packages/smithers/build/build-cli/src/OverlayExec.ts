@@ -116,7 +116,7 @@ export const resolve = async (options: {
       const path = Input.resolvePath(packagePath, declared)
       const earlier = destinations.get(path)
       const label = options.labelOf(overlay)
-      if (earlier !== undefined && earlier !== label) {
+      if (earlier !== undefined) {
         return {
           replacements,
           refusal: `Overlay conflict: ${earlier} and ${label} both replace ${path}`
@@ -133,9 +133,8 @@ export const resolve = async (options: {
       replacements.push({ overlay: label, path, source, digest })
     }
   }
-  replacements.sort((left, right) =>
-    left.path < right.path ? -1 : left.path > right.path ? 1 : left.overlay < right.overlay ? -1 : 1
-  )
+  // Destinations are unique, so the order is total on the path alone.
+  replacements.sort((left, right) => left.path < right.path ? -1 : 1)
   return { replacements }
 }
 

@@ -157,4 +157,89 @@ describe("approval bridge", () => {
     }
     await Fs.rm(directory, { recursive: true, force: true })
   })
+
+  it("refuses a child that ends its connection before finishing a question", async () => {
+    const { store, asked } = recording(async () => true)
+    await ApprovalBridge.withBridge(store, async (environment) => {
+      const { path } = address(environment)
+      const answer = await new Promise<string>((resolve, reject) => {
+        const socket = Net.createConnection(path, () => socket.end("{\"token\":"))
+        let text = ""
+        socket.on("data", (chunk) => text += chunk.toString("utf8"))
+        socket.on("end", () => resolve(text))
+        socket.on("error", reject)
+      })
+      expect(JSON.parse(answer)).toEqual({ error: "unauthorized" })
+    })
+    expect(asked).toEqual([])
+  })
+
+  it("survives a child that leaves before its answer is written", async () => {
+    let release: () => void = () => {}
+    const answered = new Promise<void>((resolve) => release = resolve)
+    const { store, asked } = recording(async () => {
+      await answered
+      return true
+    })
+    await ApprovalBridge.withBridge(store, async (environment) => {
+      const { path, token } = address(environment)
+      const socket = Net.createConnection(path)
+      await new Promise((resolve) => socket.once("connect", resolve))
+      socket.write(`${JSON.stringify({ token, request })}\n`)
+      while (asked.length === 0) await new Promise((resolve) => setTimeout(resolve, 5))
+      socket.destroy()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      // The parent is still serving.
+      expect(await ApprovalBridge.client(environment[ApprovalBridge.environmentName])!.granted(request)).toBe(true)
+    })
+    expect(asked).toHaveLength(2)
+  })
+
+  it.skipIf(process.platform === "win32")("rejects when the parent resets the connection mid-question", async () => {
+    const directory = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-bridge-test-"))
+    const path = Path.join(directory, "s")
+    // A parent that never reads the question and drops it resets the child's read.
+    const server = Net.createServer((socket) => {
+      socket.pause()
+      setTimeout(() => socket.destroy(), 100)
+    })
+    await new Promise<void>((resolve) => server.listen(path, resolve))
+    try {
+      // A question far larger than one read leaves bytes unread when the parent drops it.
+      const large = { ...request, label: "x".repeat(4 * 1024 * 1024) }
+      await expect(ApprovalBridge.client(`token@${path}`)!.granted(large)).rejects.toMatchObject({
+        code: "ECONNRESET"
+      })
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      await Fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(process.platform === "win32")(
+    "places the socket under /tmp when TMPDIR is too long for a socket path",
+    async () => {
+      const long = await Fs.mkdtemp(Path.join(Os.tmpdir(), `smthrs-bridge-${"t".repeat(64)}-`))
+      const previous = process.env["TMPDIR"]
+      process.env["TMPDIR"] = long
+      let bridge: ApprovalBridge.Bridge
+      try {
+        expect(Os.tmpdir().length).toBeGreaterThan(60)
+        bridge = await ApprovalBridge.serve(recording(async () => true).store)
+      } finally {
+        if (previous === undefined) delete process.env["TMPDIR"]
+        else process.env["TMPDIR"] = previous
+      }
+      const { path } = address(bridge.environment)
+      expect(Path.dirname(Path.dirname(path))).toBe("/tmp")
+      expect(await ApprovalBridge.client(bridge.environment[ApprovalBridge.environmentName])!.granted(request)).toBe(
+        true
+      )
+      await bridge.close()
+      await expect(Fs.stat(Path.dirname(path))).rejects.toMatchObject({ code: "ENOENT" })
+      await Fs.rm(long, { recursive: true, force: true })
+    }
+  )
 })

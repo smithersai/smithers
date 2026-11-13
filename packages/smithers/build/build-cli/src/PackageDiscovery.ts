@@ -167,7 +167,7 @@ const undeclaredNestedWorkspace = (repositoryPath: string, marker: string): Pack
   new PackageError(
     "nested_workspace_undeclared",
     `nested workspace ${marker} is not declared; add repos: { ${
-      (NodePath.posix.basename(repositoryPath) || "repo").replace(/[^A-Za-z0-9._-]/g, "-")
+      NodePath.posix.basename(repositoryPath).replace(/[^A-Za-z0-9._-]/g, "-")
     }: S.LocalRepository(${JSON.stringify(repositoryPath)}) } to the root Workspace declaration`,
     { path: marker }
   )

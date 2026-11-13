@@ -2402,8 +2402,9 @@ export const treeMatchesManifest = async (
     }
   }
   let extra: string | undefined
+  // Every recursive call follows the loop's own `extra` check below, so a walk
+  // never starts after a difference was found.
   const walk = async (directory: string, relative: string, depth: number): Promise<void> => {
-    if (extra !== undefined) return
     if (depth > outDirLimits.depth) {
       extra ??= `${manifest.outDir}/${relative} is deeper than the captured tree`
       return

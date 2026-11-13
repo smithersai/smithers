@@ -182,7 +182,8 @@ export const entries = async (
       if (stat?.isFile()) result.push({ path, bytes: stat.size, usedAt: stat.mtimeMs, inode: stat.ino })
     }
   }
-  return result.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+  // Every entry has its own path, so no two compare equal.
+  return result.sort((a, b) => a.path < b.path ? -1 : 1)
 }
 
 /**

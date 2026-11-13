@@ -36,6 +36,17 @@ describe("reading the workspace declaration", () => {
     expect(toolchain.packageManager).toBe(packageManager)
   })
 
+  it("resolves an exact Bun declaration to the Bun runtime record at its executable", () => {
+    const declared = Runtime.BunDeclaration.make({ version: "1.3.0", executable: "/opt/bun/bin/bun" })
+    const toolchain = WorkspaceToolchain.of(workspaceOf({ runtime: declared }))
+    expect(Runtime.isRuntime(toolchain.runtime)).toBe(true)
+    expect(toolchain.runtime).toMatchObject({ name: "bun", version: "1.3.0", executable: "/opt/bun/bin/bun" })
+    expect(toolchain.packageManager).toBeUndefined()
+    expect(() => WorkspaceToolchain.of(workspaceOf({ runtime: { ...declared, version: "latest" } }))).toThrow(
+      "workspace toolchain Bun version must be a supported exact version or single-comparator requirement"
+    )
+  })
+
   it("preserves a classic manager's embedded runtime when the reader receives no separate runtime", () => {
     const toolchain = WorkspaceToolchain.of(workspaceOf({ packageManager }))
     expect(toolchain.runtime).toBeUndefined()
@@ -185,6 +196,55 @@ describe("resolving workspace manifest declarations", () => {
     expect(toolchain.packageManager).toMatchObject({ name: "pnpm", version: "11.25.0", executable: "pnpm" })
     expect(toolchain.manifestDigests).toEqual([{ path: "package.json", digest: Input.digestText(text) }])
     assertTypecheckPlan(toolchain)
+  })
+
+  it("orders manifest digests by path even when the runtime manifest sorts after the manager's", async () => {
+    const root = await directory()
+    const nodeText = JSON.stringify({ engines: { node: "22.19.0" } })
+    const managerText = JSON.stringify({ packageManager: "pnpm@11.25.0" })
+    await Fs.mkdir(Path.join(root, "tools"))
+    await Fs.writeFile(Path.join(root, "tools/node.json"), nodeText)
+    await Fs.writeFile(Path.join(root, "package.json"), managerText)
+    const toolchain = await WorkspaceToolchain.resolve(
+      manifestWorkspace({
+        runtime: S.Runtime.Node({ manifest: S.file("//tools/node.json") })
+      }),
+      { root }
+    )
+    expect(toolchain.manifestDigests).toEqual([
+      { path: "package.json", digest: Input.digestText(managerText) },
+      { path: "tools/node.json", digest: Input.digestText(nodeText) }
+    ])
+  })
+
+  it("verifies a record-form runtime, its manager and the manager's runtime in order", async () => {
+    const root = await directory()
+    const node = Runtime.ResolvedNodeRuntime.make({ name: "node", version: "26.4.0", executable: "/opt/node" })
+    const managerRuntime = Runtime.ResolvedNodeRuntime.make({
+      name: "node",
+      version: "24.1.0",
+      executable: "/opt/node24"
+    })
+    const manager = PackageManager.ResolvedPnpmPackageManager.make({
+      name: "pnpm",
+      version: "11.21.0",
+      executable: "/opt/pnpm",
+      runtime: managerRuntime
+    })
+    const seen: Array<unknown> = []
+    const resolved = await WorkspaceToolchain.resolve(workspaceOf({ runtime: node, packageManager: manager }), {
+      root,
+      verifyTool: async (tool) => {
+        seen.push(tool)
+      }
+    })
+    expect(resolved.packageManager).toBe(manager)
+    expect(resolved.manifestDigests).toEqual([])
+    expect(seen).toEqual([
+      { name: "node", executable: "/opt/node", requirement: "26.4.0" },
+      { name: "pnpm", executable: "/opt/pnpm", requirement: "11.21.0" },
+      { name: "node", executable: "/opt/node24", requirement: "24.1.0" }
+    ])
   })
 
   it("measures distinct runtime and manager manifests in stable workspace-relative order", async () => {

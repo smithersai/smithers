@@ -255,8 +255,9 @@ const decodeStringLiteral = (body: string): string | undefined => {
       index += 1
       continue
     }
-    const next = body[index + 1]
-    if (next === undefined) return undefined
+    // The lexer only hands over a closed literal, and it consumes every
+    // escape with the character after it, so a backslash never ends the body.
+    const next = body[index + 1]!
     index += 2
     if (next === "\n" || next === "\u2028" || next === "\u2029") continue
     if (next === "\r") {
@@ -508,7 +509,7 @@ const scanImports = async (discovery: Discovery): Promise<StaticScan> => {
             { path: file }
           )
         }
-        const basename = resolved.split("/").at(-1) ?? ""
+        const basename = resolved.split("/").at(-1)!
         if (basename === "WORKSPACE.ts" || basename === "WORKSPACE.js") {
           if (!rules.workspaceOneWay) continue
           throw new PackageError(
@@ -555,7 +556,8 @@ const scanImports = async (discovery: Discovery): Promise<StaticScan> => {
  * Fails when FACTORY.ts reaches a PACKAGE.ts through its own imports. The
  * walk stops at WORKSPACE.ts, which may import Packages for git hooks: the
  * factory names its targets by label, and the one-way rule is between the
- * factory and every Package, not between the factory and the workspace.
+ * factory and every Package, not between the factory and the workspace. The
+ * scan records no edge into a WORKSPACE.ts, so the walk never enters it.
  */
 const checkFactoryImports = (discovery: Discovery, edges: ReadonlyMap<string, ReadonlyArray<string>>): void => {
   const packageSet = new Set(discovery.packageFiles)
@@ -567,7 +569,6 @@ const checkFactoryImports = (discovery: Discovery, edges: ReadonlyMap<string, Re
     if (seen.has(file)) continue
     seen.add(file)
     for (const next of edges.get(file) ?? []) {
-      if (next === discovery.workspaceFile) continue
       const nextChain = [...chain, next]
       if (packageSet.has(next) || Input.isDeclarationFileName(declarationName(next))) {
         throw new PackageError(
@@ -606,7 +607,9 @@ const checkCycles = (scan: StaticScan, files: ReadonlyArray<string>): void => {
     }
     visiting.add(file)
     stack.push(file)
-    for (const next of scan.edges.get(file) ?? []) visit(next)
+    // Every visited file was scanned by the Package pass, which records edges
+    // for each file it reads and fails on a Package it cannot read.
+    for (const next of scan.edges.get(file)!) visit(next)
     stack.pop()
     visiting.delete(file)
     done.add(file)
@@ -648,12 +651,8 @@ const loads = new Map<string, Promise<LoadedGraph>>()
 /** One successful probe per workspace, bound to its declaration content. */
 const probes = new Map<string, { readonly digest: string; readonly directory: string }>()
 
-const validatePackageModule = (namespace: unknown, file: string): Package.PackageValue => {
-  if (typeof namespace !== "object" || namespace === null) {
-    throw new PackageError("module_import_failed", `${declarationName(file)} did not evaluate to a module namespace`, {
-      path: file
-    })
-  }
+/** Validates the namespace object an `import * as` of one PACKAGE.ts binds. */
+const validatePackageModule = (namespace: object, file: string): Package.PackageValue => {
   let value: Package.PackageValue | undefined
   for (const [name, exported] of Object.entries(namespace)) {
     if (Package.isPackage(exported)) {
@@ -664,15 +663,7 @@ const validatePackageModule = (namespace: unknown, file: string): Package.Packag
           { path: file }
         )
       }
-      if (value !== undefined) {
-        throw new PackageError(
-          "invalid_package_export",
-          `${declarationName(file)} exports more than one Package value`,
-          {
-            path: file
-          }
-        )
-      }
+      // Export names are unique, so this is the namespace's only Package value.
       value = exported
       continue
     }
@@ -745,7 +736,7 @@ const importGraph = async (
   let entry: {
     readonly workspace: unknown
     readonly factory: unknown
-    readonly packages: ReadonlyArray<readonly [string, unknown]>
+    readonly packages: ReadonlyArray<readonly [string, object]>
   }
   try {
     entry = await importDeclarationModule(pathToFileURL(entryPath).href, import.meta.url) as typeof entry

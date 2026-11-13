@@ -186,6 +186,19 @@ const git = async (
 ): Promise<GitOutput> => {
   let stdout = ""
   let stderr = ""
+  const environment = {
+    ...Exec.toolEnvironment(
+      Object.fromEntries(
+        Object.entries(options.environment ?? process.env).filter(
+          (entry): entry is [string, string] => entry[1] !== undefined
+        )
+      ),
+      options.sensitiveNames ?? []
+    ),
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_EDITOR: "true",
+    ...extraEnvironment
+  }
   try {
     const exitCode = await ContainedProcess.run({
       command: "git",
@@ -194,19 +207,7 @@ const git = async (
       maxOutputBytes: 8 * 1024 * 1024,
       signal: options.signal,
       timeoutMs: options.timeoutMs ?? 60_000,
-      environment: {
-        ...Exec.toolEnvironment(
-          Object.fromEntries(
-            Object.entries(options.environment ?? process.env).filter(
-              (entry): entry is [string, string] => entry[1] !== undefined
-            )
-          ),
-          options.sensitiveNames ?? []
-        ),
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_EDITOR: "true",
-        ...extraEnvironment
-      },
+      environment,
       stdout: (text) => {
         stdout += text
       },
@@ -215,8 +216,9 @@ const git = async (
       }
     })
     return { exitCode, stdout, stderr }
-  } catch (cause) {
-    if (!(cause instanceof ContainedProcess.ProcessError)) throw cause
+  } catch (rejection) {
+    // ContainedProcess.run rejects only with a ProcessError.
+    const cause = rejection as ContainedProcess.ProcessError
     const detail = cause.code === "cancelled" ?
       "ABORT_ERR"
       : cause.code === "output_limit" ?

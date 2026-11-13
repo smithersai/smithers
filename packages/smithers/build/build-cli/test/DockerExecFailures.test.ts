@@ -258,6 +258,23 @@ describe.skipIf(process.platform === "win32")("Docker plans", () => {
     ])
   })
 
+  it("passes '.' when a root package context normalizes to nothing", async () => {
+    // "./" at the root normalizes to the empty path; buildx needs a context
+    // operand, and an empty argv entry would be read as no context at all.
+    const docker = await host()
+    const attrs = buildAttrs({ context: "./" })
+    const outDir = Target.metadata(Docker.Build(attrs)).outputs!.paths[0]!
+    const planned = await DockerExec.plan({
+      rule: "Docker.Build",
+      packagePath: "",
+      attrs,
+      environment: docker.environment
+    })
+    expect(Input.resolvePath("", "./")).toBe("")
+    expect(planned.refusal).toBeUndefined()
+    expect(planned.argv?.slice(-3)).toEqual(["--output", `type=oci,dest=${outDir}/image.tar`, "."])
+  })
+
   it("renders a bake into its declared per-target output directory", async () => {
     const docker = await host({ builders: "ci docker-container\n" })
     const attrs = { config: Input.file("docker-bake.hcl"), target: "web/app:latest" }

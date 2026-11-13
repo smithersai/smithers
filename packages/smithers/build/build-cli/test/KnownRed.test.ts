@@ -524,6 +524,32 @@ describe("KnownRed.blocks", () => {
     expect(judged.knownRed.known).toEqual(["//a:test"])
     expect(judged.ok).toBe(false)
   })
+
+  it("marks an advisory failure non-blocking and digests it even without a diagnostic", () => {
+    const judged = KnownRed.judge(
+      {
+        ...summary([]),
+        results: [
+          row("//art:test", "failed"),
+          row("//art:lint", "failed", { error: "lint finding" }),
+          row("//art:ok", "ran")
+        ]
+      },
+      { source: "list.json", entries: [] },
+      { ...context, advisory: new Set(["//art:test", "//art:lint", "//art:ok"]) }
+    )
+    expect(judged.ok).toBe(true)
+    expect(judged.knownRed.newlyRed).toEqual([])
+    expect(judged.results).toEqual([
+      { ...row("//art:test", "failed"), blocking: false, failureDigest: digestOf("") },
+      {
+        ...row("//art:lint", "failed", { error: "lint finding" }),
+        blocking: false,
+        failureDigest: digestOf("lint finding")
+      },
+      { ...row("//art:ok", "ran"), blocking: false }
+    ])
+  })
 })
 
 describe("KnownRed.read", () => {

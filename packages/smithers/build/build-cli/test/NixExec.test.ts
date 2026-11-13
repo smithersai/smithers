@@ -335,3 +335,228 @@ describe("NixExec pure helpers", () => {
     expect(NixExec.hostSystem("darwin", "arm64")).toBe("aarch64-darwin")
   })
 })
+
+/**
+ * A fake `nix` whose every step reads its behaviour from the environment the
+ * resolver spawns it with, and records each subcommand it ran.
+ */
+const configurableNix = async (): Promise<
+  { readonly bin: string; readonly closure: string; readonly calls: string }
+> => {
+  const closure = NodePath.join(root, "store", `${hash}-configurable-env`)
+  await Fs.mkdir(NodePath.join(closure, "bin"), { recursive: true })
+  const bin = NodePath.join(root, "configurable-bin")
+  await Fs.mkdir(bin, { recursive: true })
+  const calls = NodePath.join(root, "nix-calls")
+  await Fs.writeFile(
+    NodePath.join(bin, "nix"),
+    script(
+      [
+        `case "$1" in --version)`,
+        `  if [ "$VERSION" = fail ]; then echo "nix: broken install" >&2; exit 3; fi`,
+        `  echo "nix (Nix) 2.99.0"; exit 0;;`,
+        `esac`,
+        `sub=""`,
+        `for a in "$@"; do case "$a" in build|print-dev-env|path-info) sub="$a"; break;; esac; done`,
+        `echo "$sub $*" >> ${JSON.stringify(calls)}`,
+        `case "$sub" in`,
+        `  build)`,
+        `    case "$BUILD" in`,
+        `      fail) i=0; while [ $i -lt 600 ]; do echo "error: line $i of a long evaluation trace" >&2; i=$((i+1)); done;` +
+        ` echo "error: final cause" >&2; exit 1;;`,
+        `      empty) exit 0;;`,
+        `      slow) sleep 1;;`,
+        `      hang) exec sleep 30;;`,
+        `    esac`,
+        `    echo ${JSON.stringify(closure)};;`,
+        `  print-dev-env)`,
+        `    case "$DEV" in`,
+        `      fail) echo "error: no devShell" >&2; exit 4;;`,
+        `      garbage) echo "not json";;`,
+        `      novars) echo "{}";;`,
+        `      *) printf '%s' '{"variables":{"PATH":{"type":"exported","value":"${closure}/bin"},` +
+        `"TZDIR":{"type":"exported","value":""},"LOCALE_ARCHIVE":{"type":"array","value":["x"]}}}';;`,
+        `    esac;;`,
+        `  path-info)`,
+        `    if [ "$PATHINFO" = fail ]; then echo "error: path is not valid" >&2; exit 5; fi`,
+        `    echo ${JSON.stringify(closure)};;`,
+        `esac`
+      ].join("\n")
+    ),
+    { mode: 0o755 }
+  )
+  return { bin, closure, calls }
+}
+
+/** The fake `nix` first, then the host tools its script runs. */
+const hostPath = (bin: string): string => [bin, process.env["PATH"] ?? ""].join(NodePath.delimiter)
+
+const calledSteps = async (calls: string): Promise<ReadonlyArray<string>> =>
+  (await Fs.readFile(calls, "utf8").catch(() => "")).split("\n").filter(Boolean).map((line) => line.split(" ")[0]!)
+
+describe.skipIf(process.platform === "win32")("NixExec.resolveEnvironment refusals", () => {
+  const resolveWith = async (
+    behaviour: Readonly<Record<string, string>>,
+    options: { readonly declaration?: Nix.Environment; readonly cacheDirectory?: string } = {}
+  ) => {
+    const fake = await configurableNix()
+    const lines: Array<string> = []
+    const result = NixExec.resolveEnvironment({
+      root,
+      declaration: options.declaration ?? declaration(),
+      cacheDirectory: options.cacheDirectory,
+      environment: { PATH: hostPath(fake.bin), ...behaviour },
+      log: (line) => lines.push(line)
+    })
+    return { fake, lines, result }
+  }
+
+  it("names an unknown host platform and architecture as written", () => {
+    expect(NixExec.hostSystem("freebsd", "riscv64")).toBe("riscv64-freebsd")
+  })
+
+  it("evaluates a flake in a subdirectory and an expression file at their declared paths", async () => {
+    await write("nix/flake.nix", "{ outputs = { self }: { }; }\n")
+    await write("nix/flake.lock", "{}\n")
+    await write("env.nix", "{ }\n")
+    const flake = await resolveWith({}, { declaration: Nix.Environment({ flake: Input.file("//nix/flake.nix") }) })
+    await expect(flake.result).resolves.toMatchObject({ hash })
+    const system = NixExec.hostSystem()
+    expect(flake.lines).toEqual([`nix environment: evaluating ${root}/nix#devShells.${system}.default`])
+    const file = await resolveWith({}, { declaration: Nix.Environment({ file: Input.file("//env.nix") }) })
+    const resolved = await file.result
+    expect(file.lines).toEqual([`nix environment: evaluating --file ${NodePath.join(root, "env.nix")}`])
+    expect(resolved.inputs.map((input) => input.path)).toEqual(["env.nix"])
+  })
+
+  it("keeps only non-empty string variables from the dev shell", async () => {
+    const { fake, result } = await resolveWith({})
+    const resolved = await result
+    expect(resolved.path).toEqual([NodePath.join(fake.closure, "bin")])
+    expect(resolved.variables).toEqual({})
+    expect(Object.isFrozen(resolved.variables)).toBe(true)
+  })
+
+  it("refuses a missing expression file without the flake lock hint", async () => {
+    const { result } = await resolveWith({}, { declaration: Nix.Environment({ file: Input.file("//absent.nix") }) })
+    const error = await result.catch((cause: unknown) => cause)
+    expect(error).toMatchObject({
+      code: "nix_input_missing",
+      message: "Nix environment input absent.nix does not exist"
+    })
+  })
+
+  it("refuses a nix whose version probe fails", async () => {
+    const { fake, result } = await resolveWith({ VERSION: "fail" })
+    await expect(result).rejects.toMatchObject({
+      code: "nix_evaluation_failed",
+      message: "nix --version failed: nix: broken install"
+    })
+    expect(await calledSteps(fake.calls)).toEqual([])
+  })
+
+  it("reports a failed build with the bounded tail of its trace", async () => {
+    const { result } = await resolveWith({ BUILD: "fail" })
+    const error = (await result.catch((cause: unknown) => cause)) as NixExec.NixEnvironmentError
+    expect(error.code).toBe("nix_evaluation_failed")
+    const prefix = "nix build failed for the declared environment (exit 1): "
+    expect(error.message.startsWith(prefix)).toBe(true)
+    const trace = error.message.slice(prefix.length)
+    expect(trace.length).toBe(4 * 1024)
+    expect(trace.endsWith("error: final cause")).toBe(true)
+    expect(trace).not.toContain("line 0 of")
+  })
+
+  it("refuses a build that prints no store path", async () => {
+    const { fake, result } = await resolveWith({ BUILD: "empty" })
+    await expect(result).rejects.toMatchObject({
+      code: "nix_evaluation_failed",
+      message: "nix build printed no store path for the declared environment: \"\""
+    })
+    expect(await calledSteps(fake.calls)).toEqual(["build"])
+  })
+
+  it.each([
+    ["fails", { DEV: "fail" }, "nix_evaluation_failed", /^nix print-dev-env failed .*\(exit 4\): error: no devShell$/],
+    [
+      "prints no JSON",
+      { DEV: "garbage" },
+      "nix_environment_incomplete",
+      /^nix print-dev-env printed no readable JSON$/
+    ],
+    ["exports no PATH", { DEV: "novars" }, "nix_environment_incomplete", /exports no PATH/]
+  ])("refuses a dev shell that %s", async (_name, behaviour, code, message) => {
+    const { fake, result } = await resolveWith(behaviour)
+    await expect(result).rejects.toMatchObject({ code, message: expect.stringMatching(message) })
+    expect(await calledSteps(fake.calls)).toEqual(["build", "print-dev-env"])
+  })
+
+  it("refuses a closure nix cannot list", async () => {
+    const { fake, result } = await resolveWith({ PATHINFO: "fail" })
+    await expect(result).rejects.toMatchObject({
+      code: "nix_evaluation_failed",
+      message: `nix path-info failed for ${fake.closure}: error: path is not valid`
+    })
+  })
+
+  it.each([
+    ["unparseable", "{"],
+    ["not an object", "null"],
+    ["missing its closure", JSON.stringify({ storePath: "", hash: undefined, path: [], variables: {} })]
+  ])("re-evaluates past a memo that is %s and rewrites it", async (_name, text) => {
+    const first = await resolveWith({}, { cacheDirectory: ".flows" })
+    const resolved = await first.result
+    const memos = NodePath.join(root, ".flows", "nix")
+    const [memo] = await Fs.readdir(memos)
+    await Fs.writeFile(NodePath.join(memos, memo!), text)
+    const again = await resolveWith({}, { cacheDirectory: ".flows" })
+    await expect(again.result).resolves.toEqual(resolved)
+    expect(await calledSteps(first.fake.calls)).toEqual([
+      "build",
+      "print-dev-env",
+      "path-info",
+      "build",
+      "print-dev-env",
+      "path-info"
+    ])
+    expect(JSON.parse(await Fs.readFile(NodePath.join(memos, memo!), "utf8"))).toEqual(resolved)
+  })
+
+  it("resolves and logs when the memo cannot be written", async () => {
+    await write(".flows/nix", "a file where the memo directory belongs")
+    const { lines, result } = await resolveWith({}, { cacheDirectory: ".flows" })
+    await expect(result).resolves.toMatchObject({ hash })
+    expect(lines.at(-1)).toMatch(/^nix environment: could not memoize the resolution: Error: EEXIST/)
+  })
+
+  it("shares one evaluation between concurrent resolutions of one declaration", async () => {
+    const fake = await configurableNix()
+    const resolve = () =>
+      NixExec.resolveEnvironment({
+        root,
+        declaration: declaration(),
+        environment: { PATH: hostPath(fake.bin), BUILD: "slow" }
+      })
+    const [left, right] = await Promise.all([resolve(), resolve()])
+    expect(right).toBe(left)
+    expect(await calledSteps(fake.calls)).toEqual(["build", "print-dev-env", "path-info"])
+    await resolve()
+    expect((await calledSteps(fake.calls)).filter((step) => step === "build")).toHaveLength(2)
+  })
+
+  it("stops a running evaluation when the caller aborts", async () => {
+    const fake = await configurableNix()
+    const controller = new AbortController()
+    const result = NixExec.resolveEnvironment({
+      root,
+      declaration: declaration(),
+      environment: { PATH: hostPath(fake.bin), BUILD: "hang" },
+      signal: controller.signal
+    }).then(() => undefined, (cause: unknown) => cause)
+    await expect.poll(() => calledSteps(fake.calls)).toEqual(["build"])
+    const started = Date.now()
+    controller.abort()
+    expect(await result).toMatchObject({ name: "AbortError" })
+    expect(Date.now() - started).toBeLessThan(10_000)
+  })
+})

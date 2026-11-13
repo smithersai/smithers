@@ -18,6 +18,10 @@ const dockerHost = (
     removeCleanupFailure?: Error
     createOutput?: string
     createCode?: number
+    /** What the create client prints on stderr; an engine warning by default. */
+    createStderr?: string
+    /** Exit status of every container listing; a failed listing prints nothing. */
+    psCode?: number
     startCode?: number
     initCode?: number
     holdCreateResponse?: boolean
@@ -99,9 +103,11 @@ const dockerHost = (
           // Only the exact-name filter the supervisor uses is modeled.
           const filter = args[args.indexOf("--filter") + 1]!
           const pattern = new RegExp(filter.slice("name=".length))
-          output = [...containers.entries()].filter(([name]) => pattern.test(`/${name}`))
-            .map(([, container]) => container.id + "\n").join("")
-          yield* Deferred.succeed(exit, ExitCode(0))
+          output = faults.psCode === undefined
+            ? [...containers.entries()].filter(([name]) => pattern.test(`/${name}`))
+              .map(([, container]) => container.id + "\n").join("")
+            : ""
+          yield* Deferred.succeed(exit, ExitCode(faults.psCode ?? 0))
           break
         }
         case "exec": {
@@ -150,7 +156,9 @@ const dockerHost = (
             return new TextEncoder().encode(output)
           })),
           // Docker diagnostics must not be parsed as part of its stdout ID.
-          stderr: Stream.make(new TextEncoder().encode(args[0] === "create" ? "engine warning\n" : "")),
+          stderr: Stream.make(
+            new TextEncoder().encode(args[0] === "create" ? faults.createStderr ?? "engine warning\n" : "")
+          ),
           all: Stream.empty,
           getInputFd: () => Sink.drain,
           getOutputFd: () => Stream.empty,
@@ -451,6 +459,56 @@ describe("Docker invocation ownership", () => {
     await new Promise((resolve) => setTimeout(resolve, 500))
     expect(host.containers.size).toBe(1)
     expect(host.commands.filter((args) => args[0] === "rm")).toHaveLength(1)
+  })
+
+  it("reads a failed container listing as no container and keeps polling to its bound", async () => {
+    const host = dockerHost({ holdCreateResponse: true, lateCreate: "manual", psCode: 1 })
+    const spec = await specFor("invocation-a", "/workspace")
+    let failed = 0
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const supervisor = yield* host.make
+      yield* Effect.flip(supervisor.acquire(spec)).pipe(
+        Effect.ensuring(Deferred.succeed(host.releaseCreate, undefined))
+      )
+      failed = Date.now()
+    })))
+    // A listing that fails is never proof the name is gone, so the reap
+    // keeps polling for the whole bound and removes nothing by ID.
+    expect(Date.now() - failed).toBeGreaterThanOrEqual(1_000)
+    expect(host.commands.filter((args) => args[0] === "ps").length).toBeGreaterThan(1)
+    const name = host.commands.find((args) => args[0] === "create")![3]!
+    expect(host.commands.filter((args) => args[0] === "rm")).toEqual([["rm", "-f", name]])
+  })
+
+  it("says Docker returned no container ID when a successful create prints nothing", async () => {
+    const host = dockerHost({ createOutput: "", createStderr: "" })
+    const spec = await specFor("invocation-a", "/workspace")
+    const failure = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const supervisor = yield* host.make
+      return yield* Effect.flip(supervisor.acquire(spec))
+    })))
+    expect(failure).toMatchObject({
+      key: "//:service",
+      reason: "spawn-failed",
+      message: "service //:service container creation failed: Docker returned no container ID"
+    })
+  })
+
+  it("starts a container without readiness or init and removes it by ID on release", async () => {
+    const host = dockerHost()
+    const { readiness: _readiness, init: _init, ...spec } = await specFor("invocation-a", "/workspace")
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const supervisor = yield* host.make
+      const handle = yield* supervisor.acquire(spec)
+      expect([...host.containers.values()].map((container) => container.pid)).toEqual([handle.pid])
+    })))
+    const id = (100).toString(16).padStart(64, "0")
+    expect(host.commands.map((args) => args.slice(0, 1).concat(args[0] === "create" ? [] : args.slice(1)))).toEqual([
+      ["create"],
+      ["start", "--attach", id],
+      ["rm", "-f", id]
+    ])
+    expect(host.containers.size).toBe(0)
   })
 
   it("does not poll for a late container when the daemon answered the create", async () => {

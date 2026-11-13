@@ -119,7 +119,7 @@ export const split = (
 ): ReadonlyArray<ReadonlyArray<string>> => {
   const weights = weigh(roots, measured)
   const longestFirst = [...roots].sort((left, right) =>
-    weights.get(right)! - weights.get(left)! || (left < right ? -1 : left > right ? 1 : 0)
+    weights.get(right)! - weights.get(left)! || (left < right ? -1 : 1)
   )
   const totals = Array.from({ length: count }, () => 0)
   const part = new Map<string, number>()

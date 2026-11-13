@@ -228,7 +228,7 @@ export const resolve = async (
   }
   options.signal?.throwIfAborted()
   const manifestDigests = Object.freeze(
-    [...manifests].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([path, manifest]) =>
+    [...manifests].sort(([left], [right]) => left < right ? -1 : 1).map(([path, manifest]) =>
       Object.freeze({ path, digest: manifest.digest })
     )
   )

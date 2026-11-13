@@ -1,3 +1,6 @@
+import { Smithers as S } from "@smthrs/targets"
+import * as Target from "@smthrs/targets/Target"
+import * as Schema from "effect/Schema"
 import * as ChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -132,5 +135,148 @@ describe("apply", () => {
     await OverlayExec.apply(root, [replacement("new/nested/destination.txt", "source.txt")])
     expect(await Fs.readFile(NodePath.join(root, "new/nested/destination.txt"), "utf8")).toBe("replacement")
     expect(await Fs.readdir(NodePath.join(root, "new/nested"))).toEqual(["destination.txt"])
+  })
+})
+
+const Consumer = Target.make("Consumer", {
+  attrs: Schema.Struct({ data: Schema.Unknown }),
+  kinds: ["build"],
+  implementation: () => Target.notImplemented("Consumer")
+})
+
+/** A rule that shares the Overlay id but leaves `replace` unchecked, as a foreign catalog may. */
+const LooseOverlay = Target.make("Overlay", {
+  attrs: Schema.Struct({ base: Schema.Unknown, replace: Schema.Unknown }),
+  kinds: ["build"],
+  implementation: () => Target.notImplemented("Overlay")
+})
+
+const Bare = Target.make("Bare", {
+  attrs: Schema.Unknown as never,
+  kinds: ["build"],
+  implementation: () => Target.notImplemented("Bare")
+})
+
+describe("resolve", () => {
+  const labels = new Map<Target.AnyTarget, string>()
+  const label = (target: Target.AnyTarget, name: string): Target.AnyTarget => {
+    labels.set(target, `//pkg:${name}`)
+    return target
+  }
+  const resolveFor = (consumer: Target.AnyTarget) =>
+    OverlayExec.resolve({
+      root,
+      consumer,
+      packagePathOf: () => "pkg",
+      labelOf: (target) => labels.get(target) ?? "//pkg:unlabelled"
+    })
+  const base = () => S.Filegroup({ srcs: [S.file("original.txt")] })
+
+  beforeEach(async () => {
+    await Fs.mkdir(NodePath.join(root, "pkg"))
+    for (const name of ["a.txt", "b.txt", "c.txt"]) await Fs.writeFile(NodePath.join(root, "pkg", name), name)
+  })
+
+  it("sorts replacements by destination and anchors them to the overlay's package", async () => {
+    const overlay = label(
+      S.Overlay({
+        base: base(),
+        replace: { "z.txt": S.file("c.txt"), "x.txt": S.file("a.txt"), "y.txt": S.file("b.txt") }
+      }),
+      "overlay"
+    )
+    const resolution = await resolveFor(Consumer({ data: [overlay] }))
+    expect(resolution.refusal).toBeUndefined()
+    expect(resolution.replacements.map((entry) => [entry.path, entry.source])).toEqual([
+      ["pkg/x.txt", "pkg/a.txt"],
+      ["pkg/y.txt", "pkg/b.txt"],
+      ["pkg/z.txt", "pkg/c.txt"]
+    ])
+    expect(resolution.replacements.every((entry) => entry.overlay === "//pkg:overlay")).toBe(true)
+  })
+
+  it("refuses one overlay that names a destination twice", async () => {
+    const overlay = label(
+      S.Overlay({ base: base(), replace: { "x.txt": S.file("a.txt"), "./x.txt": S.file("b.txt") } }),
+      "twice"
+    )
+    const resolution = await resolveFor(Consumer({ data: [overlay] }))
+    expect(resolution.refusal).toBe("Overlay conflict: //pkg:twice and //pkg:twice both replace pkg/x.txt")
+  })
+
+  it("refuses an overlay whose replacement source is missing", async () => {
+    const overlay = label(S.Overlay({ base: base(), replace: { "x.txt": S.file("absent.txt") } }), "missing")
+    const resolution = await resolveFor(Consumer({ data: [overlay] }))
+    expect(resolution).toEqual({
+      replacements: [],
+      refusal: "Overlay //pkg:missing replacement source is missing: pkg/absent.txt"
+    })
+  })
+
+  it("searches only plain data records of a forged consumer and never runs its getters", async () => {
+    const plain = label(S.Overlay({ base: base(), replace: { "plain.txt": S.file("a.txt") } }), "plain")
+    const bare = label(S.Overlay({ base: base(), replace: { "bare.txt": S.file("b.txt") } }), "bare")
+    const hidden = label(S.Overlay({ base: base(), replace: { "hidden.txt": S.file("c.txt") } }), "hidden")
+    let getterCalls = 0
+    const data = {
+      plain: { overlay: plain },
+      nullPrototype: Object.assign(Object.create(null) as Record<string, unknown>, { overlay: bare }),
+      map: new Map([["overlay", hidden]]),
+      get accessor() {
+        getterCalls += 1
+        return hidden
+      }
+    }
+    // Target.make snapshots attrs into plain data; a forged marker skips that, and Target.isTarget still admits it.
+    const forged = { _tag: "Consumer" }
+    Object.defineProperty(forged, Target.TargetTypeId, {
+      value: Object.freeze({ ...Target.metadata(Consumer({ data: [] })), attrs: { data } })
+    })
+    expect(Target.isTarget(forged)).toBe(true)
+    const resolution = await resolveFor(forged as Target.AnyTarget)
+    expect(resolution.replacements.map((entry) => entry.overlay)).toEqual(["//pkg:bare", "//pkg:plain"])
+    expect(getterCalls).toBe(0)
+  })
+
+  it("skips replace members that are not file declarations", async () => {
+    const notRecord = label(LooseOverlay({ base: base(), replace: "x.txt" }), "string")
+    const notFiles = label(
+      LooseOverlay({
+        base: base(),
+        replace: { "n.txt": null, "s.txt": "a.txt", "g.txt": { _tag: "Glob", path: "a.txt" }, "f.txt": S.file("a.txt") }
+      }),
+      "mixed"
+    )
+    const resolution = await resolveFor(Consumer({ data: [notRecord, notFiles] }))
+    expect(resolution.refusal).toBeUndefined()
+    expect(resolution.replacements.map((entry) => [entry.overlay, entry.path])).toEqual([["//pkg:mixed", "pkg/f.txt"]])
+  })
+
+  it("resolves nothing for a consumer whose attrs are not a record", async () => {
+    expect(Target.metadata(Bare(null as never)).attrs).toBeNull()
+    expect(await resolveFor(Bare(null as never))).toEqual({ replacements: [] })
+  })
+
+  it("reaches overlays through filegroup sources once, but not through another target's data", async () => {
+    const overlay = label(S.Overlay({ base: base(), replace: { "x.txt": S.file("a.txt") } }), "shared")
+    const privateOverlay = label(S.Overlay({ base: base(), replace: { "y.txt": S.file("b.txt") } }), "private")
+    const group = S.Filegroup({ srcs: [overlay] })
+    const builder = Consumer({ data: [privateOverlay] })
+    const resolution = await resolveFor(Consumer({ data: [group, overlay, builder] }))
+    expect(resolution).toEqual({
+      replacements: [{ overlay: "//pkg:shared", path: "pkg/x.txt", source: "pkg/a.txt", digest: expect.any(String) }]
+    })
+  })
+
+  it("resolves nothing for a consumer that declares no data", async () => {
+    expect(await resolveFor(Bare({} as never))).toEqual({ replacements: [] })
+  })
+
+  it("applies a resolved replacement inside an existing package directory", async () => {
+    const overlay = label(S.Overlay({ base: base(), replace: { "a.txt": S.file("c.txt") } }), "apply")
+    const resolution = await resolveFor(Consumer({ data: [overlay] }))
+    await OverlayExec.apply(root, resolution.replacements)
+    expect(await Fs.readFile(NodePath.join(root, "pkg", "a.txt"), "utf8")).toBe("c.txt")
+    expect((await Fs.readdir(NodePath.join(root, "pkg"))).sort()).toEqual(["a.txt", "b.txt", "c.txt"])
   })
 })

@@ -271,7 +271,8 @@ const resolveHooksDirectory = async (root: string): Promise<string> => {
     if (isGitHooksError(cause)) throw cause
     throw new GitHooksError(
       "not_a_git_repository",
-      `could not resolve the hooks directory for ${root}: ${cause instanceof Error ? cause.message : String(cause)}`
+      // Git and node:fs reject only with Error values here.
+      `could not resolve the hooks directory for ${root}: ${(cause as Error).message}`
     )
   }
 }
@@ -362,7 +363,7 @@ export const install = async (
       await Fs.rm(temporary, { force: true }).catch(() => undefined)
       throw new GitHooksError(
         "write_failed",
-        `${hook.file} could not be installed: ${cause instanceof Error ? cause.message : String(cause)}`
+        `${hook.file} could not be installed: ${(cause as Error).message}`
       )
     }
     wrote.push(hook.file)
@@ -373,7 +374,7 @@ export const install = async (
     } catch (cause) {
       throw new GitHooksError(
         "write_failed",
-        `${file} could not be removed: ${cause instanceof Error ? cause.message : String(cause)}`
+        `${file} could not be removed: ${(cause as Error).message}`
       )
     }
   }

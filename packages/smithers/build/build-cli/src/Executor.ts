@@ -271,7 +271,7 @@ const validateWorkList = (targets: ReadonlyArray<Planner.PlannedTarget>): string
   }
   if (settled !== targets.length) {
     const stalled = targets
-      .filter((target) => (remaining.get(target.label) ?? 0) > 0)
+      .filter((target) => remaining.get(target.label)! > 0)
       .map((target) => target.label)
       .sort(byCodeUnit)
     return `${targets.length - settled} of ${targets.length} targets never became ready ` +
@@ -376,7 +376,7 @@ export const scheduleEffect = <E, R>(
         failure ??= Diagnostic.error(Cause.squash(exit.cause), "scheduled target rejected")
       } else {
         for (const dependent of dependents.get(label) ?? []) {
-          const left = (remaining.get(dependent) ?? 1) - 1
+          const left = remaining.get(dependent)! - 1
           remaining.set(dependent, left)
           if (left === 0) ready.push(dependent)
         }
@@ -451,13 +451,9 @@ const formatSchemaIssue = SchemaIssue.makeFormatterDefault()
  */
 const rendersAsJson = (value: object): boolean => {
   if (NodeUtil.isProxy(value)) return false
-  try {
-    const prototype = Object.getPrototypeOf(value)
-    if (Array.isArray(value)) return prototype === Array.prototype
-    return prototype === Object.prototype || prototype === null
-  } catch {
-    return false
-  }
+  const prototype = Object.getPrototypeOf(value)
+  if (Array.isArray(value)) return prototype === Array.prototype
+  return prototype === Object.prototype || prototype === null
 }
 
 /**
@@ -475,9 +471,7 @@ const renderFailureJson = (value: object): string | undefined => {
   let encoded = JSON.stringify(cloneJson(value, new Set(), lossyBudget(limit), "failure", 0))
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (encoded === undefined || encoded.length <= Diagnostic.maximumMessageCodeUnits) return encoded
-    const next = Math.floor(limit * Diagnostic.maximumMessageCodeUnits / encoded.length) - 64
-    if (next < 1024 || next >= limit) return encoded
-    limit = next
+    limit = Math.floor(limit * Diagnostic.maximumMessageCodeUnits / encoded.length) - 64
     encoded = JSON.stringify(cloneJson(value, new Set(), lossyBudget(limit), "failure", 0))
   }
   return encoded
@@ -630,15 +624,11 @@ const refuseMember = (budget: OutputBudget, path: string, reason: string, render
 /** Names a function without reading a `name` any caller could have made an accessor. */
 const functionMarker = (member: object): string => {
   if (NodeUtil.isProxy(member)) return "<function proxy>"
-  try {
-    const descriptor = Object.getOwnPropertyDescriptor(member, "name")
-    const name = descriptor !== undefined && "value" in descriptor && typeof descriptor.value === "string"
-      ? descriptor.value
-      : ""
-    return name === "" ? "<function>" : `<function ${name}>`
-  } catch {
-    return "<function>"
-  }
+  const descriptor = Object.getOwnPropertyDescriptor(member, "name")
+  const name = descriptor !== undefined && "value" in descriptor && typeof descriptor.value === "string"
+    ? descriptor.value
+    : ""
+  return name === "" ? "<function>" : `<function ${name}>`
 }
 
 /**
@@ -730,8 +720,6 @@ const cloneJson = (
       return refuseMember(budget, path, "is a function", functionMarker(member))
     case "object":
       break
-    default:
-      throw new Error(`${path} is an unsupported ${typeof member} value`)
   }
   const object = member
   if (NodeUtil.isProxy(object)) return refuseMember(budget, path, "is a Proxy", "<proxy>")
@@ -755,9 +743,6 @@ const cloneJson = (
       const encoded: Array<unknown> = []
       for (let index = 0; index < object.length; index += 1) {
         const childPath = `${path}[${index}]`
-        if (!budget.lossy && names[index] !== String(index)) {
-          throw new Error(`${path} is a sparse array or carries extra own properties`)
-        }
         const descriptor = Object.getOwnPropertyDescriptor(object, String(index))
         if (
           descriptor === undefined ||
@@ -766,14 +751,17 @@ const cloneJson = (
         ) {
           if (!budget.lossy) throw new Error(`${childPath} is an accessor or non-enumerable property`)
         }
-        // A hole reads as JSON's `null`, exactly as `JSON.stringify` renders it.
-        encoded.push(
-          descriptor === undefined
-            ? null
-            : "value" in descriptor
-            ? cloneJson(descriptor.value, seen, budget, childPath, depth + 1)
-            : "<accessor>"
-        )
+        if (descriptor === undefined) {
+          // A hole reads as JSON's `null`, exactly as `JSON.stringify` renders
+          // it, and spends what that `null` costs: an unspent hole let a sparse
+          // array of 2 ** 32 - 1 slots walk every one of them.
+          spendOutputBudget(budget, 4, childPath)
+          encoded.push(null)
+        } else if ("value" in descriptor) {
+          encoded.push(cloneJson(descriptor.value, seen, budget, childPath, depth + 1))
+        } else {
+          encoded.push(refuseMember(budget, childPath, "is an accessor", "<accessor>"))
+        }
         if (budget.exhausted) {
           const dropped = object.length - index - 1
           if (dropped > 0) encoded.push(`<${dropped} more items omitted>`)
@@ -793,12 +781,10 @@ const cloneJson = (
     const keys = Object.getOwnPropertyNames(object).sort()
     for (let index = 0; index < keys.length; index += 1) {
       const key = keys[index]!
-      const childPath = path === "" ? key : `${path}.${key}`
-      const descriptor = Object.getOwnPropertyDescriptor(object, key)
-      if (descriptor === undefined) {
-        if (!budget.lossy) throw new Error(`${childPath} is an accessor or non-enumerable property`)
-        continue
-      }
+      const childPath = `${path}.${key}`
+      // Own names come from this same non-proxy object and nothing between
+      // here and there runs user code, so every name still has a descriptor.
+      const descriptor = Object.getOwnPropertyDescriptor(object, key)!
       if (!("value" in descriptor) || descriptor.enumerable !== true) {
         // A lossy walk keeps a non-enumerable data property — that is where a
         // native Error holds its message — and names an accessor rather than

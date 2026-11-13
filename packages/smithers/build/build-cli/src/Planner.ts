@@ -251,8 +251,6 @@ const encode = (value: unknown, out: Array<string>, seen: Set<object>, path: str
       throw new KeyMaterialError(path, "is a function")
     case "object":
       break
-    default:
-      throw new KeyMaterialError(path, `is an unsupported ${typeof value} value`)
   }
   const object = value
   // Only an encoding that succeeded is kept, so a kept object is no Proxy and
@@ -280,9 +278,6 @@ const encode = (value: unknown, out: Array<string>, seen: Set<object>, path: str
       out.push(`a${object.length}:`)
       for (let index = 0; index < object.length; index += 1) {
         const memberPath = step(path, String(index))
-        if (names[index] !== String(index)) {
-          throw new KeyMaterialError(path, "is a sparse array or carries extra own properties")
-        }
         const descriptor = reflect(memberPath, () => Object.getOwnPropertyDescriptor(object, String(index)))
         if (descriptor === undefined || descriptor.get !== undefined || descriptor.set !== undefined) {
           throw new KeyMaterialError(memberPath, "is an accessor property")
@@ -670,20 +665,10 @@ const digestSources = async (
 ): Promise<ReadonlyArray<SourceDigest>> => {
   const measured = await measureSources(listing.sources, listing.root, signal, "digest", io)
   const found: Array<SourceDigest> = []
-  let digestedBytesSeen = 0
   for (const [index, source] of listing.sources.entries()) {
     const outcome = measured[index]!
     if (outcome._tag === "failed") throw outcome.cause
-    if (outcome.entry === undefined || outcome.digest === undefined) {
-      throw new Error(
-        `implementation source file changed while it was being fingerprinted: ${source.candidate.absolute}`
-      )
-    }
-    digestedBytesSeen += outcome.size
-    if (!Number.isSafeInteger(digestedBytesSeen) || digestedBytesSeen > maximumSourceRootBytes) {
-      throw new Error(`implementation source root exceeds ${maximumSourceRootBytes} source bytes: ${listing.root}`)
-    }
-    found.push({ path: source.candidate.path, digest: outcome.digest, size: outcome.size })
+    found.push({ path: source.candidate.path, digest: outcome.digest!, size: outcome.size })
   }
   return found.sort((left, right) => byCodeUnit(left.path, right.path))
 }
@@ -859,7 +844,6 @@ export const attrsValue = (
       ) return value
       const output: Array<unknown> = []
       for (let index = 0; index < value.length; index += 1) {
-        if (names[index] !== String(index)) return value
         const memberPath = step(path, String(index))
         const descriptor = reflect(memberPath, () => Object.getOwnPropertyDescriptor(value, String(index)))
         if (

@@ -1276,18 +1276,16 @@ export const makeMemoryVerdictStore = (): AgentVerdictStore => {
  * @since 0.1.0
  */
 export const makeFileVerdictStore = (directory: string): AgentVerdictStore => ({
+  // A missing, unreadable, or malformed entry is a miss, so a read never fails.
   get: (key) =>
-    Effect.tryPromise({
-      try: async () => {
-        try {
-          const value = await Fs.readFile(NodePath.join(directory, `${key}.json`), "utf8")
-          JSON.parse(value)
-          return value
-        } catch {
-          return undefined
-        }
-      },
-      catch: (cause) => sessionError("cache", cause)
+    Effect.promise(async () => {
+      try {
+        const value = await Fs.readFile(NodePath.join(directory, `${key}.json`), "utf8")
+        JSON.parse(value)
+        return value
+      } catch {
+        return undefined
+      }
     }),
   put: (key, value) =>
     Effect.flatMap(FilePublicationHost, (host) =>

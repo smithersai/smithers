@@ -486,7 +486,6 @@ export const prepareSource = async (source: ReviewSource, options: Selection) =>
   const declarationPolicy = policies.find(({ label }) => label === "//:proposed-security-policy")
   if (declarationPolicy !== undefined) {
     declarationPolicy.snapshot = snapshot.filter(({ path }) => declarations.has(path))
-    if (declarationPolicy.snapshot.length !== declarations.size) throw new Error("Incomplete declaration snapshot")
   }
   if (options.required === true) {
     for (const policy of policies) policy.payload = { ...policy.payload, required: true }

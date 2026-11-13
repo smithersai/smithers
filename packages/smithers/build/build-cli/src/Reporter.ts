@@ -416,7 +416,7 @@ const pretty = (options: MakeOptions, live: boolean): Reporter => {
     })()
     if (report.error === undefined) return [head]
     const [first, ...rest] = report.error.split("\n")
-    const detail = [`    ${report.status === "failed" ? c.red(first ?? "") : c.dim(first ?? "")}`]
+    const detail = [`    ${report.status === "failed" ? c.red(first!) : c.dim(first!)}`]
     // A line the producer indented is a finding, one item of a list; anything
     // else is a tool's own output and is shown as the tool wrote it.
     for (const line of rest) {

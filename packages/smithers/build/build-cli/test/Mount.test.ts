@@ -459,3 +459,87 @@ describe("a mounted overlay", () => {
     expect(error.message).toMatch(message)
   })
 })
+
+describe("mount failures and recovery", () => {
+  it("reports a host without git as a fetch failure naming the spawn error", async () => {
+    const source = await upstream()
+    const root = await overlay(source.root, { up: { ref: source.first } })
+    const empty = await temporary("smthrs-mount-nogit-")
+    const error = await mountError(
+      Mount.materialize(root, "up", { ...silent, environment: { ...process.env, PATH: empty } })
+    )
+    expect(error.code).toBe("mount_fetch_failed")
+    expect(error.message).toMatch(/^git init failed: spawn git ENOENT/)
+  })
+
+  it("names the unreachable upstream when warn drift cannot read the branch and the fetch fails", async () => {
+    const missing = NodePath.join(await temporary("smthrs-mount-gone-"), "absent.git")
+    const root = await overlay(missing, { up: { ref: "1".repeat(40), track: "main", drift: "warn" } })
+    const error = await mountError(Mount.materialize(root, "up", silent))
+    expect(error.code).toBe("mount_fetch_failed")
+    expect(error.message).toMatch(/^could not fetch 111111111111: git fetch failed: /)
+  })
+
+  it("keeps only the tail of a long git failure", async () => {
+    const source = await upstream()
+    const files = Array.from({ length: 120 }, (_, index) => `src/absent-${String(index).padStart(3, "0")}.txt`)
+    const patch = files.map((file) =>
+      `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n-old\n+new\n`
+    ).join("")
+    const root = await overlay(source.root, { up: { ref: source.first, patches: ["patches/long.patch"] } }, {
+      ".smithers/WORKSPACE.ts": workspaceFile,
+      ".smithers/patches/long.patch": patch
+    })
+    const error = await mountError(Mount.materialize(root, "up", silent))
+    expect(error.code).toBe("mount_patch_failed")
+    const detail = error.message.slice(error.message.indexOf("git apply failed: ") + "git apply failed: ".length)
+    expect(detail.length).toBe(2048)
+    expect(detail).toContain("src/absent-119.txt")
+    expect(detail).not.toContain("src/absent-000.txt")
+  })
+
+  it("re-materializes a checkout whose receipt has an unknown version", async () => {
+    const source = await upstream()
+    const root = await overlay(source.root, { up: { ref: source.second } })
+    const first = await Mount.materialize(root, "up", silent)
+    const receipt = NodePath.join(first.root, ".git", Mount.receiptFile)
+    await Fs.writeFile(receipt, JSON.stringify({ version: 2, head: "unused" }))
+    const again = await Mount.materialize(root, "up", silent)
+    expect(again.head).toBe(source.second)
+    expect(JSON.parse(await Fs.readFile(receipt, "utf8"))).toMatchObject({ version: 1, head: source.second })
+  })
+
+  it("re-applies the patches when the checkout was reset behind the materialized head", async () => {
+    const source = await upstream()
+    const patch = "diff --git a/src/value.txt b/src/value.txt\n--- a/src/value.txt\n+++ b/src/value.txt\n" +
+      "@@ -1 +1 @@\n-one\n+patched\n"
+    const root = await overlay(source.root, { up: { ref: source.first, patches: ["patches/value.patch"] } }, {
+      ".smithers/WORKSPACE.ts": workspaceFile,
+      ".smithers/patches/value.patch": patch
+    })
+    const first = await Mount.materialize(root, "up", silent)
+    expect(first.head).not.toBe(source.first)
+    await git(first.root, ["reset", "--quiet", "--hard", source.first])
+    expect(await read(first.root, "src/value.txt")).toBe("one\n")
+    const again = await Mount.materialize(root, "up", silent)
+    expect(await git(first.root, ["rev-parse", "HEAD"])).toBe(again.head)
+    expect(await git(first.root, ["rev-parse", "HEAD^"])).toBe(source.first)
+    expect(await read(first.root, "src/value.txt")).toBe("patched\n")
+  })
+
+  it.skipIf(process.platform === "win32")("lays regular overlay files and skips a named pipe", async () => {
+    const source = await upstream()
+    const root = await overlay(source.root, { up: { ref: source.first } }, {
+      ".smithers/WORKSPACE.ts": workspaceFile,
+      ".smithers/notes/kept.md": "kept\n"
+    })
+    await executeFile("mkfifo", [NodePath.join(root, ".smithers", "notes", "pipe")])
+    const mounted = await Mount.materialize(root, "up", silent)
+    const receipt = JSON.parse(await read(mounted.root, `.git/${Mount.receiptFile}`)) as {
+      readonly laid: Readonly<Record<string, string>>
+    }
+    expect(Object.keys(receipt.laid).sort()).toEqual(["WORKSPACE.ts", "notes/kept.md"])
+    expect(await read(mounted.root, ".smithers/notes/kept.md")).toBe("kept\n")
+    expect(await exists(mounted.root, ".smithers/notes/pipe")).toBe(false)
+  })
+})

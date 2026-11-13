@@ -1119,6 +1119,25 @@ export const Package = S.Package({ owners: { owners: ["child-owner"], upstream: 
     expect(executed.envelope).toBe("")
   }, 120_000)
 
+  it("prints human tables without color codes under --ui plain even when color is forced", async () => {
+    const root = await packageFixture()
+    const colored = { TERM: "xterm-256color", NO_COLOR: undefined, FORCE_COLOR: "1" }
+    const render = (ui: string) =>
+      serve(root, ["targets", "//...", "--audience", "human", "--ui", ui], true, (config) => ({
+        ...config,
+        environment: { ...config.environment, ...colored }
+      }))
+    const tty = await render("tty")
+    const plain = await render("plain")
+    expect(plain.exitCode, plain.envelope).toBe(0)
+    expect(plain.envelope).toBe("")
+    expect(tty.stdout).toContain("\u001b[")
+    expect(plain.stdout).not.toContain("\u001b[")
+    // The same table, only without escapes.
+    expect(plain.stdout).toContain("//:good")
+    expect(plain.stdout).toBe(tty.stdout.replace(/\u001b\[[0-9;]*m/g, ""))
+  }, 120_000)
+
   it("refuses an approval pattern that selects several targets", async () => {
     const root = await packageFixture()
     await expect(approvalRevision("//...", { workspace: root, cacheDir: ".inspection" }, {

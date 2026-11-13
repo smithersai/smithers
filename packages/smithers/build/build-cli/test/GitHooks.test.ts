@@ -89,6 +89,12 @@ describe("resolveHookLabels", () => {
     expect(GitHooks.resolveHookLabels(bare, index)).toEqual({})
   })
 
+  it("binds only the hooks a workspace declares", async () => {
+    const index = await openIndex()
+    const partial = { ...index.workspace, gitHooks: { prePush: index.workspace.gitHooks!.prePush! } }
+    expect(GitHooks.resolveHookLabels(partial, index)).toEqual({ prePush: "//:prePush" })
+  })
+
   it("refuses a bound hook target no Package map lists", async () => {
     const index = await openIndex()
     try {

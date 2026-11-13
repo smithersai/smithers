@@ -190,7 +190,7 @@ const git = async (cwd: string, args: ReadonlyArray<string>, options: Options): 
     return result.stdout
   } catch (cause) {
     const failed = cause as { readonly stderr?: unknown; readonly message?: unknown }
-    throw new GitFailure(`git ${args[0]} failed: ${tail(String(failed.stderr || failed.message || cause))}`)
+    throw new GitFailure(`git ${args[0]} failed: ${tail(String(failed.stderr || failed.message))}`)
   }
 }
 
@@ -224,9 +224,7 @@ export const loadConfig = async (overlayRoot: string): Promise<MountDeclaration.
       message: `evaluating .smithers/config.ts failed: ${Diagnostic.describe(cause)}`
     })
   }
-  const value = typeof namespace === "object" && namespace !== null
-    ? (namespace as { readonly default?: unknown }).default
-    : undefined
+  const value = (namespace as { readonly default?: unknown }).default
   if (!MountDeclaration.isMounts(value)) {
     throw new MountError({
       code: "mount_config_invalid",
@@ -260,7 +258,7 @@ const fetchCommit = async (checkout: string, commit: string, options: Options): 
       .catch((cause: unknown) => {
         throw new MountError({
           code: "mount_fetch_failed",
-          message: `could not fetch ${short(commit)}: ${cause instanceof Error ? cause.message : String(cause)}`
+          message: `could not fetch ${short(commit)}: ${(cause as GitFailure).message}`
         })
       })
   }
@@ -488,9 +486,7 @@ const checkout = async (
     } catch (cause) {
       throw new MountError({
         code: "mount_patch_failed",
-        message: `patch .smithers/${patch.path} does not apply to ${short(base)}: ${
-          cause instanceof Error ? cause.message : String(cause)
-        }`
+        message: `patch .smithers/${patch.path} does not apply to ${short(base)}: ${(cause as GitFailure).message}`
       })
     }
     await git(

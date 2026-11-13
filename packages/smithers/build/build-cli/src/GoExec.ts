@@ -722,7 +722,8 @@ export const planRule = async (
   const listEnv = { ...hostEnvironment(context), ...graphEnvironment(context, attrs) }
   const authority = moduleFiles(context)
   const cwd = moduleRelative(context) === "" ? "." : moduleRelative(context)
-  if (attrs["offline"] === true && moduleMode(env["GOFLAGS"] ?? "") === "mod") {
+  // An offline environment always carries GOFLAGS: environment() sets it.
+  if (attrs["offline"] === true && moduleMode(env["GOFLAGS"]!) === "mod") {
     return {
       refusal: "offline: true keeps the module graph fixed, but env.GOFLAGS declares -mod=mod, which may change it",
       cwd,

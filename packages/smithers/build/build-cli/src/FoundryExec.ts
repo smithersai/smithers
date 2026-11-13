@@ -267,9 +267,8 @@ const effectiveConfig = async (
   environment: Readonly<Record<string, string | undefined>>
 ): Promise<{ readonly out: string; readonly cachePath: string; readonly cache: boolean } | string> => {
   const args = ["config", "--json", ...(configPath === undefined ? [] : ["--config-path", configPath])]
-  const raw = await PackageTree.runCommand(forge, args, { cwd, environment }).catch((cause: unknown) =>
-    cause instanceof Error ? cause : new Error(String(cause))
-  )
+  // runCommand rejects only with an Error: its callback wraps every failure in one.
+  const raw = await PackageTree.runCommand(forge, args, { cwd, environment }).catch((cause: Error) => cause)
   if (raw instanceof Error) return `forge config failed: ${raw.message}`
   let parsed: unknown
   try {

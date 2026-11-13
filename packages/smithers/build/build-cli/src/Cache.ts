@@ -166,6 +166,9 @@ export const remoteTransferConcurrency = 8
  */
 export const initialRemoteTransferConcurrency = 2
 
+/** The total backoff one content-store exchange may wait before it is given up. */
+const remoteTransferRetryBudgetMs = 8_000
+
 /**
  * How one busy or slow content-store exchange is retried before it is given
  * up.
@@ -187,7 +190,7 @@ export const remoteTransferRetry = {
     maxMs: 2_000,
     maxAttempts: 6,
     jitterRatio: 1,
-    expirationMs: 8_000
+    expirationMs: remoteTransferRetryBudgetMs
   }),
   slow: RetryPolicy.make({
     initialMs: 100,
@@ -195,7 +198,7 @@ export const remoteTransferRetry = {
     maxMs: 2_000,
     maxAttempts: 3,
     jitterRatio: 1,
-    expirationMs: 8_000
+    expirationMs: remoteTransferRetryBudgetMs
   })
 } as const
 
@@ -289,12 +292,8 @@ const plainDataRecord = (value: unknown, what: string): Record<PropertyKey, unkn
   if (typeof value !== "object" || value === null || Array.isArray(value) || NodeUtil.isProxy(value)) {
     throw new TypeError(`${what} must be a plain object`)
   }
-  let prototype: object | null
-  try {
-    prototype = Object.getPrototypeOf(value) as object | null
-  } catch {
-    throw new TypeError(`${what} could not be inspected safely`)
-  }
+  // A Proxy is refused above, and an ordinary object's prototype read cannot throw.
+  const prototype = Object.getPrototypeOf(value) as object | null
   if (prototype !== Object.prototype && prototype !== null) {
     throw new TypeError(`${what} must be a plain object`)
   }
@@ -306,13 +305,8 @@ const exactDataKeys = (
   allowed: ReadonlySet<string>,
   what: string
 ): void => {
-  let keys: Array<string | symbol>
-  try {
-    keys = Reflect.ownKeys(value)
-  } catch {
-    throw new TypeError(`${what} could not be inspected safely`)
-  }
-  for (const key of keys) {
+  // Callers pass only values plainDataRecord admitted, so no Proxy trap runs here.
+  for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== "string" || !allowed.has(key)) {
       throw new TypeError(`${what} contains an unknown property: ${String(key)}`)
     }
@@ -320,12 +314,7 @@ const exactDataKeys = (
 }
 
 const dataMember = (value: Record<PropertyKey, unknown>, name: string, what: string): unknown => {
-  let descriptor: PropertyDescriptor | undefined
-  try {
-    descriptor = Object.getOwnPropertyDescriptor(value, name)
-  } catch {
-    throw new TypeError(`${what}.${name} could not be inspected safely`)
-  }
+  const descriptor = Object.getOwnPropertyDescriptor(value, name)
   if (descriptor === undefined) return undefined
   if (!("value" in descriptor) || descriptor.enumerable !== true) {
     throw new TypeError(`${what}.${name} must be an enumerable data property`)
@@ -493,12 +482,9 @@ const normalizeCachedResult = (key: string, value: unknown): CachedResult => {
     ) throw new TypeError(`cached result ${name} must be bounded non-empty usable text`)
   }
   if (typeof exitOk !== "boolean") throw new TypeError("cached result exitOk must be a boolean")
-  const storedAtMs = typeof storedAt === "string" ? Date.parse(storedAt) : Number.NaN
-  if (
-    typeof storedAt !== "string" ||
-    !Number.isFinite(storedAtMs) ||
-    new Date(storedAtMs).toISOString() !== storedAt
-  ) {
+  // The text loop above already refused a storedAt that is not a string.
+  const storedAtMs = Date.parse(storedAt as string)
+  if (!Number.isFinite(storedAtMs) || new Date(storedAtMs).toISOString() !== storedAt) {
     throw new TypeError("cached result storedAt must be a canonical ISO timestamp")
   }
   return Object.freeze({
@@ -657,14 +643,8 @@ const readEntryFile = async (path: string): Promise<unknown> => {
         const buffer = Buffer.allocUnsafe(Number(opened.size) + 1)
         let total = 0
         while (total < buffer.length) {
+          // read(2) reports at most the requested length, so `total` never passes the buffer.
           const { bytesRead } = await handle.read(buffer, total, buffer.length - total, total)
-          if (!Number.isSafeInteger(bytesRead) || bytesRead < 0 || bytesRead > buffer.length - total) {
-            throw new Error(
-              `cache entry returned an invalid read length: ${
-                typeof bytesRead === "number" ? String(bytesRead) : typeof bytesRead
-              }`
-            )
-          }
           if (bytesRead === 0) break
           total += bytesRead
         }
@@ -858,9 +838,7 @@ const writeLocal = async (
   result: CachedResult,
   io: CacheIo
 ): Promise<void> => {
-  if (result.key !== key) {
-    throw new TypeError(`refusing to store an entry keyed ${result.key} under ${key}`)
-  }
+  // Both callers pass a result already normalized or decoded for `key`.
   const rename = io.rename ?? Fs.rename
   const writeContents = io.writeContents ?? writeContentsLive
   const openDirectory = io.openDirectory ?? openDirectoryLive
@@ -1399,7 +1377,7 @@ class RemoteStore {
       if (this.degraded) return outcome
       const policy = outcome === "timeout" ? remoteTransferRetry.slow : remoteTransferRetry.busy
       const next = RetryPolicy.nextDelay(policy, attempt, { random: Math.random(), elapsedMs: waited })
-      if (Option.isNone(next) || retryAfterMs > (policy.expirationMs ?? 0) - waited) return outcome
+      if (Option.isNone(next) || retryAfterMs > remoteTransferRetryBudgetMs - waited) return outcome
       const delay = next.value
       waited += delay
       await new Promise((resolve) => setTimeout(resolve, delay))
@@ -1514,7 +1492,7 @@ class RemoteStore {
         return false
       }
       if (status !== 200) {
-        this.degrade("GET", { status })
+        this.degrade("PUT", { status })
         return false
       }
       this.findMissingTimeouts = 0

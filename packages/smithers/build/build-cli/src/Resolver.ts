@@ -425,9 +425,7 @@ export const extractSpecifiers = (path: string, text: string): ReadonlyArray<Ext
       const specifier = node.moduleSpecifier === undefined ? undefined : literalText(node.moduleSpecifier)
       if (specifier !== undefined) found.push({ specifier, dynamic: false })
     } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-      const specifier = node.moduleReference.expression === undefined
-        ? undefined
-        : literalText(node.moduleReference.expression)
+      const specifier = literalText(node.moduleReference.expression)
       if (specifier !== undefined) found.push({ specifier, dynamic: false, mode: "require" })
     } else if (ts.isCallExpression(node)) {
       const callee = node.expression
@@ -534,7 +532,6 @@ class TreeReader implements TreeView {
     const slash = relativePath.lastIndexOf("/")
     const directory = slash === -1 ? "" : relativePath.slice(0, slash)
     const name = slash === -1 ? relativePath : relativePath.slice(slash + 1)
-    if (name === "") return null
     const listing = await this.listing(directory)
     return listing?.get(name) ?? null
   }
@@ -563,24 +560,29 @@ const extensionOf = (path: string): string | null => {
  * the literal file, then a directory index.
  */
 const probeModulePath = async (reader: TreeView, raw: string): Promise<string | null> => {
-  const extension = extensionOf(raw)
-  if (extension !== null && extension in jsExtensionSiblings) {
-    const stem = raw.slice(0, raw.length - extension.length)
-    for (const sibling of jsExtensionSiblings[extension]!) {
-      const candidate = `${stem}${sibling}`
+  // A trailing separator names a directory, and the workspace root's own file
+  // probes would lie outside it, so for both the compiler probes only an index.
+  const directory = raw === "./" ? "" : raw.endsWith("/") ? raw.slice(0, -1) : raw
+  if (directory === raw && raw !== "") {
+    const extension = extensionOf(raw)
+    if (extension !== null && extension in jsExtensionSiblings) {
+      const stem = raw.slice(0, raw.length - extension.length)
+      for (const sibling of jsExtensionSiblings[extension]!) {
+        const candidate = `${stem}${sibling}`
+        if (await reader.kind(candidate) === "file") return candidate
+      }
+      return await reader.kind(raw) === "file" ? raw : null
+    }
+    if (extension !== null && await reader.kind(raw) === "file") return raw
+    for (const probe of probeExtensions) {
+      const candidate = `${raw}${probe}`
       if (await reader.kind(candidate) === "file") return candidate
     }
-    return await reader.kind(raw) === "file" ? raw : null
+    if (extension === null && await reader.kind(raw) === "file") return raw
   }
-  if (extension !== null && await reader.kind(raw) === "file") return raw
-  for (const probe of probeExtensions) {
-    const candidate = `${raw}${probe}`
-    if (await reader.kind(candidate) === "file") return candidate
-  }
-  if (extension === null && await reader.kind(raw) === "file") return raw
-  if (await reader.kind(raw) === "dir") {
+  if (await reader.kind(directory) === "dir") {
     for (const index of indexNames) {
-      const candidate = `${raw}/${index}`
+      const candidate = directory === "" ? index : `${directory}/${index}`
       if (await reader.kind(candidate) === "file") return candidate
     }
   }
@@ -594,7 +596,6 @@ const parsePackageSpecifier = (specifier: string): { readonly name: string; read
     const name = `${segments[0]}/${segments[1]}`
     return { name, subpath: segments.length === 2 ? "." : `./${segments.slice(2).join("/")}` }
   }
-  if (segments[0] === "") return null
   return { name: segments[0]!, subpath: segments.length === 1 ? "." : `./${segments.slice(1).join("/")}` }
 }
 
@@ -837,7 +838,7 @@ export const resolveSpecifier = async (
   if (specifier.startsWith("./") || specifier.startsWith("../") || specifier === "." || specifier === "..") {
     const raw = containedJoin(fromDirectory, specifier)
     if (raw === null) return { specifier: site.specifier, status: "unresolved" }
-    const resolved = await probeModulePath(reader, raw === "" ? "." : raw)
+    const resolved = await probeModulePath(reader, raw)
     return resolved === null
       ? { specifier: site.specifier, status: "unresolved" }
       : { specifier: site.specifier, status: "resolved-file", resolved }
@@ -880,13 +881,13 @@ export const resolveSpecifier = async (
     return { ...edge, specifier: site.specifier }
   }
   for (const candidate of pathsCandidates(config, specifier)) {
-    const resolved = await probeModulePath(reader, candidate === "" ? "." : candidate)
+    const resolved = await probeModulePath(reader, candidate)
     if (resolved !== null) return { specifier: site.specifier, status: "resolved-file", resolved }
   }
   if (config.baseUrl !== undefined) {
     const raw = containedJoin(config.baseUrl, specifier)
     if (raw !== null) {
-      const resolved = await probeModulePath(reader, raw === "" ? "." : raw)
+      const resolved = await probeModulePath(reader, raw)
       if (resolved !== null) return { specifier: site.specifier, status: "resolved-file", resolved }
     }
   }
@@ -970,12 +971,12 @@ export class ClosureError extends Data.TaggedError("smithers-build/ClosureError"
   }
 }
 
-const compareIssues = (left: Compose.ClosureIssue, right: Compose.ClosureIssue): number =>
-  left.file < right.file ? -1 : left.file > right.file ? 1 : left.specifier < right.specifier
-    ? -1
-    : left.specifier > right.specifier
-    ? 1
-    : 0
+/**
+ * Issues in file order, then specifier order. Each key joins its file and
+ * specifier with NUL, which no path contains, so key order is that order.
+ */
+const sortedIssues = (issues: ReadonlyMap<string, Compose.ClosureIssue>): Array<Compose.ClosureIssue> =>
+  [...issues.keys()].sort().map((key) => issues.get(key)!)
 
 /**
  * Computes the transitive import closure of `entries` under one
@@ -1120,11 +1121,10 @@ export const computeClosure = async (options: {
   }
   return {
     result: {
-      files: [...files.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
-        .map(([path, digest]) => ({ path, digest })),
+      files: [...files.keys()].sort().map((path) => ({ path, digest: files.get(path)! })),
       packages: [...packages].sort(),
-      unresolved: [...unresolved.values()].sort(compareIssues),
-      dynamic: [...dynamic.values()].sort(compareIssues)
+      unresolved: sortedIssues(unresolved),
+      dynamic: sortedIssues(dynamic)
     },
     stats: { parsed, cached }
   }
