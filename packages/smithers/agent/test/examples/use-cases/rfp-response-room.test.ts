@@ -22,6 +22,8 @@ const input = (asked: string) => JSON.parse(/\nINPUT: (.+)/.exec(asked)?.[1] ?? 
 interface Scenario {
   readonly confidence?: Readonly<Record<string, number>>
   readonly blocker?: string
+  readonly unapproved?: string
+  readonly needsSME?: ReadonlyArray<string>
 }
 
 /**
@@ -74,7 +76,7 @@ const script = (scenario: Scenario = {}) => {
         answer: `answer to ${requirement.question}`,
         citedSourceIds: ["SRC-1"],
         confidence,
-        needsSME: false
+        needsSME: scenario.needsSME?.includes(requirement.id) ?? false
       }
     }
     if (asked.includes("You are a proposal reviewer")) {
@@ -84,7 +86,7 @@ const script = (scenario: Scenario = {}) => {
       const blocked = scenario.blocker === role
       return {
         reviewerRole: role,
-        approved: !blocked,
+        approved: !blocked && scenario.unapproved !== role,
         requirementIds: ids,
         blockers: blocked ? [`${role} cannot back ${ids[0]}`] : [],
         suggestedEdits: []
@@ -210,8 +212,7 @@ it.live(
 
 it.live("ends the run without a package when the person denies a blocked review", () =>
   Effect.gen(function*() {
-    // A threshold of 0.5 lets the 0.6 draft through, but the question still
-    // counts it: as in 0.x, the count uses 0.8.
+    // The lowered threshold clears the draft; only the legal review blocks.
     const { answer, turns } = script({ confidence: { "SEC-1": 0.6 }, blocker: "legal" })
     const person = inbox("rfp-denied", { approved: false, reviewer: "dana", note: "legal is right" })
     const exit = yield* Effect.exit(Kit.run(RfpResponseRoom, { confidenceThreshold: 0.5 }, {
@@ -222,7 +223,7 @@ it.live("ends the run without a package when the person denies a blocked review"
     }))
 
     expect(person.questions).toMatchObject([
-      question("Review RFP response exceptions\n1 low-confidence draft(s); 1 blocker(s).")
+      question("Review RFP response exceptions\n0 low-confidence draft(s); 1 blocker(s).")
     ])
     expect(turns).not.toContain("package")
     expect(Exit.isFailure(exit)).toBe(true)
@@ -250,6 +251,30 @@ it.live("packages a draft under a lowered threshold with no person asked", () =>
     expect(person.questions).toEqual([])
     expect(output.openQuestions).toEqual([])
   }), { timeout: 60_000 })
+
+for (
+  const [id, scenario, threshold, low, blockers] of [
+    ["higher-threshold", { confidence: { "SEC-1": 0.85 } }, 0.9, 1, 0],
+    ["unapproved", { unapproved: "legal" }, 0.8, 0, 1],
+    ["needs-sme", { needsSME: ["SEC-1"] }, 0.8, 1, 0]
+  ] as const
+) {
+  it.live(`explains the ${id} exception before the person approves`, () =>
+    Effect.gen(function*() {
+      const { answer, packaged } = script(scenario)
+      const person = inbox(`rfp-${id}`, approve)
+      yield* Kit.run(RfpResponseRoom, { confidenceThreshold: threshold }, {
+        filename: join(directory, `${id}.sqlite`),
+        executionId: `rfp-${id}`,
+        script: answer,
+        actions: person.actions
+      })
+      expect(person.questions).toMatchObject([
+        question(`Review RFP response exceptions\n${low} low-confidence draft(s); ${blockers} blocker(s).`)
+      ])
+      expect(packaged[0].approval).toEqual(approve)
+    }), { timeout: 60_000 })
+}
 
 it.live(
   "drafts duplicate requirement ids independently and preserves their question order",

@@ -1,13 +1,17 @@
-import { afterAll, afterEach, expect, it } from "@effect/vitest"
+import { afterAll, expect, it } from "@effect/vitest"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import * as ConfigProvider from "effect/ConfigProvider"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as TestClock from "effect/testing/TestClock"
@@ -15,7 +19,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { createServer, type RequestListener, type Server } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { onTestFailed, vi } from "vitest"
+import { onTestFailed } from "vitest"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 import {
   delayMillis,
@@ -31,10 +35,39 @@ const directory = mkdtempSync(join(tmpdir(), "tweet-thread-"))
 
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
-afterEach(() => {
-  vi.unstubAllEnvs()
-  vi.restoreAllMocks()
-})
+/** A recording HTTP service; no request can reach X from this suite. */
+const server = (respond: (count: number) => Response) => {
+  const requests: Array<{ readonly url: string; readonly authorization: string; readonly body: unknown }> = []
+  const client = HttpClient.make((request) =>
+    Effect.sync(() => {
+      const bytes = (request.body as { readonly body: Uint8Array }).body
+      requests.push({
+        url: request.url,
+        authorization: request.headers.authorization ?? "",
+        body: JSON.parse(new TextDecoder().decode(bytes))
+      })
+      return HttpClientResponse.fromWeb(request, respond(requests.length))
+    })
+  )
+  return { requests, transport: Layer.succeed(HttpClient.HttpClient)(client) }
+}
+
+const credentials = {
+  X_API_KEY: "consumer-key",
+  X_API_SECRET: "consumer-secret",
+  X_ACCESS_TOKEN: "access-token",
+  X_ACCESS_SECRET: "access-secret"
+}
+
+const configured = <A, E, R>(
+  implementation: Layer.Layer<A, E, R | HttpClient.HttpClient>,
+  transport: Layer.Layer<HttpClient.HttpClient>,
+  values: Record<string, string> = credentials
+) =>
+  implementation.pipe(
+    Layer.provide(transport),
+    Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values)))
+  )
 
 /** The flow makes no agent calls, so any model request is unexpected. */
 const noAgents: Kit.Script = () => undefined
@@ -152,18 +185,17 @@ it.effect("stops the thread at a refused post and never retries it", () =>
 
 it.effect("records every post as not posted, without calling X, when the credentials are missing", () =>
   Effect.gen(function*() {
-    for (const name of ["X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET"]) vi.stubEnv(name, "")
-    const fetched = vi.spyOn(globalThis, "fetch")
+    const http = server(() => new Response("Unexpected request", { status: 500 }))
     const log: Array<string> = []
     const timer = advanceTimers("tweet-thread-no-credentials", () => void log.push("sleep"))
     const posts = yield* Kit.run(TweetThread, {}, {
       filename: join(directory, "no-credentials.sqlite"),
       executionId: "tweet-thread-no-credentials",
       script: noAgents,
-      actions: Layer.mergeAll(xLayer, timer)
+      actions: Layer.mergeAll(configured(xLayer, http.transport, {}), timer)
     })
 
-    expect(fetched).not.toHaveBeenCalled()
+    expect(http.requests).toEqual([])
     expect(log).toHaveLength(24)
     expect(posts).toHaveLength(25)
     expect(posts.every((post) =>
@@ -174,22 +206,14 @@ it.effect("records every post as not posted, without calling X, when the credent
 
 it.effect("signs each X request and threads it on the id X returned for the post before", () =>
   Effect.gen(function*() {
-    vi.stubEnv("X_API_KEY", "consumer-key")
-    vi.stubEnv("X_API_SECRET", "consumer-secret")
-    vi.stubEnv("X_ACCESS_TOKEN", "access-token")
-    vi.stubEnv("X_ACCESS_SECRET", "access-secret")
-    const requests: Array<{ readonly url: string; readonly authorization: string; readonly body: unknown }> = []
-    vi.spyOn(globalThis, "fetch").mockImplementation((url, init) => {
-      const headers = init?.headers as Record<string, string>
-      requests.push({ url: String(url), authorization: headers.authorization!, body: JSON.parse(String(init?.body)) })
-      return Promise.resolve(new Response(JSON.stringify({ data: { id: `x${requests.length}` } }), { status: 201 }))
-    })
+    const http = server((count) => new Response(JSON.stringify({ data: { id: `x${count}` } }), { status: 201 }))
+    const { requests } = http
     const timer = advanceTimers("tweet-thread-signed", () => {})
     const posts = yield* Kit.run(TweetThread, {}, {
       filename: join(directory, "signed.sqlite"),
       executionId: "tweet-thread-signed",
       script: noAgents,
-      actions: Layer.mergeAll(xLayer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, globalThis.fetch))), timer)
+      actions: Layer.mergeAll(configured(xLayer, http.transport), timer)
     })
 
     expect(requests).toHaveLength(25)
@@ -224,48 +248,119 @@ const clockMover = (executionId: string, posts: () => number, parks: Array<strin
 
 it.effect("parks on the durable timer between posts with the flow's own layer", () =>
   Effect.gen(function*() {
-    vi.stubEnv("X_API_KEY", "consumer-key")
-    vi.stubEnv("X_API_SECRET", "consumer-secret")
-    vi.stubEnv("X_ACCESS_TOKEN", "access-token")
-    vi.stubEnv("X_ACCESS_SECRET", "access-secret")
     // X accepts the first post and refuses the second, so the run ends after one pause.
-    let posts = 0
-    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
-      Promise.resolve(
-        ++posts === 1
-          ? new Response(JSON.stringify({ data: { id: "x1" } }), { status: 201 })
-          : new Response("Service Unavailable", { status: 503 })
-      )
+    const http = server((count) =>
+      count === 1
+        ? new Response(JSON.stringify({ data: { id: "x1" } }), { status: 201 })
+        : new Response("Service Unavailable", { status: 503 })
     )
     const parks: Array<string> = []
     const executionId = "tweet-thread-durable-timer"
-    const exit = yield* Effect.exit(Kit.run(TweetThread, {}, {
+    const failure = yield* Effect.flip(Kit.run(TweetThread, {}, {
       filename: join(directory, "durable-timer.sqlite"),
       executionId,
       script: noAgents,
       actions: Layer.mergeAll(
-        layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, globalThis.fetch))),
-        clockMover(executionId, () => posts, parks)
+        configured(layer, http.transport),
+        clockMover(executionId, () => http.requests.length, parks)
       )
     }))
 
     // The run parked three seconds out after the first post, and posted the
     // second only once the clock moved.
     expect(parks).toEqual(["parked 3000 ms after 1 post(s)"])
-    expect(posts).toBe(2)
-    expect(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "").toContain("PostRefused")
+    expect(http.requests).toHaveLength(2)
+    expect(failure).toMatchObject({
+      _tag: "examples/TweetThread/PostRefused",
+      status: 503,
+      body: "Service Unavailable"
+    })
   }))
-
-it("bounds each irreversible post and links to the actual examples repository", () => {
-  expect(PostTweet.attemptTimeoutMs).toBe(30_000)
-  expect(tweets.at(-1)).toContain("github.com/smithersai/smithers")
-})
 
 const SinglePost = Flow.make("examples/TweetThread/SinglePostTest", {
   payload: PostTweet.payloadSchema,
   success: PostTweet.successSchema,
   error: PostRefused,
   body: Node.capture({ action: PostTweet.name }, (payload) => PostTweet.call(payload))
+})
+
+for (const name of Object.keys(credentials)) {
+  for (const value of [undefined, ""]) {
+    it.effect(`does not send a request when ${name} is ${value === undefined ? "missing" : "empty"}`, () =>
+      Effect.gen(function*() {
+        const values: Record<string, string> = { ...credentials }
+        if (value === undefined) delete values[name]
+        else values[name] = value
+        const http = server(() => new Response("Unexpected request", { status: 500 }))
+        const id = `tweet-missing-${name}-${String(value)}`
+        const result = yield* Kit.run(SinglePost, { text: "one post" }, {
+          filename: join(directory, `${id}.sqlite`),
+          executionId: id,
+          script: noAgents,
+          actions: configured(xLayer, http.transport, values)
+        })
+        expect(result.posted).toBe(false)
+        expect(result.tweetId).toBe("")
+        expect(result.error).toContain("Missing X_API_KEY")
+        expect(http.requests).toEqual([])
+      }))
+  }
+}
+
+it.effect("returns a typed refusal when the injected HTTP transport fails", () =>
+  Effect.gen(function*() {
+    let attempted = 0
+    const transport = Layer.succeed(HttpClient.HttpClient)(HttpClient.make((request) => {
+      attempted++
+      return Effect.fail(
+        new HttpClientError.HttpClientError({
+          reason: new HttpClientError.TransportError({ request, cause: "connection refused" })
+        })
+      )
+    }))
+    const failure = yield* Effect.flip(Kit.run(SinglePost, { text: "one post" }, {
+      filename: join(directory, "transport-failed.sqlite"),
+      executionId: "tweet-transport-failed",
+      script: noAgents,
+      actions: configured(xLayer, transport)
+    }))
+    expect(failure).toMatchObject({
+      _tag: "examples/TweetThread/PostRefused",
+      status: 0,
+      body: "The X API could not be reached."
+    })
+    expect(attempted).toBe(1)
+  }))
+
+it.effect("returns a typed refusal when an HTTP response body cannot be read", () =>
+  Effect.gen(function*() {
+    const http = server(() =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error("response disconnected"))
+          }
+        }),
+        { status: 201 }
+      )
+    )
+    const failure = yield* Effect.flip(Kit.run(SinglePost, { text: "one post" }, {
+      filename: join(directory, "response-failed.sqlite"),
+      executionId: "tweet-response-failed",
+      script: noAgents,
+      actions: configured(xLayer, http.transport)
+    }))
+    expect(failure).toMatchObject({
+      _tag: "examples/TweetThread/PostRefused",
+      status: 0,
+      body: "The X API response could not be read."
+    })
+    expect(http.requests).toHaveLength(1)
+  }))
+
+it("bounds each irreversible post and links to the actual examples repository", () => {
+  expect(PostTweet.attemptTimeoutMs).toBe(30_000)
+  expect(tweets.at(-1)).toContain("github.com/smithersai/smithers")
 })
 
 /** A real loopback endpoint, reached by injecting the fetch transport service. */
@@ -287,24 +382,16 @@ const serve = (handler: RequestListener) =>
       })
   )
 
-const credentials = () => {
-  vi.stubEnv("X_API_KEY", "consumer-key")
-  vi.stubEnv("X_API_SECRET", "consumer-secret")
-  vi.stubEnv("X_ACCESS_TOKEN", "access-token")
-  vi.stubEnv("X_ACCESS_SECRET", "access-secret")
-}
-
 const localTransport = (server: Server, record: (signal: AbortSignal | null | undefined) => void = () => {}) =>
-  Layer.succeed(FetchHttpClient.Fetch, (_url, init) => {
+  FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, (_url, init) => {
     record(init?.signal)
     const address = server.address()
     if (address === null || typeof address === "string") return Promise.reject(new Error("No TCP address"))
     return fetch(`http://127.0.0.1:${address.port}/2/tweets`, init)
-  })
+  })))
 
 it.effect("records malformed successful X responses as typed refusals without retrying", () =>
   Effect.scoped(Effect.gen(function*() {
-    credentials()
     let body = ""
     let requests = 0
     const server = yield* serve((_request, response) => {
@@ -312,7 +399,7 @@ it.effect("records malformed successful X responses as typed refusals without re
       response.writeHead(201, { "content-type": "application/json" })
       response.end(body)
     })
-    const actions = xLayer.pipe(Layer.provide(localTransport(server)))
+    const actions = configured(xLayer, localTransport(server))
     const invalid = ["not json", "{}", "null", "{\"data\":null}", "{\"data\":{\"id\":17}}", "{\"data\":{\"id\":\"\"}}"]
     for (const [index, value] of invalid.entries()) {
       body = value
@@ -338,7 +425,6 @@ it.effect("records malformed successful X responses as typed refusals without re
 for (const mode of ["cancel", "timeout"] as const) {
   it.effect(`aborts a hung X request on ${mode} and never posts twice`, () =>
     Effect.scoped(Effect.gen(function*() {
-      credentials()
       let signal: AbortSignal | null | undefined
       let requests = 0
       const arrived = yield* Deferred.make<void>()
@@ -347,9 +433,12 @@ for (const mode of ["cancel", "timeout"] as const) {
         Deferred.doneUnsafe(arrived, Exit.void)
       })
       const executionId = `tweet-hung-${mode}`
-      const actions = xLayer.pipe(Layer.provide(localTransport(server, (current) => {
-        signal = current
-      })))
+      const actions = configured(
+        xLayer,
+        localTransport(server, (current) => {
+          signal = current
+        })
+      )
       const control = Layer.effectDiscard(Effect.forkScoped(Effect.gen(function*() {
         const runtime = yield* FlowRuntime.FlowRuntime
         yield* Deferred.await(arrived)

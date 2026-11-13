@@ -14,10 +14,12 @@
  * typed reason and nothing runs.
  */
 import { Checkpointed } from "@smthrs/agent"
+import { Cell } from "@smthrs/harness"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import { Checkpoints } from "@smthrs/std"
 import { isAlive, killProcess } from "@smthrs/testing/Faults"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -151,27 +153,63 @@ describe("case32 a checkpoint is a pinned tree", () => {
     expect(isAlive(pids[0] as number)).toBe(false)
   }, 20_000)
 
-  it("refuses a path that would read the live tree while claiming the pinned one", () => {
-    const materialized = {
-      id: checkpointId,
-      host: join(directory, ".flows-checkpoints", checkpointId),
-      guest: join(directory, ".flows-checkpoints", checkpointId),
-      root: directory,
-      guestRoot: directory
-    }
-
-    expect(Checkpoints.relocate("read", { path: "/etc/hosts" }, materialized)).toMatchObject({
-      _tag: "AbsolutePath"
-    })
-    expect(Checkpoints.relocate("read", { path: "../outside.txt" }, materialized)).toMatchObject({
-      _tag: "OutsideTree"
-    })
-    // A flow whose input names no location cannot be pinned at all, and says so
-    // rather than running against the live tree.
-    expect(Checkpoints.relocate("memory", { note: "anything" }, materialized)).toMatchObject({
-      _tag: "UnsupportedFlow"
-    })
-    // The decorated runner is the seam that turns those into refusals.
-    expect(typeof Checkpointed.checkpointed).toBe("function")
+  it("refuses unsafe checkpoint calls before the decorated runner can run", async () => {
+    const seen: Array<Cell.Call> = []
+    const results = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* Checkpoints.Checkpoints
+        const id = "refusals"
+        yield* store.capture(id)
+        const decorated = Checkpointed.checkpointed(store, {
+          run: (received) =>
+            Effect.sync(() => {
+              seen.push(received)
+              return Cell.CallResult.new({ outcome: "success", value: "ran" })
+            })
+        })
+        const targets = [
+          { flowName: "read", input: { path: "/etc/hosts" } },
+          { flowName: "read", input: { path: "../outside.txt" } },
+          { flowName: "memory", input: { note: "anything" } }
+        ] as const
+        const results: Array<Cell.CallResult> = []
+        for (const { flowName, input } of targets) {
+          results.push(
+            yield* decorated.run(
+              new Cell.Call({
+                flowName,
+                input,
+                at: id,
+                capabilities: [],
+                effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+                placement: Option.none(),
+                identity: new Cell.CallIdentity({
+                  session: "checkpoint-refusals",
+                  frame: 0,
+                  cell: "cell-digest",
+                  ordinal: results.length,
+                  declaration: "declaration-digest",
+                  layers: []
+                })
+              })
+            )
+          )
+        }
+        return results
+      }).pipe(
+        Effect.provide(Checkpoints.layerGit({ root: directory })),
+        Effect.provide(NodeHost.layer),
+        Effect.scoped
+      )
+    )
+    expect(results.map((result) => ({ outcome: result.outcome, code: result.code }))).toEqual([
+      { outcome: "failure", code: "checkpoint_unsupported" },
+      { outcome: "failure", code: "checkpoint_unsupported" },
+      { outcome: "failure", code: "checkpoint_unsupported" }
+    ])
+    expect(results[0]?.message).toContain("absolute path /etc/hosts")
+    expect(results[1]?.message).toContain("climbs back out of the checkpoint")
+    expect(results[2]?.message).toContain("Flow memory")
+    expect(seen).toEqual([])
   })
 })

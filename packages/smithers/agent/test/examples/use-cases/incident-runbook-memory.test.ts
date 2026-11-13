@@ -224,3 +224,85 @@ it.effect("counts the proposal's superseded lessons when acceptance already succ
     })
     expect(result).toEqual({ ratifiedNoteId: "rule/retry", supersededCount: 3 })
   }))
+
+for (
+  const [count, status] of [[0, "pending"], [0, "accepted"], [1, "pending"], [1, "accepted"], [3, "pending"], [
+    3,
+    "accepted"
+  ]] as const
+) {
+  it.live(
+    `reports ${count} declared replacements for a ${status} rule`,
+    () =>
+      Effect.gen(function*() {
+        const filename = join(directory, `replayed-${count}-${status}.sqlite`)
+        const ruleNoteId = `rule/replayed-${count}-${status}`
+        const supersedes = Array.from({ length: count }, (_, i) => `lesson/replayed-${count}-${status}-${i}`)
+        yield* Effect.scoped(
+          Effect.gen(function*() {
+            const store = yield* MemoryStore.MemoryStore
+            const ids: Array<string> = []
+            for (let i = 0; i < count; i++) {
+              const note = yield* store.putNote({
+                namespace,
+                id: `lesson/replayed-${count}-${status}-${i}`,
+                text: `lesson ${i}`,
+                tags: [],
+                provenance: {}
+              })
+              ids.push(note.id)
+            }
+            yield* store.putNote({
+              namespace,
+              id: ruleNoteId,
+              text: "consolidated rule",
+              status,
+              supersedes: ids,
+              tags: [],
+              provenance: {}
+            })
+          }).pipe(Effect.provide(
+            Layer.orDie(MemoryStore.layer).pipe(Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "seed")))
+          ))
+        )
+        for (const attempt of [1, 2]) {
+          const result = yield* Kit.run(Ratify, { ruleNoteId, supersedes }, {
+            filename,
+            executionId: `ratify-${count}-${status}-${attempt}`,
+            script: () => undefined,
+            actions: layer
+          })
+          expect(result).toEqual({ ratifiedNoteId: ruleNoteId, supersededCount: count })
+          // An unrelated writer in the same namespace cannot affect a replay's count.
+          yield* Effect.scoped(
+            Effect.gen(function*() {
+              const store = yield* MemoryStore.MemoryStore
+              yield* store.putNote({
+                namespace,
+                id: `lesson/unrelated-${attempt}`,
+                text: "another incident",
+                tags: [],
+                provenance: {}
+              })
+            }).pipe(Effect.provide(
+              Layer.orDie(MemoryStore.layer).pipe(
+                Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "unrelated"))
+              )
+            ))
+          )
+        }
+      }),
+    { timeout: 60_000 }
+  )
+}
+
+it.live("refuses ratification when the rule note does not exist", () =>
+  Effect.gen(function*() {
+    const failure = yield* Effect.flip(Kit.run(Ratify, { ruleNoteId: "rule/missing", supersedes: [] }, {
+      filename: join(directory, "missing-rule.sqlite"),
+      executionId: "ratify-missing",
+      script: () => undefined,
+      actions: layer
+    }))
+    expect(failure).toMatchObject({ code: "not_found" })
+  }))

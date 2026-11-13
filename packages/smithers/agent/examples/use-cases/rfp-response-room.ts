@@ -221,8 +221,8 @@ export const DraftAnswers = Flow.make("examples/RfpResponseRoom/DraftAnswers", {
 })
 
 /**
- * Whether a person must see the drafts first, and what they are asked. As in
- * 0.x, the threshold decides, but the count in the question uses 0.8.
+ * Whether a person must see the drafts first, with counts of the exceptions
+ * that require their decision. A rejected review with no listed reason counts as one blocker.
  */
 const exceptions = (
   { confidenceThreshold, drafts, reviews }: {
@@ -231,12 +231,13 @@ const exceptions = (
     readonly confidenceThreshold: number
   }
 ): { readonly needsReview: boolean; readonly prompt: string } => {
-  const lowConfidence = drafts.some((draft) => draft.needsSME || draft.confidence < confidenceThreshold)
-  const blocked = reviews.some((review) => !review.approved || review.blockers.length > 0)
-  const low = drafts.filter((draft) => draft.needsSME || draft.confidence < 0.8).length
-  const blockers = reviews.flatMap((review) => review.blockers).length
+  const low = drafts.filter((draft) => draft.needsSME || draft.confidence < confidenceThreshold).length
+  const blockers = reviews.reduce(
+    (count, review) => count + Math.max(review.blockers.length, review.approved ? 0 : 1),
+    0
+  )
   return {
-    needsReview: lowConfidence || blocked,
+    needsReview: low > 0 || blockers > 0,
     prompt: `Review RFP response exceptions\n${low} low-confidence draft(s); ${blockers} blocker(s).`
   }
 }

@@ -15,8 +15,12 @@
 import { Action, Flow, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
+import * as Config from "effect/Config"
 import * as Effect from "effect/Effect"
-import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as Layer from "effect/Layer"
+import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { createHmac, randomBytes } from "node:crypto"
 
@@ -84,73 +88,76 @@ const percent = (value: string) =>
   encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
 
 interface Credentials {
-  readonly apiKey: string
-  readonly apiSecret: string
-  readonly accessToken: string
-  readonly accessSecret: string
+  readonly apiKey: Redacted.Redacted<string>
+  readonly apiSecret: Redacted.Redacted<string>
+  readonly accessToken: Redacted.Redacted<string>
+  readonly accessSecret: Redacted.Redacted<string>
 }
 
 /** The OAuth 1.0a `Authorization` header for a POST to `endpoint` with a JSON body. */
 const authorization = (credentials: Credentials): string => {
   const oauth: Record<string, string> = {
-    oauth_consumer_key: credentials.apiKey,
+    oauth_consumer_key: Redacted.value(credentials.apiKey),
     oauth_nonce: randomBytes(16).toString("hex"),
     oauth_signature_method: "HMAC-SHA1",
     oauth_timestamp: String(Math.floor(Date.now() / 1000)),
-    oauth_token: credentials.accessToken,
+    oauth_token: Redacted.value(credentials.accessToken),
     oauth_version: "1.0"
   }
   // A JSON body is not part of the signature base string; only the OAuth parameters are.
   const parameters = Object.entries(oauth).map(([k, v]) => `${percent(k)}=${percent(v)}`).sort().join("&")
   const base = ["POST", percent(endpoint), percent(parameters)].join("&")
-  const key = `${percent(credentials.apiSecret)}&${percent(credentials.accessSecret)}`
+  const key = `${percent(Redacted.value(credentials.apiSecret))}&${percent(Redacted.value(credentials.accessSecret))}`
   oauth.oauth_signature = createHmac("sha1", key).update(base).digest("base64")
   return `OAuth ${Object.entries(oauth).map(([k, v]) => `${percent(k)}="${percent(v)}"`).join(", ")}`
 }
 
 /**
- * The live X implementation. It reads the four `X_*` variables on every post,
- * as 0.x did, and records a post it has no credentials for as not posted.
+ * The X implementation uses the host's HTTP client and reads redacted
+ * `X_*` configuration on every post. Missing or empty credentials record
+ * the post as not posted without sending a request.
  */
-export const xLayer = PostTweet.toLayer(({ replyToId, text }) =>
-  Effect.gen(function*() {
-    const apiKey = process.env.X_API_KEY
-    const apiSecret = process.env.X_API_SECRET
-    const accessToken = process.env.X_ACCESS_TOKEN
-    const accessSecret = process.env.X_ACCESS_SECRET
-    if (!apiKey || !apiSecret || !accessToken || !accessSecret) {
-      return {
-        tweetId: "",
-        posted: false,
-        error: "Missing X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, or X_ACCESS_SECRET env vars."
+export const xLayer = Layer.unwrap(Effect.gen(function*() {
+  const client = yield* HttpClient.HttpClient
+  return PostTweet.toLayer(({ replyToId, text }) =>
+    Effect.gen(function*() {
+      const credentials = yield* Config.all({
+        apiKey: Config.Redacted("X_API_KEY"),
+        apiSecret: Config.Redacted("X_API_SECRET"),
+        accessToken: Config.Redacted("X_ACCESS_TOKEN"),
+        accessSecret: Config.Redacted("X_ACCESS_SECRET")
+      }).pipe(Effect.orElseSucceed(() => undefined))
+      if (credentials === undefined || Object.values(credentials).some((value) => Redacted.value(value) === "")) {
+        return {
+          tweetId: "",
+          posted: false,
+          error: "Missing X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, or X_ACCESS_SECRET env vars."
+        }
       }
-    }
-    const body = replyToId ? { text, reply: { in_reply_to_tweet_id: replyToId } } : { text }
-    const fetch = yield* FetchHttpClient.Fetch
-    const response = yield* Effect.tryPromise({
-      try: (signal) =>
-        fetch(endpoint, {
-          method: "POST",
-          signal,
-          headers: {
-            authorization: authorization({ apiKey, apiSecret, accessToken, accessSecret }),
-            "content-type": "application/json"
-          },
-          body: JSON.stringify(body)
-        }).then(async (r) => ({ status: r.status, ok: r.ok, text: await r.text() })),
-      catch: (cause) => new PostRefused({ status: 0, body: String(cause) })
-    })
-    if (!response.ok) return yield* Effect.fail(new PostRefused({ status: response.status, body: response.text }))
-    const { data } = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
-      data: Schema.Struct({ id: Schema.String.check(Schema.isNonEmpty()) })
-    })))(response.text).pipe(
-      Effect.mapError(() =>
-        new PostRefused({ status: response.status, body: "Invalid X post response; posting status is uncertain." })
+      const body = replyToId ? { text, reply: { in_reply_to_tweet_id: replyToId } } : { text }
+      const response = yield* client.execute(
+        HttpClientRequest.post(endpoint).pipe(
+          HttpClientRequest.setHeader("authorization", authorization(credentials)),
+          HttpClientRequest.bodyJsonUnsafe(body)
+        )
+      ).pipe(Effect.mapError(() => new PostRefused({ status: 0, body: "The X API could not be reached." })))
+      const responseText = yield* response.text.pipe(
+        Effect.mapError(() => new PostRefused({ status: 0, body: "The X API response could not be read." }))
       )
-    )
-    return { tweetId: data.id, posted: true }
-  })
-)
+      if (response.status < 200 || response.status >= 300) {
+        return yield* Effect.fail(new PostRefused({ status: response.status, body: responseText }))
+      }
+      const { data } = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
+        data: Schema.Struct({ id: Schema.String.check(Schema.isNonEmpty()) })
+      })))(responseText).pipe(
+        Effect.mapError(() =>
+          new PostRefused({ status: response.status, body: "Invalid X post response; posting status is uncertain." })
+        )
+      )
+      return { tweetId: data.id, posted: true }
+    })
+  )
+}))
 
 // `Sleep.action` is a system action that declares no requirement, so only the post appears here.
 type Requirements = Action.Requirement<"examples/TweetThread/Post">
@@ -188,5 +195,5 @@ export const TweetThread = Flow.make("examples/TweetThread", {
   body: Node.capture({ action: PostTweet.name, tweets, delayMillis }, () => post(0, undefined, []))
 })
 
-/** The live X post; the interpreter supplies the durable timer. */
+/** The host supplies `HttpClient` and configuration; the interpreter supplies the durable timer. */
 export const layer = xLayer

@@ -95,6 +95,16 @@ HTTP request on cancellation. A malformed successful response fails with
 `PostRefused`: the posting outcome is uncertain, so the engine never retries
 it automatically.
 
+The `tweet-thread` implementation takes the host's Effect `HttpClient`
+(for example, `FetchHttpClient.layer` from `effect/http`) and reads
+`X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN` and `X_ACCESS_SECRET`
+through redacted Effect `Config` on each post. Tests supply a
+`ConfigProvider` and recording HTTP service; they never replace global
+`fetch` or change the process environment.
+
+`rfp-response-room` counts drafts against `confidenceThreshold` and
+counts a rejected review with no listed reasons as one blocker.
+
 ## Sandbox filesystem tools
 
 `25-agent-tools-in-sandbox.ts` exposes only `read` and `write`, with
