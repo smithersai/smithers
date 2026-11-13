@@ -2,7 +2,7 @@
 // decide a step in `modelDecision.vibe`; these state that the next Model is the old one with exactly that state written.
 import type { AccountState, Model } from "./main.vibe"
 import type { ActionView } from "./actionModel.vibe"
-import type { AccountScreen, ActionScreen, RunSelection } from "./modelDecision.vibe"
+import type { AccountLoadedStep, AccountScreen, ActionScreen, RoleScreen, RunSelection } from "./modelDecision.vibe"
 import type { AfterUpdate, EscapeRoute, EscapeStep, EventPlan, WikiVisit } from "./updateDecision.vibe"
 import type { SandboxPane, StreamScreen, TourEnd, TourKeep, TourStarted } from "./tourDecision.vibe"
 import type { SandboxResult, SandboxScreen, WikiEditScreen } from "./paneDecision.vibe"
@@ -579,4 +579,89 @@ export function eventReplayWrite(model: Model, client: Model["client"], epoch: n
 //@ ensures \result == { ...model, stream: state.stream, connection: state.connection, epoch: state.epoch, from: state.from }
 export function streamWrite(model: Model, state: StreamScreen): Model {
   return { ...model, ...state }
+}
+
+/** The Model after a loaded identity, over the scope `scopeWrite` left (`scoped`): a new person's terminal draft
+ *  cleared and sandbox pane closed; the step's name; over `account`, the loaded person and ledger, not pending, the
+ *  menu closed, no role target, and the step's error, People pane, notice, epoch and position; nothing else. */
+//@ verify
+//@ ensures step.changedPerson ==> \result == { ...scoped, terminalDraft: "", sandboxPane: "closed", name: step.name, account: { ...account, identity: person, pending: false, error: step.error, menu: false, target: "", people: step.people, ledger: ledger, epoch: step.epoch, from: step.from, notice: step.notice } }
+//@ ensures !step.changedPerson ==> \result == { ...scoped, name: step.name, account: { ...account, identity: person, pending: false, error: step.error, menu: false, target: "", people: step.people, ledger: ledger, epoch: step.epoch, from: step.from, notice: step.notice } }
+export function accountLoadedWrite(scoped: Model, account: AccountState, person: AccountState["identity"], ledger: AccountState["ledger"], step: AccountLoadedStep): Model {
+  return { ...scoped, ...(step.changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: step.name, account: { ...account, identity: person, pending: false, error: step.error, menu: false, target: "", people: step.people, ledger, epoch: step.epoch, from: step.from, notice: step.notice } }
+}
+
+/** The Model after a received role event, over the scope `scopeWrite` left (`scoped`): over `account`, the received
+ *  ledger, the person with the step's role, and the step's notice, role target and pending flag; nothing else. */
+//@ verify
+//@ ensures \result == { ...scoped, account: { ...account, ledger: ledger, identity: { ...account.identity, role: state.role }, notice: state.notice, target: state.target, pending: state.pending } }
+export function roleReceivedWrite(scoped: Model, account: AccountState, ledger: AccountState["ledger"], state: RoleScreen): Model {
+  const identity = state.role === account.identity.role ? account.identity : { ...account.identity, role: state.role }
+  return { ...scoped, account: { ...account, ledger, identity, notice: state.notice, target: state.target, pending: state.pending } }
+}
+
+/** The Model after a tour fails to start and does not keep control: the failure screen's fields, but the chat
+ *  surface, and no recovery pending; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, surface: "chat", palette: screen.palette, tour: screen.tour, tourError: screen.tourError, docs: screen.docs, following: screen.following, recoverTour: false }
+export function failedTourWrite(model: Model, screen: ScreenState): Model {
+  return { ...screenWrite(model, screen), surface: "chat", recoverTour: false }
+}
+
+/** The Model when a tour control is sent: the last control's failure cleared; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, tourError: "" }
+export function tourControlWrite(model: Model): Model {
+  return model.tourError === "" ? model : { ...model, tourError: "" }
+}
+
+/** The Model when the tour's events replay: a fresh tour client and the next epoch; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, tourClient: fresh, epoch: model.epoch + 1 }
+export function tourReplayWrite(model: Model, fresh: AccountState["ledger"]): Model {
+  return { ...model, tourClient: fresh, epoch: model.epoch + 1 }
+}
+
+/** The Model with the tour client that received an event; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, tourClient: client }
+export function tourClientWrite(model: Model, client: AccountState["ledger"]): Model {
+  return { ...model, tourClient: client }
+}
+
+/** The Model a walkthrough's list step shows: over `issues`, the list screen of every kind; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, issues: { ...issues, screen: "list", kind: "All" } }
+export function issuesListWrite(model: Model, issues: Issues): Model {
+  return { ...model, issues: { ...issues, screen: "list", kind: "All" } }
+}
+
+/** The Model a walkthrough's wiki step shows: the docs maximized; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, docs: "max" }
+export function docsMaxWrite(model: Model): Model {
+  return { ...model, docs: "max" }
+}
+
+/** The Model when a walkthrough finishes: the tour off and the draft cleared; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, tour: false, draft: "" }
+export function tourFinishWrite(model: Model): Model {
+  return { ...model, tour: false, draft: "" }
+}
+
+/** The Model when a tour's end never reached the agent: the failure screen, and the tour dismissed only when it no
+ *  longer runs here; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, surface: screen.surface, palette: screen.palette, tour: screen.tour, tourError: screen.tourError, docs: screen.docs, following: screen.following, tourDismissed: !active }
+export function endFailedWrite(model: Model, screen: ScreenState, active: boolean): Model {
+  return { ...screenWrite(model, screen), tourDismissed: !active }
+}
+
+/** The Model a recovered tour presents again: the theatre at the walkthrough's step, target and pause with the sound
+ *  kept; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, theatre: { ...model.theatre, step: step, target: target, paused: paused } }
+export function theatreWrite(model: Model, step: number, target: string, paused: boolean): Model {
+  return { ...model, theatre: { ...model.theatre, step, target, paused } }
 }
