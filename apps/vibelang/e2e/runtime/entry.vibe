@@ -9,12 +9,13 @@ import { init } from "../../src/web/main.vibe"
 import { stylesheet } from "../../src/web/styles.vibe"
 import { main as startup, page as startupPage } from "../../src/web/startup.vibe"
 import { heldHealth } from "../../test/support/heldHealth.vibe"
+import { heldActions } from "../../test/support/heldActions.vibe"
 import { canonical } from "./probe.vibe"
 
 /** The fault this page's `?fault=` names; a missing or unknown one drops an event. */
 function faultOf(search: string) {
   const requested = new URLSearchParams(search).get("fault")
-  if (requested === "issue-write" || requested === "wiki" || requested === "wiki-edit" || requested === "wiki-repository" || requested === "tour-control" || requested === "live-header" || requested === "thinking" || requested === "streaming" || requested === "tour-refuse" || requested === "tour-unavailable" || requested === "end-tour-unavailable" || requested === "sandbox-read" || requested === "sandbox-start" || requested === "sandbox-low" || requested === "sandbox-out" || requested === "sandbox-clock" || requested === "sandbox-replay" || requested === "machine-start" || requested === "machine-lost" || requested === "machine-command" || requested === "machine-stop" || requested === "roles" || requested === "roles-gap" || requested === "accounts" || requested === "live-details" || requested === "tour-events" || requested === "stale" || requested === "issue-connect" || requested === "issue-fork" || requested === "issue-install" || requested === "issue-forbidden" || requested === "issue-closed" || requested === "issue-no-model" || requested === "issue-assignee" || requested === "wiki-forbidden" || requested === "wiki-conflict" || requested === "wiki-connect" || requested === "wiki-fork" || requested === "wiki-install" || requested === "post-empty" || requested === "post-duplicate" || requested === "post-not-replying" || requested === "post-full" || requested === "forged" || requested === "held-details") return requested
+  if (requested === "issue-write" || requested === "wiki" || requested === "wiki-edit" || requested === "wiki-repository" || requested === "tour-control" || requested === "live-header" || requested === "thinking" || requested === "streaming" || requested === "tour-refuse" || requested === "tour-unavailable" || requested === "end-tour-unavailable" || requested === "sandbox-read" || requested === "sandbox-start" || requested === "sandbox-low" || requested === "sandbox-out" || requested === "sandbox-clock" || requested === "sandbox-replay" || requested === "machine-start" || requested === "machine-lost" || requested === "machine-command" || requested === "machine-stop" || requested === "roles" || requested === "roles-gap" || requested === "accounts" || requested === "live-details" || requested === "tour-events" || requested === "stale" || requested === "issue-connect" || requested === "issue-fork" || requested === "issue-install" || requested === "issue-forbidden" || requested === "issue-closed" || requested === "issue-no-model" || requested === "issue-assignee" || requested === "wiki-forbidden" || requested === "wiki-conflict" || requested === "wiki-connect" || requested === "wiki-fork" || requested === "wiki-install" || requested === "post-empty" || requested === "post-duplicate" || requested === "post-not-replying" || requested === "post-full" || requested === "forged" || requested === "held-details" || requested === "held-actions") return requested
   return requested === "issues" ? "issues" : requested === "refuse" ? "refuse" : requested === "end" ? "end" : requested === "disconnect" ? "disconnect" : "drop"
 }
 
@@ -32,12 +33,14 @@ export effect function main() {
   const observation = trace()
   let model = init({ session: "browser", mode: ["live-header", "live-details", "held-details"].includes(faultOf(window.location.search)) ? "live" : "mock", name: "Guest" }).model
   const empty = new URLSearchParams(window.location.search).get("fault") === "media-empty" || new URLSearchParams(window.location.search).get("fault") === "media-image"
+  const held = faultOf(window.location.search) === "held-actions" ? heldActions(() => { observation.faulted = true }) : undefined
   const program = application(root, faultyFactory(faultOf(window.location.search), observation), (value) => { model = value },
-    (flags) => { const started = init(flags); return empty ? { ...started, model: { ...started.model, surface: "chat" as const } } : started })
+    (flags) => { const started = init(flags); return empty ? { ...started, model: { ...started.model, surface: "chat" as const } } : started },
+    held?.layer)
   window.recovery = {
-    snapshot: () => ({ client: model.client, subscriptions: observation.subscriptions, delivered: observation.delivered.map((event) => event.seq), forged: forgedSeqs(observation.forgery), faulted: observation.faulted }),
+    snapshot: () => ({ client: model.client, subscriptions: observation.subscriptions, delivered: observation.delivered.map((event) => event.seq), forged: forgedSeqs(observation.forgery), faulted: observation.faulted, actionEntries: model.actions?.entries.length ?? 0 }),
     canonical: () => runPromise(canonical(observation)),
-    release: () => runPromise(observation.release!()),
+    release: () => held === undefined ? runPromise(observation.release!()) : held.release().then(() => undefined),
   }
   return program
 }

@@ -1,0 +1,41 @@
+// `held-actions` for the e2e host (e2e/runtime/entry.vibe): a command list that arrives after the person's role changed.
+import { Actions } from "../../src/actions/Actions.vibe"
+import { MockActions } from "../../src/actions/MockActions.vibe"
+import { Factory } from "../../src/core/Factory.vibe"
+
+/**
+ * The product's MockActions, except that the first command list answered for a maintainer waits until `release`
+ * runs, then `answered` runs. A page that changes role meanwhile receives that list after the new role's.
+ */
+export function heldActions(answered: () => void) {
+  const gate: { open: () => Promise<boolean> } = { open: () => Promise.resolve(false) }
+  const layer = Layer.effect(Actions, effect {
+    const real = try Actions
+    const factory = try Factory
+    const released = try Deferred.make<void>()
+    gate.open = () => runPromise(Deferred.succeed(released, undefined))
+    let held = false
+    return {
+      list: () => real.list(),
+      runs: (flow) => real.runs(flow),
+      read: (id) => real.read(id),
+      follow: (id) => real.follow(id),
+      start: (flow, input, door) => real.start(flow, input, door),
+      command: (text, door) => door === undefined ? real.command(text) : real.command(text, door),
+      rerun: (id) => real.rerun(id),
+      cancel: (id) => real.cancel(id),
+      commands: effect () => {
+        const role = (try Effect.orDie(factory.accounts.current())).role
+        const holds = !held && role === "maintainer"
+        if (holds) held = true
+        const commands = try real.commands()
+        if (holds) {
+          try Deferred.await(released)
+          try sync(answered)
+        }
+        return commands
+      },
+    }
+  }).pipe(Layer.provide(MockActions({ actor: "person" })))
+  return { layer, release: () => gate.open() }
+}

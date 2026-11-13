@@ -3267,6 +3267,13 @@ write between the two reads would make it visible, but live mode's only sign-in 
 (`e2e/chat-paths.spec.ts`), so the browser has no live role that may write. The unit gate keeps it
 (`ModelDecision.issueDetailsApply`).
 
+`held-actions` (`test/support/heldActions.vibe`) wraps the host's MockActions: the first command list answered for a
+maintainer waits until the page releases it. `e2e/late-actions.spec.ts` visits as maintainer, then as viewer, waits
+until the page holds the viewer's list, releases the maintainer's, and checks that the viewer's slash menu never
+offers `/post`, a contributor's command the late list holds. It closes `LoadedActions`' stale arm (`main.vibe` 511).
+A first version released the held list when the viewer's list answered; with the guard removed it still passed,
+because the late list reached the page first and the viewer's replaced it. Releasing from the page orders the two.
+
 `issueDefaultRole` waits on vl-coverage-core: the board post of 2026-11-13 17:45Z asks for `role` to be required in
 `IssuesState` (`src/core/issueSchemas.vibe`).
 
