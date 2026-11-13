@@ -263,6 +263,8 @@ export interface Call {
   readonly role: string
   readonly modelId: string
   readonly connectionId: string
+  /** The nonce of the credential opened for this call, never its value or ciphertext. */
+  readonly credentialNonce: string
   readonly protocol: Protocol | null
   readonly tier: ModelTier | undefined
 }
@@ -271,9 +273,9 @@ export interface Call {
 export const begin = (call: Call): Effect.Effect<void, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     Effect.asVoid(sql`
-      INSERT INTO personal_model_usage (invocation_id, request_id, person_id, role, model_id, connection_id, protocol, tier)
+      INSERT INTO personal_model_usage (invocation_id, request_id, person_id, role, model_id, connection_id, credential_nonce, protocol, tier)
       VALUES (${call.invocationId}, ${call.requestId}, ${call.personId}, ${call.role}, ${call.modelId},
-        ${call.connectionId}, ${call.protocol}, ${call.tier ?? null})
+        ${call.connectionId}, ${call.credentialNonce}, ${call.protocol}, ${call.tier ?? null})
       ON CONFLICT (invocation_id) DO NOTHING`))
 
 /** How a call a person's own model answered ended, as the model reported it. */
@@ -317,12 +319,12 @@ export const mark = (invocationId: string, status: number | undefined): Effect.E
           UPDATE personal_models m SET failure_status = NULL, failed_at = NULL
           FROM personal_model_usage u
           WHERE u.invocation_id = ${invocationId} AND m.person_id = u.person_id AND m.id = u.connection_id
-            AND m.updated_at <= u.created_at AND m.failure_status IS NOT NULL`
+            AND m.nonce = u.credential_nonce AND m.failure_status IS NOT NULL`
         : sql`
           UPDATE personal_models m SET failure_status = ${status}, failed_at = now()
           FROM personal_model_usage u
           WHERE u.invocation_id = ${invocationId} AND m.person_id = u.person_id AND m.id = u.connection_id
-            AND m.updated_at <= u.created_at`,
+            AND m.nonce = u.credential_nonce`,
     ))
 
 /**

@@ -153,7 +153,11 @@ models and other hosts speak the protocol the key was saved under.
 - **A refused key.** A provider's 401, 402 or 403, or a 429 that says the key ran out (`quota_exceeded`,
   `out_of_credit`), fails the call and sets that key's `failure_status` and `failed_at`, never the other key's; a later successful call, a
   passing test or a new save clears them. Only a call made with the row's current key marks it, so a slow call on a key
-  the person has since replaced says nothing of the new one. A plain rate limit marks nothing. Quota and credit refusals
+  the person has since replaced says nothing of the new one. The opened model carries the sealed credential's
+  non-secret nonce into its ledger row as `credential_nonce`; marking or clearing a refusal requires that nonce to
+  match the saved connection, even when replacement happened before ledger insertion. Editing tiers, order or
+  activity while keeping the same credential preserves its identity. Legacy calls with no recorded nonce cannot
+  change a connection's refusal. A plain rate limit marks nothing. Quota and credit refusals
   (HTTP 402, `quota_exceeded`, `out_of_credit`) lose their retry hints (`final` in `worker/ModelRefusal.ts`), so the browser's
   model step and a `todo` run fail at once instead of parking; the model package's request executor never retries
   them. A plain rate limit (429 without a quota code) keeps its hints and is waited out as before.
@@ -239,13 +243,13 @@ takes protocol, Base URL, key and the tiers' models. A key is read from the form
 ## Postgres
 
 `db/migrations/0056_personal_models.ts`, `0065_model_tiers.ts` (which kept each saved model as its person's `fast`
-model, so every tier falls back to it) and `0075_model_connections.ts`:
+model, so every tier falls back to it), `0075_model_connections.ts` and `0123_personal_credential_nonce.ts`:
 
 | Table | Columns | |
 |---|---|---|
 | `personal_models` | `person_id` and `id` (key), `kind`, `position`, `active`, `protocol`, `base_url`, `fast_model`, `implement_model`, `hard_model`, `ciphertext`, `nonce`, `key_version`, `key_last4`, `failure_status`, `failed_at`, `updated_at` | one person's ordered connections; the failure is set and cleared together; one active row each of the single kinds |
 | `personal_model_events` | `id`, `person_id`, `action` (`set`, `replace`, `delete`), `invocation_key` (unique), `at` | the audit of `model/Put` and `model/Delete` |
-| `personal_model_usage` | `invocation_id` (key), `request_id`, `person_id`, `role`, `model_id`, `protocol`, `connection_id` (the connection that answered), `tier` (the tier that answered; none for a test), `input_tokens`, `output_tokens`, `outcome`, `error_code`, `http_status`, `settled_at`, `created_at` | the person's ledger, apart from the deployment's |
+| `personal_model_usage` | `invocation_id` (key), `request_id`, `person_id`, `role`, `model_id`, `protocol`, `connection_id` (the connection that answered), `credential_nonce` (the opened credential's non-secret identity; `NULL` for legacy calls), `tier` (the tier that answered; none for a test), `input_tokens`, `output_tokens`, `outcome`, `error_code`, `http_status`, `settled_at`, `created_at` | the person's ledger, apart from the deployment's |
 
 ## Observability
 

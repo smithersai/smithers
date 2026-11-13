@@ -202,6 +202,7 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
             modelId: opened.value.modelId,
             host: opened.value.host,
             connectionId: opened.value.connectionId,
+            credentialNonce: opened.value.credentialNonce,
             protocol: opened.value.protocol,
             tier: opened.value.tier,
           }

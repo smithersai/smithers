@@ -6,7 +6,7 @@ import { final, finalFailure } from "../ModelRefusal.ts"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
-import { Cause, ConfigProvider, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { Cause, ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
@@ -1175,7 +1175,7 @@ describe("a refusal of a person's key is final", () => {
     const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
     const exit = await Effect.runPromiseExit(
       PersonalUsage.end(
-        { invocationId: "i", requestId: "i", personId: "p", role: "agent", modelId: "m", host: "h", connectionId: crypto.randomUUID(), protocol: "openai-chat" as const, tier: "fast" as const },
+        { invocationId: "i", requestId: "i", personId: "p", role: "agent", modelId: "m", host: "h", connectionId: crypto.randomUUID(), credentialNonce: "unavailable", protocol: "openai-chat" as const, tier: "fast" as const },
         { outcome: "success", usage: {} },
         unreachable,
       ),
@@ -1194,6 +1194,7 @@ describe("a refusal of a person's key is final", () => {
       modelId: "m",
       host: "h",
       connectionId,
+      credentialNonce: (await runtime.runPromise(Store.saved("person-member")))[0]!.nonce,
       protocol: "openai-chat" as const,
       tier: "fast" as const,
     }
@@ -1205,7 +1206,7 @@ describe("a refusal of a person's key is final", () => {
     await runtime.runPromise(PersonalUsage.end(call, { outcome: "failed", usage: {}, errorCode: "authentication", httpStatus: 401 }, database))
     expect(await rows(runtime)).toEqual([expect.objectContaining({ failureStatus: null, failedAt: null })])
     // A call made with the current key marks it.
-    const current = { ...call, invocationId: crypto.randomUUID() }
+    const current = { ...call, invocationId: crypto.randomUUID(), credentialNonce: (await runtime.runPromise(Store.saved("person-member")))[0]!.nonce }
     await runtime.runPromise(Effect.provide(PersonalUsage.begin(current), database))
     await runtime.runPromise(PersonalUsage.end(current, { outcome: "failed", usage: {}, errorCode: "authentication", httpStatus: 401 }, database))
     expect(await rows(runtime)).toEqual([expect.objectContaining({ failureStatus: 401 })])
@@ -1221,6 +1222,7 @@ describe("a refusal of a person's key is final", () => {
       modelId: "m",
       host: "h",
       connectionId: crypto.randomUUID(),
+      credentialNonce: "unmatched",
       protocol: "openai-chat" as const,
       tier: "fast" as const,
     }
@@ -1236,5 +1238,107 @@ describe("a refusal of a person's key is final", () => {
     expect(PersonalUsage.refusedKey({ outcome: "failed", usage: {}, httpStatus: 429, errorCode: "rate_limited" })).toBe(false)
     expect(PersonalUsage.refusedKey({ outcome: "failed", usage: {}, httpStatus: 429 })).toBe(false)
     expect(PersonalUsage.refusedKey({ outcome: "failed", usage: {}, httpStatus: 429, errorCode: "out_of_credit" })).toBe(true)
+  })
+})
+
+describe("credential identity across model admission", () => {
+  test.each([
+    ["endpoint", "failed"],
+    ["endpoint", "success"],
+    ["check access", "failed"],
+    ["check access", "success"],
+  ] as const)("%s: an old key's %s after replacement before ledger insertion leaves the new key unchanged", async (route, outcome) => {
+    const database = (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
+    const connectionId = await seed(runtime, "person-member")
+    const ready = runtime.runSync(Deferred.make<void>())
+    const resume = runtime.runSync(Deferred.make<void>())
+    const afterOpen = Effect.andThen(Deferred.succeed(ready, undefined), Deferred.await(resume))
+    const personalModels = Layer.effect(PersonalModels, Effect.map(PersonalModels, (models) => PersonalModels.of({
+      open: (personId, tier) => models.open(personId, tier).pipe(Effect.tap(() => afterOpen)),
+      openConnection: (personId, id) => models.openConnection(personId, id).pipe(Effect.tap(() => afterOpen)),
+    }))).pipe(Layer.provide(PersonalModels.layer(database).pipe(Layer.provide(SecretKeys.layer(KEY)))))
+    const provider = scriptedProvider(outcome === "failed"
+      ? { status: 401, error: { message: "old key refused" } }
+      : { text: "old key answered" })
+    const h = route === "endpoint"
+      ? await harness(runtime, () => Stream.empty, { actor: member, fetch: provider.fetch, personalModels })
+      : await open({ actor: member, provider: provider.fetch, personalModels })
+    const request = ModelRequest.ModelRequest.make({
+      modelId: "browser-choice", system: [], messages: [ModelRequest.Message.user("hi")], tools: [],
+      params: ModelRequest.GenerationParams.make({ maxTokens: 64 }),
+    })
+    const pending = h.fetch(route === "endpoint" ? "/api/model/agent" : PERSONAL_MODEL_TEST_ROUTE, {
+      method: "POST",
+      ...(route === "endpoint" ? { body: JSON.stringify(Schema.encodeSync(ModelRequest.ModelRequest)(request)) } : {}),
+    }).then(async (response) => { await response.text() })
+    try {
+      await runtime.runPromise(Deferred.await(ready))
+      // The real model has captured the old key, but admission has not inserted its ledger row yet.
+      expect(await usage(runtime)).toEqual([])
+      await seed(runtime, "person-member", { id: connectionId, key: VALUE + "-new" })
+      if (outcome === "success") {
+        await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql`UPDATE personal_models SET failure_status = 403, failed_at = now() WHERE id = ${connectionId}`))
+      }
+      const replacement = await rows(runtime)
+      await runtime.runPromise(Deferred.succeed(resume, undefined))
+      await pending
+      await eventually(async () => (await usage(runtime))[0]?.settled === true)
+      expect(provider.seen.map((seen) => seen.headers.get("authorization"))).toEqual(["Bearer " + VALUE])
+      expect(await usage(runtime)).toEqual([expect.objectContaining({ connectionId, outcome, settled: true })])
+      expect(await rows(runtime)).toEqual(replacement)
+      expect(leaks("recorded" in h ? h.recorded() : recorded(h))).toEqual([])
+    } finally {
+      await runtime.runPromise(Deferred.succeed(resume, undefined))
+      await pending
+    }
+  })
+})
+
+describe("credential identity when settling usage", () => {
+  test.each([
+    ["kept credential", "failed"],
+    ["kept credential", "success"],
+    ["legacy call", "failed"],
+    ["legacy call", "success"],
+  ] as const)("%s: %s only changes refusal state when its credential is identified", async (change, outcome) => {
+    const database = (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
+    const connectionId = await seed(runtime, "person-member")
+    const [saved] = await runtime.runPromise(Store.saved("person-member"))
+    const call: PersonalUsage.Call = {
+      invocationId: crypto.randomUUID(), requestId: "r", personId: "person-member", role: "agent",
+      modelId: "gpt-test", host: "models.example.com", connectionId, credentialNonce: saved!.nonce,
+      protocol: "openai-chat", tier: "fast",
+    }
+    await runtime.runPromise(PersonalUsage.begin(call))
+    if (outcome === "success") {
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`UPDATE personal_models SET failure_status = 403, failed_at = now() WHERE id = ${connectionId}`))
+    }
+    if (change === "legacy call") {
+      // Calls already in flight when the migration ran have no recorded credential identity.
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`UPDATE personal_model_usage SET credential_nonce = NULL WHERE invocation_id = ${call.invocationId}`))
+    } else {
+      expect(await runtime.runPromise(Store.put({
+        personId: "person-member", invocationKey: crypto.randomUUID(),
+        connections: [{
+          id: connectionId, kind: saved!.kind, active: false, protocol: saved!.protocol,
+          baseUrl: saved!.baseUrl, models: { fast: "another-model" },
+        }],
+      }))).toBe("replace")
+      // A settings-only edit after admission cannot make the credential's own result stale.
+      expect((await runtime.runPromise(Store.saved("person-member")))[0]!.nonce).toBe(saved!.nonce)
+    }
+    const before = await rows(runtime)
+    await runtime.runPromise(PersonalUsage.end(call, {
+      outcome, usage: {}, ...(outcome === "failed" ? { errorCode: "authentication", httpStatus: 401 } : {}),
+    }, database))
+    if (change === "legacy call") expect(await rows(runtime)).toEqual(before)
+    else expect(await rows(runtime)).toEqual([expect.objectContaining({
+      failureStatus: outcome === "failed" ? 401 : null,
+      ...(outcome === "success" ? { failedAt: null } : {}),
+    })])
+    expect(await usage(runtime)).toEqual([expect.objectContaining({ outcome, settled: true })])
   })
 })

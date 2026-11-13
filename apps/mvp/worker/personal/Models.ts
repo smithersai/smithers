@@ -42,6 +42,8 @@ export interface Opened {
   readonly host: string
   readonly protocol: Protocol
   readonly connectionId: string
+  /** The sealed credential's non-secret identity, captured before admission writes its ledger row. */
+  readonly credentialNonce: string
   readonly tier: ModelTier
 }
 
@@ -124,7 +126,7 @@ export class PersonalModels extends Context.Service<
               ...built.model,
               stream: (request) => built.model.stream(request).pipe(Stream.mapError(finalFailure)),
             }
-            return { modelId: planned.plan.modelId, model, host, protocol, connectionId: row.id, tier } satisfies Opened
+            return { modelId: planned.plan.modelId, model, host, protocol, connectionId: row.id, credentialNonce: row.nonce, tier } satisfies Opened
           })
         const open = (personId: string, tier: ModelTier) =>
           Effect.gen(function* () {

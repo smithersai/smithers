@@ -175,7 +175,7 @@ export const make = <E, R>(
       if (connection.kind === "jev") {
         const key = yield* keys.value.cipher.open(connection, sealContext(personId, connection.keyVersion)).pipe(Effect.option)
         if (Option.isNone(key)) return yield* unusable
-        const answered = yield* judged(personId, connection.id, key.value, "test", JEV_CHECK)
+        const answered = yield* judged(personId, connection, key.value, "test", JEV_CHECK)
         const latencyMs = yield* latency
         if (Exit.isSuccess(answered)) return { ok: true, latencyMs, sample: "" } satisfies TestResult
         const failure = Cause.squash(answered.cause) as Evaluator.EvaluatorError
@@ -234,7 +234,7 @@ export const make = <E, R>(
   /** One Jev judgment with `key`, kept in the person's ledger as `role`. */
   const judged = (
     personId: string,
-    connectionId: string,
+    connection: Store.Saved,
     key: Redacted.Redacted<string>,
     role: string,
     asked: Evaluator.Request,
@@ -248,7 +248,8 @@ export const make = <E, R>(
         role,
         modelId: JEV_MODEL,
         host: JEV_HOST,
-        connectionId,
+        connectionId: connection.id,
+        credentialNonce: connection.nonce,
         protocol: null,
         tier: undefined,
       }
@@ -289,7 +290,7 @@ export const make = <E, R>(
       if (Option.isNone(asked)) return refuse(400, "invalid")
       const answered = yield* judged(
         personId,
-        opened.value.connection.id,
+        opened.value.connection,
         key,
         "judge",
         asked.value as unknown as Evaluator.Request,
@@ -308,7 +309,7 @@ export const make = <E, R>(
   /** One tiny real call with `opened`, settled in the person's ledger: how it went. */
   const testCall = (personId: string, opened: Opened, latency: Effect.Effect<number>) =>
     Effect.gen(function* () {
-      const { model, modelId, host, protocol, connectionId } = opened
+      const { model, modelId, host, protocol, connectionId, credentialNonce } = opened
       const invocationId = crypto.randomUUID()
       const call: PersonalUsage.Call = {
         invocationId,
@@ -318,6 +319,7 @@ export const make = <E, R>(
         modelId,
         host,
         connectionId,
+        credentialNonce,
         protocol,
         tier: undefined,
       }

@@ -2219,3 +2219,25 @@ describe("0119_flow_revision_names", () => {
       expect(await on(through("0119"))).toEqual([])
     }))
 })
+
+describe("personal credential identity migration", () => {
+  test("keeps legacy usage without guessing its credential and records new identities", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0122"))
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO personal_model_usage (invocation_id, request_id, person_id, role, model_id, outcome)
+      VALUES ('legacy', 'r', 'p', 'agent', 'm', 'success')`))
+    expect((await on(through("0123"))).map(([id, name]) => [id, name])).toEqual([[123, "personal_credential_nonce"]])
+    expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      SELECT invocation_id, outcome, credential_nonce FROM personal_model_usage`)))
+      .toEqual([{ invocation_id: "legacy", outcome: "success", credential_nonce: null }])
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO personal_model_usage (invocation_id, request_id, person_id, role, model_id, credential_nonce)
+      VALUES ('current', 'r', 'p', 'agent', 'm', 'opened-nonce')`))
+    expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      SELECT credential_nonce FROM personal_model_usage WHERE invocation_id = 'current'`)))
+      .toEqual([{ credential_nonce: "opened-nonce" }])
+    expect(await on(through("0123"))).toEqual([])
+  }))
+})
