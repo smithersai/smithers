@@ -24,11 +24,9 @@
  */
 
 import { placeholder, redact } from "@smthrs/journal/Redaction"
-import { Effect, Exit, Layer, Redacted, Schema, type Scope } from "effect"
+import { Effect, Exit, FileSystem, Layer, Path, Redacted, Schema, type Scope } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import type * as HttpClientRequest from "effect/http/HttpClientRequest"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
 import { scan as scanCredentials } from "./internal/credentials.ts"
 
 /**
@@ -396,13 +394,19 @@ export const replay = (
 
 /**
  * Reads and decodes a recording file. A missing or malformed file is a
- * defect: a replayed test without its recording is a broken setup.
+ * defect: a replayed test without its recording is a broken setup. The host
+ * supplies the filesystem and path services.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const load = (path: string): Effect.Effect<Recording> =>
-  Effect.tryPromise(() => readFile(resolve(path), "utf8")).pipe(
+export const load = (path: string): Effect.Effect<Recording, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const paths = yield* Path.Path
+    const bytes = yield* fs.readFile(paths.resolve(path))
+    return new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes)
+  }).pipe(
     Effect.flatMap((text) => Effect.try(() => JSON.parse(text) as unknown)),
     Effect.flatMap(Schema.decodeUnknownEffect(RecordingSchema)),
     Effect.mapError((cause) => new Error(`Recording ${path}: ${String(cause)}`, { cause })),
@@ -435,6 +439,7 @@ export const encode = (
  * A client that calls `live` and records every exchange. The recording is
  * written to `path` when the scope closes successfully; a failed or
  * interrupted run writes nothing and leaves the previous recording in place.
+ * The host supplies the filesystem and path services.
  *
  * @category constructors
  * @since 1.0.0
@@ -442,10 +447,12 @@ export const encode = (
 export const record = (
   path: string,
   options: Pick<Options, "live" | "secrets" | "normalize" | "label" | "prune">
-): Effect.Effect<HttpClient.HttpClient, never, Scope.Scope> =>
+): Effect.Effect<HttpClient.HttpClient, never, Scope.Scope | FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const live = options.live
     if (live === undefined) return yield* Effect.die(new Error("HttpRecording.record needs a live client"))
+    const fs = yield* FileSystem.FileSystem
+    const paths = yield* Path.Path
     const exchanges: Array<Exchange> = []
     yield* Effect.addFinalizer((exit) =>
       Exit.isSuccess(exit)
@@ -455,10 +462,9 @@ export const record = (
             options.label === undefined ? { exchanges } : { label: options.label, exchanges },
             options.secrets
           )
-          yield* Effect.promise(async () => {
-            await mkdir(dirname(resolve(path)), { recursive: true })
-            await writeFile(resolve(path), text)
-          })
+          const resolved = paths.resolve(path)
+          yield* fs.makeDirectory(paths.dirname(resolved), { recursive: true })
+          yield* fs.writeFileString(resolved, text)
           yield* Effect.logInfo("http recording written").pipe(Effect.annotateLogs({ exchanges: exchanges.length }))
         }).pipe(Effect.orDie)
         : Effect.logWarning("http recording not written: the run failed")
@@ -519,12 +525,14 @@ export const record = (
 
 /**
  * The client `options.mode` selects: the live client, a recording one, or a
- * replaying one.
+ * replaying one. The host supplies the filesystem and path services.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const make = (options: Options): Effect.Effect<HttpClient.HttpClient, never, Scope.Scope> => {
+export const make = (
+  options: Options
+): Effect.Effect<HttpClient.HttpClient, never, Scope.Scope | FileSystem.FileSystem | Path.Path> => {
   switch (options.mode) {
     case "passthrough":
       return options.live === undefined
@@ -538,10 +546,13 @@ export const make = (options: Options): Effect.Effect<HttpClient.HttpClient, nev
 }
 
 /**
- * Provides {@link make} as the `HttpClient` service.
+ * Provides {@link make} as the `HttpClient` service. The host supplies the
+ * filesystem and path services.
  *
  * @category layers
  * @since 1.0.0
  */
-export const layer = (options: Options): Layer.Layer<HttpClient.HttpClient> =>
+export const layer = (
+  options: Options
+): Layer.Layer<HttpClient.HttpClient, never, FileSystem.FileSystem | Path.Path> =>
   Layer.effect(HttpClient.HttpClient, make(options))

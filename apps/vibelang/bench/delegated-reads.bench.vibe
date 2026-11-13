@@ -1,5 +1,6 @@
 // @vitest-environment node
 // Reads use real provider bytes from the committed recordings and the production delegation host.
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { it, expect } from "@effect/vitest"
 import { HttpRecording } from "@smthrs/testing"
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -15,8 +16,8 @@ import type { Storage } from "../worker/Objects.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
 it("recorded public issue and wiki reads survive an ended delegation", { timeout: 120_000 }, async ({ bench }) => {
-  const issues = await runPromise(HttpRecording.load(await runPromise(recordingPath("issues"))))
-  const wiki = await runPromise(HttpRecording.load(await runPromise(recordingPath("wiki"))))
+  const issues = await runPromise(HttpRecording.load(await runPromise(recordingPath("issues"))).pipe(Effect.provide(NodeServices.layer)))
+  const wiki = await runPromise(HttpRecording.load(await runPromise(recordingPath("wiki"))).pipe(Effect.provide(NodeServices.layer)))
   const result = await workload(bench, "delegated-read-fallback", "async", () => runPromise(scoped(effect {
     const answers: Array<{ status: number; body: unknown }> = []
     for (const kind of ["issues", "wiki"] as const) for (const mode of ["valid", "expired", "forbidden"] as const) {

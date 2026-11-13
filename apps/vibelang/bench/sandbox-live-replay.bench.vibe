@@ -2,6 +2,7 @@
 // The first real Cloudflare Container run (d7d3245c, VL-35 and VL-36) replayed through @smthrs/testing's HttpRecording:
 // the product's Factory client drives start, command, checkpoint, restore, metering and sweep against the recorded
 // exchanges, with no network and no token. It measures the client's lifecycle overhead, not a Container's.
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { it, expect } from "@effect/vitest"
 import { HttpRecording } from "@smthrs/testing"
 import { HttpClient } from "effect/http"
@@ -10,7 +11,7 @@ import { artifact, workload, slow } from "./artifact.vibe"
 import { sandboxWorkload } from "./sandbox-workload.vibe"
 
 it("a recorded Container lifecycle replays through the product's sandbox client", { timeout: 120_000 }, async ({ bench }) => {
-  const recording = await runPromise(HttpRecording.load(RECORDING))
+  const recording = await runPromise(HttpRecording.load(RECORDING).pipe(Effect.provide(NodeServices.layer)))
   const remaining: Array<number> = []
   const result = await workload(bench, "sandbox-live-replay", "async", async () => {
     const client = HttpRecording.replay(recording, { normalize })

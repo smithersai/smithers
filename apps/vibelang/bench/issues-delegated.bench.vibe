@@ -3,6 +3,7 @@
 // through smithers.sh's real per-person connection host (fuzz/delegated.vibe) to real GitHub's recorded answers for
 // codeplanesmithers/smithers-vibelang-e2e (test/recordings/issues.json, ruling VL-36). The bench always replays: it
 // never writes to GitHub. Nothing intercepts a request.
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { it, expect } from "@effect/vitest"
 import { HttpRecording } from "@smthrs/testing"
 import { recordingPath } from "../test/support/github.vibe"
@@ -10,7 +11,7 @@ import { issuesWorld, journey, journeyResult } from "../test/support/issuesWorld
 import { artifact, workload, slow } from "./artifact.vibe"
 
 it("issues: every maintainer write through smithers.sh's delegation", async ({ bench }) => {
-  const label = (await runPromise(HttpRecording.load(await runPromise(recordingPath("issues"))))).label ?? "issues"
+  const label = (await runPromise(HttpRecording.load(await runPromise(recordingPath("issues"))).pipe(Effect.provide(NodeServices.layer)))).label ?? "issues"
   const seen: Array<unknown> = []
   const result = await workload(bench, "issues-delegated-writes", "async", async () => {
     seen.push(await runPromise(scoped(effect { return try journey(try issuesWorld("issues", "replay")) })))

@@ -1,5 +1,6 @@
 // @vitest-environment node
 // Provider-independent guards and actual provider adapters with deliberately unavailable Effect transport.
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { GitHub } from "@smthrs/integrations"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { FlowEngine } from "@smthrs/engine"
@@ -31,7 +32,7 @@ effect function guarded(program: void!unknown!(FlowRuntime.FlowRuntime | FlowRun
 }
 
 it("the GitHub issue host refuses local specification operations without writing to GitHub", async ({ bench }) => {
-  const recording = await runPromise(HttpRecording.load(await runPromise(recordingPath("issues"))))
+  const recording = await runPromise(HttpRecording.load(await runPromise(recordingPath("issues"))).pipe(Effect.provide(NodeServices.layer)))
   const result = await workload(bench, "provider-host-unsupported-operation", "async", () => runPromise(scoped(guarded(effect {
     const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
     const replay = recordedClient(recording, "read", "new")

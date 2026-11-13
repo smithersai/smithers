@@ -1,11 +1,14 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, Effect, Exit, Redacted, type Scope, Stream } from "effect"
+import { NodeHost } from "@smthrs/platform-node"
+import { Cause, Effect, Exit, FileSystem, Layer, Path, PlatformError, Redacted, type Scope, Stream } from "effect"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
+import { build } from "esbuild"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import * as HttpRecording from "../src/HttpRecording.ts"
 
 // A real service on a loopback port. It counts what reaches it, so replay can
@@ -97,10 +100,16 @@ const serve = (reply?: string): Promise<Service> =>
     })
   })
 
-const withService = <A, E>(use: (service: Service) => Effect.Effect<A, E, Scope.Scope>, reply?: string) =>
+const host = Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer)
+
+const withService = <A, E>(
+  use: (service: Service) => Effect.Effect<A, E, Scope.Scope | FileSystem.FileSystem | Path.Path>,
+  reply?: string
+) =>
   Effect.acquireRelease(Effect.promise(() => serve(reply)), (service) => Effect.promise(service.close)).pipe(
     Effect.flatMap(use),
-    Effect.scoped
+    Effect.scoped,
+    Effect.provide(host)
   )
 
 const defectOf = (exit: Exit.Exit<unknown, unknown>): unknown => {
@@ -134,6 +143,132 @@ const session = (client: HttpClient.HttpClient, base: string) =>
   })
 
 describe("HttpRecording", () => {
+  it("bundles for a browser without Node module fallbacks", async () => {
+    const result = await build({
+      entryPoints: [fileURLToPath(new URL("../src/HttpRecording.ts", import.meta.url))],
+      bundle: true,
+      platform: "browser",
+      format: "esm",
+      write: false
+    })
+    expect(result.errors).toEqual([])
+    expect(result.outputFiles).toHaveLength(1)
+  })
+
+  it.live("records and loads through the injected filesystem and path services", () =>
+    withService((service) =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const paths = yield* Path.Path
+        const root = yield* Effect.acquireRelease(
+          Effect.sync(directory),
+          (root) => Effect.sync(() => rmSync(root, { recursive: true, force: true }))
+        )
+        const path = "nested/recording.json"
+        const actual = join(root, path)
+        const operations: Array<string> = []
+        const files: FileSystem.FileSystem = {
+          ...fs,
+          makeDirectory: (path, options) => {
+            operations.push("mkdir")
+            return fs.makeDirectory(path, options)
+          },
+          writeFileString: (path, text, options) => {
+            operations.push("write")
+            return fs.writeFileString(path, text, options)
+          },
+          readFile: (path) => {
+            operations.push("read")
+            return fs.readFile(path)
+          }
+        }
+        const client = yield* live
+        const recording = yield* Effect.gen(function*() {
+          yield* Effect.scoped(Effect.gen(function*() {
+            const recorder = yield* HttpRecording.record(path, { live: client, label: "injected-host" })
+            expect((yield* recorder.get(service.url)).status).toBe(200)
+          }))
+          return yield* HttpRecording.load(path)
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, files),
+          Effect.provideService(Path.Path, { ...paths, resolve: (...parts) => paths.resolve(root, ...parts) })
+        )
+        expect(existsSync(actual)).toBe(true)
+        expect(recording.label).toBe("injected-host")
+        expect(recording.exchanges).toHaveLength(1)
+        expect(operations).toEqual(["mkdir", "write", "read"])
+        const replayed = yield* HttpRecording.replay(recording).get(service.url)
+        expect(replayed.status).toBe(200)
+        expect(service.hits()).toBe(1)
+      })
+    ))
+
+  for (const operation of ["makeDirectory", "writeFileString"] as const) {
+    it.live(`record reports an injected ${operation} failure without replacing the previous recording`, () =>
+      withService((service) =>
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          const root = yield* Effect.acquireRelease(
+            Effect.sync(directory),
+            (root) => Effect.sync(() => rmSync(root, { recursive: true, force: true }))
+          )
+          const path = join(root, "recording.json")
+          const previous = "{\"exchanges\":[]}\n"
+          const failure = PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: operation
+          })
+          writeFileSync(path, previous)
+          const client = yield* live
+          const exit = yield* Effect.exit(
+            Effect.scoped(Effect.gen(function*() {
+              const recorder = yield* HttpRecording.record(path, { live: client })
+              expect((yield* recorder.get(service.url)).status).toBe(200)
+            })).pipe(Effect.provideService(FileSystem.FileSystem, {
+              ...fs,
+              [operation]: () => Effect.fail(failure)
+            }))
+          )
+          expect(defectOf(exit)).toBe(failure)
+          expect(readFileSync(path, "utf8")).toBe(previous)
+        })
+      ))
+  }
+
+  it.live("load keeps malformed JSON, invalid schemas and a UTF-8 BOM as setup defects", () =>
+    Effect.gen(function*() {
+      const root = yield* Effect.acquireRelease(
+        Effect.sync(directory),
+        (root) => Effect.sync(() => rmSync(root, { recursive: true, force: true }))
+      )
+      const path = join(root, "invalid.json")
+      for (const text of ["{", "{\"exchanges\":[{}]}", "\uFEFF{\"exchanges\":[]}"]) {
+        writeFileSync(path, text)
+        const defect = defectOf(yield* Effect.exit(HttpRecording.load(path))) as Error
+        expect(defect.message).toContain(`Recording ${path}:`)
+        expect(defect.cause).toBeDefined()
+      }
+    }).pipe(Effect.scoped, Effect.provide(host)))
+
+  it.live("load reports an injected filesystem failure as a recording setup defect", () =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const failure = PlatformError.systemError({
+        _tag: "PermissionDenied",
+        module: "FileSystem",
+        method: "readFile"
+      })
+      const exit = yield* Effect.exit(
+        HttpRecording.load("denied.json").pipe(
+          Effect.provideService(FileSystem.FileSystem, { ...fs, readFile: () => Effect.fail(failure) })
+        )
+      )
+      const defect = defectOf(exit) as Error
+      expect(defect.message).toContain("Recording denied.json:")
+      expect(defect.cause).toBe(failure)
+    }).pipe(Effect.provide(host)))
+
   it.live("records a run with no credential, then replays it without the network", () =>
     withService((service) =>
       Effect.gen(function*() {
@@ -776,5 +911,5 @@ describe("HttpRecording", () => {
         expect(defectOf(exit)).toBeInstanceOf(Error)
       }
       rmSync(path, { force: true })
-    }))
+    }).pipe(Effect.provide(host)))
 })

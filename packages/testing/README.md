@@ -66,7 +66,7 @@ failures throw; an absent selected PID returns empty text. On Windows the probe
 runs the absolute `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`
 with only `SystemRoot` and a fixed `PATH` in its environment. This Node-only
 helper stays at its explicit subpath. The root barrel also imports Node APIs
-through `HttpRecording` and `FuzzCorpus`; it requires a Node-capable
+through `FuzzCorpus` and the database test layers; it requires a Node-capable
 test host and is not browser-portable. See the
 [known violations](../../docs/libraries.md#known-violations-the-root-entry-reaches-platform-code).
 

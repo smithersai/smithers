@@ -45156,7 +45156,7 @@ file through `node:fs`, and `TurnLog` appends its trace through `node:fs`, so
 they live at `@smthrs/testing/ModelServer`, `@smthrs/testing/ModelServerCli`
 and `@smthrs/testing/TurnLog`.
 
-The root barrel requires a Node-capable host because `HttpRecording` and `FuzzCorpus` import Node filesystem and crypto modules.
+The root barrel requires a Node-capable host because `FuzzCorpus` imports Node filesystem and crypto modules, and database test layers reach Node adapters.
 The subpath split does not make the root browser-portable. `FuzzCorpus` is a
 public root export; its implementation's location under `internal/` does not
 make that named export private.
@@ -46433,17 +46433,19 @@ interface Options {
   readonly prune?: ((body: unknown, request: RecordedRequest) => unknown) | undefined
 }
 
-const make: (options: Options) => Effect.Effect<HttpClient.HttpClient, never, Scope.Scope>
-const layer: (options: Options) => Layer.Layer<HttpClient.HttpClient>
+const make: (
+  options: Options
+) => Effect.Effect<HttpClient.HttpClient, never, Scope.Scope | FileSystem.FileSystem | Path.Path>
+const layer: (options: Options) => Layer.Layer<HttpClient.HttpClient, never, FileSystem.FileSystem | Path.Path>
 const record: (
   path: string,
   options: Pick<Options, "live" | "secrets" | "normalize" | "label" | "prune">
-) => Effect.Effect<HttpClient.HttpClient, never, Scope.Scope>
+) => Effect.Effect<HttpClient.HttpClient, never, Scope.Scope | FileSystem.FileSystem | Path.Path>
 const replay: (
   recording: Recording,
   options?: Pick<Options, "normalize">
 ) => HttpClient.HttpClient & { readonly remaining: () => number }
-const load: (path: string) => Effect.Effect<Recording>
+const load: (path: string) => Effect.Effect<Recording, never, FileSystem.FileSystem | Path.Path>
 const encode: (
   path: string,
   recording: Recording,
@@ -46463,6 +46465,8 @@ class CredentialInRecordingError {
   readonly rules: ReadonlyArray<string>
 }
 ```
+
+`load`, `record`, `make` and `layer` require injected `FileSystem.FileSystem | Path.Path` services. Provide the host layers at the test boundary; `replay(recording)` needs no filesystem or path services.
 
 `passthrough` returns `live` unchanged. `record` calls `live`, hands the code
 under test the live answer, and writes the scrubbed recording when the scope

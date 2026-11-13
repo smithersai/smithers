@@ -19,8 +19,9 @@ The code under test does not change. It reads `HttpClient` from context, and
 the test provides the client the mode selects.
 
 ```ts
+import { NodeHost } from "@smthrs/platform-node"
 import { HttpRecording } from "@smthrs/testing"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 
 const github = (mode: HttpRecording.Mode, token: string | undefined) =>
@@ -32,8 +33,10 @@ const github = (mode: HttpRecording.Mode, token: string | undefined) =>
       live,
       secrets: token === undefined ? [] : [token]
     })
-  })
+  }).pipe(Effect.provide(Layer.mergeAll(NodeHost.NodeFileSystem.layer, NodeHost.NodePath.layer)))
 ```
+
+`load`, `record`, `make` and `layer` require the host's `FileSystem` and `Path` services. The example provides the Node layers; Bun callers provide the corresponding Bun host layers. For `HttpRecording.layer`, supply those services with `Layer.provide`. The in-memory `replay(recording)` client needs no host services.
 
 ## Choose the mode in the suite
 

@@ -59,7 +59,7 @@ import * as JournalAssertions from "@smthrs/testing/JournalAssertions"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```
 
-The root barrel requires a Node-capable host: `HttpRecording` and `FuzzCorpus` import Node filesystem and crypto modules. Keeping the modules
+The root barrel requires a Node-capable host: `FuzzCorpus` imports Node filesystem and crypto modules, and database test layers reach Node adapters. Keeping the modules
 below on explicit subpaths does not make the root import browser-portable.
 
 ## Seven modules stay off the root barrel
@@ -114,11 +114,10 @@ import { killProcess, waitForReparent } from "@smthrs/testing/Faults"
 ```
 
 The root entry is not yet portable to browser or Worker test hosts:
-`HttpRecording` imports filesystem and path modules, database test layers reach
-Node adapters, and filesystem corpus tools also use Node modules. Keeping the
+Database test layers reach Node adapters, and filesystem corpus tools use Node modules. Keeping the
 host helpers below on subpaths does not remove those root dependencies.
 `FixtureStore.makeMemory` and `layerMemory` themselves need no host services;
-`makeFile` and `layerFile` require injected filesystem and path services.
+`makeFile` and `layerFile` require injected filesystem and path services. So do `HttpRecording.load`, `record`, `make` and `layer`; `HttpRecording.replay(recording)` needs no host services.
 
 `ProcessTable` is absent because it spawns `ps` through `node:child_process`,
 which browser test hosts cannot load:

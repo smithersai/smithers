@@ -17,7 +17,7 @@ import { WorkerBundle } from "@alchemy.run/cloudflare/Workers/Sources/Rolldown"
 import { sandboxBenchmarkBuild } from "../bench/sandbox-build.ts"
 
 it.live("the live benchmark body checks the entire committed lifecycle recording", () => scoped(effect {
-  const recording = try HttpRecording.load(RECORDING)
+  const recording = try HttpRecording.load(RECORDING).pipe(Effect.provide(NodeServices.layer))
   const client = try Effect.try(() => HttpRecording.replay(recording, { normalize }))
   const run = try Effect.provideService(sandboxWorkload(REPLAY_ORIGIN, "replayed", false), HttpClient.HttpClient, client)
   try Effect.try(() => { expect(client.remaining()).toBe(0); expect(run.swept.running).toBe(false) })

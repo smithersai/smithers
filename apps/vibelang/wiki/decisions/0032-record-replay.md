@@ -187,3 +187,7 @@ events, `sub_issue_added` on the parent, an empty body answered as `null`, label
 in the order added in a list, newest first by default, a page link when a list passes one page, and `since` lists
 that include issues the run made. Seeding skips an issue the recording creates even when its first list read comes
 after the creation. Red: without the `closed` event the check fails at `issues-read.json` exchange 60.
+
+## Injected recording storage
+
+`HttpRecording.load`, `record`, `make` and `layer` use injected Effect `FileSystem` and `Path` services (SDK-4). Node test and benchmark callers provide `NodeServices.layer` at their file-access boundary. In-memory `replay(recording)` remains independent of host services.

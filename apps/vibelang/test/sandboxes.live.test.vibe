@@ -48,7 +48,7 @@ describe("real Containers", () => {
   it.live("a real Container starts, runs a command, checkpoints, restores, meters its minutes and is torn down", () => scoped(effect {
     const { origin, token, mode } = try settings
     const live = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
-    const client = try HttpRecording.make({ mode, path: RECORDING, live, secrets: [token], normalize })
+    const client = try HttpRecording.make({ mode, path: RECORDING, live, secrets: [token], normalize }).pipe(Effect.provide(NodeServices.layer))
     const run = try Effect.provideService(lifecycle(origin, token), HttpClient.HttpClient, client)
     try Effect.logInfo("vibelang.sandbox.live").pipe(Effect.annotateLogs({ mode, elapsedMs: run.elapsed, usedMinutes: run.ended.used }))
     try Effect.try(() => expectLifecycle(run, true))

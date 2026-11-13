@@ -1,4 +1,5 @@
 // Production issue routes on workerd SQLite, through the production GitHub delegation host and strict recording.
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, FetchHttpClient } from "effect/http"
 import { HttpRecording } from "@smthrs/testing"
@@ -7,7 +8,7 @@ import { recordingPath } from "./support/github.vibe"
 import { deadline, serveLiveIssues } from "./support/workerd.vibe"
 
 it.live("a failed new issue is recovered and retried once; a completed comment replays its saved receipt", () => scoped(effect {
-  const recording = try HttpRecording.load(try recordingPath("issues"))
+  const recording = try HttpRecording.load(try recordingPath("issues")).pipe(Effect.provide(NodeServices.layer))
   const server = try acquireRelease(serveLiveIssues(), server => promise(() => server.dispose()))
   provide FetchHttpClient.layer {
     const http = try HttpClient.HttpClient

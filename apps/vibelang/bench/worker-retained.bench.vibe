@@ -1,4 +1,5 @@
 // @vitest-environment node
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { it, expect } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
@@ -22,7 +23,7 @@ import { submissionBase } from "../worker/SubmissionBase.vibe"
 error ObservationUnavailable
 
 it("a submission keeps its observed base across recovery and never binds a failed observation", async ({ bench }) => {
-  const recording = await runPromise(HttpRecording.load(await runPromise(recordingPath("wiki"))))
+  const recording = await runPromise(HttpRecording.load(await runPromise(recordingPath("wiki"))).pipe(Effect.provide(NodeServices.layer)))
   const head = await runPromise(Schema.decodeUnknownEffect(Schema.Struct({ object: Schema.Struct({ sha: Schema.String }) }))(recording.exchanges[0]!.response.body))
   const base = { repository: "codeplanesmithers/smithers-vibelang-e2e", branch: "main", sha: head.object.sha }
   const result = await workload(bench, "submission-base-recovery", "async", () => runPromise(effect {
@@ -103,7 +104,7 @@ it("History object refuses a disabled export and an unreadable main through its 
 })
 
 it("fault coverage: an unaccounted first commit page and a lost next page refuse the fold", async () => {
-  const recording = await runPromise(HttpRecording.load(await runPromise(recordingPath("main-log"))))
+  const recording = await runPromise(HttpRecording.load(await runPromise(recordingPath("main-log"))).pipe(Effect.provide(NodeServices.layer)))
   const counts = await runPromise(effect {
     const pages: Array<string> = []
     const recorded = try Effect.try(() => HttpRecording.replay(recording))

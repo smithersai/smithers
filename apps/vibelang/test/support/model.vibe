@@ -8,6 +8,7 @@
 // The key is read only from the environment, at record time. Request headers (the key's) never reach a recording;
 // HttpRecording scrubs the key wherever else it appears and refuses a file that still matches a credential shape. A
 // recording run stops after MODEL_CALLS model calls, whatever the model answers.
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { HostModel, type HostModelRecord } from "@smthrs/model-host"
 import { HttpRecording } from "@smthrs/testing"
@@ -69,7 +70,7 @@ export effect function recordedClient(name: string, options: Options = {}) {
   const values = options.values ?? { CEREBRAS_API_KEY: Option.isSome(key) ? Redacted.value(key.value) : "replay-sends-no-key" }
   const live = capped(try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
   const secrets = [...(Option.isSome(key) ? [key.value] : []), ...(options.values === undefined ? [] : Object.values(options.values).filter((value) => !value.startsWith("http")))]
-  const client = try HttpRecording.make({ mode, path, live, label: name, secrets, normalize })
+  const client = try HttpRecording.make({ mode, path, live, label: name, secrets, normalize }).pipe(Effect.provide(NodeServices.layer))
   return { client, mode, record, values }
 }
 

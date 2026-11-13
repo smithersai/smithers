@@ -73,9 +73,9 @@ const pruneFor = (label: string) => (body: unknown, request: HttpRecording.Recor
 export effect function github(name: string, mode: HttpRecording.Mode = configured) {
   const path = try recordingPath(name)
   if (mode !== "replay" && Option.isNone(token)) return try Effect.die(new Error(`VIBE_GITHUB=${mode} needs GITHUB_TEST_TOKEN for ${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}`))
-  const label = mode === "replay" ? (try HttpRecording.load(path)).label ?? name : `${name}-${try Clock.currentTimeMillis}`
+  const label = mode === "replay" ? (try HttpRecording.load(path).pipe(Effect.provide(NodeServices.layer))).label ?? name : `${name}-${try Clock.currentTimeMillis}`
   const live = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
-  const client = try HttpRecording.make({ mode, path, live, label, normalize, prune: pruneFor(label), secrets: Option.isSome(token) ? [token.value] : [] })
+  const client = try HttpRecording.make({ mode, path, live, label, normalize, prune: pruneFor(label), secrets: Option.isSome(token) ? [token.value] : [] }).pipe(Effect.provide(NodeServices.layer))
   try Effect.logInfo("github test client").pipe(Effect.annotateLogs({ mode, recording: name }))
   return { client, label, mode, token: Option.getOrElse(token, () => Redacted.make("replay-sends-no-token")) }
 }
