@@ -372,6 +372,83 @@ describe("ported pattern declaration execution", () => {
     })
   })
 
+  it.each<{ readonly review: unknown; readonly ids: ReadonlyArray<string> }>([
+    { review: { retriable: ["a", 7, null] }, ids: ["a"] },
+    { review: { retriable: ["b", "missing", "a", "b", false, null] }, ids: ["b", "missing", "a", "b"] },
+    { review: { retriable: ["missing", 7] }, ids: ["missing"] },
+    { review: { retriable: "a" }, ids: [] },
+    { review: null, ids: [] }
+  ])("hands declared and runtime workers the same validated retry ids: $review", async ({ review: first, ids }) => {
+    const tasks = [{ id: "a", workerType: "coder" }, { id: "b", workerType: "coder" }]
+    const input = { tasks }
+    const seen: Array<unknown> = []
+    const observe = (payload: {
+      readonly task: Supervisor.Task
+      readonly round: number
+      readonly review?: unknown
+      readonly retriable?: unknown
+    }) => {
+      seen.push({
+        task: payload.task.id,
+        round: payload.round,
+        ...(Object.hasOwn(payload, "review") ? { review: payload.review } : {}),
+        ...(Object.hasOwn(payload, "retriable") ? { retriable: payload.retriable } : {})
+      })
+      return payload.task.id
+    }
+    const worker = Action.make("declaration/retry-worker", {
+      payload: {
+        task: Schema.Struct({ id: Schema.String, workerType: Schema.String }),
+        round: Schema.Number,
+        review: Schema.optional(Schema.Unknown),
+        retriable: Schema.optional(Schema.Unknown)
+      },
+      success: Schema.String
+    })
+    const declared = await execute(
+      Supervisor.make<Action.Requirement<typeof worker.name> | Action.Requirement<typeof scriptedReview.name>>({
+        plan: member("plan", () => ({ tasks }), stageFields),
+        workers: { coder: worker },
+        review: RuntimeFlow.make("retry-review", {
+          payload: stageFields,
+          success: Schema.Unknown,
+          body: (payload) => scriptedReview.call({ round: payload.round as number })
+        }),
+        finalize: member("finalize", (payload) => payload.results, stageFields),
+        maxRounds: 2,
+        maxTasks: 16,
+        concurrency: 1
+      }),
+      { input },
+      "supervisor-validated-retries",
+      worker.toLayer((payload) => Effect.sync(() => observe(payload))),
+      scriptedReview.toLayer(({ round }) => Effect.succeed(round === 1 ? first : true))
+    )
+    const declaredCalls = seen.splice(0)
+    const runtime = await Effect.runPromise(Supervisor.run(input, {
+      plan: () => Effect.succeed({ tasks }),
+      worker: (payload) => Effect.sync(() => observe(payload)),
+      review: ({ round }) => Effect.succeed(round === 1 ? first : true),
+      finalize: ({ results }) => Effect.succeed(results),
+      maxRounds: 2,
+      maxTasks: 16,
+      concurrency: 1
+    }))
+
+    const expected = [
+      ...tasks.map((task) => ({ task: task.id, round: 1 })),
+      ...tasks.filter((task) => ids.includes(task.id)).map((task) => ({
+        task: task.id,
+        round: 2,
+        review: first,
+        retriable: ids
+      }))
+    ]
+    expect(seen).toEqual(expected)
+    expect(declaredCalls).toEqual(expected)
+    expect(declared).toEqual(runtime)
+  })
+
   it("compiles a plan's parallel members in plan order and its sequence in sequence order", async () => {
     const leaf = member("leaf", (payload: Trellis.Leaf) => payload.goal, stageFields)
     const compiled = (plan: Trellis.Plan, tag: string) =>

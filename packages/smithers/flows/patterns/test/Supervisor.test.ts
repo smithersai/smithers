@@ -251,14 +251,17 @@ describe("Supervisor", () => {
 
     expect(firstReview).toBeDefined()
     expect(second).toHaveLength(3)
-    // Core recorded the dependency as `keyMaterial.inputs` entries tagged `Ref`
-    // with a path. `@smthrs/flow` keeps the planned reference itself on the call
-    // payload, so the same two references are read off the payload: the whole
-    // review, and its `retriable` field.
+    // Workers depend on the review and on the node that validates its retry
+    // ids. The raw review field must not be passed directly to a worker.
     for (const node of second) {
       const payload = payloadOf(node)
       expect(Planned.reference(payload.review)).toEqual({ node: firstReview!.id, path: [] })
-      expect(Planned.reference(payload.retriable)).toEqual({ node: firstReview!.id, path: ["retriable"] })
+      const retryIds = Planned.reference(payload.retriable)
+      expect(retryIds).toEqual({ node: expect.any(String), path: [] })
+      expect(retryIds!.node).not.toBe(firstReview!.id)
+      expect(Graph.nodes(graph).find((entry) => entry.id === retryIds!.node)?.kind).toBe("Map")
+      const retryInput = Graph.nodes(graph).find((entry) => entry.id === `${retryIds!.node}.map`)
+      expect(Planned.reference(retryInput?.payload)).toEqual({ node: firstReview!.id, path: [] })
     }
     for (const node of inPhase(graph, "work").filter((node) => payloadOf(node).round === 1)) {
       expect(Object.keys(payloadOf(node))).not.toContain("review")

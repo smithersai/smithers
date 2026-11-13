@@ -69,9 +69,7 @@ export const envelopeOf = (flow: Flow.Any): Effects.Declaration | undefined =>
 /**
  * The name a composed declaration reads off the flow it wraps.
  *
- * A tag is required of every `@smthrs/flow` declaration, so the empty string is
- * the one remaining way to have no name, and a flow called "" would compose
- * into `decorate()`.
+ * `Flow.make` requires a nonblank tag, so every wrapped flow has a name.
  *
  * @since 1.0.0
  * @private

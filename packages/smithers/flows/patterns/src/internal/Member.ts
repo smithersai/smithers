@@ -21,9 +21,6 @@ import type * as Node from "@smthrs/plan/Node"
  * Something a pattern calls: any `@smthrs/flow` declaration, flow or action,
  * whose `.call` records a node.
  *
- * A `Flow` names itself with `_tag` and an `Action.Declared` with `name`, so
- * both are read here and {@link displayName} answers from whichever is there.
- *
  * @since 1.0.0
  * @private
  */

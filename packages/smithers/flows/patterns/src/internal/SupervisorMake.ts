@@ -284,9 +284,6 @@ const planned = (input: unknown, maxTasks: number): ReadonlyArray<Task> => {
   return result
 }
 
-// Only a round after the first reads this, and what it reads is the planned
-// reference to the preceding review, so the read always lands on a reference
-// and records the path `retriable`.
 /** One round's settled state: the latest outcome per task, and the review's view of it. */
 interface Round {
   readonly latest: Readonly<Record<string, Outcome<unknown>>>
@@ -299,8 +296,6 @@ interface Folding {
   readonly latest: Readonly<Record<string, Outcome<unknown>>>
   readonly pending: ReadonlyArray<string> | null
 }
-
-const retriableOf = (review: unknown): unknown => (review as { readonly retriable?: unknown }).retriable
 
 /**
  * Builds the supervision topology: one plan call, then per round one call per
@@ -396,10 +391,15 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
     return Node.bindPlanned(
       callMember(boss.plan, { phase: "plan", input }),
       Node.capture({ ...captures, tasks: ids }, (plan) => {
-        const work = (task: Task, round: number, review: unknown): Record<string, unknown> =>
+        const work = (
+          task: Task,
+          round: number,
+          review: unknown,
+          pending: Planned.Planned<ReadonlyArray<string>> | undefined
+        ): Record<string, unknown> =>
           round === 1
             ? { phase: "work", task, round, plan, input }
-            : { phase: "work", task, round, plan, input, review, retriable: retriableOf(review) }
+            : { phase: "work", task, round, plan, input, review, retriable: pending }
         const batches: Array<ReadonlyArray<Task>> = []
         for (let offset = 0; offset < tasks.length; offset += concurrency) {
           batches.push(tasks.slice(offset, offset + concurrency))
@@ -417,7 +417,7 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
           const tagged = { round, task: task.id }
           const settled = Node.catch(
             Node.map(
-              callMember(routes[task.workerType]!, work(task, round, review)),
+              callMember(routes[task.workerType]!, work(task, round, review, pending)),
               Node.capture(tagged, (output: unknown): Outcome<unknown> => ({
                 _tag: "Done",
                 id: task.id,
@@ -529,11 +529,13 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
                           Node.succeed({ exhausted: true, rounds: round, review })
                         if (round >= maxRounds) return exhausted()
                         const redelegate = (carried: unknown): Node.Node<unknown, unknown, R> => {
+                          // Keep the review's string ids in their original order
+                          // for worker payloads, even ids outside this task list.
                           const next = Node.map(
                             Node.succeed(review),
                             Node.capture(
                               { ...captures, round, retriable: true },
-                              (value: unknown) => ids.filter((id) => retriable(value).includes(id))
+                              (value: unknown) => retriable(value)
                             )
                           )
                           return Node.bindPlanned(
@@ -542,7 +544,7 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
                               Node.branch(Node.succeed(named), {
                                 if: Node.capture(
                                   { ...captures, round, retriable: true },
-                                  (value: ReadonlyArray<string>) => value.length === 0
+                                  (value: ReadonlyArray<string>) => !ids.some((id) => value.includes(id))
                                 ),
                                 then: exhausted,
                                 else: () => visit(round + 1, review, named, state.latest, carried)

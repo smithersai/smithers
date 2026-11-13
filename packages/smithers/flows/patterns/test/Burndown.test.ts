@@ -3,6 +3,7 @@ import { describe, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Fault, Flow, Graph, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
+import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -851,10 +852,10 @@ describe("Burndown.child", () => {
       // The process died before the round was recorded: the rerun claims again
       // and reaches the same child executions.
       const second = yield* Burndown.round({ input: undefined, round: 0, items: items("1", "2") }, options)
-      const id = yield* Work.executionId({ issue: "1" })
-      return { first, second, id }
+      const children = yield* Effect.forEach(["1", "2"], (issue) => Work.poll(`issue-sweep/acme/${issue}`))
+      return { first, second, children }
     })
-    const { first, second } = await Effect.runPromise(
+    const { first, second, children } = await Effect.runPromise(
       twice.pipe(Effect.provide(host(Work, fixLayer)), Effect.scoped) as Effect.Effect<any>
     )
 
@@ -864,6 +865,10 @@ describe("Burndown.child", () => {
     ])
     expect(second.rows).toEqual(first.rows)
     expect(workRuns.sort()).toEqual(["1", "2"])
+    expect(children).toEqual([
+      Option.some(new Flow.Complete({ exit: Exit.succeed("fixed 1") })),
+      Option.some(new Flow.Complete({ exit: Exit.succeed("fixed 2") }))
+    ])
   })
 })
 
@@ -1389,7 +1394,17 @@ describe("Burndown.make", () => {
     const { layers, tape } = scripted({ discover: () => items("a"), capacity: () => ({ _tag: "Available", slots: 0 }) })
     const burndown = Burndown.make({ discover: Discover, dispatch: Dispatch, capacity: Capacity, maxRounds: 2 })
 
-    await expect(settle(burndown, { input: null }, layers)).rejects.toBeDefined()
+    const exit = await settleExit(burndown, { input: null }, layers)
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.hasDies(exit.cause)).toBe(true)
+      expect(exit.cause.reasons).toEqual([
+        expect.objectContaining({
+          _tag: "Die",
+          defect: expect.objectContaining({ _tag: "SchemaError", message: expect.stringContaining("slots") })
+        })
+      ])
+    }
     expect(tape).toEqual(["capacity:0"])
   })
 
@@ -1402,9 +1417,20 @@ describe("Burndown.make", () => {
     // @ts-expect-error Exercise a dispatch that breaks the result contract at runtime.
     const burndown = Burndown.make({ discover: Discover, dispatch: Broken, maxRounds: 2 })
 
-    await expect(
-      settle(burndown, { input: null }, [...layers, Broken.toLayer(() => Effect.succeed({ rows: "none" }))])
-    ).rejects.toBeDefined()
+    const exit = await settleExit(burndown, { input: null }, [
+      ...layers,
+      Broken.toLayer(() => Effect.succeed({ rows: "none" }))
+    ])
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.hasDies(exit.cause)).toBe(true)
+      expect(exit.cause.reasons).toEqual([
+        expect.objectContaining({
+          _tag: "Die",
+          defect: expect.objectContaining({ _tag: "SchemaError", message: expect.stringContaining("rows") })
+        })
+      ])
+    }
   })
 
   it("accepts a lineage deadline and a description", () => {
