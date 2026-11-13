@@ -176,3 +176,4 @@ brick                                   state         proof
 
 - Proofs, vl-proveall3 batches 25–30: history text, mock commit reads, wiki fields, note scans and long-input regressions; [contracts and boundaries](decisions/0018-proofs.md#third-lane-batch-30-long-history-scans-and-nonempty-evidence-captures).
 - Proofs, vl-proveall3 batches 32–35: every shell row in `src/core`, `src/actions`, `src/history`, `src/surfaces` and `scripts/` calls a proved decision or names its boundary; `bucketsOf` remains; [modules and boundaries](decisions/0018-proofs.md#third-lane-batches-32-to-35-every-shell-row-outside-the-web-app).
+- Proofs, vl-proveall3 batch 37: the counter export, submission base and reply accounting shells call proved decisions; the whole proof and mutation gate on boxes; [findings](decisions/0018-proofs.md#third-lane-batch-37-three-new-worker-shells-and-the-whole-gate-on-boxes).

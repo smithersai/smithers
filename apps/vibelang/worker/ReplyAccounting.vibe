@@ -6,6 +6,7 @@ import { Node } from "@smthrs/plan"
 import type { Storage } from "./Objects.vibe"
 import type { Spend } from "./Reply.vibe"
 import { Unreachable } from "./Unreachable.vibe"
+import { cleanupStep, driveRewakes, receiptReported, settledReported } from "./workerDecision.vibe"
 
 const Receipt = Schema.Struct({
   day: Schema.String, reply: Schema.String, ceiling: Schema.Number,
@@ -29,7 +30,7 @@ export function tracked(storage: Storage, execution: string, spend: Spend.Shape)
     checkpoint: (day, reply, tokens, reported) => Effect.uninterruptible(checkpoint(day, reply, tokens, reported)),
     admit: effect (day, reply, ceiling) => {
       const key = receiptKey(execution, day, reply)
-      const receipt: Receipt = { day, reply, ceiling, admitted: null, tokens: 0, reported: !reply.startsWith("model/") }
+      const receipt: Receipt = { day, reply, ceiling, admitted: null, tokens: 0, reported: receiptReported(reply) }
       try Effect.uninterruptible(promise(() => storage.put(key, receipt)))
       const admitted = try spend.admit(day, reply, ceiling)
       if (admitted) try promise(() => storage.put(key, { ...receipt, admitted }))
@@ -78,7 +79,7 @@ function runtime(hostId: string, storage: Storage, intent: ExecutionObject.Inten
       // A lost admission response cannot have issued a provider call: tracked.admit persists true before returning.
       // Closing that receipt at zero releases any hold and fences a late admission even while capacity is full.
       // Budget's charge receipt also makes an already applied settlement harmless to repeat.
-      try spend.spend(receipt.day, receipt.reply, receipt.tokens, receipt.reported || receipt.admitted === null, receipt.ceiling)
+      try spend.spend(receipt.day, receipt.reply, receipt.tokens, settledReported(receipt.reported, receipt.admitted === null), receipt.ceiling)
       try promise(() => storage.delete(receiptKey(payload.execution, receipt.day, receipt.reply)))
     }
     try Effect.logInfo("vibelang.reply.accounting").pipe(Effect.annotateLogs({ outcome: "settled", receipts: payload.receipts.length }))
@@ -95,10 +96,11 @@ export effect function alarm<R>(hostId: string, storage: Storage, spend: Spend.S
   const existing = try cleanup.get<string>(ExecutionObject.intentKey)
   if (existing !== undefined) {
     const result = try ExecutionObject.alarm(cleanup, options)
-    if (result._tag !== "Forgotten" && result._tag !== "Settled") return result
+    const step = cleanupStep(result._tag)
+    if (step === "return") return result
     // The main execution still has its terminal intent. Keep its final forgetting alarm after cleanup.
     try promise(() => storage.setAlarm(now))
-    if (result._tag === "Settled") return result
+    if (step === "rewake-return") return result
   }
   const raw = try promise(() => storage.get(ExecutionObject.intentKey))
   const intent = raw === undefined ? undefined : try Effect.orDie(Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw))
@@ -114,6 +116,6 @@ export effect function alarm<R>(hostId: string, storage: Storage, spend: Spend.S
   }
   const result = try drive
   // An alarm after a terminal drive starts settlement before the platform can forget its intent.
-  if (result._tag === "Settled") try promise(() => storage.setAlarm(now))
+  if (driveRewakes(result._tag)) try promise(() => storage.setAlarm(now))
   return result
 }

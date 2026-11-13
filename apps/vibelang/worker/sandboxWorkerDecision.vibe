@@ -1,5 +1,5 @@
 // The server's sandbox decisions (0024; 0018, lane vl-proveall2 worker batch), for sandboxProbeFetch.vibe,
-// SandboxHttp.vibe and accountObject.vibe. The callers keep the token digest, Number, clocks, the route RegExp's capture,
+// SandboxHttp.vibe, accountObject.vibe and sandboxBenchmark.vibe. The callers keep the token digest, Number, clocks, the route RegExp's capture,
 // Schema decoding and every object call. Each kernel restates an expression those modules used.
 
 /** The longest a probe owner may hold compute, in milliseconds (PROBE_WINDOW_MS). */
@@ -183,4 +183,24 @@ export interface RecordSlot {
 export function recordSlot(stored: number, index: number, max: number): RecordSlot {
   const at = stored + index
   return { at, kept: at < max }
+}
+
+/** Only the coverage path reaches the test-stage counter export; every other request goes to the wrapped probe. */
+//@ verify
+//@ ensures \result == (path == "/api/probe/coverage")
+export function benchmarkPath(path: string): boolean {
+  return path === "/api/probe/coverage"
+}
+
+export type BenchmarkAnswer = "forbidden" | "method" | "counts"
+
+/** The counter export answers only a probe owner's POST: no owner is forbidden, before the method is read. */
+//@ verify
+//@ ensures \result == "forbidden" <==> owner == ""
+//@ ensures \result == "method" <==> owner != "" && method != "POST"
+//@ ensures \result == "counts" <==> owner != "" && method == "POST"
+export function benchmarkAnswer(owner: string, method: string): BenchmarkAnswer {
+  if (owner === "") return "forbidden"
+  if (method !== "POST") return "method"
+  return "counts"
 }

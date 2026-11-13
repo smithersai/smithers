@@ -1,6 +1,7 @@
 // Small server decisions (0018, lane vl-proveall2 worker batch): the site Worker's routes (index.vibe), the object
 // start-up's states and members (ObjectStartup.vibe), a post's owner record (ObjectStorage.vibe), and a VIP review's pull
-// number (Issues.vibe). Each kernel restates an expression
+// number (Issues.vibe), a submission base's step (SubmissionBase.vibe), and a
+// reply's token receipts and settlement wakes (ReplyAccounting.vibe). Each kernel restates an expression
 // those modules used; the callers keep URL parsing, the asset binding, Number, Deferred and Proxy, storage and clients.
 
 export type SiteRoute = "api" | "health" | "fetch" | "not-found"
@@ -91,4 +92,56 @@ export function reviewNumberText(review: string, prefix: string): string {
   if (!review.startsWith(prefix)) return ""
   const tail = review.slice(prefix.length)
   return /^[1-9][0-9]*$/.test(tail) ? tail : ""
+}
+
+export type SubmissionStep = "observe" | "decode" | "record"
+
+/**
+ * A submission's base: with no storage it is observed each time; a stored base is decoded and never observed again;
+ * otherwise it is observed, then recorded.
+ */
+//@ verify
+//@ ensures \result == "observe" <==> !stored
+//@ ensures \result == "decode" <==> stored && known
+//@ ensures \result == "record" <==> stored && !known
+export function submissionStep(stored: boolean, known: boolean): SubmissionStep {
+  if (!stored) return "observe"
+  return known ? "decode" : "record"
+}
+
+/** A receipt starts reported unless its reply is a model reply, whose usage arrives later. */
+//@ verify
+//@ ensures \result == !reply.startsWith("model/")
+export function receiptReported(reply: string): boolean {
+  return !reply.startsWith("model/")
+}
+
+/** Settlement closes a receipt as reported when its usage was reported or its admission never answered. */
+//@ verify
+//@ ensures \result == (reported || unanswered)
+export function settledReported(reported: boolean, unanswered: boolean): boolean {
+  return reported || unanswered
+}
+
+export type CleanupStep = "return" | "rewake-return" | "rewake-continue"
+
+/**
+ * After the settlement flow's alarm: a live flow's outcome is returned as is; a settled or forgotten flow re-arms the
+ * main execution's alarm, and only a forgotten one goes on to the main execution.
+ */
+//@ verify
+//@ ensures \result == "return" <==> tag != "Forgotten" && tag != "Settled"
+//@ ensures \result == "rewake-return" <==> tag == "Settled"
+//@ ensures \result == "rewake-continue" <==> tag == "Forgotten"
+export function cleanupStep(tag: string): CleanupStep {
+  if (tag === "Settled") return "rewake-return"
+  if (tag === "Forgotten") return "rewake-continue"
+  return "return"
+}
+
+/** A main drive that settled re-arms the alarm, so settlement starts before the platform forgets the intent. */
+//@ verify
+//@ ensures \result == (tag == "Settled")
+export function driveRewakes(tag: string): boolean {
+  return tag === "Settled"
 }

@@ -8,14 +8,16 @@ import type { SandboxIdentity } from "./accountObject.vibe"
 import { PROBE_CONVERSATION } from "./sandboxProbeFetch.vibe"
 import { sandboxCounters } from "../bench/sandbox-counters.ts"
 import { observed } from "../src/core/sandboxHost.vibe"
+import { benchmarkAnswer, benchmarkPath } from "./sandboxWorkerDecision.vibe"
 
 export function benchmarkFetch(fetch: Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpServerRequest.HttpServerRequest | RuntimeContext>, accounts: { getByName(name: string): AccountBindingShape }, machines: { getByName(name: string): MachineBindingShape }, identity: SandboxIdentity.Shape) {
   return observed("benchmark-coverage", effect {
     const request = try HttpServerRequest.HttpServerRequest
-    if (new URL(request.url, "https://probe.invalid").pathname !== "/api/probe/coverage") return try fetch
+    if (!benchmarkPath(new URL(request.url, "https://probe.invalid").pathname)) return try fetch
     const { owner } = try identity.request()
-    if (owner === "") return HttpServerResponse.jsonUnsafe({ error: "forbidden" }, { status: 403 })
-    if (request.method !== "POST") return HttpServerResponse.jsonUnsafe({ error: "method" }, { status: 405 })
+    const answer = benchmarkAnswer(owner, request.method)
+    if (answer === "forbidden") return HttpServerResponse.jsonUnsafe({ error: "forbidden" }, { status: 403 })
+    if (answer === "method") return HttpServerResponse.jsonUnsafe({ error: "method" }, { status: 405 })
     const account = try accounts.getByName(owner).benchmarkCoverage()
     const machine = try machines.getByName(`${owner}/${PROBE_CONVERSATION}`).benchmarkCoverage()
     return HttpServerResponse.jsonUnsafe({ schema: 1, snapshots: [sandboxCounters(), account, machine] }, { headers: { "cache-control": "no-store" } })
