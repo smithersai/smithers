@@ -224,41 +224,41 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           if (!observed.items.some(issue => issue.number === made.number && issue.vip !== "")) throw new IssueFailure({ reason: "unavailable", code: "unavailable" })
           return { ...observed, selected: made.number! }
         }
-        if (issue === undefined) throw new IssueFailure({ reason: "missing" }) // Narrows the type; issueWriteRefusal refused it already.
+        const existing = issue! // issueWriteRefusal answers "missing" for every operation left here when the issue is unknown.
         if (request.op === "comment") {
-          try Action.once("comment", permitted({ kind: "comment.create", repository, number: issue.number, body: request.text.trim() }), { key: try key("comment") })
+          try Action.once("comment", permitted({ kind: "comment.create", repository, number: existing.number, body: request.text.trim() }), { key: try key("comment") })
         } else if (request.op === "link") {
-          if (!canLinkIssues(before.items, issue.number, request.parent)) throw new IssueFailure({ reason: "tree" })
-          if (issue.parent !== request.parent) try written("link", { kind: "issue.link", repository, parent: request.parent, childNumber: issue.number })
+          if (!canLinkIssues(before.items, existing.number, request.parent)) throw new IssueFailure({ reason: "tree" })
+          if (existing.parent !== request.parent) try written("link", { kind: "issue.link", repository, parent: request.parent, childNumber: existing.number })
         } else if (request.op === "commit" || request.op === "uncommit") {
           const committing = request.op === "commit"
           const login = choiceLogin(request.assignee, repo.agent)
           if (committing && (login.trim() === "" || !before.assignees.some(choice => choice.login.toLowerCase() === login.toLowerCase()))) throw new IssueFailure({ reason: "assignee" })
-          const target = setCommitment(issue, login, committing)
+          const target = setCommitment(existing, login, committing)
           // Preserve concurrent label edits: only the two managed labels are ever added or removed.
-          try written("assign", { kind: "issue.assign", repository, number: issue.number, assignees: target.assignee === "" ? [] : [target.assignee] })
+          try written("assign", { kind: "issue.assign", repository, number: existing.number, assignees: target.assignee === "" ? [] : [target.assignee] })
           if (committing) {
-            const after = try read(issue.number)
-            if (!after.items.some((item) => item.number === issue.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase()))) throw new IssueFailure({ reason: "assignee" })
+            const after = try read(existing.number)
+            if (!after.items.some((item) => item.number === existing.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase()))) throw new IssueFailure({ reason: "assignee" })
             try written("task-label", { kind: "label.create", repository, name: TASK_LABEL, color: "36b3aa" })
-            try written("task-labeled", { kind: "label.add", repository, number: issue.number, labels: [TASK_LABEL] })
-          } else try written("task-unlabeled", { kind: "label.remove", repository, number: issue.number, label: TASK_LABEL })
-          try written("not-running", { kind: "label.remove", repository, number: issue.number, label: "vibelang:running" })
+            try written("task-labeled", { kind: "label.add", repository, number: existing.number, labels: [TASK_LABEL] })
+          } else try written("task-unlabeled", { kind: "label.remove", repository, number: existing.number, label: TASK_LABEL })
+          try written("not-running", { kind: "label.remove", repository, number: existing.number, label: "vibelang:running" })
         } else if (request.op === "accept" || request.op === "decline") {
-          if (request.op === "accept" && issue.vip === "In review") {
-            const approved = approveVip(issue, actor.role, actor.kind ?? "person", actor.login, new Date(try Clock.currentTimeMillis).toISOString())
+          if (request.op === "accept" && existing.vip === "In review") {
+            const approved = approveVip(existing, actor.role, actor.kind ?? "person", actor.login, new Date(try Clock.currentTimeMillis).toISOString())
             if (approved.vip !== "Accepted") throw new IssueFailure({ reason: "forbidden" })
           }
-          const plan = reviewActions(issue.vip, issue.state, request.op === "accept")
+          const plan = reviewActions(existing.vip, existing.state, request.op === "accept")
           if (!plan.allowed) throw new IssueFailure({ reason: "review" })
           const label = request.op === "accept" ? ACCEPTED : DECLINED
           if (plan.label) {
             try written("review-label", { kind: "label.create", repository, name: label, color: request.op === "accept" ? "36b3aa" : "d73a4a" })
-            try written("review-labeled", { kind: "label.add", repository, number: issue.number, labels: [label] })
+            try written("review-labeled", { kind: "label.add", repository, number: existing.number, labels: [label] })
           }
-          if (plan.close) try written("close", { kind: "issue.close", repository, number: issue.number })
+          if (plan.close) try written("close", { kind: "issue.close", repository, number: existing.number })
         } else throw new IssueFailure({ reason: "unsupported" })
-        return try read(issue.number)
+        return try read(existing.number)
       }
       const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate, reads), Effect.mapError((error) => {
         const failure = error._tag === "IssueFailure" ? error : issueFailureOf(error)
