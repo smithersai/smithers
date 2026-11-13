@@ -9,7 +9,7 @@ entries `ExternalTranscript.decodeClaude` must produce from it.
 | Models         | `claude-opus-5`, `claude-fable-5-1`, and `<synthetic>` for Claude Code's own usage-limit message                    |
 | Format version | `claude-code/2.1`: the adapter profile named by the release's `major.minor`                                         |
 | Session        | `93469675-c700-423f-be09-43aefb36a280`, recorded 2026-09-18 to 2026-09-20 on macOS (Apple Silicon)                  |
-| Source file    | `~/.claude/projects/-Users-williamcory-smithers/93469675-c700-423f-be09-43aefb36a280.jsonl` (3,957 rows)            |
+| Source file    | `$CLAUDE_CONFIG_DIR/projects/<encoded-working-directory>/<session>.jsonl` (3,957 rows)                              |
 | Files          | `session.jsonl` (133 rows), `expected.json` (final decoder state and 36 entries)                                    |
 | Local evidence | All 4,309 main transcripts on the capture machine (`2.1.261` to `2.1.291`) decode with no tagged error (2026-10-08) |
 
@@ -123,12 +123,17 @@ are not golden evidence. A signed-out headless run from release `2.1.291` is
 3. Secret scan of the result for API keys (`sk-`, `gh*_`, `github_pat_`,
    `AKIA`, `vck_`), bearer tokens, JWTs, private keys, `*_KEY=`/`*TOKEN=`
    assignments, email addresses and IP addresses: no match (the only `sk-`
-   hit is the word `task-notification`). Home-directory paths, session names
-   such as `smithers-2f`, and request and message ids stay; they are not
-   credentials.
+   hit is the word `task-notification`). Session, request and message ids stay;
+   they are not credentials.
 
 4. Temporary session roots in tool calls and outputs are normalized to
    `/tmp/fixture-session/repository/`; their working-script directory is
    `scratchpad/recorded-work`. The same literal substitutions apply to the
    captured rows and their expected entries. Record order, IDs, tool names,
    exit codes, truncation markers and the 133-row/36-entry shape are unchanged.
+5. After truncation, the capture script replaces the capture machine's home
+   directory with `/Users/owner` and its encoded project-path prefix with
+   `-Users-owner`. Local account directory labels become `account-1`. Apply
+   the same literal substitutions to the independently mapped `expected.json`;
+   paths in commands, output, diff keys and edit assertions must agree. These
+   substitutions preserve record structure, IDs and existing truncation markers.

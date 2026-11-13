@@ -213,7 +213,7 @@
         "call_id": "toolu_01WM4amoe36cDCGsvtHwY6Qv",
         "files": [
           {
-            "path": "/Users/williamcory/Desktop/smithers-jev/decision-model-api.html",
+            "path": "/Users/owner/Desktop/smithers-jev/decision-model-api.html",
             "change": "added",
             "diff": "@@ -0,0 +1,13 @@\n+<!doctype html>\n+<html lang=\"en\">\n+<head>\n+<meta charset=\"utf-8\">\n+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n+<title>Decision models in @smthrs/model</title>\n+<style>\n+  :root {\n+    --bg: #ffffff; --fg: #17191c; --muted: #5b6168; --line: #e3e6ea;\n+    --code-bg: #f6f7f9; --accent: #2b5fd9; --warn: #9a5800; --good: #17652f;\n+    --chip: #eef1f6;\n+  }\n+  @media (prefers-color-scheme:…[fixture: 20647 chars truncated]\n"
           }
@@ -313,7 +313,7 @@
         "call_id": "toolu_01NUaqehpEC6Mswxstzow9to",
         "files": [
           {
-            "path": "/Users/williamcory/Desktop/smithers-jev/decision-model-api.html",
+            "path": "/Users/owner/Desktop/smithers-jev/decision-model-api.html",
             "change": "modified",
             "diff": "@@ -143,6 +143,8 @@\n \n <p>The type must carry the asymmetry rather than leaving it in each caller's head: <strong>a boolean answer has a probability and never a confidence</strong>; choice and score carry confidence at <code>providerMetadata.typesafe.confidence</code>; <strong>probabilities come back rounded to two decimals</strong>, so a pointed question yields exactly one non-zero option and a \"top 5\" list silently b…[fixture: 19 chars truncated]\n \n+<div class=\"note warn\"><strong>This changes behaviour, not only shape.</strong> The 1.0 fallback bites <em>choice and score</em>, not booleans: <code>Classifier.confidence</code> reads a boolean honestly as <code>|p − 0.5| × 2</code>, but for a choice or score it returns the largest probability in a distribution the transport may never have sent — and the missing distribution is filled one-hot, s…[fixture: 583 chars truncated]\n+\n <h3>b. <code>Decision</code> — one threshold vocabulary instead of sixteen floors</h3>\n \n <p>Today: <code>0.85</code> and <code>0.85</code> in the front door, <code>0.7</code> in Probe, <code>0.7</code> in the session checker, <code>0.5</code> in opencode Health, <code>0.8/0.2</code> in jev-checks, <code>0.8</code> in four more flow modules, <code>0.9</code> in intake — each with its own hand-written paragraph citing the same vendor 76%-agreement figure.</p>\n"
           }
@@ -337,7 +337,7 @@
         "call_id": "toolu_01TWwXS77To1CnWZ6YS2SSb6",
         "files": [
           {
-            "path": "/Users/williamcory/Desktop/smithers-jev/decision-model-api.html",
+            "path": "/Users/owner/Desktop/smithers-jev/decision-model-api.html",
             "change": "modified",
             "diff": "@@ -1,1 +1,1 @@\n-<div class=\"note warn\"><strong>This changes behaviour, not only shape.</strong> The 1.0 fallback bites <em>choice and score</em>, not booleans: <code>Classifier.confidence</code> reads a boolean honestly as <code>|p − 0.5| × 2</code>, but for a choice or score it returns the largest probability in a distribution the transport may never have sent — and the missing distribution is filled one-hot, so…[fixture: 453 chars truncated]\n+<div class=\"note warn\"><strong>No caller has ever seen the provider's confidence.</strong> <code>Classifier.ts:297,312</code> compute a choice's and a score's <code>confidence</code> as <code>Math.max(...probabilities)</code> — the largest decoded probability, never the provider's number. Repo-wide, the only read of <code>Response.confidence</code> is its own unit test. Every \"confidence\" in Smith…[fixture: 1493 chars truncated]\n"
           }
@@ -544,7 +544,7 @@
         "call_id": "toolu_014WakryLDKm8DWtXfQ8apxY",
         "files": [
           {
-            "path": "/Users/williamcory/Desktop/smithers-jev/decision-ui-mock.html",
+            "path": "/Users/owner/Desktop/smithers-jev/decision-ui-mock.html",
             "change": "modified",
             "diff": "@@ -0,0 +1,12 @@\n+<!doctype html>\n+<html lang=\"en\" data-theme=\"light\">\n+<head>\n+<meta charset=\"utf-8\">\n+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n+<title>Decisions</title>\n+<style>\n+:root {\n+  --bg:#FBFBFB; --text:#403f53; --surface:#fefefe; --surface-2:#f4f3f5;\n+  --brand:#9449bc; --danger:#ba3f3c; --success:#21766f; --warning:#846701;\n+  --text-muted:#676676; --text-faint:#6b6a7a;\n+  --border:rgba…[fixture: 37090 chars truncated]\n"
           }

@@ -131,5 +131,10 @@ reported is `../codex-signed-out-0.160`.
 8. Secret scan of the result for API keys (`sk-`, `gh*_`, `github_pat_`,
    `AKIA`), bearer tokens, JWTs, private keys, email addresses and IP
    addresses: the only match is the variable name `$OPENAI_API_KEY` inside a
-   documentation excerpt (line 45), with no value. Home-directory paths and the
-   account directory label `codex-acct-2` stay; they are not credentials.
+   documentation excerpt (line 45), with no value.
+9. After truncation, the capture script replaces the capture machine's home
+   directory with `/Users/owner` and local account directory labels with
+   `account-1`. Apply the same literal substitutions to the independently
+   mapped `expected.json`; paths in metadata, commands, output and diffs must
+   agree. These substitutions preserve record structure, IDs and existing
+   truncation markers.

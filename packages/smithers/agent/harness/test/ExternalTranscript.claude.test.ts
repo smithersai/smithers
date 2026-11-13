@@ -349,7 +349,7 @@ describe("ExternalTranscript Claude Code", () => {
         call_id: "toolu_01NUaqehpEC6Mswxstzow9to",
         outcome: "applied",
         files: [{
-          path: "/Users/williamcory/Desktop/smithers-jev/decision-model-api.html",
+          path: "/Users/owner/Desktop/smithers-jev/decision-model-api.html",
           change: "modified",
           diff: `@@ -143,6 +143,8 @@\n${patch[0]!.lines.join("\n")}\n`
         }]
@@ -384,7 +384,7 @@ describe("ExternalTranscript Claude Code", () => {
       expect(entryAt(115).part).toMatchObject({
         type: "edit",
         outcome: "failed",
-        files: [{ path: "/Users/williamcory/Desktop/smithers-jev/decision-ui-mock.html", change: "modified" }]
+        files: [{ path: "/Users/owner/Desktop/smithers-jev/decision-ui-mock.html", change: "modified" }]
       })
     })
 

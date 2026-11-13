@@ -101,6 +101,23 @@ describe("ExternalTranscript recorded captures", () => {
   describe.each(manifest.fixtures)("$directory ($agent $cli_release)", (listed) => {
     const { golden, records, text } = load(listed)
 
+    it("redacts maintainer paths from captures, expected entries and manifests", () => {
+      const directory = new URL(`${listed.directory}/`, root)
+      for (const name of [listed.file, "expected.json", "MANIFEST.md"]) {
+        const content = readFileSync(new URL(name, directory), "utf8")
+        const label = `${listed.directory}/${name}`
+        const homes = [...content.matchAll(/\/Users\/([^/\s"'`\\]+)/g)].map((match) => match[1])
+        expect(homes.filter((home) => home !== "owner"), label).toEqual([])
+        const encodedHomes = [...content.matchAll(/-Users-([^-\s/"'`\\]+)/g)].map((match) => match[1])
+        expect(encodedHomes.filter((home) => home !== "owner"), label).toEqual([])
+        const accounts = [...content.matchAll(/\/accounts\/([^/\s"'`\\]+)/g)].map((match) => match[1])
+        expect(accounts.filter((account) => account !== "account-1"), label).toEqual([])
+        expect(content.match(/\b(?:codex|claude)-acct-\d+\b/g) ?? [], label).toEqual([])
+        expect(content.match(/~\/lanes\//g) ?? [], label).toEqual([])
+        if (name === "MANIFEST.md") expect(content.match(/packages\/backend/g) ?? [], label).toEqual([])
+      }
+    })
+
     it("names the release its records carry", () => {
       const releases = new Set(records.flatMap((record) => {
         const row = JSON.parse(record) as { type?: string; version?: string; payload?: { cli_version?: string } }

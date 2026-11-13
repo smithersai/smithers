@@ -13,7 +13,7 @@ and failure outputs must survive normalization. A failed edit's diff is empty
 because the result reports a failed match, not an observed file change; the
 complete requested patch remains in its correlated tool part's command.
 
-## Procedure and receipts
+## Historical capture procedure
 
 1. Create a disposable machine with the existing `microsandbox.Runtime`, two
    CPUs, 2 GiB memory and its existing authenticated egress relay. The member
@@ -34,18 +34,13 @@ complete requested patch remains in its correlated tool part's command.
    boundary using serialized checkpoints.
 5. Delete the machine and sweep only this runtime's owned resources.
 
-Executed command: with `SMITHERS_MICROSANDBOX_BIN` set to the reference install,
-`SMITHERS_REQUIRE_MICROVM_TESTS=1`, and the capture receipts directory selected,
-`cd packages/backend && go test ./microsandbox -run '^TestAGTCodexCapture$'
--count=1 -timeout 10m -v`. Result: 1 passing, 0 failing; 76.761 seconds.
-
-Receipt: `~/lanes/fr4b-t-agt-01.receipts/codex-capture-with-tools.log`, SHA-256
+The capture-time integration test passed: 1 passing, 0 failing; 76.761 seconds.
+Its microVM harness has since been removed from this repository; these steps
+record the capture's provenance rather than a runnable current-package command.
+The privately retained receipt has SHA-256
 `c2d4002992b50100478e078e6dcc83082a16ba42cf3e1f3253fb75abebcb855f`.
-The temporary capture test is retained alongside it as
-`agt_codex_capture_with_tools_test.go`, SHA-256
-`4fafa3d35c3eca14541ce4d6db6d4871c53fd2efd181dd7f75d468b589bbed20`.
-Public builds/tests consume only the committed fixtures, never those private
-capture prerequisites or credential files.
+Public builds/tests consume only the committed fixtures, never private capture
+prerequisites, receipts or credential files.
 
 Raw capture SHA-256:
 `567af812fc13118aaa3f0ad8f5be3b9514c3b78665ccfbd0c32059f6d73c24fa`.
@@ -66,7 +61,7 @@ for bearer values, API keys and JWTs found no matches after sanitization.
 
 This capture certifies the Codex process and member-machine boundary. It does
 not certify Claude login, composed install ingestion, browser rendering, other
-release lines or smithers-38's required post-hoc sign-off. It contains no
+release lines or a separate post-hoc review. It contains no
 failure Codex reported at the end of a turn and no message between agents;
 explicit script and command failures are real. Those two are recorded in
 `../codex-signed-out-0.160` (row 11) and `../codex-0.160` (rows 98 and 100).
