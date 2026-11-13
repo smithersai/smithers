@@ -887,18 +887,24 @@ describe("RunDriver requestResume", () => {
             finished = true
             return "done"
           }))
-        const exit = yield* Effect.exit(executeAndDrain(driver, EdgeFlow, {
+        // Join this drive directly: a detached follower can read the committed
+        // child result before the drive finishes publishing its parent wake.
+        const exit = yield* Effect.exit(driver.execute(EdgeFlow, {
           executionId: "settling-under-missing-parent",
           payload: {},
-          discard: true,
+          discard: false,
           parent: FlowEngine.makeInstance(EdgeFlow, "vanishing-parent")
         }))
         expect(missingReads).toBeGreaterThan(0)
         expect(recorded).toEqual([])
-        // The child committed before publishing its parent wake. A follower
-        // may observe that durable result before or after publication fails.
-        if (code === "not_found_row") expect(Exit.isSuccess(exit)).toBe(true)
-        else if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toMatchObject({ code })
+        // A missing parent is harmless; a storage outage surfaces to the
+        // drive's caller even though the child's result is already durable.
+        if (code === "not_found_row") {
+          expect(Exit.isSuccess(exit)).toBe(true)
+        } else {
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toMatchObject({ code })
+        }
         expect((yield* base.get("settling-under-missing-parent")).status).toBe("completed")
       }))))
   }
@@ -1496,29 +1502,67 @@ const provideJournalWithTestClock = <A, E, R>(
   )
 
 describe("RunDriver parked-cancel sweep", () => {
-  it.effect("ignores parked entries whose run row can no longer be read", () =>
+  it.effect("keeps delivering parked cancellations past an unreadable run row", () =>
     Effect.gen(function*() {
       const result = yield* withCrypto(provideJournalWithTestClock(Effect.gen(function*() {
         const state = yield* DurableEngineState.DurableEngineState
         const store = yield* RunStore.RunStore
-        const driver = yield* makeDriver()
-        yield* driver.register(EdgeFlow, () => Effect.succeed("never"))
-        // A waiting row that outlived its run row — the sweeper must survive
-        // the failed lookup and keep sweeping.
+        const missingRead = yield* Deferred.make<void>()
+        const observed = RunStore.makeNoop({
+          ...store,
+          get: (runId) =>
+            runId === "vanished"
+              ? Deferred.succeed(missingRead, undefined).pipe(Effect.andThen(store.get(runId)))
+              : store.get(runId)
+        })
+        const driver = yield* makeDriver().pipe(Effect.provideService(RunStore.RunStore, observed))
+        let executions = 0
+        yield* driver.register(EdgeFlow, () =>
+          Effect.sync(() => {
+            executions++
+            return "never"
+          }))
         yield* state.park("vanished", { reason: "event" }, owner)
         yield* store.create("still-there", stateJson(EdgeFlow._tag))
         yield* state.park("still-there", { reason: "event" }, owner)
 
         yield* TestClock.adjust(Ownership.heartbeatInterval)
-        yield* Effect.yieldNow
+        // Prove the sweep encountered the vanished row before adding more work.
+        yield* Deferred.await(missingRead)
+
+        // Event waits sort by run id: cancellation must pass the missing row.
+        yield* store.create("zz-cancel-after-missing", stateJson(EdgeFlow._tag))
+        yield* store.claimAndOwn(
+          "zz-cancel-after-missing",
+          { status: "pending", owner: null, heartbeatAtMs: null },
+          owner,
+          0
+        )
+        yield* state.park("zz-cancel-after-missing", { reason: "event" }, owner)
+        yield* store.transitionOwned("zz-cancel-after-missing", owner, "suspended", undefined)
+        yield* store.requestCancel("zz-cancel-after-missing", 1)
+        expect((yield* state.waitingRuns({ cancelRequested: true })).map((row) => row.runId)).toEqual([
+          "still-there",
+          "vanished",
+          "zz-cancel-after-missing"
+        ])
+
+        let cancelled = yield* store.get("zz-cancel-after-missing")
+        for (let index = 0; index < 2000 && cancelled.status !== "cancelled"; index++) {
+          yield* TestClock.adjust(Ownership.heartbeatInterval)
+          yield* Effect.yieldNow
+          cancelled = yield* store.get("zz-cancel-after-missing")
+        }
         return {
+          cancelled,
+          executions,
           parked: yield* state.waitingRuns(),
           row: yield* store.get("still-there")
         }
       })))
 
-      // Neither entry was cancel-requested, so the sweep left both parked and
-      // never woke the surviving run.
+      expect(result.cancelled.status).toBe("cancelled")
+      expect(result.executions).toBe(0)
       expect(result.parked.map((row) => row.runId).sort()).toEqual(["still-there", "vanished"])
       expect(result.row.status).toBe("pending")
     }))
