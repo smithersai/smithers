@@ -257,12 +257,11 @@ describe("the remaining branches a person can reach", () => {
     expect(names(result)).toEqual(["ClosePalette"])
     expect(result.model).toMatchObject({ palette: false, draft: "", sandboxPane: "pane", sandboxBusy: true })
   })
-  it("a slash command picks the highlighted action and passes no epoch before one exists", () => {
+  it("a slash command picks the highlighted action and passes epoch 0 before one exists", () => {
     const entry = { name: "vibelang/Run", title: "Run", command: "/run", runnable: true, detail: "Run", least: "viewer" as const, input: "text" as const }
     const { epoch: _epoch, ...rest } = { ...initialActions, epoch: 1 }
     const result = update({ ...chat, draft: "/run now", actions: { ...rest, slash: true, entries: [entry], commands: [entry] } }, Message.SubmittedDraft())
-    expect(result.commands?.[0]).toMatchObject({ name: "RunAction", args: { name: "vibelang/Run", text: "now", door: "slash" } })
-    expect(result.commands?.[0]).not.toHaveProperty("args.epoch")
+    expect(result.commands?.[0]).toMatchObject({ name: "RunAction", args: { name: "vibelang/Run", text: "now", door: "slash", epoch: 0 } })
   })
   it("a role reply can carry no actions epoch", () => {
     const { epoch: _epoch, ...rest } = { ...initialActions, epoch: 1 }

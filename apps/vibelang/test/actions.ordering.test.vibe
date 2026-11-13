@@ -8,7 +8,7 @@ describe("action delivery ordering", () => {
   it("keeps a completed card when an older list request finishes after its live update", () => {
     const home = init({ session: "ordering", mode: "mock", name: "Guest" }).model
     const model = { ...home, actions: { ...initial, runs: [passed] } }
-    const next = update(model, Message.LoadedActions({ entries: [], commands: [], runs: [{ ...passed, state: "running", result: "", at: 3 }] })).model
+    const next = update(model, Message.LoadedActions({ entries: [], commands: [], runs: [{ ...passed, state: "running", result: "", at: 3 }], epoch: 0 })).model
     expect(next.actions?.runs).toEqual([passed])
   })
   it("keeps an ended attempt when older or duplicate running telemetry arrives", () => {
@@ -30,6 +30,6 @@ it("identity changes remove old controls immediately and refuse an older command
   const ready = { ...first, actions: { ...initial, entries: [entry], commands: [entry] } }
   const changed = update(ready, Message.AccountLoaded({ identity: { id: "", login: "", role: "viewer" } })).model
   expect(changed.actions?.commands).toEqual([])
-  const late = update(changed, Message.LoadedActions({ entries: [entry], commands: [entry], runs: [] })).model
+  const late = update(changed, Message.LoadedActions({ entries: [entry], commands: [entry], runs: [], epoch: 0 })).model
   expect(late.actions?.commands).toEqual([])
 })

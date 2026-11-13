@@ -146,12 +146,12 @@ describe("page listeners", () => {
     try settled(() => expect(seen.model.tour).toBe(true))
   }))
   it.live("a running action ticks the clock", () => scoped(effect {
-    const seen = try started(quiet({ actions: { ...initialActions } }, () => [RunAction({ name: "vibelang/Tour", text: "", door: "button", format: "none" })]))
+    const seen = try started(quiet({ actions: { ...initialActions } }, () => [RunAction({ name: "vibelang/Tour", text: "", door: "button", format: "none", epoch: 0 })]))
     try settled(() => expect(seen.model.actions?.runs.length).toBe(1))
     try settled(() => expect(seen.model.actions?.now ?? 0).toBeGreaterThan(0))
   }))
   it.live("a started action is followed to its end", () => scoped(effect {
-    const seen = try started(quiet({ actions: { ...initialActions } }, () => [RunAction({ name: "vibelang/history/show", text: "", door: "button", format: "json" })]), MockActions({ role: "contributor", actor: "person" }))
+    const seen = try started(quiet({ actions: { ...initialActions } }, () => [RunAction({ name: "vibelang/history/show", text: "", door: "button", format: "json", epoch: 0 })]), MockActions({ role: "contributor", actor: "person" }))
     // This action lazily imports its real durable history runtime; compilation shares the host with other suites.
     try settled(() => expect(seen.model.actions?.runs[0]?.state).toBe("passed"), 15_000)
   }))
@@ -208,7 +208,7 @@ it.live("a run cancelled by another client settles in the page after its first f
     const factory = try FactoryService
     const actions = try Actions
     const seen = try started(
-      quiet({ actions: { ...initialActions, open: true } }, () => [RunAction({ name: "vibelang/Tour", text: "", door: "button", format: "none" })]),
+      quiet({ actions: { ...initialActions, open: true } }, () => [RunAction({ name: "vibelang/Tour", text: "", door: "button", format: "none", epoch: 0 })]),
       faultyActions(Layer.succeed(Actions, actions), "follow"),
       Layer.succeed(FactoryService, factory),
     )

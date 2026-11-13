@@ -100,7 +100,7 @@ function messageOf(step: Exclude<Step, Restore | Dialog>, items: ReadonlyArray<I
     case "wiki-reply": return step.reply === "began" ? Message.BeganWikiEdit({ request: step.request, page: step.page, source: "# Page", draft: "# Page", ...(step.stale === undefined ? {} : { stale: step.stale }) })
       : step.reply === "completed" ? Message.CompletedWikiEdit({ request: step.request, page: step.page, source: "# Page", revision: "r", review: "" })
       : Message.FailedWikiEdit({ request: step.request, reason: "conflict", ...(step.unwritten === undefined ? {} : { unwritten: step.unwritten }) })
-    case "actions": return step.reply === "open" ? Message.ClickedActions() : step.reply === "loaded" ? Message.LoadedActions({ entries: [], commands: [], runs: [], ...(step.epoch === undefined ? {} : { epoch: step.epoch }) }) : step.reply === "failed" ? Message.FailedActions({ code: "fault", ...(step.epoch === undefined ? {} : { epoch: step.epoch }) }) : Message.RetriedActions()
+    case "actions": return step.reply === "open" ? Message.ClickedActions() : step.reply === "loaded" ? Message.LoadedActions({ entries: [], commands: [], runs: [], epoch: step.epoch ?? 0 }) : step.reply === "failed" ? Message.FailedActions({ code: "fault", ...(step.epoch === undefined ? {} : { epoch: step.epoch }) }) : Message.RetriedActions()
   }
 }
 
@@ -130,7 +130,7 @@ it.live("web/pane-messages", () => scoped(effect {
       const closes = commands.filter(command => command.name === "CloseIssueDialog").length
       const closed = (before.issues?.dialog ?? "") !== "" && (next.model.issues?.dialog ?? "") === ""
       if (closes !== (closed ? 1 : 0)) return undefined
-      for (const command of commands) if (command.name === "LoadActions" && (command.args as { epoch?: number }).epoch !== actionsOf(next.model).epoch) return undefined
+      for (const command of commands) if (command.name === "LoadActions" && (command.args as { epoch: number }).epoch !== (actionsOf(next.model).epoch ?? 0)) return undefined
       return next.model
     }
     for (const step of steps) {

@@ -1122,7 +1122,7 @@ some target's draw. `web-arms` now chooses each one, both sides, in every execut
 | a stale scroll | `scroll-stale`: a scroll older than the last, then one as new | the old one changes nothing; the new one is applied |
 | a tour event past a missed one | `tour-gap`: a started tour, then an event two numbers ahead | the tour client starts over under the next epoch |
 | `EndTour` failing | `web/command-arms` `end-tour`: an end that succeeds, is refused, or fails unavailable | `FocusedPrompt`, `FocusedPrompt`, `FailedEndTour` |
-| a run with and without an epoch | `run-without-epoch` | `StartedAction` carries the epoch only when it was given |
+| a run's epoch | `run-epoch` | `StartedAction` carries the epoch it was given, 0 for a page whose role never changed (0016) |
 | the issue count without and with an issues service | `issue-count`: the `issueCount` subscription over a bare and a mock backend | `IssueDialogFocused`, then `IssueProjectionLoaded` |
 | issue details answered | `details-mock`: a real issue number from the mock's records | `IssueDetailsLoaded` for that number |
 

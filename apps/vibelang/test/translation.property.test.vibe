@@ -104,11 +104,11 @@ describe("update's translation of proved steps", () => {
       const model: Model = { ...home, actions: panel }
       const known = actionsOf(model).entries.length !== 0
       const arms: ReadonlyArray<readonly [Message, ModelDecision.ActionStep]> = [
-        [Message.ClickedActions(), ModelDecision.clickedActions(screen, known, epoch ?? null)],
+        [Message.ClickedActions(), ModelDecision.clickedActions(screen, known, epoch ?? 0)],
         [Message.MaximizedActions(), ModelDecision.maximizedActions(screen)],
-        [Message.SelectedAction({ name }), ModelDecision.selectedAction(screen, name, epoch ?? null)],
+        [Message.SelectedAction({ name }), ModelDecision.selectedAction(screen, name, epoch ?? 0)],
         [Message.UpdatedActionInput({ value: name }), ModelDecision.updatedActionInput(screen, name)],
-        [Message.RetriedActions(), ModelDecision.retriedActions(screen, epoch ?? null)],
+        [Message.RetriedActions(), ModelDecision.retriedActions(screen, epoch ?? 0)],
         [Message.FailedActions({ code, ...(epoch === undefined ? {} : { epoch }) }), ModelDecision.failedActions(screen, code, "load")],
         [Message.FailedActions({ code, op: "run", ...(epoch === undefined ? {} : { epoch }) }), ModelDecision.failedActions(screen, code, "run")],
         [Message.FailedActions({ code, op: "cancel", ...(epoch === undefined ? {} : { epoch }) }), ModelDecision.failedActions(screen, code, "cancel")],

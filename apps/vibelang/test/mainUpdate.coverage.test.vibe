@@ -454,7 +454,7 @@ describe("actions", () => {
     const selected = update(open, Message.SelectedAction({ name: reply.name }))
     expect(selected.model.actions).toMatchObject({ selected: reply.name, run: "", loading: true })
     expect(selected.commands?.[0]).toMatchObject({ args: { flow: reply.name, epoch: 1 } })
-    expect(update(noEpoch, Message.SelectedAction({ name: reply.name })).commands?.[0]).not.toHaveProperty("args.epoch")
+    expect(update(noEpoch, Message.SelectedAction({ name: reply.name })).commands?.[0]).toMatchObject({ args: { epoch: 0 } })
     const known: Model = { ...open, actions: { ...open.actions!, runs: [run("running")] } }
     expect(update(known, Message.SelectedRun({ id: "a1", flow: tour.name })).model.actions).toMatchObject({ run: "a1", selected: tour.name, open: true, maximized: true, step: "" })
     // A run picked while another flow is selected opens in its own flow.
@@ -479,6 +479,13 @@ describe("actions", () => {
     expect(update(open, Message.StartedAction({ run: run("running"), epoch: 0 })).model).toBe(open)
     expect(update(open, Message.FailedActions({ code: "x", epoch: 0 })).model).toBe(open)
     expect(update(open, Message.FailedActions({ code: "x", epoch: 1 })).model.actions).toMatchObject({ error: "Couldn't load runs", loading: false, starting: false })
+  })
+  it("a run started before the first role change is tagged epoch 0, so it neither starts nor fails under the next role", () => {
+    const launched = update({ ...noEpoch, actions: { ...noEpoch.actions!, input: "" } }, Message.ClickedRunAction())
+    expect(launched.commands?.[0]).toMatchObject({ name: "RunAction", args: { epoch: 0 } })
+    // `open` is the same page after a role change moved the actions epoch to 1.
+    expect(update(open, Message.StartedAction({ run: run("running"), epoch: 0 })).model).toBe(open)
+    expect(update(open, Message.FailedActions({ code: "unavailable", op: "run", epoch: 0 })).model).toBe(open)
   })
   it("a started run joins the list, re-focuses a shown run, and docks the composer", () => {
     const started = update(open, Message.StartedAction({ run: run("running"), epoch: 1 }))
@@ -505,7 +512,7 @@ describe("actions", () => {
     const retried = update({ ...open, actions: { ...open.actions!, error: "x" } }, Message.RetriedActions())
     expect(retried.model.actions).toMatchObject({ loading: true, error: "" })
     expect(retried.commands?.[0]).toMatchObject({ args: { epoch: 1 } })
-    expect(update(noEpoch, Message.RetriedActions()).commands?.[0]).not.toHaveProperty("args.epoch")
+    expect(update(noEpoch, Message.RetriedActions()).commands?.[0]).toMatchObject({ args: { epoch: 0 } })
   })
   it("the slash menu moves, picks a mode, starts the tour and passes the words after the command", () => {
     const menu: Model = { ...open, draft: "/", actions: { ...open.actions!, slash: true } }

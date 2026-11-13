@@ -250,11 +250,11 @@ export const Message = defineMessageUnion({
   SelectedAction: { name: Schema.String },
   SelectedActionStep: { key: Schema.String },
   SelectedRun: { id: Schema.String, flow: Schema.String },
-  LoadedActions: { epoch: Schema.optionalKey(Schema.Number), entries: Schema.Array(Registered), commands: Schema.Array(Registered), runs: Schema.Array(Run) },
+  LoadedActions: { epoch: Schema.Number, entries: Schema.Array(Registered), commands: Schema.Array(Registered), runs: Schema.Array(Run) },
   FailedActions: { code: Schema.String, epoch: Schema.optionalKey(Schema.Number), op: Schema.optionalKey(Schema.Literals(["load", "run", "cancel"])) },
   UpdatedActionInput: { value: Schema.String },
   ClickedRunAction: {},
-  StartedAction: { run: Run, epoch: Schema.optionalKey(Schema.Number) },
+  StartedAction: { run: Run, epoch: Schema.Number },
   ChangedAction: { run: Run },
   FollowedAction: { run: Run, epoch: Schema.Number, generation: Schema.Number, ids: Schema.Array(Schema.String) },
   FailedActionFollow: { id: Schema.String, epoch: Schema.Number, generation: Schema.Number, ids: Schema.Array(Schema.String) },
@@ -500,26 +500,26 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const menu = TourDecision.updatedDraftMenu(value, actionsOf(model).entries.length === 0)
       return {
         model: ModelWrite.draftWrite(model, actionsOf(model), value, menu.slash),
-        ...(menu.load ? { commands: [LoadActions({ flow: "", ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] } : {}),
+        ...(menu.load ? { commands: [LoadActions({ flow: "", epoch: actionsOf(model).epoch ?? 0 })] } : {}),
       }
     },
-    ClickedActions: () => runActions(model, ModelDecision.clickedActions(actionScreen(model), actionsOf(model).entries.length !== 0, actionsOf(model).epoch ?? null)),
+    ClickedActions: () => runActions(model, ModelDecision.clickedActions(actionScreen(model), actionsOf(model).entries.length !== 0, actionsOf(model).epoch ?? 0)),
     MaximizedActions: () => runActions(model, ModelDecision.maximizedActions(actionScreen(model))),
-    SelectedAction: ({ name }) => runActions(model, ModelDecision.selectedAction(actionScreen(model), name, actionsOf(model).epoch ?? null)),
+    SelectedAction: ({ name }) => runActions(model, ModelDecision.selectedAction(actionScreen(model), name, actionsOf(model).epoch ?? 0)),
     SelectedActionStep: ({ key }) => ({ model: ModelWrite.actionStepWrite(model, actionsOf(model), key) }),
     SelectedRun: ({ id, flow }) => ({ model: ModelWrite.actionSelectedWrite(model, actionsOf(model), ModelDecision.selectedRun(runSelection(model), id, flow)) }),
-    LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionsLoadedWrite(model, { ...actionsOf(model), disconnected: ActionFollow.settled(actionsOf(model).disconnected ?? [], runs), stoppedFollows: ActionFollow.settled(actionsOf(model).stoppedFollows ?? [], runs) }, entries, commands, mergeRuns(actionsOf(model).runs, runs)) }),
+    LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionsLoadedWrite(model, { ...actionsOf(model), disconnected: ActionFollow.settled(actionsOf(model).disconnected ?? [], runs), stoppedFollows: ActionFollow.settled(actionsOf(model).stoppedFollows ?? [], runs) }, entries, commands, mergeRuns(actionsOf(model).runs, runs)) }),
     FailedActions: ({ code, epoch, op }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : runActions(model, ModelDecision.failedActions(actionScreen(model), code, op ?? "load")),
     UpdatedActionInput: ({ value }) => runActions(model, ModelDecision.updatedActionInput(actionScreen(model), value)),
     ClickedRunAction: () => launchAction(model, actionsOf(model).selected, "button"),
-    StartedAction: ({ run, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionStartedWrite(model, actionsOf(model), ModelDecision.followedRun(runSelection(model), run.id, run.flow), mergeRuns(actionsOf(model).runs, [run])), commands: [ClosePalette({ dock: true })] }),
+    StartedAction: ({ run, epoch }) => !ModelDecision.actionsEpochCurrent(epoch, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionStartedWrite(model, actionsOf(model), ModelDecision.followedRun(runSelection(model), run.id, run.flow), mergeRuns(actionsOf(model).runs, [run])), commands: [ClosePalette({ dock: true })] }),
     ChangedAction: ({ run }) => ({ model: ModelWrite.actionChangedWrite(model, actionsOf(model), mergeRuns(actionsOf(model).runs, [run]), ActionFollow.settled(actionsOf(model).disconnected ?? [], [run]), ActionFollow.settled(actionsOf(model).stoppedFollows ?? [], [run])) }),
     FollowedAction: ({ run, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: ModelWrite.actionFollowedWrite(model, actionsOf(model), mergeRuns(actionsOf(model).runs, [run]), ActionFollow.received(actionsOf(model).disconnected ?? [], run.id)) }),
     FailedActionFollow: ({ id, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: ModelWrite.actionFollowFailedWrite(model, actionsOf(model), ActionFollow.failed(actionsOf(model).disconnected ?? [], id, actionsOf(model).runs), ActionFollow.failed(actionsOf(model).stoppedFollows ?? [], id, actionsOf(model).runs)) }),
     ReconnectedActions: () => ({ model: ModelWrite.actionsReconnectedWrite(model, actionsOf(model), ActionFollow.reconnected(actionsOf(model).followGeneration ?? 0)) }),
     TickedActions: ({ at }) => ({ model: ModelWrite.actionClockWrite(model, actionsOf(model), ModelDecision.actionsClock(actionsOf(model).now ?? 0, at)) }),
     ClickedCancelAction: () => ({ model: ModelWrite.actionCancelWrite(model, actionsOf(model)), commands: [CancelAction({ id: actionsOf(model).run })] }),
-    RetriedActions: () => runActions(model, ModelDecision.retriedActions(actionScreen(model), actionsOf(model).epoch ?? null)),
+    RetriedActions: () => runActions(model, ModelDecision.retriedActions(actionScreen(model), actionsOf(model).epoch ?? 0)),
     MovedSlash: ({ delta }) => {
       const menu = completions(model)
       return { model: ModelWrite.highlightWrite(model, actionsOf(model), ModelDecision.slashHighlight(actionsOf(model).highlight, delta, menu.length)) }
@@ -645,7 +645,7 @@ function actionFollowCurrent(model: Model, epoch: number, generation: number, id
 function actionCommand(command: ModelDecision.ActionCommand) {
   switch (command.type) {
     case "FocusComposer": return FocusComposer({})
-    case "LoadActions": return LoadActions({ flow: command.flow, ...(command.epoch === null ? {} : { epoch: command.epoch }) })
+    case "LoadActions": return LoadActions({ flow: command.flow, epoch: command.epoch })
   }
 }
 
@@ -807,7 +807,7 @@ function launchAction(model: Model, name: string, door: "button" | "slash"): Upd
   const text = door === "slash" ? splitCommand(model.draft).rest : actions.input
   return {
     model: ModelWrite.launchWrite(model, actions),
-    commands: [RunAction({ name, text, door, ...(actions.epoch === undefined ? {} : { epoch: actions.epoch }), format: actions.commands.find((entry) => entry.name === name)!.input, ...(UpdateDecision.launchRetries(door === "button", actions.run) ? { retry: actions.run } : {}) })],
+    commands: [RunAction({ name, text, door, epoch: actions.epoch ?? 0, format: actions.commands.find((entry) => entry.name === name)!.input, ...(UpdateDecision.launchRetries(door === "button", actions.run) ? { retry: actions.run } : {}) })],
   }
 }
 
@@ -974,27 +974,27 @@ export const FocusWikiEditor = Command.define("FocusWikiEditor", {
 })
 
 export const LoadActions = Command.define("LoadActions", {
-  args: { flow: Schema.String, epoch: Schema.optionalKey(Schema.Number) }, messages: [Message.LoadedActions, Message.FailedActions],
+  args: { flow: Schema.String, epoch: Schema.Number }, messages: [Message.LoadedActions, Message.FailedActions],
   execute: effect ({ flow, epoch }) => {
     const actions = try Actions
     return (effect {
       const entries = try actions.list()
       const commands = try actions.commands()
       const runs = try actions.runs(flow)
-      return try message(() => Message.LoadedActions({ entries, commands, runs, ...(epoch === undefined ? {} : { epoch }) }))
-    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, ...(epoch === undefined ? {} : { epoch }) }))
+      return try message(() => Message.LoadedActions({ entries, commands, runs, epoch }))
+    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, epoch }))
   },
 })
 export const RunAction = Command.define("RunAction", {
-  args: { name: Schema.String, text: Schema.String, epoch: Schema.optionalKey(Schema.Number), door: Schema.Literals(["button", "slash"]), retry: Schema.optionalKey(Schema.String), format: Schema.optionalKey(Schema.Literals(["none", "text", "path", "json"])) }, messages: [Message.StartedAction, Message.FailedActions],
+  args: { name: Schema.String, text: Schema.String, epoch: Schema.Number, door: Schema.Literals(["button", "slash"]), retry: Schema.optionalKey(Schema.String), format: Schema.optionalKey(Schema.Literals(["none", "text", "path", "json"])) }, messages: [Message.StartedAction, Message.FailedActions],
   execute: effect ({ name, text, door, retry, format, epoch }) => {
     const actions = try Actions
     return (effect {
       const input = format === "json" ? (text.trim() === "" ? {} : try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(text), () => new ActionFailure({ code: "input" }))) : { text }
       const id = try (retry === undefined ? actions.start(name, input, door) : actions.rerun(retry))
       const run = try actions.read(id)
-      return try message(() => Message.StartedAction({ run, ...(epoch === undefined ? {} : { epoch }) }))
-    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, op: "run", ...(epoch === undefined ? {} : { epoch }) }))
+      return try message(() => Message.StartedAction({ run, epoch }))
+    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, op: "run", epoch }))
   },
 })
 export const ReadAction = Command.define("ReadAction", {

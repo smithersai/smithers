@@ -340,7 +340,7 @@ export interface ActionScreen {
 }
 export type ActionCommand =
   | { readonly type: "FocusComposer" }
-  | { readonly type: "LoadActions"; readonly flow: string; readonly epoch: number | null }
+  | { readonly type: "LoadActions"; readonly flow: string; readonly epoch: number }
 export interface ActionStep { readonly state: ActionScreen; readonly commands: ReadonlyArray<ActionCommand> }
 
 /** The panel button closes an open panel and gives focus back, or opens it and loads the selected flow; empty lists show loading. */
@@ -349,7 +349,7 @@ export interface ActionStep { readonly state: ActionScreen; readonly commands: R
 //@ ensures state.open ==> \result.commands == [{ type: "FocusComposer" }]
 //@ ensures !state.open ==> \result.state == { ...state, open: true, loading: !loaded }
 //@ ensures !state.open ==> \result.commands == [{ type: "LoadActions", flow: state.selected, epoch: epoch }]
-export function clickedActions(state: ActionScreen, loaded: boolean, epoch: number | null): ActionStep {
+export function clickedActions(state: ActionScreen, loaded: boolean, epoch: number): ActionStep {
   if (state.open) return { state: { ...state, open: false, maximized: false }, commands: [{ type: "FocusComposer" }] }
   return { state: { ...state, open: true, loading: !loaded }, commands: [{ type: "LoadActions", flow: state.selected, epoch }] }
 }
@@ -366,7 +366,7 @@ export function maximizedActions(state: ActionScreen): ActionStep {
 //@ verify
 //@ ensures \result.state == { ...state, selected: name, run: "", loading: true, error: "" }
 //@ ensures \result.commands == [{ type: "LoadActions", flow: name, epoch: epoch }]
-export function selectedAction(state: ActionScreen, name: string, epoch: number | null): ActionStep {
+export function selectedAction(state: ActionScreen, name: string, epoch: number): ActionStep {
   return { state: { ...state, selected: name, run: "", loading: true, error: "" }, commands: [{ type: "LoadActions", flow: name, epoch }] }
 }
 
@@ -382,7 +382,7 @@ export function updatedActionInput(state: ActionScreen, value: string): ActionSt
 //@ verify
 //@ ensures \result.state == { ...state, loading: true, error: "" }
 //@ ensures \result.commands == [{ type: "LoadActions", flow: state.selected, epoch: epoch }]
-export function retriedActions(state: ActionScreen, epoch: number | null): ActionStep {
+export function retriedActions(state: ActionScreen, epoch: number): ActionStep {
   return { state: { ...state, loading: true, error: "" }, commands: [{ type: "LoadActions", flow: state.selected, epoch }] }
 }
 

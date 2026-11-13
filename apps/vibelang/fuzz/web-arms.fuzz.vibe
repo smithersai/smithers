@@ -69,7 +69,7 @@ const SCENARIOS = [
   "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
   "control-tour", "read-action", "actions-faulty-epoch", "draft-link", "theatre-keys", "auto-tour", "tour-events",
   "wiki-unlisted", "wiki-unwritten", "sign-in-mock", "wiki-link",
-  "end-tour", "run-without-epoch", "issue-count", "details-mock", "details-faulty",
+  "end-tour", "run-epoch", "issue-count", "details-mock", "details-faulty",
   "sandbox-poll-unreachable", "open-wiki", "run-json-blank", "people-faulty",
 ] as const
 
@@ -380,11 +380,11 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       }
       return same(answers, ["FocusedPrompt", "FocusedPrompt", "FailedEndTour"])
     }
-    case "run-without-epoch": {
+    case "run-epoch": {
       provide backend("mock", "maintainer") {
-        const got = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button" }))
+        const got = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: 0 }))
         const epoched = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: input.number }))
-        return got._tag === "StartedAction" && !("epoch" in got) && epoched._tag === "StartedAction" && epoched.epoch === input.number
+        return got._tag === "StartedAction" && got.epoch === 0 && epoched._tag === "StartedAction" && epoched.epoch === input.number
       }
     }
     case "issue-count": {
@@ -421,8 +421,8 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
     }
     case "run-json-blank": {
       provide backend("mock", "maintainer") {
-        const blank = try answer(() => RunAction({ name: "vibelang/Post", text: " \n", door: "button", format: "json" }))
-        const broken = try answer(() => RunAction({ name: "vibelang/Post", text: "{", door: "button", format: "json" }))
+        const blank = try answer(() => RunAction({ name: "vibelang/Post", text: " \n", door: "button", format: "json", epoch: 0 }))
+        const broken = try answer(() => RunAction({ name: "vibelang/Post", text: "{", door: "button", format: "json", epoch: 0 }))
         return blank._tag === "StartedAction" && broken._tag === "FailedActions" && broken.code === "input"
       }
     }

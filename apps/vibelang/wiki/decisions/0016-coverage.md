@@ -3282,6 +3282,25 @@ offers `/post`, a contributor's command the late list holds. It closes `LoadedAc
 A first version released the held list when the viewer's list answered; with the guard removed it still passed,
 because the late list reached the page first and the viewer's replaced it. Releasing from the page orders the two.
 
+`held-start` and `held-start-failed` (same module) hold the first run start until the page releases it; the start
+itself begins only then, so a list the page loads meanwhile holds no run of it. `e2e/late-start.spec.ts` presses Run on
+Tour, visits as maintainer, releases the start, and checks that the old role's run joins no list (`StartedAction`,
+`main.vibe` 515) and that its failure shows no error (`FailedActions`, 512); then Run again shows exactly one run, so
+the new role can still start one. With both guards removed both journeys fail.
+
+The failure journey found a bug: a page whose role had never changed holds no actions epoch, so its Run, Retry,
+Select and slash-menu loads sent none, and `FailedActions` without an epoch applies under any role. A start that
+failed after the first role change showed "Couldn't start the run." to the new role. Every load and start now carries
+`epoch ?? 0`, `LoadedActions` and `StartedAction` require it, and the epoch-less paths are deleted. Only `ReadAction`
+and `CancelAction` failures, which name one run, still carry none.
+
+`FollowedAction`'s and `FailedActionFollow`'s stale arms (517, 518) are not reachable from a page. The follow
+subscription's dependencies are exactly the guard's inputs (epoch, follow generation, watched ids), and Foldkit restarts
+it with `Stream.switchMap` (`foldkit/dist/runtime/subscriptionFibers.js`), which interrupts the old stream when they
+change. A stale follow message exists only when the old stream queued it after the changing message was queued and
+before it was applied, an order Effect's scheduler decides and no page action sets. `test/actionFollow.test.vibe`
+keeps both arms and their `?? []` defaults.
+
 `issueDefaultRole` waits on vl-coverage-core: the board post of 2026-11-13 17:45Z asks for `role` to be required in
 `IssuesState` (`src/core/issueSchemas.vibe`).
 

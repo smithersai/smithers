@@ -1,13 +1,18 @@
-// `held-actions` for the e2e host (e2e/runtime/entry.vibe): a command list that arrives after the person's role changed.
-import { Actions } from "../../src/actions/Actions.vibe"
+// `held-actions`, `held-start` and `held-start-failed` for the e2e host (e2e/runtime/entry.vibe): an actions answer
+// that arrives after the person's role changed.
+import { Actions, ActionFailure } from "../../src/actions/Actions.vibe"
 import { MockActions } from "../../src/actions/MockActions.vibe"
 import { Factory } from "../../src/core/Factory.vibe"
 
+/** Which answer waits: the first command list answered for a maintainer, or the first run start (then starts or fails). */
+export type Held = "commands" | "start" | "start-failed"
+
 /**
- * The product's MockActions, except that the first command list answered for a maintainer waits until `release`
- * runs, then `answered` runs. A page that changes role meanwhile receives that list after the new role's.
+ * The product's MockActions, except that one answer waits until `release` runs, then `answered` runs. A page that
+ * changes role meanwhile receives that answer under its old epoch. A held start begins only after `release`, so a
+ * list the page loads meanwhile does not hold its run; `answered` runs once the started run has been read.
  */
-export function heldActions(answered: () => void) {
+export function heldActions(holds: Held, answered: () => void) {
   const gate: { open: () => Promise<boolean> } = { open: () => Promise.resolve(false) }
   const layer = Layer.effect(Actions, effect {
     const real = try Actions
@@ -15,21 +20,40 @@ export function heldActions(answered: () => void) {
     const released = try Deferred.make<void>()
     gate.open = () => runPromise(Deferred.succeed(released, undefined))
     let held = false
+    let started = ""
     return {
       list: () => real.list(),
       runs: (flow) => real.runs(flow),
-      read: (id) => real.read(id),
+      read: effect (id) => {
+        const run = try real.read(id)
+        if (id === started) {
+          started = ""
+          try sync(answered)
+        }
+        return run
+      },
       follow: (id) => real.follow(id),
-      start: (flow, input, door) => real.start(flow, input, door),
+      start: effect (flow, input, door) => {
+        if (holds === "commands" || held) return try real.start(flow, input, door)
+        held = true
+        try Deferred.await(released)
+        if (holds === "start-failed") {
+          try sync(answered)
+          throw new ActionFailure({ code: "unavailable" })
+        }
+        const id = try real.start(flow, input, door)
+        started = id
+        return id
+      },
       command: (text, door) => door === undefined ? real.command(text) : real.command(text, door),
       rerun: (id) => real.rerun(id),
       cancel: (id) => real.cancel(id),
       commands: effect () => {
         const role = (try Effect.orDie(factory.accounts.current())).role
-        const holds = !held && role === "maintainer"
-        if (holds) held = true
+        const holdsList = holds === "commands" && !held && role === "maintainer"
+        if (holdsList) held = true
         const commands = try real.commands()
-        if (holds) {
+        if (holdsList) {
           try Deferred.await(released)
           try sync(answered)
         }
