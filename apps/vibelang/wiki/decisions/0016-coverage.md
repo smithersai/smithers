@@ -3210,3 +3210,19 @@ action arm and `launchAction`'s slash text. Two classes of the remaining arms ha
 | A response to a pane the page never opened | `IssuesLoaded` and `IssuesFailed`'s `model.issues ?? initialIssues` (lines 401, 416) | Every `LoadIssues` sender (`init` with `openIssues`, `OpenIssueCard`, `ClickedIssues`) writes `model.issues` first, and no update clears it. The fuzz targets that send any Message in any Model (`fuzz/pane-messages.fuzz.vibe`) reach them. |
 | A role-less issue answer | `?? IssueDecision.issueDefaultRole(...)` (lines 384, 1449, 1461) | Both hosts answer with `role` (session 31's `issueDecision` table). |
 
+## Replies that arrive after the person moved on (vl-coverage, session 32, 2026-11-13)
+
+`held-details` (`test/support/FaultyFactory.vibe`) runs live mode, holds the first issue's details read until the next
+details read has answered, then fails it. `e2e/late-details.spec.ts` opens #42, goes back, opens #38, and checks that
+#42's late failure shows no error on #38. It closes `IssueDetailsFailed`'s stale arm (`main.vibe` 415). The journey
+waits on `faulted` in the page's snapshot, then two frames, before its check: no timer.
+
+`IssueDetailsLoaded`'s stale arm (414) has no browser consequence: a details answer is the whole projection, so a late
+one for #42 carries the same items #38 shows, and a journey asserting on it would pass with or without the guard. A
+write between the two reads would make it visible, but live mode's only sign-in leaves the page
+(`e2e/chat-paths.spec.ts`), so the browser has no live role that may write. The unit gate keeps it
+(`ModelDecision.issueDetailsApply`).
+
+`issueDefaultRole` waits on vl-coverage-core: the board post of 2026-11-13 17:45Z asks for `role` to be required in
+`IssuesState` (`src/core/issueSchemas.vibe`).
+
