@@ -93,8 +93,9 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * and `issue-no-model` refuse it with that reason, as the live host does for a role it refuses, a closed issue and a
  * review with no model. `wiki-forbidden`, `wiki-conflict`,
  * `wiki-connect`, `wiki-fork` and `wiki-install` refuse the first wiki save with that reason, as the live wiki host does.
- * `post-empty`, `post-duplicate`, `post-not-replying` and `post-full` refuse the first post with that refusal, as the
- * sequencer answers another client's post.
+ * `post-empty` loses the first post's text on the way, and the mock's sequencer refuses it as empty; `post-duplicate`,
+ * `post-not-replying` and `post-full` refuse the first post with that refusal, as the sequencer answers another
+ * client's post.
  * `forged` inserts events that break the conversation's rules into the home and tour conversations (forgedEvents.vibe).
  * `wiki-repository` faults nothing: its fixture repository's Benchmarks page is the recorded GitHub copy (recordedWiki.vibe).
  * Each fault happens once.
@@ -177,6 +178,8 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         },
       } }),
       post: effect (conversation, clientId, name, text) => {
+        // `post-empty` sends the post with its text lost, so the mock's sequencer (decide.vibe) refuses it itself.
+        if (fault === "post-empty" && first(fault)) return try base.post(conversation, clientId, name, "")
         if (fault.startsWith("post-") && first(fault)) throw new Refused({ refusal: fault.slice("post-".length) as "empty" | "duplicate" | "not-replying" | "full" })
         if (fault === "refuse" && !observation.faulted) {
           try sync(() => { observation.faulted = true })

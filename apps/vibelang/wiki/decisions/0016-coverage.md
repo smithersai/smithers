@@ -164,6 +164,9 @@ per in-memory store, its flows have no step timeout, and `memoryMachines` cannot
 (session 5). No browser input reaches it. It moves to the Worker, which alone outlives a command fiber; the move changes
 `sandboxHostDecision.recoveryOf`'s proved contract, posted to vl-proveall3 on the platform board (2026-11-13 07:45Z).
 
+`fault=post-empty` now loses the post's text on the way instead of faking the refusal, so the mock's sequencer refuses
+it itself (`decide`'s empty post); the page shows "Empty message" and Retry as before (`e2e/recovery.spec.ts`).
+
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
 
 The lead's two decisions: move `decide`'s non-blank guarantee into the outline's schema, and make the session type
