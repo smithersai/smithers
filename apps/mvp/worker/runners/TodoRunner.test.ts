@@ -212,13 +212,13 @@ afterEach(async () => {
 const noModel = Model.make({ stream: () => Stream.die(new Error("Smithers' own agent was asked")) })
 
 /**
- * Everything a run needs, with a runner registered for the repository and the coding agent set. `run` sees every
+ * Everything a run needs, with a runner registered for the repository and the coding agent set. `onRun` sees every
  * command the attempt's machine runs; with `secrets`, SECRETS_KEY is set, so a run could open what its committer sealed;
  * `fleet`, the fleet's alerts.
  */
 const setup = async (
   options: {
-    readonly run?: (command: string) => number
+    readonly onRun?: (command: string) => void
     readonly secrets?: boolean
     readonly fleet?: Jobs.Alerts
     readonly capacity?: number
@@ -289,7 +289,7 @@ const setup = async (
   }
   const registration = Todo.registration(todoServices, TodoAgent.registration(local("agent"), db, Agent.layerSandbox))
     .pipe(
-      Layer.provide(machines(github, options.run).layer),
+      Layer.provide(machines(github, undefined, { onRun: options.onRun }).layer),
     )
   github.onPullOpened = (number) => void github.merge(number, "maya")
   const run = (start: Stack.AttemptStart, signal?: AbortSignal) =>
@@ -355,7 +355,7 @@ describe("a TODO on an external agent", { timeout: 240_000 }, () => {
     const subscription = CONNECTION_KINDS.find((kind) => kind.endsWith("_subscription"))!
     await seedKeys(runtime, maya.id, [{ kind: subscription }])
     const commands: Array<string> = []
-    const ctx = await setup({ secrets: true, run: (command) => (commands.push(command), 0) })
+    const ctx = await setup({ secrets: true, onRun: (command) => void commands.push(command) })
     const runner = startRunner(ctx.config)
     running.push(runner.child)
     const start = await commit("Note alpha", "add the line `alpha` to `NOTES.md`")

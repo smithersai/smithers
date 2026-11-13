@@ -1,110 +1,124 @@
-// Test support: the branches' machines a `todo` run's agent works on, as a test `Machines` service over an in-memory
-// working copy of each machine, checked out from the scripted GitHub on first use: the commit its checkout names, alone
-// and detached, as an attempt's machine checks out its base (worker/flows/TodoMachine.ts). The run's sandbox tools
-// reach it as they reach a branch's real machine (worker/flows/TodoAgent.ts); worker/flows/Todo.test.ts and
-// evals/todo-steer.eval.ts use it.
-import type { SandboxTools } from "@smthrs/sandbox"
+// TODO tests and evals use the real sandbox tools and command jobs over one scratch checkout per attempt.
+// GitHub is a scripted outside provider; each checkout starts at exactly the commit the attempt names.
+import { type SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer } from "effect"
-import { Base64 } from "effect/encoding"
+import { execFileSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
+import { onTestFinished } from "vitest"
 import { Machines } from "../branch/Machines.ts"
-import { instantCommands } from "./commands.ts"
+import type { SandboxBranch } from "../branch/Sandboxes.ts"
 import type { ScriptedGitHub } from "../github/test/scriptedGitHub.ts"
+import * as Box from "./box.ts"
+import { instantCommands } from "./commands.ts"
 
-/**
- * The machine: one in-memory working copy per branch machine, checked out on GitHub on first use: the commit its
- * checkout names (`SandboxBranch.branch`, a 40-hex id), none when GitHub has no such commit.
- * With `commands` set (a machine over real processes, worker/test/box.ts `machinesOn`), every command runs there instead,
- * as a tool call and as a job alike; the files stay in memory.
- */
+/** Real machines by default; `run` injects command failures only in explicitly unhappy-path tests. */
 export const machines = (
   github: ScriptedGitHub,
-  run: (command: string) => number = () => 0,
-  options: { readonly commands?: Machines["Service"] } = {},
+  run?: (command: string) => number,
+  options: { readonly onRun?: (command: string) => void; readonly checkout?: (branch: SandboxBranch) => string } = {},
 ) => {
-  const copies = new Map<string, { readonly initial: Map<string, string>; readonly files: Map<string, string> }>()
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-todo-machines-")))
+  const jobs = new Map<string, Effect.Effect<void, unknown>>()
+  let closing: Promise<void> | undefined
+  const close = () => closing ??= Effect.runPromise(
+    Effect.forEach([...jobs.values()], cancel => cancel, { discard: true }).pipe(
+      Effect.andThen(Effect.sync(() => rmSync(root, { recursive: true, force: true }))),
+    ),
+  )
+  onTestFinished(close)
+  const copies = new Map<string, { readonly workdir: string; readonly base: string; readonly initial: ReadonlyMap<string, string>; readonly bases: Map<string, string>; readonly service: Machines["Service"] }>()
   const calls: Array<{ readonly branchId: string; readonly branch: string; readonly ownerId: string; readonly callId: string; readonly tool: string }> = []
-  const commands = new Map<string, typeof SandboxTools.RunResult.Type>()
-  const real = options.commands
+  const results = new Map<string, typeof SandboxTools.RunResult.Type>()
+  const checkout = (branch: SandboxBranch) => {
+    const known = copies.get(branch.branchId)
+    if (known !== undefined) return known
+    const workdir = mkdtempSync(join(root, "checkout-"))
+    const git = (...args: Array<string>) => execFileSync("git", [
+      "-c", "user.name=Agent", "-c", "user.email=agent@example.com", "-c", "commit.gpgsign=false", ...args,
+    ], { cwd: workdir, encoding: "utf8" }).trim()
+    git("init", "-q")
+    const source = options.checkout?.(branch) ?? github.refs.get(branch.branch) ?? branch.branch
+    const initial = new Map(github.commits.get(source)?.files)
+    for (const [path, content] of initial) {
+      const target = join(workdir, path)
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, content)
+    }
+    git("add", "-f", ".")
+    git("commit", "-q", "--allow-empty", "-m", "base")
+    git("checkout", "-q", "--detach")
+    const base = git("rev-parse", "HEAD")
+    const box = Box.boxAt({ workdir, homes: mkdtempSync(join(root, "homes-")) })
+    const copy = { workdir, base, initial, bases: new Map([[source, base]]), service: Box.machinesOn(box.box) }
+    copies.set(branch.branchId, copy)
+    return copy
+  }
+  // A published GitHub commit may be compared before the checkout fetches it. Materialize its exact tree in
+  // this object's Git store through an independent index, without modifying the checkout or its real index.
+  const baseFor = (copy: ReturnType<typeof checkout>, sha: string) => {
+    const known = copy.bases.get(sha)
+    if (known !== undefined) return known
+    const source = github.commits.get(sha)
+    if (source === undefined) return sha
+    const scratch = mkdtempSync(join(root, "base-"))
+    const files = join(scratch, "files")
+    mkdirSync(files)
+    try {
+      for (const [path, content] of source.files) {
+        const target = join(files, path)
+        mkdirSync(dirname(target), { recursive: true })
+        writeFileSync(target, content)
+      }
+      const git = (...args: Array<string>) => execFileSync("git", [
+        "-c", "user.name=Agent", "-c", "user.email=agent@example.com", "-c", "commit.gpgsign=false",
+        "--git-dir", join(copy.workdir, ".git"), "--work-tree", files, ...args,
+      ], { cwd: files, env: { ...process.env, GIT_INDEX_FILE: join(scratch, "index") }, encoding: "utf8" }).trim()
+      git("add", "-f", "-A")
+      const base = git("commit-tree", git("write-tree"), "-m", "base")
+      copy.bases.set(sha, base)
+      return base
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  }
+  const record = (branch: SandboxBranch, ownerId: string, callId: string, tool: string) =>
+    calls.push({ branchId: branch.branchId, branch: branch.branch, ownerId, callId, tool })
   const service = Machines.of({
     tool: (branch, ownerId, callId, call) =>
       Effect.suspend(() => {
-        calls.push({ branchId: branch.branchId, branch: branch.branch, ownerId, callId, tool: call.tool })
-        if (call.tool === "run" && real !== undefined) return real.tool(branch, ownerId, callId, call)
-        let copy = copies.get(branch.branchId)
-        if (copy === undefined) {
-          const files = new Map(github.commits.get(branch.branch)?.files)
-          copy = { initial: new Map(files), files }
-          copies.set(branch.branchId, copy)
+        record(branch, ownerId, callId, call.tool)
+        if (call.tool === "run") {
+          options.onRun?.(call.command)
+          if (run !== undefined) return Effect.map(instantCommands(run, undefined, results).start(call, callId).pipe(
+            Effect.andThen(instantCommands(run, undefined, results).collect(callId)),
+            Effect.orDie,
+          ), (result) => ({ result, generation: 1 }))
         }
-        const { initial, files } = copy
-        const done = (result: SandboxTools.Result) => Effect.succeed({ result, generation: 1 })
-        switch (call.tool) {
-          case "write":
-            files.set(call.path, call.content)
-            return done({ tool: "write", path: call.path, bytes: call.content.length })
-          case "read": {
-            const content = files.get(call.path)
-            if (content === undefined) {
-              return Effect.fail({ _tag: "@smthrs/sandbox/SandboxTools/ToolRefused", reason: "not_found" } as never)
-            }
-            return done({
-              tool: "read",
-              path: call.path,
-              content: call.encoding === "base64" ? Base64.encode(content) : content,
-              bytes: content.length,
-              truncated: false,
-            })
-          }
-          case "status": {
-            const paths = [...new Set([...initial.keys(), ...files.keys()])].sort()
-            const entries = paths.flatMap((path) => {
-              const before = initial.get(path)
-              const after = files.get(path)
-              if (before === after) return []
-              if (before === undefined) return [{ path, index: "?", worktree: "?" }]
-              if (after === undefined) return [{ path, index: " ", worktree: "D" }]
-              return [{ path, index: " ", worktree: "M" }]
-            })
-            // Detached at a commit, git names no branch.
-            return done({ tool: "status", branch: null, entries })
-          }
-          case "list": {
-            const prefix = call.path === undefined ? "" : `${call.path}/`
-            const names = [...files.keys()].filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length))
-              .filter((name) => !name.includes("/"))
-            return done({
-              tool: "list",
-              path: call.path ?? ".",
-              entries: names.map((name) => ({ name, kind: "file" as const, bytes: files.get(`${prefix}${name}`)!.length })),
-              truncated: false,
-            })
-          }
-          case "run": {
-            const exitCode = run(call.command)
-            return done({
-              tool: "run",
-              exitCode,
-              timedOut: false,
-              stdout: "",
-              stderr: "",
-              stdoutBytes: 0,
-              stderrBytes: 0,
-              truncated: false,
-            })
-          }
-          case "diff":
-            return done({ tool: "diff", diff: "", bytes: 0, truncated: false })
-        }
+        const copy = checkout(branch)
+        // The outside provider uses synthetic commit ids; the real checkout has the corresponding real base.
+        const local = call.tool === "status" && call.base !== undefined ? { ...call, base: baseFor(copy, call.base) } : call
+        return copy.service.tool(branch, ownerId, callId, local)
       }),
-    // The agent's commands run as `sandbox/Command` jobs: each starts once per key and finishes at once.
-    commands: (branch, ownerId, callId) =>
-      real?.commands(branch, ownerId, callId) ?? instantCommands(
-        run,
-        (key) => calls.push({ branchId: branch.branchId, branch: branch.branch, ownerId, callId: key, tool: "run" }),
-        commands,
-      ),
+    commands: (branch, ownerId, callId) => {
+      const started = (key: string, call: typeof SandboxTools.Run.Type) => {
+        record(branch, ownerId, key, "run")
+        options.onRun?.(call.command)
+      }
+      if (run !== undefined) return instantCommands(run, started, results)
+      const commands = checkout(branch).service.commands(branch, ownerId, callId)
+      return {
+        ...commands,
+        start: (call, key) => Effect.suspend(() => {
+          started(key, call)
+          // Reserve cleanup before the asynchronous start: a lost answer can still leave a detached process.
+          jobs.set(JSON.stringify([branch.branchId, ownerId, key]), commands.cancel(key))
+          return commands.start(call, key)
+        }),
+      }
+    },
     sleepIfIdle: () => Effect.die("the todo run never puts a machine to sleep"),
   })
-  return { calls, copies, service, layer: Layer.succeed(Machines, service) }
+  return { calls, copies, close, service, layer: Layer.succeed(Machines, service) }
 }
-

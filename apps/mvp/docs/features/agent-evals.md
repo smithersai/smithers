@@ -319,6 +319,8 @@ EVAL_ONLY=todo-lint EVAL_K=3 pnpm eval evals/todo-lint.eval.ts
 
 ## todo-steer
 
+The steer eval uses `worker/test/todoMachines.ts`: real sandbox tools and command jobs share one temporary checkout per attempt, seeded at its recorded base. Commands report their actual exits and output; file reads, writes, status and diff all see that checkout. Only explicitly unhappy-path unit tests inject command failures.
+
 `evals/todo-steer.eval.ts` holds the TODO agent to a person's steer (ruling TODO-3, [steering](runs.md#steering)): the TODO asks for one line that says a word and "Change nothing else", and while the agent's first turn is in flight the person asks for a second line, `steered <word>`, right after it. The real `todo` flow runs on the Node host's engine with the scripted GitHub and the real model; only the steer is scripted. Every trial must merge, and the merged README must hold the word on a line of its own with `steered <word>` on the next line (`evals/todoSteer.ts`, whitespace around a line aside): the steered line alone, either line inside other text, the two lines apart or in the other order fail the trial. Each trial's record keeps the merged README.
 
 ```sh

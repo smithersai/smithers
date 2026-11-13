@@ -20,6 +20,7 @@ import {
   Metric,
   Option,
   Scope,
+  Semaphore,
   Tracer,
 } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
@@ -45,7 +46,7 @@ import * as Repos from "../Repos.ts"
 import type { RepoUpstream } from "../RepoUpstream.ts"
 import { fixture, type GitHubRepository, type Scripted, scripted as makeScripted } from "./codeStorage.ts"
 import { GITHUB_API, type ScriptedGitHub, scriptedGitHub } from "./githubRest.ts"
-import { build, type Engine } from "./flowHost.ts"
+import { build, type Engine, type HostOptions } from "./flowHost.ts"
 import { signedIn, type testFile } from "./harness.ts"
 import { shapeRequest } from "./shapeRequest.ts"
 import { outsideWeb, type Page } from "./pages.ts"
@@ -167,6 +168,8 @@ export interface RepoHarnessOptions {
   readonly deadline?: Duration.Input
   /** Whether the Smithers GitHub App is installed on every repository Index asks about: not unless set. */
   readonly installed?: boolean
+  /** Injects an engine database outage; engine construction and storage remain real. */
+  readonly engineDatabaseGate?: HostOptions["databaseGate"]
   /**
    * GitHub's REST API as RepoApi's about route reaches it (`GITHUB_API_URL`, `https://api.github.com` unless the config
    * says otherwise): the scripted one (worker/test/githubRest.ts) unless set.
@@ -214,13 +217,20 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
 
   const scope = await Effect.runPromise(Scope.make())
   const fibers = new Map<string, Fiber.Fiber<unknown, unknown>>()
-  onTestFinished(async () => {
+  const launches: Array<string> = []
+  const engineSchemas: Array<string> = []
+  const close = async () => {
     await Effect.runPromise(Fiber.interruptAll([...fibers.values()]))
     await Effect.runPromise(Scope.close(scope, Exit.void))
-  })
+  }
+  onTestFinished(close)
 
   const budgets = await Effect.runPromise(observed(Repos.budgets))
   // The Node host's engine, built when the first clone starts, with few connections: a test file builds many.
+  // Hold initialization through the asynchronous build; a failed build releases the permit and can be retried.
+  const preparing = Semaphore.makeUnsafe(1)
+  // Reserve startup before reading its intent or waiting for initialization, through inserting the owned fiber.
+  const starting = Semaphore.makeUnsafe(1)
   let engine: { readonly context: Context.Context<FlowRuntime.FlowRuntime>; readonly engine: Engine } | undefined
   const engineFor = (client: CodeStorage.Client) =>
     Effect.gen(function* () {
@@ -240,11 +250,12 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
               ),
           installed: () => Effect.succeed(options.installed ?? false),
         })),
-        { maxConnections: 3 },
+        { maxConnections: 3, ...(options.engineDatabaseGate === undefined ? {} : { databaseGate: options.engineDatabaseGate }) },
       ).pipe(Effect.provideService(Scope.Scope, scope), Effect.orDie)
+      engineSchemas.push(built.engine.schema)
       engine = built
       return built
-    })
+    }).pipe(preparing.withPermits(1))
   // Each execution's Durable Object storage, by execution id. Like a deployed object's, it outlives a reset of the
   // database: `resetRepos` empties the tables and leaves these.
   const objects = new Map<string, ExecutionHost.Storage>()
@@ -264,8 +275,9 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
         if (fibers.has(start.executionId)) return
         const flows = Context.get((yield* engineFor(codeStorage)).context, FlowRuntime.FlowRuntime)
         const run = flows.execute(flow as never, { executionId: start.executionId, payload: start.payload as never })
+        launches.push(start.executionId)
         fibers.set(start.executionId, Effect.runFork(observed(run as Effect.Effect<unknown, unknown>)))
-      }),
+      }).pipe(starting.withPermits(1)),
   })
 
   const cache = await Effect.runPromise(
@@ -370,6 +382,7 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     })
 
   return {
+    close,
     origin,
     /** RepoApi as the browser reaches it: a full URL or a path on `origin`. */
     fetch,
@@ -406,9 +419,11 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
       for (const fiber of fibers.values()) await Effect.runPromise(Effect.exit(Fiber.join(fiber)))
     },
     /** The clone executions started, by execution id. */
-    started: () => [...fibers.keys()],
+    started: () => [...launches],
     /** The real engine schema, for asserting it belongs to this fixture database. */
     engineSchema: () => engine?.engine.schema,
+    /** Every engine actually built, retained so concurrent initialization cannot hide a leaked engine. */
+    engineSchemas: () => [...engineSchemas],
     /** Publishes `owner/name` on the scripted GitHub, clones it to the end, and answers its id and head commit. */
     seed: async (owner: string, name: string, repository: GitHubRepository = fixture()) => {
       scripted.publish(owner, name, repository)

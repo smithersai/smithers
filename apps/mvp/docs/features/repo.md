@@ -313,6 +313,7 @@ An [issues read](issues.md#sync) with stale sync state also awaits `github/Recon
 ## Tests
 
 | Test | Proves |
+| `worker/test/repos.test.ts` | concurrent cold launches share one real Node engine and start each execution once; every result remains readable; teardown drops the engine schema; a database outage releases initialization and launch permits so a later launch can recover |
 |---|---|
 | `worker/CloneCaps.test.ts` | a stranger's fourth reservation refuses before launch, a deployment Member's fourth succeeds, concurrent requests serialize, counts stay per person, failed repositories count, retaining a reservation works after a cap reduction or demotion, a takeover above the cap refuses, positive Config bounds, and content-free refusal records |
 | `worker/github/ReadToken.test.ts` | configured bot or App token, anonymous fallback and recovery, expiry refresh, a read that mints for itself while another read's mint is still in flight, and each mint's count and log by outcome without the token |

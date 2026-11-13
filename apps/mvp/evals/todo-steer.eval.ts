@@ -3,7 +3,7 @@ import { TestSchemas } from "@smthrs/database"
 // run's real agent works with the real model (the deployment's default, `CHAT_MODEL`, metered by the model endpoint as in
 // production) on a TODO that says "Change nothing else", and while its first turn is in flight the person asks it to add
 // a second line. A steer is a newer instruction than the TODO, so the merged pull request must carry both lines. The
-// run is the Node host's engine over Postgres, the GitHub is scripted and the branch's machine is in memory
+// run is the Node host's engine over Postgres, the GitHub is scripted and the branch's machine is a real scratch checkout
 // (worker/test/todoMachines.ts); the message is admitted to the run's queue through a journal of its own, as ChatApi's
 // steer route admits it. Nothing about the model is scripted.
 //
@@ -67,7 +67,7 @@ const trial = async (real: HostModel["Service"]): Promise<Trial> => {
   await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, pulls, pull_commits, reviews, runs, model_usage")
   const word = `w${Date.now().toString(36)}`
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
-  github.files.set("README.md", README)
+  github.push("main", { "README.md": README })
   github.onPullOpened = (number) => void github.merge(number, "maya")
   const machine = machines(github)
   const { services } = await githubServices(runtime, github)

@@ -1,8 +1,8 @@
 import { TestSchemas } from "@smthrs/database"
 // The `todo` run (worker/flows/Todo.ts, decision 0016's factory simplified) on the Node host's engine over this file's
-// schema of the compose Postgres (`pnpm db:up`), against the scripted GitHub on the `HttpClient` seam. Two stand-ins,
-// each a seam the run takes as an Effect service: the branch's machine is a test `Machines` over an in-memory working
-// copy of the branch it checks out, and the model behind the agent's `agent` seat is scripted, while its admission and
+// schema of the compose Postgres (`pnpm db:up`), against the scripted GitHub on the `HttpClient` seam. The providers
+// reach the run as Effect services: the branch's machine runs real sandbox tools and processes on a
+// scratch checkout, and the model behind the agent's `agent` seat is scripted, while its admission and
 // metering are the model endpoint's own (`ModelEndpoint.local`). The writer, the engine, the GitHub client, the tokens
 // and the projection are the real ones.
 import { Agent } from "@smthrs/agent"
@@ -159,6 +159,7 @@ const setup = async (
     readonly cancel?: (executionId: string) => Effect.Effect<void, unknown>
     readonly model?: Model.Model
     readonly run?: (command: string) => number
+    readonly onRun?: (command: string) => void
     readonly schema?: string
     /** The people's own models' provider: the run's committer's model answers its agent. */
     readonly personal?: typeof globalThis.fetch
@@ -167,7 +168,8 @@ const setup = async (
   } = {},
 ) => {
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
-  const machine = machines(github, options.run)
+  github.push("main", { ".smithers/checks/readme.sh": "test -s README.md\n" })
+  const machine = machines(github, options.run, { onRun: options.onRun })
   const { services } = await githubServices(runtime, github)
   const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
   const todoServices: Todo.Services<unknown, never> = {
@@ -208,13 +210,9 @@ describe("the todo run", { timeout: 120_000 }, () => {
     // What GitHub holds while the agent runs its check: the branch exists only once Publish makes it (ruling GH-11).
     let refsWhileWorking: ReadonlyArray<string> = []
     const ctx: Awaited<ReturnType<typeof setup>> = await setup({
-      run: () => {
-        refsWhileWorking = [...ctx.github.refs.keys()]
-        return 0
-      },
+      onRun: () => { refsWhileWorking = [...ctx.github.refs.keys()] },
     })
     const issue = ctx.github.open("README needs a line", "Please add one.")
-    ctx.github.files.set(".smithers/checks/readme.sh", "test -s README.md\n")
     const start = (await commit("Add a line to README", "Add a line to the README.", issue.number))!
     const second = await commit("Second", "Then this.")
     expect(second).toBeUndefined()
@@ -455,12 +453,12 @@ describe("the todo run", { timeout: 120_000 }, () => {
       ])
       const commands: Array<string> = []
       const provider = scriptedProvider({ text: "unused" })
-      const ctx = await setup({ personal: provider.fetch, secrets: true, run: (command) => (commands.push(command), 0) })
+      const ctx = await setup({ personal: provider.fetch, secrets: true, run: () => 1, onRun: (command) => void commands.push(command) })
       const start = (await commit("Mine", "Change nothing."))!
       const ran = await ctx.run(start)
-      // The scripted box writes nothing, so the run reaches `todo/Collect` and stops there.
+      // The injected command failure stops the vendor agent before it writes anything.
       expect(ran.exit).toEqual(Exit.succeed({ state: "failed" }))
-      expect(await todo()).toMatchObject({ state: "failed", failure: "empty_change" })
+      expect(await todo()).toMatchObject({ state: "failed", failure: "implement" })
       expect(commands.some((command) => command.includes("claude -p --output-format json"))).toBe(true)
       expect(commands.join("\n")).not.toContain("SENTINEL")
       expect(provider.seen).toEqual([])
@@ -475,10 +473,10 @@ describe("the todo run", { timeout: 120_000 }, () => {
       ))
       await seedKeys(runtime, maya.id, [{ kind: "claude_subscription", key: "sk-ant-oat01-SENTINEL-claude-token" }])
       const commands: Array<string> = []
-      const ctx = await setup({ secrets: true, run: (command) => (commands.push(command), 0) })
+      const ctx = await setup({ secrets: true, run: () => 1, onRun: (command) => void commands.push(command) })
       const start = (await commit("Mine", "Change nothing."))!
       expect((await ctx.run(start)).exit).toEqual(Exit.succeed({ state: "failed" }))
-      expect(await todo()).toMatchObject({ state: "failed", failure: "empty_change" })
+      expect(await todo()).toMatchObject({ state: "failed", failure: "implement" })
       expect(commands.some((command) => command.includes("claude -p --output-format json"))).toBe(true)
       expect(ctx.agent.requests).toEqual([])
       expect(await sql(runtime, "SELECT count(*)::int AS n FROM agent_jobs")).toEqual([{ n: 0 }])
@@ -486,7 +484,7 @@ describe("the todo run", { timeout: 120_000 }, () => {
 
     test("gets the agent's refusal as the TODO's failure when it exits non-zero", async () => {
       await seedKeys(runtime, maya.id, [{ kind: "claude_subscription", key: "sk-ant-oat01-SENTINEL-claude-token" }])
-      const ctx = await setup({ secrets: true, run: (command) => command.includes("claude -p") ? 1 : 0 })
+      const ctx = await setup({ secrets: true, run: () => 1 })
       const start = (await commit("Mine", "Change nothing."))!
       expect((await ctx.run(start)).exit).toEqual(Exit.succeed({ state: "failed" }))
       expect(await todo()).toMatchObject({ state: "failed", failure: "implement" })
@@ -628,7 +626,7 @@ describe("the todo run on a host that dies mid-implement", { timeout: 180_000 },
 
   test("a new engine resumes the agent where it stopped: no answered frame is asked again, and each tool call keeps its id", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
-    github.files.set(".smithers/checks/readme.sh", "test -s README.md\n")
+    github.push("main", { ".smithers/checks/readme.sh": "test -s README.md\n" })
     github.onPullOpened = (number) => void github.merge(number, "maya")
     const machine = machines(github)
     const { services } = await githubServices(runtime, github)
@@ -711,11 +709,7 @@ describe("the todo run on a host that dies mid-implement", { timeout: 180_000 },
   test("a command the agent runs outlives the engine that started it: it runs once, and the agent reads its result", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     github.onPullOpened = (number) => void github.merge(number, "maya")
-    // The attempt's commands run on a real box (a scratch checkout, real processes); its files stay in memory.
-    const workdir = join(boxes, `todo-${crypto.randomUUID()}`)
-    mkdirSync(workdir)
-    const box = Box.boxAt({ workdir, homes: `${workdir}-homes` })
-    const machine = machines(github, undefined, { commands: Box.machinesOn(box.box) })
+    const machine = machines(github)
     const { services } = await githubServices(runtime, github)
     const todoServices: Todo.Services<unknown, never> = {
       database: services.database,
@@ -768,6 +762,8 @@ describe("the todo run on a host that dies mid-implement", { timeout: 180_000 },
     const first = await engine()
     const running = Effect.runFork(Effect.exit(first.execute))
     // The host dies while the command runs: its connections cut, its fibers stopped, its exec sessions closed.
+    await expect.poll(() => machine.copies.has(TodoMachine.machineId(start.attemptId)), { timeout: 60_000 }).toBe(true)
+    const workdir = machine.copies.get(TodoMachine.machineId(start.attemptId))!.workdir
     await expect.poll(() => existsSync(join(workdir, "started")), { interval: 10, timeout: 60_000 }).toBe(true)
     expect(existsSync(join(workdir, "finished"))).toBe(false)
     await runtime.runPromise(
@@ -1146,7 +1142,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     const machine = TodoMachine.machineOf({ attemptId: start.attemptId, repoId: start.repoId, checkout: base, ownerId: maya.id })
     const tools = Context.get(await Effect.runPromise(Layer.build(ctx.machine.layer).pipe(Effect.scoped)), Machines)
     await Effect.runPromise(tools.tool(machine.branch, maya.id, "w", { tool: "write", path: "NEW.md", content: "n\n" }))
-    ctx.machine.copies.get(machine.branch.branchId)!.files.delete("README.md")
+    rmSync(join(ctx.machine.copies.get(machine.branch.branchId)!.workdir, "README.md"))
     const collected = await step(ctx, (steps) => steps.collect({ request: start, begun: begun(ctx, "main") }))
     expect(collected._tag === "Success" && collected.value).toEqual({
       additions: [{ path: "NEW.md", contents: btoa("n\n") }],
@@ -1155,12 +1151,12 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     // Collect reads the attempt's machine, checked out at the base commit: the branch isn't on GitHub yet.
     expect(new Set(ctx.machine.calls.map((call) => `${call.branchId} ${call.branch}`)))
       .toEqual(new Set([`${TodoMachine.machineId(start.attemptId)} ${base}`]))
-    const files = ctx.machine.copies.get(machine.branch.branchId)!.files
-    for (let index = 0; index < Todo.MAX_FILES; index++) files.set(`f${index}.md`, "x")
+    const workdir = ctx.machine.copies.get(machine.branch.branchId)!.workdir
+    for (let index = 0; index < Todo.MAX_FILES; index++) writeFileSync(join(workdir, `f${index}.md`), "x")
     expect(failure(await step(ctx, (steps) => steps.collect({ request: start, begun: begun(ctx, "main") }))))
       .toMatchObject({ failure: "implement" })
-    for (let index = 0; index < Todo.MAX_FILES; index++) files.delete(`f${index}.md`)
-    files.set("BIG.md", "x".repeat(Todo.MAX_CHANGE_BYTES + 1))
+    for (let index = 0; index < Todo.MAX_FILES; index++) rmSync(join(workdir, `f${index}.md`))
+    writeFileSync(join(workdir, "BIG.md"), "x".repeat(Todo.MAX_CHANGE_BYTES + 1))
     expect(failure(await step(ctx, (steps) => steps.collect({ request: start, begun: begun(ctx, "main") }))))
       .toMatchObject({ failure: "implement" })
   })
@@ -1741,7 +1737,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     // Merged forward, never rebased: T2's own commit, then the merge of T1's squash.
     expect(ctx.github.commits.get(head)!.parents).toEqual([published.headSha, squash])
     expect(ctx.github.commits.get(head)!.message).toBe("Merge T1 from main into T2")
-    expect([...ctx.github.tree(begun.branch).keys()].sort()).toEqual(["ONE.md", "README.md", "TWO.md"])
+    expect([...ctx.github.tree(begun.branch).keys()].sort()).toEqual([".smithers/checks/readme.sh", "ONE.md", "README.md", "TWO.md"])
     expect(await todo(2)).toMatchObject({ state: "in_review", headSha: head })
     expect(await sql(runtime, `SELECT pr_draft AS "draft" FROM todos WHERE number = 2`)).toEqual([{ draft: false }])
     // The new head's checks start, the review reading from T1's merge: T2's change alone.
@@ -1754,7 +1750,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     ctx.github.merge(published.prNumber, "maya")
     const merged = await step(ctx, (steps) => steps.await({ request: start2, begun, published }))
     expect(merged._tag === "Success" && merged.value).toMatchObject({ state: "merged" })
-    expect([...ctx.github.tree("main").keys()].sort()).toEqual(["ONE.md", "README.md", "TWO.md"])
+    expect([...ctx.github.tree("main").keys()].sort()).toEqual([".smithers/checks/readme.sh", "ONE.md", "README.md", "TWO.md"])
   })
 
   test("stacked: a restack cut short does the rest again, each part once", async () => {

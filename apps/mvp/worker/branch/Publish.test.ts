@@ -1,6 +1,6 @@
 import { TestSchemas } from "@smthrs/database"
 // Publish and Update branch (worker/branch/Publish.ts, docs/features/branch-publish.md) on the Node host against the
-// scripted GitHub and a test `Machines` over an in-memory working copy, both injected Effect services: a write admitted
+// scripted GitHub and real sandbox tools over a scratch checkout, both injected Effect services: a write admitted
 // as the writes route admits it, then `branch/Publish` takes the branch's working copy to GitHub as the person who
 // pressed, and `branch/Update` brings the published branch up to date with its base, or settles why not.
 import * as Pg from "@effect/sql-pg"
@@ -8,6 +8,8 @@ import { GitHub } from "@smthrs/integrations"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
+import { rmSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -21,7 +23,7 @@ import { admit, database, keys, REPOSITORY, reset, services, signedIn, sql, writ
 import { BOT_LOGIN, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import { machines } from "../test/todoMachines.ts"
+import { machines as todoMachines } from "../test/todoMachines.ts"
 import * as Conversations from "./Conversations.ts"
 import { Forge } from "./Forge.ts"
 import { Machines } from "./Machines.ts"
@@ -34,6 +36,10 @@ beforeEach(async () => {
 })
 
 type Built = Awaited<ReturnType<typeof services>>["services"]
+const machines = (github: ScriptedGitHub) => {
+  const base = github.refs.get("main")!
+  return todoMachines(github, undefined, { checkout: () => base })
+}
 type Machine = ReturnType<typeof machines>
 
 /** Maya, signed in, owns the Smithers-only branch `try-1`, made at main's head (or `baseSha`) in the ephemeral namespace. */
@@ -50,10 +56,7 @@ const tracked = async (
 }
 
 /** The branch's working copy, checked out at its base (main's head when first used): `files` written, as Save writes them. */
-const edit = async (machine: Machine, branchId: string, ownerId: string, files: Readonly<Record<string, string>>, github?: ScriptedGitHub) => {
-  if (github !== undefined && !machine.copies.has(branchId)) {
-    machine.copies.set(branchId, { initial: new Map(github.tree("main")), files: new Map(github.tree("main")) })
-  }
+const edit = async (machine: Machine, branchId: string, ownerId: string, files: Readonly<Record<string, string>>) => {
   const tools = Context.get(await Effect.runPromise(Layer.build(machine.layer).pipe(Effect.scoped)), Machines)
   for (const [path, content] of Object.entries(files)) {
     await Effect.runPromise(tools.tool(
@@ -105,7 +108,7 @@ const publication = async (branchId: string) =>
 const published = async (github: ScriptedGitHub) => {
   const branch = await tracked(github)
   const machine = machines(github)
-  await edit(machine, branch.branchId, branch.maya.personId, { "README.md": "# Widgets\n\nA line\n" }, github)
+  await edit(machine, branch.branchId, branch.maya.personId, { "README.md": "# Widgets\n\nA line\n" })
   const writeId = await publishing(branch.maya, branch.branchId)
   const { services: built } = await services(runtime, github)
   const settled = await send(built, machine, writeId)
@@ -312,9 +315,11 @@ describe("branch/Publish", { timeout: 60_000 }, () => {
 
   test("a base GitHub doesn't have is refused base_missing, before any branch", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
-    const { maya, branchId } = await tracked(github, { baseSha: "f".repeat(40) })
+    const { maya, branchId, baseSha } = await tracked(github)
     const machine = machines(github)
     await edit(machine, branchId, maya.personId, { "README.md": "x\n" })
+    // The checkout already has its base; the outside provider no longer serves that commit.
+    github.commits.delete(baseSha)
     const writeId = await publishing(maya, branchId)
     const { services: built } = await services(runtime, github)
     await send(built, machine, writeId)
@@ -381,13 +386,13 @@ describe("branch/Publish", { timeout: 60_000 }, () => {
     await edit(machine, branchId, maya.personId, { "docs/new.md": "new\n" })
     await send(built, machine, await publishing(maya, branchId))
     const copy = machine.copies.get(branchId)!
-    copy.files.set("README.md", copy.initial.get("README.md")!)
-    copy.files.delete("docs/new.md")
+    writeFileSync(join(copy.workdir, "README.md"), copy.initial.get("README.md")!)
+    rmSync(join(copy.workdir, "docs/new.md"))
     const back = await publishing(maya, branchId)
     expect((await send(built, machine, back)).status).toBe("done")
     expect([github.tree(ref).get("README.md"), github.tree(ref).has("docs/new.md")]).toEqual([github.tree("main").get("README.md"), false])
     const deleted = await publishing(maya, branchId)
-    copy.files.delete("README.md")
+    rmSync(join(copy.workdir, "README.md"))
     expect((await send(built, machine, deleted)).status).toBe("done")
     expect(github.tree(ref).has("README.md")).toBe(false)
     const again = await publishing(maya, branchId)
@@ -405,7 +410,7 @@ describe("branch/Publish", { timeout: 60_000 }, () => {
     expect(await writeRow(runtime, conflicted)).toMatchObject({ status: "refused", failure: "conflict" })
     expect(github.refs.get(ref)).toBe(theirs)
     const copy = machine.copies.get(branchId)!
-    copy.files.set("README.md", "# Widgets\n\nA line\n")
+    writeFileSync(join(copy.workdir, "README.md"), "# Widgets\n\nA line\n")
     await edit(machine, branchId, maya.personId, { "OTHER.md": "mine\n" })
     const other = await publishing(maya, branchId)
     expect((await send(built, machine, other)).status).toBe("done")
@@ -487,7 +492,7 @@ describe("branch/Publish", { timeout: 60_000 }, () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const { built, machine, maya, branchId } = await published(github)
     const copy = machine.copies.get(branchId)!
-    copy.files.set("README.md", copy.initial.get("README.md")!)
+    writeFileSync(join(copy.workdir, "README.md"), copy.initial.get("README.md")!)
     const real = Context.get(await Effect.runPromise(Layer.build(machine.layer).pipe(Effect.scoped)), Machines)
     const reading = (answer: (call: Parameters<Machines["Service"]["tool"]>[3]) => ReturnType<Machines["Service"]["tool"]> | undefined) =>
       Layer.succeed(Machines, Machines.of({ ...real, tool: (branch, owner, callId, call) => answer(call) ?? real.tool(branch, owner, callId, call) }))
@@ -510,7 +515,7 @@ describe("branch/Publish", { timeout: 60_000 }, () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const { built, machine, maya, branchId } = await published(github)
     const copy = machine.copies.get(branchId)!
-    copy.files.set("README.md", copy.initial.get("README.md")!)
+    writeFileSync(join(copy.workdir, "README.md"), copy.initial.get("README.md")!)
     const real = Context.get(await Effect.runPromise(Layer.build(machine.layer).pipe(Effect.scoped)), Machines)
     const reads: Array<Parameters<Machines["Service"]["tool"]>[3]> = []
     const recording = Layer.succeed(Machines, Machines.of({
