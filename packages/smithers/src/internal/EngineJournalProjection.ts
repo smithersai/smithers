@@ -236,14 +236,19 @@ export const make = (options: Options) =>
         })
       )
       const seen = new Set<string>()
+      // Rounds a lineage read of this catch-up already returned. One read
+      // names every round of a lineage, so its members are not asked again:
+      // asking each of N rounds for all N made a catch-up cost N squared rows.
+      const listed = new Set<string>()
       const pending = [options.executionId]
       for (let index = 0; index < pending.length; index++) {
         const executionId = pending[index]!
         if (seen.has(executionId)) continue
         seen.add(executionId)
         yield* readRun(executionId)
-        if (options.runLineage !== undefined) {
-          const rounds = yield* options.runLineage(executionId)
+        if (options.runLineage !== undefined && !listed.has(executionId)) {
+          // Membership only: the rounds' saved state is never read here.
+          const rounds = yield* options.runLineage(executionId, { includeState: false })
           const member = rounds.find((row) => row.runId === executionId)
           if (member === undefined) {
             return yield* Effect.fail(
@@ -260,6 +265,7 @@ export const make = (options: Options) =>
                 new Journal.JournalError({ code: "decode_failed", message: "Native lineage returned a foreign member" })
               )
             }
+            listed.add(round.runId)
             if (!seen.has(round.runId)) pending.push(round.runId)
           }
         }

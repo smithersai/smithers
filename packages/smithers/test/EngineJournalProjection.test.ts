@@ -167,6 +167,67 @@ describe("private engine journal projection", () => {
         .toEqual(first.entries)
     }))))
 
+  it("reads a lineage once per catch-up, without the rounds' saved state, however many rounds it has", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      const state = JSON.stringify({ version: 1, flowName: "agent/run", payload: { large: "x".repeat(4_000) } })
+      yield* f.runs.create("native-root", state)
+      yield* emit(f.engineJournal, "native-root", { round: 0 })
+      const reads: Array<{ readonly runId: string; readonly options: unknown; readonly withState: boolean }> = []
+      const runLineage = ((runId: string, options?: { readonly includeState: false }) =>
+        Effect.tap(
+          options === undefined ? f.runs.lineage(runId) : f.runs.lineage(runId, options),
+          (rows) =>
+            Effect.sync(() => void reads.push({ runId, options, withState: rows.some((row) => "stateJson" in row) }))
+        )) as typeof f.runs.lineage
+      const projector = yield* Projection.make({ ...f.options, runLineage })
+      for (const rounds of [1, 8, 40]) {
+        for (let round = 1; round <= rounds; round++) {
+          const runId = `round-${round}`
+          const exists = yield* Effect.result(f.runs.get(runId))
+          if (exists._tag === "Success") continue
+          yield* f.runs.create(runId, state, {
+            lineageId: "native-root",
+            roundOrdinal: round,
+            parentRunId: "native-root"
+          })
+          yield* emit(f.engineJournal, runId, { round })
+        }
+        reads.length = 0
+        yield* projector.catchUp
+        // One read for the whole lineage, asked of the root, whatever its length.
+        expect(reads).toEqual([{ runId: "native-root", options: { includeState: false }, withState: false }])
+        expect((yield* rows(f.controlJournal)).map((entry) => record(entry).executionId)).toEqual([
+          "native-root",
+          ...Array.from({ length: rounds }, (_, index) => `round-${index + 1}`)
+        ])
+      }
+    }))))
+
+  it("still refuses a lineage read that omits the run it was asked for or returns a foreign round", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      const state = JSON.stringify({ version: 1, flowName: "agent/run", payload: {} })
+      yield* f.runs.create("native-root", state)
+      yield* f.runs.create("other-root", state)
+      yield* emit(f.engineJournal, "native-root", { root: true })
+      const answering = (runIds: ReadonlyArray<string>) =>
+        ((_: string, options?: { readonly includeState: false }) =>
+          Effect.map(
+            Effect.forEach(runIds, (runId) => f.runs.lineage(runId, options ?? { includeState: false })),
+            (found) => found.flat()
+          )) as unknown as typeof f.runs.lineage
+      for (
+        const [runLineage, message] of [
+          [answering([]), "Native lineage omitted its requested member"],
+          [answering(["native-root", "other-root"]), "Native lineage returned a foreign member"]
+        ] as const
+      ) {
+        const failure = yield* Effect.flip((yield* Projection.make({ ...f.options, runLineage })).catchUp)
+        expect(failure).toMatchObject({ code: "decode_failed", message })
+      }
+    }))))
+
   it("calls the record hook before that record is readable in the control journal", () =>
     Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       const f = yield* setup
