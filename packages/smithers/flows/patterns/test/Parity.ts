@@ -277,13 +277,19 @@ export const settleRun = (effect: Effect.Effect<unknown, unknown, never>): Promi
 export const roles = (tape: ReadonlyArray<Call>): ReadonlyArray<string> => tape.map((call) => call.role)
 
 /**
- * The calls each role received, in order. Two concurrent roles may interleave
- * differently in the two forms; one role's own sequence may not.
+ * The number of calls each role received, independent of interleaving.
  */
 export const byRole = (tape: ReadonlyArray<Call>): Readonly<Record<string, number>> => {
   const counts: Record<string, number> = {}
   for (const call of tape) counts[call.role] = (counts[call.role] ?? 0) + 1
   return counts
+}
+
+/** Payloads each role received, preserving that role's call order. */
+export const payloadsByRole = (tape: ReadonlyArray<Call>): Readonly<Record<string, ReadonlyArray<unknown>>> => {
+  const payloads: Record<string, Array<unknown>> = {}
+  for (const call of tape) (payloads[call.role] ??= []).push(call.payload)
+  return payloads
 }
 
 /** What one parity case states. */
@@ -297,7 +303,7 @@ export interface Case<Options> {
   readonly options: Options
   /** The outcome both forms must settle to, when the case pins one. */
   readonly expected?: unknown
-  /** Require the same role ORDER, not only the same counts per role. */
+  /** Require the same role order and payload sequence per role. */
   readonly ordered?: boolean
   /**
    * A KNOWN divergence, stated as why the two forms disagree. Both halves are
@@ -373,6 +379,8 @@ export const check = async <Options>(pattern: Pattern<Options>, scenario: Case<O
   expect(byRole(declaredTape), "declared and run call each role the same number of times").toEqual(byRole(ranTape))
   if (scenario.ordered === true) {
     expect(roles(declaredTape), "declared and run call roles in the same order").toEqual(roles(ranTape))
+    expect(payloadsByRole(declaredTape), "declared and run hand each role the same payload sequence")
+      .toEqual(payloadsByRole(ranTape))
   }
   if ("expected" in scenario) expect(comparable(declared)).toEqual(comparable(scenario.expected))
 }

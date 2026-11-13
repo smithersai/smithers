@@ -14,8 +14,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { EngineStore, StepBoundary } from "@smthrs/engine-store"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
-import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -29,9 +30,11 @@ import * as MapReduce from "../src/MapReduce.vibe"
 import * as MergeQueue from "../src/MergeQueue.vibe"
 import * as Optimizer from "../src/Optimizer.ts"
 import * as Panel from "../src/Panel.vibe"
+import * as Pattern from "../src/Pattern.ts"
 import { PatternError } from "../src/PatternError.ts"
 import * as Recursion from "../src/Recursion.ts"
 import * as ReviewLoop from "../src/ReviewLoop.vibe"
+import * as Runbook from "../src/Runbook.vibe"
 import * as Saga from "../src/Saga.vibe"
 import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.vibe"
@@ -356,6 +359,51 @@ const recovering: ReadonlyArray<Case & { readonly succeeded: unknown }> = [
 ]
 
 describe("declared patterns on the durable engine", () => {
+  for (const failing of ["middle", "approve"] as const) {
+    it(`Runbook propagates a tagged ${failing} failure and stops later steps`, async () => {
+      const trace: Array<string> = []
+      const script: Script = Object.fromEntries(
+        ["first", "middle", "last", "approve"].map((role) => [
+          role,
+          () => {
+            trace.push(role)
+            return role === failing ? new Declined({ step: role }) : role
+          }
+        ])
+      )
+      const declare = (m: Members) => {
+        const step = (role: string) =>
+          Flow.make(`durable-runbook/${role}`, {
+            payload: fields,
+            success: Schema.Unknown,
+            error: Declined,
+            body: Node.capture({ role }, (payload) => m[role]!.call(payload))
+          })
+        const approval = Flow.make("durable-runbook/approval", {
+          payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+          success: Pattern.Approved,
+          error: Declined,
+          body: Node.capture({}, (payload) => Node.andThen(m.approve!.call(payload), Node.succeed("approved" as const)))
+        })
+        return Runbook.make({
+          steps: [
+            { id: "first", flow: step("first"), risk: "safe" },
+            { id: "middle", flow: step("middle"), risk: failing === "approve" ? "risky" : "safe" },
+            { id: "last", flow: step("last"), risk: "safe" }
+          ],
+          approval,
+          onDeny: "fail"
+        })
+      }
+      const result = settle(script, declare, { input: "release" })
+      await expect(result).resolves.toEqual({ failed: new Declined({ step: failing }) })
+      const settled = await result
+      expect(settled).toHaveProperty("failed", expect.any(Declined))
+      expect(settled).toMatchObject({ failed: { step: failing } })
+      expect(trace).toEqual(["first", failing])
+    })
+  }
+
   describe("fail with the tagged error a member failed with", () => {
     for (const scenario of propagating) {
       it(scenario.name, async () => {

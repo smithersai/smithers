@@ -1,11 +1,16 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph } from "@smthrs/flow"
+import { Action, Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
+import * as Cause from "effect/Cause"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import { PatternError } from "../src/PatternError.ts"
 import * as Recursion from "../src/Recursion.ts"
-import { callsTo } from "./Graphs.ts"
+import { executeExit } from "./Execute.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
 
 const child = Flow.make("child", {
   payload: { input: Schema.Unknown, envelope: Schema.Unknown },
@@ -34,7 +39,57 @@ describe("Recursion", () => {
         ]
       })
     )
-    expect(callsTo(graph, "child")).toHaveLength(4)
+    const calls = callsTo(graph, "child")
+    expect(calls.map(payloadOf)).toEqual([
+      { input: "root", envelope: { fuel: 3, depth: 2, fanout: 2 } },
+      { input: "left", envelope: { fuel: 2, depth: 1, fanout: 2 } },
+      { input: "leaf", envelope: { fuel: 1, depth: 0, fanout: 2 } },
+      { input: "right", envelope: { fuel: 0, depth: 1, fanout: 2 } }
+    ])
+    const byInput = new Map(calls.map((call) => [payloadOf(call).input, call]))
+    expect(byInput.get("left")!.dependencies).toContain(byInput.get("root")!.id)
+    expect(byInput.get("right")!.dependencies).toContain(byInput.get("root")!.id)
+    expect(byInput.get("leaf")!.dependencies).toContain(byInput.get("left")!.id)
+  })
+
+  it("executes the tree and stops descendants of a failing parent", async () => {
+    class ChildFailed extends Schema.TaggedError<ChildFailed>()("ChildFailed", { input: Schema.String }) {}
+    const Child = Action.make("recursion/execute-child", {
+      payload: { input: Schema.String, envelope: Schema.Unknown },
+      success: Schema.String,
+      error: ChildFailed
+    })
+    const input = tree({ input: "root", children: [{ input: "left", children: [{ input: "leaf" }] }] })
+    for (const failing of [undefined, "root", "left"]) {
+      const seen: Array<unknown> = []
+      const error = new ChildFailed({ input: failing ?? "" })
+      const exit = await executeExit(
+        Recursion.recurse({ child: Child, fuel: 3, depth: 3, fanout: 1 }),
+        input,
+        `recursion-parent-${failing}`,
+        Child.toLayer((payload) =>
+          Effect.suspend(() => {
+            seen.push(payload)
+            return payload.input === failing ? Effect.fail(error) : Effect.succeed(payload.input)
+          })
+        )
+      )
+      const expected = [
+        { input: "root", envelope: { fuel: 2, depth: 2, fanout: 1 } },
+        { input: "left", envelope: { fuel: 1, depth: 1, fanout: 1 } },
+        { input: "leaf", envelope: { fuel: 0, depth: 0, fanout: 1 } }
+      ]
+      expect(seen).toEqual(expected.slice(0, failing === "root" ? 1 : failing === "left" ? 2 : 3))
+      if (failing === undefined) {
+        expect(exit).toEqual(Exit.succeed({ "child-0": { "child-0": "leaf" } }))
+      } else {
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.hasDies(exit.cause)).toBe(false)
+          expect(Cause.findErrorOption(exit.cause)).toEqual(Option.some(error))
+        }
+      }
+    }
   })
 
   it("keeps the caller's name and description on the declared flow", () => {

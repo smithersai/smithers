@@ -12,6 +12,7 @@ import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Pattern from "../src/Pattern.ts"
@@ -26,7 +27,7 @@ const Envelope = Schema.Struct({
   risk: Schema.String,
   elevated: Schema.Boolean,
   input: Schema.Unknown,
-  previous: Schema.Unknown
+  previous: Schema.optional(Schema.Unknown)
 })
 
 const step = Flow.make("runbook/step", {
@@ -139,6 +140,94 @@ describe("Runbook", () => {
         expect(Cause.squash(exit.cause)).toMatchObject({ code: "invalid_input", cause: { decision: answer } })
       }
       expect(trace).toEqual(["approval"])
+    }
+  })
+
+  it("propagates step and approval failures without running later steps", async () => {
+    class RunbookFailed extends Schema.TaggedError<RunbookFailed>()("RunbookFailed", {
+      stage: Schema.String
+    }) {}
+    const RunStep = Action.make("runbook/fallible-step", {
+      payload: Envelope,
+      success: Schema.String,
+      error: RunbookFailed
+    })
+    const Approve = Action.make("runbook/fallible-approval", {
+      payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+      success: Pattern.Approved,
+      error: RunbookFailed
+    })
+    const stepFlow = Flow.make("runbook/fallible-step-flow", {
+      payload: Envelope,
+      success: Schema.String,
+      error: RunbookFailed,
+      body: Node.capture({}, (request) => RunStep.call(request))
+    })
+    const approvalFlow = Flow.make("runbook/fallible-approval-flow", {
+      payload: { input: Schema.Unknown, reason: Schema.String, scope: Schema.String },
+      success: Pattern.Approved,
+      error: RunbookFailed,
+      body: Node.capture({}, (request) => Approve.call(request))
+    })
+    for (const onDeny of ["fail", "skip"] as const) {
+      for (const middleRisk of ["safe", "risky", "critical"] as const) {
+        for (const failing of ["step", "approval"] as const) {
+          if (middleRisk === "safe" && failing === "approval") continue
+          const trace: Array<string> = []
+          const error = new RunbookFailed({ stage: failing })
+          const run = (request: { readonly step: string }) =>
+            Effect.suspend(() => {
+              trace.push(request.step)
+              return failing === "step" && request.step === "middle" ? Effect.fail(error) : Effect.succeed(request.step)
+            })
+          const approve = () =>
+            Effect.suspend(() => {
+              trace.push("approval")
+              return failing === "approval" ? Effect.fail(error) : Effect.succeed("approved" as const)
+            })
+          const specs = [
+            { id: "first", risk: "safe" as const },
+            { id: "middle", risk: middleRisk },
+            { id: "last", risk: "safe" as const }
+          ]
+          const expectedTrace = [
+            "first",
+            ...(middleRisk === "safe" ? [] : ["approval"]),
+            ...(failing === "step" ? ["middle"] : [])
+          ]
+          const runtimeExit = await Effect.runPromiseExit(Runbook.run("release", {
+            steps: specs.map((spec) => ({ ...spec, run })),
+            approve,
+            onDeny
+          }))
+          expect(trace).toEqual(expectedTrace)
+          expect(Exit.isFailure(runtimeExit)).toBe(true)
+          if (Exit.isFailure(runtimeExit)) {
+            expect(Cause.hasDies(runtimeExit.cause)).toBe(false)
+            expect(Cause.findErrorOption(runtimeExit.cause)).toEqual(Option.some(error))
+          }
+          // skip has no declared form; its refusal is tested separately.
+          if (onDeny === "skip") continue
+          trace.length = 0
+          const declaredExit = await executeExit(
+            Runbook.make({
+              steps: specs.map((spec) => ({ ...spec, flow: stepFlow })),
+              approval: approvalFlow,
+              onDeny
+            }),
+            { input: "release" },
+            `runbook-failure-${middleRisk}-${failing}`,
+            RunStep.toLayer(run),
+            Approve.toLayer(approve)
+          )
+          expect(trace).toEqual(expectedTrace)
+          expect(Exit.isFailure(declaredExit)).toBe(true)
+          if (Exit.isFailure(declaredExit)) {
+            expect(Cause.hasDies(declaredExit.cause)).toBe(false)
+            expect(Cause.findErrorOption(declaredExit.cause)).toEqual(Option.some(error))
+          }
+        }
+      }
     }
   })
 

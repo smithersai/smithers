@@ -10,8 +10,12 @@
  * have no declared counterpart; their rows use the shared option set only and
  * `OptionsParity.test.ts` names the asymmetry.
  */
-import { Graph } from "@smthrs/flow"
+import { Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
+import * as Bounded from "../src/Bounded.vibe"
 import * as CheckSuite from "../src/CheckSuite.vibe"
 import * as Debate from "../src/Debate.vibe"
 import * as DelegationChain from "../src/DelegationChain.ts"
@@ -23,12 +27,105 @@ import * as Kanban from "../src/Kanban.vibe"
 import * as MapReduce from "../src/MapReduce.vibe"
 import * as MergeQueue from "../src/MergeQueue.vibe"
 import * as Panel from "../src/Panel.vibe"
+import * as Quarantine from "../src/Quarantine.vibe"
 import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import * as Runbook from "../src/Runbook.vibe"
 import * as Saga from "../src/Saga.vibe"
 import * as Sidecar from "../src/Sidecar.vibe"
 import * as Supervisor from "../src/Supervisor.vibe"
+import * as Trellis from "../src/Trellis.vibe"
 import { approval, check, fail, flow, type Pattern, roles, scripted, settleRun } from "./Parity.ts"
+
+const bounded: Pattern<{ readonly concurrency: number }> = {
+  make: (m, options) =>
+    Flow.make("parity/bounded", {
+      payload: { input: Schema.Unknown },
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: ({ input }) => Bounded.all({ a: m.a!.call({ input }), b: m.b!.call({ input }) }, options)
+    }),
+  run: (e, input, options) => Bounded.run({ a: e.a!({ input }), b: e.b!({ input }) }, options),
+  cases: [1, 2].flatMap((concurrency) =>
+    [false, true].map((failing) => ({
+      name: `bounded-${concurrency}-failing-${failing}`,
+      input: "work",
+      options: { concurrency },
+      script: { a: () => "a-done", b: () => failing ? fail("b-failed") : "b-done" },
+      expected: failing ? { failed: "b-failed" } : { a: "a-done", b: "b-done" },
+      ordered: concurrency === 1
+    }))
+  )
+}
+
+const quarantine: Pattern<{ readonly policy: Quarantine.Policy }> = {
+  make: (m, options) =>
+    Flow.make("parity/quarantine", {
+      payload: { input: Schema.Unknown },
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: ({ input }) => {
+        const members = { a: m.a!.call({ input }), b: m.b!.call({ input }) }
+        return options.policy === "halt"
+          ? Quarantine.all(members, { policy: "halt" })
+          : Quarantine.all(members, { policy: "quarantine" })
+      }
+    }),
+  run: (e, input, options) => {
+    const members = { a: e.a!({ input }), b: e.b!({ input }) }
+    return options.policy === "halt"
+      ? Quarantine.run(members, { policy: "halt" })
+      : Quarantine.run(members, { policy: "quarantine" })
+  },
+  cases: (["halt", "quarantine"] as const).flatMap((policy) =>
+    [false, true].map((failing) => ({
+      name: `quarantine-${policy}-failing-${failing}`,
+      input: "work",
+      options: { policy },
+      script: { a: () => "a-done", b: () => failing ? fail("b-failed") : "b-done" },
+      expected: policy === "halt"
+        ? failing ? { failed: "b-failed" } : { a: "a-done", b: "b-done" }
+        : {
+          a: { _tag: "Succeeded", member: "a", value: "a-done" },
+          b: failing
+            ? { _tag: "Quarantined", member: "b", error: "b-failed" }
+            : { _tag: "Succeeded", member: "b", value: "b-done" }
+        }
+    }))
+  )
+}
+
+const trellisPlans: ReadonlyArray<Trellis.Plan> = [
+  { agent: { goal: "a", seat: "writer" } },
+  { sequence: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }] },
+  { parallel: [{ agent: { goal: "a" } }, { agent: { goal: "b" } }] }
+]
+const trellis: Pattern<{ readonly plan: Trellis.Plan }> = {
+  make: (m) => Trellis.make({ author: m.author!, leaf: m.leaf!, envelope: { fuel: 4, depth: 3, fanout: 2 } }),
+  // make authors one plan and returns its round ledger; execute runs that
+  // plan directly. The adapter supplies only this surrounding protocol.
+  run: (e, input) =>
+    Effect.flatMap(
+      e.author!(input),
+      (plan: Trellis.Plan) =>
+        Effect.map(Trellis.execute(plan, { concurrency: 2, leaf: e.leaf! }), (result) => ({
+          rounds: [{ plan, result }],
+          remaining: 4 - Trellis.leaves(plan).length
+        }))
+    ),
+  cases: trellisPlans.flatMap((plan, index) =>
+    [false, true].map((failing) => ({
+      name: `trellis-${index}-failing-${failing}`,
+      input: { input: "delegate" },
+      options: { plan },
+      script: {
+        author: () => plan,
+        leaf: ({ goal, path, seat }) => failing ? fail("leaf-failed") : { goal, path, ...(seat ? { seat } : {}) }
+      },
+      ...(failing ? { expected: { failed: "leaf-failed" } } : {}),
+      ordered: !("parallel" in plan)
+    }))
+  )
+}
 
 const drift: Pattern<{ readonly alerts: boolean }> = {
   make: (members, { alerts }) =>
@@ -213,7 +310,7 @@ const reviewLoop: Pattern<{ readonly maxRounds: number }> = {
   run: (e, input, { maxRounds }) =>
     ReviewLoop.run(input, {
       produce: (value) => e.produce!({ input: value }),
-      review: (output, round) => e.review!({ output, round }),
+      review: (output) => e.review!({ output }),
       revise: e.revise!,
       maxRounds
     }),
@@ -313,7 +410,7 @@ const intervene: Pattern<{ readonly dryRun: boolean; readonly gated: boolean }> 
       apply: flow("apply"),
       report: m.report!,
       dryRun,
-      ...(gated ? { approval: approval("approval") } : {})
+      ...(gated ? { approval: approval("approval"), reason: "Apply proposed change" } : {})
     }),
   run: (e, input, { dryRun, gated }) =>
     Intervene.run(input, {
@@ -322,7 +419,12 @@ const intervene: Pattern<{ readonly dryRun: boolean; readonly gated: boolean }> 
       apply: e.apply!,
       report: e.report!,
       dryRun,
-      ...(gated ? { approval: e.approval! } : {})
+      ...(gated
+        ? {
+          approval: ({ input, proposal }) =>
+            e.approval!({ input: { phase: "apply", input, proposal }, reason: "Apply proposed change", scope: "run" })
+        }
+        : {})
     }),
   cases: [
     ...[true, false].map((dryRun) => ({
@@ -577,10 +679,36 @@ const runbook: Pattern<Record<string, never>> = {
         { id: "s2", run: e.s2!, risk: "risky" },
         { id: "s3", run: e.s3!, risk: "critical" }
       ],
-      approve: e.approve!,
+      approve: (request) =>
+        e.approve!({
+          input: request,
+          reason: `run the step: ${request.step}`,
+          scope: "run"
+        }),
       onDeny: "fail"
     }),
-  cases: [{ name: "runbook-approved", input: "deploy", options: {}, script: runbookScript }]
+  cases: [
+    {
+      name: "runbook-approved",
+      input: "deploy",
+      options: {},
+      script: runbookScript,
+      ordered: true,
+      expected: {
+        outputs: { s1: "s1-ok", s2: { after: "s1-ok" }, s3: { elevated: true } },
+        ran: ["s1", "s2", "s3"],
+        skipped: []
+      }
+    },
+    ...(["s1", "s2", "approve"] as const).map((role) => ({
+      name: `runbook-${role}-fails`,
+      input: "deploy",
+      options: {},
+      ordered: true,
+      script: { ...runbookScript, [role]: () => fail({ code: "member_failed", message: `${role} failed` }) },
+      expected: { failed: { code: "member_failed", message: `${role} failed` } }
+    }))
+  ]
 }
 
 const supervisorTasks = [
@@ -744,6 +872,7 @@ const delegationChain: Pattern<Record<string, never>> = {
 
 /** Every dual-form pattern, by the name `src/index.ts` exports it under. */
 const table: Readonly<Record<string, Pattern<any>>> = {
+  Bounded: bounded,
   CheckSuite: checkSuite,
   Debate: debate,
   DelegationChain: delegationChain,
@@ -754,11 +883,13 @@ const table: Readonly<Record<string, Pattern<any>>> = {
   MapReduce: mapReduce,
   MergeQueue: mergeQueue,
   Panel: panel,
+  Quarantine: quarantine,
   ReviewLoop: reviewLoop,
   Runbook: runbook,
   Saga: saga,
   Sidecar: sidecar,
-  Supervisor: supervisor
+  Supervisor: supervisor,
+  Trellis: trellis
 }
 
 describe("declared and run forms agree", () => {
@@ -776,11 +907,38 @@ describe("parity coverage", () => {
     const dual = Object.entries(Patterns)
       .filter(([, namespace]) => {
         const exports = namespace as Record<string, unknown>
-        return typeof exports.run === "function" && typeof exports.make === "function"
+        return [["make", "run"], ["all", "run"], ["recurse", "run"], ["make", "execute"], ["all", "execute"], [
+          "recurse",
+          "execute"
+        ]]
+          .some(([declared, executed]) =>
+            typeof exports[declared!] === "function" && typeof exports[executed!] === "function"
+          )
       })
       .map(([name]) => name)
       .sort()
     expect(dual.filter((name) => !Object.hasOwn(table, name))).toEqual([])
     expect(Object.keys(table).sort()).toEqual(dual)
   })
+})
+
+it("rejects payload drift even when results and role counts agree", async () => {
+  const pattern: Pattern<Record<string, never>> = {
+    make: (m) =>
+      Flow.make("parity/payload-probe", {
+        payload: { input: Schema.Unknown },
+        success: Schema.Unknown,
+        error: Schema.Unknown,
+        body: () => Node.andThen(m.member!.call({ input: 1 }), m.member!.call({ input: 2 }))
+      }),
+    run: (e) => Effect.andThen(e.member!({ input: 2 }), e.member!({ input: 1 })),
+    cases: []
+  }
+  await expect(check(pattern, {
+    name: "payload-drift",
+    input: null,
+    options: {},
+    script: { member: () => "same" },
+    ordered: true
+  })).rejects.toThrow("same payload sequence")
 })
