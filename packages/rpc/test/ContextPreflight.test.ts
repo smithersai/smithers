@@ -1,12 +1,10 @@
 import { expect, test } from "vitest"
-import { ZodError } from "zod"
 import { composeAgentInstructions } from "../src/AgentContext.ts"
 import type { AgentRuntimeContext } from "../src/AgentContext.ts"
 import {
   ContextCandidateSchema,
   ContextPreflightFrameSchema,
   ContextPreflightInputSchema,
-  ContextPreflightRejected,
   SelectedContextItemSchema
 } from "../src/ContextPreflight.ts"
 const context: AgentRuntimeContext = {
@@ -56,61 +54,6 @@ test("owner budget defaults to 24000 and can exceed it without changing recall's
   expect(ContextPreflightInputSchema.parse({ ...base, tokenBudget: 32000 }).tokenBudget).toBe(32000)
 })
 
-test("paged preflight survives serialization and publishes only complete phases", async () => {
-  const { projectContextPreflight, ContextPreflightProgressSchema } = await import("../src/ContextPreflight.ts")
-  const first = {
-    runId: "r",
-    type: "context.preflight" as const,
-    phase: "completed" as const,
-    page: { index: 0, total: 2 },
-    result: {
-      model: "fast",
-      durationMs: 12,
-      candidates: [{ kind: "todo" as const, label: "T1", ref: "T1" }],
-      context: [{ kind: "todo" as const, label: "T1", ref: "T1", reason: "One" }]
-    }
-  }
-  const partial = projectContextPreflight({}, first)
-  expect(partial.preflightPhase).toBe("started")
-  const restored = ContextPreflightProgressSchema.parse(JSON.parse(JSON.stringify(partial)))
-  const second = {
-    ...first,
-    page: { index: 1, total: 2 },
-    result: {
-      ...first.result,
-      candidates: [],
-      context: [{ kind: "todo" as const, label: "T2", ref: "T2", reason: "Two" }]
-    }
-  }
-  const complete = projectContextPreflight(restored, second)
-  expect(complete.preflightPhase).toBe("completed")
-  expect(complete.preflightPage).toBeUndefined()
-  expect(complete.preflight?.context).toEqual([...first.result.context, ...second.result.context])
-  expect(complete.preflight?.candidates).toEqual(first.result.candidates)
-  expect(() => projectContextPreflight({}, second)).toThrow(ContextPreflightRejected)
-  for (const invalid of [{ ...first, page: { index: 2, total: 2 } }, { ...first, phase: undefined }]) {
-    expect(() => projectContextPreflight({}, invalid)).toThrow(ZodError)
-  }
-  for (
-    const invalid of [{ ...second, page: { index: 1, total: 3 } }, { ...second, phase: "started" as const }, {
-      ...second,
-      result: { ...second.result, model: "other" }
-    }, { ...second, result: { ...second.result, durationMs: 13 } }]
-  ) {
-    expect(() => projectContextPreflight(restored, invalid)).toThrow(ContextPreflightRejected)
-    expect(() => projectContextPreflight(restored, invalid)).toThrow(
-      expect.objectContaining({ code: "invalid_page_sequence" })
-    )
-  }
-  expect(projectContextPreflight(restored, { ...first, phase: "started" }).preflightPage?.next).toBe(1)
-  const { page: _page, phase: _phase, ...legacy } = first
-  expect(projectContextPreflight(restored, legacy)).toEqual({
-    preflight: first.result,
-    preflightPhase: "completed",
-    preflightPage: undefined
-  })
-})
-
 test("preflight host timings survive decoding while historical frames remain readable", () => {
   const frame = {
     runId: "run",
@@ -133,4 +76,19 @@ test("preflight host timings survive decoding while historical frames remain rea
   ) {
     expect(ContextPreflightFrameSchema.safeParse({ ...frame, ...timing }).success).toBe(false)
   }
+})
+
+test("paged preflight frames require a phase and valid page coordinates", () => {
+  const frame = {
+    runId: "r",
+    type: "context.preflight",
+    phase: "completed",
+    page: { index: 0, total: 2 },
+    result: { model: "fast", durationMs: 12, candidates: [], context: [] }
+  }
+  expect(ContextPreflightFrameSchema.parse(frame)).toEqual(frame)
+  for (const page of [{ index: -1, total: 2 }, { index: 2, total: 2 }, { index: 0, total: 0 }]) {
+    expect(ContextPreflightFrameSchema.safeParse({ ...frame, page }).success).toBe(false)
+  }
+  expect(ContextPreflightFrameSchema.safeParse({ ...frame, phase: undefined }).success).toBe(false)
 })

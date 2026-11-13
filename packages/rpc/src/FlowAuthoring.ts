@@ -54,19 +54,3 @@ export const FLOW_AUTHORING_STAGES = [
  * @category constants
  */
 export const FLOW_AUTHORING_PACK: ReadonlyArray<string> = [FLOW_AUTHORING_ENTRY, ...FLOW_AUTHORING_STAGES]
-
-/**
- * What a person is told when the workspace cannot resolve the authoring flow.
- *
- * The control plane's own refusal is `No flow "create-flow" is registered on
- * this workspace.`, which names an internal id and no action. A person reading
- * it can only conclude the product is broken. This sentence says which flow is
- * missing in the product's own words and what closes the gap, and it is the
- * one place that wording lives.
- *
- * @since 1.0.0
- * @category constructors
- */
-export const flowAuthoringUnavailable = (repo: string): string =>
-  `${repo}'s workspace does not have the flow-authoring flow installed, so there is nothing to build your flow with yet. `
-  + `Update the workspace from Settings and run /flow.new again, or use /flow.list to see what it can run today.`

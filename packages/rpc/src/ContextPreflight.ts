@@ -105,82 +105,9 @@ export const ContextPreflightFrameSchema = z.object({
 }).refine((frame) => frame.page === undefined || frame.phase !== undefined)
   .refine((frame) => (frame.at === undefined) === (frame.clock === undefined))
 /**
- * Replay progress is persisted with the existing HTTP turn projection.
- *
- * @since 1.0.0
- * @category schemas
- */
-export const ContextPreflightProgressSchema = z.object({
-  preflight: ContextPreflightResultSchema.optional(),
-  preflightPhase: z.enum(["started", "completed"]).optional(),
-  preflightPage: z.object({
-    phase: z.enum(["started", "completed"]),
-    next: z.number().int().positive(),
-    total: z.number().int().positive()
-  }).strict().optional()
-})
-/**
  * One durable preflight journal frame.
  *
  * @since 1.0.0
  * @category models
  */
 export type ContextPreflightFrame = z.infer<typeof ContextPreflightFrameSchema>
-/**
- * Persisted preflight replay progress.
- *
- * @since 1.0.0
- * @category models
- */
-export type ContextPreflightProgress = z.infer<typeof ContextPreflightProgressSchema>
-
-/**
- * An out-of-order or inconsistent preflight page refused during replay.
- * @since 1.0.0
- * @category errors
- */
-export class ContextPreflightRejected extends Error {
-  readonly _tag = "ContextPreflightRejected"
-  readonly code: "invalid_page_sequence"
-  constructor(code: "invalid_page_sequence", message: string) {
-    super(message)
-    this.code = code
-    this.name = "ContextPreflightRejected"
-  }
-}
-
-/**
- * Fold complete phases only; interrupted pages never expose a completed selection.
- *
- * @since 1.0.0
- * @category projections
- */
-export const projectContextPreflight = (
-  prior: ContextPreflightProgress,
-  frame: ContextPreflightFrame
-): ContextPreflightProgress => {
-  const parsed = ContextPreflightFrameSchema.parse(frame)
-  const phase = parsed.phase ?? "completed"
-  if (parsed.page === undefined) return { preflight: parsed.result, preflightPhase: phase, preflightPage: undefined }
-  const { index, total } = parsed.page
-  let result = parsed.result
-  if (index > 0) {
-    const pending = prior.preflightPage
-    if (
-      pending === undefined || prior.preflight === undefined || pending.next !== index || pending.total !== total ||
-      pending.phase !== phase ||
-      prior.preflight.model !== result.model || prior.preflight.durationMs !== result.durationMs
-    ) throw new ContextPreflightRejected("invalid_page_sequence", "Invalid preflight page sequence")
-    result = {
-      ...result,
-      context: [...prior.preflight.context, ...result.context],
-      candidates: [...prior.preflight.candidates, ...result.candidates]
-    }
-  }
-  const complete = index + 1 === total
-  return {
-    preflight: result,
-    preflightPhase: complete ? phase : "started",
-    preflightPage: complete ? undefined : { phase, next: index + 1, total }
-  }
-}

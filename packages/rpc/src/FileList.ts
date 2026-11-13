@@ -115,6 +115,7 @@ export interface FileList {
 
 /**
  * The Files card a listing shows, its entries in the one listing order, and the model's copy of it.
+ * IDs escape percent signs and repository/path delimiters so listings from distinct repositories and revisions stay distinct.
  * @since 1.0.0
  * @category constructors
  */
@@ -128,7 +129,9 @@ export const fileListCard = (
   const value = listingValue(list.repo, list.path, entries)
   return {
     card: {
-      id: `files-${list.repo}-${label}${list.ref === undefined ? "" : `@${list.ref}`}`,
+      id: `files-${list.repo.replace(/%/g, "%25").replace(/-/g, "%2D")}-${
+        label.replace(/%/g, "%25").replace(/@/g, "%40")
+      }${list.ref === undefined ? "" : `@${list.ref}`}`,
       kind: "file-list",
       title: `Files · ${list.repo} · ${label}${list.ref === undefined ? "" : ` · ${list.ref}`}`,
       status: "active",

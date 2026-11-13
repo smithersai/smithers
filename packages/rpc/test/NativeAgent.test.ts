@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
-import { AgentTurnFrameSchema, decodeAgentTurnFrame } from "../src/NativeAgent.ts"
+import { AgentTurnFrameSchema } from "../src/NativeAgent.ts"
 import type { AgentTurnFrame } from "../src/NativeAgent.ts"
 import { moduleSpecifiers, sources } from "./SourceGuards.ts"
 
@@ -101,22 +101,16 @@ describe("AgentTurnFrame — proxy family", () => {
     expect(accepted.map(([name, value]) => [name, parses(value)])).toEqual(accepted.map(([name]) => [name, true]))
   })
 
-  test("the decoder answers a frame for each of them", () => {
-    expect(accepted.map(([name, value]) => [name, decodeAgentTurnFrame(value) !== null]))
-      .toEqual(accepted.map(([name]) => [name, true]))
-  })
-
   test("a malformed instance of each frame is rejected", () => {
     expect(rejected.map(([name, value]) => [name, parses(value)])).toEqual(rejected.map(([name]) => [name, false]))
   })
 
-  test("the decoder answers null for each of them", () => {
-    expect(rejected.map(([name, value]) => [name, decodeAgentTurnFrame(value)]))
-      .toEqual(rejected.map(([name]) => [name, null]))
-  })
-
-  test("the decoder keeps a legacy card frame and its recorded payload readable", () => {
-    const frame = decodeAgentTurnFrame({ runId: "r1", type: "card", card: { ...runHistoryCard, kind: "run-history" } })
+  test("the schema keeps a legacy card frame and its recorded payload readable", () => {
+    const frame = AgentTurnFrameSchema.parse({
+      runId: "r1",
+      type: "card",
+      card: { ...runHistoryCard, kind: "run-history" }
+    })
     expect(frame).toEqual({
       runId: "r1",
       type: "card",
@@ -150,13 +144,8 @@ describe("AgentTurnFrame — proxy family", () => {
         "chat_guests_busy"
       ]
     ) {
-      expect([code, decodeAgentTurnFrame(sealed(code))]).toEqual([code, sealed(code)])
+      expect([code, AgentTurnFrameSchema.parse(sealed(code))]).toEqual([code, sealed(code)])
     }
-  })
-
-  test("the decoder answers null for a value that is not an object", () => {
-    expect(decodeAgentTurnFrame("{}")).toBe(null)
-    expect(decodeAgentTurnFrame(null)).toBe(null)
   })
 })
 
@@ -186,10 +175,6 @@ describe("AgentTurnFrame — chain family (DESIGN.md §14)", () => {
       expect(parsed.success).toBe(true)
       expect(parsed.success && parsed.data).toEqual(frame)
     }
-  })
-
-  test("the decoder answers the chain family too", () => {
-    for (const frame of frames) expect(decodeAgentTurnFrame(frame)).toEqual(frame)
   })
 
   test("verdict, gate kind, outcome, and park code are closed vocabularies", () => {

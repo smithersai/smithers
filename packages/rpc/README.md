@@ -6,7 +6,7 @@ Shared product contracts for the local host, browser, and server. Import them fr
 
 `FileRead.parseFileReadArgs` accepts line and column anchors only from `1` through `Number.MAX_SAFE_INTEGER`, refusing zero and unsafe integers before a File card is built.
 
-`FileRead` card IDs retain their readable repository-path@revision form, escaping `%` and repository `-` / path `@` delimiters so names cannot collide. `decodeFilePage` rejects malformed base64 with `FilePageRejected` (`invalid_encoding`); valid binary content stays opaque. `LocalLsp` validates definition paths with the request's repository-relative path rule, and diagnostic responses require `items` and `total` to be null together. `Refusal` accepts only positive finite explicit retry seconds, rounded up, and attributes a missing response to the client unless an origin is stated.
+`FileRead` and `FileList` card IDs retain their readable `repository-path@revision` form, escaping `%` and repository `-` / path `@` delimiters so names cannot collide. `LocalLsp` validates definition paths with the request's repository-relative path rule, and diagnostic responses require `items` and `total` to be null together. `Refusal` accepts only positive finite explicit retry seconds, rounded up, and attributes a missing response to the client unless an origin is stated.
 
 ## Route ownership
 
@@ -24,6 +24,6 @@ These are public product contracts even while the package is private. Preserve w
 
 `UserFailure` keeps registered copy, tags and actions, while `failureDetail` returns `[REDACTED]` for every thrown value. A collapsed details control does not make exception text safe to disclose.
 
-`ConfiguredModel.modelStateFieldsOf` keeps a recorded object with any invalid field name whole in one JSON `state` field, preserving all its keys. Choice answers validate every supplied probability, including entries for undeclared options. `DocsPages.readDocsPage` accepts `page#anchor` and returns the complete page.
+`ConfiguredModel.modelStateFieldsOf` keeps a recorded object with any invalid field name whole in one JSON `state` field, preserving all its keys. `ModelAnswerSchema` validates every supplied choice probability, including entries for undeclared options. `DocsPages.readDocsPage` accepts `page#anchor` and returns the complete page.
 
 Run `pnpm run check`, `pnpm run lint`, and `pnpm run test` here. Sources use the standard NodeNext configuration with unchecked indexed access enabled; an array or dictionary lookup must handle absence. Tests live in `test/` and run under Vitest, matching the other packages. `IndexAccess.types.ts` pins the compiler contract.

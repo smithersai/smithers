@@ -361,21 +361,3 @@ export const AgentTurnFrameSchema = z.discriminatedUnion("type", [
  * @category models
  */
 export type AgentTurnFrame = z.infer<typeof AgentTurnFrameSchema>
-
-/*
- * Frames carry card schemas whose fields default (`RunRecord.labels`,
- * `GraphNode.private`), so a value that merely validates is not yet an
- * `AgentTurnFrame`: forwarding the input under that type hands subscribers a
- * value missing fields the type declares required. Every boundary that
- * forwards a frame decodes it here and publishes the decoded value.
- */
-/**
- * Decodes an agent turn frame, applying the schema defaults, or answers null.
- *
- * @since 1.0.0
- * @category conversions
- */
-export const decodeAgentTurnFrame = (value: unknown): AgentTurnFrame | null => {
-  const parsed = AgentTurnFrameSchema.safeParse(value)
-  return parsed.success ? parsed.data : null
-}

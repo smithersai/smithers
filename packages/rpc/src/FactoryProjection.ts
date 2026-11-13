@@ -172,39 +172,3 @@ export type FactoryProjection = z.infer<typeof FactoryProjectionSchema>
  */
 export const ruleFlows = (rule: FactoryRule): ReadonlyArray<string> =>
   typeof rule.flow === "string" ? [rule.flow] : rule.flow
-
-/**
- * The featured rows of a projection, in catalog order: the id and the
- * declared summary a listing shows under it.
- *
- * @since 1.0.0
- * @category accessors
- */
-export const featuredFlows = (
-  projection: FactoryProjection
-): ReadonlyArray<{ readonly id: string; readonly summary: string | null }> =>
-  (projection.flows ?? []).filter((flow) => flow.featured).map((flow) => ({ id: flow.id, summary: flow.summary }))
-
-/**
- * The transition `id` names, or undefined when the repository declares no
- * such transition. An UNDECLARED transition is the whole refusal: nothing is
- * asked of GitHub for one, so the issue is untouched.
- *
- * @since 1.0.0
- * @category accessors
- */
-export const issueTransitionOf = (
-  projection: FactoryProjection,
-  id: string
-): FactoryIssueTransition | undefined => (projection.issueTransitions ?? []).find((transition) => transition.id === id)
-
-/**
- * Whether `transition` is one the repository says a PERSON has to make. The
- * default is a person: a repository that declares a transition without
- * naming an actor has not said an agent may make it.
- *
- * @since 1.0.0
- * @category accessors
- */
-export const issueTransitionNeedsPerson = (transition: FactoryIssueTransition): boolean =>
-  (transition.actor ?? "person") === "person"

@@ -28,11 +28,6 @@ const reviewed: ReadonlyArray<readonly [file: string, line: string, why: string]
     "digestSync explicitly documents TypeError for text UTF-8 cannot represent; Sha256.test.ts pins that contract."
   ],
   [
-    "src/ContextPreflight.ts",
-    "const parsed = ContextPreflightFrameSchema.parse(frame)",
-    "docs/context-preflight.md distinguishes malformed-frame schema validation from tagged page-sequence rejection."
-  ],
-  [
     "src/CardAction.ts",
     ": { ...action, tag: CatalogTagSchema.parse(action.tag) }",
     "The ActionSchema overwrite narrows a tag already admitted by its union after historical tags have been normalized."

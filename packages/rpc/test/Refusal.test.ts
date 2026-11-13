@@ -11,7 +11,6 @@ import {
   PLUE_FAULTS
 } from "../src/PlueFailureCodes.ts"
 import {
-  clientRefusal,
   faultOfStatus,
   isCapacityRefusal,
   mayAutoRetry,
@@ -21,7 +20,6 @@ import {
   refusalFromStored,
   refusalOf,
   retryAfterHeader,
-  statedRetryDelayMs,
   statedWords,
   type StoredRefusal,
   storedRefusal
@@ -132,7 +130,7 @@ describe("refusal persistence units", () => {
   })
 
   test("a current client refusal stores a zero status and restores its connection attribution", () => {
-    const refused = clientRefusal("Connection closed")
+    const refused = refusalOf({ body: null, status: null, message: "Connection closed" })
     const stored = storedRefusal(refused)
     expect(stored).toEqual({
       status: 0,
@@ -228,28 +226,6 @@ describe("refusal persistence units", () => {
       retryAfter: null,
       status,
       origin: "plue"
-    })
-  })
-
-  test.each([
-    { name: "a thrown string", error: "Connection closed", message: undefined, expected: "Connection closed" },
-    {
-      name: "an explicit public message",
-      error: new Error("Socket details"),
-      message: "Try again",
-      expected: "Try again"
-    },
-    { name: "an empty override on an Error", error: new Error("Socket details"), message: "", expected: "" },
-    { name: "an empty override on a thrown string", error: "Socket details", message: "", expected: "" }
-  ])("client classification preserves $name", ({ error, message, expected }) => {
-    expect(clientRefusal(error, message)).toEqual({
-      code: null,
-      rawCode: null,
-      fault: "infra",
-      message: expected,
-      retryAfter: null,
-      status: null,
-      origin: "client"
     })
   })
 
@@ -393,7 +369,6 @@ describe("classifying a refusal", () => {
       const input = { body: { fault: "wait" }, status: 503, message: "Wait", retryAfterSeconds }
       const refusal = refusalOf(input)
       expect(refusal.retryAfter).toBeNull()
-      expect(statedRetryDelayMs(refusal)).toBeNull()
       expect(mayAutoRetry(refusal)).toBe(false)
       expect(refusalOf({ ...input, body: { retry_after: 3 } }).retryAfter).toBe(3)
     }
@@ -402,7 +377,6 @@ describe("classifying a refusal", () => {
   test("explicit fractional retry seconds are rounded up like body retry seconds", () => {
     const refusal = refusalOf({ body: { retry_after: 9 }, status: 503, message: "Wait", retryAfterSeconds: 1.25 })
     expect(refusal.retryAfter).toBe(2)
-    expect(statedRetryDelayMs(refusal)).toBe(2000)
   })
 
   test.each([null, {}, { code: "future_failure" }, { origin: "unknown" }])(
@@ -482,21 +456,6 @@ describe("classifying a refusal", () => {
     expect(refusalOf({ body: {}, status: 502, message: "no" }).fault).toBe("dependency")
     expect(refusalOf({ body: {}, status: 503, message: "no" }).fault).toBe("infra")
     expect(faultOfStatus(null)).toBe("infra")
-  })
-
-  test("a fetch that threw before any response is an infra-class client refusal", () => {
-    // It used to reach the chat model as `failed: Load failed` — a sentence
-    // with no verdict in it, which the model read as the user's mistake.
-    const refusal = clientRefusal(new Error("Load failed"))
-    expect(refusal).toEqual({
-      code: null,
-      rawCode: null,
-      fault: "infra",
-      message: "Load failed",
-      retryAfter: null,
-      status: null,
-      origin: "client"
-    })
   })
 
   test("plueFailureCode is the one ingress for a string code", () => {
@@ -595,16 +554,6 @@ describe("auto-retry", () => {
     expect(mayAutoRetry(refusalOf({ body: { code: "guest_not_ready" }, status: 503, message: "x" }))).toBe(true)
   })
 
-  test("waits the interval the response stated, and leaves the caller's own wait alone when it stated none", () => {
-    expect(
-      statedRetryDelayMs(
-        refusalOf({ body: { code: "guest_not_ready" }, status: 503, message: "x", retryAfterSeconds: 1 })
-      )
-    )
-      .toBe(1_000)
-    expect(statedRetryDelayMs(refusalOf({ body: { code: "guest_not_ready" }, status: 503, message: "x" }))).toBeNull()
-  })
-
   test("never fires for infra — a full fleet does not empty because a client asked twice", () => {
     // no_capacity states retry_after 30, so this is the fault gate doing the
     // work and not the absence of a number.
@@ -624,7 +573,7 @@ describe("auto-retry", () => {
   })
 
   test("never fires for a client refusal", () => {
-    expect(mayAutoRetry(clientRefusal(new Error("offline")))).toBe(false)
+    expect(mayAutoRetry(refusalOf({ body: null, status: null, message: "offline" }))).toBe(false)
   })
 
   test("every wait code in the registry states a pacing, so none of them stalls", () => {
@@ -661,7 +610,7 @@ describe("statedWords", () => {
     expect(statedWords(refusalOf({ body: null, status: 500, message: "Reading this page failed (500)." }))).toBe(
       "Reading this page failed (500)."
     )
-    expect(statedWords(clientRefusal(new Error("offline"), "Could not reach Smithers Cloud."))).toBe(
+    expect(statedWords(refusalOf({ body: null, status: null, message: "Could not reach Smithers Cloud." }))).toBe(
       "Could not reach Smithers Cloud."
     )
   })

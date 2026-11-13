@@ -140,3 +140,33 @@ describe("a listing at a named revision", () => {
     expect(fileListCard({ repo: "acme/app", path: "", entries: [] }, 0, 1).value).toBe("/ in acme/app is empty.")
   })
 })
+
+describe("listing card identities", () => {
+  test.each([
+    [{ repo: "acme/web-app", path: "ui" }, { repo: "acme/web", path: "app-ui" }],
+    [{ repo: "acme/web", path: "docs@v2" }, { repo: "acme/web", path: "docs", ref: "v2" }],
+    [{ repo: "acme/web-app", path: "ui" }, { repo: "acme/web%2Dapp", path: "ui" }],
+    [{ repo: "acme/web", path: "docs@v2" }, { repo: "acme/web", path: "docs%40v2" }],
+    [{ repo: "acme/web", path: "docs" }, { repo: "acme/web", path: "docs", ref: "" }],
+    [{ repo: "acme/web", path: "docs", ref: "v1" }, { repo: "acme/web", path: "docs", ref: "v2" }]
+  ])("keeps %j distinct from %j", (left, right) => {
+    const first = fileListCard({ ...left, entries: [] }, 0, 1).card
+    const second = fileListCard({ ...right, entries: [] }, 0, 1).card
+    expect(first.id).not.toBe(second.id)
+    expect(new Map([[first.id, first], [second.id, second]]).size).toBe(2)
+  })
+
+  test("escapes delimiters only in the identity and keeps listing metadata readable", () => {
+    const { card } = fileListCard({ repo: "acme/web-app%", path: "docs@v2%", ref: "release/@next", entries: [] }, 0, 1)
+    expect(card.id).toBe("files-acme/web%2Dapp%25-docs%40v2%25@release/@next")
+    expect(card.title).toBe("Files · acme/web-app% · docs@v2% · release/@next")
+    expect(card.payload).toEqual({
+      repo: "acme/web-app%",
+      path: "docs@v2%",
+      ref: "release/@next",
+      address: "/acme/web-app%/docs@v2%",
+      entries: []
+    })
+    expect(CardSchema.safeParse(card).success).toBe(true)
+  })
+})

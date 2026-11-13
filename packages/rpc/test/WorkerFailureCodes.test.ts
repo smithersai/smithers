@@ -8,8 +8,7 @@ import {
   refusalEntry,
   refusalFromStored,
   refusalOf,
-  storedRefusal,
-  workerRefusalEnvelope
+  storedRefusal
 } from "../src/Refusal.ts"
 import { WORKER_FAILURE_CODES, WORKER_FAILURES, workerFailureCode } from "../src/WorkerFailureCodes.ts"
 import { workerRefusal } from "./refusalFixtures.ts"
@@ -68,16 +67,10 @@ describe("a Worker refusal as it reaches the app", () => {
     }
   })
 
-  test("the envelope takes status and pacing from the table, and the app reads back what it wrote", async () => {
+  test("decodes the registry status and pacing from an HTTP response", async () => {
     for (const code of WORKER_FAILURE_CODES) {
       const entry = WORKER_FAILURES[code]
-      const envelope = workerRefusalEnvelope(code, "nope")
       const paced = entry.retryAfter > 0
-      expect(envelope).toEqual({
-        status: entry.status,
-        body: { status: "error", code, message: "nope", ...(paced ? { retry_after: entry.retryAfter } : {}) },
-        headers: paced ? { "retry-after": String(entry.retryAfter) } : {}
-      })
       const built = await workerRefusal(code, "nope")
       expect({ status: built.status, fault: built.fault, origin: built.origin, retryAfter: built.retryAfter }).toEqual({
         status: entry.status,
@@ -91,17 +84,6 @@ describe("a Worker refusal as it reaches the app", () => {
   test("the desktop host's envelope says local and carries the same pacing", async () => {
     const refusal = await workerRefusal("model_rate_limited", "slow down", { origin: "local" })
     expect({ origin: refusal.origin, retryAfter: refusal.retryAfter }).toEqual({ origin: "local", retryAfter: 60 })
-  })
-
-  test("a caller's status and stated wait win; null states no wait", () => {
-    expect(workerRefusalEnvelope("upstream_refused", "x", { status: 409, retryAfterSeconds: null })).toEqual({
-      status: 409,
-      body: { status: "error", code: "upstream_refused", message: "x" },
-      headers: {}
-    })
-    expect(workerRefusalEnvelope("model_rate_limited", "x", { retryAfterSeconds: 5 }).headers).toEqual({
-      "retry-after": "5"
-    })
   })
 
   test("survives a round trip through a card's stored shape", async () => {

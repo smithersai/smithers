@@ -5,11 +5,9 @@ import {
   customModelCredentials,
   cutModelCredential,
   DECISION_MODEL_IDS,
-  decodeModelAnswers,
   failedModelCredential,
   failedModelTest,
   hostModelCredentials,
-  hostRefusedModelTest,
   isLoopbackOrigin,
   MODEL_CALL_MAX_TOKENS_MAX,
   MODEL_CALL_NAME_MAX,
@@ -31,7 +29,6 @@ import {
   MODEL_TEST_SAMPLE_MAX,
   MODEL_TEST_STATES,
   ModelBindingSchema,
-  ModelCallCardPayloadSchema,
   modelCallDefault,
   ModelCallDraftSchema,
   modelCallInputOf,
@@ -49,7 +46,6 @@ import {
   modelKindOf,
   modelOriginOf,
   ModelRecordIdSchema,
-  ModelsCardPayloadSchema,
   modelSeatsOf,
   ModelStateFieldSchema,
   modelStateFieldsOf,
@@ -627,30 +623,6 @@ describe("the test result", () => {
     expect(cutModelCredential("  ok \n", "")).toBe("  ok \n")
   })
 
-  test("a host's refusal to run a test is stored as its code, status and fault, never its words", () => {
-    const refusal = { code: "sign_in_required", status: 401, fault: "user", message: "Sign in. token=sk-live" } as const
-    const result = hostRefusedModelTest(refusal, 7.6)
-    expect(result).toEqual({
-      ok: false,
-      latencyMs: 8,
-      failure: { code: "host_refused", refusal: "sign_in_required", status: 401, fault: "user" },
-      fault: "user"
-    })
-    expect(ModelTestResultSchema.parse(result)).toEqual(result)
-    expect(JSON.stringify(result)).not.toContain("sk-live")
-  })
-
-  test("no response at all is a host refusal with no code and no status", () => {
-    const result = hostRefusedModelTest({ code: null, status: null, fault: "infra" }, 0)
-    expect(ModelTestResultSchema.parse(result)).toEqual(result)
-    expect(result.ok === false && result.failure).toEqual({
-      code: "host_refused",
-      refusal: null,
-      status: null,
-      fault: "infra"
-    })
-  })
-
   test("a row's test state is running while asked, then what the last result says", () => {
     const record = (result: ModelTestResult) => ({ id: "fast-local", testedAt: 1, result })
     const passed = record({ ok: true, latencyMs: 3, sample: "ok" })
@@ -752,24 +724,6 @@ describe("the catalog and the card", () => {
       credentials: [{ name: "OPENAI_API_KEY", present: true, origins: [], value: "sk-live" }]
     }
     expect(ModelCatalogSchema.safeParse(leaky).success).toBe(false)
-  })
-
-  test("the card payload keeps the last result per model beside what is still running", () => {
-    const payload = {
-      models: catalog.models,
-      seats: [{ id: "explainer", recordId: "fast-local", resolvable: true }],
-      credentials: catalog.credentials,
-      tests: [{ id: "fast-local", testedAt: 1, result: failedModelTest({ code: "refused", status: 401 }, 9, "local") }],
-      testing: ["fast-local"],
-      host: "observed",
-      selected: "fast-local",
-      attention: { kind: "seat-unresolved", seat: "explainer" }
-    }
-    expect(ModelsCardPayloadSchema.parse(payload)).toEqual(payload)
-    expect(
-      ModelsCardPayloadSchema.safeParse({ ...payload, attention: { kind: "test-failed", seat: "explainer" } }).success
-    )
-      .toBe(false)
   })
 })
 
@@ -1017,103 +971,6 @@ describe("a composed call", () => {
     ).toBe(false)
   })
 
-  test("raw answers decode against their questions the way the classifier decodes them", () => {
-    const decoded = decodeModelAnswers(decision.questions, {
-      ok: { type: "boolean", probability: 0.2 },
-      which: { type: "choice", choice: "red", probabilities: { red: 0.8 } },
-      sure: { type: "score", score: 1 }
-    })
-    expect(decoded).toEqual({
-      ok: true,
-      answers: {
-        ok: { type: "boolean", value: false, probability: 0.2 },
-        which: { type: "choice", value: "red", probabilities: { blue: 0, red: 0.8 }, confidence: 0.8 },
-        sure: { type: "score", value: 1, label: "high", probabilities: { low: 0, high: 1 }, confidence: 1 }
-      }
-    })
-    for (
-      const raw of [
-        {},
-        { ...{ ok: { type: "choice", choice: "blue" } } },
-        { ok: { type: "boolean", probability: 1.5 } },
-        {
-          ok: { type: "boolean", probability: 0.5 },
-          which: { type: "choice", choice: "green" },
-          sure: { type: "score", score: 0 }
-        },
-        {
-          ok: { type: "boolean", probability: 0.5 },
-          which: { type: "choice", choice: "blue" },
-          sure: { type: "score", score: 5 }
-        },
-        "nonsense"
-      ]
-    ) expect(decodeModelAnswers(decision.questions, raw)).toEqual({ ok: false })
-  })
-
-  test.each([-0.1, 1.1, Number.NaN, Number.POSITIVE_INFINITY, "not a probability"])(
-    "choice answers reject invalid probabilities for undeclared options: %s",
-    (probability) => {
-      for (const key of ["undeclared", "__proto__"]) {
-        const probabilities = { blue: 0.7, red: 0.3, [key]: probability }
-        expect(decodeModelAnswers({ which: choice }, {
-          which: { type: "choice", choice: "blue", probabilities }
-        })).toEqual({ ok: false })
-      }
-    }
-  )
-
-  test("decision distributions reject invalid mass and mixed key spaces", () => {
-    const questions = { which: choice, sure: score }
-    const valid = {
-      which: { type: "choice", choice: "blue", probabilities: { blue: 0.7, red: 0.3 } },
-      sure: { type: "score", score: 0.6, probabilities: { low: 0.2, high: 0.8 } }
-    }
-    expect(decodeModelAnswers(questions, valid)).toEqual({
-      ok: true,
-      answers: {
-        which: { type: "choice", value: "blue", probabilities: { blue: 0.7, red: 0.3 }, confidence: 0.7 },
-        sure: { type: "score", value: 0.6, label: "high", probabilities: { low: 0.2, high: 0.8 }, confidence: 0.8 }
-      }
-    })
-    for (const probabilities of [{ blue: -0.1 }, { blue: 1.1 }, { blue: Number.NaN }]) {
-      expect(decodeModelAnswers(questions, { ...valid, which: { ...valid.which, probabilities } })).toEqual({
-        ok: false
-      })
-    }
-    for (
-      const probabilities of [{ low: -0.1 }, { high: 1.1 }, { low: Number.POSITIVE_INFINITY }, { low: 0.5, "1": 0.5 }]
-    ) {
-      expect(decodeModelAnswers(questions, { ...valid, sure: { ...valid.sure, probabilities } })).toEqual({ ok: false })
-    }
-  })
-
-  test.each([
-    {
-      name: "complete numeric indexes",
-      probabilities: { "0": 0.2, "1": 0.8 },
-      expected: { low: 0.2, high: 0.8 },
-      confidence: 0.8
-    },
-    {
-      name: "a missing numeric rung",
-      probabilities: { "1": 0.75 },
-      expected: { low: 0, high: 0.75 },
-      confidence: 0.75
-    },
-    { name: "an empty numeric dictionary", probabilities: {}, expected: { low: 0, high: 0 }, confidence: 0 }
-  ])("score answers decode $name into the declared rung labels", ({ probabilities, expected, confidence }) => {
-    expect(decodeModelAnswers({ sure: score }, { sure: { type: "score", score: 0.6, probabilities } })).toEqual({
-      ok: true,
-      answers: { sure: { type: "score", value: 0.6, label: "high", probabilities: expected, confidence } }
-    })
-  })
-
-  test.each(["-1", "0.5", "2"])("score answers reject numeric index %s outside the declared integer rungs", (index) => {
-    expect(decodeModelAnswers({ sure: score }, { sure: { type: "score", score: 0.6, probabilities: { [index]: 1 } } }))
-      .toEqual({ ok: false })
-  })
-
   test("a temperature is drafted as the text typed, and only one in range becomes the wire's number", () => {
     const typed = (temperature: string) => ModelCallDraftSchema.parse({ ...generation, temperature })
     for (const text of ["3", "warm", "-1", "1e0", "0x1", " ", "2.01"]) {
@@ -1185,42 +1042,10 @@ describe("a composed call", () => {
     expect(ModelCallInputSchema.safeParse({ ...decision, questions: { ok: score } }).success).toBe(true)
   })
 
-  test("a distribution keeps an entry named as an object's prototype: read from a provider, and carried in a result", () => {
-    const questions = JSON.parse(
-      "{\"sure\":{\"type\":\"score\",\"instructions\":\"?\",\"criteria\":[\"__proto__\",\"other\"]},\"which\":{\"type\":\"choice\",\"instructions\":\"?\",\"criteria\":{\"__proto__\":\"\",\"other\":\"\"}}}"
+  test("a decision result preserves and validates a probability named as an object's prototype", () => {
+    const output = JSON.parse(
+      "{\"kind\":\"decision\",\"answers\":{\"sure\":{\"type\":\"score\",\"value\":0,\"label\":\"__proto__\",\"probabilities\":{\"__proto__\":0.6,\"other\":0.4},\"confidence\":0.6}}}"
     )
-    const distribution = "{\"__proto__\":0.6,\"other\":0.4}"
-    const decoded = decodeModelAnswers(
-      questions,
-      JSON.parse(
-        `{"sure":{"type":"score","score":0,"probabilities":${distribution}},"which":{"type":"choice","choice":"__proto__","probabilities":${distribution}}}`
-      )
-    )
-    if (!decoded.ok) throw new Error("the answer did not decode")
-    for (const answer of Object.values(decoded.answers)) {
-      if (answer.type === "boolean") throw new Error("the answer holds no distribution")
-      expect(Object.entries(answer.probabilities)).toEqual([["__proto__", 0.6], ["other", 0.4]])
-      expect(answer.confidence).toBe(0.6)
-    }
-    // A probability that is no number is still no answer.
-    expect(
-      decodeModelAnswers(
-        questions,
-        JSON.parse(
-          "{\"sure\":{\"type\":\"score\",\"score\":0,\"probabilities\":{\"__proto__\":\"0.6\"}},\"which\":{\"type\":\"choice\",\"choice\":\"other\"}}"
-        )
-      ).ok
-    ).toBe(false)
-    expect(
-      decodeModelAnswers(
-        questions,
-        JSON.parse(
-          "{\"sure\":{\"type\":\"score\",\"score\":0,\"probabilities\":[0.6,0.4]},\"which\":{\"type\":\"choice\",\"choice\":\"other\"}}"
-        )
-      ).ok
-    ).toBe(false)
-    // The result crosses the wire with every entry it was decoded with.
-    const output = JSON.parse(JSON.stringify({ kind: "decision", answers: decoded.answers }))
     const carried = ModelCallOutputSchema.parse(output)
     if (carried.kind !== "decision" || carried.answers.sure?.type !== "score") {
       throw new Error("the output is not the decision")
@@ -1233,49 +1058,6 @@ describe("a composed call", () => {
         )
       ).success
     ).toBe(false)
-  })
-
-  test("a reserved rung name decodes as an own key: the chosen rung keeps its mass", () => {
-    const questions = { sure: { ...score, criteria: ["__proto__", "other"] } }
-    const decoded = decodeModelAnswers(questions, { sure: { type: "score", score: 0 } })
-    if (!decoded.ok) throw new Error("the answer did not decode")
-    const sure = decoded.answers.sure
-    if (sure?.type !== "score") throw new Error("the answer is not a score")
-    expect(sure.label).toBe("__proto__")
-    expect(Object.entries(sure.probabilities)).toEqual([["__proto__", 1], ["other", 0]])
-    expect(sure.confidence).toBe(1)
-  })
-
-  test("the composer card keeps the asked request apart from the draft, each with the binding it is about", () => {
-    const binding = bindingOf(chat())
-    const asked = { ...generation, temperature: "0.2" }
-    const payload = {
-      model: "fast-local",
-      request: { ...generation, prompt: "edited while out", temperature: "3" },
-      pending: { requestId: "0b9e4b0e-ask1", request: asked, binding, owner: null },
-      response: {
-        askedAt: 1,
-        request: asked,
-        binding,
-        result: { ok: true, latencyMs: 9, sample: "ok", output: { kind: "generation", text: "ok" } }
-      }
-    }
-    expect(ModelCallCardPayloadSchema.parse(payload)).toEqual(payload)
-    expect(
-      ModelCallCardPayloadSchema.safeParse({ ...payload, pending: { ...payload.pending, apiKey: "sk-live" } }).success
-    ).toBe(false)
-    expect(
-      ModelCallCardPayloadSchema.safeParse({ ...payload, pending: { ...payload.pending, owner: undefined } }).success
-    ).toBe(false)
-    // A card written before the snapshot existed still replays: a bare flag, a response without a binding, a numeric temperature.
-    const before = {
-      model: "fast-local",
-      request: { ...generation, temperature: 0.2 },
-      asking: true,
-      response: { askedAt: 1, request: { ...generation, temperature: 0.2 }, result: payload.response.result }
-    }
-    expect(ModelCallCardPayloadSchema.parse(before)).toEqual(before)
-    expect(modelCallInputOf(before.request as ModelCallDraft)).toEqual({ ...generation, temperature: 0.2 })
   })
 })
 

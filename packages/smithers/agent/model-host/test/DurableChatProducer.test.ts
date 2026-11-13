@@ -324,7 +324,6 @@ test("wiki-only preflight journals and supplies only the chosen pinned page", as
 })
 
 test("pages large candidate and choice lists into bounded hash-checked journal writes", async () => {
-  const { projectContextPreflight } = await import("@smthrs/rpc/ContextPreflight")
   const candidates = Array.from(
     { length: 2500 },
     (_, i) => ({
@@ -355,12 +354,14 @@ test("pages large candidate and choice lists into bounded hash-checked journal w
     await Effect.runPromise(producer.writePreflight(phase, value))
     const pages = frames.filter((frame) => frame.type === "context.preflight" && frame.phase === phase)
     expect(pages.length).toBeGreaterThan(1)
-    let state = {}
-    for (const frame of pages) {
+    const results = pages.map((frame, index) => {
       if (frame.type !== "context.preflight") throw new Error("unexpected frame")
-      state = projectContextPreflight(state, frame)
-    }
-    expect(state).toEqual({ preflight: value, preflightPhase: phase, preflightPage: undefined })
+      expect(frame.page).toEqual({ index, total: pages.length })
+      expect(frame.result).toMatchObject({ model: value.model, durationMs: value.durationMs })
+      return frame.result
+    })
+    expect(results.flatMap((result) => result.candidates)).toEqual(value.candidates)
+    expect(results.flatMap((result) => result.context)).toEqual(value.context)
   }
 })
 

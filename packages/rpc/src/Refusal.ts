@@ -283,82 +283,6 @@ export const refusalOf = (input: RefusalInput): Refusal => {
 }
 
 /**
- * The HTTP answer for a refusal in the Worker's vocabulary: status, JSON body
- * and headers.
- *
- * @since 1.0.0
- * @category models
- */
-export interface WorkerRefusalEnvelope {
-  readonly status: number
-  readonly body: {
-    readonly status: "error"
-    readonly code: WorkerFailureCode
-    readonly message: string
-    readonly retry_after?: number
-    readonly origin?: "local"
-  }
-  readonly headers: Readonly<Record<string, string>>
-}
-
-/**
- * The one envelope a host answers a Worker-vocabulary refusal with.
- *
- * The status comes from the registry unless the caller passes one it has as
- * evidence (an upstream's). `retryAfterSeconds` left out uses the registry's
- * pacing; `null` states no wait. A stated wait travels on both the
- * `Retry-After` header and the body's `retry_after`, which is what
- * `refusalOf` reads back. `origin: "local"` marks the desktop host, which
- * serves the same routes in the same vocabulary.
- *
- * @since 1.0.0
- * @category constructors
- */
-export const workerRefusalEnvelope = (
-  code: WorkerFailureCode,
-  message: string,
-  options?: {
-    readonly status?: number
-    readonly retryAfterSeconds?: number | null
-    readonly origin?: "worker" | "local"
-  }
-): WorkerRefusalEnvelope => {
-  const entry = WORKER_FAILURES[code]
-  const seconds = options?.retryAfterSeconds === undefined
-    ? (entry.retryAfter > 0 ? entry.retryAfter : null)
-    : secondsOf(options.retryAfterSeconds)
-  return {
-    status: options?.status ?? entry.status,
-    body: {
-      status: "error",
-      code,
-      message,
-      ...(seconds === null ? {} : { retry_after: seconds }),
-      ...(options?.origin === "local" ? { origin: "local" as const } : {})
-    },
-    headers: seconds === null ? {} : { "retry-after": String(seconds) }
-  }
-}
-
-/**
- * A request that never got an answer: no server judged it, so no server can be
- * blamed for it and the user certainly cannot. Infra by construction — this is
- * the case that used to reach the chat model as `failed: <fetch message>`.
- *
- * @since 1.0.0
- * @category constants
- */
-export const clientRefusal = (error: unknown, message?: string): Refusal => ({
-  code: null,
-  rawCode: null,
-  fault: "infra",
-  message: message ?? (error instanceof Error ? error.message : String(error)),
-  retryAfter: null,
-  status: null,
-  origin: "client"
-})
-
-/**
  * The refusal as a workspace card persists it (`SessionRefusalSchema`).
  *
  * Structural, not the zod type, so the schema can keep importing this module
@@ -477,15 +401,3 @@ export const statedWords = (refusal: Refusal): string => refusal.message
 export const mayAutoRetry = (refusal: Refusal): boolean =>
   refusal.fault === "wait" &&
   (refusal.retryAfter !== null || secondsOf(refusalEntry(refusal.code)?.retryAfter) !== null)
-
-/**
- * The interval THIS RESPONSE asked for, in milliseconds, or null when it asked
- * for none — in which case the caller uses its own configured wait. The
- * distinction matters: a seam shortens its default in tests, and folding the
- * registry's pacing in here would make that knob a lie.
- *
- * @since 1.0.0
- * @category constants
- */
-export const statedRetryDelayMs = (refusal: Refusal): number | null =>
-  refusal.retryAfter === null ? null : refusal.retryAfter * 1_000

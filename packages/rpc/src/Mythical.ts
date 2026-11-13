@@ -49,7 +49,6 @@ export const MYTHICAL_ROUTES = {
   events: "/api/repos/{owner}/{repo}/mythical/events",
   /** `POST`: create the stack from main's history. */
   bootstrap: "/api/repos/{owner}/{repo}/mythical/bootstrap",
-  /** `POST`: admit every open GitHub issue now instead of waiting for the sweep. */
   /** `PUT`: {@link MythicalConfigSchema}. */
   config: "/api/repos/{owner}/{repo}/mythical/config",
   /** `GET`: one {@link MythicalItemSchema}, named by its id or its issue's number, however many the snapshot lists. */
@@ -186,7 +185,7 @@ export type MythicalChange = z.infer<typeof MythicalChangeSchema>
  * - `proposed`: its pull request is open. `landed`: main contains it.
  * - `rejected`: its pull request closed unmerged and it was reverted.
  * - `retrying`: an attempt sent back to a lane; retained legacy conflicts remain decodable.
- * - `blocked`: out of attempts; a person decides (`retry` route).
+ * - `blocked`: out of attempts; awaiting a person's decision.
  *
  * @since 1.0.0
  * @category schemas
@@ -515,7 +514,7 @@ export const MythicalItemSchema = z.object({
   route: MythicalTodoRouteSchema.optional(),
   /** Whether a person took over one of the item's runs. */
   humanEdited: z.boolean().optional(),
-  /** Whether a proposed TODO waits on an unfinished review of its current head, which a person may retry. */
+  /** Whether a proposed TODO waits on an unfinished review of its current head. */
   reviewHeld: z.boolean().optional(),
   /** The request id of the Smithers filing that made this TODO (`POST …/mythical/todos`). */
   request: z.string().optional(),
