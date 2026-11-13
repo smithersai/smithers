@@ -29,8 +29,10 @@ This is a composition problem, not a race. It is `sink_failed` rather than
 
 ## fence_lost
 
-**What happened.** The run no longer records the owner you supplied. Either
-another process reclaimed it, or its status is no longer `running`.
+**What happened.** The injected `Consensus` strategy no longer records the
+owner you supplied as holding the run. With `SqlConsensus`, the owner tuple
+does not match `flows_consensus_leases`: another process may have reclaimed
+the lease, the owner may have released it, or no lease was activated.
 
 **What to change.** Stop writing. `fence_lost` is ownership news, not a
 transient failure: retrying with the same token cannot succeed, and reaching for

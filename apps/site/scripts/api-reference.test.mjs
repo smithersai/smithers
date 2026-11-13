@@ -149,3 +149,72 @@ test("flows setup docs use the current release and public platform imports", () 
     assert.ok(!/@smthrs\/flows\/(?:NodeRuntime|SandboxedFlow)/.test(docs), `${path}: avoids blocked platform subpaths`)
   }
 })
+
+test("journal root namespaces and root-only imports match the published export maps", () => {
+  const dir = `${flows}journal`
+  const manifest = JSON.parse(read(`${dir}/package.json`))
+  const names = [...read(`${dir}/src/index.ts`).matchAll(/^export \* as (\w+) from/gm)].map((match) => match[1])
+  const readme = read(`${dir}/README.md`)
+  const table = readme.split("## Public API\n")[1].split("Two test entry points")[0]
+  const documented = [...table.matchAll(/^\| `(\w+)`\s*\|/gm)].map((match) => match[1])
+  assert.deepEqual(documented.sort(), names.sort())
+  const rootOnly = names.filter((name) => !Object.hasOwn(manifest.exports, `./${name}`))
+  for (const name of names) {
+    assert.equal(Object.hasOwn(manifest.exports, `./${name}`), Object.hasOwn(manifest.publishConfig.exports, `./${name}`))
+  }
+  for (const path of ["README.md", "docs/api.md", "docs/installation.md"]) {
+    const text = read(`${dir}/${path}`)
+    assert.doesNotMatch(text, /each is also importable|Every module in the root is also importable|Each module is also importable/)
+    for (const name of rootOnly) {
+      assert.match(text, new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from "@smthrs/journal"`), path)
+      assert.ok(!text.includes(`"@smthrs/journal/${name}"`), `${path}: root-only ${name}`)
+    }
+  }
+})
+
+test("journal setup and API reference cover the installed schema", () => {
+  const dir = `${flows}journal`
+  const migrations = [...read(`${dir}/src/Migrations.ts`).matchAll(/"(\d{4}_\w+)":/g)].map((match) => match[1])
+  const api = reference(dir)
+  for (const migration of migrations) assert.ok(api.includes(`\`${migration}\``), migration)
+  const install = read(`${dir}/docs/installation.md`)
+  for (const migration of migrations) {
+    const source = read(`${dir}/src/migrations/${migration}.ts`)
+    for (const [, table] of source.matchAll(/CREATE TABLE (\w+)/g)) {
+      assert.ok(install.includes(`\`${table}\``), table)
+    }
+  }
+  for (const text of [install, api]) {
+    assert.ok(text.includes("`flows_journal_generations`"))
+    assert.ok(text.includes("`JournalGeneration.initialize`"))
+  }
+  assert.doesNotMatch(install, /two tables and nothing else/)
+})
+
+test("journal guides describe the consensus lease rather than run status as the fence", () => {
+  const dir = `${flows}journal/docs`
+  const trouble = read(`${dir}/troubleshooting.md`).split("## fence_lost\n")[1].split("\n## ")[0]
+  assert.match(trouble, /Consensus/)
+  assert.match(trouble, /flows_consensus_leases/)
+  assert.doesNotMatch(trouble, /status|running/)
+  const testing = read(`${dir}/guides/testing.md`)
+  assert.match(testing, /journal.*migrations.*flows_consensus_leases/s)
+  assert.doesNotMatch(testing, /run-store migrations, so the fence/)
+})
+
+test("journal docs agree on SQL backends and retained history", () => {
+  const dir = `${flows}journal`
+  const install = read(`${dir}/docs/installation.md`).replace(/\s+/g, " ")
+  assert.match(install, /SQLite and PostgreSQL/)
+  assert.match(install, /PGlite is not supported/)
+  const reader = read(`${dir}/docs/guides/read-a-run.md`).replace(/\s+/g, " ")
+  assert.doesNotMatch(reader, /SQLite-specific adapter/)
+  assert.match(reader, /On SQLite/)
+  for (const path of ["README.md", "docs/README.md"]) {
+    const text = read(`${dir}/${path}`)
+    assert.doesNotMatch(text, /Rows are appended and never updated/)
+    const introduction = text.split("It is a set of")[0]
+    assert.match(introduction, /checkpoint.*replac/s)
+    assert.match(introduction, /compact.*delet/s)
+  }
+})

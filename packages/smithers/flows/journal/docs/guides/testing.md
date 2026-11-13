@@ -52,8 +52,10 @@ instead.
 `@smthrs/journal/test/TestJournal` provides the journal and nothing else. For
 the journal, run, attempt, and cache services over one database, take
 `@smthrs/engine-store/test/TestStores` from
-[`@smthrs/engine-store`](/api/engine-store). That bundle includes the run-store
-migrations, so the fence has a table to read.
+[`@smthrs/engine-store`](/api/engine-store). That bundle composes the journal,
+run-store, cache, and engine migrations. Both bundles include the journal's
+migrations that create `flows_consensus_leases`, the table `SqlConsensus`
+reads for the fence.
 
 ## Inject a crash at an exact transition
 

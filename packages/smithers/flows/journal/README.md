@@ -10,9 +10,10 @@ runtime.
 
 An append-only event history for [Effect](https://effect.website) applications.
 `@smthrs/journal` records what a long-running piece of work did, in order, in
-SQLite. Rows are appended and never updated, so the history reads the same on
-the tenth pass as on the first, and a process that dies halfway through leaves
-behind everything it had already committed.
+SQLite or PostgreSQL. Appends leave existing event rows unchanged. A checkpoint
+replaces saved state at the same run and sequence, and `compact` deletes older
+event rows. A process that dies halfway through leaves behind the committed
+history that has not been compacted.
 
 It is a set of Effect services: every write returns a typed receipt or a typed
 failure, and the database arrives as a layer you compose. It belongs to the
@@ -131,14 +132,26 @@ journaling cannot abandon the cleanup that follows the commit.
 
 ## Public API
 
-The root exports each module as a namespace, and each is also importable from
-the matching `@smthrs/journal/*` subpath. The
+The root exports the namespaces below. Most also have a matching
+`@smthrs/journal/<Module>` subpath. `CallFact`, `ExecutionFact`, and `StepFact`
+are available only from the root:
+
+```ts
+import { CallFact, ExecutionFact, StepFact } from "@smthrs/journal"
+```
+
+The
 [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md) lists every export
 with its one-line summary.
 
 | Namespace        | What it holds                                                                                                                                                                                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `Journal`        | The service and its operations, the `Checkpoint` and `Compacted` models, typed errors, receipts, read options, constructors, and the no-op layer.                                                                                                                  |
+| `EngineEvent`    | Typed engine lifecycle event schemas and constructors.                                                                                                                                                                                                             |
+| `ExecutionFact`  | Native execution observations and versioned facts.                                                                                                                                                                                                                 |
+| `CallFact`       | Authorized native call identities and delivered result facts.                                                                                                                                                                                                      |
+| `StepFact`       | Durable agent checkpoint observations and invocation coordinates.                                                                                                                                                                                                  |
+| `RedactedLogger` | Redacting Effect logger and console bridge.                                                                                                                                                                                                                        |
 | `JournalEvent`   | Branded `RunId`, `Seq`, `SourceId`, and `SourceSeq`; the `Input` and committed `Entry` schemas; deterministic `makeEventId`.                                                                                                                                       |
 | `SqlJournal`     | `SqlJournalOptions`, `CompactionPolicy`, the database-backed `layer(options)` fenced by `SqlConsensus`, and `layerWith(options)` over an injected strategy.                                                                                                        |
 | `OwnerId`        | The fencing token `emitDurable` accepts, carrying `hostId`, `pid`, and `nonce`.                                                                                                                                                                                    |

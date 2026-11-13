@@ -47,14 +47,22 @@ const database = Layer.provideMerge(
 )
 ```
 
-SQLite is the supported backend at `1.0.0-rc.0`. PostgreSQL and PGlite are
-not; see [storage compatibility](/docs/migration/compatibility#storage).
+SQLite and PostgreSQL use the same journal and migration ladder. The example
+above selects SQLite; for an injected PostgreSQL client, see
+[database configuration](../../database/docs/concepts/sqlite-only.md).
+PGlite is not supported.
 
 ## Install the migrations
 
-`Migrations.layer` creates this package's two tables and nothing else:
-`flows_journal_events` with its event-type index, and
-`flows_journal_checkpoints`.
+`Migrations.layer` installs six migrations that create four tables:
+`flows_journal_events`, `flows_journal_checkpoints`, `flows_journal_dedup`,
+and `flows_consensus_leases`, together with their indexes and the compacted
+producer identity guard. The migration composer records applied migrations
+in `flows_migrations`.
+
+The SQL journal also runs `JournalGeneration.initialize` to install
+`flows_journal_generations` idempotently for rewind tracking. That table is
+initialized separately from the six numbered migrations.
 
 ```ts
 import { Migrations, SqlJournal } from "@smthrs/journal"
@@ -110,8 +118,14 @@ The root entry point re-exports every module as a namespace:
 import { Journal, JournalEvent, Migrations, Redaction, SqlJournal } from "@smthrs/journal"
 ```
 
-Each module is also importable from its own subpath, which is the form the API
-reference uses:
+Most root namespaces also have a matching subpath. `CallFact`,
+`ExecutionFact`, and `StepFact` are available only from the root:
+
+```ts
+import { CallFact, ExecutionFact, StepFact } from "@smthrs/journal"
+```
+
+Namespaces with a subpath include:
 
 ```ts
 import * as Journal from "@smthrs/journal/Journal"

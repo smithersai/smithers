@@ -4,9 +4,10 @@ description: "An append-only event history for Effect applications: a lossless l
 ---
 
 `@smthrs/journal` records what a long-running piece of work did, in order, in
-SQLite. Rows are appended and never updated, so the history reads the same on
-the tenth pass as on the first, and a process that dies halfway through leaves
-behind everything it had already committed.
+SQLite or PostgreSQL. Appends leave existing event rows unchanged. A checkpoint
+replaces saved state at the same run and sequence, and `compact` deletes older
+event rows. A process that dies halfway through leaves behind the committed
+history that has not been compacted.
 
 It is a set of [Effect](https://effect.website) services: every write returns a
 typed receipt or a typed failure, and the database arrives as a layer you

@@ -27,7 +27,14 @@ const journal = SqlJournal.layer({ capacity: 1024, overflow: "reject" }).pipe(
 | `@smthrs/journal/test/TestJournal` | [src/test/TestJournal.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/src/test/TestJournal.ts) | Node     |
 | `@smthrs/journal/test/Notifying`   | [src/test/Notifying.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/src/test/Notifying.ts)     | any      |
 
-Every module in the root is also importable from `@smthrs/journal/<Module>`.
+Most root namespaces also have a matching `@smthrs/journal/<Module>`
+subpath. `CallFact`, `ExecutionFact`, and `StepFact` are available only from
+the root:
+
+```ts
+import { CallFact, ExecutionFact, StepFact } from "@smthrs/journal"
+```
+
 The root holds the journal and its contracts, written against the
 driver-neutral `@smthrs/database` service, and it bundles for the browser. The
 test doubles are kept out of it and live under explicit subpaths; of the two,
@@ -551,11 +558,19 @@ writer fiber and are not counted.
 `0001_initial` creates `flows_journal_events` and its event-type index;
 `0002_checkpoints` creates `flows_journal_checkpoints`;
 `0003_startup_index` indexes the timestamp/run/sequence ordering used by the
-bounded startup query. `run` and `layer` install this package's full set.
-The migration composer also applies the new index to an installed journal
-block when another package has already advanced the global migration cursor.
+bounded startup query; `0004_dedup` creates `flows_journal_dedup` and its
+producer identity guard; `0005_run_event_type` adds the
+`(run_id, event_type, seq)` cursor index; and `0006_consensus` creates
+`flows_consensus_leases` for `SqlConsensus`. `run` and `layer` install all
+six migrations. The migration composer also applies forward additions to an
+installed journal block when another package has already advanced the global
+migration cursor.
 
-Every other durable table belongs to the package that reads it.
+The SQL journal separately runs `JournalGeneration.initialize` to install
+`flows_journal_generations` idempotently for rewind tracking. It is not one
+of the six numbered migrations. Time travel shares this initializer.
+
+Run, attempt, cache, and engine tables belong to their owning packages.
 `@smthrs/database`'s `Migrations` composes several sets over one
 `flows_migrations` table, namespacing each package's ids into a reserved block
 so two packages' `0001_initial` cannot collide.

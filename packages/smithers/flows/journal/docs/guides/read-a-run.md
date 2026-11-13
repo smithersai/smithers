@@ -53,10 +53,11 @@ const finished = yield * journal.entries({ runId, eventTypes: ["build.finished",
 ```
 
 This is a new public query option. Filtering happens in SQL before the page
-limit, using the journal's `(run_id, event_type, seq)` index. `SqlJournal` is the
-existing SQLite-specific adapter and explicitly selects that index: SQLite can
-otherwise choose the run/sequence index for an `IN` query and scan unrelated
-history. Multiple types may sort matching rows by sequence. The dialect-specific
+limit, using the journal's `(run_id, event_type, seq)` index. `SqlJournal`
+serves SQLite and PostgreSQL. On SQLite it explicitly selects that index:
+SQLite can otherwise choose the run/sequence index for an `IN` query and scan
+unrelated history. PostgreSQL uses the same filter without a SQLite index
+hint. Multiple types may sort matching rows by sequence. The dialect-specific
 hint stays inside `SqlJournal`; `Journal.Service` remains platform-independent. `after` remains the
 canonical run sequence, and `hasMore` counts only matching events. Gaps between
 matching sequences are expected. Duplicate types do not duplicate entries. No match returns an empty final page. Omitting
