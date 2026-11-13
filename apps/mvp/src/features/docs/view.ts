@@ -96,7 +96,7 @@ export const docsPageOf = (row: DocsRow | undefined): DocsPage => {
 
 /**
  * Where a link in the shown page goes in the app: another page of the same index, on the shown page's own site, opens
- * as this tab's docs page; anything else is the site's, `undefined`.
+ * as this tab's docs page; section links and anything else stay on the site, `undefined`.
  */
 export const inAppHref = (
   href: string,
@@ -104,7 +104,7 @@ export const inAppHref = (
 ): string | undefined => {
   const target = URL.parse(href)
   const site = URL.parse(docs.pageUrl)
-  if (target === null || site === null || target.origin !== site.origin) return undefined
+  if (target === null || site === null || target.origin !== site.origin || target.hash !== "") return undefined
   return docs.pages.some((page) => page.path === target.pathname)
     ? docsHref(docs.owner, docs.name, target.pathname)
     : undefined

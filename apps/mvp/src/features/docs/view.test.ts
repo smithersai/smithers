@@ -45,6 +45,10 @@ describe("docsPageOf", () => {
   test("a chosen page before its row exists is on its way", () => {
     const page = docsPageOf({ current: { ...current, path: "/a.md", pageKey: "acme/widgets:/a.md" }, index: ready })
     expect(page).toMatchObject({ kind: "docs", page: { kind: "loading" }, path: "/a.md" })
+    expect(docsPageOf({
+      current: { ...current, path: "/a.md", pageKey: "acme/widgets:/a.md" }, index: ready,
+      page: { key: "acme/widgets:/a.md", repoId: "github/acme/widgets", state: "loading", title: "", url: "", text: "", code: null },
+    })).toMatchObject({ page: { kind: "loading" } })
   })
 
   test("a search ChatApi refused, or one with no row yet", () => {
@@ -56,13 +60,35 @@ describe("docsPageOf", () => {
       docsPageOf({ current: searching, index: ready, search: { key: "acme/widgets?x", repoId: "github/acme/widgets", state: "refused", pages: [], code: "unavailable" } }),
     ).toMatchObject({ list: { kind: "results", notice: DOCS_UNREADABLE } })
   })
+
+  test("search results keep matching pages, while a settled empty search says no matches", () => {
+    const searching = { ...current, query: "retry", searchKey: "acme/widgets?retry" }
+    const search = { key: searching.searchKey, repoId: "github/acme/widgets", state: "ready" as const, pages, code: null }
+    expect(docsPageOf({ current: searching, index: ready, search })).toMatchObject({
+      list: { kind: "results", pages, notice: null },
+    })
+    expect(docsPageOf({ current: searching, index: ready, search: { ...search, pages: [] } })).toMatchObject({
+      list: { kind: "results", pages: [], notice: "No matches" },
+    })
+    expect(docsPageOf({ current: searching, index: ready, search: { ...search, state: "loading" } })).toMatchObject({
+      list: { kind: "results", pages: [], notice: null },
+    })
+  })
 })
 
 describe("inAppHref", () => {
   const docs = { owner: "acme", name: "widgets", pageUrl: "https://docs.example/guide/retrying.md", pages }
 
   test("another page of the same index on the same site opens in the app", () => {
-    expect(inAppHref("https://docs.example/reference/schedule.md#x", docs)).toBe("/acme/widgets/docs/reference/schedule.md")
+    expect(inAppHref("https://docs.example/reference/schedule.md", docs)).toBe("/acme/widgets/docs/reference/schedule.md")
+  })
+
+  test.each([
+    "https://docs.example/reference/schedule.md#retry",
+    "https://docs.example/guide/retrying.md#retry",
+    "https://docs.example/reference/schedule.md?view=full#retry%20later",
+  ])("a section link stays on its original site: %s", (href) => {
+    expect(inAppHref(href, docs)).toBeUndefined()
   })
 
   test("a page the index doesn't list, another site, or no URL is the site's", () => {

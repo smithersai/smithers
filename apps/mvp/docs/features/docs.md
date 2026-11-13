@@ -73,6 +73,8 @@ It answers `{ pages: [{ title, path, url, viewId }], text? }`: the pages shown, 
 
 `/$owner/$repo/docs` lists the repository's docs; `/$owner/$repo/docs/<path>` shows one page (the splat is the page's path without its leading slash, such as `error-management/018-retrying.md`). The **Repository pages** navigation, beside **Home** and **Code**, has **Docs** only when the repository's home, or its curated one, names docs (`HomePage.docs`, `tabsOf`): its own home's `docs` at its newest commit, from what GitHub says of it, which the page loads cloned or not, else the curated home's, from ChatApi's answer. Both live in the tab's `home-current` row only, never in a stored home, so the Docs tab needs the network, as the docs themselves do. The page has a `Search docs` searchbox whose matches show as you type, the index's pages as links grouped by section, and the chosen page in the `Docs` region, rendered by `DocsPageView`. Its state lives in `src/features/docs/` as local TanStack DB collections and Effect actions ([state](../state.md)).
 
+Links to a listed page on the same docs site open in the app when they have no section fragment. Section links open on the original docs site with their fragment intact, including links within the current page and modified clicks. The in-app Markdown headings have no section targets.
+
 ## Observability
 
 No record carries a query, a path, a URL, a title or a page's text.
@@ -98,9 +100,10 @@ No record carries a query, a path, a URL, a title or a page's text.
 | `src/features/docs/search.test.ts` | the steps on the Node host's engine against ChatApi's real routes: one page and three, a lost page left out, text bounded, nothing matched, refusals, passing failures tried again, conversations by door, records; the agent's `ctx.call` as a journaled step whose answer carries the page's text; the client |
 | `src/features/views/views.test.ts` | `/docs` on a Node device shows the page inline with its Markdown and at full size |
 | `db/Database.test.ts` "0043_docs_views" | the template's check |
+| `src/features/docs/view.test.ts`, `tests/DocsLinks.test.ts` | whole-page links route in the app; cross-page and same-page section links keep their original destination for ordinary, Command, Ctrl and Shift clicks |
 | `e2e/docs.spec.ts` | on `smithersai/vibelang`, live: a visitor's Docs tab lists vibelang.sh's index, `Search docs` finds a page selected from the live index as they type, and its heading and code body match the live Markdown with its site; `/docs` shows it in the chat and at full size; with the real model (`requires("liveModel")`), the agent asked how to retry shows a docs page |
 
-Run them with the compose Postgres and Electric up: `pnpm exec vitest run worker/docs worker/Views.test.ts src/features/docs src/features/views`, and `pnpm exec playwright test e2e/docs.spec.ts` against `pnpm dev`.
+Run them with the compose Postgres and Electric up: `pnpm exec vitest run worker/docs worker/Views.test.ts src/features/docs src/features/views tests/DocsLinks.test.ts`, and `pnpm exec playwright test e2e/docs.spec.ts` against `pnpm dev`.
 
 ## Plugin
 

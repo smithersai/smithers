@@ -8,7 +8,7 @@ import { useDocs } from "./DocsContext"
 
 // `/$owner/$repo/docs[/<page>]`: a repository's docs. Beside the page, the searchbox and the index's pages by section,
 // or the search's matches while the box holds words; the chosen page in the Docs region, rendered from its Markdown
-// (`@smthrs/ui`'s `DocsPageView`). A link in it to another page of the same index opens here; any other opens the site.
+// (`@smthrs/ui`'s `DocsPageView`). Whole-page links in the same index open here; section links open on the site.
 export function DocsPage() {
   const { queries, actions } = useDocs()
   const navigate = useNavigate()
