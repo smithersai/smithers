@@ -101,15 +101,21 @@ it.live("history/command-arms", () => run("history/command-arms", Input, (input)
       return try Fiber.join(keys)
     }, "5 seconds")
     if (Option.isNone(escaped) || Option.isNone(escaped.value) || escaped.value.value._tag !== "PressedEscape") throw new Finding({ report: "Escape" })
-    // A stream lost once: the outline, then two seconds later the event.
+    // A lost stream and a stream that ends both leave the page disconnected after the outline; neither follows again
+    // until Reconnect bumps the epoch (#5344).
     const mythical = try Mythical
     const outline = try mythical.outline()
-    let follows = 0
     const event = { type: "Started" as const, seq: outline.seq + 1, id: "m1", lane: "fuzz" }
-    const lostOnce = Layer.succeed(Mythical, Object.assign(Object.create(mythical) as Mythical.Shape, { events: () => follows++ === 0 ? Stream.fail(new Unavailable({ reason: "fault" })) : Stream.make(event) }))
-    const got = try stepped(Effect.provide(Stream.runCollect(entries["history"]!.dependenciesToStream({ epoch: 0 }, () => ({ epoch: 0 })).pipe(Stream.take(2))), lostOnce), 5)
-    const delivered = Array.from(got)
-    if (follows !== 2 || delivered.length !== 2 || delivered[0]!._tag !== "GotOutline" || delivered[1]!._tag !== "ReceivedEvent") throw new Finding({ report: `a lost stream: ${follows} follows, ${delivered.map((m) => m._tag).join(",")}` })
+    for (const [label, events, wanted] of [
+      ["a lost stream", () => Stream.fail(new Unavailable({ reason: "fault" })), "GotOutline,FailedEvents"],
+      ["an ended stream", () => Stream.make(event), "GotOutline,ReceivedEvent,FailedEvents"],
+    ] as const) {
+      let follows = 0
+      const faulty = Layer.succeed(Mythical, Object.assign(Object.create(mythical) as Mythical.Shape, { events: () => { follows += 1; return events() } }))
+      const got = try stepped(Effect.provide(Stream.runCollect(entries["history"]!.dependenciesToStream({ epoch: 0 }, () => ({ epoch: 0 }))), faulty), 5)
+      const delivered = Array.from(got).map((m) => m._tag).join(",")
+      if (follows !== 1 || delivered !== wanted) throw new Finding({ report: `${label}: ${follows} follows, ${delivered}` })
+    }
   }
   const start = init({ mode: "mock", role: input.model, hash: "" }).model
   const navigated = try Effect.try(() => update(start, HistoryMessage.Navigated({ hash: "e1" })))

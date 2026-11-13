@@ -539,6 +539,13 @@ and a target with nothing to replay still fails on zero executions. `FUZZ_CORPUS
 for the test (`test/fuzzGate.test.vibe`: a 50 ms replay against a 1 ms budget; with the extra run removed it fails
 with the box's `NoExecution`).
 
+Two chosen cases follow product changes that landed after them. `history/command-arms`: since `72877048` (#5344) a
+lost event stream and one that ends both deliver `FailedEvents` after the outline and follow once, until Reconnect
+(it followed again after 2 s before). `screens/sandbox-states`: since `a44561eb` (#5346) the pane's sign-in is the
+`ClickedSignIn` button, counted inside the pane because the header has its own; a new case holds it disabled and
+named `Signing in…` while an account request runs. Mutants caught: an ended stream that never disconnects; a
+sign-in button that stays enabled.
+
 ### Product findings fixed
 
 | Finding | Target | Fix and regression |

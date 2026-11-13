@@ -42,6 +42,8 @@ type SandboxCase = {
   readonly bare?: boolean
   /** The failure offers Retry: only a failed start or stop does. */
   readonly retry?: boolean
+  /** An account request is under way, so the sign-in button waits. */
+  readonly pending?: boolean
 }
 
 /** One case per arm of the pane: closed with and without a snapshot, each gate, each start control, each failure. */
@@ -50,6 +52,7 @@ const SANDBOX_CASES: ReadonlyArray<SandboxCase> = [
   { pane: "closed", bare: true },
   { pane: "closed", snapshot: { role: "contributor" } },
   { pane: "pane", snapshot: { role: "viewer" } },
+  { pane: "pane", snapshot: { role: "viewer" }, pending: true },
   { pane: "pane", snapshot: { role: "community" } },
   { pane: "max" },
   { pane: "pane", snapshot: { role: "contributor", allowance: 0, remaining: 0 } },
@@ -80,6 +83,7 @@ function sandboxHolds(c: SandboxCase, input: typeof SandboxInput.Type): boolean 
     ...(c.error ? { sandboxError: `e${input.error}` } : {}),
     ...(c.notice ? { minuteNotice: `n${input.notice}` } : {}),
     ...(c.draft ? { terminalDraft: input.draft } : {}),
+    ...(c.pending ? { account: { ...home.account, pending: true } } : {}),
   }
   const running = snapshot?.status === "running"
   const pane = sandboxPaneView(c.pane, running, c.busy ?? false, mayStart(snapshot?.role ?? "viewer"), snapshot?.role ?? "", c.operation ?? "", snapshot?.remaining === 0)
@@ -101,7 +105,10 @@ function sandboxHolds(c: SandboxCase, input: typeof SandboxInput.Type): boolean 
     if (count("button", "Stop") !== (running ? 1 : 0)) holds = false
     if ((textContent(sections[0]!).includes("Sign in to start a sandbox")) !== (pane.gate === "sign-in")) holds = false
     if ((textContent(sections[0]!).includes("Contributor required")) !== (pane.gate === "contributor")) holds = false
-    if (count("link", "Sign in") !== (pane.gate === "sign-in" ? 1 : 0)) holds = false
+    // Sign-in is the header's ClickedSignIn button, disabled and named for the wait while an account request runs (#5346).
+    const signIn = getAllByRole("button", { name: /^Sign(ing)? in/ })(sections[0]!)
+    if (getAllByRole("link", { name: /^Sign/ })(sections[0]!).length !== 0 || signIn.length !== (pane.gate === "sign-in" ? 1 : 0)) holds = false
+    if (signIn.length === 1 && (disabled(signIn[0]!) !== !!c.pending || textContent(signIn[0]!) !== (c.pending ? "Signing in…" : "Sign in"))) holds = false
     if (count("progressbar", "Minutes left") !== (ok && !running ? 1 : 0)) holds = false
     if (count("button", "New sandbox") !== (ok && !running && !snapshot?.id ? 1 : 0)) holds = false
     if (count("button", "Start") !== (ok && !running && !!snapshot?.id ? 1 : 0)) holds = false
