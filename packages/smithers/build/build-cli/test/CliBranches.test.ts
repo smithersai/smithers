@@ -13,7 +13,7 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, afterEach, describe, expect, it } from "vitest"
 import * as Audience from "../src/Audience.ts"
-import { openCache } from "../src/Cache.ts"
+import { sanitizeKey } from "../src/Cache.ts"
 import * as CacheAdmin from "../src/CacheAdmin.ts"
 import { approvalRevision, makeCli, normalizeArgv, openPackageIndex, type RuntimeConfig } from "../src/Cli.ts"
 import { CliServices, cliServicesLive } from "../src/index.ts"
@@ -1012,29 +1012,32 @@ export const Package = S.Package({ targets: {
     expect(missing.data.owners).toHaveLength(1)
     expect(JSON.stringify(missing.data.owners)).toContain("maintainer")
     expect(await CacheAdmin.entries(root, ".flows")).toEqual([])
-    const cache = await openCache({ workspaceRoot: root })
-    try {
-      for (
-        const row of [
-          { label: "//:sources", target: "Filegroup", exitOk: false },
-          { label: "//:other", target: "Filegroup", exitOk: true },
-          { label: "//:sources", target: "Other", exitOk: true }
-        ]
-      ) {
-        await cache.put(missing.data.cache.key, {
-          key: missing.data.cache.key,
-          ...row,
-          storedAt: new Date().toISOString(),
-          output: null
-        }, { shared: false })
-        const refused = await jsonCommand(root, ["show", "target", "//:sources"])
-        expect(refused.exitCode, refused.envelope).toBe(0)
-        expect(refused.data.cache.local).toBe("miss")
-      }
-    } finally {
-      await cache.close()
+    const initial = await jsonCommand(root, ["target", "//:sources"])
+    expect(initial.data.results).toEqual([expect.objectContaining({ label: "//:sources", status: "ran" })])
+    const replay = await jsonCommand(root, ["target", "//:sources"])
+    expect(replay.data.results).toEqual([expect.objectContaining({ label: "//:sources", status: "hit" })])
+    const key = missing.data.cache.key as string
+    const safe = sanitizeKey(key)
+    const cachePath = NodePath.join(root, ".flows/cache", safe.slice(0, 2), safe + ".json")
+    const valid = JSON.parse(await Fs.readFile(cachePath, "utf8"))
+    await Fs.writeFile(cachePath, JSON.stringify(valid))
+    const reserialized = await jsonCommand(root, ["target", "//:sources"])
+    expect(reserialized.data.results).toEqual([expect.objectContaining({ label: "//:sources", status: "hit" })])
+    for (
+      const row of [
+        { label: "//:sources", target: "Filegroup", exitOk: false },
+        { label: "//:other", target: "Filegroup", exitOk: true },
+        { label: "//:sources", target: "Other", exitOk: true }
+      ]
+    ) {
+      await Fs.writeFile(cachePath, JSON.stringify({ ...valid, ...row }))
+      const refused = await jsonCommand(root, ["show", "target", "//:sources"])
+      expect(refused.exitCode, refused.envelope).toBe(0)
+      expect(refused.data.cache.local).toBe("miss")
+      const executed = await jsonCommand(root, ["target", "//:sources"])
+      expect(executed.exitCode, executed.envelope).toBe(0)
+      expect(executed.data.results).toEqual([expect.objectContaining({ label: "//:sources", status: "ran" })])
     }
-    expect((await jsonCommand(root, ["target", "//:sources"])).exitCode).toBe(0)
     const hit = await jsonCommand(root, ["explain", "//:sources"])
     expect(hit.exitCode, hit.envelope).toBe(0)
     expect(hit.data.cache).toMatchObject({ local: "candidate", key: missing.data.cache.key })

@@ -10,6 +10,7 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import * as AgentFake from "../src/AgentFake.ts"
+import { sanitizeKey } from "../src/Cache.ts"
 import {
   executeEffect,
   ExecutionServices,
@@ -1086,19 +1087,14 @@ describe("cache envelope identity", () => {
   ])("does not replay a %s as this target", async (_fault, invalid) => {
     const { root, options, plan, node } = await fixture(`import { Smithers as S } from "@smthrs/targets"
 export const Package = S.Package({ targets: { command: S.Filegroup({ srcs: [S.file("//prompt.md")] }) } })`)
-    const store = await Effect.runPromise(
-      executionServicesLive.cache({ workspaceRoot: root, cacheDirectory: ".flows" })
-    )
-    await store.put(node.keyPreview, {
-      key: node.keyPreview,
-      target: node.rule,
-      label: node.label,
-      exitOk: true,
-      output: { kind: "filegroup" },
-      storedAt: new Date().toISOString(),
-      ...invalid
-    })
-    await store.close()
+    expect((await PackageExec.execute(plan, options)).results).toMatchObject([{ status: "ran" }])
+    expect((await PackageExec.execute(plan, options)).results).toMatchObject([{ status: "hit" }])
+    const safe = sanitizeKey(node.keyPreview)
+    const cachePath = Path.join(root, ".flows/cache", safe.slice(0, 2), safe + ".json")
+    const valid = JSON.parse(await Fs.readFile(cachePath, "utf8"))
+    await Fs.writeFile(cachePath, JSON.stringify(valid))
+    expect((await PackageExec.execute(plan, options)).results).toMatchObject([{ status: "hit" }])
+    await Fs.writeFile(cachePath, JSON.stringify({ ...valid, ...invalid }))
     const result = await PackageExec.execute(plan, options)
     expect(result.results).toMatchObject([{ status: "ran" }])
     const corrected = await Effect.runPromise(

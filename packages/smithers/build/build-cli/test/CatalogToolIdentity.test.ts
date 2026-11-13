@@ -181,14 +181,8 @@ posixIt.each(["build", "check", "test", "lint", "fmt"])(
 posixIt("excludes unrelated ambient environment from catalog keys", async () => {
   const { node } = await fixture()
   const original = await node("check")
-  const previous = process.env["SMITHERS_CATALOG_UNRELATED_CANARY"]
-  try {
-    process.env["SMITHERS_CATALOG_UNRELATED_CANARY"] = "changed ambient value"
-    expect((await node("check")).keyPreview).toBe(original.keyPreview)
-  } finally {
-    if (previous === undefined) delete process.env["SMITHERS_CATALOG_UNRELATED_CANARY"]
-    else process.env["SMITHERS_CATALOG_UNRELATED_CANARY"] = previous
-  }
+  expect((await node("check", { SMITHERS_CATALOG_UNRELATED_CANARY: "changed ambient value" })).keyPreview)
+    .toBe(original.keyPreview)
 })
 
 posixIt.each(["build", "check", "test", "lint", "fmt"])(

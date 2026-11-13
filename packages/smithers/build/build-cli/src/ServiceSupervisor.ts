@@ -32,6 +32,7 @@ import * as Data from "effect/Data"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
+import * as Option from "effect/Option"
 import * as RcMap from "effect/RcMap"
 import * as Schedule from "effect/Schedule"
 import * as Scope from "effect/Scope"
@@ -43,7 +44,14 @@ import * as NodeHttps from "node:https"
 import * as NodeNet from "node:net"
 import * as NodePath from "node:path"
 import * as NodeUtil from "node:util/types"
+import { ProcessSpawner } from "./internal/ContainedProcess.ts"
 import type * as OutputStream from "./OutputStream.ts"
+
+/** Defaults to the real process owner; faults are scoped to the caller's Effect context. */
+const spawn: typeof ScopedProcess.spawn = (options) =>
+  Effect.serviceOption(ProcessSpawner).pipe(
+    Effect.flatMap((service) => Option.getOrElse(service, () => ({ spawn: ScopedProcess.spawn })).spawn(options))
+  )
 
 /**
  * Optional command-scoped progress observers; service capture and readiness are independent.
@@ -810,7 +818,7 @@ const serviceCommand = (
     const output: Array<Uint8Array> = []
     const error: Array<Uint8Array> = []
     const program = Effect.gen(function*() {
-      const handle = yield* ScopedProcess.spawn({
+      const handle = yield* spawn({
         command: argv[0]!,
         args: argv.slice(1),
         cwd: context.cwd,
@@ -1353,7 +1361,7 @@ const startService = (
       )
     }
     const argv = parsed.spec.docker === undefined ? secretBoundary.argv : parsed.spec.argv
-    const handle = yield* ScopedProcess.spawn({
+    const handle = yield* spawn({
       command: argv[0],
       args: argv.slice(1),
       cwd: parsed.spec.cwd,

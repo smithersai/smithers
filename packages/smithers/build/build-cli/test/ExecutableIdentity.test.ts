@@ -244,22 +244,23 @@ export const Package = S.Package({ targets: { dist: S.Shell.Build({ shell: "${bi
     expect(await Fs.readFile(Path.join(root, "dist/value"), "utf8")).toBe("compiled")
   })
 
-  it.each(process.platform === "win32" ? ["native"] : ["posix", "native"])(
-    "misses after replacing a declared %s host executable at the same path and version",
-    async (transport) => {
-      const name = transport === "native" ? "identity-compiler.exe" : "identity-compiler"
-      const { root, tools } = await fixture(
-        `S.Shell.Build({ bin: S.Host.bin(${JSON.stringify(name)}), outDirs: ["dist"], sandbox: "none" })`
-      )
-      const workspace = Path.join(root, "WORKSPACE.ts")
-      await Fs.writeFile(
-        workspace,
-        (await Fs.readFile(workspace, "utf8")).replace("\"identity-compiler\"", JSON.stringify(name))
-      )
-      const install = async (value: string) => {
-        await writeExecutable(
-          Path.join(tools, "identity-compiler"),
-          `#!/usr/bin/env node
+  for (const transport of process.platform === "win32" ? ["native"] : ["posix", "native"]) {
+    it.skipIf(transport === "native" && PackageTree.findOnPath("rustc") === undefined)(
+      `misses after replacing a declared ${transport} host executable at the same path and version`,
+      async () => {
+        const name = transport === "native" ? "identity-compiler.exe" : "identity-compiler"
+        const { root, tools } = await fixture(
+          `S.Shell.Build({ bin: S.Host.bin(${JSON.stringify(name)}), outDirs: ["dist"], sandbox: "none" })`
+        )
+        const workspace = Path.join(root, "WORKSPACE.ts")
+        await Fs.writeFile(
+          workspace,
+          (await Fs.readFile(workspace, "utf8")).replace("\"identity-compiler\"", JSON.stringify(name))
+        )
+        const install = async (value: string) => {
+          await writeExecutable(
+            Path.join(tools, "identity-compiler"),
+            `#!/usr/bin/env node
 const fs = require("node:fs");
 if (process.argv.includes("--version")) { console.log("1.0.0"); } else {
   fs.appendFileSync(${JSON.stringify(Path.join(tools, "dispatches"))}, "dispatch\\n");
@@ -267,17 +268,18 @@ if (process.argv.includes("--version")) { console.log("1.0.0"); } else {
   fs.writeFileSync("dist/value", ${JSON.stringify(value)});
 }
 `,
-          transport === "native" ? "win32" : process.platform
-        )
-        if (transport === "native") {
-          expect(PackageTree.findOnPath("identity-compiler", { PATH: tools, PATHEXT: ".EXE" }, { platform: "win32" }))
-            .toBe(Path.join(tools, "identity-compiler.exe"))
+            transport === "native" ? "win32" : process.platform
+          )
+          if (transport === "native") {
+            expect(PackageTree.findOnPath("identity-compiler", { PATH: tools, PATHEXT: ".EXE" }, { platform: "win32" }))
+              .toBe(Path.join(tools, "identity-compiler.exe"))
+          }
         }
+        await install("first")
+        await assertReplacement(root, tools, () => install("second"))
       }
-      await install("first")
-      await assertReplacement(root, tools, () => install("second"))
-    }
-  )
+    )
+  }
 
   it.each([true, false])("keys a helper the tool spawns itself only when tools declares it (%s)", async (declared) => {
     const { root, tools } = await fixture(
@@ -389,24 +391,25 @@ if (process.argv.includes("--version")) { console.log("1.0.0"); } else {
     expect(planned.nodes.get("//:dist")?.refusal).toBe("Runtime.npx references must be used as bin, not in tools")
   })
 
-  it.each(["direct", "env", "env-split"])(
-    "misses after replacing the %s shebang interpreter behind a symlink",
-    async (kind) => {
-      const { root, tools } = await fixture(
-        "S.Shell.Build({ bin: S.Host.bin(\"identity-compiler\"), outDirs: [\"dist\"], sandbox: \"none\" })"
-      )
-      const interpreter = kind === "direct"
-        ? `${tools}/identity-interpreter`
-        : `/usr/bin/env ${kind === "env-split" ? "-S " : ""}identity-interpreter`
-      await write(tools, "identity-compiler", `#!${interpreter}\n# The interpreter supplies the compiler behavior.\n`)
-      const install = async (value: string): Promise<void> => {
-        if (kind !== "direct") return write(tools, "interpreter", compiler(tools, value))
-        // macOS does not accept a script as the direct shebang interpreter.
-        // Compile a real executable so this fixture exercises the kernel seam.
-        await write(
-          tools,
-          "interpreter.c",
-          `#include <stdio.h>
+  for (const kind of ["direct", "env", "env-split"]) {
+    it.skipIf(kind === "direct" && PackageTree.findOnPath("cc") === undefined)(
+      `misses after replacing the ${kind} shebang interpreter behind a symlink`,
+      async () => {
+        const { root, tools } = await fixture(
+          "S.Shell.Build({ bin: S.Host.bin(\"identity-compiler\"), outDirs: [\"dist\"], sandbox: \"none\" })"
+        )
+        const interpreter = kind === "direct"
+          ? `${tools}/identity-interpreter`
+          : `/usr/bin/env ${kind === "env-split" ? "-S " : ""}identity-interpreter`
+        await write(tools, "identity-compiler", `#!${interpreter}\n# The interpreter supplies the compiler behavior.\n`)
+        const install = async (value: string): Promise<void> => {
+          if (kind !== "direct") return write(tools, "interpreter", compiler(tools, value))
+          // macOS does not accept a script as the direct shebang interpreter.
+          // Compile a real executable so this fixture exercises the kernel seam.
+          await write(
+            tools,
+            "interpreter.c",
+            `#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 int main(int argc, char **argv) {
@@ -417,16 +420,17 @@ int main(int argc, char **argv) {
   FILE *out = fopen("dist/value", "w"); fputs(${JSON.stringify(value)}, out); fclose(out);
   return 0;
 }`
-        )
-        ChildProcess.execFileSync("cc", [Path.join(tools, "interpreter.c"), "-o", Path.join(tools, "interpreter")], {
-          timeout: 60_000
-        })
+          )
+          ChildProcess.execFileSync("cc", [Path.join(tools, "interpreter.c"), "-o", Path.join(tools, "interpreter")], {
+            timeout: 60_000
+          })
+        }
+        await install("first")
+        await Fs.symlink("interpreter", Path.join(tools, "identity-interpreter"))
+        await assertReplacement(root, tools, () => install("second"))
       }
-      await install("first")
-      await Fs.symlink("interpreter", Path.join(tools, "identity-interpreter"))
-      await assertReplacement(root, tools, () => install("second"))
-    }
-  )
+    )
+  }
 
   it.each(["Nextest", "Deny"])("misses after replacing the Cargo.%s plugin at the same version", async (rule) => {
     const name = `cargo-${rule.toLowerCase()}`
@@ -462,39 +466,41 @@ exec '${tools}/sdk/bin/go' "$@"
     await assertReplacement(root, tools, () => write(tools, "sdk/bin/go", compiler(tools, "second")))
   })
 
-  it("keeps a missing rustup toolchain read-only while planning", async () => {
-    expect(PackageTree.findOnPath("rustup")).toBeDefined()
-    const { root, tools } = await fixture(
-      "S.Cargo.Test({ workspace: true, sandbox: \"none\" })",
-      "toolchains: [S.Rust.Toolchain({ workspace: S.file(\"//Cargo.toml\"), channel: \"stable\" })],"
-    )
-    await write(root, "Cargo.toml", "[workspace]\nmembers = []\n")
-    await write(tools, "cargo", "#!/bin/sh\necho cargo-1\n")
-    const rustupHome = await directory()
-    const distribution = await directory()
-    await write(rustupHome, "settings.toml", "version = \"12\"\nprofile = \"minimal\"\n")
-    const environment = {
-      ...process.env,
-      RUSTUP_HOME: rustupHome,
-      // A real, empty local distribution makes an accidental install observable
-      // without reaching the network or changing the developer's toolchains.
-      RUSTUP_DIST_SERVER: pathToFileURL(distribution).href,
-      RUSTUP_AUTO_INSTALL: "1"
+  it.skipIf(PackageTree.findOnPath("rustup") === undefined)(
+    "keeps a missing rustup toolchain read-only while planning",
+    async () => {
+      const { root, tools } = await fixture(
+        "S.Cargo.Test({ workspace: true, sandbox: \"none\" })",
+        "toolchains: [S.Rust.Toolchain({ workspace: S.file(\"//Cargo.toml\"), channel: \"stable\" })],"
+      )
+      await write(root, "Cargo.toml", "[workspace]\nmembers = []\n")
+      await write(tools, "cargo", "#!/bin/sh\necho cargo-1\n")
+      const rustupHome = await directory()
+      const distribution = await directory()
+      await write(rustupHome, "settings.toml", "version = \"12\"\nprofile = \"minimal\"\n")
+      const environment = {
+        ...process.env,
+        RUSTUP_HOME: rustupHome,
+        // A real, empty local distribution makes an accidental install observable
+        // without reaching the network or changing the developer's toolchains.
+        RUSTUP_DIST_SERVER: pathToFileURL(distribution).href,
+        RUSTUP_AUTO_INSTALL: "1"
+      }
+      const loaded = await PackageLoader.load(await PackageDiscovery.discover(root))
+      const options = {
+        index: PackageIndex.make(loaded),
+        patterns: ["//:dist"],
+        cacheDirectory: ".flows",
+        verb: "auto" as const,
+        environment
+      }
+      const first = await PackageExec.plan(options)
+      expect(await Fs.readdir(rustupHome)).toEqual(["settings.toml"])
+      const second = await PackageExec.plan(options)
+      expect(second.nodes.get("//:dist")?.keyPreview).toBe(first.nodes.get("//:dist")?.keyPreview)
+      expect(environment.RUSTUP_AUTO_INSTALL).toBe("1")
     }
-    const loaded = await PackageLoader.load(await PackageDiscovery.discover(root))
-    const options = {
-      index: PackageIndex.make(loaded),
-      patterns: ["//:dist"],
-      cacheDirectory: ".flows",
-      verb: "auto" as const,
-      environment
-    }
-    const first = await PackageExec.plan(options)
-    expect(await Fs.readdir(rustupHome)).toEqual(["settings.toml"])
-    const second = await PackageExec.plan(options)
-    expect(second.nodes.get("//:dist")?.keyPreview).toBe(first.nodes.get("//:dist")?.keyPreview)
-    expect(environment.RUSTUP_AUTO_INSTALL).toBe("1")
-  })
+  )
 
   it("misses after replacing the rustup-selected cargo behind an unchanged proxy", async () => {
     const { root, tools } = await fixture(

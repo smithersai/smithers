@@ -85,6 +85,23 @@ afterEach(async () => {
 })
 
 describe("openCache", () => {
+  it.each([false, true])(
+    "refuses failed results before local or shared publication (existing=%s)",
+    async (existing) => {
+      const cache = await openCache({ workspaceRoot: root, endpoint })
+      try {
+        if (existing) await cache.put(result.key, result)
+        const before = requests.length
+        await expect(cache.put(result.key, { ...result, exitOk: false })).rejects
+          .toThrow("only successful results may be cached")
+        expect(requests).toHaveLength(before)
+        expect(await cache.get(result.key)).toEqual(existing ? result : null)
+      } finally {
+        await cache.close()
+      }
+    }
+  )
+
   it.each([
     [7, "must be a string"],
     ["x".repeat(8193), "must be bounded well-formed text"],

@@ -2,6 +2,7 @@ import * as Docker from "@smthrs/targets/Docker"
 import * as Input from "@smthrs/targets/Input"
 import * as Target from "@smthrs/targets/Target"
 import { spawn, spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodeNet from "node:net"
@@ -18,6 +19,20 @@ import * as PackageTree from "../src/PackageTree.ts"
 import { dockerAvailable } from "./helpers/DockerProbe.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
 import { serve } from "./helpers/ServeCli.ts"
+
+const outputDigest = async (directory: string): Promise<string> => {
+  const files = (await Fs.readdir(directory, { recursive: true, withFileTypes: true }))
+    .filter((entry) => entry.isFile())
+    .map((entry) => NodePath.relative(directory, NodePath.join(entry.parentPath, entry.name))).sort()
+  expect(files.length).toBeGreaterThan(0)
+  const digest = createHash("sha256")
+  for (const file of files) {
+    const bytes = await Fs.readFile(NodePath.join(directory, file))
+    digest.update(JSON.stringify([file, bytes.length]))
+    digest.update(bytes)
+  }
+  return digest.digest("hex")
+}
 
 const fixture = NodePath.resolve(import.meta.dirname, "fixtures/chain-exec")
 const temporaryDirectories: Array<string> = []
@@ -163,11 +178,12 @@ describe.skipIf(!hasForge)("Foundry package execution", { concurrent: false }, (
     expect(built.logs).toContain("//:foundryBuild  ran")
     expect(await Fs.stat(NodePath.join(root, "out"))).toBeDefined()
 
+    const originalDigest = await outputDigest(NodePath.join(root, "out"))
     await Fs.rm(NodePath.join(root, "out"), { recursive: true, force: true })
     const restored = await serve(root, ["//:foundryBuild"])
     expect(restored.exitCode, restored.logs).toBe(0)
     expect(restored.logs).toContain("//:foundryBuild  hit")
-    expect(await Fs.stat(NodePath.join(root, "out"))).toBeDefined()
+    expect(await outputDigest(NodePath.join(root, "out"))).toBe(originalDigest)
 
     const tested = await serve(root, ["//:foundryTest"])
     expect(tested.exitCode, tested.logs).toBe(0)
@@ -294,11 +310,12 @@ describe.skipIf(!engineAvailable)("Docker package execution", { concurrent: fals
     const bakedAgain = await serve(root, ["//:dockerBake"])
     expect(bakedAgain.exitCode, bakedAgain.logs).toBe(0)
     expect(bakedAgain.logs).toContain("//:dockerBake  hit")
+    const originalDigest = await outputDigest(NodePath.join(root, buildDir))
     await Fs.rm(NodePath.join(root, buildDir), { recursive: true, force: true })
     const restored = await serve(root, ["//:dockerBuild"])
     expect(restored.exitCode, restored.logs).toBe(0)
     expect(restored.logs).toContain("//:dockerBuild  hit")
-    expect(await Fs.stat(NodePath.join(root, buildDir, "image.tar"))).toBeDefined()
+    expect(await outputDigest(NodePath.join(root, buildDir))).toBe(originalDigest)
   }, 120_000)
 
   it("acquires, exec-probes, initializes, and releases a Docker service", async () => {

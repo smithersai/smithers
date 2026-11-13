@@ -59,12 +59,34 @@ const numberWords = [
 
 const kebab = (key: string): string => key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
 
+/** Only a command's own inventory row can document its flags. */
+const commandRow = (text: string, name: string): string | undefined =>
+  text.split("\n").find((line) => line.split("|")[1]?.trim() === `\`${name}\``)
+
+const inventoryGaps = (text: string, commands: ReadonlyMap<string, Registered>): Array<string> =>
+  [...commands].flatMap(([name, entry]) => {
+    const row = commandRow(text, name)
+    if (row === undefined) return [name]
+    const flags = new Set([...row.matchAll(/`(--[a-z][a-z0-9-]*)(?=[` ,])/g)].map((match) => match[1]))
+    return Object.keys(entry.options?.shape ?? {})
+      .map((key) => "--" + kebab(key))
+      .filter((flag) => !flags.has(flag))
+      .map((flag) => name + " " + flag)
+  })
+
 describe("docs/cli.md", () => {
+  it("rejects prose substrings and flags belonging to another command", () => {
+    const text = "specific runs latest targets\n| `test` | `--plan` |\n| `run` | `--jobs` |"
+    for (const name of ["ci", "list", "target"]) expect(commandRow(text, name)).toBeUndefined()
+    expect(commandRow(text, "run")).not.toContain("`--plan`")
+    expect(commandRow(text, "test")).toContain("`--plan`")
+  })
+
   it("names every command the CLI registers, and counts them", () => {
     const commands = commandMap()
     expect(commands.size).toBeGreaterThanOrEqual(10)
     for (const name of commands.keys()) {
-      expect(doc, `docs/cli.md never names the ${name} command`).toContain(name)
+      expect(commandRow(doc, name), `docs/cli.md has no inventory row for ${name}`).toBeDefined()
     }
     const written = doc.match(/registers (\w+) commands/)
     expect(written, "docs/cli.md no longer states how many commands makeCli registers").not.toBeNull()
@@ -75,10 +97,24 @@ describe("docs/cli.md", () => {
       .toBe(commands.size)
   })
 
-  it("names every flag every command takes", () => {
+  it("names every flag in its command's inventory row", () => {
+    expect(inventoryGaps(doc, commandMap())).toEqual([])
+  })
+
+  it("detects removal of every registered command row even when its name remains in prose", () => {
+    for (const name of commandMap().keys()) {
+      const changed = doc.replace(commandRow(doc, name)!, "") + "\n" + name
+      expect(inventoryGaps(changed, commandMap())).toContain(name)
+    }
+  })
+
+  it("detects every missing per-command flag even when another row documents it", () => {
     for (const [name, entry] of commandMap()) {
       for (const key of Object.keys(entry.options?.shape ?? {})) {
-        expect(doc, `docs/cli.md never names ${name}'s --${kebab(key)} flag`).toContain(`--${kebab(key)}`)
+        const flag = "--" + kebab(key)
+        const row = commandRow(doc, name)!
+        const changed = doc.replace(row, row.replaceAll(flag, "--omitted")) + "\n| `other` | `" + flag + "` |"
+        expect(inventoryGaps(changed, commandMap())).toContain(name + " " + flag)
       }
     }
   })
@@ -118,7 +154,7 @@ describe("command documentation contracts", () => {
         : numberWords.indexOf(token)
       expect(count, `${path} counts ${token} commands`).toBe(commandMap().size)
     }
-    expect(page.match(/`gitHooks`/g) ?? []).toHaveLength(path === "docs/cli.md" ? 1 : 0)
+    expect(page.match(/`gitHooks`/g) ?? []).toHaveLength(path === "docs/cli.md" ? 2 : 0)
     expect(page).not.toContain("smithers-build gitHooks")
   })
 

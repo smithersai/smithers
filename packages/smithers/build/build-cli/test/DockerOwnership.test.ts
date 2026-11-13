@@ -1,12 +1,10 @@
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Cause, Deferred, Effect, Exit, Fiber, Scope, Sink, Stream } from "effect"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import * as DockerExec from "../src/DockerExec.ts"
-import * as PackageTree from "../src/PackageTree.ts"
+import { ProcessSpawner } from "../src/internal/ContainedProcess.ts"
 import * as ServiceSupervisor from "../src/ServiceSupervisor.ts"
-
-afterEach(() => vi.restoreAllMocks())
 
 /**
  * Only the Docker host and process boundary are modeled. Names are exclusive,
@@ -27,8 +25,6 @@ const dockerHost = (
     lateCreate?: "after-missed-rm" | "manual"
   } = {}
 ) => {
-  vi.spyOn(PackageTree, "findOnPath").mockReturnValue("/docker")
-  vi.spyOn(PackageTree, "probeCommand").mockResolvedValue({ exitCode: 0, output: "fixture engine" })
   const containers = new Map<
     string,
     { id: string; pid: number; exit: Deferred.Deferred<ExitCode>; initialized: boolean }
@@ -163,8 +159,9 @@ const dockerHost = (
         { targetPid: pid }
       )
     })
-  vi.spyOn(ScopedProcess, "spawn").mockImplementation(spawn)
   return {
+    make: ServiceSupervisor.make.pipe(Effect.provideService(ProcessSpawner, { spawn })),
+    spawn,
     containers,
     commands,
     stopping,
@@ -177,20 +174,15 @@ const dockerHost = (
   }
 }
 
-const specFor = async (invocationId: string, cwd: string) => {
-  const options: Parameters<typeof DockerExec.serviceSpec>[0] = {
-    invocationId,
-    label: "//:service",
+const specFor = async (invocationId: string, cwd: string): Promise<ServiceSupervisor.ServiceSpec> => {
+  return {
+    key: "//:service",
     cwd,
-    attrs: {
-      image: "fixture",
-      readiness: { exec: ["ready"], timeout: "1s" },
-      init: [["initialize"]]
-    }
-  }
-  const spec = await DockerExec.serviceSpec(options)
-  if ("error" in spec) throw new Error(spec.error)
-  return spec
+    docker: DockerExec.containerName("//:service", cwd, invocationId),
+    argv: ["/docker", "fixture"] as [string, ...Array<string>],
+    readiness: { exec: ["ready"] as [string], timeout: "1s" },
+    init: [["initialize"]] as [[string]]
+  } satisfies ServiceSupervisor.ServiceSpec
 }
 
 const holdConsumer = (handle: ServiceSupervisor.ServiceHandle) =>
@@ -212,7 +204,7 @@ describe("Docker invocation ownership", () => {
       const host = dockerHost(createCleanupFails ? { createCleanupFailure: cleanupFailure } : {})
       const spec = await specFor("invocation-a", "/workspace")
       const exit = await Effect.runPromiseExit(Effect.scoped(Effect.gen(function*() {
-        const supervisor = yield* ServiceSupervisor.make
+        const supervisor = yield* host.make
         yield* supervisor.acquire(spec)
       })))
       expect.soft(host.containers.size).toBe(0)
@@ -237,7 +229,7 @@ describe("Docker invocation ownership", () => {
     const host = dockerHost({ createCleanupFailure, removeCleanupFailure })
     const spec = await specFor("invocation-a", "/workspace")
     const exit = await Effect.runPromiseExit(Effect.scoped(Effect.gen(function*() {
-      const supervisor = yield* ServiceSupervisor.make
+      const supervisor = yield* host.make
       yield* supervisor.acquire(spec)
     })))
     expect.soft(host.containers.size).toBe(0)
@@ -257,7 +249,7 @@ describe("Docker invocation ownership", () => {
     const host = dockerHost({ holdCreateResponse: true })
     const spec = await specFor("invocation-a", "/workspace")
     await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const supervisor = yield* ServiceSupervisor.make
+      const supervisor = yield* host.make
       const acquiring = yield* Effect.scoped(supervisor.acquire(spec)).pipe(Effect.forkChild)
       yield* Deferred.await(host.creating)
       acquiring.interruptUnsafe()
@@ -273,10 +265,10 @@ describe("Docker invocation ownership", () => {
   })
 
   it("includes the Docker prefix in spec drift detection", async () => {
-    dockerHost()
+    const host = dockerHost()
     const spec = await specFor("invocation-a", "/workspace")
     await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const supervisor = yield* ServiceSupervisor.make
+      const supervisor = yield* host.make
       yield* supervisor.acquire(spec)
       const error = yield* Effect.flip(supervisor.acquire({ ...spec, docker: "different-prefix" }))
       expect(error.reason).toBe("spec-drift")
@@ -288,7 +280,7 @@ describe("Docker invocation ownership", () => {
       const host = dockerHost()
       const spec = await specFor("invocation-a", "/workspace")
       const error = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const supervisor = yield* ServiceSupervisor.make
+        const supervisor = yield* host.make
         return yield* Effect.flip(supervisor.acquire({ ...spec, docker } as ServiceSupervisor.ServiceSpec))
       })))
       expect(error.reason).toBe("invalid-spec")
@@ -300,7 +292,7 @@ describe("Docker invocation ownership", () => {
     const host = dockerHost()
     const spec = await specFor("invocation-a", "/workspace")
     await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const supervisor = yield* ServiceSupervisor.make
+      const supervisor = yield* host.make
       const oldScope = yield* Scope.fork(yield* Scope.Scope)
       const old = yield* supervisor.acquire(spec).pipe(Scope.provide(oldScope))
       host.delayStop(old.pid)
@@ -334,7 +326,7 @@ describe("Docker invocation ownership", () => {
     const host = dockerHost()
     const spec = await specFor("invocation-a", "/workspace")
     await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const supervisor = yield* ServiceSupervisor.make
+      const supervisor = yield* host.make
       const old = yield* Effect.scoped(Effect.gen(function*() {
         const first = yield* supervisor.acquire(spec)
         const shared = yield* supervisor.acquire(yield* Effect.promise(() => specFor("invocation-a", "/workspace")))
@@ -356,7 +348,7 @@ describe("Docker invocation ownership", () => {
       const host = dockerHost(options)
       const spec = await specFor("invocation-a", "/workspace")
       const exit = await Effect.runPromiseExit(Effect.scoped(Effect.gen(function*() {
-        const supervisor = yield* ServiceSupervisor.make
+        const supervisor = yield* host.make
         yield* supervisor.acquire(spec)
       })))
       expect(Exit.isFailure(exit)).toBe(true)
@@ -374,7 +366,7 @@ describe("Docker invocation ownership", () => {
       const host = dockerHost({ createOutput })
       const spec = await specFor("invocation-a", "/workspace")
       const failure = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const supervisor = yield* ServiceSupervisor.make
+        const supervisor = yield* host.make
         return yield* Effect.flip(supervisor.acquire(spec))
       })))
       expect(failure).toMatchObject({ key: "//:service", reason: "spawn-failed" })
@@ -392,7 +384,7 @@ describe("Docker invocation ownership", () => {
     const host = dockerHost({ holdCreateResponse: true })
     const spec = await specFor("invocation-a", "/workspace")
     const failure = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const supervisor = yield* ServiceSupervisor.make
+      const supervisor = yield* host.make
       return yield* Effect.flip(supervisor.acquire(spec)).pipe(
         Effect.ensuring(Deferred.succeed(host.releaseCreate, undefined))
       )
@@ -409,7 +401,7 @@ describe("Docker invocation ownership", () => {
     const host = dockerHost({ holdCreateResponse: true, lateCreate: "after-missed-rm" })
     const spec = await specFor("invocation-a", "/workspace")
     const failure = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const supervisor = yield* ServiceSupervisor.make
+      const supervisor = yield* host.make
       return yield* Effect.flip(supervisor.acquire(spec)).pipe(
         Effect.ensuring(Deferred.succeed(host.releaseCreate, undefined))
       )
@@ -439,7 +431,7 @@ describe("Docker invocation ownership", () => {
     const spec = await specFor("invocation-a", "/workspace")
     let failed = 0
     await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const supervisor = yield* ServiceSupervisor.make
+      const supervisor = yield* host.make
       yield* Effect.flip(supervisor.acquire(spec)).pipe(
         Effect.ensuring(Deferred.succeed(host.releaseCreate, undefined))
       )
@@ -465,7 +457,7 @@ describe("Docker invocation ownership", () => {
     const host = dockerHost({ createOutput: "", createCode: 1 })
     const spec = await specFor("invocation-a", "/workspace")
     const failure = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const supervisor = yield* ServiceSupervisor.make
+      const supervisor = yield* host.make
       return yield* Effect.flip(supervisor.acquire(spec))
     })))
     expect(failure).toMatchObject({ key: "//:service", reason: "spawn-failed" })
@@ -476,12 +468,12 @@ describe("Docker invocation ownership", () => {
     const host = dockerHost()
     const spec = await specFor("invocation-a", "/workspace")
     await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const supervisor = yield* ServiceSupervisor.make
+      const supervisor = yield* host.make
       const handle = yield* supervisor.acquire(spec)
       const consumer = yield* holdConsumer(handle)
       const name = [...host.containers.keys()][0]!
       yield* Effect.scoped(Effect.gen(function*() {
-        const removed = yield* ScopedProcess.spawn({ command: "/docker", args: ["rm", "-f", name] })
+        const removed = yield* host.spawn({ command: "/docker", args: ["rm", "-f", name] })
         expect((yield* ScopedProcess.status(removed)).code).toBe(0)
       }))
       const exit = yield* Fiber.await(consumer.fiber)
@@ -499,9 +491,9 @@ describe("Docker invocation ownership", () => {
       const bSpec = await specFor("invocation-b", cwd)
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const aScope = yield* Scope.fork(yield* Scope.Scope)
-        const a = yield* ServiceSupervisor.make.pipe(Scope.provide(aScope))
+        const a = yield* host.make.pipe(Scope.provide(aScope))
         const aHandle = yield* a.acquire(aSpec).pipe(Scope.provide(aScope))
-        const b = yield* ServiceSupervisor.make
+        const b = yield* host.make
         const bHandle = yield* b.acquire(bSpec)
         const consumer = yield* holdConsumer(bHandle)
         expect.soft([...host.containers.values()].map((c) => c.pid)).toContain(aHandle.pid)
@@ -529,12 +521,12 @@ describe("Docker invocation ownership", () => {
       const bSpec = await specFor("invocation-b", cwd)
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const aScope = yield* Scope.fork(yield* Scope.Scope)
-        const a = yield* ServiceSupervisor.make.pipe(Scope.provide(aScope))
+        const a = yield* host.make.pipe(Scope.provide(aScope))
         const aHandle = yield* a.acquire(aSpec).pipe(Scope.provide(aScope))
         host.delayStop(aHandle.pid)
         const closing = yield* Scope.close(aScope, Exit.void).pipe(Effect.forkChild)
         yield* Deferred.await(host.stopping)
-        const b = yield* ServiceSupervisor.make
+        const b = yield* host.make
         const { bHandle, consumer } = yield* Effect.gen(function*() {
           const bHandle = yield* b.acquire(bSpec)
           const consumer = yield* holdConsumer(bHandle)

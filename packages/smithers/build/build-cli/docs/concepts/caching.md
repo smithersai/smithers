@@ -8,6 +8,8 @@ sidebar:
 A cached target does not run. Everything below is about deciding when that is
 safe.
 
+`CacheStore.put` refuses failed results before writing locally or publishing to the shared tier.
+
 Filegroup is cacheable: a successful execution stores its content key, and an
 unchanged subsequent execution reads that result and reports a hit. Changed
 member bytes change the key. There are no produced files to restore.
