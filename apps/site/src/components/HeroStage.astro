@@ -125,13 +125,16 @@ const tree = [
             <Code code={pane.code} lang="ts" theme={nightOwl} />
           </div>
         ))}
-        <div class="run">
-          <span class="prompt">$</span> smithers-build review <span class="str">//packages/smithers/flows/engine-store</span>
+        <div class="run" tabindex="0" role="region" aria-label="Review command">
+          <span class="prompt">$</span> smithers-build review <span class="str">//packages/smithers/flows/engine-store</span> --policy-revision <span class="str">&lt;approved-commit-sha&gt;</span>
           <span class="caret"></span>
         </div>
       </div>
     </div>
   </div>
+  <p class="review-setup">
+    Run <code>pnpm target-index</code>, commit the review declarations and index, and have a person approve the commit. Pass its full commit SHA as <code>--policy-revision</code>. <a href="https://github.com/smithersai/smithers/blob/main/packages/smithers/build/targets/docs/guides/review-isolation.md#run-a-review">Review setup</a>.
+  </p>
 </section>
 
 <style>
@@ -142,6 +145,7 @@ const tree = [
     --ease: cubic-bezier(0.22, 0.61, 0.21, 1);
   }
   .stage :global(*) { margin-top: 0; }
+  .review-setup { margin: 0.75rem 0 0; font-size: 0.85rem; }
   .frame {
     display: block; position: relative; width: 100%;
     aspect-ratio: 16 / 10; border-radius: 16px; background: var(--surface);
@@ -185,7 +189,7 @@ const tree = [
   .code :global(.line) { display: inline-block; opacity: 0; transform: translateX(6px); }
   .pane.current :global(.line) { animation: typed 240ms var(--ease) forwards; animation-delay: calc(var(--base) + var(--n, 0) * 45ms); }
   @keyframes typed { to { opacity: 1; transform: none; } }
-  .run { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 18px; background: linear-gradient(to top, #011627 70%, transparent); color: #d6deeb; opacity: 0; animation: typed 400ms var(--ease) forwards; animation-delay: calc(var(--base) + 1600ms); }
+  .run { position: absolute; left: 0; right: 0; bottom: 0; white-space: nowrap; overflow-x: auto; padding: 12px 18px; background: linear-gradient(to top, #011627 70%, transparent); color: #d6deeb; opacity: 0; animation: typed 400ms var(--ease) forwards; animation-delay: calc(var(--base) + 1600ms); }
   .prompt { color: #addb67; } .str { color: #ecc48d; }
   .caret { display: inline-block; width: 8px; height: 1em; background: #9bd5c6; vertical-align: text-bottom; margin-left: 4px; animation: blink 1s steps(2) infinite; }
   @keyframes blink { to { opacity: 0; } }

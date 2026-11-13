@@ -346,6 +346,7 @@ const docsTextTest = Smithers.Shell.Test({
     Smithers.file("scripts/flows-location.test.mjs"),
     Smithers.file("src/data/migration-paths.json"),
     Smithers.file("src/components/HeroStage.astro"),
+    Smithers.file("//packages/smithers/build/targets/docs/guides/review-isolation.md"),
     Smithers.file("scripts/docs-text.mjs"),
     Smithers.file("scripts/docs-text.test.mjs"),
     Smithers.file("scripts/inline-comment.test.mjs"),
