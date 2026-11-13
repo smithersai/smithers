@@ -5,6 +5,7 @@ import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
+import ts from "typescript"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory } from "./MemoryFlowRuntime.ts"
 
@@ -210,4 +211,25 @@ describe("tutorial callback identity", () => {
       expect(markdown).toContain("process-local")
     }, 120_000)
   }
+})
+
+// Run the tutorial's actual declarations and assertions with the real test API.
+describe("tutorial topology code blocks", () => {
+  const guide = readFileSync(new URL("../docs/guides/build-a-body.md", import.meta.url), "utf8")
+  const testing = readFileSync(new URL("../docs/testing.md", import.meta.url), "utf8")
+  const fences = (markdown: string) => Array.from(markdown.matchAll(/```ts\n([\s\S]*?)\n```/g), (match) => match[1]!)
+  const source = [...fences(guide), fences(testing)[0]!].join("\n")
+    .replace(/^import .*$/gm, "")
+    .replace(/^export /gm, "")
+  const run = new Function(
+    "Action",
+    "Flow",
+    "Graph",
+    "Node",
+    "Schema",
+    "it",
+    "expect",
+    ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText
+  )
+  run(Action, Flow, Graph, Node, Schema, it, expect)
 })

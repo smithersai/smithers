@@ -14,7 +14,8 @@ and its failure legible.
 
 ## Assert a body's topology
 
-Building a plan is pure, so a topology test needs nothing but the declarations:
+Building a plan is pure, so a topology test needs nothing but the declarations.
+Using `Gate` from [Compose a body](./guides/build-a-body.md):
 
 ```ts
 import { expect, it } from "@effect/vitest"
@@ -25,7 +26,7 @@ it("plans both checks before the report", () => {
   const ids = Graph.nodes(graph).map((node) => node.id)
 
   expect(Graph.diagnostics(graph)).toEqual([])
-  expect(ids).toContain("root.lint")
+  expect(ids).toContain("root.flow.protected.branch.andThen.all.lint")
 })
 ```
 

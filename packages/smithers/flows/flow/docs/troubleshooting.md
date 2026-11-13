@@ -208,9 +208,10 @@ does not rewrite history.
 
 ### `FlowRuntime.FlowExecutionNotFound`
 
-**Cause.** `poll` or `resume` named an execution id the runtime never recorded.
+**Cause.** `poll` named an execution id the runtime never recorded.
 This is different from a known execution that has not settled, which `poll`
-answers as `Option.none`.
+answers as `Option.none`. `resume` has no typed failure and silently ignores
+unknown execution ids.
 
 **Fix.** Check the id, and check that the caller and the run share a store. An
 in-memory engine's records die with the process.
@@ -262,8 +263,9 @@ file boundary with `boundaryMode: "hard"`, and the composition's complete
 `Action.CacheEnvironment`.
 
 **Fix.** See [Reuse a recorded result](./guides/reuse-a-recorded-result.md). Note
-that `metadata`, which carries the file boundary, is an option of the inline form
-of `Action.make`.
+that `fileBoundary` is an option of both forms of `Action.make`; the declared form
+can compute it from the decoded payload. Inline actions also accept a historical
+boundary declaration through `metadata`.
 
 ### A changed schema did not re-key a call
 

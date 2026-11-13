@@ -72,6 +72,8 @@ const test = Smithers.Vitest({
     sources,
     examples,
     Smithers.file("PACKAGE.ts"),
+    Smithers.file("docs/guides/build-a-body.md"),
+    Smithers.file("docs/testing.md"),
     Smithers.file("//packages/smithers/flows/engine/SourceInputs.ts")
   ],
   deps: [lib, plan, crypto, keys, canonical, capability, engineSourceInputs],

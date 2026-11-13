@@ -139,8 +139,10 @@ identity. Equal source and captures reproduce identity across processes.
 The v5 encoding re-keys captured callbacks from earlier versions. Changed source, captures, or captured implementation version require
 a newly planned run; this check does not migrate or reapprove existing plans.
 Action implementations use a separate `implementationVersion` contract.
-Canonical `Interpreter.layerWithImplementations` requires it for sealed actions
-that declare an idempotency key, because those actions can reuse recorded content.
+Every interpreter path requires it for sealed actions that declare an idempotency
+key, because those actions can reuse recorded content. This includes
+`Interpreter.layerWithImplementations`, `Interpreter.layer`, and
+`Interpreter.interpret`.
 Declare the version on `Action.make`, and attest the same version in `toLayer`.
 A missing or different registration version is refused. The interpreter also
 checks each graph declaration against the registry before dispatching any action,
@@ -153,15 +155,14 @@ The version is a semantic compatibility declaration. Cover the handler and every
 service/configuration change that can affect its result. Equal versions authorize
 reuse even if JavaScript source changed. Different versions require a new plan
 and execution ID; this is not an upgrade API for an already persisted run. Existing
-completed executions keep their recorded outcomes. Omitted versions preserve
-legacy key material exactly and do not infer handler identity from source.
-The low-level `Interpreter.layer` and `Interpreter.interpret` retain this legacy
-behavior: equal identity inputs can return the old handler's recorded result
-after its code changes. Selecting stable callback identity alone does not change
-that handler-reuse contract.
+completed executions keep their recorded outcomes. An inline action dispatched
+from a handler does not pass through the interpreter's declaration checks.
+There, an omitted version preserves legacy key material: equal identity inputs
+can return the old handler's recorded result after its code changes. No path
+infers handler identity from source.
 
-Canonical version admission is independent of `callbackIdentity`; choosing
-`process-local` callbacks cannot bypass it. Keyless sealed actions use run-local
+Version admission is independent of `callbackIdentity`; choosing
+`process-local` callbacks cannot bypass it on any interpreter path. Keyless sealed actions use run-local
 invocation keys, while compensable and irreversible actions do not use content-key
 caching, so those declarations may omit a version. The canonical interpreter also
 refuses detached action nodes whose declarations are unavailable for checking.

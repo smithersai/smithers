@@ -121,10 +121,9 @@ export interface Declared<
   readonly name: Tag
   /**
    * Semantic implementation identity. Changing it requires a newly planned
-   * execution; it is not an in-place upgrade of a persisted run. Canonical
-   * composition requires it for sealed actions with an idempotency key.
-   * Invocation-scoped actions may omit it; low-level keyed legacy callers
-   * retain their old handler-reuse contract when it is absent.
+   * execution; it is not an in-place upgrade of a persisted run. Every
+   * interpreter path requires it for sealed actions with an idempotency key.
+   * Invocation-scoped actions may omit it.
    */
   readonly implementationVersion: string | undefined
   readonly payloadSchema: Payload

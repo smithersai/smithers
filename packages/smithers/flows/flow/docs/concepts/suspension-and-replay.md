@@ -25,8 +25,10 @@ implementation declares how it is about to wait through
 `FlowRuntime.annotateWaiting` and then suspends. The engine records a waiting row
 carrying that annotation and releases the run. The process can exit.
 
-A `WaitingAnnotation` is `{ reason, wakeAt?, token? }`, and the reason is what an
-operator reads off the run:
+A `WaitingAnnotation` is `{ reason, wakeAt?, token?, request? }`. The optional
+`request` carries JSON text describing a pending human question and its answer
+budget, so a reader can render what the run is waiting for. It is not completion
+matching material. The reason is what an operator reads off the run:
 
 | Reason     | Declared by                                                         |
 | ---------- | ------------------------------------------------------------------- |

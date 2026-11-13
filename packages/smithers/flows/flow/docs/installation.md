@@ -58,8 +58,11 @@ import * as Flow from "@smthrs/flow/Flow"
 
 The `exports` map publishes `@smthrs/flow/Action`, `/CacheEnvironment`,
 `/FileBoundary`, `/FileInput`, `/Flow`, `/FlowRuntime`, `/StepIdentity`, and one
-subpath per top-level module (`DurableClock`, `DurableDeferred`, `DurableQueue`,
-`Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`, `WaitFor`).
+subpath per exported top-level module (`Deadline`, `DurableClock`,
+`DurableDeferred`, `DurableQueue`, `ExternalJob`, `Fault`, `Graph`, `HumanTask`,
+`Interpreter`, `Poll`, `RetryPolicy`, `Sleep`, `Stall`, `WaitFor`).
+`JournalDecode`, `RunMetrics`, and `SpanFailure` are available from the root
+namespace only.
 Four subpath shapes resolve to nothing on purpose: `@smthrs/flow/internal/*`,
 `@smthrs/flow/*/index`, and the per-file paths under `Action/`, `Flow/`, and
 `FlowRuntime/`. Reach those namespaces through their directory subpath instead.

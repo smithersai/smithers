@@ -124,8 +124,9 @@ declarations reused. What the key covers is deliberate:
   naming the offending path, and the refusal is not retryable because the same
   declaration derives it on every attempt.
 - **Runtime facts the engine adds.** The complete `Action.CacheEnvironment`
-  (`layers` and `capabilities`) and any file boundary derived from the action's
-  `metadata`. The engine adds these separately, so caller identity cannot
+  (`layers` and `capabilities`) and the action's `fileBoundary`. Both forms of
+  `Action.make` accept `fileBoundary`; inline actions also accept a historical
+  boundary declaration through `metadata`. The engine adds these separately, so caller identity cannot
   override them. When the environment is absent, the engine scopes the key to the
   current execution rather than presenting incomplete data as reusable identity.
 

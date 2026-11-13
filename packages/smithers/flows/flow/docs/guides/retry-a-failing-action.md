@@ -233,9 +233,10 @@ unretried.
 
 An action implementation or transport adapter may fail with
 `Action.InfraInterrupt` when it can identify a retryable infrastructure event.
-It is not an ordinary domain failure and `retryPolicy` does not see it. Only an
-inline action's `interruptRetryPolicy`, an Effect `Schedule`, retries the
-explicit marker. The shipped engines do not convert owner loss, host shutdown,
+It is not an ordinary domain failure and `retryPolicy` does not see it.
+`interruptRetryPolicy`, an Effect `Schedule`, retries the explicit marker on
+both declared and inline actions. For a declared action, `toLayer` applies the
+policy to its handler. The shipped engines do not convert owner loss, host shutdown,
 or ordinary fiber interruption into it:
 
 ```ts

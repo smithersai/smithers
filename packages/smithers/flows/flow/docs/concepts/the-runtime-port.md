@@ -36,6 +36,7 @@ without touching a declaration.
 | `deferredResult`, `deferredDone`, `deferredDoneIfWaiting` | Reads and writes durable deferred completions.                                                  |
 | `scheduleClock`                                           | Arms a durable timer.                                                                           |
 | `recordNode`                                              | Optional. Records the graph a run was driven from, and how each node settled.                   |
+| `nodeRecordBytes`                                         | Optional. Measures a node record's encoded byte size before it is recorded.                     |
 | `retryFrom`                                               | Optional. Starts a new run that retries a settled one from one of its steps.                    |
 
 Every method takes a flow whatever its requirement channel says and demands none
@@ -52,9 +53,10 @@ a guessed or stale token from pre-answering a run. It does not authorize the
 caller: a token is an unsigned address, so the host authorizes whoever
 completes an open wait.
 
-`recordNode` is the one optional method, and optional in the strong sense: a
-runtime that keeps no history leaves it absent and the walk is unchanged, so no
-interpreter behavior may depend on whether one is there. An engine with a
+`recordNode`, `nodeRecordBytes`, and `retryFrom` are optional. A runtime that keeps
+no history leaves `recordNode` absent and skips journal preflight. When
+`nodeRecordBytes` is absent, the interpreter measures the JSON encoding's UTF-8
+byte length. Without `retryFrom`, `Flow.retryFrom` refuses `unsupported`. An engine with a
 journal implements it by writing the record. Each record carries its own
 replay-stable `sourceId`, and an implementation must use that as the record's
 producer identity rather than minting one per observation: that is what makes a
@@ -75,16 +77,18 @@ value. A completion wakes a parked run through `FlowRuntime.resume`.
 `FlowRuntime.annotateWaiting(annotation)` is how an implementation tells a
 durable driver what kind of wait is about to happen, so the run parks under that
 reason and token rather than a derived default. A `WaitingAnnotation` is
-`{ reason, wakeAt?, token? }`. `Sleep` declares `timer` with the deadline,
+`{ reason, wakeAt?, token?, request? }`. `Sleep` declares `timer` with the deadline,
 `WaitFor` declares `event` with the wake token, and `HumanTask` declares
-`approval` with the current attempt's token.
+`approval` with the current attempt's token. The optional `request` is JSON text
+describing the pending question and its answer budget for readers; it is not
+used to match a completion.
 
 ## Failures the port defines
 
 | Failure                 | Raised when                                                                                                                                                                                                    |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FlowCycleDetected`     | Executing a flow would close a cycle in the persisted parent-execution chain. `path` holds the ordered execution ids from the cycle's target back to itself.                                                   |
-| `FlowExecutionNotFound` | `poll` or `resume` names an execution id the runtime never recorded.                                                                                                                                           |
+| `FlowExecutionNotFound` | `poll` names an execution id the runtime never recorded. `resume` silently ignores unknown ids.                                                                                                                |
 | `RetryFromRefused`      | `retryFrom` cannot start: no history to replay, an unknown or unsettled source, another flow's run, or a step that never ran. Nothing is written.                                                              |
 | `CancelRequestFailed`   | A durable runtime could not record a cancellation. `cancel_request_failed` is a storage failure; `unsafe_interrupt_unsupported` is the durable engine refusing `interruptUnsafe`, which it does not implement. |
 

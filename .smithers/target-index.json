@@ -76376,6 +76376,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/guides/build-a-body.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/testing.md"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/engine/SourceInputs.ts"
       },
       {

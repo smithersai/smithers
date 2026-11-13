@@ -27,11 +27,12 @@ The `exports` map declares these subpaths:
 | `@smthrs/flow/StepIdentity`     | `src/Action/StepIdentity.ts`     | any      |
 | `@smthrs/flow/<Module>`         | `src/<Module>.ts`                | any      |
 
-`<Module>` is one of the top-level modules, each listed explicitly in the `exports` map: `Deadline`, `DurableClock`, `DurableDeferred`, `DurableQueue`, `Fault`, `Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`, `Stall`, and `WaitFor`. No `./*` wildcard is declared. The `exports` map maps `./internal/*`, `./*/index`, `./Action/*`, `./Flow/*`, and `./FlowRuntime/*` to `null`, so those paths do not resolve.
+`<Module>` is one of the top-level modules, each listed explicitly in the `exports` map: `Deadline`, `DurableClock`, `DurableDeferred`, `DurableQueue`, `ExternalJob`, `Fault`, `Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`, `Stall`, and `WaitFor`. No `./*` wildcard is declared. The `exports` map maps `./internal/*`, `./*/index`, `./Action/*`, `./Flow/*`, and `./FlowRuntime/*` to `null`, so those paths do not resolve.
 
 ## Namespaces
 
-The package index re-exports eighteen namespaces:
+The package index re-exports twenty-one namespaces. `JournalDecode`, `RunMetrics`,
+and `SpanFailure` are available only from this root entry:
 
 | Namespace         | Summary                                                              |
 | ----------------- | -------------------------------------------------------------------- |
@@ -40,14 +41,17 @@ The package index re-exports eighteen namespaces:
 | `DurableClock`    | Durable clock and timer services.                                    |
 | `DurableDeferred` | Durable deferred values.                                             |
 | `DurableQueue`    | Durable queues.                                                      |
+| `ExternalJob`     | External workers observed through durable actions and timers.        |
 | `Fault`           | One typed fault class per failure, and the response ladder.          |
 | `Flow`            | Durable flow definitions.                                            |
 | `FlowRuntime`     | The execution contract flow authoring APIs are written against.      |
 | `Graph`           | Plan-time graph building from flow declarations.                     |
 | `HumanTask`       | Asking a person something: typed answers, re-asking, and a deadline. |
 | `Interpreter`     | Execution of a flow body, and the layer that registers it.           |
+| `JournalDecode`   | Safe diagnostics for persisted data this build cannot decode.        |
 | `Poll`            | The durable poller: attempts as rounds, waits as durable timers.     |
 | `RetryPolicy`     | Retry policy models and constructors.                                |
+| `RunMetrics`      | Content-free usage metrics and logs for flow runs.                   |
 | `Sleep`           | The system timer action and its implementation layer.                |
 | `SpanFailure`     | Spans whose failures export only a tag and a code.                   |
 | `Stall`           | The stall breaker round loops share.                                 |
@@ -187,7 +191,7 @@ The key of write `name` in the running dispatch: 64 lowercase hex of SHA-256 ove
 - **Signature:** `once<A, E, R>(name: string, effect: Keyed<A, E, R>, options?: { readonly key?: string }): Effect.Effect<A, E, R>`
 - **Since:** `1.0.0`
 
-Finds write `name`'s object, or makes it once. It calls `find(key)` and adopts what it answers; on `None` it calls `perform(key)`; when `perform` fails it calls `find(key)` again and adopts what landed, else fails with `perform`'s failure. A failing first `find` fails without writing. Each write runs in a span `Action.once` with `smithers.effect.name` and `smithers.effect.outcome`, and counts in `flows_effects` by outcome (`performed`, `adopted`, `adopted_after_failure`, `failed`); the key is never logged. Name each write of one step differently. `options.key` replaces the derived key when the write's identity was chosen and recorded before the step ran, such as a write id stored with the request that started the execution; `once` then needs no dispatch. Never derive it from what is written.
+Finds write `name`'s object, or makes it once. It calls `find(key)` and adopts what it answers; on `None` it calls `perform(key)`; when `perform` fails it calls `find(key)` again and adopts what landed, else fails with `perform`'s failure. A failing first `find` fails without writing. Each write runs in a span `Action.once` with `smithers.effect.outcome`, and counts in `flows_effects` by outcome (`performed`, `adopted`, `adopted_after_failure`, `failed`); the write name and key are never logged or attached to spans. Name each write of one step differently. `options.key` replaces the derived key when the write's identity was chosen and recorded before the step ran, such as a write id stored with the request that started the execution; `once` then needs no dispatch. Never derive it from what is written.
 
 ### `Action.EffectKeyUnavailable`
 
@@ -276,8 +280,8 @@ The implementation table, scoped to the composition that builds it. Filing an im
 
 ### `Action.make`
 
-- **Signature:** `make(tag: Tag, options: { payload, declaredFrom?, implementationVersion?, success?, error?, tier?, idempotencyKey?, nondeterministic?, retryPolicy?, interruptRetryPolicy?, fileBoundary?, annotations? }): Declared<Tag, Payload, Success, Error>`
-- **Signature:** `make(options: { name, success?, error?, execute, tier?, idempotencyKey?, nondeterministic?, metadata?, interruptRetryPolicy?, retryPolicy?, annotations? }): Action<Success, Error, R>`
+- **Signature:** `make(tag: Tag, options: { payload, declaredFrom?, implementationVersion?, success?, error?, capabilities?, effects?, tier?, idempotencyKey?, nondeterministic?, retryPolicy?, attemptTimeoutMs?, heartbeatTimeoutMs?, interruptRetryPolicy?, fileBoundary?, annotations? }): Declared<Tag, Payload, Success, Error>`
+- **Signature:** `make(options: { name, implementationVersion?, success?, error?, execute, tier?, idempotencyKey?, nondeterministic?, metadata?, fileBoundary?, interruptRetryPolicy?, retryPolicy?, attemptTimeoutMs?, heartbeatTimeoutMs?, annotations? }): Action<Success, Error, R>`
 - **Since:** `0.1.0`
 - **Related:** [`Action.makeSystem`](#actionmakesystem)
 
@@ -287,26 +291,30 @@ The declared form accepts `declaredFrom: original` to retain a native declaratio
 diagnostic source location, including its absence. The new action owns its call
 closures; this option changes neither dispatch identity nor key material.
 
-| Option                  | Forms    | Meaning                                                                         |
-| ----------------------- | -------- | ------------------------------------------------------------------------------- |
-| `payload`               | declared | Payload fields or struct schema, validated on every dispatch.                   |
-| `name`, `execute`       | inline   | The step name and the effect it runs.                                           |
-| `implementationVersion` | declared | Non-empty version string; `toLayer` must pass the same value.                   |
-| `success`, `error`      | both     | Result schemas. Default `Schema.Void` and `Schema.Never`.                       |
-| `tier`                  | both     | Durability tier. Default `"sealed"`.                                            |
-| `idempotencyKey`        | both     | Caller identity. The declared form may compute it from the decoded payload.     |
-| `nondeterministic`      | both     | Marks a result that replay must read from the record rather than recompute.     |
-| `retryPolicy`           | both     | The `RetryPolicy` the engine reads at dispatch.                                 |
-| `interruptRetryPolicy`  | both     | The `Schedule` spent on `Action.InfraInterrupt` failures.                       |
-| `fileBoundary`          | both     | Typed file boundary. The declared form may compute it from the decoded payload. |
-| `metadata`              | inline   | Free-form metadata; a historical boundary declaration is still read from it.    |
-| `annotations`           | both     | Context annotations carried by the action.                                      |
+| Option                  | Forms    | Meaning                                                                              |
+| ----------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `payload`               | declared | Payload fields or struct schema, validated on every dispatch.                        |
+| `name`, `execute`       | inline   | The step name and the effect it runs.                                                |
+| `implementationVersion` | both     | Semantic version identity; declared actions must attest the same value in `toLayer`. |
+| `success`, `error`      | both     | Result schemas. Default `Schema.Void` and `Schema.Never`.                            |
+| `capabilities`          | declared | Capability ceiling, intersected with every caller's grant.                           |
+| `effects`               | declared | Effect envelope checked against the calling flow's grant.                            |
+| `tier`                  | both     | Durability tier. Default `"sealed"`.                                                 |
+| `idempotencyKey`        | both     | Caller identity. The declared form may compute it from the decoded payload.          |
+| `nondeterministic`      | both     | Marks a result that replay must read from the record rather than recompute.          |
+| `retryPolicy`           | both     | The `RetryPolicy` the engine reads at dispatch.                                      |
+| `attemptTimeoutMs`      | both     | Milliseconds one attempt may run before `Action.AttemptTimedOut`.                    |
+| `heartbeatTimeoutMs`    | both     | Milliseconds from attempt start or its last heartbeat before timing out.             |
+| `interruptRetryPolicy`  | both     | The `Schedule` spent on `Action.InfraInterrupt` failures.                            |
+| `fileBoundary`          | both     | Typed file boundary. The declared form may compute it from the decoded payload.      |
+| `metadata`              | inline   | Free-form metadata; a historical boundary declaration is still read from it.         |
+| `annotations`           | both     | Context annotations carried by the action.                                           |
 
 `Declared.toLayer(handler, { implementationVersion?, override? })` registers the implementation. Without `override: true`, a second, different implementation of the tag dies with `Action.DuplicateImplementation`.
 
 ### `Action.makeSystem`
 
-- **Signature:** `makeSystem(tag: Tag, options: { payload, declaredFrom?, implementationVersion?, success?, error?, tier?, idempotencyKey?, nondeterministic?, retryPolicy?, interruptRetryPolicy?, fileBoundary?, annotations? }): Declared<Tag, Payload, Success, Error, never>`
+- **Signature:** `makeSystem(tag: Tag, options: { payload, declaredFrom?, implementationVersion?, success?, error?, capabilities?, effects?, tier?, idempotencyKey?, nondeterministic?, retryPolicy?, attemptTimeoutMs?, heartbeatTimeoutMs?, interruptRetryPolicy?, fileBoundary?, annotations? }): Declared<Tag, Payload, Success, Error, never>`
 - **Since:** `0.1.0`
 
 Declares a system action, one whose implementation ships with the engine rather than with the composition that calls it. It matches `Action.make`'s declared form in every respect except the requirement: a system declaration mints none, so a body using `Sleep` or `WaitFor` pushes no layer obligation onto its callers.
@@ -1119,13 +1127,15 @@ How a node left the walk. `built` ran, `clean` was served entirely from durable 
 
 ### `FlowRuntime.WaitingAnnotation`
 
-- **Type:** `interface WaitingAnnotation { readonly reason: string; readonly wakeAt?: number | undefined; readonly token?: string | undefined }`
-- **Schema:** `Schema.Struct({ reason: Schema.String, wakeAt: Schema.optional(Schema.Number), token: Schema.optional(Schema.String) })`
+- **Type:** `interface WaitingAnnotation { readonly reason: string; readonly wakeAt?: number | undefined; readonly token?: string | undefined; readonly request?: string | undefined }`
+- **Schema:** `Schema.Struct({ reason: Schema.String, wakeAt: Schema.optional(Schema.Number), token: Schema.optional(Schema.String), request: Schema.optional(Schema.String) })`
 - **Since:** `0.1.0`
 
 The waiting classification a flow declares before suspending. `Flow.Park`
 carries this schema as its `reason`, so a parking request and the annotation
-that precedes a suspension cannot describe different waits.
+that precedes a suspension cannot describe different waits. Optional `request`
+is JSON text describing a pending human question and its answer budget for
+readers; completions are matched by the token, not the request.
 
 ### `FlowRuntime.annotateWaiting`
 
@@ -2075,3 +2085,40 @@ Provide a runtime that implements `FlowRuntime`, then run `Deploy.execute({ id: 
 | `recordModelCall`                                                                                             | `({ flow, model, outcome, inputTokens?, outputTokens? }) => Effect<void>`; records one provider call and its positive reported token counts.                                                                            |
 
 Recording functions need no host service and have no typed failure. They use Effect's metric/log context; they do not start work or read payloads.
+
+## JournalDecode
+
+Available as `JournalDecode` from `@smthrs/flow`; there is no dedicated subpath.
+
+### `JournalDecode.Identity`
+
+- **Type:** `Context.Reference<{ readonly objectId: string; readonly codeVersion: string }>`
+- **Since:** `1.0.0`
+
+Host identity captured by the engine, never read from journal payloads. Both
+fields default to `"unknown"`.
+
+### `JournalDecode.JournalDecodeError`
+
+- **Type:** `Schema.TaggedError` with tag `"JournalDecodeError"` and fields `stepTag: string`, `objectId: string`, `codeVersion: string`
+- **Since:** `1.0.0`
+
+A stored step cannot be read by this build. Carries neither the stored value nor
+the schema's diagnostic message.
+
+### `JournalDecode.failures`
+
+- **Type:** Incremental counter `smithers_journal_decode_failures`
+- **Since:** `1.0.0`
+
+Decode refusals, attributed by `stepTag` and `boundary`.
+
+### `JournalDecode.report`
+
+- **Signature:** `report(stepTag: string, boundary?: "outcome" | "payload" | "state"): Effect.Effect<JournalDecodeError>`
+- **Since:** `1.0.0`
+
+Reports a refusal and returns its error without inspecting the stored payload.
+The boundary defaults to `"outcome"`. Updates `failures`, annotates a
+`smithers.journal.decode.failed` span with the host identity and step tag, and
+logs those fields with the boundary.

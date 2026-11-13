@@ -29,8 +29,10 @@ export const Charge = Action.make("payments/Charge", {
 })
 ```
 
-The declared options are `payload`, `success`, `error`, `tier`,
-`idempotencyKey`, `nondeterministic`, and `annotations`. `success` defaults to
+The declared options are `payload`, `declaredFrom`, `implementationVersion`,
+`success`, `error`, `capabilities`, `effects`, `tier`, `idempotencyKey`,
+`nondeterministic`, `retryPolicy`, `interruptRetryPolicy`, `attemptTimeoutMs`,
+`heartbeatTimeoutMs`, `fileBoundary`, and `annotations`. `success` defaults to
 `Schema.Void` and `error` to `Schema.Never`, so an action that declares no error
 schema cannot fail typed.
 
