@@ -149,6 +149,21 @@ A stored tour journal restores a step with what remains of its reading time: non
 at once) and all of it when the step's clock reads later than the page's. Closed in `conversation`: `TourEnded`'s
 other-entry arm and `holdRemaining`'s clock-behind and elapsed arms.
 
+**A transport that resends** (`fault=sandbox-replay`, `e2e/core-sandbox-replay.spec.ts`, session 6). The faulty
+transport loses the answers to the first sandbox start and the first command and sends each again with its operation
+id, then sends the second command under the first command's id. The sandbox writer answers each resend from its receipt,
+so the transcript holds the first command once, and refuses the second command (`operation-conflict`); the page shows the
+refusal, writes nothing, and the next command runs. Closed: `sandboxHost` `admit`'s stored receipt and conflict and
+`command`'s receipt answer; `sandboxHostDecision` `replayConflict` (all five comparisons) and `replayAnswer`'s conflict
+and replay arms.
+
+`sandboxHost` `current`'s `settle-command` arm runs only for a pending command no fiber of this host instance runs:
+after a Durable Object eviction, or when the command fiber is interrupted or dies. The browser's mock builds one host
+per in-memory store, its flows have no step timeout, and `memoryMachines` cannot fail a command except with
+`Unavailable`, which the command records itself; a failing store write is a defect and ends in Foldkit's crash view
+(session 5). No browser input reaches it. It moves to the Worker, which alone outlives a command fiber; the move changes
+`sandboxHostDecision.recoveryOf`'s proved contract, posted to vl-proveall3 on the platform board (2026-11-13 07:45Z).
+
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
 
 The lead's two decisions: move `decide`'s non-blank guarantee into the outline's schema, and make the session type

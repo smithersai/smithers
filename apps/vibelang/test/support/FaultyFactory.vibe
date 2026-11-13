@@ -10,7 +10,7 @@ import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
 import { faultyMachines, machineFault, type MachineFault } from "./faultyMachines.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "forged" | MachineFault
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "forged" | MachineFault
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -82,6 +82,9 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * fails every sandbox read; `sandbox-start` fails the first start; each `machine-*` fault fails the mock sandbox's
  * machine once (faultyMachines.vibe); `sandbox-low` and `sandbox-out` move the sandbox
  * meter's clock, once the first sandbox starts, to five minutes before the allowance runs out or a minute past it;
+ * `sandbox-replay` is a transport that loses the answers to the first sandbox start and the first command and sends each
+ * again with its operation id, then reuses the first command's id for the second command, as a client with a stale id
+ * does: the writer answers a resend from its receipt and refuses a different request under a used id.
  * `sandbox-clock` makes that clock read before 1970 for the first sandbox command; `roles` ends the first role subscription with AccountUnavailable; `roles-gap` loses the first grant's role event;
  * `tour-events` ends the first tour conversation subscription with Unavailable; `accounts` fails the first sign-in or role
  * choice, member list, grant and sign-out; `live-details` runs live mode and fails the first issue's details read.
@@ -127,6 +130,8 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     let skew = skewed ? Date.UTC(built.getUTCFullYear(), built.getUTCMonth(), 15) - built.getTime() : 0
     let skewNanos = try Effect.orDie(Effect.try(() => BigInt(skew) * 1_000_000n))
     let jumped = false
+    // `sandbox-replay`: the first command's operation id, which the second command reuses.
+    let firstCommand = ""
     const clock: Clock.Clock = {
       currentTimeMillisUnsafe: () => broken ? -1 : wall.currentTimeMillisUnsafe() + skew,
       currentTimeMillis: sync(() => broken ? -1 : wall.currentTimeMillisUnsafe() + skew),
@@ -212,6 +217,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       },
       startSandbox: effect (conversation, operationId) => {
         if (first("sandbox-start")) throw new Unavailable({ reason: "sandbox unavailable" })
+        if (first("sandbox-replay:start")) try metered(base.startSandbox(conversation, operationId))
         const started = try metered(base.startSandbox(conversation, operationId))
         if (skewed && !jumped) {
           jumped = true
@@ -229,6 +235,10 @@ export function faultyFactory(fault: Fault, observation: Trace) {
           broken = true
           try Effect.logInfo("vibelang.e2e.sandbox-clock").pipe(Effect.annotateLogs({ fault }))
         }
+        if (first("sandbox-replay:command")) {
+          firstCommand = operationId
+          try metered(base.sandboxCommand(conversation, operationId, command, generation))
+        } else if (first("sandbox-replay:reuse")) return try metered(base.sandboxCommand(conversation, firstCommand, command, generation))
         return try metered(base.sandboxCommand(conversation, operationId, command, generation))
       },
       events: (conversation, after) => Stream.unwrap(effect {
