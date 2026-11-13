@@ -1,5 +1,7 @@
 /** @jsxImportSource react */
 import {
+  Children,
+  isValidElement,
   createContext,
   useContext,
   useEffect,
@@ -205,7 +207,11 @@ export type TestSuiteProps = Omit<ComponentProps<"div">, "children"> & {
   onOpenChange?: (open: boolean) => void;
 };
 
-/** Collapsible suite; failed suites default open, the rest default closed. */
+function isSuiteHeader(child: ReactNode): boolean {
+  return isValidElement(child) && (child.type === TestSuiteName || child.type === TestSuiteStats);
+}
+
+/** Collapsible suite; direct TestSuiteName/Stats children form the compound trigger. */
 export function TestSuite({
   suite,
   children,
@@ -250,6 +256,9 @@ export function TestSuite({
     [suite, suiteCounts],
   );
 
+  const parts = Children.toArray(children);
+  const headerParts = parts.filter(isSuiteHeader);
+
   const body = (
     <>
       <button
@@ -266,7 +275,7 @@ export function TestSuite({
             <TestSuiteName>{suite.name}</TestSuiteName>
             <TestSuiteStats />
           </>
-        ) : null}
+        ) : headerParts.length > 0 ? headerParts : <TestSuiteName>Test suite</TestSuiteName>}
       </button>
       {open ? (
         <div
@@ -276,7 +285,7 @@ export function TestSuite({
           aria-labelledby={triggerId}
           className="sui-tests-suite-content"
         >
-          {suite ? suite.tests.map((test) => <TestRow key={test.id} test={test} />) : children}
+          {suite ? suite.tests.map((test) => <TestRow key={test.id} test={test} />) : parts.filter((child) => !isSuiteHeader(child))}
         </div>
       ) : null}
     </>

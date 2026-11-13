@@ -145,7 +145,7 @@ describe("ChangeSummary", () => {
   test("vcs=jj switches the accessible terminology to working-copy change", async () => {
     await render(<ChangeSummary additions={1} deletions={1} filesChanged={1} vcs="jj" />);
     const el = container!.querySelector('[data-slot="change-summary"]')!;
-    expect(el.getAttribute("aria-label")).toBe("1 additions, 1 deletions, 1 files changed in this working-copy change");
+    expect(el.getAttribute("aria-label")).toBe("1 addition, 1 deletion, 1 file changed in this working-copy change");
     expect(el.getAttribute("data-vcs")).toBe("jj");
     expect(el.textContent).toContain("1 file");
   });

@@ -446,6 +446,11 @@ the request in view. `ApprovalCard` preserves the summary, proposed actions,
 resources and reviewer note; an authorized reviewer can edit the note before
 retrying `Approve` or `Deny`.
 
+`Reasoning` and `TaskItem` round elapsed seconds before splitting minutes.
+`ToolCall` keeps millisecond and decimal-second precision for short calls and
+carries rounded durations into the next unit at its boundary. Its live region
+announces lifecycle state changes, including completion as `Done`.
+
 ## Sources and citations
 
 | Export                                                              | Types                                                                                             |
@@ -454,6 +459,9 @@ retrying `Approve` or `Deny`.
 | `InlineCitation`, `CitationCard`, `CitationCarousel`, `CitationQuote` | `InlineCitationProps`, `CitationSource`, `CitationCardProps`, `CitationCarouselProps`, `CitationQuoteProps` |
 | `Suggestion`, `SuggestionGroup`                                     | `SuggestionProps`, `SuggestionGroupProps`                                                         |
 | `OpenInChat`                                                        | `OpenInChatProps`, `OpenInChatSubject`, `OpenInChatSubjectKind`                                   |
+
+`SourcesContent` keeps its native list semantics and is labelled by
+`SourcesTrigger`; each `Source` remains a list item.
 
 ## Agents and context
 
@@ -499,6 +507,14 @@ function useCommitModel(): CommitModel | null
 `TestResultsProgress` counts `passed`, `failed`, `skipped` and `todo` cases
 as finished. A completed run reaches `100` percent even with `todo` cases;
 a running run or an empty result remains indeterminate.
+
+In a compound `TestSuite`, direct `TestSuiteName` and `TestSuiteStats` children
+render in its disclosure trigger; other children render in the collapsed body.
+Without a name part, the trigger reads “Test suite”. Model-driven failed
+suites default open.
+
+`ChangeSummary` announces its additions, deletions and file count as a labelled
+image, including when `compact` hides the visible file count.
 
 `SchemaDisplay` and `SecretField` enforce bounds documented in
 [Failure codes and limits](./reference/contracts.md).
@@ -580,6 +596,14 @@ const calendarCss: string
 `CalendarEvent` values, with `CalendarView` naming the three. Every timestamp is
 Unix epoch milliseconds. `hashSource` is the per-source tint rotation, which is
 what gives an event without an explicit `color` a stable one.
+
+The month grid groups its headers and days into accessible rows. Agenda
+events retain their native button or link roles inside dated lists. Opening or
+clicking the overflow popover does not report an empty-slot click.
+
+Overlapping timed events share the day column side by side. Packing uses the
+displayed 30-minute bounds, includes overnight segments, and gives isolated
+events the full column width.
 
 The week grid is a wall clock, not elapsed time. `atMinutesIntoDay` inverts
 `minutesIntoDay` to turn a row offset back into an instant, and `hourLabel`

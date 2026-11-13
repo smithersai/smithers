@@ -3,6 +3,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@smthrs/ui-css";
 import { formatStatus, normalizeStatus, statusClass } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
+import { formatDuration } from "../internal/formatDuration";
 
 export type TaskItemProps = Omit<ComponentProps<"div">, "children"> & {
   label: ReactNode;
@@ -16,11 +17,6 @@ export type TaskItemFileProps = Omit<ComponentProps<"span">, "children"> & {
   name: string;
   icon?: ReactNode;
 };
-
-function formatDuration(n: number): string {
-  if (n < 60) return `${Math.round(n)}s`;
-  return `${Math.floor(n / 60)}m ${String(Math.round(n % 60)).padStart(2, "0")}s`;
-}
 
 /** A file chip associated with a task, with an optional leading icon. */
 export function TaskItemFile({ name, icon, className, ...props }: TaskItemFileProps) {

@@ -53,7 +53,7 @@ export function CompactGroup({
         <span aria-hidden="true" className="sui-compact-group-chevron">
           ▸
         </span>
-        <span>{label ?? `${count} earlier messages`}</span>
+        <span>{label ?? `${count} earlier ${count === 1 ? "message" : "messages"}`}</span>
       </button>
       {isOpen ? (
         <div

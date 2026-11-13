@@ -23,7 +23,6 @@ import {
   agendaGroups,
   atMinutesIntoDay,
   dayKey,
-  daySegment,
   eventsOnDay,
   fullDayLabel,
   hashSource,
@@ -33,7 +32,6 @@ import {
   monthGridDays,
   monthLabel,
   snapDown30,
-  snapUp30,
   startOfDay,
   timeLabel,
   weekDays,
@@ -41,6 +39,7 @@ import {
   weekdayLabel,
 } from "./dateUtils";
 import type { CalendarEvent, CalendarView } from "./types";
+import { layoutTimedEvents } from "./layoutTimedEvents";
 
 /** Pixels per hour in the week time grid; mirrors the 44px row period in calendarCss. */
 const HOUR_PX = 44;
@@ -235,68 +234,73 @@ function MonthView({
 
   return (
     <div ref={gridRef} role="grid" aria-label={monthLabel(anchorMs)} className="sui-cal-grid" onKeyDown={onGridKeyDown}>
-      {days.slice(0, 7).map((dayMs) => (
-        <div key={`h-${dayMs}`} role="columnheader" className="sui-cal-weekday">
-          {weekdayLabel(dayMs)}
+      <div role="row" style={{ display: "contents" }}>
+        {days.slice(0, 7).map((dayMs) => (
+          <div key={`h-${dayMs}`} role="columnheader" className="sui-cal-weekday">
+            {weekdayLabel(dayMs)}
+          </div>
+        ))}
+      </div>
+      {weeks.map((week, row) => (
+        <div key={week[0]} role="row" style={{ display: "contents" }}>
+          {week.map((dayMs, col) => {
+            const key = dayKey(dayMs);
+            const dayEvents = eventsOnDay(events, dayMs);
+            const visible = dayEvents.slice(0, maxChipsPerDay);
+            const overflow = dayEvents.length - visible.length;
+            return (
+              <div
+                key={key}
+                role="gridcell"
+                tabIndex={key === effectiveFocusedKey ? 0 : -1}
+                data-date={key}
+                data-today={isSameDay(dayMs, nowMs) || undefined}
+                data-outside={new Date(dayMs).getMonth() !== month || undefined}
+                aria-label={fullDayLabel(dayMs)}
+                className="sui-cal-day"
+                onFocus={() => setFocusedKey(key)}
+                onClick={() => {
+                  setFocusedKey(key);
+                  onSlotClick?.(dayMs);
+                }}
+              >
+                <span className="sui-cal-day-num">{new Date(dayMs).getDate()}</span>
+                {visible.map((event) => (
+                  <EventChip key={event.id} event={event} onEventClick={onEventClick} />
+                ))}
+                {overflow > 0 ? (
+                  <button
+                    type="button"
+                    className="sui-cal-more"
+                    aria-expanded={openKey === key}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setOpenKey(openKey === key ? null : key);
+                    }}
+                  >
+                    +{overflow} more
+                  </button>
+                ) : null}
+                {openKey === key ? (
+                  <div
+                    role="dialog"
+                    aria-label={fullDayLabel(dayMs)}
+                    className="sui-cal-popover"
+                    onClick={(event) => event.stopPropagation()}
+                    data-align={col >= 5 ? "end" : undefined}
+                    data-placement={row >= 4 ? "up" : undefined}
+                  >
+                    <div className="sui-cal-popover-label">{fullDayLabel(dayMs)}</div>
+                    {dayEvents.map((event) => (
+                      <EventChip key={event.id} event={event} onEventClick={onEventClick} />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ))}
-      {weeks.flatMap((week, row) =>
-        week.map((dayMs, col) => {
-          const key = dayKey(dayMs);
-          const dayEvents = eventsOnDay(events, dayMs);
-          const visible = dayEvents.slice(0, maxChipsPerDay);
-          const overflow = dayEvents.length - visible.length;
-          return (
-            <div
-              key={key}
-              role="gridcell"
-              tabIndex={key === effectiveFocusedKey ? 0 : -1}
-              data-date={key}
-              data-today={isSameDay(dayMs, nowMs) || undefined}
-              data-outside={new Date(dayMs).getMonth() !== month || undefined}
-              aria-label={fullDayLabel(dayMs)}
-              className="sui-cal-day"
-              onFocus={() => setFocusedKey(key)}
-              onClick={() => {
-                setFocusedKey(key);
-                onSlotClick?.(dayMs);
-              }}
-            >
-              <span className="sui-cal-day-num">{new Date(dayMs).getDate()}</span>
-              {visible.map((event) => (
-                <EventChip key={event.id} event={event} onEventClick={onEventClick} />
-              ))}
-              {overflow > 0 ? (
-                <button
-                  type="button"
-                  className="sui-cal-more"
-                  aria-expanded={openKey === key}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setOpenKey(openKey === key ? null : key);
-                  }}
-                >
-                  +{overflow} more
-                </button>
-              ) : null}
-              {openKey === key ? (
-                <div
-                  role="dialog"
-                  aria-label={fullDayLabel(dayMs)}
-                  className="sui-cal-popover"
-                  data-align={col >= 5 ? "end" : undefined}
-                  data-placement={row >= 4 ? "up" : undefined}
-                >
-                  <div className="sui-cal-popover-label">{fullDayLabel(dayMs)}</div>
-                  {dayEvents.map((event) => (
-                    <EventChip key={event.id} event={event} onEventClick={onEventClick} />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          );
-        }),
-      )}
     </div>
   );
 }
@@ -359,22 +363,14 @@ function WeekView({ anchorMs, events, nowMs, weekStartsOn, onEventClick, onSlotC
             </div>
             {days.map((dayMs) => {
               // An overnight or multi-day event renders one segment in every day it covers.
-              const timed = events
-                .filter((event) => !event.allDay)
-                .flatMap((event) => {
-                  const segment = daySegment(event, dayMs);
-                  return segment ? [{ event, segment }] : [];
-                })
-                .sort((a, b) => a.event.start - b.event.start || a.event.title.localeCompare(b.event.title));
+              const timed = layoutTimedEvents(events, dayMs);
               const isToday = isSameDay(dayMs, nowMs);
               return (
                 // Click targets the column backdrop only; chips stopPropagation.
                 // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
                 <div key={dayMs} className="sui-cal-week-col" onClick={(event) => onColumnClick(dayMs, event)}>
-                  {timed.map(({ event, segment }) => {
-                    const startMin = snapDown30(segment.startMin);
-                    const endMin = snapUp30(segment.endMin);
-                    const height = Math.max(endMin - startMin, 30);
+                  {timed.map(({ event, segment, startMin, endMin, column, columns }) => {
+                    const height = endMin - startMin;
                     return eventElement(
                       event,
                       onEventClick,
@@ -386,6 +382,10 @@ function WeekView({ anchorMs, events, nowMs, weekStartsOn, onEventClick, onSlotC
                         style: {
                           top: (startMin / 60) * HOUR_PX,
                           height: (height / 60) * HOUR_PX,
+                          left: `calc(${(column / columns) * 100}% + 2px)`,
+                          width: `calc(${100 / columns}% - 4px)`,
+                          right: "auto",
+                          boxSizing: "border-box",
                           ...colorStyle(event),
                         },
                       },
@@ -436,44 +436,48 @@ function AgendaView({
   return (
     <div className="sui-cal-agenda" role="list" aria-label="Agenda">
       {groups.map((group) => (
-        <section key={dayKey(group.dayMs)} className="sui-cal-agenda-day" aria-label={fullDayLabel(group.dayMs)}>
+        <div key={dayKey(group.dayMs)} role="listitem" className="sui-cal-agenda-day">
           <div className="sui-cal-agenda-day-label">{agendaDayLabel(group.dayMs, nowMs)}</div>
-          {group.events.map((event) => {
-            const isRecentPast = !event.allDay && event.start <= nowMs && nowMs - event.start < 24 * 3_600_000;
-            const href = event.href === undefined ? undefined : safeHref(event.href);
-            const row = (
-              <>
-                <span className="sui-cal-agenda-time">
-                  {event.allDay ? "All day" : isRecentPast ? <RelativeTime ts={event.start} /> : timeLabel(event.start)}
-                </span>
-                {statusDot(event)}
-                <span className="sui-cal-agenda-title" title={event.title}>
-                  {event.title}
-                </span>
-                {event.source ? (
-                  <span className="sui-cal-agenda-source" title={event.source}>
-                    {event.source}
+          <div role="list" aria-label={fullDayLabel(group.dayMs)} style={{ display: "grid", gap: 2 }}>
+            {group.events.map((event) => {
+              const isRecentPast = !event.allDay && event.start <= nowMs && nowMs - event.start < 24 * 3_600_000;
+              const href = event.href === undefined ? undefined : safeHref(event.href);
+              const row = (
+                <>
+                  <span className="sui-cal-agenda-time">
+                    {event.allDay ? "All day" : isRecentPast ? <RelativeTime ts={event.start} /> : timeLabel(event.start)}
                   </span>
-                ) : null}
-              </>
-            );
-            return href !== undefined && !onEventClick ? (
-              <a key={event.id} role="listitem" className="sui-cal-agenda-row" href={href}>
-                {row}
-              </a>
-            ) : (
-              <button
-                key={event.id}
-                role="listitem"
-                type="button"
-                className="sui-cal-agenda-row"
-                onClick={() => onEventClick?.(event)}
-              >
-                {row}
-              </button>
-            );
-          })}
-        </section>
+                  {statusDot(event)}
+                  <span className="sui-cal-agenda-title" title={event.title}>
+                    {event.title}
+                  </span>
+                  {event.source ? (
+                    <span className="sui-cal-agenda-source" title={event.source}>
+                      {event.source}
+                    </span>
+                  ) : null}
+                </>
+              );
+              return (
+                <div key={event.id} role="listitem">
+                  {href !== undefined && !onEventClick ? (
+                    <a className="sui-cal-agenda-row" href={href}>
+                      {row}
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      className="sui-cal-agenda-row"
+                      onClick={() => onEventClick?.(event)}
+                    >
+                      {row}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       ))}
     </div>
   );

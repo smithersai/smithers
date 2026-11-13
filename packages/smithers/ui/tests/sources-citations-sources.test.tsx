@@ -54,7 +54,7 @@ describe("Sources compound anatomy", () => {
     const content = container!.querySelector('[data-slot="sources-content"]') as HTMLElement;
     expect(content).not.toBeNull();
     expect(content.tagName).toBe("UL");
-    expect(content.getAttribute("role")).toBe("region");
+    expect(content.getAttribute("role")).toBe("list");
     expect(content.getAttribute("aria-labelledby")).toBe(trigger.id);
     expect(trigger.getAttribute("aria-controls")).toBe(content.id);
     expect(content.querySelectorAll('[data-slot="source"]')).toHaveLength(2);

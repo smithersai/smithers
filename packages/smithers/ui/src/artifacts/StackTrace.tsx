@@ -118,7 +118,7 @@ export function StackTrace({
         onClick={toggle}
       >
         {title ?? "Stack trace"}
-        {hasFrames ? <span className="sui-stack-count">{frames.length} frames</span> : null}
+        {hasFrames ? <span className="sui-stack-count">{frames.length} {frames.length === 1 ? "frame" : "frames"}</span> : null}
       </button>
       {open ? (
         <div

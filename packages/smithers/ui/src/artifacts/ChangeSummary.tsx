@@ -25,12 +25,13 @@ export function ChangeSummary({
 }: ChangeSummaryProps) {
   useInjectUiCss();
   const subject = vcs === "jj" ? "working-copy change" : "diff";
-  const ariaLabel = `${additions} additions, ${deletions} deletions, ${filesChanged} files changed in this ${subject}`;
+  const ariaLabel = `${additions} ${additions === 1 ? "addition" : "additions"}, ${deletions} ${deletions === 1 ? "deletion" : "deletions"}, ${filesChanged} ${filesChanged === 1 ? "file" : "files"} changed in this ${subject}`;
   return (
     <div
       data-slot="change-summary"
       data-vcs={vcs}
       data-compact={compact ? "true" : "false"}
+      role="img"
       aria-label={ariaLabel}
       className={cn("sui-changesum", className)}
       {...props}

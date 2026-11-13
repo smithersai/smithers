@@ -161,7 +161,7 @@ export function SourcesTrigger({ count, children, className, onClick, type, ...p
 
 export type SourcesContentProps = ComponentProps<"ul">;
 
-/** Collapsible source list region for a compound Sources; renders a <ul>. */
+/** Collapsible, labelled source list for a compound Sources; renders a <ul>. */
 export function SourcesContent({ className, children, role, ...props }: SourcesContentProps) {
   useInjectUiCss();
   const context = useContext(SourcesContext);
@@ -171,7 +171,7 @@ export function SourcesContent({ className, children, role, ...props }: SourcesC
     <ul
       data-slot="sources-content"
       id={context?.contentId}
-      role={role ?? "region"}
+      role={role ?? "list"}
       aria-labelledby={context?.triggerId}
       className={cn("sui-sources-content", className)}
       {...props}

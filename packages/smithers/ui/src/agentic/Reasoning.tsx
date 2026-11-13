@@ -11,6 +11,7 @@ import {
 } from "react";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
+import { formatDuration } from "../internal/formatDuration";
 
 export type ReasoningProps = Omit<ComponentProps<"div">, "children"> & {
   streaming?: boolean;
@@ -36,11 +37,6 @@ function useReasoningContext(part: string): ReasoningContextValue {
   const context = useContext(ReasoningContext);
   if (!context) throw new Error(`${part} must be rendered inside <Reasoning composed>`);
   return context;
-}
-
-function formatDuration(n: number): string {
-  if (n < 60) return `${Math.round(n)}s`;
-  return `${Math.floor(n / 60)}m ${String(Math.round(n % 60)).padStart(2, "0")}s`;
 }
 
 /**

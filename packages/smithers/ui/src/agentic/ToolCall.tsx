@@ -11,6 +11,7 @@ import {
 } from "react";
 import { cn } from "@smthrs/ui-css";
 import { safeImageSrc } from "../internal/safeImageSrc";
+import { formatDuration } from "../internal/formatDuration";
 import { CodeBlock } from "../primitives/CodeBlock";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
@@ -103,19 +104,11 @@ function isTerminalToolState(state: ToolCallState): boolean {
   return state === "output-available" || state === "output-error" || state === "output-denied";
 }
 
-function formatDurationMs(durationMs: number): string {
-  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
-  if (durationMs < 60_000) return `${(durationMs / 1000).toFixed(1)}s`;
-  const minutes = Math.floor(durationMs / 60_000);
-  const seconds = Math.round((durationMs % 60_000) / 1000);
-  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
-}
-
 function useToolCallInjected() {
   useInjectUiCss();
 }
 
-/** One polite announcement region per ToolCall (state labels + completion). */
+/** One polite announcement region per ToolCall for state transitions. */
 function ToolCallLiveRegion({ announcement }: { announcement: string }) {
   return (
     <span data-slot="tool-call-live" className="sui-sr-only" aria-live="polite">
@@ -124,23 +117,17 @@ function ToolCallLiveRegion({ announcement }: { announcement: string }) {
   );
 }
 
-function useToolCallAnnouncement(state: ToolCallState, outputComplete: boolean): string {
+function useToolCallAnnouncement(state: ToolCallState): string {
   const [announcement, setAnnouncement] = useState("");
   const previousLabel = useRef(TOOL_CALL_STATE_LABELS[state]);
-  const previousComplete = useRef(outputComplete);
 
   useEffect(() => {
     const label = TOOL_CALL_STATE_LABELS[state];
     if (label !== previousLabel.current) {
       previousLabel.current = label;
       setAnnouncement(label);
-      return;
     }
-    if (outputComplete && !previousComplete.current) {
-      setAnnouncement("Tool output complete");
-    }
-    previousComplete.current = outputComplete;
-  }, [state, outputComplete]);
+  }, [state]);
 
   return announcement;
 }
@@ -171,7 +158,7 @@ export function ToolCall(props: ToolCallProps) {
     onOpenChange?.(next);
   }
 
-  const announcement = useToolCallAnnouncement(state, state === "output-available");
+  const announcement = useToolCallAnnouncement(state);
   return (
     <ToolCallContext.Provider value={{ name, state, open: isOpen, bodyId, durationMs, toggle }}>
       <div
@@ -200,7 +187,7 @@ export function ToolCallHeader({ className, children, ...props }: ToolCallHeader
   const duration =
     context.durationMs != null && isTerminalToolState(context.state) ? (
       <span data-slot="tool-call-duration" className="sui-toolcall-duration">
-        {formatDurationMs(context.durationMs)}
+        {formatDuration(context.durationMs / 1000, "milliseconds")}
       </span>
     ) : null;
   return (

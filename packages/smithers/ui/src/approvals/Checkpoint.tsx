@@ -112,7 +112,7 @@ export function CheckpointMetadata({ className, ...props }: ComponentProps<"div"
     <div data-slot="checkpoint-metadata" className={cn("sui-checkpoint-metadata", className)} {...props}>
       {checkpoint.frameNo !== undefined ? <span>frame {checkpoint.frameNo}</span> : null}
       {date !== undefined ? <time dateTime={date.toISOString()}>{date.toLocaleString()}</time> : null}
-      {checkpoint.messageCount !== undefined ? <span>{checkpoint.messageCount} messages</span> : null}
+      {checkpoint.messageCount !== undefined ? <span>{checkpoint.messageCount} {checkpoint.messageCount === 1 ? "message" : "messages"}</span> : null}
     </div>
   );
 }
