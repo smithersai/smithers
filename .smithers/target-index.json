@@ -49385,6 +49385,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/site/src/data/versions.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/site/scripts/sync-support-docs.mjs"
       },
       {

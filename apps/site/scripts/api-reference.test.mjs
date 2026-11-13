@@ -2,6 +2,7 @@
 import assert from "node:assert/strict"
 import { existsSync, readFileSync } from "node:fs"
 import { test } from "node:test"
+import { fileURLToPath } from "node:url"
 import ts from "typescript"
 
 const read = (path) => {
@@ -501,4 +502,33 @@ test("cloudflare intent and sandbox wake reference preserve telemetry fields and
   assert.ok(documented, "wake has a documented return type")
   assert.equal(documented.replaceAll("SandboxObject.", "").replace(/\s/g, ""), wake.initializer.type.getText(sandbox).replace(/\s/g, ""))
   members(cloudflareDir, "SandboxObject", "StartTimedOut")
+})
+
+test("AgentSession reference explains registered native module execution", () => {
+  const docs = reference("packages/smithers/agent")
+  for (const term of ["Executable.Catalog", "durable child", "approved", "action implementations"]) {
+    assert.ok(docs.includes(term), term)
+  }
+  assert.doesNotMatch(docs, /Module flows are discovered and planned but return/)
+  assert.doesNotMatch(docs, /drive\s+them separately/)
+})
+
+test("the artifact store example typechecks as a complete module", () => {
+  const docs = reference(`${flows}artifacts`)
+  const example = docs.split("## Example\n")[1]?.match(/```ts\n([\s\S]*?)```/)?.[1]
+  assert.ok(example, "the reference has a complete TypeScript example")
+  const file = fileURLToPath(new URL(`../../../${flows}artifacts/reference-example.ts`, import.meta.url))
+  const options = {
+    noEmit: true, strict: true, skipLibCheck: true, types: [],
+    target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext, allowImportingTsExtensions: true
+  }
+  const host = ts.createCompilerHost(options)
+  const getSourceFile = host.getSourceFile.bind(host)
+  host.getSourceFile = (path, version, ...args) => path === file
+    ? ts.createSourceFile(path, example, version, true)
+    : getSourceFile(path, version, ...args)
+  const program = ts.createProgram([file], options, host)
+  const diagnostics = ts.getPreEmitDiagnostics(program)
+  assert.equal(diagnostics.length, 0, ts.formatDiagnostics(diagnostics, host))
 })

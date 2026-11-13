@@ -113,4 +113,6 @@ Published pages mirror each package's colocated `docs/api.md` or `docs/reference
 
 ## Platform support
 
-The [RC support matrix](/docs/reference/support-matrix/) defines the runtime and platform boundary. Node.js and Bun are durable runtimes, storing in local SQLite or, when `SMITHERS_POSTGRES_URL` or `DATABASE_URL` is set, PostgreSQL. Browser coverage establishes bundling only; supplying another runtime or SQL client does not establish durable browser support.
+The [RC support matrix](/docs/reference/support-matrix/) defines the runtime and platform boundary. Node.js and Bun are durable runtimes through `NodeRuntime` and `BunRuntime`, storing in local SQLite or, when `SMITHERS_POSTGRES_URL` or `DATABASE_URL` is set, PostgreSQL.
+
+Browsers run durable flows through `BrowserRuntime` in `@smthrs/platform-browser`, over SQLite in OPFS in a dedicated worker. A Web Lock elects one leader per origin. All tabs closed pauses execution; a new leader resumes unfinished runs from the same browser profile's store. Browser storage may be cleared, and another profile or device has a separate store. No other SQL client is a supported durable browser store.

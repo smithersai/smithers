@@ -19,6 +19,7 @@ dependency list.
 
 ```ts
 import { ArtifactStore } from "@smthrs/artifacts"
+import * as Effect from "effect/Effect"
 
 const program = Effect.gen(function*() {
   const store = yield* ArtifactStore.ArtifactStore

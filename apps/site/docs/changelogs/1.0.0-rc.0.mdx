@@ -9,18 +9,18 @@ Smithers 1.0 replaces the 0.x JSX workflow engine with typed flows and actions o
 
 ## Install
 
-The release is not on npm; install from the source checkout ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli)). The CLI requires Node.js 26.4.0 or later, and Effect and its platform packages are pinned to exactly `4.0.0-rc.115`. See the [support matrix](/docs/reference/support-matrix/).
+The release is not on npm; install from the source checkout ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli)). The CLI requires Node.js 26.4.0 or later, and Effect and its platform packages are pinned to exactly `4.1.1`. See the [support matrix](/docs/reference/support-matrix/).
 
 ## Authoring and execution
 
 - `Flow.make`, `Action.make`, `Interpreter.layer`, and Effect replace JSX workflow components. Action declarations and their implementations are separate.
-- Markdown agent flows run through `smthrs flow start` with a configured model seat. TypeScript module flows can be discovered and planned by the CLI, but execution remains `pending` until a host registers the flow, provides its action layers, and drives it. See [module flows](/docs/guides/module-flows/).
+- Markdown agent flows run through `smthrs flow start` with a configured model seat. Hosts register module flows and their action implementations with the durable runtime and provide `Executable.Catalog`. `AgentSession` executes a native module matching its approved descriptor as a durable child, retaining its actions, waits, and replay. Without a catalog or a registered delegate, execution remains `pending`. See [module flows](/docs/guides/module-flows/).
 - `WORKSPACE.ts` and `PACKAGE.ts` declare the target graph. `smthrs test`, `build`, and `lint` select targets; declared inputs and execution identities control caching. [The first-target tutorial](/docs/tutorials/first-target/) exercises a cache hit and input invalidation.
 - The agent runtime evaluates model-authored cells in QuickJS with declared flow tools and budgets. Typed output schemas validate values before downstream steps consume them.
 
 ## Durable state and control
 
-SQLite on Node.js is the supported durable runtime. The control plane uses `.flows/control.db`, the engine uses `.flows/engine.db`, and artifacts live under `.flows/objects/`. Services sharing a database must initialize their complete ordered migration set before opening later schema blocks. Internal pre-release schemas and 0.x run databases carry no compatibility promise.
+Node.js and Bun support durable execution through `NodeRuntime` and `BunRuntime` with SQLite or PostgreSQL. The control plane uses `.flows/control.db`, the engine uses `.flows/engine.db`, and artifacts live under `.flows/objects/`. Services sharing a database must initialize their complete ordered migration set before opening later schema blocks. Internal pre-release schemas and 0.x run databases carry no compatibility promise.
 
 | Feature | Current surface |
 | --- | --- |
@@ -32,7 +32,7 @@ SQLite on Node.js is the supported durable runtime. The control plane uses `.flo
 | Memory | Structured facts and FTS recall over SQLite; namespaces and memory policy determine visibility. |
 | Backup | `@smthrs/engine-store/DisasterRecovery`; source checkout script `packages/smithers/flows/engine-store/scripts/flows-backup.mjs backup\|verify\|restore`. |
 
-See the [support matrix](/docs/reference/support-matrix/) for runtime ranges, tested toolchain pins, platform boundaries, storage, and hosting requirements. Bun has a limited non-durable package scope. Browser bundling does not establish durable browser, Deno, or edge execution. Windows is best effort; macOS CI is advisory.
+See the [support matrix](/docs/reference/support-matrix/) for runtime ranges, tested toolchain pins, platform boundaries, storage, and hosting requirements. `BunRuntime` uses the native Bun SQL driver; restart coverage exercises Node-to-Bun and Bun-to-Node recovery. Browsers run durable flows through `BrowserRuntime` over SQLite in OPFS in a dedicated worker, with one leader per origin elected by a Web Lock. All tabs closed pauses execution; reopening the same browser profile resumes unfinished runs. Browser storage may be cleared, and profiles and devices have separate stores. Cloudflare Workers use `CloudflareRuntime` over PostgreSQL; Deno and other edge runtimes are unsupported. Windows is best effort; macOS CI is advisory.
 
 ## Hosting and credentials
 
@@ -48,7 +48,7 @@ Published export maps define the public API. `internal/` subpaths are excluded. 
 
 ## Compatibility promise
 
-> Smithers 1.0.0-rc.0 is a source migration, not a compatible upgrade. It provides no JSX workflow API, no `smthrs/jsx-runtime` or `smthrs/jsx-dev-runtime`, no React reconciler, no `<Workflow>`, `<Task>`, `<Sequence>`, `<Parallel>`, `<Loop>`, `<Ralph>`, `<Branch>`, `<Approval>`, `<Signal>`, `<Timer>`, `<Subflow>`, `<Worktree>`, or `<Saga>` components, no `createSmithers`, `runWorkflow`, `renderFrame`, or `SmithersCtx`, no `smthrs` facade, no 0.x CLI verbs beyond those listed in the 1.0 command table, no 0.x gateway protocol, and no ability to load, resume, or migrate 0.x run databases. No shim, adapter, or compatibility layer will be published. Flows are written against `@smthrs/flow` (`Flow`, `Action`, durable waits, `RetryPolicy`), `@smthrs/engine`, `@smthrs/control`, and Effect `4.0.0-rc.115`, and run on Node.js 22.19.0 or later with local SQLite. Existing 0.x projects migrate their source with the `migrate-smithers-v1` workflow (`smithers migrate`), which rewrites workflows, imports, configuration, scripts, and docs and reports every construct it could not translate. Runtime behavior between 0.x and 1.0 is not equivalent and is not intended to be.
+> Smithers 1.0.0-rc.0 is a source migration, not a compatible upgrade. It provides no JSX workflow API, no `smthrs/jsx-runtime` or `smthrs/jsx-dev-runtime`, no React reconciler, no `<Workflow>`, `<Task>`, `<Sequence>`, `<Parallel>`, `<Loop>`, `<Ralph>`, `<Branch>`, `<Approval>`, `<Signal>`, `<Timer>`, `<Subflow>`, `<Worktree>`, or `<Saga>` components, no `createSmithers`, `runWorkflow`, `renderFrame`, or `SmithersCtx`, no `smthrs` facade, no 0.x CLI verbs beyond those listed in the 1.0 command table, no 0.x gateway protocol, and no ability to load, resume, or migrate 0.x run databases. No shim, adapter, or compatibility layer will be published. Flows are written against `@smthrs/flow` (`Flow`, `Action`, durable waits, `RetryPolicy`), `@smthrs/engine`, `@smthrs/control`, and Effect `4.1.1`, and run on Node.js 22.19.0 or later with local SQLite. Existing 0.x projects migrate their source with the `migrate-smithers-v1` workflow (`smithers migrate`), which rewrites workflows, imports, configuration, scripts, and docs and reports every construct it could not translate. Runtime behavior between 0.x and 1.0 is not equivalent and is not intended to be.
 
 ## Migrating source
 

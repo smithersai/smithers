@@ -528,6 +528,7 @@ const supportMatrixTest = Smithers.Shell.Test({
   shell: "node --test --test-concurrency=1 apps/site/scripts/support-matrix.test.mjs",
   data: [
     Smithers.file("scripts/support-matrix.test.mjs"),
+    Smithers.file("src/data/versions.json"),
     Smithers.file("scripts/sync-support-docs.mjs"),
     Smithers.glob("docs/**/*"),
     Smithers.file("src/content/docs/docs/reference/api/index.mdx"),

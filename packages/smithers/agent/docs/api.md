@@ -219,7 +219,7 @@ const layerSandboxWithVariant: Layer.Layer<
 
 The production `ControlExecutor` for [`@smthrs/control`](/api/control). When
 the control plane accepts a launch, the session looks the flow up in the
-registry, loads its markdown prompt body, resolves its declared seat through
+registry. For a markdown prompt flow, it loads the body, resolves its declared seat through
 `SeatResolver`, and runs `Agent` as the body of one durable flow execution
 whose id is the control run id. Run-status writes stay fenced: the executor
 waits for the control plane's own `running` transition, writes
@@ -233,9 +233,17 @@ change to the prompt, model, parameters, or discovered metadata refuses the
 run; a refreshed registry needs a new plan and approval. A registry mismatch
 is retained as the typed cause of the launch failure.
 
-Module flows are discovered and planned but return `pending` from this agent
-executor. A host must register their flow and action implementations and drive
-them separately; `AgentSession` executes markdown prompt flows.
+Module flows execute when the host provides `Executable.Catalog` with an
+executable matching the approved descriptor's execution digest and registers
+the flow and its action implementations with the durable runtime.
+`AgentSession` runs a native module as a durable child with a deterministic
+execution id, preserving its action outputs, waits, and replay. The child
+receives the approved budget, quota policy, and attenuated capabilities; the
+session owns control admission, cancellation, and settlement.
+
+A module remains `pending` when the host supplies no executable catalog or
+has not registered its declared delegate. A missing executable or a mismatched
+approved identity otherwise fails the launch with `LaunchFailed`.
 
 A prompt flow whose frontmatter selects a `sandbox:` runs its tools on a
 machine the host's `Options.sandbox` opens for it: one machine per run,

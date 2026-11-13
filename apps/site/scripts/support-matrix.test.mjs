@@ -150,3 +150,36 @@ test("operator docs describe the PR evidence upload and factory operator", () =>
     assert.doesNotMatch(text, /\.smithers\/workflows\/queue-driver/, `${readme}: untracked workflow path`)
   }
 })
+
+test("the API index and current RC notes describe the durable Bun and browser hosts", () => {
+  for (const path of [
+    "apps/site/docs/reference/api/index.mdx",
+    "apps/site/src/content/docs/docs/reference/api/index.mdx",
+    "apps/site/docs/changelogs/1.0.0-rc.0.mdx",
+    "apps/site/src/content/docs/changelogs/1.0.0-rc.0.mdx"
+  ]) {
+    const docs = read(path)
+    for (const term of ["BunRuntime", "BrowserRuntime", "OPFS", "Web Lock"]) {
+      assert.ok(docs.includes(term), `${path}: ${term}`)
+    }
+    assert.match(docs, /[Aa]ll tabs closed/)
+    assert.doesNotMatch(docs, /Browser coverage establishes bundling only|limited non-durable package scope|does not establish durable browser/)
+  }
+})
+
+test("current RC Effect pins match installation metadata and exact public peers", () => {
+  const expected = JSON.parse(read("apps/site/src/data/versions.json")).effect
+  for (const pkg of ["flow", "engine"]) {
+    assert.equal(JSON.parse(read(`packages/smithers/flows/${pkg}/package.json`)).peerDependencies.effect, expected)
+  }
+  for (const path of [
+    "apps/site/docs/changelogs/1.0.0-rc.0.mdx",
+    "apps/site/src/content/docs/changelogs/1.0.0-rc.0.mdx"
+  ]) {
+    const docs = read(path)
+    const installPin = docs.match(/Effect and its platform packages are pinned to exactly `([^`]+)`/)
+    const compatibilityPin = docs.match(/and Effect `([^`]+)`/)
+    assert.equal(installPin?.[1], expected, `${path}: installation pin`)
+    assert.equal(compatibilityPin?.[1], expected, `${path}: compatibility pin`)
+  }
+})
