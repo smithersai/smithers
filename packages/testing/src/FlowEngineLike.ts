@@ -342,9 +342,12 @@ export const make = (): Effect.Effect<
                   Effect.gen(function*() {
                     let input: unknown = payload.value
                     for (const step of spec.steps) {
-                      input = step.kind === "step"
-                        ? yield* stepActivity(journal, step, input)
-                        : yield* raceStep(journal, step, input)
+                      if (step.kind === "step") {
+                        input = yield* stepActivity(journal, step, input)
+                      } else {
+                        const effect = raceStep(journal, step, input)
+                        input = yield* (step.branches.length === 0 ? instrument(journal, step, effect) : effect)
+                      }
                     }
                     return input
                   }),

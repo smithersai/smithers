@@ -18,7 +18,7 @@
  * refuses to let any config carve an exception out of.
  */
 import { spawn } from "node:child_process"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import {
   isAlive,
   isGroupAlive,
@@ -32,11 +32,6 @@ import {
 } from "../src/Faults.ts"
 import * as ProcessTable from "../src/ProcessTable.ts"
 
-vi.mock(
-  "../src/ProcessTable.ts",
-  async (original) => ({ ...await original<typeof import("../src/ProcessTable.ts")>() })
-)
-
 /**
  * Every child a case spawns, so `afterEach` stops the survivors. A case that fails before its
  * own kill would otherwise leave an idle `node -e` running after vitest exits, reparented to
@@ -48,6 +43,15 @@ const sleeper = () => {
   spawned.push(child)
   return child
 }
+/** Arm group cleanup only for a live group belonging to this supervisor. */
+const ownedGroupPid = (member: number, supervisor: number): number => {
+  const pgid = Number(ProcessTable.query({ pid: member, columns: ["pgid"] }).trim())
+  if (!Number.isInteger(pgid) || pgid <= 1 || parentPid(pgid) !== supervisor) {
+    throw new Error("The spawned process group is no longer available")
+  }
+  return pgid
+}
+
 afterEach(() => {
   for (const child of spawned.splice(0)) {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
@@ -56,67 +60,121 @@ afterEach(() => {
 
 describe("invalid process identifiers", () => {
   it.each([0, -0, -1, NaN, 1.5, Infinity])("rejects %s without signalling anything", async (pid) => {
-    // Intercept every signal, including signal 0, so a regression cannot kill the runner.
-    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
-      throw Object.assign(new Error("intercepted signal"), { code: "ESRCH" })
-    })
-    try {
-      await expect(killProcess({ pid })).rejects.toThrow(/invalid pid/)
-      expect(isAlive(pid)).toBe(false)
-      expect(isGroupAlive(pid)).toBe(false)
-      expect(() => killGroup(pid)).not.toThrow()
-      expect(kill).not.toHaveBeenCalled()
-    } finally {
-      kill.mockRestore()
+    let signals = 0
+    const sendSignal: typeof process.kill = () => {
+      signals++
+      throw Object.assign(new Error("unexpected signal"), { code: "ESRCH" })
     }
+    await expect(killProcess({ pid }, "SIGKILL", 0, sendSignal)).rejects.toThrow(/invalid pid/)
+    expect(isAlive(pid, sendSignal)).toBe(false)
+    expect(isGroupAlive(pid, sendSignal)).toBe(false)
+    expect(() => killGroup(pid, "SIGKILL", sendSignal)).not.toThrow()
+    expect(signals).toBe(0)
   })
 })
 
-describe("process group syscall boundary", () => {
-  it("waits until the observed parent changes", async () => {
-    const query = vi.spyOn(ProcessTable, "query")
-      .mockReturnValueOnce("123\n")
-      .mockReturnValueOnce("456\n")
-    try {
-      await expect(waitForReparent(12345, 123)).resolves.toBe(456)
-      expect(query).toHaveBeenCalledTimes(2)
-      expect(query).toHaveBeenLastCalledWith({ pid: 12345, columns: ["ppid"] })
-    } finally {
-      query.mockRestore()
+describe("process syscall boundary", () => {
+  it("waits until the injected parent observation changes", async () => {
+    const observations: Array<ProcessTable.Query> = []
+    const probe: typeof ProcessTable.query = (query) => {
+      observations.push(query)
+      return observations.length === 1 ? "123\n" : "456\n"
     }
+    await expect(waitForReparent(12345, 123, 5_000, probe)).resolves.toBe(456)
+    expect(observations).toEqual([
+      { pid: 12345, columns: ["ppid"] },
+      { pid: 12345, columns: ["ppid"] }
+    ])
   })
 
-  it("distinguishes a live group, absence, and denied inspection", () => {
-    const kill = vi.spyOn(process, "kill").mockReturnValue(true)
-    try {
-      expect(isGroupAlive(12345)).toBe(true)
-      kill.mockImplementationOnce(() => {
-        throw Object.assign(new Error("gone"), { code: "ESRCH" })
-      })
-      expect(isGroupAlive(12345)).toBe(false)
-      kill.mockImplementationOnce(() => {
-        throw Object.assign(new Error("denied"), { code: "EPERM" })
-      })
-      expect(isGroupAlive(12345)).toBe(true)
-      expect(kill.mock.calls).toEqual([[-12345, 0], [-12345, 0], [-12345, 0]])
-    } finally {
-      kill.mockRestore()
+  it.each(["ESRCH", "EPERM"])("interprets an injected %s without replacing the global syscall", (code) => {
+    const signals: Array<readonly [number, string | number | undefined]> = []
+    const sendSignal: typeof process.kill = (pid, signal) => {
+      signals.push([pid, signal])
+      throw Object.assign(new Error(code), { code })
     }
+    expect(isAlive(2_147_483_647, sendSignal)).toBe(code !== "ESRCH")
+    expect(isGroupAlive(2_147_483_647, sendSignal)).toBe(code !== "ESRCH")
+    expect(signals).toEqual([[2_147_483_647, 0], [-2_147_483_647, 0]])
+    expect(isAlive(process.pid)).toBe(true)
   })
 
-  it("uses the default and requested group signals and contains teardown errors", () => {
-    const kill = vi.spyOn(process, "kill").mockReturnValue(true)
-    try {
-      killGroup(12345)
-      killGroup(12345, "SIGTERM")
-      kill.mockImplementationOnce(() => {
-        throw Object.assign(new Error("denied"), { code: "EPERM" })
-      })
-      expect(() => killGroup(12345)).not.toThrow()
-      expect(kill.mock.calls).toEqual([[-12345, "SIGKILL"], [-12345, "SIGTERM"], [-12345, "SIGKILL"]])
-    } finally {
-      kill.mockRestore()
+  it("contains an injected group teardown failure", () => {
+    let deliveries = 0
+    const denied: typeof process.kill = () => {
+      deliveries++
+      throw Object.assign(new Error("denied"), { code: "EPERM" })
     }
+    expect(() => killGroup(2_147_483_647, "SIGTERM", denied)).not.toThrow()
+    expect(deliveries).toBe(1)
+  })
+
+  it.skipIf(process.platform === "win32").each(["SIGKILL", "SIGTERM"] as const)(
+    "delivers %s to both members of a real process group",
+    async (signal) => {
+      const supervisor = spawn("bash", [
+        "-c",
+        "set -m; sleep 30 | sleep 30 & printf '%s\\n' \"$!\"; wait"
+      ], { stdio: ["ignore", "pipe", "ignore"], detached: true })
+      spawned.push(supervisor)
+      const member = await new Promise<number>((resolve) => {
+        supervisor.stdout.setEncoding("utf8")
+        supervisor.stdout.once("data", (chunk: string) => resolve(Number(chunk.trim())))
+      })
+      const pgid = ownedGroupPid(member, supervisor.pid as number)
+      try {
+        expect(pgid).toBeGreaterThan(0)
+        expect(pgid).not.toBe(member)
+        expect(parentPid(pgid)).toBe(supervisor.pid)
+        expect(parentPid(member)).toBe(supervisor.pid)
+        expect(isGroupAlive(pgid)).toBe(true)
+        if (signal === "SIGKILL") killGroup(pgid)
+        else killGroup(pgid, signal)
+        await waitFor(() => !isAlive(pgid) && !isAlive(member), "both group members to exit")
+        expect(isGroupAlive(pgid)).toBe(false)
+      } finally {
+        // Teardown must still stop both children if the primitive regresses to
+        // signalling just the group leader. Their supervisor reaps both pids.
+        try {
+          process.kill(-pgid, "SIGKILL")
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+        }
+        await waitFor(() => !isAlive(pgid) && !isAlive(member), "group teardown to reap both children")
+      }
+    }
+  )
+
+  it.skipIf(process.platform === "win32")("does not arm group cleanup for an already exited child", async () => {
+    const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" })
+    spawned.push(child)
+    await new Promise<void>((resolve, reject) => {
+      child.once("error", reject)
+      child.once("exit", () => resolve())
+    })
+    expect(() => ownedGroupPid(child.pid as number, process.pid)).toThrow("no longer available")
+    expect(isAlive(process.pid)).toBe(true)
+  })
+
+  it("propagates an injected probe failure and rejects a malformed parent row", () => {
+    const error = new Error("probe unavailable")
+    expect(() =>
+      parentPid(process.pid, () => {
+        throw error
+      })
+    ).toThrow(error)
+    expect(parentPid(process.pid, () => "not-a-pid")).toBeUndefined()
+  })
+
+  it("uses the injected signal for both delivery and exit observation", async () => {
+    const delivered: Array<readonly [number, string | number | undefined]> = []
+    const sendSignal: typeof process.kill = (pid, signal) => {
+      delivered.push([pid, signal])
+      if (signal === 0) throw Object.assign(new Error("gone"), { code: "ESRCH" })
+      return true
+    }
+    await killProcess({ pid: 2_147_483_647 }, "SIGCONT", 0, sendSignal)
+    expect(delivered).toEqual([[2_147_483_647, "SIGCONT"], [2_147_483_647, 0]])
   })
 })
 
@@ -224,9 +282,13 @@ describe("killProcess", () => {
     // probe can exceed this test's entire deadline, so the timeout contract
     // uses a fixed parent observation while the real monotonic wait runs.
     expect(parentPid(pid)).toBe(process.pid)
-    const probe = vi.spyOn(ProcessTable, "query").mockReturnValue(`${process.pid}\n`)
+    let observations = 0
+    const probe: typeof ProcessTable.query = () => {
+      observations++
+      return `${process.pid}\n`
+    }
     try {
-      const waiting = waitForReparent(pid, process.pid, 100)
+      const waiting = waitForReparent(pid, process.pid, 100, probe)
       let settled = false
       void waiting.then(() => {
         settled = true
@@ -238,9 +300,8 @@ describe("killProcess", () => {
       await expect(waiting).rejects.toThrow(
         new RegExp(`still reports parent ${process.pid} after 100ms`)
       )
+      expect(observations).toBeGreaterThan(1)
     } finally {
-      expect(probe.mock.calls.length).toBeGreaterThan(1)
-      probe.mockRestore()
       await killProcess(child)
     }
   })
@@ -381,10 +442,11 @@ describe("skewClock", () => {
 
   it("restores the real clock, and restoring twice is a no-op", () => {
     const real = Date.now()
+    const originalNow = Date.now
     const clock = skewClock(3_600_000)
     clock.restore()
     clock.restore()
     expect(Math.abs(Date.now() - real)).toBeLessThan(5_000)
-    expect(Date.now).toBe(Date.now)
+    expect(Date.now).toBe(originalNow)
   })
 })

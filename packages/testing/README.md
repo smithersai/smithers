@@ -62,10 +62,12 @@ Every module, every export, and the contract of each is at
 64 MiB buffer. Select a PID for resident-size and state probes, or scan the
 table for containment checks. Use `comm` for executable names and `args`
 when a script marker must be distinguished from its interpreter. Spawn
-failures throw; an absent selected PID returns empty text. This Node-only
-helper stays off the main barrel. The root entry still reaches platform code
-through `HttpRecording`, the database test layers, and filesystem corpus tools;
-it is not yet portable to browser or Worker test hosts. See the
+failures throw; an absent selected PID returns empty text. On Windows the probe
+runs the absolute `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`
+with only `SystemRoot` and a fixed `PATH` in its environment. This Node-only
+helper stays at its explicit subpath. The root barrel also imports Node APIs
+through `HttpRecording` and `FuzzCorpus`; it requires a Node-capable
+test host and is not browser-portable. See the
 [known violations](../../docs/libraries.md#known-violations-the-root-entry-reaches-platform-code).
 
 ## Certify an engine in fifteen lines
@@ -204,7 +206,8 @@ write files through `node:fs`, so they stay at `@smthrs/testing/ModelServer`,
 [Serve a recorded model over HTTP](#serve-a-recorded-model-over-http).
 
 `@smthrs/testing/package.json` is also exported. `internal/*` and nested
-`*/index` subpaths are not public.
+`*/index` subpaths are not public. `FuzzCorpus` is a public root export even
+though its implementation lives under `internal/`.
 
 ## Integration test tools
 

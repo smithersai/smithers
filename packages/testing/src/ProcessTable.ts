@@ -6,6 +6,7 @@
  */
 
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding, type SpawnSyncReturns } from "node:child_process"
+import { win32 } from "node:path"
 
 /**
  * Supported POSIX process-table columns.
@@ -101,11 +102,17 @@ export const queryWindows = ({ columns, pid, timeoutMs }: Query, spawn: Spawn = 
   const filter = pid === undefined ? "" : ` -Filter 'ProcessId = ${pid}'`
   const script =
     `$ErrorActionPreference = 'Stop'; foreach ($p in (Get-CimInstance Win32_Process${filter})) { [Console]::Out.WriteLine((@(${fields}) -join ' ')) }`
-  const result = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-Command", script], {
+  const systemRoot = process.env.SystemRoot ?? "C:\\Windows"
+  if (!win32.isAbsolute(systemRoot) || win32.parse(systemRoot).root.length <= 1) {
+    throw new Error("Windows process probe needs a fully qualified SystemRoot")
+  }
+  const system32 = win32.join(systemRoot, "System32")
+  const powershell = win32.join(system32, "WindowsPowerShell", "v1.0", "powershell.exe")
+  const result = spawn(powershell, ["-NoProfile", "-NonInteractive", "-Command", script], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
     timeout: timeoutMs,
-    env: process.env
+    env: { SystemRoot: systemRoot, PATH: system32 }
   })
   if (result.error !== undefined) throw result.error
   if (result.status === 0 && (result.stdout.trim() !== "" || pid !== undefined)) return result.stdout

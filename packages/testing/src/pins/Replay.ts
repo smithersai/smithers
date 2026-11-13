@@ -28,8 +28,10 @@ const completedPrefixReplay: ConformanceCase = {
     Effect.gen(function*() {
       let prefixInvocations = 0
       let terminalInvocations = 0
+      let frontierInvocations = 0
       const prefixKey = "replay/completed-prefix/prefix"
       const terminalKey = "replay/completed-prefix/terminal"
+      const frontierKey = "replay/completed-prefix/frontier"
       const flow: FlowSpec = {
         name: "testing/replay/completed-prefix",
         steps: [
@@ -51,6 +53,16 @@ const completedPrefixReplay: ConformanceCase = {
               Effect.sync(() => {
                 terminalInvocations += 1
                 return { input, output: "completed" }
+              })
+          },
+          {
+            key: frontierKey,
+            sealed: false,
+            kind: "step",
+            run: (input) =>
+              Effect.suspend(() => {
+                frontierInvocations += 1
+                return frontierInvocations === 1 ? Effect.interrupt : Effect.succeed(input)
               })
           }
         ]
@@ -77,31 +89,32 @@ const completedPrefixReplay: ConformanceCase = {
 
       yield* assert(
         deterministicReplayPin,
-        fresh.status === "completed" && replayed.status === "completed",
-        "Fresh execution and replay must both complete.",
-        ["completed", "completed"],
+        fresh.status === "suspended" && replayed.status === "completed",
+        "The fresh run must suspend after both sealed steps, and resume must complete.",
+        ["suspended", "completed"],
         [fresh.status, replayed.status]
       )
       yield* assert(
         deterministicReplayPin,
         prefixInvocations === 1 && terminalInvocations === 1,
-        "A fresh engine over the same execution journal must not re-execute the completed prefix.",
+        "Resuming an unfinished execution must not re-execute either completed prefix step.",
         { prefixInvocations: 1, terminalInvocations: 1 },
         { prefixInvocations, terminalInvocations }
       )
       yield* assert(
         deterministicReplayPin,
-        same(fresh.value, replayed.value),
-        "Replay must reconstruct the same flow output.",
-        fresh.value,
+        frontierInvocations === 2 &&
+          same(replayed.value, freshJournal.find((entry) => entry.stepKey === terminalKey)?.value),
+        "Resume must re-enter the frontier and reconstruct the completed prefix output.",
+        freshJournal.find((entry) => entry.stepKey === terminalKey)?.value,
         replayed.value
       )
       yield* assert(
         deterministicReplayPin,
-        same(freshJournal, replayedJournal),
-        "Replay must reconstruct identical decisions from the same journal.",
+        same(freshJournal, replayedJournal.slice(0, freshJournal.length)),
+        "Replay must preserve the existing journal prefix.",
         freshJournal,
-        replayedJournal
+        replayedJournal.slice(0, freshJournal.length)
       )
       yield* assert(
         deterministicReplayPin,

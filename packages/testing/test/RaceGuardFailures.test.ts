@@ -164,3 +164,28 @@ it.scoped("reports a subject that keeps terminal results but forgets its recorde
       expect(error, pin).toMatchObject({ code: "conformance_violation", pin })
     }
   }))
+
+it.scoped("completed-prefix replay rejects an engine that preserves terminal results but loses sealed steps", () =>
+  Effect.gen(function*() {
+    const store = yield* MemoryEngine.makeStore()
+    const base = yield* MemoryEngine.make(store)
+    let prefixKeys: ReadonlySet<string> = new Set()
+    const forgetsPrefix = EngineSubject.make({
+      name: "forgets-completed-prefix",
+      run: (options) => {
+        prefixKeys = new Set(options.flow.steps.filter((step) => step.sealed).map((step) => step.key))
+        return base.run(options)
+      },
+      result: base.result,
+      interrupt: base.interrupt,
+      resume: (executionId) =>
+        Effect.flatMap(base.result(executionId), (result) =>
+          result.status === "completed"
+            ? base.resume(executionId)
+            : Effect.andThen(forgetRecordedWinners(store, prefixKeys), base.resume(executionId))),
+      journal: base.journal
+    })
+    const pin = Replay.cases.find((candidate) => candidate.name === "replay/completed-prefix")!
+    const error = yield* pin.run(forgetsPrefix).pipe(Effect.flip)
+    expect(error).toMatchObject({ code: "conformance_violation", pin: pin.name })
+  }))

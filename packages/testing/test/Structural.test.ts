@@ -57,6 +57,153 @@ describe("same", () => {
     expect(same(Number.NaN, Number.POSITIVE_INFINITY)).toBe(false)
   })
 
+  it.each([
+    ["URL", new URL("https://a.example/"), new URL("https://b.example/"), new URL("https://a.example/")],
+    ["buffer", new Uint8Array([1]).buffer, new Uint8Array([2]).buffer, new Uint8Array([1]).buffer],
+    [
+      "view",
+      new DataView(new Uint8Array([9, 1, 8]).buffer, 1, 1),
+      new DataView(new Uint8Array([2]).buffer),
+      new DataView(new Uint8Array([1]).buffer)
+    ],
+    ["typed array", new Uint8Array([1]), new Uint8Array([2]), new Uint8Array([1])],
+    ["boxed number", new Number(1), new Number(2), new Number(1)],
+    ["boxed boolean", new Boolean(false), new Boolean(true), new Boolean(false)],
+    ["boxed string", new String("a"), new String("b"), new String("a")],
+    ["boxed bigint", Object(1n), Object(2n), Object(1n)],
+    ["boxed symbol", Object(Symbol.for("left")), Object(Symbol.for("right")), Object(Symbol.for("left"))],
+    [
+      "error cause",
+      new Error("x", { cause: new Error("a") }),
+      new Error("x", { cause: new Error("b") }),
+      new Error("x", { cause: new Error("a") })
+    ]
+  ])("compares %s by its represented state", (_name, left, different, equal) => {
+    expect(same(left, different)).toBe(false)
+    expect(same(left, equal)).toBe(true)
+    expect(same(left, left)).toBe(true)
+  })
+
+  it.each(
+    [
+      ["buffer", () => new Uint8Array([1]).buffer],
+      ["view", () => new DataView(new Uint8Array([1]).buffer)],
+      ["typed array", () => new Uint8Array([1])],
+      ["boxed number", () => new Number(1)],
+      ["boxed boolean", () => new Boolean(true)],
+      ["boxed string", () => new String("a")],
+      ["boxed bigint", () => Object(1n)],
+      ["boxed symbol", () => Object(Symbol.for("state"))],
+      ["URL", () => new URL("https://a.example/")]
+    ] as const
+  )("retains string and symbol fields on %s", (_name, make) => {
+    const symbol = Symbol("metadata")
+    expect(same(Object.assign(make(), { tag: 1 }), Object.assign(make(), { tag: 2 }))).toBe(false)
+    expect(same(Object.assign(make(), { tag: 1 }), Object.assign(make(), { tag: 1 }))).toBe(true)
+    expect(same(Object.assign(make(), { [symbol]: 1 }), Object.assign(make(), { [symbol]: 2 }))).toBe(false)
+    expect(same(Object.assign(make(), { [symbol]: 1 }), Object.assign(make(), { [symbol]: 1 }))).toBe(true)
+  })
+
+  it("reads boxed state without invoking an overridden valueOf accessor", () => {
+    let reads = 0
+    const get = () => {
+      reads++
+      throw new Error("must not execute")
+    }
+    const left = Object.defineProperty(new Number(1), "valueOf", { enumerable: true, get })
+    const equal = Object.defineProperty(new Number(1), "valueOf", { enumerable: true, get })
+    const different = Object.defineProperty(new Number(2), "valueOf", { enumerable: true, get })
+    expect(same(left, equal)).toBe(true)
+    expect(same(left, different)).toBe(false)
+    expect(reads).toBe(0)
+  })
+
+  it.each(
+    [
+      ["DataView", () => new DataView(new Uint8Array([1]).buffer)],
+      ["typed array", () => new Uint8Array([1])]
+    ] as const
+  )("reads %s slots without invoking shadowing accessors", (_name, make) => {
+    for (const key of ["buffer", "byteOffset", "byteLength"]) {
+      let reads = 0
+      const get = () => {
+        reads++
+        throw new Error("must not execute")
+      }
+      const left = Object.defineProperty(make(), key, { enumerable: true, get })
+      const right = Object.defineProperty(make(), key, { enumerable: true, get })
+      expect(same(left, right), key).toBe(true)
+      expect(reads, key).toBe(0)
+    }
+  })
+
+  it("retains differing bytes when view lengths are shadowed", () => {
+    const left = Object.defineProperty(new DataView(new Uint8Array([1]).buffer), "byteLength", { value: 0 })
+    const right = Object.defineProperty(new DataView(new Uint8Array([2]).buffer), "byteLength", { value: 0 })
+    expect(same(left, right)).toBe(false)
+  })
+
+  it("preserves binary view ranges and types", () => {
+    expect(same(new Uint8Array([9, 1, 8]).subarray(1, 2), new Uint8Array([1]))).toBe(true)
+    expect(same(new Uint8Array([1]), new Int8Array([1]))).toBe(false)
+    expect(same(new Uint8Array([1]), new Uint8Array([1]).buffer)).toBe(false)
+  })
+
+  it("compares own symbol keys without invoking their accessors", () => {
+    const first = Symbol("same description")
+    const second = Symbol("same description")
+    expect(same({ [first]: 1 }, { [first]: 2 })).toBe(false)
+    expect(same({ [first]: 1 }, { [second]: 1 })).toBe(false)
+    expect(same({ [first]: 1, [second]: 2 }, { [second]: 2, [first]: 1 })).toBe(true)
+    expect(same(Object.assign(new Ticket(), { [first]: 1 }), Object.assign(new Ticket(), { [first]: 2 }))).toBe(false)
+    expect(same(Object.assign(new Ticket(), { [first]: 1 }), Object.assign(new Ticket(), { [first]: 1 }))).toBe(true)
+    expect(same({ [first]: undefined }, {})).toBe(false)
+    expect(same(Object.defineProperty({}, first, { value: 1 }), Object.defineProperty({}, first, { value: 2 }))).toBe(
+      false
+    )
+    let reads = 0
+    const get = () => {
+      reads++
+      throw new Error("must not run")
+    }
+    expect(same(Object.defineProperty({}, first, { get }), Object.defineProperty({}, first, { get }))).toBe(true)
+    expect(reads).toBe(0)
+  })
+
+  it("uses identity for instances whose state cannot be inspected", () => {
+    class Private {
+      #value: number
+      constructor(value: number) {
+        this.#value = value
+      }
+      get value() {
+        return this.#value
+      }
+    }
+    const first = new Private(1)
+    const second = new Private(2)
+    expect(first.value).not.toBe(second.value)
+    expect(same(first, second)).toBe(false)
+    expect(same([first], [first])).toBe(true)
+    expect(same(new WeakMap(), new WeakMap())).toBe(false)
+    expect(
+      same(
+        Object.defineProperty(new Private(1), "hidden", { value: 1 }),
+        Object.defineProperty(new Private(1), "hidden", { value: 2 })
+      )
+    ).toBe(false)
+  })
+
+  it("bounds recursive error causes and preserves symbol fields on errors", () => {
+    const left = new Error("cycle")
+    const right = new Error("cycle")
+    left.cause = left
+    right.cause = right
+    expect(same(left, right)).toBe(true)
+    const key = Symbol("error detail")
+    expect(same(Object.assign(new Error("x"), { [key]: 1 }), Object.assign(new Error("x"), { [key]: 2 }))).toBe(false)
+  })
+
   it("still answers true for the values it always compared correctly", () => {
     expect(same({ b: 2, a: 1 }, { a: 1, b: 2 })).toBe(true)
     expect(same([1, [2, 3]], [1, [2, 3]])).toBe(true)

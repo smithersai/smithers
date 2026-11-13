@@ -45156,6 +45156,11 @@ file through `node:fs`, and `TurnLog` appends its trace through `node:fs`, so
 they live at `@smthrs/testing/ModelServer`, `@smthrs/testing/ModelServerCli`
 and `@smthrs/testing/TurnLog`.
 
+The root barrel requires a Node-capable host because `HttpRecording` and `FuzzCorpus` import Node filesystem and crypto modules.
+The subpath split does not make the root browser-portable. `FuzzCorpus` is a
+public root export; its implementation's location under `internal/` does not
+make that named export private.
+
 `@smthrs/testing/internal/*` and `@smthrs/testing/*/index` are not public.
 `@smthrs/testing/package.json` is exported.
 
@@ -45506,6 +45511,10 @@ node id fails with `missing_node` and lists the ids the plan does have.
 Value comparisons run when the returned Effect executes. Envelope and placement
 mismatch diagnostics use the shared structural renderer: cycles and depth limits
 produce markers, and record accessors are described without invoking getters.
+Comparisons retain binary bytes and view types, boxed primitive values, URL
+addresses, error causes and own symbol keys. Foreign objects with no rendered
+fields compare by reference identity, because their private state cannot be
+inspected.
 These mismatches remain typed `PlanAssertionError` failures.
 
 ### PlanAssertions.NodeAssertions
@@ -47193,15 +47202,17 @@ Real, machine-global process fault primitives, imported by subpath:
 import { isAlive, killProcess, skewClock, waitForReparent } from "@smthrs/testing/Faults"
 ```
 
-Every helper that waits takes an optional `timeoutMs` as its last argument. A
-`timeoutMs` that is `NaN` or negative throws `RangeError` before the helper
-waits or signals.
+Every helper that waits takes an optional `timeoutMs`. A `timeoutMs` that is
+`NaN` or negative throws `RangeError` before the helper waits or signals.
+Process helpers also accept a final injected `sendSignal` or `probe` function,
+defaulting to `process.kill` or `ProcessTable.query`. Fault-boundary tests can
+supply failures without replacing process globals or module exports.
 
 ### Faults.isAlive and isGroupAlive
 
 ```ts
-const isAlive: (pid: number) => boolean
-const isGroupAlive: (pgid: number) => boolean
+const isAlive: (pid: number, sendSignal?: typeof process.kill) => boolean
+const isGroupAlive: (pgid: number, sendSignal?: typeof process.kill) => boolean
 ```
 
 Signal 0 performs the permission and existence check without delivering
@@ -47214,8 +47225,13 @@ the whole process group, which is the unit host containment works in.
 ### Faults.parentPid and waitForReparent
 
 ```ts
-const parentPid: (pid: number) => number | undefined
-const waitForReparent: (pid: number, expected: number, timeoutMs?: number) => Promise<number>
+const parentPid: (pid: number, probe?: typeof ProcessTable.query) => number | undefined
+const waitForReparent: (
+  pid: number,
+  expected: number,
+  timeoutMs?: number,
+  probe?: typeof ProcessTable.query
+) => Promise<number>
 ```
 
 `parentPid` is the orphan test: a child whose parent was killed is reparented,
@@ -47244,7 +47260,8 @@ ends it early nor extends it.
 const killProcess: (
   handle: { readonly pid?: number | undefined },
   signal?: NodeJS.Signals,
-  timeoutMs?: number
+  timeoutMs?: number,
+  sendSignal?: typeof process.kill
 ) => Promise<void>
 ```
 
@@ -47257,7 +47274,11 @@ sending any signal.
 ### Faults.killGroup
 
 ```ts
-const killGroup: (pgid: number, signal?: NodeJS.Signals) => void
+const killGroup: (
+  pgid: number,
+  signal?: NodeJS.Signals,
+  sendSignal?: typeof process.kill
+) => void
 ```
 
 Kills a whole process group, used to clean up what a test deliberately

@@ -106,7 +106,19 @@ refreshes its settlement from the runtime because cancellation can finish a
 parked round before its registered body runs. Missing cancellation publication
 fails with `EngineUnavailableError` after a bounded number of scheduler passes.
 
+## Completed-prefix replay
+
+The `replay/completed-prefix` pin completes two sealed steps, then suspends
+at a third step. Resuming must execute that frontier again while preserving
+both completed invocation counts and every existing journal entry. The final
+value must come from the recorded prefix. This checks step replay by
+re-entering an unfinished flow, rather than reusing a terminal result.
+
 ## Race semantics
+
+A race with no branches fails with `EngineUnavailableError` and journals one
+`failed` outcome under the race's key. Both reference subjects use this
+contract.
 
 A durable race has two obligations the pins hold an engine to.
 

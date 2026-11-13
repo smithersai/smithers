@@ -1,4 +1,5 @@
 import { spawnSync, type SpawnSyncReturns } from "node:child_process"
+import { win32 } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as ProcessTable from "../src/ProcessTable.ts"
 
@@ -69,7 +70,11 @@ describe("ProcessTable.query", () => {
 describe("ProcessTable.queryWindows", () => {
   it("asks Windows for the selected process and reports resident KiB", () => {
     const spawn: ProcessTable.Spawn = (command, args, options) => {
-      expect(command).toBe("pwsh")
+      const systemRoot = process.env.SystemRoot ?? "C:\\Windows"
+      expect(command).toBe(win32.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"))
+      expect(win32.isAbsolute(command)).toBe(true)
+      expect(options.env).toEqual({ SystemRoot: systemRoot, PATH: win32.join(systemRoot, "System32") })
+      expect(options.env).not.toBe(process.env)
       expect(args.slice(0, 3)).toEqual(["-NoProfile", "-NonInteractive", "-Command"])
       expect(args[3]).toContain("Get-CimInstance Win32_Process -Filter 'ProcessId = 123'")
       expect(args[3]).toContain("WorkingSetSize / 1024")
@@ -80,6 +85,67 @@ describe("ProcessTable.queryWindows", () => {
     expect(ProcessTable.query({ pid: 123, columns: ["pid", "rss"], timeoutMs: 2000, platform: "win32" }, spawn))
       .toBe("123 256\n")
   })
+
+  it.each([undefined, "D:\\Windows Root"])(
+    "pins the Windows shell with SystemRoot %s and an untrusted PATH",
+    (root) => {
+      const child = spawnSync(process.execPath, [
+        "--input-type=module",
+        "-e",
+        `import { queryWindows } from ${JSON.stringify(new URL("../src/ProcessTable.ts", import.meta.url).href)};
+       queryWindows({ pid: 1, columns: ["pid"] }, (command, _args, options) => {
+         process.stdout.write(JSON.stringify({ command, env: options.env }));
+         return { stdout: "1", status: 0 };
+       });`
+      ], {
+        encoding: "utf8",
+        env: { ...process.env, SystemRoot: root, PATH: "untrusted", NODE_OPTIONS: "" }
+      })
+      expect(child.status, child.stderr).toBe(0)
+      const systemRoot = root ?? "C:\\Windows"
+      const system32 = win32.join(systemRoot, "System32")
+      expect(JSON.parse(child.stdout)).toEqual({
+        command: win32.join(system32, "WindowsPowerShell", "v1.0", "powershell.exe"),
+        env: { SystemRoot: systemRoot, PATH: system32 }
+      })
+    }
+  )
+
+  it.each(["", ".", "Windows", "C:Windows", "\\Windows", "/Windows"])(
+    "rejects non-qualified SystemRoot %j before spawning",
+    (root) => {
+      const child = spawnSync(process.execPath, [
+        "--input-type=module",
+        "-e",
+        `import { queryWindows } from ${JSON.stringify(new URL("../src/ProcessTable.ts", import.meta.url).href)};
+         let calls = 0;
+         try {
+           queryWindows({ pid: 1, columns: ["pid"] }, () => { calls++; return { stdout: "1", status: 0 }; });
+           process.stdout.write(JSON.stringify({ calls }));
+         } catch (error) { process.stdout.write(JSON.stringify({ calls, error: error.message })); }`
+      ], { encoding: "utf8", env: { ...process.env, SystemRoot: root, NODE_OPTIONS: "" } })
+      expect(child.status, child.stderr).toBe(0)
+      expect(JSON.parse(child.stdout)).toEqual({
+        calls: 0,
+        error: "Windows process probe needs a fully qualified SystemRoot"
+      })
+      const previous = process.env.SystemRoot
+      let calls = 0
+      try {
+        process.env.SystemRoot = root
+        expect(() =>
+          ProcessTable.queryWindows({ pid: 1, columns: ["pid"] }, () => {
+            calls++
+            return result("1")
+          })
+        ).toThrow("Windows process probe needs a fully qualified SystemRoot")
+        expect(calls).toBe(0)
+      } finally {
+        if (previous === undefined) delete process.env.SystemRoot
+        else process.env.SystemRoot = previous
+      }
+    }
+  )
 
   it("returns no row for a missing pid and refuses an empty full scan", () => {
     expect(ProcessTable.queryWindows({ pid: 123, columns: ["pid"] }, () => result(""))).toBe("")

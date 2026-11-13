@@ -43,7 +43,7 @@ Every other module works under any runner, because an assertion is an ordinary
 
 ## Import forms
 
-The root entry point re-exports every module as a namespace:
+The root entry point re-exports module namespaces:
 
 ```ts
 import { Conformance, EngineSubject, JournalAssertions, TestLayers } from "@smthrs/testing"
@@ -58,6 +58,9 @@ import { RealCliDriver, TerminalRecording } from "@smthrs/testing"
 import * as JournalAssertions from "@smthrs/testing/JournalAssertions"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```
+
+The root barrel requires a Node-capable host: `HttpRecording` and `FuzzCorpus` import Node filesystem and crypto modules. Keeping the modules
+below on explicit subpaths does not make the root import browser-portable.
 
 ## Seven modules stay off the root barrel
 

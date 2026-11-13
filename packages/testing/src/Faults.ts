@@ -10,6 +10,9 @@
  * durable timer is measured against, which is the only way to observe what a
  * restarted host does with a deadline that has already passed.
  *
+ * Process boundaries accept an optional signal or probe function for fault
+ * tests; omitted arguments use the real operating system.
+ *
  * Both are process-global, which is why a suite built on them declares itself
  * a fault tier — `Smithers.FaultSuite`, `vitest.faults.config.ts`, no file
  * parallelism — instead of sitting beside a package's unit tests. They live
@@ -38,10 +41,10 @@ const realNow = (): number => originalNow.call(OriginalDate)
  * @since 1.0.0
  * @category refinements
  */
-export const isAlive = (pid: number): boolean => {
+export const isAlive = (pid: number, sendSignal: typeof process.kill = process.kill): boolean => {
   if (!Number.isInteger(pid) || pid <= 0) return false
   try {
-    process.kill(pid, 0)
+    sendSignal(pid, 0)
     return true
   } catch (error) {
     return (error as NodeJS.ErrnoException).code !== "ESRCH"
@@ -58,10 +61,10 @@ export const isAlive = (pid: number): boolean => {
  * @since 1.0.0
  * @category refinements
  */
-export const isGroupAlive = (pgid: number): boolean => {
+export const isGroupAlive = (pgid: number, sendSignal: typeof process.kill = process.kill): boolean => {
   if (!Number.isInteger(pgid) || pgid <= 0) return false
   try {
-    process.kill(-pgid, 0)
+    sendSignal(-pgid, 0)
     return true
   } catch (error) {
     return (error as NodeJS.ErrnoException).code !== "ESRCH"
@@ -79,10 +82,9 @@ export const isGroupAlive = (pgid: number): boolean => {
  * @since 1.0.0
  * @category getters
  */
-export const parentPid = (pid: number): number | undefined => {
-  const output = ProcessTable.query({ pid, columns: ["ppid"] }).trim()
+export const parentPid = (pid: number, probe: typeof ProcessTable.query = ProcessTable.query): number | undefined => {
+  const output = probe({ pid, columns: ["ppid"] }).trim()
   const parsed = Number(output.split(/\s+/)[0])
-  /* v8 ignore next -- a selected pid yields one numeric parent or an empty row. */
   return output.length === 0 || !Number.isFinite(parsed) ? undefined : parsed
 }
 
@@ -131,12 +133,13 @@ export const waitFor = async (
 export const waitForReparent = async (
   pid: number,
   expected: number,
-  timeoutMs = defaultTimeoutMs
+  timeoutMs = defaultTimeoutMs,
+  probe: typeof ProcessTable.query = ProcessTable.query
 ): Promise<number> => {
   requireTimeoutMs("waitForReparent", timeoutMs)
   const deadline = realNow() + timeoutMs
   for (;;) {
-    const parent = parentPid(pid)
+    const parent = parentPid(pid, probe)
     if (parent === undefined) throw new Error(`pid ${pid} exited before it could be reparented`)
     if (parent !== expected) return parent
     if (realNow() >= deadline) {
@@ -160,7 +163,8 @@ export const waitForReparent = async (
 export const killProcess = async (
   handle: { readonly pid?: number | undefined },
   signal: NodeJS.Signals = "SIGKILL",
-  timeoutMs = defaultTimeoutMs
+  timeoutMs = defaultTimeoutMs,
+  sendSignal: typeof process.kill = process.kill
 ): Promise<void> => {
   const pid = handle.pid
   if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
@@ -168,14 +172,14 @@ export const killProcess = async (
   }
   requireTimeoutMs("killProcess", timeoutMs)
   try {
-    process.kill(pid, signal)
+    sendSignal(pid, signal)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ESRCH") {
       throw new Error(`killProcess: pid ${pid} was already dead, so ${signal} injected nothing`)
     }
     throw error
   }
-  await waitFor(() => !isAlive(pid), `pid ${pid} to exit after ${signal}`, timeoutMs)
+  await waitFor(() => !isAlive(pid, sendSignal), `pid ${pid} to exit after ${signal}`, timeoutMs)
 }
 
 /**
@@ -186,10 +190,14 @@ export const killProcess = async (
  * @since 1.0.0
  * @category constructors
  */
-export const killGroup = (pgid: number, signal: NodeJS.Signals = "SIGKILL"): void => {
+export const killGroup = (
+  pgid: number,
+  signal: NodeJS.Signals = "SIGKILL",
+  sendSignal: typeof process.kill = process.kill
+): void => {
   if (!Number.isInteger(pgid) || pgid <= 0) return
   try {
-    process.kill(-pgid, signal)
+    sendSignal(-pgid, signal)
   } catch {
     // Already gone; teardown has nothing left to do.
   }

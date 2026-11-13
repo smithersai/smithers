@@ -216,11 +216,36 @@ describe("failed flow bodies", () => {
       expect(result.value).toMatchObject({ code: "engine_unavailable" })
       expect((result.value as EngineUnavailableError).message).toContain("has no branches")
       const journal = yield* engine.journal(executionId)
-      expect(journal).toEqual(
-        engine.name === "MemoryEngine"
-          ? [expect.objectContaining({ stepKey: "empty-race", kind: "race", outcome: "failed" })]
-          : []
-      )
+      expect(journal).toEqual([
+        expect.objectContaining({
+          index: 0,
+          stepKey: "empty-race",
+          kind: "race",
+          outcome: "failed",
+          value: expect.objectContaining({ code: "engine_unavailable" })
+        })
+      ])
+    }))
+
+  onEachSubject("journals a nested empty race failure exactly once", (engine) =>
+    Effect.gen(function*() {
+      const executionId = `testing/nested-empty-race/${engine.name}`
+      const result = yield* engine.run({
+        flow: {
+          name: executionId,
+          steps: [{
+            key: "outer-race",
+            sealed: true,
+            kind: "race",
+            branches: [{ key: "empty-branch", sealed: true, kind: "race", branches: [] }]
+          }]
+        },
+        payload: undefined,
+        executionId
+      })
+      expect(result.status).toBe("failed")
+      const entries = (yield* engine.journal(executionId)).filter((entry) => entry.stepKey === "empty-branch")
+      expect(entries).toEqual([expect.objectContaining({ kind: "race", outcome: "failed" })])
     }))
 
   onEachSubject("executes a nested race branch", (engine) =>

@@ -104,11 +104,10 @@ const member = (descriptor: PropertyDescriptor): Part =>
     : { text: `!{"_tag":"Accessor","get":${canonical(descriptor.get)},"set":${canonical(descriptor.set)}}` }
 
 /** String keys and symbol identities have separate canonical namespaces. */
-const record = (value: object): Rendering => {
+const record = (value: object, names: ReadonlyArray<string> = Object.keys(value)): Rendering => {
   const descriptors = Object.getOwnPropertyDescriptors(value)
-  const keys = Object.keys(value).sort()
+  const keys = [...names].sort()
   const symbols = Object.getOwnPropertySymbols(value)
-    .filter((key) => Object.prototype.propertyIsEnumerable.call(value, key))
     .sort((left, right) => symbolIdentity(left) - symbolIdentity(right))
   const parts = [...keys, ...symbols].map((key) => member(Reflect.get(descriptors, key) as PropertyDescriptor))
   return {
@@ -122,6 +121,12 @@ const record = (value: object): Rendering => {
         }]}`
     }
   }
+}
+
+/** Read a view slot without invoking a shadowing instance accessor. */
+const viewSlot = (value: ArrayBufferView, key: "buffer" | "byteOffset" | "byteLength") => {
+  const prototype = value instanceof DataView ? DataView.prototype : Object.getPrototypeOf(Uint8Array.prototype)
+  return Object.getOwnPropertyDescriptor(prototype, key)!.get!.call(value)
 }
 
 const inspect = (value: object): Rendering => {
@@ -161,10 +166,53 @@ const inspect = (value: object): Rendering => {
       format: (parts) => `!{"_tag":"Set","values":[${[...parts].sort().join(",")}]}`
     }
   }
+  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+    const bytes = value instanceof ArrayBuffer
+      ? new Uint8Array(value)
+      : new Uint8Array(viewSlot(value, "buffer"), viewSlot(value, "byteOffset"), viewSlot(value, "byteLength"))
+    const type = JSON.stringify(Object.getPrototypeOf(value).constructor.name)
+    const fields = record(value)
+    const content = [...bytes].join(",")
+    return {
+      parts: fields.parts,
+      format: (parts) => `!{"_tag":"Binary","type":${type},"bytes":[${content}],"fields":${fields.format(parts)}}`
+    }
+  }
+  if (
+    value instanceof Number || value instanceof Boolean || value instanceof String ||
+    value instanceof BigInt || value instanceof Symbol
+  ) {
+    const primitive = value instanceof Number ?
+      Number.prototype.valueOf.call(value)
+      : value instanceof Boolean ?
+      Boolean.prototype.valueOf.call(value)
+      : value instanceof String ?
+      String.prototype.valueOf.call(value)
+      : value instanceof BigInt ?
+      BigInt.prototype.valueOf.call(value)
+      : Symbol.prototype.valueOf.call(value)
+    const fields = record(value)
+    const type = JSON.stringify(typeof primitive)
+    const content = canonical(primitive)
+    return {
+      parts: fields.parts,
+      format: (parts) => `!{"_tag":"Boxed","type":${type},"value":${content},"fields":${fields.format(parts)}}`
+    }
+  }
+  if (value instanceof URL) {
+    const href = JSON.stringify(URL.prototype.toString.call(value))
+    const fields = record(value)
+    return {
+      parts: fields.parts,
+      format: (parts) => `!{"_tag":"URL","href":${href},"fields":${fields.format(parts)}}`
+    }
+  }
   if (value instanceof Error) {
-    // Stack traces vary between otherwise identical failures.
-    const { stack: _stack, ...own } = value as Error & Record<string, unknown>
-    const fields = record(own)
+    // Stack traces vary between otherwise identical failures. Preserve cause
+    // descriptors and symbol fields without invoking enumerable accessors.
+    const keys = Object.keys(value).filter((key) => key !== "stack")
+    if (Object.hasOwn(value, "cause") && !keys.includes("cause")) keys.push("cause")
+    const fields = record(value, keys)
     const name = JSON.stringify(value.name)
     const message = JSON.stringify(value.message)
     return {
@@ -178,6 +226,13 @@ const inspect = (value: object): Rendering => {
   const name = typeof (prototype as { constructor?: { name?: unknown } })?.constructor?.name === "string"
     ? (prototype as { constructor: { name: string } }).constructor.name
     : "Object"
+  if (fields.parts.length === 0) {
+    const identity = objectIdentity(value)
+    return {
+      parts: [],
+      format: () => `!{"_tag":"Opaque","constructor":${JSON.stringify(name)},"identity":${identity}}`
+    }
+  }
   return {
     parts: fields.parts,
     format: (parts) => `!{"_tag":"Foreign","constructor":${JSON.stringify(name)},"fields":${fields.format(parts)}}`
