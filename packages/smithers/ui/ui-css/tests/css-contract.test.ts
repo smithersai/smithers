@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { reducedMotionCss, workflowUiThemeCss } from "@smthrs/ui-styleguide";
-import { agentOutputCss, uiCss as smithersUiCss } from "../src/index.ts";
+import { agentOutputCss, avatarStackCss, canvasCss, collaboratorsCss, sandboxCss, uiCss as smithersUiCss } from "../src/index.ts";
 import { tokens } from "../src/index.ts";
 
 /**
@@ -131,6 +131,32 @@ describe("css contract", () => {
     );
   });
 
+  test.each([
+    [".sui-canvas-node[data-selected='true']", canvasCss],
+    [".sui-canvas-controls-button:focus-visible", canvasCss],
+    [".sui-sandbox-trigger:focus-visible", sandboxCss],
+    [".sui-sandbox-action:focus-visible", sandboxCss],
+    [".sui-webpreview-toolbar-button:focus-visible", sandboxCss],
+  ])("%s follows the host focus token", (selector, css) => {
+    const rule = css.split(selector + " {")[1]?.split("}")[0] ?? "";
+    expect(rule).toContain(`box-shadow:0 0 0 3px ${tokens.ring}`);
+    if (selector.includes("node") || selector.includes("sandbox")) {
+      expect(rule).toContain(`border-color:${tokens.ringBorder}`);
+    }
+  });
+
+  test("sandbox identity typography follows the host mono font", () => {
+    const rule = sandboxCss.match(/\.sui-sandbox-workspace, \.sui-sandbox-repository \{([^}]+)\}/)![1]!;
+    expect(rule).toContain(`font-family:${tokens.fontMono}`);
+  });
+
+  test("every collaborator caret and selection uses its avatar's lane color", () => {
+    const avatars = [...avatarStackCss.matchAll(/\.sui-avatar\[data-lane='(\d+)'\] \{ --sui-avatar-lane:([^;]+); \}/g)];
+    const collaborators = [...collaboratorsCss.matchAll(/\.sui-collaborator-caret\[data-lane='(\d+)'\], \.sui-collaborator-selection\[data-lane='\1'\] \{ --sui-collaborator:([^;]+); \}/g)];
+    expect(avatars).toHaveLength(6);
+    expect(collaborators.map((match) => match.slice(1))).toEqual(avatars.map((match) => match.slice(1)));
+  });
+
   test("the default button variant is the house tinted primary, not a solid fill", () => {
     const defaultRule = smithersUiCss.match(/\.sui-button-default \{[^}]+\}/)?.[0] ?? "";
     expect(defaultRule).toContain("color-mix(in srgb, var(--brand, #0f766e) 10%,");
@@ -167,7 +193,7 @@ describe("css contract", () => {
 
   test("composes one document-wide reduced-motion policy after every component block", () => {
     expect(smithersUiCss.endsWith(reducedMotionCss)).toBe(true);
-    expect(smithersUiCss.match(/@media \(prefers-reduced-motion: reduce\)/g)).toHaveLength(1);
+    expect(smithersUiCss.match(/@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)/g)).toHaveLength(1);
     expect(reducedMotionCss).toContain("*, *::before, *::after");
     expect(reducedMotionCss).toContain("animation-duration:0.001ms !important");
     expect(reducedMotionCss).toContain("transition-duration:0.001ms !important");

@@ -35,6 +35,11 @@ and `vaultCss`) and CSS id constant, `tokens` / `SmithersUiTokens`, `cn` /
 For a standalone host, prepend `workflowUiThemeCss` from `@smthrs/ui-styleguide`
 to supply the theme tokens and global element styles. Token fallbacks reproduce
 the default light palette; theme tokens enable all shared light/dark palettes.
+Canvas and sandbox focus rings follow `--ring` and `--ring-border`; sandbox
+identity labels follow `--font-mono`. Avatars and collaborator carets share the
+same lane palette, including host overrides from `--lane-0` to `--lane-5`.
+The complete sheet ends with one document-wide reduced-motion policy;
+component fragments rely on that shared policy.
 `smithersUiCss()` itself preserves the default React sheet, without that optional
 prefix or any host-specific extra CSS.
 

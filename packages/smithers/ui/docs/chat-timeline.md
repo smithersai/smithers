@@ -22,7 +22,7 @@ Wheel and trackpad input over the rail (including its open phone sheet) scrolls 
 
 The position-scale layout recomputes geometry after a render even when a resize observer already recorded the new box dimensions. Numeric `data-layout-width`/`data-layout-height` on the rail and `data-window-start`/`data-window-end` on each clip expose the measured geometry without content.
 
-A level slides in over 240 ms, then its lens fades in and its funnel draws. It leaves in reverse. With reduced motion, these become a 120 ms fade.
+A level slides in over 240 ms, then its lens fades in and its funnel draws. It leaves in reverse. With reduced motion, the shared document-wide policy completes these animations immediately.
 
 ## Appearance
 

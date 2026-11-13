@@ -5,15 +5,15 @@ import { flowGraphCss } from "./flow-graph/flowGraphCss.ts";
  *
  * CSS travels as a JS string (never an `import "./x.css"`) because the gateway
  * UI bundler keeps only the JS output of `Bun.build` and silently drops CSS
- * artifacts. Consumers render {@link file://./styles.tsx SmithersUiStyles} once,
- * and every component also self-injects this sheet idempotently in the browser
- * via `useInjectUiCss`, so a forgotten style tag still renders styled output.
+ * artifacts. Consumers of `@smthrs/ui` render its `SmithersUiStyles` once;
+ * that package also injects this sheet idempotently through its browser hook
+ * `useInjectUiCss`, so a forgotten style tag still renders styled output.
  *
  * Rules:
  * - Every class is namespaced `sui-` so nothing can collide with the
  *   ui-styleguide page vocabulary (`.button`, `.badge`, `.card`, ...) or with
  *   consumer CSS.
- * - Every color resolves through the {@link file://./tokens.ts tokens} bridge:
+ * - Every color resolves through the `tokens.ts` bridge:
  *   `var(--house-token, #lightFallback)` chains, tints only via
  *   `color-mix(in srgb, token N%, transparent)`. No raw hex outside fallback
  *   position, no `rgba(255,255,255,...)`-style theme leaks, no `:root` token

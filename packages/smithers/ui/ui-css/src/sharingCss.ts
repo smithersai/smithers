@@ -7,7 +7,7 @@ import { tokens as t } from "./tokens.ts";
  * follow light and dark. `--avatar-ink` is the initial's color, the theme's
  * inverse text by default, so the initial reads on every lane in both themes.
  */
-const LANE_FALLBACKS = [t.destructive, t.info, t.mutedForeground, t.warning, t.primary, t.success] as const;
+export const LANE_FALLBACKS = [t.destructive, t.info, t.mutedForeground, t.warning, t.primary, t.success] as const;
 
 const laneCss = LANE_FALLBACKS.map(
   (fallback, lane) => `.sui-avatar[data-lane='${lane}'] { --sui-avatar-lane:var(--lane-${lane}, ${fallback}); }`,

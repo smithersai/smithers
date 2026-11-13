@@ -1,7 +1,8 @@
 import { tokens as t } from "./tokens.ts";
+import { LANE_FALLBACKS } from "./sharingCss.ts";
 
 /** Each lane's color, as `.sui-avatar[data-lane]` paints it, so a person's caret matches their avatar. */
-const laneCss = [t.destructive, t.info, t.mutedForeground, t.warning, t.primary, t.success]
+const laneCss = LANE_FALLBACKS
   .map((fallback, lane) =>
     `.sui-collaborator-caret[data-lane='${lane}'], .sui-collaborator-selection[data-lane='${lane}'] { --sui-collaborator:var(--lane-${lane}, ${fallback}); }`
   )

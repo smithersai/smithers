@@ -93,12 +93,5 @@ g[data-leaving] .sui-tl-ln{stroke-dasharray:1;animation:sui-tl-draw 150ms ease r
 .sui-timeline-preview[hidden]{display:none}
 .sui-timeline-preview strong{display:block;font-weight:500;color:var(--text,#211d18)}
 .sui-timeline-preview span{display:block}
-@media(prefers-reduced-motion:reduce){
-.sui-tl-lv,.sui-tl-clip{transition:none}
-.sui-tl-row,.sui-tl-blk-li{transition:opacity .15s,background-color .15s}
-[data-state=working] .sui-tl-mk,.sui-tl-sm[data-state=working]{animation:none}
-.sui-tl-lv[data-entering],.sui-tl-lv[data-entering] .sui-tl-lens,g[data-entering] .sui-tl-beam,g[data-entering] .sui-tl-ln{animation:sui-tl-fade 120ms ease both}
-.sui-tl-lv[data-leaving],.sui-tl-lv[data-leaving] .sui-tl-lens,g[data-leaving] .sui-tl-beam,g[data-leaving] .sui-tl-ln{animation:sui-tl-fade 120ms ease reverse both}
-g[data-entering] .sui-tl-ln,g[data-leaving] .sui-tl-ln{stroke-dasharray:none}
-}
+
 `;

@@ -30,7 +30,7 @@ export * from "./repository-home/repositoryHomeCss.ts";
 export * from "./repositoryCss.ts";
 export * from "./run-page/runPageCss.ts";
 export * from "./sandbox/sandboxCss.ts";
-export * from "./sharingCss.ts";
+export { avatarStackCss, shareDialogCss } from "./sharingCss.ts";
 export * from "./stack/todoDraftCardCss.ts";
 export * from "./status.ts";
 export * from "./style-constants.ts";
