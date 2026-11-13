@@ -352,6 +352,55 @@ test("product index preserves every decision cited by source", () => {
   assert.deepEqual([...missing].sort(), [])
 })
 
+test("library catalog qualifies model replay and duplicate charges", () => {
+  const catalog = readFileSync(join(root, "docs/libraries.md"), "utf8")
+  const row = catalog.split("\n").find((line) => line.includes("ModelStep.run("))
+  assert.ok(row, "the catalog must recommend ModelStep.run")
+  assert.match(row, /sealed answers replay without another provider call/i)
+  assert.match(row, /at-least-once/i)
+  assert.match(row, /interrupted, unsealed calls may incur duplicate charges/i)
+  assert.doesNotMatch(row, /never paid for twice/i)
+})
+
+test("library catalog supplies required trigger input and enabled fields", () => {
+  const catalog = readFileSync(join(root, "docs/libraries.md"), "utf8")
+  assert.match(catalog, /Trigger\.make\(\{ id, flowId, input: \{\}, cron, enabled: true \}\)/)
+})
+
+for (const id of ["D-09a", "D-09b"]) {
+  test(`product index retains only the current scope of ${id}`, () => {
+    const index = readFileSync(join(root, "docs/mvp/PRODUCT.md"), "utf8")
+    const inForce = index.split("### In force")[1].split("### Superseded, cut or deferred")[0]
+    const row = inForce.split("\n").find((line) => line.startsWith(`| ${id} `))
+    assert.ok(row, `${id} retains its independently applicable rules`)
+    assert.match(row, /In force only/)
+    assert.match(row, /TODO-2/)
+    assert.match(row, /M-57/)
+    assert.match(row, /deferred/i)
+    assert.doesNotMatch(row, /Mythical history is on by default|after every fold of the mythical stack/)
+    if (id === "D-09a") {
+      assert.match(row, /append-only `main`/)
+      assert.match(row, /pull request a person merges/)
+      assert.match(row, /Postgres/)
+    } else {
+      assert.match(row, /Wiki is core and on by default/)
+      assert.match(row, /without overwriting a person's edit/)
+    }
+  })
+}
+
+test("product index defers the mythical history view under TODO-2", () => {
+  const index = readFileSync(join(root, "docs/mvp/PRODUCT.md"), "utf8")
+  const [inForce, superseded] = index.split("### Superseded, cut or deferred")
+  assert.doesNotMatch(inForce, /^\| D-20[ |(]/m)
+  const row = superseded.split("\n").find((line) => line.startsWith("| D-20 |"))
+  assert.ok(row, "D-20 remains indexed as deferred")
+  assert.match(row, /Deferred/)
+  assert.match(row, /TODO-2/)
+  assert.match(row, /M-57/)
+  assert.match(row, /Postgres/)
+})
+
 test("repository documentation relative links resolve", () => {
   // The app docs pages under apps/site/docs/app/pages name a screenshot as
   // `images/<id>.webp`; the site projects it to its light and dark files, and
