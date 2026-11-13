@@ -308,11 +308,17 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
     ).rejects.toThrow("failed: timed out after 100ms")
   })
 
-  it("rejects malformed go list JSON", async () => {
-    await host.set("list.out", "{\"ImportPath\": }")
-    await expect(GoExec.planRule("Go.Packages", { pkgs: ["./..."] }, host.context, goPath())).rejects.toThrow(
-      SyntaxError
-    )
+  it.each([
+    ["list.out", "list -json ./pkg/..."],
+    ["deps.out", "list -deps -test -json example.test/pkg/lib"]
+  ])("names the command and directory for malformed %s JSON", async (output, command) => {
+    if (output === "deps.out") await listPackage({ "lib.go": "package lib\n" })
+    await host.set(output, "{\"ImportPath\": }")
+    await expect(GoExec.planRule("Go.Packages", { pkgs: ["./..."] }, host.context, goPath())).rejects.toMatchObject({
+      _tag: "smithers-build/GoListJsonError",
+      message: expect.stringContaining(`${goPath()} ${command} in ${host.root} printed unparsable JSON:`),
+      cause: expect.any(SyntaxError)
+    })
   })
 
   it("keys every in-tree compiler input and replacement files by module path, skipping the standard library", async () => {

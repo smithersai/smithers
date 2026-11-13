@@ -87,6 +87,13 @@ repositories outside this checkout, so cold process startup is part of their
 wall-clock cost. Linux execution fixtures also require `bubblewrap` on PATH.
 Install the pinned Rust toolchain for native executable fixtures.
 
+Go execution coverage requires a launcher that selects Go `1.26` or later and
+an installed launcher older than Go `1.26` for SDK selection coverage. Set
+`SMITHERS_TEST_OLDER_GO` to the older launcher's executable when it is not on
+`PATH` or in the default Go `1.24.6` toolchain cache. Missing toolchains fail the
+host requirement tests. Hosts intentionally omitting Go coverage must set
+`SMITHERS_TEST_SKIP_GO=1`; those cases are then reported as skipped.
+
 Subprocess boundary tests run real executables and wait for observed startup
 before cancellation. Executor faults use invocation-local `ExecutionServices`;
 artifact publication faults use the scoped `TreeIo` adapter, including directory

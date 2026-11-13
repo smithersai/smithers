@@ -22,6 +22,12 @@ import * as StampExec from "./StampExec.ts"
 /** A package pattern that names a directory outside the declared Go module. */
 class GoPatternRefused extends Data.TaggedError("smithers-build/GoPatternRefused")<{ readonly message: string }> {}
 
+/** A malformed `go list` response with its command and parse cause. */
+class GoListJsonError extends Data.TaggedError("smithers-build/GoListJsonError")<{
+  readonly message: string
+  readonly cause: unknown
+}> {}
+
 /**
  * Where one Go rule is being planned: the workspace root, the declaring
  * package, and the workspace declaration whose toolchain shapes the build.
@@ -492,17 +498,26 @@ const listed = async (
   env: Readonly<Record<string, string>>,
   context: Context,
   tests = false
-): Promise<ReadonlyArray<GoListRow>> =>
+): Promise<ReadonlyArray<GoListRow>> => {
   // With no pattern, Go lists the current package rather than an empty set.
-  patterns.length === 0 ? [] : jsonRows(
-    await execFile(
-      goPath,
-      ["list", ...(deps ? ["-deps"] : []), ...(tests ? ["-test"] : []), "-json", ...patterns],
-      cwd,
-      env,
-      { signal: context.signal, timeoutMs: context.timeoutMs ?? 60_000 }
-    )
+  if (patterns.length === 0) return []
+  const args = ["list", ...(deps ? ["-deps"] : []), ...(tests ? ["-test"] : []), "-json", ...patterns]
+  const output = await execFile(
+    goPath,
+    args,
+    cwd,
+    env,
+    { signal: context.signal, timeoutMs: context.timeoutMs ?? 60_000 }
   )
+  try {
+    return jsonRows(output)
+  } catch (cause) {
+    throw new GoListJsonError({
+      message: `${goPath} ${args.join(" ")} in ${cwd} printed unparsable JSON: ${String(cause)}`,
+      cause
+    })
+  }
+}
 
 const selectedPackages = async (
   selection: unknown,

@@ -42,6 +42,18 @@ import { executeWithServices } from "./helpers/ExecuteWithServices.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
+const skipGo = process.env["SMITHERS_TEST_SKIP_GO"] === "1"
+const hasGo = PackageTree.findOnPath("go") !== undefined
+
+describe.skipIf(skipGo)("Go write-set host requirements", () => {
+  it("requires Go for write-set restoration coverage", () => {
+    expect(
+      hasGo,
+      "Go write-set tests require Go on PATH; SMITHERS_TEST_SKIP_GO=1 explicitly opts out of Go execution coverage"
+    ).toBe(true)
+  })
+})
+
 /** Temp directories this file created; removed after the suite so a run leaves nothing in the OS temp dir. */
 const temporaryDirectories: Array<string> = []
 const tracked = async (directory: Promise<string>): Promise<string> => {
@@ -368,7 +380,7 @@ export const Package = S.Package({ targets: { svc, probe } })
     expect(pgrep(probeControlMarker)).not.toHaveLength(0)
   }, 90_000)
 
-  it.skipIf(PackageTree.findOnPath("go") === undefined).each(["interrupt", "health"] as const)(
+  it.skipIf(skipGo || !hasGo).each(["interrupt", "health"] as const)(
     "waits for write-set restoration after consumer %s",
     async (failure) => {
       const root = await temporaryWorkspace()

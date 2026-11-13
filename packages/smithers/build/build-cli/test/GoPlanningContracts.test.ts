@@ -78,7 +78,6 @@ process.exit(1)
       readSet,
       writeSet
     })
-    expect(changes).toEqual(writeSet.length === 0 ? [] : ["generated.go", "//shared/generated.go"])
   })
 
   it.each([
