@@ -3,6 +3,7 @@ import { Deferred, Effect, Fiber, Queue, Ref, Sink, Stream } from "effect"
 import * as PlatformError from "effect/PlatformError"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, ProcessId } from "effect/process/ChildProcessSpawner"
+import { TestClock } from "effect/testing"
 import { describe, expect, it, vi } from "vitest"
 import * as Rpc from "../src/internal/Rpc.ts"
 import * as StdioTransport from "../src/internal/StdioTransport.ts"
@@ -64,44 +65,6 @@ describe("StdioTransport limits and terminal state", () => {
     expect(frames).toEqual([])
   })
 
-  it("does not let a full cancellation queue delay the request deadline", async () => {
-    const outcome = await execute(Effect.scoped(Effect.gen(function*() {
-      const writerStarted = yield* Deferred.make<void>()
-      const spawner = fakeProcess({
-        pid: ProcessId(8),
-        exitCode: Effect.as(Effect.sleep("6 seconds"), ExitCode(0)),
-        stdin: Sink.forEach((_chunk: Uint8Array) =>
-          Deferred.succeed(writerStarted, undefined).pipe(Effect.andThen(Effect.never))
-        )
-      })
-      const transport = yield* provideSpawner(
-        StdioTransport.connect({
-          server: "full-cancellation-queue",
-          command: "mcp",
-          args: [],
-          queueCapacity: 1,
-          requestTimeoutMs: 300
-        }),
-        spawner
-      )
-      const started = Date.now()
-      const request = yield* Effect.forkChild(Effect.flip(transport.request("tools/call")), {
-        startImmediately: true
-      })
-      yield* Deferred.await(writerStarted)
-      yield* transport.notify("fill-outbound-queue")
-      const error = yield* Fiber.join(request)
-      return { elapsed: Date.now() - started, error }
-    })))
-
-    expect(outcome.error).toMatchObject({
-      code: "timeout",
-      server: "full-cancellation-queue",
-      message: "MCP server \"full-cancellation-queue\" did not answer tools/call within 300ms"
-    })
-    expect(outcome.elapsed).toBeLessThan(5_000)
-  })
-
   it("cancels exactly once when a tools/call request times out", async () => {
     const frames: Array<Rpc.Outbound> = []
     const error = await withFakeServer(
@@ -161,78 +124,6 @@ describe("StdioTransport limits and terminal state", () => {
       method: "notifications/cancelled",
       params: { requestId: request.id, reason: "request no longer awaited" }
     }])
-  })
-
-  it("does not cancel a tools/call request that receives a normal reply", async () => {
-    const frames: Array<Rpc.Outbound> = []
-    const result = await withFakeServer(
-      (request) => {
-        frames.push(request)
-        return "done"
-      },
-      Effect.gen(function*() {
-        const transport = yield* StdioTransport.connect({ server: "settled", command: "mcp", args: [] })
-        const value = yield* transport.request("tools/call", {})
-        yield* Effect.sleep("25 millis")
-        return value
-      })
-    )
-
-    expect(result).toBe("done")
-    expect(frames.filter((frame) => frame.method === "notifications/cancelled")).toEqual([])
-  })
-
-  it("does not cancel a tools/call request that receives a JSON-RPC error", async () => {
-    const frames: Array<Rpc.Outbound> = []
-    const error = await withFakeServer(
-      (request) => {
-        frames.push(request)
-        return "ignored"
-      },
-      Effect.gen(function*() {
-        const transport = yield* StdioTransport.connect({ server: "settled-error", command: "mcp", args: [] })
-        const failure = yield* Effect.flip(transport.request("tools/call", {}))
-        yield* Effect.sleep("25 millis")
-        return failure
-      }),
-      {
-        envelope: (request) => ({
-          jsonrpc: "2.0",
-          id: request.id,
-          error: { code: -32_000, message: "remote failure" }
-        })
-      }
-    )
-
-    expect(error).toMatchObject({
-      code: "tool_failed",
-      server: "settled-error",
-      message: "MCP server \"settled-error\" failed tools/call (-32000); remote details withheld"
-    })
-    expect(frames.filter((frame) => frame.method === "notifications/cancelled")).toEqual([])
-  })
-
-  it("never cancels initialize when it times out", async () => {
-    const frames: Array<Rpc.Outbound> = []
-    const error = await withFakeServer(
-      (request) => {
-        frames.push(request)
-        return undefined
-      },
-      Effect.gen(function*() {
-        const transport = yield* StdioTransport.connect({ server: "initialize-timeout", command: "mcp", args: [] })
-        const failure = yield* Effect.flip(transport.request("initialize", {}, 25))
-        yield* Effect.sleep("25 millis")
-        return failure
-      })
-    )
-
-    expect(error).toMatchObject({
-      code: "timeout",
-      server: "initialize-timeout",
-      message: "MCP server \"initialize-timeout\" did not answer initialize within 25ms"
-    })
-    expect(frames.filter((frame) => frame.method === "notifications/cancelled")).toEqual([])
   })
 
   it("accepts an outbound frame exactly at maxOutboundFrameBytes", async () => {
@@ -426,7 +317,9 @@ describe("StdioTransport limits and terminal state", () => {
 
   it("turns an exit-status failure into one terminal error for later traffic", async () => {
     const errors = await execute(Effect.scoped(Effect.gen(function*() {
+      const killed = yield* Deferred.make<void>()
       const spawner = fakeProcess({
+        kill: () => Deferred.succeed(killed, undefined).pipe(Effect.asVoid),
         pid: ProcessId(3),
         exitCode: Effect.fail(PlatformError.systemError({
           _tag: "Unknown",
@@ -440,10 +333,9 @@ describe("StdioTransport limits and terminal state", () => {
         StdioTransport.connect({ server: "bad-exit", command: "mcp", args: [] }),
         spawner
       )
-      yield* Effect.sleep("10 millis")
+      yield* Deferred.await(killed)
       const request = yield* Effect.flip(transport.request("later"))
       const notification = yield* Effect.flip(transport.notify("later"))
-      yield* Effect.sleep("10 millis")
       return { request, notification }
     })))
 
@@ -512,7 +404,9 @@ describe("StdioTransport limits and terminal state", () => {
         method: "stdout",
         description: "fixture failure"
       })
+      const killed = yield* Deferred.make<void>()
       const spawner = fakeProcess({
+        kill: () => Deferred.succeed(killed, undefined).pipe(Effect.asVoid),
         pid: ProcessId(5),
         stdout: Stream.fail(failure)
       })
@@ -520,7 +414,7 @@ describe("StdioTransport limits and terminal state", () => {
         StdioTransport.connect({ server: "bad-stdout", command: "mcp", args: [] }),
         spawner
       )
-      yield* Effect.sleep("10 millis")
+      yield* Deferred.await(killed)
       return yield* Effect.flip(transport.request("later"))
     })))
 
@@ -532,36 +426,39 @@ describe("StdioTransport limits and terminal state", () => {
   })
 
   it("wakes a blocked enqueue when the process exits", async () => {
-    const errors = await execute(Effect.scoped(Effect.gen(function*() {
-      const writerStarted = yield* Deferred.make<void>()
-      const exit = yield* Deferred.make<ExitCode>()
-      const spawner = fakeProcess({
-        pid: ProcessId(6),
-        exitCode: Deferred.await(exit),
-        stdin: Sink.forEach((_chunk: Uint8Array) =>
-          Deferred.succeed(writerStarted, undefined).pipe(Effect.andThen(Effect.never))
+    const errors = await execute(
+      Effect.scoped(Effect.gen(function*() {
+        const writerStarted = yield* Deferred.make<void>()
+        const exit = yield* Deferred.make<ExitCode>()
+        const spawner = fakeProcess({
+          pid: ProcessId(6),
+          exitCode: Deferred.await(exit),
+          stdin: Sink.forEach((_chunk: Uint8Array) =>
+            Deferred.succeed(writerStarted, undefined).pipe(Effect.andThen(Effect.never))
+          )
+        })
+        const transport = yield* provideSpawner(
+          StdioTransport.connect({
+            server: "blocked-enqueue",
+            command: "mcp",
+            args: [],
+            queueCapacity: 1,
+            requestTimeoutMs: 1_000
+          }),
+          spawner
         )
-      })
-      const transport = yield* provideSpawner(
-        StdioTransport.connect({
-          server: "blocked-enqueue",
-          command: "mcp",
-          args: [],
-          queueCapacity: 1,
-          requestTimeoutMs: 1_000
-        }),
-        spawner
-      )
-      yield* transport.notify("first")
-      yield* Deferred.await(writerStarted)
-      yield* transport.notify("second")
-      const blocked = yield* Effect.forkChild(transport.notify("third"), { startImmediately: true })
-      yield* Effect.sleep("10 millis")
-      yield* Deferred.succeed(exit, ExitCode(0))
-      const blockedError = yield* Effect.flip(Fiber.join(blocked))
-      const laterError = yield* Effect.flip(transport.request("later"))
-      return { blockedError, laterError }
-    })))
+        yield* transport.notify("first")
+        yield* Deferred.await(writerStarted)
+        yield* transport.notify("second")
+        const blocked = yield* Effect.forkChild(transport.notify("third"), { startImmediately: true })
+        yield* TestClock.adjust(0)
+        expect(blocked.pollUnsafe()).toBeUndefined()
+        yield* Deferred.succeed(exit, ExitCode(0))
+        const blockedError = yield* Effect.flip(Fiber.join(blocked))
+        const laterError = yield* Effect.flip(transport.request("later"))
+        return { blockedError, laterError }
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
 
     expect(errors.blockedError).toBe(errors.laterError)
     expect(errors.blockedError).toMatchObject({

@@ -1,6 +1,6 @@
 import * as Redaction from "@smthrs/journal/Redaction"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
-import { Clock, Deferred, Effect, Exit, Fiber, Redacted, Schema, Scope, Sink, Stream } from "effect"
+import { Clock, Deferred, Effect, Exit, Fiber, Queue, Redacted, Schema, Scope, Sink, Stream } from "effect"
 import * as PlatformError from "effect/PlatformError"
 import { ExitCode, ProcessId } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
@@ -14,7 +14,11 @@ import { fakeHandle, type HandleOptions } from "./fixtures/FakeProcess.ts"
 const secret = "synthetic-private-value-DO-NOT-PUBLISH"
 const diagnosticBytes = new TextEncoder().encode(`API_TOKEN=${secret}\n`)
 
-const connect = (overrides: Partial<HandleOptions>, released: () => void = () => {}) =>
+const connect = (
+  overrides: Partial<HandleOptions>,
+  released: () => void = () => {},
+  options: Partial<StdioTransport.ConnectOptions> = {}
+) =>
   StdioTransport.connect({
     server: "terminal-drain",
     command: "fixture",
@@ -23,7 +27,8 @@ const connect = (overrides: Partial<HandleOptions>, released: () => void = () =>
     // credential's recognizable prefix and hand the observer its remainder.
     maxStderrBytes: secret.length + 1,
     queueCapacity: 1,
-    requestTimeoutMs: 1_000
+    requestTimeoutMs: 1_000,
+    ...options
   }).pipe(Effect.provideService(
     ChildProcessSpawner.ChildProcessSpawner,
     ChildProcessSpawner.makeNoop({
@@ -659,4 +664,216 @@ describe("request lifecycle", () => {
       })).pipe(Effect.provide(TestClock.layer()))
     )
   })
+})
+
+describe("terminal process cleanup", () => {
+  it.each(["malformed reply", "oversized frame", "stdout EOF"] as const)(
+    "kills the child once after %s while the caller scope stays open",
+    async (cause) => {
+      const counts = { killed: 0, released: 0 }
+      await Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          const written = yield* Deferred.make<void>()
+          const terminal = yield* Deferred.make<Uint8Array>()
+          const exited = yield* Deferred.make<ExitCode>()
+          const transport = yield* connect({
+            exitCode: Deferred.await(exited),
+            stdin: Sink.forEach((_chunk: Uint8Array) => Deferred.succeed(written, undefined)),
+            stdout: cause === "stdout EOF"
+              ? Stream.fromEffect(Deferred.await(terminal)).pipe(Stream.drain)
+              : Stream.concat(Stream.fromEffect(Deferred.await(terminal)), Stream.never),
+            kill: () =>
+              Effect.sync(() => {
+                counts.killed += 1
+              })
+          }, () => {
+            counts.released += 1
+          }, { maxFrameBytes: 64 })
+          const pending = yield* Effect.forkChild(Effect.flip(transport.request("tools/call")), {
+            startImmediately: true
+          })
+          yield* Deferred.await(written)
+          expect(counts).toEqual({ killed: 0, released: 0 })
+          yield* Deferred.succeed(
+            terminal,
+            new TextEncoder().encode(
+              cause === "malformed reply" ? "{\"jsonrpc\":\"2.0\",\"id\":1}\n" : "x".repeat(65)
+            )
+          )
+          const error = yield* Fiber.join(pending)
+          expect(error.code).toBe(cause === "stdout EOF" ? "connection_closed" : "protocol_error")
+          // Let terminal cleanup finish without closing the owning scope.
+          yield* TestClock.adjust(0)
+          expect(counts).toEqual({ killed: 1, released: 0 })
+          expect(yield* Effect.flip(transport.request("later"))).toBe(error)
+          expect(yield* Effect.flip(transport.notify("later"))).toBe(error)
+          // A second terminal signal must not kill the same child again.
+          yield* Deferred.succeed(exited, ExitCode(0))
+          yield* TestClock.adjust(0)
+          expect(counts).toEqual({ killed: 1, released: 0 })
+        })).pipe(Effect.provide(TestClock.layer()))
+      )
+      expect(counts).toEqual({ killed: 1, released: 1 })
+    }
+  )
+
+  it("kills the child after server-response admission times out before scope closure", async () => {
+    const counts = { killed: 0, released: 0 }
+    await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const written = yield* Deferred.make<void>()
+        const output = yield* Queue.unbounded<Uint8Array>()
+        const transport = yield* connect({
+          stdin: Sink.forEach((_chunk: Uint8Array) =>
+            Deferred.succeed(written, undefined).pipe(Effect.andThen(Effect.never))
+          ),
+          stdout: Stream.fromQueue(output),
+          kill: () =>
+            Effect.sync(() => {
+              counts.killed += 1
+            })
+        }, () => {
+          counts.released += 1
+        })
+        const pending = yield* Effect.forkChild(Effect.flip(transport.request("tools/call", {}, 10_000)), {
+          startImmediately: true
+        })
+        yield* Deferred.await(written)
+        yield* transport.notify("fill-queue")
+        yield* Queue.offer(output, new TextEncoder().encode("{\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"ping\"}\n"))
+        yield* TestClock.adjust(999)
+        expect(pending.pollUnsafe()).toBeUndefined()
+        expect(counts).toEqual({ killed: 0, released: 0 })
+        yield* TestClock.adjust(1)
+        expect(pending.pollUnsafe()).toBeDefined()
+        const error = yield* Fiber.join(pending)
+        expect(error).toMatchObject({
+          code: "timeout",
+          message: "MCP server \"terminal-drain\" did not answer server-response admission within 1000ms"
+        })
+        expect(yield* Clock.currentTimeMillis).toBe(1_000)
+        expect(counts).toEqual({ killed: 1, released: 0 })
+        expect(yield* Effect.flip(transport.request("later"))).toBe(error)
+        expect(yield* Effect.flip(transport.notify("later"))).toBe(error)
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
+    expect(counts).toEqual({ killed: 1, released: 1 })
+  })
+})
+
+describe("request cancellation ordering", () => {
+  it("does not let a full cancellation queue delay the request deadline", async () => {
+    await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const written: Array<WrittenFrame> = []
+        const occupied = yield* Deferred.make<void>()
+        const releaseWriter = yield* Deferred.make<void>()
+        const drained = yield* Deferred.make<void>()
+        const transport = yield* connect({
+          stdin: Sink.forEach((chunk: Uint8Array) =>
+            Effect.gen(function*() {
+              const frame = decodeFrame(chunk)
+              written.push(frame)
+              if (frame.method === "tools/call") {
+                yield* Deferred.succeed(occupied, undefined)
+                yield* Deferred.await(releaseWriter)
+              }
+              if (frame.method === "after-deadline") yield* Deferred.succeed(drained, undefined)
+            })
+          )
+        })
+        const pending = yield* Effect.forkChild(Effect.flip(transport.request("tools/call", {}, 300)), {
+          startImmediately: true
+        })
+        yield* Deferred.await(occupied)
+        yield* transport.notify("fill-queue")
+        yield* TestClock.adjust(299)
+        expect(pending.pollUnsafe()).toBeUndefined()
+        yield* TestClock.adjust(1)
+        const atDeadline = pending.pollUnsafe()
+        if (atDeadline === undefined) {
+          // Release faulty cleanup before asserting, so scope finalization
+          // cannot hide the missed deadline behind a wall-clock test timeout.
+          yield* Deferred.succeed(releaseWriter, undefined)
+          yield* TestClock.adjust(1_000)
+        }
+        expect(atDeadline).toBeDefined()
+        expect(yield* Fiber.join(pending)).toMatchObject({
+          code: "timeout",
+          message: "MCP server \"terminal-drain\" did not answer tools/call within 300ms"
+        })
+        expect(yield* Clock.currentTimeMillis).toBe(300)
+        yield* Deferred.succeed(releaseWriter, undefined)
+        yield* transport.notify("after-deadline")
+        yield* Deferred.await(drained)
+        expect(written.map((frame) => frame.method)).toEqual(["tools/call", "fill-queue", "after-deadline"])
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
+  })
+
+  it.each(["normal reply", "JSON-RPC error", "initialize timeout"] as const)(
+    "does not cancel after %s, including after the original deadline",
+    async (outcome) => {
+      await Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          const written: Array<WrittenFrame> = []
+          const requestWritten = yield* Deferred.make<number>()
+          const reply = yield* Deferred.make<Uint8Array>()
+          const settled = yield* Deferred.make<void>()
+          const drained = yield* Deferred.make<void>()
+          const transport = yield* connect({
+            stdin: Sink.forEach((chunk: Uint8Array) =>
+              Effect.gen(function*() {
+                const frame = decodeFrame(chunk)
+                written.push(frame)
+                if (frame.id !== undefined) yield* Deferred.succeed(requestWritten, frame.id)
+                if (frame.method === "after-settle") yield* Deferred.succeed(settled, undefined)
+                if (frame.method === "after-deadline") yield* Deferred.succeed(drained, undefined)
+              })
+            ),
+            stdout: Stream.concat(Stream.fromEffect(Deferred.await(reply)), Stream.never)
+          })
+          const method = outcome === "initialize timeout" ? "initialize" : "tools/call"
+          const pending = yield* Effect.forkChild(Effect.result(transport.request(method, {}, 25)), {
+            startImmediately: true
+          })
+          const id = yield* Deferred.await(requestWritten)
+          if (outcome === "initialize timeout") {
+            yield* TestClock.adjust(24)
+            expect(pending.pollUnsafe()).toBeUndefined()
+            yield* TestClock.adjust(1)
+          } else {
+            yield* Deferred.succeed(
+              reply,
+              outcome === "normal reply"
+                ? resultFrame(id, "done")
+                : new TextEncoder().encode(
+                  JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32_000, message: "remote failure" } }) + "\n"
+                )
+            )
+          }
+          const result = yield* Fiber.join(pending)
+          if (outcome === "normal reply") expect(result).toMatchObject({ _tag: "Success", success: "done" })
+          else {
+            expect(result).toMatchObject({
+              _tag: "Failure",
+              failure: {
+                code: outcome === "initialize timeout" ? "timeout" : "tool_failed",
+                server: "terminal-drain"
+              }
+            })
+          }
+          expect(yield* Clock.currentTimeMillis).toBe(outcome === "initialize timeout" ? 25 : 0)
+          // Each sentinel proves stdin has consumed every earlier frame.
+          yield* transport.notify("after-settle")
+          yield* Deferred.await(settled)
+          expect(written.map((frame) => frame.method)).toEqual([method, "after-settle"])
+          yield* TestClock.adjust(1_000)
+          yield* transport.notify("after-deadline")
+          yield* Deferred.await(drained)
+          expect(written.map((frame) => frame.method)).toEqual([method, "after-settle", "after-deadline"])
+        })).pipe(Effect.provide(TestClock.layer()))
+      )
+    }
+  )
 })

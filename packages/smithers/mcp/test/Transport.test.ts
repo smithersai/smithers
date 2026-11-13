@@ -1,5 +1,8 @@
 import { Effect, Stream } from "effect"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { describe, expect, it } from "vitest"
+import * as HttpTransport from "../src/internal/HttpTransport.ts"
 import * as Transport from "../src/internal/Transport.ts"
 
 const bytes = (text: string) => new TextEncoder().encode(text)
@@ -29,6 +32,10 @@ describe("Transport.lines", () => {
     expect(await split(["data: a\r", "", "\ndata: b\r\n\r\n"], true)).toEqual(["data: a", "data: b", ""])
   })
 
+  it.each([false, true])("keeps a split CRLF across multiple empty chunks in CR mode %s", async (crTerminates) => {
+    expect(await split(["", "a\r", "", "", "\nb\n", ""], crTerminates)).toEqual(["a", "b"])
+  })
+
   it("fails a line longer than the bound in either mode", async () => {
     for (const crTerminates of [false, true]) {
       await expect(split(["12345", "6\r"], crTerminates, 5)).rejects.toMatchObject({
@@ -39,5 +46,38 @@ describe("Transport.lines", () => {
         message: "MCP frame exceeded 5 bytes"
       })
     }
+  })
+})
+
+describe("Streamable HTTP event grouping", () => {
+  it.each([1, 2])("joins data lines across a split CRLF with %s empty chunks", async (emptyChunks) => {
+    const chunks = [
+      "data: {\"jsonrpc\":\"2.0\",\r",
+      ...Array.from({ length: emptyChunks }, () => ""),
+      "\ndata: \"id\":1,\"result\":\"joined\"}\r\n\r\n"
+    ]
+    // The host service supplies a real response stream with explicit chunk
+    // boundaries; a network socket may coalesce or drop empty writes.
+    const http = HttpClient.make((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(
+        request,
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              for (const chunk of chunks) controller.enqueue(bytes(chunk))
+              controller.close()
+            }
+          }),
+          { headers: { "content-type": "text/event-stream" } }
+        )
+      ))
+    )
+    const result = await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const transport = yield* HttpTransport.connect({ server: "events", url: "https://mcp.example.test/mcp" })
+        return yield* transport.request("ping")
+      })).pipe(Effect.provideService(HttpClient.HttpClient, http))
+    )
+    expect(result).toBe("joined")
   })
 })
