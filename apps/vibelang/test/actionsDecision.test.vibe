@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Post } from "../src/core/flows.vibe"
-import { agentRun, agentRunsSettle, postFlow } from "../worker/actionsDecision.vibe"
+import { Post, Reply, Tour } from "../src/core/flows.vibe"
+import { agentRun, agentRunsSettle, conversationalFlow, openAgentReply, openRootReply, postFlow, replyChildEvent, replyDone, replyFailed } from "../worker/actionsDecision.vibe"
 import { actionsRoute, callerActor, cancelFlow, crossOriginWrite, declaredTooLarge, runIdValid, runRoute, startActor, startConflict, writeStatus } from "../worker/actionsDecision.vibe"
 import { ACTIONS_PATH } from "../src/actions/wire.vibe"
 
@@ -35,5 +35,20 @@ describe("a post's reply child and its agent runs", () => {
     expect([agentRunsSettle("vibelang/Post", true), agentRunsSettle("vibelang/Post", false), agentRunsSettle("vibelang/Tour", true)]).toEqual([true, false, false])
     expect([agentRun("agent"), agentRun("person"), agentRun("")]).toEqual([true, false, false])
     expect(Post._tag).toBe("vibelang/Post")
+  })
+})
+
+describe("an action run's reply states", () => {
+  it("opens only the agent's unfinished reply, and a tour's first one answers no entry", () => {
+    expect([openAgentReply("agent", false), openAgentReply("agent", true), openAgentReply("person", false), openAgentReply("", false)]).toEqual([true, false, false, false])
+    expect([openRootReply("agent", false, ""), openRootReply("agent", false, "p1"), openRootReply("agent", true, ""), openRootReply("person", false, "")]).toEqual([true, false, false, false])
+  })
+  it("holds Tour and Post conversations, and a post's Reply events as its child's", () => {
+    expect([conversationalFlow(Tour._tag), conversationalFlow(Post._tag), conversationalFlow(Reply._tag), conversationalFlow("vibelang/history/Commit"), conversationalFlow("")]).toEqual([true, true, false, false, false])
+    expect([replyChildEvent(Reply._tag, Post._tag), replyChildEvent(Reply._tag, Tour._tag), replyChildEvent(Post._tag, Post._tag), replyChildEvent(Tour._tag, Tour._tag)]).toEqual([true, false, false, false])
+  })
+  it("is done only with a finished reply, and failed by the engine or the reply's error", () => {
+    expect([replyDone(true, true), replyDone(true, false), replyDone(false, false)]).toEqual([true, false, false])
+    expect([replyFailed(true, false, ""), replyFailed(false, true, "Action failed"), replyFailed(false, true, ""), replyFailed(false, false, ""), replyFailed(true, true, "")]).toEqual([true, true, false, false, true])
   })
 })

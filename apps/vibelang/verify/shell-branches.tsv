@@ -714,42 +714,25 @@ worker/ActionIdentity.vibe	fromAccounts/request	?? trusted.name	Default: an abse
 worker/ActionIdentity.vibe	fromAccounts/request	&& signedIn(person.id) && (try accounts.allowed(person.id, "action"))	Forwards: signed in (the proved signedIn), then the account policy's own answer (a host service), short-circuited inside Effect
 worker/ActionIdentity.vibe	fromAccounts/request	person.agent === true	Variant test: an agent session acts as the agent
 worker/ActionIdentity.vibe	fromAccounts/role	owner === "" || !(try accounts.allowed(owner, "action"))	Host boundary: the account host's policy answer; no owner is the signed-out viewer
-worker/ActionRuns.vibe	alarm	&& reply !== undefined && reply.done	Open: state: a run's reply is done, or failed (engine or reply error)
-worker/ActionRuns.vibe	alarm	|| engineFailed || (reply !== undefined && reply.error !== "")	Open: state: a run's reply is done, or failed (engine or reply error)
 worker/ActionRuns.vibe	alarm	engineFailed && intent !== undefined	Forwards the engine receipt's failure to the active reply
-worker/ActionRuns.vibe	alarm	request.flow !== Tour._tag && request.flow !== Post._tag	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
 worker/ActionRuns.vibe	alarm	request.flow === Tour._tag && tourSettles(done, failed)	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
-worker/ActionRuns.vibe	alarm/callback	&& entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
 worker/ActionRuns.vibe	alarm/callback	find entry.author === "agent"	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-worker/ActionRuns.vibe	alarm/callback	find entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
 worker/ActionRuns.vibe	callerOf	?? request.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionRuns.vibe	callerOf	?? request.owner	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionRuns.vibe	callerOf/current	?? request.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionRuns.vibe	cancel	run.flow === Tour._tag	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
-worker/ActionRuns.vibe	cancel/callback	&& entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
-worker/ActionRuns.vibe	cancel/callback	find entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
 worker/ActionRuns.vibe	cancel/callback	find run.id === id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/ActionRuns.vibe	make/admit	?? request.owner	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-worker/ActionRuns.vibe	make/admit/callback	&& entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
-worker/ActionRuns.vibe	make/admit/callback	find entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
 worker/ActionRuns.vibe	start	?? existing?.state	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionRuns.vibe	start	?? request.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionRuns.vibe	start	?? request.owner	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-worker/ActionRuns.vibe	start	|| request.flow === Tour._tag || request.flow === Post._tag	Open: state: Tour and Post are conversational runs
-worker/ActionRuns.vibe	start	accepted	Forwards whether the sequencer holds the run's post or tour
-worker/ActionRuns.vibe	start	existing !== undefined && conversational	Variant: a stored post or tour run is resumed, not restarted (startRuns, proved, decides which)
 worker/ActionRuns.vibe	start	previous !== undefined && JSON.stringify(previous) !== JSON.stringify(request)	Host boundary: JSON equality; a different request under a known id conflicts
 worker/ActionRuns.vibe	start	request.flow === Post._tag	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
 worker/ActionRuns.vibe	start	request.flow === Post._tag && typeof raw.text === "string"	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
 worker/ActionRuns.vibe	start	request.flow === Tour._tag	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
 worker/ActionRuns.vibe	start	request.flow === Tour._tag	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
-worker/ActionRuns.vibe	start/callback	&& entry.author === "agent" && !entry.done && entry.inReplyTo === ""	Open: state: a restarted conversational start was accepted: its tour reply or its post is there
 worker/ActionRuns.vibe	start/callback	find run.id === request.id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-worker/ActionRuns.vibe	start/callback	some entry.author === "agent" && !entry.done && entry.inReplyTo === ""	Open: state: a restarted conversational start was accepted: its tour reply or its post is there
-worker/ActionRuns.vibe	start/callback	some entry.clientId === request.id	Open: state: a restarted conversational start was accepted: its tour reply or its post is there
-worker/ActionRuns.vibe	traced/callback/callback	&& event.flow === Reply._tag && request.flow === Post._tag	Open: state: a Post run's trace includes its Reply events
-worker/ActionRuns.vibe	traced/callback/callback	child	Variant: a reply child traces under its post (isReplyChild, proved)
-worker/ActionRuns.vibe	traced/callback/callback	child	Variant: a reply child traces under its post (isReplyChild, proved)
+worker/ActionRuns.vibe	start/callback	some entry.clientId === request.id	Lookup: finds the post the restarted start named by its id; whether that accepts the start is the proved dispatch on the flow
 worker/ActionsHttp.vibe	handle	?? parts[1]	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionsHttp.vibe	handle	?? principal.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionsHttp.vibe	handle	?? principal.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing

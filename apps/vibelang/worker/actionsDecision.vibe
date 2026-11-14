@@ -117,3 +117,46 @@ export function agentRun(actor: string): boolean {
 export function reservedByOther(reserved: string | undefined, id: string): boolean {
   return reserved !== undefined && reserved !== id
 }
+
+/** A conversation's open agent reply, the one an engine failure, a cancel or a changed permission fails: the agent's
+ * entry that has not finished. */
+//@ verify
+//@ ensures \result == (author == "agent" && !done)
+export function openAgentReply(author: string, done: boolean): boolean {
+  return author === "agent" && !done
+}
+
+/** A tour's accepted start dispatched its first agent reply: open, and answering no entry. */
+//@ verify
+//@ ensures \result == (author == "agent" && !done && inReplyTo == "")
+export function openRootReply(author: string, done: boolean, inReplyTo: string): boolean {
+  return openAgentReply(author, done) && inReplyTo === ""
+}
+
+/** Tour and Post are the conversational runs: their replies live in the run's conversation, not a history host. */
+//@ verify
+//@ ensures \result == (flow == "vibelang/Tour" || flow == "vibelang/Post")
+export function conversationalFlow(flow: string): boolean {
+  return flow === "vibelang/Tour" || postFlow(flow)
+}
+
+/** A run's reply is done when the agent's reply is there and finished. */
+//@ verify
+//@ ensures \result == (present && done)
+export function replyDone(present: boolean, done: boolean): boolean {
+  return present && done
+}
+
+/** A run's reply failed when the engine failed its execution, or the agent's reply is there with an error. */
+//@ verify
+//@ ensures \result == (engineFailed || (present && error != ""))
+export function replyFailed(engineFailed: boolean, present: boolean, error: string): boolean {
+  return engineFailed || (present && error !== "")
+}
+
+/** A Post run's trace event from its Reply flow belongs to the post's reply child. */
+//@ verify
+//@ ensures \result == (eventFlow == "vibelang/Reply" && requestFlow == "vibelang/Post")
+export function replyChildEvent(eventFlow: string, requestFlow: string): boolean {
+  return eventFlow === "vibelang/Reply" && postFlow(requestFlow)
+}

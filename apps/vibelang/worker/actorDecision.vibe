@@ -16,17 +16,11 @@ export function actorKind(stated: boolean, kind: "person" | "agent"): "person" |
   return stated ? kind : "person"
 }
 
-/** The issues host keys a missing principal's executions as public; a present principal by its own id. */
-//@ verify
-//@ ensures \result == (present ? id : "public")
-export function issueExecutionActor(present: boolean, id: string): string {
-  return present ? id : "public"
-}
-
-/** The wiki host keys a missing principal, or one with an empty id, as public. */
+/** The issues and wiki hosts key a missing principal's executions, or those of one with an empty id, as public; any
+ * other principal by its own id (0018 batch 67, the lead's ruling: one signed-out key). */
 //@ verify
 //@ ensures \result == (present && id != "" ? id : "public")
-export function wikiExecutionActor(present: boolean, id: string): string {
+export function executionActor(present: boolean, id: string): string {
   return present && id !== "" ? id : "public"
 }
 

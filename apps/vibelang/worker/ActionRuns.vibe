@@ -8,7 +8,7 @@ import { allowed, registration } from "../src/actions/catalog.vibe"
 import { RunRequest } from "../src/actions/wire.vibe"
 import { isHistory, prepare, prepareHistory, refused } from "../src/actions/execution.vibe"
 import { cancellable } from "../src/actions/actionHostDecision.vibe"
-import { agentRun, agentRunsSettle } from "./actionsDecision.vibe"
+import { agentRun, agentRunsSettle, conversationalFlow, openAgentReply, openRootReply, replyChildEvent, replyDone, replyFailed } from "./actionsDecision.vibe"
 import { historyPassed, isReplyChild, replyChildId, settledResult, settledState, startRuns, startSettles, tourSettles } from "../src/core/actionRunDecision.vibe"
 import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
 import * as HistoryActions from "./HistoryActions.vibe"
@@ -30,7 +30,7 @@ export effect function traced<A, E, R>(sequencer: Sequencer, request: RunRequest
       while (true) {
         const event = try Queue.take(queue)
         if (event === null) return
-        const child = event.flow === Reply._tag && request.flow === Post._tag
+        const child = replyChildEvent(event.flow, request.flow)
         const id = child ? replyChildId(request.id) : request.id
         if (child) try sequencer.action({ type: "RequestAction", id, flow: Reply._tag, door: "agent", actor: "agent", at: event.at })
         try sequencer.action({ type: "TraceAction", id, key: event.key, name: event.name, attempt: event.attempt, state: event.state, at: event.at })
@@ -53,12 +53,12 @@ export effect function start(hostId: string, storage: Objects.Storage, sequencer
   const previous = try promise(() => storage.get<RunRequest>("action/request"))
   if (previous !== undefined && JSON.stringify(previous) !== JSON.stringify(request)) return "conflict"
   const existing = before.find(run => run.id === request.id)
-  const conversational = request.flow === Tour._tag || request.flow === Post._tag
+  const conversational = conversationalFlow(request.flow)
   // A host that stopped mid-start leaves its post or tour running: its first step's trace precedes the accepted write.
   if (!startRuns(existing !== undefined, existing?.state ?? "", conversational)) return null
   if (existing !== undefined && conversational) {
     const snapshot = try sequencer.read(0)
-    const accepted = request.flow === Tour._tag ? snapshot.entries.some(entry => entry.author === "agent" && !entry.done && entry.inReplyTo === "") : snapshot.entries.some(entry => entry.clientId === request.id)
+    const accepted = request.flow === Tour._tag ? snapshot.entries.some(entry => openRootReply(entry.author, entry.done, entry.inReplyTo)) : snapshot.entries.some(entry => entry.clientId === request.id)
     if (accepted) {
       try sequencer.ensureDispatched()
       try promise(() => storage.setAlarm(Date.now()))
@@ -99,7 +99,7 @@ export function callerOf(request: RunRequest, authority: Pick<ActionIdentity.Sha
 export effect function alarm(hostId: string, storage: Objects.Storage, sequencer: Sequencer, spend: Spend.Shape, model: ChatModel.Shape, history: import("../src/history/tools.vibe").HistoryReader, historyHost = HistoryActions.make(hostId, storage), replyHost = Objects.executionHost(hostId, storage, sequencer), authority: Pick<ActionIdentity.Shape, "role"> = signedOut) {
   const request = (try promise(() => storage.get("action/request"))) as RunRequest | undefined
   if (request === undefined) return try Objects.alarm(hostId, storage, sequencer, spend, model, history)
-  if (request.flow !== Tour._tag && request.flow !== Post._tag) {
+  if (!conversationalFlow(request.flow)) {
     const outcome = try traced(sequencer, request, historyHost.alarm(history, callerOf(request, authority)))
     if (outcome._tag === "Settled") {
       // Only a settled run has a receipt, so only it prepares the stored request: a request stored by an older deployment
@@ -125,13 +125,13 @@ export effect function alarm(hostId: string, storage: Objects.Storage, sequencer
   const engineFailed = Option.isSome(receipt) && receipt.value._tag === "Complete" && Exit.isFailure(receipt.value.exit)
   if (engineFailed && intent !== undefined) {
     const current = try sequencer.read(0)
-    const active = current.entries.find((entry) => entry.author === "agent" && !entry.done)
+    const active = current.entries.find((entry) => openAgentReply(entry.author, entry.done))
     if (active !== undefined) try sequencer.fail(active.id, "Action failed")
   }
   const snapshot = try sequencer.read(0)
   const reply = snapshot.entries.find((entry) => entry.author === "agent")
-  const done = reply !== undefined && reply.done
-  const failed = engineFailed || (reply !== undefined && reply.error !== "")
+  const done = replyDone(reply !== undefined, reply === undefined ? false : reply.done)
+  const failed = replyFailed(engineFailed, reply !== undefined, reply === undefined ? "" : reply.error)
   if (request.flow === Tour._tag && tourSettles(done, failed)) {
     try sequencer.action({ type: "SettleAction", id: request.id, state: settledState(failed), result: settledResult(failed), at: try Clock.currentTimeMillis })
   }
@@ -155,7 +155,7 @@ export effect function cancel(hostId: string, storage: Objects.Storage, sequence
   if (child) {
     try replyHost.cancel()
     const snapshot = try sequencer.read(0)
-    const active = snapshot.entries.find(entry => entry.author === "agent" && !entry.done)
+    const active = snapshot.entries.find(entry => openAgentReply(entry.author, entry.done))
     if (active !== undefined) try sequencer.fail(active.id, "Cancelled")
   } else if (run.flow === Tour._tag) {
     // The cancellation receipt wins before ending the tour wakes its alarm. Otherwise that alarm can observe
@@ -181,7 +181,7 @@ export function make(hostId: string, storage: Objects.Storage, sequencer: Sequen
     const permitted = allowed(try Effect.orDie(authority.role(request.owner ?? "")), registration(request.flow))
     if (!permitted) {
       const snapshot = try sequencer.read(0)
-      const active = snapshot.entries.find(entry => entry.author === "agent" && !entry.done)
+      const active = snapshot.entries.find(entry => openAgentReply(entry.author, entry.done))
       if (active !== undefined) try sequencer.fail(active.id, "Permission changed")
       try sequencer.action({ type: "SettleAction", id: request.id, state: "failed", result: "Permission changed", at: try Clock.currentTimeMillis })
     }

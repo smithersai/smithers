@@ -21,7 +21,7 @@ import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 import { personId } from "./accountsDecision.vibe"
 import { bodyLimit, objectMethod, reviewNumberText, withinBodyLimit } from "./workerDecision.vibe"
-import { actorKind, actorRole, issueExecutionActor } from "./actorDecision.vibe"
+import { actorKind, actorRole, executionActor } from "./actorDecision.vibe"
 import { blankPart } from "./hostFactsDecision.vibe"
 
 /** `kind: "agent"` marks a device sign-in (decision 0028); agents never approve, accept, decline or merge. */
@@ -206,7 +206,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
         }
         if (request.op === "propose") {
           // The person's fork owns the change; smithers.sh derives and verifies it from their login (decision 0165).
-          const base = try submissionBase(storage, try issueExecutionId(actor.id, request.op, request.key), effect () => {
+          const base = try submissionBase(storage, try issueExecutionId(keyOf(actor), request.op, request.key), effect () => {
             const upstream = try Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) }))
             const head = try GitHub.Refs.getBranch(repo.owner, repo.name, upstream.default_branch)
             if (Option.isNone(head)) throw new IssueFailure({ reason: "missing" })
@@ -305,10 +305,10 @@ export effect function serveIssues(hostId: string, storage: Storage, repo: Repos
 }
 
 /** The acting principal: none acts as a viewer person keyed public, and a principal of no stated kind is a person
- * (the proved actorRole, actorKind and issueExecutionActor). */
+ * (the proved actorRole, actorKind and executionActor). */
 function roleOf(actor: Principal | undefined): Role { return actorRole(actor !== undefined, actor?.role ?? "viewer") }
 function kindOf(actor: Principal | undefined): "person" | "agent" { return actorKind(actor?.kind !== undefined, actor?.kind ?? "person") }
-function keyOf(actor: Principal | undefined): string { return issueExecutionActor(actor !== undefined, actor?.id ?? "") }
+function keyOf(actor: Principal | undefined): string { return executionActor(actor !== undefined, actor?.id ?? "") }
 
 /** The same durable execution for HTTP, CLI/MCP and a delegated chat tool. */
 export effect function executeIssues(hostId: string, storage: Storage, payload: IssueRequest, repo: Repository = repository) {
@@ -410,7 +410,7 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     if (original.op === "read" && original.resumeKey !== undefined && original.resumeOp !== undefined) {
       if (actor === undefined) throw new IssueFailure({ reason: "sign-in" })
       if (!requestKey(original.resumeKey) || !resumable(original.resumeOp)) throw new IssueFailure({ reason: "invalid" })
-      const rootId = try issueExecutionId(actor.id, original.resumeOp as IssueRequest["op"], original.resumeKey)
+      const rootId = try issueExecutionId(keyOf(actor), original.resumeOp as IssueRequest["op"], original.resumeKey)
       if (original.resumeRecovery !== undefined && !requestKey(original.resumeRecovery)) throw new IssueFailure({ reason: "invalid" })
       const sourceId = original.resumeRecovery === undefined ? rootId : try issueRecoveryId(rootId, original.resumeRecovery)
       const sourceFlow = issueFlows.find(f => f._tag === `vibelang/issues/${original.resumeOp}`)!

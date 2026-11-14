@@ -22,7 +22,7 @@ import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 import { carriesCode, connectFailure, failureReason, draftProposed, joinsReceipt, objectPath, pinnedConflict, readRetriesSignedOut, refusalReason, requestKey, retriesSettledFailure, sameActor, wikiDraftRefusal, wikiEditRefusal, writeKeyMissing, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
 import { editable } from "../src/core/wikiPageDecision.vibe"
 import { bodyLimit, objectMethod, withinBodyLimit } from "./workerDecision.vibe"
-import { actorKind, actorRole, reviewAuthored, reviewChangesPage, wikiExecutionActor } from "./actorDecision.vibe"
+import { actorKind, actorRole, reviewAuthored, reviewChangesPage, executionActor } from "./actorDecision.vibe"
 
 export service WikiAuthority {
   current(): (Principal | undefined)!WikiFailure
@@ -212,10 +212,10 @@ export effect function serveWiki(hostId: string, storage: Storage, repo: WikiRep
 }
 
 /** The acting principal: none acts as a viewer person, keyed public with an empty id too, and a principal of no stated
- * kind is a person (the proved actorRole, actorKind and wikiExecutionActor). */
+ * kind is a person (the proved actorRole, actorKind and executionActor). */
 function roleOf(actor: Principal | undefined): Role { return actorRole(actor !== undefined, actor?.role ?? "viewer") }
 function kindOf(actor: Principal | undefined): "person" | "agent" { return actorKind(actor?.kind !== undefined, actor?.kind ?? "person") }
-function keyOf(actor: Principal | undefined): string { return wikiExecutionActor(actor !== undefined, actor?.id ?? "") }
+function keyOf(actor: Principal | undefined): string { return executionActor(actor !== undefined, actor?.id ?? "") }
 
 /** The same durable execution for HTTP, CLI/MCP and a delegated chat tool. */
 export effect function executeWiki(hostId: string, storage: Storage, input: WikiRequest, repo: WikiRepository = wikiRepository) {

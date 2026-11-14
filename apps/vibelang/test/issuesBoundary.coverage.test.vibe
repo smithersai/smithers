@@ -150,6 +150,20 @@ describe("the durable issues execution", () => {
     return { storage, seen, run }
   }
 
+  it.live("keys a principal with an empty id as public: the signed-out execution, not a person's", () => effect {
+    let actor: Issues.Principal | undefined = undefined
+    const { run, seen } = world({ current: () => sync(() => actor) })
+    try run(asking({ key: "shared" }))
+    actor = { id: "", login: "", role: "viewer" }
+    const joined = try refusal(run(asking({ key: "shared", title: "changed" })))
+    actor = person()
+    try run(asking({ key: "shared", title: "changed" }))
+    try Effect.try(() => {
+      expect(joined.reason).toBe("invalid")
+      expect(seen.performed).toBe(2)
+    })
+  }, 60_000)
+
   it.live("refuses a malformed key and a malformed recovery before running", () => effect {
     const { run, seen } = world(authorityOf(person()))
     const key = try refusal(run(asking({ key: "has space" })))

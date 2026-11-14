@@ -56,6 +56,20 @@ cases = [
 
 C = 'worker/actionsDecision.vibe'
 cases += [
+# Batch 66 (vl-proveall3): the action runs' reply states.
+(C, 'action-open-agent-author', 'openAgentReply', 'return author === "agent" && !done', 'return !done', "a person's open entry is no agent reply"),
+(C, 'action-open-agent-done', 'openAgentReply', 'return author === "agent" && !done', 'return author === "agent"', 'a finished reply is not open'),
+(C, 'action-open-root', 'openRootReply', ' && inReplyTo === ""', '', "an answer to an entry is not the tour's first reply"),
+(C, 'action-open-root-open', 'openRootReply', 'return openAgentReply(author, done) && ', 'return author === "agent" && ', 'a finished first reply is not open'),
+(C, 'action-conversational-tour', 'conversationalFlow', 'return flow === "vibelang/Tour" || postFlow(flow)', 'return postFlow(flow)', 'a tour is conversational'),
+(C, 'action-conversational-post', 'conversationalFlow', 'return flow === "vibelang/Tour" || postFlow(flow)', 'return flow === "vibelang/Tour"', 'a post is conversational'),
+(C, 'action-reply-done-present', 'replyDone', 'return present && done', 'return done', 'an absent reply is not done'),
+(C, 'action-reply-done', 'replyDone', 'return present && done', 'return present', 'an unfinished reply is not done'),
+(C, 'action-reply-failed-engine', 'replyFailed', 'return engineFailed || (present && error !== "")', 'return present && error !== ""', 'an engine failure fails the run'),
+(C, 'action-reply-failed-error', 'replyFailed', 'return engineFailed || (present && error !== "")', 'return engineFailed', "a reply's error fails the run"),
+(C, 'action-reply-failed-present', 'replyFailed', '(present && error !== "")', '(error !== "")', 'an absent reply carries no error'),
+(C, 'action-child-event-reply', 'replyChildEvent', 'return eventFlow === "vibelang/Reply" && ', 'return ', "only a Reply event is the child's"),
+(C, 'action-child-event-post', 'replyChildEvent', ' && postFlow(requestFlow)', '', "only a post's trace has a reply child"),
 (C, 'actions-declared-digits', 'declaredTooLarge', '!/^[0-9]+$/.test(declared) || ', '', 'a declared length is digits'),
 (C, 'actions-declared-limit', 'declaredTooLarge', 'value > 32000', 'value >= 32000', 'the limit itself is read'),
 (C, 'actions-cross-origin-absent', 'crossOriginWrite', ' && origin !== undefined', '', 'no Origin is no page'),
