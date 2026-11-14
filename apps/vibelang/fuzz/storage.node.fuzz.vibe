@@ -88,6 +88,24 @@ import { MainUnavailable } from "../src/history/flows.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { pageOf } from "../src/history/pages.vibe"
 import { Outline } from "../src/history/schemas.vibe"
+
+/**
+ * A stored snapshot that is not a History, a torn chunk or a rank its cursor does not cover, is a defect when the
+ * History object loads it (decodeStoredHistory): never a history, and never a typed failure a caller could retry.
+ */
+it.live("storage/history-snapshot-corrupt", () => run("storage/history-snapshot-corrupt", Schema.Struct({ text: Text, torn: Schema.Boolean }), ({ text, torn }) => effect {
+  const { object } = try storage()
+  const store = HistoryObject.storeOver(object)
+  const epics = [{ id: "e1", title: "Epic " + text }]
+  if (torn) {
+    try store.seed({ ...emptyHistory, seq: 1, epics })
+    try promise(() => object.put({ "base/000000": "{" + text }))
+  } else {
+    try store.seed({ ...emptyHistory, seq: 1, epics, commits: [{ id: "m1", epic: "e1", rank: 1, title: "T", state: "planned", task: "", lane: "", notes: [] }] })
+  }
+  const loaded = try exit(store.load())
+  return loaded._tag === "Failure" && Cause.hasDies(loaded.cause) && String(Cause.squash(loaded.cause)).includes("Invalid history state")
+}))
 import { WebCrypto } from "@smthrs/crypto"
 
 /** History's real SQLite flow host, including operation replay and the trusted reader adapter. */

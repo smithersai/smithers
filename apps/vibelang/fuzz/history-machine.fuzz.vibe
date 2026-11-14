@@ -10,7 +10,15 @@ import { run, Int, Text } from "./run.vibe"
 
 const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
 const Action = Schema.Literals(["show", "append", "retell", "start", "note", "approve", "fold", "export"])
-const Word = Schema.Union([Text, Schema.Literals(["forbidden", "empty", "too-long", "duplicate", "unknown", "state", "full", "unavailable", "planned", "working", "approved", "landed", "new", "how", "live", "mock"])])
+/** historyRefusal's contract: each refusal's sentence; any other word is its own. */
+const REFUSALS = new Map([
+  ["forbidden", "Your role can't do that."], ["empty", "Needs a title."], ["no-task", "Needs a task."], ["too-long", "Too long."],
+  ["duplicate", "Already there."], ["unknown", "No such epic or commit."], ["state", "Not in that state."], ["full", "History full."],
+  ["unavailable", "The history can't be reached."], ["unsupported", "Export is off."], ["conflict", "The refs moved. Export again."],
+  ["tree", "The export failed its check."], ["linear", "The export failed its check."], ["notes", "The export failed its check."],
+  ["nothing", "Nothing to export."], ["paced", "Publishing in the background."],
+])
+const Word = Schema.Union([Text, Schema.Literals(["forbidden", "empty", "no-task", "too-long", "duplicate", "unknown", "state", "full", "unavailable", "unsupported", "conflict", "tree", "linear", "notes", "nothing", "paced", "planned", "working", "approved", "landed", "new", "how", "live", "mock"])])
 const Step = Schema.Literals(["authorize", "record", "begin"])
 const Input = Schema.Struct({
   role: Role, signed: Role, action: Action, agent: Schema.Boolean, name: Text, steps: Schema.Array(Step).check(Schema.isMaxLength(8)),
@@ -51,8 +59,8 @@ it.live("history/machine-contracts", () => run("history/machine-contracts", Inpu
   if (fields.how !== input.how || fields.epic !== (input.word === "new" ? "" : input.word) || fields.newEpic !== (input.how === "append" && input.word === "new" ? input.other : "")) return false
   const badge = M.historyBadge(input.word)
   if (badge !== ({ planned: "sui-badge-warning", working: "sui-badge-default", approved: "sui-badge-success" } as Record<string, string>)[input.word] && badge !== "sui-badge-secondary") return false
-  const sentence = M.historyRefusal(input.word)
-  if (["forbidden", "empty", "too-long", "duplicate", "unknown", "state", "full", "unavailable"].includes(input.word) === (sentence === input.word)) return false
+  if (M.historyRefusal(input.word) !== (REFUSALS.get(input.word) ?? input.word)) return false
+  for (const [refusal, sentence] of REFUSALS) if (M.historyRefusal(refusal) !== sentence) return false
   if (M.initialEpic(input.how, input.first ?? undefined) !== (input.how === "append" ? (input.first ?? "new") : "")) return false
   return M.validPlanField(input.word, input.other) === (input.word !== "how" || ["append", "insert", "amend"].includes(input.other))
 }))

@@ -7,7 +7,11 @@ import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { Actions, ActionFailure, type Run } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 import { deferredActions } from "../src/actions/agent.vibe"
-import { deviceRegistration, execute, prepare } from "../src/actions/execution.vibe"
+import { deviceRegistration, execute, prepare, prepareHistory } from "../src/actions/execution.vibe"
+import { Post, Tour } from "../src/core/flows.vibe"
+import { Show } from "../src/history/tools.vibe"
+import { Denied } from "../src/core/roles.vibe"
+import type { Action as PolicyAction } from "../src/core/conversation.vibe"
 import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
 import { WebCrypto } from "@smthrs/crypto"
@@ -215,9 +219,28 @@ it.live("actions/mock-factories", () => run("actions/mock-factories", Role, (rol
     const actions = try Actions
     const id = try actions.start("vibelang/Tour", null, "button")
     try actions.cancel(id)
-    return (try actions.read(id)).state !== "queued"
+    if ((try actions.read(id)).state === "queued") return false
+  }
+  // A policy stricter than the roles (a workflow's) refuses every run `forbidden` and hides every command.
+  const strict = overlaidLayer(mockFactoryFor(role), (factory) => Object.assign(Object.create(factory) as Factory.Shape, {
+    policy: { authorize: (_actor: string, action: PolicyAction) => fail(new Denied({ action, least: "maintainer" })) },
+  }))
+  provide Layer.provideMerge(MockActions({ role, actor: "person" }), strict) {
+    const actions = try Actions
+    return (try code(actions.start("vibelang/Tour", null, "button"))) === "forbidden" && (try actions.commands()).length === 0
   }
 })))
+
+/** worker/HistoryActions drives history and sandbox runs only: a post or a tour `prepare` accepts is `not-found` there. */
+it.live("actions/prepare-history", () => run("actions/prepare-history", Text, (text) => effect {
+  for (const name of [Post._tag, Tour._tag]) {
+    const prepared = try code(prepare(name, { text }, "a1"))
+    const history = try code(prepareHistory(name, { text }, "a1"))
+    if (history !== (prepared === "ok" ? "not-found" : prepared)) return false
+  }
+  const shown = try prepareHistory(Show._tag, {}, "a1")
+  return shown.kind === "show" && same(shown.payload, { what: "outline" })
+}))
 
 /** A tour whose event stream closes after it starts, before it ends, fails its run; it never passes or hangs. */
 it.live("actions/mock-tour-stream", () => run("actions/mock-tour-stream", Schema.Struct({ role: Role, actor: Schema.Literals(["person", "agent"]) }), (input) => scoped(effect {

@@ -8,7 +8,8 @@ import { LiveMythical } from "../src/history/LiveMythical.vibe"
 import { BrowserFactory, AgentBackend } from "../src/web/backend.vibe"
 import { BrowserMythical, HistoryBackend } from "../src/web/historyBackend.vibe"
 import { chatModel, dailyTokens, DEFAULT_DAILY_TOKENS } from "../worker/AgentModel.vibe"
-import { run, Finding, Int, REPLAY_FLOOR, Text, TextOrBoundary } from "./run.vibe"
+import { run, Finding, Int, REPLAY_FLOOR, same, Text, TextOrBoundary } from "./run.vibe"
+import { HISTORY_PATH } from "../src/history/wire.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import { MockJournal } from "../src/core/MockJournal.vibe"
 import { liveIssues } from "../src/core/LiveIssues.vibe"
@@ -65,6 +66,26 @@ it.live("clients/history-faults", () => run("clients/history-faults", Input, ({ 
       }
     })
     return typed(result)
+  }
+}))
+
+/** Every history write over a fitting server answers what the server wrote: its id, its fold count, the export's tip. */
+it.live("clients/history-answers", () => run("clients/history-answers", Schema.Struct({ id: Text, folded: Int }), ({ id, folded }) => effect {
+  const urls: Array<string> = []
+  const fitting = HttpClient.make((request) => {
+    urls.push(request.url)
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(JSON.stringify({ id, folded }), { status: 200 }))))
+  })
+  provide LiveMythical("http://fitting.invalid").pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, fitting))) {
+    const history = try Mythical
+    const planned = try history.plan({ how: "append", epic: "", newEpic: "Epic", target: "", title: "T", task: "" })
+    try history.start("m1", "lane")
+    try history.note("m1", "tried", "x")
+    try history.approve("m1")
+    const fold = try history.fold()
+    const published = try history.publish()
+    const writes = ["plan", "start", "note", "approve", "fold", "export"].map((name) => `http://fitting.invalid${HISTORY_PATH}/${name}`)
+    return planned === id && fold === folded && published.mythical === id && published.written === folded && same(urls, writes)
   }
 }))
 

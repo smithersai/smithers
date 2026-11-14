@@ -8,6 +8,7 @@ import { Factory } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { readPending, readSession, writePending, writeSession } from "../src/surfaces/session.vibe"
 import { signIn, signOutSurface } from "../src/surfaces/signin.vibe"
+import * as D from "../src/surfaces/signinDecision.vibe"
 import { run } from "./run.vibe"
 
 const DEVICE_CODE = "private-device-code"
@@ -104,3 +105,45 @@ it.live("signin/mock-mode", () => run("signin/mock-mode", Schema.Array(Schema.Li
     }
   }
 })))
+
+const Word = Schema.Literals(["", "https:", "http:", "ftp:", "localhost", "127.0.0.1", "[::1]", "f.example", "https://f.example", "declined", "expired", "failed", "signed-in", "pending"])
+const Decision = Schema.Struct({
+  a: Word, b: Word, c: Word, d: Word, n: Schema.Int.check(Schema.isBetween({ minimum: -40, maximum: 40 })), m: Schema.Int.check(Schema.isBetween({ minimum: -40, maximum: 40 })),
+  flag: Schema.Boolean, step: Schema.Literals(["route", "session", "sign-out"]), status: Schema.Literals([200, 204, 401, 500]),
+})
+type Decision = typeof Decision.Type
+const base: Decision = { a: "", b: "", c: "", d: "", n: 0, m: 0, flag: false, step: "route", status: 200 }
+/** One argument tuple per arm: an https origin, each loopback host, a foreign http host, each refusal, each settings place. */
+const CHOSEN: ReadonlyArray<Decision> = [
+  { ...base, a: "https://f.example", b: "https://f.example", c: "https:", d: "f.example", flag: true, n: 3, m: 9 },
+  { ...base, a: "localhost", b: "localhost", c: "http:", d: "localhost", status: 204, step: "sign-out" },
+  { ...base, a: "127.0.0.1", b: "127.0.0.1", c: "http:", d: "127.0.0.1", flag: true, n: 9, m: 3 },
+  { ...base, a: "[::1]", b: "[::1]", c: "http:", d: "[::1]", step: "session" },
+  { ...base, a: "f.example", b: "f.example", c: "http:", d: "f.example" },
+  { ...base, a: "declined", b: "https://f.example", c: "https:", d: "f.example", n: 5, m: 5 },
+  { ...base, a: "expired", b: "pending", c: "ftp:" },
+  { ...base, a: "signed-in" },
+  { ...base, b: "f.example" },
+]
+
+/** The settled ensures of signinDecision.vibe, written again here: the running code must be the proved text. */
+function signinDecisions(x: Decision): boolean {
+  const loopback = x.d === "localhost" || x.d === "127.0.0.1" || x.d === "[::1]"
+  const refused = x.a === "declined" || x.a === "expired"
+  return D.factoryOriginAccepted(x.a, x.b, x.c, x.d) === (x.b === x.a && (x.c === "https:" || (x.c === "http:" && loopback)))
+    && D.storedSessionUsable(x.a, x.b, x.c) === (x.a === x.b && x.c !== "")
+    && D.agentSessionConfirmed(x.status, x.a, x.flag) === (x.status === 200 && x.a !== "" && x.flag)
+    && D.pendingResumes(x.a, x.b) === (x.a === x.b)
+    && D.pollDue(x.n, x.m) === (x.n >= x.m)
+    && D.pollInterval(x.flag, x.n, x.m) === (x.flag ? (x.n + 5 >= x.m ? x.n + 5 : x.m) : x.n)
+    && D.answerRefused(x.a) === refused
+    && D.refusalOf(x.a) === (refused ? x.a : "failed")
+    && D.refusalMessage(x.a) === (x.a === "declined" ? "Sign-in declined." : x.a === "expired" ? "Sign-in expired." : "Sign-in failed.")
+    && D.offersCode(x.a) === (x.a !== "signed-in")
+    && D.signInAnswered(x.step, x.status) === (x.step === "sign-out" ? x.status === 204 : x.status === 200)
+    && D.revokesRemote(x.flag, x.c) === (x.flag && x.c !== "")
+    && D.pendingExpired(x.n, x.m) === (x.n <= x.m)
+    && D.settingsBase(x.a, x.b) === (x.a !== "" ? "xdg" : x.b !== "" ? "home" : "")
+}
+
+it.live("signin/decisions", () => run("signin/decisions", Decision, (drawn) => CHOSEN.every(signinDecisions) && signinDecisions(drawn)))

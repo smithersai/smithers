@@ -24,7 +24,7 @@ const Input = Schema.Struct({ userCode: Word, login: Word, interval: Int, slowDo
 /** What the scripted server answers; each scenario sets it before it runs. */
 interface Script {
   route: "ok" | "refused" | "garbage" | "wrong-shape"
-  device: "ok" | "refused"
+  device: "ok" | "refused" | "disabled"
   grant: "authorization_pending" | "slow_down" | "access_denied" | "expired_token" | "authorized" | "garbage"
   exchange: "ok" | "refused" | "garbage" | "wrong-shape"
   session: "agent" | "person" | "signed-out" | "refused" | "garbage"
@@ -63,7 +63,7 @@ function steered(input: typeof Input.Type, part: "answers" | "waits" | "refusals
       hits.push(path)
       if (path === "/api/auth/device" && request.method === "GET") return script.route === "ok" ? json({ clientId: "fixture-client" }) : script.route === "refused" ? json({}, 503) : script.route === "garbage" ? text("{") : json({ clientId: 7 })
       if (path === "/api/auth/device") return script.exchange === "ok" ? json({ cookie: COOKIE, login: input.login }) : script.exchange === "refused" ? json({}, 403) : script.exchange === "garbage" ? text("{") : json({ cookie: 1 })
-      if (path === "/login/device/code") return script.device === "ok" ? json({ device_code: DEVICE_CODE, user_code: input.userCode, verification_uri: origin + "/device", expires_in: script.expires, interval: input.interval }) : json({}, 500)
+      if (path === "/login/device/code") return script.device === "ok" ? json({ device_code: DEVICE_CODE, user_code: input.userCode, verification_uri: origin + "/device", expires_in: script.expires, interval: input.interval }) : script.device === "disabled" ? json({ error: "device_flow_disabled" }, 400) : json({}, 500)
       if (path === "/login/oauth/access_token") {
         const grant = script.queue.length > 0 ? script.queue[0]! : script.grant
         if (script.queue.length > 0) script.queue = script.queue.slice(1)
@@ -132,6 +132,13 @@ function steered(input: typeof Input.Type, part: "answers" | "waits" | "refusals
         const stored = try readSession()
         return out.status === "signed-in" && out.login === "" && stored?.login === input.login
       })
+      // Settings that can't be secured once the flow is pending end the wait failed, before any poll.
+      try scenario("wait-settings-unsecured", {}, effect () => {
+        const denied = PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "chmod" })
+        const unsecured: FileSystem.FileSystem = { ...fs, chmod: (path, mode) => Effect.flatMap(fs.exists(path + "/device.json"), (pending) => pending ? fail(denied) : fs.chmod(path, mode)) }
+        const out = try answer(effect { provide FileSystem.FileSystem = unsecured { return try signIn({ wait: true }) } })
+        return !out.ok && out.message === "Sign-in failed." && hits.includes("/login/device/code") && !hits.includes("/login/oauth/access_token")
+      })
       if (failures.length > 0) try Console.error("signin/steered-waits failed: " + failures.join(", "))
       return failures.length === 0
     }
@@ -142,6 +149,7 @@ function steered(input: typeof Input.Type, part: "answers" | "waits" | "refusals
     try scenario("route-garbage", { route: "garbage" }, fails(`Sign-in at ${origin} can't be understood.`))
     try scenario("route-wrong-shape", { route: "wrong-shape" }, fails(`Sign-in at ${origin} can't be understood.`))
     try scenario("device-refused", { device: "refused" }, fails("GitHub refused the device sign-in."))
+    try scenario("device-disabled", { device: "disabled" }, fails(`Device sign-in is off for ${origin}.`))
     for (const factory of ["http://example.invalid", "not a url", `${origin}/path`, "ftp://127.0.0.1"]) {
       try scenario(`origin ${factory}`, {}, fails("Invalid factory origin."), factory)
     }

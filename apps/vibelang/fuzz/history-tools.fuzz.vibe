@@ -4,7 +4,7 @@ import { MockMythical } from "../src/history/MockMythical.vibe"
 import { Mythical, Unavailable } from "../src/history/MythicalHistory.vibe"
 import { empty } from "../src/history/mythical.vibe"
 import { may } from "../src/history/roles.vibe"
-import { type HistoryReader, note, plan, requestOf, ShowPage, show, start } from "../src/history/tools.vibe"
+import { type HistoryReader, note, plan, requestOf, type ShowInput, ShowPage, show, start } from "../src/history/tools.vibe"
 import { historyTools, REPLY_CALLS } from "../worker/HistoryTools.vibe"
 import { run, Int, TextOrBoundary, same } from "./run.vibe"
 
@@ -61,4 +61,18 @@ it.live("history/agent-tool-unavailable", () => run("history/agent-tool-unavaila
   ]
   const read = try exit(show(history, { what: (["outline", "epic", "commit", "search"] as const)[op % 4]! }))
   return writes.every((answer) => answer.id === "" && answer.refusal === "unavailable") && read._tag === "Failure" && !Cause.hasDies(read.cause)
+}))
+
+/**
+ * A page `show`'s input type has no name for (a cast, `any`, or a value no decoder checked) reads nothing and dies with
+ * the match's own TypeError, the proposal's, which has no message: the generic fallback every VibeLang match keeps
+ * (D209; the lead's 2026-11-14 ruling). An arm that read the unnamed page instead fails on its fields first.
+ */
+it.live("history/agent-tool-out-of-type", () => run("history/agent-tool-out-of-type", Schema.Literals(["nope", "", "OUTLINE", "outline "]), (what) => effect {
+  const reads: Array<string> = []
+  const read = (name: string) => () => { reads.push(name); return fail(new Unavailable({ reason: "read" })) }
+  const history: HistoryReader = { outline: read("outline"), epic: read("epic"), commit: read("commit"), search: read("search"), plan: read("plan"), start: read("start"), note: read("note") }
+  const shown = try exit(show(history, { what } as unknown as ShowInput))
+  const died = shown._tag === "Failure" && Cause.hasDies(shown.cause) ? Cause.squash(shown.cause) : undefined
+  return died instanceof TypeError && died.message === "" && reads.length === 0
 }))
