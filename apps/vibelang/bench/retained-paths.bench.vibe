@@ -44,14 +44,14 @@ it("the default mock folds actual outside commits once and keeps their native id
       const specification = try history.search("VIP-43, theorem and spec")
       const pages = try all([compiler, terminal, specification].map(result => history.commit(result.commits[0]!.id)))
       try Effect.try(() => {
-        expect([first, again]).toEqual([3, 0])
-        expect(outline.main).toBe("0c6cea2cde78")
+        expect([first, again]).toEqual([6, 0])
+        expect(outline.main).toBe("47422f47d257")
         expect(pages.map(page => page.real.map(item => item.sha))).toEqual([["301689a33565"], ["0c40c2c6e9a0"], ["0c6cea2cde78"]])
         expect(pages.map(page => page.commit?.state)).toEqual(["landed", "landed", "landed"])
       })
     }
   }))).run(slow)
-  await runPromise(artifact("history-outside-seed", "Vitest built-in bench; actual default MockMythical seed and the three real outside commits retained in AFTER_SEED. Fold twice, search each native title and read its mythical detail. Require three folds then zero, the exact final main, each native SHA and landed state. Three fresh engines; seed loading, projections and assertions included.", ["Shipped mock history over memory storage; fixed native commit metadata, no GitHub read or repository mutation."], result))
+  await runPromise(artifact("history-outside-seed", "Vitest built-in bench; actual default MockMythical seed and the six real outside commits retained in AFTER_SEED, in main's order. Fold twice, search each native title and read its mythical detail. Require six folds then zero, the exact final main, each native SHA and landed state. Three fresh engines; seed loading, projections and assertions included.", ["Shipped mock history over memory storage; fixed native commit metadata, no GitHub read or repository mutation."], result))
 })
 
 it("bootstrap handles a repeated title, revert, continued evidence and malformed fold", async ({ bench }) => {
