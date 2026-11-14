@@ -710,6 +710,7 @@ Reached after this run (vl-coverage-core, session 12; focused run `s12e2e3`, 108
 | --- | --- |
 | `sandboxDecision.vibe:325` `meterDelay`'s `due` (the allowance ends before the next interval) | Fault `sandbox-last-minute` moves the meter's clock, once the sandbox starts, to 30 seconds before the allowance runs out; the next read re-arms the meter for those seconds. `e2e/core-sandbox-minute.spec.ts`. |
 | `issueFixtureDecision.vibe:27` `fixtureFailure`'s `title` | The agent asked `File an issue:` with no title files nothing and says "No issue filed." `e2e/core-agent-requests.spec.ts`. |
+| `sandboxDecision.vibe:116` `meterStep` at the month's boundary | Fault `sandbox-month-end` leaves five minutes, then, once the person stops, moves the meter's clock to three seconds before the next UTC month. The sandbox started again runs across it: the badge shows the new month's 600 minutes and the old month's low notice clears. `e2e/core-sandbox-month.spec.ts`, 6/6 (`s12month5`). |
 
 Kept, with the reason no page input reaches them:
 
@@ -717,6 +718,8 @@ Kept, with the reason no page input reaches them:
 | --- | --- |
 | `issueFixtureDecision.vibe:32` (`comment` with blank text) | The page no longer sends a blank comment: `issueDecision.vibe` `issueAction` ignores Comment while the box is blank (session 12's fix; before, the host refused it and the page showed "Couldn't save. Retry."). The agent surfaces still can (`src/surfaces/commands.vibe` `Issue`), so the host keeps its own check; `test/issueFixtureDecision.test.vibe` covers it. |
 | `sandboxDecision.vibe:324` (`ceiling < 1`) | `meterDelay` runs only when `arm` meters a running sandbox with no operation pending. `sandboxHost.vibe` `metered`, which every arming path follows, gives each running sandbox a pending stop when no minutes are left and completes it, so at zero minutes `arm` either retries a pending stop or finds nothing running. |
+| `MockFactory.vibe:392`, `:401`, `:402` (a reply's post with no recorded person or owner) | A reply runs only for a post the mock accepted, and acceptance records both maps first (line 327, `decision.ok`). |
+| `MockFactory.vibe:436`, `:453` (an agent's issue or wiki actor) and `issueFixtureDecision.vibe:96` (`agentRefused`) | The agent signs in only through the agent surfaces (`src/surfaces/signin.vibe`, `MockAccounts.vibe` `signInAgent`), which the page does not run; Visit as clears the agent flag, and the scripted agent acts as the poster. |
 | `sandboxDecision.vibe:38`, `:39` (`runningCountPrefix`) and `conversation.vibe:943` (`pendingCount`) | Specification only: they state `runningCount`'s and the pending list's contracts and nothing calls them at run time (`~/vl/vibelang-bugs/spec-only-function/`, still open in VibeLang). |
 
 ### The Export journey counts turns, not milliseconds (vl-coverage-core, session 12, 2026-11-14)
