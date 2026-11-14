@@ -9,6 +9,7 @@ import { TourPresentation, presentation } from "./theatre.vibe"
 import { surfaceTransition, toggleSandbox, maximizeSandbox, currentSandbox, canSandboxAction } from "./viewDecision.vibe"
 import { IssuesUi, initialIssues, issueScreen, issuesUpdate } from "./issues.vibe"
 import { IssueFailure, IssueRequest, IssuesAnswer, IssuesState, IssueOperation } from "../core/issueSchemas.vibe"
+import { issueCreates } from "../core/issueGraphDecision.vibe"
 // The web app's Foldkit program: Model, Messages, update, Commands and Subscriptions. The view is `view.vibe`. Every
 // change to the conversation goes through the shared machine (`../core/conversation.vibe`); this file only adds what a
 // screen needs on top of it (wiki/decisions/0003-one-state-machine.md).
@@ -1454,7 +1455,7 @@ export const ActOnIssue = Command.define("ActOnIssue", {
       return try factory.issues.act(request)
     })
     if (Facts.marksResume(factory.mode, request.op) && Facts.resumeSettled(result._tag === "Success", result._tag === "Success" ? false : result.failure.unwritten === true)) try Navigation.replaceUrl("/?issues=1")
-    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: ["new", "split", "propose"].includes(request.op), op: request.op, key: request.key, role: result.success.role }) : Message.IssuesFailed({ reason: result.failure.reason, op: request.op, key: request.key, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
+    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: issueCreates(request.op), op: request.op, key: request.key, role: result.success.role }) : Message.IssuesFailed({ reason: result.failure.reason, op: request.op, key: request.key, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
   },
 })
 export const ShowIssueDialog = Command.define("ShowIssueDialog", {

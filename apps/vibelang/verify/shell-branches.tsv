@@ -691,7 +691,6 @@ src/web/main.vibe	execute/callback	posted === ""	Result: an effect's outcome bec
 src/web/main.vibe	execute/callback	reached	Result: an effect's outcome becomes its success or failure message; the failure is the host's
 src/web/main.vibe	execute/callback	result.success.draft !== undefined && result.success.draft.page === page	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	execute/callback	started === ""	Result: an effect's outcome becomes its success or failure message; the failure is the host's
-src/web/main.vibe	execute/callback	value ["new", "split", "propose"].includes(request.op)	Open: restates the proved issueCreates (issueGraphDecision); call it once pnpm fuzz:affected passes src/web/main.vibe, which misses 4 unrelated branches today (batch 74)
 src/web/main.vibe	execute/callback	window.location.pathname + window.location.hash !== url	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	execute/callback/callback	find entry.id === page	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	execute/callback/callback	find entry.id === request.page	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
