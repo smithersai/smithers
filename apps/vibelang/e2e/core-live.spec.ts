@@ -121,18 +121,35 @@ test("a person whose role was taken away after the page's last read is refused: 
   await accountFault(page, origin, owner)
 })
 
-test("a live message past the sequencer's limit is refused, two past the body limit fail and a retry fails again; the next one is sent", async ({ page }, info) => {
-  const origin = origins[info.project.name]!
+/** Opens the live site signed in as maintainer 1 with the message box focused; answers the box. */
+async function openLiveChat(page: Page, origin: string) {
   await signIn(page, origin, "1", "will")
   await page.addInitScript(() => localStorage.setItem("vibelang:toured", "yes"))
   await page.goto(origin + "/")
   await expect(page.locator(".vl-app")).toHaveAttribute("data-mode", "live")
   await page.keyboard.press("ControlOrMeta+k")
-  const message = page.getByRole("textbox", { name: "Message" })
+  return page.getByRole("textbox", { name: "Message" })
+}
+
+// Each journey's screenshot is the viewport: a full-page capture of 40,000-character posts took 14 s on phone.
+
+test("a live message past the sequencer's limit is refused, and the next one is sent", async ({ page }, info) => {
+  const message = await openLiveChat(page, origins[info.project.name]!)
   // 8,001 characters: the request fits, and the real sequencer refuses the text (409).
   await message.fill("a".repeat(8001))
   await message.press("Enter")
   await expect(page.getByText("Message too long")).toBeVisible()
+  // The live conversation outlives an attempt: a retry or repeat must not find the earlier attempt's post.
+  const sent = `short and sent ${info.repeatEachIndex}-${info.retry}`
+  await message.fill(sent)
+  await message.press("Enter")
+  await expect(page.getByText(sent)).toBeVisible()
+  await expect(page.getByText("Message too long")).toBeVisible()
+  await page.screenshot({ path: info.outputPath("live-post-refused.png") })
+})
+
+test("two live messages past the body limit fail, and a retry of one fails again and leaves the other", async ({ page }, info) => {
+  const message = await openLiveChat(page, origins[info.project.name]!)
   // 40,000 characters: past the Worker's post body limit, which answers 413 before the sequencer.
   const failed = page.getByText("Send failed")
   const retry = page.getByRole("button", { name: "Retry" })
@@ -141,18 +158,11 @@ test("a live message past the sequencer's limit is refused, two past the body li
     await message.press("Enter")
   }
   await expect(failed).toHaveCount(2)
-  await expect(retry).toHaveCount(3)
-  // Retrying one failed post leaves the others as they are; it fails again.
+  await expect(retry).toHaveCount(2)
   await retry.nth(1).click()
   await expect(failed).toHaveCount(2)
-  await expect(retry).toHaveCount(3)
-  // The live conversation outlives an attempt: a retry or repeat must not find the earlier attempt's post.
-  const sent = `short and sent ${info.repeatEachIndex}-${info.retry}`
-  await message.fill(sent)
-  await message.press("Enter")
-  await expect(page.getByText(sent)).toBeVisible()
-  await expect(page.getByText("Message too long")).toBeVisible()
-  await page.screenshot({ path: info.outputPath("live-post-limits.png"), fullPage: true })
+  await expect(retry).toHaveCount(2)
+  await page.screenshot({ path: info.outputPath("live-post-limits.png") })
 })
 
 test("a site whose API Worker fails its health check starts in the mock", async ({ page }, info) => {
