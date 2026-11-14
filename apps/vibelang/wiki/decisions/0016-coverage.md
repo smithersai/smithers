@@ -4706,6 +4706,21 @@ last commit, so the chain ends early (335); `export-notes` drops the notes tree'
 drops the manifest from its bookmark's tree (133). Each reads "The export failed its check.", and exporting again
 publishes.
 
+**A long title on main, and an export before any fold.** Two more faults under the mock history, in
+`e2e/history-arms.spec.ts`. `main-long-title` answers Fold's read of main with its first commit titled past the
+history's 200-unit limit, as GitHub keeps any first line; the fold folds it with the title cut (`stackDecision.vibe`
+`foldTitle`, 76; uncut, `decide` refuses the fold `too-long`). `export-unfolded` answers the export's read of the
+history with one no fold has reached, and the export publishes through "nothing" (`export.vibe` 264).
+
+**The live history over a faulty HTTP.** `test/support/FaultyHistoryHttp.vibe` is a faulty `HttpClient` under
+`LiveMythical`, which `e2e/history-runtime` provides when `?http=` names a fault. `e2e/live-history-faults.spec.ts`
+opens that page on the core live site, signed in as maintainer 1. `outline` answers the first outline read 503: the
+page says "Couldn't load the history.", and Retry loads it (`LiveMythical.vibe` 49). `events` answers the events
+request 503: the page offers Reconnect (67). `write` answers the first Plan 500 with `{}`, neither accepted nor
+refused: the dialog says "The history can't be reached.", and planning again writes (36, 40). The 500 also runs
+`flowMachine.vibe` `historyResponse`'s other statuses (175), which session 38's row lists as needing a History object
+that fails.
+
 ### Bug: a repository code shown as the refusal
 
 `export-manifest` showed "invalid". `historyRefusal` returned any code it did not name as it came, and the export's
@@ -4735,19 +4750,24 @@ These are the rest of `src/actions` and `src/history`:
 | `pages.vibe` `stacked`'s unknown epic (105), `pageDecision.vibe` `pageOrder`'s fallback (99) | `decide` refuses a commit whose epic the history lacks, so every commit's epic is in `epics`. |
 | `LiveMythical.vibe` a write with an operation (30) | Only the agent's history tools pass an operation id, and live they run in the Worker, which reads the history through `HistoryObject.readerOver`. |
 | `LiveMythical.vibe` `pathOf`'s undefined (47), `wire.vibe`'s `catch` (32) | `encodeURIComponent` throws only on a lone surrogate. A typed, pasted or IME query is well-formed UTF-16, and `clipQuery` never splits a pair. |
-| `LiveMythical.vibe` a page, write or events answer other than 200 (49, 67) and a write that is neither accepted nor refused (36) | The core live site's History object answers each; a failing History object has no fault on that host (session 38's row). |
 | `LiveActions.vibe` `command` (50-58, 7 arms) and `actionHostDecision.vibe` `firstCommand` | No product caller: only the mock agent calls `Actions.command` (`MockFactory.vibe`), and live the agent runs in the Worker. `test/actionClientHttp.test.vibe` and `fuzz/actions-live.node.fuzz.vibe` cover it. Proposed on the board: move `command` from `Actions` to the agent's interface. |
 | `LiveActions.vibe` a follow answered other than 200 (63), an event without the run (70) | The page follows only runs the Worker listed, and a run's conversation is its own (`action-<id>`), so its stream starts at the run's own request. |
 | `MockActions.vibe` no policy (34's else), a closed world (140), a rerun of an unknown id (173), an owner who is not the person (127) | `MockFactory` always supplies its policy; the world's scope lives as long as the page; the page reruns only runs it listed; a run runs as the person who started it. |
 | `execution.vibe` `prepare`'s `not-found` (31) | `start` authorizes first, and an unknown flow is never runnable, so it is forbidden before `prepare`. |
 | `tools.vibe` a write that fails unavailable (104), `toolDecision.vibe` `writeRefusal`'s `unavailable` | The mock history is memory and its writes answer or refuse; `FaultyMythical` faults sit above the agent's tools. |
 | `MockActions.vibe` a cancel of a run that is not a tour (202's else), a cancel of a settled run (194) | Only a Tour run is still running when its card's Cancel renders: a Post run answers once it posts, and history and sandbox runs settle in the turn they start. The page offers Cancel only while a run is queued or running. |
-| `MockActions.vibe` a tour whose events end first or whose reply failed (114) | The mock's events come from memory and end only with the tour; `fault=fail` fails the tour's start, before `GuideTour` reads. |
+| `MockActions.vibe` `caller.current`'s `"Guest"` (80) | A history run needs a contributor (`catalogDecision.vibe` `leastRoleOf`), and `allowed` refuses anyone less before the run starts. Every mock contributor has a login (`MockAccounts.vibe`), as every GitHub account does. |
+| `execution.vibe` `prepare`'s `raw.text ?? ""` (22) | The Actions pane's Post form always sends `text`, empty or not. Session 23 ran a Post with no text from the pane: it reads the left operand. |
+| `actionHostDecision.vibe` `invocationKind`'s `not-found` (123) | `prepare`'s `not-found` (31), above: `start` refuses an unknown flow before `prepare` asks. |
+| `export.vibe` the empty tree (328) | `exportDecision.vibe` `treeOrigin`'s `empty` (session 38's row): every commit the mock exports has a source or a parent. |
+| `MockMythical.vibe` a seed other than the real one (105's `[]`) | The page always bootstraps the real seed; only tests pass their own. |
 
 **Actions journeys.** `e2e/actions-arms.spec.ts`: a contributor runs `show` with `{"what":"outline"}` from the Actions
 pane, so `MockActions` builds its history for a person (84-85, and `caller.current`'s origin operand, 80); the scripted
 agent asked for `/plan` by a visitor answers "Action unavailable." (`command`'s hidden entry, 179); asked for
-`/history {not json` by a maintainer, the same (`command`'s input refusal, 183).
+`/history {not json` by a maintainer, the same (`command`'s input refusal, 183). With `fault=tour-closes`
+(`test/support/FaultyFactory.vibe`), the stream `GuideTour` follows closes once the tour starts, before it ends: the Tour
+run fails, and Re-run runs it again (114).
 
 ### Measurement, not open code
 
