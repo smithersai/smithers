@@ -774,10 +774,6 @@ worker/Budget.vibe	make/spend/callback	result.over > over	Metric only: the overs
 worker/Budget.vibe	make/totals	?? try ledger.read(OVER)	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 worker/Budget.vibe	make/totals	?? try ledger.read(RESERVED)	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 worker/Budget.vibe	make/totals	?? try ledger.read(SPENT)	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
-worker/CallBudget.vibe	callBudget/callback/callback	&& settled && Budget.reportsTokens(usage)	Open: count: a call's tokens are usable only when settled with reported tokens
-worker/CallBudget.vibe	callBudget/callback/callback	usable	Forwards: the proved settle charges the ceiling when the count is not usable, so the 0 passed then is never charged
-worker/CallBudget.vibe	callBudget/recordCall/callback	&& settled && Budget.reportsTokens(usage)	Open: count: a call's tokens are usable only when settled with reported tokens
-worker/CallBudget.vibe	callBudget/recordCall/callback	usable	Forwards: the proved settle charges the ceiling when the count is not usable, so the 0 passed then is never charged
 worker/CallBudget.vibe	callBudget/reserveCall/callback	!admitted	Forwards: Budget.admit returns the proved reserve’s admission
 worker/HistoryActions.vibe	intentOf	switch invocation.kind	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 worker/HistoryActions.vibe	poll	switch invocation.kind	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
@@ -806,7 +802,7 @@ worker/Http.vibe	handle	url.pathname === "/api/actions" || url.pathname.startsWi
 worker/Http.vibe	handle	url.pathname === HEALTH_PATH	Variant dispatch on the path prefix: health, sandboxes and actions go to their own handlers, each admitting its routes
 worker/Http.vibe	handle	url.pathname.startsWith("/api/sandboxes/")	Variant dispatch on the path prefix: health, sandboxes and actions go to their own handlers, each admitting its routes
 worker/Http.vibe	handleConversations	url.pathname === HEALTH_PATH	Variant dispatch on the path prefix: health, sandboxes and actions go to their own handlers, each admitting its routes
-worker/index.vibe	fetch	&& !url.pathname.startsWith("/api/") && wikiPath(url.pathname) === url.pathname	Open: state: a site path the wiki owns: not under /api/ and already a wiki path
+worker/index.vibe	fetch	?? wikiPath(url.pathname)	Default: a path the wiki cannot spell reads as empty, which no site path equals (the proved wikiOwnedPath refuses it)
 worker/Issues.vibe	executeIssues/callback	!known	Host boundary: whether the engine knows the recovery execution
 worker/Issues.vibe	executeIssues/callback	?? completed.value.selected	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	executeIssues/callback	&& Option.isSome(failure) && failure.value.unwritten === true	Open: state: a resumed write that failed before writing is unwritten
@@ -849,7 +845,6 @@ worker/Issues.vibe	githubHost/perform/callback/callback	find i.number === reques
 worker/Issues.vibe	githubHost/perform/callback/callback	some choice.login.toLowerCase() === login.toLowerCase()	Host boundary: case-insensitive matching (Unicode casing, unicode-case.ts)
 worker/Issues.vibe	githubHost/perform/callback/callback	some issue.number === made.number && issue.vip !== ""	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Issues.vibe	githubHost/perform/callback/callback	some item.number === existing.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase())	Host boundary: case-insensitive matching (Unicode casing, unicode-case.ts)
-worker/Issues.vibe	githubHost/perform/callback/callback	some s.trim() === ""	Open: state: an issue body with a blank part is incomplete
 worker/Issues.vibe	githubHost/perform/callback/callback/callback	some login.toLowerCase() === target.assignee.toLowerCase()	Host boundary: case-insensitive matching (Unicode casing, unicode-case.ts)
 worker/Issues.vibe	githubHost/read	?? c.user?.login	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	githubHost/read	?? event.actor?.login	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -910,15 +905,14 @@ worker/Reply.vibe	answer/callback	when { _tag: "Answered"	Variant dispatch on th
 worker/Reply.vibe	answer/callback	when { _tag: "Failed"	Variant dispatch on the reply's answer (Answered, Failed, busy, interrupted); each outcome's state is a proved reply decision
 worker/Reply.vibe	compose	!admission.admitted	Forwards the budget meter's admission (the proved reserve)
 worker/Reply.vibe	compose	?? progress.failed	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-worker/Reply.vibe	compose	&& progress.usageValid && progress.failed === undefined	Open: count: a spend reports its usage only when valid and the reply did not fail
 worker/Reply.vibe	compose	Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)	Variant test: an interrupted or budget-refused model call
 worker/Reply.vibe	compose	failure instanceof HarnessError.HarnessError && typeof failure.cause === "object" && failure.cause !== null && "_tag" in failure.cause && failure.cause._tag === "vibelang/DailyBudgetExceeded"	Variant test: an interrupted or budget-refused model call
 worker/Reply.vibe	compose	meter.ledgerUnavailable()	Host boundary: the budget ledger's availability
 worker/Reply.vibe	compose	progress.usageValid	Forwards the proved reply progress's usage validity
 worker/Reply.vibe	daySpent	&& typeof failure === "object" && failure !== null && "cause" in failure && typeof failure.cause === "object" && failure.cause !== null && "_tag" in failure.cause && failure.cause._tag === "vibelang/DailyBudgetExceeded"	Host boundary: a failure's shape read by typeof (unknown values)
-worker/Reply.vibe	fold	?? event.usage.outputTokens	Open: count: tokens used: the provider's total, else its input count, else 0
-worker/Reply.vibe	fold	?? event.usage.totalTokens	Open: count: tokens used: the provider's total, else its input count, else 0
-worker/Reply.vibe	fold	?? event.usage.totalTokens ?? event.usage.inputTokens	Open: count: tokens used: the provider's total, else its input count, else 0
+worker/Reply.vibe	fold	?? event.usage.inputTokens	Default: filler read only when the count is unreported; the proved usageCounts decides what an unreported count adds
+worker/Reply.vibe	fold	?? event.usage.outputTokens	Default: filler read only when the count is unreported; the proved usageCounts decides what an unreported count adds
+worker/Reply.vibe	fold	?? event.usage.totalTokens	Default: filler read only when the count is unreported; the proved usageCounts decides what an unreported count adds
 worker/Reply.vibe	fold	event.delta.type === "text-delta"	Variant dispatch on the model stream's delta type
 worker/Reply.vibe	fold	switch event._tag	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 worker/Reply.vibe	respond/callback	!next.text.startsWith(shown)	Host boundary: string prefix and equality of the streamed text against what is shown
@@ -953,7 +947,6 @@ worker/Sequencer.vibe	make/controlTour/callback	?? current.walkthrough?.revision
 worker/Sequencer.vibe	make/controlTour/callback	action === "pause"	Variant dispatch on the tour control action
 worker/Sequencer.vibe	make/controlTour/callback	action === "seek"	Variant dispatch on the tour control action
 worker/Sequencer.vibe	make/ensureDispatched	posts.length > 0	Emptiness: no undispatched post
-worker/Sequencer.vibe	make/finish/callback	&& entry.done && entry.error === ""	Open: state: a reply finishes only when done without an error
 worker/Sequencer.vibe	make/read/callback	filter event.seq > after	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Sequencer.vibe	make/read/callback	filter touched.has(entry.id)	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Sequencer.vibe	make/record	!decision.ok	Forwards the proved decide's refusal

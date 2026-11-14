@@ -1,3 +1,4 @@
+import { spendsUsage, usageCounts } from "./hostFactsDecision.vibe"
 import { callBudget, INPUT_CEILING } from "./CallBudget.vibe"
 import { WikiDrafting } from "../src/core/WikiWriter.vibe"
 import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, recordReplySettlement } from "../src/core/replyDecision.vibe"
@@ -206,8 +207,9 @@ export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress
     case "model-settled":
       present = Budget.reportsTokens(event.usage)
       // The provider's total is authoritative; without one, count both reported components.
-      input = event.usage.totalTokens ?? event.usage.inputTokens ?? 0
-      output = event.usage.totalTokens === undefined ? event.usage.outputTokens ?? 0 : 0
+      const counts = usageCounts(event.usage.totalTokens !== undefined, event.usage.totalTokens ?? 0, event.usage.inputTokens !== undefined, event.usage.inputTokens ?? 0, event.usage.outputTokens !== undefined, event.usage.outputTokens ?? 0)
+      input = counts.input
+      output = counts.output
       safeTotal = Number.isSafeInteger(progress.tokens)
       safeInput = Number.isSafeInteger(input)
       safeOutput = Number.isSafeInteger(output)
@@ -344,7 +346,7 @@ effect function compose(post: string, reply: string) {
     name: "vibelang/reply/spend",
     error: Unreachable,
     retryPolicy: patient,
-    execute: spend.spend(admission.day, reply, progress.tokens, progress.usageValid && progress.failed === undefined, REPLY_CEILING),
+    execute: spend.spend(admission.day, reply, progress.tokens, spendsUsage(progress.usageValid, progress.failed !== undefined), REPLY_CEILING),
   })
   const failure = Exit.isFailure(answered) ? Cause.squash(answered.cause) : undefined
   const tag = failure === undefined ? "answered" : tagOf(failure)

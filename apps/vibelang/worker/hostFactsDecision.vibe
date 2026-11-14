@@ -1,0 +1,48 @@
+// What the worker counted and settled inline (0018 "Decisions in views", batch 64, lane vl-proveall3): the tokens a
+// reply's model call used, whether a call's tokens count, a reply's clean finish, a blank issue part, and the site
+// paths the wiki owns. Plain values in; the worker reads the provider's usage and the request.
+
+/** The tokens a settled model call used: the provider's total is authoritative (all input, no separate output);
+ * without one, its input and output counts, each 0 when unreported. */
+export interface UsageCounts { readonly input: number; readonly output: number }
+//@ verify
+//@ ensures \result.input == (hasTotal ? total : hasInput ? input : 0)
+//@ ensures \result.output == (hasTotal ? 0 : hasOutput ? output : 0)
+export function usageCounts(hasTotal: boolean, total: number, hasInput: boolean, input: number, hasOutput: boolean, output: number): UsageCounts {
+  return { input: hasTotal ? total : hasInput ? input : 0, output: hasTotal ? 0 : hasOutput ? output : 0 }
+}
+
+/** A reply's spend reports its usage only when the usage was valid and the reply did not fail. */
+//@ verify
+//@ ensures \result == (valid && !failed)
+export function spendsUsage(valid: boolean, failed: boolean): boolean {
+  return valid && !failed
+}
+
+/** A call's tokens count only when it settled and reported tokens. */
+//@ verify
+//@ ensures \result == (settled && reported)
+export function usableCall(settled: boolean, reported: boolean): boolean {
+  return settled && reported
+}
+
+/** A reply finishes cleanly only when done without an error. */
+//@ verify
+//@ ensures \result == (done && error == "")
+export function finishedClean(done: boolean, error: string): boolean {
+  return done && error === ""
+}
+
+/** An issue part is blank when nothing is left after trimming. */
+//@ verify
+//@ ensures \result == (trimmed == "")
+export function blankPart(trimmed: string): boolean {
+  return trimmed === ""
+}
+
+/** A site path the wiki owns: not under /api/, and already the wiki's own spelling of a page. */
+//@ verify
+//@ ensures \result == (!path.startsWith("/api/") && canonical == path)
+export function wikiOwnedPath(path: string, canonical: string): boolean {
+  return !path.startsWith("/api/") && canonical === path
+}

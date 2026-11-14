@@ -2,6 +2,7 @@
 // binding, as apps/mvp's site does. Without the binding the site runs the mock agent in the browser, and `/api/health`
 // says so; with it, the API answers health itself, `agent: "live"` (wiki/decisions/0006-hosting.md, 0010-live-agent.md).
 // Its own answers are Effect's HTTP responses, converted to the platform's at this boundary.
+import { wikiOwnedPath } from "./hostFactsDecision.vibe"
 import { wikiPath } from "../src/core/wikiIndex.vibe"
 import { HttpServerResponse } from "effect/http"
 import { assetFallback, assetPath, siteRoute } from "./workerDecision.vibe"
@@ -21,7 +22,7 @@ export default {
   fetch: async (request, env) => {
     const url = new URL(request.url)
     // App pages keep their incoming deep-link request; the native asset binding supplies SPA fallback.
-    const route = siteRoute(url.pathname, env.API !== undefined, !url.pathname.startsWith("/api/") && wikiPath(url.pathname) === url.pathname)
+    const route = siteRoute(url.pathname, env.API !== undefined, wikiOwnedPath(url.pathname, wikiPath(url.pathname) ?? ""))
     if (route === "api" && env.API !== undefined) return env.API.fetch(request)
     if (route === "health") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ ok: true, agent: "mock" }))
     if (route !== "fetch") return notFound()

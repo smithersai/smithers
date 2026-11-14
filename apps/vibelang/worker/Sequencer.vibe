@@ -1,3 +1,4 @@
+import { finishedClean } from "./hostFactsDecision.vibe"
 import { selectModelTurns } from "../src/core/sequenceDecision.vibe"
 // One conversation's sequencer (wiki/decisions/0003-one-state-machine.md, 0010-live-agent.md, 0011-post-flow.md): the
 // only writer of its numbered events. Every intent, a step of a person's post flow or of the agent's reply flow, goes
@@ -226,7 +227,7 @@ export effect function make(log: Log, dispatch?: Dispatch) {
         if (plan.restart) try record({ type: "RestartReply", id: reply })
         if (plan.append !== "") try record({ type: "AppendReply", id: reply, text: plan.append })
       })
-      return try settle(reply, { type: "FinishReply", id: reply }, (entry) => entry.done && entry.error === "")
+      return try settle(reply, { type: "FinishReply", id: reply }, (entry) => finishedClean(entry.done, entry.error))
     },
 
     /** Fails the reply with `reason`, shown on it. Done again once failed. Then the next post is dispatched. */

@@ -1,4 +1,5 @@
 // Each physical provider invocation owns a durable receipt, including reissues inside one model step.
+import { usableCall } from "./hostFactsDecision.vibe"
 import { Budget } from "@smthrs/agent"
 import { HarnessError } from "@smthrs/harness"
 import { Clock, Effect, Schema } from "effect"
@@ -55,13 +56,13 @@ export function callBudget(meter: Budget.Service, ledger: Ledger, parent: string
     }),
     checkpointCall: ledger.checkpoint === undefined ? undefined : effect (receipt, usage, settled) => {
       const call = try Schema.decodeUnknownEffect(Receipt)(receipt).pipe(Effect.mapError(unavailable))
-      const usable = try Effect.try(() => settled && Budget.reportsTokens(usage)).pipe(Effect.mapError(unavailable))
+      const usable = try Effect.try(() => usableCall(settled, Budget.reportsTokens(usage))).pipe(Effect.mapError(unavailable))
       const used = try Effect.try(() => usable ? Budget.tokensOf(usage) : 0).pipe(Effect.mapError(unavailable))
       try ledger.checkpoint!(call.day, call.key, used, usable, call.ceiling).pipe(Effect.mapError(unavailable))
     },
     recordCall: (receipt, usage, settled) => Effect.gen(function*() {
       const call = yield* Schema.decodeUnknownEffect(Receipt)(receipt).pipe(Effect.mapError(unavailable))
-      const usable = settled && Budget.reportsTokens(usage)
+      const usable = usableCall(settled, Budget.reportsTokens(usage))
       const used = usable ? Budget.tokensOf(usage) : 0
       yield* steady(ledger.spend(call.day, call.key, used, usable, call.ceiling))
     }),

@@ -5,6 +5,7 @@ S = 'src/web/viewStateDecision.vibe'
 L = 'src/web/viewLabelDecision.vibe'
 F = 'src/web/mainFactsDecision.vibe'
 A = 'worker/actorDecision.vibe'
+H = 'worker/hostFactsDecision.vibe'
 cases = [
 # Batch 57: gating and enablement.
 (G, 'gate-mode-offered', 'switchedMode', 'return offered && mode !== "pending" ? mode : ""', 'return mode !== "pending" ? mode : ""', 'a page that offers no switch shows none'),
@@ -176,4 +177,18 @@ cases = [
 (A, 'review-one-file', 'reviewChangesPage', 'return files === 1 && filename === path', 'return filename === path', 'a review of several files is refused'),
 (A, 'review-path', 'reviewChangesPage', 'files === 1 && filename === path && status', 'files === 1 && status', 'a review of another file is refused'),
 (A, 'review-modified', 'reviewChangesPage', ' && status === "modified"', '', 'only a modification counts'),
+# Batch 64: what the worker counted and settled.
+(H, 'usage-total', 'usageCounts', 'input: hasTotal ? total : hasInput ? input : 0', 'input: hasInput ? input : 0', "the provider's total is authoritative"),
+(H, 'usage-input', 'usageCounts', 'input: hasTotal ? total : hasInput ? input : 0', 'input: hasTotal ? total : 0', 'without a total, input counts'),
+(H, 'usage-output-total', 'usageCounts', 'output: hasTotal ? 0 : hasOutput ? output : 0', 'output: hasOutput ? output : 0', 'a total already holds the output'),
+(H, 'usage-output', 'usageCounts', 'output: hasTotal ? 0 : hasOutput ? output : 0', 'output: 0', 'without a total, output counts'),
+(H, 'spend-valid', 'spendsUsage', 'return valid && !failed', 'return !failed', 'invalid usage is not reported'),
+(H, 'spend-failed', 'spendsUsage', 'return valid && !failed', 'return valid', "a failed reply's usage is not reported"),
+(H, 'call-settled', 'usableCall', 'return settled && reported', 'return reported', 'an unsettled call counts nothing'),
+(H, 'call-reported', 'usableCall', 'return settled && reported', 'return settled', 'unreported tokens count nothing'),
+(H, 'finish-done', 'finishedClean', 'return done && error === ""', 'return error === ""', 'an unfinished reply has not finished'),
+(H, 'finish-error', 'finishedClean', 'return done && error === ""', 'return done', 'a failed reply did not finish cleanly'),
+(H, 'issue-blank', 'blankPart', 'return trimmed === ""', 'return false', 'a blank part is incomplete'),
+(H, 'wiki-owned-api', 'wikiOwnedPath', 'return !path.startsWith("/api/") && canonical === path', 'return canonical === path', 'an API path is never the wiki'),
+(H, 'wiki-owned-canonical', 'wikiOwnedPath', 'return !path.startsWith("/api/") && canonical === path', 'return !path.startsWith("/api/")', 'only the wiki spelling of a page is the wiki'),
 ]

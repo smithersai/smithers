@@ -22,6 +22,7 @@ import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 import { personId } from "./accountsDecision.vibe"
 import { bodyLimit, objectMethod, reviewNumberText, withinBodyLimit } from "./workerDecision.vibe"
 import { actorKind, actorRole, issueExecutionActor } from "./actorDecision.vibe"
+import { blankPart } from "./hostFactsDecision.vibe"
 
 /** `kind: "agent"` marks a device sign-in (decision 0028); agents never approve, accept, decline or merge. */
 export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly connection?: Connection; readonly kind?: "person" | "agent" }
@@ -193,7 +194,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
         }
         const before = try read(request.number)
         const issue = before.items.find((i) => i.number === request.number)
-        const writeRefusal = issueWriteRefusal(request.op, request.title.trim() === "", [request.text, request.example, request.prior].some((s) => s.trim() === ""), request.text.trim() === "", issue !== undefined, issue?.state === "open")
+        const writeRefusal = issueWriteRefusal(request.op, request.title.trim() === "", [request.text, request.example, request.prior].some((s) => blankPart(s.trim())), request.text.trim() === "", issue !== undefined, issue?.state === "open")
         if (writeRefusal !== "") throw new IssueFailure({ reason: writeRefusal })
         if (request.op === "new" || request.op === "split") {
           const made = try Action.once("issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body: request.text, since: try admitted() }), { key: try key("issue") })
