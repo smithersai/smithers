@@ -4,6 +4,7 @@ import { Model, Message, update } from "../src/web/main.vibe"
 import { actionsOf } from "../src/web/actionModel.vibe"
 import { backend, Backend, Role } from "./web-backends.vibe"
 import { run, Finding, Int, TextOrBoundary } from "./run.vibe"
+import { issuesCorpusCodec } from "./issues-corpus.vibe"
 import { gesture, pump, Step, tab } from "./web-tab.vibe"
 
 /**
@@ -12,7 +13,9 @@ import { gesture, pump, Step, tab } from "./web-tab.vibe"
  */
 const TAB_FLOOR = "3 seconds"
 
-it.live("web/commands-from-any-model", () => run("web/commands-from-any-model", Schema.Struct({ model: Model, message: Message, backend: Backend, role: Role, repeat: Int }), ({ model, message, backend: kind, role }) => Effect.provide(effect {
+/** Saved values may predate 8315745b's required Model fields; the corpus codec reads them. */
+const CommandsInput = Schema.Struct({ model: Model, message: Message, backend: Backend, role: Role, repeat: Int })
+it.live("web/commands-from-any-model", () => run("web/commands-from-any-model", CommandsInput, ({ model, message, backend: kind, role }) => Effect.provide(effect {
   const answer = update(model, message)
   for (const command of answer.commands ?? []) {
     const result = try exit(timeout(command.effect, "5 seconds"))
@@ -20,7 +23,7 @@ it.live("web/commands-from-any-model", () => run("web/commands-from-any-model", 
     if (!Schema.is(Model)(update(answer.model, result.value).model)) throw new Finding({ report: `${command.name}: left an invalid Model` })
   }
   return true
-}, backend(kind, role)), undefined, { minimum: TAB_FLOOR }))
+}, backend(kind, role)), undefined, { minimum: TAB_FLOOR, codec: issuesCorpusCodec(CommandsInput) }))
 
 // Arbitrary Messages arrive between the gestures a screen offers, as a stale or malformed event would.
 const Guided = Schema.Struct({ session: Int, resumeTour: Schema.Boolean, backend: Backend, role: Role, steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(24)), noise: Schema.optionalKey(Schema.Array(Message).check(Schema.isMaxLength(6))) })

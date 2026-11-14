@@ -59,11 +59,13 @@ it.live("screens/issues-view-names-controls", () => run("screens/issues-view-nam
   return try Effect.try(() => renders({ ...init(flags).model, surface: "chat", issues: { ...ui, open: true } }))
 }, undefined, { codec: issuesCorpusCodec(View) }))
 
-it.live("screens/panes-name-controls", () => run("screens/panes-name-controls", Schema.Struct({ flags: Flags, actions: ActionView, wiki: Schema.Boolean, open: Schema.Boolean, maximized: Schema.Boolean }), ({ flags, actions, wiki, open, maximized }) => effect {
+/** Saved values may predate 8315745b's required Model fields; the corpus codec reads them. */
+const PanesInput = Schema.Struct({ flags: Flags, actions: ActionView, wiki: Schema.Boolean, open: Schema.Boolean, maximized: Schema.Boolean })
+it.live("screens/panes-name-controls", () => run("screens/panes-name-controls", PanesInput, ({ flags, actions, wiki, open, maximized }) => effect {
   const model = init(flags).model
   const conversation = { ...model.client.conversation, pane: wiki ? "wiki:index" : "" }
   return try Effect.try(() => renders({ ...model, surface: "chat", docs: maximized ? "max" : "pane", client: { ...model.client, conversation }, actions: { ...actions, open, maximized } }))
-}))
+}, undefined, { codec: issuesCorpusCodec(PanesInput) }))
 
 const WikiInput = Schema.Struct({
   flags: Flags, page: Schema.Int.check(Schema.isBetween({ minimum: -1, maximum: 400 })), anchor: Schema.Boolean,
