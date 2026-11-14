@@ -67,11 +67,14 @@ it("sandbox account and machine objects fence, checkpoint and refuse on an in-me
       expect(await apply("lease", 1, "", "60000")).toEqual({ ok: true, output: "stopped" })
       await machine(id, "fault", { fault: "" })
       expect(await apply("start", 2)).toEqual({ ok: true, output: "" })
+      // A restart drops the stopped generation's lease: its first command waits for a lease of its own (7dcff109).
+      expect(await apply("command", 2, "b-early", "cat keep")).toEqual({ ok: false, output: "", reason: "lease-expired" })
+      expect(await apply("lease", 2, "", "60000")).toEqual({ ok: true, output: "running" })
       expect(await apply("command", 2, "b", "cat keep")).toEqual({ ok: true, output: "one\n" })
       await machine(id, "fault", { fault: "stuck" })
       expect(await apply("stop", 2)).toEqual({ ok: false, output: "", reason: "running-after-destroy" })
       expect(await machine(id, "observed")).toMatchObject({ up: true })
     })
-    await runPromise(artifact("sandbox-objects", "Vitest built-in bench; the production SandboxAccount and SandboxMachine object bodies and gateway in real workerd SQLite, through the identity policy adapter: read, start, write, replay, nonzero exit, stop with checkpoint, restart restoring the checkpoint, stale generation, then role, binding and Container faults.", ["An in-memory Container answers the run tool's fence protocol: no Cloudflare Container, image, checkpoint or shell latency is measured. Commands are a four-form test language. Three samples per journey on one served Worker."], [await lifecycle.run(slow), await refusals.run(slow), await faults.run(slow)]))
+    await runPromise(artifact("sandbox-objects", "Vitest built-in bench; the production SandboxAccount and SandboxMachine object bodies and gateway in real workerd SQLite, through the identity policy adapter: read, start, write, replay, nonzero exit, stop with checkpoint, restart restoring the checkpoint, stale generation, a restart without its own lease, then role, binding and Container faults.", ["An in-memory Container answers the run tool's fence protocol: no Cloudflare Container, image, checkpoint or shell latency is measured. Commands are a four-form test language. Three samples per journey on one served Worker."], [await lifecycle.run(slow), await refusals.run(slow), await faults.run(slow)]))
   } finally { await api.dispose() }
 })
