@@ -137,12 +137,14 @@ const httpSurface = (input: typeof Http.Type) => effect {
     Effect.provide(WebCrypto.layer),
   ), HttpServerRequest.HttpServerRequest, server)
   if (![200, 400, 401, 403, 404, 405, 409, 413, 503].includes(response.status)) return false
+  // A wiki request past the body limit is refused before its body is read, whoever sends it.
+  if (input.body === "oversized" && input.path.startsWith("/api/wiki") && response.status !== 405 && response.status !== 413) return false
   const text = try promise(() => HttpServerResponse.toWeb(response).text())
   if (response.status === 404 && input.path === "/other" || response.status === 405) return text === ""
   const parsed = try Effect.try(() => JSON.parse(text))
   return response.status === 200 ? Array.isArray(parsed.pages) : typeof parsed.reason === "string"
 }
-it.live("wiki/http-surface", () => Effect.andThen(run("wiki/http-surface", Http, httpSurface), reached("wiki/http-surface", surface, httpSurface, { method: "POST", path: "/api/wiki", body: "valid", role: "maintainer", signedOut: false, key: 1 })))
+it.live("wiki/http-surface", () => Effect.andThen(run("wiki/http-surface", Http, httpSurface, undefined, { chosen: [{ method: "POST", path: "/api/wiki", body: "oversized", role: "maintainer", signedOut: false, key: 1 }] }), reached("wiki/http-surface", surface, httpSurface, { method: "POST", path: "/api/wiki", body: "valid", role: "maintainer", signedOut: false, key: 1 })))
 
 /** Regression: GitHub's 404 on a delegated read was `unavailable`, which the flow retried for two minutes. */
 it.live("wiki: a connected read of a page missing from the repository answers missing at once", () => scoped(effect {
