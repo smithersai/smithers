@@ -94,11 +94,14 @@ test.describe("the history page's refusals and epic page", () => {
   test("folds main's commits from outside the queue under the epic their scope names", async ({ page }) => {
     await open(page)
     await page.getByRole("button", { name: "Fold" }).click()
-    await expect(page.locator(".sui-badge[title='Folded through']")).toContainText("0c6cea2cde78")
+    await expect(page.locator(".sui-badge[title='Folded through']")).toContainText("47422f47d257")
     const folded: ReadonlyArray<readonly [string, string, string]> = [
       ["fix(compiler): preserve reverse-mapped declaration cycle structure", "The compiler", "301689a33565"],
       ["docs(terminal): distinguish line input from raw key events", "Foundations", "0c40c2c6e9a0"],
       ["📝 docs(vips): add VIP-43, theorem and spec, as open", "Foundations", "0c6cea2cde78"],
+      ["fix(cli): fail compilation when interrupted", "Release, CI and tooling", "0121839c9be7"],
+      ["fix(docs,release): documented dprint.json passes on a built starter", "Docs, guides and the site", "ba26e8a1ade9"],
+      ["docs: clarify experimental opt-in support boundary", "Docs, guides and the site", "47422f47d257"],
     ]
     for (const [title, epic, sha] of folded) {
       await page.getByRole("searchbox", { name: "Filter commits" }).fill(title)
