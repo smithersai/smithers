@@ -1286,3 +1286,19 @@ present at either position and absent, and checks each comparator answer. A focu
 workload failed with the agent's `-1` mutated to `1`. With it and the 31 deployed-only positions from the live run,
 which `960599ec` leaves unchanged: open in `src/` + `worker/` is 133 specification-only and 4 traps. A live dump
 merges only against its own deployed source, so a later live run confirms the deployed-only lines on this source.
+
+**Batches 6–9: mains `d5e5279e`, `d13d8b8f`, `8cb72297`, `be5b2993`.** Full local-only collections (jobs
+`vl-bench:b6-coverage` to `vl-bench:b9-coverage`, cfbox node26). Batches 6 and 7: no new open line. Two benchmarks went
+red on main, and each was fixed to the product's new answer. `history-outside-seed` broke when `007eaf07` made
+`AFTER_SEED` six commits (now six folds, main `47422f47d257`; `d13d8b8f`). `sandbox-machine-faults` broke when
+`7dcff109` made a restart drop the old generation's lease (now refused, leased, then read; `be5b2993`). Batch 9
+(`be5b2993`, 119 files passed): `src/` + `worker/` 9,778/9,946 local. One new open runtime line: `resumeSettled`
+(`src/web/mainFactsDecision.vibe` 143), which `9938ffa7` split out of `ActOnIssue`'s inline condition. It runs only
+for a live-mode write, and every web benchmark used the mock Factory. `web-issue-resume`
+(`bench/web-issue-resume.bench.vibe`) runs the real `ActOnIssue` in happy-dom through `LiveFactory` and a Node HTTP
+client against `serveIssues` on a loopback server, with the product fixture host. A created issue and an unwritten
+failure clear the address; a failure that may have landed keeps `resume-op`, `resume-key` and `resume-recovery`; a
+read never marks it. A faulty `IssueHost` gives the two failures. A focused run counts line 143 (3 hits), and the
+workload failed with `|| unwritten` removed. `src/history/trailerDecision.vibe` 57, specification-only before, now
+runs. Open in `src/` + `worker/`: 132 specification-only, 4 traps, and the 31 deployed-only lines. `7dcff109` changed
+`worker/machineObject.vibe` after `f46f5a78`, so those need the next live run on a main that contains it.

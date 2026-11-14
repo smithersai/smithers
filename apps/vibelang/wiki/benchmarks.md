@@ -4834,3 +4834,9 @@ Batch 5 (main `960599ec`, job `vl-bench:b5-coverage`, local only): 9,692/9,863 i
 runtime block, the assignee comparator `agentFirst` (`issueHostDecision` 420–422), now runs in `decision-edges`
 (decision 0017 says why no GitHub world can run it). `decision-edges`: mean 0.347 ms, 288 samples, nyc-01 (shared
 host, Node 26.5.0), 03:01 UTC; assertion overhead dominates the time.
+
+Batches 6–9 (to main `be5b2993`): two benchmarks main left stale were fixed (`history-outside-seed`,
+`sandbox-machine-faults`), and the one new open runtime line, `resumeSettled`, runs in `web-issue-resume`: mean 407 ms,
+5 samples, nyc-01 (shared host, Node 26.5.0), 08:2x UTC. Each sample starts a loopback server, SQLite store and the
+live Factory, then makes three writes and a read, so most of the time is setup, not the address update. Not workerd,
+not GitHub.

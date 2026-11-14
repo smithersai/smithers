@@ -1,0 +1,78 @@
+// A live issue write's way back in the address (src/web/main.vibe `ActOnIssue`, mainFactsDecision `marksResume` and
+// `resumeSettled`): the real Command, through the real LiveFactory and a Node HTTP client, against worker/Issues.vibe's
+// serveIssues on a loopback server over SQLite and the shipped product fixture host. A faulty IssueHost answers the two
+// failures: one that wrote nothing and one that may have landed.
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpServer } from "effect/http"
+import { fixtureHost, makeIssueStore, type FixturePerson } from "../src/core/IssuesFactory.vibe"
+import { IssueHost } from "../src/core/issueFlows.vibe"
+import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { ActOnIssue } from "../src/web/main.vibe"
+import * as Issues from "../worker/Issues.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { fullLocation, setLocation } from "../test/support/browser.ts"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+const person: FixturePerson = { id: "bench-person", login: "ada", role: "maintainer" }
+const write: IssueRequest = { op: "new", number: 0, parent: 0, title: "Resume bench", text: "Kept body", assignee: "", example: "", prior: "", key: "w1" }
+type Fault = { readonly reason: "unavailable"; readonly unwritten: boolean } | undefined
+const wroteNothing: Fault = { reason: "unavailable", unwritten: true }
+const mayHaveLanded: Fault = { reason: "unavailable", unwritten: false }
+const healthy: Fault = undefined
+
+effect function execute<A, E, R>(make: () => { readonly effect: A!E!R }) {
+  return try (try Effect.try(make)).effect
+}
+
+it("a live issue write clears its resume address once it settles, and keeps it while it may have landed", async ({ bench }) => {
+  let run = 0
+  const result = await workload(bench, "web-issue-resume", "async", () => runPromise(scoped(effect {
+    const suffix = ++run
+    const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
+    const store = try makeIssueStore()
+    const real = try fixtureHost(() => succeed(person), store.state, store.lock)
+    const fault = try Ref.make<Fault>(undefined)
+    const host: IssueHost.Shape = { perform: effect request => {
+      const failing = try Ref.get(fault)
+      if (failing !== undefined) throw new IssueFailure(failing)
+      return try real.perform(request)
+    } }
+    const authority: Issues.IssueAuthority.Shape = { current: () => succeed({ ...person }) }
+    provide NodeHttpServer.layerTest {
+      try HttpServer.serveEffect(Issues.serveIssues(`bench-resume-${suffix}`, storage).pipe(
+        Effect.provideService(Issues.IssueAuthority, authority), Effect.provideService(IssueHost, host), Effect.provide(FetchHttpClient.layer),
+      ))
+      const address = (try HttpServer.HttpServer).address
+      const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+      provide LiveFactory(origin).pipe(Layer.provide(NodeHttpClient.layerNodeHttp)) {
+        const act = effect (request: IssueRequest) => {
+          try sync(() => setLocation("/?issues=1"))
+          const message = try execute(() => ActOnIssue({ request }))
+          return { message, after: try sync(fullLocation) }
+        }
+        const created = try act({ ...write, key: `w1-${suffix}` })
+        try Ref.set(fault, wroteNothing)
+        const unwritten = try act({ ...write, key: `w2-${suffix}` })
+        try Ref.set(fault, mayHaveLanded)
+        const uncertain = try act({ ...write, key: `w3-${suffix}`, recovery: "r1" })
+        try Ref.set(fault, healthy)
+        const read = try act({ ...write, op: "read", key: `r-${suffix}` })
+        try Effect.try(() => {
+          expect(created.message).toMatchObject({ _tag: "IssuesLoaded", created: true, op: "new" })
+          expect((created.message as { readonly data: { readonly items: ReadonlyArray<{ readonly title: string }> } }).data.items.some(item => item.title === "Resume bench")).toBe(true)
+          expect(created.after).toBe("/?issues=1")
+          expect(unwritten.message).toMatchObject({ _tag: "IssuesFailed", reason: "unavailable", unwritten: true })
+          expect(unwritten.after).toBe("/?issues=1")
+          expect(uncertain.message).toMatchObject({ _tag: "IssuesFailed", reason: "unavailable" })
+          expect(uncertain.after).toBe(`/?issues=1&resume-op=new&resume-key=w3-${suffix}&resume-recovery=r1`)
+          expect(read.after).toBe("/?issues=1")
+        })
+      }
+    }
+  }))).run(quick)
+  await runPromise(artifact("web-issue-resume", "Vitest built-in bench; the real ActOnIssue Command in happy-dom through the real LiveFactory and a Node HTTP client, against worker/Issues.vibe's serveIssues on a Node loopback server, SQLite object storage and the shipped product fixture host; one fresh server and store per sample. A created issue, an unwritten failure, a failure that may have landed and a read: each answer and the address after it checked.", ["A Node loopback server, not workerd, and the product fixture host, not GitHub. The faulty IssueHost stands in for GitHub's two failure shapes. happy-dom history, no document load."], result))
+})
