@@ -63,6 +63,13 @@ test("the public slash menu filters, moves, dismisses, and starts its real regis
   await expect(input).toHaveValue("/")
   await input.press("Escape")
   await expect(menu).toHaveCount(0)
+  // A slash draft that names no command sends nothing and stays (src/web/updateDecision.vibe `submitKind`).
+  const posts = page.locator(".sui-chat-message[data-role='user']")
+  const before = await posts.count()
+  await input.fill("/zzz")
+  await input.press("Enter")
+  await expect(input).toHaveValue("/zzz")
+  await expect(posts).toHaveCount(before)
   await input.fill("/to")
   await input.press("Enter")
   await expect(page.locator(".vl-theatre-bar")).toBeVisible()
