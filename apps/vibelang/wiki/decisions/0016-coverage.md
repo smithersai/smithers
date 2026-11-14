@@ -4891,8 +4891,16 @@ failing page, live-actions.spec.ts's Tour run, started as the same maintainer, h
 composer was hidden, so the second 40,000-character message was never sent (`toHaveCount(2)` read 1) or its `fill`
 timed out. core-live.spec.ts's own health fault (`/__fault/health?down=1`) also sent the other specs' page loads to
 the mock while it held. `e2e/authbroker-host.vibe` now serves core-live.spec.ts sites of its own
-(`LIVE_CORE_ALONE_TEST_ORIGINS`), one per project; the other five keep `LIVE_CORE_TEST_ORIGINS`. The repeat's other
-failures came from `--repeat-each` itself: copies of one journey ran at once as the same person on the same sandbox.
+(`LIVE_CORE_ALONE_TEST_ORIGINS`), one per project; the other five keep `LIVE_CORE_TEST_ORIGINS`. That stopped
+core-live's failures (`s14/live5`: 27 journeys, 3 passes, 0 failed) but costs three more workerd processes, each
+reading all 430 recorded issues on every page load: the gate on that tree (`s14full2`, job
+`4007759b00b666ea17411fe0`) failed four issue-reading journeys at 36 s (live-connection twice, live-issue-list,
+live-specification), which passed before it (`s14full1`). Back on the shared site with the same journeys
+(`s14/live6`), core-live failed 9 of 30, so its own sites stay; the four journeys' load is open for the lead (a
+core-live site that reads no issues, or serial specs on one site). A second cause was core-live's own: `:151` typed
+its second message 45 ms after the first Enter, while the palette was still closing, and it was never posted (one
+request in the trace, `s14/live4`). It now waits for each failure first. The repeat's other failures came from
+`--repeat-each` itself: copies of one journey ran at once as the same person on the same sandbox.
 
 
 ## Build structure: sourceless code and `effect` blocks (vl-coverage-core, session 14, 2026-11-14)

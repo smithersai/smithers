@@ -155,11 +155,14 @@ test("two live messages past the body limit fail, and a retry of one fails again
   // 40,000 characters: past the Worker's post body limit, which answers 413 before the sequencer.
   const failed = page.getByText("Send failed")
   const retry = page.getByRole("button", { name: "Retry" })
-  for (const letter of ["b", "c"]) {
+  // A person sees each failure before typing again. Typed at once, 45 ms after the first Enter while the palette was
+  // still closing, the second message was never posted (one request in the trace; 0016 "The core live site's
+  // neighbours").
+  for (const [index, letter] of ["b", "c"].entries()) {
     await message.fill(letter.repeat(40000))
     await message.press("Enter")
+    await expect(failed).toHaveCount(index + 1)
   }
-  await expect(failed).toHaveCount(2)
   await expect(retry).toHaveCount(2)
   await retry.nth(1).click()
   await expect(failed).toHaveCount(2)
@@ -178,4 +181,25 @@ test("a site whose API Worker fails its health check starts in the mock", async 
   } finally {
     expect((await page.request.post(`${origin}/__fault/health?down=0`)).status()).toBe(200)
   }
+})
+
+// The live accounts client's People and Sign out routes (src/core/LiveAccounts.vibe `members`, `grant`, `signOut`).
+
+test("on the live site a maintainer changes a role from People, then signs out", async ({ page }, info) => {
+  const origin = origins[info.project.name]!
+  await signInContributor(page, origin, "9")
+  await signIn(page, origin, "1", "will")
+  await page.addInitScript(() => localStorage.setItem("vibelang:toured", "yes"))
+  await page.goto(origin + "/")
+  await expect(page.locator(".vl-app")).toHaveAttribute("data-mode", "live")
+  await page.getByRole("button", { name: "Account", exact: true }).click()
+  await page.getByRole("menuitem", { name: "People" }).click()
+  const person = page.getByRole("combobox", { name: "Role for person-9" })
+  await person.selectOption("maintainer")
+  await page.getByRole("dialog", { name: /person-9 to Maintainer/ }).getByRole("button", { name: "Promote", exact: true }).click()
+  await expect(person).toHaveValue("maintainer")
+  await page.getByRole("button", { name: "Account", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Sign out" }).click()
+  await expect(page.getByText("Signed in as will.")).toHaveCount(0)
+  await page.screenshot({ path: info.outputPath("live-people.png") })
 })
