@@ -47,7 +47,7 @@ const program = await runPromise(effect {
       return real
     }).pipe(Layer.provide(MockActions({ role, actor: "person" })))
     // `actions` fails the first list; `actions-<point>` the first call at that point (FaultyActions.vibe).
-    const point = fault === "actions" ? "list" : fault === "actions-start" ? "start" : fault === "actions-read" ? "read" : fault === "actions-follow" ? "follow" : fault === "actions-cancel" ? "cancel" : undefined
+    const point = fault === "actions" ? "list" : fault === "actions-start" ? "start" : fault === "actions-read" ? "read" : fault === "actions-follow" ? "follow" : fault === "actions-follow-drop" ? "follow-drop" : fault === "actions-cancel" ? "cancel" : undefined
     return application(root, factory, () => {}, undefined, point === undefined ? actions : faultyActions(actions, point))
   }
 })

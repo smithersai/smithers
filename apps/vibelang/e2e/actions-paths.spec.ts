@@ -61,6 +61,22 @@ test("a run whose follow is lost reads Disconnected until Reconnect, then settle
   await expect(page.getByRole("button", { name: "Reconnect", exact: true })).toHaveCount(0)
 })
 
+test("a follow lost while the run is running reads Disconnected, not Running, until Reconnect", async ({ page }) => {
+  // src/web/actionFollowDecision.vibe `failed` and `observedState` for a running run (`actions-follow` fails it queued).
+  const actions = await pane(page, "actions-follow-drop")
+  await actions.getByRole("button", { name: "Tour", exact: true }).click()
+  await actions.getByRole("button", { name: "Run", exact: true }).click()
+  const card = page.getByRole("button", { name: /Open Tour run/ })
+  await expect(card).toContainText("Disconnected")
+  await expect(card).not.toContainText("Running")
+  await actions.getByRole("button", { name: "Reconnect", exact: true }).click()
+  await expect(card).toContainText("Running")
+  await expect(page.getByRole("button", { name: "Reconnect", exact: true })).toHaveCount(0)
+  await card.click()
+  await actions.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(actions.getByText("Cancelled", { exact: true }).first()).toBeVisible()
+})
+
 test("a cancel that fails says so; the next cancel stops the run", async ({ page }) => {
   const actions = await pane(page, "actions-cancel")
   await actions.getByRole("button", { name: "Tour", exact: true }).click()
