@@ -1,5 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
-import { canLinkIssues, nextIssueNumber } from "../src/core/issueGraphDecision.vibe"
+import {
+  canLinkIssues, editedIssue, issueAddFrame, issueAncestorAt, issueAncestorJoin, issueAvoids, issueFirstNumbered, issueLinkFrame,
+  issueMissingStays, issueRootStays, issueSameEdges, nextIssueNumber,
+} from "../src/core/issueGraphDecision.vibe"
 import { fixtureIssues, makeIssueFactory } from "../src/core/IssuesFactory.vibe"
 import type { IssueRecord } from "../src/core/conversation.vibe"
 const Choice = Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 100 }))
@@ -67,5 +70,61 @@ describe("issue trees", () => {
       return true
     }), { runs: 60 })
     try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+  })
+})
+
+// The specification-only lemmas answer true; their claims are their `ensures`. Each runs here on a fixed graph, beside
+// its claim checked with `issueAncestorAt` (fuzz/core-issue-graph.node.fuzz.vibe does the same on generated graphs).
+describe("the specification lemmas' claims", () => {
+  const at = (number: number, parent: number): IssueRecord => ({ ...fixtureIssues[0]!, number, parent })
+  // #3 -> #2 -> #1 -> root, and #4 under #9, which no issue has.
+  const items = [at(1, 0), at(2, 1), at(3, 2), at(4, 9)]
+  const steps = [0, 1, 2, 3, 4]
+
+  it("walks #3 to the root in three links, stays there, and a missing parent answers -1", () => {
+    expect(steps.map((k) => issueAncestorAt(items, 3, k))).toEqual([3, 2, 1, 0, 0])
+    expect(steps.map((k) => issueAncestorAt(items, 4, k))).toEqual([4, 9, -1, -1, -1])
+  })
+
+  it("finds the first issue with a number among the first end, duplicates included", () => {
+    const duplicated = [...items, at(2, 0)]
+    for (const end of [0, 1, 2, 5]) expect(issueFirstNumbered(duplicated, 2, end)).toBe(true)
+    expect(duplicated.findIndex((issue) => issue.number === 2)).toBe(1)
+  })
+
+  it("splits a walk of a + b links into a links, then b more", () => {
+    for (const a of steps) for (const b of steps) {
+      expect(issueAncestorJoin(items, 3, a, b)).toBe(true)
+      expect(issueAncestorAt(items, 3, a + b)).toBe(issueAncestorAt(items, issueAncestorAt(items, 3, a), b))
+    }
+  })
+
+  it("keeps the root the root, a missing issue missing, and never reaches a number no issue has or names", () => {
+    for (const k of steps) {
+      expect(issueRootStays(items, k) && issueAncestorAt(items, 0, k) === 0).toBe(true)
+      expect(issueMissingStays(items, k) && issueAncestorAt(items, -1, k) === -1).toBe(true)
+      expect(issueAvoids(items, 3, 7, k) && issueAncestorAt(items, 3, k) !== 7).toBe(true)
+    }
+  })
+
+  it("leaves a walk unchanged by a link it never stands on, an issue added in front, or unchanged edges", () => {
+    const relinked = items.map((issue) => issue.number === 4 ? { ...issue, parent: 1 } : issue)
+    const added = [at(5, 2), ...items]
+    const retitled = items.map((issue) => ({ ...issue, title: `${issue.title} (edited)` }))
+    for (const k of steps) {
+      expect(issueLinkFrame(items, relinked, 4, 1, 3, k) && issueAncestorAt(relinked, 3, k) === issueAncestorAt(items, 3, k)).toBe(true)
+      expect(issueAddFrame(items, added, 3, k) && issueAncestorAt(added, 3, k) === issueAncestorAt(items, 3, k)).toBe(true)
+      expect(issueSameEdges(items, retitled, 4, k) && issueAncestorAt(retitled, 4, k) === issueAncestorAt(items, 4, k)).toBe(true)
+    }
+    // The walk from #4 stands on #4, so the relink changes it: the frame's premise matters.
+    expect(issueAncestorAt(relinked, 4, 2)).toBe(0)
+    expect(issueAncestorAt(items, 4, 2)).toBe(-1)
+  })
+
+  it("returns an issue unchanged for a write that edits none of its fields", () => {
+    const issue = at(3, 2)
+    for (const op of ["read", "draft", "spec-revise", "spec-review"] as const) {
+      expect(editedIssue(issue, { op, number: 3, parent: 1, assignee: "", text: "t", note: "n", actor: "1", role: "maintainer", kind: "person", at: "2026-11-14T00:00:00Z" })).toBe(issue)
+    }
   })
 })
