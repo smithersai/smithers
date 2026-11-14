@@ -7,6 +7,8 @@ import { expect, test } from "./coverage"
 const origins: Record<string, string> = JSON.parse(process.env.LIVE_CORE_TEST_ORIGINS!)
 // The list waits on the Worker's recorded read of every issue, which took 11 s under the gate's load (0016).
 const listed = { timeout: 30_000 }
+// That wait, then each screen re-rendering 430 rows, ran past the 30 s default on phone (0016).
+test.describe.configure({ timeout: 90_000 })
 
 test("a live specification with no revision reads In review, with no reviewer's verdict, grade or revision", async ({ page }, info) => {
   const origin = origins[info.project.name]!

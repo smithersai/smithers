@@ -4125,3 +4125,14 @@ a review with no link, a review with no revision and the screen without self-con
 review for a visitor. Closes `issuesView.vibe` 240 (2 arms), 245 (2), 253 and `issuesViewDecision.vibe` `cellText`
 (305). `issuesView.vibe` 235 and 237 (`?? emptySpecification`, `?? []`) stay open: the Worker and the mock always
 answer both fields, so they apply only before the first read answers or after it fails.
+
+**Empty filters on the live list.** The mock's fixture has tasks and VIPs; the core live site's recorded issues have
+neither. `e2e/live-issue-list.spec.ts`: Tasks reads "No tasks committed", VIPs "No VIPs in review", and Issues and
+Closed list rows. Closes `issuesViewDecision.vibe` `emptyTitle` (196, 2 arms). Its first run failed on phone at
+32.6 s: the 30 s list wait sits inside Playwright's 30 s test default, and each filter re-renders 430 rows. The three
+core-site issue specs now run under a 90 s test timeout.
+
+**Not reachable in the browser: long-form ages.** `issuesViewDecision.vibe` `digits` (76, 82), `compactAge` (92, 93)
+and `ageText`'s non-compact arm (108) need a comment age that is not digits and `d` or `w`. The mock's ages are all
+of that form ("3d", "1w") or "just now", which `ageText` returns before it asks; live mode shows absolute dates
+(`absoluteDates`), which return first too. `test/paneViewDecisions.test.vibe` and `fuzz/decision-arms.fuzz.vibe` cover them.
