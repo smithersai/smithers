@@ -4,6 +4,7 @@ import { ExperimentalBrowserWindow, ExperimentalBrowserDocument } from "vibelang
 import { Model, Message, subscriptions, update } from "../src/web/main.vibe"
 import { backend, Backend, Role } from "./web-backends.vibe"
 import { run, Finding } from "./run.vibe"
+import { issuesCorpusCodec } from "./issues-corpus.vibe"
 
 const WINDOW = "40 millis"
 /** The deadline for the keyboard probe to answer; it never ends a passing run early. */
@@ -66,6 +67,7 @@ function fire(document: Document, window: Window, links: ReturnType<typeof page>
  * `defaultView` is null, so window events fall back to the key target), or none.
  */
 const Page = Schema.Literals(["document", "windowless", "none"])
+/** Saved values may predate 8315745b's required Model fields; the corpus codec reads them. */
 const Input = Schema.Struct({ model: Model, backend: Backend, role: Role, events: Schema.Array(DomEvent).check(Schema.isMaxLength(12)), page: Schema.optionalKey(Page) })
 
 function pageOf(document: Document, page: typeof Page.Type | undefined): Document | undefined {
@@ -120,4 +122,4 @@ it.live("web/subscriptions", () => run("web/subscriptions", Input, ({ model, bac
     }
   }
   return true
-}, Layer.mergeAll(backend(kind, role), ExperimentalBrowserDocument.layer, ExperimentalBrowserWindow.layer))))
+}, Layer.mergeAll(backend(kind, role), ExperimentalBrowserDocument.layer, ExperimentalBrowserWindow.layer)), undefined, { codec: issuesCorpusCodec(Input) }))

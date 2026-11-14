@@ -31,9 +31,12 @@ it.live("history/state-machine", () => run("history/state-machine", Steps, (step
   let state = History.empty
   const events: Array<History.Event> = []
   for (const step of steps) {
-    const decision = History.decide(state, intent(step))
+    const command = intent(step)
+    const decision = History.decide(state, command)
+    // An amend with a blank task is refused for its task (ff02b9a6), whatever else holds.
+    if (command.type === "Amend" && command.task.trim() === "" && (decision.ok || decision.refusal !== "no-task")) return false
     if (!decision.ok) {
-      if (!["empty", "too-long", "duplicate", "unknown", "state"].includes(decision.refusal)) return false
+      if (!["empty", "no-task", "too-long", "duplicate", "unknown", "state"].includes(decision.refusal)) return false
       continue
     }
     if (decision.event.seq !== state.seq + 1) return false
