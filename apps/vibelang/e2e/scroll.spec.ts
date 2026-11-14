@@ -56,7 +56,7 @@ test("7: four follow-ups remain in the viewport; scrolling up pauses following u
   await expect(latest).toBeHidden()
 })
 
-test("Home and PageUp outside the composer stop following and scroll the page; a key while paused is the browser's", async ({ page }) => {
+test("Home, PageUp, ArrowUp and Meta+ArrowUp outside the composer stop following and scroll the page; a key while paused is the browser's", async ({ page }) => {
   await page.goto("/")
   await open(page)
   for (let i = 0; i < 4; i++) {
@@ -81,6 +81,20 @@ test("Home and PageUp outside the composer stop following and scroll the page; a
   await blur()
   await page.keyboard.press("PageUp")
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(Math.max(0, bottom - step))
+  await expect(latest).toBeVisible()
+  // A line key scrolls 40 pixels; Meta+ArrowUp jumps to the top (src/web/screenDecision.vibe `keyGesture`, `keyScrollTop`).
+  await latest.click()
+  await expect(latest).toBeHidden()
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(bottom)
+  await blur()
+  await page.keyboard.press("ArrowUp")
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(Math.max(0, bottom - 40))
+  await expect(latest).toBeVisible()
+  await latest.click()
+  await expect(latest).toBeHidden()
+  await blur()
+  await page.keyboard.press("Meta+ArrowUp")
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
   await expect(latest).toBeVisible()
 })
 
