@@ -7405,6 +7405,38 @@ The wiki's body limit is now 8 MiB (`bodyLimit`, from 4 MiB): a save carries the
 0018 reached 2,094,066 bytes, so `wikiEdit.http.test`'s "the largest actual wiki page fits the bounded edit request"
 answered 413 (unit gate u54). The mutant for the limit is the old 4 MiB. Records: 363 branches, 0 open, 0 unreviewed, 26 reviewed rules not yet proved.
 
+## Stamp: the whole gate on main `c9bcf508` (vl-proveall3, 2026-11-14)
+
+The first main revision with no open shell-decision candidate (batches 46 to 53 and the `actions-click-epoch` mutant
+fix). Driver `~/vl/pa3s7-gate/driver3.py`, shards `shards-r6.json`, results `r6-c9bcf5088a22/` (nyc-02); 12 shards,
+at most 4 boxes, 22:58 to 01:01 UTC, every exit 0, no box interrupted.
+
+| Gate | Result |
+| --- | --- |
+| `pnpm verify`, 85 production sources | 93 Dafny runs (85 sources and 8 dependencies re-proved inside their shards), 20,418 obligations, 0 errors |
+| `verify:broken`, 85 modules | 3,030/3,030 rejected; 0 survived, 0 invalid, 0 missing |
+| `runtime_broken.py` | exit 0 |
+| Inventory and landing check | 4,126 rows, 0 "Not yet proved", 1,169 contracts each with a mutant, 0 stale cases; 371 shell branches, 0 open, 0 unreviewed |
+
+| Shard | Box job | Command s | Result |
+| --- | --- | ---: | --- |
+| broken-1 | `73be4d9636c850e6649c6d68` | 2,190 | 427/427 rejected |
+| broken-2 | `752836f4c141a2f78d72c507` | 2,175 | 426/426 rejected |
+| broken-3 | `b930199555ba3860eb4395ce` | 965 | 427/427 rejected |
+| broken-4 | `72c2d3cddbf91753341beb61` | 1,259 | 426/426 rejected |
+| broken-5 | `bf339d94d0b4c96c4d277af8` | 966 | 426/426 rejected |
+| broken-6 | `931733558bfc503e3e6c2518` | 1,260 | 424/424 rejected |
+| broken-conversation | `2d6414b0a20dab47e1a6d9ae` | 4,561 | 217/217 rejected |
+| broken-heavy | `c72bdef56f203a735df03cde` | 2,758 | 257/257 rejected |
+| proof-1 | `7d033fc21ca66a3b436cb63d` | 370 | 27/27 proved |
+| proof-2 | `587b152459ce8241218f105d` | 353 | 26/26 proved |
+| proof-3 | `7b8e2ee45548deccab40c6a7` | 976 | 33/33 proved; runtime 0 |
+| proof-heavy | `2acaed12fabfaabe405f3919` | 3,085 | 7/7 proved |
+
+A first run on `cf4c78264e3e` stopped after its proof shards (all exit 0): broken-heavy reported 257 missing because
+the `actions-click-epoch` mutant no longer typechecked (fixed in `c9bcf5088a22`). Batch 54 and the 8 MiB wiki limit
+(`8678a974fa64`) landed after this revision; each passed its module's proof and mutants on a box.
+
 ## Final stamp: the whole gate on main `07185eed` (vl-proveall3, 2026-11-13)
 
 The revision holds vl-proveall's last `update` arms (batch 55, `e9b08d1a`), vl-coverage-core's orphan settlement in
