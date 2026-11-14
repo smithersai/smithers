@@ -13,11 +13,12 @@ import { Action, type FlowRuntime } from "@smthrs/flow"
 import type * as Node from "@smthrs/plan/Node"
 import { DestinationProxy } from "@smthrs/platform-node"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
+import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
-import type * as PlatformError from "effect/PlatformError"
+import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as NodeChildProcess from "node:child_process"
@@ -417,6 +418,18 @@ export const StartupRetry = Context.Reference<StartupRetryPolicy>("@smthrs/targe
 const unstarted = (error: PlatformError.PlatformError): boolean =>
   error.reason._tag === "TimedOut" &&
   (error.cause as { readonly code?: unknown } | undefined)?.code === "startup_timeout"
+
+/**
+ * The supervisor's teardown of an already finished tool missed its bound: the
+ * owner process did not exit in time, usually on a stalled host. A teardown
+ * that observed a live member, a failed cleanup or no snapshot reports
+ * `cleanup_unverified` instead, and stays a failure.
+ */
+const teardownTimedOut = (defect: unknown): defect is PlatformError.PlatformError =>
+  PlatformError.isPlatformError(defect) &&
+  defect.reason._tag !== "BadArgument" &&
+  defect.reason.method === "kill" &&
+  (defect.cause as { readonly code?: unknown } | undefined)?.code === "supervisor_timeout"
 
 // Retry pacing runs on the host's time, like the supervisor's own bounds.
 const hostClock = Clock.Clock.defaultValue()
@@ -1261,6 +1274,9 @@ const spawnTool = (
   Effect.suspend(() => {
     const stdout = capture()
     const stderr = capture()
+    // The tool's result, once its exit status is in hand: the scope's
+    // teardown runs after it and must not replace it with a missed bound.
+    let exited: Spawned | undefined
     const failure = (message: string, code: ExecFailureCode, signal?: string) => {
       finish(stdout)
       finish(stderr)
@@ -1380,14 +1396,37 @@ const spawnTool = (
           status.signal
         ))
       }
-      return {
+      exited = {
         exitCode: status.code ?? -1,
         stdout: stdout.head,
         stderr: stderr.head,
         stdoutTail: stdout.tail,
         stderrTail: stderr.tail
       }
+      return exited
     })
+    // A tool that already exited has its result. When the teardown of that
+    // finished process then misses the supervisor's bound, the result stands
+    // and the live stderr view says the cleanup was not confirmed. Any other
+    // teardown failure, or one before the exit status arrived, still fails.
+    const kept = (cause: Cause.Cause<ExecError>): Effect.Effect<Spawned, ExecError> => {
+      const result = exited
+      const timedOut = cause.reasons.flatMap((reason) =>
+        Cause.isDieReason(reason) && teardownTimedOut(reason.defect) ? [reason.defect.message] : []
+      )
+      if (result === undefined || timedOut.length === 0 || timedOut.length !== cause.reasons.length) {
+        return Effect.failCause(cause)
+      }
+      try {
+        onStderr?.(new TextEncoder().encode(
+          `smthrs: the tool exited with status ${result.exitCode}, but the machine was too busy to confirm its ` +
+            `process cleanup in time; the result stands (${timedOut.join("; ")})\n`
+        ))
+      } catch {
+        // Optional progress output cannot change the run.
+      }
+      return Effect.annotateCurrentSpan("smithers.exec.teardownUnconfirmed", true).pipe(Effect.as(result))
+    }
     return Effect.scoped(
       payload.timeoutMs === "unbounded" ? program : program.pipe(
         Effect.timeoutOrElse({
@@ -1401,7 +1440,7 @@ const spawnTool = (
           }
         })
       )
-    )
+    ).pipe(Effect.catchCause(kept))
   })
 
 /**

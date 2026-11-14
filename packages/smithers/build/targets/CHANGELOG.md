@@ -79,6 +79,11 @@ of it.
 
 ### Fixed
 
+- `Exec.run` keeps a tool's own result when the supervisor's teardown of the
+  already exited process misses its bound on a stalled host. A target that
+  exited 0 no longer fails with `Unknown: ChildProcess.kill (...): Process
+  supervisor kill timed out`; the live stderr view says the cleanup was not
+  confirmed. `cleanup_unverified` still fails the run.
 - Foundry targets require their native executor, which honors skip patterns,
   profiles, configuration and formatting mode.
 - Literal GitHub policies and factory projections enforce the same path,

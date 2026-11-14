@@ -150,6 +150,18 @@ followed by the supervisor's own `TimedOut` sentence. A miss after the
 supervisor was asked to start the tool is never retried, because the tool may
 have run; the tool's own deadline bounds that wait.
 
+A teardown the machine is too busy to finish is not the tool's result either.
+Once the tool's exit status is in hand, the process supervisor still stops and
+verifies the finished process's group. When that teardown misses the
+supervisor's bound (`supervisor_timeout` on `kill`, the owner process did not
+exit in time), the run keeps the tool's own result: exit status 0 succeeds, and
+any other status fails with code `exit_status` as usual. The live stderr view
+gets one `smthrs: the tool exited with status <n>, but the machine was too busy
+to confirm its process cleanup in time` line; the captured result is unchanged.
+A teardown that finds a live group member, a failed cleanup or no process
+snapshot reports `cleanup_unverified` and still fails the run, as does any
+teardown failure before the exit status arrived.
+
 Sandbox scratch cleanup covers preparation, execution, and interruption,
 including failures while creating declared write directories or wrapping argv.
 Docker wrappers return a unique `containerName` and pass it as `--name`.
