@@ -4774,9 +4774,45 @@ run fails, and Re-run runs it again (114).
 Rolldown inlines a `const` read once into the statement that reads it, also inside the `gen(function* …)` bodies that
 `effect` blocks compile to. Session 38's rule drops such a statement only outside them, so `MockActions.vibe` 85, 133,
 134 and 141 read 0 although every run passes through them (the e2e bundle writes `state: mockState(…)` and
-`result: isSuccess(result) ? yield* orDie(…) : "Action failed"` straight into `yield* record({…})`). `runs` (166-167,
-a `{ *runs() {…} }.runs` generator method) reads 0 on both `??` arms although every pane open calls it. Both are the
-browser structure's (vl-coverage's tool), handed over on the board with the evidence.
+`result: isSuccess(result) ? yield* orDie(…) : "Action failed"` straight into `yield* record({…})`). vl-coverage-core
+took this on the board (19:35Z). `runs`' `??` (166) is two branches in the union: Node's starts its left arm at the
+`(` of `(try Ref.get(state)).runs` (column 14) and reads [1, 1]; the build's starts it at column 21 and reads [0, 0].
+That is the operand-column split vl-coverage-core recorded at 18:50Z (`~/vl/vibelang-bugs/operand-try-column/`):
+an under-count, never false credit. Session 23 first named the generator method `{ *runs() {…} }.runs` as the cause;
+its statements and function count 1 in the same gate, so that was wrong.
+
+### Gates for the two batches (vl-fuzz2, session 23)
+
+Batch 1 (`3a4c5524`'s tree, job `c1df2e28831339d9264f4981`): 902 passed, 12 skipped, 1 failed (`core-live.spec.ts:151`
+light, vl-coverage-core's). Batch 2 (`1bed6244`'s tree, job `b125771c71af071e3b975c45`, 53.1 min): 942 passed,
+12 skipped, 0 failed; the run exits 1 on the coverage thresholds only. Whole gate: lines 94.07% (5382/5721),
+statements 90.86%, branches 87.38% (5373/6149), functions 93.79% (2388/2546). In `src/actions` and `src/history`:
+807/1037 branches (230 open) at session 38, 826/1009 (183) after batch 1, 834/1009 (175) after batch 2; the 28 arms
+the server-only moves took out of the bundle are measured by the unit and workerd gates. Every arm still open is a row
+above, a session 38 row, or a VIP-43 spec-only site.
+
+| File | Session 38 | Batch 1 | Batch 2 | Open |
+| --- | --- | --- | --- | --- |
+| `src/history/trailerDecision.vibe` | 41/75 | 41/75 | 41/75 | 34 |
+| `src/history/mythical.vibe` | 166/199 | 166/199 | 166/199 | 33 |
+| `src/history/areaDecision.vibe` | 29/58 | 29/58 | 29/58 | 29 |
+| `src/history/flowMachine.vibe` | 80/110 | 85/110 | 87/110 | 23 |
+| `src/history/replayDecision.vibe` | 2/12 | 2/12 | 2/12 | 10 |
+| `src/actions/MockActions.vibe` | 54/64 | 54/64 | 55/64 | 9 |
+| `src/actions/LiveActions.vibe` | 10/19 | 10/19 | 10/19 | 9 |
+| `src/history/Sequencer.vibe` | 28/34 | 28/34 | 28/34 | 6 |
+| `src/history/pageDecision.vibe` | 19/25 | 20/25 | 20/25 | 5 |
+| `src/actions/actionHostDecision.vibe` | 42/49 | 42/45 | 42/45 | 3 |
+| `src/history/pages.vibe` | 6/12 | 6/8 | 6/8 | 2 |
+| `src/history/LiveMythical.vibe` | 7/12 | 7/12 | 10/12 | 2 |
+| `src/actions/execution.vibe` | 34/38 | 34/36 | 34/36 | 2 |
+| `src/history/flows.vibe` | 43/45 | 43/45 | 43/45 | 2 |
+| `src/history/tools.vibe` | 45/47 | 45/47 | 45/47 | 2 |
+| `src/history/exportDecision.vibe` | 37/51 | 37/38 | 37/38 | 1 |
+| `src/history/export.vibe` | 68/77 | 73/75 | 74/75 | 1 |
+| `src/history/MockMythical.vibe` | 24/25 | 24/25 | 24/25 | 1 |
+| `src/history/toolDecision.vibe` | 3/4 | 3/4 | 3/4 | 1 |
+| `src/history/stackDecision.vibe` | 13/25 | 21/22 | 22/22 | 0 |
 
 ### Gate (session 39, `f24b116f5b6b`'s tree, job `92c2d3a67489be29fc5d574e`)
 
