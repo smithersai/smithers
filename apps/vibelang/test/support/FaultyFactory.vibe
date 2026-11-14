@@ -5,18 +5,21 @@ import type { Event } from "../../src/core/conversation.vibe"
 import { ConversationRead, Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
 import { AccountUnavailable, Accounts } from "../../src/core/roles.vibe"
 import { MockFactory, mockFactoryFor } from "../../src/core/MockFactory.vibe"
+import { MockJournal } from "../../src/core/MockJournal.vibe"
 import { makeWikiStore } from "../../src/core/WikiFactory.vibe"
 import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
 import { faultyMachines, machineFault, type MachineFault } from "./faultyMachines.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | "held-tour" | MachineFault
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | "held-tour" | "held-tour-step" | MachineFault
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
   base?: Factory.Shape
   release?: () => void!!
   faulted: boolean
+  /** `held-tour-step`: true while the tour's first step is held. */
+  holding?: boolean
   /** `forged`: what the forging transport inserted, by conversation. */
   forgery?: Forgery
 }
@@ -106,7 +109,9 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * `account-read` fails the first read of the signed-in account. `held-wiki-read` holds the editor's first page read
  * until the page releases it; `held-wiki-read-failed` then fails it. `held-wiki-save` holds the first wiki save or
  * proposal until the page releases it, then writes it. `held-tour` holds the first tour start until the page releases
- * it, then starts the tour. `faulted` turns true as each hold ends.
+ * it, then starts the tour. `held-tour-step` holds the journal write of the tour's first step, under the room's lock,
+ * until the page releases it (`holding` reads true meanwhile): an end the person asks for then waits for that lock and
+ * lands while the tour is still speaking. `faulted` turns true as each hold ends.
  * `wiki-repository` faults nothing: its fixture repository's Benchmarks page is the recorded GitHub copy (recordedWiki.vibe).
  * Each fault happens once.
  */
@@ -121,7 +126,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     if (fault === "forged") observation.forgery = forging
     const wikiRefusal = fault.startsWith("wiki-") && fault !== "wiki-edit" && fault !== "wiki-repository" ? fault.slice("wiki-".length) : undefined
     const setup = fault === "issue-connect" ? "connect" : fault === "issue-fork" ? "fork" : fault === "issue-install" ? "install" : fault === "issue-forbidden" ? "forbidden" : fault === "issue-closed" ? "closed" : fault === "issue-no-model" ? "no-model" : fault === "issue-assignee" ? "assignee" : undefined
-    observation.release = () => fault === "streaming"
+    if (fault !== "held-tour-step") observation.release = () => fault === "streaming"
       ? Effect.asVoid(Queue.offer(completions, undefined))
       : Effect.asVoid(Deferred.succeed(released, undefined))
     try sync(() => { observation.base = base })
@@ -305,5 +310,24 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         return forged ? Stream.concat(Stream.fromIterable(resumed.first), real.pipe(Stream.flatMap((event) => Stream.fromIterable(forge(forging, conversation, event))))) : real
       }),
     }
-  })).pipe(Layer.provide(fault === "wiki-repository" ? mockFactoryFor(undefined, recordedWikiStore()) : device !== undefined ? mockFactoryFor(undefined, makeWikiStore(), faultyMachines(device)) : MockFactory))
+  })).pipe(Layer.provide((fault === "wiki-repository" ? mockFactoryFor(undefined, recordedWikiStore()) : device !== undefined ? mockFactoryFor(undefined, makeWikiStore(), faultyMachines(device)) : MockFactory).pipe(Layer.provide(fault === "held-tour-step" ? heldStepJournal(observation) : Layer.empty))))
+}
+
+/** `held-tour-step`'s journal: the first write that records a tour's step waits for the page's release. */
+function heldStepJournal(observation: Trace) {
+  return Layer.effect(MockJournal, effect {
+    const released = try Deferred.make<void>()
+    observation.release = () => Effect.asVoid(Deferred.succeed(released, undefined))
+    let held = false
+    return {
+      read: (_conversation: string) => succeed([] as ReadonlyArray<Event>),
+      write: effect (_conversation: string, events: ReadonlyArray<Event>) => {
+        if (held || events.at(-1)?.type !== "WalkthroughDriven") return
+        held = true
+        try sync(() => { observation.holding = true })
+        try Deferred.await(released)
+        try sync(() => { observation.holding = false; observation.faulted = true })
+      },
+    }
+  })
 }

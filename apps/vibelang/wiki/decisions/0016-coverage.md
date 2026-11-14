@@ -495,6 +495,84 @@ the key `label + "-4"`, so a second key has no recorded exchange to replay, and 
 write on the project's host. A per-repeat key needs a recording with one proposal per repeat (VL-36's record mode,
 with a live token). The first repeat still runs every line it covers.
 
+### The person ends a tour mid-step (vl-coverage-core, session 10, 2026-11-13)
+
+`flowDecision.vibe` `tourStop`'s `ended` arm (line 15) runs when `flows.vibe` `toured`'s race ends at `tours.ended`,
+which needs the person's end to land while the tour speaks. Every hold and control gate parks the run, and a re-driven
+run that finds its tour over returns `inactive` before the race, so an Esc at an arbitrary moment almost never lands
+there. Fault `held-tour-step` (`test/support/FaultyFactory.vibe`) injects a `MockJournal` whose first write of a
+`WalkthroughDriven` event waits for the page's release, under the room's lock. The person's Esc then waits for that
+lock and records `TourEnded` before the tour's next step can journal. `e2e/core-tour-race.spec.ts` closes the arm (5/5
+under `--repeat-each 5`, box `s10race2`).
+
+`MockFactory.vibe` `scripted`'s busy start (the `StartReply` refusal, its metric, log and hand-over, lines 98-103) and
+`flowDecision.vibe` `firstUndispatched`'s skip (line 40) have no browser input. Busy needs a tour accepted in the
+post's own conversation after the post was dispatched. The page never posts into a tour's conversation: Learn more
+starts the tour in `tourConversation(session)` on its own client (`src/web/main.vibe` `learnMore`), and the chat
+posts into the home conversation. A probe (`s10busy6`) held the reply's start step with an injected Digest, started a
+second tour meanwhile and read the page's conversation: it held only the post and its reply, never a tour, and the
+start was never refused. The skip needs a dispatched post that is still unanswered when the answer loop runs again,
+which only a busy start's retry leaves; no other path was found. Both stay: the `Factory` interface lets any client
+post and tour in one conversation.
+
+### `src/core` in the browser gate after session 10 (`s10full1`, 2026-11-13)
+
+`pnpm e2e:coverage` on box playwright over main `8cb72297` plus `e2e/core-tour-race.spec.ts`: 759 passed, 12
+skipped, 0 unexpected, 50.6 minutes; exit 1 from the thresholds. Arms are Istanbul branch arms; a line counts once
+any statement starting on it ran. Open arms in `src/core`: 409 in `s9full1`, 358 of 1,755 here, in 49 files.
+
+| File | Open arms | Arms | Statements | Functions | Lines |
+| --- | --- | --- | --- | --- | --- |
+| `src/core/conversation.vibe` | 32 | 375 | 293/316 | 72/74 | 227/233 |
+| `src/core/WikiFactory.vibe` | 25 | 66 | 68/81 | 18/19 | 56/64 |
+| `src/core/decide.vibe` | 24 | 97 | 59/84 | 3/3 | 52/55 |
+| `src/core/issueGraphDecision.vibe` | 24 | 57 | 39/64 | 9/24 | 26/46 |
+| `src/core/sandboxHost.vibe` | 24 | 119 | 208/237 | 31/32 | 181/198 |
+| `src/core/flowDecision.vibe` | 22 | 48 | 23/38 | 14/15 | 22/31 |
+| `src/core/MockFactory.vibe` | 18 | 138 | 339/365 | 87/91 | 277/295 |
+| `src/core/issueFixtureDecision.vibe` | 17 | 68 | 30/43 | 9/12 | 26/29 |
+| `src/core/sandboxDecision.vibe` | 17 | 72 | 58/73 | 19/20 | 50/54 |
+| `src/core/sandboxHostDecision.vibe` | 16 | 107 | 60/70 | 32/32 | 51/51 |
+| `src/core/specification.vibe` | 16 | 40 | 39/44 | 6/6 | 34/35 |
+| `src/core/sandboxMock.vibe` | 13 | 53 | 73/80 | 22/23 | 46/50 |
+| `src/core/wikiLinkDecision.vibe` | 11 | 26 | 17/20 | 7/8 | 14/15 |
+| `src/core/wikiPageDecision.vibe` | 11 | 48 | 43/50 | 11/11 | 30/31 |
+| `src/core/IssuesFactory.vibe` | 10 | 70 | 71/78 | 12/12 | 63/66 |
+| `src/core/MockAccounts.vibe` | 9 | 30 | 95/110 | 23/26 | 80/86 |
+| `src/core/flows.vibe` | 8 | 54 | 193/199 | 71/72 | 187/192 |
+| `src/core/liveAnswerDecision.vibe` | 8 | 12 | 4/8 | 3/4 | 4/6 |
+| `src/core/replayDecision.vibe` | 8 | 10 | 10/13 | 2/5 | 9/12 |
+| `src/core/specificationDecision.vibe` | 7 | 27 | 9/11 | 5/5 | 8/8 |
+| `src/core/LiveAccounts.vibe` | 6 | 10 | 20/37 | 5/13 | 18/31 |
+| `src/core/mockFactoryDecision.vibe` | 5 | 30 | 27/28 | 11/12 | 21/22 |
+| `src/core/sandboxMeter.vibe` | 5 | 36 | 39/44 | 7/7 | 37/37 |
+| `src/core/LiveWiki.vibe` | 4 | 4 | 5/26 | 1/11 | 5/18 |
+| `src/core/tourDecision.vibe` | 3 | 10 | 5/7 | 3/3 | 5/5 |
+| `src/core/wikiIndex.vibe` | 3 | 17 | 18/21 | 5/5 | 14/17 |
+| `src/core/wikiLinks.vibe` | 3 | 8 | 8/10 | 1/1 | 8/9 |
+| `src/core/wiki.vibe` | 2 | 4 | 3/3 | 1/1 | 3/3 |
+| `src/core/followDecision.vibe` | 1 | 2 | 2/2 | 2/2 | 2/2 |
+| `src/core/LiveFactory.vibe` | 1 | 24 | 75/95 | 15/19 | 66/85 |
+| `src/core/LiveIssues.vibe` | 1 | 6 | 15/19 | 4/8 | 12/12 |
+| `src/core/mockReplies.vibe` | 1 | 4 | 18/19 | 5/6 | 17/17 |
+| `src/core/sandboxMockDecision.vibe` | 1 | 14 | 12/12 | 2/2 | 7/7 |
+| `src/core/walkthroughSteps.vibe` | 1 | 2 | 3/4 | 1/1 | 3/4 |
+| `src/core/wire.vibe` | 1 | 2 | 12/18 | 1/1 | 12/17 |
+| `src/core/clientProtocolDecision.vibe` | 0 | 10 | 7/7 | 5/5 | 6/6 |
+| `src/core/Factory.vibe` | 0 | 0 | 7/7 | 0/0 | 5/5 |
+| `src/core/flowPolicyDecision.vibe` | 0 | 13 | 10/10 | 10/10 | 10/10 |
+| `src/core/identityDecision.vibe` | 0 | 4 | 3/3 | 1/1 | 2/2 |
+| `src/core/issueFlows.vibe` | 0 | 12 | 35/40 | 10/11 | 30/35 |
+| `src/core/issueSchemas.vibe` | 0 | 0 | 14/15 | 1/2 | 13/14 |
+| `src/core/mockDecision.vibe` | 0 | 6 | 19/19 | 4/4 | 17/17 |
+| `src/core/MockJournal.vibe` | 0 | 0 | 5/5 | 3/3 | 2/2 |
+| `src/core/roles.vibe` | 0 | 1 | 13/13 | 1/1 | 11/11 |
+| `src/core/sandboxPolicy.vibe` | 0 | 0 | 2/5 | 0/3 | 2/3 |
+| `src/core/schemas.vibe` | 0 | 0 | 24/30 | 0/0 | 24/30 |
+| `src/core/wikiDecision.vibe` | 0 | 3 | 1/1 | 1/1 | 1/1 |
+| `src/core/wikiFlows.vibe` | 0 | 16 | 37/42 | 10/11 | 32/37 |
+| `src/core/wikiSchemas.vibe` | 0 | 0 | 6/6 | 0/0 | 5/5 |
+
 ### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
 
 **History fallbacks.** Five `historyView.vibe` fallbacks are for data the history never holds. The proved `decide`
