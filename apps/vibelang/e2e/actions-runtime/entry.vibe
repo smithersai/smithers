@@ -31,7 +31,7 @@ const program = await runPromise(effect {
     // The scripted agent requests runs ("Run /tour") through the page's own MockActions, never through the fault, as
     // the app's BrowserFactory wires it: a fault point is the page's call, not the agent's.
     const agent = try deferredActions()
-    const base = fault === "fail" ? faultyFactory("tour-unavailable", trace()) : mockFactoryFor(role).pipe(Layer.provideMerge(Layer.succeed(AgentActions, { actions: agent.actions })))
+    const base = fault === "fail" ? faultyFactory("tour-unavailable", trace()) : fault === "tour-closes" ? faultyFactory("tour-closes", trace()) : mockFactoryFor(role).pipe(Layer.provideMerge(Layer.succeed(AgentActions, { actions: agent.actions })))
     // A fixture agent's real Post flow, observed by a signed-out browser through the unchanged label component.
     const factory = params.get("agent") === "yes" ? Layer.effectContext(effect {
       const built = try Layer.build(base)

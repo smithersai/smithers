@@ -11,7 +11,7 @@ import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
 import { faultyMachines, machineFault, type MachineFault } from "./faultyMachines.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-last-minute" | "sandbox-month-end" | "sandbox-clock" | "sandbox-clock-read" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | "held-tour" | "held-tour-step" | MachineFault
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-last-minute" | "sandbox-month-end" | "sandbox-clock" | "sandbox-clock-read" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | "held-tour" | "held-tour-step" | "tour-closes" | MachineFault
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -115,6 +115,8 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * until the page releases it (`holding` reads true meanwhile): an end the person asks for then waits for that lock and
  * lands while the tour is still speaking. `faulted` turns true as each hold ends.
  * `wiki-repository` faults nothing: its fixture repository's Benchmarks page is the recorded GitHub copy (recordedWiki.vibe).
+ * `tour-closes` closes the second subscription to an Actions run's own conversation (`action-…`), its tour's guide,
+ * once it delivers TourStarted: the run's stream closes before the tour ends.
  * Each fault happens once.
  */
 export function faultyFactory(fault: Fault, observation: Trace) {
@@ -136,6 +138,8 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     try sync(() => { observation.base = base })
     // The first call of each named fault point, `fault:point`, fails; later calls are real.
     const once = new Set<string>()
+    // Subscriptions to Actions runs' own conversations so far (`tour-closes`).
+    const runSubscriptions = { count: 0 }
     const first = (name: string) => {
       if (fault !== name.split(":")[0] || once.has(name)) return false
       once.add(name)
@@ -311,6 +315,8 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       events: (conversation, after) => Stream.unwrap(effect {
         try sync(() => { observation.subscriptions.push({ conversation, after }) })
         if (conversation.startsWith("tour-") && first("tour-events")) return Stream.fail(new Unavailable({ reason: "connection interrupted" }))
+        const runSubscription = try sync(() => conversation.startsWith("action-") ? ++runSubscriptions.count : 0)
+        const closes = runSubscription === 2 && first("tour-closes")
         const ending = fault === "end" && !observation.faulted
         const forged = fault === "forged" && forges(conversation)
         const resumed = forged ? resumeAt(forging, conversation, after) : { cursor: after, first: [] }
@@ -335,6 +341,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
             if (ending && event.seq === 3) { observation.faulted = true; return true }
             return false
           }),
+          Stream.takeUntil((event) => closes && event.type === "TourStarted"),
         )
         return forged ? Stream.concat(Stream.fromIterable(resumed.first), real.pipe(Stream.flatMap((event) => Stream.fromIterable(forge(forging, conversation, event))))) : real
       }),
