@@ -4757,3 +4757,70 @@ Rolldown inlines a `const` read once into the statement that reads it, also insi
 `result: isSuccess(result) ? yield* orDie(…) : "Action failed"` straight into `yield* record({…})`). `runs` (166-167,
 a `{ *runs() {…} }.runs` generator method) reads 0 on both `??` arms although every pane open calls it. Both are the
 browser structure's (vl-coverage's tool), handed over on the board with the evidence.
+
+### Gate (session 39, `f24b116f5b6b`'s tree, job `92c2d3a67489be29fc5d574e`)
+
+892 passed, 12 skipped, 2 failed, 54.1 min: `core-live.spec.ts` "two live messages past the body limit" (dark) and
+"a live sandbox ... shows the refusal and Retry" (light), both vl-coverage-core's. Lines 93.49% (5373/5747), statements
+90.11%, branches 86.41% (5338/6177), functions 92.89% (2381/2563); session 38: 93.47%, 90.01%, 85.90% (5301/6171),
+92.85%. The first gate (`7040782dc2a7`, 27 failed at 1.6 h) measured the same 5338 arms. In `src/history`,
+`src/actions` and `src/web`: 3921/4422 branches, 501 open in 56 files (session 38: 528 in 57).
+
+| File | Session 38 | Session 39 | Open |
+| --- | --- | --- | --- |
+| `src/web/main.vibe` | 545/596 | 547/596 | 49 |
+| `src/web/issueDecision.vibe` | 220/255 | 224/259 | 35 |
+| `src/history/trailerDecision.vibe` | 41/75 | 41/75 | 34 |
+| `src/history/mythical.vibe` | 166/199 | 166/199 | 33 |
+| `src/history/flowMachine.vibe` | 80/110 | 80/110 | 30 |
+| `src/history/areaDecision.vibe` | 29/58 | 29/58 | 29 |
+| `src/history/exportDecision.vibe` | 37/51 | 37/51 | 14 |
+| `src/history/stackDecision.vibe` | 13/25 | 13/25 | 12 |
+| `src/web/issuesView.vibe` | 206/226 | 214/226 | 12 |
+| `src/web/viewDecision.vibe` | 138/150 | 138/150 | 12 |
+| `src/web/historyApp.vibe` | 51/62 | 51/62 | 11 |
+| `src/web/markdown.vibe` | 70/82 | 71/82 | 11 |
+| `src/actions/MockActions.vibe` | 54/64 | 54/64 | 10 |
+| `src/history/replayDecision.vibe` | 2/12 | 2/12 | 10 |
+| `src/web/modelDecision.vibe` | 108/118 | 108/118 | 10 |
+| `src/web/modelWrite.vibe` | 51/61 | 51/61 | 10 |
+| `src/actions/LiveActions.vibe` | 10/19 | 10/19 | 9 |
+| `src/history/export.vibe` | 68/77 | 68/77 | 9 |
+| `src/web/actionFollowDecision.vibe` | 15/24 | 15/24 | 9 |
+| `src/web/issuesViewDecision.vibe` | 184/198 | 189/198 | 9 |
+| `src/web/screenDecision.vibe` | 102/113 | 104/113 | 9 |
+| `src/web/view.vibe` | 96/105 | 96/105 | 9 |
+| `src/actions/actionHostDecision.vibe` | 42/49 | 42/49 | 7 |
+| `src/web/tourDecision.vibe` | 47/54 | 47/54 | 7 |
+| `src/web/updateDecision.vibe` | 98/105 | 98/105 | 7 |
+| `src/history/Sequencer.vibe` | 28/34 | 28/34 | 6 |
+| `src/history/pageDecision.vibe` | 19/25 | 19/25 | 6 |
+| `src/history/pages.vibe` | 6/12 | 6/12 | 6 |
+| `src/web/viewport.vibe` | 27/40 | 34/40 | 6 |
+| `src/history/LiveMythical.vibe` | 7/12 | 7/12 | 5 |
+| `src/web/actionViewDecision.vibe` | 91/96 | 91/96 | 5 |
+| `src/web/markdownDecision.vibe` | 25/30 | 25/30 | 5 |
+| `src/web/theatreDecision.vibe` | 67/72 | 67/72 | 5 |
+| `src/web/viewGateDecision.vibe` | 38/43 | 38/43 | 5 |
+| `src/web/wikiEditorDecision.vibe` | 17/22 | 17/22 | 5 |
+| `src/actions/execution.vibe` | 34/38 | 34/38 | 4 |
+| `src/web/actionView.vibe` | 84/88 | 84/88 | 4 |
+| `src/web/paneDecision.vibe` | 44/48 | 44/48 | 4 |
+| `src/web/screenRead.vibe` | 12/16 | 12/16 | 4 |
+| `src/web/actionModel.vibe` | 10/13 | 10/13 | 3 |
+| `src/web/historyDecision.vibe` | 28/31 | 28/31 | 3 |
+| `src/web/historyStartup.vibe` | 22/25 | 22/25 | 3 |
+| `src/web/historyViewDecision.vibe` | 57/60 | 57/60 | 3 |
+| `src/web/theatre.vibe` | 23/26 | 23/26 | 3 |
+| `src/history/flows.vibe` | 43/45 | 43/45 | 2 |
+| `src/history/tools.vibe` | 45/47 | 45/47 | 2 |
+| `src/web/accountViewDecision.vibe` | 38/40 | 38/40 | 2 |
+| `src/web/issues.vibe` | 32/34 | 32/34 | 2 |
+| `src/web/viewLabelDecision.vibe` | 36/38 | 36/38 | 2 |
+| `src/web/wikiView.vibe` | 76/78 | 76/78 | 2 |
+| `src/web/wikiViewDecision.vibe` | 52/54 | 52/54 | 2 |
+| `src/history/MockMythical.vibe` | 24/25 | 24/25 | 1 |
+| `src/history/toolDecision.vibe` | 3/4 | 3/4 | 1 |
+| `src/web/backend.vibe` | 12/13 | 12/13 | 1 |
+| `src/web/roleView.vibe` | 37/38 | 37/38 | 1 |
+| `src/web/sandboxView.vibe` | 59/60 | 59/60 | 1 |
