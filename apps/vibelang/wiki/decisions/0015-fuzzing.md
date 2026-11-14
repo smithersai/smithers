@@ -1924,13 +1924,77 @@ in-scope files misses a line either, so every line in scope runs from a chosen i
 The two runs include main's nine commits since `235e936c` (among them `1ec1ba13`, `decideSandbox` deciding starts and
 stops only, and `8678a974`, the 8 MiB wiki body limit).
 
-**FUZZ-GATE GREEN, 2026-11-13** (lines in scope: every `worker/` and `src/core/` file outside vl-fuzzpkg's and
-vl-fuzz3's). Still open and not counted by the line gate: 43 branch arms in 20 of those files. Mutants for this
+**Line gate green, 2026-11-13** (lines in scope: every `worker/` and `src/core/` file outside vl-fuzzpkg's and
+vl-fuzz3's). This was not the fuzz gate, which is `pnpm fuzz:coverage` exiting 0 with every file at 100% on every
+metric, branches included: `full21` exited 1 with 43 branch arms open in 20 of those files (session 19 below). Mutants for this
 session's cases: 7 of 7 for `full18`'s lines, 31 of 32 for the 48; the survivor, `sandboxWorkerDecision`'s
 missing-generation arm, is equivalent at the HTTP boundary, whose handler checks `body.generation` again for
 TypeScript's narrowing. The first `sandbox/host-recovery` oracles were too strict (a ledger at the last sequence cannot
 record a stop, so the next fail-closed pass stops again; a viewer's meter also stops other sandboxes); the fuzzer
 saved both counterexamples, which were deleted, and the narrowed oracles passed three seeds of 20 s each.
+
+### Session 19: the 43 branch arms (vl-fuzz2, 2026-11-14)
+
+`full21` (job `df2d75b40514bc6dcab4e55d`) left 43 branch arms open in 20 in-scope files. An arm is a `line:column`
+in the merged report; an `if` with no `else` reports its missing arm with no position, so a probe that prints each
+zero arm's whole branch map named those (`sandboxHost` 95 and `Accounts` 396, 400, 426, 444). Each arm now runs from
+a chosen input or from every execution, and each case was checked against a mutant of its arm at the floor
+(`FUZZ_FLOOR_ONLY=1`, seed `s19mut`, each target alone):
+
+| Arm | Target and case | Mutant caught |
+| --- | --- | --- |
+| `flows` 161 (`?? ""`), `sandboxDecision` 96, `sandboxHostDecision` 291, `wikiBuildDecision` 31, 173 (two arms), `GitHubDelegate` 14 | new `decisions/core-arms`: each decision on arbitrary arguments against its contract; chosen: a stream that ended with no event, a clock that stood still or ran back, a transcript of 32,769 and 40,000 units, a file without `.md`, both fields present in either order, an error with no details | 7 of 7 |
+| `toolRefusalDecision` 35 | `decisions/tool-refusal`: the field `e2e_9`, a code with a digit and `_` | yes |
+| `specificationDecision` 30 | `issues/specification-transitions`: a specification revised once from empty (production keeps seats, so only it has an unanswered Opus seat at revision 1), reviewed by scripted Opus: `B+` | yes |
+| `specification` 55 | the same target: a reviewer that answers with no review text; the history entry's review is empty | yes |
+| `specification` 64, 66 (three arms) | new `issues/requested-review`: the chat agent's request over an issues service with no specification on its read and its answer | yes |
+| `MockFactory` 163 | `mock/scripted-actions`: a draft of the `decisions` index, which the build makes and nobody edits: a contributor's fails, anyone else's is refused | yes |
+| `MockFactory` 178 | new `mock/host-services`: a host's own Digest; the engine calls it | yes |
+| `MockFactory` 400, 401 | new `mock/retained-unowned`: retained posts asking for a sandbox and an action, with a maintainer signed in: no sandbox starts and no action is requested | 2 of 2 |
+| `MockFactory` 435, 452 | new `mock/agent-actor`: a maintainer's device sign-in is refused a VIP verdict and a wiki proposal; the maintainer is not | 2 of 2 |
+| `sandboxHost` 95 | new `sandbox/host-first-clock`: nothing saved and an impossible clock: every call is `invalid-clock`, nothing written or stopped | yes |
+| `IssuesFactory` 119 | new `issues/engine-faults`: a held identity alone is `conflict`; beside a second defect, both defects reach the caller | yes |
+| `LiveIssues` 12 | `clients/issues-wiki-replies`: every execution, a 409 with a protocol refusal for each call | yes |
+| `Accounts` 396, 400 | new `accounts/bootstrap-and-restart`: no initial maintainer, `01`, and a restart over migrated storage | 2 of 2 (400 after the oracle below) |
+| `Accounts` 426, 444 | `accounts/broker-sequences`: a person signed out elsewhere while a write runs on a delegation smithers.sh ended (new op `vanishing-write`, wiki then issues): `connect`, and no delegation copy forgotten | yes |
+| `ActionDirectory` 61, 73, 100, 101, 112, `ActionRuns` 151 | new `actions/directory-edges`: an ownerless request (refused for a post whatever role it carries, and never handed on); a reply child whose routes were never reserved; a start that fails, or dies with a held identity and a second defect; a cancel of a run whose object stored no request | 61, 73 (after the oracle below), 101, 112 and 151; 100 survives (below) |
+| `ActionsHttp` 26, 35, 43, 55 | `actions/http-surface`: a body that never ends (408 under virtual time), the runs list with no `flow`, a principal with no name (`Guest`) | 4 of 4 |
+| `Reply` 351, 363 | `actions/run-answers`: an answer whose usage totals past the safe integers fails with the general reason, and the reply's log says `invalid-usage` | 2 of 2 (351 after the log check) |
+| `SandboxHttp` 52 | `sandbox/http-surface`: every execution, a refusal with a reason crosses with it | yes |
+| `machineObject` 96 | `sandbox/machine-object`: a command on a fresh machine started and never leased is `lease-expired` and does not run | yes |
+
+Arms removed instead, with the proof:
+
+- `mainLogDecision` 73: `sideShas`'s inner loop stops only at an empty stack or at a top in `bySha`, so `bySha.get(top)`
+  is defined and its `undefined` arm never ran. It is `bySha.get(top)!` with that reason; `pnpm verify
+  worker/mainLogDecision.vibe` passes (box job `1fbdf4261bf5f17fffc3bb9c`).
+- `MockFactory` 123: `specificationReview ?? ""` sat under `kind === "specification"`, which `replyKind`'s proved
+  contract gives only when the review is defined. It is `specificationReview!`.
+- `MockFactory` 115: the fixture host refuses a review request only for the role (`forbidden`) or for a revision that
+  changed between the agent's read and its write, a race with no deterministic product path through the mock. The
+  wording moved to the proved `reviewRefusal` (`mockFactoryDecision.vibe`, mutation `mock-review-refusal`; `pnpm
+  verify` box job `f28772c21f6dcf3aef1668c3`), which `decisions/mock-factory` checks on both reasons.
+- `ActionRuns` 151: `request?.id ?? ""` with no stored request could not change the result, because `isReplyChild` is
+  false whenever the request is not a post. It is `request !== undefined && isReplyChild(..., request.id)`.
+
+The survivor: `ActionDirectory` 100's `cause.reasons.length === 1` guard. A held identity reaches it only from the
+engine's own identity check, alone; a step's defects cross the journal as copies, so no execution of this directory
+puts a real `ExecutionIdentityConflict` beside a second reason. The arm runs (a two-defect start); the mutant that drops
+the guard is equivalent here. `IssuesFactory` 119, whose engine is a seam, kills the same mutant.
+
+Two oracles were strengthened after their first mutant survived. `Accounts` 400: always granting the initial id would
+make `""`, the signed-out owner, a maintainer when none is configured; the case now requires a malformed initial id to
+hold what a never-granted id holds. `ActionDirectory` 73: the run object refuses an ownerless post again, so the case
+also starts it through a recording downstream that must not be called.
+
+Found on the way, not changed (no product path admits them today): a machine started again keeps the previous
+generation's `leaseUntil` (`machineObject` `{ ...previous, generation, phase }`), so a command could run under the old
+lease until the host leases again, which it does before every command; and a write that fails `connect` after its
+session ended keeps the ended delegation copy, since `lost` cannot name the person; the next such write after they sign
+in again forgets it.
+
+`actions/http-surface`'s saved regression predates the principal's name, so `named` is optional and absent means named,
+as every saved principal was. Each new target costs under 0.4 s an execution, so none needs a `FLOORS` entry.
 
 ## Complete browser sources and settled history receipts
 
