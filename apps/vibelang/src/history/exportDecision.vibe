@@ -2,6 +2,7 @@
 // commit takes, how much of the last export a new one keeps, which refs a publication moves and from what, and what the
 // refs read back after it say. `export.vibe` calls these; nothing here reads or writes a repository.
 //
+//   real commits ──lastFolds──▶ each mythical id's last fold, in one pass
 //   mythical commit ──treeSource──▶ "" (an empty reservation: its parent's tree) | its last folded real commit
 //   previous oids, planned oids ──kept──▶ how many leading commits are already written
 //   published, candidate ──moves──▶ one compare-and-swap of all three refs, each from its published value
@@ -35,32 +36,43 @@ export interface Move {
 }
 
 /**
- * The index in `real` of the last real commit folded into the mythical commit `id`, or -1 when none is: such a commit
- * is an empty reservation. A commit that several real commits fold into (a merge's side commits, an amend that landed
- * again) takes the tree of the last, which is main's tree when it landed.
+ * Every mythical commit's last fold, in one pass over `real`: each id any real commit folds into, to the index of the
+ * last real commit folded into it. An id absent from the map is an empty reservation. A commit that several real commits
+ * fold into (a merge's side commits, an amend that landed again) takes the tree of the last, which is main's tree when
+ * it landed. One pass, so an export reads each real commit once rather than once per mythical commit.
  */
 //@ verify
-//@ ensures -1 <= \result && \result < real.length
-//@ ensures \result == -1 <==> forall(i, 0 <= i && i < real.length ==> real[i].mythical != id)
-//@ ensures \result >= 0 ==> real[\result].mythical == id
-//@ ensures \result >= 0 ==> forall(i, \result < i && i < real.length ==> real[i].mythical != id)
-export function lastFold(real: ReadonlyArray<Real>, id: string): number {
-  for (let i = real.length - 1; i >= 0; i--) {
-    //@ invariant -1 <= i && i < real.length
-    //@ invariant forall(k, i < k && k < real.length ==> real[k].mythical != id)
-    //@ decreases i + 1
-    if (real[i]!.mythical === id) return i
+//@ ensures forall(i, 0 <= i && i < real.length ==> \result.has(real[i].mythical))
+//@ ensures forall(k: string, \result.has(k) ==> 0 <= \result.get(k) && \result.get(k) < real.length)
+//@ ensures forall(k: string, \result.has(k) ==> real[\result.get(k)].mythical == k)
+//@ ensures forall(k: string, \result.has(k) ==> forall(i, \result.get(k) < i && i < real.length ==> real[i].mythical != k))
+export function lastFolds(real: ReadonlyArray<Real>): Map<string, number> {
+  const last = new Map<string, number>()
+  for (let i = 0; i < real.length; i++) {
+    //@ invariant 0 <= i && i <= real.length
+    //@ invariant forall(j, 0 <= j && j < i ==> last.has(real[j].mythical))
+    //@ invariant forall(k: string, last.has(k) ==> 0 <= last.get(k) && last.get(k) < i)
+    //@ invariant forall(k: string, last.has(k) ==> real[last.get(k)].mythical == k)
+    //@ invariant forall(k: string, last.has(k) ==> forall(j, last.get(k) < j && j < i ==> real[j].mythical != k))
+    last.set(real[i]!.mythical, i)
   }
-  return -1
+  return last
 }
 
-/** The real commit whose tree the mythical commit `id` takes: the sha of its last fold, or `""` for a reservation. */
+/**
+ * The real commit whose tree the mythical commit `id` takes: the sha of its last fold, or `""` for a reservation.
+ * `folds` is `lastFolds(real)`.
+ */
 //@ verify
+//@ requires forall(i, 0 <= i && i < real.length ==> folds.has(real[i].mythical))
+//@ requires forall(k: string, folds.has(k) ==> 0 <= folds.get(k) && folds.get(k) < real.length)
+//@ requires forall(k: string, folds.has(k) ==> real[folds.get(k)].mythical == k)
+//@ requires forall(k: string, folds.has(k) ==> forall(i, folds.get(k) < i && i < real.length ==> real[i].mythical != k))
 //@ ensures forall(i, 0 <= i && i < real.length ==> real[i].mythical != id) ==> \result == ""
 //@ ensures exists(i, 0 <= i && i < real.length && real[i].mythical == id) ==> exists(j, 0 <= j && j < real.length && real[j].mythical == id && \result == real[j].sha && forall(k, j < k && k < real.length ==> real[k].mythical != id))
-export function treeSource(real: ReadonlyArray<Real>, id: string): string {
-  const at = lastFold(real, id)
-  return at < 0 ? "" : real[at]!.sha
+export function treeSource(real: ReadonlyArray<Real>, folds: Map<string, number>, id: string): string {
+  if (!folds.has(id)) return ""
+  return real[folds.get(id) ?? 0]!.sha
 }
 
 /**

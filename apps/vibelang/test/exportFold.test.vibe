@@ -1,0 +1,44 @@
+// The Export's fold lookup grows linearly with the history (src/history/export.vibe `planned`, exportDecision.vibe
+// `lastFolds`; decision 0020, "The git export"). Counts reads of the history's real commits during one whole export,
+// not time: a lookup that rescans every real commit for each mythical commit reads quadratically many, and froze the
+// history page for seconds on VibeLang's 5,703 commits.
+import { describe, expect, it } from "@effect/vitest"
+import { Repository } from "@smthrs/jj"
+import { prepare, REF_NAMES } from "../src/history/export.vibe"
+import type { Real } from "../src/history/mythical.vibe"
+import { landedStory, told, world } from "./support/exportFlow.vibe"
+
+/** `real` behind a view that counts each element read: by index, by iteration and by every array method. */
+function counted(real: ReadonlyArray<Real>, reads: { count: number }): ReadonlyArray<Real> {
+  return new Proxy(real, {
+    get(target, key, receiver) {
+      if (typeof key === "string" && /^\d+$/.test(key)) reads.count++
+      return Reflect.get(target, key, receiver)
+    },
+  })
+}
+
+/** How many real commits one whole export of an `n`-commit history reads. */
+effect function readsAt(n: number) {
+  const { sequencer, repository } = try world()
+  try told(sequencer, landedStory(n))
+  const history = try sequencer.read()
+  const reads = { count: 0 }
+  provide Repository.Repository = repository {
+    const prepared = try prepare({ ...history, real: counted(history.real, reads) }, REF_NAMES)
+    return { reads: reads.count, written: prepared?.written ?? -1 }
+  }
+}
+
+describe("the export's fold lookup", () => {
+  it.effect("reads each real commit a fixed number of times, however long the history", () => effect {
+    const small = try readsAt(100)
+    const large = try readsAt(400)
+    try Effect.try(() => {
+      expect([small.written, large.written]).toEqual([100, 400])
+      // Linear: four times the history reads four times the commits (a rescan per commit reads sixteen times).
+      expect(large.reads).toBeLessThanOrEqual(4 * small.reads)
+      expect(large.reads).toBeLessThanOrEqual(8 * 400)
+    })
+  })
+})

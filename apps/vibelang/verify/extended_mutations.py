@@ -5681,10 +5681,10 @@ cases.append(('src/core/issueGraphDecision.vibe','issues-link-complete','canLink
 
 # Lane vl-mythical-export: the git export's decisions and who may export (wiki/decisions/0020-mythical-history.md).
 cases.extend([('src/history/exportDecision.vibe', *case) for case in [
-('export-last-fold-match', 'lastFold', 'if (real[i]!.mythical === id) return i', 'if (real[i]!.mythical !== id) return i', 'a fold is found only among the commits folded into it'),
-('export-last-fold-first', 'lastFold', 'for (let i = real.length - 1; i >= 0; i--) {', 'for (let i = real.length - 1; i >= 0; i = i - 2) {', 'the last fold wins, whichever came before'),
-('export-tree-source', 'treeSource', 'return at < 0 ? "" : real[at]!.sha', 'return at < 0 ? "" : real[0]!.sha', 'a landed commit takes its last fold\'s tree'),
-('export-reservation', 'treeSource', 'return at < 0 ? "" : real[at]!.sha', 'return at <= 0 ? "" : real[at]!.sha', 'a commit folded once is no reservation'),
+('export-last-fold-match', 'lastFolds', 'last.set(real[i]!.mythical, i)', 'last.set(real[i]!.mythical, 0)', 'a fold is found only among the commits folded into it'),
+('export-last-fold-first', 'lastFolds', 'for (let i = 0; i < real.length; i++) {', 'for (let i = 0; i < real.length; i = i + 2) {', 'the last fold wins, whichever came before'),
+('export-tree-source', 'treeSource', 'return real[folds.get(id) ?? 0]!.sha', 'return real[0]!.sha', 'a landed commit takes its last fold\'s tree'),
+('export-reservation', 'treeSource', 'if (!folds.has(id)) return ""', 'if (folds.has(id)) return ""', 'a commit folded once is no reservation'),
 ('export-kept-overrun', 'kept', ' && planned[n] === previous[n]) {', ') {', 'a changed commit and everything after it is written again'),
 ('export-same-notes', 'same', ' && a.notes === b.notes', '', 'a notes ref that moved is a change'),
 ('export-moves-mythical', 'moves', '{ ref: names.mythical, before: published.mythical, after: candidate.mythical }', '{ ref: names.mythical, before: candidate.mythical, after: candidate.mythical }', 'the bookmark moves only from the value read'),

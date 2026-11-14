@@ -327,8 +327,9 @@ vibelang-factory note m5704 --section tried "A cache; it went stale."
    `flows.vibe` runs this machine: the authorize step journals `authorize(begin(action, principal))`, and every record
    step, including each `fold/<sha>`, runs only when `canRecord` holds.
 9. **A fold never runs before its approval** (`foldTarget`, which `Sequencer.fold` calls): defined below.
-10. **The export's decisions** (`exportDecision.vibe`): `lastFold` is the last real commit folded into a commit, -1
-    exactly when none is; `treeSource` is that commit's sha or `""` for an empty reservation; `kept` is the longest
+10. **The export's decisions** (`exportDecision.vibe`): `lastFolds` maps each commit any real commit folds into to
+    the index of its last fold, in one pass over the real commits, and holds no other commit; `treeSource` is that
+    commit's sha or `""` for an empty reservation; `kept` is the longest
     common prefix of the last and planned chains; `moves` is all three refs, each from its published value to its
     candidate value; `confirmed` is `published` exactly when the refs read are the candidate, `unchanged` exactly when
     they are still the published tuple, else `conflict`. Item 7's `may` now names `export` beside approve and fold.

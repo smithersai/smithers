@@ -14,7 +14,7 @@
 // parent's, so the bookmark's tree is always the tree of the last real commit it folds. The commits' author, committer
 // and date are fixed, so the same history is the same commits, and preparing again writes nothing new.
 import { Repository } from "@smthrs/jj"
-import { chainEnds, commitVerdict, headerAgrees, kept, linkedTo, manifestChanged, moves, pacedOut, parentsOf, rewritesMythical, treeOrigin, type RefNames, type Refs, treeSource, waitsForTrees, writable, writesChange } from "./exportDecision.vibe"
+import { chainEnds, commitVerdict, headerAgrees, kept, lastFolds, linkedTo, manifestChanged, moves, pacedOut, parentsOf, rewritesMythical, treeOrigin, type RefNames, type Refs, treeSource, waitsForTrees, writable, writesChange } from "./exportDecision.vibe"
 import type { Commit, History, Real } from "./mythical.vibe"
 import { stacked } from "./pages.vibe"
 
@@ -170,7 +170,9 @@ export effect function planned(repository: Repository.Repository, history: Histo
   const known = new Map<string, string>((previous?.commits ?? []).filter((entry) => entry[2] !== "").map((entry) => [entry[2], entry[3]]))
   for (const [source, tree] of trees) known.set(source, tree)
   const commits = stacked(history)
-  const needs = [...new Set(commits.map((commit) => treeSource(history.real, commit.id)).filter((source) => source !== "" && !known.has(source)))]
+  // One pass over the real commits finds every commit's last fold (`lastFolds`, proved).
+  const folds = lastFolds(history.real)
+  const needs = [...new Set(commits.map((commit) => treeSource(history.real, folds, commit.id)).filter((source) => source !== "" && !known.has(source)))]
   if (waitsForTrees(needs.length)) {
     const waiting: Planned = { needs, pending: [], candidate: NONE, written: 0 }
     return waiting
@@ -179,7 +181,7 @@ export effect function planned(repository: Repository.Repository, history: Histo
   let parent = ""
   let parentTree = EMPTY_TREE
   for (const commit of commits) {
-    const source = treeSource(history.real, commit.id)
+    const source = treeSource(history.real, folds, commit.id)
     // `needs` is empty, so every source's tree is known.
     const tree = source === "" ? parentTree : known.get(source) as string
     const object: Repository.CommitObject = { tree, parents: parentsOf(parent), author: EXPORTER, committer: EXPORTER, message: messageOf(commit) }
@@ -192,11 +194,15 @@ export effect function planned(repository: Repository.Repository, history: Histo
   const pending: Array<Pending> = chain.slice(keep).map((link) => ({ oid: link.oid, write: () => repository.writeCommit(link.object) }))
 
   // Notes: a blob per commit, written only when the last notes tree lacks it; one tree; a commit only when it changed.
-  const folds = new Map<string, Array<Real>>()
-  for (const real of history.real) folds.set(real.mythical, [...(folds.get(real.mythical) ?? []), real])
+  const folded = new Map<string, Array<Real>>()
+  for (const real of history.real) {
+    const into = folded.get(real.mythical)
+    if (into === undefined) folded.set(real.mythical, [real])
+    else into.push(real)
+  }
   const entries: Array<Repository.TreeEntry> = []
   for (const link of chain) {
-    const text = noteOf(link.commit, folds.get(link.commit.id) ?? [])
+    const text = noteOf(link.commit, folded.get(link.commit.id) ?? [])
     const blob = try Repository.hashBlob(text)
     if (writesChange(noted.get(link.oid) ?? "", blob)) pending.push({ oid: blob, write: () => repository.writeBlob(text) })
     entries.push({ name: link.oid, mode: "100644", oid: blob })

@@ -27,8 +27,13 @@ it.live("history/export-decisions", () => run("history/export-decisions", Decisi
   const real: ReadonlyArray<Real> = input.real.map((each) => ({ ...each, change: "", title: "t" }))
   let last = -1
   real.forEach((each, at) => { if (each.mythical === input.id) last = at })
-  if (D.lastFold(real, input.id) !== last) return false
-  if (D.treeSource(real, input.id) !== (last < 0 ? "" : real[last]!.sha)) return false
+  const folds = D.lastFolds(real)
+  // Every id: the last fold's index when some real commit folds into it, absent otherwise.
+  for (const id of ["m1", "m2", "m3", ""]) {
+    const at = real.map((each) => each.mythical).lastIndexOf(id)
+    if ((folds.get(id) ?? -1) !== at) return false
+  }
+  if (D.treeSource(real, folds, input.id) !== (last < 0 ? "" : real[last]!.sha)) return false
   let prefix = 0
   while (prefix < input.planned.length && prefix < input.previous.length && input.planned[prefix] === input.previous[prefix]) prefix++
   if (D.kept(input.previous, input.planned) !== prefix) return false
@@ -126,7 +131,7 @@ it.live("history/export-flow", () => run("history/export-flow", Story, (input) =
   for (const [at, commit] of chain.entries()) {
     if (commit.parents.length !== (at === 0 ? 0 : 1) || (at > 0 && commit.parents[0] !== chain[at - 1]!.oid)) return false
     const id = /Mythical: (m\d+)/.exec(commit.message)![1]!
-    const source = D.treeSource(history.real, id)
+    const source = D.treeSource(history.real, D.lastFolds(history.real), id)
     const tree = source === "" ? parentTree : (try repository.readCommit(source)).tree
     if (commit.tree !== tree) return false
     parentTree = commit.tree

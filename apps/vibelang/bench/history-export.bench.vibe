@@ -4,12 +4,12 @@
 import { it, expect } from "@effect/vitest"
 import { Repository } from "@smthrs/jj"
 import { HttpClient } from "effect/http"
-import { confirmed, kept, lastFold, moves, treeSource } from "../src/history/exportDecision.vibe"
-import { EXPORTER, REF_NAMES } from "../src/history/export.vibe"
+import { confirmed, kept, lastFolds, moves, treeSource } from "../src/history/exportDecision.vibe"
+import { EXPORTER, prepare, REF_NAMES } from "../src/history/export.vibe"
 import { MockMythical } from "../src/history/MockMythical.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { exporterOf, off } from "../worker/HistoryExport.vibe"
-import { told, world } from "../test/support/exportFlow.vibe"
+import { landedStory, told, world } from "../test/support/exportFlow.vibe"
 import { artifact, quick, slow, workload } from "./artifact.vibe"
 
 const STORY = [
@@ -87,8 +87,9 @@ it("exports VibeLang's whole history in mock mode, then nothing, then one commit
   const decisions = await workload(bench, "history-export-decisions", "sync", () => {
     const real = Array.from({ length: 6737 }, (_, at) => ({ sha: `${at}`, change: "", title: "t", mythical: `m${at % 5703}` }))
     const oids = Array.from({ length: 5703 }, (_, at) => `${at}`)
-    expect(lastFold(real, "m1")).toBe(5704)
-    expect(treeSource(real, "m9999")).toBe("")
+    const folds = lastFolds(real)
+    expect(folds.get("m1")).toBe(5704)
+    expect(treeSource(real, folds, "m9999")).toBe("")
     expect(kept(oids, [...oids.slice(0, 5000), "x"])).toBe(5000)
     const published = { mythical: "a", notes: "b", manifest: "c" }
     const candidate = { mythical: "d", notes: "b", manifest: "e" }
@@ -97,6 +98,22 @@ it("exports VibeLang's whole history in mock mode, then nothing, then one commit
     expect(confirmed(published, published, candidate)).toBe("unchanged")
     expect(confirmed({ ...candidate, notes: "z" }, published, candidate)).toBe("conflict")
   }).run(quick)
+  // Export's planning on long histories: the same work at each size, so the means grow linearly with the history.
+  const scaled = []
+  for (const size of [1000, 4000]) {
+    const { sequencer, repository } = await runPromise(scoped(effect {
+      const made = try world()
+      try told(made.sequencer, landedStory(size))
+      return made
+    }))
+    const history = await runPromise(sequencer.read())
+    scaled.push(await workload(bench, `history-export-${size}`, "async", () => runPromise(effect {
+      provide Repository.Repository = repository {
+        const prepared = try prepare(history, REF_NAMES)
+        try Effect.try(() => expect(prepared?.written).toBe(size))
+      }
+    })).run(slow))
+  }
   const setting = await workload(bench, "history-export-setting", "async", () => runPromise(effect {
     const unreachable = HttpClient.make(() => Effect.die("no request"))
     const offExporter = try exporterOf(undefined, undefined, unreachable)
@@ -104,5 +121,5 @@ it("exports VibeLang's whole history in mock mode, then nothing, then one commit
     const elsewhere = try exporterOf("github:smithersai/vibelang", Redacted.make("bench"), unreachable, REF_NAMES, "https://github.test")
     try Effect.try(() => expect([offExporter === off, github === off, elsewhere === off]).toEqual([true, false, false]))
   })).run(quick)
-  await runPromise(artifact("history-export", "Vitest built-in bench; the real Export flow, sequencer and @smthrs/jj memory repository. Whole: MockMythical bootstraps VibeLang's 5,703-commit history and exports it (every commit, note, notes tree, manifest, tree-equality check by repository reads), then exports again writing nothing. Incremental: a two-commit story, then one appended commit. Refused: a publication the repository refuses, refs unmoved. Refusals: the check refusing a tree, a parent, a note and a short manifest, an unreadable repository, a manifest bookmark with no manifest; plans alone then an insert that rewrites the bookmark. Decisions: lastFold over 6,737 real commits, kept over 5,703 oids. Setting: off and github exporters built with no request.", ["Memory repository only: GitHub's latency and rate limits are not measured; the recorded GitHub run is test/export.github.test.vibe.", "Each whole run rebuilds the mock, so bootstrap time is included."], [whole, incremental, refused, refusals, decisions, setting]))
+  await runPromise(artifact("history-export", "Vitest built-in bench; the real Export flow, sequencer and @smthrs/jj memory repository. Whole: MockMythical bootstraps VibeLang's 5,703-commit history and exports it (every commit, note, notes tree, manifest, tree-equality check by repository reads), then exports again writing nothing. Incremental: a two-commit story, then one appended commit. Refused: a publication the repository refuses, refs unmoved. Refusals: the check refusing a tree, a parent, a note and a short manifest, an unreadable repository, a manifest bookmark with no manifest; plans alone then an insert that rewrites the bookmark. Scale: prepare over synthetic 1,000- and 4,000-commit histories, each commit landed by one real commit (the same objects each iteration; no ref moves). Decisions: lastFolds over 6,737 real commits, kept over 5,703 oids. Setting: off and github exporters built with no request.", ["Memory repository only: GitHub's latency and rate limits are not measured; the recorded GitHub run is test/export.github.test.vibe.", "Each whole run rebuilds the mock, so bootstrap time is included."], [whole, incremental, refused, refusals, decisions, ...scaled, setting]))
 })

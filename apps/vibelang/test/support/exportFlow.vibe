@@ -21,6 +21,21 @@ effect function digestOf() {
   }
 }
 
+/** `n` commits in one epic, each started, approved and landed by one real commit: a long history to export. */
+export function landedStory(n: number): ReadonlyArray<Intent> {
+  const intents: Array<Intent> = [{ type: "OpenEpic", id: "e1", title: "compiler" }]
+  for (let at = 0; at < n; at++) {
+    const id = `m${at}`
+    intents.push(
+      { type: "Plan", id, epic: "e1", before: "", title: `feat(compiler): step ${at}`, task: "" },
+      { type: "Start", id, lane: "lane-a" },
+      { type: "Approve", id, by: "Ada" },
+      { type: "Fold", sha: at.toString(16).padStart(12, "0"), change: "", title: `feat(compiler): step ${at}`, into: id },
+    )
+  }
+  return intents
+}
+
 /** Records `intents`, dying on any refusal. */
 export effect function told(sequencer: Sequencer, intents: ReadonlyArray<Intent>) {
   for (const intent of intents) {
