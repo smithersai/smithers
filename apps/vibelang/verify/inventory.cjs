@@ -549,6 +549,7 @@ function inventorySource(file, source) {
       compared: operand.type === 'BinaryExpression' && ['===', '!==', '<', '>', '<=', '>='].includes(operand.operator)
         ? (operand.right.type === 'Literal' ? flagName(operand.left) : operand.left.type === 'Literal' ? flagName(operand.right) : undefined) : undefined })) });
   const LOOPS = new Set(['WhileStatement', 'DoWhileStatement', 'ForStatement']);
+  const TESTS = new Set(['includes', 'has', 'startsWith', 'endsWith', 'test', 'isArray', 'isSafeInteger', 'isInteger', 'isFinite', 'isNaN', 'hasOwn']);
   const COMPARISONS = new Set(['===', '!==', '==', '!=', '<', '>', '<=', '>=']);
   // Where a value goes: an argument, an array element, an object property, a `const`, an assignment, or a return.
   const slot = (node, parent) => ((parent?.type === 'CallExpression' || parent?.type === 'NewExpression') && parent.arguments.includes(node) ? 'passed'
@@ -596,8 +597,11 @@ function inventorySource(file, source) {
       owner.branches.push(branch.test.length > 120 ? { ...branch, test: branch.test.slice(0, 117) + '...' } : branch);
     }
     if (predicate) predicates.add(predicate);
+    // A membership, prefix or pattern test (`ids.includes(page)`, `url.startsWith("https:")`, `/x/.test(s)`) counts the
+    // same way (batch 74); a host type guard among them (`Number.isSafeInteger`) is neutral by the operand rule.
     if (owner && slot(node, parent) && !predicates.has(node) && ((node.type === 'BinaryExpression' && COMPARISONS.has(node.operator))
-      || (node.type === 'UnaryExpression' && node.operator === '!' && node.argument.type !== 'Literal'))) {
+      || (node.type === 'UnaryExpression' && node.operator === '!' && node.argument.type !== 'Literal')
+      || (node.type === 'CallExpression' && node.callee?.type === 'MemberExpression' && TESTS.has(node.callee.property?.name)))) {
       owner.branches.push(branchOf(node, 'value', node));
     }
     if (owner && node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && node.init) {

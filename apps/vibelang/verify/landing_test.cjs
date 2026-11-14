@@ -117,6 +117,11 @@ test('a new branch in a shell row is refused until it is proved or recorded with
     + 'export function h(b: boolean) {\n  return b\n}\nexport const lt = (a: number, b: number) => a < b\n';
   assert.deepEqual(shellBranches(inventorySource(fixture, values)).map(branch => branch.test),
     ['value m.n === 0', 'value m.i === 1', 'value !m.ok', 'find x === m.i', 'value x > m.n', 'value a < b']);
+  // A membership, prefix or pattern test passed or stored as a value is one too (batch 74); a host type guard is not.
+  const tests = '// Fixture.\nexport function b(xs: string[], s: string, n: number) {\n'
+    + '  return [h(xs.includes(s)), { on: s.startsWith("a"), ok: Number.isSafeInteger(n), m: /x/.test(s) }]\n}\n'
+    + 'export function h(b: boolean) {\n  return b\n}\n';
+  assert.deepEqual(shellBranches(inventorySource(fixture, tests)).map(branch => branch.test), ['value xs.includes(s)', 'value s.startsWith("a")', 'value /x/.test(s)']);
   // A loop's test chooses how many times its body runs (batch 71): a `while`, a `do ... while` and a `for` test, each
   // one branch, its `&&` not counted twice.
   const loops = '// Fixture.\nexport function l(xs: number[], n: number) {\n  let i = 0\n  while (i < n && xs[i] !== 0) i++\n'

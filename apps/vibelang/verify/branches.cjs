@@ -1,7 +1,9 @@
 // Branches in shell rows (decision 0018, "Decisions in shell rows" and "Decisions in views"): an `if` or conditional
 // inside a row that is not proved, a `switch`, the left side of a `??`, an `&&` or `||` used as a value, a list
-// predicate (what a list or count holds), or a comparison or `!` passed, stored or returned as a value (`value`,
-// `h.AriaSelected(index === highlight)`, batch 70), a `while`, `do` or `for` test (batch 71), a default value (`door = "slash"`, batch 72), or an error fallback (`catch () => false`, batch 73), with an operand (split at `&&`, `||` and `!`) that neither calls a
+// predicate (what a list or count holds), a comparison, `!` or membership test passed, stored or returned as a value
+// (`value`: `h.AriaSelected(index === highlight)`, batch 70; `ids.includes(page)`, batch 74), a `while`, `do` or `for`
+// test (batch 71), a default value (`door = "slash"`, batch 72), or an error fallback (`catch () => false`, batch 73),
+// with an operand (split at `&&`, `||` and `!`) that neither calls a
 // proved function, nor reads a `const` whose value calls one (in its row or an enclosing row) as a flag or against a
 // literal (`replay === "replay-refused"`, `cut < 0`: the proved function's answer), nor calls a function whose whole
 // body returns a proved call, nor is a

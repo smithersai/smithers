@@ -1,6 +1,7 @@
 # file	function	condition	reason (decision 0018, "Decisions in shell rows"; "Open:" = still to prove)
 scripts/agent-context.vibe	main	catch () => ""	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/agent-context.vibe	main	check	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/agent-context.vibe	main	value (try (try Stdio.Stdio).args).includes("--check")	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/fuzz-preflight.vibe	preflight	!(try fs.exists(path.join(root, ".smithers/flows/node_modules", name, "package.json")))	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/mythical-seed-program.vibe	entriesOf	catch () => undefined	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/mythical-seed-program.vibe	entriesOf	line.trim() === ""	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
@@ -54,6 +55,8 @@ src/actions/MockActions.vibe	MockActions/callback/runs	?? (try Ref.get(state)).r
 src/actions/MockActions.vibe	MockActions/callback/start	?? principal.conversation	Mock mode (VL-13): the forced mock backend, not a product decision
 src/actions/tools.vibe	actionTools	default announce: (run: Run) => void!! = () => Effect.void	Seam: the production dependency, policy or store by default; the parameter exists so a test injects a faulty or fixture one (AGENTS.md, no mocks); no product choice (batch 72)
 src/core/accountCookies.vibe	validSessionCookie	catch { return false }	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
+src/core/accountCookies.vibe	validSessionCookie	value /^__Host-vibelang-session=[A-Za-z0-9_.:-]{1,4096}$/.test(cookie)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
+src/core/accountCookies.vibe	validSessionCookie	value /^vibelang-session=[A-Za-z0-9_.:-]{1,4096}$/.test(cookie)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/core/accountCookies.vibe	validSessionCookie	value url.origin === origin	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 src/core/accountCookies.vibe	validSessionCookie	value url.protocol === "http:"	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 src/core/accountCookies.vibe	validSessionCookie	value url.protocol === "https:"	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
@@ -79,6 +82,7 @@ src/core/IssuesFactory.vibe	fixtureHost/perform/callback	?? person.kind	Mock mod
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	|| person.id || "public"	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	|| request.op !== "link" || canLinkIssues(before.items, request.number, request.parent)	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	|| request.text.trim() === "" || request.example.trim() === "" || request.prior.trim() === ""	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/IssuesFactory.vibe	fixtureHost/perform/callback	value instance.executionId.startsWith(`issues/${person.id || "public"}/`)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	value issue?.state === "open"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	value issue?.vip === "In review"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	value request.assignee.trim() === ""	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
@@ -148,6 +152,7 @@ src/core/MockFactory.vibe	scripted	for index < pieces.length	Mock mode (VL-13): 
 src/core/MockFactory.vibe	scripted	page !== undefined && /\bdraft\b/i.test(prompt)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted	prompt === "Split #38 into three children, linked under it."	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted	prompt.startsWith("File an issue:")	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	scripted	value /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted/callback	!(try ownsReply())	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted/callback	find entry.id === page	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/MockFactory.vibe	scripted/callback	find entry.id === post	Mock mode (VL-13): the forced mock backend, not a product decision
@@ -159,6 +164,7 @@ src/core/routes.vibe	routeOf	!pathname.startsWith(CONVERSATIONS)	Variant: the co
 src/core/routes.vibe	routeOf	parts.length > 2	Variant: the conversations prefix and at most two path segments name a route; routeKind (proved) names the operation
 src/core/sandboxHost.vibe	failureReason	?? reason	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/sandboxHost.vibe	failureReason	?? tag	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/sandboxHost.vibe	makeSandboxHost/admit	value activeCommands.has(request.operationId)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/core/sandboxHost.vibe	makeSandboxHost/admit	value request.generation === snapshot.generation	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 src/core/sandboxHost.vibe	makeSandboxHost/admit	value snapshot.status === "running"	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 src/core/sandboxHost.vibe	makeSandboxHost/command	admitted.type === "receipt"	Variant dispatch on admit's answer (a stored receipt or a pending operation), which the proved replayAnswer and freshAdmission decide
@@ -189,9 +195,12 @@ src/core/sandboxMock.vibe	makeMockSandboxes/write/callback	receipt	Mock mode (VL
 src/core/sandboxMock.vibe	memoryMachines/command	?? active.get(id)	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/sandboxMock.vibe	memoryMachines/command	?? files.get(read![1]!)	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/sandboxMock.vibe	memoryMachines/command	outputs.has(key)	Mock mode (VL-13): the fixture sandboxes
+src/core/sandboxMock.vibe	memoryMachines/command	value active.has(id)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/sandboxMock.vibe	memoryMachines/lease	?? active.get(id)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/sandboxMock.vibe	memoryMachines/lease	value active.has(id)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/sandboxMock.vibe	memoryMachines/start/callback	!disk.has(id)	Mock mode (VL-13): the fixture sandboxes
 src/core/sandboxMock.vibe	memoryMachines/stop/callback	?? active.get(id)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/sandboxMock.vibe	memoryMachines/stop/callback	value active.has(id)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/specification.vibe	performSpecification	?? before.specification	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/specification.vibe	performSpecification	?? before.specificationHistory	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/specification.vibe	performSpecification	default scripted = true	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
@@ -242,12 +251,18 @@ src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag.endsWith("Exec
 src/core/WikiFactory.vibe	makeWikiFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
 src/core/WikiFactory.vibe	personOf	identity === "maintainer"	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
 src/core/wikiFlows.vibe	authorizeWiki	default kind: "person" | "agent" = "person"	Least privilege: an absent authority, gateway, principal or role is the signed-out viewer, and an absent kind a person (the proved actorKind); a caller grants more only by passing it (batch 72)
+src/core/wikiIndex.vibe	requestedWiki	value /designs/i.test(text)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
+src/core/wikiIndex.vibe	requestedWiki	value /wiki/i.test(text)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/core/wikiIndex.vibe	wikiPath	?? hash	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/wikiLinks.vibe	wikiLink	?? hash	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/wikiLinks.vibe	wikiLink	value ids.includes(`${target}/index`)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
+src/core/wikiLinks.vibe	wikiLink	value ids.includes(page)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
+src/core/wikiLinks.vibe	wikiLink	value ids.includes(target)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/core/wire.vibe	conversationPath	catch { return undefined }	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 src/history/export.vibe	check	!old.has(oid)	Host boundary: Set membership; a commit the last publication holds was checked when it was published
 src/history/export.vibe	check	published.manifest === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
 src/history/export.vibe	check	value commit.tree === tree	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
+src/history/export.vibe	check/callback	value noted.has(entry[1])	Observation: which manifest commits have a note, the list the proved notesComplete decides on (batch 74)
 src/history/export.vibe	noteOf/of/callback	filter note.section === kind	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/export.vibe	planned	?? folded.get(link.commit.id)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/export.vibe	planned	?? noted.get(link.oid)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -256,6 +271,7 @@ src/history/export.vibe	planned	?? previous?.commits	Default: an absent stored o
 src/history/export.vibe	planned	history.main === ""	Formatting: the manifest message names main, or nothing before main has a commit
 src/history/export.vibe	planned/callback	filter oid !== ""	Empty text: an empty string shows nothing; any other text shows as given
 src/history/export.vibe	planned/callback	some link.oid === published.refs.mythical	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+src/history/export.vibe	planned/callback	value known.has(source)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/history/export.vibe	prepare	default pace: Pace = UNPACED	Limit: the module's named bound (MAX_SEED_NOTE, MAX_CALLS, a read's 6-second budget, the export pace) unless a test passes another (batch 72)
 src/history/export.vibe	publish/callback	move.before === ""	Forwards: an empty before is git's null, a ref the swap creates
 src/history/export.vibe	readManifest/callback	find each.name === MANIFEST_FILE	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -382,6 +398,7 @@ src/surfaces/commands.vibe	showHistory	?? listed?.commits ?? matched?.commits	De
 src/surfaces/commands.vibe	showHistory	?? listed?.total	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/surfaces/commands.vibe	signInError	error instanceof SignInFailed	Variant test: a SignInFailed passes on as its message
 src/surfaces/commands.vibe	summaryOf	?? page?.commit	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/surfaces/mcp-entry.vibe	main	value args.includes("--mock")	Mock mode (VL-13): the forced mock backend, not a product decision
 src/surfaces/session.vibe	activeSession	!validSessionCookie(decoded.origin, decoded.cookie)	Variant: a configured session cookie wins over the stored one; validSessionCookie checks the stored one
 src/surfaces/session.vibe	activeSession	Option.isSome(configured) && Redacted.value(configured.value) !== ""	Variant: a configured session cookie wins over the stored one; validSessionCookie checks the stored one
 src/surfaces/session.vibe	readJson	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
@@ -451,6 +468,7 @@ src/web/actionView.vibe	slashMenu	menu.length === 0	Empty list: no items show no
 src/web/actionView.vibe	slashMenu/callback	value index === actionsOf(model).highlight	Markup: marks the option, choice or pane the Model names (selected, checked, highlighted, maximized, preformatted); the proved steps decide what the Model names (batch 70)
 src/web/actionView.vibe	slashMenu/callback	value index === actionsOf(model).highlight	Markup: marks the option, choice or pane the Model names (selected, checked, highlighted, maximized, preformatted); the proved steps decide what the Model names (batch 70)
 src/web/actionView.vibe	status	default disconnected: ReadonlyArray<string> = []	Markup: a view helper's optional display argument (maximized, primary, disabled, placeholder, the clock, the chosen row) defaults to its plain form; callers pass the proved choice (batch 72)
+src/web/actionView.vibe	status	value disconnected.includes(run.id)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/web/actionView.vibe	steps	default interactive = false	Markup: a view helper's optional display argument (maximized, primary, disabled, placeholder, the clock, the chosen row) defaults to its plain form; callers pass the proved choice (batch 72)
 src/web/actionView.vibe	steps/callback	interactive	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/actionView.vibe	trace	default chosen = ""	Markup: a view helper's optional display argument (maximized, primary, disabled, placeholder, the clock, the chosen row) defaults to its plain form; callers pass the proved choice (batch 72)
@@ -468,12 +486,16 @@ src/web/historyApp.vibe	execute	catch () => undefined	Absence: a failed read, de
 src/web/historyApp.vibe	execute	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 src/web/historyApp.vibe	execute	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 src/web/historyApp.vibe	execute	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
+src/web/historyApp.vibe	hashReads	value COMMIT_HASH.test(hash)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
+src/web/historyApp.vibe	hashReads	value EPIC_HASH.test(hash)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/web/historyApp.vibe	readCommand	switch read.kind	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
+src/web/historyApp.vibe	shownCommit	value COMMIT_HASH.test(model.hash)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/web/historyApp.vibe	subscriptions/callback/dependenciesToStream/callback	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 src/web/historyApp.vibe	update/ClickedMore	?? pageOf(model, id)?.commits.length	Default: Show more renders only under an epic's read page (commitList), so a missing page reads from 0 only by construction
 src/web/historyApp.vibe	update/GotOutline	value model.status === "ready"	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 src/web/historyApp.vibe	update/Navigated	commands.length === 0	Commands: sends the commands a proved step returned, or none; Foldkit batching, no decision
 src/web/historyApp.vibe	update/PressedEscape	model.dialog	Forwards: Escape acts on the plan's own open flag; nothing to close while it is closed
+src/web/historyApp.vibe	update/ToggledEpic	value model.open.includes(id)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/web/historyApp.vibe	update/Wrote	hash === ""	Empty text: an empty hash names no commit to open, so no address is set
 src/web/historyBackend.vibe	BrowserMythical/callback/callback	?? answer?.agent	Mock mode (VL-13): the forced mock backend, not a product decision
 src/web/historyBackend.vibe	BrowserMythical/callback/callback	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
@@ -488,6 +510,7 @@ src/web/historyStartup.vibe	mockRole	catch { asked = "" }	Host boundary: DOM, wi
 src/web/historyStartup.vibe	signedRoles/callback	!("ledger" in identity)	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/historyStartup.vibe	signedRoles/callback	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
 src/web/historyStartup.vibe	signedRoles/callback/callback	event.type === "RoleGranted" && grantsMe(event.type, event.id, identity.id)	Variant dispatch: narrows to the grant variant for its role; the proved grantsMe decides whose grant counts
+src/web/historyView.vibe	body	value COMMIT_HASH.test(model.hash)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/web/historyView.vibe	commitPage	real.length === 0	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
 src/web/historyView.vibe	commitPage/callback	find each.id === commit.epic	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/historyView.vibe	commitPage/notes/callback	filter note.section === which	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -496,6 +519,7 @@ src/web/historyView.vibe	connection	model.disconnected	Forwards: reads a value o
 src/web/historyView.vibe	epicCard	open	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/historyView.vibe	epicCard	open	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/historyView.vibe	epicCard	open	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
+src/web/historyView.vibe	epicCard	value model.open.includes(epic.id)	Markup: marks the option, choice or pane the Model names (selected, checked, highlighted, maximized, preformatted); the proved steps decide what the Model names (batch 70)
 src/web/historyView.vibe	failure	model.error === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/historyView.vibe	failure	value model.filter.trim() === ""	Observation: one comparison stored as a named fact (a `const` or a facts object field) that a proved function reads and decides on (batch 70)
 src/web/historyView.vibe	list	model.exported === ""	Empty text: an empty string shows nothing; any other text shows as given
@@ -584,6 +608,7 @@ src/web/issuesView.vibe	issueLink	full	Markup: an icon, class, element or size f
 src/web/issuesView.vibe	list/callback	i.comments === 0	Zero: a zero count or revision shows nothing or a dash; any other shows as given
 src/web/issuesView.vibe	list/callback	state === ui.state	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/issuesView.vibe	list/callback	ui.kind === kind	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+src/web/issuesView.vibe	list/callback	value `${i.title} #${i.number} ${i.labels.join(" ")}`.toLowerCase().includes(ui.query.toLowerCase())	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/web/issuesView.vibe	list/callback	value ui.data.absoluteDates === true	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 src/web/issuesView.vibe	list/callback	value ui.data.absoluteDates === true	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 src/web/issuesView.vibe	list/callback	value ui.kind === kind	Markup: marks the option, choice or pane the Model names (selected, checked, highlighted, maximized, preformatted); the proved steps decide what the Model names (batch 70)
@@ -660,6 +685,7 @@ src/web/main.vibe	execute/callback	posted === ""	Result: an effect's outcome bec
 src/web/main.vibe	execute/callback	reached	Result: an effect's outcome becomes its success or failure message; the failure is the host's
 src/web/main.vibe	execute/callback	result.success.draft !== undefined && result.success.draft.page === page	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	execute/callback	started === ""	Result: an effect's outcome becomes its success or failure message; the failure is the host's
+src/web/main.vibe	execute/callback	value ["new", "split", "propose"].includes(request.op)	Open: restates the proved issueCreates (issueGraphDecision); call it once pnpm fuzz:affected passes src/web/main.vibe, which misses 4 unrelated branches today (batch 74)
 src/web/main.vibe	execute/callback	window.location.pathname + window.location.hash !== url	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	execute/callback/callback	find entry.id === page	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	execute/callback/callback	find entry.id === request.page	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -716,6 +742,7 @@ src/web/main.vibe	subscriptions/callback/modelToDependencies	?? model.sandbox?.s
 src/web/main.vibe	subscriptions/callback/modelToDependencies	value !!model.sandboxBusy	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 src/web/main.vibe	subscriptions/callback/modelToDependencies	value model.autoTour === true	Default: an absent optional flag reads as false (`=== true`); nothing of the view's own choosing (batch 70)
 src/web/main.vibe	subscriptions/callback/modelToDependencies	value model.stream === "open"	Variant test: the Model's stream state opens its subscription; the proved stream steps decide the state (batch 70)
+src/web/main.vibe	subscriptions/callback/modelToDependencies/callback	value actionsOf(model).disconnected.includes(run.id)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/web/main.vibe	subscriptions/scrolled	value	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	touringHere	?? model.tourClient	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update	?? issues?.dialog	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -773,6 +800,7 @@ src/web/main.vibe	update/OpenIssueCard	?? model.issues	Default: an absent option
 src/web/main.vibe	update/OpenIssueCard	?? model.issues	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/OpenIssueCard	?? model.issues?.serial	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/PressedCommandK	value !model.palette	Toggle: Command-K flips the palette flag; the proved paletteChange decides the focus that follows (batch 70)
+src/web/main.vibe	update/PressedEscape	value model.client.conversation.pane.startsWith("/wiki/")	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 src/web/main.vibe	update/ReceivedEvent	?? announcedAnswer?.text	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/ReceivedEvent	?? answer?.error	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/ReceivedEvent	?? answer?.text	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -780,9 +808,11 @@ src/web/main.vibe	update/ReceivedEvent	?? model.wikiAfter	Lookup: finds the reco
 src/web/main.vibe	update/ReceivedEvent	?? model.wikiEdit?.page	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/ReceivedEvent	&& model.wikiAfter !== undefined && client.conversation.entries.some(entry => entry.id === model.wikiAfter)	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	update/ReceivedEvent	event.type === "PaneOpened"	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
+src/web/main.vibe	update/ReceivedEvent	value /\]\(#issue-[1-9][0-9]*\)/.test(announcedAnswer?.text ?? "")	Observation: one comparison stored as a named fact (a `const` or a facts object field) that a proved function reads and decides on (batch 70)
 src/web/main.vibe	update/ReceivedEvent	value accountOf(model).people === "max"	Observation: one comparison stored as a named fact (a `const` or a facts object field) that a proved function reads and decides on (batch 70)
 src/web/main.vibe	update/ReceivedEvent	value model.stream === "open"	Observation: one comparison stored as a named fact (a `const` or a facts object field) that a proved function reads and decides on (batch 70)
 src/web/main.vibe	update/ReceivedEvent	value paneUrl === `/wiki/${model.wikiEdit?.page ?? ""}`	Observation: one comparison stored as a named fact (a `const` or a facts object field) that a proved function reads and decides on (batch 70)
+src/web/main.vibe	update/ReceivedEvent	value paneUrl.startsWith("/wiki/")	Observation: one comparison stored as a named fact (a `const` or a facts object field) that a proved function reads and decides on (batch 70)
 src/web/main.vibe	update/ReceivedEvent/callback	find entry.id === event.id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	update/ReceivedEvent/callback	some entry.id === model.wikiAfter	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	update/ReceivedRole	?? account.members.find(person => person.id === event.id)?.login	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -813,6 +843,7 @@ src/web/markdown.vibe	compile	line.trim() === ""	Markdown parsing: regexp-driven
 src/web/markdown.vibe	compile	list	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	ordered	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	ruling	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
+src/web/markdown.vibe	compile	value /^[0-9]/.test(line)	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	while index < lines.length	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	while index < lines.length	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	while index < lines.length && !lines[index]!.startsWith("```")	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
@@ -961,8 +992,10 @@ worker/accountObject.vibe	identityFromPolicy/request	admitted	Forwards the polic
 worker/accountObject.vibe	identityFromPolicy/request	catch () => false	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
 worker/accountObject.vibe	identityFromPolicy/role	admitted	Forwards the policy object's admission, decided by the proved role policy on its host
 worker/accountObject.vibe	identityFromPolicy/role	catch () => false	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
+worker/Accounts.vibe	cookieOf	value origin.startsWith("https:")	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 worker/Accounts.vibe	make	?? setup.delegate	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Accounts.vibe	make	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
+worker/Accounts.vibe	make	value setup.origin.startsWith("https:")	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 worker/Accounts.vibe	make/authorize	!(try sequencer.allows(actor, action))	Host boundary: the sequencer's role answer, decided by the proved decide on its host
 worker/Accounts.vibe	make/callback	?? body	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Accounts.vibe	make/callback	(url.pathname === "/api/auth/device" || url.pathname === CALLBACK) && request.method === "POST"	Variant dispatch on the account route, which the proved accountRoute admits
@@ -971,11 +1004,14 @@ worker/Accounts.vibe	make/callback	catch () => undefined	Absence: a failed read,
 worker/Accounts.vibe	make/callback	url.pathname === "/api/issues"	Variant dispatch on the account route, which the proved accountRoute admits
 worker/Accounts.vibe	make/callback	url.pathname === "/api/roles" && request.method === "POST"	Variant dispatch on the account route, which the proved accountRoute admits
 worker/Accounts.vibe	make/callback	url.pathname === "/api/wiki"	Variant dispatch on the account route, which the proved accountRoute admits
+worker/Accounts.vibe	make/cookie	value setup.origin.startsWith("https:")	Observation: the https origin test the proved signInCookieName and presentedSession read; a `__Host-` cookie must be Secure, so the cookie's Secure flag reads the same test (batch 74)
 worker/Accounts.vibe	make/current	live.value.agent === true	Variant test: an agent session
 worker/Accounts.vibe	make/current	live.value.agent === true	Variant test: an agent session
 worker/Accounts.vibe	make/current	value live.value.agent === true	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 worker/Accounts.vibe	make/handle	catch () => false	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
 worker/Accounts.vibe	make/handle	catch () => false	Fail closed: a refused or failed authorization, or an unparsable cookie origin, reads as not permitted (batch 73)
+worker/Accounts.vibe	make/handle	value url.searchParams.has("code")	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
+worker/Accounts.vibe	make/handle	value url.searchParams.has("state")	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 worker/Accounts.vibe	make/handle/callback	?? live?.key	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Accounts.vibe	make/handle/callback	?? live?.value.id	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Accounts.vibe	make/handle/callback	?? url.searchParams.get("resume-key")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
@@ -993,6 +1029,7 @@ worker/Accounts.vibe	make/handle/callback	catch () => undefined	Absence: a faile
 worker/Accounts.vibe	make/handle/callback	value live.value.agent === true	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 worker/Accounts.vibe	make/json	default status = 200	Host boundary: a JSON response helper answers 200 unless its caller names the status the proved route decision chose (batch 72)
 worker/Accounts.vibe	make/mutation/callback/callback	result !== null && typeof result === "object" && "status" in result	Variant test: a mutation that answered an HTTP status
+worker/Accounts.vibe	make/presented	value setup.origin.startsWith("https:")	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 worker/Accounts.vibe	make/readResponse	default budget: Duration.Input = "6 seconds"	Limit: the module's named bound (MAX_SEED_NOTE, MAX_CALLS, a read's 6-second budget, the export pace) unless a test passes another (batch 72)
 worker/Accounts.vibe	make/readResponse	method !== "GET"	Variant dispatch: a GET answers the read, any other method the write's receipt
 worker/Accounts.vibe	make/session	catch () => undefined	Absence: a failed read, decode or lookup reads as absent (undefined, null, empty); the caller's own branch, counted, decides what absent means (batch 73)
@@ -1000,6 +1037,7 @@ worker/Accounts.vibe	readSetup	catch () => undefined	Absence: a failed read, dec
 worker/ActionDirectory.vibe	directory	default authority: Pick<ActionIdentity.Shape, "role"> = signedOut	Least privilege: an absent authority, gateway, principal or role is the signed-out viewer, and an absent kind a person (the proved actorKind); a caller grants more only by passing it (batch 72)
 worker/ActionDirectory.vibe	directory/cancel	default owner = ""	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionDirectory.vibe	directory/cancel	value request.flow === "vibelang/Post"	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
+worker/ActionDirectory.vibe	directory/list/callback/callback	value indexed.has(run.id)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 worker/ActionDirectory.vibe	directory/rerun	default owner = ""	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionDirectory.vibe	directory/root	?? request?.flow	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionDirectory.vibe	directory/root	parent === id || (try runs.request(id, true)) !== undefined	Variant: a root id or a stored run is its own root; the proved actionRoot gives the parent
@@ -1208,6 +1246,10 @@ worker/Issues.vibe	githubHost/read	review.user !== null && !reviewers.includes(r
 worker/Issues.vibe	githubHost/read	reviews.truncated	Forwards: GitHub.Pulls.listReviews and GitHub.Issues.listComments set truncated when they stop before the last page; the branch refuses on that flag as given and compares nothing of its own
 worker/Issues.vibe	githubHost/read	value assignee !== ""	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 worker/Issues.vibe	githubHost/read	value i.state === "closed"	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
+worker/Issues.vibe	githubHost/read	value labels.includes("vibelang:running")	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
+worker/Issues.vibe	githubHost/read	value labels.includes(ACCEPTED)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
+worker/Issues.vibe	githubHost/read	value labels.includes(DECLINED)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
+worker/Issues.vibe	githubHost/read	value labels.includes(TASK_LABEL)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 worker/Issues.vibe	githubHost/read/callback	?? c.body	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	githubHost/read/callback	?? i.body	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	githubHost/read/callback	findIndex (value as { readonly number?: unknown } | null)?.number === number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -1295,6 +1337,7 @@ worker/Sandboxes.vibe	open/hold/callback	?? running.get(id)	Default: an absent o
 worker/Sandboxes.vibe	open/hold/callback	count === 0	Emptiness: the last hold released
 worker/Sandboxes.vibe	open/read	!rows[0]	Absence: no stored row
 worker/Sandboxes.vibe	open/read	value pending.kind === "command"	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
+worker/Sandboxes.vibe	open/read	value running.has(pending.operationId)	Observation: a membership, prefix or pattern test of a field, passed whole to a proved function, which decides on it (batch 74)
 worker/Sandboxes.vibe	open/receipt	!rows[0]	Absence: no stored row
 worker/Sandboxes.vibe	open/write/callback/callback	receipt	Variant: a receipt write or a pending write
 worker/Sandboxes.vibe	runtime	default retention: CloudflareRuntime.Retention = EXECUTION_RETENTION	Seam: the production dependency, policy or store by default; the parameter exists so a test injects a faulty or fixture one (AGENTS.md, no mocks); no product choice (batch 72)

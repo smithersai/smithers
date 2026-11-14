@@ -7758,6 +7758,25 @@ flags, 3 unreadable budget meters (zero tokens, one unreported call), 2 scripts,
 execution's missing receipt. No fallback fails open: the two `catch () => true` sites set a `failed` flag. 1,384 shell
 branches, 0 open.
 
+### Batch 74: a membership, prefix or pattern test as a value
+
+Batch 70 counted a comparison passed as a value, but not the same test written as a call: `ids.includes(page)`,
+`url.startsWith("https:")`, `/x/.test(s)`, `set.has(id)`. Inside an `if` these already count as operands; passed or
+stored they did not. The `value` kind now covers these calls too; a host type guard among them (`Number.isSafeInteger`)
+stays neutral by the operand rule. `verify/landing_test.cjs` failed first.
+
+On main `1787fe91` this adds 43 branches. One is a proved rule restated inline and is recorded `Open:`: the issues
+screen marks an answer `created` by `["new", "split", "propose"].includes(request.op)`, the set the proved
+`issueCreates` (`src/core/issueGraphDecision.vibe`, mutant `graph-creates-split`) decides for the fixture host. Calling
+`issueCreates` there changes no behavior, but a change to `src/web/main.vibe` now needs a passing `pnpm fuzz:affected`
+receipt (0015, session 21), and two runs on that one-line change (16 targets, 4 boxes) both left the same 4 of 596
+branches uncovered, at lines 394, 423, 475 and 970, none of them the changed line. That gap is reported to vl-fuzz2; the
+call lands when the receipt passes. The other 42 are recorded: 29
+tests passed whole to a proved function, 5 mock mode, 2 fact fields, the forced mock flag, the export's note list (read
+by the proved `notesComplete`), an epic card's open mark, a markdown list test, the seed script, and the session
+cookie's Secure flag, which reads the same https test as the proved `signInCookieName`, as a `__Host-` cookie needs.
+1,427 shell branches, 1 open.
+
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 
 Five shells compared `Number(content-length)` with a literal: accounts 2,048 bytes (sign-in and roles), issues 32 KiB,
