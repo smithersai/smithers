@@ -4,6 +4,7 @@ import { type Registered, type Run, type Role } from "../src/actions/Actions.vib
 import { bundled, allowed, registration } from "../src/actions/catalog.vibe"
 import { ACTIONS_PATH, type RunRequest, RerunBody, StartBody } from "../src/actions/wire.vibe"
 import { ActionIdentity } from "./ActionIdentity.vibe"
+import { listedCommand } from "./actorDecision.vibe"
 import type { Unreachable } from "./Unreachable.vibe"
 import { actionsRoute, callerActor, crossOriginWrite, declaredTooLarge, MAX_BODY, runIdValid, runRoute, startActor, writeStatus } from "./actionsDecision.vibe"
 
@@ -31,7 +32,7 @@ export effect function handle(api: ActionsApi, url: URL) {
   if (crossOriginWrite(request.method, request.headers.origin, new URL(request.originalUrl, url).origin)) return json({ code: "forbidden" }, 403)
   const route = actionsRoute(url.pathname, request.method)
   if (route === "flows") return json((try (try Effect.orDie(bundled)).list()).map((flow) => registration(flow._tag)))
-  if (route === "commands") return json((try (try Effect.orDie(bundled)).list()).map((flow) => registration(flow._tag)).filter((entry) => entry.command !== "" && allowed(principal.role, entry)))
+  if (route === "commands") return json((try (try Effect.orDie(bundled)).list()).map((flow) => registration(flow._tag)).filter((entry) => listedCommand(entry.command, allowed(principal.role, entry))))
   if (route === "runs") return json(try api.list(url.searchParams.get("flow") ?? ""))
   if (route === "start") {
     const raw = try boundedBody()

@@ -4,6 +4,7 @@ G = 'src/web/viewGateDecision.vibe'
 S = 'src/web/viewStateDecision.vibe'
 L = 'src/web/viewLabelDecision.vibe'
 F = 'src/web/mainFactsDecision.vibe'
+A = 'worker/actorDecision.vibe'
 cases = [
 # Batch 57: gating and enablement.
 (G, 'gate-mode-offered', 'switchedMode', 'return offered && mode !== "pending" ? mode : ""', 'return mode !== "pending" ? mode : ""', 'a page that offers no switch shows none'),
@@ -157,4 +158,22 @@ cases = [
 (F, 'facts-failure-connect', 'issueFailureWords', 'return reason === "connect" ? "Connect GitHub."', 'return reason === "fork" ? "Connect GitHub."', 'connect asks to connect'),
 (F, 'facts-failure-fork', 'issueFailureWords', ': reason === "fork" ? "Fork on GitHub."', ': reason === "install" ? "Fork on GitHub."', 'fork asks to fork'),
 (F, 'facts-failure-install', 'issueFailureWords', ': reason === "install" ? "Install Smithers on your fork." : other', ': other', 'install asks to install'),
+# Batch 63: who acts, and what a host admits.
+(A, 'actor-role-absent', 'actorRole', 'return present ? role : "viewer"', 'return role', 'no principal acts as a viewer'),
+(A, 'actor-role-present', 'actorRole', 'return present ? role : "viewer"', 'return "viewer"', 'a principal acts with its role'),
+(A, 'actor-kind-unstated', 'actorKind', 'return stated ? kind : "person"', 'return kind', 'an unstated kind is a person'),
+(A, 'actor-kind-stated', 'actorKind', 'return stated ? kind : "person"', 'return "person"', 'a stated agent is an agent'),
+(A, 'actor-issue-key-absent', 'issueExecutionActor', 'return present ? id : "public"', 'return id', 'no principal is keyed public'),
+(A, 'actor-issue-key-present', 'issueExecutionActor', 'return present ? id : "public"', 'return "public"', "a principal is keyed by its id"),
+(A, 'actor-wiki-key-empty', 'wikiExecutionActor', 'return present && id !== "" ? id : "public"', 'return present ? id : "public"', 'an empty id is keyed public'),
+(A, 'actor-wiki-key-absent', 'wikiExecutionActor', 'return present && id !== "" ? id : "public"', 'return id !== "" ? id : "public"', 'no principal is keyed public'),
+(A, 'probe-token', 'probeAuthorized', 'return token !== "" && matches', 'return matches', 'no configured token authorizes nothing'),
+(A, 'probe-match', 'probeAuthorized', 'return token !== "" && matches', 'return token !== ""', 'a wrong header is refused'),
+(A, 'commands-listed', 'listedCommand', 'return command !== "" && permitted', 'return permitted', 'an entry without a command is not listed'),
+(A, 'commands-permitted', 'listedCommand', 'return command !== "" && permitted', 'return command !== ""', 'a command the role may not run is not listed'),
+(A, 'review-signed-in', 'reviewAuthored', 'return actor !== "" && author === actor', 'return author === actor', 'a signed-out actor owns no review'),
+(A, 'review-author', 'reviewAuthored', 'return actor !== "" && author === actor', 'return actor !== ""', "another person's review is not the actor's"),
+(A, 'review-one-file', 'reviewChangesPage', 'return files === 1 && filename === path', 'return filename === path', 'a review of several files is refused'),
+(A, 'review-path', 'reviewChangesPage', 'files === 1 && filename === path && status', 'files === 1 && status', 'a review of another file is refused'),
+(A, 'review-modified', 'reviewChangesPage', ' && status === "modified"', '', 'only a modification counts'),
 ]

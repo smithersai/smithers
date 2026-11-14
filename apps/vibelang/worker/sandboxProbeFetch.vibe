@@ -7,6 +7,7 @@
 // running generation through the SandboxMeter flow (the leftover sweeper), and every lease is clamped to the deadline,
 // so Cloudflare's inactivity timeout ends a container even if the alarm never runs.
 import { digestSync } from "@smthrs/crypto"
+import { probeAuthorized } from "./actorDecision.vibe"
 import type { RuntimeContext } from "alchemy/RuntimeContext"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Role } from "../src/core/sandboxDecision.vibe"
@@ -55,7 +56,7 @@ export function leaseFor(id: string, milliseconds: number, now: number) {
 
 /** Compare by digest, so the comparison's time doesn't depend on how much of the token a caller guessed. */
 effect function authorized(token: string, header: string | undefined) {
-  return token !== "" && (try Effect.orDie(Effect.try(() => digestSync(header ?? "") === digestSync(`Bearer ${token}`))))
+  return probeAuthorized(token, try Effect.orDie(Effect.try(() => digestSync(header ?? "") === digestSync(`Bearer ${token}`))))
 }
 effect function ownerOf(request: HttpServerRequest.HttpServerRequest, token: string, now: number) {
   const owner = request.headers[OWNER_HEADER] ?? ""

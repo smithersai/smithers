@@ -1,0 +1,59 @@
+// Who acts, and what a host admits, when the issues and wiki hosts, the sandbox probe and the actions API decided it
+// inline (0018 "Decisions in views", batch 63, lane vl-proveall3). Plain values in; the hosts read the principal.
+import type { Role } from "../src/core/conversation.vibe"
+
+/** A missing principal acts as a viewer; a present one acts with its own role. */
+//@ verify
+//@ ensures \result == (present ? role : "viewer")
+export function actorRole(present: boolean, role: Role): Role {
+  return present ? role : "viewer"
+}
+
+/** A principal of no stated kind, or no principal, is a person; only a stated agent is an agent. */
+//@ verify
+//@ ensures \result == (stated ? kind : "person")
+export function actorKind(stated: boolean, kind: "person" | "agent"): "person" | "agent" {
+  return stated ? kind : "person"
+}
+
+/** The issues host keys a missing principal's executions as public; a present principal by its own id. */
+//@ verify
+//@ ensures \result == (present ? id : "public")
+export function issueExecutionActor(present: boolean, id: string): string {
+  return present ? id : "public"
+}
+
+/** The wiki host keys a missing principal, or one with an empty id, as public. */
+//@ verify
+//@ ensures \result == (present && id != "" ? id : "public")
+export function wikiExecutionActor(present: boolean, id: string): string {
+  return present && id !== "" ? id : "public"
+}
+
+/** A sandbox probe is authorized only when a token is configured and the presented header matches it. */
+//@ verify
+//@ ensures \result == (token != "" && matches)
+export function probeAuthorized(token: string, matches: boolean): boolean {
+  return token !== "" && matches
+}
+
+/** The actions API lists only entries with a slash command that the caller's role may run. */
+//@ verify
+//@ ensures \result == (command != "" && permitted)
+export function listedCommand(command: string, permitted: boolean): boolean {
+  return command !== "" && permitted
+}
+
+/** A proposed wiki review counts as the actor's own only when a signed-in actor wrote it. */
+//@ verify
+//@ ensures \result == (actor != "" && author == actor)
+export function reviewAuthored(author: string, actor: string): boolean {
+  return actor !== "" && author === actor
+}
+
+/** A proposed wiki review changes exactly the page's one file, by modifying it. */
+//@ verify
+//@ ensures \result == (files == 1 && filename == path && status == "modified")
+export function reviewChangesPage(files: number, filename: string, path: string, status: string): boolean {
+  return files === 1 && filename === path && status === "modified"
+}

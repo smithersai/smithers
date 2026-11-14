@@ -186,8 +186,8 @@ src/history/export.vibe	check/callback	every noted.has(entry[1])	Open: state: an
 src/history/export.vibe	noteOf/of/callback	filter note.section === kind	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/export.vibe	planned	?? folded.get(link.commit.id)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/export.vibe	planned	?? noted.get(link.oid)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/history/export.vibe	planned	?? previous?.commits	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/history/export.vibe	planned	?? previous?.commits	Open: state: only published entries with a source tree are known trees
+src/history/export.vibe	planned	?? previous?.commits	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
+src/history/export.vibe	planned	?? previous?.commits	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 src/history/export.vibe	planned	history.main === ""	Formatting: the manifest message names main, or nothing before main has a commit
 src/history/export.vibe	planned/callback	&& source !== "" && !known.has(source)	Open: state: the export waits for trees it does not know yet
 src/history/export.vibe	planned/callback	filter entry[2] !== ""	Open: state: only published entries with a source tree are known trees
@@ -711,8 +711,7 @@ worker/ActionDirectory.vibe	directory/submit	?? request.owner	Default: an absent
 worker/ActionDirectory.vibe	directory/submit/callback/callback	cause.reasons.length === 1	Host boundary: Effect’s Cause shape; the engine’s identity conflict dies as the only reason
 worker/ActionDirectory.vibe	directory/submit/callback/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
 worker/ActionIdentity.vibe	fromAccounts/request	?? trusted.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-worker/ActionIdentity.vibe	fromAccounts/request	&& person.id !== "" && (try accounts.allowed(person.id, "action"))	Open: gate: an action identity is admitted only for a signed-in person the policy allows
-worker/ActionIdentity.vibe	fromAccounts/request	admitted	Forwards the account host's admission, decided by the proved role policy on its host
+worker/ActionIdentity.vibe	fromAccounts/request	&& signedIn(person.id) && (try accounts.allowed(person.id, "action"))	Forwards: signed in (the proved signedIn), then the account policy's own answer (a host service), short-circuited inside Effect
 worker/ActionIdentity.vibe	fromAccounts/request	person.agent === true	Variant test: an agent session acts as the agent
 worker/ActionIdentity.vibe	fromAccounts/role	owner === "" || !(try accounts.allowed(owner, "action"))	Host boundary: the account host's policy answer; no owner is the signed-out viewer
 worker/ActionRuns.vibe	alarm	&& reply !== undefined && reply.done	Open: state: a run's reply is done, or failed (engine or reply error)
@@ -757,8 +756,6 @@ worker/ActionsHttp.vibe	handle	?? principal.name	Default: an absent optional val
 worker/ActionsHttp.vibe	handle	?? url.searchParams.get("flow")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/ActionsHttp.vibe	handle	raw.status !== 200	Host boundary: the actions object's HTTP status, passed through
 worker/ActionsHttp.vibe	handle	raw.status !== 200	Host boundary: the actions object's HTTP status, passed through
-worker/ActionsHttp.vibe	handle/callback	&& entry.command !== "" && allowed(principal.role, entry)	Open: gate: the command list holds only commands the caller's role may run
-worker/ActionsHttp.vibe	handle/callback	filter entry.command !== "" && allowed(principal.role, entry)	Open: gate: the command list holds only commands the caller's role may run
 worker/ActionsHttp.vibe	handle/callback	find run.id === id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/apiObjects.vibe	actionIndexBody/callback/request	exact === true	Forwards the caller's exact-match flag to the index read
 worker/apiObjects.vibe	apiFetch/callback	?? commit	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -810,12 +807,8 @@ worker/Http.vibe	handle	url.pathname === HEALTH_PATH	Variant dispatch on the pat
 worker/Http.vibe	handle	url.pathname.startsWith("/api/sandboxes/")	Variant dispatch on the path prefix: health, sandboxes and actions go to their own handlers, each admitting its routes
 worker/Http.vibe	handleConversations	url.pathname === HEALTH_PATH	Variant dispatch on the path prefix: health, sandboxes and actions go to their own handlers, each admitting its routes
 worker/index.vibe	fetch	&& !url.pathname.startsWith("/api/") && wikiPath(url.pathname) === url.pathname	Open: state: a site path the wiki owns: not under /api/ and already a wiki path
-worker/Issues.vibe	executeIssues	?? actor?.id	Open: gate: a missing actor is a signed-out viewer person, keyed public
-worker/Issues.vibe	executeIssues	?? actor?.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
-worker/Issues.vibe	executeIssues	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
-worker/Issues.vibe	executeIssues	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Issues.vibe	executeIssues/callback	!known	Host boundary: whether the engine knows the recovery execution
-worker/Issues.vibe	executeIssues/callback	?? completed.value.selected	Open: state: a resumed write that failed before writing is unwritten
+worker/Issues.vibe	executeIssues/callback	?? completed.value.selected	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	executeIssues/callback	&& Option.isSome(failure) && failure.value.unwritten === true	Open: state: a resumed write that failed before writing is unwritten
 worker/Issues.vibe	executeIssues/callback	find f._tag === `vibelang/issues/${payload.op}`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
@@ -824,23 +817,17 @@ worker/Issues.vibe	executeIssues/callback	original.op === "read" && original.res
 worker/Issues.vibe	executeIssues/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Variant test: an engine deadline answers unavailable
 worker/Issues.vibe	executeIssues/callback/callback	find f._tag === `vibelang/issues/${original.resumeOp}`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Issues.vibe	executeIssues/callback/callback	find item.action === `${flow._tag}/perform`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-worker/Issues.vibe	executeIssues/callback/callback	some decoded.value[name as keyof IssueRequest] !== value	Open: gate: a resumed request must equal the stored one field by field
-worker/Issues.vibe	executeIssues/callback/callback	some decoded.value[name as keyof IssueRequest] !== value	Open: gate: a resumed request must equal the stored one field by field
-worker/Issues.vibe	executeIssues/perform	?? current?.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
-worker/Issues.vibe	executeIssues/perform	?? current?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Issues.vibe	executeIssues/callback/callback	some decoded.value[name as keyof IssueRequest] !== value	Host boundary: structural equality by the request's own keys (Object.entries with dynamic indexing, outside LemmaScript's subset); tested by issuesBoundary 'a reused key joins only the exact request it first named' and wikiEdit.http 'a write key cannot adopt a changed payload'
+worker/Issues.vibe	executeIssues/callback/callback	some decoded.value[name as keyof IssueRequest] !== value	Host boundary: structural equality by the request's own keys (Object.entries with dynamic indexing, outside LemmaScript's subset); tested by issuesBoundary 'a reused key joins only the exact request it first named' and wikiEdit.http 'a write key cannot adopt a changed payload'
 worker/Issues.vibe	executeIssues/perform	?? saved.specification	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	executeIssues/perform	?? saved.specificationHistory	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	executeIssues/perform	request.op === "accept" && current !== undefined	Variant dispatch: an accept records the person's approval through the proved approveVip
 worker/Issues.vibe	executeIssues/perform	request.op === "spec-revise" || request.op === "spec-review"	Variant dispatch on the specification operations, which the proved issuePermission admits
-worker/Issues.vibe	executeIssues/perform/callback	?? current.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Issues.vibe	executeIssues/perform/callback	item.number === request.number	Selects the requested issue
 worker/Issues.vibe	executeIssues/perform/callback/callback	&& old.number === item.number && old.approvedBy !== undefined	Open: state: an issue keeps a VIP approval it already had
 worker/Issues.vibe	executeIssues/perform/callback/callback	find old.number === item.number && old.approvedBy !== undefined	Open: state: an issue keeps a VIP approval it already had
-worker/Issues.vibe	githubHost/perform	?? actor?.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
-worker/Issues.vibe	githubHost/perform	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Issues.vibe	githubHost/perform/callback	!after.items.some((item) => item.number === existing.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase()))	Host boundary: GitHub’s assignee read-back, matched case-insensitively with toLowerCase (Unicode casing)
 worker/Issues.vibe	githubHost/perform/callback	!observed.items.some(issue => issue.number === made.number && issue.vip !== "")	Host boundary: GitHub's read-back of the proposed VIP
-worker/Issues.vibe	githubHost/perform/callback	?? actor.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Issues.vibe	githubHost/perform/callback	?? current.parent_issue_url	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	githubHost/perform/callback	committing	Variant dispatch: commit or uncommit
 worker/Issues.vibe	githubHost/perform/callback	committing && (login.trim() === "" || !before.assignees.some(choice => choice.login.toLowerCase() === login.toLowerCase()))	Host boundary: assignee choice matched case-insensitively with toLowerCase (Unicode casing); an empty login is refused
@@ -884,7 +871,9 @@ worker/Issues.vibe	githubHost/read	reviews.truncated	Forwards: GitHub.Pulls.list
 worker/Issues.vibe	githubHost/read/callback	?? c.body	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	githubHost/read/callback	?? i.body	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	githubHost/read/callback	findIndex (value as { readonly number?: unknown } | null)?.number === number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-worker/Issues.vibe	serveIssues	?? current?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Issues.vibe	keyOf	?? actor?.id	Default: filler read only when absent; the proved actorRole, actorKind or execution-actor rule decides the absent case
+worker/Issues.vibe	kindOf	?? actor?.kind	Default: filler read only when absent; the proved actorRole, actorKind or execution-actor rule decides the absent case
+worker/Issues.vibe	roleOf	?? actor?.role	Default: filler read only when absent; the proved actorRole, actorKind or execution-actor rule decides the absent case
 worker/Issues.vibe	serveIssues	request.method === "GET"	Variant dispatch on the method the proved objectMethod admitted: a GET is a read
 worker/Issues.vibe	serveIssues	result.failure._tag === "IssueFailure" && result.failure.unwritten === true	Forwards the unwritten mark the proved unwritten decided
 worker/machineObject.vibe	machineObject/callback/apply	!(try box.running)	Host boundary: whether the container runs after wake
@@ -952,11 +941,9 @@ worker/SandboxHttp.vibe	sandboxRequest	!match	Absence: the path matched no sandb
 worker/SandboxHttp.vibe	sandboxRequest	?? action	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/SandboxHttp.vibe	sandboxRequest/callback	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
 worker/sandboxProbeContainer.vibe	probeBox	mode === "passthrough"	Variant dispatch on the probe's mode (an operator diagnostic)
-worker/sandboxProbeFetch.vibe	authorized	&& token !== "" && (try Effect.orDie(Effect.try(() => digestSync(header ?? "") === digestSync(`Bearer ${token}`))))	Open: gate: a probe is authorized only with a configured token, by digest
-worker/sandboxProbeFetch.vibe	authorized/callback	?? header	Open: gate: a probe is authorized only with a configured token, by digest
+worker/sandboxProbeFetch.vibe	authorized/callback	?? header	Default: an absent Authorization header is empty, which never matches the configured token's digest
 worker/sandboxProbeFetch.vibe	leaseClamped/getByName/apply	kind !== "lease"	Host boundary: the operator probe's token check, lease kind and status read (a diagnostic route, not product logic)
 worker/sandboxProbeFetch.vibe	ownerOf	?? request.headers[OWNER_HEADER]	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
-worker/sandboxProbeFetch.vibe	probeFetch/callback	!(try authorized(token, request.headers["authorization"]))	Host boundary: the operator probe's token check, lease kind and status read (a diagnostic route, not product logic)
 worker/sandboxProbeFetch.vibe	probeFetch/callback	?? request.headers[OWNER_HEADER]	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/sandboxProbeFetch.vibe	recorded	?? conversation	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/sandboxProbeFetch.vibe	sweep	read.ok && read.snapshot.status === "running"	Host boundary: the operator probe's token check, lease kind and status read (a diagnostic route, not product logic)
@@ -976,33 +963,27 @@ worker/SpecificationReviewers.vibe	callback/review	meter.ledgerUnavailable()	Hos
 worker/VipDraft.vibe	callback/draft	!admission.admitted	Forwards the budget meter's admission (the proved reserve)
 worker/VipDraft.vibe	callback/draft	!agent.available	Host boundary: whether the drafting agent is configured
 worker/VipDraft.vibe	callback/draft	meter.ledgerUnavailable()	Host boundary: the budget ledger's availability
-worker/Wiki.vibe	executeWiki	?? actor?.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
-worker/Wiki.vibe	executeWiki	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
-worker/Wiki.vibe	executeWiki	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
-worker/Wiki.vibe	executeWiki	|| actor?.id || "public"	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Wiki.vibe	executeWiki/callback	!known	Host boundary: whether the engine knows the recovery execution
 worker/Wiki.vibe	executeWiki/callback	find f._tag === `vibelang/wiki/${payload.op}`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
 worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
 worker/Wiki.vibe	executeWiki/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Variant test: an engine deadline answers unavailable
 worker/Wiki.vibe	executeWiki/callback/callback	find item.action === `${flow._tag}/perform`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-worker/Wiki.vibe	executeWiki/callback/callback	some decoded.value[name as keyof WikiRequest] !== value	Open: gate: a resumed request must equal the stored one field by field
-worker/Wiki.vibe	executeWiki/callback/callback	some decoded.value[name as keyof WikiRequest] !== value	Open: gate: a resumed request must equal the stored one field by field
+worker/Wiki.vibe	executeWiki/callback/callback	some decoded.value[name as keyof WikiRequest] !== value	Host boundary: structural equality by the request's own keys (Object.entries with dynamic indexing, outside LemmaScript's subset); tested by issuesBoundary 'a reused key joins only the exact request it first named' and wikiEdit.http 'a write key cannot adopt a changed payload'
+worker/Wiki.vibe	executeWiki/callback/callback	some decoded.value[name as keyof WikiRequest] !== value	Host boundary: structural equality by the request's own keys (Object.entries with dynamic indexing, outside LemmaScript's subset); tested by issuesBoundary 'a reused key joins only the exact request it first named' and wikiEdit.http 'a write key cannot adopt a changed payload'
 worker/Wiki.vibe	githubWikiHost/loadDraft	storage === undefined || person === ""	Absence: no storage or no person has no retained draft
-worker/Wiki.vibe	githubWikiHost/perform	?? actor?.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
-worker/Wiki.vibe	githubWikiHost/perform	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
-worker/Wiki.vibe	githubWikiHost/perform/callback	!authored || !changed	Host boundary: GitHub's read-back that the review is the person's and changes exactly this page
-worker/Wiki.vibe	githubWikiHost/perform/callback	?? actor?.id	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Wiki.vibe	githubWikiHost/perform/callback	?? actor?.id	Default: a draft of no principal is read under the empty id, which holds none
 worker/Wiki.vibe	githubWikiHost/perform/callback	?? retained?.text	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-worker/Wiki.vibe	githubWikiHost/perform/callback	&& actor.id !== "" && observedReview.pipe(Option.exists((review) => String(review.author) === actor.id))	Open: gate: a review counts as the actor's own only for a signed-in actor who wrote it
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "draft"	Variant dispatch on the wiki operation, which the proved wikiPermission and wikiSubmissionAllowed admit
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "read"	Variant dispatch on the wiki operation, which the proved wikiPermission and wikiSubmissionAllowed admit
-worker/Wiki.vibe	githubWikiHost/perform/callback/callback	?? current.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Wiki.vibe	githubWikiHost/perform/callback/callback	?? repo.branch	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-worker/Wiki.vibe	githubWikiHost/perform/callback/callback	&& review.files.length === 1 && review.files[0]!.filename === path && review.files[0]!.status === "modified"	Open: state: a wiki review changes exactly the page's one file
+worker/Wiki.vibe	githubWikiHost/perform/callback/callback	?? review.files[0]?.filename	Default: filler for a review with no files; the proved reviewChangesPage refuses any count but 1
+worker/Wiki.vibe	githubWikiHost/perform/callback/callback	?? review.files[0]?.status	Default: filler for a review with no files; the proved reviewChangesPage refuses any count but 1
 worker/Wiki.vibe	githubWikiHost/perform/callback/callback	filter entry.id !== page.id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Wiki.vibe	githubWikiHost/perform/callback/callback	storage !== undefined && !touched	Forwards: a first execution that wrote nothing yet keeps the draft
-worker/Wiki.vibe	serveWiki	?? current?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Wiki.vibe	keyOf	?? actor?.id	Default: filler read only when absent; the proved actorRole, actorKind or execution-actor rule decides the absent case
+worker/Wiki.vibe	kindOf	?? actor?.kind	Default: filler read only when absent; the proved actorRole, actorKind or execution-actor rule decides the absent case
+worker/Wiki.vibe	roleOf	?? actor?.role	Default: filler read only when absent; the proved actorRole, actorKind or execution-actor rule decides the absent case
 worker/Wiki.vibe	serveWiki	?? url.searchParams.get("page")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/Wiki.vibe	serveWiki	request.method === "GET"	Variant dispatch on the method the proved objectMethod admitted: a GET is a read
 worker/Wiki.vibe	serveWiki	result.failure._tag === "WikiFailure" && result.failure.unwritten === true	Forwards the unwritten mark the proved wikiUnwritten decided

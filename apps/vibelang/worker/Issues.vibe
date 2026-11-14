@@ -21,6 +21,7 @@ import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 import { personId } from "./accountsDecision.vibe"
 import { bodyLimit, objectMethod, reviewNumberText, withinBodyLimit } from "./workerDecision.vibe"
+import { actorKind, actorRole, issueExecutionActor } from "./actorDecision.vibe"
 
 /** `kind: "agent"` marks a device sign-in (decision 0028); agents never approve, accept, decline or merge. */
 export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly connection?: Connection; readonly kind?: "person" | "agent" }
@@ -149,8 +150,8 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
     perform: effect (request) => {
       const actor = try authority.current()
       if (authority.authorize !== undefined) try authority.authorize(request.op)
-      if (!issuePermission(actor?.role ?? "viewer", request.op)) throw new IssueFailure({ reason: "forbidden" })
-      if (agentRefused(request.op, actor?.kind ?? "person")) throw new IssueFailure({ reason: "forbidden" })
+      if (!issuePermission(roleOf(actor), request.op)) throw new IssueFailure({ reason: "forbidden" })
+      if (agentRefused(request.op, kindOf(actor))) throw new IssueFailure({ reason: "forbidden" })
       const work = effect {
         if (request.op === "read") {
           // A signed-out read GitHub refused answers the last good copy, marked with when GitHub last confirmed it (0031).
@@ -247,7 +248,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           try written("not-running", { kind: "label.remove", repository, number: existing.number, label: "vibelang:running" })
         } else if (request.op === "accept" || request.op === "decline") {
           if (request.op === "accept" && existing.vip === "In review") {
-            const approved = approveVip(existing, actor.role, actor.kind ?? "person", actor.login, new Date(try Clock.currentTimeMillis).toISOString())
+            const approved = approveVip(existing, actor.role, kindOf(actor), actor.login, new Date(try Clock.currentTimeMillis).toISOString())
             if (approved.vip !== "Accepted") throw new IssueFailure({ reason: "forbidden" })
           }
           const plan = reviewActions(existing.vip, existing.state, request.op === "accept")
@@ -299,8 +300,14 @@ export effect function serveIssues(hostId: string, storage: Storage, repo: Repos
   }
   if (actor !== undefined && accepted !== undefined && grantsParticipation(payload.op)) try accepted(actor)
   const current = try authority.current()
-  return HttpServerResponse.jsonUnsafe({ ...result.success, role: current?.role ?? "viewer" }, { headers: { "cache-control": "no-store" } })
+  return HttpServerResponse.jsonUnsafe({ ...result.success, role: roleOf(current) }, { headers: { "cache-control": "no-store" } })
 }
+
+/** The acting principal: none acts as a viewer person keyed public, and a principal of no stated kind is a person
+ * (the proved actorRole, actorKind and issueExecutionActor). */
+function roleOf(actor: Principal | undefined): Role { return actorRole(actor !== undefined, actor?.role ?? "viewer") }
+function kindOf(actor: Principal | undefined): "person" | "agent" { return actorKind(actor?.kind !== undefined, actor?.kind ?? "person") }
+function keyOf(actor: Principal | undefined): string { return issueExecutionActor(actor !== undefined, actor?.id ?? "") }
 
 /** The same durable execution for HTTP, CLI/MCP and a delegated chat tool. */
 export effect function executeIssues(hostId: string, storage: Storage, payload: IssueRequest, repo: Repository = repository) {
@@ -308,10 +315,10 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
   const authority = try IssueAuthority
   const actor = try authority.current()
   if (authority.authorize !== undefined) try authority.authorize(payload.op)
-  if (agentRefused(payload.op, actor?.kind ?? "person")) throw new IssueFailure({ reason: "forbidden" })
-  try authorizeIssue(actor?.role ?? "viewer", payload.op)
+  if (agentRefused(payload.op, kindOf(actor))) throw new IssueFailure({ reason: "forbidden" })
+  try authorizeIssue(roleOf(actor), payload.op)
   const flow = issueFlows.find((f) => f._tag === `vibelang/issues/${payload.op}`)!
-  const executionId = try issueExecutionId(actor?.id ?? "public", payload.op, payload.key)
+  const executionId = try issueExecutionId(keyOf(actor), payload.op, payload.key)
   /** One admission time per request, whichever execution or retry asks. */
   const admitted = effect () => {
     const name = "issues/admitted/" + executionId
@@ -333,12 +340,12 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
   // The project object owns gate receipts; public GitHub labels cannot invent a person's approval.
   const host: IssueHost.Shape = { perform: effect (request) => {
     const current = try authority.current()
-    if (agentRefused(request.op, current?.kind ?? "person")) throw new IssueFailure({ reason: "forbidden" })
+    if (agentRefused(request.op, kindOf(current))) throw new IssueFailure({ reason: "forbidden" })
     const raw = try promise(() => storage.get("gates/state"))
     const saved: typeof IssuesState.Type = raw === undefined ? { seq: 0, items: [], specification: emptySpecification } : try Schema.decodeUnknownEffect(IssuesState)(raw).pipe(Effect.mapError(() => new IssueFailure({ reason: "protocol" })))
     if (!Number.isSafeInteger(saved.seq) || !revisionRoom(saved.seq)) throw new IssueFailure({ reason: "protocol" })
     if (request.op === "spec-revise" || request.op === "spec-review") {
-      if (!issuePermission(current?.role ?? "viewer", request.op)) throw new IssueFailure({ reason: "forbidden" })
+      if (!issuePermission(roleOf(current), request.op)) throw new IssueFailure({ reason: "forbidden" })
       const result = try performSpecification(saved, request, false)
       try promise(() => storage.put("gates/state", result))
       return result
@@ -357,7 +364,7 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     })
     if (request.op === "accept" && current !== undefined) {
       const at = new Date(try Clock.currentTimeMillis).toISOString()
-      items = items.map(item => item.number === request.number ? approveVip(item, current.role, current.kind ?? "person", current.login, at) : item)
+      items = items.map(item => item.number === request.number ? approveVip(item, current.role, kindOf(current), current.login, at) : item)
     }
     const result = { ...observed, items, specification: saved.specification ?? emptySpecification, specificationHistory: saved.specificationHistory ?? [], seq: nextRevision(saved.seq, observed.seq) }
     try promise(() => storage.put("gates/state", result))
@@ -425,7 +432,7 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
       ? Effect.logWarning("vibelang.issues.deadline").pipe(Effect.annotateLogs({ op: payload.op }), Effect.andThen(Metric.update(Metric.withAttributes(Metric.counter("vibelang_issue_deadline", { incremental: true }), { op: payload.op }), 1)), Effect.andThen(Effect.fail(new IssueFailure({ reason: "unavailable", code: "unavailable" }))))
       : Effect.die(defect)),
   )
-  return { ...result, role: actor?.role ?? "viewer", connected: actor?.connection !== undefined }
+  return { ...result, role: roleOf(actor), connected: actor?.connection !== undefined }
 }
 
 /** Unconfigured sign-in still leaves GitHub's public issues readable. */
