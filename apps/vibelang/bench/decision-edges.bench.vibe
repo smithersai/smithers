@@ -6,6 +6,7 @@ import { accountFailureText, actionsEpochCurrent, actionsFailureApplies, slashHi
 import { issueAction, issueAssigneeAfter, issueLoaded, type IssueScreen, type IssueFacts } from "../src/web/issueDecision.vibe"
 import { readOffsets, closesDialog } from "../src/web/historyDecision.vibe"
 import { docsPath } from "../src/core/tourDecision.vibe"
+import { agentFirst } from "../src/core/issueHostDecision.vibe"
 import { recordSpecificationReview, type Specification, type SpecificationReview } from "../src/core/conversation.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
@@ -64,6 +65,16 @@ function check() {
     clearRetry: false, closeDialog: false,
   })
 
+  // The commit dialog's assignee choices, sorted as worker/Issues.vibe sorts them: the agent first, then locale order.
+  const choices = (logins: ReadonlyArray<string>, agent: string) => [...logins].sort((a, b) => agentFirst(a, b, agent, a.localeCompare(b)))
+  expect(choices(["will", "maya", "codeplanesmithers"], "codeplanesmithers")).toEqual(["codeplanesmithers", "maya", "will"])
+  expect(choices(["codeplanesmithers", "will", "maya"], "will")).toEqual(["will", "codeplanesmithers", "maya"])
+  expect(choices(["will", "maya"], "")).toEqual(["maya", "will"])
+  expect(agentFirst("agent", "will", "agent", 1)).toBe(-1)
+  expect(agentFirst("will", "agent", "agent", -1)).toBe(1)
+  expect(agentFirst("maya", "will", "agent", -1)).toBe(-1)
+  expect(agentFirst("agent", "agent", "agent", 0)).toBe(0)
+
   expect(readOffsets(0, 50)).toEqual([0])
   expect(readOffsets(50, 50)).toEqual([0])
   expect(readOffsets(101, 50)).toEqual([0, 50, 100])
@@ -87,5 +98,5 @@ function check() {
 
 it("web-app and flow decision edges against written-out answers", async ({ bench }) => {
   const result = await workload(bench, "decision-edges", "sync", check).run(quick)
-  await runPromise(artifact("decision-edges", "Vitest built-in bench; one callback checks the Actions panel steps (epochs, failure, retry, maximize, input, slash highlight), account failure text, the issues screen's specification-review action, default role, assignee and settled load, history read offsets and dialog keys, tour docs paths and specification review recording, each against a written-out expected value. Imports excluded; assertions included.", ["Pure decisions in one process; the web app's DOM, Commands and HTTP are measured by the browser and HTTP workloads.", "Assertion overhead dominates the time."], result))
+  await runPromise(artifact("decision-edges", "Vitest built-in bench; one callback checks the Actions panel steps (epochs, failure, retry, maximize, input, slash highlight), account failure text, the issues screen's specification-review action, default role, assignee, assignee choice order and settled load, history read offsets and dialog keys, tour docs paths and specification review recording, each against a written-out expected value. Imports excluded; assertions included.", ["Pure decisions in one process; the web app's DOM, Commands and HTTP are measured by the browser and HTTP workloads.", "Assertion overhead dominates the time."], result))
 })

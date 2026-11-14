@@ -1274,3 +1274,15 @@ Artifacts stay on nyc-01 under `~/vl/vl-bench-evidence/live-f46f5a78/` (the lead
 records the Mac working-copy revision `2f8bc823`; the lead's log names main `f46f5a78`. Neither is relabeled.
 
 A later main that changes any deployed module's source opens these positions again until the next live run.
+
+**Batch 5: main `960599ec`.** Full collection, local only (job `vl-bench:b5-coverage`, cfbox node26, 02:13–02:56
+UTC): 119 files passed, 1 skipped; `src/` + `worker/` 9,692/9,863. Main's `960599ec` moved shell rules into proved
+decisions. One new runtime block had no workload: `agentFirst` (`src/core/issueHostDecision.vibe` 420–422), the
+assignee sort's comparator in `worker/Issues.vibe` 142. The old inline comparator shared the `sort` line, so the line
+counted as run. No benchmark world has two assignees: the recorded test repository and the public read of
+`smithersai/vibelang` each list one, a second account needs a GitHub write, and `smithersai/smithers` (two) lists
+about 55 issue pages, past the read's 50-page refusal. `decision-edges` now sorts written-out choices with the agent
+present at either position and absent, and checks each comparator answer. A focused run counts 420–422, and the
+workload failed with the agent's `-1` mutated to `1`. With it and the 31 deployed-only positions from the live run,
+which `960599ec` leaves unchanged: open in `src/` + `worker/` is 133 specification-only and 4 traps. A live dump
+merges only against its own deployed source, so a later live run confirms the deployed-only lines on this source.

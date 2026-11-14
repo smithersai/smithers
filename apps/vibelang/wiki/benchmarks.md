@@ -4829,3 +4829,8 @@ source `f46f5a78`, 02:10–02:44 UTC: 119 files passed, 1 skipped. The collector
 The dump closes all 31 deployed-only positions in `src/` + `worker/` and both in `infra/`; decision 0017 lists them.
 The 137 left are 133 specification-only lines (VIP-43) and 4 invariant traps. No runtime line is open. The strict
 four-metric gate still exits 1 on these positions. No threshold or exclusion changed.
+
+Batch 5 (main `960599ec`, job `vl-bench:b5-coverage`, local only): 9,692/9,863 in `src/` + `worker/`. The one new
+runtime block, the assignee comparator `agentFirst` (`issueHostDecision` 420–422), now runs in `decision-edges`
+(decision 0017 says why no GitHub world can run it). `decision-edges`: mean 0.347 ms, 288 samples, nyc-01 (shared
+host, Node 26.5.0), 03:01 UTC; assertion overhead dominates the time.
