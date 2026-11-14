@@ -28,7 +28,35 @@ effect function eventually(ready: () => boolean) {
   return ready()
 }
 
+/** A restored stop whose hold has 1 ms left: the hold ends with no signal, and the run drives the next stop. */
+effect function heldOut() {
+  const calls: Array<string> = []
+  const now = try Clock.currentTimeMillis
+  const tours: Tours["Service"] = {
+    current: () => succeed({ step: 1, target: "#restored", paused: false, revision: 7, remaining: 1, at: now }),
+    drive: (_tour, driven, target, _duration) => sync(() => {
+      calls.push(`drive ${driven}`)
+      return { step: driven, target, paused: false, revision: 8 + calls.length, remaining: HOLD, at: now }
+    }),
+    control: () => succeed({ tour: "t1", previous: 0, state: null, refusal: "not-replying" as const }),
+    start: () => succeed(null),
+    dispatch: () => Effect.void,
+    end: () => succeed(null),
+    wake: () => Effect.void,
+    running: () => succeed(true),
+    open: () => succeed(true),
+    say: () => sync(() => { calls.push("say"); return true }),
+    finish: () => sync(() => { calls.push("finish") }),
+    ended: () => Effect.never,
+  }
+  const context = try Layer.build(walkRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer), Layer.provide(Layer.succeed(Tours, tours))))
+  try Context.get(context, FlowRuntime.FlowRuntime).execute(Tour, { executionId: "tour/held", payload: { tour: "t1" }, discard: true })
+  return (try eventually(() => calls.length > 0)) && calls[0] === "drive 2"
+}
+
 it.live("tours/walk-restore", () => run("tours/walk-restore", Input, (input) => scoped(effect {
+  // Every execution: a hold that runs out moves the tour on by itself.
+  if (!(try scoped(heldOut()))) return false
   const calls: Array<string> = []
   let revision = 100
   const now = try Clock.currentTimeMillis

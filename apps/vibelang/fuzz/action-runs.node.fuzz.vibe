@@ -403,6 +403,14 @@ it.live("actions/steered-runs", () => run("actions/steered-runs", Text, (text) =
       for (let turn = 0; turn < 3; turn++) try exit(unread.host.alarm(w.spend, model, dark))
       if ((try state(unread, "unread")) !== "failed") throw new Finding({ report: `a history read of an unavailable history is ${try state(unread, "unread")}` })
 
+      // A history host that admits nothing settles the run's intent with no execution, so no receipt: the alarm answers
+      // and the run is never recorded as passed.
+      const unadmitted = try fresh("unadmitted")
+      if ((try unadmitted.host.start(request("unadmitted", Show._tag, {}, w.person.id), "maintainer")) !== null) throw new Finding({ report: "a history read was refused" })
+      const admitsNothing = HistoryActions.make("unadmitted", unadmitted.storage, () => succeed(false))
+      const unanswered = try exit(Runs.alarm("unadmitted", unadmitted.storage, unadmitted.sequencer, w.spend, model, product, admitsNothing))
+      if (unanswered._tag === "Failure" || (try state(unadmitted, "unadmitted")) === "passed") throw new Finding({ report: `an unadmitted history run answered ${unanswered._tag}, its run ${try state(unadmitted, "unadmitted")}` })
+
       // The model refuses the post's reply: the reply ends with an error, and the agent's run settles failed.
       const refusing = try scriptedModel([{ kind: "status", status: 400, code: "content_policy" }])
       const declined = try fresh("declined")

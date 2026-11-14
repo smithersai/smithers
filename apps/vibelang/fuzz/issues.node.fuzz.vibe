@@ -205,6 +205,8 @@ const performBoundary = (input: typeof Direct.Type) => effect {
     if (proceeds && [1, 2, 3, 4].includes(input.number) && result.failure.reason !== "unsupported") throw new Finding({ report: `${input.op} on an issue answered ${result.failure.reason}` })
   }
   if (agentReview && (result._tag === "Success" || result.failure.reason !== "forbidden" || fake.writes !== writesBefore)) throw new Finding({ report: `an agent's ${input.op} was not refused` })
+  // A permitted write without its key is asked to sign in again, before any write.
+  if (permitted && input.blankKey && input.op !== "read" && (result._tag === "Success" || result.failure.reason !== "sign-in" || fake.writes !== writesBefore)) throw new Finding({ report: `a ${input.op} without its key was not asked to sign in` })
   if (result._tag === "Failure") {
     if (result.failure._tag !== "IssueFailure" || !reasons.includes(result.failure.reason)) return false
     if (result.failure.reason === "forbidden" && permitted) return false
@@ -218,11 +220,12 @@ const performBoundary = (input: typeof Direct.Type) => effect {
   return ["link", "commit", "uncommit", "accept", "decline"].includes(input.op)
 }
 const directWitness: typeof Direct.Type = { op: "commit", role: "maintainer", signedOut: false, noToken: false, number: 1, parent: 0, blank: false, blankKey: false, bogus: false, demote: false, assignee: "fuzz", withWriter: false, authorizeFails: false }
-/** A maintainer declines the VIP in review; a device signed in as a maintainer tries to accept and decline it. */
+/** A maintainer declines the VIP in review; a device signed in as a maintainer tries to accept and decline it; a commit has no key. */
 const directChosen: ReadonlyArray<typeof Direct.Type> = [
   { ...directWitness, op: "decline", number: 4 },
   { ...directWitness, op: "accept", number: 4, agent: true },
   { ...directWitness, op: "decline", number: 4, agent: true },
+  { ...directWitness, blankKey: true },
 ]
 /** Random inputs rarely permit a specification operation on an existing issue; each runs once per execution. */
 const specificationWitnesses = Effect.forEach(["spec-revise", "spec-review"] as const, (op) => effect {

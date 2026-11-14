@@ -54,7 +54,10 @@ effect function answersRequest(origin: string, { kind, text, id }: typeof ApiReq
 
 it.live("workerd/api-requests", () => run("workerd/api-requests", ApiRequest, (input) => answersRequest(api!.origin, input)))
 
-it.live("workerd/alchemy-api-requests", () => run("workerd/alchemy-api-requests", ApiRequest, (input) => answersRequest(deployed!.origin, input)))
+// Every execution also posts once, so the deployed entry's request path (its execution props included) runs whatever the draw.
+it.live("workerd/alchemy-api-requests", () => run("workerd/alchemy-api-requests", ApiRequest, (input) => effect {
+  return (try answersRequest(deployed!.origin, { kind: 2, text: "hello", id: 1 })) && (try answersRequest(deployed!.origin, input))
+}))
 
 it.live("workerd/event-stream", () => run("workerd/event-stream", Int, (cursor) => effect {
   provide FetchHttpClient.layer {
