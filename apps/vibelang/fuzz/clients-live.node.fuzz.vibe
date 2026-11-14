@@ -97,6 +97,20 @@ effect function call(input: Input) {
 }
 
 /**
+ * A terminal reply is any object with a string `output`, extra fields ignored as every decoder here ignores them. A
+ * sandbox snapshot carries one, so a command answered with a snapshot succeeds (seed 20261408, vl-fuzzpkg 2026-11-14).
+ */
+const repliesChosen: ReadonlyArray<{ readonly walk: boolean; readonly input: Input }> = [{
+  walk: false,
+  input: {
+    op: "sandboxCommand", shape: "any", conversation: "fuzz", transport: false, status: 200, body: "sandbox", word: "empty",
+    sandbox: { id: "", generation: 0, sequence: 0, status: "running", role: "new", allowance: 0, used: 0, remaining: 0, resetAt: 0, output: "zq9-shown" },
+    identity: { id: "", login: "", role: "maintainer" }, event: { type: "ReplyFinished", seq: 0, id: "" },
+    health: { ok: false, agent: "live" }, text: "", step: 0,
+  },
+}]
+
+/**
  * What the protocol (0010, wire.vibe) promises for each reply: 2xx accepts a conversation intent, 409 carries the
  * sequencer's refusal; a sandbox write's 403 or 409 carries its refusal and reason; a read succeeds only with 200 and
  * a body of its schema; an account read refused by role is Denied; anything else is Unavailable, never a defect.
@@ -107,7 +121,7 @@ it.live("clients/live-replies", () => run("clients/live-replies", Schema.Struct(
   const inputs = walk ? [...all.flatMap((op) => (["fit", "refused", "broken", "odd"] as const).map((shape) => ({ ...input, op, shape, conversation: "fuzz" as const }))), input] : [input]
   for (const each of inputs) if (!(try reply(shaped(each)))) return false
   return true
-}))
+}, undefined, { chosen: repliesChosen }))
 
 effect function reply(input: Input) {
   let sent = 0
@@ -158,6 +172,9 @@ effect function reply(input: Input) {
     const expected = input.body === "text-refusal" ? MARK + input.text : input.word
     return failure?._tag === "Refused" && failure.refusal === expected && failure.reason === reason
   }
+  // A command's 200 with a string `output` (a reply's own, or a snapshot's) must answer that output.
+  const terminal = input.body === "output" ? input.text : input.body === "sandbox" ? input.sandbox.output : undefined
+  if (ok && input.op === "sandboxCommand" && status === 200 && json && terminal !== undefined) return result._tag === "Success" && result.value === terminal
   if (result._tag === "Failure") {
     if (failure?._tag !== "Unavailable") return false
     // A failure's reason names what failed; it never carries the reply's body.
@@ -167,6 +184,6 @@ effect function reply(input: Input) {
   if (conversationOp) return status >= 200 && status <= 299
   if (input.op === "read") return status === 200 && json
   if (input.op === "events") return status === 200 && input.body === "event" && json
-  if (input.op === "sandboxCommand") return status === 200 && input.body === "output" && json && result.value === input.text
+  if (input.op === "sandboxCommand") return false
   return status === 200 && input.body === "sandbox" && json
 }

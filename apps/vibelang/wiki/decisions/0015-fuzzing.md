@@ -2107,6 +2107,17 @@ nothing.
 | `gate20`: `typecheck`, `test`, nine changed fuzz files at 5 s | node26 box | 1 | typecheck 0; test 2,829 passed, 1 failed (`accountsRoutes`, above); fuzz 9 files, 41 tests, 0 |
 | `test/accountsRoutes.coverage.test.vibe` after its update | nyc-01 | 0 | 1 file |
 
+#### A terminal reply that is a snapshot (after `full24`)
+
+vl-fuzzpkg's pair at `220ece01` falsified `clients/live-replies` at seed 20261408 after 298 executions: op
+`sandboxCommand`, 200, a `SandboxSnapshot` body. The client is right. `SandboxSnapshot` requires `output: string`, and
+`decodeTerminal`, like every decoder in `LiveFactory`, ignores fields it does not name, so a snapshot answers its
+`output`. The oracle accepted only the `output` body. It now requires any 200 JSON reply with a string `output` to
+succeed with that text, checked before the generic failure branch: that branch accepted any `Unavailable`, so a strict
+decoder (`onExcessProperty: "error"`) survived the first fix. The shrunk input is a `chosen` case. Checks on nyc-01:
+the case failed first (exit 1); after the fix the file passed (exit 0); the strict-decoder mutant was caught (exit 1);
+seeds 20261408, 20261409 and 20261410 at 60 s each passed (exit 0); `pnpm typecheck` 0.
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the
