@@ -70,7 +70,7 @@ const SCENARIOS = [
   "control-tour", "read-action", "actions-faulty-epoch", "draft-link", "theatre-keys", "auto-tour", "tour-events",
   "wiki-unlisted", "wiki-unwritten", "sign-in-mock", "wiki-link",
   "end-tour", "run-epoch", "issue-count", "details-mock", "details-faulty", "editor-faulty",
-  "sandbox-poll-unreachable", "open-wiki", "run-json-blank", "people-faulty",
+  "sandbox-poll-unreachable", "open-wiki", "run-json-blank", "people-faulty", "run-retry",
 ] as const
 
 type Entries = Record<string, {
@@ -137,7 +137,8 @@ const CommandArms = Schema.Struct({ role: Role, number: Int, key: Schema.Literal
  * without an issues service focuses the dialog and with one loads the projection; issue details of a real issue load.
  * An unreachable sandbox read names its reason; opening a wiki page succeeds over the mock and fails with its request
  * number over a failing backend; a grant without accounts fails; a blank JSON action input starts the run with an empty
- * object, and unreadable JSON fails as input.
+ * object, and unreadable JSON fails as input. Retry from the panel reruns the run it names as a new run of the same
+ * flow, and a retry of a run the backend never started fails as not found.
  */
 effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof CommandArms.Type) {
   const role = input.role
@@ -418,6 +419,16 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       const opened = try Effect.provide(answer(() => OpenWikiCommand({ conversation: "fuzz-wiki", page, request: input.number })), backend("mock", role))
       const failed = try Effect.provide(answer(() => OpenWikiCommand({ conversation: "fuzz-wiki", page, request: input.number })), backend("faulty", role))
       return opened._tag === "SucceededWiki" && failed._tag === "FailedWiki" && failed.request === input.number
+    }
+    case "run-retry": {
+      provide backend("mock", "maintainer") {
+        const first = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: 0 }))
+        if (first._tag !== "StartedAction") return false
+        const again = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: 1, retry: first.run.id }))
+        const unknown = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: 2, retry: "never-started" }))
+        return again._tag === "StartedAction" && again.epoch === 1 && again.run.id !== first.run.id && again.run.flow === first.run.flow
+          && unknown._tag === "FailedActions" && unknown.code === "not-found" && unknown.epoch === 2
+      }
     }
     case "run-json-blank": {
       provide backend("mock", "maintainer") {

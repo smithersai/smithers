@@ -111,6 +111,9 @@ it.live("history/startup", () => run("history/startup", Input, ({ asked, stored 
         try until(`${scenario}: live`, () => mounted.frame("data-mode") === "live")
         if (scenario === "visitor") {
           try until("a visitor's session", () => client.asked("/api/auth/session") === 1)
+          // The page reads the answer after the request is counted: on loopback it has within milliseconds, and a
+          // visitor's session (no ledger) still opens no grant stream.
+          try sleep("500 millis")
           if (mounted.frame("data-role") !== "viewer" || client.asked("/api/roles/events") !== 0) throw new Finding({ report: "a visitor plays a role or follows grants" })
           return
         }
