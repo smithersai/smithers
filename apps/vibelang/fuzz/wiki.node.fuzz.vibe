@@ -123,7 +123,7 @@ const httpSurface = (input: typeof Http.Type) => effect {
   const web = try HttpClientRequest.toWeb(request)
   // A Web Request forbids Content-Length, so it goes on the server request a real proxy would deliver.
   const delivered = HttpServerRequest.fromWeb(web)
-  const server = input.body === "oversized" ? delivered.modify({ headers: { ...delivered.headers, "content-length": "4194305" } }) : delivered
+  const server = input.body === "oversized" ? delivered.modify({ headers: { ...delivered.headers, "content-length": "8388609" } }) : delivered
   if (input.path === "/other") {
     const answer = try Effect.provideService(publicWiki("wiki-public", storage), HttpServerRequest.HttpServerRequest, server)
     if (answer.status !== 404) return false

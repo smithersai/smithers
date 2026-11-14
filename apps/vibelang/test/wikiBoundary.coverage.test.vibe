@@ -226,7 +226,7 @@ describe("the wiki HTTP boundary refuses malformed requests", () => {
   it.live("bounds the body, and refuses bad JSON and bad write keys", () => scoped(effect {
     provide NodeHttpServer.layerTest, FetchHttpClient.layer {
       const origin = try served(failingHost("unavailable"))
-      const huge = try send(origin, "POST", "/api/wiki", JSON.stringify({ ...edit(), text: "x".repeat(4_194_400) }))
+      const huge = try send(origin, "POST", "/api/wiki", JSON.stringify({ ...edit(), text: "x".repeat(8_388_700) }))
       const malformed = try send(origin, "POST", "/api/wiki", "{nope")
       const badKey = try send(origin, "POST", "/api/wiki", JSON.stringify(edit({ key: "bad key!" })))
       try Effect.try(() => {
