@@ -7756,6 +7756,29 @@ No decision, recorded with the reason:
 
 23 mutation cases. Records: 343 branches, 0 open, 0 unreviewed, 0 reviewed rules not yet proved.
 
+## Stamp: the whole gate on main `257bbf03`, the first with every view decision proved (vl-proveall3, 2026-11-14)
+
+The whole proof and mutation gate ran on one main revision, `257bbf03481c` (batches 56 to 61 landed, 0 view decisions
+open), in 12 node26 box shards from nyc-01 (`~/vl/pa3-gate/r8-257bbf03481c/`). Every shard exited 0.
+
+| Shard | Exit | Seconds | Result |
+| --- | --- | --- | --- |
+| proof-heavy | 0 | 2,226 | 7/7 files |
+| proof-1 | 0 | 390 | 31/31 runs |
+| proof-2 | 0 | 765 | 31/31 runs |
+| proof-3 | 0 | 855 | 27/27 runs; runtime mutants 0 |
+| broken-conversation | 0 | 3,706 | 217/217 rejected |
+| broken-heavy | 0 | 3,110 | 251/251 rejected |
+| broken-1 to broken-6 | 0 | 1,000 to 2,560 | 455, 455, 456, 455, 454, 456 rejected (all of each) |
+
+Totals: `pnpm verify` 90 sources, 96 Dafny runs, 20,431 obligations, 0 errors; `pnpm verify:broken` 3,199/3,199 rejected
+(0 survived, 0 invalid, 0 missing); runtime mutants 0. Landing check on the same tree: 4,210 rows, 0 not proved, 1,251
+contracts, 3,199 mutation cases, 710 shell branches, 0 open, 0 refused.
+
+Since the stamp, batches 62 to 65 landed (`05ec4144` to `77337988`): every branch kind now counts in every file, 300 more
+branches recorded, 40 of the 62 decisions among them proved (module boxes m63 1/1 and 17/17, m64 2/2 and 30/30), 22
+open, and the tour-control body fix.
+
 ## Stamp: the whole gate on main `960599ec` (vl-proveall3, 2026-11-14)
 
 The first main revision with no reviewed rule left in a shell row (batch 55) and the first whose `verify:broken` counts
