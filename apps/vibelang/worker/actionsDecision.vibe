@@ -2,6 +2,8 @@
 // ActionsHttp.vibe and ActionDirectory.vibe. The callers keep URL parsing, Number, Schema decoding, JSON comparison,
 // the body read and every engine call. Each kernel restates an expression those modules used.
 
+import type { InvocationKind } from "../src/actions/actionHostDecision.vibe"
+
 /** The longest action request body read, in bytes. */
 export const MAX_BODY = 32000
 
@@ -159,4 +161,18 @@ export function replyFailed(engineFailed: boolean, present: boolean, error: stri
 //@ ensures \result == (eventFlow == "vibelang/Reply" && requestFlow == "vibelang/Post")
 export function replyChildEvent(eventFlow: string, requestFlow: string): boolean {
   return eventFlow === "vibelang/Reply" && postFlow(requestFlow)
+}
+
+/** Whether a directory lists a run it read from index `source`: from its own index, or a child no index holds. */
+//@ verify
+//@ ensures \result == (id == source || !indexed)
+export function indexedRun(id: string, source: string | undefined, indexed: boolean): boolean {
+  return id === source || !indexed
+}
+
+/** Whether an invocation runs on the history host (worker/HistoryActions): everything but a post and a tour. */
+//@ verify
+//@ ensures \result == (kind != "post" && kind != "tour")
+export function historyKind(kind: InvocationKind): boolean {
+  return kind !== "post" && kind !== "tour"
 }

@@ -36,12 +36,6 @@ export function matchingFlow(filter: string, flow: string): boolean {
 }
 
 //@ verify
-//@ ensures \result == (id == source || !indexed)
-export function indexedRun(id: string, source: string | undefined, indexed: boolean): boolean {
-  return id === source || !indexed
-}
-
-//@ verify
 //@ ensures \result == (id == expected)
 export function sameRun(id: string, expected: string): boolean {
   return id === expected
@@ -128,13 +122,6 @@ export function invocationKind(name: string, tags: InvocationTags): InvocationKi
   if (name === tags.sandboxStop) return "sandbox-stop"
   if (name === tags.sandboxCommand) return "sandbox-command"
   return "not-found"
-}
-
-/** Whether an invocation runs on the history host (worker/HistoryActions): everything but a post and a tour. */
-//@ verify
-//@ ensures \result == (kind != "post" && kind != "tour")
-export function historyKind(kind: InvocationKind): boolean {
-  return kind !== "post" && kind !== "tour"
 }
 
 /** Whether a history write's answer is a refusal: an answer that names one. Nothing was written, so the run failed. */

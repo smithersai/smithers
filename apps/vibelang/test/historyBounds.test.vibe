@@ -1,7 +1,8 @@
 // The sequencer admits only ranks/cursors whose JavaScript arithmetic matches the proved integer domain.
 import { expect, it } from "@effect/vitest"
 import { empty, type History, type Event } from "../src/history/mythical.vibe"
-import { History as HistorySchema, HistoryEvent, decodeStoredHistory } from "../src/history/schemas.vibe"
+import { History as HistorySchema, HistoryEvent } from "../src/history/schemas.vibe"
+import { decodeStoredHistory } from "../worker/storedHistory.vibe"
 import { make, memoryStore, type Store } from "../src/history/Sequencer.vibe"
 import { replay } from "../src/history/seed.vibe"
 

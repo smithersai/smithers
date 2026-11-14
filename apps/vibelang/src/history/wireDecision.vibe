@@ -72,3 +72,14 @@ export function routeKind(method: string, pathname: string): RouteKind {
   if (method === "GET" && (pathname === "/api/history" || pathname.startsWith("/api/history/"))) return "read"
   return ""
 }
+
+/** The status a history refusal answers with: forbidden 403, unavailable 503, any other 409 (routes.vibe). */
+//@ verify
+//@ ensures refusal == "forbidden" ==> \result == 403
+//@ ensures refusal == "unavailable" ==> \result == 503
+//@ ensures refusal != "forbidden" && refusal != "unavailable" ==> \result == 409
+export function historyStatus(refusal: string): number {
+  if (refusal === "forbidden") return 403
+  if (refusal === "unavailable") return 503
+  return 409
+}

@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { expect, it } from "@effect/vitest"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
-import { isHistory, prepare } from "../src/actions/execution.vibe"
+import { prepare } from "../src/actions/execution.vibe"
+import { isHistory } from "../worker/historyInvocation.vibe"
 import * as HistoryActions from "../worker/HistoryActions.vibe"
 import { history, request, world } from "./support/actionObjects.vibe"
 import { requireSettledReceipt } from "../fuzz/history-receipt.vibe"

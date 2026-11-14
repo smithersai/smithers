@@ -3658,19 +3658,19 @@ cases.extend([('src/history/flowMachine.vibe',
   '>=',
   '>',
   'the least allowed role includes equality'),
- ('src/history/flowMachine.vibe',
+ ('src/history/wireDecision.vibe',
   'history-read-status-forbidden',
   'historyStatus',
   'return 403',
   'return 409',
   'refusals map to the exact HTTP status'),
- ('src/history/flowMachine.vibe',
+ ('src/history/wireDecision.vibe',
   'history-read-status-unavailable',
   'historyStatus',
   'return 503',
   'return 409',
   'refusals map to the exact HTTP status'),
- ('src/history/flowMachine.vibe',
+ ('src/history/wireDecision.vibe',
   'history-read-status-fallback',
   'historyStatus',
   'return 409',
@@ -5256,7 +5256,7 @@ cases.extend([('src/core/protocolDecision.vibe', *case) for case in [
 ('proto-cookie-origin', 'sessionCookie', 'storedOrigin === origin && valid', 'valid', 'a session stored for another origin is never sent'),
 ('proto-cookie-valid', 'sessionCookie', 'storedOrigin === origin && valid', 'storedOrigin === origin', 'an invalid cookie is never sent'),
 ]])
-cases.extend([('src/history/stackDecision.vibe', *case) for case in [
+cases.extend([('src/history/seedDecision.vibe', *case) for case in [
 ('stack-line-empty', 'admitsLine', 'line !== "" && !lines.includes(line)', '!lines.includes(line)', 'an empty note line is dropped'),
 ('stack-line-once', 'admitsLine', 'line !== "" && !lines.includes(line)', 'line !== ""', 'a note line is kept once'),
 ('stack-line-max', 'admitsLine', 'lines.length < max', 'lines.length <= max', 'a commit keeps at most its notes'),
@@ -5492,8 +5492,6 @@ cases.extend([('src/actions/actionHostDecision.vibe', *case) for case in [
 ('action-host-principal-actor', 'actionActor', 'return door === "agent" ? "agent" : actor', 'return door === "agent" ? "agent" : "person"', 'other doors retain the principal actor'),
 ('action-host-any-flow', 'matchingFlow', 'return filter === "" || flow === filter', 'return flow === filter', 'an empty filter lists every flow'),
 ('action-host-selected-flow', 'matchingFlow', 'return filter === "" || flow === filter', 'return true', 'a named filter excludes other flows'),
-('action-host-own-index', 'indexedRun', 'return id === source || !indexed', 'return !indexed', 'an indexed run is listed from its own index'),
-('action-host-other-index', 'indexedRun', 'return id === source || !indexed', 'return true', 'a child indexed elsewhere is not listed twice'),
 ('action-host-same-run', 'sameRun', 'return id === expected', 'return id !== expected', 'only the requested run is read or followed'),
 ]])
 
@@ -5702,7 +5700,7 @@ cases.extend([('src/history/flowMachine.vibe', *case) for case in [
 ('flow-refusal-export-paced', 'historyRefusal', 'if (refusal === "paced") return "Publishing in the background."', 'if (refusal === "paced") return refusal', 'a paced export says it runs in the background'),
 ]])
 # Lane vl-mythical-publish: the export never moves main, the `vibe` branch or a ref outside its three names.
-cases.extend([('src/history/exportDecision.vibe', *case) for case in [
+cases.extend([('src/history/workerExportDecision.vibe', *case) for case in [
 ('export-writable-main', 'writable', '  if (ref === "refs/heads/main" || ref === "refs/heads/vibe") return false\n', '', 'a name pointed at main is still refused'),
 ('export-writable-vibe', 'writable', 'ref === "refs/heads/main" || ref === "refs/heads/vibe"', 'ref === "refs/heads/main"', 'the vibe branch is refused'),
 ('export-writable-names', 'writable', ' || ref === names.notes || ref === names.manifest', ' || ref === names.notes || ref === names.manifest || ref !== ""', 'a ref outside the three names is refused'),
@@ -5987,7 +5985,7 @@ cases.extend([
 ('src/actions/actionHostDecision.vibe', 'action-invocation-note', 'invocationKind', 'if (name === tags.note) return "note"', 'if (name === tags.note) return "start"', 'a note prepares a note'),
 ('src/actions/actionHostDecision.vibe', 'action-invocation-command', 'invocationKind', 'if (name === tags.sandboxCommand) return "sandbox-command"', 'if (name === tags.sandboxCommand) return "sandbox-stop"', 'a sandbox command prepares a command'),
 ('src/actions/actionHostDecision.vibe', 'action-invocation-unknown', 'invocationKind', 'return "not-found"', 'return "show"', 'an unknown flow is not found'),
-('src/actions/actionHostDecision.vibe', 'action-history-tour', 'historyKind', 'return kind !== "post" && kind !== "tour"', 'return kind !== "post"', 'a tour runs on the conversation host'),
+('worker/actionsDecision.vibe', 'action-history-tour', 'historyKind', 'return kind !== "post" && kind !== "tour"', 'return kind !== "post"', 'a tour runs on the conversation host'),
 ('src/actions/actionHostDecision.vibe', 'action-refused-answer', 'refusedAnswer', 'return answer && hasRefusal', 'return hasRefusal', 'only a history answer can be a refusal'),
 ('src/actions/actionHostDecision.vibe', 'action-outline-default', 'outlineByDefault', 'return keys === 0', 'return keys <= 1', 'a read naming a field is not the outline'),
 ('src/actions/actionHostDecision.vibe', 'action-tour-failed-reply', 'guidedTourPassed', 'return hasLast && ended && !failed', 'return hasLast && ended', 'a failed reply fails the tour run'),
@@ -6098,3 +6096,8 @@ cases += [
 ('src/history/exportDecision.vibe', 'export-breathes-first', 'breathes', 'index > 0 && index % chunk === 0', 'index % chunk === 0', 'the first item of a loop gets no turn'),
 ('src/history/exportDecision.vibe', 'export-breathes-chunk', 'breathes', 'index % chunk === 0', 'index % chunk === 1', 'a turn comes once every chunk items'),
 ]
+# indexedRun moved from src/actions/actionHostDecision.vibe (0016 "Browser gate scope": only the Worker's directory runs it).
+cases.extend([('worker/actionsDecision.vibe', *case) for case in [
+('action-host-own-index', 'indexedRun', 'return id === source || !indexed', 'return !indexed', 'an indexed run is listed from its own index'),
+('action-host-other-index', 'indexedRun', 'return id === source || !indexed', 'return true', 'a child indexed elsewhere is not listed twice'),
+]])

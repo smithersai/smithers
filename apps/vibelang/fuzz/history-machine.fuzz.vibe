@@ -6,6 +6,7 @@ import * as M from "../src/history/flowMachine.vibe"
 import * as H from "../src/history/mythical.vibe"
 import { HISTORY_PATH, pathOf } from "../src/history/wire.vibe"
 import { historyRouteOf, pageRequestOf } from "../src/history/routes.vibe"
+import { historyStatus } from "../src/history/wireDecision.vibe"
 import { run, Int, Text } from "./run.vibe"
 
 const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
@@ -46,7 +47,7 @@ it.live("history/machine-contracts", () => run("history/machine-contracts", Inpu
   if (!may && M.lawful({ ...state, phase: "authorized", records: 0 })) return false
   if (input.action !== "fold" && M.lawful({ ...state, phase: "recorded", records: 2 })) return false
   // The small decisions, against their stated contracts.
-  const status = M.historyStatus(input.word)
+  const status = historyStatus(input.word)
   if (status !== (input.word === "forbidden" ? 403 : input.word === "unavailable" ? 503 : 409)) return false
   const response = M.historyResponse(input.status)
   if (response !== (input.status === 200 ? "accepted" : [403, 409, 503].includes(input.status) ? "refused" : "unavailable")) return false

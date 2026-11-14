@@ -6,7 +6,8 @@ import { Action as Step, DurableClock, Flow, Interpreter, RetryPolicy, Sleep } f
 import { Repository } from "@smthrs/jj"
 import { Node } from "@smthrs/plan"
 import { NONE, type Pace, type Pending, planned, readPublished, readRefs } from "./export.vibe"
-import { batchOutcome, emptyHistory, pacedOut, publishOutcome, type Refs, same, waitsForTrees } from "./exportDecision.vibe"
+import { pacedOut, type Refs, same, waitsForTrees } from "./exportDecision.vibe"
+import { batchOutcome, emptyHistory, publishOutcome } from "./workerExportDecision.vibe"
 import { counted, exported, ExportTarget, exportStep, finish, foldCommits, MainCommitSchema, paceOf, readMain, refusing, RefsSchema, Stack } from "./flows.vibe"
 import type { History } from "./mythical.vibe"
 

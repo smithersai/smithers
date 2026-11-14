@@ -1,10 +1,10 @@
 // The history API's routing in the API Worker (wiki/decisions/0020-mythical-history.md): which route a request names
-// and the status a refusal answers with. Only the Worker routes, so this is apart from wire.vibe, whose paths and
+// the status a refusal answers with, and the page that answers a read. Only the Worker routes, so this is apart from wire.vibe, whose paths and
 // schemas the browser's live client also loads (decision 0016, browser gate scope).
-import { historyStatus } from "./flowMachine.vibe"
-import type { PageRequest } from "./pages.vibe"
+import type { History } from "./mythical.vibe"
+import { type CommitPage, commitPageOf, type EpicPage, epicPageOf, type Matches, matchesOf, type Outline, outlineOf, type PageRequest } from "./pages.vibe"
 import { HISTORY_PATH, type Write } from "./wire.vibe"
-import { digitsFrom, idAfter, pageKind, routeKind, writeOf } from "./wireDecision.vibe"
+import { digitsFrom, historyStatus, idAfter, pageKind, routeKind, writeOf } from "./wireDecision.vibe"
 
 /** A route of the history API. A read's kind names its page, so each is counted on its own. */
 export type HistoryRoute =
@@ -40,4 +40,14 @@ export function historyRouteOf(method: string, pathname: string, params: URLSear
 /** The HTTP status a write's refusal answers with. */
 export function statusOf(refusal: string): number {
   return historyStatus(refusal)
+}
+
+/** What answers `request`. */
+export function pageOf(history: History, request: PageRequest): Outline | EpicPage | CommitPage | Matches {
+  switch (request.what) {
+    case "outline": return outlineOf(history)
+    case "epic": return epicPageOf(history, request.id, request.from)
+    case "commit": return commitPageOf(history, request.id)
+    case "search": return matchesOf(history, request.query)
+  }
 }

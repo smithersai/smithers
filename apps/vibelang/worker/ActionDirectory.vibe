@@ -1,7 +1,7 @@
 import { actionRoot } from "./apiObjectDecision.vibe"
-import { indexedRun, matchingFlow, sameRun } from "../src/actions/actionHostDecision.vibe"
+import { matchingFlow, sameRun } from "../src/actions/actionHostDecision.vibe"
 import { isReplyChild, replyChildId } from "../src/core/actionRunDecision.vibe"
-import { cancelFlow, postFlow, reservedByOther, startConflict } from "./actionsDecision.vibe"
+import { cancelFlow, indexedRun, postFlow, reservedByOther, startConflict } from "./actionsDecision.vibe"
 // Public run index: requests are durable steps; each registered workflow runs in its own Conversation object.
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"

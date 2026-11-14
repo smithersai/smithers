@@ -1,6 +1,8 @@
 // The mythical history sequencer's own decisions (wiki/decisions/0020-mythical-history.md, 0018 "History sequencer
 // decisions"): which step a plan takes, where a long title is cut, and which epic a fold appends to; which events a
-// follower is sent is src/core/followDecision.vibe. `Sequencer.vibe` and `seed.vibe` call these; nothing here locks, stores or publishes.
+// follower is sent is src/core/followDecision.vibe. `Sequencer.vibe` and `seed.vibe` call these; nothing here locks,
+// stores or publishes. This file ships to the browser, so the bootstrap's note-line admission (`admitsLine`) is in
+// `seedDecision.vibe`, which only the seed runs (0016 "Browser gate scope").
 //
 // VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
 // file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
@@ -87,11 +89,4 @@ export function epicByTitle(epics: ReadonlyArray<Epic>, title: string): string {
     if (epics[i]!.title === title) return epics[i]!.id
   }
   return ""
-}
-
-/** Whether a seeded commit's note list takes `line`: a nonempty line not already there, while it holds fewer than `max`. */
-//@ verify
-//@ ensures \result == (line != "" && !lines.includes(line) && lines.length < max)
-export function admitsLine(lines: ReadonlyArray<string>, line: string, max: number): boolean {
-  return line !== "" && !lines.includes(line) && lines.length < max
 }

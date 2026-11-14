@@ -1,5 +1,6 @@
 import { it, expect } from "@effect/vitest"
 import * as P from "../src/history/pages.vibe"
+import { pageOf } from "../src/history/routes.vibe"
 import type { History } from "../src/history/mythical.vibe"
 import { pathOf } from "../src/history/wire.vibe"
 import { historyRouteOf, statusOf } from "../src/history/routes.vibe"
@@ -63,10 +64,10 @@ it("paged history order, notes, folds and wire routing", async ({ bench }) => {
     expect(outline.open.map((commit) => commit.id)).toEqual(["m1", "m3"])
     expect(outline.epics).toEqual([{ id: "e1", title: "Performance", commits: 2, folds: 3 }, { id: "e2", title: "Other", commits: 1, folds: 0 }])
     expect(P.epicPageOf(history, "e1", -1.5).commits.map((commit) => [commit.id, commit.notes, commit.folds])).toEqual([["m1", 1, 2], ["m2", 0, 1]])
-    expect(P.pageOf(history, { what: "commit", id: "m1" })).toEqual({ seq: 11, commit: first, real })
-    expect(P.pageOf(history, { what: "outline" })).toEqual(outline)
-    expect(P.pageOf(history, { what: "epic", id: "missing", from: 0 })).toEqual({ seq: 11, epic: "missing", from: 0, total: 0, commits: [] })
-    expect(P.pageOf(history, { what: "search", query: "COMMIT" })).toMatchObject({ query: "COMMIT", commits: [{ id: "m1" }, { id: "m2" }, { id: "m3" }] })
+    expect(pageOf(history, { what: "commit", id: "m1" })).toEqual({ seq: 11, commit: first, real })
+    expect(pageOf(history, { what: "outline" })).toEqual(outline)
+    expect(pageOf(history, { what: "epic", id: "missing", from: 0 })).toEqual({ seq: 11, epic: "missing", from: 0, total: 0, commits: [] })
+    expect(pageOf(history, { what: "search", query: "COMMIT" })).toMatchObject({ query: "COMMIT", commits: [{ id: "m1" }, { id: "m2" }, { id: "m3" }] })
     for (const request of [{ what: "outline" }, { what: "epic", id: "e1", from: 50 }, { what: "commit", id: "m1" }, { what: "search", query: "café λ &/#" }] as const) {
       const path = pathOf(request)
       expect(path).toBeDefined()

@@ -9,7 +9,7 @@ import {
 import { type HistoryReader, note, plan, ReadShow, Show, show, start } from "../history/tools.vibe"
 import { Factory, Refused } from "../core/Factory.vibe"
 import { ActionFailure } from "./Actions.vibe"
-import { historyKind, invocationKind, outlineByDefault, refusedAnswer, type InvocationTags } from "./actionHostDecision.vibe"
+import { invocationKind, outlineByDefault, refusedAnswer, type InvocationTags } from "./actionHostDecision.vibe"
 
 effect function decode<A, I>(schema: Schema.Codec<A, I>, input: unknown) {
   return try Effect.mapError(Schema.decodeUnknownEffect(schema)(input), () => new ActionFailure({ code: "input" }))
@@ -32,17 +32,6 @@ export effect function prepare(name: string, input: Schema.Json, id: string) {
   }
 }
 export type Invocation = Effect.Success<ReturnType<typeof prepare>>
-/** A history or sandbox run: what worker/HistoryActions drives. Posts and tours run on the conversation's host. */
-export type HistoryInvocation = Exclude<Invocation, { readonly kind: "post" | "tour" }>
-export function isHistory(invocation: Invocation): invocation is HistoryInvocation {
-  return historyKind(invocation.kind)
-}
-/** `prepare` for a run worker/HistoryActions drives: a post or a tour isn't one (`not-found`). */
-export effect function prepareHistory(name: string, input: Schema.Json, id: string) {
-  const invocation = try prepare(name, input, id)
-  if (!isHistory(invocation)) throw new ActionFailure({ code: "not-found" })
-  return invocation
-}
 
 /** A history write answers its refusal as a value, so its flow succeeds. The run still failed: nothing was written. */
 export function refused(answer: unknown): boolean {

@@ -4,8 +4,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { apply, decide, empty, type History, type Intent } from "../src/history/mythical.vibe"
 import {
-  commitPageOf, epicPageOf, MATCHES, matchesOf, MAX_QUERY, outlineOf, PAGE, type PageRequest, pageOf,
+  commitPageOf, epicPageOf, MATCHES, matchesOf, MAX_QUERY, outlineOf, PAGE, type PageRequest,
 } from "../src/history/pages.vibe"
+import { pageOf } from "../src/history/routes.vibe"
 import { History as HistorySchema } from "../src/history/schemas.vibe"
 import { make, memoryStore, type Store } from "../src/history/Sequencer.vibe"
 import { HISTORY_JSON } from "../src/history/seed/vibelang.vibe"

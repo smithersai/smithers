@@ -144,13 +144,3 @@ export function matchesOf(history: History, query: string): Matches {
   const hits = stacked(history).filter((commit) => found(commit.id, commit.title.toLowerCase(), needle))
   return { seq: history.seq, query: clipped, commits: hits.slice(0, pageCount(hits.length, 0, MATCHES)).map((commit) => headOf(commit, folds)) }
 }
-
-/** What answers `request`. */
-export function pageOf(history: History, request: PageRequest): Outline | EpicPage | CommitPage | Matches {
-  switch (request.what) {
-    case "outline": return outlineOf(history)
-    case "epic": return epicPageOf(history, request.id, request.from)
-    case "commit": return commitPageOf(history, request.id)
-    case "search": return matchesOf(history, request.query)
-  }
-}

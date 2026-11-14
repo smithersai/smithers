@@ -1,0 +1,9 @@
+// The History object's stored snapshot (wiki/decisions/0020-mythical-history.md): decoded once, at the storage
+// boundary, by worker/HistoryObject.vibe. Apart from src/history/schemas.vibe, which the browser ships for its
+// schemas; no browser reads a stored snapshot (0016 "Browser gate scope").
+import { History } from "../src/history/schemas.vibe"
+
+/** Decode the stored JSON snapshot at the storage boundary. */
+export function decodeStoredHistory(json: string) {
+  return Effect.orDie(Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(History))(json), () => new Error("Invalid history state")))
+}

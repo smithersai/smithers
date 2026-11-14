@@ -15,7 +15,7 @@
 // and date are fixed, so the same history is the same commits, and preparing again writes nothing new.
 import { Repository } from "@smthrs/jj"
 import * as Scheduler from "effect/Scheduler"
-import { breathes, chainEnds, commitVerdict, headerAgrees, kept, lastFolds, linkedTo, manifestChanged, moves, pacedOut, parentsOf, rewritesMythical, treeOrigin, type RefNames, type Refs, treeSource, waitsForTrees, writable, writesChange, hasSourceTree, needsTree, notesComplete } from "./exportDecision.vibe"
+import { breathes, chainEnds, commitVerdict, headerAgrees, kept, lastFolds, linkedTo, manifestChanged, moves, pacedOut, parentsOf, rewritesMythical, treeOrigin, type RefNames, type Refs, treeSource, waitsForTrees, writesChange, hasSourceTree, needsTree, notesComplete } from "./exportDecision.vibe"
 import type { Commit, History, Real } from "./mythical.vibe"
 import { stacked } from "./pages.vibe"
 
@@ -351,27 +351,4 @@ export effect function publish(names: RefNames, published: Refs, candidate: Refs
     after: move.after,
   }))
   try repository.updateRefs({ operation: `vibelang-history-export/${candidate.manifest.slice(0, 12)}`, updates })
-}
-
-/** Ref updates the guard refused before they reached the repository. */
-export const guardRefusals = Metric.counter("vibelang_history_export_guard", { description: "Ref updates the export refused outside its three refs", incremental: true })
-
-/**
- * `repository` as an export may use it: `updateRefs` refuses `invalid`, naming the refs, before it reaches the
- * repository when any ref is not one `names` names, or is `main` or the `vibe` branch (`writable`, proved). Every other
- * call passes through.
- */
-export function guarded(repository: Repository.Repository, names: RefNames): Repository.Repository {
-  return {
-    ...repository,
-    updateRefs: (transaction) => {
-      const refused = transaction.updates.map((update) => update.ref).filter((ref) => !writable(names, ref))
-      if (refused.length === 0) return repository.updateRefs(transaction)
-      return Effect.logWarning("vibelang.history.export.guard").pipe(
-        Effect.annotateLogs({ outcome: "refused", refs: refused.length }),
-        Effect.andThen(Metric.update(Metric.withAttributes(guardRefusals, { outcome: "refused" }), 1)),
-        Effect.andThen(Effect.fail(Repository.repositoryError("invalid", "updateRefs", "the export moves only its own three refs", refused))),
-      )
-    },
-  }
 }

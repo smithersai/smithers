@@ -7,7 +7,8 @@
 import { GitHub } from "@smthrs/integrations"
 import { Repository } from "@smthrs/jj"
 import { HttpClient } from "effect/http"
-import { GITHUB_PACE, guarded, type Pace, REF_NAMES, UNPACED } from "../src/history/export.vibe"
+import { GITHUB_PACE, type Pace, REF_NAMES, UNPACED } from "../src/history/export.vibe"
+import { guarded } from "../src/history/exportGuard.vibe"
 import type { RefNames } from "../src/history/exportDecision.vibe"
 
 /** Where an export writes: the repository, its three refs, and the pace the repository allows. */

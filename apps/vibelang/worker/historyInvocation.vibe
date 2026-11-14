@@ -1,0 +1,18 @@
+// The Worker's history runs (0023): which prepared invocations worker/HistoryActions drives, and `prepare` for one.
+// Apart from src/actions/execution.vibe, which the browser's MockActions ships whole: in the browser every run goes
+// through `execute`, and nothing asks whether it is a history run (0016 "Browser gate scope").
+import { ActionFailure } from "../src/actions/Actions.vibe"
+import { type Invocation, prepare } from "../src/actions/execution.vibe"
+import { historyKind } from "./actionsDecision.vibe"
+
+/** A history or sandbox run: what worker/HistoryActions drives. Posts and tours run on the conversation's host. */
+export type HistoryInvocation = Exclude<Invocation, { readonly kind: "post" | "tour" }>
+export function isHistory(invocation: Invocation): invocation is HistoryInvocation {
+  return historyKind(invocation.kind)
+}
+/** `prepare` for a run worker/HistoryActions drives: a post or a tour isn't one (`not-found`). */
+export effect function prepareHistory(name: string, input: Schema.Json, id: string) {
+  const invocation = try prepare(name, input, id)
+  if (!isHistory(invocation)) throw new ActionFailure({ code: "not-found" })
+  return invocation
+}

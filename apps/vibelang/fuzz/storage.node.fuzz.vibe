@@ -86,7 +86,7 @@ it.live("storage/history-snapshot", () => run("storage/history-snapshot", Schema
 
 import { MainUnavailable } from "../src/history/flows.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
-import { pageOf } from "../src/history/pages.vibe"
+import { pageOf } from "../src/history/routes.vibe"
 import { Outline } from "../src/history/schemas.vibe"
 
 /**

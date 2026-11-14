@@ -1,7 +1,8 @@
 // The SDK execution host owns admission, alarms, replay and cancellation for a registered history run.
 import { FlowRuntime, type Flow } from "@smthrs/flow"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
-import { ActionDevice, deviceRegistration, historyRegistration, type HistoryInvocation } from "../src/actions/execution.vibe"
+import { ActionDevice, deviceRegistration, historyRegistration } from "../src/actions/execution.vibe"
+import type { HistoryInvocation } from "./historyInvocation.vibe"
 import { SandboxStart, SandboxStop, SandboxCommand } from "../src/core/flows.vibe"
 import type { RunRequest } from "../src/actions/wire.vibe"
 import { Note, Plan, Start } from "../src/history/flows.vibe"

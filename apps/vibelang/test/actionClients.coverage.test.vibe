@@ -4,7 +4,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
 import { LiveActions } from "../src/actions/LiveActions.vibe"
-import { prepare, prepareHistory } from "../src/actions/execution.vibe"
+import { prepare } from "../src/actions/execution.vibe"
+import { prepareHistory } from "../worker/historyInvocation.vibe"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 
 interface FaultAnswer { readonly status: number; readonly body: string }

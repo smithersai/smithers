@@ -90,11 +90,6 @@ export schema Seed {
 }
 
 
-/** Decode the stored JSON snapshot at the storage boundary. */
-export function decodeStoredHistory(json: string) {
-  return Effect.orDie(Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(History))(json), () => new Error("Invalid history state")))
-}
-
 // ── pages (pages.vibe): what a reader asks for and gets ─────────────────────────────────────────────────────────────
 
 export schema Head {

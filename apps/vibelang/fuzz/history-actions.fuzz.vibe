@@ -1,7 +1,8 @@
 // The SDK execution host for registered history and sandbox runs, driven directly over each flow it may be given.
 import { it } from "@effect/vitest"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
-import { ActionDevice, isHistory, prepare } from "../src/actions/execution.vibe"
+import { ActionDevice, prepare } from "../src/actions/execution.vibe"
+import { isHistory } from "../worker/historyInvocation.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import * as HistoryActions from "../worker/HistoryActions.vibe"

@@ -308,7 +308,7 @@ src/history/pages.vibe	commitPageOf/callback	filter real.mythical === id	Lookup:
 src/history/pages.vibe	commitPageOf/callback	find commit.id === id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/pages.vibe	epicPageOf/callback	filter commit.epic === epic	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/pages.vibe	matchesOf	needle === ""	Emptiness: an empty search matches nothing
-src/history/pages.vibe	pageOf	switch request.what	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
+src/history/routes.vibe	pageOf	switch request.what	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 src/history/pages.vibe	stacked/callback	?? epicA	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/pages.vibe	stacked/callback	?? epicB	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/publish.vibe	batch	skip.has(each.oid)	Host boundary: Set membership drops an object id written by an earlier batch (done) or listed twice in the plan; which objects to write is the planner's pending list

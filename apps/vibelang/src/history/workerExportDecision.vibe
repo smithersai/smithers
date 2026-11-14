@@ -1,0 +1,49 @@
+// The git export's decisions that only the History object runs (wiki/decisions/0020-mythical-history.md, "The git
+// export" and "Publishing and following main"): the ref guard every Worker export goes through (`exportGuard.vibe`)
+// and the paced publisher's outcomes (`publish.vibe`). They are apart from `exportDecision.vibe` because the browser's
+// mock Export ships that file whole, and no browser export is guarded or paced (0016 "Browser gate scope").
+//
+//   names, ref ──writable──▶ only the three names, and never main or the `vibe` branch
+//   needs, remaining ──batchOutcome──▶ read | wrote | done
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Every function is total.
+
+import type { RefNames } from "./exportDecision.vibe"
+
+/**
+ * Whether an export may move `ref`: only one of its own three names, and never `main` or the `vibe` branch, even when
+ * a name is one of them (VL-39 grants the three refs, nothing else).
+ */
+//@ verify
+//@ ensures \result <==> ((ref == names.mythical || ref == names.notes || ref == names.manifest) && ref != "refs/heads/main" && ref != "refs/heads/vibe")
+//@ ensures \result ==> ref != "refs/heads/main"
+export function writable(names: RefNames, ref: string): boolean {
+  if (ref === "refs/heads/main" || ref === "refs/heads/vibe") return false
+  return ref === names.mythical || ref === names.notes || ref === names.manifest
+}
+
+/** A paced batch's outcome: trees still to read, else objects still to write, else done (the export may finish). */
+//@ verify
+//@ ensures needs > 0 ==> \result == "read"
+//@ ensures needs <= 0 && remaining > 0 ==> \result == "wrote"
+//@ ensures needs <= 0 && remaining <= 0 ==> \result == "done"
+export function batchOutcome(needs: number, remaining: number): "read" | "wrote" | "done" {
+  if (needs > 0) return "read"
+  if (remaining > 0) return "wrote"
+  return "done"
+}
+
+/** A history with no commits exports nothing. */
+//@ verify
+//@ ensures \result == (commits == 0)
+export function emptyHistory(commits: number): boolean {
+  return commits === 0
+}
+
+/** A publisher round that wrote objects published; one that wrote none found the publication current. */
+//@ verify
+//@ ensures \result == (written > 0 ? "published" : "current")
+export function publishOutcome(written: number): "published" | "current" {
+  return written > 0 ? "published" : "current"
+}

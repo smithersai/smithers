@@ -1,0 +1,30 @@
+// The Worker's guard on the export's repository (wiki/decisions/0020-mythical-history.md, "The git export"): an export
+// moves only its own three refs. `worker/HistoryExport.vibe` wraps every export's repository in it. The browser's mock
+// Export writes to an unguarded memory repository, so this lives apart from `export.vibe`, which the browser ships
+// (0016 "Browser gate scope").
+import { Repository } from "@smthrs/jj"
+import type { RefNames } from "./exportDecision.vibe"
+import { writable } from "./workerExportDecision.vibe"
+
+/** Ref updates the guard refused before they reached the repository. */
+export const guardRefusals = Metric.counter("vibelang_history_export_guard", { description: "Ref updates the export refused outside its three refs", incremental: true })
+
+/**
+ * `repository` as an export may use it: `updateRefs` refuses `invalid`, naming the refs, before it reaches the
+ * repository when any ref is not one `names` names, or is `main` or the `vibe` branch (`writable`, proved). Every other
+ * call passes through.
+ */
+export function guarded(repository: Repository.Repository, names: RefNames): Repository.Repository {
+  return {
+    ...repository,
+    updateRefs: (transaction) => {
+      const refused = transaction.updates.map((update) => update.ref).filter((ref) => !writable(names, ref))
+      if (refused.length === 0) return repository.updateRefs(transaction)
+      return Effect.logWarning("vibelang.history.export.guard").pipe(
+        Effect.annotateLogs({ outcome: "refused", refs: refused.length }),
+        Effect.andThen(Metric.update(Metric.withAttributes(guardRefusals, { outcome: "refused" }), 1)),
+        Effect.andThen(Effect.fail(Repository.repositoryError("invalid", "updateRefs", "the export moves only its own three refs", refused))),
+      )
+    },
+  }
+}

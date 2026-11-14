@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { actionActor, cancelEndsTour, cancellable, commandInput, firstCommand, guidedTourPassed, historyKind, indexedRun, invocationKind, matchingFlow, mockState, outlineByDefault, ownerRefused, refusedAnswer, sameRun } from "../src/actions/actionHostDecision.vibe"
+import { actionActor, cancelEndsTour, cancellable, commandInput, firstCommand, guidedTourPassed, invocationKind, matchingFlow, mockState, outlineByDefault, ownerRefused, refusedAnswer, sameRun } from "../src/actions/actionHostDecision.vibe"
+import { historyKind, indexedRun } from "../worker/actionsDecision.vibe"
 
 describe("action hosts' decisions", () => {
   it("passes only a successful non-refusal; a refusal or an engine failure fails", () => {

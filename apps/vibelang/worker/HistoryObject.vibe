@@ -16,10 +16,11 @@ import { Caller, type Principal, VIEWER } from "../src/history/roles.vibe"
 import { Refused, Unavailable } from "../src/history/MythicalHistory.vibe"
 import type { PageRequest } from "../src/history/pages.vibe"
 import {
-  CommitPage as CommitPageSchema, EpicPage as EpicPageSchema, decodeStoredHistory, Matches as MatchesSchema,
+  CommitPage as CommitPageSchema, EpicPage as EpicPageSchema, Matches as MatchesSchema,
   Outline as OutlineSchema,
 } from "../src/history/schemas.vibe"
 import type { HistoryReader } from "../src/history/tools.vibe"
+import { decodeStoredHistory } from "./storedHistory.vibe"
 import { make, type Sequencer, stackOf, type Store } from "../src/history/Sequencer.vibe"
 import type { Write } from "../src/history/wire.vibe"
 import { EXECUTION_RETENTION, executionStorage, postExecutionId, type Storage } from "./Objects.vibe"

@@ -163,15 +163,6 @@ export function atLeast(role: Role, least: Role): boolean {
 }
 
 
-//@ verify
-//@ ensures refusal == "forbidden" ==> \result == 403
-//@ ensures refusal == "unavailable" ==> \result == 503
-//@ ensures refusal != "forbidden" && refusal != "unavailable" ==> \result == 409
-export function historyStatus(refusal: string): number {
-  if (refusal === "forbidden") return 403
-  if (refusal === "unavailable") return 503
-  return 409
-}
 
 
 
