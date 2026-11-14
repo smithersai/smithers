@@ -552,6 +552,15 @@ function inventorySource(file, source) {
         ? (operand.right.type === 'Literal' ? flagName(operand.left) : operand.left.type === 'Literal' ? flagName(operand.right) : undefined) : undefined })) });
   const LOOPS = new Set(['WhileStatement', 'DoWhileStatement', 'ForStatement']);
   const TESTS = new Set(['includes', 'has', 'startsWith', 'endsWith', 'test', 'isArray', 'isSafeInteger', 'isInteger', 'isFinite', 'isNaN', 'hasOwn']);
+  const COMBINATORS = new Map([
+    ...['Effect', 'Stream'].flatMap(root => ['catch', 'catchAll', 'catchCause', 'catchTag', 'catchTags', 'orElse', 'orElseSucceed', 'orElseFail']
+      .map(name => [`${root}.${name}`, 'catch'])),
+    ['Option.getOrElse', 'default'], ['Either.getOrElse', 'default'], ['Option.orElse', 'default'],
+    ...['Effect.match', 'Effect.matchEffect', 'Effect.matchCause', 'Option.match', 'Either.match', 'Exit.match', 'Result.match'].map(name => [name, 'match']),
+    ['Effect.when', 'when'], ['Effect.unless', 'when'], ['Stream.when', 'when'],
+  ]);
+  // A handler can be a whole effect block, so a fallback's or combinator's record is cut at 120 characters.
+  const capped = branch => branch.test.length > 120 ? { ...branch, test: branch.test.slice(0, 117) + '...' } : branch;
   const COMPARISONS = new Set(['===', '!==', '==', '!=', '<', '>', '<=', '>=']);
   // Where a value goes: an argument, an array element, an object property, a `const`, an assignment, or a return.
   const slot = (node, parent) => ((parent?.type === 'CallExpression' || parent?.type === 'NewExpression') && parent.arguments.includes(node) ? 'passed'
@@ -592,12 +601,13 @@ function inventorySource(file, source) {
     // does (batch 72). Its operand is the whole default, so one that calls a proved function is that function's choice.
     if (owner && node.type === 'AssignmentPattern' && node.range) owner.branches.push(branchOf(node, 'default', node));
     // An error fallback (batch 73): a `catch` expression's handler or a `try`'s `catch` block chooses what a failure
-    // answers. A handler can be a whole effect block, so its record is cut at 120 characters.
+    // answers.
     const fallback = node.type === 'VibeCatchExpression' ? node.handler : node.type === 'CatchClause' ? node.body : undefined;
-    if (owner && fallback?.range) {
-      const branch = branchOf(node, 'catch', fallback);
-      owner.branches.push(branch.test.length > 120 ? { ...branch, test: branch.test.slice(0, 117) + '...' } : branch);
-    }
+    if (owner && fallback?.range) owner.branches.push(capped(branchOf(node, 'catch', fallback)));
+    // The same choices written as Effect, Option, Either or Stream combinators (batch 75): a `catch*` or `orElse`
+    // handler, a `getOrElse` default, a `match` and a `when` condition, each by its last argument.
+    const combinator = node.type === 'CallExpression' ? COMBINATORS.get(memberPath(node.callee)?.join('.')) : undefined;
+    if (owner && combinator && node.arguments.at(-1)?.range) owner.branches.push(capped(branchOf(node, combinator, node.arguments.at(-1))));
     if (predicate) predicates.add(predicate);
     // A membership, prefix or pattern test (`ids.includes(page)`, `url.startsWith("https:")`, `/x/.test(s)`) counts the
     // same way (batch 74); a host type guard among them (`Number.isSafeInteger`) is neutral by the operand rule.

@@ -2,8 +2,9 @@
 // inside a row that is not proved, a `switch`, the left side of a `??`, an `&&` or `||` used as a value, a list
 // predicate (what a list or count holds), a comparison, `!` or membership test passed, stored or returned as a value
 // (`value`: `h.AriaSelected(index === highlight)`, batch 70; `ids.includes(page)`, batch 74), a `while`, `do` or `for`
-// test (batch 71), a default value (`door = "slash"`, batch 72), or an error fallback (`catch () => false`, batch 73),
-// with an operand (split at `&&`, `||` and `!`) that neither calls a
+// test (batch 71), a default value (`door = "slash"`, batch 72), an error fallback (`catch () => false`, batch 73), or
+// the same choices as Effect combinators (`Effect.catchTag`, `Option.getOrElse`, `Effect.match`, `Stream.when`,
+// batch 75), with an operand (split at `&&`, `||` and `!`) that neither calls a
 // proved function, nor reads a `const` whose value calls one (in its row or an enclosing row) as a flag or against a
 // literal (`replay === "replay-refused"`, `cut < 0`: the proved function's answer), nor calls a function whose whole
 // body returns a proved call, nor is a
@@ -19,7 +20,7 @@ const HEADER = '# file\tfunction\tcondition\treason (decision 0018, "Decisions i
 
 // Every file is in scope, and every kind counts: an `if` or conditional test, a `switch`, a `??`, a value `&&` or `||`,
 // a list predicate, and a comparison as a value (0018 "Decisions in views"; batch 62 extended the kinds from src/web to
-// every file, batch 70 added `value`, batch 71 loop tests, batch 72 `default`, batch 73 `catch`).
+// every file, batch 70 added `value`, batch 71 loop tests, batch 72 `default`, batch 73 `catch`, batch 75 combinators and `match`, `when`).
 const counted = () => true;
 // Callback labels carry their line (`answer/callback@88`); the record does not, so moving code changes nothing.
 const stable = label => label.replace(/@\d+/g, '');

@@ -138,6 +138,14 @@ test('a new branch in a shell row is refused until it is proved or recorded with
     + '  try {\n    parse(n)\n  } catch {\n    return 0\n  }\n  return [v, w, (try parse(n)) catch () => "' + 'x'.repeat(130) + '"]\n}\n';
   assert.deepEqual(shellBranches(inventorySource(fixture, failures)).filter(branch => branch.kind === 'catch').map(branch => branch.test),
     ['catch () => "small"', 'catch { return 0 }', `catch () => "${'x'.repeat(110)}...`]);
+  // The same choices written as Effect combinators count by their kind (batch 75): a `catch*` handler, an
+  // `Option.getOrElse` default, an `Effect.match` and a `Stream.when` condition; `getOrUndefined` reads presence.
+  const combinators = '// Fixture.\nexport effect function e(x: Option.Option<number>, s: Stream.Stream<number>, on: boolean) {\n'
+    + '  const a = Option.getOrElse(x, () => 0)\n  const b = try Effect.succeed(1).pipe(Effect.catchTag("Boom", () => Effect.succeed(2)))\n'
+    + '  const c = try Effect.succeed(1).pipe(Effect.match({ onFailure: () => 0, onSuccess: (n) => n }))\n'
+    + '  return [a, b, c, s.pipe(Stream.when(on)), Option.getOrUndefined(x)]\n}\n';
+  assert.deepEqual(shellBranches(inventorySource(fixture, combinators)).map(branch => branch.test),
+    ['default () => 0', 'catch () => Effect.succeed(2)', 'match { onFailure: () => 0, onSuccess: (n) => n }', 'when on']);
   // A recorded value branch lands; its record names the kind before the text.
   const valueRecord = 'worker/landingFixture.vibe\tlt\tvalue a < b\tOpen: the fixture order\n';
   assert.deepEqual(branchFacts(inventorySource(fixture, 'export const lt = (a: number, b: number) => a < b\n'), valueRecord),

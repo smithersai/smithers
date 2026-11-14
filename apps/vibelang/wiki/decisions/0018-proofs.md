@@ -7777,6 +7777,22 @@ by the proved `notesComplete`), an epic card's open mark, a markdown list test, 
 cookie's Secure flag, which reads the same https test as the proved `signInCookieName`, as a `__Host-` cookie needs.
 1,427 shell branches, 1 open.
 
+### Batch 75: the same choices as Effect combinators
+
+A fallback, default, match or condition can also be a library call: `x.pipe(Effect.catchTag("Boom", handler))`,
+`Option.getOrElse(option, () => closed)`, `Effect.match(start, { onFailure, onSuccess })`, `stream.pipe(Stream.when(on))`.
+`verify/inventory.cjs` now counts these by the kind they share with the syntax (`catch`, `default`, `match`, `when`),
+by their last argument: `Effect` and `Stream` `catch*` and `orElse*`; `Option` and `Either` `getOrElse`, `Option.orElse`;
+`Effect`, `Option`, `Either`, `Exit` and `Result` `match`; `Effect.when`, `Effect.unless`, `Stream.when`.
+`Stream.filter` and `Option.filter` already count as list predicates, `Effect.timeout` is a named limit, and
+`Option.getOrUndefined` reads presence. `verify/landing_test.cjs` failed first.
+
+On main `200677ff` this adds 26 branches, each recorded: 4 failure messages, 3 subscription conditions, 3 empty
+defaults, 2 reconnects after a lost event stream, 2 result flags, 2 unavailable answers, 2 mock, and one each of
+absence, fail closed (`allowed`), identity conflict, an unusable chat model, a failed reply (interrupts propagate),
+a rethrow, the publisher's singleton start label, and the closed sandbox a reply gets without a `SandboxAgent`.
+1,453 shell branches, 1 open (batch 74's `issueCreates` call).
+
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 
 Five shells compared `Number(content-length)` with a literal: accounts 2,048 bytes (sign-in and roles), issues 32 KiB,
