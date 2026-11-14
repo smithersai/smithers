@@ -5,6 +5,8 @@ scripts/mythical-seed-program.vibe	entriesOf	line.trim() === ""	Script tooling (
 scripts/mythical-seed-program.vibe	log/callback	line === ""	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/mythical-seed-program.vibe	log/callback	Number(status) !== 0	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/mythical-seed-program.vibe	main	refused.length > 0	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/wiki.vibe	generate	?? { index: "Home", rulings: "Rulings", roadmap: "Roadmap", decisions: "Decisions", "designs/index": "Designs" }[id]	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/wiki.vibe	generate	?? label	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/wiki.vibe	generate	file === "decisions.md"	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/wiki.vibe	generate/collect	name.endsWith(".md")	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/wiki.vibe	generate/collect	stat.type === "Directory"	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
@@ -21,23 +23,49 @@ src/actions/catalog.vibe	registration	name === SandboxStop._tag	Labels: each flo
 src/actions/catalog.vibe	registration	name === Start._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
 src/actions/catalog.vibe	registration	name === Tour._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
 src/actions/catalog.vibe	registration	name === Tour._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/execution.vibe	execute	switch invocation.kind	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
+src/actions/execution.vibe	prepare	?? raw.conversation	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/actions/execution.vibe	prepare	?? raw.conversation	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/actions/execution.vibe	prepare	?? raw.conversation	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/actions/execution.vibe	prepare	?? raw.text	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/actions/execution.vibe	refused	&& decoded && answer.refusal !== null	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/actions/LiveActions.vibe	LiveActions/callback/request	method === "GET"	Variant dispatch on the HTTP method
 src/actions/LiveActions.vibe	LiveActions/callback/request	method === "POST"	Variant dispatch on the HTTP method
 src/actions/MockActions.vibe	MockActions/callback/authorize	entry.least === "viewer"	Mock mode (VL-13): the fixture actions; their role gate is the proved catalogDecision
+src/actions/MockActions.vibe	MockActions/callback/callback	&& Option.isSome(last) && last.value.type === "ReplyFailed"	Mock mode (VL-13): the forced mock backend, not a product decision
+src/actions/MockActions.vibe	MockActions/callback/callback/callback	filter event.type === "TourStarted"	Mock mode (VL-13): the forced mock backend, not a product decision
 src/actions/MockActions.vibe	MockActions/callback/command	entry.command === command && (authorize(entry.name) catch () => undefined) !== undefined	Mock mode (VL-13): the fixture actions; their role gate is the proved catalogDecision
 src/actions/MockActions.vibe	MockActions/callback/commands	!entry.runnable	Mock mode (VL-13): the fixture actions; their role gate is the proved catalogDecision
+src/actions/MockActions.vibe	MockActions/callback/conversationOfRun	?? principal.conversation	Mock mode (VL-13): the forced mock backend, not a product decision
+src/actions/MockActions.vibe	MockActions/callback/current	|| person.login || "Guest"	Mock mode (VL-13): the forced mock backend, not a product decision
+src/actions/MockActions.vibe	MockActions/callback/current	|| principal.actor === "agent" || origin.actor === "agent"	Mock mode (VL-13): the forced mock backend, not a product decision
+src/actions/MockActions.vibe	MockActions/callback/runs	?? (try Ref.get(state)).runs	Mock mode (VL-13): the forced mock backend, not a product decision
+src/actions/MockActions.vibe	MockActions/callback/start	?? principal.conversation	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/docsTool.vibe	openDocs	opened	Forwards the host's answer (the page or line was opened or said)
 src/core/flows.vibe	beginTour	try (try Tours).running(tour)	Host boundary: whether the tour runs (the Tours service)
+src/core/flows.vibe	controlTour	?? result.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
 src/core/flows.vibe	openWiki/callback	opened	Forwards the host's answer (the page or line was opened or said)
 src/core/flows.vibe	readingMillis	text.trim() === ""	Emptiness: nothing to say or read
+src/core/flows.vibe	recordEndTour	?? answer	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/flows.vibe	recordPost	?? answer	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/flows.vibe	recordTour	?? answer	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/flows.vibe	say	said	Forwards the host's answer (the page or line was opened or said)
 src/core/flows.vibe	say	words === ""	Emptiness: nothing to say or read
 src/core/flows.vibe	say	words === ""	Emptiness: nothing to say or read
+src/core/flows.vibe	stoppedBy	?? Option.getOrUndefined(last)?.type	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/flows.vibe	walk	!(Continuation.firstTourVisit(visit) && restored !== null && restored.target !== "") && !(try narrateLine(tour, stop.subtitle, visit))	Variant: a stop is narrated unless the walk resumes at a restored target (firstTourVisit is proved); narrateLine answers whether it was said
 src/core/flows.vibe	walk/callback	saved === null || saved.paused	Variant dispatch on the tour control (seek, pause) and the saved state
+src/core/IssuesFactory.vibe	fixtureHost/perform/callback	?? person.kind	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/IssuesFactory.vibe	fixtureHost/perform/callback	?? person.kind	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/IssuesFactory.vibe	fixtureHost/perform/callback	|| person.id || "public"	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/IssuesFactory.vibe	fixtureHost/perform/callback	|| request.op !== "link" || canLinkIssues(before.items, request.number, request.parent)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/IssuesFactory.vibe	fixtureHost/perform/callback	|| request.text.trim() === "" || request.example.trim() === "" || request.prior.trim() === ""	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/IssuesFactory.vibe	makeIssueFactory	?? shared	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/IssuesFactory.vibe	makeIssueFactory/act	!Schema.is(IssueRequest)(request)	Host boundary: Schema validation of the request
+src/core/IssuesFactory.vibe	makeIssueFactory/act	|| person.id || "public"	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	cause.reasons.length === 1	Variant test: the engine's identity conflict answers conflict
 src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
+src/core/IssuesFactory.vibe	noteOf	switch request.op	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/LiveFactory.vibe	health	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
 src/core/LiveFactory.vibe	LiveFactory/callback/events/callback	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
 src/core/LiveFactory.vibe	LiveFactory/callback/sandbox	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
@@ -50,84 +78,189 @@ src/core/MockAccounts.vibe	make/choose	role !== "new"	Mock mode (VL-13): the fix
 src/core/MockAccounts.vibe	make/choose	role === "viewer"	Mock mode (VL-13): the fixture accounts
 src/core/MockAccounts.vibe	make/current	id === ""	Mock mode (VL-13): the fixture accounts
 src/core/MockAccounts.vibe	make/current	try Ref.get(agent)	Mock mode (VL-13): the fixture accounts
+src/core/MockAccounts.vibe	make/current/callback	find p.id === id	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/MockAccounts.vibe	make/events/callback	?? events.at(-1)?.seq	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/MockAccounts.vibe	make/participated	?? personId	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/MockFactory.vibe	mockFactoryFor/callback/answer	index === posts.length	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	mockFactoryFor/callback/answer	tour !== "" && !dispatched.has(`tour/${tour}`)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	!Schema.is(TourControlBody)({ action, step }) || !validTourStep(step, 11)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	action === "pause"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	action === "resume"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/events/callback	?? log.at(-1)?.seq	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/MockFactory.vibe	mockFactoryFor/callback/issuesForPerson/callback/callback	person.agent === true	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback	retained.length < journaled.length	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/callback	?? postPeople.get(payload.post)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/callback/callback	?? postOwners.get(payload.post)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/callback/startSandbox	?? postOwners.get(payload.post)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	?? (try Ref.get(state)).conversation.walkthrough	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	?? current.walkthrough?.revision	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	action === "pause"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	action === "seek"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/ended/callback/callback	filter item.conversation === conversation	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/say	entry?.text	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/say/callback	find entry.id === tour	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/wake	tour !== ""	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	mockFactoryFor/callback/openWiki	!opened	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/read/callback	filter touched.has(entry.id)	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/MockFactory.vibe	mockFactoryFor/callback/wikiForPerson/callback/callback	person.agent === true	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	scripted	|| prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it."	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/MockFactory.vibe	scripted	completed === 3	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted	page !== undefined && /\bdraft\b/i.test(prompt)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted	prompt === "Split #38 into three children, linked under it."	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted	prompt.startsWith("File an issue:")	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted/callback	!(try ownsReply())	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	scripted/callback	find entry.id === page	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/MockFactory.vibe	scripted/callback	find entry.id === post	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/mockReplies.vibe	historyReply	open.length === 0	Mock mode (VL-13): the fixture replies
 src/core/routes.vibe	routeOf	!pathname.startsWith(CONVERSATIONS)	Variant: the conversations prefix and at most two path segments name a route; routeKind (proved) names the operation
 src/core/routes.vibe	routeOf	parts.length > 2	Variant: the conversations prefix and at most two path segments name a route; routeKind (proved) names the operation
+src/core/sandboxHost.vibe	failureReason	?? reason	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/sandboxHost.vibe	failureReason	?? tag	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/sandboxHost.vibe	makeSandboxHost/command	admitted.type === "receipt"	Variant dispatch on admit's answer (a stored receipt or a pending operation), which the proved replayAnswer and freshAdmission decide
 src/core/sandboxHost.vibe	makeSandboxHost/command/callback	admitted.type === "pending"	Variant dispatch on admit's answer (a stored receipt or a pending operation), which the proved replayAnswer and freshAdmission decide
+src/core/sandboxHost.vibe	makeSandboxHost/command/callback/callback	?? state.pending?.operationId	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/sandboxHost.vibe	makeSandboxHost/emergency	!box.running	Host boundary: whether the container runs
+src/core/sandboxHost.vibe	makeSandboxHost/load	?? saved	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/sandboxHost.vibe	makeSandboxHost/load	?? saved?.ledger	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Host boundary: whether the container runs
 src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Host boundary: whether the container runs
 src/core/sandboxHost.vibe	makeSandboxHost/run	admitted.type === "receipt"	Variant dispatch on admit's answer (a stored receipt or a pending operation), which the proved replayAnswer and freshAdmission decide
+src/core/sandboxHost.vibe	receiptReason	?? receipt.reason	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/sandboxMeter.vibe	meter	?? buckets[String(boundary)]	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/sandboxMeter.vibe	snapshotOf	?? box?.id	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/sandboxMeter.vibe	snapshotOf	box?.running	Forwards the found sandbox's running flag from the proved ledger (applySandbox); no sandbox for the conversation is stopped
+src/core/sandboxMeter.vibe	snapshotOf/callback	find entry.conversation === conversation	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/core/sandboxMock.vibe	makeMockSandboxes/callback	at === null || at > (try Clock.currentTimeMillis)	Mock mode (VL-13): the fixture sandboxes
 src/core/sandboxMock.vibe	makeMockSandboxes/write/callback	receipt	Mock mode (VL-13): the fixture sandboxes
+src/core/sandboxMock.vibe	memoryMachines/command	?? active.get(id)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/sandboxMock.vibe	memoryMachines/command	?? files.get(read![1]!)	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/sandboxMock.vibe	memoryMachines/command	outputs.has(key)	Mock mode (VL-13): the fixture sandboxes
+src/core/sandboxMock.vibe	memoryMachines/lease	?? active.get(id)	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/sandboxMock.vibe	memoryMachines/start/callback	!disk.has(id)	Mock mode (VL-13): the fixture sandboxes
+src/core/sandboxMock.vibe	memoryMachines/stop/callback	?? active.get(id)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/specification.vibe	performSpecification	?? before.specification	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/specification.vibe	performSpecification	?? before.specificationHistory	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/specification.vibe	performSpecification	revise	Variant: revise or review; an unchanged specification is not rewritten
 src/core/specification.vibe	requestedSpecificationReview	!/review.*specification|specification.*review/i.test(prompt)	Host boundary: a case-insensitive RegExp over the prompt
+src/core/specification.vibe	requestedSpecificationReview	?? answer?.grade	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/specification.vibe	requestedSpecificationReview	?? answer?.revision	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/specification.vibe	requestedSpecificationReview	?? answer?.verdict	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/specification.vibe	requestedSpecificationReview	?? before.specification?.revision	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/specification.vibe	requestedSpecificationReview/callback	find prompt.toLowerCase().includes(seat.name.toLowerCase())	Host boundary: case-insensitive matching (Unicode casing, unicode-case.ts)
+src/core/specification.vibe	revisedSpecificationState	?? before.specification	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/specification.vibe	revisedSpecificationState	?? before.specificationHistory	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/specification.vibe	revisedSpecificationState	next === spec	Variant: revise or review; an unchanged specification is not rewritten
 src/core/walkthroughSteps.vibe	walkthroughStop	Number.isNaN(step)	Host boundary: NaN
 src/core/wiki.vibe	wikiPage	base.startsWith("/wiki/")	Variant: a /wiki/ path names its page
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	!instance.executionId.startsWith(`wiki/${person.id || "public"}/`)	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	?? before.pages.find((page) => page.id === request.page)?.source	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	?? before.pages.find((page) => page.id === request.page)?.source ?? fixtureSource(request.page)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	?? person.kind	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	|| person.id || "public"	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	before.pages.some((page) => page.id === request.page)	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	existing.page !== request.page || existing.base !== request.base || existing.text !== request.text	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "draft"	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
 src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "read"	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback/callback	&& entry.person === person.id && entry.page === request.page	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback/callback	&& proposal.person === person.id && proposal.op === request.op && proposal.key === request.key	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback/callback	filter !(entry.person === person.id && entry.page === request.page)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback/callback	filter entry.person === person.id && entry.page === request.page	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback/callback	find page.id === request.page	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback/callback	find proposal.person === person.id && proposal.op === request.op && proposal.key === request.key	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback/callback	some page.id === request.page	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback/callback/callback	filter !(entry.person === person.id && entry.page === request.page && entry.text === request.text)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	makeWikiFactory	?? shared	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	makeWikiFactory/act	?? person.kind	Mock mode (VL-13): the forced mock backend, not a product decision
+src/core/WikiFactory.vibe	makeWikiFactory/act	|| person.id || "public"	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/WikiFactory.vibe	makeWikiFactory/act/callback	cause.reasons.length === 1	Variant test: the engine's identity conflict answers conflict
 src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag.endsWith("ExecutionIdentityConflict")	Variant test: the engine's identity conflict answers conflict
 src/core/WikiFactory.vibe	makeWikiFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
 src/core/WikiFactory.vibe	personOf	identity === "maintainer"	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
+src/core/wikiIndex.vibe	wikiPath	?? hash	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/wikiIndex.vibe	wikiPath	|| page.replace(/^\/wiki\/?/, "").replace(/\.md(?=#|$)/, "") || "index"	Open: state: an empty wiki path is the index
+src/core/wikiLinks.vibe	wikiLink	?? hash	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/export.vibe	check	!manifest.commits.every((entry) => noted.has(entry[1]))	Host boundary: Set membership; the notes tree holds a note for every manifest commit
 src/history/export.vibe	check	!old.has(oid)	Host boundary: Set membership; a commit the last publication holds was checked when it was published
 src/history/export.vibe	check	published.manifest === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
+src/history/export.vibe	check/callback	every noted.has(entry[1])	Open: state: an export checks that every manifest commit has its note
+src/history/export.vibe	noteOf/of/callback	filter note.section === kind	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+src/history/export.vibe	planned	?? folded.get(link.commit.id)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/export.vibe	planned	?? noted.get(link.oid)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/export.vibe	planned	?? previous?.commits	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/export.vibe	planned	?? previous?.commits	Open: state: only published entries with a source tree are known trees
 src/history/export.vibe	planned	history.main === ""	Formatting: the manifest message names main, or nothing before main has a commit
+src/history/export.vibe	planned/callback	&& source !== "" && !known.has(source)	Open: state: the export waits for trees it does not know yet
+src/history/export.vibe	planned/callback	filter entry[2] !== ""	Open: state: only published entries with a source tree are known trees
+src/history/export.vibe	planned/callback	filter oid !== ""	Empty text: an empty string shows nothing; any other text shows as given
+src/history/export.vibe	planned/callback	filter source !== "" && !known.has(source)	Open: state: the export waits for trees it does not know yet
+src/history/export.vibe	planned/callback	some link.oid === published.refs.mythical	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/export.vibe	publish/callback	move.before === ""	Forwards: an empty before is git's null, a ref the swap creates
+src/history/export.vibe	readManifest/callback	find each.name === MANIFEST_FILE	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/export.vibe	readPublished	notesTree === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
 src/history/export.vibe	readPublished	refs.manifest === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
 src/history/export.vibe	readPublished	refs.notes === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
+src/history/export.vibe	readRefs	?? manifest?.oid	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/export.vibe	readRefs	?? mythical?.oid	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/export.vibe	readRefs	?? notes?.oid	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/export.vibe	section	lines.length === 0	Formatting: an empty note section reads (none)
+src/history/flows.vibe	finish	?? sent.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
+src/history/flows.vibe	finish	?? sent.refusal ?? observed.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
+src/history/flows.vibe	finish/callback	?? answer.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
+src/history/flows.vibe	finish/callback	?? answer.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
+src/history/flows.vibe	finish/callback	?? answer.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
 src/history/flows.vibe	foldCommits	count === 0	Emptiness or a loaded flag: nothing to fold or export, or the bootstrap already loaded
 src/history/flows.vibe	loadBootstrap	loaded	Emptiness or a loaded flag: nothing to fold or export, or the bootstrap already loaded
+src/history/flows.vibe	paceOf	?? target.pace	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/flows.vibe	recorder/callback/callback	?? answer.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
+src/history/flows.vibe	runExport/callback	?? answer.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
 src/history/flows.vibe	runExport/callback	history.commits.length === 0	Emptiness or a loaded flag: nothing to fold or export, or the bootstrap already loaded
 src/history/LiveMythical.vibe	LiveMythical/callback/events/callback	response.status !== 200	Host boundary: the API's HTTP status
 src/history/LiveMythical.vibe	LiveMythical/callback/page	response.status !== 200	Host boundary: the API's HTTP status
 src/history/MockMythical.vibe	MockMythical	seed === seeded	Mock mode (VL-13): the fixture history
+src/history/MockMythical.vibe	mockRepository/readCommit	?? indexed.get(history)	Mock mode (VL-13): the forced mock backend, not a product decision
+src/history/pages.vibe	commitPageOf	?? history.commits.find((commit) => commit.id === id)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/pages.vibe	commitPageOf/callback	filter real.mythical === id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+src/history/pages.vibe	commitPageOf/callback	find commit.id === id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+src/history/pages.vibe	epicPageOf/callback	filter commit.epic === epic	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/pages.vibe	matchesOf	needle === ""	Emptiness: an empty search matches nothing
+src/history/pages.vibe	pageOf	switch request.what	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
+src/history/pages.vibe	stacked/callback	?? epicA	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/pages.vibe	stacked/callback	?? epicB	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/publish.vibe	batch	skip.has(each.oid)	Host boundary: Set membership drops an object id written by an earlier batch (done) or listed twice in the plan; which objects to write is the planner's pending list
 src/history/publish.vibe	pacedExport	answered.empty	Forwards the flag batch sets only when the proved emptyHistory found no commits
+src/history/publish.vibe	pacedExport/callback	?? answer.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
+src/history/publish.vibe	runPublish	?? answer.refusal	Default: an answer with no refusal reads as none; the proved refusal wording decides what it says
 src/history/publish.vibe	runPublish	read.available	Forwards readMain's answer that main's log was read; an unread main folds nothing and the export still runs
+src/history/routes.vibe	pageRequestOf	?? params.get("from")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
+src/history/routes.vibe	pageRequestOf	?? params.get("q")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
+src/history/seed.vibe	bucketsOf/callback/callback	?? index.get(sha)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/seed.vibe	evidenceOf/callback	filter line !== ""	Empty text: an empty string shows nothing; any other text shows as given
+src/history/seed.vibe	intentsOf	?? titles.get(real.into)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/seed.vibe	seedOf	!byTitle.has(title)	Host boundary: Map membership; the first group under a title keeps it, for a revert to find
 src/history/seed.vibe	seedOf	!list.includes(entry)	Host boundary: identity membership; an entry is listed once under each title
 src/history/seed.vibe	seedOf	!members.has(area)	Host boundary: Map membership; epics keep the order the project first touched them
+src/history/seed.vibe	seedOf	?? attempts.get(title)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/seed.vibe	seedOf	?? entry?.id	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/seed.vibe	seedOf	?? into.get(title)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/seed.vibe	seedOf	&& entry !== undefined && byEntry.has(entry.id)	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
+src/history/seed.vibe	seedOf	&& reverted !== "" && byTitle.has(reverted)	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/history/seed.vibe	seedOf	attempt.reason === ""	Formatting: an evidence line names the gate or reason only when there is one
 src/history/seed.vibe	seedOf	entry.gate === ""	Formatting: an evidence line names the gate or reason only when there is one
 src/history/Sequencer.vibe	answered	decision.ok	Forwards the proved decide's answer
 src/history/Sequencer.vibe	answered	decision.ok	Forwards the proved decide's answer
 src/history/Sequencer.vibe	make/record	!decision.ok	Forwards the proved decide's answer
+src/history/Sequencer.vibe	memoryStore/since/callback/callback	filter event.seq > after	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+src/history/tools.vibe	requestOf	?? input.from	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/tools.vibe	requestOf	?? input.id	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/tools.vibe	requestOf	?? input.id	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/tools.vibe	requestOf	?? input.query	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/history/tools.vibe	requestOf	switch input.what	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 src/history/tools.vibe	show/callback	{	Variant dispatch on what the history tool shows (outline, epic, commit, search)
 src/history/tools.vibe	show/callback	when { what: "commit"	Variant dispatch on what the history tool shows (outline, epic, commit, search)
 src/history/tools.vibe	show/callback	when { what: "epic"	Variant dispatch on what the history tool shows (outline, epic, commit, search)
 src/history/tools.vibe	show/callback	when { what: "outline"	Variant dispatch on what the history tool shows (outline, epic, commit, search)
 src/history/tools.vibe	show/callback	when { what: "search"	Variant dispatch on what the history tool shows (outline, epic, commit, search)
+src/history/wire.vibe	pathOf	switch request.what	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 src/surfaces/backend.vibe	backend	probe	Variant: mock or live backend, agent or person session, the probe flag; validSessionCookie and the origin match select the stored client
 src/surfaces/backend.vibe	callback	stored?.origin === "mock"	Variant: mock or live backend, agent or person session, the probe flag; validSessionCookie and the origin match select the stored client
 src/surfaces/backend.vibe	callback/callback	!("ledger" in identity)	Variant: mock or live backend, agent or person session, the probe flag; validSessionCookie and the origin match select the stored client
@@ -139,6 +272,13 @@ src/surfaces/commands.vibe	ask/callback	event.type === "Posted"	Variant dispatch
 src/surfaces/commands.vibe	ask/callback	event.type === "ReplyDelta"	Variant dispatch: reads each event variant's own field for the proved collectAnswer, which decides on the event's kind
 src/surfaces/commands.vibe	ask/callback	event.type === "ReplyFailed"	Variant dispatch: reads each event variant's own field for the proved collectAnswer, which decides on the event's kind
 src/surfaces/commands.vibe	ask/callback	event.type === "ReplyStarted"	Variant dispatch: reads each event variant's own field for the proved collectAnswer, which decides on the event's kind
+src/surfaces/commands.vibe	callback	?? result.saved ?? result.items.find(i => i.number === selected)	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+src/surfaces/commands.vibe	callback	|| input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-")	Default: a caller without its own key or operation id gets a fresh one
+src/surfaces/commands.vibe	callback	|| input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-")	Default: a caller without its own key or operation id gets a fresh one
+src/surfaces/commands.vibe	callback	|| input.operationId || (try IdGenerator.defaultIdGenerator.generateId())	Default: a caller without its own key or operation id gets a fresh one
+src/surfaces/commands.vibe	callback	|| input.operationId || (try IdGenerator.defaultIdGenerator.generateId())	Default: a caller without its own key or operation id gets a fresh one
+src/surfaces/commands.vibe	callback	|| input.operationId || (try IdGenerator.defaultIdGenerator.generateId())	Default: a caller without its own key or operation id gets a fresh one
+src/surfaces/commands.vibe	callback	|| s.id || "Sandboxes"	Open: label: an unnamed sandbox is called Sandboxes
 src/surfaces/commands.vibe	callback	input.op === "read"	Variant dispatch on the wiki operation: a read goes to read, any other op to act, whose authority is the proved wiki gate
 src/surfaces/commands.vibe	callback	input.recovery === ""	Forwards: an empty recovery key is left out of the request
 src/surfaces/commands.vibe	callback	input.wait	Variant dispatch on the caller's option: wait for the run's end, which the proved runSettled and runWaitFails decide
@@ -146,15 +286,22 @@ src/surfaces/commands.vibe	callback	output.commits.length === 0	Formatting: an e
 src/surfaces/commands.vibe	callback	output.entries.length === 0	Formatting: an empty list reads as one line; no decision about the data
 src/surfaces/commands.vibe	callback	output.signedOut	Formatting: the login and logout answers' sentences
 src/surfaces/commands.vibe	callback	output.status === "signed-in"	Formatting: the login and logout answers' sentences
+src/surfaces/commands.vibe	callback/callback	find i.number === selected	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/surfaces/commands.vibe	callback/callback	i.task === ""	Formatting: an issue without a task or VIP omits that part
 src/surfaces/commands.vibe	callback/callback	i.vip === ""	Formatting: an issue without a task or VIP omits that part
 src/surfaces/commands.vibe	define/render	json	Variant dispatch on the caller's output option: JSON or text
+src/surfaces/commands.vibe	showHistory	?? listed?.commits	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/surfaces/commands.vibe	showHistory	?? listed?.commits ?? matched?.commits	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/surfaces/commands.vibe	showHistory	?? listed?.total	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/surfaces/commands.vibe	signInError	error instanceof SignInFailed	Variant test: a SignInFailed passes on as its message
+src/surfaces/commands.vibe	summaryOf	?? page?.commit	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/surfaces/session.vibe	activeSession	!validSessionCookie(decoded.origin, decoded.cookie)	Variant: a configured session cookie wins over the stored one; validSessionCookie checks the stored one
 src/surfaces/session.vibe	activeSession	Option.isSome(configured) && Redacted.value(configured.value) !== ""	Variant: a configured session cookie wins over the stored one; validSessionCookie checks the stored one
+src/surfaces/signin.vibe	output	?? stored?.login	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/surfaces/signin.vibe	output	mock	Forwards: mock mode reads the fixture session file and has no pending flow
 src/surfaces/signin.vibe	output	mock	Forwards: mock mode reads the fixture session file and has no pending flow
 src/surfaces/signin.vibe	safeSettings/callback	error instanceof SignInFailed	Variant test: a SignInFailed passes through; any other settings failure becomes one sentence
+src/surfaces/signin.vibe	settle	?? answer.intervalSeconds	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/surfaces/signin.vibe	settle	answer.status !== "authorized"	Variant dispatch: GitHub's DevicePoll status picks its arm (denied, expired, pending or slowDown, authorized), and TypeScript narrows each; the interval is the proved pollInterval
 src/surfaces/signin.vibe	settle	answer.status === "denied"	Variant dispatch: GitHub's DevicePoll status picks its arm (denied, expired, pending or slowDown, authorized), and TypeScript narrows each; the interval is the proved pollInterval
 src/surfaces/signin.vibe	settle	answer.status === "expired"	Variant dispatch: GitHub's DevicePoll status picks its arm (denied, expired, pending or slowDown, authorized), and TypeScript narrows each; the interval is the proved pollInterval
@@ -536,29 +683,60 @@ src/web/wikiView.vibe	wikiPane/callback	filter `${page.label} ${page.title}`.toL
 src/web/wikiView.vibe	wikiPane/link	decision	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/wikiView.vibe	wikiPane/link	page?.id === id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/accountObject.vibe	accountObject/callback/call	!answer.ok	Host boundary: the account object's RPC answer
+worker/accountObject.vibe	accountObject/callback/current	?? try promise(() => state.raw.storage.get<string>("owner"))	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 worker/accountObject.vibe	gatewayOf/request	!answer.ok	Host boundary: the account object's RPC answer
 worker/accountObject.vibe	identityFromPolicy/request	admitted	Forwards the policy object's admission, decided by the proved role policy on its host
 worker/accountObject.vibe	identityFromPolicy/role	admitted	Forwards the policy object's admission, decided by the proved role policy on its host
+worker/Accounts.vibe	make	?? setup.delegate	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Accounts.vibe	make/authorize	!(try sequencer.allows(actor, action))	Host boundary: the sequencer's role answer, decided by the proved decide on its host
+worker/Accounts.vibe	make/callback	?? body	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Accounts.vibe	make/callback	(url.pathname === "/api/auth/device" || url.pathname === CALLBACK) && request.method === "POST"	Variant dispatch on the account route, which the proved accountRoute admits
 worker/Accounts.vibe	make/callback	url.pathname === "/api/issues"	Variant dispatch on the account route, which the proved accountRoute admits
 worker/Accounts.vibe	make/callback	url.pathname === "/api/roles" && request.method === "POST"	Variant dispatch on the account route, which the proved accountRoute admits
 worker/Accounts.vibe	make/callback	url.pathname === "/api/wiki"	Variant dispatch on the account route, which the proved accountRoute admits
 worker/Accounts.vibe	make/current	live.value.agent === true	Variant test: an agent session
 worker/Accounts.vibe	make/current	live.value.agent === true	Variant test: an agent session
+worker/Accounts.vibe	make/handle/callback	?? live?.key	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Accounts.vibe	make/handle/callback	?? live?.value.id	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Accounts.vibe	make/handle/callback	?? url.searchParams.get("resume-key")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
+worker/Accounts.vibe	make/handle/callback	?? url.searchParams.get("resume-op")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
+worker/Accounts.vibe	make/handle/callback	?? url.searchParams.get("resume-recovery")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
+worker/Accounts.vibe	make/handle/callback	?? url.searchParams.get("wiki-page")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/Accounts.vibe	make/handle/callback	"session" in pending	Variant test: a pending sign-in or a pending Connect
 worker/Accounts.vibe	make/mutation/callback/callback	result !== null && typeof result === "object" && "status" in result	Variant test: a mutation that answered an HTTP status
 worker/Accounts.vibe	make/readResponse	method !== "GET"	Variant dispatch: a GET answers the read, any other method the write's receipt
+worker/ActionDirectory.vibe	directory/root	?? request?.flow	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionDirectory.vibe	directory/root	parent === id || (try runs.request(id, true)) !== undefined	Variant: a root id or a stored run is its own root; the proved actionRoot gives the parent
+worker/ActionDirectory.vibe	directory/submit	?? request.owner	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionDirectory.vibe	directory/submit/callback/callback	cause.reasons.length === 1	Host boundary: Effect’s Cause shape; the engine’s identity conflict dies as the only reason
 worker/ActionDirectory.vibe	directory/submit/callback/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
+worker/ActionIdentity.vibe	fromAccounts/request	?? trusted.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/ActionIdentity.vibe	fromAccounts/request	&& person.id !== "" && (try accounts.allowed(person.id, "action"))	Open: gate: an action identity is admitted only for a signed-in person the policy allows
 worker/ActionIdentity.vibe	fromAccounts/request	admitted	Forwards the account host's admission, decided by the proved role policy on its host
 worker/ActionIdentity.vibe	fromAccounts/request	person.agent === true	Variant test: an agent session acts as the agent
 worker/ActionIdentity.vibe	fromAccounts/role	owner === "" || !(try accounts.allowed(owner, "action"))	Host boundary: the account host's policy answer; no owner is the signed-out viewer
+worker/ActionRuns.vibe	alarm	&& reply !== undefined && reply.done	Open: state: a run's reply is done, or failed (engine or reply error)
+worker/ActionRuns.vibe	alarm	|| engineFailed || (reply !== undefined && reply.error !== "")	Open: state: a run's reply is done, or failed (engine or reply error)
 worker/ActionRuns.vibe	alarm	engineFailed && intent !== undefined	Forwards the engine receipt's failure to the active reply
 worker/ActionRuns.vibe	alarm	request.flow !== Tour._tag && request.flow !== Post._tag	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
 worker/ActionRuns.vibe	alarm	request.flow === Tour._tag && tourSettles(done, failed)	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
+worker/ActionRuns.vibe	alarm/callback	&& entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
+worker/ActionRuns.vibe	alarm/callback	find entry.author === "agent"	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/ActionRuns.vibe	alarm/callback	find entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
+worker/ActionRuns.vibe	callerOf	?? request.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/ActionRuns.vibe	callerOf	?? request.owner	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/ActionRuns.vibe	callerOf/current	?? request.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/ActionRuns.vibe	cancel	run.flow === Tour._tag	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
+worker/ActionRuns.vibe	cancel/callback	&& entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
+worker/ActionRuns.vibe	cancel/callback	find entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
+worker/ActionRuns.vibe	cancel/callback	find run.id === id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/ActionRuns.vibe	make/admit	?? request.owner	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/ActionRuns.vibe	make/admit/callback	&& entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
+worker/ActionRuns.vibe	make/admit/callback	find entry.author === "agent" && !entry.done	Open: state: the open agent reply is the one an engine failure fails
+worker/ActionRuns.vibe	start	?? existing?.state	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/ActionRuns.vibe	start	?? request.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/ActionRuns.vibe	start	?? request.owner	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/ActionRuns.vibe	start	|| request.flow === Tour._tag || request.flow === Post._tag	Open: state: Tour and Post are conversational runs
 worker/ActionRuns.vibe	start	accepted	Forwards whether the sequencer holds the run's post or tour
 worker/ActionRuns.vibe	start	existing !== undefined && conversational	Variant: a stored post or tour run is resumed, not restarted (startRuns, proved, decides which)
 worker/ActionRuns.vibe	start	previous !== undefined && JSON.stringify(previous) !== JSON.stringify(request)	Host boundary: JSON equality; a different request under a known id conflicts
@@ -566,49 +744,104 @@ worker/ActionRuns.vibe	start	request.flow === Post._tag	Variant dispatch on the 
 worker/ActionRuns.vibe	start	request.flow === Post._tag && typeof raw.text === "string"	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
 worker/ActionRuns.vibe	start	request.flow === Tour._tag	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
 worker/ActionRuns.vibe	start	request.flow === Tour._tag	Variant dispatch on the run's flow (tour, post or history); each arm's settle rule is a proved actionRunDecision
+worker/ActionRuns.vibe	start/callback	&& entry.author === "agent" && !entry.done && entry.inReplyTo === ""	Open: state: a restarted conversational start was accepted: its tour reply or its post is there
+worker/ActionRuns.vibe	start/callback	find run.id === request.id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/ActionRuns.vibe	start/callback	some entry.author === "agent" && !entry.done && entry.inReplyTo === ""	Open: state: a restarted conversational start was accepted: its tour reply or its post is there
+worker/ActionRuns.vibe	start/callback	some entry.clientId === request.id	Open: state: a restarted conversational start was accepted: its tour reply or its post is there
+worker/ActionRuns.vibe	traced/callback/callback	&& event.flow === Reply._tag && request.flow === Post._tag	Open: state: a Post run's trace includes its Reply events
 worker/ActionRuns.vibe	traced/callback/callback	child	Variant: a reply child traces under its post (isReplyChild, proved)
 worker/ActionRuns.vibe	traced/callback/callback	child	Variant: a reply child traces under its post (isReplyChild, proved)
+worker/ActionsHttp.vibe	handle	?? parts[1]	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/ActionsHttp.vibe	handle	?? principal.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/ActionsHttp.vibe	handle	?? principal.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/ActionsHttp.vibe	handle	?? url.searchParams.get("flow")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/ActionsHttp.vibe	handle	raw.status !== 200	Host boundary: the actions object's HTTP status, passed through
 worker/ActionsHttp.vibe	handle	raw.status !== 200	Host boundary: the actions object's HTTP status, passed through
+worker/ActionsHttp.vibe	handle/callback	&& entry.command !== "" && allowed(principal.role, entry)	Open: gate: the command list holds only commands the caller's role may run
+worker/ActionsHttp.vibe	handle/callback	filter entry.command !== "" && allowed(principal.role, entry)	Open: gate: the command list holds only commands the caller's role may run
+worker/ActionsHttp.vibe	handle/callback	find run.id === id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/apiObjects.vibe	actionIndexBody/callback/request	exact === true	Forwards the caller's exact-match flag to the index read
+worker/apiObjects.vibe	apiFetch/callback	?? commit	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/apiObjects.vibe	apiFetch/callback	?? healthUrl.searchParams.get("conversation")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/apiObjects.vibe	apiFetch/callback	healthUrl.pathname === "/api/health/objects" && incoming.method === "GET"	Variant dispatch: the objects health route
+worker/apiObjects.vibe	conversationBody/callback/alarm/callback	?? request?.actor	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/apiObjects.vibe	conversationBody/callback/callback	?? afterOf(new URL(request.url, "http://conversation.invalid"))	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/apiObjects.vibe	historyBody/callback/callback	?? afterOf(new URL(request.url, "http://history.invalid"))	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/apiObjects.vibe	historyBody/callback/callback	exporter !== off	Variant: the history export runs only when configured on
 worker/apiObjects.vibe	sandboxIdentityOf/request	admitted	Forwards the account host's admission, decided by the proved role policy on its host
 worker/apiObjects.vibe	sandboxIdentityOf/role	allowed	Forwards the account host's admission, decided by the proved role policy on its host
+worker/Budget.vibe	make/admit/callback	?? try ledger.read(holdKey(reply))	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
+worker/Budget.vibe	make/spend/callback	?? try ledger.read(holdKey(reply))	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 worker/Budget.vibe	make/spend/callback	recorded	Forwards: for a recorded reply the proved settle leaves charges, overshoot and receipt unchanged (added 0), so only the reservation and hold are written
 worker/Budget.vibe	make/spend/callback	result.over > over	Metric only: the overshoot counter; no ledger write
+worker/Budget.vibe	make/totals	?? try ledger.read(OVER)	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
+worker/Budget.vibe	make/totals	?? try ledger.read(RESERVED)	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
+worker/Budget.vibe	make/totals	?? try ledger.read(SPENT)	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
+worker/CallBudget.vibe	callBudget/callback/callback	&& settled && Budget.reportsTokens(usage)	Open: count: a call's tokens are usable only when settled with reported tokens
 worker/CallBudget.vibe	callBudget/callback/callback	usable	Forwards: the proved settle charges the ceiling when the count is not usable, so the 0 passed then is never charged
+worker/CallBudget.vibe	callBudget/recordCall/callback	&& settled && Budget.reportsTokens(usage)	Open: count: a call's tokens are usable only when settled with reported tokens
 worker/CallBudget.vibe	callBudget/recordCall/callback	usable	Forwards: the proved settle charges the ceiling when the count is not usable, so the 0 passed then is never charged
 worker/CallBudget.vibe	callBudget/reserveCall/callback	!admitted	Forwards: Budget.admit returns the proved reserve’s admission
+worker/HistoryActions.vibe	intentOf	switch invocation.kind	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
+worker/HistoryActions.vibe	poll	switch invocation.kind	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
+worker/HistoryExport.vibe	exporterOf	?? setting	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/HistoryObject.vibe	write/callback	name === "export"	Variant dispatch on the history write's name; each write's own decision is proved in the history modules
 worker/HistoryObject.vibe	write/callback	name === "fold"	Variant dispatch on the history write's name; each write's own decision is proved in the history modules
 worker/HistoryObject.vibe	write/callback	name === "note"	Variant dispatch on the history write's name; each write's own decision is proved in the history modules
 worker/HistoryObject.vibe	write/callback	name === "plan"	Variant dispatch on the history write's name; each write's own decision is proved in the history modules
 worker/HistoryObject.vibe	write/callback	name === "start"	Variant dispatch on the history write's name; each write's own decision is proved in the history modules
+worker/Http.vibe	answer	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
+worker/Http.vibe	answer	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
+worker/Http.vibe	answer	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
 worker/Http.vibe	answer	route.kind === "post"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answer	route.kind === "read"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answer	route.kind === "tour-control"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answer	route.kind === "tour"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answer	route.kind === "tour" || route.kind === "end-tour"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answer	route.kind === "wiki"	Variant dispatch on the route the proved routeKind named
+worker/Http.vibe	answerHistory	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
 worker/Http.vibe	answerHistory	route.kind !== "history-write"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answerHistory	route.kind === "history-events"	Variant dispatch on the route the proved routeKind named
 worker/Http.vibe	answerHistory	text === ""	Forwards: an empty history write decodes as the schema's default body
 worker/Http.vibe	answerHistory/callback	error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge"	Variant test: the bounded read's too-large error answers 413
+worker/Http.vibe	decodeWrite	switch write	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 worker/Http.vibe	handle	url.pathname === "/api/actions" || url.pathname.startsWith("/api/actions/")	Variant dispatch on the path prefix: health, sandboxes and actions go to their own handlers, each admitting its routes
 worker/Http.vibe	handle	url.pathname === HEALTH_PATH	Variant dispatch on the path prefix: health, sandboxes and actions go to their own handlers, each admitting its routes
 worker/Http.vibe	handle	url.pathname.startsWith("/api/sandboxes/")	Variant dispatch on the path prefix: health, sandboxes and actions go to their own handlers, each admitting its routes
 worker/Http.vibe	handleConversations	url.pathname === HEALTH_PATH	Variant dispatch on the path prefix: health, sandboxes and actions go to their own handlers, each admitting its routes
+worker/index.vibe	fetch	&& !url.pathname.startsWith("/api/") && wikiPath(url.pathname) === url.pathname	Open: state: a site path the wiki owns: not under /api/ and already a wiki path
+worker/Issues.vibe	executeIssues	?? actor?.id	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Issues.vibe	executeIssues	?? actor?.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Issues.vibe	executeIssues	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Issues.vibe	executeIssues	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Issues.vibe	executeIssues/callback	!known	Host boundary: whether the engine knows the recovery execution
+worker/Issues.vibe	executeIssues/callback	?? completed.value.selected	Open: state: a resumed write that failed before writing is unwritten
+worker/Issues.vibe	executeIssues/callback	&& Option.isSome(failure) && failure.value.unwritten === true	Open: state: a resumed write that failed before writing is unwritten
+worker/Issues.vibe	executeIssues/callback	find f._tag === `vibelang/issues/${payload.op}`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
 worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
 worker/Issues.vibe	executeIssues/callback	original.op === "read" && original.resumeKey !== undefined && original.resumeOp !== undefined	Variant dispatch: a read that names a resumable operation also answers its receipt; resumable and requestKey (proved) admit it
 worker/Issues.vibe	executeIssues/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Variant test: an engine deadline answers unavailable
+worker/Issues.vibe	executeIssues/callback/callback	find f._tag === `vibelang/issues/${original.resumeOp}`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/Issues.vibe	executeIssues/callback/callback	find item.action === `${flow._tag}/perform`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/Issues.vibe	executeIssues/callback/callback	some decoded.value[name as keyof IssueRequest] !== value	Open: gate: a resumed request must equal the stored one field by field
+worker/Issues.vibe	executeIssues/callback/callback	some decoded.value[name as keyof IssueRequest] !== value	Open: gate: a resumed request must equal the stored one field by field
+worker/Issues.vibe	executeIssues/perform	?? current?.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Issues.vibe	executeIssues/perform	?? current?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Issues.vibe	executeIssues/perform	?? saved.specification	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	executeIssues/perform	?? saved.specificationHistory	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	executeIssues/perform	request.op === "accept" && current !== undefined	Variant dispatch: an accept records the person's approval through the proved approveVip
 worker/Issues.vibe	executeIssues/perform	request.op === "spec-revise" || request.op === "spec-review"	Variant dispatch on the specification operations, which the proved issuePermission admits
+worker/Issues.vibe	executeIssues/perform/callback	?? current.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Issues.vibe	executeIssues/perform/callback	item.number === request.number	Selects the requested issue
+worker/Issues.vibe	executeIssues/perform/callback/callback	&& old.number === item.number && old.approvedBy !== undefined	Open: state: an issue keeps a VIP approval it already had
+worker/Issues.vibe	executeIssues/perform/callback/callback	find old.number === item.number && old.approvedBy !== undefined	Open: state: an issue keeps a VIP approval it already had
+worker/Issues.vibe	githubHost/perform	?? actor?.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Issues.vibe	githubHost/perform	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Issues.vibe	githubHost/perform/callback	!after.items.some((item) => item.number === existing.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase()))	Host boundary: GitHub’s assignee read-back, matched case-insensitively with toLowerCase (Unicode casing)
 worker/Issues.vibe	githubHost/perform/callback	!observed.items.some(issue => issue.number === made.number && issue.vip !== "")	Host boundary: GitHub's read-back of the proposed VIP
+worker/Issues.vibe	githubHost/perform/callback	?? actor.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Issues.vibe	githubHost/perform/callback	?? current.parent_issue_url	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	githubHost/perform/callback	committing	Variant dispatch: commit or uncommit
 worker/Issues.vibe	githubHost/perform/callback	committing && (login.trim() === "" || !before.assignees.some(choice => choice.login.toLowerCase() === login.toLowerCase()))	Host boundary: assignee choice matched case-insensitively with toLowerCase (Unicode casing); an empty login is refused
 worker/Issues.vibe	githubHost/perform/callback	request.op === "accept"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
@@ -623,6 +856,24 @@ worker/Issues.vibe	githubHost/perform/callback	request.op === "new" || request.o
 worker/Issues.vibe	githubHost/perform/callback	request.op === "propose"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
 worker/Issues.vibe	githubHost/perform/callback	request.op === "read"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
 worker/Issues.vibe	githubHost/perform/callback	request.op === "split"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
+worker/Issues.vibe	githubHost/perform/callback/callback	&& issue.number === made.number && issue.vip !== ""	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/Issues.vibe	githubHost/perform/callback/callback	&& item.number === existing.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase())	Host boundary: case-insensitive matching (Unicode casing, unicode-case.ts)
+worker/Issues.vibe	githubHost/perform/callback/callback	find i.number === request.number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/Issues.vibe	githubHost/perform/callback/callback	some choice.login.toLowerCase() === login.toLowerCase()	Host boundary: case-insensitive matching (Unicode casing, unicode-case.ts)
+worker/Issues.vibe	githubHost/perform/callback/callback	some issue.number === made.number && issue.vip !== ""	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/Issues.vibe	githubHost/perform/callback/callback	some item.number === existing.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase())	Host boundary: case-insensitive matching (Unicode casing, unicode-case.ts)
+worker/Issues.vibe	githubHost/perform/callback/callback	some s.trim() === ""	Open: state: an issue body with a blank part is incomplete
+worker/Issues.vibe	githubHost/perform/callback/callback/callback	some login.toLowerCase() === target.assignee.toLowerCase()	Host boundary: case-insensitive matching (Unicode casing, unicode-case.ts)
+worker/Issues.vibe	githubHost/read	?? c.user?.login	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read	?? event.actor?.login	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read	?? event.assignee?.login	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read	?? event.created_at?.slice(0, 10)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read	?? event.label?.name	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read	?? i.parent_issue_url	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read	?? i.user?.id	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read	?? i.user?.login	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read	?? vip?.path	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read	?? vip?.review	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Issues.vibe	githubHost/read	at === -1	Host boundary: findIndex; the issue's own copy replaces its listed copy, or joins the list
 worker/Issues.vibe	githubHost/read	comments.truncated	Forwards: GitHub.Pulls.listReviews and GitHub.Issues.listComments set truncated when they stop before the last page; the branch refuses on that flag as given and compares nothing of its own
 worker/Issues.vibe	githubHost/read	number === i.number	Selects the requested issue (its reviews, timeline and comments are read only for it); the number is the proved selectsIssue's
@@ -630,10 +881,15 @@ worker/Issues.vibe	githubHost/read	number === i.number && vip !== undefined	Sele
 worker/Issues.vibe	githubHost/read	own._tag === "Failure" && issueFailureOf(own.failure).reason !== "missing"	Variant dispatch: the selected issue's own read failing as anything but missing fails the read; missing falls back to the list
 worker/Issues.vibe	githubHost/read	review.user !== null && !reviewers.includes(review.user.login)	Host boundary: Array membership; each reviewer is listed once
 worker/Issues.vibe	githubHost/read	reviews.truncated	Forwards: GitHub.Pulls.listReviews and GitHub.Issues.listComments set truncated when they stop before the last page; the branch refuses on that flag as given and compares nothing of its own
+worker/Issues.vibe	githubHost/read/callback	?? c.body	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read/callback	?? i.body	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Issues.vibe	githubHost/read/callback	findIndex (value as { readonly number?: unknown } | null)?.number === number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/Issues.vibe	serveIssues	?? current?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Issues.vibe	serveIssues	request.method === "GET"	Variant dispatch on the method the proved objectMethod admitted: a GET is a read
 worker/Issues.vibe	serveIssues	result.failure._tag === "IssueFailure" && result.failure.unwritten === true	Forwards the unwritten mark the proved unwritten decided
 worker/machineObject.vibe	machineObject/callback/apply	!(try box.running)	Host boundary: whether the container runs after wake
 worker/machineObject.vibe	machineObject/callback/apply	!currentRunning(generation, previous.generation, previous.phase) || !(try box.running)	Host boundary: whether the container runs, beside the proved currentRunning and checkpointPhase
+worker/machineObject.vibe	machineObject/callback/apply	?? previous.checkpointFailed	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/machineObject.vibe	machineObject/callback/apply	checkpointPhase(previous.phase) && (try box.running)	Host boundary: whether the container runs, beside the proved currentRunning and checkpointPhase
 worker/machineObject.vibe	machineObject/callback/apply	kind === "command"	Variant dispatch on the machine operation; each arm's guard is a proved machineDecision
 worker/machineObject.vibe	machineObject/callback/apply	kind === "lease"	Variant dispatch on the machine operation; each arm's guard is a proved machineDecision
@@ -644,7 +900,9 @@ worker/machineObject.vibe	machineObject/callback/apply	try box.running	Host boun
 worker/machineObject.vibe	machineObject/callback/apply	try box.running	Host boundary: whether the container runs, beside the proved currentRunning and checkpointPhase
 worker/machineObject.vibe	machineObject/callback/apply/callback	!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)	Host boundary: whether the container runs, beside the proved currentRunning and checkpointPhase
 worker/machineObject.vibe	machineObject/callback/apply/callback	!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)	Host boundary: whether the container runs, beside the proved currentRunning and checkpointPhase
+worker/machineObject.vibe	machineObject/callback/apply/callback	?? latest.leaseUntil	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/machineObject.vibe	machineObject/callback/apply/callback	answer.ok	Host boundary: the container command's answer
+worker/machineObject.vibe	machineObject/callback/saved	?? try promise(() => state.raw.storage.get<Saved>("machine"))	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 worker/Objects.vibe	controlTour	action === "pause"	Variant dispatch on the tour control action, which the proved validTourStep and tour decisions admit
 worker/Objects.vibe	controlTour	action === "resume"	Variant dispatch on the tour control action, which the proved validTourStep and tour decisions admit
 worker/Objects.vibe	controlTour/callback	action === "pause"	Variant dispatch on the tour control action, which the proved validTourStep and tour decisions admit
@@ -655,17 +913,25 @@ worker/Objects.vibe	post	!Schema.is(PostBody)({ clientId, name, text })	Host bou
 worker/Objects.vibe	tour	held !== undefined && unanswered(try sequencer.snapshot()).length > 0	Variant: a held tour with unanswered prompts stays held; unanswered is the sequencer's read
 worker/Objects.vibe	wakeTour	intent.flow !== Tour._tag	Variant dispatch on the intent's flow
 worker/ObjectStartup.vibe	make/callback/callback	result._tag === "Success" || !Deferred.doneUnsafe(pending, fail(new ObjectStartupFailed({ objectClass, objectId, codeVersion })))	Host boundary: Deferred completion; a failed start completes the waiters once
+worker/ObjectStartup.vibe	make/get	&& typeof property === "string" && known.has(property)	Host boundary: a property name read by typeof against the object's known methods
 worker/Reply.vibe	agentOf/resolve	id === AGENT_SEAT	Variant: the agent's seat resolves to the agent
 worker/Reply.vibe	answer/callback	answered === "busy"	Variant dispatch on the reply's answer (Answered, Failed, busy, interrupted); each outcome's state is a proved reply decision
 worker/Reply.vibe	answer/callback	Cause.hasInterrupts(cause)	Variant dispatch on the reply's answer (Answered, Failed, busy, interrupted); each outcome's state is a proved reply decision
 worker/Reply.vibe	answer/callback	when { _tag: "Answered"	Variant dispatch on the reply's answer (Answered, Failed, busy, interrupted); each outcome's state is a proved reply decision
 worker/Reply.vibe	answer/callback	when { _tag: "Failed"	Variant dispatch on the reply's answer (Answered, Failed, busy, interrupted); each outcome's state is a proved reply decision
 worker/Reply.vibe	compose	!admission.admitted	Forwards the budget meter's admission (the proved reserve)
+worker/Reply.vibe	compose	?? progress.failed	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Reply.vibe	compose	&& progress.usageValid && progress.failed === undefined	Open: count: a spend reports its usage only when valid and the reply did not fail
 worker/Reply.vibe	compose	Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)	Variant test: an interrupted or budget-refused model call
 worker/Reply.vibe	compose	failure instanceof HarnessError.HarnessError && typeof failure.cause === "object" && failure.cause !== null && "_tag" in failure.cause && failure.cause._tag === "vibelang/DailyBudgetExceeded"	Variant test: an interrupted or budget-refused model call
 worker/Reply.vibe	compose	meter.ledgerUnavailable()	Host boundary: the budget ledger's availability
 worker/Reply.vibe	compose	progress.usageValid	Forwards the proved reply progress's usage validity
+worker/Reply.vibe	daySpent	&& typeof failure === "object" && failure !== null && "cause" in failure && typeof failure.cause === "object" && failure.cause !== null && "_tag" in failure.cause && failure.cause._tag === "vibelang/DailyBudgetExceeded"	Host boundary: a failure's shape read by typeof (unknown values)
+worker/Reply.vibe	fold	?? event.usage.outputTokens	Open: count: tokens used: the provider's total, else its input count, else 0
+worker/Reply.vibe	fold	?? event.usage.totalTokens	Open: count: tokens used: the provider's total, else its input count, else 0
+worker/Reply.vibe	fold	?? event.usage.totalTokens ?? event.usage.inputTokens	Open: count: tokens used: the provider's total, else its input count, else 0
 worker/Reply.vibe	fold	event.delta.type === "text-delta"	Variant dispatch on the model stream's delta type
+worker/Reply.vibe	fold	switch event._tag	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 worker/Reply.vibe	respond/callback	!next.text.startsWith(shown)	Host boundary: string prefix and equality of the streamed text against what is shown
 worker/Reply.vibe	respond/callback	next.text === shown	Host boundary: string prefix and equality of the streamed text against what is shown
 worker/Reply.vibe	tagOf	typeof error !== "object" || error === null || !("_tag" in error)	Host boundary: reading _tag off an unknown error
@@ -677,35 +943,70 @@ worker/Sandboxes.vibe	execute	kind === "start"	Variant dispatch on the sandbox o
 worker/Sandboxes.vibe	execute	kind === "start"	Variant dispatch on the sandbox operation; admission is the proved sandboxHostDecision
 worker/Sandboxes.vibe	execute	kind === "stop"	Variant dispatch on the sandbox operation; admission is the proved sandboxHostDecision
 worker/Sandboxes.vibe	execute	kind === "stop"	Variant dispatch on the sandbox operation; admission is the proved sandboxHostDecision
+worker/Sandboxes.vibe	open/hold/callback	?? running.get(id)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Sandboxes.vibe	open/hold/callback	count === 0	Emptiness: the last hold released
 worker/Sandboxes.vibe	open/read	!rows[0]	Absence: no stored row
 worker/Sandboxes.vibe	open/receipt	!rows[0]	Absence: no stored row
 worker/Sandboxes.vibe	open/write/callback/callback	receipt	Variant: a receipt write or a pending write
 worker/SandboxHttp.vibe	sandboxRequest	!match	Absence: the path matched no sandbox route
+worker/SandboxHttp.vibe	sandboxRequest	?? action	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/SandboxHttp.vibe	sandboxRequest/callback	?? request.headers["content-length"]	Default: a missing content-length reads as 0, which the proved validBodyLength refuses (no body is read)
 worker/sandboxProbeContainer.vibe	probeBox	mode === "passthrough"	Variant dispatch on the probe's mode (an operator diagnostic)
+worker/sandboxProbeFetch.vibe	authorized	&& token !== "" && (try Effect.orDie(Effect.try(() => digestSync(header ?? "") === digestSync(`Bearer ${token}`))))	Open: gate: a probe is authorized only with a configured token, by digest
+worker/sandboxProbeFetch.vibe	authorized/callback	?? header	Open: gate: a probe is authorized only with a configured token, by digest
 worker/sandboxProbeFetch.vibe	leaseClamped/getByName/apply	kind !== "lease"	Host boundary: the operator probe's token check, lease kind and status read (a diagnostic route, not product logic)
+worker/sandboxProbeFetch.vibe	ownerOf	?? request.headers[OWNER_HEADER]	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/sandboxProbeFetch.vibe	probeFetch/callback	!(try authorized(token, request.headers["authorization"]))	Host boundary: the operator probe's token check, lease kind and status read (a diagnostic route, not product logic)
+worker/sandboxProbeFetch.vibe	probeFetch/callback	?? request.headers[OWNER_HEADER]	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
+worker/sandboxProbeFetch.vibe	recorded	?? conversation	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/sandboxProbeFetch.vibe	sweep	read.ok && read.snapshot.status === "running"	Host boundary: the operator probe's token check, lease kind and status read (a diagnostic route, not product logic)
+worker/Sequencer.vibe	make/actions	?? (try locked(state())).conversation.runs	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Sequencer.vibe	make/controlTour/callback	?? (try state()).conversation.walkthrough	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Sequencer.vibe	make/controlTour/callback	?? current.walkthrough?.revision	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/Sequencer.vibe	make/controlTour/callback	action === "pause"	Variant dispatch on the tour control action
 worker/Sequencer.vibe	make/controlTour/callback	action === "seek"	Variant dispatch on the tour control action
 worker/Sequencer.vibe	make/ensureDispatched	posts.length > 0	Emptiness: no undispatched post
+worker/Sequencer.vibe	make/finish/callback	&& entry.done && entry.error === ""	Open: state: a reply finishes only when done without an error
+worker/Sequencer.vibe	make/read/callback	filter event.seq > after	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/Sequencer.vibe	make/read/callback	filter touched.has(entry.id)	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Sequencer.vibe	make/record	!decision.ok	Forwards the proved decide's refusal
+worker/Sequencer.vibe	make/say/callback	?? entry?.text	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/SpecificationReviewers.vibe	callback/review	!admission.admitted	Forwards the budget meter's admission (the proved reserve)
 worker/SpecificationReviewers.vibe	callback/review	meter.ledgerUnavailable()	Host boundary: the budget ledger's availability
 worker/VipDraft.vibe	callback/draft	!admission.admitted	Forwards the budget meter's admission (the proved reserve)
 worker/VipDraft.vibe	callback/draft	!agent.available	Host boundary: whether the drafting agent is configured
 worker/VipDraft.vibe	callback/draft	meter.ledgerUnavailable()	Host boundary: the budget ledger's availability
+worker/Wiki.vibe	executeWiki	?? actor?.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Wiki.vibe	executeWiki	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Wiki.vibe	executeWiki	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Wiki.vibe	executeWiki	|| actor?.id || "public"	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Wiki.vibe	executeWiki/callback	!known	Host boundary: whether the engine knows the recovery execution
+worker/Wiki.vibe	executeWiki/callback	find f._tag === `vibelang/wiki/${payload.op}`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
 worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
 worker/Wiki.vibe	executeWiki/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Variant test: an engine deadline answers unavailable
+worker/Wiki.vibe	executeWiki/callback/callback	find item.action === `${flow._tag}/perform`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
+worker/Wiki.vibe	executeWiki/callback/callback	some decoded.value[name as keyof WikiRequest] !== value	Open: gate: a resumed request must equal the stored one field by field
+worker/Wiki.vibe	executeWiki/callback/callback	some decoded.value[name as keyof WikiRequest] !== value	Open: gate: a resumed request must equal the stored one field by field
 worker/Wiki.vibe	githubWikiHost/loadDraft	storage === undefined || person === ""	Absence: no storage or no person has no retained draft
+worker/Wiki.vibe	githubWikiHost/perform	?? actor?.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Wiki.vibe	githubWikiHost/perform	?? actor?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
 worker/Wiki.vibe	githubWikiHost/perform/callback	!authored || !changed	Host boundary: GitHub's read-back that the review is the person's and changes exactly this page
+worker/Wiki.vibe	githubWikiHost/perform/callback	?? actor?.id	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Wiki.vibe	githubWikiHost/perform/callback	?? retained?.text	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Wiki.vibe	githubWikiHost/perform/callback	&& actor.id !== "" && observedReview.pipe(Option.exists((review) => String(review.author) === actor.id))	Open: gate: a review counts as the actor's own only for a signed-in actor who wrote it
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "draft"	Variant dispatch on the wiki operation, which the proved wikiPermission and wikiSubmissionAllowed admit
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "read"	Variant dispatch on the wiki operation, which the proved wikiPermission and wikiSubmissionAllowed admit
+worker/Wiki.vibe	githubWikiHost/perform/callback/callback	?? current.kind	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Wiki.vibe	githubWikiHost/perform/callback/callback	?? repo.branch	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+worker/Wiki.vibe	githubWikiHost/perform/callback/callback	&& review.files.length === 1 && review.files[0]!.filename === path && review.files[0]!.status === "modified"	Open: state: a wiki review changes exactly the page's one file
+worker/Wiki.vibe	githubWikiHost/perform/callback/callback	filter entry.id !== page.id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Wiki.vibe	githubWikiHost/perform/callback/callback	storage !== undefined && !touched	Forwards: a first execution that wrote nothing yet keeps the draft
+worker/Wiki.vibe	serveWiki	?? current?.role	Open: gate: a missing actor is a signed-out viewer person, keyed public
+worker/Wiki.vibe	serveWiki	?? url.searchParams.get("page")	Default: an absent query parameter, header or optional input reads as empty; the proved reader decides what empty means
 worker/Wiki.vibe	serveWiki	request.method === "GET"	Variant dispatch on the method the proved objectMethod admitted: a GET is a read
 worker/Wiki.vibe	serveWiki	result.failure._tag === "WikiFailure" && result.failure.unwritten === true	Forwards the unwritten mark the proved wikiUnwritten decided
 worker/WikiDraft.vibe	callback/draft	!admission.admitted	Forwards the budget meter's admission (the proved reserve)
 worker/WikiDraft.vibe	callback/draft	!agent.available	Host boundary: whether the drafting agent is configured
 worker/WikiDraft.vibe	callback/draft	meter.ledgerUnavailable()	Host boundary: the budget ledger's availability
+worker/WikiTools.vibe	wikiTools/handler/callback	some page.id === input.page	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere

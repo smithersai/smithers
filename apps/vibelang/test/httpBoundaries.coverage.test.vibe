@@ -151,10 +151,10 @@ describe("the API's HTTP routes", () => {
     }
   }))
 
-  for (const route of ["wiki", "posts"]) {
+  for (const route of ["wiki", "posts", "tour-control"]) {
     it.effect(`refuses a ${route} body without a declared length, reaching no conversation`, () => effect {
       provide MockFactory {
-        const body = JSON.stringify(route === "wiki" ? { page: "rulings" } : { clientId: "a", name: "Ada", text: "hi" })
+        const body = JSON.stringify(route === "wiki" ? { page: "rulings" } : route === "posts" ? { clientId: "a", name: "Ada", text: "hi" } : { action: "pause", step: 0 })
         const chunked = HttpClientRequest.post(`http://api.invalid/api/conversations/chunked/${route}`).pipe(
           HttpClientRequest.bodyStream(Stream.make(new TextEncoder().encode(body)), { contentType: "application/json" }),
         )
@@ -169,6 +169,14 @@ describe("the API's HTTP routes", () => {
       }
     })
   }
+
+  // A tour control declared over its 1 KiB limit is refused before its body is read (0018 batch 62).
+  it.effect("refuses a tour control declared over its limit without reading the body", () => effect {
+    provide MockFactory {
+      const response = try Effect.provideService(handle(try conversations(true), unavailableHistory), HttpServerRequest.HttpServerRequest, try resetRequest("/api/conversations/reset/tour-control", "2048"))
+      try Effect.try(() => expect(response.status).toBe(413))
+    }
+  })
 
   for (const path of ["/api/conversations/reset/wiki", "/api/conversations/reset/posts", "/api/conversations/reset/tour-control", "/api/history/plan"]) {
     it.effect(`answers a body that fails mid-read as a bad body, reaching nothing: ${path}`, () => effect {

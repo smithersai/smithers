@@ -1,6 +1,6 @@
 // Branches in shell rows (decision 0018, "Decisions in shell rows" and "Decisions in views"): an `if` or conditional
-// inside a row that is not proved (in src/web/ also a `switch`, the left side of a `??`, and an `&&` or `||` used as a
-// value: what a view shows or enables), with an operand (split at `&&`, `||` and `!`) that neither calls a
+// inside a row that is not proved, a `switch`, the left side of a `??`, an `&&` or `||` used as a value, or a list
+// predicate (what a list or count holds), with an operand (split at `&&`, `||` and `!`) that neither calls a
 // proved function, nor reads a `const` whose value calls one (in its row or an enclosing row) as a flag or against a
 // literal (`replay === "replay-refused"`, `cut < 0`: the proved function's answer), nor calls a function whose whole
 // body returns a proved call, nor is a
@@ -14,10 +14,9 @@ const app = path.resolve(__dirname, '..');
 const record = path.join(__dirname, 'shell-branches.tsv');
 const HEADER = '# file\tfunction\tcondition\treason (decision 0018, "Decisions in shell rows"; "Open:" = still to prove)';
 
-// Every file is in scope. In views (src/web/) a `??`, a `switch` and a value `&&` or `||` choose too; elsewhere only an
-// `if` or conditional test counts (the worker audit's rule, unchanged).
-const views = file => file.startsWith('src/web/');
-const counted = (file, branch) => (branch.kind ?? 'if') === 'if' || views(file);
+// Every file is in scope, and every kind counts: an `if` or conditional test, a `switch`, a `??`, a value `&&` or `||`,
+// and a list predicate (0018 "Decisions in views"; batch 62 extended the kinds from src/web to every file).
+const counted = () => true;
 // Callback labels carry their line (`answer/callback@88`); the record does not, so moving code changes nothing.
 const stable = label => label.replace(/@\d+/g, '');
 const key = ({ file, label, test }) => `${file}\t${stable(label)}\t${test}`;

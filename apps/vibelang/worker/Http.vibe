@@ -101,8 +101,10 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
     return json(refusal === null ? {} : { refusal }, writeStatus(refusal !== null))
   }
   if (route.kind === "tour-control") {
+    // Refused by its declared length before any byte is read, as every other write route is.
+    const length = Number(request.headers["content-length"] ?? "0")
+    if (!validBodyLength(length, bodyLimit("tour-control"))) return json({ error: "body size" }, 413)
     const text = request.text catch () => ""
-    if (!withinBodyLimit(text.length, bodyLimit("tour-control"))) return json({ error: "body size" }, 413)
     const body = Schema.decodeUnknownEffect(Schema.fromJsonString(TourControlBody))(text) catch () => undefined
     if (body === undefined || !validTourStep(body.step, 11)) return json({ error: "body" }, 400)
     const refusal = conversations.controlTour === undefined ? "not-replying" : try conversations.controlTour(route.conversation, body.action, body.step)

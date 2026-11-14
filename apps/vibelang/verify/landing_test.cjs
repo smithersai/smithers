@@ -82,7 +82,8 @@ test('a new branch in a shell row is refused until it is proved or recorded with
   // A wrapper whose whole body returns a proved call decides nothing; a wrapper that adds a comparison does.
   const wrapped = answer + 'export function big(n: number) {\n  return size(n)\n}\nexport function bigger(n: number) {\n  return size(n) === "big" && n > 9\n}\n'
     + 'export function pick(n: number) {\n  if (big(n) === "big") return 1\n  return bigger(n) ? 2 : 0\n}\n';
-  assert.deepEqual(shellBranches(inventorySource(fixture, wrapped)).map(branch => branch.test), ['kind === "big"', 'bigger(n)']);
+  // Its own `&&` is a value choice too (batch 62: every kind counts in every file).
+  assert.deepEqual(shellBranches(inventorySource(fixture, wrapped)).map(branch => branch.test), ['kind === "big"', '&& size(n) === "big" && n > 9', 'bigger(n)']);
   // A proved function called through a namespace decides too.
   const spaced = answer.replace('if (s === "big") return 1', 'if (Sizes.size(n) === "x" || Other.thing(n)) return 1');
   assert.deepEqual(shellBranches(inventorySource(fixture, spaced)).map(branch => branch.test), ['Sizes.size(n) === "x" || Other.thing(n)', 'kind === "big"']);
@@ -93,14 +94,14 @@ test('a new branch in a shell row is refused until it is proved or recorded with
   const callback = '// Fixture.\nexport const f = (xs: number[]) => xs.map(x => x > 1 ? x : 0)\n';
   const k = 'worker/landingFixture.vibe\tf/callback\tx > 1\tOpen: fixture\n';
   assert.deepEqual(branchFacts(inventorySource(fixture, '\n\n' + callback), k).refused, []);
-  // Views in src/web are in scope (0018, "Decisions in views"); there a `??`, a `switch`, and an `&&` or `||` used as a
-  // value choose what a person sees too. Outside src/web only `if` and conditional tests count, as before.
+  // Views in src/web are in scope (0018, "Decisions in views"); a `??`, a `switch`, and an `&&` or `||` used as a
+  // value choose too, in every file (batch 62).
   const web = path.join(app, 'src/web/landingFixture.vibe');
   assert.deepEqual(branchFacts(inventorySource(web, shell), '').branches, 2);
   const view = '// Fixture.\nexport function v(m: { label?: string, busy: boolean, kind: string }, ok: boolean) {\n  const label = m.label ?? "None"\n'
     + '  const off = m.busy || !ok\n  switch (m.kind) {\n    case "a": return 1\n  }\n  return [label, off, ok && "shown", ok ? 1 : 2]\n}\n';
   assert.deepEqual(shellBranches(inventorySource(web, view)).map(branch => branch.test), ['?? m.label', '|| m.busy || !ok', 'switch m.kind', '&& ok && "shown"', 'ok']);
-  assert.deepEqual(shellBranches(inventorySource(fixture, view)).map(branch => branch.test), ['ok']);
+  assert.deepEqual(shellBranches(inventorySource(fixture, view)).map(branch => branch.test), ['?? m.label', '|| m.busy || !ok', 'switch m.kind', '&& ok && "shown"', 'ok']);
 });
 
 // One read of the real tree (about 15 s): the inventory of every source, decision 0018 and mutations.py's cases.
