@@ -81,7 +81,7 @@ Named browser sites and status:
 | `src/core/conversation.vibe` `apply`: a fractional or negative walkthrough `step`, `duration` or seek | The page decodes every event with `EventSchema`, whose `Seq` is a non-negative integer, so such an event fails decoding first (vl-coverage-core: the forged fault crashed Foldkit's schema check when it sent one). The contracts keep the checks because Dafny's numbers are not integers. |
 | `src/core/conversation.vibe` `hasClientId("")` | `apply` refuses an empty client id before calling it, and `post` before that. |
 | `src/core/conversation.vibe` `holdRemaining`: `remaining < 0` | A walkthrough's remainder is a `WalkthroughDriven` duration, which `apply` admits only when it is 0 or more, or `holdRemaining`'s own answer, which is never negative. The guard keeps the function total for its proof. |
-| `src/core/conversation.vibe` `tourWalkthrough` answering `null` for a walkthrough it holds | `TourStarted` clears the last tour's walkthrough (`c5a2f3f9`) and `WalkthroughDriven` applies only to the running tour, so a walkthrough always belongs to the running tour; `flows.vibe` `walk`, the only reader, runs only for a running tour. |
+| `src/core/conversation.vibe` `tourWalkthrough` answering `null` for a walkthrough it holds | `TourStarted` clears the last tour's walkthrough (`c5a2f3f9`) and `WalkthroughDriven` applies only to the running tour. An ended tour's walkthrough stays in the conversation until the next tour starts, and `tourWalkthrough` answers `null` for it; `flows.vibe` `walk`, the browser's only reader, runs only for a running tour. Unit: `test/walkthrough.test.vibe:134`. |
 | `src/core/flowDecision.vibe` `tourLawful` (18 arms) | Called only by proof contracts, `test/decisions.coverage.test.vibe` and the fuzz oracle (`fuzz/core-flow-decisions.node.fuzz.vibe`), never by product code. It becomes a `spec function` when a compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`). |
 | `src/history/areaDecision.vibe`: `lowerEnd`, `unitFrom`, `scopeEnd`, `parenScope` (24 arms) | The recursive specifications the `find*` and `read*` loops' invariants and `ensures` name; `titleScope` calls only the loops. Spec functions once a compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`, session 35). |
 | `src/history/trailerDecision.vibe`: `digitsStart`, `mythicalNameSpec`, `textEnd`, `paragraphStart`, `firstNamed`, `nameAt`, `lastParagraph` (34 arms) | The recursive specifications the `find*` loops' invariants name; `trailerName` calls only the loops. Spec functions once a compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`). |
@@ -736,6 +736,44 @@ Kept, with the reason no page input reaches them:
 | `MockFactory.vibe:436`, `:453` (an agent's issue or wiki actor) and `issueFixtureDecision.vibe:96` (`agentRefused`) | The agent signs in only through the agent surfaces (`src/surfaces/signin.vibe`, `MockAccounts.vibe` `signInAgent`), which the page does not run; Visit as clears the agent flag, and the scripted agent acts as the poster. |
 | `sandboxDecision.vibe:96` (`elapsedMilliseconds`'s `: 0`) | Its only caller, `sandboxMeter.vibe` `meter`, loops `while (cursor < high)` with `end > cursor`. The clamp is the kernel's specified rollback property (`test/sandboxDecision.test.vibe`, mutant `clock-highwater`), kept for any later caller. |
 | `sandboxDecision.vibe:38`, `:39` (`runningCountPrefix`) and `conversation.vibe:943` (`pendingCount`) | Specification only: they state `runningCount`'s and the pending list's contracts and nothing calls them at run time (`~/vl/vibelang-bugs/spec-only-function/`, still open in VibeLang). |
+
+### `conversation.vibe`'s browser-open arms, each with the test that runs it (vl-coverage-core, session 13, 2026-11-14)
+
+The 32 arms `s12full2` left open in `src/core/conversation.vibe` (30 sites; line 943 is counted twice in the build's
+structure) each need an input one of the page's own decisions refuses first, so the browser gate never runs them; the
+lead approved leaving them to the unit and Worker suites. Each row names that page check and the test that runs the
+arm. Method: every candidate test file ran alone under `vitest run --coverage` restricted to `conversation.vibe`, and an
+arm counts for a file only if that run's Istanbul arm at the same line, column and index ran (nyc-01
+`~/vl/vl-coverage-evidence/s13/attr1/`; script `s13/who.cjs`); one test was then isolated with `-t` where a file has several. Line 1115 ran
+in no suite, so `test/walkthrough.test.vibe:134` now runs it; with the guard removed only that test fails (7 of 8 pass).
+
+| Line | Arm | The page check that refuses it first | Test that runs it |
+| --- | --- | --- | --- |
+| 342 | `hasClientId("")` | `post` refuses an empty client id before calling it; the page's ids are `${session}-${n}` | `test/conversation.boundaries.test.vibe:28` |
+| 528 | `mayRun`'s last operand | Only Approve and Fold are maintainer-least, and neither has a command (`catalog.vibe` `registration`) | `test/actionMachine.test.vibe:42` (every role, tour, maintainer and internal combination) |
+| 562 | `post` of a blank text | `submitKind` drops a blank draft | `test/conversation.test.vibe:350` |
+| 568 | `post` of a client id already pending | Every id is `${session}-${sent + 1}`; the tour driver sends its one id only when `walkthroughPlan`'s `posted` is false | `test/conversation.test.vibe:349` |
+| 571 | `post` of a client id already in the conversation | The same `walkthroughPlan` check | `test/conversation.boundaries.test.vibe:30` |
+| 587 | `failPost` with a blank reason | Every reason the page receives is non-blank (`LiveFactory.vibe`, `MockFactory.vibe`) | `test/conversation.test.vibe:351` |
+| 671 | `receive` of a later event during a gap | `main.vibe` resumes in the update that sees the gap | `test/conversation.test.vibe:368` |
+| 687 | `resume` with no gap | `main.vibe` resumes only on `plan.replay` | `test/conversation.test.vibe:370` |
+| 804 | a grant to an empty id or to Viewer | `roleView.vibe` offers no Viewer; the roster lists only known people | `test/roles.test.vibe:44` |
+| 805 (4 arms) | the bootstrap grant | The mock seeds its ledger by `apply`, never `decide` (`MockAccounts.vibe` `seeded`) | `test/roles.test.vibe:21` (admitted), `:46` (refused on a non-empty ledger) |
+| 807 | a grant with no granter, or to the current role | `MockAccounts.grant` returns before deciding an unchanged role | `test/conversationEdges.coverage.test.vibe:52`, `:53` |
+| 808 (2 arms) | a self-promotion | `accountViewDecision.vibe` `canChangeRole` never offers a person their own select | `test/roles.test.vibe:28`, `:43` |
+| 809 | a non-maintainer's grant to another | Role selects show only to a maintainer (`canChangeRole`) | `test/conversationEdges.coverage.test.vibe:54` |
+| 810 | the last maintainer's self-demotion | `canChangeRole` (no own select) | `test/roles.test.vibe:45` |
+| 905 | `unansweredIndexes` while the agent works | `MockFactory.vibe` `answer` waits for each reply and tour before reading again | `test/sequencer.coverage.test.vibe:108` (the Worker's sequencer) |
+| 943 (4 arms) | `pendingCount` | Specification only; nothing calls it at run time | `test/conversationEdges.coverage.test.vibe:66` |
+| 977 | `approveVip`'s refusal | Accept shows only to a maintainer on a VIP in review (`issuesViewDecision.vibe` `detailActions`) | `test/gates.test.vibe:9` to `:12`, `:14` |
+| 986 | `declineVip` of an issue not in review | The same `detailActions` check | `test/conversationEdges.coverage.test.vibe:73` |
+| 1026 | the `reset` revision policy | Production's `SPEC_REVISION_POLICY` is `keep` | `test/gates.test.vibe:41` |
+| 1061 | a revision with unchanged text | Save revision is disabled while the text equals the specification (`revisionDisabled`) | `test/gates.test.vibe:47` |
+| 1062 | a revision under `reset` | Production's policy is `keep` | `test/gates.test.vibe:48` |
+| 1083 | a review `recordSpecificationReview` refuses | `specification.vibe` `reviewAnswerAccepted` refuses it before recording | `test/gates.test.vibe:52`, `:53`, `:60`, `:61` |
+| 1087 | an unknown reviewer | `reviewer` is the four-name union | `test/gates.test.vibe:63` |
+| 1100 | `holdRemaining` of a negative remainder | `apply` admits only a duration of 0 or more | `test/conversationEdges.coverage.test.vibe:77` |
+| 1115 | `tourWalkthrough` of an ended tour, whose walkthrough the conversation keeps | `flows.vibe` `walk`, the browser's only reader, runs only for a running tour; the Worker's `current` (`worker/Objects.vibe:117`) reads it after the tour ends | `test/walkthrough.test.vibe:134` (new, session 13) |
 
 ### The Export journey counts turns, not milliseconds (vl-coverage-core, session 12, 2026-11-14)
 

@@ -130,3 +130,12 @@ it("refuses controls on a new tour until its first drive, including replayed eve
   expect(tourWalkthrough(driven)).toMatchObject({ step: 1, target: "splash", paused: false })
   expect(decide(driven, { type: "PauseTour", id: "second", at: 1000 }).ok).toBe(true)
 })
+
+it("keeps an ended tour's walkthrough in the conversation, but shows it as no tour's", () => {
+  const started = apply(empty, { type: "TourStarted", seq: 1, id: "first" })
+  const showing = apply(started, { type: "WalkthroughDriven", seq: 2, id: "first", step: 7, target: "history-nav", at: 0, duration: 10000 })
+  expect(tourWalkthrough(showing)).toMatchObject({ step: 7, target: "history-nav" })
+  const ended = apply(showing, { type: "TourEnded", seq: 3, id: "first" })
+  expect(ended.walkthrough).toMatchObject({ step: 7, target: "history-nav" })
+  expect(tourWalkthrough(ended)).toBeNull()
+})
