@@ -36,6 +36,17 @@ const Step = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("actions"), reply: Schema.Literals(["open", "loaded", "failed", "retry"]), epoch: Schema.optionalKey(Int) }),
 ])
 type Step = typeof Step.Type
+
+const FLAGS = { session: "pane-chosen", mode: "mock" as const, name: "Guest" }
+/**
+ * Sequences a short budget rarely lines up, run on every invocation (fuzz:affected's floor): details that fail for the
+ * issue the pane shows; a live page selecting an issue, which loads its details; Cancel on an editor saving nothing.
+ */
+const paneChosen: ReadonlyArray<{ readonly flags: typeof Flags.Type; readonly steps: ReadonlyArray<Step> }> = [
+  { flags: FLAGS, steps: [{ kind: "clicked-issues" }, { kind: "projection", seq: 1, items: 3 }, { kind: "open-card", number: 1 }, { kind: "details", seq: 1, number: 1, failed: true }] },
+  { flags: { ...FLAGS, mode: "live" }, steps: [{ kind: "clicked-issues" }, { kind: "projection", seq: 1, items: 3 }, { kind: "issue-ui", action: "select", value: "1" }] },
+  { flags: FLAGS, steps: [{ kind: "restore-editor", page: "index", busy: false, error: "", submitting: false, recorded: true, role: "contributor" }, { kind: "wiki-edit", op: "cancel", value: "" }] },
+]
 type Item = typeof Message.IssuesLoaded.Type["data"]["items"][number]
 
 type Restore = Extract<Step, { kind: "restore-editor" }>
@@ -148,5 +159,5 @@ it.live("web/pane-messages", () => scoped(effect {
       if (step.kind === "projection" && step.seq < (before.issues?.data.seq ?? 0) && !unchanged) return false
     }
     return true
-  })
+  }, undefined, { chosen: paneChosen })
 }))

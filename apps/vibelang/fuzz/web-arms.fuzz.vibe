@@ -73,7 +73,7 @@ const SCENARIOS = [
   "load-faulty", "load-resumed", "act-live-kept", "act-live", "refresh-faulty", "grant",
   "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
   "control-tour", "read-action", "actions-faulty-epoch", "draft-link", "theatre-keys", "auto-tour", "tour-events",
-  "wiki-unlisted", "wiki-unwritten", "sign-in-mock", "wiki-link",
+  "wiki-unlisted", "wiki-unwritten", "wiki-refused", "sign-in-mock", "wiki-link",
   "end-tour", "run-epoch", "issue-count", "details-mock", "details-faulty", "editor-faulty",
   "sandbox-poll-unreachable", "open-wiki", "run-json-blank", "people-faulty", "run-retry",
 ] as const
@@ -354,6 +354,13 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       const refusing = backendChanged(role, (factory) => ({ wiki: Object.assign(Object.create(factory.wiki), { act: () => fail(new WikiFailure({ reason: "conflict", unwritten: true })) }) }))
       const got = try Effect.provide(answer(() => SubmitWikiEdit({ request: { op: "save", page, base: "# A", text: "# B", key: input.key }, serial: input.number })), refusing)
       return got._tag === "FailedWikiEdit" && got.reason === "conflict" && got.unwritten === true
+    }
+    case "wiki-refused": {
+      // A save the wiki refuses without saying whether it wrote fails with no unwritten flag, so the editor keeps the save it may have made.
+      const page = pages.filter((entry) => wikiEditable(entry.id))[input.number % 2]!.id
+      const refusing = backendChanged(role, (factory) => ({ wiki: Object.assign(Object.create(factory.wiki), { act: () => fail(new WikiFailure({ reason: "conflict" })) }) }))
+      const got = try Effect.provide(answer(() => SubmitWikiEdit({ request: { op: "save", page, base: "# A", text: "# B", key: input.key }, serial: input.number })), refusing)
+      return got._tag === "FailedWikiEdit" && got.reason === "conflict" && !("unwritten" in got)
     }
     case "sign-in-mock": {
       const failing = try Effect.provide(answer(() => SignInAccount({ mock: true })), backend("faulty", role))
