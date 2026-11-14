@@ -169,9 +169,6 @@ src/surfaces/signin.vibe	signOutSurface/callback/callback	factory.mode === "mock
 src/surfaces/signin.vibe	startLogin/callback	error.reason === "misconfigured"	Variant dispatch on GitHubRefused's reason: a misconfigured device flow names the factory
 src/web/actionModel.vibe	actionsOf	?? model.actions	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/actionModel.vibe	modeCommands	?? mode	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/actionModel.vibe	resultText	answer.value.refusal !== "empty"	Open: label: a refused action's wording per flow (resultText)
-src/web/actionModel.vibe	resultText	flow === Note._tag	Open: label: a refused action's wording per flow (resultText)
-src/web/actionModel.vibe	resultText	flow === Start._tag	Open: label: a refused action's wording per flow (resultText)
 src/web/actionView.vibe	actionRow	latest	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/actionView.vibe	actionRow	latest	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/actionView.vibe	actionRow/callback	find run.flow === entry.name	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -217,14 +214,12 @@ src/web/historyStartup.vibe	signedRoles/callback/callback	event.type === "RoleGr
 src/web/historyView.vibe	commitPage	real.length === 0	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
 src/web/historyView.vibe	commitPage/callback	find each.id === commit.epic	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/historyView.vibe	commitPage/notes/callback	filter note.section === which	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-src/web/historyView.vibe	commitPage/notes/callback	note.by === BOOTSTRAP	Open: label: a bootstrap note names no author
 src/web/historyView.vibe	commitPage/section	items.length === 0	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
 src/web/historyView.vibe	connection	model.disconnected	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/historyView.vibe	epicCard	open	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/historyView.vibe	epicCard	open	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/historyView.vibe	epicCard	open	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/historyView.vibe	failure	model.error === ""	Empty text: an empty string shows nothing; any other text shows as given
-src/web/historyView.vibe	failure/callback	filter visible(read)	Open: state: which failed reads the page shows (outline, shown commit, current search)
 src/web/historyView.vibe	list	model.exported === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/historyView.vibe	plan	model.dialog	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/historyView.vibe	plan	shown?.id === form.target	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -247,8 +242,6 @@ src/web/issuesView.vibe	badges	labels	Markup: an icon, class, element or size fo
 src/web/issuesView.vibe	button	primary	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/issuesView.vibe	detail	?? i.approvedAt	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/issuesView.vibe	detail	?? i.approvedAt	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/issuesView.vibe	detail	i.assignee === ""	Open: label: an unassigned issue says No one
-src/web/issuesView.vibe	detail	i.state === "open"	Open: label: an issue's state reads Open or Closed
 src/web/issuesView.vibe	detail	i.task === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	detail	i.vip === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	detail	i.vip === ""	Presence: renders a part only while its value exists; what it holds is decided where it is set
@@ -260,20 +253,16 @@ src/web/issuesView.vibe	detail/callback	filter c.parent === i.number	Lookup: fin
 src/web/issuesView.vibe	detail/callback	filter c.task !== ""	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/issuesView.vibe	detail/callback	find i.number === ui.selected	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/issuesView.vibe	detail/callback	find p.number === i.parent	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-src/web/issuesView.vibe	detail/callback	isAgent(n.author)	Open: label: the agent's comments carry the agent badge
 src/web/issuesView.vibe	detail/callback	n.age === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	detail/callback	n.age === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	dialog	?? ui.data.assignees	Default: the assignee choices a host sends, else the fixture list (mock mode, VL-13)
 src/web/issuesView.vibe	dialog	ui.dialog === ""	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/issuesView.vibe	dialog	ui.error === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	field	action === "title"	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
-src/web/issuesView.vibe	field	code	Open: state: Enter continues from the VIP title
-src/web/issuesView.vibe	field	code	Open: state: Enter continues from the VIP title
+src/web/issuesView.vibe	field	code	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
+src/web/issuesView.vibe	field	code	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/issuesView.vibe	form	ui.error === ""	Empty text: an empty string shows nothing; any other text shows as given
-src/web/issuesView.vibe	form	vip	Open: label: the form's title and back link by VIP or issue
-src/web/issuesView.vibe	form	vip	Open: label: the form's title and back link by VIP or issue
-src/web/issuesView.vibe	form	vip	Open: label: the form's title and back link by VIP or issue
-src/web/issuesView.vibe	form	vip	Open: label: the form's title and back link by VIP or issue
+src/web/issuesView.vibe	form	vip	Forwards: the VIP form's own flag (the screen is vip) picks its step list; the proved issueForm decides the steps
 src/web/issuesView.vibe	form/callback	idx + 1 === ui.step	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/issuesView.vibe	icon	done	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/issuesView.vibe	icon	kind === "queued"	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
@@ -282,25 +271,13 @@ src/web/issuesView.vibe	icon	kind === "running"	Markup: an icon, class, element 
 src/web/issuesView.vibe	icon	kind === "running"	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/issuesView.vibe	issueBody/callback	block.kind === "code"	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/issuesView.vibe	issueBody/callback/callback	part.code	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
-src/web/issuesView.vibe	issueChatCard	children.length === 0	Open: label: an issue card's badge: open leaf, closed leaf, or its children count
-src/web/issuesView.vibe	issueChatCard	children.length === 0	Open: label: an issue card's badge: open leaf, closed leaf, or its children count
-src/web/issuesView.vibe	issueChatCard	children.length === 0 && issue.state === "open"	Open: label: an issue card's badge: open leaf, closed leaf, or its children count
 src/web/issuesView.vibe	issueChatCard	issue.labels.length === 0	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
-src/web/issuesView.vibe	issueChatCard	issue.state === "open"	Open: label: an issue card's badge: open leaf, closed leaf, or its children count
-src/web/issuesView.vibe	issueChatCard	label.trim() === ""	Open: label: a blank card link reads Open #n
 src/web/issuesView.vibe	issueChatCard/callback	filter child.parent === issue.number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/issuesView.vibe	issueLink	full	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
-src/web/issuesView.vibe	list/callback	i.assignee === ""	Open: label: an issue row's meta: parent, children, assignee
 src/web/issuesView.vibe	list/callback	i.comments === 0	Zero: a zero count or revision shows nothing or a dash; any other shows as given
-src/web/issuesView.vibe	list/callback	i.parent === 0	Open: label: an issue row's meta: parent, children, assignee
-src/web/issuesView.vibe	list/callback	state === "open"	Open: label: the state filters read Open and Closed
 src/web/issuesView.vibe	list/callback	state === ui.state	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-src/web/issuesView.vibe	list/callback	ui.data.items.some((c) => c.parent === i.number)	Open: label: an issue row's meta: parent, children, assignee
 src/web/issuesView.vibe	list/callback	ui.kind === kind	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/issuesView.vibe	list/callback/callback	filter c.parent === i.number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-src/web/issuesView.vibe	list/callback/callback	filter c.parent === i.number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-src/web/issuesView.vibe	list/callback/callback	filter i.state === state	Open: count: the Open and Closed filters count their issues
-src/web/issuesView.vibe	list/callback/callback	some c.parent === i.number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/issuesView.vibe	references/callback	/^#[1-9][0-9]*$/.test(part)	Host boundary: the issue-reference regexp (regexp.ts)
 src/web/issuesView.vibe	references/callback/callback	find item.number === Number(part.slice(1))	Host boundary: the issue-reference regexp (regexp.ts)
 src/web/issuesView.vibe	rolesView/callback/callback	allowed	Forwards: the cell's mark and class follow its permission, the proved issuePermission or may
@@ -508,7 +485,6 @@ src/web/roleView.vibe	accountOverlays	?? person?.role	Default: an absent optiona
 src/web/roleView.vibe	accountOverlays	account.pending	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/roleView.vibe	accountOverlays/callback	find person.id === account.target	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/roleView.vibe	identityNav	account.menu	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
-src/web/roleView.vibe	peoplePane/callback	person.id === account.identity.id	Open: label: the signed-in person's row says you
 src/web/sandboxView.vibe	icon	max	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/sandboxView.vibe	minutes	?? model.sandbox?.remaining	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/sandboxView.vibe	sandboxPane	?? snapshot?.allowance	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -524,7 +500,6 @@ src/web/sandboxView.vibe	sandboxPane	model.minuteNotice	Presence: renders a part
 src/web/sandboxView.vibe	sandboxPane	model.sandboxError	Presence: renders a part only while its value exists; what it holds is decided where it is set
 src/web/sandboxView.vibe	sandboxPane	snapshot	Presence: renders a part only while its value exists; what it holds is decided where it is set
 src/web/sandboxView.vibe	sandboxPane	snapshot?.id	Presence: renders a part only while its value exists; what it holds is decided where it is set
-src/web/sandboxView.vibe	sandboxPane/callback	allowance	Open: label: a role with no minutes shows a dash
 src/web/startup.vibe	main	new URLSearchParams(window.location.search).has("resume-key")	Startup flags: copies a flag init reads from the URL or storage into the Model; startupDecision proves the flags
 src/web/startup.vibe	main	new URLSearchParams(window.location.search).has("resume-op")	Startup flags: copies a flag init reads from the URL or storage into the Model; startupDecision proves the flags
 src/web/startup.vibe	main	new URLSearchParams(window.location.search).has("resume-recovery")	Startup flags: copies a flag init reads from the URL or storage into the Model; startupDecision proves the flags
@@ -543,20 +518,13 @@ src/web/view.vibe	chat	layout.docsInline	Forwards: reads a value or flag another
 src/web/view.vibe	chat	layout.empty	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/view.vibe	chat	layout.wikiFirst	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/view.vibe	chat/callback	?? model.wikiAfter	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/view.vibe	chat/callback	filter i.state === "open"	Open: count: the Issues button counts open issues
 src/web/view.vibe	chatLayoutOf	&& model.wikiAfter !== undefined && model.wikiAfter !== ""	Presence: renders a part only while its value exists; what it holds is decided where it is set
 src/web/view.vibe	composer	model.palette	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/view.vibe	control	?? model.theatreBox	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
-src/web/view.vibe	control	model.theatre.paused	Open: label: the tour's Play or Pause and Sound on or off follow its state
-src/web/view.vibe	control	model.theatre.paused	Open: label: the tour's Play or Pause and Sound on or off follow its state
-src/web/view.vibe	control	model.theatre.sound	Open: label: the tour's Play or Pause and Sound on or off follow its state
-src/web/view.vibe	control	model.theatre.sound	Open: label: the tour's Play or Pause and Sound on or off follow its state
 src/web/view.vibe	control	model.tourError === ""	Empty text: an empty string shows nothing; any other text shows as given
-src/web/view.vibe	control/callback	model.theatre.paused	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/view.vibe	docsPane	maximized	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/view.vibe	docsPane	maximized	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/view.vibe	entryView	?? model.issues?.data.items	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/view.vibe	entryView	entry.author === "person" && ownPost(entry.clientId, model.session)	Open: label: a person's own post is labeled You
 src/web/view.vibe	entryView/callback	find i.number === Number(linked[2])	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/view.vibe	media/source	?? model.mediaSources?.[src]	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/view.vibe	palette	model.palette	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision

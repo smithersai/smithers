@@ -2,6 +2,7 @@ import { failureOf, postFailure, statusLabel, canSend, entryDisplay, showMedia, 
 import * as V from "./viewDecision.vibe"
 import * as G from "./viewGateDecision.vibe"
 import * as S from "./viewStateDecision.vibe"
+import * as L from "./viewLabelDecision.vibe"
 export { failureOf } from "./viewDecision.vibe"
 import { issuesView, issueChatCard } from "./issuesView.vibe"
 // The web app's view. Chat parts use @smthrs/ui's classes (`sui-chat-*`, `sui-cmd-*`), so the conversation looks the
@@ -142,12 +143,13 @@ function splashPane(h: H): Html {
 function control(model: Model, h: H): ReadonlyArray<Html> {
   const step = model.theatre.step
   const box = model.theatreBox ?? { x: 16, y: 80, width: 200, height: 100 }
+  const tour = L.tourButtons(model.theatre.paused, model.theatre.sound)
   const button = (label: string, text: string, message: AppMessage, disabled = false) => h.button([h.Type("button"), h.AriaLabel(label), h.Disabled(disabled), h.OnClick(message)], [text])
   return [
     h.div([h.Class("vl-glow"), h.AriaHidden(true)], []),
     h.div([h.Class("vl-theatre-block"), h.AriaHidden(true)], []),
     h.div([h.Class("vl-theatre-spotlight"), h.AriaHidden(true), h.Style({ left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px` })], []),
-    h.div([h.Class("vl-theatre-progress"), h.AriaLabel("Tour progress")], WALKTHROUGH.map((_, index) => h.span([h.Class(V.progressClass(index, step)), h.Style({ animationPlayState: model.theatre.paused ? "paused" : "running" })], []))),
+    h.div([h.Class("vl-theatre-progress"), h.AriaLabel("Tour progress")], WALKTHROUGH.map((_, index) => h.span([h.Class(V.progressClass(index, step)), h.Style({ animationPlayState: tour.playState })], []))),
     h.section([h.Class("vl-theatre-bar"), h.AriaLabel("Walkthrough"), h.DataAttribute("step", String(step)), h.DataAttribute("paused", String(model.theatre.paused))], [
       h.div([h.Class("vl-theatre-meta")], [`${step} of 10`]),
       h.p([h.Class("vl-theatre-subtitle"), h.AriaLive("polite"), h.AriaAtomic(true)], [walkthroughStop(step).subtitle]),
@@ -155,9 +157,9 @@ function control(model: Model, h: H): ReadonlyArray<Html> {
       ...(model.tourError === "" ? [] : [h.p([h.Class("vl-theatre-error"), h.Role("alert")], [postFailure(model.tourError)])]),
       h.div([h.Class("vl-theatre-controls")], [
         button("Back", "⏮", Message.ClickedBackStop(), G.backDisabled(step)),
-        button(model.theatre.paused ? "Play" : "Pause", model.theatre.paused ? "▶" : "Ⅱ", Message.ClickedPauseTour()),
+        button(tour.pause, tour.pauseIcon, Message.ClickedPauseTour()),
         button("Skip", "⏭", Message.ClickedSkipStop()),
-        h.button([h.Type("button"), h.AriaLabel(model.theatre.sound ? "Sound off" : "Sound on"), h.AriaPressed(String(model.theatre.sound)), h.OnClick(Message.ToggledTourSound())], [model.theatre.sound ? "🔊" : "🔇"]),
+        h.button([h.Type("button"), h.AriaLabel(tour.sound), h.AriaPressed(String(model.theatre.sound)), h.OnClick(Message.ToggledTourSound())], [tour.soundIcon]),
         button("Exit", "Exit", Message.ClickedEndTour()),
       ]),
     ]),
@@ -212,7 +214,7 @@ function chat(model: Model, h: H): Html {
       sandboxPane(model, h),
       ...peoplePane(model, h),
       ...accountNotice(model, h),
-      h.button([h.Class("vl-pane"), h.Type("button"), h.Style({ viewTransitionName: "issues" }), h.OnClick(Message.ClickedIssues())], [h.span([h.Class("vl-pane-text")], [model.issues?.data === undefined ? "Issues" : `Issues · ${model.issues.data.items.filter(i => i.state === "open").length} open`]), h.span([h.Class("vl-pane-expand")], [paneIcon(h, MAXIMIZE)])]),
+      h.button([h.Class("vl-pane"), h.Type("button"), h.Style({ viewTransitionName: "issues" }), h.OnClick(Message.ClickedIssues())], [h.span([h.Class("vl-pane-text")], [model.issues?.data === undefined ? "Issues" : `Issues · ${model.issues.data.items.filter(i => L.isOpen(i.state)).length} open`]), h.span([h.Class("vl-pane-expand")], [paneIcon(h, MAXIMIZE)])]),
       ...(layout.wikiFirst ? [wikiPane(model, h)] : []),
       ...(layout.docsInline ? [docsPane(model, h)] : []),
       ...(layout.empty ? [h.div([h.Class("sui-chat-empty")], media(model, h, "vl-empty-media", {
@@ -256,7 +258,7 @@ function entryView(entry: Entry, model: Model, h: H): Html {
   return h.article(
     [h.Class("sui-chat-message"), h.DataAttribute("role", display.role), h.DataAttribute("done", String(entry.done)), h.Key(entry.id), h.DataAttribute("in-reply-to", entry.inReplyTo)],
     [
-      h.div([h.Class("sui-chat-message-label")], [entry.author === "person" && ownPost(entry.clientId, model.session) ? "You" : entry.name]),
+      h.div([h.Class("sui-chat-message-label")], [L.authorLabel(entry.author, ownPost(entry.clientId, model.session), entry.name)]),
       // A reply that failed before any text has nothing to show but its reason.
       ...(!display.showBody ? [] : [h.div(
         [h.Class(display.thinking ? "sui-chat-bubble vl-thinking" : "sui-chat-bubble")],

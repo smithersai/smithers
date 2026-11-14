@@ -8,6 +8,7 @@ import { modeSwitch } from "./modeSwitch.vibe"
 import * as V from "./historyViewDecision.vibe"
 import * as G from "./viewGateDecision.vibe"
 import * as S from "./viewStateDecision.vibe"
+import * as L from "./viewLabelDecision.vibe"
 import type { Commit } from "../history/mythical.vibe"
 import { type CommitPage, type EpicCount, type Head, MAX_QUERY } from "../history/pages.vibe"
 import { clipQuery } from "../history/pageDecision.vibe"
@@ -217,10 +218,11 @@ function badgeOf(state: Commit["state"]): string {
 }
 
 function failure(model: HistoryModel, h: H): ReadonlyArray<Html> {
-  const visible = (read: HistoryRead) => S.failureShown(read.kind, read.id, model.hash, clipQuery(model.filter, MAX_QUERY), model.filter.trim() === "")
+  const query = clipQuery(model.filter, MAX_QUERY)
+  const blank = model.filter.trim() === ""
   return [
     ...(model.error === "" ? [] : [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [h.div([h.Class("sui-alert-title")], [refusalText(model.error)])])]),
-    ...model.readFailures.filter(({ read }) => visible(read)).map(({ read, reason }) => readFailure(read, reason, h)),
+    ...model.readFailures.filter(({ read }) => S.failureShown(read.kind, read.id, model.hash, query, blank)).map(({ read, reason }) => readFailure(read, reason, h)),
   ]
 }
 
@@ -274,7 +276,7 @@ function commitPage(model: HistoryModel, commit: Commit, page: CommitPage, h: H)
     ])
   const notes = (which: "tried" | "evidence" | "superseded") =>
     commit.notes.filter((note) => note.section === which).map((note) =>
-      h.li([], [note.text, ...(note.by === BOOTSTRAP ? [] : [h.span([h.Class("mh-by")], [` · ${note.by}`])])])
+      h.li([], [note.text, ...(!L.noteAuthorShown(note.by, BOOTSTRAP) ? [] : [h.span([h.Class("mh-by")], [` · ${note.by}`])])])
     )
   return [
     crumbs(h, [["History", ""], ...(epic === undefined ? [] : [[epic.title, epic.id] as const])], commit.title),

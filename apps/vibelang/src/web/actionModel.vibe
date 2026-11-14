@@ -2,6 +2,7 @@ import * as ModelDecision from "./modelDecision.vibe"
 import { modeCommandTarget, modeCommandTitle, selectedStepIndex } from "./actionViewDecision.vibe"
 import { Registered, Run } from "../actions/Actions.vibe"
 import { historyRefusal } from "../history/flowMachine.vibe"
+import { refusalText } from "./viewLabelDecision.vibe"
 import { HistoryAnswer, Note, Start } from "../history/flows.vibe"
 export schema ActionView {
   readonly epoch: number
@@ -32,8 +33,7 @@ export const initial: ActionView = { epoch: 0, followGeneration: 0, disconnected
 export function resultText(result: string, flow: string): string {
   const answer = Schema.decodeUnknownOption(Schema.fromJsonString(HistoryAnswer))(result)
   if (Option.isNone(answer) || answer.value.refusal === null) return result
-  if (answer.value.refusal !== "empty") return historyRefusal(answer.value.refusal)
-  return flow === Start._tag ? "Needs a lane." : flow === Note._tag ? "Needs text." : historyRefusal("empty")
+  return refusalText(answer.value.refusal, flow, Start._tag, Note._tag, historyRefusal(answer.value.refusal))
 }
 export function actionsOf(model: { readonly actions?: ActionView }): ActionView { return model.actions ?? initial }
 /** The page's own commands: switching between the live agent and the mock (VL-13). Not flows: a page load. */

@@ -2,6 +2,7 @@
 contracts are never edited."""
 G = 'src/web/viewGateDecision.vibe'
 S = 'src/web/viewStateDecision.vibe'
+L = 'src/web/viewLabelDecision.vibe'
 cases = [
 # Batch 57: gating and enablement.
 (G, 'gate-mode-offered', 'switchedMode', 'return offered && mode !== "pending" ? mode : ""', 'return mode !== "pending" ? mode : ""', 'a page that offers no switch shows none'),
@@ -76,4 +77,35 @@ cases = [
 (S, 'state-card-known', 'issueCardShown', 'return author === "agent" && known', 'return author === "agent"', 'an unknown issue shows no card'),
 (S, 'state-wiki-surface', 'wikiCurrent', 'return surface === "chat" && pane.startsWith("/wiki/")', 'return pane.startsWith("/wiki/")', 'Wiki is current only in the chat'),
 (S, 'state-wiki-pane', 'wikiCurrent', 'return surface === "chat" && pane.startsWith("/wiki/")', 'return surface === "chat"', 'Wiki is current only on a wiki page'),
+# Batch 59: what a label or count says.
+(L, 'label-refusal-empty', 'refusalText', 'if (refusal !== "empty") return general', 'if (refusal === "") return general', 'only an empty refusal names its field'),
+(L, 'label-refusal-start', 'refusalText', 'return flow === start ? "Needs a lane."', 'return flow === note ? "Needs a lane."', 'an empty lane needs a lane'),
+(L, 'label-refusal-note', 'refusalText', ': flow === note ? "Needs text." : general', ': general', 'an empty note needs text'),
+(L, 'label-note-author', 'noteAuthorShown', 'return by !== bootstrap', 'return true', 'a bootstrap note names no author'),
+(L, 'label-self', 'isSelf', 'return id === me', 'return id !== ""', "only the signed-in person's row says you"),
+(L, 'label-minutes', 'hasMinutes', 'return allowance !== 0', 'return allowance > 1', 'one minute is a number'),
+(L, 'label-tour-pause', 'tourButtons', 'pause: paused ? "Play" : "Pause"', 'pause: "Pause"', 'a paused tour offers Play'),
+(L, 'label-tour-pause-icon', 'tourButtons', 'pauseIcon: paused ? "▶" : "Ⅱ"', 'pauseIcon: "Ⅱ"', 'a paused tour shows the play mark'),
+(L, 'label-tour-sound', 'tourButtons', 'sound: sound ? "Sound off" : "Sound on"', 'sound: "Sound on"', 'sound on offers Sound off'),
+(L, 'label-tour-sound-icon', 'tourButtons', 'soundIcon: sound ? "🔊" : "🔇"', 'soundIcon: "🔇"', 'sound on shows the speaker'),
+(L, 'label-tour-play-state', 'tourButtons', 'playState: paused ? "paused" : "running"', 'playState: "running"', 'a paused tour pauses its progress'),
+(L, 'label-author-person', 'authorLabel', 'return author === "person" && own ? "You" : name', 'return own ? "You" : name', "only a person's own post is You"),
+(L, 'label-author-own', 'authorLabel', 'return author === "person" && own ? "You" : name', 'return author === "person" ? "You" : name', "another person's post keeps their name"),
+(L, 'count-open', 'isOpen', 'return state === "open"', 'return state !== "closed"', 'only open issues count'),
+(L, 'label-state-word', 'stateWord', 'return state === "open" ? "Open" : "Closed"', 'return "Open"', 'a closed issue reads Closed'),
+(L, 'count-in-state', 'inState', 'return state === wanted', 'return true', 'a filter counts only its own state'),
+(L, 'label-state-filter', 'stateFilterLabel', 'return state === "open" ? "◉ Open " : "✓ Closed "', 'return "◉ Open "', 'the closed filter reads Closed'),
+(L, 'label-card-leaf', 'cardBadge', 'const leaf = children === 0', 'const leaf = children <= 1', 'one child makes a parent'),
+(L, 'label-card-tone', 'cardBadge', 'tone: leaf && state === "open" ? "success"', 'tone: leaf ? "success"', 'a closed leaf is secondary'),
+(L, 'label-card-label', 'cardBadge', 'label: leaf ? (state === "open" ? "Open" : "Closed") : ""', 'label: leaf ? "Open" : ""', 'a closed leaf reads Closed'),
+(L, 'label-card-count', 'cardBadge', 'label: leaf ? (state === "open" ? "Open" : "Closed") : ""', 'label: (state === "open" ? "Open" : "Closed")', 'a parent counts its children'),
+(L, 'label-blank', 'blankLabel', 'return trimmed === ""', 'return false', 'a blank label is replaced'),
+(L, 'label-meta-parent', 'rowMeta', 'parent: parent !== 0', 'parent: true', 'a root issue names no parent'),
+(L, 'label-meta-children', 'rowMeta', 'children: children > 0', 'children: true', 'a leaf names no children'),
+(L, 'label-meta-assignee', 'rowMeta', 'assignee: assignee !== ""', 'assignee: true', 'an unassigned issue names no assignee'),
+(L, 'label-unassigned', 'unassigned', 'return assignee === ""', 'return false', 'an unassigned issue says No one'),
+(L, 'label-agent', 'agentAuthor', 'return name === "VibeLang agent"', 'return name !== ""', 'only the agent carries the agent mark'),
+(L, 'label-form-title', 'formLabels', 'title: vip ? "Propose a VIP" : "New issue"', 'title: "New issue"', 'the VIP form is titled Propose a VIP'),
+(L, 'label-form-back', 'formLabels', 'back: vip ? "‹ VIPs" : "‹ Issues"', 'back: "‹ Issues"', 'the VIP form goes back to VIPs'),
+(L, 'label-form-placeholder', 'formLabels', 'placeholder: vip ? "One language feature" : "Title"', 'placeholder: "Title"', 'a VIP title asks for one feature'),
 ]

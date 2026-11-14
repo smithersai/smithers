@@ -1,0 +1,132 @@
+// What a label or count says, decided inline before (0018 "Decisions in views", batch 59, lane vl-proveall3). Plain
+// values in, the words or the flag that picks them out; the views build the Html and do the arithmetic.
+
+/** A refused action's words: an empty lane or note names its field; every other refusal reads as the history's. */
+//@ verify
+//@ ensures refusal == "empty" && flow == start ==> \result == "Needs a lane."
+//@ ensures refusal == "empty" && flow != start && flow == note ==> \result == "Needs text."
+//@ ensures !(refusal == "empty" && (flow == start || flow == note)) ==> \result == general
+export function refusalText(refusal: string, flow: string, start: string, note: string, general: string): string {
+  if (refusal !== "empty") return general
+  return flow === start ? "Needs a lane." : flow === note ? "Needs text." : general
+}
+
+/** A bootstrap note names no author; every other note names who wrote it. */
+//@ verify
+//@ ensures \result == (by != bootstrap)
+export function noteAuthorShown(by: string, bootstrap: string): boolean {
+  return by !== bootstrap
+}
+
+/** The People list marks the signed-in person's own row. */
+//@ verify
+//@ ensures \result == (id == me)
+export function isSelf(id: string, me: string): boolean {
+  return id === me
+}
+
+/** A role with no minutes shows a dash instead of a number. */
+//@ verify
+//@ ensures \result == (allowance != 0)
+export function hasMinutes(allowance: number): boolean {
+  return allowance !== 0
+}
+
+/** The tour's Play or Pause and Sound on or off follow its state. */
+export interface TourButtons { readonly pause: string; readonly pauseIcon: string; readonly sound: string; readonly soundIcon: string; readonly playState: string }
+//@ verify
+//@ ensures \result.pause == (paused ? "Play" : "Pause")
+//@ ensures \result.pauseIcon == (paused ? "▶" : "Ⅱ")
+//@ ensures \result.sound == (sound ? "Sound off" : "Sound on")
+//@ ensures \result.soundIcon == (sound ? "🔊" : "🔇")
+//@ ensures \result.playState == (paused ? "paused" : "running")
+export function tourButtons(paused: boolean, sound: boolean): TourButtons {
+  return { pause: paused ? "Play" : "Pause", pauseIcon: paused ? "▶" : "Ⅱ", sound: sound ? "Sound off" : "Sound on", soundIcon: sound ? "🔊" : "🔇", playState: paused ? "paused" : "running" }
+}
+
+/** A person's own post is labeled You; every other entry carries its author's name. */
+//@ verify
+//@ ensures \result == (author == "person" && own ? "You" : name)
+export function authorLabel(author: string, own: boolean, name: string): string {
+  return author === "person" && own ? "You" : name
+}
+
+/** An issue counts as open in the Issues button and reads Open. */
+//@ verify
+//@ ensures \result == (state == "open")
+export function isOpen(state: string): boolean {
+  return state === "open"
+}
+
+/** An issue's state as one word. */
+//@ verify
+//@ ensures \result == (state == "open" ? "Open" : "Closed")
+export function stateWord(state: string): "Open" | "Closed" {
+  return state === "open" ? "Open" : "Closed"
+}
+
+/** The Open and Closed filters count the issues in their own state. */
+//@ verify
+//@ ensures \result == (state == wanted)
+export function inState(state: string, wanted: string): boolean {
+  return state === wanted
+}
+
+/** The state filters' words. */
+//@ verify
+//@ ensures \result == (state == "open" ? "◉ Open " : "✓ Closed ")
+export function stateFilterLabel(state: string): string {
+  return state === "open" ? "◉ Open " : "✓ Closed "
+}
+
+/** An issue card's badge: a leaf says Open (success) or Closed; a parent counts its children (label ""). */
+export interface CardBadge { readonly leaf: boolean; readonly tone: "success" | "secondary"; readonly label: string }
+//@ verify
+//@ ensures \result.leaf == (children == 0)
+//@ ensures \result.tone == (children == 0 && state == "open" ? "success" : "secondary")
+//@ ensures \result.label == (children == 0 ? (state == "open" ? "Open" : "Closed") : "")
+export function cardBadge(children: number, state: string): CardBadge {
+  const leaf = children === 0
+  return { leaf, tone: leaf && state === "open" ? "success" : "secondary", label: leaf ? (state === "open" ? "Open" : "Closed") : "" }
+}
+
+/** A blank label (trimmed) is replaced by the card's own words. */
+//@ verify
+//@ ensures \result == (trimmed == "")
+export function blankLabel(trimmed: string): boolean {
+  return trimmed === ""
+}
+
+/** An issue row's meta names its parent, its children and its assignee, each only when there is one. */
+export interface RowMeta { readonly parent: boolean; readonly children: boolean; readonly assignee: boolean }
+//@ verify
+//@ ensures \result.parent == (parent != 0)
+//@ ensures \result.children == (children > 0)
+//@ ensures \result.assignee == (assignee != "")
+export function rowMeta(parent: number, children: number, assignee: string): RowMeta {
+  return { parent: parent !== 0, children: children > 0, assignee: assignee !== "" }
+}
+
+/** An unassigned issue says No one. */
+//@ verify
+//@ ensures \result == (assignee == "")
+export function unassigned(assignee: string): boolean {
+  return assignee === ""
+}
+
+/** The agent's comments and choices carry the agent mark: it posts as "VibeLang agent". */
+//@ verify
+//@ ensures \result == (name == "VibeLang agent")
+export function agentAuthor(name: string): boolean {
+  return name === "VibeLang agent"
+}
+
+/** The issue form's title, back link and title placeholder, for a VIP or an issue. */
+export interface FormLabels { readonly title: string; readonly back: string; readonly placeholder: string }
+//@ verify
+//@ ensures \result.title == (vip ? "Propose a VIP" : "New issue")
+//@ ensures \result.back == (vip ? "‹ VIPs" : "‹ Issues")
+//@ ensures \result.placeholder == (vip ? "One language feature" : "Title")
+export function formLabels(vip: boolean): FormLabels {
+  return { title: vip ? "Propose a VIP" : "New issue", back: vip ? "‹ VIPs" : "‹ Issues", placeholder: vip ? "One language feature" : "Title" }
+}

@@ -4,6 +4,7 @@ import { ALLOWANCES, mayStart } from "../core/sandboxDecision.vibe"
 import { roleName } from "./accountViewDecision.vibe"
 import { minutesTone, sandboxPaneView } from "./viewDecision.vibe"
 import { sandboxControls } from "./viewGateDecision.vibe"
+import { hasMinutes } from "./viewLabelDecision.vibe"
 import { accountOf, Message, type Message as AppMessage, type Model } from "./main.vibe"
 type H = HtmlBuilder<AppMessage>
 
@@ -54,7 +55,7 @@ export function sandboxPane(model: Model, h: H): Html {
     ...(model.minuteNotice ? [h.div([h.Class("sui-chat-message"), h.DataAttribute("role", "system"), h.Role("status"), h.AriaLabel("Sandbox minutes")], [h.div([h.Class("sui-chat-bubble")], [model.minuteNotice])])] : []),
     ...(max ? [h.div([h.Class("sui-table-container"), h.DataAttribute("variant", "card")], [h.table([h.Class("sui-table"), h.AriaLabel("Minutes by role")], [
       h.thead([], [h.tr([], [h.th([], ["Role"]), h.th([], ["Minutes"])])]),
-      h.tbody([], Object.entries(ALLOWANCES).map(([role, allowance]) => h.tr([], [h.td([], [roleName(role)]), h.td([], [allowance ? allowance.toLocaleString("en-US") : "—"])]))),
+      h.tbody([], Object.entries(ALLOWANCES).map(([role, allowance]) => h.tr([], [h.td([], [roleName(role)]), h.td([], [hasMinutes(allowance) ? allowance.toLocaleString("en-US") : "—"])]))),
       h.caption([], ["Minutes reset monthly"]),
     ])])] : []),
   ])

@@ -4,6 +4,7 @@ import { accountOf, Message, type Model, type Message as AppMessage } from "./ma
 import { modeSwitch } from "./modeSwitch.vibe"
 import * as D from "./accountViewDecision.vibe"
 import * as G from "./viewGateDecision.vibe"
+import * as L from "./viewLabelDecision.vibe"
 
 type H = HtmlBuilder<AppMessage>
 const roles: ReadonlyArray<Role> = ["viewer", "new", "community", "contributor", "maintainer"]
@@ -57,7 +58,7 @@ export function peoplePane(model: Model, h: H): ReadonlyArray<Html> {
         h.span([h.Class("sui-avatar"), h.DataAttribute("lane", String(D.avatarLane(index))), h.AriaHidden(true)], [person.login.slice(0, 1).toUpperCase()]),
         h.div([h.Class("vl-person-who")], [
           h.span([h.Class("vl-person-name")], [person.login]),
-          ...(person.id === account.identity.id ? [h.span([h.Class("vl-person-handle")], ["you"])] : []),
+          ...(L.isSelf(person.id, account.identity.id) ? [h.span([h.Class("vl-person-handle")], ["you"])] : []),
         ]),
         ...(D.canChangeRole(account.identity.role, person.id, account.identity.id) ? [
           h.select([h.Key(person.id + account.target), h.Class("sui-select-trigger"), h.AriaLabel("Role for " + person.login), h.Value(person.role), h.OnChange(role => Message.SelectedRole({ id: person.id, role: role as SignedRole }))],
