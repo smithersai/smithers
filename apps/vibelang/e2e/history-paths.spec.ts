@@ -111,6 +111,10 @@ test.describe("the history page's refusals and epic page", () => {
       await expect(page.locator(`.mh-note-list a[href='https://github.com/smithersai/vibelang/commit/${sha}']`)).toBeVisible()
       await page.getByRole("link", { name: "History", exact: true }).click()
     }
+    // Folding again finds nothing new on main: no refusal, and the history stays folded through the same commit.
+    await page.getByRole("button", { name: "Fold" }).click()
+    await expect(page.locator(".sui-badge[title='Folded through']")).toContainText("47422f47d257")
+    await expect(page.getByRole("alert")).toHaveCount(0)
   })
 
   test("refuses what the history can't hold, in the page's words", async ({ page }) => {

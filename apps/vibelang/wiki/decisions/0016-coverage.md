@@ -3536,3 +3536,12 @@ write's round trip, so the wait now has the file's 20 s `settled` bound. It fail
 alone on a box (dark, job `37bdbb05651bafa3c092f578`), and passed in the other projects. `e2e/actions.spec.ts` "the
 agent reads an epic …" ran six agent runs in one test and hit its time limit on the slow box; it is now one test per
 read.
+
+**`src/history/flows.vibe` in Chromium.** The fold journey (`e2e/history-paths.spec.ts`) folds a second time: nothing
+new on main, no refusal, Folded through unchanged, which closes `foldCommits`' `current` count. The arms left:
+
+| Arms | Reason |
+| --- | --- |
+| `loadBootstrap`'s `exists` (355) | Each mock history bootstraps its own new sequencer once (`MockMythical.vibe`), so a load always loads. A History object that restarts over a loaded store answers `exists`; `test/historyFlows.test.vibe` covers it. |
+| `authorizer`'s refusal (255) | The page offers a history write only to a role that may make it, and `MockActions` refuses one before its flow runs (`catalogDecision.vibe` `leastRoleOf`). |
+| `readMain` unavailable (277); Export with no commits (328), paced (329), refused at prepare (331) or check (342), and a publish or confirm that fails (347-349) | The mock's `MainLog` and repository are memory and never fail, its history is never empty, and its target is unpaced. They need a faulty `MainLog`, `Repository` or `ExportTarget` under the mock history; `test/support/FaultyMythical.vibe` injects faults above it, at `Mythical`. Next: a fault seam under `MockMythical`. |
