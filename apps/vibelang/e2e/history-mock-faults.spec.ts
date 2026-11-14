@@ -35,13 +35,16 @@ test.describe("the history page when what the mock history runs on fails", () =>
     ["export-lost", UNREACHABLE],
     ["export-conflict", "The refs moved. Export again."],
   ] as const
+  // One Export holds the page's main thread 2.3 s to 5.1 s on an unloaded box (0016), past expect's 5 s default under
+  // load: all ten of these failed in a gate that ran 1.6 h, and passed alone (0016 session 39).
+  const exporting = { timeout: 20_000 }
   for (const [fault, text] of refused) test(`${fault}: the export says why, and exporting again publishes`, async ({ page }) => {
     await open(page, fault)
     const exported = page.getByTitle("Exported")
     await page.getByRole("button", { name: "Export", exact: true }).click()
-    await expect(page.getByRole("alert")).toHaveText(text)
+    await expect(page.getByRole("alert")).toHaveText(text, exporting)
     await page.getByRole("button", { name: "Export", exact: true }).click()
-    await expect(exported).toHaveText(/^mythical \S{7}$/)
+    await expect(exported).toHaveText(/^mythical \S{7}$/, exporting)
     await expect(page.getByRole("alert")).toHaveCount(0)
   })
 })

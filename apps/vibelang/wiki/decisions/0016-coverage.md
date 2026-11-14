@@ -4382,3 +4382,9 @@ wiki renders a page through `toHtml` only when the repository's copy differs fro
 `fault=wiki-repository`), and a saved edit opens a review instead of changing the page (`core-wiki.spec.ts`). Closing
 them means new fixture text, a test of the fixture rather than of an input. `test/markdown.test.vibe` and
 `test/markdownEdges.coverage.test.vibe` hold the unit cases.
+
+**Export waits under load.** This session's first full gate (`7040782dc2a7`, job `c850236b6506b87d21052df8`) ran
+1.6 h against session 38's 57 min and failed 27 tests; 10 were `history-mock-faults.spec.ts` "exporting again
+publishes", in all three projects. Alone on a box, that file and `live-actions.spec.ts` passed 36 of 36. Those two
+waits used expect's 5 s default, and one Export holds the main thread 2.3 s to 5.1 s unloaded (above, session 9); they
+now wait 20 s.
