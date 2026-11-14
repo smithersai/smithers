@@ -1,6 +1,6 @@
 import { it } from "@effect/vitest"
 import { History } from "../src/history/schemas.vibe"
-import { outlineOf, epicPageOf, commitPageOf, matchesOf, PAGE, MATCHES, MAX_QUERY } from "../src/history/pages.vibe"
+import { outlineOf, epicPageOf, commitPageOf, matchesOf, PAGE, MATCHES, MAX_QUERY, stacked } from "../src/history/pages.vibe"
 import { pageOf } from "../src/history/routes.vibe"
 import { pathOf } from "../src/history/wire.vibe"
 import { historyRouteOf } from "../src/history/routes.vibe"
@@ -34,6 +34,9 @@ it.live("history/page-paths", () => run("history/page-paths", Request, (request)
 }))
 
 it.live("history/pages", () => run("history/pages", Schema.Struct({ history: History, cursor: Int, query: TextOrBoundary, request: Request }), ({ history, cursor, query, request }) => {
+  // Commits whose epics the history lacks sort by rank alone (pageOrder's fallback), on every draw.
+  const orphan = (id: string, rank: number) => ({ id, epic: "gone", rank, title: id, state: "planned" as const, task: "", lane: "", notes: [] })
+  if (stacked({ ...history, epics: [], commits: [orphan("b", 2), orphan("a", 1)] }).map((c) => c.id).join() !== "a,b") return false
   const outline = outlineOf(history)
   if (outline.seq !== history.seq || outline.main !== history.main || outline.open.some((c) => c.state === "landed")) return false
   if (!outline.epics.every((e) => e.commits === history.commits.filter((c) => c.epic === e.id).length)) return false

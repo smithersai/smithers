@@ -441,6 +441,8 @@ it.live("api-objects/history-publish", () => run("api-objects/history-publish", 
   const offline = HttpClient.make((request) => Effect.fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
   const kv = try Effect.try(() => objectStorage())
   const exporter = try exporterOf(setting, token ? Redacted.make("fuzz-token") : undefined, offline)
+  // The same exporter at another API base: built without a request.
+  try exporterOf("github:o/r", Redacted.make("fuzz-token"), offline, undefined, "https://api.invalid")
   const api = try historyObject({ id: { toString: () => "history/vibelang" }, raw: { storage: kv }, exports: {} } as never, undefined, offline, exporter)
   if (member === "alarm") try api.alarm()
   else try api.page({ what: "outline" })

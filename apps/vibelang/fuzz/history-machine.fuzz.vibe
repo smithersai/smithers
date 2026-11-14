@@ -18,8 +18,9 @@ const REFUSALS = new Map([
   ["unavailable", "The history can't be reached."], ["unsupported", "Export is off."], ["conflict", "The refs moved. Export again."],
   ["tree", "The export failed its check."], ["linear", "The export failed its check."], ["notes", "The export failed its check."],
   ["nothing", "Nothing to export."], ["paced", "Publishing in the background."],
+  ["invalid", "The export failed its check."], ["not_found", "The export failed its check."],
 ])
-const Word = Schema.Union([Text, Schema.Literals(["forbidden", "empty", "no-task", "too-long", "duplicate", "unknown", "state", "full", "unavailable", "unsupported", "conflict", "tree", "linear", "notes", "nothing", "paced", "planned", "working", "approved", "landed", "new", "how", "live", "mock"])])
+const Word = Schema.Union([Text, Schema.Literals(["forbidden", "empty", "no-task", "too-long", "duplicate", "unknown", "state", "full", "unavailable", "unsupported", "conflict", "tree", "linear", "notes", "invalid", "not_found", "nothing", "paced", "planned", "working", "approved", "landed", "new", "how", "live", "mock"])])
 const Step = Schema.Literals(["authorize", "record", "begin"])
 const Input = Schema.Struct({
   role: Role, signed: Role, action: Action, agent: Schema.Boolean, name: Text, steps: Schema.Array(Step).check(Schema.isMaxLength(8)),
@@ -49,6 +50,11 @@ it.live("history/machine-contracts", () => run("history/machine-contracts", Inpu
   // The small decisions, against their stated contracts.
   const status = historyStatus(input.word)
   if (status !== (input.word === "forbidden" ? 403 : input.word === "unavailable" ? 503 : 409)) return false
+  // Every arm on every draw, whatever the seed: each status, a recorded fold and note recorded again, an append to a new epic.
+  if (historyStatus("forbidden") !== 403 || historyStatus("unavailable") !== 503 || historyStatus("conflict") !== 409) return false
+  const maintainer: M.Principal = { role: "maintainer", name: input.name, agent: false }
+  if (!M.canRecord(M.record(M.authorize(M.begin("fold", maintainer)))) || M.canRecord(M.record(M.authorize(M.begin("note", maintainer))))) return false
+  if (M.planFields("append", "new", input.other).newEpic !== input.other) return false
   const response = M.historyResponse(input.status)
   if (response !== (input.status === 200 ? "accepted" : [403, 409, 503].includes(input.status) ? "refused" : "unavailable")) return false
   if (M.historySignature(input.name, input.agent) !== (input.agent ? `${input.name} (agent)` : input.name)) return false
@@ -80,6 +86,7 @@ it.live("history/wire-paths", () => run("history/wire-paths", Schema.Struct({ pa
     const route = historyRouteOf(method, `${HISTORY_PATH}/${write}`)
     if (method === "POST" ? route?.kind !== "history-write" : route !== undefined) return false
   }
+  if (historyRouteOf("GET", `${HISTORY_PATH}/epics/e`, new URLSearchParams("from=0")) !== undefined || historyRouteOf("GET", `${HISTORY_PATH}/commits/m1234567890`) !== undefined) return false
   const bare = historyRouteOf("GET", `${HISTORY_PATH}/search`, new URLSearchParams())
   if (bare?.kind !== "history-search" || JSON.stringify(bare.page) !== JSON.stringify({ what: "search", query: "" })) return false
   const path = pathOf(page)

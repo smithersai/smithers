@@ -67,6 +67,7 @@ it.live("actions/live-client", () => run("actions/live-client", Live, (input) =>
       const planned = try client.command(Command.literals[7])
       ids.push(planned)
       if ((try code(client.command("/plan {oops"))) !== "input" || (try code(client.command("/plan"))) !== "input") return false
+      if ((try code(client.command("/nothing-answers"))) !== "unknown-command") return false
       const posted = try client.command("/post hello")
       ids.push(posted)
       // The planned run, alarmed, is followed over the event stream until it passes.
