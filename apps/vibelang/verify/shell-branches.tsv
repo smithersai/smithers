@@ -27,7 +27,7 @@ src/actions/MockActions.vibe	MockActions/callback/authorize	entry.least === "vie
 src/actions/MockActions.vibe	MockActions/callback/command	entry.command === command && (authorize(entry.name) catch () => undefined) !== undefined	Mock mode (VL-13): the fixture actions; their role gate is the proved catalogDecision
 src/actions/MockActions.vibe	MockActions/callback/commands	!entry.runnable	Mock mode (VL-13): the fixture actions; their role gate is the proved catalogDecision
 src/core/flows.vibe	beginTour	try (try Tours).running(tour)	Host boundary: whether the tour runs (the Tours service)
-src/core/flows.vibe	openDocs	opened	Forwards the host's answer (the page or line was opened or said)
+src/core/docsTool.vibe	openDocs	opened	Forwards the host's answer (the page or line was opened or said)
 src/core/flows.vibe	openWiki/callback	opened	Forwards the host's answer (the page or line was opened or said)
 src/core/flows.vibe	readingMillis	text.trim() === ""	Emptiness: nothing to say or read
 src/core/flows.vibe	say	said	Forwards the host's answer (the page or line was opened or said)

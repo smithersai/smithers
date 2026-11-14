@@ -9,8 +9,9 @@ import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import {
-  DOCS_ORIGIN, docsPage, EndTour, stoppedBy, openDocs, readingMillis, Reply, ReplyStep, say, StartTour, Tour, toured, tourRegistration, Tours, walk, walkRegistration,
+  EndTour, stoppedBy, readingMillis, Reply, ReplyStep, say, StartTour, Tour, toured, tourRegistration, Tours, walk, walkRegistration,
 } from "../src/core/flows.vibe"
+import { DOCS_ORIGIN, docsPage, openDocs } from "../src/core/docsTool.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { toursOf } from "../worker/Objects.vibe"

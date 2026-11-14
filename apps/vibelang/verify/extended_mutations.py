@@ -5224,13 +5224,15 @@ cases.extend([('src/history/pageDecision.vibe', *case) for case in [
 ('page-query-fits', 'clipQuery', 'if (query.length <= max) return query', 'if (query.length < max) return query', 'a search that fits is unchanged'),
 ('page-query-pair', 'clipQuery', 'query.slice(0, pairCut(query, max))', 'query.slice(0, max)', 'a long search is cut between characters'),
 ]])
-cases.extend([('src/core/tourDecision.vibe', *case) for case in [
+cases.extend([('src/core/docsDecision.vibe', *case) for case in [
 ('tour-unit-letter', 'docsUnit', '(97 <= unit && unit <= 122)', '(65 <= unit && unit <= 122)', 'no uppercase or punctuation in a docs path'),
 ('tour-unit-dash', 'docsUnit', 'unit === 45 || unit === 47', 'unit === 46 || unit === 47', 'a dot never enters a docs path'),
 ('tour-path-slash', 'docsPath', 'if (path.length === 0 || path.charCodeAt(0) !== 47) return false', 'if (path.length === 0) return false', 'a docs path starts with a slash'),
 ('tour-path-units', 'docsPath', 'if (!docsUnit(path.charCodeAt(i))) return false', 'if (false) return false', 'every unit of a docs path is admitted'),
 ('tour-path-double', 'docsPath', 'if (i > 0 && path.charCodeAt(i - 1) === 47 && path.charCodeAt(i) === 47) return false', 'if (false) return false', 'no protocol-relative double slash'),
 ('tour-path-skip', 'docsPath', 'i++', 'i += 2', 'every unit is checked'),
+]])
+cases.extend([('src/core/tourDecision.vibe', *case) for case in [
 ('tour-running-working', 'runningTour', 'conversation.agent === "working" && isTour', 'isTour', 'an idle agent runs no tour'),
 ('tour-running-id', 'runningTour', '? conversation.replying : ""', '? conversation.replying : conversation.replying', 'no tour runs unless the streaming entry is one'),
 ('tour-reply-prefix', 'replyIdOf', 'return "r" + post.slice(1)', 'return "r" + post', 'a reply id drops the post\'s first character'),

@@ -56,6 +56,8 @@ and `pnpm verify:broken` pass on all nine modules, and the unit gate measures ev
 | `reviewActions`, `vipDocumentMatches`, `VipFile` | `conversation` (the state machine: every screen) | `issueHostDecision` | `worker/Issues` |
 | `cancellable` | `actionRunDecision` (only this name: `MockActions`) | `src/actions/actionHostDecision` | `MockActions`, `worker/ActionRuns` |
 | `wikiUnwritten`, `wikiRefusalStatus` | `wikiPageDecision` (page lookups: `wiki`, `WikiFactory`) | `issueHostDecision` | `worker/Wiki` |
+| `docsUnit`, `docsPath` (session 9) | `tourDecision` (the running tour, reply ids and stops: `flows`, `walkthroughSteps`) | `docsDecision` (new) | `docsTool` |
+| `DOCS_ORIGIN`, `docsPage`, `openDocs` (session 9) | `flows` (every tour and post flow: `MockFactory`) | `docsTool` (new) | `worker/WikiTools`, the only registration of `vibelang/docs/open`'s step |
 
 Measured on main `6fbe6ee1` (`pnpm e2e:coverage`, base and change on boxes): covered counts are identical
 (branches 4,522, lines 4,643, functions 2,004, statements 5,547), so the browser runs exactly what it ran; the roster

@@ -1,0 +1,22 @@
+// The docs tool's body (`vibelang/docs/open`, declared in `flows.vibe`). Only the Worker registers it
+// (worker/WikiTools.vibe): the mock's scripted agent never opens docs, so no browser code imports this file (0016,
+// "Browser gate scope").
+import { counted, Tours } from "./flows.vibe"
+import { docsPath } from "./docsDecision.vibe"
+
+/** VibeLang's docs, the only site the tour's pane shows. */
+export const DOCS_ORIGIN = "https://vibelang.sh"
+
+/** The docs page at `path`, such as `/setup`, or `undefined` when `path` is not a page of the docs site. */
+export function docsPage(path: string): string | undefined {
+  return docsPath(path) ? DOCS_ORIGIN + path : undefined
+}
+
+/** `vibelang/docs/open`'s body: shows the docs page at `path` in the pane while `tour` runs. */
+export effect function openDocs(tour: string, path: string) {
+  const tours = try Tours
+  const page = docsPage(path)
+  const opened = page === undefined ? false : try tours.open(tour, page)
+  try counted("open", page === undefined ? "outside-docs" : opened ? "opened" : "ended")
+  return opened
+}

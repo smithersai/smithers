@@ -13,7 +13,7 @@ import { registration } from "../src/actions/catalog.vibe"
 import type { Commit } from "../src/history/mythical.vibe"
 import type { CommitPage } from "../src/history/pages.vibe"
 import type { Run } from "../src/actions/Actions.vibe"
-import { docsPage } from "../src/core/flows.vibe"
+import { docsPage } from "../src/core/docsTool.vibe"
 import { plannedHistory } from "./fixtures.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 

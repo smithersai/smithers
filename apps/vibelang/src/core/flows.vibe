@@ -15,7 +15,7 @@ import * as Continuation from "./flowDecision.vibe"
 import { Action, DurableDeferred, DurableClock, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
 import { holdRemaining, unansweredSelection, type Conversation, type Event } from "./conversation.vibe"
-import { docsPath, runningTour } from "./tourDecision.vibe"
+import { runningTour } from "./tourDecision.vibe"
 import { type Refusal } from "./decide.vibe"
 import { endsTourEvent, readingHold, tourStop } from "./flowDecision.vibe"
 import { WALKTHROUGH } from "./walkthroughSteps.vibe"
@@ -113,14 +113,6 @@ export const postRegistration = Interpreter.layerWithImplementations(Post, Layer
 ))
 
 // ── the tour (wiki/decisions/0014-agent-tour.md) ─────────────────────────────────────────────────────────────────
-
-/** VibeLang's docs, the only site the tour's pane shows. */
-export const DOCS_ORIGIN = "https://vibelang.sh"
-
-/** The docs page at `path`, such as `/setup`, or `undefined` when `path` is not a page of the docs site. */
-export function docsPage(path: string): string | undefined {
-  return docsPath(path) ? DOCS_ORIGIN + path : undefined
-}
 
 /** The conversation's sequencer, as the tour's steps reach it. */
 export service Tours {
@@ -225,7 +217,7 @@ export const tourSteps = Metric.counter("vibelang_tour_steps", {
 })
 
 /** Logs and counts one tour step by its outcome only: never what the agent said or a person's words. */
-effect function counted(step: string, outcome: string) {
+export effect function counted(step: string, outcome: string) {
   try Metric.update(Metric.withAttributes(tourSteps, { step, outcome }), 1)
   try Effect.logInfo(`vibelang.tour.${step}`).pipe(Effect.annotateLogs({ outcome }))
 }
@@ -256,15 +248,6 @@ export effect function wakeTour() {
   try (try Tours).wake()
   try counted("wake", "requested")
   return null
-}
-
-/** `vibelang/docs/open`'s body: shows the docs page at `path` in the pane while `tour` runs. */
-export effect function openDocs(tour: string, path: string) {
-  const tours = try Tours
-  const page = docsPage(path)
-  const opened = page === undefined ? false : try tours.open(tour, page)
-  try counted("open", page === undefined ? "outside-docs" : opened ? "opened" : "ended")
-  return opened
 }
 
 /** `vibelang/tour/say`'s body: adds `text` to what `tour` said while it runs. */
