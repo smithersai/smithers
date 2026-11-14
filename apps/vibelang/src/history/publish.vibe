@@ -6,7 +6,7 @@ import { Action as Step, DurableClock, Flow, Interpreter, RetryPolicy, Sleep } f
 import { Repository } from "@smthrs/jj"
 import { Node } from "@smthrs/plan"
 import { NONE, type Pace, type Pending, planned, readPublished, readRefs } from "./export.vibe"
-import { pacedOut, type Refs, same, waitsForTrees } from "./exportDecision.vibe"
+import { batchOutcome, emptyHistory, pacedOut, publishOutcome, type Refs, same, waitsForTrees } from "./exportDecision.vibe"
 import { counted, exported, ExportTarget, exportStep, finish, foldCommits, MainCommitSchema, paceOf, readMain, refusing, RefsSchema, Stack } from "./flows.vibe"
 import type { History } from "./mythical.vibe"
 
@@ -86,7 +86,7 @@ export interface Batch {
  */
 export effect function batch(history: History, refs: Refs, trees: ReadonlyArray<readonly [string, string]>, done: ReadonlyArray<string>, pace: Pace) {
   const nothing: Batch = { trees: [], wrote: [], needs: 0, remaining: 0, candidate: NONE, written: 0, empty: true }
-  if (history.commits.length === 0) return nothing
+  if (emptyHistory(history.commits.length)) return nothing
   const repository = try Repository.Repository
   const published = try readPublished(repository, refs)
   const known = new Map(trees)
@@ -131,7 +131,7 @@ function batchStep<R>(at: number, body: typeof BatchSchema.Type!Repository.Repos
         try counted("export.batch", error.retryAfterMillis === undefined ? error.code : "limited")
         throw error
       }
-      try counted("export.batch", answer.needs > 0 ? "read" : answer.remaining > 0 ? "wrote" : "done")
+      try counted("export.batch", batchOutcome(answer.needs, answer.remaining))
       try Metric.update(Metric.withAttributes(exportObjects, { kind: "write" }), answer.wrote.length)
       try Metric.update(Metric.withAttributes(exportObjects, { kind: "read" }), answer.trees.length)
       return answer
@@ -168,7 +168,7 @@ effect function pacedExport() {
     trees.push(...answered.trees)
     done.push(...answered.wrote)
     if (answered.empty) return exported("", 0, "nothing")
-    if (answered.needs === 0 && answered.remaining === 0) {
+    if (batchOutcome(answered.needs, answered.remaining) === "done") {
       if (same(begun.refs, answered.candidate)) return exported(answered.candidate.mythical, 0, null)
       return try finish(names, begun.refs, answered.candidate, answered.written)
     }
@@ -189,7 +189,7 @@ effect function runPublish() {
   })
   const folded = read.available ? (try foldCommits(read.commits)).folded : 0
   const answer = try pacedExport()
-  try counted("publish", answer.refusal ?? (answer.written > 0 ? "published" : "current"))
+  try counted("publish", answer.refusal ?? publishOutcome(answer.written))
   return { folded, ...answer }
 }
 

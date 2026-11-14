@@ -403,3 +403,60 @@ export function wikiEditRefusal(baseMatches: boolean, blank: boolean, unchanged:
   if (blank || unchanged) return "empty"
   return ""
 }
+
+/** A write needs the request key every write step is named by; a request without one is a sign-in refusal. */
+//@ verify
+//@ ensures \result == (key == "")
+export function writeKeyMissing(key: string): boolean {
+  return key === ""
+}
+
+/** Assignee choices: the agent's login sorts first, every other pair in `compared` (the caller's localeCompare). */
+//@ verify
+//@ ensures a == agent && b != agent ==> \result == -1
+//@ ensures b == agent && a != agent ==> \result == 1
+//@ ensures (a == agent) == (b == agent) ==> \result == compared
+export function agentFirst(a: string, b: string, agent: string, compared: number): number {
+  if (a === agent && b !== agent) return -1
+  if (b === agent && a !== agent) return 1
+  return compared
+}
+
+/** A split's new issue is linked to its parent only when GitHub has not already linked it (a retry after the link). */
+//@ verify
+//@ ensures \result == (parentUrl != expected)
+export function splitLinkNeeded(parentUrl: string, expected: string): boolean {
+  return parentUrl !== expected
+}
+
+/** A link writes only a changed parent; the same parent needs no GitHub write. */
+//@ verify
+//@ ensures \result == (current != requested)
+export function parentChanges(current: number, requested: number): boolean {
+  return current !== requested
+}
+
+/** A wiki draft: a blank ask is empty, before a missing writer is unavailable; else none (`""`). */
+//@ verify
+//@ ensures blank ==> \result == "empty"
+//@ ensures !blank && !writer ==> \result == "unavailable"
+//@ ensures !blank && writer ==> \result == ""
+export function wikiDraftRefusal(blank: boolean, writer: boolean): "empty" | "unavailable" | "" {
+  if (blank) return "empty"
+  if (!writer) return "unavailable"
+  return ""
+}
+
+/** The pinned commit's page must be the base the person reviewed, or the proposal is a conflict. */
+//@ verify
+//@ ensures \result == (pinned != base)
+export function pinnedConflict(pinned: string, base: string): boolean {
+  return pinned !== base
+}
+
+/** After a proposal, the retained draft is deleted only when it holds the text just proposed. */
+//@ verify
+//@ ensures \result == (retained && draft == proposed)
+export function draftProposed(retained: boolean, draft: string, proposed: string): boolean {
+  return retained && draft === proposed
+}

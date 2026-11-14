@@ -19,7 +19,7 @@ import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
-import { carriesCode, connectFailure, failureReason, joinsReceipt, objectPath, readRetriesSignedOut, refusalReason, requestKey, retriesSettledFailure, sameActor, wikiEditRefusal, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
+import { carriesCode, connectFailure, failureReason, draftProposed, joinsReceipt, objectPath, pinnedConflict, readRetriesSignedOut, refusalReason, requestKey, retriesSettledFailure, sameActor, wikiDraftRefusal, wikiEditRefusal, writeKeyMissing, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
 import { editable } from "../src/core/wikiPageDecision.vibe"
 import { bodyLimit, objectMethod, withinBodyLimit } from "./workerDecision.vibe"
 
@@ -93,7 +93,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
           const answer = draft === undefined ? state : { ...state, draft }
           return observed.stale === undefined ? answer : { ...answer, stale: observed.stale }
         }
-        if (actor === undefined || request.key === "") throw new WikiFailure({ reason: "sign-in" })
+        if (actor === undefined || writeKeyMissing(request.key)) throw new WikiFailure({ reason: "sign-in" })
         const key = (name: string) => wikiWriteKey(repo, actor.id, request, name)
         const repository = `${repo.owner}/${repo.name}`
         /** Every step re-reads who is asking; a role lost mid-flow stops the next one. */
@@ -124,10 +124,12 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
           },
         })
         if (request.op === "draft") {
-          if (request.text.trim() === "") throw new WikiFailure({ reason: "empty" })
-          if (Option.isNone(writer)) throw new WikiFailure({ reason: "unavailable" })
+          const draftRefusal = wikiDraftRefusal(request.text.trim() === "", Option.isSome(writer))
+          if (draftRefusal !== "") throw new WikiFailure({ reason: draftRefusal })
+          // The proved refusal answered "unavailable" for a missing writer.
+          const drafter = Option.getOrThrow(writer)
           const file = try readSource(path)
-          const drafted = try writer.value.draft({ page: request.page, source: file.text, ask: request.text })
+          const drafted = try drafter.draft({ page: request.page, source: file.text, ask: request.text })
           if (storage !== undefined) try promise(() => storage.put(`wiki/draft/${actor.id}/${request.page}`, { page: drafted.page, text: drafted.text }))
           return { ...edits, draft: { page: drafted.page, text: drafted.text } }
         }
@@ -151,7 +153,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
           if (Option.isNone(head)) throw new WikiFailure({ reason: "missing" })
           // Validate the exact commit before persisting it or binding any write key.
           const pinned = try authorized(readSource(path, head.value.sha))
-          if (pinned.text !== request.base) throw new WikiFailure({ reason: "conflict" })
+          if (pinnedConflict(pinned.text, request.base)) throw new WikiFailure({ reason: "conflict" })
           return { repository, branch, sha: head.value.sha }
         })
         const branch = try Action.once("branch", permitted({ kind: "branch.create", repository: base.repository, prefix: "vibelang/wiki-", label: request.page.replace(/[^a-z0-9]+/gi, "-").slice(0, 40), at: base.sha }), { key: try key("branch") })
@@ -165,7 +167,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         const changed = observedReview.pipe(Option.exists((review) => review.files.length === 1 && review.files[0]!.filename === path && review.files[0]!.status === "modified"))
         if (!authored || !changed) throw new WikiFailure({ reason: "unavailable", code: "unavailable" })
         const retained = try loadDraft(actor.id, request.page)
-        if (storage !== undefined && retained?.text === request.text) try promise(() => storage.delete(`wiki/draft/${actor.id}/${request.page}`))
+        if (storage !== undefined && draftProposed(retained !== undefined, retained?.text ?? "", request.text)) try promise(() => storage.delete(`wiki/draft/${actor.id}/${request.page}`))
         return { ...edits, review: `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}` }
       }
       const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate, reads), Effect.mapError((error) => {

@@ -5,7 +5,7 @@ import { History as HistorySchema, HistoryEvent } from "./schemas.vibe"
 // keeps its store in memory; the live History object (worker/HistoryObject.vibe) keeps it in its own storage. Nothing
 // here names a host.
 import { recordedHistory, replayHistory } from "./replayDecision.vibe"
-import { type Decision, empty, epicOf, foldTarget, hasSha, type History, type Event, type Intent, MAX_ID, MAX_TITLE } from "./mythical.vibe"
+import { type Decision, empty, epicOf, foldRefusal, foldTarget, hasSha, type History, type Event, type Intent, MAX_ID, MAX_TITLE } from "./mythical.vibe"
 import type { Stack } from "./flows.vibe"
 import { areaOf } from "./areas.vibe"
 import { epicByTitle, foldTitle, planStep } from "./stackDecision.vibe"
@@ -175,7 +175,7 @@ export effect function make(store: Store) {
       locked(effect {
         const history = try current()
         // The Fold's own refusals (mythical.vibe `decide`, same order), checked before a commit is planned for it.
-        const refusal = commit.sha === "" ? "empty" : commit.sha.length > MAX_ID || commit.change.length > MAX_ID ? "too-long" : hasSha(history.real, commit.sha) ? "duplicate" : ""
+        const refusal = foldRefusal(history.real, commit.sha, commit.change)
         if (refusal !== "") {
           const refused: Answer = { id: "", refusal }
           return refused

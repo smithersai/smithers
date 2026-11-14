@@ -329,6 +329,22 @@ export function hasCommit(commits: ReadonlyArray<Commit>, id: string): boolean {
 }
 
 /**
+ * A Fold's refusals that need no plan, in `decide`'s order: no sha is empty; a sha or change id longer than MAX_ID is
+ * too long; a sha already folded is a duplicate; else none (`""`). The Sequencer answers them before planning a commit.
+ */
+//@ verify
+//@ ensures sha == "" ==> \result == "empty"
+//@ ensures sha != "" && (sha.length > MAX_ID || change.length > MAX_ID) ==> \result == "too-long"
+//@ ensures sha != "" && sha.length <= MAX_ID && change.length <= MAX_ID && exists(j, 0 <= j && j < real.length && real[j].sha == sha) ==> \result == "duplicate"
+//@ ensures sha != "" && sha.length <= MAX_ID && change.length <= MAX_ID && !exists(j, 0 <= j && j < real.length && real[j].sha == sha) ==> \result == ""
+export function foldRefusal(real: ReadonlyArray<Real>, sha: string, change: string): "empty" | "too-long" | "duplicate" | "" {
+  if (sha === "") return "empty"
+  if (sha.length > MAX_ID || change.length > MAX_ID) return "too-long"
+  if (hasSha(real, sha)) return "duplicate"
+  return ""
+}
+
+/**
  * Whether a real commit with `sha` is already folded.
  */
 //@ verify

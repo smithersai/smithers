@@ -78,7 +78,7 @@ src/core/sandboxHost.vibe	makeSandboxHost/emergency	!box.running	Host boundary: 
 src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Host boundary: whether the container runs
 src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Host boundary: whether the container runs
 src/core/sandboxHost.vibe	makeSandboxHost/run	admitted.type === "receipt"	Variant dispatch on admit's answer (a stored receipt or a pending operation), which the proved replayAnswer and freshAdmission decide
-src/core/sandboxMeter.vibe	snapshotOf	box?.running	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
+src/core/sandboxMeter.vibe	snapshotOf	box?.running	Forwards the found sandbox's running flag from the proved ledger (applySandbox); no sandbox for the conversation is stopped
 src/core/sandboxMock.vibe	makeMockSandboxes/callback	at === null || at > (try Clock.currentTimeMillis)	Mock mode (VL-13): the fixture sandboxes
 src/core/sandboxMock.vibe	makeMockSandboxes/write/callback	receipt	Mock mode (VL-13): the fixture sandboxes
 src/core/sandboxMock.vibe	memoryMachines/command	outputs.has(key)	Mock mode (VL-13): the fixture sandboxes
@@ -97,7 +97,6 @@ src/core/WikiFactory.vibe	makeWikiFactory/act/callback	cause.reasons.length === 
 src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag.endsWith("ExecutionIdentityConflict")	Variant test: the engine's identity conflict answers conflict
 src/core/WikiFactory.vibe	makeWikiFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
 src/core/WikiFactory.vibe	personOf	identity === "maintainer"	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
-src/core/wire.vibe	conversationPath	conversation.length === 0 || conversation.length > MAX_CONVERSATION	Refusal: a conversation id is 1 to MAX_CONVERSATION units (the same bound as the proved validConversationLength, which browser code may not import)
 src/history/export.vibe	check	!manifest.commits.every((entry) => noted.has(entry[1]))	Host boundary: Set membership; the notes tree holds a note for every manifest commit
 src/history/export.vibe	check	!old.has(oid)	Host boundary: Set membership; a commit the last publication holds was checked when it was published
 src/history/export.vibe	check	published.manifest === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
@@ -114,14 +113,9 @@ src/history/LiveMythical.vibe	LiveMythical/callback/events/callback	response.sta
 src/history/LiveMythical.vibe	LiveMythical/callback/page	response.status !== 200	Host boundary: the API's HTTP status
 src/history/MockMythical.vibe	MockMythical	seed === seeded	Mock mode (VL-13): the fixture history
 src/history/pages.vibe	matchesOf	needle === ""	Emptiness: an empty search matches nothing
-src/history/publish.vibe	batch	history.commits.length === 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
-src/history/publish.vibe	batch	skip.has(each.oid)	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
-src/history/publish.vibe	batchStep/callback	answer.needs > 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
-src/history/publish.vibe	batchStep/callback	answer.remaining > 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
-src/history/publish.vibe	pacedExport	answered.empty	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
-src/history/publish.vibe	pacedExport	answered.needs === 0 && answered.remaining === 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
-src/history/publish.vibe	runPublish	answer.written > 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
-src/history/publish.vibe	runPublish	read.available	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
+src/history/publish.vibe	batch	skip.has(each.oid)	Host boundary: Set membership drops an object id written by an earlier batch (done) or listed twice in the plan; which objects to write is the planner's pending list
+src/history/publish.vibe	pacedExport	answered.empty	Forwards the flag batch sets only when the proved emptyHistory found no commits
+src/history/publish.vibe	runPublish	read.available	Forwards readMain's answer that main's log was read; an unread main folds nothing and the export still runs
 src/history/seed.vibe	seedOf	!byTitle.has(title)	Host boundary: Map membership; the first group under a title keeps it, for a revert to find
 src/history/seed.vibe	seedOf	!list.includes(entry)	Host boundary: identity membership; an entry is listed once under each title
 src/history/seed.vibe	seedOf	!members.has(area)	Host boundary: Map membership; epics keep the order the project first touched them
@@ -129,8 +123,6 @@ src/history/seed.vibe	seedOf	attempt.reason === ""	Formatting: an evidence line 
 src/history/seed.vibe	seedOf	entry.gate === ""	Formatting: an evidence line names the gate or reason only when there is one
 src/history/Sequencer.vibe	answered	decision.ok	Forwards the proved decide's answer
 src/history/Sequencer.vibe	answered	decision.ok	Forwards the proved decide's answer
-src/history/Sequencer.vibe	make/fold/callback	commit.sha === ""	Refusal: a fold's commit ids must be nonempty and at most MAX_ID long (input validation before the proved fold)
-src/history/Sequencer.vibe	make/fold/callback	commit.sha.length > MAX_ID || commit.change.length > MAX_ID	Refusal: a fold's commit ids must be nonempty and at most MAX_ID long (input validation before the proved fold)
 src/history/Sequencer.vibe	make/record	!decision.ok	Forwards the proved decide's answer
 src/history/tools.vibe	show/callback	{	Variant dispatch on what the history tool shows (outline, epic, commit, search)
 src/history/tools.vibe	show/callback	when { what: "commit"	Variant dispatch on what the history tool shows (outline, epic, commit, search)
@@ -161,8 +153,6 @@ src/surfaces/commands.vibe	define/render	json	Variant dispatch on the caller's o
 src/surfaces/commands.vibe	signInError	error instanceof SignInFailed	Variant test: a SignInFailed passes on as its message
 src/surfaces/session.vibe	activeSession	!validSessionCookie(decoded.origin, decoded.cookie)	Variant: a configured session cookie wins over the stored one; validSessionCookie checks the stored one
 src/surfaces/session.vibe	activeSession	Option.isSome(configured) && Redacted.value(configured.value) !== ""	Variant: a configured session cookie wins over the stored one; validSessionCookie checks the stored one
-src/surfaces/session.vibe	settingsDir	Option.isNone(home) || home.value === ""	Configuration: XDG_CONFIG_HOME wins, else HOME
-src/surfaces/session.vibe	settingsDir	Option.isSome(xdg) && xdg.value !== ""	Configuration: XDG_CONFIG_HOME wins, else HOME
 src/surfaces/signin.vibe	output	mock	Forwards: mock mode reads the fixture session file and has no pending flow
 src/surfaces/signin.vibe	output	mock	Forwards: mock mode reads the fixture session file and has no pending flow
 src/surfaces/signin.vibe	safeSettings/callback	error instanceof SignInFailed	Variant test: a SignInFailed passes through; any other settings failure becomes one sentence
@@ -193,7 +183,6 @@ worker/Accounts.vibe	make/handle/callback	"session" in pending	Variant test: a p
 worker/Accounts.vibe	make/mutation/callback/callback	result !== null && typeof result === "object" && "status" in result	Variant test: a mutation that answered an HTTP status
 worker/Accounts.vibe	make/readResponse	method !== "GET"	Variant dispatch: a GET answers the read, any other method the write's receipt
 worker/ActionDirectory.vibe	directory/root	parent === id || (try runs.request(id, true)) !== undefined	Variant: a root id or a stored run is its own root; the proved actionRoot gives the parent
-worker/ActionDirectory.vibe	directory/submit	(reserved !== undefined && reserved !== request.id) || (try runs.request(child, true)) !== undefined	Refusal: a post's reply child already reserved by another post, or already stored, conflicts
 worker/ActionDirectory.vibe	directory/submit/callback/callback	cause.reasons.length === 1	Host boundary: Effect’s Cause shape; the engine’s identity conflict dies as the only reason
 worker/ActionDirectory.vibe	directory/submit/callback/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
 worker/ActionIdentity.vibe	fromAccounts/request	admitted	Forwards the account host's admission, decided by the proved role policy on its host
@@ -253,11 +242,8 @@ worker/Issues.vibe	executeIssues/perform	request.op === "spec-revise" || request
 worker/Issues.vibe	executeIssues/perform/callback	item.number === request.number	Selects the requested issue
 worker/Issues.vibe	githubHost/perform/callback	!after.items.some((item) => item.number === existing.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase()))	Host boundary: GitHub’s assignee read-back, matched case-insensitively with toLowerCase (Unicode casing)
 worker/Issues.vibe	githubHost/perform/callback	!observed.items.some(issue => issue.number === made.number && issue.vip !== "")	Host boundary: GitHub's read-back of the proposed VIP
-worker/Issues.vibe	githubHost/perform/callback	actor === undefined || request.key === ""	Refusal: no signed-in person or no request key is sign-in; requestKey (proved) validated the key at the door
 worker/Issues.vibe	githubHost/perform/callback	committing	Variant dispatch: commit or uncommit
 worker/Issues.vibe	githubHost/perform/callback	committing && (login.trim() === "" || !before.assignees.some(choice => choice.login.toLowerCase() === login.toLowerCase()))	Host boundary: assignee choice matched case-insensitively with toLowerCase (Unicode casing); an empty login is refused
-worker/Issues.vibe	githubHost/perform/callback	current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`	Write skip: a split's new issue is linked only when GitHub did not already link it
-worker/Issues.vibe	githubHost/perform/callback	existing.parent !== request.parent	Write skip: an unchanged parent needs no GitHub write; the proved canLinkIssues admits the link
 worker/Issues.vibe	githubHost/perform/callback	request.op === "accept"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
 worker/Issues.vibe	githubHost/perform/callback	request.op === "accept"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
 worker/Issues.vibe	githubHost/perform/callback	request.op === "accept" && existing.vip === "In review"	Variant dispatch on the VIP state: an In-review accept must pass the proved approveVip; any other state goes to the proved reviewActions
@@ -271,14 +257,12 @@ worker/Issues.vibe	githubHost/perform/callback	request.op === "propose"	Variant 
 worker/Issues.vibe	githubHost/perform/callback	request.op === "read"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
 worker/Issues.vibe	githubHost/perform/callback	request.op === "split"	Variant dispatch on the issue operation, which the proved issuePermission, agentRefused and issueWriteRefusal admit
 worker/Issues.vibe	githubHost/read	at === -1	Host boundary: findIndex; the issue's own copy replaces its listed copy, or joins the list
-worker/Issues.vibe	githubHost/read	comments.truncated	Refusal: a truncated GitHub list is partial; the library sets the flag
+worker/Issues.vibe	githubHost/read	comments.truncated	Forwards: GitHub.Pulls.listReviews and GitHub.Issues.listComments set truncated when they stop before the last page; the branch refuses on that flag as given and compares nothing of its own
 worker/Issues.vibe	githubHost/read	number === i.number	Selects the requested issue (its reviews, timeline and comments are read only for it); the number is the proved selectsIssue's
 worker/Issues.vibe	githubHost/read	number === i.number && vip !== undefined	Selects the requested issue (its reviews, timeline and comments are read only for it); the number is the proved selectsIssue's
 worker/Issues.vibe	githubHost/read	own._tag === "Failure" && issueFailureOf(own.failure).reason !== "missing"	Variant dispatch: the selected issue's own read failing as anything but missing fails the read; missing falls back to the list
 worker/Issues.vibe	githubHost/read	review.user !== null && !reviewers.includes(review.user.login)	Host boundary: Array membership; each reviewer is listed once
-worker/Issues.vibe	githubHost/read	reviews.truncated	Refusal: a truncated GitHub list is partial; the library sets the flag
-worker/Issues.vibe	githubHost/read/callback	a.login === repo.agent	Order: the agent's login sorts first among assignee choices
-worker/Issues.vibe	githubHost/read/callback	b.login === repo.agent	Order: the agent's login sorts first among assignee choices
+worker/Issues.vibe	githubHost/read	reviews.truncated	Forwards: GitHub.Pulls.listReviews and GitHub.Issues.listComments set truncated when they stop before the last page; the branch refuses on that flag as given and compares nothing of its own
 worker/Issues.vibe	serveIssues	request.method === "GET"	Variant dispatch on the method the proved objectMethod admitted: a GET is a read
 worker/Issues.vibe	serveIssues	result.failure._tag === "IssueFailure" && result.failure.unwritten === true	Forwards the unwritten mark the proved unwritten decided
 worker/machineObject.vibe	machineObject/callback/apply	!(try box.running)	Host boundary: whether the container runs after wake
@@ -350,12 +334,8 @@ worker/Wiki.vibe	executeWiki/callback	Option.isNone(decoded) || Object.entries(o
 worker/Wiki.vibe	executeWiki/callback	RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"	Variant test: an engine deadline answers unavailable
 worker/Wiki.vibe	githubWikiHost/loadDraft	storage === undefined || person === ""	Absence: no storage or no person has no retained draft
 worker/Wiki.vibe	githubWikiHost/perform/callback	!authored || !changed	Host boundary: GitHub's read-back that the review is the person's and changes exactly this page
-worker/Wiki.vibe	githubWikiHost/perform/callback	actor === undefined || request.key === ""	Refusal: no signed-in person or no request key is sign-in; requestKey (proved) validated the key at the door
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "draft"	Variant dispatch on the wiki operation, which the proved wikiPermission and wikiSubmissionAllowed admit
 worker/Wiki.vibe	githubWikiHost/perform/callback	request.op === "read"	Variant dispatch on the wiki operation, which the proved wikiPermission and wikiSubmissionAllowed admit
-worker/Wiki.vibe	githubWikiHost/perform/callback	request.text.trim() === ""	Refusal: a blank draft ask is empty (trim is a host boundary)
-worker/Wiki.vibe	githubWikiHost/perform/callback	storage !== undefined && retained?.text === request.text	Write skip: the retained draft is deleted only when it is the text just proposed
-worker/Wiki.vibe	githubWikiHost/perform/callback/callback	pinned.text !== request.base	Refusal: the pinned head's page must equal the reviewed base, else conflict (the same rule as the proved wikiEditRefusal's base check)
 worker/Wiki.vibe	githubWikiHost/perform/callback/callback	storage !== undefined && !touched	Forwards: a first execution that wrote nothing yet keeps the draft
 worker/Wiki.vibe	serveWiki	request.method === "GET"	Variant dispatch on the method the proved objectMethod admitted: a GET is a read
 worker/Wiki.vibe	serveWiki	result.failure._tag === "WikiFailure" && result.failure.unwritten === true	Forwards the unwritten mark the proved wikiUnwritten decided

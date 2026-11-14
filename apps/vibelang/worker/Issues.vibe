@@ -15,7 +15,7 @@ import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/co
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { agentRefused } from "../src/core/flowPolicyDecision.vibe"
-import { connectFailure, grantsParticipation, issuePagesExhausted, joinsReceipt, needsConnection, objectPath, parentInRepository, readRetriesSignedOut, retriesSettledFailure, sameActor, selectsIssue } from "../src/core/issueHostDecision.vibe"
+import { agentFirst, connectFailure, grantsParticipation, issuePagesExhausted, parentChanges, splitLinkNeeded, writeKeyMissing, joinsReceipt, needsConnection, objectPath, parentInRepository, readRetriesSignedOut, retriesSettledFailure, sameActor, selectsIssue } from "../src/core/issueHostDecision.vibe"
 import { carriesCode, choiceLabel, issueWriteRefusal, refusalReason, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, reviewActions, timelineText, unwritten, vipDocumentMatches, vipState } from "../src/core/issueHostDecision.vibe"
 import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
@@ -139,7 +139,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
     }
     const assignable = try GitHub.IssueChanges.assignees(repo.owner, repo.name)
     const choices = assignable.map((a) => ({ login: a.login, label: choiceLabel(a.login, repo.agent) }))
-    choices.sort((a, b) => a.login === repo.agent ? -1 : b.login === repo.agent ? 1 : a.login.localeCompare(b.login))
+    choices.sort((a, b) => agentFirst(a.login, b.login, repo.agent, a.login.localeCompare(b.login)))
     items.sort((a, b) => b.number - a.number)
     revision += 1
     const state = observe === undefined ? applyIssues({ ...emptyIssues, seq: revision - 1 }, { type: "IssuesObserved", seq: revision, items }) : try observe(items)
@@ -157,7 +157,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           const observed = try GitHub.ReadCache.observeStale(read(request.number), { patience: READ_PATIENCE })
           return observed.stale === undefined ? observed.value : { ...observed.value, stale: observed.stale }
         }
-        if (actor === undefined || request.key === "") throw new IssueFailure({ reason: "sign-in" })
+        if (actor === undefined || writeKeyMissing(request.key)) throw new IssueFailure({ reason: "sign-in" })
         if (needsConnection(request.op, actor.connection !== undefined)) throw new IssueFailure({ reason: "connect" })
         // A logical write keeps its marker when SDK retryFrom creates a new execution.
         const key = (name: string) => issueWriteKey(repo, actor.id, request, name)
@@ -198,7 +198,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           const made = try Action.once("issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body: request.text, since: try admitted() }), { key: try key("issue") })
           if (request.op === "split") {
             const current = try GitHub.IssueChanges.get(repo.owner, repo.name, made.number!)
-            if (current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`) try written("link", { kind: "issue.link", repository, parent: request.number, childNumber: made.number! })
+            if (splitLinkNeeded(current.parent_issue_url ?? "", `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`)) try written("link", { kind: "issue.link", repository, parent: request.number, childNumber: made.number! })
           }
           return { ...(try read(made.number!)), selected: made.number! }
         }
@@ -230,7 +230,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           try Action.once("comment", permitted({ kind: "comment.create", repository, number: existing.number, body: request.text.trim() }), { key: try key("comment") })
         } else if (request.op === "link") {
           if (!canLinkIssues(before.items, existing.number, request.parent)) throw new IssueFailure({ reason: "tree" })
-          if (existing.parent !== request.parent) try written("link", { kind: "issue.link", repository, parent: request.parent, childNumber: existing.number })
+          if (parentChanges(existing.parent, request.parent)) try written("link", { kind: "issue.link", repository, parent: request.parent, childNumber: existing.number })
         } else if (request.op === "commit" || request.op === "uncommit") {
           const committing = request.op === "commit"
           const login = choiceLogin(request.assignee, repo.agent)

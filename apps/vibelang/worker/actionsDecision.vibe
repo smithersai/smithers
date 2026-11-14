@@ -110,3 +110,10 @@ export function agentRunsSettle(flow: string, done: boolean): boolean {
 export function agentRun(actor: string): boolean {
   return actor === "agent"
 }
+
+/** A post's reply child reserved for another post conflicts; unreserved, or reserved for this post, does not. */
+//@ verify
+//@ ensures \result == (reserved != undefined && reserved != id)
+export function reservedByOther(reserved: string | undefined, id: string): boolean {
+  return reserved !== undefined && reserved !== id
+}

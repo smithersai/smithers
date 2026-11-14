@@ -104,3 +104,14 @@ export function revokesRemote(live: boolean, cookie: string): boolean {
 export function pendingExpired(expiresAt: number, now: number): boolean {
   return expiresAt <= now
 }
+
+/** Where settings live: XDG_CONFIG_HOME when set and nonempty, else HOME when nonempty, else nowhere (`""`). */
+//@ verify
+//@ ensures xdg != "" ==> \result == "xdg"
+//@ ensures xdg == "" && home != "" ==> \result == "home"
+//@ ensures xdg == "" && home == "" ==> \result == ""
+export function settingsBase(xdg: string, home: string): "xdg" | "home" | "" {
+  if (xdg !== "") return "xdg"
+  if (home !== "") return "home"
+  return ""
+}

@@ -1,7 +1,7 @@
 import { actionRoot } from "./apiObjectDecision.vibe"
 import { indexedRun, matchingFlow, sameRun } from "../src/actions/actionHostDecision.vibe"
 import { isReplyChild, replyChildId } from "../src/core/actionRunDecision.vibe"
-import { cancelFlow, postFlow, startConflict } from "./actionsDecision.vibe"
+import { cancelFlow, postFlow, reservedByOther, startConflict } from "./actionsDecision.vibe"
 // Public run index: requests are durable steps; each registered workflow runs in its own Conversation object.
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -79,7 +79,7 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
     if (postFlow(request.flow)) {
       const child = replyChildId(request.id)
       const reserved = try promise(() => storage.get(routeKey(child)))
-      if ((reserved !== undefined && reserved !== request.id) || (try runs.request(child, true)) !== undefined) return "conflict"
+      if (reservedByOther(reserved === undefined ? undefined : String(reserved), request.id) || (try runs.request(child, true)) !== undefined) return "conflict"
     }
     // The steps act on the request admitted above, with the role decided above. The journaled payload is that request
     // decoded, whose keys follow the schema's order; storing the admitted object keeps a replay's conflict check (a

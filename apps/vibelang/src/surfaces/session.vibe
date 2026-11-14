@@ -1,5 +1,5 @@
 import { validSessionCookie } from "../core/accountCookies.vibe"
-import { pendingExpired } from "./signinDecision.vibe"
+import { pendingExpired, settingsBase } from "./signinDecision.vibe"
 // Where the CLI and MCP server keep their settings: the app session `login` stores and a pending device flow
 // (decision 0028). The directory is `$XDG_CONFIG_HOME/vibelang-factory` (or `~/.config/vibelang-factory`), mode 0700,
 // and files in it are mode 0600. Nothing here or in its callers logs a cookie or a device code.
@@ -33,11 +33,12 @@ const DEVICE_FILE = "device.json"
 
 export effect function settingsDir() {
   const path = try Path.Path
-  const xdg = try Config.option(Config.String("XDG_CONFIG_HOME"))
-  if (Option.isSome(xdg) && xdg.value !== "") return path.join(xdg.value, DIRECTORY)
-  const home = try Config.option(Config.String("HOME"))
-  if (Option.isNone(home) || home.value === "") throw new SessionFailed({ reason: "no home directory" })
-  return path.join(home.value, ".config", DIRECTORY)
+  const xdg = Option.getOrElse(try Config.option(Config.String("XDG_CONFIG_HOME")), () => "")
+  const home = Option.getOrElse(try Config.option(Config.String("HOME")), () => "")
+  const base = settingsBase(xdg, home)
+  if (base === "xdg") return path.join(xdg, DIRECTORY)
+  if (base === "") throw new SessionFailed({ reason: "no home directory" })
+  return path.join(home, ".config", DIRECTORY)
 }
 
 effect function readJson<S extends Schema.ConstraintDecoder<unknown>>(file: string, schema: S) {
