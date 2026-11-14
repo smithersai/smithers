@@ -30,6 +30,10 @@ test("a new issue whose save was lost comes back after a reload, and Retry saves
   const title = label + " issue"
   await open(page, origin, "issues=1")
   await expect(page.getByRole("heading", { name: "Issues", exact: true })).toBeVisible()
+  // The heading shows before the list's read answers; the person is connected, so the answer brings Disconnect. It
+  // came 0.1 to 11 s after the heading in 15 runs (0016), so the bound is the write's.
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible(settled)
+  await expect(page.getByRole("button", { name: "Connect GitHub", exact: true })).toHaveCount(0)
   await page.request.post(origin + "/__fault?writes=1")
   await page.getByRole("button", { name: "New issue", exact: true }).click()
   await page.getByRole("textbox", { name: "Title", exact: true }).fill(title)

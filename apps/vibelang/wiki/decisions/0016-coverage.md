@@ -3926,7 +3926,8 @@ statements 90.01%, branches 85.90% (5301/6171), functions 92.85% (2380/2563); se
 37: 573 in 60). `main.vibe` lost two arms with `RunAction`'s fallback (598 to 596), one of them covered. One arm
 each in `issuesView.vibe` (148) and `issuesViewDecision.vibe` `connectionControl` (145), the Connect GitHub control,
 ran in session 37 and not here, with no change to either file; the journeys that render it are in
-`e2e/fault-paths.spec.ts`, `e2e/issues.spec.ts` and `e2e/authbroker.spec.ts`. Not yet explained (vl-coverage, next).
+`e2e/fault-paths.spec.ts`, `e2e/issues.spec.ts` and `e2e/authbroker.spec.ts`. Session 39 explains it below: the arm
+was Disconnect, and a race decided it.
 
 | File | Session 37 | Session 38 | Open |
 | --- | --- | --- | --- |
@@ -3987,3 +3988,30 @@ ran in session 37 and not here, with no change to either file; the journeys that
 | `src/web/backend.vibe` | 12/13 | 12/13 | 1 |
 | `src/web/roleView.vibe` | 37/38 | 37/38 | 1 |
 | `src/web/sandboxView.vibe` | 59/60 | 59/60 | 1 |
+
+## The connection controls' race (vl-coverage, session 39, 2026-11-14)
+
+Session 38 recorded a drop it could not explain. It was misnamed: the arm that dropped was Disconnect, not Connect.
+On `issuesView.vibe` 148 the `connect` arm (column 53) read 0 in session 37 and in both session 38 gates; the
+`disconnect` arm (column 99) read 1 in session 37 and 0 in session 38. `viewStateDecision.vibe` `connectionOf`'s `yes`
+arm (37) moved with it. No file the list renders or the Worker answers changed between the two gates' trees
+(`959f61d30c4e` and `392fd0b2`); the same tests ran.
+
+**Cause.** Only the Worker's issue route sends `connected: true` (`worker/Issues.vibe` `connected: actor?.connection
+!== undefined`), and only the live-issues host's person is connected. `live-issues.spec.ts`'s first test clicked New
+issue once the Issues heading showed, which is before the list's read answers. A probe (15 runs on a playwright box)
+read Disconnect 0.1 s to 11.3 s after the heading; at the heading itself, 1 run of 15. Session 37's gate won the race in
+some project; session 38's lost it in all six. The coverage was incidental: no test asserted either control.
+
+**Fix.** That test now waits for Disconnect (and no Connect GitHub) before it acts, bounded by the write's 20 s
+(`settled`). `e2e/live-connection.spec.ts`, on the core live site (`LIVE_CORE_TEST_ORIGINS`), whose fixture session
+has no GitHub connection: a signed-in `new` person is offered Connect GitHub on the list and on an issue, whose form
+posts to `/api/auth/connect`, with no Split, Link or Commit; a signed-out visitor sees neither control. Its list wait
+is 30 s: the core site's read of the recorded issues (434 rows) is what it waits on.
+
+Closed: `issuesView.vibe` 148 (both arms) and 170 (an issue's Connect), `issuesViewDecision.vibe` `connectionControl`
+(145, two arms), `viewStateDecision.vibe` `connectionOf` (37, two arms).
+
+A probe of `authbroker.spec.ts`'s round trip with `--repeat-each 5` answered its write 401 in 5 of 15 runs. The repeats
+ran at once on one project's broker host as the same person (`ada`); the gate runs each test once per project, and it
+passed in every gate. Not reproduced one run at a time; not chased further.
