@@ -257,6 +257,8 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
         // A run whose follow was lost is not shown as live: its clock stops.
         if (!actionsOf(lost).disconnected?.includes(id) || !same(clock.modelToDependencies(lost), { active: false })) return false
         const again = try Effect.try(() => update(lost, Message.ReconnectedActions()).model)
+        // The loss reported before reconnecting is stale: it disconnects nothing again (main.vibe 526).
+        if (update(again, got.value).model !== again) return false
         const recovered = try Effect.provide(Stream.runHead(try subscriptionOf("actionRuns", again)), services)
         if (Option.isNone(recovered) || recovered.value._tag !== "FollowedAction" || recovered.value.run.id !== id) return false
         return follows === 2 && actionsOf(update(again, recovered.value).model).disconnected?.length === 0

@@ -326,26 +326,34 @@ function keyPlan(ui: IssuesUi, k: KeysInput["keyed"], html: Html) {
  */
 it.live("screens/issues-keys", () => scoped(effect {
   const records = try mockItems()
+  // Every execution also presses ⌘ Enter in a maintainer's enabled comment box on a connected tracker, which must
+  // comment as the Comment button does; drawn keys reach it only by chance (issuesView 192, open at seed 20261442).
   try run("screens/issues-keys", KeysInput, (input) => effect {
-    const ui = keyedUi(input, records)
-    const base = init(input.flags).model
-    const model: Model = { ...base, surface: "chat", issues: ui, account: { ...accountOf(base), identity: { ...accountOf(base).identity, role: input.role } } }
-    const before = try settledOn(input, model, [])
-    const plan = keyPlan(ui, input.keyed, before.html)
-    if (plan === undefined) return true
-    const after = try settledOn(input, model, pressSteps(plan, keyOf(input.keyed)))
-    const focused = after.first.filter(command => command.name === "FocusIssueControl").map(command => command.args?.["id"])
-    if (plan.focus !== undefined && (focused.length !== 1 || focused[0] !== plan.focus)) return false
-    if (plan.focus === undefined && focused.length !== 0) return false
-    if (!plan.handled || plan.focus?.startsWith("ix-issue-") === true) return shape(after.html) === shape(before.html)
-    if (plan.click === undefined) return true
-    const button = findOne(before.html, plan.click)
-    if (Option.isNone(button)) return false
-    if (disabled(button.value)) return !after.ran.some(command => command.name === "ActOnIssue")
-    const clicked = try settledOn(input, model, [clickStep(plan.click)])
-    return shape(after.html) === shape(clicked.html)
+    const comment = { ...input, role: "maintainer" as const, connected: true, keyed: { ...input.keyed, target: "comment" as const, press: 0, meta: true, control: false, index: 1, comment: "Looks right." } }
+    return (try pressed(input, records)) && (try pressed(comment, records, true))
   })
 }))
+
+/** One key on the pane as `input` draws it: the outcome screens/issues-keys checks. A `required` control must show. */
+effect function pressed(input: KeysInput, records: ReadonlyArray<Item>, required = false) {
+  const ui = keyedUi(input, records)
+  const base = init(input.flags).model
+  const model: Model = { ...base, surface: "chat", issues: ui, account: { ...accountOf(base), identity: { ...accountOf(base).identity, role: input.role } } }
+  const before = try settledOn(input, model, [])
+  const plan = keyPlan(ui, input.keyed, before.html)
+  if (plan === undefined) return !required
+  const after = try settledOn(input, model, pressSteps(plan, keyOf(input.keyed)))
+  const focused = after.first.filter(command => command.name === "FocusIssueControl").map(command => command.args?.["id"])
+  if (plan.focus !== undefined && (focused.length !== 1 || focused[0] !== plan.focus)) return false
+  if (plan.focus === undefined && focused.length !== 0) return false
+  if (!plan.handled || plan.focus?.startsWith("ix-issue-") === true) return shape(after.html) === shape(before.html)
+  if (plan.click === undefined) return true
+  const button = findOne(before.html, plan.click)
+  if (Option.isNone(button)) return false
+  if (disabled(button.value)) return !after.ran.some(command => command.name === "ActOnIssue")
+  const clicked = try settledOn(input, model, [clickStep(plan.click)])
+  return shape(after.html) === shape(clicked.html)
+}
 
 /** The value an input or text area holds as rendered. */
 function valueOf(node: Html): unknown {
