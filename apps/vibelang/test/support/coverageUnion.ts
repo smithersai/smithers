@@ -158,6 +158,8 @@ export function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON
  * into the statement that reads it, so the bundle has no statement at its start, yet its code ships inside the reading
  * statement, which Chromium credits: a compiler statement with code shipped in it and no shipped statement of its own
  * function around it is not an obligation. Tree-shaken code has no segment; a nested statement stays (decision 0016).
+ * Inside an `effect` block the statement around its `gen` call is not such a statement (decision 0016).
+ * A bundle statement at most one column wide that no compiler statement starts at is the compiler's sourceless code.
  */
 export function builtStructure(compiler: FileCoverageJSON, bundle: FileCoverageJSON, emitted: ReadonlyArray<SourcePosition> = []): FileCoverageJSON {
   const json: FileCoverageJSON = { ...structuredClone(compiler), statementMap: {}, fnMap: {}, branchMap: {}, s: {}, f: {}, b: {} }
@@ -210,18 +212,30 @@ export function builtStructure(compiler: FileCoverageJSON, bundle: FileCoverageJ
     // Inlined, not nested: no shipped statement of its own function encloses it. A shipped `if` that holds this
     // statement as its consequent emits its code too, but cannot establish that it ran.
     const inner = shippedBodies.filter(range => contains(range, candidate.start)).sort((a, b) => before(a.start, b.start) ? 1 : -1)[0]
-    const enclosed = shippedStatements.some(range => contains(range, candidate.start) && (inner === undefined || before(inner.start, range.start)))
-    if (!enclosed && shipsInside(candidate)) replaced.add(id)
+    const enclosing = shippedStatements.filter(range => contains(range, candidate.start) && (inner === undefined || before(inner.start, range.start)))
+    // An `effect` block compiles to a `gen(function* …)` whose function no map names, so the statement around that call
+    // encloses every statement of the block. The innermost enclosing statement holding other shipped statements beside
+    // this one is such a block, not an `if` around its consequent: the candidate was inlined into one of them.
+    const innermost = enclosing.sort((a, b) => before(a.start, b.start) ? 1 : -1)[0]
+    const block = innermost !== undefined && shippedStatements.some(range => range !== innermost && contains(innermost, range.start) && !contains(range, candidate.start))
+    if ((innermost === undefined || block) && shipsInside(candidate)) replaced.add(id)
   }
   const seen = { s: new Set<string>(), f: new Set<string>(), b: new Set<string>() }
   const first = (kind: keyof typeof seen, key: string) => !seen[kind].has(key) && Boolean(seen[kind].add(key))
+  // Code the compiler writes with no source of its own has no segment in its map, so Vitest's structure has no
+  // statement for it. The `catch` that turns a throw while an `effect function` binds its default parameters into a
+  // defect (`catch (e) { return die(e) }`) is such code: Rolldown gives it the last segment before it, the function's
+  // closing brace, so the bundle holds a statement there at most one column wide that no source statement starts at.
+  const compilerStarts = new Set(Object.values(compiler.statementMap).map(start))
+  const sourceless = (loc: FileCoverageJSON["statementMap"][string]) =>
+    loc.start.line === loc.end.line && (loc.end.column ?? 0) - (loc.start.column ?? 0) <= 1 && !compilerStarts.has(start(loc))
   // The minified bundle's map may start a later arm elsewhere (a ternary's second arm at its first arm's start, an
   // if/else printed as an `if`): its branch of the same kind, start and arm count replaces the compiler's.
   const shape = (branch: FileCoverageJSON["branchMap"][string]) => JSON.stringify([branch.type, start(branch.loc), branch.locations.length])
   const shippedBranches = new Set(Object.values(bundle.branchMap).map(shape))
   for (const owner of [bundle, compiler]) {
     for (const [id, loc] of Object.entries(owner.statementMap)) {
-      if ((owner === compiler && replaced.has(id)) || !first("s", start(loc))) continue
+      if ((owner === compiler && replaced.has(id)) || (owner === bundle && sourceless(loc)) || !first("s", start(loc))) continue
       const key = String(Object.keys(json.statementMap).length)
       json.statementMap[key] = structuredClone(loc)
       json.s[key] = owner.s[id] ?? 0

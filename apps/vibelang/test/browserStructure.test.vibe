@@ -172,3 +172,27 @@ it("a statement nested in a shipped statement of its own function stays an oblig
   const inlined = { ...compiler, statementMap: { "0": range(4, 4, 4, 20) }, s: { "0": 0 } }
   expect(starts(builtStructure(inlined, bundle, [[4, 10]]).statementMap)).toEqual(["1:0", "3:4"])
 })
+
+// `effect function make(role, policy = mockPolicy(role)) { ... }` compiles to a `try { ... } catch (e) { return die(e) }`
+// whose `catch` has no segment in the compiler's map. Rolldown maps its `return` to the closing brace (line 9, column 1;
+// a nested function's `},` at 6:9), so the bundle holds statements there that no source statement starts at.
+it("a bundle statement at most one column wide where no source statement starts is the compiler's sourceless code", () => {
+  const compiler = { ...empty, statementMap: { "0": range(2, 2, 2, 20), "1": range(4, 4, 4, 5), "2": range(6, 9, 6, 10) }, s: { "0": 0, "1": 0, "2": 0 } }
+  const bundle = { ...empty, statementMap: { "0": range(2, 2, 2, 20), "1": range(9, 1, 9, 1), "2": range(7, 9, 7, 10), "3": range(4, 4, 4, 5), "4": range(6, 9, 6, 10) }, s: { "0": 1, "1": 0, "2": 0, "3": 0, "4": 1 } }
+  // 9:1 and 7:9 are sourceless; 4:4 (a one-character statement) and 6:9 start source statements, so they stay.
+  expect(starts(builtStructure(compiler, bundle).statementMap)).toEqual(["2:2", "4:4", "6:9"])
+  expect(Object.values(builtStructure(compiler, bundle).s)).toEqual([1, 0, 1])
+})
+
+// `function live() { return effect { const mode = "live"; const client = try get(); return { mode, client } } }`: the
+// block compiles to `return gen(function* () { … })`, whose generator no map names, so the bundle's statement on line 2
+// encloses the whole block. Rolldown writes `mode: "live"` into the return (a segment at 3:16), so `const mode` ships
+// inside the return and is no obligation; `const client` (4:4) ships as its own statement.
+it("a statement inlined inside an effect block is no obligation, though the block's call statement encloses it", () => {
+  const live = { name: "live", decl: range(1, 9, 1, 13), loc: range(1, 16, 8, 1) }
+  const compiler = { ...empty, statementMap: { "0": range(2, 2, 7, 4), "1": range(3, 16, 3, 22), "2": range(4, 4, 4, 30), "3": range(5, 4, 5, 28) }, s: { "0": 0, "1": 0, "2": 0, "3": 0 }, fnMap: { "0": live }, f: { "0": 0 } }
+  const bundle = { ...empty, statementMap: { "0": range(2, 2, 7, 4), "1": range(4, 4, 4, 30), "2": range(5, 4, 5, 28) }, s: { "0": 1, "1": 1, "2": 1 }, fnMap: { "0": live }, f: { "0": 1 } }
+  expect(starts(builtStructure(compiler, bundle, [[2, 2], [4, 4], [5, 4], [3, 16]]).statementMap)).toEqual(["2:2", "4:4", "5:4"])
+  // With no segment inside it, the const was not shipped: it stays an obligation.
+  expect(starts(builtStructure(compiler, bundle, [[2, 2], [4, 4], [5, 4]]).statementMap)).toEqual(["2:2", "4:4", "5:4", "3:16"])
+})

@@ -4858,3 +4858,25 @@ the mock while it held. `e2e/authbroker-host.vibe` now serves core-live.spec.ts 
 (`LIVE_CORE_ALONE_TEST_ORIGINS`), one per project; the other five keep `LIVE_CORE_TEST_ORIGINS`. The repeat's other
 failures came from `--repeat-each` itself: copies of one journey ran at once as the same person on the same sandbox.
 
+
+## Build structure: sourceless code and `effect` blocks (vl-coverage-core, session 14, 2026-11-14)
+
+Two kinds of statement in the browser's structure read 0 although no source code under them goes unrun. Both rules
+are in `builtStructure` (`test/support/coverageUnion.ts`), each with a test in `test/browserStructure.test.vibe` that
+fails without it.
+
+- **Sourceless code.** An `effect function` with default parameters compiles to `try { … } catch (e) { return die(e) }`,
+  which turns a throw while binding the arguments into a defect. The compiler's map has no segment for that `catch`, so
+  Vitest's structure has no statement for it; Rolldown gives its `return` the last segment before it, the function's
+  closing brace. A bundle statement at most one column wide that no compiler statement starts at is now dropped: five
+  in `src/core` (`IssuesFactory.vibe:133`, `WikiFactory.vibe:104`, `sandboxHost.vibe:83`, `sandboxMock.vibe:53`,
+  `MockFactory.vibe:329`) and `src/web/historyStartup.vibe:128`.
+- **Inlined statements inside an `effect` block.** A block compiles to `gen(function* () { … })`, and no map names that
+  generator, so the statement around the `gen` call encloses every statement of the block and session 38's rule (an
+  inlined statement with no shipped statement of its own function around it) never applied there (vl-fuzz2's finding,
+  17:06Z). When the innermost shipped statement around a candidate holds other shipped statements beside it, it is a
+  block, not an `if` around its consequent, and the candidate, whose code ships inside one of them, is dropped.
+
+Still open, measurement and not open code: a `const` whose literal value Rolldown folds into its reader leaves no
+segment at the `const` at all (`LiveFactory.vibe:61` `const mode: Mode = "live"`, `MockFactory.vibe:470`, `wire.vibe`
+21, 22, 41 and 44, `decide.vibe:10`), so nothing in the build shows that it shipped. Those stay open and unlisted.
