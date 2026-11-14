@@ -52,7 +52,8 @@ effect function check(name: string, holds: boolean) {
  * and one without, or no failure, offers none,
  * and typed text reaches the editor; the finder sends its query; a page the repository changed renders its own source
  * with relative links resolved to wiki pages, a missing page shows nothing and a query no page matches says so; in the account menu ArrowDown and ArrowUp move focus with FocusedPrompt
- * and x and Enter send nothing; choosing a person's role sends SelectedRole for that person.
+ * and x and Enter send nothing; choosing a person's role sends SelectedRole for that person, and you are marked "you"
+ * with no role to choose.
  */
 it.live("screens/wiki-and-people", () => run("screens/wiki-and-people", Schema.Struct({ text: Text }), ({ text }) => effect {
   for (const error of ["Connect GitHub.", "Fork on GitHub.", "Install Smithers on your fork.", "The page changed. Reload the editor.", ""]) {
@@ -92,10 +93,12 @@ it.live("screens/wiki-and-people", () => run("screens/wiki-and-people", Schema.S
     try check(`menu key ${item} ${key}`, same(menu.seen, moves ? [focused] : []))
   }
   // A person's role in the People pane.
-  const members = [{ id: "p2", login: "bo", role: "community" as const }]
+  // You are in the list: marked "you", with no role to choose for yourself.
+  const members = [{ id: "p1", login: "ada", role: "maintainer" as const }, { id: "p2", login: "bo", role: "community" as const }]
   const chosen = try Effect.try(() => change("select[aria-label='Role for bo']", "contributor"))
   const people = try render(model({ account: { ...accountOf(model({})), people: "pane", members } }), chosen)
   const selected = try Effect.try(() => Message.SelectedRole({ id: "p2", role: "contributor" }))
   try check("role choice", same(people.seen, [selected]))
+  try check("you", people.all(".vl-person-handle").length === 1 && people.all("select[aria-label='Role for ada']").length === 0 && people.all("select[aria-label='Role for bo']").length === 1)
   return true
 }))

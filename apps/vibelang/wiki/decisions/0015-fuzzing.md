@@ -1444,6 +1444,10 @@ the next step in a VIP and is ignored in a new issue (`screens/issues-chosen` `e
 saved draft (`web/command-arms` `editor-other-draft`). Mutants caught: Enter advancing a new issue, Enter never
 advancing, and a draft of another page filling the editor.
 
+At `9c81b43e` (seeds 20261414, 20261415) one more: `roleView` 61, the People list marking you, refactored in by
+`d9e6f4e1`. `screens/wiki-and-people` now lists you beside Bo: one "you", no role to choose for yourself (the mutant
+that never marks you is caught).
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
