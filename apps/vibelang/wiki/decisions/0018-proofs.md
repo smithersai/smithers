@@ -7476,6 +7476,34 @@ No decision, recorded with the reason:
 
 23 mutation cases. Records: 343 branches, 0 open, 0 unreviewed, 0 reviewed rules not yet proved.
 
+## Stamp: the whole gate on main `960599ec` (vl-proveall3, 2026-11-14)
+
+The first main revision with no reviewed rule left in a shell row (batch 55) and the first whose `verify:broken` counts
+an ill-typed mutant invalid instead of voiding its batch. Driver `~/vl/pa3s7-gate/driver3.py`, shards `shards-r7.json`,
+results `r7-960599ec414b/` (nyc-02); 12 shards, at most 4 node26 boxes, 02:09 to 04:08 UTC, every exit 0.
+
+| Gate | Result |
+| --- | --- |
+| `pnpm verify`, 85 production sources | 93 Dafny runs, 20,438 obligations, 0 errors |
+| `verify:broken`, 85 modules | 3,050/3,050 rejected; 0 survived, 0 invalid, 0 missing |
+| `runtime_broken.py` | exit 0 |
+| Inventory and landing check | 4,146 rows, 0 "Not yet proved", 1,186 contracts each with a mutant, 0 stale or invalid cases; 343 shell branches, 0 open, 0 unreviewed, 0 reviewed rules not yet proved |
+
+| Shard | Box job | Command s | Result |
+| --- | --- | ---: | --- |
+| broken-1 | `883e544fcf0c21603f6a16fa` | 1,874 | 429/429 rejected |
+| broken-2 | `1983e8a9f6d095bbfaafb329` | 1,545 | 430/430 rejected |
+| broken-3 | `b690ff20ad3c6459fa889c92` | 1,270 | 430/430 rejected |
+| broken-4 | `7914f9f3e2a21f53ec7217af` | 1,255 | 430/430 rejected |
+| broken-5 | `de6a53662af901ac63392902` | 1,937 | 428/428 rejected |
+| broken-6 | `a8f6713a8662a01a3ccc08cd` | 1,268 | 429/429 rejected |
+| broken-conversation | `4974c561595a0f70d31e88e2` | 4,564 | 217/217 rejected |
+| broken-heavy | `d7d02b905ca7e48fcace7c25` | 2,759 | 257/257 rejected |
+| proof-1 | `86329e166edb41921ed3f381` | 357 | 27/27 proved |
+| proof-2 | `627002632d54156591bf07a4` | 366 | 26/26 proved |
+| proof-3 | `edebb77966a128b3ce5f98eb` | 957 | 33/33 proved; runtime 0 |
+| proof-heavy | `2fb5b1c34b49c287ac89a169` | 4,929 | 7/7 proved |
+
 ## Stamp: the whole gate on main `c9bcf508` (vl-proveall3, 2026-11-14)
 
 The first main revision with no open shell-decision candidate (batches 46 to 53 and the `actions-click-epoch` mutant
