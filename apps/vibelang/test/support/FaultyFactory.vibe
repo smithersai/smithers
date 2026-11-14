@@ -10,7 +10,7 @@ import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
 import { faultyMachines, machineFault, type MachineFault } from "./faultyMachines.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | MachineFault
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | "held-tour" | MachineFault
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -105,7 +105,8 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * until the page releases it (heldActions.vibe).
  * `account-read` fails the first read of the signed-in account. `held-wiki-read` holds the editor's first page read
  * until the page releases it; `held-wiki-read-failed` then fails it. `held-wiki-save` holds the first wiki save or
- * proposal until the page releases it, then writes it. `faulted` turns true as each hold ends.
+ * proposal until the page releases it, then writes it. `held-tour` holds the first tour start until the page releases
+ * it, then starts the tour. `faulted` turns true as each hold ends.
  * `wiki-repository` faults nothing: its fixture repository's Benchmarks page is the recorded GitHub copy (recordedWiki.vibe).
  * Each fault happens once.
  */
@@ -220,6 +221,10 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         try base.openWiki(conversation, page)
       },
       tour: effect (conversation) => {
+        if (first("held-tour")) {
+          try Deferred.await(released)
+          try sync(() => { observation.faulted = true })
+        }
         if ((fault === "tour-refuse" || fault === "tour-unavailable") && !observation.faulted) {
           observation.faulted = true
           if (fault === "tour-refuse") throw new Refused({ refusal: "busy" })

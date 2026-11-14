@@ -78,3 +78,13 @@ test("a slash command sent while a run is starting starts nothing", async ({ pag
   await expect(page.getByRole("button", { name: /Open Tour run/ })).toHaveCount(1)
   await expect(page.getByRole("button", { name: /Open Post run/ })).toHaveCount(0)
 })
+
+test("the agent answers an unknown command as unavailable", async ({ page }) => {
+  await page.goto("/?agent=mock")
+  await page.getByRole("button", { name: "Ask the agent", exact: true }).click()
+  await page.getByRole("dialog").getByRole("textbox", { name: "Message", exact: true }).fill("Run /nothing-here")
+  await page.getByRole("dialog").getByRole("button", { name: "Send", exact: true }).click()
+  const answer = page.locator(".sui-chat-message[data-role='assistant']").last()
+  await expect(answer).toHaveAttribute("data-done", "true")
+  await expect(answer).toContainText("Action unavailable.")
+})
