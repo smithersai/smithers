@@ -109,6 +109,7 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
   // tab still tours, else leaves them as they were.
   for (const incoming of [null, 0, 3]) for (const current of [null, 0, 3]) {
     try check(`actionsEpochCurrent ${incoming} ${current}`, ModelD.actionsEpochCurrent(incoming, current) === ((incoming ?? 0) === (current ?? 0)))
+    try check(`actionsFailureApplies ${incoming} ${current}`, ModelD.actionsFailureApplies(incoming, current) === (incoming === null || incoming === (current ?? 0)))
   }
   for (const touring of [false, true]) for (const docs of ["pane", "max"] as const) {
     try check(`failedScreenEnd ${touring} ${docs}`, same(Screen.failedScreenEnd({ ...screen, docs }, touring), { ...screen, tour: touring, docs: touring ? "max" : docs }))
