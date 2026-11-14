@@ -2138,6 +2138,14 @@ above returns `""` unless `folds.has(id)`, and every value `lastFolds` stores is
 any seed. It is now `folds.get(id)!`; the proof's `requires` already state both facts. Mutation row
 `export-tree-source` carries the new text.
 
+#### A tour control refused by its declared length (`full25`)
+
+The whole-app run on `9445c9c6` (job `f3828a5765c2a008d61c656f`) failed `http/every-route` at its first execution: a
+`tour-control` with no declared length answered 413 where the oracle expected 409. `05ec4144` (0018 batch 62) made the
+route refuse by its declared length before reading, with the proved `validBodyLength`, and tested it in
+`httpBoundaries.coverage.test`; the oracle still modelled read-then-check. It now applies `validBodyLength(length,
+1024)` first, as it does for `post`. The parent's `worker/Http.vibe` is the mutant: caught.
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the

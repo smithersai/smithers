@@ -82,7 +82,8 @@ function expectedStatus(input: Case, text: string, valid: boolean): number {
       if (!validBodyLength(length, MAX_POST_BYTES)) return 413
       return valid ? answered(input) : 400
     case "tour-control":
-      if (text.length > 1024) return 413
+      // Refused by its declared length before any byte is read (05ec4144), as `post` is.
+      if (!validBodyLength(length, 1024)) return 413
       if (!valid) return 400
       if (!input.controls) return 409
       return answered(input)
