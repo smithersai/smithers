@@ -538,6 +538,7 @@ receipt and the `vibelang.fuzz.target` log say `oneMore: true`. A finding or `FU
 and a target with nothing to replay still fails on zero executions. `FUZZ_CORPUS` moves both stores to one directory
 for the test (`test/fuzzGate.test.vibe`: a 50 ms replay against a 1 ms budget; with the extra run removed it fails
 with the box's `NoExecution`).
+Since 2026-11-13 the seeded floor (session 18, below) replaces this extra run: a starved target still runs its floor.
 
 Two chosen cases follow product changes that landed after them. `history/command-arms`: since `72877048` (#5344) a
 lost event stream and one that ends both deliver `FailedEvents` after the outline and follow once, until Reconnect
@@ -1862,6 +1863,74 @@ that landed as `bbbdcdd1`, 2,784 s, exit 1 on thresholds only): 104 fuzz files a
 the proof lane's batches 40 to 45: `Accounts` 370-371 (an undecodable grant body) and `Issues` 152, 227, 257, 286.
 Three were reached by `full15` and missed this draw: `conversation` 810, `accountObject` 40 and `apiObjects` 153.
 The fuzz gate is not done.
+
+### Session 18: chosen inputs and a seeded floor (vl-fuzz2, 2026-11-13)
+
+`full18`'s nine lines run under chosen inputs. `fuzz/run.vibe`'s `run` takes `chosen`: inputs judged once per
+invocation, before the search, whatever the seed and budget (`2cd6c1a6`). Each case catches a mutant at one execution
+per target:
+
+| Line | Target and chosen input | Mutant caught |
+| --- | --- | --- |
+| `worker/Issues.vibe` 152 | `issues/host-perform-boundary`: a device signed in as a maintainer accepts and declines the VIP in review (new optional `agent` field) | agent guard removed |
+| `Issues` 257 | the same target: a maintainer declines it; the oracle now requires the declined label and the close | label write removed |
+| `Issues` 286 | `issues/http-surface`: PUT and DELETE; the oracle now requires 405 | method check removed |
+| `Issues` 227 | none: the `issue === undefined` guard after `issueWriteRefusal` could never run, since its contract answers `missing` first; it is now `issue!` naming that proof (`af4776d2`) | |
+| `worker/Accounts.vibe` 370-371 | `accounts/worker-lifecycle`: an undecodable grant body | 400 answered as 200 |
+| `src/core/conversation.vibe` 810 | `accounts/worker-lifecycle`: the only maintainer demotes themselves, 403 | last-maintainer guard removed |
+| `worker/apiObjects.vibe` 153 | `api-objects/history-publish`: publishing on, at start-up and at the alarm | publisher start removed |
+| `worker/accountObject.vibe` 40 | `sandbox/account-gateway`: an admitted start with no machine binding names `container-binding` | reason changed |
+
+Then the rest of the lines only draws reached. At one execution per target, 373 in-scope lines that `full19` reached
+were missed under both of two seeds, and 546 under either: most targets draw sequences, and their arms accrue over
+many draws. One execution is stricter than the gate needs. The gate's seed is fixed (20261107) and a box starts with
+an empty input cache, so a target's first executions are the same inputs on every run, and only the host's speed
+decides how many fit the budget. The fuzzer now takes a floor: `@smthrs/fuzz`'s `minExecutions` (`be4a7882`) keeps a run
+going past its `duration` and `plateau` until that many exploratory executions have run. `run` passes 32, or a slow
+target's own floor (`FLOORS`: the executions each of 42 slow targets ran within its budget in `full19`, 2 to 19), so a
+normal run pays about 5 minutes more and a loaded box still covers the same prefix (`235e936c`). The floor replaces the
+one extra execution a starved target used to get (`oneMore`, above); receipts record `floor`. `FUZZ_FLOOR_ONLY=1` runs
+exactly the floor, which is what every run covers.
+
+A uniform floor costs too much where one execution takes seconds: added serial time from `full19`'s per-target times
+was 290 s at 4, 1,340 s at 8 and 8,570 s at 32, mostly the steered targets (25 to 40 s an execution). Hence the table.
+
+Measured at the floor alone (`FUZZ_FLOOR_ONLY=1`, every stage, `playwright` box): 48 in-scope lines in 17 files that
+`full19` reached stayed unreached. Each file was then run alone under coverage of those 17 files to find the target
+that reaches them, and each got chosen inputs:
+
+| Lines | Target | Chosen input |
+| --- | --- | --- |
+| `MockAccounts` 117 | `accounts/random-role-sequences` | the maintainer demotes people 2 to 5, then chooses `community` and `contributor`, which nobody holds |
+| `WikiFactory` 43, `sandboxHostDecision` 169 | `web/command-bodies` | the mock opens page `nope`; a sandbox action with no operation id (oracle: both fail) |
+| `conversation` 491, 514 | `conversation/malformed-events` | a run's empty-key step, unknown settlement, pass, late step and late fail (oracle: `settleRun` and `stepRun` leave a closed run, an empty key and a non-final state unchanged) |
+| `conversation` 571, `decide` 150 | `conversation/sequences` | a delivered post sent again (oracle: never pending again); a tour started, ended and started under the same id |
+| `issueHostDecision` 285 | `issues/vip-evidence-and-failure-mapping` | a marked proposal by author 8 and by author 0 |
+| `sandboxDecision` 305, 308 | `decisions/host-rules` | an owner's start with its minutes used, and with no sandbox id |
+| `sandboxHost` 118, 139-142, 193, 218-220, `sandboxHostDecision` 146 | `sandbox/host-recovery` | a viewer's pending start; a start beside a running sandbox whose clock passes the allowance; a stop of a stopped sandbox; a broken clock under a running sandbox (oracle: machine stops counted, one per sandbox that ran) |
+| `sandboxMock` 67 | `sandbox/mock-device` | an operation id sent again with another command |
+| `specification` 31 | `issues/specification-transitions` | a revision whose text is the current one, under both policies |
+| `toolRefusalDecision` 18, 42, 43, 48 | `decisions/tool-refusal` | every tag with every field |
+| `ActionsHttp` 24, 39-40, 52-54 | `actions/http-surface` | start and rerun with each refused body (oracle: 400 or 413, no call) |
+| `Http` 88-90, 97, 104-105, 145-146 | `http/every-route` | unreadable, malformed and oversized bodies, declared and chunked |
+| `SandboxHttp` 43, 48, `sandboxWorkerDecision` 103 | `sandbox/http-surface` | a lost body on stop; stop and command with no generation |
+| `mainLogDecision` 197 | `history/main-first-parent-graph` | a merge whose side parent is neither listed nor folded |
+| `sandboxBenchmark` 21-23, `sandboxWorkerDecision` 205 | `sandbox/benchmark-coverage` | all 18 path, method and owner combinations |
+
+Measured on main `c33db232`: `fuzz2-full21` (`playwright` box, job `df2d75b40514bc6dcab4e55d`, 2,059 s, exit 1 on
+per-file thresholds only) passed 104 fuzz files, 300 tests and 5 browser tests, and no statement line in scope is
+missed. At the floor alone (`FUZZ_FLOOR_ONLY=1`, every stage, job `efcb6b820086039340bf1213`) none of the 125
+in-scope files misses a line either, so every line in scope runs from a chosen input or the seeded floor, on any box.
+The two runs include main's nine commits since `235e936c` (among them `1ec1ba13`, `decideSandbox` deciding starts and
+stops only, and `8678a974`, the 8 MiB wiki body limit).
+
+**FUZZ-GATE GREEN, 2026-11-13** (lines in scope: every `worker/` and `src/core/` file outside vl-fuzzpkg's and
+vl-fuzz3's). Still open and not counted by the line gate: 43 branch arms in 20 of those files. Mutants for this
+session's cases: 7 of 7 for `full18`'s lines, 31 of 32 for the 48; the survivor, `sandboxWorkerDecision`'s
+missing-generation arm, is equivalent at the HTTP boundary, whose handler checks `body.generation` again for
+TypeScript's narrowing. The first `sandbox/host-recovery` oracles were too strict (a ledger at the last sequence cannot
+record a stop, so the next fail-closed pass stops again; a viewer's meter also stops other sandboxes); the fuzzer
+saved both counterexamples, which were deleted, and the narrowed oracles passed three seeds of 20 s each.
 
 ## Complete browser sources and settled history receipts
 
