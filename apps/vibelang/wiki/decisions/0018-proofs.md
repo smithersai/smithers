@@ -7713,6 +7713,19 @@ value the proof sees, as a field read does, and the inventory counts no field re
 proved or recorded: 1,122 shell branches, 0 open. The count drops one stale record (`?? format` in `execute`, removed
 from `src/web/main.vibe` since the last stamp).
 
+### Batch 71: a loop's test
+
+Reading every comparison in an unproved row by the shape that holds it (a scratch walk of all 237 sources' ASTs) left
+one more uncounted shape after batch 70: a loop's test, which chooses how many times the body runs. A `while`,
+`do ... while` or `for` test is now a branch (`while index < lines.length`), and an `&&` or `||` that is the whole test
+is not counted a second time. A literal test (`while (true)`) is not a branch: the loop ends only through its own `if`s,
+already counted. `verify/landing_test.cjs` failed first.
+
+On main `86bcb6b1` this adds 13 branches and retires 5 records that had named markdown loop tests as `&&` branches.
+Each is recorded: 7 markdown parsing loops (the existing reason), the mock reply's chunks, the seed script's batches,
+and 4 iterations over a list or range in order (the tour's stops, the meter's month intervals, a history snapshot's
+storage chunks), which choose no more than a `for ... of` does. 1,130 shell branches, 0 open.
+
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 
 Five shells compared `Number(content-length)` with a literal: accounts 2,048 bytes (sign-in and roles), issues 32 KiB,

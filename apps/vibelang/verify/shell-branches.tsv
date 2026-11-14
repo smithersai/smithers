@@ -5,6 +5,7 @@ scripts/mythical-seed-program.vibe	entriesOf	line.trim() === ""	Script tooling (
 scripts/mythical-seed-program.vibe	log/callback	line === ""	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/mythical-seed-program.vibe	log/callback	Number(status) !== 0	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/mythical-seed-program.vibe	main	refused.length > 0	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/mythical-seed-program.vibe	titlesOf	for start < ids.length	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/wiki.vibe	generate	?? { index: "Home", rulings: "Rulings", roadmap: "Roadmap", decisions: "Decisions", "designs/index": "Designs" }[id]	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/wiki.vibe	generate	?? label	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
 scripts/wiki.vibe	generate	file === "decisions.md"	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
@@ -61,6 +62,7 @@ src/core/flows.vibe	say	words === ""	Emptiness: nothing to say or read
 src/core/flows.vibe	stoppedBy	?? Option.getOrUndefined(last)?.type	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/flows.vibe	toured	value outcome === "ended"	Observation: one comparison of a field with a literal, empty text or another field, passed whole to a proved function, which decides on it (batch 70)
 src/core/flows.vibe	walk	!(Continuation.firstTourVisit(visit) && restored !== null && restored.target !== "") && !(try narrateLine(tour, stop.subtitle, visit))	Variant: a stop is narrated unless the walk resumes at a restored target (firstTourVisit is proved); narrateLine answers whether it was said
+src/core/flows.vibe	walk	while step <= WALKTHROUGH.length	Iteration: walks every index of a list or range in order, as a `for ... of` does (the tour's stops, the meter's month intervals, a snapshot's chunks); each step's choices are their own branches or proved calls (batch 71)
 src/core/flows.vibe	walk/callback	saved === null || saved.paused	Variant dispatch on the tour control (seek, pause) and the saved state
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	?? person.kind	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/IssuesFactory.vibe	fixtureHost/perform/callback	?? person.kind	Mock mode (VL-13): the forced mock backend, not a product decision
@@ -122,6 +124,7 @@ src/core/MockFactory.vibe	mockFactoryFor/callback/wikiForPerson/callback	value p
 src/core/MockFactory.vibe	mockFactoryFor/callback/wikiForPerson/callback/callback	person.agent === true	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted	|| prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it."	Mock mode (VL-13): the forced mock backend, not a product decision
 src/core/MockFactory.vibe	scripted	completed === 3	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	scripted	for index < pieces.length	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted	page !== undefined && /\bdraft\b/i.test(prompt)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted	prompt === "Split #38 into three children, linked under it."	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
 src/core/MockFactory.vibe	scripted	prompt.startsWith("File an issue:")	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
@@ -149,6 +152,7 @@ src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Host boundary: wh
 src/core/sandboxHost.vibe	makeSandboxHost/run	admitted.type === "receipt"	Variant dispatch on admit's answer (a stored receipt or a pending operation), which the proved replayAnswer and freshAdmission decide
 src/core/sandboxHost.vibe	receiptReason	?? receipt.reason	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/sandboxMeter.vibe	meter	?? buckets[String(boundary)]	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/core/sandboxMeter.vibe	meter	while cursor < high	Iteration: walks every index of a list or range in order, as a `for ... of` does (the tour's stops, the meter's month intervals, a snapshot's chunks); each step's choices are their own branches or proved calls (batch 71)
 src/core/sandboxMeter.vibe	snapshotOf	?? box?.id	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/core/sandboxMeter.vibe	snapshotOf	box?.running	Forwards the found sandbox's running flag from the proved ledger (applySandbox); no sandbox for the conversation is stopped
 src/core/sandboxMeter.vibe	snapshotOf/callback	find entry.conversation === conversation	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -670,11 +674,6 @@ src/web/markdown.vibe	blocks	fence	Markdown parsing: regexp-driven (regexp.ts); 
 src/web/markdown.vibe	blocks/flushProse	joined !== ""	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	!item || /^[0-9]/.test(lines[index]!) !== ordered	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	?? lines[index + 1]	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
-src/web/markdown.vibe	compile	&& index < lines.length && !lines[index]!.startsWith("```")	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
-src/web/markdown.vibe	compile	&& index < lines.length && /^ +\S/.test(lines[index]!)	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
-src/web/markdown.vibe	compile	&& index < lines.length && lines[index]!.startsWith("> ")	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
-src/web/markdown.vibe	compile	&& index < lines.length && lines[index]!.startsWith("|")	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
-src/web/markdown.vibe	compile	&& index < lines.length && lines[index]!.trim() !== "" && !/^(?:#|```|\||- |[0-9]+\. |> )/.test(lines[index]!)	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	heading	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	line.startsWith("```")	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	line.startsWith("> ")	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
@@ -683,6 +682,13 @@ src/web/markdown.vibe	compile	line.trim() === ""	Markdown parsing: regexp-driven
 src/web/markdown.vibe	compile	list	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	ordered	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	compile	ruling	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
+src/web/markdown.vibe	compile	while index < lines.length	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
+src/web/markdown.vibe	compile	while index < lines.length	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
+src/web/markdown.vibe	compile	while index < lines.length && !lines[index]!.startsWith("```")	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
+src/web/markdown.vibe	compile	while index < lines.length && /^ +\S/.test(lines[index]!)	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
+src/web/markdown.vibe	compile	while index < lines.length && lines[index]!.startsWith("> ")	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
+src/web/markdown.vibe	compile	while index < lines.length && lines[index]!.startsWith("|")	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
+src/web/markdown.vibe	compile	while index < lines.length && lines[index]!.trim() !== "" && !/^(?:#|```|\||- |[0-9]+\. |> )/.test(lines[index]!)	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	render/draw	item.href	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	render/draw	item.id	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
 src/web/markdown.vibe	render/draw	item.tag === "pre"	Markdown parsing: regexp-driven (regexp.ts); every node holds text, never markup (0018 markdown rows)
@@ -888,6 +894,8 @@ worker/HistoryActions.vibe	intentOf	switch invocation.kind	Translation: dispatch
 worker/HistoryActions.vibe	poll	switch invocation.kind	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 worker/HistoryExport.vibe	exporterOf	?? setting	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 worker/HistoryObject.vibe	publisher/continueHere	value intent.flow === Publish._tag	Variant dispatch: a durable flow's branch on its payload variant or a step's answer; each step's own decision is proved (batch 70)
+worker/HistoryObject.vibe	storeOver/seed	for at < keys.length	Iteration: walks every index of a list or range in order, as a `for ... of` does (the tour's stops, the meter's month intervals, a snapshot's chunks); each step's choices are their own branches or proved calls (batch 71)
+worker/HistoryObject.vibe	storeOver/seed	for start < json.length	Iteration: walks every index of a list or range in order, as a `for ... of` does (the tour's stops, the meter's month intervals, a snapshot's chunks); each step's choices are their own branches or proved calls (batch 71)
 worker/HistoryObject.vibe	write/callback	name === "export"	Variant dispatch on the history write's name; each write's own decision is proved in the history modules
 worker/HistoryObject.vibe	write/callback	name === "fold"	Variant dispatch on the history write's name; each write's own decision is proved in the history modules
 worker/HistoryObject.vibe	write/callback	name === "note"	Variant dispatch on the history write's name; each write's own decision is proved in the history modules

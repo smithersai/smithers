@@ -548,6 +548,7 @@ function inventorySource(file, source) {
     operands: (kind === '??' ? [tested] : operands(tested)).map(operand => ({ calls: calledNames(operand), flag: flagName(operand), neutral: kind !== '??' && neutral(operand),
       compared: operand.type === 'BinaryExpression' && ['===', '!==', '<', '>', '<=', '>='].includes(operand.operator)
         ? (operand.right.type === 'Literal' ? flagName(operand.left) : operand.left.type === 'Literal' ? flagName(operand.right) : undefined) : undefined })) });
+  const LOOPS = new Set(['WhileStatement', 'DoWhileStatement', 'ForStatement']);
   const COMPARISONS = new Set(['===', '!==', '==', '!=', '<', '>', '<=', '>=']);
   // Where a value goes: an argument, an array element, an object property, a `const`, an assignment, or a return.
   const slot = (node, parent) => ((parent?.type === 'CallExpression' || parent?.type === 'NewExpression') && parent.arguments.includes(node) ? 'passed'
@@ -567,13 +568,18 @@ function inventorySource(file, source) {
       && ['filter', 'find', 'findIndex', 'findLast', 'some', 'every'].includes(parent.callee.property?.name)
       && ['BinaryExpression', 'LogicalExpression', 'UnaryExpression', 'CallExpression'].includes(node.body?.type) ? node.body : undefined;
     // The tested expression of each choice: an `if` or conditional test, a `switch` discriminant, the left side of a
-    // `??` (what shows when it is absent), and an `&&` or `||` used as a value rather than as a test (`ok && h.div(...)`).
-    const tested = predicate ?? ((node.type === 'IfStatement' || node.type === 'ConditionalExpression') ? node.test
+    // `??` (what shows when it is absent), an `&&` or `||` used as a value rather than as a test (`ok && h.div(...)`),
+    // and a loop's test (how many times its body runs, batch 71).
+    // A literal test (`while (true)`) leaves the loop only through its own `if`s, already branches.
+    const loop = LOOPS.has(node.type) && node.test && node.test.type !== 'Literal' ? node.test : undefined;
+    const tested = predicate ?? loop ?? ((node.type === 'IfStatement' || node.type === 'ConditionalExpression') ? node.test
       : node.type === 'SwitchStatement' ? node.discriminant
       : node.type === 'LogicalExpression' && node.operator === '??' ? node.left
-      : node.type === 'LogicalExpression' && !['LogicalExpression', 'UnaryExpression', 'IfStatement'].includes(parent?.type) && !(parent?.type === 'ConditionalExpression' && parent.test === node) ? node
+      : node.type === 'LogicalExpression' && !['LogicalExpression', 'UnaryExpression', 'IfStatement'].includes(parent?.type) && !(parent?.type === 'ConditionalExpression' && parent.test === node)
+        && !(LOOPS.has(parent?.type) && parent.test === node) ? node
       : undefined);
-    const kind = node.type === 'SwitchStatement' ? 'switch' : node.type === 'LogicalExpression' ? node.operator : predicate ? parent.callee.property.name : 'if';
+    const kind = node.type === 'SwitchStatement' ? 'switch' : node.type === 'LogicalExpression' ? node.operator : predicate ? parent.callee.property.name
+      : loop ? (node.type === 'ForStatement' ? 'for' : 'while') : 'if';
     if (owner && tested?.range && !predicate) {
       owner.branches.push(branchOf(node, kind, tested));
     }

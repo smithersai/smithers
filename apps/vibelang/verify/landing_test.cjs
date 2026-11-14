@@ -117,6 +117,11 @@ test('a new branch in a shell row is refused until it is proved or recorded with
     + 'export function h(b: boolean) {\n  return b\n}\nexport const lt = (a: number, b: number) => a < b\n';
   assert.deepEqual(shellBranches(inventorySource(fixture, values)).map(branch => branch.test),
     ['value m.n === 0', 'value m.i === 1', 'value !m.ok', 'find x === m.i', 'value x > m.n', 'value a < b']);
+  // A loop's test chooses how many times its body runs (batch 71): a `while`, a `do ... while` and a `for` test, each
+  // one branch, its `&&` not counted twice.
+  const loops = '// Fixture.\nexport function l(xs: number[], n: number) {\n  let i = 0\n  while (i < n && xs[i] !== 0) i++\n'
+    + '  for (let j = 0; j < n; j++) i++\n  do {\n    i--\n  } while (i > 9)\n  for (;;) break\n  while (true) break\n  return i\n}\n';
+  assert.deepEqual(shellBranches(inventorySource(fixture, loops)).map(branch => branch.test), ['while i < n && xs[i] !== 0', 'for j < n', 'while i > 9']);
   // A recorded value branch lands; its record names the kind before the text.
   const valueRecord = 'worker/landingFixture.vibe\tlt\tvalue a < b\tOpen: the fixture order\n';
   assert.deepEqual(branchFacts(inventorySource(fixture, 'export const lt = (a: number, b: number) => a < b\n'), valueRecord),
