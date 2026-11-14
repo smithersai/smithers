@@ -35,6 +35,10 @@ export const test = base.extend<{ sourceCoverage: void }>({
         if (map.value === null) return null
         return { ...script, sourceMap: map.value }
       }))).filter((entry) => entry !== null)
+      // A function V8 ran without block counters reports only its call count; merged with other tests' block
+      // coverage its branch evidence is dropped (@bcoe/v8-coverage), so a branch it took would read as never taken.
+      const lost = entries.flatMap((entry) => entry.functions.filter((fn) => !fn.isBlockCoverage && fn.ranges[0]!.count > 0).map(() => entry.url))
+      if (lost.length > 0) throw new Error(`Block coverage lost for ${lost.length} executed functions in ${new Set(lost).size} scripts, first ${lost[0]}`)
       const directory = info.outputPath("coverage")
       await mkdir(directory, { recursive: true })
       const path = info.outputPath("coverage", "chromium.json")
