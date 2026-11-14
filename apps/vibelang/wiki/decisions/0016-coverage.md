@@ -639,6 +639,13 @@ control): a tour control before the tour's first step is driven. The page shows 
 is on screen, and a Pause during `held-tour-step`'s held first step waits for the room's lock and reads the driven step
 (`e2e/core-tour-race.spec.ts`, 12/12 in `s11tour1`, the `?? 0` arm still 0). Stays, no browser input.
 
+`src/core/issueFixtureDecision.vibe` `fixtureLogin` (line 75, both arms) and `fixtureErrorReason` (line 54, four arms)
+never run in the page. `IssuesFactory.vibe` `personOf` calls `fixtureLogin` only for a role-string identity, the unit
+tests' `makeIssueFactory()` default; the page's `MockFactory` always passes the signed-in person as a function.
+`fixtureErrorReason` maps an engine failure that is not an `IssueFailure`: the page's memory engine never answers
+`StoreUnavailable`, and the page never reuses an issue key with a changed request (`ExecutionIdentityConflict`). Both
+stay, unit-tested, no browser input (session 11).
+
 ### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
 
 **History fallbacks.** Five `historyView.vibe` fallbacks are for data the history never holds. The proved `decide`
