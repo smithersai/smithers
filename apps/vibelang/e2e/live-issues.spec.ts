@@ -35,8 +35,9 @@ test("a new issue whose save was lost comes back after a reload, and Retry saves
   await page.getByRole("textbox", { name: "Title", exact: true }).fill(title)
   await page.getByRole("textbox", { name: "Summary", exact: true }).fill("Body")
   await page.locator(".sui-issue-form-actions").getByRole("button", { name: "New issue", exact: true }).click()
-  await expect(page.locator(".sui-issue-form-error")).toContainText("Couldn't save. Retry.")
-  await expect(page).toHaveURL(/[?&]resume-op=new&resume-key=[^&]+$/)
+  // The save happens and its answer is lost: the page hears of it only after the write, as for a retry.
+  await expect(page.locator(".sui-issue-form-error")).toContainText("Couldn't save. Retry.", settled)
+  await expect(page).toHaveURL(/[?&]resume-op=new&resume-key=[^&]+$/, settled)
 
   await page.reload()
   await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveValue(title)

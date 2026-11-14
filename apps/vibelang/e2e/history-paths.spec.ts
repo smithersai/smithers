@@ -145,7 +145,7 @@ test.describe("the history page's refusals and epic page", () => {
     await expect(amend.getByRole("alert")).toHaveText("Too long.")
   })
 
-  test("exports again after a note and a plan, over what it published before", async ({ page }) => {
+  test("exports the same history twice to the same commit", async ({ page }) => {
     await open(page)
     const exported = page.getByTitle("Exported")
     await page.getByRole("button", { name: "Export", exact: true }).click()
@@ -154,6 +154,15 @@ test.describe("the history page's refusals and epic page", () => {
     await page.getByRole("button", { name: "Export", exact: true }).click()
     await expect(page.getByRole("alert")).toHaveCount(0)
     await expect(exported).toHaveText(first!)
+  })
+
+  // Split from the export above: both in one test outran the test's budget under the full gate's load.
+  test("exports again after a note and a plan, over what it published before", async ({ page }) => {
+    await open(page)
+    const exported = page.getByTitle("Exported")
+    await page.getByRole("button", { name: "Export", exact: true }).click()
+    await expect(exported).toHaveText(/^mythical \S{7}$/)
+    const first = await exported.textContent()
 
     await page.getByRole("button", { name: /The compiler/ }).click()
     await page.getByRole("list", { name: "The compiler" }).getByRole("link").first().click()

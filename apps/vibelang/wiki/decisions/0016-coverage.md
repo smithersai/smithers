@@ -458,6 +458,20 @@ terminal. Not a product bug.
 | --- | --- | --- |
 | The terminal's command box, after the sandbox read `Running`. | `fault=sandbox-clock` broke the meter's clock after the sandbox started, for the next metered call of any kind. Under load the page's sandbox status read came before the typed `pwd`, failed closed, and stopped the sandbox, so the command box never came back. | The fault breaks the clock for the first command only (`test/support/FaultyFactory.vibe` `sandboxCommand`), the call the journey types. `--repeat-each 5` in all three projects passes. |
 
+### Three journeys that outran their budget under load (vl-coverage-core, session 9, 2026-11-13)
+
+The full browser gate `s8full1` (main `1ec1ba13`) failed three journeys that passed in a focused rerun. Not product bugs.
+
+| Journey | What it waited on | Fix |
+| --- | --- | --- |
+| `e2e/actions.spec.ts` "all five roles see only commands they may run" (48 s, dark and light) | Five page loads in one 30-second test. | One test per role, each loading its own page. |
+| `e2e/history-paths.spec.ts` "exports again after a note and a plan" (39 s, dark) | Three exports, a note and a plan in one test. Each Export holds the page's main thread in one block: 2.3 s to 5.1 s on an unloaded 4-vCPU box (s9exp2), so a click during it never returns. Chromium's profile of a 3.0 s export (s9exp3) puts 1.1 s in `exportDecision.vibe` `lastFold`, which `export.vibe` `planned` calls through `treeSource` twice per commit over all real commits, and most of the rest in Effect's run loop between WebCrypto digests, which resolve as microtasks and never yield to input. | The unchanged re-export is its own journey, so each test exports at most twice. The freeze is a product bug in `src/history`, posted to its owner, vl-coverage, on the board (2026-11-14 03:05Z) with a one-pass fix. |
+| `e2e/live-issues.spec.ts` "a new issue whose save was lost comes back" (17.5 s, dark) | The lost save's error and resume address, with the default 5-second wait. The Worker writes first and only then loses the answer, so both wait on the write. | Both waits use `settled` (20 s), the bound the file already gives the retry's write. |
+
+A load repro (2 cores, 6 workers, `s9flaky2`, `s9flaky3`) reproduced the live-issues failure before the fix. With `--repeat-each`, the live-issues
+VIP journey fails on its second repeat: its key, `label + "-4"`, is fixed so the recorded GitHub replay matches, and a
+repeat finds the first run's write. One gate pass runs it once.
+
 ### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
 
 **History fallbacks.** Five `historyView.vibe` fallbacks are for data the history never holds. The proved `decide`

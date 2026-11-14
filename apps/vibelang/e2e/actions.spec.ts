@@ -187,16 +187,17 @@ test("a plan the sequencer refuses says why, and one inserted before a commit is
 
 test.describe("local real-engine action faults and role views", () => {
   test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_4511 ?? process.env.E2E_PORT ?? 4173}` })
-  test("all five roles see only commands they may run", async ({ page }) => {
-    for (const role of ["viewer", "new", "community", "contributor", "maintainer"]) {
+  // One page load per role: five in one test outran the test's budget under the full gate's load.
+  for (const role of ["viewer", "new", "community", "contributor", "maintainer"]) {
+    test(`a ${role} sees only commands they may run`, async ({ page }) => {
       await page.goto(`/e2e/actions-runtime/index.html?role=${role}`)
       await page.keyboard.press("ControlOrMeta+k")
       const input = page.getByRole("dialog").getByRole("textbox", { name: "Message", exact: true })
       await input.fill("/")
       await expect(page.getByRole("option", { name: "/tour Explore VibeLang", exact: true })).toBeVisible()
       await expect(page.getByRole("option", { name: "/post Ask the agent", exact: true })).toHaveCount(role === "contributor" || role === "maintainer" ? 1 : 0)
-    }
-  })
+    })
+  }
   test("a faulty service leaves a failed trace, and Re-run opens a new run", async ({ page }) => {
     await page.goto("/e2e/actions-runtime/index.html?role=contributor&fault=fail")
     await page.keyboard.press("ControlOrMeta+k")
