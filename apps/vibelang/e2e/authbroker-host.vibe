@@ -11,10 +11,24 @@ import { serveApi, serveAuthBroker, serveLiveIssues, type Served } from "../test
 // gateway, account and machine objects on an in-memory Container (core-live.spec.ts).
 NodeRuntime.runMain(scoped(effect {
   const site = `http://127.0.0.1:${try Config.String("E2E_PORT")}`
+  /** A live site whose API Worker has sign-in configured and runs the production sandbox objects; answers its origin. */
+  const coreSite = effect () => {
+    // The site's origin is the Worker's VIBELANG_ORIGIN, so the site is served first and reaches the Worker once it runs.
+    let worker: Served | undefined
+    const served = try serveLiveSite({ fetch: (request: Request) => worker!.fetch(request) } as Served, site)
+    worker = try acquireRelease(serveApi({
+      VIBELANG_ORIGIN: served.origin, VIBELANG_INITIAL_MAINTAINER_ID: "1",
+      GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+      SESSION_SECRET: "fixture-only-signing-secret-32-chars",
+      SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    }), api => promise(() => api.dispose()))
+    return served.origin
+  }
   const origins: Record<string, string> = {}
   const live: Record<string, string> = {}
   const replies: Record<string, string> = {}
   const core: Record<string, string> = {}
+  const alone: Record<string, string> = {}
   const markdown = try recordingPath("model-markdown")
   const recorded = try Effect.provide(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.exists(markdown)), NodeServices.layer)
   for (const project of ["dark", "light", "phone"]) {
@@ -27,18 +41,14 @@ NodeRuntime.runMain(scoped(effect {
       const replying = try acquireRelease(serveApi(provider.bindings), api => promise(() => api.dispose()))
       replies[project] = (try serveLiveSite(replying, site)).origin
     }
-    // The site's origin is the Worker's VIBELANG_ORIGIN, so the site is served first and reaches the Worker once it runs.
-    let worker: Served | undefined
-    const coreSite = try serveLiveSite({ fetch: (request: Request) => worker!.fetch(request) } as Served, site)
-    worker = try acquireRelease(serveApi({
-      VIBELANG_ORIGIN: coreSite.origin, VIBELANG_INITIAL_MAINTAINER_ID: "1",
-      GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
-      SESSION_SECRET: "fixture-only-signing-secret-32-chars",
-      SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-    }), api => promise(() => api.dispose()))
-    core[project] = coreSite.origin
+    core[project] = try coreSite()
+    // core-live.spec.ts gets sites of its own: every person on a site shares its one `home` conversation, so another
+    // spec's Tour took over core-live's page mid-journey, and core-live's health fault sent the other specs' pages
+    // to the mock (decision 0016, "The core live site's neighbours").
+    alone[project] = try coreSite()
   }
   try Console.log("LIVE_CORE_READY " + JSON.stringify(core))
+  try Console.log("LIVE_CORE_ALONE_READY " + JSON.stringify(alone))
   try Console.log("LIVE_REPLY_READY " + JSON.stringify({ prompt: MARKDOWN_PROMPT, origins: replies }))
   try Console.log("LIVE_ISSUES_READY " + JSON.stringify(live))
   try Console.log("AUTH_BROKER_READY " + JSON.stringify(origins))

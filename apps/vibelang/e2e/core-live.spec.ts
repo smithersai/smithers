@@ -2,9 +2,11 @@
 // Sandboxes in live mode (src/core/LiveFactory.vibe) on a live site whose API Worker has sign-in configured and runs
 // the production sandbox gateway, account and machine objects in workerd on an in-memory Container
 // (test/workerd/liveSandboxes.vibe, served by e2e/authbroker-host.vibe). A fault is the in-memory Container's own.
+// These sites are this spec's alone: a site's people share one conversation, and another spec's Tour there hid this
+// spec's composer mid-journey (decision 0016, "The core live site's neighbours").
 import { expect, test, type Page } from "./coverage"
 
-const origins: Record<string, string> = JSON.parse(process.env.LIVE_CORE_TEST_ORIGINS!)
+const origins: Record<string, string> = JSON.parse(process.env.LIVE_CORE_ALONE_TEST_ORIGINS!)
 
 /** A fixture session for person `id`, as the browser's cookie; returns the cookie for direct requests. */
 async function signIn(page: Page, origin: string, id: string, login: string, browser = true) {

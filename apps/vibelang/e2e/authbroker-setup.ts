@@ -1,5 +1,6 @@
 // Stays .ts: Playwright loads global setup modules by JS/TS extension only.
 import { spawn } from "node:child_process"
+import { appendFileSync } from "node:fs"
 
 /** Each browser project owns durable storage so roles and idempotency receipts cannot leak between projects. */
 export default async function setup() {
@@ -7,6 +8,9 @@ export default async function setup() {
     cwd: process.cwd(), detached: true, stdio: ["ignore", "pipe", "pipe"],
   })
   let output = ""
+  // E2E_HOST_LOG names a file that keeps the host's whole output, for a failure after it is ready (decision 0016).
+  const log = process.env.E2E_HOST_LOG
+  if (log) for (const stream of [host.stdout!, host.stderr!]) stream.on("data", chunk => appendFileSync(log, chunk))
   const stop = async () => {
     if (host.exitCode !== null) return
     const signal = (name: NodeJS.Signals) => {
@@ -33,6 +37,8 @@ export default async function setup() {
           process.env.LIVE_REPLY_TEST = output.match(/LIVE_REPLY_READY (\{[^\n]+\})/)![1]!
           // Then the signed-in live sites with the production sandbox objects (core-live.spec.ts).
           process.env.LIVE_CORE_TEST_ORIGINS = output.match(/LIVE_CORE_READY (\{[^\n]+\})/)![1]!
+          // And core-live.spec.ts's own, which no other spec shares.
+          process.env.LIVE_CORE_ALONE_TEST_ORIGINS = output.match(/LIVE_CORE_ALONE_READY (\{[^\n]+\})/)![1]!
           resolve(ready[1]!)
         }
       })

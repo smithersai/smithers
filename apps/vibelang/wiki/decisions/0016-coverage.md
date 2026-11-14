@@ -4844,3 +4844,17 @@ browser structure's (vl-coverage's tool), handed over on the board with the evid
 | `src/web/backend.vibe` | 12/13 | 12/13 | 1 |
 | `src/web/roleView.vibe` | 37/38 | 37/38 | 1 |
 | `src/web/sandboxView.vibe` | 59/60 | 59/60 | 1 |
+
+## The core live site's neighbours (vl-coverage-core, session 14, 2026-11-14)
+
+`e2e/core-live.spec.ts` failed in both of vl-coverage's session 39 gates (`core-live.spec.ts:151` dark on `7040782d`;
+`:48` light and `:151` dark on `f24b116f`, job `92c2d3a67489be29fc5d574e`). A focused repeat of the six specs that
+used the core live site (`s14/live1`: `--repeat-each 4`, 204 runs, 46 failed) showed why. Every person on a live site
+shares its one conversation (`home`, `worker/Api.vibe`), and each project had one core site for all six specs. On the
+failing page, live-actions.spec.ts's Tour run, started as the same maintainer, had taken over the conversation: the
+composer was hidden, so the second 40,000-character message was never sent (`toHaveCount(2)` read 1) or its `fill`
+timed out. core-live.spec.ts's own health fault (`/__fault/health?down=1`) also sent the other specs' page loads to
+the mock while it held. `e2e/authbroker-host.vibe` now serves core-live.spec.ts sites of its own
+(`LIVE_CORE_ALONE_TEST_ORIGINS`), one per project; the other five keep `LIVE_CORE_TEST_ORIGINS`. The repeat's other
+failures came from `--repeat-each` itself: copies of one journey ran at once as the same person on the same sandbox.
+
