@@ -10,6 +10,7 @@ import * as RulePolicy from "../src/internal/RulePolicy.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import { productionSourceRoots } from "../src/Planner.ts"
+import { causes } from "./helpers/AffectedExplain.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -76,16 +77,18 @@ it.each(["default", "closed", "network", "none"] as const)(
     expect(sibling.conservative).toBe(false)
     expect(sibling.targets.map((target) => target.label)).toEqual(policy === "none" ? ["//pkg:check"] : [])
     if (policy === "none") {
-      expect(sibling.targets[0]!.reasonDetails).toEqual(expect.arrayContaining([
+      expect(causes(sibling, sibling.targets[0]!.label)).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "package", label: "//pkg:check" })
       ]))
     }
     const declared = Affected.select(index, ["//..."], ["pkg/declared.txt"], { explain: true })
     expect(declared.targets).toHaveLength(1)
-    expect(declared.targets[0]!.reasonDetails).toEqual(expect.arrayContaining([
+    expect(causes(declared, declared.targets[0]!.label)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "declared-input", input: S.file("declared.txt") })
     ]))
-    expect(declared.targets[0]!.reasonDetails!.some((cause) => cause.kind === "package")).toBe(policy === "none")
+    expect(causes(declared, declared.targets[0]!.label).some((cause) => cause.kind === "package")).toBe(
+      policy === "none"
+    )
   }
 )
 
@@ -93,9 +96,9 @@ it.each(["none", "absent"] as const)("keeps package selection with a %s workspac
   const { index } = await fixture({
     check: S.Shell.Test({ shell: "true", data: [S.file("declared.txt")], sandbox: {} })
   }, mechanism)
-  expect(Affected.select(index, ["//..."], ["pkg/secret.txt"], { explain: true }).targets).toMatchObject([
-    { label: "//pkg:check", reasonDetails: [{ kind: "package" }] }
-  ])
+  const selected = Affected.select(index, ["//..."], ["pkg/secret.txt"], { explain: true })
+  expect(selected.targets).toEqual([{ label: "//pkg:check", sources: [0] }])
+  expect(causes(selected, "//pkg:check")).toMatchObject([{ kind: "package" }])
 })
 
 it.each(["enforced", "none", "absent"] as const)(
@@ -140,7 +143,7 @@ it("retains global, unknown, empty and uncacheable fallbacks under confinement",
   }
   const selected = Affected.select(index, ["//..."], ["pkg/secret.txt"], { explain: true })
   expect(selected.targets.map((target) => target.label).sort()).toEqual(["//pkg:empty", "//pkg:run"])
-  expect(selected.targets.find((target) => target.label === "//pkg:run")!.reasonDetails)
+  expect(causes(selected, "//pkg:run"))
     .toEqual(expect.arrayContaining([expect.objectContaining({ kind: "uncacheable" })]))
 })
 
@@ -296,19 +299,15 @@ export const Package = S.Package({ targets: {
     expect(result.exitCode, result.output + result.logs).toBe(0)
     const listed = JSON.parse(result.output)
     expect(listed.conservative).toBe(false)
-    expect(listed.targets).toEqual(
-      file === "pkg/secret.txt" ? [] : [{
-        label: "//pkg:check",
-        reasons: ["pkg/declared.txt"],
-        reasonDetails: [{
-          file: "pkg/declared.txt",
-          kind: "declared-input",
-          label: "//pkg:check",
-          rule: "Shell.Test",
-          input: S.file("declared.txt"),
-          dependencyPath: ["//pkg:check"]
-        }]
-      }]
+    const { changeSets, changes, edges, sources, targets } = listed
+    expect({ targets, sources, changeSets, changes, edges }).toEqual(
+      file === "pkg/secret.txt" ? { targets: [], sources: [], changeSets: [], changes: [], edges: {} } : {
+        targets: [{ label: "//pkg:check", sources: [0] }],
+        sources: [{ label: "//pkg:check", rule: "Shell.Test", changes: [0] }],
+        changeSets: [[0]],
+        changes: [{ file: "pkg/declared.txt", kind: "declared-input", input: S.file("declared.txt") }],
+        edges: {}
+      }
     )
   }
 })
@@ -350,9 +349,9 @@ it.each([
     ]
   })
   const path = "outDirs" in outputs && outputs.outDirs[0] === "//other" ? "other/input.txt" : "pkg/secret.txt"
-  expect(Affected.select(expanded, ["//pkg:build"], [path], { explain: true }).targets).toMatchObject([
-    { label: "//pkg:build", reasonDetails: [expect.objectContaining({ kind: "sandbox-input" })] }
-  ])
+  const explained = Affected.select(expanded, ["//pkg:build"], [path], { explain: true })
+  expect(explained.targets.map((target) => target.label)).toEqual(["//pkg:build"])
+  expect(causes(explained, "//pkg:build")).toEqual([expect.objectContaining({ kind: "sandbox-input" })])
 })
 
 it("keeps workspace cache and dependency-directory read grants", async () => {
@@ -559,7 +558,7 @@ it.each(["dangling", "loop"] as const)("retains an indirect-input cause for a %s
   await Fs.symlink(kind === "loop" ? "link" : "absent", Path.join(root, "pkg/link"), "dir")
   const selection = Affected.select(index, ["//pkg:check"], ["pkg/secret.txt"], { explain: true })
   expect(selection.targets).toHaveLength(1)
-  expect(selection.targets[0]!.reasonDetails).toEqual(expect.arrayContaining([
+  expect(causes(selection, selection.targets[0]!.label)).toEqual(expect.arrayContaining([
     expect.objectContaining({ kind: "indirect-input", input: S.file("link/declared.txt") })
   ]))
 })
@@ -571,10 +570,10 @@ it("reports a readable installation alias without calling it package ownership",
   await Fs.mkdir(Path.join(root, "shared"))
   await Fs.symlink("../shared", Path.join(root, "pkg/node_modules"), "dir")
   const selection = Affected.select(index, ["//pkg:check"], ["pkg/secret.txt"], { explain: true })
-  expect(selection.targets[0]!.reasonDetails).toEqual(expect.arrayContaining([
+  expect(causes(selection, selection.targets[0]!.label)).toEqual(expect.arrayContaining([
     expect.objectContaining({ kind: "indirect-input", readPath: "pkg/node_modules" })
   ]))
-  expect(selection.targets[0]!.reasonDetails!.some((cause) => cause.kind === "package")).toBe(false)
+  expect(causes(selection, selection.targets[0]!.label).some((cause) => cause.kind === "package")).toBe(false)
 })
 
 it("keeps a glob conservative when its scan prefix cannot be resolved", async () => {
@@ -582,7 +581,7 @@ it("keeps a glob conservative when its scan prefix cannot be resolved", async ()
   const { root, index } = await fixture({ check: S.Filegroup({ srcs: [input] }) })
   await Fs.symlink("cycle", Path.join(root, "pkg/cycle"), "dir")
   const selection = Affected.select(index, ["//pkg:check"], ["pkg/secret.txt"], { explain: true })
-  expect(selection.targets[0]!.reasonDetails).toEqual(expect.arrayContaining([
+  expect(causes(selection, selection.targets[0]!.label)).toEqual(expect.arrayContaining([
     expect.objectContaining({ kind: "indirect-input", input })
   ]))
 })
@@ -597,7 +596,7 @@ it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     await Fs.chmod(denied, 0)
     try {
       const selection = Affected.select(index, ["//pkg:check"], ["pkg/secret.txt"], { explain: true })
-      expect(selection.targets[0]!.reasonDetails).toEqual(expect.arrayContaining([
+      expect(causes(selection, selection.targets[0]!.label)).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "indirect-input", input })
       ]))
     } finally {
@@ -629,7 +628,7 @@ it("keeps a glob conservative when the bounded alias survey is exhausted", async
     ))
   }
   const selection = Affected.select(index, ["//pkg:check"], ["pkg/secret.txt"], { explain: true })
-  expect(selection.targets[0]!.reasonDetails).toEqual(expect.arrayContaining([
+  expect(causes(selection, selection.targets[0]!.label)).toEqual(expect.arrayContaining([
     expect.objectContaining({ kind: "indirect-input", input })
   ]))
 })
@@ -649,7 +648,7 @@ it("retains implementation directories and their descendants as global inputs", 
   for (const path of [directory, directory + "/Affected.ts"]) {
     const selection = Affected.select(real, ["//pkg:check"], [path], { explain: true })
     expect(selection.conservative).toBe(true)
-    expect(selection.targets[0]!.reasonDetails).toContainEqual({ file: path, kind: "global-input" })
+    expect(causes(selection, selection.targets[0]!.label)).toContainEqual({ file: path, kind: "global-input" })
   }
   expect(Affected.select(real, ["//pkg:check"], ["pkg/secret.txt"]).targets).toEqual([])
 })
@@ -665,7 +664,7 @@ it("selects a confined script by the script's declared file identity", async () 
   expect(after.nodes.get("//pkg:check")!.keyPreview).not.toBe(before.nodes.get("//pkg:check")!.keyPreview)
   const selected = Affected.select(index, ["//pkg:check"], ["pkg/check.mjs"], { explain: true })
   expect(selected.targets.map((row) => row.label)).toEqual(["//pkg:check"])
-  expect(selected.targets[0]!.reasonDetails).toEqual(expect.arrayContaining([
+  expect(causes(selected, selected.targets[0]!.label)).toEqual(expect.arrayContaining([
     expect.objectContaining({ kind: "declared-input", input: S.file("check.mjs") })
   ]))
   expect(Affected.select(index, ["//pkg:check"], ["pkg/secret.txt"]).targets).toEqual([])
@@ -688,6 +687,6 @@ it("propagates a confined bin producer's declared input without selecting unrela
   expect(after.nodes.get("//pkg:check")!.keyPreview).not.toBe(before.nodes.get("//pkg:check")!.keyPreview)
   const selected = Affected.select(index, ["//pkg:check"], ["pkg/declared.txt"], { explain: true })
   expect(selected.targets.map((row) => row.label)).toEqual(["//pkg:check"])
-  expect(selected.targets[0]!.reasonDetails!.some((cause) => cause.kind === "package")).toBe(false)
+  expect(causes(selected, selected.targets[0]!.label).some((cause) => cause.kind === "package")).toBe(false)
   expect(Affected.select(index, ["//pkg:check"], ["pkg/secret.txt"]).targets).toEqual([])
 })

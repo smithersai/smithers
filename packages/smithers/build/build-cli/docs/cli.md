@@ -682,7 +682,59 @@ complete inputs. Lockfiles select the graph: `pnpm-lock.yaml`,
 `flake.lock`, `go.sum`, and names ending in `.lock`. Other filenames containing
 `lock`, such as `clock.ts`, follow their declared inputs.
 
-`--list` adds `reasonDetails` beside each target's changed-path `reasons`.
+`--list` returns a factored explanation whose size grows with the selection,
+not with roots times changed files. `changes` holds each distinct (file, cause)
+record once, sorted by file, then `kind`, then input: `kind` is
+`declared-input`, `ambient-input`, `uncacheable`, `package`, `empty`,
+`sandbox-input`, or `indirect-input`, with `input` for a declared input and
+`readPath` for a readable directory. `changeSets` holds each distinct set of
+change indexes once, ascending; a source gets one set per cause, so targets
+with the same cause over the same files share a set. `sources` holds one entry
+per directly affected target, with its `label`, `rule`, and `changes`,
+ascending indexes into `changeSets`. Each selected target lists `sources`,
+ascending indexes of the sources whose change reaches it. `edges` maps every
+target reachable from a source to its direct dependents inside the selected
+closure, sorted, each edge once; a target with no dependents has no key. Three
+tests in one package, where `own/0.txt` and two sources changed:
+
+```json
+{
+  "pattern": "//...",
+  "files": ["cases/own/0.txt", "cases/src/a.ts", "cases/src/b.ts"],
+  "conservative": false,
+  "globalInputs": [],
+  "globalCauses": [],
+  "targets": [
+    { "label": "//cases:t0", "sources": [0] },
+    { "label": "//cases:t1", "sources": [1] },
+    { "label": "//cases:t2", "sources": [2] }
+  ],
+  "sources": [
+    { "label": "//cases:t0", "rule": "Shell.Test", "changes": [0, 1] },
+    { "label": "//cases:t1", "rule": "Shell.Test", "changes": [1] },
+    { "label": "//cases:t2", "rule": "Shell.Test", "changes": [1] }
+  ],
+  "changeSets": [[0], [1, 2, 3]],
+  "changes": [
+    { "file": "cases/own/0.txt", "kind": "declared-input", "input": { "_tag": "File", "path": "own/0.txt" } },
+    { "file": "cases/own/0.txt", "kind": "package" },
+    { "file": "cases/src/a.ts", "kind": "package" },
+    { "file": "cases/src/b.ts", "kind": "package" }
+  ],
+  "edges": {}
+}
+```
+
+A target's changed-path reasons are the files of `changes[i]` for every `i` in
+`changeSets[s]`, for every `s` in each of its sources' `changes`, and a route
+from a source to a target is any path through `edges`. A gate can therefore ask
+exactly whether some cause reaches a target without passing through a given set
+of labels, which a single route per source could not answer. A conservative
+selection names each global or unowned file once in `globalCauses`
+(`global-input` or `unknown-input`, sorted by file), lists targets by `label`
+alone, and leaves `sources`, `changeSets`, `changes`, and `edges` empty.
+Without `--list`, each target keeps its changed-path `reasons`.
+
 Native `Shell.Build`, `Shell.Test`, and `Shell.Run` omit the `package`
 cause when every kind retains confinement and the workspace explicitly declares
 a default sandbox mechanism other than `S.Sandbox.None()`. A missing host

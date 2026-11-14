@@ -119,11 +119,13 @@ const globalPath = (path: string): boolean =>
 
 const ambientInput = (input: Input.Declared): boolean => input._tag === "GitDiff" || input._tag === "PnpmWorkspace"
 
-interface ReasonDetail {
+/** One cause by which one changed file directly affects one source target.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Change {
   readonly file: string
   readonly kind:
-    | "global-input"
-    | "unknown-input"
     | "ambient-input"
     | "uncacheable"
     | "sandbox-input"
@@ -131,11 +133,84 @@ interface ReasonDetail {
     | "package"
     | "declared-input"
     | "empty"
-  readonly label?: string
-  readonly rule?: string
+  /** The declared input, for `declared-input`, `ambient-input` and an input's `indirect-input`. */
   readonly input?: Input.Declared
-  readonly dependencyPath?: ReadonlyArray<string>
+  /** The readable directory, for `sandbox-input` and a directory's `indirect-input`. */
   readonly readPath?: string
+}
+
+/**
+ * A target that a changed file affects directly. `changes` holds ascending
+ * indexes into the selection's `changeSets`; the union of those sets is every
+ * (file, cause) pair that affects this target.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Source {
+  readonly label: string
+  readonly rule: string
+  readonly changes: ReadonlyArray<number>
+}
+
+/** Why every root was selected when a global or unowned file changed.
+ * @category models
+ * @since 1.0.0
+ */
+export interface GlobalCause {
+  readonly file: string
+  readonly kind: "global-input" | "unknown-input"
+}
+
+/** A plain selection: each selected root with every changed file that reaches it.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Selection {
+  readonly pattern: string
+  readonly files: ReadonlyArray<string>
+  readonly conservative: boolean
+  readonly globalInputs: ReadonlyArray<string>
+  readonly targets: ReadonlyArray<{ readonly label: string; readonly reasons: ReadonlyArray<string> }>
+}
+
+/**
+ * An explained selection, factored so its size grows with the selection, not
+ * with roots times changed files. Each distinct change record is stored once
+ * in `changes`, and each distinct set of them once in `changeSets`, one set
+ * per cause of a source. A root's reasons are the files of
+ * `changes[i]` for every `i` in `changeSets[s]`, for every `s` in each of its
+ * sources' `changes`; a route from a source to a root is a path through
+ * `edges`, which maps each target reachable from a source to its direct
+ * dependents inside the selected closure.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ExplainedSelection {
+  readonly pattern: string
+  readonly files: ReadonlyArray<string>
+  readonly conservative: boolean
+  readonly globalInputs: ReadonlyArray<string>
+  /** Conservative selections only: one cause per global or unowned file, sorted by file. */
+  readonly globalCauses: ReadonlyArray<GlobalCause>
+  /** `sources` holds ascending indexes into the top-level `sources`; absent when conservative. */
+  readonly targets: ReadonlyArray<{ readonly label: string; readonly sources?: ReadonlyArray<number> }>
+  readonly sources: ReadonlyArray<Source>
+  /** Each distinct set of change indexes, ascending, in first use walking `sources`. */
+  readonly changeSets: ReadonlyArray<ReadonlyArray<number>>
+  /** Each distinct change record, sorted by file, kind, then input and read path. */
+  readonly changes: ReadonlyArray<Change>
+  readonly edges: Readonly<Record<string, ReadonlyArray<string>>>
+}
+
+/** Options for {@link select}.
+ * @category models
+ * @since 1.0.0
+ */
+export interface SelectOptions {
+  readonly explain?: boolean
+  readonly cacheDirectory?: string
 }
 
 const compileInput = (
@@ -175,15 +250,34 @@ const compileInput = (
 
 /** Selects roots, among the union of the patterns, whose declarations, package inputs or dependencies may have changed.
  * Every uncacheable target, and each target depending on one, is selected by any change.
+ * With `explain`, returns the factored {@link ExplainedSelection} instead of per-root reasons.
  * @category querying
  * @since 0.1.0
  */
-export const select = (
+export function select(
   index: PackageIndex,
   patterns: ReadonlyArray<string>,
   paths: ReadonlyArray<string>,
-  options: { readonly explain?: boolean; readonly cacheDirectory?: string } = {}
-) => {
+  options: SelectOptions & { readonly explain: true }
+): ExplainedSelection
+export function select(
+  index: PackageIndex,
+  patterns: ReadonlyArray<string>,
+  paths: ReadonlyArray<string>,
+  options?: SelectOptions & { readonly explain?: false }
+): Selection
+export function select(
+  index: PackageIndex,
+  patterns: ReadonlyArray<string>,
+  paths: ReadonlyArray<string>,
+  options?: SelectOptions
+): Selection | ExplainedSelection
+export function select(
+  index: PackageIndex,
+  patterns: ReadonlyArray<string>,
+  paths: ReadonlyArray<string>,
+  options: SelectOptions = {}
+): Selection | ExplainedSelection {
   const normalized = [
     ...new Set(paths.map((path) => {
       const value = path.replaceAll("\\", "/").replace(/^\.\//, "")
@@ -198,7 +292,6 @@ export const select = (
     ...new Map(patterns.flatMap((pattern) => index.resolve(pattern)).map((row) => [row.label, row])).values()
   ]
   const reasons = new Map<string, Set<string>>()
-  const reasonDetails = new Map<Target.AnyTarget, Array<ReasonDetail>>()
   const labels = new Map(rows.map((row) => [row.target, row.label]))
   let privateCounter = 0
   const labelOf = (target: Target.AnyTarget): string => {
@@ -365,22 +458,53 @@ export const select = (
   const ownership = normalized.length === 0 ? [] : rows.map((row) => entry(row.target))
   const unknown = normalized.filter((path) => !ownership.some((value) => value.ownsPath(path)))
   const conservative = global.length + unknown.length > 0
-  if (conservative) {
-    for (const row of selected) {
-      reasons.set(row.label, new Set([...global, ...unknown]))
-      if (options.explain) {
-        reasonDetails.set(
-          row.target,
-          [...new Set([...global, ...unknown])].sort().map((file) => ({
-            file,
-            kind: global.includes(file) ? "global-input" : "unknown-input"
-          }))
-        )
-      }
+  const globalInputs = [...new Set([...global, ...unknown])].sort()
+  const envelope = { pattern: patterns.join(" "), files: normalized, conservative, globalInputs }
+  // Explained, a conservative selection names its causes once, not once per root.
+  if (conservative && options.explain) {
+    const globals = new Set(global)
+    return {
+      ...envelope,
+      globalCauses: globalInputs.map((file) => ({
+        file,
+        kind: globals.has(file) ? "global-input" as const : "unknown-input" as const
+      })),
+      targets: selected.map((row) => ({ label: row.label })),
+      sources: [],
+      changeSets: [],
+      changes: [],
+      edges: {}
     }
+  }
+  const sources: Array<{ readonly target: Target.AnyTarget; readonly changes: ReadonlyArray<number> }> = []
+  const changeSets: Array<ReadonlyArray<number>> = []
+  const changes: Array<Change> = []
+  const reached = new Map<Target.AnyTarget, Array<number>>()
+  const edges = new Map<string, ReadonlyArray<string>>()
+  if (conservative) {
+    for (const row of selected) reasons.set(row.label, new Set(globalInputs))
   } else if (normalized.length > 0) {
     const direct = new Map<Target.AnyTarget, (path: string) => boolean>()
-    const details = new Map<Target.AnyTarget, (file: string) => ReadonlyArray<ReasonDetail>>()
+    // A cause is a change record without its file: (kind, input, readPath).
+    // Each target's causes are interned once; a (cause, file) pair becomes an
+    // integer, so explaining allocates nothing per (source, file).
+    const causeIds = new Map<string, number>()
+    const causeOf: Array<{ readonly cause: Omit<Change, "file">; readonly key: string }> = []
+    const internCause = (cause: Omit<Change, "file">): number => {
+      const key = `${cause.kind}\0${cause.input === undefined ? "" : JSON.stringify(cause.input)}\0${
+        cause.readPath ?? ""
+      }`
+      let id = causeIds.get(key)
+      if (id === undefined) {
+        causeIds.set(key, id = causeOf.length)
+        causeOf.push({ cause, key })
+      }
+      return id
+    }
+    const causesOf = new Map<
+      Target.AnyTarget,
+      ReadonlyArray<{ readonly cause: number; readonly matches: ((file: string) => boolean) | undefined }>
+    >()
     const reverse = new Map<Target.AnyTarget, Set<Target.AnyTarget>>()
     const selectors = new Map<string, ReadonlyArray<Target.AnyTarget>>()
     const pending = selected.map((row) => row.target)
@@ -442,27 +566,26 @@ export const select = (
           input,
           matches: compileInput(input, inputPackage(metadata, value.packagePath), glob)
         }))
-        details.set(target, (file) => {
-          const source = { file, label: labelOf(target), rule: metadata.target }
-          const causes: Array<ReasonDetail> = []
-          for (const { input, matches } of declared) {
-            if (ambientInput(input)) causes.push({ ...source, kind: "ambient-input", input })
-            else if (matches(file)) causes.push({ ...source, kind: "declared-input", input })
-          }
-          for (const { readPath, matches } of sandboxInputs) {
-            if (matches(file)) causes.push({ ...source, kind: "sandbox-input", readPath })
-          }
-          for (const input of indirect) causes.push({ ...source, kind: "indirect-input", input })
-          for (const readPath of indirectDirectories) causes.push({ ...source, kind: "indirect-input", readPath })
-          if (uncacheable) causes.push({ ...source, kind: "uncacheable" })
-          if (readsPackage && value.packagePath !== "" && file.startsWith(`${value.packagePath}/`)) {
-            causes.push({ ...source, kind: "package" })
-          }
-          if (metadata.inputs.length === 0 && metadata.dependencies.length === 0) {
-            causes.push({ ...source, kind: "empty" })
-          }
-          return causes
-        })
+        // `matches` undefined: the cause applies to every changed file.
+        const causes: Array<{ readonly cause: number; readonly matches: ((file: string) => boolean) | undefined }> = []
+        const add = (cause: Omit<Change, "file">, matches?: (file: string) => boolean) => {
+          const id = internCause(cause)
+          if (!causes.some((existing) => existing.cause === id)) causes.push({ cause: id, matches })
+        }
+        for (const { input, matches } of declared) {
+          if (ambientInput(input)) add({ kind: "ambient-input", input })
+          else add({ kind: "declared-input", input }, matches)
+        }
+        for (const { readPath, matches } of sandboxInputs) add({ kind: "sandbox-input", readPath }, matches)
+        for (const input of indirect) add({ kind: "indirect-input", input })
+        for (const readPath of indirectDirectories) add({ kind: "indirect-input", readPath })
+        if (uncacheable) add({ kind: "uncacheable" })
+        if (readsPackage && value.packagePath !== "") {
+          const prefix = `${value.packagePath}/`
+          add({ kind: "package" }, (file) => file.startsWith(prefix))
+        }
+        if (metadata.inputs.length === 0 && metadata.dependencies.length === 0) add({ kind: "empty" })
+        causesOf.set(target, causes)
       }
       const dependencies = new Set([
         ...metadata.dependencies,
@@ -484,27 +607,90 @@ export const select = (
         pending.push(dependency)
       }
     }
-    const roots = new Set(selected.map((row) => row.target))
-    for (const path of normalized) {
+    if (options.explain) {
+      // Each directly affected target is one source. A (cause, file) pair is
+      // the integer cause * files + file, interned to a provisional change id;
+      // a source keeps one integer list per cause. Reach is computed once per
+      // source, never per changed path.
+      const files = normalized.length
+      const provisional = new Map<number, number>()
+      const pairs: Array<number> = []
+      const listsOf = new Map<Target.AnyTarget, Array<Array<number>>>()
+      normalized.forEach((path, file) => {
+        for (const [target, matches] of direct) {
+          if (!matches(path)) continue
+          const causes = causesOf.get(target)!
+          let lists = listsOf.get(target)
+          if (lists === undefined) listsOf.set(target, lists = causes.map(() => []))
+          causes.forEach(({ cause, matches: applies }, at) => {
+            if (applies !== undefined && !applies(path)) return
+            const pair = cause * files + file
+            let id = provisional.get(pair)
+            if (id === undefined) {
+              provisional.set(pair, id = pairs.length)
+              pairs.push(pair)
+            }
+            lists[at]!.push(id)
+          })
+        }
+      })
+      // Final change order: file, then kind, then input and read path. Files
+      // are already sorted, so a cause list stays ascending after renumbering.
+      const order = pairs.map((_, id) => id).sort((left, right) => {
+        const leftFile = pairs[left]! % files
+        const rightFile = pairs[right]! % files
+        if (leftFile !== rightFile) return leftFile - rightFile
+        const leftKey = causeOf[Math.floor(pairs[left]! / files)]!.key
+        const rightKey = causeOf[Math.floor(pairs[right]! / files)]!.key
+        // One file never repeats a cause, so keys never tie here.
+        return leftKey < rightKey ? -1 : 1
+      })
+      const renumbered = new Array<number>(pairs.length)
+      order.forEach((id, at) => {
+        renumbered[id] = at
+        changes.push({ file: normalized[pairs[id]! % files]!, ...causeOf[Math.floor(pairs[id]! / files)]!.cause })
+      })
+      // Labels are assigned in discovery order so private names are stable.
+      const found = [...listsOf].map(([target, lists]) => ({ target, label: labelOf(target), lists }))
+      // Labels are unique, so the order is total without a tie arm.
+      found.sort((left, right) => left.label < right.label ? -1 : 1)
+      const setIds = new Map<string, number>()
+      const roots = new Set(selected.map((row) => row.target))
+      const expanded = new Set<Target.AnyTarget>()
+      found.forEach(({ lists, target: source }, at) => {
+        const sets = lists.filter((list) => list.length > 0)
+          .map((list) => list.map((id) => renumbered[id]!))
+          .sort((left, right) => left[0]! - right[0]!)
+          .map((set) => {
+            const key = set.join(",")
+            let id = setIds.get(key)
+            if (id === undefined) {
+              setIds.set(key, id = changeSets.length)
+              changeSets.push(set)
+            }
+            return id
+          })
+        sources.push({ target: source, changes: [...new Set(sets)].sort((left, right) => left - right) })
+        const seen = new Set([source])
+        for (const target of seen) {
+          if (roots.has(target)) {
+            let into = reached.get(target)
+            if (into === undefined) reached.set(target, into = [])
+            into.push(at)
+          }
+          const dependents = reverse.get(target)
+          if (dependents === undefined) continue
+          if (!expanded.has(target)) {
+            expanded.add(target)
+            edges.set(labelOf(target), [...dependents].map(labelOf).sort())
+          }
+          for (const dependent of dependents) seen.add(dependent)
+        }
+      })
+    }
+    for (const path of options.explain ? [] : normalized) {
       const affected = new Set<Target.AnyTarget>()
       for (const [target, matches] of direct) if (matches(path)) affected.add(target)
-      if (options.explain) {
-        for (const source of affected) {
-          const causes = details.get(source)!(path)
-          // One shortest route per source, including shared/private/cyclic dependencies.
-          const routes = new Map<Target.AnyTarget, ReadonlyArray<string>>([[source, [labelOf(source)]]])
-          for (const [target, route] of routes) {
-            if (roots.has(target)) {
-              let into = reasonDetails.get(target)
-              if (into === undefined) reasonDetails.set(target, into = [])
-              into.push(...causes.map((cause) => ({ ...cause, dependencyPath: [...route].reverse() })))
-            }
-            for (const dependent of reverse.get(target) ?? []) {
-              if (!routes.has(dependent)) routes.set(dependent, [...route, labelOf(dependent)])
-            }
-          }
-        }
-      }
       // Set iteration includes newly added dependents and visits each target/path once,
       // even when several selected roots share dependencies or the graph has a cycle.
       for (const target of affected) {
@@ -518,16 +704,29 @@ export const select = (
       }
     }
   }
+  if (options.explain) {
+    return {
+      ...envelope,
+      globalCauses: [],
+      targets: selected.flatMap((row) => {
+        const from = reached.get(row.target)
+        return from === undefined ? [] : [{ label: row.label, sources: from }]
+      }),
+      sources: sources.map(({ changes: sets, target }) => ({
+        label: labelOf(target),
+        rule: entry(target).metadata.target,
+        changes: sets
+      })),
+      changeSets,
+      changes,
+      edges: Object.fromEntries([...edges].sort(([left], [right]) => left < right ? -1 : 1))
+    }
+  }
   return {
-    pattern: patterns.join(" "),
-    files: normalized,
-    conservative,
-    globalInputs: [...new Set([...global, ...unknown])].sort(),
+    ...envelope,
     targets: selected.filter((row) => reasons.has(row.label)).map((row) => ({
       label: row.label,
-      reasons: [...reasons.get(row.label)!].sort(),
-      // Explaining records details for every target it gives a reason.
-      ...(options.explain ? { reasonDetails: reasonDetails.get(row.target)! } : {})
+      reasons: [...reasons.get(row.label)!].sort()
     }))
   }
 }

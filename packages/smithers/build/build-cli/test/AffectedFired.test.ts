@@ -8,6 +8,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { expect, it } from "vitest"
+import { causes, reasons } from "./helpers/AffectedExplain.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -118,21 +119,32 @@ export const Package = S.Package({ targets: { test: S.Vitest({
       "--json"
     ])
     expect(listed.exitCode, listed.output + listed.logs).toBe(0)
-    expect(JSON.parse(listed.output)).toMatchObject({
+    const output = JSON.parse(listed.output)
+    expect(output).toMatchObject({
       conservative: false,
       globalInputs: [],
-      targets: [{
-        label: "//packages/other:test",
-        reasons: ["packages/changed/src/a.ts"],
-        reasonDetails: [{
-          file: "packages/changed/src/a.ts",
-          kind: "uncacheable",
-          label: "//packages/other:test",
-          rule: "Vitest",
-          dependencyPath: ["//packages/other:test"]
-        }]
-      }]
+      // The changed Filegroup is a source too; `test` keeps only the Vitest root.
+      targets: [{ label: "//packages/other:test", sources: [1] }],
+      sources: [
+        { label: "//packages/changed:sources", rule: "Filegroup", changes: [0] },
+        { label: "//packages/other:test", rule: "Vitest", changes: [1] }
+      ],
+      changeSets: [[0], [1]],
+      changes: [
+        { file: "packages/changed/src/a.ts", kind: "declared-input" },
+        { file: "packages/changed/src/a.ts", kind: "uncacheable" }
+      ],
+      edges: {}
     })
+    expect(output.targets).toHaveLength(1)
+    expect(reasons(output, "//packages/other:test")).toEqual(["packages/changed/src/a.ts"])
+    expect(causes(output, "//packages/other:test")).toEqual([{
+      file: "packages/changed/src/a.ts",
+      kind: "uncacheable",
+      label: "//packages/other:test",
+      rule: "Vitest",
+      dependencyPath: ["//packages/other:test"]
+    }])
   } finally {
     await Fs.rm(root, { recursive: true, force: true })
   }
@@ -172,7 +184,8 @@ export const Package = S.Package({ targets: { test: S.Vitest({
     const output = JSON.parse(listed.output)
     expect(output).toMatchObject({ conservative: false, globalInputs: [] })
     expect(output.targets).toHaveLength(1)
-    expect(output.targets[0].reasonDetails).toEqual(expect.arrayContaining([
+    expect(output.edges).toEqual({ "//:workspace": ["//packages/other:test"] })
+    expect(causes(output, "//packages/other:test")).toEqual(expect.arrayContaining([
       {
         file: "packages/changed/src/a.ts",
         kind: "uncacheable",
@@ -527,6 +540,42 @@ it("is red when one of several patterns names no target, though another still re
     const result = await serve(root, ["affected", "test", "//...", "//gone/...", "--files", "notes.md", "--no-cache"])
     expect(result.exitCode).not.toBe(0)
     expect(result.output + result.logs).toContain("met patterns that name no target")
+  } finally {
+    await Fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+it("affected list explains 400 roots over 400 changed files through one shared dependency in linear output", async () => {
+  const count = 400
+  const root = await workspace(`const shared = S.Filegroup({ srcs: [S.glob("shared/**")] })
+const targets: Record<string, unknown> = { shared }
+for (let n = 0; n < ${count}; n++) {
+  targets[\`t\${n}\`] = S.Shell.Test({ shell: "true", sandbox: "none", data: [shared, S.file(\`own/\${n}.txt\`)] })
+}
+export const Package = S.Package({ targets })`)
+  try {
+    const files = Array.from({ length: count }, (_, n) => `shared/src/f${n}.ts`)
+    const listed = await serve(root, [
+      "affected",
+      "test",
+      "//...",
+      ...files.flatMap((file) => ["--files", file]),
+      "--list",
+      "--json"
+    ])
+    expect(listed.exitCode, (listed.output + listed.logs).slice(0, 2000)).toBe(0)
+    const output = JSON.parse(listed.output)
+    const labels = Array.from({ length: count }, (_, n) => `//:t${n}`)
+    expect(output.targets.map((target: { label: string }) => target.label).sort()).toEqual(labels.sort())
+    expect(output.sources).toHaveLength(1)
+    expect(output.sources[0]).toMatchObject({ label: "//:shared", rule: "Filegroup" })
+    expect(output.sources[0].changes).toEqual([0])
+    expect(output.changeSets).toEqual([files.map((_, at) => at)])
+    expect(output.changes.map((change: { file: string }) => change.file)).toEqual([...files].sort())
+    expect(output.targets.every((target: { sources: Array<number> }) => target.sources.join() === "0")).toBe(true)
+    expect([...output.edges["//:shared"]].sort()).toEqual(labels)
+    // The old shape carried a record per (root, file): 160,000 here, tens of megabytes.
+    expect(listed.output.length).toBeLessThan(400 * count + 400 * count)
   } finally {
     await Fs.rm(root, { recursive: true, force: true })
   }

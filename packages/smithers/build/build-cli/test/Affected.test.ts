@@ -6,6 +6,7 @@ import * as Path from "node:path"
 import { expect, it } from "vitest"
 import * as Affected from "../src/Affected.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
+import { causes, reasons } from "./helpers/AffectedExplain.ts"
 
 const attrs = Schema.Struct({
   inputs: Schema.Array(Input.Declared),
@@ -75,28 +76,39 @@ it("explains shared ambient selection through private dependencies without claim
   add("other", "test", target([Input.file("local.txt")], [privateTarget]))
   add("lib", "src", target([Input.glob("src/**/*.ts")]))
   const selected = Affected.select(graph.index, ["//other:test"], ["lib/src/a.ts"], { explain: true })
-  expect(selected).toMatchObject({
+  expect(selected).toEqual({
+    pattern: "//other:test",
+    files: ["lib/src/a.ts"],
     conservative: false,
     globalInputs: [],
-    targets: [{
-      label: "//other:test",
-      reasons: ["lib/src/a.ts"],
-      reasonDetails: [{
-        file: "lib/src/a.ts",
-        kind: "ambient-input",
-        label: "//:workspace",
-        rule: "Fixture",
-        input: Input.pnpmWorkspace("//pnpm-workspace.yaml"),
-        dependencyPath: ["//other:test", "//other:__private_Filegroup_1", "//:workspace"]
-      }, {
-        file: "lib/src/a.ts",
-        kind: "uncacheable",
-        label: "//:workspace",
-        rule: "Fixture",
-        dependencyPath: ["//other:test", "//other:__private_Filegroup_1", "//:workspace"]
-      }]
-    }]
+    globalCauses: [],
+    targets: [{ label: "//other:test", sources: [0] }],
+    sources: [{ label: "//:workspace", rule: "Fixture", changes: [0, 1] }],
+    changeSets: [[0], [1]],
+    changes: [
+      { file: "lib/src/a.ts", kind: "ambient-input", input: Input.pnpmWorkspace("//pnpm-workspace.yaml") },
+      { file: "lib/src/a.ts", kind: "uncacheable" }
+    ],
+    edges: {
+      "//:workspace": ["//other:__private_Filegroup_1"],
+      "//other:__private_Filegroup_1": ["//other:test"]
+    }
   })
+  expect(reasons(selected, "//other:test")).toEqual(["lib/src/a.ts"])
+  expect(causes(selected, "//other:test")).toEqual([{
+    file: "lib/src/a.ts",
+    kind: "ambient-input",
+    label: "//:workspace",
+    rule: "Fixture",
+    input: Input.pnpmWorkspace("//pnpm-workspace.yaml"),
+    dependencyPath: ["//other:test", "//other:__private_Filegroup_1", "//:workspace"]
+  }, {
+    file: "lib/src/a.ts",
+    kind: "uncacheable",
+    label: "//:workspace",
+    rule: "Fixture",
+    dependencyPath: ["//other:test", "//other:__private_Filegroup_1", "//:workspace"]
+  }])
   expect(Affected.select(graph.index, ["//other:test"], ["lib/src/a.ts"]).targets).toEqual([
     { label: "//other:test", reasons: ["lib/src/a.ts"] }
   ])
@@ -307,7 +319,7 @@ it("propagates through shared declared, verb and selector dependencies", () => {
   ])
   expect(graph.index.resolve("//first/...:build").map((row) => row.label)).toEqual(["//first:build"])
   const explained = Affected.select(graph.index, ["//selector:build"], ["lib/data.txt"], { explain: true })
-  expect(explained.targets[0]!.reasonDetails).toEqual([
+  expect(causes(explained, explained.targets[0]!.label)).toEqual([
     {
       file: "lib/data.txt",
       kind: "declared-input",
@@ -336,11 +348,12 @@ it("treats every declaration module, helpers included, as a global input", () =>
     expect(Affected.select(graph.index, ["//..."], [file], { explain: true })).toMatchObject({
       conservative: true,
       globalInputs: [file],
-      targets: ["//app:test", "//tools:src", "//packages/helpers:lib"].sort().map((label) => ({
-        label,
-        reasons: [file],
-        reasonDetails: [{ file, kind: "global-input" }]
-      }))
+      globalCauses: [{ file, kind: "global-input" }],
+      targets: ["//app:test", "//tools:src", "//packages/helpers:lib"].sort().map((label) => ({ label })),
+      sources: [],
+      changeSets: [],
+      changes: [],
+      edges: {}
     })
   }
   // A path that merely shares a module's prefix stays with its owner.
@@ -353,9 +366,18 @@ it("explains global and unknown fallbacks without inventing a dependency route",
   const { add } = graph
   add("app", "test", target([Input.file("local.txt")]))
   for (const [file, kind] of [["pnpm-lock.yaml", "global-input"], ["unowned/a.txt", "unknown-input"]]) {
-    expect(Affected.select(graph.index, ["//..."], [file!], { explain: true }).targets[0]!.reasonDetails).toEqual([
-      { file, kind }
-    ])
+    expect(Affected.select(graph.index, ["//..."], [file!], { explain: true })).toEqual({
+      pattern: "//...",
+      files: [file],
+      conservative: true,
+      globalInputs: [file],
+      globalCauses: [{ file, kind }],
+      targets: [{ label: "//app:test" }],
+      sources: [],
+      changeSets: [],
+      changes: [],
+      edges: {}
+    })
   }
   expect(Affected.select(graph.index, ["//..."], [], { explain: true }).targets).toEqual([])
 })
@@ -380,7 +402,7 @@ it.each(
       verbOnly ? { inputs: [input] } : undefined
     )
   )
-  expect(Affected.select(graph.index, ["//app:test"], ["lib/src/a.ts"], { explain: true }).targets[0]!.reasonDetails)
+  expect(causes(Affected.select(graph.index, ["//app:test"], ["lib/src/a.ts"], { explain: true }), "//app:test"))
     .toEqual(
       [
         {
@@ -409,7 +431,7 @@ it("distinguishes declared inputs, package membership, empty contracts and verb-
   const paths = ["app/src/a.ts", "assets/schema.txt"]
   const selected = Affected.select(graph.index, ["//..."], paths, { explain: true })
   expect(selected.targets.map((row) => row.label)).toEqual(["//app:test", "//empty:test", "//verb:test"])
-  expect(selected.targets[0]!.reasonDetails).toEqual([
+  expect(causes(selected, selected.targets[0]!.label)).toEqual([
     { file: paths[0], kind: "package", label: "//app:test", rule: "Fixture", dependencyPath: ["//app:test"] },
     {
       file: paths[1],
@@ -420,14 +442,14 @@ it("distinguishes declared inputs, package membership, empty contracts and verb-
       dependencyPath: ["//app:test"]
     }
   ])
-  expect(selected.targets[1]!.reasonDetails).toEqual(paths.map((file) => ({
+  expect(causes(selected, selected.targets[1]!.label)).toEqual(paths.map((file) => ({
     file,
     kind: "empty",
     label: "//empty:test",
     rule: "Fixture",
     dependencyPath: ["//empty:test"]
   })))
-  expect(selected.targets[2]!.reasonDetails).toEqual(paths.map((file) => ({
+  expect(causes(selected, selected.targets[2]!.label)).toEqual(paths.map((file) => ({
     file,
     kind: "uncacheable",
     label: "//verb:test",
@@ -444,7 +466,7 @@ it("uses one shortest route when an ambient source has shared dependency paths",
   add("app", "test", target([Input.file("local.txt")], [intermediate, source]))
   add("lib", "src", target([Input.glob("src/**")]))
   const paths = ["lib/src/a.ts", "lib/src/b.ts"]
-  expect(Affected.select(graph.index, ["//app:test"], paths, { explain: true }).targets[0]!.reasonDetails).toEqual(
+  expect(causes(Affected.select(graph.index, ["//app:test"], paths, { explain: true }), "//app:test")).toEqual(
     paths.map((file) => ({
       file,
       kind: "ambient-input",
@@ -585,7 +607,7 @@ it("selects native declarations through their actual metadata and package index"
   const selection = Affected.select(graph.index, ["//..."], ["lib/src/value.ts"], { explain: true })
   expect(selection.conservative).toBe(false)
   expect(selection.targets.map((row) => row.label)).toEqual(["//app:check", "//lib:sources"])
-  expect(selection.targets[0]!.reasonDetails).toContainEqual({
+  expect(causes(selection, selection.targets[0]!.label)).toContainEqual({
     file: "lib/src/value.ts",
     kind: "declared-input",
     label: "//lib:sources",
@@ -593,4 +615,127 @@ it("selects native declarations through their actual metadata and package index"
     input: S.glob("src/**/*.ts"),
     dependencyPath: ["//app:check", "//lib:sources"]
   })
+})
+
+/** A small deterministic PRNG (mulberry32), so every generated case reproduces from its seed. */
+const random = (seed: number) => () => {
+  seed = (seed + 0x6D2B79F5) | 0
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+}
+
+/** Checks one seeded graph and says which case it exercised. */
+const equivalent = (seed: number): "empty" | "conservative" | "single" | "shared" => {
+  const next = random(seed)
+  const pick = <A>(values: ReadonlyArray<A>): A => values[Math.floor(next() * values.length)]!
+  const graph = fixture()
+  const packages = ["p0", "p1", "p2", "shared"]
+  const count = 2 + Math.floor(next() * 9)
+  // A private target belongs to one package and only targets there may use it.
+  const all: Array<{ readonly value: Target.AnyTarget; readonly home: string; readonly listed: boolean }> = []
+  for (let n = 0; n < count; n++) {
+    const home = pick(packages)
+    const listed = n === 0 || next() >= 0.25
+    const usable = all.filter((other) => other.listed || other.home === home).map((other) => other.value)
+    const inputs: Array<Input.Declared> = []
+    const roll = next()
+    if (roll < 0.4) inputs.push(Input.file(`f${Math.floor(next() * 3)}.txt`))
+    else if (roll < 0.6) inputs.push(Input.glob("//shared/**"))
+    else if (roll < 0.65) inputs.push(Input.gitDiff())
+    if (next() < 0.2) inputs.push(Input.file(`//shared/f${Math.floor(next() * 3)}.txt`))
+    // Targets are immutable, so dependencies point at earlier targets; shared
+    // and diamond-shaped paths still arise.
+    const deps = usable.length === 0 ? [] : Array.from({ length: Math.floor(next() * 3) }, () => pick(usable))
+    const viewDeps = usable.length > 0 && next() < 0.3 ? [pick(usable)] : []
+    const value = target(
+      inputs,
+      [...new Set(deps)],
+      viewDeps.length > 0 ? { dependencies: viewDeps } : undefined,
+      next() > 0.1
+    )
+    // Some targets are private: reachable only as a dependency.
+    if (listed) graph.add(home, `t${n}`, value)
+    all.push({ value, home, listed })
+  }
+  const pool = [
+    "p0/f0.txt",
+    "p0/f1.txt",
+    "p1/f2.txt",
+    "p2/new.ts",
+    "shared/f0.txt",
+    "shared/f1.txt",
+    "shared/deep/x.ts",
+    ...(next() < 0.15 ? ["elsewhere/unowned.ts"] : []),
+    ...(next() < 0.05 ? ["pnpm-lock.yaml"] : [])
+  ]
+  const paths = pool.filter(() => next() < 0.4)
+  const index = graph.index
+  const plain = Affected.select(index, ["//..."], paths)
+  const explained = Affected.select(index, ["//..."], paths, { explain: true })
+  expect(explained.targets.map((row) => row.label)).toEqual(plain.targets.map((row) => row.label))
+  expect(explained.conservative).toBe(plain.conservative)
+  expect(explained.globalInputs).toEqual(plain.globalInputs)
+  if (explained.conservative) {
+    expect(explained.sources).toEqual([])
+    expect(explained.changeSets).toEqual([])
+    expect(explained.changes).toEqual([])
+    expect(explained.edges).toEqual({})
+    expect(explained.globalCauses.map((cause) => cause.file)).toEqual(explained.globalInputs)
+    for (const row of plain.targets) expect(row.reasons).toEqual(explained.globalInputs)
+    return "conservative"
+  }
+  expect(explained.globalCauses).toEqual([])
+  const reaches = (from: string, to: string): boolean => {
+    const seen = new Set([from])
+    for (const label of seen) {
+      if (label === to) return true
+      for (const dependent of explained.edges[label] ?? []) seen.add(dependent)
+    }
+    return false
+  }
+  for (const [label, dependents] of Object.entries(explained.edges)) {
+    expect(dependents).toEqual([...new Set(dependents)].sort())
+    expect(dependents.length, label).toBeGreaterThan(0)
+  }
+  expect(new Set(explained.sources.map((source) => source.label)).size).toBe(explained.sources.length)
+  // Each change record and each change set is stored once, in canonical order.
+  const keys = explained.changes.map((change) => JSON.stringify(change))
+  expect(new Set(keys).size).toBe(keys.length)
+  expect(explained.changes.map((change) => change.file)).toEqual(explained.changes.map((change) => change.file).sort())
+  const sets = explained.changeSets.map((set) => set.join())
+  expect(new Set(sets).size).toBe(sets.length)
+  for (const set of explained.changeSets) expect(set).toEqual([...new Set(set)].sort((left, right) => left - right))
+  const used = explained.sources.flatMap((source) => source.changes)
+  expect(new Set(used)).toEqual(new Set(explained.changeSets.keys()))
+  expect(new Set(explained.changeSets.flat())).toEqual(new Set(explained.changes.keys()))
+  const changeFiles = (source: number) =>
+    explained.sources[source]!.changes.flatMap((set) =>
+      explained.changeSets[set]!.map((change) => explained.changes[change]!.file)
+    )
+  plain.targets.forEach((row, position) => {
+    const explainedRow = explained.targets[position]!
+    const sources = explainedRow.sources!
+    expect(sources).toEqual([...sources].sort((left, right) => left - right))
+    const files = new Set(sources.flatMap(changeFiles))
+    expect([...files].sort()).toEqual(row.reasons)
+    // Exactly the sources that reach the root through `edges` are listed.
+    const reaching = explained.sources.flatMap((source, at) => reaches(source.label, row.label) ? [at] : [])
+    expect(sources).toEqual(reaching)
+  })
+  if (plain.targets.length === 0) return "empty"
+  return explained.targets.some((row) => row.sources!.length > 1) ? "shared" : "single"
+}
+
+it("explain mode selects what plain mode selects, and its sources and edges rebuild each reason, over 1,000 seeded graphs", () => {
+  const tally = { empty: 0, conservative: 0, single: 0, shared: 0 }
+  for (let seed = 0; seed < 1000; seed++) {
+    try {
+      tally[equivalent(seed)]++
+    } catch (cause) {
+      throw new Error(`seed ${seed}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause })
+    }
+  }
+  // The generator reaches every case, so the property is not vacuous.
+  expect(Object.values(tally).every((count) => count > 20), JSON.stringify(tally)).toBe(true)
 })

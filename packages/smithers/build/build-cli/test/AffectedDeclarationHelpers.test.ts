@@ -13,6 +13,7 @@ import * as Affected from "../src/Affected.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
+import { causes } from "./helpers/AffectedExplain.ts"
 import { write } from "./helpers/WriteFile.ts"
 
 const roots: Array<string> = []
@@ -173,8 +174,10 @@ it.each([
   const selected = Affected.select(index, ["//..."], [file], { explain: true })
   expect(selected).toMatchObject({ conservative: true, globalInputs: [file] })
   expect(selected.targets.map((target) => target.label).sort()).toEqual(labels)
+  expect(selected.globalCauses).toEqual([{ file, kind: "global-input" }])
   for (const target of selected.targets) {
-    expect(target).toMatchObject({ reasons: [file], reasonDetails: [{ file, kind: "global-input" }] })
+    expect(target).toEqual({ label: target.label })
+    expect(causes(selected, target.label)).toEqual([{ file, kind: "global-input" }])
   }
 })
 

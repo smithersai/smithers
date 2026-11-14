@@ -11,6 +11,7 @@ import * as Path from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Affected from "../src/Affected.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
+import { causes, reasons } from "./helpers/AffectedExplain.ts"
 
 const attrs = Schema.Struct({
   inputs: Schema.Array(Input.Declared),
@@ -83,17 +84,16 @@ describe("Affected.select graph edges", () => {
     expect(graph.ownerOf(orphan)).toBeUndefined()
     const explained = Affected.select(graph, ["//app:build"], ["shared/data.txt"], { explain: true })
     expect(explained.conservative).toBe(false)
-    expect(explained.targets).toEqual([{
-      label: "//app:build",
-      reasons: ["shared/data.txt"],
-      reasonDetails: [{
-        file: "shared/data.txt",
-        kind: "declared-input",
-        label: "//:__private_Fixture_1",
-        rule: "Fixture",
-        input: Input.file("//shared/data.txt"),
-        dependencyPath: ["//app:build", "//:__private_Fixture_1"]
-      }]
+    expect(explained.targets).toEqual([{ label: "//app:build", sources: [0] }])
+    expect(explained.edges).toEqual({ "//:__private_Fixture_1": ["//app:build"] })
+    expect(reasons(explained, "//app:build")).toEqual(["shared/data.txt"])
+    expect(causes(explained, "//app:build")).toEqual([{
+      file: "shared/data.txt",
+      kind: "declared-input",
+      label: "//:__private_Fixture_1",
+      rule: "Fixture",
+      input: Input.file("//shared/data.txt"),
+      dependencyPath: ["//app:build", "//:__private_Fixture_1"]
     }])
   })
 

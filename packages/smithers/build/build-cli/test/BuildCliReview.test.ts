@@ -9,6 +9,7 @@ import * as AnvilExec from "../src/AnvilExec.ts"
 import * as HostProbes from "../src/internal/HostProbes.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
+import { reasons } from "./helpers/AffectedExplain.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -84,9 +85,10 @@ describe("affected lockfile selection", () => {
       expect(result).toMatchObject({
         conservative: false,
         globalInputs: [],
-        targets: [{ label: "//pkg:sources", reasons: [file] }]
+        targets: [{ label: "//pkg:sources", sources: [0] }]
       })
       expect(result.targets).toHaveLength(1)
+      expect(reasons(result, "//pkg:sources")).toEqual([file])
     }
   )
   it.each([

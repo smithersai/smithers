@@ -23,6 +23,21 @@
   the capture and names the link, instead of publishing an entry that can
   never be restored.
 
+- **Breaking:** `affected --list` JSON (and `Affected.select(..., { explain: true })`)
+  is factored so it grows with the selection, not with roots times changed
+  files. On a 3,948-root repository the old per-(root, file) records reached
+  432 MB for 120 changed files and crashed past V8's string limit from 160
+  on. Targets lose `reasons` and `reasonDetails` and carry `sources`, indexes
+  into a top-level `sources` list of directly affected targets. Each source's
+  `changes` indexes `changeSets`, each distinct set of indexes into
+  `changes`, each distinct (file, cause) record, so a cause shared by many
+  targets, such as a package's `package` cause, is stored once. A top-level
+  `edges` map gives each reachable target's direct dependents. A target's
+  reasons are the files of `changes[changeSets[s]]` over its sources' sets,
+  and its routes are paths through `edges`. Conservative selections name each
+  global or unowned file once in `globalCauses`. Selection is unchanged, and
+  `affected` without `--list` keeps per-target `reasons`.
+
 - A remote cache with no available credential (unset, empty or whitespace-only)
   now stays local from the start, sends no requests, and prints one
   `smthrs: remote cache off: no credentials` notice per run, instead of a 401
