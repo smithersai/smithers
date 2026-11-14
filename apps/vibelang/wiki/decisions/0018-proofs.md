@@ -7866,6 +7866,35 @@ No decision, recorded with the reason:
 
 23 mutation cases. Records: 343 branches, 0 open, 0 unreviewed, 0 reviewed rules not yet proved.
 
+## Stamp: the whole gate on main `9a962dd1`, the first with every comparison and loop test counted (vl-proveall3, 2026-11-14)
+
+The whole proof and mutation gate ran on one main revision, `9a962dd1c51e` (batches 70 and 71 landed: 1,130 shell
+branches, 0 open), in node26 box shards from nyc-01 (`~/vl/pa3-gate/r11-9a962dd1c51e/`). Every shard that ran to its
+end exited 0.
+
+`src/core/conversation.vibe`'s 217 mutants ran as one shard in the last stamp (4,056 s). This time its box did 68 in
+94 minutes, on track to pass the 3.5-hour box limit with the same source and box shape, so it was stopped and the 217
+were rerun by name (`mutations.py NAME ...`, a `names` field in the shard driver). Two of those four boxes were slow
+too (14 of 54 in 40 minutes) and were stopped the same way; their 108 ran as six shards. A stopped shard has no
+verdict and is not counted; each mutant is counted once, from the shard that finished it.
+
+| Shard | Exit | Seconds | Result |
+| --- | --- | --- | --- |
+| proof-heavy | 0 | 2,531 | 7/7 files |
+| proof-1 | 0 | 400 | 32/32 runs |
+| proof-2 | 0 | 415 | 31/31 runs |
+| proof-3 | 0 | 805 | 28/28 runs; runtime mutants 3/3 rejected |
+| broken-heavy | 0 | 2,526 | 251/251 rejected |
+| broken-1 to broken-6 | 0 | 1,020 to 2,320 | 464, 464, 464, 464, 465, 463 rejected (all of each) |
+| broken-conversation-1, -3 | 0 | 2,666, 2,290 | 55/55, 54/54 rejected |
+| broken-conversation-r1 to -r6 | 0 | 2,436 to 4,846, most of it waiting for a free box | 18/18 rejected each |
+| Unit gate (`pnpm typecheck && pnpm test`) | 0 | 795 | 331/331 files, 2,846 tests (job `89fdf46f`) |
+
+Totals: `pnpm verify` 92 sources, 98 Dafny runs, 20,464 obligations, 0 errors; `pnpm verify:broken` 3,252/3,252
+rejected (0 survived, 0 invalid, 0 missing); runtime mutants 3/3 rejected. Landing check on the same tree: 4,244 rows,
+0 not proved, 1,276 contracts, 3,252 mutation cases (0 invalid), 1,130 shell branches, 0 open, fuzz receipt not
+needed, 0 refused.
+
 ## Stamp: the whole gate on main `ec310181`, the first with every branch in every file proved or recorded (vl-proveall3, 2026-11-14)
 
 The whole proof and mutation gate ran on one main revision, `ec310181bcf6` (batches 66 to 69 landed, 0 open branches
