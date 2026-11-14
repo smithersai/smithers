@@ -29,7 +29,7 @@ export const FLOOR = 32
  * (2026-11-13): a floor of 32 would add up to 20 minutes each. Lines past these floors have chosen inputs.
  */
 export const FLOORS: Readonly<Record<string, number>> = {
-  "accounts/broker-sequences": 2, "issues/steered-host": 2, "wiki/steered-host": 2, "surfaces/cli-rejects-garbage": 2,
+  "history/export-long": 1, "accounts/broker-sequences": 2, "issues/steered-host": 2, "wiki/steered-host": 2, "surfaces/cli-rejects-garbage": 2,
   "surfaces/history-cli-arguments": 2, "signin/steered-wait-refusals": 3, "signin/steered-waits": 3, "api-objects/world": 3,
   "history/startup": 3, "actions/live-client": 3, "surfaces/history-mcp-arguments": 3, "accounts/broker-site": 3,
   "mock/factory-edges": 3, "actions/run-answers": 3, "reply/answers": 3, "web/startup": 4, "surfaces/mcp-arguments": 4,

@@ -6,7 +6,7 @@ import { Repository } from "@smthrs/jj"
 import { HttpClient } from "effect/http"
 import * as D from "../src/history/exportDecision.vibe"
 import type { Intent, Real } from "../src/history/mythical.vibe"
-import { EXPORTER, guarded, type Pace, REF_NAMES } from "../src/history/export.vibe"
+import { EXPORT_CHUNK, EXPORTER, guarded, type Pace, REF_NAMES } from "../src/history/export.vibe"
 import { exporterOf, off } from "../worker/HistoryExport.vibe"
 import { chainOf, told, world } from "../test/support/exportFlow.vibe"
 import { StoryCommits, storyOf } from "./history-stories.vibe"
@@ -154,6 +154,26 @@ it.live("history/export-flow", () => run("history/export-flow", Story, (input) =
   { commits: [{ epic: "e1", state: "planned", folds: 1, insert: false }], more: false, fault: "none", pace: "reads" },
   { commits: LANDED, more: false, fault: "none", untold: true },
 ] satisfies ReadonlyArray<typeof Story.Type> }))
+
+/**
+ * A history one commit past `EXPORT_CHUNK`: every loop of the export gives the page a turn at item `EXPORT_CHUNK`
+ * (`breathe`), and the chain is still whole, linear and written once. The turn itself is measured in Chromium by
+ * `e2e/core-export-longtask.spec.ts`; here it must change no answer.
+ */
+it.live("history/export-long", () => run("history/export-long", Schema.Struct({ again: Schema.Boolean }), ({ again }) => scoped(effect {
+  const { sequencer, repository, run: exported, refs } = try world()
+  // `storyOf` past the schema's five commits: each landed with one fold, so the real commits' loops run as long.
+  try told(sequencer, storyOf(Array.from({ length: EXPORT_CHUNK + 1 }, () => ({ epic: "e1" as const, state: "landed" as const, folds: 1 as const, insert: false }))))
+  const history = try sequencer.read()
+  const answer = try exported()
+  const mythical = (try refs())[0] ?? null
+  if (history.commits.length !== EXPORT_CHUNK + 1 || answer.refusal !== null || mythical === null || answer.written !== history.commits.length) return false
+  const chain = try chainOf(repository, mythical)
+  if (chain.length !== history.commits.length || chain.some((commit, at) => commit.parents.length !== (at === 0 ? 0 : 1))) return false
+  if (!again) return true
+  const repeat = try exported()
+  return repeat.refusal === null && repeat.written === 0 && repeat.mythical === mythical
+}), undefined, { chosen: [{ again: true }] }))
 
 const Setting = Schema.Struct({
   setting: Schema.UndefinedOr(Schema.Union([Schema.Literals(["off", "github:codeplanesmithers/smithers-vibelang-e2e", "github:smithersai/vibelang", "github:a/b/c", "github:/x", "gitlab:a/b"]), Schema.String])),

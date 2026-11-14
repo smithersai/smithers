@@ -2162,6 +2162,15 @@ it opens records no files, `changed_files` 0; with the count left at 1 the packa
 and `wiki/steered-host`'s delegated scenario requires such a review to answer `unavailable`. Mutant: dropping
 `|| !changed` from the evidence guard answers `ok`: caught.
 
+#### An export past `EXPORT_CHUNK` (`full27`)
+
+`full27` (main `8d1e6392`, job `2223fbfb98d852d570c11000`): 107 files, 319 tests passed; exit 1 on
+`src/history/export.vibe` 118 (branches 76/77, statements 177/178). `f2858758` gives the page a turn once every 500
+items (`breathe`); a fuzz story has at most five commits, so the turn never ran. New target `history/export-long`
+(floor 1, about 0.7 s): `storyOf` with 501 landed commits, then the chain must be whole, linear and written once, and a
+second export writes nothing. A mutant of the turn changes no answer in Node, so it is equivalent here; the turn's
+effect is measured in Chromium by `e2e/core-export-longtask.spec.ts`.
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the
