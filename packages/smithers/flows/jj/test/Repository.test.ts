@@ -31,6 +31,25 @@ describe("hashing", () => {
       .toBe(NO_NEWLINE_COMMIT)
   })
 
+  it("hashes a tree with names outside ASCII as git does, ordered by their UTF-8 bytes", async () => {
+    // `git mktree --missing` (git 2.47.3) answered this id. U+E000 sorts before U+1D11E in UTF-8 (0xee < 0xf0) and
+    // after it in UTF-16 (0xe000 > 0xd834).
+    const entries: ReadonlyArray<Repository.TreeEntry> = [
+      { name: "\u{1D11E}", mode: "100644", oid: HELLO_BLOB },
+      { name: "\uE000", mode: "100644", oid: HELLO_BLOB },
+      { name: "é.txt", mode: "100644", oid: HELLO_BLOB },
+      { name: "a", mode: "040000", oid: HELLO_TREE }
+    ]
+    expect(await run(Repository.hashTree(entries))).toBe("ee897e4aa815ab4fa44b46906a53b7fad4c2b241")
+    // A lone surrogate is written as U+FFFD, so it sorts before U+FFFF as git reads the bytes (git mktree's id).
+    expect(
+      await run(Repository.hashTree([
+        { name: "\uFFFF", mode: "100644", oid: HELLO_BLOB },
+        { name: "\uD800", mode: "100644", oid: HELLO_BLOB }
+      ]))
+    ).toBe("8eb9457d1ee8cd48f913a70c0daae262b1f9575b")
+  })
+
   it("sorts a tree as git does: a tree's name as if it ended in '/'", () => {
     const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes.filter((byte) => byte >= 0x20 && byte < 0x7f))
     const encoded = Repository.encodeTree([

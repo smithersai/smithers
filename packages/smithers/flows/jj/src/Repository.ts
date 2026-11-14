@@ -449,8 +449,6 @@ const concat = (parts: ReadonlyArray<Uint8Array>): Uint8Array<ArrayBuffer> => {
 
 const hex = (bytes: Uint8Array): string => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
 
-const fromHex = (oid: ObjectId): Uint8Array => Uint8Array.from(oid.match(/../g)!, (pair) => Number.parseInt(pair, 16))
-
 /**
  * The git id of an object of `kind` whose body is `body`: the SHA-1 of
  * `<kind> <length>\0<body>`, through WebCrypto.
@@ -470,25 +468,45 @@ export const hashObject = (kind: "blob" | "tree" | "commit", body: Uint8Array): 
  * @category hashing
  * @since 1.0.0
  */
-export const encodeTree = (entries: ReadonlyArray<TreeEntry>): Uint8Array =>
-  concat(
-    sortEntries(entries).flatMap((entry) => [
-      encoder.encode(`${entry.mode === "040000" ? "40000" : entry.mode} ${entry.name}\0`),
-      fromHex(entry.oid)
-    ])
-  )
+export const encodeTree = (entries: ReadonlyArray<TreeEntry>): Uint8Array => encodeSorted(sortEntries(entries))
 
-// Git's tree order: bytewise by name, a tree's name read as if it ended in `/`.
-const sortEntries = (entries: ReadonlyArray<TreeEntry>): ReadonlyArray<TreeEntry> => {
-  const key = (entry: TreeEntry) => encoder.encode(entry.mode === "040000" ? `${entry.name}/` : entry.name)
-  return entries.map((entry) => ({ entry, key: key(entry) })).sort((a, b) => compareBytes(a.key, b.key)).map((
-    { entry }
-  ) => entry)
+// A tree's body from entries already in git's order.
+const encodeSorted = (sorted: ReadonlyArray<TreeEntry>): Uint8Array => {
+  // One buffer for the whole body, each header encoded in place: UTF-8 takes at most three bytes per UTF-16 unit, a
+  // mode and its two separators at most eight, and an id half its hex digits.
+  const out = new Uint8Array(
+    sorted.reduce((size, entry) => size + 3 * (entry.name.length + 8) + (entry.oid.length >> 1), 0)
+  )
+  let at = 0
+  for (const entry of sorted) {
+    at +=
+      encoder.encodeInto(`${entry.mode === "040000" ? "40000" : entry.mode} ${entry.name}\0`, out.subarray(at)).written
+    for (let digit = 0; digit + 1 < entry.oid.length; digit += 2) {
+      out[at++] = Number.parseInt(entry.oid.slice(digit, digit + 2), 16)
+    }
+  }
+  return out.slice(0, at)
 }
 
-const compareBytes = (a: Uint8Array, b: Uint8Array): number => {
+// Git's tree order: bytewise by name, a tree's name read as if it ended in `/`. Bytewise over UTF-8 is code point
+// order, compared here on the strings: UTF-16 units already sort in code point order except that a surrogate (half of a
+// code point above U+FFFF) belongs after U+E000 to U+FFFF, so `rank` moves surrogates up and those units down. A lone
+// surrogate is written as U+FFFD (TextEncoder), so it sorts as one: `LONE_SURROGATE` matches a surrogate only outside
+// a pair, since a `u` pattern reads a pair as one code point.
+const LONE_SURROGATE = /\p{Cs}/gu
+
+const sortEntries = (entries: ReadonlyArray<TreeEntry>): ReadonlyArray<TreeEntry> =>
+  entries.map((entry) => ({
+    entry,
+    key: (entry.mode === "040000" ? `${entry.name}/` : entry.name).replace(LONE_SURROGATE, "\uFFFD")
+  }))
+    .sort((a, b) => compareNames(a.key, b.key)).map(({ entry }) => entry)
+
+const rank = (unit: number): number => unit < 0xd800 ? unit : unit < 0xe000 ? unit + 0x2000 : unit - 0x800
+
+const compareNames = (a: string, b: string): number => {
   for (let i = 0; i < Math.min(a.length, b.length); i++) {
-    if (a[i] !== b[i]) return a[i]! - b[i]!
+    if (a.charCodeAt(i) !== b.charCodeAt(i)) return rank(a.charCodeAt(i)) - rank(b.charCodeAt(i))
   }
   return a.length - b.length
 }
@@ -657,7 +675,7 @@ export const makeMemory = (options?: MemoryOptions): Repository => {
           }
         }
         const sorted = sortEntries(entries)
-        return store(yield* hashTree(sorted), { kind: "tree", entries: sorted })
+        return store(yield* hashObject("tree", encodeSorted(sorted)), { kind: "tree", entries: sorted })
       }),
     readCommit: (revision) =>
       Effect.gen(function*() {

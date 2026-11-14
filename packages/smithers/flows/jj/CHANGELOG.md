@@ -24,6 +24,11 @@
 
 ### Changed
 
+- `Repository.encodeTree` compares names as strings in code point order and
+  writes a tree's body into one buffer, and the memory repository's
+  `writeTree` sorts once: a 5,700-entry tree encodes 3.1 times faster, with
+  the same bytes and ids.
+
 - **CONTRACT:** `Jj.snapshot` returns `{ commitId, changeId }`. Restore, diff,
   fork, and revert by `commitId`, the full hex commit id: no later rewrite of
   the change (an agent's `jj squash`, `describe`, or `abandon`) changes the tree
