@@ -4161,3 +4161,15 @@ projects.
 `page?.` and `defaultView?.… ?? 0` fallbacks. `startup.vibe` always passes `document`, whose `defaultView` is the
 window; only `test/viewport.boundaries.test.vibe` and `fuzz/view-branches.fuzz.vibe` call `transcriptViewport()`
 with none.
+
+**An unclosed code fence in an issue.** `e2e/issue-bodies.spec.ts`: a maintainer files an issue whose summary opens
+a fence and never closes it; the issue shows the rest as code. Closes `markdown.vibe` `blocks` (39).
+
+**`markdown.vibe` `compile` and `render`: only fixture text reaches them.** The other 11 open arms (60, 61, 72, 76,
+78, 86, 114, 134, 136, 145, 159: an unsafe or non-web link, bold, a link with no visible label, a table as the last
+line, a ruling list item, an ordered list, prose running into a block, a heading in chat) need Markdown no browser
+input supplies. Chat renders the mock's scripted replies and the recorded model reply (`chat-markdown.spec.ts`); the
+wiki renders a page through `toHtml` only when the repository's copy differs from the build's (the recorded store,
+`fault=wiki-repository`), and a saved edit opens a review instead of changing the page (`core-wiki.spec.ts`). Closing
+them means new fixture text, a test of the fixture rather than of an input. `test/markdown.test.vibe` and
+`test/markdownEdges.coverage.test.vibe` hold the unit cases.
