@@ -92,6 +92,7 @@ test("Home, PageUp, ArrowUp and Meta+ArrowUp outside the composer stop following
   await expect(latest).toBeVisible()
   await latest.click()
   await expect(latest).toBeHidden()
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(bottom)
   await blur()
   await page.keyboard.press("Meta+ArrowUp")
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
