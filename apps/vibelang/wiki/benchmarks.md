@@ -4792,3 +4792,40 @@ sign-in workload adds 2 by a focused run (9,674/9,842, 98.29%). The `a54642d6` l
 longer matches `worker/SandboxMachine.vibe`, so the 31 deployed-only positions are open until a live run of the
 current source.
 
+## Resume 14: second source-matching live sandbox run (2026-11-14)
+
+### Live observation
+
+At **02:04 UTC (18:04 PST, 2026-11-13)** the lead deployed main `f46f5a78` to a reserved `vl-test` stage, ran one
+instrumented lifecycle and destroyed the stage. Deploy, benchmark (1/1) and destroy each exited 0.
+
+| Measurement | Observed ms | Samples |
+| --- | ---: | ---: |
+| Full lifecycle, Stop/sweep and correctness assertions | 21,778 | 1 |
+| Lifecycle through the second Stop (metering window) | 21,491 | 1 |
+
+Method: unchanged from [resume 12](#resume-12-source-matching-live-sandbox-run-2026-11-13). The run checks generations
+1 and 2, the restored bytes, metered usage (0.260 used minutes) and `runningAfterSweep: false`, then bad-token 403,
+valid-token GET 405, a nonempty recording read and the counter export. 66 recorded Container calls. The Vitest
+duration, 24.1 s, includes that later work.
+
+Client: Apple M3 Max, 16 logical CPUs, macOS Darwin 25.2.0 arm64, Node 26.10.0; Vitest 5.0.0, Vite 8.3.4, VibeLang
+0.0.13, Effect 4.1.1. No model tokens, no GitHub calls.
+
+Limits: **one instrumented sample**. It is faster than resume 12's 28,688 ms and slower than resume 10's 14,891 ms;
+three single samples cannot separate WAN, placement, cold start and checkpoint/restore. No percentile, regression
+threshold or uninstrumented latency follows.
+
+### Coverage with the live counters
+
+Full `pnpm bench:coverage` (job `vl-bench:live14-coverage`, Cloudflare box, node26 image, Node 26.5.0, 4 vCPU),
+source `f46f5a78`, 02:10–02:44 UTC: 119 files passed, 1 skipped. The collector accepts all 78 counter files.
+
+| Merge | `src/` + `worker/` lines | `infra/` | Open in src and worker |
+| --- | ---: | ---: | ---: |
+| Local benchmarks only | 9,669/9,837 (98.29%) | 10/12 | 168 |
+| With the live dump | **9,700/9,837 (98.61%)** | 12/12 | 137 |
+
+The dump closes all 31 deployed-only positions in `src/` + `worker/` and both in `infra/`; decision 0017 lists them.
+The 137 left are 133 specification-only lines (VIP-43) and 4 invariant traps. No runtime line is open. The strict
+four-metric gate still exits 1 on these positions. No threshold or exclusion changed.

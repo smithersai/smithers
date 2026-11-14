@@ -1242,3 +1242,35 @@ A collection on base `a54642d6` needs main's `bbbdcdd1` (workerd counters read `
 it, `bench/merge-coverage.ts` exits on the first workerd dump: VibeLang 0.0.13's esbuild plugin names inline-map
 sources by `file://` URL, and Istanbul resolves them beside the module. This collection applied the same conversion
 at remap time; the remapped maps are identical.
+
+### Second source-matching live receipt (resume 14, 2026-11-14)
+
+Main's `c8d32448` moved the binding counter export into `worker/benchmarkCounters.vibe`, so the `a54642d6` dump no
+longer merged. The lead deployed main `f46f5a78` (which contains `c8d32448` and `51fab4e3`) to `vl-test` at 02:02 UTC,
+ran `pnpm bench:sandboxes-live` once (1/1) and destroyed the stage; deploy, benchmark and destroy each exited 0. The
+collector, unchanged, accepts the dump's 78 counter files (build `7f4d8b63-89c3-4d71-a66d-ce1a92b622df`) against a
+checkout of `f46f5a78`.
+
+Method: as in resume 12. One benchmark-only collection on `f46f5a78` (job `vl-bench:live14-coverage`, cfbox node26,
+Node 26.5.0, 4 vCPU, 02:10–02:44 UTC: 119 files passed, 1 skipped), merged once with and once without the dump. The
+local evidence is identical in both merges; the dump adds exactly the 33 positions below and nothing else.
+
+| File | Positions | Without live counters | With live counters |
+| --- | --- | ---: | ---: |
+| `worker/SandboxAccounts.vibe` | 17, 18, 19, 21, 29, 30, 31 | open | run |
+| `worker/SandboxMachine.vibe` | 15–18 | open | run |
+| `worker/SandboxProbe.vibe` | 19, 20, 24–27 | open | run |
+| `worker/sandboxBenchmark.vibe` | 14–23 | open | run |
+| `worker/sandboxWorkerDecision.vibe` | 192, 203–205 | open | run |
+| `infra/SandboxImage.vibe` | 4, 5 | open | run |
+
+`src/` + `worker/`: 9,669/9,837 → **9,700/9,837 (98.61%)**; `infra/` 10/12 → 12/12. The 137 positions still open
+are the 133 specification-only lines (VIP-43) and the 4 invariant traps (`HistoryObject` 149–150, `Objects`
+256–257); no runtime line is open. The strict four-metric gate still exits 1 on them. No threshold or exclusion
+changed.
+
+Artifacts stay on nyc-01 under `~/vl/vl-bench-evidence/live-f46f5a78/` (the lead's JSON, `sandbox-raw/`,
+`lead-run.log`) and `~/vl/vl-bench-evidence/resume14/` (job script, summary script, collection log). The JSON
+records the Mac working-copy revision `2f8bc823`; the lead's log names main `f46f5a78`. Neither is relabeled.
+
+A later main that changes any deployed module's source opens these positions again until the next live run.
