@@ -3,6 +3,7 @@
 // (pages.vibe): the outline first, an epic's commits a page at a time, a commit in full when it is opened, a filter's
 // matches. It follows the history's events from the outline's `seq`; each event reads again what is shown. Each button
 // runs one of the history's flows through `Mythical`. Where you are is the URL's hash: `#e4` an epic, `#m12` a commit.
+import { readsEqual } from "./viewStateDecision.vibe"
 import { Command, Dom, Subscription, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { Mythical } from "../history/MythicalHistory.vibe"
@@ -221,7 +222,7 @@ export function shownReads(model: HistoryModel): ReadonlyArray<Command.Command<H
 
 /** Identity includes the epic offset and the search text, so one result never clears another failed read. */
 export function sameRead(a: HistoryRead, b: HistoryRead): boolean {
-  return a.kind === b.kind && a.id === b.id && a.from === b.from
+  return readsEqual(a.kind, a.id, a.from, b.kind, b.id, b.from)
 }
 
 function withoutFailure(model: HistoryModel, read: HistoryRead): ReadonlyArray<HistoryReadFailure> {

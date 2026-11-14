@@ -7,6 +7,7 @@ import { historyBadge, historyRefusal } from "../history/flowMachine.vibe"
 import { modeSwitch } from "./modeSwitch.vibe"
 import * as V from "./historyViewDecision.vibe"
 import * as G from "./viewGateDecision.vibe"
+import * as S from "./viewStateDecision.vibe"
 import type { Commit } from "../history/mythical.vibe"
 import { type CommitPage, type EpicCount, type Head, MAX_QUERY } from "../history/pages.vibe"
 import { clipQuery } from "../history/pageDecision.vibe"
@@ -46,7 +47,7 @@ export function view(model: HistoryModel, h: H): Document {
 const COMMIT_HASH = /^m\d+$/
 
 function body(model: HistoryModel, shown: CommitPage | undefined, epic: EpicCount | undefined, h: H): ReadonlyArray<Html> {
-  const which = V.historyBody(model.status, model.outline.epics.length, shown?.commit != null, COMMIT_HASH.test(model.hash), shown !== undefined, epic !== undefined, model.error !== "" || model.readFailures.some(({ read }) => read.kind === "commit" && read.id === model.hash))
+  const which = V.historyBody(model.status, model.outline.epics.length, shown?.commit != null, COMMIT_HASH.test(model.hash), shown !== undefined, epic !== undefined, S.pageFailed(model.error, model.readFailures.some(({ read }) => S.readIs(read.kind, read.id, "commit", model.hash))))
   if (which === "loading") return loading(h)
   if (which === "failed") {
     return [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [
@@ -135,7 +136,7 @@ function list(model: HistoryModel, h: H): ReadonlyArray<Html> {
     ...failure(model, h),
     shown.filtering
       ? h.ul(
-        [h.Class("mh-commits"), h.AriaLabel("Matching commits"), h.AriaBusy(!shown.matchesShown && !model.readFailures.some(({ read }) => read.kind === "matches" && read.id === clipQuery(model.filter, MAX_QUERY)))],
+        [h.Class("mh-commits"), h.AriaLabel("Matching commits"), h.AriaBusy(!shown.matchesShown && !model.readFailures.some(({ read }) => S.readIs(read.kind, read.id, "matches", clipQuery(model.filter, MAX_QUERY))))],
         shown.matchesShown ? model.matches.commits.map((commit) => row(model, commit, h, true)) : [],
       )
       : h.div([h.Class("mh-epics")], [
@@ -155,9 +156,9 @@ function list(model: HistoryModel, h: H): ReadonlyArray<Html> {
 /** An epic's commits read so far, and Show more while there are more. */
 function commitList(model: HistoryModel, epic: EpicCount, h: H): ReadonlyArray<Html> {
   const page = pageOf(model, epic.id)
-  const failures = model.readFailures.filter(({ read }) => read.kind === "epic" && read.id === epic.id)
+  const failures = model.readFailures.filter(({ read }) => S.readIs(read.kind, read.id, "epic", epic.id))
     .map(({ read, reason }) => readFailure(read, reason, h))
-  if (page === undefined) return [...failures, h.ul([h.Class("mh-commits"), h.AriaLabel(epic.title), h.AriaBusy(!model.readFailures.some(({ read }) => read.kind === "epic" && read.id === epic.id))], [])]
+  if (page === undefined) return [...failures, h.ul([h.Class("mh-commits"), h.AriaLabel(epic.title), h.AriaBusy(!model.readFailures.some(({ read }) => S.readIs(read.kind, read.id, "epic", epic.id)))], [])]
   return [
     ...failures,
     h.ul([h.Class("mh-commits"), h.AriaLabel(epic.title)], page.commits.map((commit) => row(model, commit, h, false))),
@@ -216,9 +217,7 @@ function badgeOf(state: Commit["state"]): string {
 }
 
 function failure(model: HistoryModel, h: H): ReadonlyArray<Html> {
-  const visible = (read: HistoryRead) => read.kind === "outline"
-    || (read.kind === "commit" && read.id === model.hash)
-    || (read.kind === "matches" && read.id === clipQuery(model.filter, MAX_QUERY) && model.filter.trim() !== "")
+  const visible = (read: HistoryRead) => S.failureShown(read.kind, read.id, model.hash, clipQuery(model.filter, MAX_QUERY), model.filter.trim() === "")
   return [
     ...(model.error === "" ? [] : [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [h.div([h.Class("sui-alert-title")], [refusalText(model.error)])])]),
     ...model.readFailures.filter(({ read }) => visible(read)).map(({ read, reason }) => readFailure(read, reason, h)),

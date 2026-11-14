@@ -1,6 +1,7 @@
 import { failureOf, postFailure, statusLabel, canSend, entryDisplay, showMedia, mediaDecision } from "./viewDecision.vibe"
 import * as V from "./viewDecision.vibe"
 import * as G from "./viewGateDecision.vibe"
+import * as S from "./viewStateDecision.vibe"
 export { failureOf } from "./viewDecision.vibe"
 import { issuesView, issueChatCard } from "./issuesView.vibe"
 // The web app's view. Chat parts use @smthrs/ui's classes (`sui-chat-*`, `sui-cmd-*`), so the conversation looks the
@@ -67,7 +68,7 @@ function top(model: Model, h: H): Html {
     h.nav([h.Class("vl-nav")], [
       h.div([h.Class("vl-nav-links")], [
       h.button([h.Class("vl-nav-link"), h.Type("button"), h.AriaLabel("Issues"), h.OnClick(Message.ClickedIssues())], [h.span([h.Class("vl-nav-issue-label")], ["Issues"]), h.svg([h.Class("vl-nav-issue-icon"), h.ViewBox("0 0 16 16"), h.Width("16"), h.Height("16"), h.AriaHidden(true)], [h.circle([h.Cx("8"), h.Cy("8"), h.R("6.75"), h.Fill("none"), h.Stroke("currentColor"), h.StrokeWidth("1.5")], []), h.circle([h.Cx("8"), h.Cy("8"), h.R("2.5"), h.Fill("currentColor")], [])])]),
-      h.button([h.Class("vl-nav-link"), h.Type("button"), ...(model.surface === "chat" && model.client.conversation.pane.startsWith("/wiki/") ? [h.AriaCurrent("page")] : []), h.OnClick(Message.ClickedWiki({ page: "index" }))], ["Wiki"]),
+      h.button([h.Class("vl-nav-link"), h.Type("button"), ...(S.wikiCurrent(model.surface, model.client.conversation.pane) ? [h.AriaCurrent("page")] : []), h.OnClick(Message.ClickedWiki({ page: "index" }))], ["Wiki"]),
       h.a([h.Class("vl-nav-link"), h.Href("/history")], ["History"]),
       h.a([h.Class("vl-nav-link vl-ext"), h.Href(DOCS_URL)], ["Docs", away(h)]),
       h.a([h.Class("vl-nav-link vl-ext"), h.Href(SOURCE_URL)], [githubMark(h), "GitHub", away(h)]),
@@ -224,7 +225,7 @@ function chat(model: Model, h: H): Html {
         entryView(entry, model, h),
       ]),
       ...pending.map((post) => pendingView(post, h)),
-      ...(model.stream === "failed"
+      ...(S.streamReconnect(model.stream)
         ? [h.div([h.Class("sui-chat-message"), h.DataAttribute("role", "system")], [
           h.div([h.Class("sui-chat-bubble")], [
             h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.ClickedReconnect())], ["Reconnect"]),
@@ -251,7 +252,7 @@ function entryView(entry: Entry, model: Model, h: H): Html {
   const issue = linked === null ? undefined : items.find((i) => i.number === Number(linked[2]))
   const text = issue === undefined ? entry.text : entry.text.replace(linked![0], "").trim()
   const body = display.markdown ? render(h, text) : [entry.text]
-  const card = entry.author === "agent" && issue !== undefined && linked !== null ? issueChatCard(h, issue, items, linked[1]!, model.issues?.data.absoluteDates === true, number => Message.OpenIssueCard({ number })) : undefined
+  const card = S.issueCardShown(entry.author, issue !== undefined && linked !== null) && issue !== undefined && linked !== null ? issueChatCard(h, issue, items, linked[1]!, model.issues?.data.absoluteDates === true, number => Message.OpenIssueCard({ number })) : undefined
   return h.article(
     [h.Class("sui-chat-message"), h.DataAttribute("role", display.role), h.DataAttribute("done", String(entry.done)), h.Key(entry.id), h.DataAttribute("in-reply-to", entry.inReplyTo)],
     [

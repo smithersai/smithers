@@ -188,7 +188,6 @@ src/web/actionView.vibe	actionsPane	pane.body === "trace" && run	Forwards: reads
 src/web/actionView.vibe	actionsPane	pane.layout === "runs" && selected	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/actionView.vibe	actionsPane	run	Presence: renders a part only while its value exists; what it holds is decided where it is set
 src/web/actionView.vibe	actionsPane	selected	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
-src/web/actionView.vibe	actionsPane	state.disconnected.length > 0	Open: state: any disconnected run shows Reconnect
 src/web/actionView.vibe	actionsPane	state.maximized	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/actionView.vibe	actionsPane/callback	filter run.flow === selected.name	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/actionView.vibe	actionsPane/callback	filter run.flow === selected.name	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
@@ -196,7 +195,6 @@ src/web/actionView.vibe	actionsPane/callback	find entry.name === state.selected	
 src/web/actionView.vibe	actionsPane/callback	find run.id === state.run	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/actionView.vibe	actionsPane/callback	some entry.name === "vibelang/Post"	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/actionView.vibe	icon	max	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
-src/web/actionView.vibe	runRows	runs.length === 0	Open: state: an action with no runs says No runs yet
 src/web/actionView.vibe	slashMenu	menu.length === 0	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
 src/web/actionView.vibe	steps/callback	interactive	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/actionView.vibe	trace	run.result === ""	Empty text: an empty string shows nothing; any other text shows as given
@@ -204,12 +202,10 @@ src/web/backend.vibe	BrowserFactory/callback/callback	?? answer?.agent	Mock mode
 src/web/backend.vibe	BrowserFactory/callback/callback	forceMock	Mock mode (VL-13): the forced mock backend, not a product decision
 src/web/backend.vibe	BrowserFactory/callback/callback	forceMock	Mock mode (VL-13): the forced mock backend, not a product decision
 src/web/historyApp.vibe	readCommand	switch read.kind	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
-src/web/historyApp.vibe	sameRead	&& a.kind === b.kind && a.id === b.id && a.from === b.from	Open: state: two reads are the same read (sameRead): kind, id and offset
-src/web/historyApp.vibe	update/ClickedMore	?? pageOf(model, id)?.commits.length	Open: state: Show more reads from the commits already shown
+src/web/historyApp.vibe	update/ClickedMore	?? pageOf(model, id)?.commits.length	Default: Show more renders only under an epic's read page (commitList), so a missing page reads from 0 only by construction
 src/web/historyApp.vibe	update/Navigated	commands.length === 0	Commands: sends the commands a proved step returned, or none; Foldkit batching, no decision
-src/web/historyApp.vibe	update/PressedEscape	model.dialog	Open: state: Escape closes the plan only while it is open
-src/web/historyApp.vibe	update/Wrote	hash === ""	Open: state: a write that names no commit leaves the address
-src/web/historyApp.vibe	withoutFailure/callback	filter !sameRead(failure.read, read)	Open: state: a result clears only its own read's failure (sameRead)
+src/web/historyApp.vibe	update/PressedEscape	model.dialog	Forwards: Escape acts on the plan's own open flag; nothing to close while it is closed
+src/web/historyApp.vibe	update/Wrote	hash === ""	Empty text: an empty hash names no commit to open, so no address is set
 src/web/historyBackend.vibe	BrowserMythical/callback/callback	?? answer?.agent	Mock mode (VL-13): the forced mock backend, not a product decision
 src/web/historyBackend.vibe	BrowserMythical/callback/callback	forceMock	Mock mode (VL-13): the forced mock backend, not a product decision
 src/web/historyStartup.vibe	backendMode/callback/callback	mode === "live"	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
@@ -218,13 +214,6 @@ src/web/historyStartup.vibe	mockRole	?? window.localStorage.getItem("vibelang.ro
 src/web/historyStartup.vibe	mockRole	asked === ""	Startup flags: copies a flag init reads from the URL or storage into the Model; startupDecision proves the flags
 src/web/historyStartup.vibe	signedRoles/callback	!("ledger" in identity)	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/historyStartup.vibe	signedRoles/callback/callback	event.type === "RoleGranted" && grantsMe(event.type, event.id, identity.id)	Variant dispatch: narrows to the grant variant for its role; the proved grantsMe decides whose grant counts
-src/web/historyView.vibe	body	|| model.error !== "" || model.readFailures.some(({ read }) => read.kind === "commit" && read.id === model.hash)	Open: state: a failed read of the shown commit fails the commit page
-src/web/historyView.vibe	body/callback	&& read.kind === "commit" && read.id === model.hash	Open: state: a failed read of the shown commit fails the commit page
-src/web/historyView.vibe	body/callback	some read.kind === "commit" && read.id === model.hash	Open: state: a failed read of the shown commit fails the commit page
-src/web/historyView.vibe	commitList/callback	&& read.kind === "epic" && read.id === epic.id	Open: state: an epic's failed reads show in its list
-src/web/historyView.vibe	commitList/callback	&& read.kind === "epic" && read.id === epic.id	Open: state: an epic's list is busy until it arrives or its read fails
-src/web/historyView.vibe	commitList/callback	filter read.kind === "epic" && read.id === epic.id	Open: state: an epic's failed reads show in its list
-src/web/historyView.vibe	commitList/callback	some read.kind === "epic" && read.id === epic.id	Open: state: an epic's list is busy until it arrives or its read fails
 src/web/historyView.vibe	commitPage	real.length === 0	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
 src/web/historyView.vibe	commitPage/callback	find each.id === commit.epic	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/historyView.vibe	commitPage/notes/callback	filter note.section === which	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -236,10 +225,7 @@ src/web/historyView.vibe	epicCard	open	Markup: an icon, class, element or size f
 src/web/historyView.vibe	epicCard	open	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/historyView.vibe	failure	model.error === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/historyView.vibe	failure/callback	filter visible(read)	Open: state: which failed reads the page shows (outline, shown commit, current search)
-src/web/historyView.vibe	failure/visible	|| read.kind === "outline" || (read.kind === "commit" && read.id === model.hash) || (read.kind === "matches" && read.id === clipQuery(model.filter, MAX_QUERY) && model.filter.trim() !== "")	Open: state: which failed reads the page shows (outline, shown commit, current search)
 src/web/historyView.vibe	list	model.exported === ""	Empty text: an empty string shows nothing; any other text shows as given
-src/web/historyView.vibe	list/callback	&& read.kind === "matches" && read.id === clipQuery(model.filter, MAX_QUERY)	Open: state: matches are busy until they arrive or their read fails
-src/web/historyView.vibe	list/callback	some read.kind === "matches" && read.id === clipQuery(model.filter, MAX_QUERY)	Open: state: matches are busy until they arrive or their read fails
 src/web/historyView.vibe	plan	model.dialog	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/historyView.vibe	plan	shown?.id === form.target	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/historyView.vibe	row	?? model.outline.epics.find((each) => each.id === commit.epic)?.title	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -259,14 +245,11 @@ src/web/issuesView.vibe	badges	i.task === ""	Empty text: an empty string shows n
 src/web/issuesView.vibe	badges	i.vip === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	badges	labels	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/issuesView.vibe	button	primary	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
-src/web/issuesView.vibe	connection	ui.data.connected === false	Open: state: GitHub connection: yes, no or unknown
-src/web/issuesView.vibe	connection	ui.data.connected === true	Open: state: GitHub connection: yes, no or unknown
 src/web/issuesView.vibe	detail	?? i.approvedAt	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/issuesView.vibe	detail	?? i.approvedAt	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/issuesView.vibe	detail	i.assignee === ""	Open: label: an unassigned issue says No one
 src/web/issuesView.vibe	detail	i.state === "open"	Open: label: an issue's state reads Open or Closed
 src/web/issuesView.vibe	detail	i.task === ""	Empty text: an empty string shows nothing; any other text shows as given
-src/web/issuesView.vibe	detail	i.vip !== "" || (parent === undefined && children.length === 0)	Open: state: the Tree card shows for a non-VIP with a parent or children
 src/web/issuesView.vibe	detail	i.vip === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	detail	i.vip === ""	Presence: renders a part only while its value exists; what it holds is decided where it is set
 src/web/issuesView.vibe	detail	ui.data.reviewers === undefined || ui.data.reviewers.length === 0	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
@@ -282,22 +265,16 @@ src/web/issuesView.vibe	detail/callback	n.age === ""	Empty text: an empty string
 src/web/issuesView.vibe	detail/callback	n.age === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	dialog	?? ui.data.assignees	Default: the assignee choices a host sends, else the fixture list (mock mode, VL-13)
 src/web/issuesView.vibe	dialog	ui.dialog === ""	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
-src/web/issuesView.vibe	dialog	ui.dialog === "commit"	Open: state: the dialog's body by kind: assignee, split or link
-src/web/issuesView.vibe	dialog	ui.dialog === "split"	Open: state: the dialog's body by kind: assignee, split or link
 src/web/issuesView.vibe	dialog	ui.error === ""	Empty text: an empty string shows nothing; any other text shows as given
-src/web/issuesView.vibe	dialog/callback	filter choice.display.trim() !== ""	Open: state: an assignee choice with a blank name is not offered
-src/web/issuesView.vibe	dialog/callback	key === "Enter"	Open: state: Enter commits in the assignee picker
 src/web/issuesView.vibe	field	action === "title"	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/issuesView.vibe	field	code	Open: state: Enter continues from the VIP title
 src/web/issuesView.vibe	field	code	Open: state: Enter continues from the VIP title
-src/web/issuesView.vibe	field/callback	key === "Enter" && advance	Open: state: Enter continues from the VIP title
 src/web/issuesView.vibe	form	ui.error === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	form	vip	Open: label: the form's title and back link by VIP or issue
 src/web/issuesView.vibe	form	vip	Open: label: the form's title and back link by VIP or issue
 src/web/issuesView.vibe	form	vip	Open: label: the form's title and back link by VIP or issue
 src/web/issuesView.vibe	form	vip	Open: label: the form's title and back link by VIP or issue
 src/web/issuesView.vibe	form/callback	idx + 1 === ui.step	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-src/web/issuesView.vibe	header	back === "‹ Chat"	Open: state: Back from the list closes the issues; from a page it opens the list
 src/web/issuesView.vibe	icon	done	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/issuesView.vibe	icon	kind === "queued"	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/issuesView.vibe	icon	kind === "queued"	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
@@ -313,9 +290,6 @@ src/web/issuesView.vibe	issueChatCard	issue.state === "open"	Open: label: an iss
 src/web/issuesView.vibe	issueChatCard	label.trim() === ""	Open: label: a blank card link reads Open #n
 src/web/issuesView.vibe	issueChatCard/callback	filter child.parent === issue.number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/issuesView.vibe	issueLink	full	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
-src/web/issuesView.vibe	list	ui.error === "" || ui.status === "error"	Open: state: the list's error banner hides when empty or when the list itself failed
-src/web/issuesView.vibe	list/callback	&& i.state === ui.state && `${i.title} #${i.number} ${i.labels.join(" ")}`.toLowerCase().includes(ui.query.toLowerCase())	Open: state: the list shows issues in the chosen state that match the search
-src/web/issuesView.vibe	list/callback	filter i.state === ui.state && `${i.title} #${i.number} ${i.labels.join(" ")}`.toLowerCase().includes(ui.query.toLowerCase())	Open: state: the list shows issues in the chosen state that match the search
 src/web/issuesView.vibe	list/callback	i.assignee === ""	Open: label: an issue row's meta: parent, children, assignee
 src/web/issuesView.vibe	list/callback	i.comments === 0	Zero: a zero count or revision shows nothing or a dash; any other shows as given
 src/web/issuesView.vibe	list/callback	i.parent === 0	Open: label: an issue row's meta: parent, children, assignee
@@ -568,7 +542,6 @@ src/web/view.vibe	chat	!layout.actionsInline	Forwards: reads a value or flag ano
 src/web/view.vibe	chat	layout.docsInline	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/view.vibe	chat	layout.empty	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/view.vibe	chat	layout.wikiFirst	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
-src/web/view.vibe	chat	model.stream === "failed"	Open: state: a failed event stream shows Reconnect
 src/web/view.vibe	chat/callback	?? model.wikiAfter	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/view.vibe	chat/callback	filter i.state === "open"	Open: count: the Issues button counts open issues
 src/web/view.vibe	chatLayoutOf	&& model.wikiAfter !== undefined && model.wikiAfter !== ""	Presence: renders a part only while its value exists; what it holds is decided where it is set
@@ -583,7 +556,6 @@ src/web/view.vibe	control/callback	model.theatre.paused	Markup: an icon, class, 
 src/web/view.vibe	docsPane	maximized	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/view.vibe	docsPane	maximized	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/view.vibe	entryView	?? model.issues?.data.items	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/view.vibe	entryView	entry.author === "agent" && issue !== undefined && linked !== null	Open: state: an agent entry that links a known issue shows its card
 src/web/view.vibe	entryView	entry.author === "person" && ownPost(entry.clientId, model.session)	Open: label: a person's own post is labeled You
 src/web/view.vibe	entryView/callback	find i.number === Number(linked[2])	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/view.vibe	media/source	?? model.mediaSources?.[src]	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
@@ -591,7 +563,6 @@ src/web/view.vibe	palette	model.palette	Markup: an icon, class, element or size 
 src/web/view.vibe	palette	model.palette	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/view.vibe	pendingView	post.error === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/view.vibe	showsWiki	?? model.wikiStatus	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/view.vibe	top	model.surface === "chat" && model.client.conversation.pane.startsWith("/wiki/")	Open: state: Wiki is the current nav link while the chat shows a wiki page
 src/web/view.vibe	view	layout.actionsOver	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/view.vibe	view	layout.paneOver	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/view.vibe	view	model.answer === ""	Empty text: an empty string shows nothing; any other text shows as given
@@ -611,7 +582,7 @@ src/web/viewport.vibe	transcriptViewport/touchStart	active() && first	Host bound
 src/web/wikiView.vibe	observedHtml	?? observed?.source	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/wikiView.vibe	observedHtml/callback	find entry.id === page.id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/wikiView.vibe	wikiPane	?? model.wikiQuery	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/wikiView.vibe	wikiPane	?? model.wikiRequested	Open: state: Retry reopens the requested page, else the index
+src/web/wikiView.vibe	wikiPane	?? model.wikiRequested	Default: the error state follows a request, which sets wikiRequested; the index is the wiki's first page
 src/web/wikiView.vibe	wikiPane	decisions.length	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
 src/web/wikiView.vibe	wikiPane	editing.error === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/wikiView.vibe	wikiPane	loading	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new

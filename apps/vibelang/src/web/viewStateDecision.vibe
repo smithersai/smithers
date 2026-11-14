@@ -1,0 +1,122 @@
+// Which state a view shows, decided inline before (0018 "Decisions in views", batch 58, lane vl-proveall3): failed
+// reads, empty and error states, which dialog body, connection, list membership and keys. Plain values in, plain
+// answers out; the views build the Html.
+
+/** Two history reads are the same read: same kind, id and offset, so one result never clears another's failure. */
+//@ verify
+//@ ensures \result == (aKind == bKind && aId == bId && aFrom == bFrom)
+export function readsEqual(aKind: string, aId: string, aFrom: number, bKind: string, bId: string, bFrom: number): boolean {
+  return aKind === bKind && aId === bId && aFrom === bFrom
+}
+
+/** A failed read belongs to what the page shows when its kind and id match: the shown commit, an epic, a search. */
+//@ verify
+//@ ensures \result == (readKind == kind && readId == id)
+export function readIs(readKind: string, readId: string, kind: string, id: string): boolean {
+  return readKind === kind && readId === id
+}
+
+/** The page shows a failed read of the outline, of the shown commit, and of the current nonblank search. */
+//@ verify
+//@ ensures \result == (kind == "outline" || (kind == "commit" && id == hash) || (kind == "matches" && id == query && !blank))
+export function failureShown(kind: string, id: string, hash: string, query: string, blank: boolean): boolean {
+  return kind === "outline" || (kind === "commit" && id === hash) || (kind === "matches" && id === query && !blank)
+}
+
+/** The history page has failed: a refusal it shows, or a failed read of the shown commit. */
+//@ verify
+//@ ensures \result == (error != "" || failedRead)
+export function pageFailed(error: string, failedRead: boolean): boolean {
+  return error !== "" || failedRead
+}
+
+/** GitHub connection as the issues page knows it: yes, no, or unknown before an answer says. */
+//@ verify
+//@ ensures \result == (yes ? "yes" : no ? "no" : "unknown")
+export function connectionOf(yes: boolean, no: boolean): "yes" | "no" | "unknown" {
+  return yes ? "yes" : no ? "no" : "unknown"
+}
+
+/** The issues list holds the issues in the chosen state that match the search. */
+//@ verify
+//@ ensures \result == (state == shown && matches)
+export function issueListed(state: string, shown: string, matches: boolean): boolean {
+  return state === shown && matches
+}
+
+/** The list's error banner shows a nonempty error, unless the list itself failed (its own error state says so). */
+//@ verify
+//@ ensures \result == (error != "" && status != "error")
+export function listErrorShown(error: string, status: string): boolean {
+  return error !== "" && status !== "error"
+}
+
+/** The Tree card shows for an issue that is not a VIP and has a parent or children. */
+//@ verify
+//@ ensures \result == (vip == "" && (hasParent || children > 0))
+export function treeShown(vip: string, hasParent: boolean, children: number): boolean {
+  return vip === "" && (hasParent || children > 0)
+}
+
+/** The issue dialog's body: the assignee picker to commit, the split form, else the link form. */
+//@ verify
+//@ ensures \result == (dialog == "commit" ? "assignee" : dialog == "split" ? "split" : "link")
+export function dialogBody(dialog: string): "assignee" | "split" | "link" {
+  return dialog === "commit" ? "assignee" : dialog === "split" ? "split" : "link"
+}
+
+/** Back from the issues list closes the issues; from any page under it, Back opens the list. */
+//@ verify
+//@ ensures \result == (back == "‹ Chat" ? "close" : "list")
+export function backAction(back: string): "close" | "list" {
+  return back === "‹ Chat" ? "close" : "list"
+}
+
+/** Enter continues from a field that advances (the VIP title), and commits in the assignee picker. */
+//@ verify
+//@ ensures \result == (key == "Enter" && advances)
+export function enterActs(key: string, advances: boolean): boolean {
+  return key === "Enter" && advances
+}
+
+/** An assignee choice with a blank name is not offered: it would be a button without a name. */
+//@ verify
+//@ ensures \result == (trimmed != "")
+export function choiceOffered(trimmed: string): boolean {
+  return trimmed !== ""
+}
+
+/** An action with no runs says so. */
+//@ verify
+//@ ensures \result == (runs == 0)
+export function noRuns(runs: number): boolean {
+  return runs === 0
+}
+
+/** Any disconnected run puts Reconnect over the Actions pane. */
+//@ verify
+//@ ensures \result == (disconnected > 0)
+export function reconnectShown(disconnected: number): boolean {
+  return disconnected > 0
+}
+
+/** A failed event stream shows Reconnect in the conversation. */
+//@ verify
+//@ ensures \result == (stream == "failed")
+export function streamReconnect(stream: string): boolean {
+  return stream === "failed"
+}
+
+/** An agent entry that links an issue the page knows shows that issue's card. */
+//@ verify
+//@ ensures \result == (author == "agent" && known)
+export function issueCardShown(author: string, known: boolean): boolean {
+  return author === "agent" && known
+}
+
+/** Wiki is the current nav link while the chat shows a wiki page. */
+//@ verify
+//@ ensures \result == (surface == "chat" && pane.startsWith("/wiki/"))
+export function wikiCurrent(surface: string, pane: string): boolean {
+  return surface === "chat" && pane.startsWith("/wiki/")
+}

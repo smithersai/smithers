@@ -8,6 +8,7 @@ import type { IssuesUi } from "./issues.vibe"
 import { blocks, inline as codeParts } from "./markdown.vibe"
 import * as V from "./issuesViewDecision.vibe"
 import * as G from "./viewGateDecision.vibe"
+import * as S from "./viewStateDecision.vibe"
 import { wikiErrorAction } from "./wikiViewDecision.vibe"
 import { roleName } from "./accountViewDecision.vibe"
 
@@ -71,7 +72,7 @@ function issueLink(h: H, send: Send, i: IssueRecord, full = true): Html {
 }
 function header(h: H, send: Send, name: string, back = "‹ Chat", actions: ReadonlyArray<Html> = []): Html {
   return h.header([h.Class("sui-page-header")], [h.div([h.Class("sui-page-header-inner")], [
-    h.div([h.Class("sui-page-header-back")], [h.a([h.Href("#issues"), h.OnClick(send(back === "‹ Chat" ? "close" : "list"), { defaultAction: "Prevent" })], [back])]),
+    h.div([h.Class("sui-page-header-back")], [h.a([h.Href("#issues"), h.OnClick(send(S.backAction(back)), { defaultAction: "Prevent" })], [back])]),
     h.h1([h.Class("sui-page-header-title")], [name]),
     h.div([h.Class("sui-page-header-actions")], actions),
   ])])
@@ -96,7 +97,7 @@ function screenOf(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
   return screen === "specification" ? specificationView(ui, h, send) : screen === "roles" ? rolesView(h, send) : screen === "detail" ? detail(ui, h, send) : screen === "form" ? form(ui, h, send) : list(ui, h, send)
 }
 function connected(ui: IssuesUi): boolean { return ui.data.connected !== false }
-function connection(ui: IssuesUi): "yes" | "no" | "unknown" { return ui.data.connected === true ? "yes" : ui.data.connected === false ? "no" : "unknown" }
+function connection(ui: IssuesUi): "yes" | "no" | "unknown" { return S.connectionOf(ui.data.connected === true, ui.data.connected === false) }
 function isAgent(name: string): boolean { return name === "VibeLang agent" }
 /** A failure's Retry (retryAction): the kept request when still permitted, else a comments read. */
 function retryButton(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
@@ -138,12 +139,12 @@ function rolesView(h: H, send: Send): ReadonlyArray<Html> {
 }
 function list(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
   const filtered = ui.data.items.filter((i) => V.kindIncludes(ui.kind, i.task, i.vip))
-  const rows = filtered.filter((i) => i.state === ui.state && `${i.title} #${i.number} ${i.labels.join(" ")}`.toLowerCase().includes(ui.query.toLowerCase()))
+  const rows = filtered.filter((i) => S.issueListed(i.state, ui.state, `${i.title} #${i.number} ${i.labels.join(" ")}`.toLowerCase().includes(ui.query.toLowerCase())))
   const add = G.newIssueControl(ui.kind, connected(ui), issuePermission(ui.role, "propose"), issuePermission(ui.role, "new"))
   const control = V.connectionControl(ui.role, connection(ui))
   const connectionControls = control === "connect" ? [connect(h, ui)] : control === "disconnect" ? [disconnect(h)] : []
   const controls = add.shown ? [h.button([h.Class("sui-button sui-button-sm sui-button-default"), h.Type("button"), h.OnClick(send(add.action))], [add.label])] : []
-  return [header(h, send, titleOf(ui), "‹ Chat", [...staleMark(h, ui.data.stale), button(h, send, "Specification", "specification"), button(h, send, "Roles", "roles"), ...connectionControls, ...controls]), ...(ui.error === "" || ui.status === "error" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...retryButton(ui, h, send)])]), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-issues-view")], [
+  return [header(h, send, titleOf(ui), "‹ Chat", [...staleMark(h, ui.data.stale), button(h, send, "Specification", "specification"), button(h, send, "Roles", "roles"), ...connectionControls, ...controls]), ...(!S.listErrorShown(ui.error, ui.status) ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...retryButton(ui, h, send)])]), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-issues-view")], [
     h.div([h.Class("sui-issues-header")], [
       h.div([h.Class("sui-issues-filters")], (["open", "closed"] as const).map((state) => h.a([h.Class("sui-issues-filter"), h.Href(`#${state}`), ...(state === ui.state ? [h.AriaCurrent("page")] : []), h.OnClick(send("state", state), { defaultAction: "Prevent" })], [state === "open" ? "◉ Open " : "✓ Closed ", h.span([h.Class("sui-issues-filter-count")], [String(filtered.filter((i) => i.state === state).length)])]))),
       h.div([h.Class("sui-segmented"), h.DataAttribute("size", "sm"), h.Role("radiogroup"), h.AriaLabel("Kind")], (["All", "Issues", "Tasks", "VIPs"] as const).map((kind, index, kinds) => h.button([h.Id(`ix-kind-${kind}`), h.Class("sui-segmented-item"), h.Type("button"), h.Role("radio"), h.AriaChecked(ui.kind === kind), h.Tabindex(ui.kind === kind ? 0 : -1), h.OnClick(send("kind", kind)), h.OnKeyDownPreventDefault((key) => V.kindKey(index, key) < 0 ? Option.none() : Option.some(send("kind-key", kinds[V.kindKey(index, key)]!)))], [kind]))),
@@ -173,7 +174,7 @@ function detail(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
     h.div([h.Class("sui-item-conv-header")], [h.h1([h.Class("sui-item-conv-title")], [i.title, " ", h.span([h.Class("sui-item-conv-number")], [`#${i.number}`])]), h.div([h.Class("sui-item-conv-meta")], [h.span([h.Class("sui-item-conv-state sui-badge sui-badge-success")], [icon(h, i), i.state === "open" ? "Open" : "Closed"]), ...badges(h, i, false), h.span([], [`${i.author} opened ${when(ui.data.absoluteDates === true, i.age, true)} · ${i.comments} comments`]), h.span([h.Class("sui-item-conv-header-actions")], actions)])]),
     h.div([h.Class("sui-item-conv-main")], [
       h.div([h.Class("sui-item-conv-post")], [h.div([h.Class("sui-item-conv-comment-meta")], [avatar(h, i.author), h.span([h.Class("sui-item-conv-author")], [i.author]), h.span([], [when(ui.data.absoluteDates === true, i.age, true)])]), ...issueBody(ui, h, send, i.body)]),
-      ...(i.vip !== "" || (parent === undefined && children.length === 0) ? [] : [
+      ...(!S.treeShown(i.vip, parent !== undefined, children.length) ? [] : [
       h.div([h.Class("sui-card")], [h.div([h.Class("sui-card-header")], [h.div([h.Class("sui-card-title")], ["Tree"]), h.span([h.Class("sui-card-action sui-badge sui-badge-secondary")], [`${children.length} ${V.childrenWord(children.length)}`])]), h.div([h.Class("sui-card-content ix-tree")], [
         ...(parent === undefined ? [] : [h.div([h.Class("ix-tree-parent")], ["Part of ", issueLink(h, send, parent)])]),
         h.ul([h.Class("ix-tree-list")], children.map((child) => h.li([h.Class("ix-tree-row")], [icon(h, child), issueLink(h, send, child), h.span([h.Class("ix-tree-meta")], [...badges(h, child, false), ...(child.assignee === "" ? [] : [avatar(h, child.assignee)])])]))),
@@ -192,7 +193,7 @@ function detail(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
   ])])]
 }
 function field(h: H, send: Send, label: string, action: string, value: string, placeholder = "", code = false, advance = false, locked = false): Html {
-  return h.div([h.Class("sui-field")], [h.label([h.Class("sui-label"), h.For(`ix-${action}`)], [label]), action === "title" ? h.input([h.Id(`ix-${action}`), h.Disabled(locked), h.Class("sui-input"), h.AriaLabel(label), h.Placeholder(placeholder), h.Value(value), h.OnInput((v) => send(action, v)), h.OnKeyDownPreventDefault((key) => key === "Enter" && advance ? Option.some(send("continue")) : Option.none())]) : h.textarea([h.Id(`ix-${action}`), h.Disabled(locked), h.Class(`sui-textarea${code ? " vl-code" : ""}`), ...(code ? [h.DataAttribute("code", ""), h.Rows(5)] : []), h.AriaLabel(label), h.Placeholder(placeholder), h.Value(value), h.OnInput((v) => send(action, v))])])
+  return h.div([h.Class("sui-field")], [h.label([h.Class("sui-label"), h.For(`ix-${action}`)], [label]), action === "title" ? h.input([h.Id(`ix-${action}`), h.Disabled(locked), h.Class("sui-input"), h.AriaLabel(label), h.Placeholder(placeholder), h.Value(value), h.OnInput((v) => send(action, v)), h.OnKeyDownPreventDefault((key) => S.enterActs(key, advance) ? Option.some(send("continue")) : Option.none())]) : h.textarea([h.Id(`ix-${action}`), h.Disabled(locked), h.Class(`sui-textarea${code ? " vl-code" : ""}`), ...(code ? [h.DataAttribute("code", ""), h.Rows(5)] : []), h.AriaLabel(label), h.Placeholder(placeholder), h.Value(value), h.OnInput((v) => send(action, v))])])
 }
 function form(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
   const vip = ui.screen === "vip"
@@ -216,9 +217,10 @@ function form(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
 function dialog(ui: IssuesUi, h: H, send: Send): Html {
   if (ui.dialog === "") return h.dialog([h.Id("ix-dialog"), h.Class("sui-dialog-content ix-dialog"), h.DataAttribute("state", "closed")], [])
   const name = V.dialogTitle(ui.dialog, String(ui.selected))
+  const body = S.dialogBody(ui.dialog)
   return h.dialog([h.Id("ix-dialog"), h.Class("sui-dialog-content ix-dialog"), h.AriaLabel(name), h.AriaModal(true), h.DataAttribute("state", "open"), h.OnCancelPreventDefault(send("cancel"))], [
     h.div([h.Class("sui-dialog-header")], [h.h2([h.Class("sui-dialog-title")], [name])]),
-    ...(ui.dialog === "commit" ? [h.div([h.Class("sui-field")], [h.span([h.Class("sui-label")], ["Assignee"]), h.div([h.Class("ix-pick"), h.Role("radiogroup"), h.AriaLabel("Assignee"), h.OnKeyDownPreventDefault((key) => key === "Enter" ? Option.some(send("commit")) : Option.none())], (ui.data.assignees ?? ["VibeLang agent", "Will", "Maya"].map((name) => ({ login: name, label: name }))).map((choice) => ({ ...choice, display: V.assigneeName(choice.label, choice.login) })).filter((choice) => choice.display.trim() !== "").map((choice) => h.label([], [h.input([h.Type("radio"), h.AriaLabel(choice.display), h.Disabled(G.issueLocked(ui.busy, ui.retry !== undefined)), h.Name("assignee"), h.Checked(ui.assignee === choice.login), h.Value(choice.login), h.OnClick(send("assignee", choice.login))]), h.span([h.Class("ix-avatar"), h.DataAttribute("agent", String(isAgent(choice.display)))], [choice.display.slice(0, 1)]), choice.display])))])] : ui.dialog === "split" ? [field(h, send, "Title", "title", ui.title), field(h, send, "Summary", "summary", ui.summary, "", false, false, G.issueLocked(ui.busy, ui.retry !== undefined))] : [field(h, send, "Parent", "parent", ui.parent)]),
+    ...(body === "assignee" ? [h.div([h.Class("sui-field")], [h.span([h.Class("sui-label")], ["Assignee"]), h.div([h.Class("ix-pick"), h.Role("radiogroup"), h.AriaLabel("Assignee"), h.OnKeyDownPreventDefault((key) => S.enterActs(key, true) ? Option.some(send("commit")) : Option.none())], (ui.data.assignees ?? ["VibeLang agent", "Will", "Maya"].map((name) => ({ login: name, label: name }))).map((choice) => ({ ...choice, display: V.assigneeName(choice.label, choice.login) })).filter((choice) => S.choiceOffered(choice.display.trim())).map((choice) => h.label([], [h.input([h.Type("radio"), h.AriaLabel(choice.display), h.Disabled(G.issueLocked(ui.busy, ui.retry !== undefined)), h.Name("assignee"), h.Checked(ui.assignee === choice.login), h.Value(choice.login), h.OnClick(send("assignee", choice.login))]), h.span([h.Class("ix-avatar"), h.DataAttribute("agent", String(isAgent(choice.display)))], [choice.display.slice(0, 1)]), choice.display])))])] : body === "split" ? [field(h, send, "Title", "title", ui.title), field(h, send, "Summary", "summary", ui.summary, "", false, false, G.issueLocked(ui.busy, ui.retry !== undefined))] : [field(h, send, "Parent", "parent", ui.parent)]),
     ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...failureAction(h, ui), ...retryButton(ui, h, send)])]),
     h.div([h.Class("sui-dialog-footer")], [button(h, send, "Cancel", "cancel"), h.button([h.Class("sui-button sui-button-sm sui-button-solid"), h.Type("button"), h.Disabled(G.issueLocked(ui.busy, ui.retry !== undefined)), h.OnClick(send(ui.dialog))], [V.dialogSubmit(ui.dialog)])]),
   ])

@@ -1,6 +1,7 @@
 """Executable mutations of the decisions the views made inline (0018 "Decisions in views", lane vl-proveall3);
 contracts are never edited."""
 G = 'src/web/viewGateDecision.vibe'
+S = 'src/web/viewStateDecision.vibe'
 cases = [
 # Batch 57: gating and enablement.
 (G, 'gate-mode-offered', 'switchedMode', 'return offered && mode !== "pending" ? mode : ""', 'return mode !== "pending" ? mode : ""', 'a page that offers no switch shows none'),
@@ -41,4 +42,38 @@ cases = [
 (G, 'account-changed-same', 'personChanged', 'return (epoch > 0 || before !== "") && before !== after', 'return (epoch > 0 || before !== "")', 'the same person is no change'),
 (G, 'dialog-open-present', 'dialogOpen', 'return present && dialog !== ""', 'return dialog !== ""', 'no issues screen, no dialog'),
 (G, 'dialog-open-named', 'dialogOpen', 'return present && dialog !== ""', 'return present', 'an unnamed dialog is closed'),
+# Batch 58: which state a view shows.
+(S, 'state-reads-kind', 'readsEqual', 'return aKind === bKind && aId === bId && aFrom === bFrom', 'return aId === bId && aFrom === bFrom', 'reads of different kinds differ'),
+(S, 'state-reads-id', 'readsEqual', 'return aKind === bKind && aId === bId && aFrom === bFrom', 'return aKind === bKind && aFrom === bFrom', 'reads of different ids differ'),
+(S, 'state-reads-from', 'readsEqual', 'return aKind === bKind && aId === bId && aFrom === bFrom', 'return aKind === bKind && aId === bId', 'reads from different offsets differ'),
+(S, 'state-read-kind', 'readIs', 'return readKind === kind && readId === id', 'return readId === id', 'a failed read of another kind is not this one'),
+(S, 'state-read-id', 'readIs', 'return readKind === kind && readId === id', 'return readKind === kind', 'a failed read of another id is not this one'),
+(S, 'state-failure-outline', 'failureShown', 'return kind === "outline" || ', 'return ', 'an outline failure always shows'),
+(S, 'state-failure-commit', 'failureShown', '(kind === "commit" && id === hash)', '(kind === "commit")', 'only the shown commit fails the page'),
+(S, 'state-failure-search', 'failureShown', '(kind === "matches" && id === query && !blank)', '(kind === "matches" && id === query)', 'a blank search shows no failure'),
+(S, 'state-failure-query', 'failureShown', '(kind === "matches" && id === query && !blank)', '(kind === "matches" && !blank)', 'only the current search shows its failure'),
+(S, 'state-page-error', 'pageFailed', 'return error !== "" || failedRead', 'return failedRead', 'a refusal fails the page'),
+(S, 'state-page-read', 'pageFailed', 'return error !== "" || failedRead', 'return error !== ""', 'a failed commit read fails the page'),
+(S, 'state-connection-yes', 'connectionOf', 'return yes ? "yes" : no ? "no" : "unknown"', 'return no ? "no" : "unknown"', 'a known connection says yes'),
+(S, 'state-connection-no', 'connectionOf', 'return yes ? "yes" : no ? "no" : "unknown"', 'return yes ? "yes" : "unknown"', 'a known disconnection says no'),
+(S, 'state-listed-state', 'issueListed', 'return state === shown && matches', 'return matches', 'the list holds only the chosen state'),
+(S, 'state-listed-search', 'issueListed', 'return state === shown && matches', 'return state === shown', 'the list holds only search matches'),
+(S, 'state-banner-error', 'listErrorShown', 'return error !== "" && status !== "error"', 'return status !== "error"', 'no error, no banner'),
+(S, 'state-banner-status', 'listErrorShown', 'return error !== "" && status !== "error"', 'return error !== ""', "a failed list shows its own error, not the banner"),
+(S, 'state-tree-vip', 'treeShown', 'return vip === "" && (hasParent || children > 0)', 'return (hasParent || children > 0)', 'a VIP shows no tree'),
+(S, 'state-tree-parent', 'treeShown', 'return vip === "" && (hasParent || children > 0)', 'return vip === "" && (children > 0)', 'a child shows its tree'),
+(S, 'state-tree-children', 'treeShown', 'return vip === "" && (hasParent || children > 0)', 'return vip === "" && (hasParent)', 'a parent shows its tree'),
+(S, 'state-dialog-commit', 'dialogBody', 'return dialog === "commit" ? "assignee"', 'return dialog === "split" ? "assignee"', 'Commit picks an assignee'),
+(S, 'state-dialog-split', 'dialogBody', ': dialog === "split" ? "split" : "link"', ': "link"', 'Split shows the split form'),
+(S, 'state-back', 'backAction', 'return back === "‹ Chat" ? "close" : "list"', 'return "list"', 'Back from the list closes the issues'),
+(S, 'state-enter-key', 'enterActs', 'return key === "Enter" && advances', 'return advances', 'only Enter acts'),
+(S, 'state-enter-advances', 'enterActs', 'return key === "Enter" && advances', 'return key === "Enter"', 'Enter acts only where it advances'),
+(S, 'state-choice-blank', 'choiceOffered', 'return trimmed !== ""', 'return true', 'a blank choice is not offered'),
+(S, 'state-no-runs', 'noRuns', 'return runs === 0', 'return runs <= 1', 'one run is not none'),
+(S, 'state-reconnect', 'reconnectShown', 'return disconnected > 0', 'return disconnected > 1', 'one lost run shows Reconnect'),
+(S, 'state-stream', 'streamReconnect', 'return stream === "failed"', 'return stream !== "live"', 'only a failed stream shows Reconnect'),
+(S, 'state-card-author', 'issueCardShown', 'return author === "agent" && known', 'return known', "only the agent's entries show cards"),
+(S, 'state-card-known', 'issueCardShown', 'return author === "agent" && known', 'return author === "agent"', 'an unknown issue shows no card'),
+(S, 'state-wiki-surface', 'wikiCurrent', 'return surface === "chat" && pane.startsWith("/wiki/")', 'return pane.startsWith("/wiki/")', 'Wiki is current only in the chat'),
+(S, 'state-wiki-pane', 'wikiCurrent', 'return surface === "chat" && pane.startsWith("/wiki/")', 'return surface === "chat"', 'Wiki is current only on a wiki page'),
 ]

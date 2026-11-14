@@ -2,6 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Registered, Run } from "../actions/Actions.vibe"
 import { actionsOf, completions, resultText, selectedStep } from "./actionModel.vibe"
 import * as D from "./actionViewDecision.vibe"
+import * as S from "./viewStateDecision.vibe"
 import { observedState } from "./actionFollowDecision.vibe"
 import { type Message as AppMessage, Message, type Model } from "./main.vibe"
 type H = HtmlBuilder<AppMessage>
@@ -27,7 +28,7 @@ function actionRow(h: H, entry: Registered, model: Model): Html {
   ])
 }
 function runRows(h: H, runs: ReadonlyArray<Run>, now = 0, disconnected: ReadonlyArray<string> = []): Html {
-  return h.div([h.Class("vl-act-main")], runs.length === 0 ? [h.div([h.Class("sui-empty")], ["No runs yet"])] : runs.map((run) =>
+  return h.div([h.Class("vl-act-main")], S.noRuns(runs.length) ? [h.div([h.Class("sui-empty")], ["No runs yet"])] : runs.map((run) =>
     h.button([h.Class("sui-row-button vl-run"), h.Type("button"), h.OnClick(Message.SelectedRun({ id: run.id, flow: run.flow }))], [
       dot(h, status(run, disconnected)), h.span([h.Class("vl-run-main")], [h.span([h.Class("vl-run-title")], [`${title(run.flow)} #${run.id}`]), h.span([h.Class("vl-run-meta")], [`${run.actor} · ${D.runStatus(status(run, disconnected))}`])]), h.span([h.Class("vl-run-dur")], [duration(run, now, disconnected)]),
     ])
@@ -70,7 +71,7 @@ export function actionsPane(model: Model, h: H): Html {
         h.button([h.Class("vl-docs-toggle"), h.Type("button"), h.AriaLabel("Collapse Actions"), h.OnClick(Message.ClickedActions())], ["×"]),
       ]),
     ]),
-    ...(state.disconnected.length > 0 ? [reconnect(h)] : []),
+    ...(S.reconnectShown(state.disconnected.length) ? [reconnect(h)] : []),
     h.div([h.Class("vl-act-body")], pane.body === "loading" ? [h.div([h.Class("sui-skeleton"), h.AriaLabel("Loading actions"), h.Style({ height: "32px" })], [])] : pane.body === "error" ? [
       h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], ["Couldn't load runs", h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.RetriedActions())], ["Retry"])]),
     ] : [...(pane.notice ? [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [state.error])] : []), ...(pane.body === "trace" && run ? [trace(h, run, state.now, state.step, state.disconnected)] : [
