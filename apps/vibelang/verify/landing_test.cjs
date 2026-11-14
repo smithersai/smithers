@@ -127,6 +127,12 @@ test('a new branch in a shell row is refused until it is proved or recorded with
   const defaults = answer + 'export function d(n: number, door = "slash", p = size(n)) {\n  const { k = 1 } = { k: n }\n  return [door, p, k]\n}\n';
   assert.deepEqual(shellBranches(inventorySource(fixture, defaults)).filter(branch => branch.kind === 'default').map(branch => branch.test),
     ['default k = 1', 'default door = "slash"']);
+  // An error fallback chooses what a failure answers (batch 73): a `catch` expression's handler and a `try`'s `catch`
+  // block; one that calls a proved function is that function's choice. A long handler's record is cut at 120 characters.
+  const failures = answer + 'export effect function c(n: number) {\n  const v = (try parse(n)) catch () => "small"\n  const w = (try parse(n)) catch () => size(n)\n'
+    + '  try {\n    parse(n)\n  } catch {\n    return 0\n  }\n  return [v, w, (try parse(n)) catch () => "' + 'x'.repeat(130) + '"]\n}\n';
+  assert.deepEqual(shellBranches(inventorySource(fixture, failures)).filter(branch => branch.kind === 'catch').map(branch => branch.test),
+    ['catch () => "small"', 'catch { return 0 }', `catch () => "${'x'.repeat(110)}...`]);
   // A recorded value branch lands; its record names the kind before the text.
   const valueRecord = 'worker/landingFixture.vibe\tlt\tvalue a < b\tOpen: the fixture order\n';
   assert.deepEqual(branchFacts(inventorySource(fixture, 'export const lt = (a: number, b: number) => a < b\n'), valueRecord),

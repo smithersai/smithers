@@ -588,6 +588,13 @@ function inventorySource(file, source) {
     // A default value (`door = "slash"`, `{ k = 1 }`) chooses what an absent argument or field reads as, as a `??`
     // does (batch 72). Its operand is the whole default, so one that calls a proved function is that function's choice.
     if (owner && node.type === 'AssignmentPattern' && node.range) owner.branches.push(branchOf(node, 'default', node));
+    // An error fallback (batch 73): a `catch` expression's handler or a `try`'s `catch` block chooses what a failure
+    // answers. A handler can be a whole effect block, so its record is cut at 120 characters.
+    const fallback = node.type === 'VibeCatchExpression' ? node.handler : node.type === 'CatchClause' ? node.body : undefined;
+    if (owner && fallback?.range) {
+      const branch = branchOf(node, 'catch', fallback);
+      owner.branches.push(branch.test.length > 120 ? { ...branch, test: branch.test.slice(0, 117) + '...' } : branch);
+    }
     if (predicate) predicates.add(predicate);
     if (owner && slot(node, parent) && !predicates.has(node) && ((node.type === 'BinaryExpression' && COMPARISONS.has(node.operator))
       || (node.type === 'UnaryExpression' && node.operator === '!' && node.argument.type !== 'Literal'))) {

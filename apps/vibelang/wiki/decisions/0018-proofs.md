@@ -7741,6 +7741,23 @@ flags on the production path, 5 named limits, 5 JSON helpers answering 200 unles
 that could widen spend, `Reply.agentOf`'s unbounded budget, is passed by every production caller (Reply, WikiDraft,
 VipDraft, SpecificationReviewers); only `test/replyAgent.coverage.test.vibe` omits it. 1,251 shell branches, 0 open.
 
+### Batch 73: an error fallback
+
+A failure's answer is a choice too: a VibeLang `catch` expression's handler
+(`Schema.decodeUnknownEffect(Failure)(value) catch () => ({ code: "unavailable" })`) and a `try` statement's `catch`
+block (`catch { return false }` in `validSessionCookie`). `verify/inventory.cjs` now records a `catch` branch for each
+in an unproved row; a handler that calls a proved function is that function's choice (17 sites on main), and a handler
+longer than 120 characters is recorded by its first 117 and `...`. `verify/landing_test.cjs` failed first.
+
+On main `094d7503` this adds 133 branches, each recorded: 64 absences (a failed read, decode or lookup reads as
+`undefined`, `null` or empty, and the caller's own counted branch decides what absent means), 17 DOM and storage host
+boundaries, 11 failure messages, 9 rethrows (as the surface's own error, or after an emergency record or count), 6 fail
+closed (every `policy.authorize(...) catch () => false` in the account hosts, and an unparsable cookie origin), 5 mock
+mode, 5 unavailable answers (503), 5 fixed refusal codes (`input`, `busy`, `cancel-failed`, `defect`, `failed`), 4 result
+flags, 3 unreadable budget meters (zero tokens, one unreported call), 2 scripts, the body limit and a cancelled
+execution's missing receipt. No fallback fails open: the two `catch () => true` sites set a `failed` flag. 1,384 shell
+branches, 0 open.
+
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 
 Five shells compared `Number(content-length)` with a literal: accounts 2,048 bytes (sign-in and roles), issues 32 KiB,
