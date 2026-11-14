@@ -3367,7 +3367,7 @@ registered commands (`src/actions/catalog.vibe`). The pattern now takes `[a-z][a
 | --- | --- |
 | `record`, `lawful`; `authorize`'s non-`begun` arm; `canRecord`'s repeated-fold operand | The proof's model of a run. Product code calls `begin`, `authorize` and `canRecord` once per run (`flows.vibe` `authorizer`) and journals its record steps itself. Proved (0018) and unit-tested (`test/flowMachine.test.vibe`); spec functions once the compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`). |
 | `authorize`'s `forbidden` arm; `may`'s person-only refusal | The mock history page plays a person, and the same role hides every action it may not take; the agent's door has no command for approve, fold or export (`src/actions/catalog.vibe`). A refusal reaches the page only as the History's answer (`fault=refused`, `e2e/history-faults.spec.ts`). |
-| `historyStatus`, `historyResponse`, `resolvedRole`'s and `signedRole`'s live arms | Live mode only: `historyStatus` runs in the Worker (`wire.vibe`), `historyResponse` in `LiveMythical`, which the browser gate has no host for yet. A live history host beside `test/workerd/live-issues.vibe` closes them in the browser; the unit and workerd gates measure them meanwhile. |
+| `historyStatus`, `resolvedRole`'s and `signedRole`'s remaining live arms; `historyResponse`'s 503 and other statuses | `historyStatus` runs in the Worker (`wire.vibe`). `historyResponse`'s 200, 403 and 409 and `signedRole`'s signed arm run in Chromium since session 38 (`e2e/live-history.spec.ts`, below); a 503 or another status needs a History object that fails, which the core live site has no fault for. The unit and workerd gates measure them. |
 | `initialEpic`'s `"new"` arm | A history with no epics. The mock always bootstraps the seed, and the page shows Plan only after the outline loads. Unit: `test/flowMachineEdges.coverage.test.vibe`. |
 | `validPlanField`'s operation checks | No view sends `UpdatedForm` with field `how` (`historyView.vibe` sends title, epic, newEpic and task); the guard refuses a forged message the fuzz lane found (0015). Dead in the browser: removing `how` from `UpdatedForm`'s field literals would delete it, a change to vl-fuzzpkg's fix that this lane proposes on the board rather than makes. |
 
@@ -3825,4 +3825,30 @@ Tests: `test/browserCoverageBuild.test.vibe` (a real Vite build of `e2e/coverage
 `test/browserStructure.test.vibe` (the map decoder; inlined code dropped, tree-shaken code and code in a removed
 nested function kept; a consequent nested in a shipped `if` kept) and `e2e/source-map.spec.ts` (the same fixture in
 Chromium: lines 22 to 25 credited).
+
+## The history page in live mode (vl-coverage, session 38, 2026-11-14)
+
+The browser gate had no live history host, so `LiveMythical` read 0/12 branches in Chromium. No new host was needed:
+the core live site (`e2e/authbroker-host.vibe`, `LIVE_CORE_TEST_ORIGINS`) already runs the whole API Worker, History
+object included, with the fixture session. `e2e/live-history.spec.ts` opens `/history` there; the page finds a live
+health answer and reads and writes through `LiveMythical` over the production routes:
+
+| Journey | What it checks |
+| --- | --- |
+| A maintainer plans, starts, notes and approves a commit, opens its epic and filters | Each badge after each write; the epic page lists commits; the filter finds the new commit |
+| A plan without a title | The History object's 409 refusal reads "Needs a title." |
+| A signed-out visitor | The outline loads; Plan work is absent |
+| A role granted while the page is open | Plan work appears after the grant, over the page's role stream; another person's grant comes first |
+| Export with no repository configured | The exporter is `off` (`worker/HistoryExport.vibe`), so the History object refuses `unsupported`, which the page words "Export is off." (`flowMachine.vibe` `historyRefusal`) |
+
+15 of 15 pass in the three projects (box job `9eb5113fc0cc5ce5b85069cd`). Against session 37's gate they close 31 branch arms in
+7 files: `src/web/historyStartup.vibe` 9, `src/history/LiveMythical.vibe` 7, `src/history/flowMachine.vibe` 7
+(`historyResponse`, `signedRole`), `src/history/wire.vibe` 4 (all four page paths), `src/web/viewGateDecision.vibe` 2,
+`src/web/historyBackend.vibe` 1 and `src/web/startupDecision.vibe` 1.
+
+Still open in `LiveMythical`: replay through public HTTP (30, refused by design: trusted replay uses
+`HistoryObject.readerOver`), an invalid page path (47), and a read or event stream that answers other than 200 (49, 67).
+`pathOf` returns undefined only when `encodeURIComponent` throws on a lone surrogate, which no page id holds; the
+non-200 answers need a History object that fails. An unknown commit address (`#m999999`) shows the outline and
+issues no failing read, so it is no route to 49.
 
