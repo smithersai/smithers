@@ -1,0 +1,15 @@
+// The browser gate's verdict (0016, "Browser-unreachable counters"), run by `pnpm e2e:coverage` after Playwright and
+// the attribution runs. BROWSER_GATE_SCOPE (comma-separated path prefixes, such as `src/core/`) limits it to a lane's
+// files; unset, every file Chromium's report holds is judged.
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { gate, gateFiles } from "./support/browserVerdict.vibe"
+
+export effect function main() {
+  const path = try Path.Path
+  const app = path.dirname(try path.fromFileUrl(new URL("../package.json", import.meta.url)))
+  const scope = try Config.withDefault(Config.String("BROWSER_GATE_SCOPE"), "")
+  try gate(app, { ...gateFiles, scope: scope.split(",").map((prefix) => prefix.trim()).filter((prefix) => prefix !== "") })
+}
+
+NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))

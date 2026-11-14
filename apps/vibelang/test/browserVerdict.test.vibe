@@ -1,0 +1,96 @@
+// @vitest-environment node
+// The browser gate's verdict (test/support/browserVerdict.vibe; decision 0016, "Browser-unreachable counters").
+import { it, expect } from "@effect/vitest"
+import { parseList, verdict, type Attribution, type Listed } from "./support/browserVerdict.vibe"
+import type { FileCoverageJSON } from "./support/coverageUnion.ts"
+import { passedLines, plan, runDirectory } from "./support/browserAttribution.vibe"
+
+const range = (line: number, start: number, end: number) => ({ start: { line, column: start }, end: { line, column: end } })
+
+/** One file's report: an `if` at 4:2 whose arms are `run` times run, a statement at 6:4 and a function at 8:16. */
+function report(arms: [number, number], statement: number, fn: number, armStart = range(4, 10, 20)): FileCoverageJSON {
+  return {
+    path: "src/core/a.vibe",
+    statementMap: { "0": range(6, 4, 30) }, s: { "0": statement },
+    fnMap: { "0": { name: "f", decl: range(8, 16, 17), loc: range(8, 20, 40) } }, f: { "0": fn },
+    branchMap: { "0": { type: "if", loc: range(4, 2, 40), locations: [armStart, range(4, 24, 40)] } }, b: { "0": arms },
+  } as unknown as FileCoverageJSON
+}
+
+const listed = (kind: Listed["kind"], line: number, column: number, index: number, testLine: number): Listed =>
+  ({ file: "src/core/a.vibe", kind, line, column, index, count: 1, reason: "spec-only", test: "test/a.test.vibe", testLine })
+
+// Arm 1 of the `if` and the function are open in the browser; both are listed with the test that runs them.
+const browser = { "src/core/a.vibe": report([3, 0], 2, 0) }
+const list = [listed("branch", 4, 2, 1, 7), listed("function", 8, 20, 0, 9)]
+const runs = (unit: FileCoverageJSON, passed = [7, 9]): Record<string, Attribution> => ({ "test/a.test.vibe": { passed, coverage: { "src/core/a.vibe": unit } } })
+const unit = report([1, 1], 1, 1)
+
+it("passes when every open counter is listed and its named test runs it", () => {
+  expect(verdict(browser, list, runs(unit))).toEqual({ refused: [], files: 1, open: 2, listed: 2 })
+})
+
+it("refuses a new open counter the list misses", () => {
+  const opened = { "src/core/a.vibe": report([3, 0], 0, 0) }
+  expect(verdict(opened, list, runs(unit)).refused).toEqual(["open in the browser, not listed: src/core/a.vibe:6:4 statement 0"])
+})
+
+it("refuses a listed counter the browser now runs, or no longer has, as a stale list", () => {
+  expect(verdict({ "src/core/a.vibe": report([3, 1], 2, 0) }, list, runs(unit)).refused).toEqual(["listed, but the browser ran it (stale list): src/core/a.vibe:4:2 branch 1"])
+  expect(verdict(browser, [...list, listed("statement", 5, 0, 0, 7)], runs(unit)).refused).toEqual(["listed, not in the browser structure (stale list): src/core/a.vibe:5:0 statement 0"])
+})
+
+it("refuses a listed counter its named test no longer runs, or a named test that did not pass", () => {
+  expect(verdict(browser, list, runs(report([1, 0], 1, 1))).refused).toEqual(["named test does not run it, test/a.test.vibe:7: src/core/a.vibe:4:2 branch 1"])
+  expect(verdict(browser, list, runs(unit, [9])).refused).toEqual(["named test did not pass in its attribution run, test/a.test.vibe:7: src/core/a.vibe:4:2 branch 1"])
+  expect(verdict(browser, list, {}).refused).toEqual([
+    "no attribution run for test/a.test.vibe: src/core/a.vibe:4:2 branch 1",
+    "no attribution run for test/a.test.vibe: src/core/a.vibe:8:20 function 0",
+  ])
+})
+
+it("counts each copy of a counter the browser's structure holds twice", () => {
+  const twice = { "src/core/a.vibe": report([3, 0], 2, 0), "src/core/b.vibe": report([3, 0], 2, 0) }
+  twice["src/core/b.vibe"] = { ...twice["src/core/b.vibe"]!, branchMap: { ...twice["src/core/a.vibe"]!.branchMap, "1": twice["src/core/a.vibe"]!.branchMap["0"]! }, b: { "0": [3, 0], "1": [3, 0] } } as FileCoverageJSON
+  const both = [...list, { ...listed("branch", 4, 2, 1, 7), file: "src/core/b.vibe" }, { ...listed("function", 8, 20, 0, 9), file: "src/core/b.vibe" }]
+  const attribution = { "test/a.test.vibe": { passed: [7, 9], coverage: { "src/core/a.vibe": unit, "src/core/b.vibe": unit } } }
+  expect(verdict(twice, both, attribution).refused).toEqual(["open ×2 in the browser, listed ×1: src/core/b.vibe:4:2 branch 1"])
+  expect(verdict(twice, both.map((row) => row.file === "src/core/b.vibe" && row.kind === "branch" ? { ...row, count: 2 } : row), attribution).refused).toEqual([])
+})
+
+it("matches an arm by its own start where the bundle starts its branch elsewhere", () => {
+  // The build starts `a ?? (try f()).x` at the expression (4:2); Vitest at the right operand's own branch (4:9).
+  const vitest = { ...unit, branchMap: { "0": { type: "binary-expr", loc: range(4, 9, 40), locations: [range(4, 10, 20), range(4, 24, 40)] } } } as unknown as FileCoverageJSON
+  expect(verdict(browser, list, runs(vitest)).refused).toEqual([])
+  expect(verdict(browser, list, runs({ ...vitest, b: { "0": [1, 0] } } as FileCoverageJSON)).refused).toEqual(["named test does not run it, test/a.test.vibe:7: src/core/a.vibe:4:2 branch 1"])
+})
+
+it("judges only the files in scope", () => {
+  const other = { ...browser, "src/web/b.vibe": report([0, 0], 0, 0) }
+  expect(verdict(other, list, runs(unit), ["src/core/"]).refused).toEqual([])
+  expect(verdict(other, list, runs(unit)).refused).toHaveLength(4)
+})
+
+it("reads the list the tool writes", () => {
+  const text = "file\tline\tcolumn\tkind\tindex\tcount\treason\tcheck\ttest\ttest_line\nsrc/core/a.vibe\t4\t2\tbranch\t1\t2\tspec-only\tSpecification only.\ttest/a.test.vibe\t7\n"
+  expect(parseList(text)).toEqual([{ ...listed("branch", 4, 2, 1, 7), count: 2 }])
+})
+
+it("plans one attribution run per named test file, with its named lines and listed sources", () => {
+  const row = (file: string, test: string, line: number) => `${file}\t1\t0\tstatement\t0\t1\tspec-only\tSpecification only.\t${test}\t${line}`
+  const text = ["header", row("src/core/b.vibe", "test/a.test.vibe", 9), row("src/core/a.vibe", "test/a.test.vibe", 3), row("src/core/a.vibe", "test/c.test.vibe", 3), row("src/core/a.vibe", "test/a.test.vibe", 9), ""].join("\n")
+  expect(plan(text)).toEqual([
+    { test: "test/a.test.vibe", lines: [3, 9], sources: ["src/core/a.vibe", "src/core/b.vibe"] },
+    { test: "test/c.test.vibe", lines: [3], sources: ["src/core/a.vibe"] },
+  ])
+  expect(runDirectory("test/a.test.vibe")).toBe("test_a.test.vibe")
+})
+
+it("reads the declaration lines of the tests that passed from Vitest's JSON report", () => {
+  const results = { testResults: [{ assertionResults: [
+    { status: "passed", location: { line: 9 } }, { status: "failed", location: { line: 3 } }, { status: "skipped", location: { line: 12 } },
+    { status: "passed", location: { line: 9 } }, { status: "passed" },
+  ] }] }
+  expect(passedLines(results)).toEqual([9])
+  expect(passedLines({})).toEqual([])
+})

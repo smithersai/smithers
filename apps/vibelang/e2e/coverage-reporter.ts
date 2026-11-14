@@ -157,11 +157,12 @@ export async function browserSources(app = root): Promise<Array<string>> {
 }
 
 /**
- * Whether the strict gate fails: a metric below 100%, an executed check that attached no Chromium evidence, or a green
- * run with no evidence at all. A check without evidence ran code the report cannot see, so its gaps would be false.
+ * Whether the strict run fails here: an executed check that attached no Chromium evidence, or a green run with no
+ * evidence at all. A check without evidence ran code the report cannot see, so its gaps would be false. The counters
+ * the report leaves open are the verdict's (`test/browserGate.vibe`; decision 0016, "Browser-unreachable counters").
  */
-export function gateFailed(gaps: number, unmeasured: number, evidence: number, status: FullResult["status"]): boolean {
-  return gaps > 0 || unmeasured > 0 || (evidence === 0 && status === "passed")
+export function gateFailed(unmeasured: number, evidence: number, status: FullResult["status"]): boolean {
+  return unmeasured > 0 || (evidence === 0 && status === "passed")
 }
 
 /** One emitted chunk and its source map, as Vite wrote them. */
@@ -213,7 +214,7 @@ export default class SourceCoverage implements Reporter {
     if (this.unmeasured.length > 0) console.error(`Chromium checks without coverage evidence (import test from "./coverage"): ${this.unmeasured.length}\n${this.unmeasured.join("\n")}`)
     const strict = process.env.E2E_COVERAGE_GATE === "1"
     if (this.executed === 0) {
-      if (strict && gateFailed(0, 0, 0, result.status)) {
+      if (strict && gateFailed(0, 0, result.status)) {
         console.error("Chromium coverage gate failed: no checks executed.")
         return { status: "failed" as const }
       }
@@ -237,10 +238,11 @@ export default class SourceCoverage implements Reporter {
       const summary = coverage.fileCoverageFor(file).toSummary().toJSON()
       return metrics.filter((metric) => summary[metric].pct < 100).map((metric) => `${file.slice(root.length)}: ${metric} ${summary[metric].pct}% < 100%`)
     })
-    // `pnpm e2e` always measures and reports; only `pnpm e2e:coverage` (decision 0016) fails below 100%.
+    // `pnpm e2e` always measures and reports. `pnpm e2e:coverage` (decision 0016) then runs the verdict, which fails on
+    // any open counter that is not listed as browser-unreachable with a test that runs it.
     console.info(`Chromium coverage: ${coverage.files().length} files, ${gaps.length} metrics below 100%; report in coverage/browser.`)
     if (!strict) return
-    if (gaps.length > 0) console.error(`Chromium coverage gate failed:\n${gaps.join("\n")}`)
-    if (gateFailed(gaps.length, this.unmeasured.length, this.files.size, result.status)) return { status: "failed" as const }
+    if (gaps.length > 0) console.info(`Below 100% (the verdict judges each open counter):\n${gaps.join("\n")}`)
+    if (gateFailed(this.unmeasured.length, this.files.size, result.status)) return { status: "failed" as const }
   }
 }

@@ -1,0 +1,14 @@
+// Runs each test the browser-unreachable list names under coverage (0016; test/support/browserAttribution.vibe), for
+// the browser gate's verdict. `pnpm coverage:attribution`.
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { attribute } from "./support/browserAttribution.vibe"
+
+export effect function main() {
+  const path = try Path.Path
+  const app = path.dirname(try path.fromFileUrl(new URL("../package.json", import.meta.url)))
+  try attribute(app)
+}
+
+NodeRuntime.runMain(Effect.provide(main(), Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)))

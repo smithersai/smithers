@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const { inventorySource, sourceFiles, withTable, decision } = require('./inventory.cjs');
 const { branchFacts, record } = require('./branches.cjs');
 const { landingRefusals } = require('./fuzz_affected.cjs');
+const browserList = require('./browser_unreachable.cjs');
 const app = path.resolve(__dirname, '..');
 
 /** Every reason the tree may not land. A contract needs a mutant unless it is a lemma or restates its table. */
@@ -75,7 +76,8 @@ function main() {
   // A range that changes a src/ or worker/ source lands only with its passing `pnpm fuzz:affected` receipt (0015,
   // "Fuzz before landing"). It reads jj, so it runs here, under land-main, and never in `pnpm test`'s treeFacts.
   const fuzz = landingRefusals();
-  const refused = [...refusals(facts), ...fuzz.refused];
+  // The browser gate's unreachable list must match 0016 and name declared tests (0016, "Browser-unreachable counters").
+  const refused = [...refusals(facts), ...browserList.refusals(browserList.treeFacts()), ...fuzz.refused];
   const contracts = facts.rows.filter(row => row.proof === 'contract').length;
   // Counts only: no source text, names or paths beyond the refused rows themselves.
   const branches = branchFacts(facts.rows, facts.branchRecord);

@@ -4880,3 +4880,577 @@ fails without it.
 Still open, measurement and not open code: a `const` whose literal value Rolldown folds into its reader leaves no
 segment at the `const` at all (`LiveFactory.vibe:61` `const mode: Mode = "live"`, `MockFactory.vibe:470`, `wire.vibe`
 21, 22, 41 and 44, `decide.vibe:10`), so nothing in the build shows that it shipped. Those stay open and unlisted.
+
+## Browser-unreachable counters (vl-coverage-core, session 14, 2026-11-14)
+
+The browser gate (`pnpm e2e:coverage`) passes exactly when every counter Chromium's report leaves open is listed here
+as browser-unreachable, with the page check that refuses its input first and a test in another suite that runs it
+(the lead's decision, 2026-11-14). No code is excluded and no threshold moves: every counter still runs somewhere,
+and every listed counter still counts.
+
+How it works:
+
+1. The tables below are the source. `node verify/browser_unreachable.cjs --write` generates
+   `verify/browser-unreachable.tsv` from them; `pnpm test` (`verify/browser_unreachable_test.cjs`) and the landing
+   check (`verify/landing.cjs`) refuse a list that differs from this section, a malformed row, an unknown reason, a
+   counter listed twice, and a named test that is not declared on its line.
+2. After Playwright, `pnpm coverage:attribution` (`test/browserAttribution.vibe`) runs each named test file alone
+   under Vitest's coverage, with only its named tests selected (`file:line`), and records which of them passed.
+3. `test/browserGate.vibe` (`test/support/browserVerdict.vibe`) then refuses: an open counter not listed; a listed
+   counter the browser ran, or that its structure no longer holds (a stale list); a counter open more times than
+   listed (`×N`, a structure that holds it twice); a named test that did not pass; and a named test whose run does
+   not run its counter. `BROWSER_GATE_SCOPE` (path prefixes, such as `src/core/`) limits the verdict to a lane's
+   files; unset, it judges every file. It writes `coverage/browser/verdict.json` and logs
+   `vibelang.coverage.browser-verdict` with counts only.
+
+A counter is an Istanbul branch arm, statement or function, keyed by its start in the browser's structure: `file:line:column
+branch <arm>`, `statement` or `function`. The attribution run matches it the way the fuzz and bench gates do
+(`coverageUnion.ts`): the same source start, or for an arm the arm's own start (the build starts the right operand of
+`a ?? (try f()).x` at the expression, `MockAccounts.vibe:123`), or for a statement the body of a function that ran.
+Workerd test files cannot be named yet: the attribution runner measures Node only.
+
+Each lane adds its own reasons table (`| Reason | … |`) and counters tables (`| Counter | Reason | Test |`) in its own
+subsection here, then runs `node verify/browser_unreachable.cjs --write`. A reason id is unique in the section.
+
+### `src/core` (vl-coverage-core)
+
+Rows are generated from the session 14 browser report: for each open `src/core` counter, the page check recorded for its
+site in this decision (sessions 11 to 13 above) and the one test that runs it, found by running each candidate test
+alone under coverage (nyc-01 `~/vl/vl-coverage-evidence/s14/find/`, `gen/`). A statement or function inside a listed
+arm takes that arm's reason. A counter with no recorded page check is not listed and stays open in the gate.
+
+| Reason | The page check that refuses the input first |
+| --- | --- |
+| `spec-only` | Specification only: proof contracts and tests call it, product code never does. A `spec function` once a compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`). |
+| `client-ids` | `main.vibe` `submit` is `post`'s only caller: `submitKind` drops a blank draft, and every client id is `${session}-${sent + 1}` or the walkthrough's, sent once (`walkthroughPlan`). |
+| `maintainer-least-internal` | Approve and Fold are the only maintainer-least flows, and neither has a command (`catalog.vibe` `registration`). |
+| `failure-reasons` | Every failure reason the page receives is non-blank: a refusal literal, `Factory closed`, or `<what> answered <status>` (`LiveFactory.vibe`, `MockFactory.vibe`). |
+| `resume-on-gap` | `main.vibe` resumes in the update that sees a gap (`plan.replay`), so `receive` never meets one and `resume` runs only after one. |
+| `grant-checks` | The mock seeds its ledger by `apply`, never `decide`; the page offers role selects only to a maintainer and never for themselves, with no Viewer (`accountViewDecision.vibe` `canChangeRole`, `roleView.vibe`), and `MockAccounts.grant` returns before an unchanged role. |
+| `answer-waits` | `MockFactory.vibe` `answer`, the browser's only caller, waits for each reply and tour before reading again, so it never reads a working agent. |
+| `vip-actions` | Accept and Decline show only to a maintainer on a VIP in review (`issuesViewDecision.vibe` `detailActions`), and the screen stays busy until the answer. |
+| `revision-policy` | Production's `SPEC_REVISION_POLICY` is `keep`; only unit tests drive `reset`. |
+| `revision-checks` | Save revision is disabled while the text is blank or unchanged (`issuesViewDecision.vibe` `revisionDisabled`), the page sends the revision it shows, and `specification.vibe` refuses a review `reviewAnswerAccepted` rejects before recording it. |
+| `hold-nonnegative` | `apply` admits a walkthrough duration of 0 or more only, so `holdRemaining` never sees a negative remainder. |
+| `ended-tour-walkthrough` | `flows.vibe` `walk`, the browser's only reader of `tourWalkthrough`, runs only for a running tour. |
+| `mock-intents` | Every intent the browser decides is built by the mock from its own state: fresh ids (`nextId`, `replyIdOf`), catalog flows, and replies only for the oldest unanswered post, after the last reply and tour end (`MockFactory.vibe` `answer`). |
+| `issue-fixture-forest` | The fixture is a forest whose parents exist, Link picks an issue the page lists, and `issuesAfter` sends `editedIssue` only the ops it edits. |
+| `subtitles-long` | Every subtitle in `walkthroughSteps.vibe` has 12 to 18 words, so `readingHold`'s four-second floor for 10 words or fewer never applies. |
+| `tour-run-order` | `flows.vibe` `toured`, the only product caller, calls `observeTourActivity`, `startTourSpeech` and `finishTourSpeech` once each, in that order, on a fresh run and only after `canSpeakTour` holds. |
+| `wiki-identity` | The browser's only caller, `MockFactory.vibe` `wikiForPerson`, passes an identity effect that sets `kind` and the shared store, and `authorizeWiki` refuses a signed-out visitor before the id is used. |
+| `wiki-known-page` | The editor opens only on a page `wikiEditable` admits, one of the build's pages (`main.vibe` `beginWikiEdit`), and the agent drafts only a page named in `pages`. |
+| `journal-replay` | The execution id is the person, op and key, so a retry with the same key replays the journaled answer without calling the host again, and the page's memory engine never answers `StoreUnavailable` or an identity conflict. |
+| `issue-identity` | The page's `MockFactory` passes the signed-in person as a function and the shared store; `IssuesFactory` builds a role-string identity or its own store only for the unit tests' `makeIssueFactory()` default. |
+| `issue-requests-typed` | `authorizeIssue` refuses the role before the flow runs, the execution id comes from the identity the host reads, and the page builds every request from typed fields with a key (`issueKey`, `read-N`). |
+| `issue-fixture-held` | The page acts only on an issue it lists, the agent's only split names #38, which the fixture holds, and no flow removes an issue. |
+| `vip-form-steps` | The VIP form's Continue refuses each blank step (`issueDecision.vibe` `issueStepError`) and Propose a blank name, before any request. |
+| `commit-shown` | Commit shows only on an open issue without a task, and the assignee group starts at "VibeLang agent" with no blank choice (`viewStateDecision.vibe` `choiceOffered`). |
+| `comment-blank` | `issueDecision.vibe` `issueAction` ignores Comment while the box is blank; only the agent surfaces, which the page does not run, can send one. |
+| `engine-errors` | The page's memory engine never answers `StoreUnavailable`, and the page never reuses a key with a changed request (`ExecutionIdentityConflict`). |
+| `review-refusal` | The page requests a specification review only as a role that may, so the only refusal it can meet is the role's. |
+| `agent-actor` | The agent signs in only through the agent surfaces (`src/surfaces/signin.vibe`), which the page does not run; Visit as clears the agent flag, and the scripted agent acts as the poster. |
+| `reply-post-recorded` | A reply runs only for a post the mock accepted, and acceptance records the post's person and owner first. |
+| `tour-control-before-step` | The page shows the tour's controls only once a step is on screen, so no control reaches the host before the first step is driven (`e2e/core-tour-race.spec.ts`). |
+| `specification-seeded` | The mock's issue store always holds a specification and its history, and a review the host accepts carries the reviewer's verdict, grade and revision. |
+| `scripted-reviewer` | The browser provides no `SpecificationReviewers` and runs the scripted source, whose answer carries the current revision, LGTM, a link and a text; the provider path waits on VL-36's model record and replay. |
+| `decide-sandbox-refusals` | `sandboxHost.vibe` calls `decideSandbox` only after the same refusals of its own (admission, `outOfMinutes`, `drop-start`), so every page decision is accepted; the proved contract states each refusal. |
+| `meter-delay-floor` | `meterDelay` runs only for a running sandbox with no operation pending, and at zero minutes `metered` gives each running sandbox a pending stop first. |
+| `elapsed-clamp` | `sandboxMeter.vibe` `meter`, the only caller, loops while `cursor < high` with `end > cursor`; the clamp is the kernel's rollback property. |
+| `tagged-failures` | Every failure the page's host sees is a tagged Effect error; untagged values come only from the unit test and the race fuzz target. |
+| `container-refusals` | Only `worker/machineObject.vibe` passes a container refusal as a successful answer; the page's mock machines answer or fail. |
+| `sandbox-ids` | The page's operation and conversation ids are a random session and fixed conversation names, always inside their alphabets and lengths; the Worker's HTTP API takes any client's. |
+| `demoted-pending-start` | A start left pending by an evicted Durable Object, then a demotion: the mock completes every start under its lock. |
+| `own-ledger` | The mock builds one host per owner with that owner's policy, so it never reads another owner's ledger. |
+| `sequence-room` | It takes 2^53 ledger transitions or starts; the guard establishes the proved kernel's precondition. |
+| `receipt-with-pending` | Both stores write a receipt and clear its pending together, so recovery never finds a pending operation whose receipt exists. |
+| `two-sandboxes` | It needs a second sandbox of the same person running meanwhile, which the page's single conversation pane does not make. |
+| `command-receipt` | Only the command's own fiber writes its receipt; the Worker's settle skips a command its incarnation holds. |
+| `wiki-fixture-verdicts` | The page stops a save that changes nothing ("No changes.") and saves only a page the editor read, with its key; the mock never changes a page under an editor, its saves open reviews. |
+
+**`src/core/IssuesFactory.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/IssuesFactory.vibe:52:2 branch 0` | `issue-identity` | `test/gates.test.vibe:74` |
+| `src/core/IssuesFactory.vibe:67:181 branch 1` | `issue-requests-typed` | `test/gates.test.vibe:74` |
+| `src/core/IssuesFactory.vibe:68:6 branch 0` | `issue-requests-typed` | `test/gates.test.vibe:74` |
+| `src/core/IssuesFactory.vibe:76:6 branch 0` | `issue-requests-typed` | `test/issuesFactoryEdges.coverage.test.vibe:64` |
+| `src/core/IssuesFactory.vibe:103:16 branch 1` | `issue-identity` | `test/gates.test.vibe:74` |
+| `src/core/IssuesFactory.vibe:109:4 branch 0` | `issue-requests-typed` | `test/issuesFactoryEdges.coverage.test.vibe:58` |
+| `src/core/IssuesFactory.vibe:119:23 branch 1` | `journal-replay` | `test/factoryEngineFaults.coverage.test.vibe:96` |
+| `src/core/IssuesFactory.vibe:120:15 branch 0` | `journal-replay` | `test/issuesFactoryEdges.coverage.test.vibe:43` |
+| `src/core/IssuesFactory.vibe:122:33 branch 1` | `journal-replay` | `test/factoryEngineFaults.coverage.test.vibe:39` |
+| `src/core/IssuesFactory.vibe:52:36 statement` | `issue-identity` | `test/gates.test.vibe:74` |
+| `src/core/IssuesFactory.vibe:68:33 statement` | `issue-requests-typed` | `test/gates.test.vibe:74` |
+| `src/core/IssuesFactory.vibe:76:31 statement` | `issue-requests-typed` | `test/issuesFactoryEdges.coverage.test.vibe:64` |
+| `src/core/IssuesFactory.vibe:109:43 statement` | `issue-requests-typed` | `test/issuesFactoryEdges.coverage.test.vibe:58` |
+
+**`src/core/MockFactory.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/MockFactory.vibe:97:6 branch 0` | `answer-waits` | `test/mockReplyRace.coverage.test.vibe:94` |
+| `src/core/MockFactory.vibe:392:25 branch 1` | `reply-post-recorded` | `test/mockFactory.coverage.test.vibe:77` |
+| `src/core/MockFactory.vibe:401:81 branch 1` | `reply-post-recorded` | `test/mockFactory.coverage.test.vibe:77` |
+| `src/core/MockFactory.vibe:402:73 branch 1` | `reply-post-recorded` | `test/mockFactory.coverage.test.vibe:77` |
+| `src/core/MockFactory.vibe:369:35 branch 1` | `tour-control-before-step` | `test/httpBoundaries.coverage.test.vibe:95` |
+| `src/core/MockFactory.vibe:369:71 branch 1` | `tour-control-before-step` | `test/httpBoundaries.coverage.test.vibe:95` |
+| `src/core/MockFactory.vibe:369:142 branch 1` | `tour-control-before-step` | `test/httpBoundaries.coverage.test.vibe:95` |
+| `src/core/MockFactory.vibe:436:88 branch 0` | `agent-actor` | `test/mockFactory.coverage.test.vibe:129` |
+| `src/core/MockFactory.vibe:453:87 branch 0` | `agent-actor` | `test/wikiEdit.test.vibe:303` |
+| `src/core/MockFactory.vibe:369:78 branch 0` | `tour-control-before-step` | `test/httpBoundaries.coverage.test.vibe:95` |
+| `src/core/MockFactory.vibe:369:78 branch 1` | `tour-control-before-step` | `test/httpBoundaries.coverage.test.vibe:95` |
+| `src/core/MockFactory.vibe:98:8 statement` | `answer-waits` | `test/mockReplyRace.coverage.test.vibe:94` |
+| `src/core/MockFactory.vibe:99:8 statement` | `answer-waits` | `test/mockReplyRace.coverage.test.vibe:94` |
+| `src/core/MockFactory.vibe:102:8 statement` | `answer-waits` | `test/mockReplyRace.coverage.test.vibe:94` |
+| `src/core/MockFactory.vibe:103:8 statement` | `answer-waits` | `test/mockReplyRace.coverage.test.vibe:94` |
+
+**`src/core/WikiFactory.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/WikiFactory.vibe:13:2 branch 0` | `wiki-identity` | `test/factoryHosts.coverage.test.vibe:53` |
+| `src/core/WikiFactory.vibe:13:79 branch 0` | `wiki-identity` | `test/factoryHosts.coverage.test.vibe:53` |
+| `src/core/WikiFactory.vibe:13:79 branch 1` | `wiki-identity` | `test/wikiEdit.test.vibe:94` |
+| `src/core/WikiFactory.vibe:27:9 branch 0` | `wiki-known-page` | `test/liveWiki.coverage.test.vibe:44` |
+| `src/core/WikiFactory.vibe:36:6 branch 0` | `wiki-identity` | `test/factoryHosts.coverage.test.vibe:53` |
+| `src/core/WikiFactory.vibe:36:51 branch 1` | `wiki-identity` | `test/liveWiki.coverage.test.vibe:62` |
+| `src/core/WikiFactory.vibe:37:49 branch 1` | `wiki-identity` | `test/liveWiki.coverage.test.vibe:44` |
+| `src/core/WikiFactory.vibe:40:22 branch 2` | `wiki-known-page` | `test/liveWiki.coverage.test.vibe:44` |
+| `src/core/WikiFactory.vibe:43:8 branch 0` | `wiki-known-page` | `test/liveWiki.coverage.test.vibe:44` |
+| `src/core/WikiFactory.vibe:62:6 branch 0` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:63:8 branch 0` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:83` |
+| `src/core/WikiFactory.vibe:63:8 branch 1` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:63:12 branch 0` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:63:12 branch 1` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:63:12 branch 2` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:79:16 branch 1` | `wiki-identity` | `test/factoryEngineFaults.coverage.test.vibe:110` |
+| `src/core/WikiFactory.vibe:87:47 branch 1` | `wiki-identity` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:89:44 branch 1` | `wiki-identity` | `test/wikiEdit.test.vibe:175` |
+| `src/core/WikiFactory.vibe:92:23 branch 1` | `journal-replay` | `test/factoryEngineFaults.coverage.test.vibe:110` |
+| `src/core/WikiFactory.vibe:93:15 branch 0` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:95:33 branch 1` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:95:98 branch 0` | `journal-replay` | `test/factoryEngineFaults.coverage.test.vibe:51` |
+| `src/core/WikiFactory.vibe:95:98 branch 1` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:95:163 branch 0` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:95:163 branch 1` | `journal-replay` | `test/factoryEngineFaults.coverage.test.vibe:51` |
+| `src/core/WikiFactory.vibe:13:36 statement` | `wiki-identity` | `test/factoryHosts.coverage.test.vibe:53` |
+| `src/core/WikiFactory.vibe:36:78 statement` | `wiki-identity` | `test/factoryHosts.coverage.test.vibe:53` |
+| `src/core/WikiFactory.vibe:43:35 statement` | `wiki-known-page` | `test/liveWiki.coverage.test.vibe:44` |
+| `src/core/WikiFactory.vibe:63:8 statement` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+| `src/core/WikiFactory.vibe:63:112 statement` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:83` |
+| `src/core/WikiFactory.vibe:64:8 statement` | `journal-replay` | `test/factoryHosts.coverage.test.vibe:66` |
+
+**`src/core/conversation.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/conversation.vibe:342:2 branch 0` | `client-ids` | `test/conversation.boundaries.test.vibe:27` |
+| `src/core/conversation.vibe:528:9 branch 5` | `maintainer-least-internal` | `test/actionMachine.test.vibe:39` |
+| `src/core/conversation.vibe:562:2 branch 0` | `client-ids` | `test/conversation.test.vibe:346` |
+| `src/core/conversation.vibe:568:4 branch 0` | `client-ids` | `test/conversation.test.vibe:346` |
+| `src/core/conversation.vibe:571:2 branch 0` | `client-ids` | `test/conversation.boundaries.test.vibe:27` |
+| `src/core/conversation.vibe:587:98 branch 0` | `failure-reasons` | `test/conversation.test.vibe:346` |
+| `src/core/conversation.vibe:671:34 branch 0` | `resume-on-gap` | `test/conversation.test.vibe:365` |
+| `src/core/conversation.vibe:687:9 branch 1` | `resume-on-gap` | `test/conversation.test.vibe:365` |
+| `src/core/conversation.vibe:804:2 branch 0` | `grant-checks` | `test/roles.test.vibe:40` |
+| `src/core/conversation.vibe:805:2 branch 0` | `grant-checks` | `test/roles.test.vibe:20` |
+| `src/core/conversation.vibe:805:35 branch 0` | `grant-checks` | `test/roles.test.vibe:20` |
+| `src/core/conversation.vibe:805:35 branch 1` | `grant-checks` | `test/roles.test.vibe:20` |
+| `src/core/conversation.vibe:805:35 branch 2` | `grant-checks` | `test/roles.test.vibe:20` |
+| `src/core/conversation.vibe:807:2 branch 0` | `grant-checks` | `test/conversationEdges.coverage.test.vibe:51` |
+| `src/core/conversation.vibe:808:2 branch 0` | `grant-checks` | `test/roles.test.vibe:20` |
+| `src/core/conversation.vibe:808:6 branch 1` | `grant-checks` | `test/roles.test.vibe:20` |
+| `src/core/conversation.vibe:809:2 branch 0` | `grant-checks` | `test/conversationEdges.coverage.test.vibe:51` |
+| `src/core/conversation.vibe:810:2 branch 0` | `grant-checks` | `test/roles.test.vibe:40` |
+| `src/core/conversation.vibe:905:2 branch 0` | `answer-waits` | `test/sequencer.coverage.test.vibe:28` |
+| `src/core/conversation.vibe:977:2 branch 0` | `vip-actions` | `test/gates.test.vibe:7` |
+| `src/core/conversation.vibe:986:9 branch 1` | `vip-actions` | `test/conversationEdges.coverage.test.vibe:70` |
+| `src/core/conversation.vibe:1026:2 branch 0` | `revision-policy` | `test/gates.test.vibe:33` |
+| `src/core/conversation.vibe:1061:2 branch 0` | `revision-checks` | `test/gates.test.vibe:46` |
+| `src/core/conversation.vibe:1062:2 branch 1` | `revision-policy` | `test/gates.test.vibe:46` |
+| `src/core/conversation.vibe:1083:2 branch 0` | `revision-checks` | `test/gates.test.vibe:46` |
+| `src/core/conversation.vibe:1087:2 branch 1` | `revision-checks` | `test/gates.test.vibe:46` |
+| `src/core/conversation.vibe:1100:2 branch 0` | `hold-nonnegative` | `test/conversationEdges.coverage.test.vibe:76` |
+| `src/core/conversation.vibe:1115:2 branch 0` | `ended-tour-walkthrough` | `test/walkthrough.test.vibe:134` |
+| `src/core/conversation.vibe:943:9 branch 0` | `spec-only` | `test/conversationEdges.coverage.test.vibe:64` |
+| `src/core/conversation.vibe:943:9 branch 1` | `spec-only` | `test/conversationEdges.coverage.test.vibe:64` |
+| `src/core/conversation.vibe:943:69 branch 0` | `spec-only` | `test/conversationEdges.coverage.test.vibe:64` |
+| `src/core/conversation.vibe:943:69 branch 1` | `spec-only` | `test/conversationEdges.coverage.test.vibe:64` |
+| `src/core/conversation.vibe:342:23 statement` | `client-ids` | `test/conversation.boundaries.test.vibe:27` |
+| `src/core/conversation.vibe:562:41 statement` | `client-ids` | `test/conversation.test.vibe:346` |
+| `src/core/conversation.vibe:568:50 statement` | `client-ids` | `test/conversation.test.vibe:346` |
+| `src/core/conversation.vibe:571:58 statement` | `client-ids` | `test/conversation.boundaries.test.vibe:27` |
+| `src/core/conversation.vibe:804:38 statement` | `grant-checks` | `test/roles.test.vibe:40` |
+| `src/core/conversation.vibe:805:28 statement` | `grant-checks` | `test/roles.test.vibe:20` |
+| `src/core/conversation.vibe:807:37 statement` | `grant-checks` | `test/conversationEdges.coverage.test.vibe:51` |
+| `src/core/conversation.vibe:808:48 statement` | `grant-checks` | `test/roles.test.vibe:20` |
+| `src/core/conversation.vibe:809:43 statement` | `grant-checks` | `test/conversationEdges.coverage.test.vibe:51` |
+| `src/core/conversation.vibe:810:42 statement` | `grant-checks` | `test/roles.test.vibe:40` |
+| `src/core/conversation.vibe:905:40 statement` | `answer-waits` | `test/sequencer.coverage.test.vibe:28` |
+| `src/core/conversation.vibe:977:108 statement` | `vip-actions` | `test/gates.test.vibe:7` |
+| `src/core/conversation.vibe:1026:26 statement` | `revision-policy` | `test/gates.test.vibe:33` |
+| `src/core/conversation.vibe:1061:26 statement` | `revision-checks` | `test/gates.test.vibe:46` |
+| `src/core/conversation.vibe:1083:114 statement` | `revision-checks` | `test/gates.test.vibe:46` |
+| `src/core/conversation.vibe:1100:21 statement` | `hold-nonnegative` | `test/conversationEdges.coverage.test.vibe:76` |
+| `src/core/conversation.vibe:1115:58 statement` | `ended-tour-walkthrough` | `test/walkthrough.test.vibe:134` |
+| `src/core/conversation.vibe:943:2 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:64` |
+| `src/core/conversation.vibe:942:91 function` | `spec-only` | `test/conversationEdges.coverage.test.vibe:64` |
+
+**`src/core/decide.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/decide.vibe:100:2 branch 0` | `mock-intents` | `test/conversation.test.vibe:374` |
+| `src/core/decide.vibe:102:2 branch 8` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:107:6 branch 0` | `mock-intents` | `test/accounts.test.vibe:18` |
+| `src/core/decide.vibe:110:6 branch 0` | `mock-intents` | `test/decisionEdges.coverage.test.vibe:16` |
+| `src/core/decide.vibe:111:6 branch 0` | `mock-intents` | `test/actionMachine.test.vibe:10` |
+| `src/core/decide.vibe:117:6 branch 0` | `mock-intents` | `test/decisionEdges.coverage.test.vibe:20` |
+| `src/core/decide.vibe:123:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:130:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:131:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:132:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:133:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:136:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:139:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:139:6 branch 1` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:142:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:145:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:149:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:150:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:132` |
+| `src/core/decide.vibe:156:6 branch 0` | `mock-intents` | `test/decisionEdges.coverage.test.vibe:29` |
+| `src/core/decide.vibe:157:6 branch 0` | `mock-intents` | `test/decisionEdges.coverage.test.vibe:37` |
+| `src/core/decide.vibe:162:6 branch 0` | `mock-intents` | `test/httpBoundaries.coverage.test.vibe:95` |
+| `src/core/decide.vibe:164:8 branch 0` | `mock-intents` | `test/walkthrough.test.vibe:7` |
+| `src/core/decide.vibe:170:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:171:6 branch 0` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:100:44 statement` | `mock-intents` | `test/conversation.test.vibe:374` |
+| `src/core/decide.vibe:107:70 statement` | `mock-intents` | `test/accounts.test.vibe:18` |
+| `src/core/decide.vibe:110:50 statement` | `mock-intents` | `test/decisionEdges.coverage.test.vibe:16` |
+| `src/core/decide.vibe:111:51 statement` | `mock-intents` | `test/actionMachine.test.vibe:10` |
+| `src/core/decide.vibe:117:56 statement` | `mock-intents` | `test/decisionEdges.coverage.test.vibe:20` |
+| `src/core/decide.vibe:123:55 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:130:44 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:131:28 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:132:55 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:133:63 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:136:48 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:139:6 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:139:48 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:140:6 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:142:48 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:145:48 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:149:28 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:150:55 statement` | `mock-intents` | `test/conversation.test.vibe:132` |
+| `src/core/decide.vibe:156:47 statement` | `mock-intents` | `test/decisionEdges.coverage.test.vibe:29` |
+| `src/core/decide.vibe:157:148 statement` | `mock-intents` | `test/decisionEdges.coverage.test.vibe:37` |
+| `src/core/decide.vibe:162:89 statement` | `mock-intents` | `test/httpBoundaries.coverage.test.vibe:95` |
+| `src/core/decide.vibe:164:74 statement` | `mock-intents` | `test/walkthrough.test.vibe:7` |
+| `src/core/decide.vibe:170:68 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+| `src/core/decide.vibe:171:29 statement` | `mock-intents` | `test/conversation.test.vibe:126` |
+
+**`src/core/flowDecision.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/flowDecision.vibe:26:9 branch 0` | `subtitles-long` | `test/tour.test.vibe:34` |
+| `src/core/flowDecision.vibe:69:2 branch 0` | `tour-run-order` | `test/decisions.coverage.test.vibe:66` |
+| `src/core/flowDecision.vibe:86:2 branch 0` | `tour-run-order` | `test/decisions.coverage.test.vibe:66` |
+| `src/core/flowDecision.vibe:98:2 branch 0` | `tour-run-order` | `test/decisions.coverage.test.vibe:66` |
+| `src/core/flowDecision.vibe:107:2 branch 0` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:107:2 branch 1` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:107:6 branch 0` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:107:6 branch 1` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:107:6 branch 2` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:107:89 branch 0` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:107:89 branch 1` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:108:2 branch 0` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:108:2 branch 1` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:108:39 branch 0` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:108:39 branch 1` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:109:2 branch 0` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:109:2 branch 1` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:109:39 branch 0` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:109:39 branch 1` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:110:9 branch 0` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:110:9 branch 1` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:69:29 statement` | `tour-run-order` | `test/decisions.coverage.test.vibe:66` |
+| `src/core/flowDecision.vibe:86:26 statement` | `tour-run-order` | `test/decisions.coverage.test.vibe:66` |
+| `src/core/flowDecision.vibe:98:32 statement` | `tour-run-order` | `test/decisions.coverage.test.vibe:66` |
+| `src/core/flowDecision.vibe:107:2 statement` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:107:82 statement` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:108:2 statement` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:108:32 statement` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:109:2 statement` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:109:32 statement` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:110:2 statement` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+| `src/core/flowDecision.vibe:106:39 function` | `spec-only` | `test/decisions.coverage.test.vibe:58` |
+
+**`src/core/issueFixtureDecision.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/issueFixtureDecision.vibe:26:2 branch 0` | `issue-fixture-held` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:28:2 branch 0` | `vip-form-steps` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:29:2 branch 0` | `issue-fixture-held` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:31:2 branch 0` | `commit-shown` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:32:2 branch 0` | `comment-blank` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:33:2 branch 0` | `vip-actions` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:43:18 branch 1` | `vip-form-steps` | `test/factoryHosts.coverage.test.vibe:43` |
+| `src/core/issueFixtureDecision.vibe:54:9 branch 0` | `engine-errors` | `test/issueFixtureDecision.test.vibe:30` |
+| `src/core/issueFixtureDecision.vibe:54:9 branch 1` | `engine-errors` | `test/issueFixtureDecision.test.vibe:30` |
+| `src/core/issueFixtureDecision.vibe:54:67 branch 0` | `engine-errors` | `test/issueFixtureDecision.test.vibe:30` |
+| `src/core/issueFixtureDecision.vibe:54:67 branch 1` | `engine-errors` | `test/issueFixtureDecision.test.vibe:30` |
+| `src/core/issueFixtureDecision.vibe:75:9 branch 0` | `issue-identity` | `test/gates.test.vibe:74` |
+| `src/core/issueFixtureDecision.vibe:75:9 branch 1` | `issue-identity` | `test/coreShellDecisions.test.vibe:69` |
+| `src/core/issueFixtureDecision.vibe:94:2 branch 0` | `issue-requests-typed` | `test/coreShellDecisions.test.vibe:58` |
+| `src/core/issueFixtureDecision.vibe:96:2 branch 0` | `agent-actor` | `test/gates.test.vibe:74` |
+| `src/core/issueFixtureDecision.vibe:98:2 branch 0` | `issue-requests-typed` | `test/coreShellDecisions.test.vibe:58` |
+| `src/core/issueFixtureDecision.vibe:26:27 statement` | `issue-fixture-held` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:28:38 statement` | `vip-form-steps` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:29:32 statement` | `issue-fixture-held` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:31:51 statement` | `commit-shown` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:32:37 statement` | `comment-blank` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:33:59 statement` | `vip-actions` | `test/issueFixtureDecision.test.vibe:8` |
+| `src/core/issueFixtureDecision.vibe:54:2 statement` | `engine-errors` | `test/issueFixtureDecision.test.vibe:30` |
+| `src/core/issueFixtureDecision.vibe:75:2 statement` | `issue-identity` | `test/gates.test.vibe:74` |
+| `src/core/issueFixtureDecision.vibe:94:27 statement` | `issue-requests-typed` | `test/coreShellDecisions.test.vibe:58` |
+| `src/core/issueFixtureDecision.vibe:96:20 statement` | `agent-actor` | `test/gates.test.vibe:74` |
+| `src/core/issueFixtureDecision.vibe:98:15 statement` | `issue-requests-typed` | `test/coreShellDecisions.test.vibe:58` |
+
+**`src/core/issueGraphDecision.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/issueGraphDecision.vibe:53:4 branch 0` | `issue-fixture-forest` | `test/issues.property.test.vibe:36` |
+| `src/core/issueGraphDecision.vibe:118:2 branch 1` | `issue-fixture-forest` | `test/issues.property.test.vibe:140` |
+| `src/core/issueGraphDecision.vibe:25:2 branch 0` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:25:2 branch 1` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:27:2 branch 0` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:27:2 branch 1` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:29:2 branch 0` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:29:2 branch 1` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:149:9 branch 0` | `spec-only` | `test/issues.property.test.vibe:90` |
+| `src/core/issueGraphDecision.vibe:149:9 branch 1` | `spec-only` | `test/issues.property.test.vibe:90` |
+| `src/core/issueGraphDecision.vibe:166:9 branch 0` | `spec-only` | `test/issues.property.test.vibe:96` |
+| `src/core/issueGraphDecision.vibe:166:9 branch 1` | `spec-only` | `test/issues.property.test.vibe:96` |
+| `src/core/issueGraphDecision.vibe:175:9 branch 0` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:175:9 branch 1` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:185:9 branch 0` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:185:9 branch 1` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:196:9 branch 0` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:196:9 branch 1` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:216:9 branch 0` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:216:9 branch 1` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:227:9 branch 0` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:227:9 branch 1` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:238:9 branch 0` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:238:9 branch 1` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:53:29 statement` | `issue-fixture-forest` | `test/issues.property.test.vibe:36` |
+| `src/core/issueGraphDecision.vibe:25:2 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:25:18 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:26:19 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:27:2 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:27:22 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:28:16 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:28:37 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:29:2 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:29:27 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:30:2 statement` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:149:2 statement` | `spec-only` | `test/issues.property.test.vibe:90` |
+| `src/core/issueGraphDecision.vibe:157:2 statement` | `spec-only` | `test/issues.property.test.vibe:125` |
+| `src/core/issueGraphDecision.vibe:166:2 statement` | `spec-only` | `test/issues.property.test.vibe:96` |
+| `src/core/issueGraphDecision.vibe:175:2 statement` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:185:2 statement` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:196:2 statement` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:205:2 statement` | `spec-only` | `test/issues.property.test.vibe:125` |
+| `src/core/issueGraphDecision.vibe:216:2 statement` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:227:2 statement` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:238:2 statement` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:250:2 statement` | `spec-only` | `test/issues.property.test.vibe:125` |
+| `src/core/issueGraphDecision.vibe:266:2 statement` | `spec-only` | `test/issues.property.test.vibe:125` |
+| `src/core/issueGraphDecision.vibe:279:2 statement` | `spec-only` | `test/issues.property.test.vibe:125` |
+| `src/core/issueGraphDecision.vibe:24:95 function` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:28:37 function` | `spec-only` | `test/conversationEdges.coverage.test.vibe:58` |
+| `src/core/issueGraphDecision.vibe:148:97 function` | `spec-only` | `test/issues.property.test.vibe:90` |
+| `src/core/issueGraphDecision.vibe:156:97 function` | `spec-only` | `test/issues.property.test.vibe:125` |
+| `src/core/issueGraphDecision.vibe:165:104 function` | `spec-only` | `test/issues.property.test.vibe:96` |
+| `src/core/issueGraphDecision.vibe:174:79 function` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:184:82 function` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:195:106 function` | `spec-only` | `test/issues.property.test.vibe:103` |
+| `src/core/issueGraphDecision.vibe:204:98 function` | `spec-only` | `test/issues.property.test.vibe:125` |
+| `src/core/issueGraphDecision.vibe:215:160 function` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:226:128 function` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:237:129 function` | `spec-only` | `test/issues.property.test.vibe:111` |
+| `src/core/issueGraphDecision.vibe:249:163 function` | `spec-only` | `test/issues.property.test.vibe:125` |
+| `src/core/issueGraphDecision.vibe:265:146 function` | `spec-only` | `test/issues.property.test.vibe:125` |
+| `src/core/issueGraphDecision.vibe:278:100 function` | `spec-only` | `test/issues.property.test.vibe:125` |
+
+**`src/core/mockFactoryDecision.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/mockFactoryDecision.vibe:52:9 branch 1` | `review-refusal` | `test/mockFactoryDecision.test.vibe:37` |
+| `src/core/mockFactoryDecision.vibe:60:9 branch 0` | `agent-actor` | `test/mockFactory.coverage.test.vibe:129` |
+
+**`src/core/replayDecision.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/replayDecision.vibe:22:9 branch 0` ×2 | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:32` |
+| `src/core/replayDecision.vibe:22:9 branch 1` ×2 | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:32` |
+| `src/core/replayDecision.vibe:30:9 branch 0` | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:32` |
+| `src/core/replayDecision.vibe:30:9 branch 1` | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:32` |
+| `src/core/replayDecision.vibe:40:9 branch 0` | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:51` |
+| `src/core/replayDecision.vibe:40:9 branch 1` | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:51` |
+| `src/core/replayDecision.vibe:22:2 statement` | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:32` |
+| `src/core/replayDecision.vibe:30:2 statement` | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:32` |
+| `src/core/replayDecision.vibe:40:2 statement` | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:51` |
+| `src/core/replayDecision.vibe:21:73 function` | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:32` |
+| `src/core/replayDecision.vibe:29:94 function` | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:32` |
+| `src/core/replayDecision.vibe:39:125 function` | `spec-only` | `test/conversationSpecifications.coverage.test.vibe:51` |
+
+**`src/core/sandboxDecision.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/sandboxDecision.vibe:96:9 branch 1` | `elapsed-clamp` | `test/sandboxDecision.test.vibe:36` |
+| `src/core/sandboxDecision.vibe:268:2 branch 0` | `decide-sandbox-refusals` | `test/sandboxKernelEdges.coverage.test.vibe:19` |
+| `src/core/sandboxDecision.vibe:269:2 branch 0` | `decide-sandbox-refusals` | `test/sandboxKernelEdges.coverage.test.vibe:19` |
+| `src/core/sandboxDecision.vibe:272:2 branch 0` | `decide-sandbox-refusals` | `test/sandboxHost.coverage.test.vibe:80` |
+| `src/core/sandboxDecision.vibe:273:2 branch 0` | `decide-sandbox-refusals` | `test/sandboxKernelEdges.coverage.test.vibe:19` |
+| `src/core/sandboxDecision.vibe:324:14 branch 0` | `meter-delay-floor` | `test/sandboxHost.coverage.test.vibe:113` |
+| `src/core/sandboxDecision.vibe:38:2 branch 0` | `spec-only` | `test/decisionEdges.coverage.test.vibe:46` |
+| `src/core/sandboxDecision.vibe:38:2 branch 1` | `spec-only` | `test/decisionEdges.coverage.test.vibe:46` |
+| `src/core/sandboxDecision.vibe:39:51 branch 0` | `spec-only` | `test/decisionEdges.coverage.test.vibe:46` |
+| `src/core/sandboxDecision.vibe:39:51 branch 1` | `spec-only` | `test/decisionEdges.coverage.test.vibe:46` |
+| `src/core/sandboxDecision.vibe:268:57 statement` | `decide-sandbox-refusals` | `test/sandboxKernelEdges.coverage.test.vibe:19` |
+| `src/core/sandboxDecision.vibe:269:117 statement` | `decide-sandbox-refusals` | `test/sandboxKernelEdges.coverage.test.vibe:19` |
+| `src/core/sandboxDecision.vibe:272:89 statement` | `decide-sandbox-refusals` | `test/sandboxHost.coverage.test.vibe:80` |
+| `src/core/sandboxDecision.vibe:273:138 statement` | `decide-sandbox-refusals` | `test/sandboxKernelEdges.coverage.test.vibe:19` |
+| `src/core/sandboxDecision.vibe:38:2 statement` | `spec-only` | `test/decisionEdges.coverage.test.vibe:46` |
+| `src/core/sandboxDecision.vibe:38:16 statement` | `spec-only` | `test/decisionEdges.coverage.test.vibe:46` |
+| `src/core/sandboxDecision.vibe:39:2 statement` | `spec-only` | `test/decisionEdges.coverage.test.vibe:46` |
+| `src/core/sandboxDecision.vibe:37:86 function` | `spec-only` | `test/decisionEdges.coverage.test.vibe:46` |
+
+**`src/core/sandboxHost.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/sandboxHost.vibe:57:2 branch 0` | `tagged-failures` | `test/sandboxHost.coverage.test.vibe:271` |
+| `src/core/sandboxHost.vibe:59:14 branch 1` | `tagged-failures` | `test/sandboxHost.coverage.test.vibe:271` |
+| `src/core/sandboxHost.vibe:61:36 branch 1` | `tagged-failures` | `test/sandboxHost.coverage.test.vibe:271` |
+| `src/core/sandboxHost.vibe:72:49 branch 1` | `container-refusals` | `test/sandboxProbe.test.vibe:180` |
+| `src/core/sandboxHost.vibe:74:11 branch 1` | `container-refusals` | `test/sandboxProbe.test.vibe:180` |
+| `src/core/sandboxHost.vibe:99:4 branch 0` | `own-ledger` | `test/sandboxHost.coverage.test.vibe:59` |
+| `src/core/sandboxHost.vibe:116:4 branch 0` | `sequence-room` | `test/sandboxHost.coverage.test.vibe:69` |
+| `src/core/sandboxHost.vibe:118:4 branch 0` | `decide-sandbox-refusals` | `test/sandboxHost.coverage.test.vibe:80` |
+| `src/core/sandboxHost.vibe:124:4 branch 0` | `receipt-with-pending` | `test/sandboxHost.coverage.test.vibe:97` |
+| `src/core/sandboxHost.vibe:138:6 branch 0` | `two-sandboxes` | `test/sandboxHost.coverage.test.vibe:113` |
+| `src/core/sandboxHost.vibe:193:6 branch 0` | `two-sandboxes` | `test/sandboxHost.coverage.test.vibe:11` |
+| `src/core/sandboxHost.vibe:217:6 branch 0` | `demoted-pending-start` | `test/sandboxHost.coverage.test.vibe:153` |
+| `src/core/sandboxHost.vibe:227:4 branch 0` | `sandbox-ids` | `test/sandboxesObject.coverage.test.vibe:82` |
+| `src/core/sandboxHost.vibe:244:4 branch 0` | `sequence-room` | `test/sandboxHost.coverage.test.vibe:223` |
+| `src/core/sandboxHost.vibe:272:8 branch 0` | `command-receipt` | `test/sandboxHost.coverage.test.vibe:235` |
+| `src/core/sandboxHost.vibe:273:10 branch 0` | `command-receipt` | `test/sandboxHost.coverage.test.vibe:235` |
+| `src/core/sandboxHost.vibe:273:10 branch 1` | `command-receipt` | `test/sandboxHost.coverage.test.vibe:251` |
+| `src/core/sandboxHost.vibe:57:51 statement` | `tagged-failures` | `test/sandboxHost.coverage.test.vibe:271` |
+| `src/core/sandboxHost.vibe:99:54 statement` | `own-ledger` | `test/sandboxHost.coverage.test.vibe:59` |
+| `src/core/sandboxHost.vibe:116:90 statement` | `sequence-room` | `test/sandboxHost.coverage.test.vibe:69` |
+| `src/core/sandboxHost.vibe:118:22 statement` | `decide-sandbox-refusals` | `test/sandboxHost.coverage.test.vibe:80` |
+| `src/core/sandboxHost.vibe:124:32 statement` | `receipt-with-pending` | `test/sandboxHost.coverage.test.vibe:97` |
+| `src/core/sandboxHost.vibe:139:35 statement` | `two-sandboxes` | `test/sandboxHost.coverage.test.vibe:113` |
+| `src/core/sandboxHost.vibe:140:27 statement` | `two-sandboxes` | `test/sandboxHost.coverage.test.vibe:113` |
+| `src/core/sandboxHost.vibe:141:8 statement` | `two-sandboxes` | `test/sandboxHost.coverage.test.vibe:113` |
+| `src/core/sandboxHost.vibe:142:8 statement` | `two-sandboxes` | `test/sandboxHost.coverage.test.vibe:113` |
+| `src/core/sandboxHost.vibe:193:24 statement` | `two-sandboxes` | `test/sandboxHost.coverage.test.vibe:11` |
+| `src/core/sandboxHost.vibe:218:8 statement` | `demoted-pending-start` | `test/sandboxHost.coverage.test.vibe:153` |
+| `src/core/sandboxHost.vibe:219:8 statement` | `demoted-pending-start` | `test/sandboxHost.coverage.test.vibe:153` |
+| `src/core/sandboxHost.vibe:220:8 statement` | `demoted-pending-start` | `test/sandboxHost.coverage.test.vibe:153` |
+| `src/core/sandboxHost.vibe:227:90 statement` | `sandbox-ids` | `test/sandboxesObject.coverage.test.vibe:82` |
+| `src/core/sandboxHost.vibe:244:45 statement` | `sequence-room` | `test/sandboxHost.coverage.test.vibe:223` |
+| `src/core/sandboxHost.vibe:273:10 statement` | `command-receipt` | `test/sandboxHost.coverage.test.vibe:235` |
+| `src/core/sandboxHost.vibe:273:48 statement` | `command-receipt` | `test/sandboxHost.coverage.test.vibe:235` |
+| `src/core/sandboxHost.vibe:274:10 statement` | `command-receipt` | `test/sandboxHost.coverage.test.vibe:251` |
+
+**`src/core/sandboxHostDecision.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/sandboxHostDecision.vibe:27:9 branch 1` | `tagged-failures` | `test/sandboxHostDecision.test.vibe:14` |
+| `src/core/sandboxHostDecision.vibe:34:9 branch 1` | `container-refusals` | `test/sandboxHostDecision.test.vibe:18` |
+| `src/core/sandboxHostDecision.vibe:146:2 branch 0` | `demoted-pending-start` | `test/sandboxHostDecision.test.vibe:48` |
+| `src/core/sandboxHostDecision.vibe:146:6 branch 1` | `demoted-pending-start` | `test/sandboxHostDecision.test.vibe:48` |
+| `src/core/sandboxHostDecision.vibe:169:2 branch 0` | `sandbox-ids` | `test/sandboxHostDecision.test.vibe:52` |
+| `src/core/sandboxHostDecision.vibe:174:4 branch 0` | `sandbox-ids` | `test/sandboxHostDecision.test.vibe:52` |
+| `src/core/sandboxHostDecision.vibe:183:2 branch 0` | `sandbox-ids` | `test/sandboxHostDecision.test.vibe:52` |
+| `src/core/sandboxHostDecision.vibe:188:4 branch 0` | `sandbox-ids` | `test/sandboxHostDecision.test.vibe:52` |
+| `src/core/sandboxHostDecision.vibe:243:2 branch 0` | `sequence-room` | `test/sandboxHostDecision.test.vibe:68` |
+| `src/core/sandboxHostDecision.vibe:146:37 statement` | `demoted-pending-start` | `test/sandboxHostDecision.test.vibe:48` |
+| `src/core/sandboxHostDecision.vibe:169:40 statement` | `sandbox-ids` | `test/sandboxHostDecision.test.vibe:52` |
+| `src/core/sandboxHostDecision.vibe:174:42 statement` | `sandbox-ids` | `test/sandboxHostDecision.test.vibe:52` |
+| `src/core/sandboxHostDecision.vibe:183:40 statement` | `sandbox-ids` | `test/sandboxHostDecision.test.vibe:52` |
+| `src/core/sandboxHostDecision.vibe:188:45 statement` | `sandbox-ids` | `test/sandboxHostDecision.test.vibe:52` |
+| `src/core/sandboxHostDecision.vibe:243:13 statement` | `sequence-room` | `test/sandboxHostDecision.test.vibe:68` |
+
+**`src/core/specification.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/specification.vibe:28:15 branch 1` | `specification-seeded` | `test/specificationEdges.coverage.test.vibe:21` |
+| `src/core/specification.vibe:31:2 branch 0` | `revision-checks` | `test/specificationEdges.coverage.test.vibe:79` |
+| `src/core/specification.vibe:32:91 branch 1` | `specification-seeded` | `test/specificationEdges.coverage.test.vibe:21` |
+| `src/core/specification.vibe:36:15 branch 1` | `specification-seeded` | `test/specificationEdges.coverage.test.vibe:21` |
+| `src/core/specification.vibe:37:18 branch 1` | `specification-seeded` | `test/specificationEdges.coverage.test.vibe:21` |
+| `src/core/specification.vibe:40:2 branch 0` | `revision-checks` | `test/gates.test.vibe:86` |
+| `src/core/specification.vibe:47:17 branch 0` | `scripted-reviewer` | `test/gates.test.vibe:86` |
+| `src/core/specification.vibe:47:17 branch 1` | `scripted-reviewer` | `test/gates.test.vibe:86` |
+| `src/core/specification.vibe:47:112 branch 1` | `scripted-reviewer` | `test/issuesBoundary.coverage.test.vibe:236` |
+| `src/core/specification.vibe:50:2 branch 0` | `scripted-reviewer` | `test/issuesBoundary.coverage.test.vibe:236` |
+| `src/core/specification.vibe:52:2 branch 0` | `scripted-reviewer` | `test/gates.test.vibe:144` |
+| `src/core/specification.vibe:55:236 branch 1` | `scripted-reviewer` | `test/gates.test.vibe:130` |
+| `src/core/specification.vibe:64:83 branch 1` | `specification-seeded` | `test/specificationEdges.coverage.test.vibe:127` |
+| `src/core/specification.vibe:66:31 branch 1` | `specification-seeded` | `test/specificationEdges.coverage.test.vibe:127` |
+| `src/core/specification.vibe:66:58 branch 1` | `specification-seeded` | `test/specificationEdges.coverage.test.vibe:127` |
+| `src/core/specification.vibe:66:84 branch 1` | `specification-seeded` | `test/specificationEdges.coverage.test.vibe:127` |
+| `src/core/specification.vibe:31:21 statement` | `revision-checks` | `test/specificationEdges.coverage.test.vibe:79` |
+| `src/core/specification.vibe:40:22 statement` | `revision-checks` | `test/gates.test.vibe:86` |
+| `src/core/specification.vibe:50:28 statement` | `scripted-reviewer` | `test/issuesBoundary.coverage.test.vibe:236` |
+| `src/core/specification.vibe:52:90 statement` | `scripted-reviewer` | `test/gates.test.vibe:144` |
+
+**`src/core/specificationDecision.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/specificationDecision.vibe:14:2 branch 0` | `revision-checks` | `test/gates.test.vibe:86` |
+| `src/core/specificationDecision.vibe:15:21 branch 0` | `revision-checks` | `test/gates.test.vibe:86` |
+| `src/core/specificationDecision.vibe:16:9 branch 0` | `revision-checks` | `test/gates.test.vibe:86` |
+| `src/core/specificationDecision.vibe:30:9 branch 0` | `scripted-reviewer` | `test/gates.test.vibe:86` |
+| `src/core/specificationDecision.vibe:37:9 branch 0` | `revision-policy` | `test/coreShellDecisions.test.vibe:54` |
+| `src/core/specificationDecision.vibe:48:2 branch 0` | `scripted-reviewer` | `test/gates.test.vibe:130` |
+| `src/core/specificationDecision.vibe:49:9 branch 1` | `scripted-reviewer` | `test/coreShellDecisions.test.vibe:54` |
+| `src/core/specificationDecision.vibe:14:43 statement` | `revision-checks` | `test/gates.test.vibe:86` |
+| `src/core/specificationDecision.vibe:48:19 statement` | `scripted-reviewer` | `test/gates.test.vibe:130` |
+
+**`src/core/wikiLinkDecision.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/wikiLinkDecision.vibe:56:9 branch 0` | `spec-only` | `test/coreShellDecisions.test.vibe:29` |
+| `src/core/wikiLinkDecision.vibe:56:9 branch 1` | `spec-only` | `test/coreShellDecisions.test.vibe:29` |
+| `src/core/wikiLinkDecision.vibe:56:2 statement` | `spec-only` | `test/coreShellDecisions.test.vibe:29` |
+| `src/core/wikiLinkDecision.vibe:55:72 function` | `spec-only` | `test/coreShellDecisions.test.vibe:29` |
+
+**`src/core/wikiPageDecision.vibe`**
+
+| Counter | Reason | Test |
+| --- | --- | --- |
+| `src/core/wikiPageDecision.vibe:126:28 branch 1` | `wiki-fixture-verdicts` | `test/liveWiki.coverage.test.vibe:44` |
+| `src/core/wikiPageDecision.vibe:127:2 branch 0` | `wiki-fixture-verdicts` | `test/factoryHosts.coverage.test.vibe:53` |
+| `src/core/wikiPageDecision.vibe:128:2 branch 0` | `wiki-fixture-verdicts` | `test/mockFactory.coverage.test.vibe:143` |
+| `src/core/wikiPageDecision.vibe:131:2 branch 0` | `wiki-fixture-verdicts` | `test/liveWiki.coverage.test.vibe:44` |
+| `src/core/wikiPageDecision.vibe:132:9 branch 0` | `wiki-fixture-verdicts` | `test/wikiPageDecision.test.vibe:57` |
+| `src/core/wikiPageDecision.vibe:127:15 statement` | `wiki-fixture-verdicts` | `test/factoryHosts.coverage.test.vibe:53` |
+| `src/core/wikiPageDecision.vibe:128:14 statement` | `wiki-fixture-verdicts` | `test/mockFactory.coverage.test.vibe:143` |
+| `src/core/wikiPageDecision.vibe:131:13 statement` | `wiki-fixture-verdicts` | `test/liveWiki.coverage.test.vibe:44` |

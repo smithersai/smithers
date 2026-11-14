@@ -1,0 +1,73 @@
+// Attribution runs for the browser gate (decision 0016, "Browser-unreachable counters"): each test file the list names
+// runs alone under Vitest's V8 coverage, with only its named tests selected (`file:line`, which needs task locations),
+// so a listed counter counts only when its own test runs it, not another test in its file or another file. Each run
+// writes `coverage/attribution/<test>/coverage-final.json` and `results.json`; `index.json` names, per test file, the
+// declaration lines of the tests that passed. test/support/browserVerdict.vibe reads them.
+import { node, run } from "./processes.vibe"
+import { parseList } from "./browserVerdict.vibe"
+
+/** A named test runs inside workerd, whose isolates this runner cannot measure on its own. */
+export error WorkerdTest { test: string }
+
+/** A Vitest run wrote no results file, so which named tests passed is unknown. */
+export error NoResults { test: string; status: number; output: string }
+
+/** The directory one test file's run writes, under the attribution directory. */
+export const runDirectory = (test: string) => test.replaceAll("/", "_")
+
+/** Every listed test file with the declaration lines and sources it is named for, in the list's order. */
+export function plan(text: string): Array<{ readonly test: string; readonly lines: ReadonlyArray<number>; readonly sources: ReadonlyArray<string> }> {
+  const tests = new Map<string, { lines: Set<number>; sources: Set<string> }>()
+  for (const row of parseList(text)) {
+    const entry = tests.get(row.test) ?? { lines: new Set<number>(), sources: new Set<string>() }
+    entry.lines.add(row.testLine)
+    entry.sources.add(row.file)
+    tests.set(row.test, entry)
+  }
+  return [...tests].map(([test, { lines, sources }]) => ({ test, lines: [...lines].sort((a, b) => a - b), sources: [...sources].sort() }))
+}
+
+/** The declaration lines of the tests that passed, from Vitest's JSON reporter. */
+export function passedLines(results: unknown): Array<number> {
+  const files = (results as { testResults?: ReadonlyArray<{ assertionResults?: ReadonlyArray<{ status?: string; location?: { line?: number } }> }> }).testResults ?? []
+  const lines = files.flatMap((file) => (file.assertionResults ?? []).flatMap((test) => test.status === "passed" && test.location?.line !== undefined ? [test.location.line] : []))
+  return [...new Set(lines)].sort((a, b) => a - b)
+}
+
+/** Runs each named test file of `list` and writes the attribution directory the verdict reads. */
+export effect function attribute(app: string, list = "verify/browser-unreachable.tsv", directory = "coverage/attribution") {
+  return try withSpan(effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const runs = plan(try fs.readFileString(path.join(app, list)))
+    const root = path.join(app, directory)
+    try fs.remove(root, { recursive: true, force: true })
+    try fs.makeDirectory(root, { recursive: true })
+    const vitest = path.join(app, "node_modules/vitest/vitest.mjs")
+    const executable = try node()
+    const index: Record<string, { status: number; passed: ReadonlyArray<number>; coverage: string }> = {}
+    for (const entry of runs) if (entry.test.includes(".workerd.test.")) throw new WorkerdTest({ test: entry.test })
+    // ATTRIBUTION_CONCURRENCY test files run at once (default 4): each writes its own directory.
+    const concurrency = try Config.withDefault(Config.Int("ATTRIBUTION_CONCURRENCY"), 4)
+    try Effect.forEach(runs, effect (entry) => {
+      const out = runDirectory(entry.test)
+      const started = Date.now()
+      const finished = try run(executable, [
+        vitest, "run", ...entry.lines.map((line) => `${entry.test}:${line}`), "--includeTaskLocation",
+        "--coverage", ...entry.sources.map((source) => `--coverage.include=${source}`), "--coverage.reporter=json",
+        `--coverage.reportsDirectory=${path.join(directory, out)}`, ...["lines", "branches", "functions", "statements"].map((metric) => `--coverage.thresholds.${metric}=0`), "--coverage.thresholds.perFile=false", "--reporter=json", `--outputFile=${path.join(directory, out, "results.json")}`,
+      ], { COVERAGE_MERGE: "1" }, app)
+      const resultsText = fs.readFileString(path.join(root, out, "results.json")) catch effect () => {
+        throw new NoResults({ test: entry.test, status: finished.status, output: (finished.stdout + finished.stderr).slice(-4000) })
+      }
+      const results = try Effect.try({ try: () => JSON.parse(resultsText) as unknown, catch: () => new NoResults({ test: entry.test, status: finished.status, output: resultsText.slice(0, 400) }) })
+      const passed = passedLines(results)
+      index[entry.test] = { status: finished.status, passed, coverage: `${out}/coverage-final.json` }
+      const seconds = Math.round((Date.now() - started) / 1000)
+      try Effect.logInfo("vibelang.coverage.attribution").pipe(Effect.annotateLogs({ named: entry.lines.length, passed: passed.length, sources: entry.sources.length, status: finished.status, seconds }))
+      try Console.log(`${entry.test}: ${passed.length}/${entry.lines.length} named tests passed, exit ${finished.status}, ${seconds} s`)
+    }, { concurrency, discard: true })
+    try fs.writeFileString(path.join(root, "index.json"), JSON.stringify(index, null, 1) + "\n")
+    try Console.log(`Attribution: ${runs.length} test files run.`)
+  }, "vibelang.coverage.attribution")
+}

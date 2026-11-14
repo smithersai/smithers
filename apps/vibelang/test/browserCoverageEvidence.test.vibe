@@ -28,12 +28,11 @@ describe("Chromium coverage evidence", () => {
     expect(reporter.missingEvidence).toEqual(["e2e/wikiEdit.spec.ts:6 edits", "e2e/authbroker.spec.ts:4 signs in"])
   })
 
-  it("fails the strict gate on a gap, an unmeasured check, or a green run with no evidence", () => {
-    expect(gateFailed(0, 0, 3, "passed")).toBe(false)
-    expect(gateFailed(1, 0, 3, "passed")).toBe(true)
-    expect(gateFailed(0, 1, 3, "passed")).toBe(true)
-    expect(gateFailed(0, 0, 0, "passed")).toBe(true)
-    expect(gateFailed(0, 0, 0, "failed")).toBe(false)
+  it("fails the strict run on an unmeasured check or a green run with no evidence; the verdict judges open counters", () => {
+    expect(gateFailed(0, 3, "passed")).toBe(false)
+    expect(gateFailed(1, 3, "passed")).toBe(true)
+    expect(gateFailed(0, 0, "passed")).toBe(true)
+    expect(gateFailed(0, 0, "failed")).toBe(false)
   })
 })
 

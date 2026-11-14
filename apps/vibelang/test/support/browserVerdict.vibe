@@ -1,0 +1,210 @@
+// The browser gate's verdict (decision 0016, "Browser-unreachable counters"), run by `pnpm e2e:coverage` after
+// Playwright. Chromium's report (coverage/browser) leaves some counters at 0 because every page check refuses their
+// input first. The gate passes exactly when each such counter is listed in verify/browser-unreachable.tsv (generated
+// from 0016 by verify/browser_unreachable.cjs) and its named test runs it in that test's own Vitest run
+// (coverage/attribution, test/support/browserAttribution.vibe). It fails on an open counter the list misses, on a listed
+// counter the browser ran or no longer has (a stale list), and on a listed counter its named test does not run. No
+// counter is dropped and no threshold moves: every counter still runs somewhere, and every listed one still counts.
+import type { FileCoverageJSON, Position } from "./coverageUnion.ts"
+
+export type Kind = "branch" | "statement" | "function"
+
+/** One Istanbul counter: a branch arm (`index`), a statement or a function, keyed by its structure's start. */
+export interface Counter {
+  readonly file: string
+  readonly kind: Kind
+  readonly line: number
+  readonly column: number
+  readonly index: number
+}
+
+/** A listed counter: how many times the browser's structure holds it, why no page runs it, and the test that does. */
+export interface Listed extends Counter {
+  readonly count: number
+  readonly reason: string
+  readonly test: string
+  readonly testLine: number
+}
+
+/** One named test file's attribution run: the declaration lines of the tests that passed, and that run's coverage. */
+export interface Attribution {
+  readonly passed: ReadonlyArray<number>
+  readonly coverage: Readonly<Record<string, FileCoverageJSON>>
+}
+
+/** What the gate decided: every refusal, and the counts it logs. */
+export interface Verdict {
+  readonly refused: ReadonlyArray<string>
+  readonly files: number
+  readonly open: number
+  readonly listed: number
+}
+
+/** A browser counter with what the unit side's second keys need: an arm's own start, a function's declaration. */
+interface Measured {
+  readonly counter: Counter
+  readonly hits: number
+  readonly arm?: Position
+  readonly decl?: Position
+}
+
+export const counterKey = (counter: Counter) => `${counter.file}:${counter.line}:${counter.column} ${counter.kind} ${counter.index}`
+
+const same = (position: Partial<Position> | undefined, line: number, column: number) => position?.line === line && (position.column ?? 0) === column
+
+const samePosition = (left: Partial<Position> | undefined, right: Partial<Position> | undefined) =>
+  left?.line !== undefined && right?.line !== undefined && left.line === right.line && (left.column ?? 0) === (right.column ?? 0)
+
+/** Every counter in one file's report, run or not. */
+function measured(file: string, json: FileCoverageJSON): Array<Measured> {
+  const all: Array<Measured> = []
+  for (const [id, branch] of Object.entries(json.branchMap)) {
+    for (const [index, hits] of (json.b[id] ?? []).entries()) {
+      const arm = branch.locations[index]?.start
+      all.push({
+        counter: { file, kind: "branch", line: branch.loc.start.line, column: branch.loc.start.column ?? 0, index },
+        hits,
+        ...(arm?.line === undefined ? {} : { arm: { line: arm.line, column: arm.column ?? 0 } }),
+      })
+    }
+  }
+  for (const [id, statement] of Object.entries(json.statementMap)) {
+    all.push({ counter: { file, kind: "statement", line: statement.start.line, column: statement.start.column ?? 0, index: 0 }, hits: json.s[id] ?? 0 })
+  }
+  for (const [id, fn] of Object.entries(json.fnMap)) {
+    const start = (fn.loc ?? fn.decl).start
+    all.push({ counter: { file, kind: "function", line: start.line, column: start.column ?? 0, index: 0 }, hits: json.f[id] ?? 0, decl: fn.decl.start })
+  }
+  return all
+}
+
+/**
+ * Whether a test's Vitest report runs the browser's counter. Vitest compiles the same `.vibe` source through the
+ * compiler's map, so counters share their source start, the fuzz and bench gates' rule (coverageUnion.ts). Two second
+ * keys cover where the bundle starts a counter elsewhere: an arm's own start (the bundle starts `a ?? (try f()).x`'s
+ * right operand at the expression, decision 0016), and a statement that is a function's body (a concise arrow). An
+ * enclosing statement never counts: it runs without its inner code.
+ */
+function unitRuns(unit: FileCoverageJSON | undefined, browser: Measured): boolean {
+  if (unit === undefined) return false
+  const { line, column, index, kind } = browser.counter
+  if (kind === "branch") {
+    return Object.entries(unit.branchMap).some(([id, branch]) => {
+      const hits = unit.b[id] ?? []
+      if (same(branch.loc.start, line, column) && (hits[index] ?? 0) > 0) return true
+      return browser.arm !== undefined && branch.locations.some((arm, armIndex) => samePosition(arm.start, browser.arm) && (hits[armIndex] ?? 0) > 0)
+    })
+  }
+  const functionRuns = Object.entries(unit.fnMap).some(([id, fn]) => {
+    const body = same((fn.loc ?? fn.decl).start, line, column)
+    const declared = kind === "function" && samePosition(fn.decl.start, browser.decl)
+    return (body || declared) && (unit.f[id] ?? 0) > 0
+  })
+  if (kind === "function") return functionRuns
+  return functionRuns || Object.entries(unit.statementMap).some(([id, statement]) => same(statement.start, line, column) && (unit.s[id] ?? 0) > 0)
+}
+
+/** The list's rows from its TSV text (verify/browser_unreachable.cjs writes it; the landing check refuses a stale one). */
+export function parseList(text: string): Array<Listed> {
+  const rows: Array<Listed> = []
+  for (const line of text.split("\n").slice(1)) {
+    if (line === "") continue
+    const [file = "", lineNumber, column, kind, index, count, reason = "", , test = "", testLine] = line.split("\t")
+    rows.push({ file, line: Number(lineNumber), column: Number(column), kind: kind as Kind, index: Number(index), count: Number(count), reason, test, testLine: Number(testLine) })
+  }
+  return rows
+}
+
+/**
+ * The verdict over Chromium's report (keys relative to the app), the list and each named test file's attribution run.
+ * `scope` holds path prefixes, such as `src/core/`; empty means every file the report holds.
+ */
+export function verdict(
+  browser: Readonly<Record<string, FileCoverageJSON>>,
+  list: ReadonlyArray<Listed>,
+  attribution: Readonly<Record<string, Attribution>>,
+  scope: ReadonlyArray<string> = [],
+): Verdict {
+  const inScope = (file: string) => scope.length === 0 || scope.some((prefix) => file.startsWith(prefix))
+  const files = Object.keys(browser).filter(inScope).sort()
+  const structure = new Map<string, Array<Measured>>()
+  for (const file of files) {
+    for (const counter of measured(file, browser[file]!)) {
+      const key = counterKey(counter.counter)
+      structure.set(key, [...(structure.get(key) ?? []), counter])
+    }
+  }
+  const listed = new Map<string, Listed>()
+  for (const row of list) if (inScope(row.file)) listed.set(counterKey(row), row)
+  const refused: Array<string> = []
+  let open = 0
+  for (const [key, counters] of structure) {
+    const unrun = counters.filter((counter) => counter.hits === 0).length
+    open += unrun
+    const row = listed.get(key)
+    if (unrun > 0 && row === undefined) refused.push(`open in the browser, not listed: ${key}${unrun > 1 ? ` ×${unrun}` : ""}`)
+    else if (row !== undefined && unrun < row.count) refused.push(`listed, but the browser ran it (stale list): ${key}`)
+    else if (row !== undefined && unrun > row.count) refused.push(`open ×${unrun} in the browser, listed ×${row.count}: ${key}`)
+  }
+  for (const [key, row] of listed) {
+    if (!structure.has(key)) {
+      refused.push(`listed, not in the browser structure (stale list): ${key}`)
+      continue
+    }
+    const named = `${row.test}:${row.testLine}`
+    const run = attribution[row.test]
+    if (run === undefined) refused.push(`no attribution run for ${row.test}: ${key}`)
+    else if (!run.passed.includes(row.testLine)) refused.push(`named test did not pass in its attribution run, ${named}: ${key}`)
+    else if (!unitRuns(run.coverage[row.file], structure.get(key)![0]!)) refused.push(`named test does not run it, ${named}: ${key}`)
+  }
+  return { refused: refused.sort(), files: files.length, open, listed: [...listed.values()].reduce((total, row) => total + row.count, 0) }
+}
+
+/** The browser gate refused at least one counter. */
+export error Refused { count: number }
+
+/** A report or the list is missing or malformed. */
+export error Unreadable { cause: unknown }
+
+/** A report's keys relative to the app. A key outside it stays whole, so it matches no listed counter. */
+function relative(app: string, report: Readonly<Record<string, FileCoverageJSON>>): Record<string, FileCoverageJSON> {
+  return Object.fromEntries(Object.entries(report).map(([file, json]) => [file.startsWith(app + "/") ? file.slice(app.length + 1) : file, json]))
+}
+
+/** What the gate reads, relative to the app. */
+export interface Gate {
+  readonly browser: string
+  readonly list: string
+  readonly attribution: string
+  readonly scope: ReadonlyArray<string>
+}
+
+export const gateFiles: Gate = { browser: "coverage/browser/coverage-final.json", list: "verify/browser-unreachable.tsv", attribution: "coverage/attribution", scope: [] }
+
+/** Reads the reports and the list, prints and logs the verdict, writes `verdict.json` beside the browser report. */
+export effect function gate(app: string, options: Gate = gateFiles) {
+  return try withSpan(effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const parse = effect (file: string) => {
+      const text = try fs.readFileString(path.join(app, file))
+      return try Effect.try({ try: () => JSON.parse(text) as unknown, catch: (cause) => new Unreadable({ cause }) })
+    }
+    const browser = relative(app, (try parse(options.browser)) as Record<string, FileCoverageJSON>)
+    const list = parseList(try fs.readFileString(path.join(app, options.list)))
+    const index = (try parse(path.join(options.attribution, "index.json"))) as Record<string, { readonly passed: ReadonlyArray<number>; readonly coverage?: string }>
+    const attribution: Record<string, Attribution> = {}
+    for (const [test, run] of Object.entries(index)) {
+      const coverage = run.coverage === undefined ? {} : relative(app, (try parse(path.join(options.attribution, run.coverage))) as Record<string, FileCoverageJSON>)
+      attribution[test] = { passed: run.passed, coverage }
+    }
+    const result = verdict(browser, list, attribution, options.scope)
+    const written = path.join(app, path.dirname(options.browser), "verdict.json")
+    try fs.writeFileString(written, JSON.stringify({ scope: options.scope, ...result }, null, 1) + "\n")
+    try Effect.logInfo("vibelang.coverage.browser-verdict").pipe(Effect.annotateLogs({ files: result.files, open: result.open, listed: result.listed, refused: result.refused.length }))
+    const where = options.scope.length === 0 ? "every file" : options.scope.join(", ")
+    try Console.log(`Browser gate (${where}): ${result.files} files, ${result.open} counters open, ${result.listed} listed, ${result.refused.length} refused.`)
+    for (const line of result.refused) try Console.log(line)
+    if (result.refused.length > 0) throw new Refused({ count: result.refused.length })
+  }, "vibelang.coverage.browser-verdict")
+}

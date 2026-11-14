@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import {
-  canLinkIssues, editedIssue, issueAddFrame, issueAncestorAt, issueAncestorJoin, issueAvoids, issueFirstNumbered, issueLinkFrame,
-  issueMissingStays, issueRootStays, issueSameEdges, nextIssueNumber,
+  canLinkIssues, editedIssue, issueAddAcyclic, issueAddFrame, issueAncestorAt, issueAncestorJoin, issueAncestorStep, issueAvoids,
+  issueFirstNumbered, issueLinkAcyclic, issueLinkChildFree, issueLinkFrame, issueMissingStays, issueRootedExists, issueRootStays,
+  issueSameEdges, nextIssueNumber,
 } from "../src/core/issueGraphDecision.vibe"
 import { fixtureIssues, makeIssueFactory } from "../src/core/IssuesFactory.vibe"
 import type { IssueRecord } from "../src/core/conversation.vibe"
@@ -119,6 +120,21 @@ describe("the specification lemmas' claims", () => {
     // The walk from #4 stands on #4, so the relink changes it: the frame's premise matters.
     expect(issueAncestorAt(relinked, 4, 2)).toBe(0)
     expect(issueAncestorAt(items, 4, 2)).toBe(-1)
+  })
+
+  it("steps a walk one link at a time, finds a rooted issue, and keeps a link or an added issue acyclic", () => {
+    const relinked = items.map((issue) => issue.number === 4 ? { ...issue, parent: 1 } : issue)
+    const added = [at(5, 2), ...items]
+    const acyclic = (graph: ReadonlyArray<IssueRecord>) => graph.every((issue) => steps.slice(1).every((k) => issueAncestorAt(graph, issue.number, k) !== issue.number))
+    for (const k of steps) {
+      expect(issueAncestorStep(items, 3, k) && issueAncestorAt(items, 3, k + 1) === issueAncestorAt(items, issueAncestorAt(items, 3, k), 1)).toBe(true)
+      if (k >= 1) expect(issueLinkChildFree(items, relinked, 4, 1, 0, k) && issueAncestorAt(relinked, 4, k) !== 4).toBe(true)
+    }
+    // #3 reaches the root in three links, so it is one of the issues.
+    expect(issueRootedExists(items, 3, 3) && items.some((issue) => issue.number === 3)).toBe(true)
+    expect(acyclic(items)).toBe(true)
+    expect(issueLinkAcyclic(items, relinked, 4, 1, 0) && acyclic(relinked)).toBe(true)
+    expect(issueAddAcyclic(items, added) && acyclic(added)).toBe(true)
   })
 
   it("returns an issue unchanged for a write that edits none of its fields", () => {
