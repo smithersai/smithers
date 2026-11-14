@@ -9,7 +9,8 @@ import type { Role } from "../../src/history/roles.vibe"
 import { HistoryBackend } from "../../src/web/historyBackend.vibe"
 
 /**
- * A fault under the mock history. `main-read` fails the first read of main. The rest fail the first export:
+ * A fault under the mock history. `main-read` fails the first read of main; `main-long-title` answers it with its first
+ * commit titled past the history's 200-unit limit. The rest fail the first export:
  * `export-empty` answers it a history with no commits, `export-paced` a pace of one write; `export-prepare` fails its
  * first ref read, `export-check` its first commit read after a write, `export-publish` its ref update and
  * `export-confirm` the ref read after that; `export-linear` and `export-tree` answer its check's read of the first commit it
@@ -17,11 +18,12 @@ import { HistoryBackend } from "../../src/web/historyBackend.vibe"
  * `export-lost` answers the update without making it. The check's own reads after the export wrote: `export-header`
  * answers the manifest naming a mythical tip the export did not write, `export-ends` the manifest without its last
  * commit, `export-manifest` the manifest bookmark's tree without the manifest, and `export-notes` the notes tree
- * without its first note; `export-reads` paces the export at no tree reads.
+ * without its first note; `export-reads` paces the export at no tree reads; `export-unfolded` answers its read of the
+ * history with a history no fold has reached.
  */
-export type MockFault = "main-read" | "export-empty" | "export-paced" | "export-prepare" | "export-check" | "export-publish" | "export-confirm" | "export-linear" | "export-tree" | "export-conflict" | "export-lost" | "export-reads" | "export-header" | "export-ends" | "export-manifest" | "export-notes"
+export type MockFault = "main-read" | "main-long-title" | "export-empty" | "export-paced" | "export-prepare" | "export-check" | "export-publish" | "export-confirm" | "export-linear" | "export-tree" | "export-conflict" | "export-lost" | "export-reads" | "export-header" | "export-ends" | "export-manifest" | "export-notes" | "export-unfolded"
 
-const MOCK_FAULTS: ReadonlyArray<MockFault> = ["main-read", "export-empty", "export-paced", "export-prepare", "export-check", "export-publish", "export-confirm", "export-linear", "export-tree", "export-conflict", "export-lost", "export-reads", "export-header", "export-ends", "export-manifest", "export-notes"]
+const MOCK_FAULTS: ReadonlyArray<MockFault> = ["main-read", "main-long-title", "export-empty", "export-paced", "export-prepare", "export-check", "export-publish", "export-confirm", "export-linear", "export-tree", "export-conflict", "export-lost", "export-reads", "export-header", "export-ends", "export-manifest", "export-notes", "export-unfolded"]
 
 /** One write per batch: any export with more to write is the publisher's. */
 const ONE_WRITE: Pace = { writes: 1, reads: Number.POSITIVE_INFINITY, pauseMs: 0 }
@@ -31,6 +33,9 @@ const NO_READS: Pace = { writes: Number.POSITIVE_INFINITY, reads: 0, pauseMs: 0 
 
 /** A notes tree names each entry by the 40-digit commit it notes. */
 const NOTE_NAME = /^[0-9a-f]{40}$/
+
+/** A commit title past the history's 200-unit limit, as GitHub keeps any first line. */
+const LONG_TITLE = ": a first line that keeps going past the limit".repeat(5)
 
 /** An object id the export never wrote. */
 const FOREIGN = "0".repeat(40)
@@ -103,8 +108,16 @@ export function faultyWiring(faults: ReadonlyArray<MockFault>) {
       get pace() { return first("export-paced") ? ONE_WRITE : first("export-reads") ? NO_READS : mock.target.pace ?? UNPACED },
     }
     return {
-      stack: { ...mock.stack, read: () => Effect.suspend(() => first("export-empty") ? Effect.map(mock.stack.read(), (history) => ({ ...history, commits: [] })) : mock.stack.read()) },
-      main: { since: (sha) => Effect.suspend(() => first("main-read") ? Effect.fail(new MainUnavailable({ reason: "main can't be read" })) : mock.main.since(sha)) },
+      stack: {
+        ...mock.stack,
+        read: () => Effect.suspend(() => first("export-empty") ? Effect.map(mock.stack.read(), (history) => ({ ...history, commits: [] }))
+          : first("export-unfolded") ? Effect.map(mock.stack.read(), (history) => ({ ...history, main: "" })) : mock.stack.read()),
+      },
+      main: {
+        since: (sha) => Effect.suspend(() => first("main-read") ? Effect.fail(new MainUnavailable({ reason: "main can't be read" }))
+          : first("main-long-title") ? Effect.map(mock.main.since(sha), (commits) => commits.map((commit, index) => index === 0 ? { ...commit, title: commit.title + LONG_TITLE } : commit))
+          : mock.main.since(sha)),
+      },
       repository,
       target,
     }

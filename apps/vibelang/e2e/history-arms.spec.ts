@@ -65,3 +65,19 @@ test.describe("an export its own check or pace stops", () => {
     await expect(page.getByRole("alert")).toHaveCount(0)
   })
 })
+
+test.describe("a fold or an export over what main and the history hold", () => {
+  test("main-long-title: a commit of main titled past the history's limit folds, cut", async ({ page }) => {
+    await openFaulty(page, "main-long-title")
+    await page.getByRole("button", { name: "Fold" }).click()
+    await expect(page.locator(".sui-badge[title='Folded through']")).toContainText("47422f47d257", { timeout: 20_000 })
+    await expect(page.getByRole("alert")).toHaveCount(0)
+  })
+
+  test("export-unfolded: a history no fold has reached exports", async ({ page }) => {
+    await openFaulty(page, "export-unfolded")
+    await page.getByRole("button", { name: "Export", exact: true }).click()
+    await expect(page.getByTitle("Exported")).toHaveText(/^mythical \S{7}$/, { timeout: 20_000 })
+    await expect(page.getByRole("alert")).toHaveCount(0)
+  })
+})
