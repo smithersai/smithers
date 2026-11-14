@@ -4388,3 +4388,96 @@ them means new fixture text, a test of the fixture rather than of an input. `tes
 publishes", in all three projects. Alone on a box, that file and `live-actions.spec.ts` passed 36 of 36. Those two
 waits used expect's 5 s default, and one Export holds the main thread 2.3 s to 5.1 s unloaded (above, session 9); they
 now wait 20 s.
+
+## Actions and history arms in the browser (vl-fuzz2, session 23, 2026-11-14)
+
+The lead split the browser gate's web half on 2026-11-14: vl-fuzz2 takes `src/actions` and `src/history`,
+vl-coverage keeps `src/web`. The starting list is vl-coverage's session 38 gate 2 (job `a83115987de7d33a762f1c2c`, tree
+`392fd0b2`): 248 open branch arms in 20 files. Each arm ends one of five ways: a journey, an injected Effect fault, a
+replayed recording, a deletion or move with its proof, or a row below naming why no browser input reaches it.
+
+### Server-only names out of the browser bundle
+
+Each name below lived in a file the bundle ships for other names, so the browser gate counted it, and only the Worker,
+the seed or the publisher runs it (this decision's "Browser gate scope"). Each moved with its contract, mutation rows
+and inventory row; callers, tests, fuzz targets and benches import it from its new home.
+
+| Name | Was in (the browser loads it for) | Now in | Callers |
+| --- | --- | --- | --- |
+| `admitsLine` | `stackDecision` (plan step, fold title: `Sequencer`) | `seedDecision` | `seed.vibe` `pushOnce` |
+| `writable` | `exportDecision` (the mock's Export) | `workerExportDecision` (new) | `exportGuard.vibe` `guarded` |
+| `batchOutcome`, `emptyHistory`, `publishOutcome` | `exportDecision` | `workerExportDecision` | `publish.vibe` |
+| `guarded`, `guardRefusals` | `export.vibe` (the mock's Export) | `exportGuard.vibe` (new) | `worker/HistoryExport`, `fuzz/history-export`, `bench/history-publisher` |
+| `indexedRun`, `historyKind` | `actionHostDecision` (`MockActions`, `LiveActions`) | `worker/actionsDecision` | `worker/ActionDirectory`, `worker/historyInvocation` |
+| `isHistory`, `prepareHistory`, `HistoryInvocation` | `src/actions/execution.vibe` (`MockActions`) | `worker/historyInvocation.vibe` (new) | `worker/ActionRuns`, `worker/HistoryActions` |
+| `historyStatus` | `flowMachine` (the history page) | `wireDecision` | `routes.vibe` |
+| `decodeStoredHistory` | `schemas.vibe` (the page's schemas) | `worker/storedHistory.vibe` (new) | `worker/HistoryObject` |
+| `pageOf` | `pages.vibe` (`stacked`, `MAX_QUERY`: the page and the mock) | `routes.vibe` | `worker/apiObjects` |
+
+`pnpm verify` on the eight decision modules: 8/8 verified, 0 errors. `verify:broken` on the 17 moved mutations: 17/17
+rejected. The 0018 inventory is regenerated; its rows for `exportGuard` and `storedHistory` carry their old reasons.
+
+### Journeys and faults
+
+**A long search.** `e2e/history-arms.spec.ts` searches 201 plain units, then 199 units and an emoji whose pair
+straddles the 200-unit cut. Both settle with no matches, and the box keeps what was typed. Closes `stackDecision.vibe`
+`isHighSurrogate`, `isLowSurrogate` and `pairCut` (40, 47, 60) through `clipQuery`.
+
+**The export's own check and pace.** Five faults join `test/support/FaultyMockHistory.vibe`, each once, under the
+mock history's Export: `export-reads` paces it at no tree reads ("Publishing in the background.", `export.vibe` 283);
+`export-header` answers the check a manifest naming a foreign mythical tip (320); `export-ends` drops the manifest's
+last commit, so the chain ends early (335); `export-notes` drops the notes tree's first note (338); `export-manifest`
+drops the manifest from its bookmark's tree (133). Each reads "The export failed its check.", and exporting again
+publishes.
+
+### Bug: a repository code shown as the refusal
+
+`export-manifest` showed "invalid". `historyRefusal` returned any code it did not name as it came, and the export's
+`refusing` answers a repository failure by its code alone, so `invalid` and `not_found` (a bookmark with no manifest,
+a ref to a missing object) reached the page as raw codes. Both now read "The export failed its check." Red first:
+`test/flowMachineEdges.coverage.test.vibe` `invalid` and `not_found` (2 failed, 26 passed), then 28/28. Contract
+clauses and two mutation rows (`flow-refusal-export-invalid`, `flow-refusal-export-missing`) added.
+
+### Not reachable in the browser (after session 23)
+
+Session 38's rows stay as written: `trailerDecision`, `areaDecision`, `mythical.vibe`'s `apply` and `decide`
+refusals, `flowMachine.vibe`'s table, `exportDecision.vibe` `treeOrigin`'s `empty`, `flows.vibe:213`, `tools.vibe:93`.
+These are the rest of `src/actions` and `src/history`:
+
+| Site | Reason |
+| --- | --- |
+| `replayDecision.vibe` `replayStep`, `replayedHistory`, `replayedHistoryPrefix`, `liveHistoryReplays` (10 arms) | Specification only: the file's header says so, and only `replayHistory`'s and `recordedHistory`'s contracts name them. Spec functions once a compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`), with `trailerDecision`'s and `areaDecision`'s. |
+| `pageDecision.vibe` `sumOf` (4 arms) | Specification only: `totals`' contract and invariants name it; nothing calls it at run time. VIP-43, as above. |
+| `mythical.vibe` `hasEpic`'s and `hasCommit`'s `id === ""` (301, 319) | Every caller asks only with an id it has checked: `apply`'s guards and `decide`'s refusals test the id or title first, and the Sequencer names ids itself (`e<n+1>`, `m<n+1>`). The contract keeps `""` taken so the proofs need no caller. |
+| `mythical.vibe` `foldRefusal`'s `empty` and `too-long` (341, 342) | The mock's main is `AFTER_SEED`, six commits with 12-unit shas and change ids. GitHub's main never names an empty sha. |
+| `mythical.vibe` the lookups' not-found returns (393, 410, 427, 463) and `validRanks`' `false` (639) | Every id the browser looks up names a commit the history holds (a page's or the Sequencer's own), and every history the browser holds passed `validRanks` when the mock bootstrapped it. |
+| `mythical.vibe` `decideWithinCapacity`'s `full` (700), `replayEvent` at capacity (754) | Need 2^53 events. |
+| `flowMachine.vibe` `may`'s agent refusal (80), `signedRole`'s mock arm | The agent's door has no approve, fold or export command (session 38's row). `signedRole` runs only for a live page. |
+| `Sequencer.vibe` a stored base (87), the decode failures (16, 17), a second bootstrap (203) and `flows.vibe` `loadBootstrap`'s `exists` (355) | The mock's store is memory: it starts empty, the first start bootstraps it once, and only `decide`'s accepted events reach it. |
+| `Sequencer.vibe` a fold that opens an epic (188-194) | `areaOf` answers one of `AREAS` or Foundations, and the seed holds an epic for each, so `epicByTitle` always finds one. |
+| `Sequencer.vibe` `follow`'s replay filter (133), `memoryStore`'s `since` (237) | Only the Worker's events route follows the sequencer; the mock page reads pages. |
+| `pages.vibe` `stacked`'s unknown epic (105), `pageDecision.vibe` `pageOrder`'s fallback (99) | `decide` refuses a commit whose epic the history lacks, so every commit's epic is in `epics`. |
+| `LiveMythical.vibe` a write with an operation (30) | Only the agent's history tools pass an operation id, and live they run in the Worker, which reads the history through `HistoryObject.readerOver`. |
+| `LiveMythical.vibe` `pathOf`'s undefined (47), `wire.vibe`'s `catch` (32) | `encodeURIComponent` throws only on a lone surrogate. A typed, pasted or IME query is well-formed UTF-16, and `clipQuery` never splits a pair. |
+| `LiveMythical.vibe` a page, write or events answer other than 200 (49, 67) and a write that is neither accepted nor refused (36) | The core live site's History object answers each; a failing History object has no fault on that host (session 38's row). |
+| `LiveActions.vibe` `command` (50-58, 7 arms) and `actionHostDecision.vibe` `firstCommand` | No product caller: only the mock agent calls `Actions.command` (`MockFactory.vibe`), and live the agent runs in the Worker. `test/actionClientHttp.test.vibe` and `fuzz/actions-live.node.fuzz.vibe` cover it. Proposed on the board: move `command` from `Actions` to the agent's interface. |
+| `LiveActions.vibe` a follow answered other than 200 (63), an event without the run (70) | The page follows only runs the Worker listed, and a run's conversation is its own (`action-<id>`), so its stream starts at the run's own request. |
+| `MockActions.vibe` no policy (34's else), a closed world (140), a rerun of an unknown id (173), an owner who is not the person (127) | `MockFactory` always supplies its policy; the world's scope lives as long as the page; the page reruns only runs it listed; a run runs as the person who started it. |
+| `execution.vibe` `prepare`'s `not-found` (31) | `start` authorizes first, and an unknown flow is never runnable, so it is forbidden before `prepare`. |
+| `tools.vibe` a write that fails unavailable (104), `toolDecision.vibe` `writeRefusal`'s `unavailable` | The mock history is memory and its writes answer or refuse; `FaultyMythical` faults sit above the agent's tools. |
+| `MockActions.vibe` a cancel of a run that is not a tour (202's else), a cancel of a settled run (194) | Only a Tour run is still running when its card's Cancel renders: a Post run answers once it posts, and history and sandbox runs settle in the turn they start. The page offers Cancel only while a run is queued or running. |
+| `MockActions.vibe` a tour whose events end first or whose reply failed (114) | The mock's events come from memory and end only with the tour; `fault=fail` fails the tour's start, before `GuideTour` reads. |
+
+**Actions journeys.** `e2e/actions-arms.spec.ts`: a contributor runs `show` with `{"what":"outline"}` from the Actions
+pane, so `MockActions` builds its history for a person (84-85, and `caller.current`'s origin operand, 80); the scripted
+agent asked for `/plan` by a visitor answers "Action unavailable." (`command`'s hidden entry, 179); asked for
+`/history {not json` by a maintainer, the same (`command`'s input refusal, 183).
+
+### Measurement, not open code
+
+Rolldown inlines a `const` read once into the statement that reads it, also inside the `gen(function* …)` bodies that
+`effect` blocks compile to. Session 38's rule drops such a statement only outside them, so `MockActions.vibe` 85, 133,
+134 and 141 read 0 although every run passes through them (the e2e bundle writes `state: mockState(…)` and
+`result: isSuccess(result) ? yield* orDie(…) : "Action failed"` straight into `yield* record({…})`). `runs` (166-167,
+a `{ *runs() {…} }.runs` generator method) reads 0 on both `??` arms although every pane open calls it. Both are the
+browser structure's (vl-coverage's tool), handed over on the board with the evidence.
