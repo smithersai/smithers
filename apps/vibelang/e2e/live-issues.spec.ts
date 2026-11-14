@@ -75,6 +75,9 @@ test("a refused comment comes back as its issue with no retry", async ({ page },
 
 test("a VIP whose save was lost reopens at its review step with Retry", async ({ page }, info) => {
   const origin = origins[info.project.name]!
+  // Single-run: the recording holds one VIP proposal, whose branch and pull request name this key, and a repeat on the
+  // same host finds the first run's write (0016, "Single-run journeys").
+  test.skip(info.repeatEachIndex > 0, "single-run: one recorded VIP proposal")
   const key = label + "-4"
   const title = label + " tuples"
   await page.request.post(origin + "/__fault?writes=1")

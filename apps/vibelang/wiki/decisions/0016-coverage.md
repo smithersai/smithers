@@ -486,6 +486,15 @@ A load repro (2 cores, 6 workers, `s9flaky2`, `s9flaky3`) reproduced the live-is
 VIP journey fails on its second repeat: its key, `label + "-4"`, is fixed so the recorded GitHub replay matches, and a
 repeat finds the first run's write. One gate pass runs it once.
 
+### Single-run journeys (vl-coverage-core, session 10, 2026-11-13)
+
+`e2e/live-issues.spec.ts` "a VIP whose save was lost reopens at its review step with Retry" runs once per project and
+skips under `--repeat-each` after the first repeat. Its replay, `test/recordings/issues.json`, holds exactly one VIP
+proposal: the branch `vibelang/vip-proposal-<hash of the key>`, its file, its pull request and its issue all derive from
+the key `label + "-4"`, so a second key has no recorded exchange to replay, and the same key finds the first repeat's
+write on the project's host. A per-repeat key needs a recording with one proposal per repeat (VL-36's record mode,
+with a live token). The first repeat still runs every line it covers.
+
 ### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
 
 **History fallbacks.** Five `historyView.vibe` fallbacks are for data the history never holds. The proved `decide`
