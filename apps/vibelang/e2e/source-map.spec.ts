@@ -48,6 +48,9 @@ test("Chromium remapping retains a tree-shaken export and an unvisited nested Ef
     expect(await page.evaluate(() => Reflect.get(window, "coverageNested"))).toBe(2)
     expect(unrun).toContain(15)
     expect(unrun).toContain(16)
+    // `linked`'s single-use consts are inlined into the statement that reads them: the run credits them there.
+    expect(await page.evaluate(() => Reflect.get(window, "coverageLinked"))).toBe("none")
+    for (const line of [22, 23, 24, 25]) expect(unrun).not.toContain(line)
     const structure = built.toJSON() as FileCoverageJSON
     const nested = Object.entries(structure.fnMap).filter(([, fn]) => fn.decl.start.line === 15)
     expect(nested).toHaveLength(1)

@@ -1,7 +1,7 @@
 // @vitest-environment node
 // Literal source ranges for the browser gate's structure (e2e/coverage-reporter.ts `measure` with a build).
 import { it, expect } from "@effect/vitest"
-import { builtStructure } from "./support/coverageUnion.ts"
+import { builtStructure, emittedPositions } from "./support/coverageUnion.ts"
 
 const file = "/app/e2e/coverage-fixtures/initializer.vibe"
 const range = (line: number, start: number, endLine: number, end: number) => ({ start: { line, column: start }, end: { line: endLine, column: end } })
@@ -127,4 +127,48 @@ it("the build's branch replaces the compiler's branch of the same kind, start an
   })
   expect(Object.values(json.branchMap).map(branch => `${branch.type}@${branch.loc.start.line}:${branch.loc.start.column}`)).toEqual(["cond-expr@3:9", "if@5:2", "binary-expr@11:4"])
   expect(Object.values(json.b)).toEqual([[1, 1], [1, 0], [0, 0]])
+})
+
+it("decodes the source positions a map's segments name, per source", () => {
+  // Rows are generated lines; fields are relative. `IAAI` moves 4 generated and 4 original columns, `ACAA` moves to
+  // source 1, `AAAAA` names a symbol, and a 1-field segment maps nothing.
+  const positions = emittedPositions("AAAA;AACA,IAAI,ACAA,AAAAA,E;;AAEA")
+  expect([...positions.entries()]).toEqual([[0, [[1, 0], [2, 0], [2, 4]]], [1, [[2, 4], [2, 4], [4, 4]]]])
+  expect(emittedPositions("gBAAgB").get(0)).toEqual([[1, 16]])
+  expect(() => emittedPositions("A!AA")).toThrow("not base64")
+})
+
+// `const element = event.target; const link = element?.closest?.("a"); return link?.id ?? "none"`: Rolldown prints
+// `return event.target?.closest?.("a")?.id ?? "none"`, with segments at both inlined initializers.
+it("a statement the bundle inlines into another is no obligation; tree-shaken code still is", () => {
+  const compiler = {
+    ...empty,
+    statementMap: { "0": range(2, 18, 2, 30), "1": range(3, 15, 3, 37), "2": range(4, 2, 4, 28), "3": range(5, 17, 5, 29), "4": range(6, 26, 6, 30) },
+    s: { "0": 0, "1": 0, "2": 0, "3": 0, "4": 0 },
+    fnMap: { "0": { name: "linked", decl: range(1, 16, 1, 22), loc: range(1, 30, 7, 1) }, "1": { name: "unused", decl: range(6, 8, 6, 14), loc: range(6, 26, 6, 30) } },
+    f: { "0": 0, "1": 0 },
+  }
+  const bundle = { ...empty, statementMap: { "0": range(4, 2, 4, 28) }, s: { "0": 0 }, fnMap: { "0": compiler.fnMap["0"] }, f: { "0": 0 } }
+  // Segments at the inlined `event.target` and `?.closest?.("a")`, the return, and inside the removed `unused`; none
+  // in the tree-shaken `5:17` statement.
+  const emitted = [[4, 2], [4, 9], [2, 18], [2, 24], [3, 22], [6, 27]] as const
+  expect(starts(builtStructure(compiler, bundle, emitted).statementMap)).toEqual(["4:2", "5:17", "6:26"])
+  // Without the map's positions, nothing tells inlined code from tree-shaken code: both stay obligations.
+  expect(starts(builtStructure(compiler, bundle).statementMap)).toEqual(["4:2", "2:18", "3:15", "5:17", "6:26"])
+  // A segment exactly at a statement's end belongs to what follows it.
+  expect(starts(builtStructure(compiler, bundle, [[5, 29]]).statementMap)).toContain("5:17")
+})
+
+// `if (role !== undefined) try choose(role)`: the bundle ships the `if` as one statement, so the consequent's code is
+// emitted, but the `if` ran whether or not its consequent did.
+it("a statement nested in a shipped statement of its own function stays an obligation", () => {
+  const consequent = range(3, 30, 3, 48)
+  const compiler = { ...empty, statementMap: { "0": range(3, 4, 3, 48), "1": consequent }, s: { "0": 0, "1": 0 } }
+  const outer = { name: "make", decl: range(1, 9, 1, 13), loc: range(1, 16, 9, 1) }
+  const inner = { name: "handler", decl: range(2, 2, 2, 9), loc: range(2, 12, 5, 3) }
+  const bundle = { ...empty, statementMap: { "0": range(1, 0, 9, 1), "1": range(3, 4, 3, 48) }, s: { "0": 0, "1": 0 }, fnMap: { "0": outer, "1": inner }, f: { "0": 0, "1": 0 } }
+  expect(starts(builtStructure(compiler, bundle, [[3, 4], [3, 30], [3, 40]]).statementMap)).toEqual(["1:0", "3:4", "3:30"])
+  // A statement enclosing the whole function (an exported `const` holding it) is outside that function: it does not count.
+  const inlined = { ...compiler, statementMap: { "0": range(4, 4, 4, 20) }, s: { "0": 0 } }
+  expect(starts(builtStructure(inlined, bundle, [[4, 10]]).statementMap)).toEqual(["1:0", "3:4"])
 })

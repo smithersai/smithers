@@ -8,7 +8,7 @@ import { createHash } from "node:crypto"
 import convert from "ast-v8-to-istanbul"
 import { parseAstAsync } from "vite"
 import { findCompiler, projects } from "vibelang/project"
-import { builtStructure, normalizeEndColumns, unionEvidence, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
+import { builtStructure, emittedPositions, normalizeEndColumns, unionEvidence, type FileCoverageJSON, type SourcePosition } from "../test/support/coverageUnion.ts"
 import { readEntries } from "./coverageStore.ts"
 
 const require = createRequire(import.meta.url)
@@ -75,6 +75,8 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, sourc
     }
     // The build's structure with no hits: each chunk once, executed or not.
     const built = createCoverageMap({})
+    // Each source position the build emits code for; a compiler statement with code shipped there is no obligation.
+    const emitted = new Map<string, Array<SourcePosition>>()
     const chunks = new Set<string>()
     for (const chunk of build) {
       const hash = createHash("sha256").update(chunk.source).digest("hex")
@@ -82,6 +84,12 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, sourc
       chunks.add(hash)
       const converted = await remap(chunk, [])
       if (converted) built.merge(converted)
+      for (const [index, positions] of emittedPositions(chunk.sourceMap.mappings ?? "")) {
+        const source = chunk.sourceMap.sources[index]
+        if (source === undefined) continue
+        const path = resolve(root, "dist/assets", source)
+        emitted.set(path, [...(emitted.get(path) ?? []), ...positions])
+      }
     }
     const seed = createCoverageMap({})
     // Seed every full source, including loaded files: bundling may tree-shake an uncalled export from a loaded file.
@@ -104,7 +112,7 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, sourc
     for (const file of seed.files() as string[]) {
       const text = await readFile(file, "utf8")
       let json = normalizeEndColumns(seed.fileCoverageFor(file).toJSON() as FileCoverageJSON, text)
-      if (built.data[file] !== undefined) json = builtStructure(json, normalizeEndColumns(built.fileCoverageFor(file).toJSON() as FileCoverageJSON, text))
+      if (built.data[file] !== undefined) json = builtStructure(json, normalizeEndColumns(built.fileCoverageFor(file).toJSON() as FileCoverageJSON, text), emitted.get(file))
       for (const bundle of evidence) {
         if (bundle[file] !== undefined) json = unionEvidence(json, normalizeEndColumns(bundle[file]!, text))
       }

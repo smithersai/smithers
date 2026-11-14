@@ -16,3 +16,11 @@ export function result() {
   const droppedChoice = true ? 3 : 4
   return 2
 }
+
+/** Rolldown inlines each `const` read once into the statement that reads it (decision 0016). */
+export function linked(event: { readonly target: { readonly closest?: (selector: string) => { readonly id: string } | null } | null }) {
+  const element = event.target
+  const link = element?.closest?.("a")
+  const id = link?.id
+  return id ?? "none"
+}

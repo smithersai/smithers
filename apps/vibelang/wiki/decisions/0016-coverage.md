@@ -1846,9 +1846,12 @@ source in a chunk?  ── no ──▶ compiler's structure (unloaded file)
         │ yes
         ▼
 bundle's statements, functions, branches
-  + each compiler item whose start no bundle statement or function range contains (tree-shaken code)
+  + each compiler item the bundle has none for at its start (tree-shaken code); a compiler statement whose
+    start Rolldown leaves unmapped pairs with the bundle statement of the same end instead
   − duplicates at one source start (Rolldown maps an inner `make` and its renamed `make_2` to one start)
   − each compiler branch the bundle has with the same kind, start and number of arms (2026-11-13)
+  − each compiler statement inlined into another: the bundle's maps name a position inside it, and no
+    shipped statement of its own function encloses it (2026-11-14, session 38 below)
 ```
 
 The last rule (lane vl-coverage-core, 2026-11-13). The minified bundle's map can start a branch's later arm elsewhere
@@ -3784,3 +3787,42 @@ My half (`src/history`, `src/actions`, `src/web`): 3841/4414 branches, 573 open 
 | `src/web/sandboxView.vibe` | 64/68 | 59/60 | 1 |
 | `src/web/startupDecision.vibe` | 27/28 | 27/28 | 1 |
 | `src/web/viewStateDecision.vibe` | - | 35/36 | 1 |
+
+## Inlined constants in the browser structure (vl-coverage, session 38, 2026-11-14)
+
+**Bug: 65 statements could never count in Chromium.** Rolldown inlines a `const` read once into the statement that
+reads it, even unminified. `src/web/main.vibe`'s wiki link handler
+
+```
+const element = event.target as Element | null          // 1118
+const link = element?.closest?.(".vl-wiki-content a")    // 1119
+const href = link?.getAttribute("href")                  // 1120
+```
+
+ships as one statement, `const href = (event.target?.closest?.(".vl-wiki-content a"))?.getAttribute("href")`. The
+bundle has no statement at 1118 or 1119, so `builtStructure` kept the compiler's two as obligations, and since
+Chromium credits by identical start, they read 0 in every gate while 1120 read 1. Session 37's gate held 65 such
+statements in 26 files: every one a single-use `const` or `schema` initializer, every one 0. In `main.vibe` they are
+465, 466, 469, 848, 872, 1118, 1119, 1129 and 1397. They are not the "9 lines no browser test runs" of the build
+structure section above: 1118 and 1119 run on every link click.
+
+**Rule.** The reporter decodes each chunk's map (`emittedPositions`, `test/support/coverageUnion.ts`) into the source
+positions the bundle emits code for. A compiler statement the bundle has no statement for is dropped when the bundle
+emits code inside it and no shipped statement of its own function encloses it: its code runs inside the statement
+that reads it, which Chromium credits. Both conditions are needed. Tree-shaken code has no map segment, so it stays
+an obligation (`initializer.vibe` lines 10, 15, 16). A consequent the bundle ships inside its `if`
+(`MockActions.vibe` 26: `if (principal.role !== undefined) try ...`) is emitted too, but the `if` ran whether or not
+its consequent did, so it stays; a first version without the enclosing check dropped 1,394 statements session 37's
+gate had credited. An enclosing statement outside the function (the exported `const` holding a subscription object)
+does not count.
+
+**Measured on the gate's own build** (`pnpm build --mode e2e`; `pnpm build` ships different chunks and is not the
+denominator): the old rule gives 7,326 statements, session 37's exactly; the new rule gives 7,261. All 65 dropped
+statements read 0 in session 37; none it credited is dropped.
+
+Tests: `test/browserCoverageBuild.test.vibe` (a real Vite build of `e2e/coverage-fixtures/initializer.vibe`
+`linked`, whose `element`, `link` and `id` Rolldown inlines into the `return`; failed first with `[22, false]`),
+`test/browserStructure.test.vibe` (the map decoder; inlined code dropped, tree-shaken code and code in a removed
+nested function kept; a consequent nested in a shipped `if` kept) and `e2e/source-map.spec.ts` (the same fixture in
+Chromium: lines 22 to 25 credited).
+

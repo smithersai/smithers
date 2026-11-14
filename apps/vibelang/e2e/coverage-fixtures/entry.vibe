@@ -1,9 +1,9 @@
 import { ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { answer } from "./fixture.vibe"
-import { scrolled, result } from "./initializer.vibe"
+import { scrolled, result, linked } from "./initializer.vibe"
 
 runSync(Effect.provide(effect {
   const window = try (try Experimental.Window.Window).current
   const value = try answer(true)
-  try Effect.try(() => Object.assign(window, { coverageAnswer: value, coverageScrolled: scrolled(undefined, 1), coverageNested: result() }))
+  try Effect.try(() => Object.assign(window, { coverageAnswer: value, coverageScrolled: scrolled(undefined, 1), coverageNested: result(), coverageLinked: linked({ target: null }) }))
 }, ExperimentalBrowserWindow.layer))

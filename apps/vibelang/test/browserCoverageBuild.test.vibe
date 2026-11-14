@@ -28,7 +28,7 @@ it.live("the browser gate credits a statement whose start Rolldown leaves unmapp
       const fixture = path.join(app, "e2e/coverage-fixtures/initializer.vibe")
       // Inside the app's node_modules so the entry resolves like the app does; removed with the scope.
       const root = try fs.makeTempDirectoryScoped({ directory: path.join(app, "node_modules"), prefix: ".browser-coverage-build-" })
-      try fs.writeFileString(path.join(root, "entry.mjs"), `import { scrolled, result } from ${JSON.stringify(fixture)}\nconsole.log(scrolled(undefined, 1), result())\n`)
+      try fs.writeFileString(path.join(root, "entry.mjs"), `import { scrolled, result, linked } from ${JSON.stringify(fixture)}\nconsole.log(scrolled(undefined, 1), result(), linked({ target: null }))\n`)
       const output = path.join(root, "dist")
       // Unminified, as the e2e build is: Rolldown still prints no segment at `() =>` or `(serial ?? 0)`.
       try tryPromise(() => build({
@@ -60,7 +60,7 @@ it.live("the browser gate credits a statement whose start Rolldown leaves unmapp
   const { status, stderr, stdout, native, file } = observed
   try Effect.try(() => {
     expect(status, stderr).toBe(0)
-    expect(stdout.trim()).toBe("2 2")
+    expect(stdout.trim()).toBe("2 2 none")
     expect(native).toBe(true)
     // Both initializers ran. The compiler's map starts them at `(` (3:19, 4:15); the bundle's map has no segment
     // there, so its statements start at the names. The build's structure is the denominator, so each is credited.
@@ -74,6 +74,11 @@ it.live("the browser gate credits a statement whose start Rolldown leaves unmapp
     expect(functionHitsAt(file, 15)).toEqual([0])
     expect(hitsAt(file, 15)).toEqual([0, 0])
     expect(hitsAt(file, 16)).toEqual([0])
+    // Rolldown inlines `element`, `link` and `id` into the `return`, so the bundle has no statement at their starts.
+    // Their code ships inside the `return`, which ran: the build's structure counts it there, not as unrun.
+    expect(functionHitsAt(file, 21)).toEqual([1])
+    for (const line of [22, 23, 24]) expect([line, hitsAt(file, line).every(hit => hit === 1)]).toEqual([line, true])
+    expect(hitsAt(file, 25)).toEqual([1])
   })
   // A real Vite build: about a minute alone on a loaded host.
 }, 300_000)

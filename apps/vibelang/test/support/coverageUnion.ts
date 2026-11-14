@@ -24,6 +24,43 @@ export interface FileCoverageJSON {
   b: Record<string, Array<number>>
 }
 export interface Position { line: number; column: number | null }
+/** A source position a bundle's map names: 1-based line, 0-based column, as Istanbul counts them. */
+export type SourcePosition = readonly [line: number, column: number]
+
+const base64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+/** Every original position a source map's `mappings` name, per source index: where the bundle emits each source. */
+export function emittedPositions(mappings: string): Map<number, Array<SourcePosition>> {
+  const positions = new Map<number, Array<SourcePosition>>()
+  let source = 0
+  let line = 0
+  let column = 0
+  for (const row of mappings.split(";")) {
+    for (const segment of row.split(",")) {
+      const fields: Array<number> = []
+      let value = 0
+      let shift = 0
+      for (const char of segment) {
+        const digit = base64.indexOf(char)
+        if (digit < 0) throw new Error(`Source map mappings hold a character that is not base64: ${char}`)
+        value += (digit & 31) * 2 ** shift
+        if ((digit & 32) !== 0) shift += 5
+        else {
+          fields.push(value % 2 === 1 ? -Math.floor(value / 2) : value / 2)
+          value = 0
+          shift = 0
+        }
+      }
+      if (fields.length < 4) continue
+      source += fields[1]!
+      line += fields[2]!
+      column += fields[3]!
+      const list = positions.get(source) ?? []
+      list.push([line + 1, column])
+      positions.set(source, list)
+    }
+  }
+  return positions
+}
 /** A branch arm. Istanbul writes an `if` without `else` as an arm with no coordinates at all: `{ start: {}, end: {} }`. */
 export interface Arm { start: Partial<Position>; end: Partial<Position> }
 
@@ -117,8 +154,12 @@ export function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON
  * A replacement has the same kind and source start; a branch also has the same number of arms. For a statement whose initializer start Rolldown leaves
  * unmapped, pair just one compiler statement with the same end and the closest start. A containing function or
  * declaration cannot replace its nested statements, functions or branches (decision 0016).
+ * `emitted` is every source position the bundle's maps name (`emittedPositions`). Rolldown inlines a `const` read once
+ * into the statement that reads it, so the bundle has no statement at its start, yet its code ships inside the reading
+ * statement, which Chromium credits: a compiler statement with code shipped in it and no shipped statement of its own
+ * function around it is not an obligation. Tree-shaken code has no segment; a nested statement stays (decision 0016).
  */
-export function builtStructure(compiler: FileCoverageJSON, bundle: FileCoverageJSON): FileCoverageJSON {
+export function builtStructure(compiler: FileCoverageJSON, bundle: FileCoverageJSON, emitted: ReadonlyArray<SourcePosition> = []): FileCoverageJSON {
   const json: FileCoverageJSON = { ...structuredClone(compiler), statementMap: {}, fnMap: {}, branchMap: {}, s: {}, f: {}, b: {} }
   const order = (position: Partial<Position>) => [position.line ?? -1, position.column ?? -1] as const
   const before = (a: Partial<Position>, b: Partial<Position>) => order(a)[0] < order(b)[0] || (order(a)[0] === order(b)[0] && order(a)[1] <= order(b)[1])
@@ -146,6 +187,31 @@ export function builtStructure(compiler: FileCoverageJSON, bundle: FileCoverageJ
     const preceding = candidates.filter(([, candidate]) => before(candidate.start, loc.start))
     const match = preceding.at(-1) ?? candidates[0]
     if (match) replaced.add(match[0])
+  }
+  const shipped = [...emitted].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  const less = (position: SourcePosition, bound: Position) => position[0] < bound.line || (position[0] === bound.line && position[1] < (bound.column ?? -1))
+  /** Whether the bundle emits code at a position in `[range.start, range.end)`: the first one at or after the start. */
+  const shipsInside = (range: { start: Position; end: Position }) => {
+    let low = 0
+    let high = shipped.length
+    while (low < high) {
+      const middle = (low + high) >> 1
+      if (less(shipped[middle]!, range.start)) low = middle + 1
+      else high = middle
+    }
+    const found = shipped[low]
+    return found !== undefined && less(found, range.end)
+  }
+  const contains = (range: { start: Partial<Position>; end: Partial<Position> }, position: Position) => before(range.start, position) && !before(range.end, position)
+  const shippedBodies = Object.values(bundle.fnMap).map(body)
+  const shippedStatements = Object.values(bundle.statementMap)
+  for (const [id, candidate] of statements) {
+    if (replaced.has(id) || removedBodies.some(range => before(range.start, candidate.start) && before(candidate.start, range.end))) continue
+    // Inlined, not nested: no shipped statement of its own function encloses it. A shipped `if` that holds this
+    // statement as its consequent emits its code too, but cannot establish that it ran.
+    const inner = shippedBodies.filter(range => contains(range, candidate.start)).sort((a, b) => before(a.start, b.start) ? 1 : -1)[0]
+    const enclosed = shippedStatements.some(range => contains(range, candidate.start) && (inner === undefined || before(inner.start, range.start)))
+    if (!enclosed && shipsInside(candidate)) replaced.add(id)
   }
   const seen = { s: new Set<string>(), f: new Set<string>(), b: new Set<string>() }
   const first = (kind: keyof typeof seen, key: string) => !seen[kind].has(key) && Boolean(seen[kind].add(key))
