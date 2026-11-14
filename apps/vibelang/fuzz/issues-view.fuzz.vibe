@@ -458,7 +458,8 @@ it.live("screens/issues-chosen", () => scoped(effect {
 /**
  * Arms of the issues view that runs 20261286 and 20261287 reached in one seed or neither (0015, twentieth session): an
  * issue with a parent names it in its tree and one without does not; the specification's failure offers Retry exactly
- * when a request is saved; the kind control ignores a key that is not an arrow.
+ * when a request is saved; the kind control ignores a key that is not an arrow. A proposal in review offers a
+ * maintainer Decline and Accept and a viewer neither (twenty-first session).
  */
 it.live("screens/issue-arms", () => scoped(effect {
   const records = try mockItems()
@@ -469,12 +470,17 @@ it.live("screens/issue-arms", () => scoped(effect {
     const base = init({ session: "00000000-0000-4000-8000-000000000000", mode: "mock", name: "fuzz" }).model
     const as = (ui: Partial<IssuesUi>): Model => ({ ...base, surface: "chat", issues: { ...initialIssues, open: true, status: "ready", role: "maintainer", data: { seq: 1, items: records }, ...ui }, account: { ...accountOf(base), identity: { ...accountOf(base).identity, role: "maintainer" } } })
     const failure = `e${error}`
+    // The view reads the role from the account (0019), not from the issues state.
+    const viewer = (model: Model): Model => ({ ...model, account: { ...accountOf(model), identity: { ...accountOf(model).identity, role: "viewer" } } })
+    const reviewing = { seq: 1, items: records.map((item) => item.number === parent.number ? { ...item, vip: "In review" as const } : item) }
     const saved = { op: "spec-revise" as const, number: 0, parent: 0, title: "", text: "S", assignee: "", example: "", prior: "", key: "k-1", revision: 0 }
     const cases: ReadonlyArray<readonly [string, Model, (html: Html) => boolean]> = [
       ["a child names its parent", as({ screen: "detail", selected: child.number }), html => findAll(html, ".ix-tree-parent").length === 1],
       ["a parent names none", as({ screen: "detail", selected: parent.number }), html => findAll(html, ".ix-tree-parent").length === 0 && findAll(html, ".ix-tree-row").length > 0],
       ["a failed revision without a saved request", as({ screen: "specification", error: failure }), html => count(html, "alert", /./) === 1 && count(html, "button", "Retry") === 0],
       ["a failed revision with one", as({ screen: "specification", error: failure, retry: saved }), html => count(html, "alert", /./) === 1 && count(html, "button", "Retry") === 1],
+      ["a proposal in review offers its review", as({ screen: "detail", selected: parent.number, data: reviewing }), html => count(html, "button", "Decline") === 1 && count(html, "button", "Accept") === 1],
+      ["a viewer may not review it", viewer(as({ screen: "detail", selected: parent.number, data: reviewing })), html => count(html, "button", "Decline") === 0 && count(html, "button", "Accept") === 0],
     ]
     for (const [name, model, holds] of cases) {
       let shown = false
