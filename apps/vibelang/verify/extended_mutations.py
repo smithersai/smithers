@@ -5683,7 +5683,7 @@ cases.append(('src/core/issueGraphDecision.vibe','issues-link-complete','canLink
 cases.extend([('src/history/exportDecision.vibe', *case) for case in [
 ('export-last-fold-match', 'lastFolds', 'last.set(real[i]!.mythical, i)', 'last.set(real[i]!.mythical, 0)', 'a fold is found only among the commits folded into it'),
 ('export-last-fold-first', 'lastFolds', 'for (let i = 0; i < real.length; i++) {', 'for (let i = 0; i < real.length; i = i + 2) {', 'the last fold wins, whichever came before'),
-('export-tree-source', 'treeSource', 'return real[folds.get(id) ?? 0]!.sha', 'return real[0]!.sha', 'a landed commit takes its last fold\'s tree'),
+('export-tree-source', 'treeSource', 'return real[folds.get(id)!]!.sha', 'return real[0]!.sha', 'a landed commit takes its last fold\'s tree'),
 ('export-reservation', 'treeSource', 'if (!folds.has(id)) return ""', 'if (folds.has(id)) return ""', 'a commit folded once is no reservation'),
 ('export-kept-overrun', 'kept', ' && planned[n] === previous[n]) {', ') {', 'a changed commit and everything after it is written again'),
 ('export-same-notes', 'same', ' && a.notes === b.notes', '', 'a notes ref that moved is a change'),

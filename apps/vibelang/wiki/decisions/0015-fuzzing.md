@@ -2129,6 +2129,15 @@ decoder (`onExcessProperty: "error"`) survived the first fix. The shrunk input i
 the case failed first (exit 1); after the fix the file passed (exit 0); the strict-decoder mutant was caught (exit 1);
 seeds 20261408, 20261409 and 20261410 at 60 s each passed (exit 0); `pnpm typecheck` 0.
 
+#### The floor alone, and `treeSource`'s fallback (`floor25`)
+
+A whole-app `FUZZ_FLOOR_ONLY=1 pnpm fuzz:coverage` on main `aba41767` (playwright box, job `b892123b358c3785187e7cd0`,
+2,120 s): 107 files, 319 tests passed; one gate failed, `src/history/exportDecision.vibe` branches 46/47, line 75. No
+gate depends on the draw. That arm is `treeSource`'s `folds.get(id) ?? 0` (`4b3bd97d`, after `full24`'s base): the line
+above returns `""` unless `folds.has(id)`, and every value `lastFolds` stores is an index, so `?? 0` never applies at
+any seed. It is now `folds.get(id)!`; the proof's `requires` already state both facts. Mutation row
+`export-tree-source` carries the new text.
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the

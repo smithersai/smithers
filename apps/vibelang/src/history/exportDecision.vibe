@@ -72,7 +72,7 @@ export function lastFolds(real: ReadonlyArray<Real>): Map<string, number> {
 //@ ensures exists(i, 0 <= i && i < real.length && real[i].mythical == id) ==> exists(j, 0 <= j && j < real.length && real[j].mythical == id && \result == real[j].sha && forall(k, j < k && k < real.length ==> real[k].mythical != id))
 export function treeSource(real: ReadonlyArray<Real>, folds: Map<string, number>, id: string): string {
   if (!folds.has(id)) return ""
-  return real[folds.get(id) ?? 0]!.sha
+  return real[folds.get(id)!]!.sha
 }
 
 /**
