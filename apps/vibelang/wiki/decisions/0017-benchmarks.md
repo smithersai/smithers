@@ -1225,6 +1225,15 @@ current source: the lead deploys a main that contains `c8d32448`, runs `pnpm ben
 `vl-test`, as in resume 12. The 168 open positions in `src/` + `worker/`: 133 specification-only (VIP-43), 4 invariant
 traps and these 31.
 
+**Second batch: main `51fab4e3`.** Full collection (job `vl-bench:r13c-coverage`, cfbox node26, 23:28–00:14 UTC):
+119 files passed, 1 skipped; `src/` + `worker/` **9,672/9,842 (98.27%)**. The four sandbox positions above run. Main's
+`b8e22c43` moved sign-in's answer from a one-line ternary into `src/surfaces/signinDecision.vibe`'s `refusalOf` and
+`refusalMessage`. Their "failed" answers (65, 76) became separate lines that no workload ran: a waited `login` whose
+poll fails. `signin-device-wait-failed` (`bench/signin-device.bench.vibe`) waits while GitHub's token endpoint answers
+an undefined error, and then a token for a person the factory doesn't know. Each wait ends with "Sign-in failed.", and
+no session is stored. A focused run counts both lines, and the workload failed with the sentence mutated. With it,
+9,674/9,842 (98.29%); open in `src/` + `worker/`: 133 specification-only, 4 traps, 31 deployed-only.
+
 **Live result artifacts.** Live results follow the artifact rule above: `bench/results/` is ignored, so the live JSON
 and the 6 MB counter dump stay out of the repository. Both are retained on nyc-01 under
 `~/vl/vl-bench-evidence/live-a54642d6/`, with the lead's run log and both merged maps.

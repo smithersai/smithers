@@ -4769,7 +4769,8 @@ each one. The strict four-metric gate still exits 1 on these positions. No thres
 Method: Vitest built-in bench (`vitest bench --run --config bench/config.ts`), each workload checking its result
 (decision 0017, "Keeping up with main"). Times are observational, not gated. The web workloads ran on a Cloudflare box
 (node26 image: Node 26.5.0, AMD EPYC, 4 vCPU) at 22:21 UTC (14:21 PST); the sandbox workloads ran on nyc-01 (Node
-26.5.0, 32 logical CPUs, shared host) at 23:16 UTC (15:16 PST). Source: main `6f779528` plus these benchmark files.
+26.5.0, 32 logical CPUs, shared host) at 23:16 UTC (15:16 PST), and `signin-device-wait-failed` there at 00:21 UTC
+(16:21 PST). Source: main `6f779528` (`51fab4e3` for the sign-in workload) plus these benchmark files.
 
 | Workload | File | Mean (ms) | Samples |
 | --- | --- | ---: | ---: |
@@ -4778,13 +4779,16 @@ Method: Vitest built-in bench (`vitest bench --run --config bench/config.ts`), e
 | web-tour-replay-finish | `bench/web-actions.bench.vibe` | 0.089 | 1,123 |
 | sandbox-signed-out | `bench/sandbox-signed-out.bench.vibe` | 9.67 | 11 |
 | sandbox-counter-export | `bench/sandbox-signed-out.bench.vibe` | 0.038 | 2,603 |
+| signin-device-wait-failed | `bench/signin-device.bench.vibe` | 619.0 | 3 |
 
 Limits: `web-refused-blank-writes` mounts three fresh pages per sample and waits for the mock agent's reply, so most
 of its time is the app's startup and the mock agent, not the refusal. Both web journeys run in happy-dom with no
-browser layout. `sandbox-signed-out` is a Node loopback server, not workerd. Three samples give no percentile.
+browser layout. `sandbox-signed-out` is a Node loopback server, not workerd. `signin-device-wait-failed` makes two
+waited sign-ins per sample against the identity-provider fixture, not GitHub. Three samples give no percentile.
 
 Coverage: full collection on `6f779528` (job `vl-bench:r13b-coverage`), local merge 9,605/9,777 (98.24%) in `src/` +
-`worker/`. The sandbox workloads add 4 positions by a focused run (9,609/9,777, 98.28%). The `a54642d6` live dump no
+`worker/`. On `51fab4e3` (job `vl-bench:r13c-coverage`), with the sandbox workloads: 9,672/9,842 (98.27%). The
+sign-in workload adds 2 by a focused run (9,674/9,842, 98.29%). The `a54642d6` live dump no
 longer matches `worker/SandboxMachine.vibe`, so the 31 deployed-only positions are open until a live run of the
 current source.
 

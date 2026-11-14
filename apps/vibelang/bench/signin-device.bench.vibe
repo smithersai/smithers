@@ -77,6 +77,32 @@ it("GitHub's refusals end or slow the device flow", async ({ bench }) => {
   await runPromise(artifact("signin-device-refusals", "Vitest built-in bench; actual signIn over real loopback HTTP to the Accounts object and the identity-provider device fixture. Declined, expired, slow-down back-off, a forged stored session, and a waited sign-in the person declines. Exact sentences and the 30 s back-off checked.", ["The identity provider is a local fixture.", "The slowed flow is not waited out."], result))
 })
 
+// signinDecision's refusalOf/refusalMessage "failed" answer: a poll that fails while `login` waits is neither declined nor expired.
+it("a waited sign-in whose poll GitHub rejects ends Sign-in failed", async ({ bench }) => {
+  const result = await workload(bench, "signin-device-wait-failed", "async", () => runPromise(scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, grant, interval } = try world()
+      try Ref.set(interval, 0)
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        const answers: Array<string> = []
+        // GitHub answers an error the device flow doesn't define, then authorizes someone the factory doesn't know.
+        for (const answer of ["incorrect_device_code", "unknown-person"]) {
+          try removePending()
+          try Ref.set(grant, answer)
+          answers.push(try refusal(signIn({ wait: true })))
+        }
+        const session = try readSession()
+        try Effect.try(() => {
+          expect(answers).toEqual(["Sign-in failed.", "Sign-in failed."])
+          expect(session).toBeUndefined()
+        })
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("signin-device-wait-failed", "Vitest built-in bench; actual signIn with wait over real loopback HTTP to the Accounts object and the identity-provider device fixture, fresh world per sample. While login waits, GitHub's token endpoint answers an undefined error, then a token for a person the factory doesn't know. Checks each wait ends with Sign-in failed. and no session is stored.", ["Identity-provider fixture, not GitHub.", "The wait's journal is the real node:sqlite flow host in a temporary directory."], result))
+})
+
 it("a waited sign-in succeeds, and an unreachable factory or unwritable settings end it with one sentence", async ({ bench }) => {
   const result = await workload(bench, "signin-device-faults", "async", () => runPromise(scoped(effect {
     provide NodeServices.layer, NodeHttpServer.layerTest, live {
