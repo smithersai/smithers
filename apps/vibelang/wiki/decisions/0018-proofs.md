@@ -7671,6 +7671,17 @@ Three sites in `worker/Issues.vibe` decide nothing of their own and are recorded
 the same issue that holds an approval, and the proved `projectedVip` decides whether the issue keeps it. Every branch
 in every file is now proved or recorded: 961 shell branches, 0 open.
 
+### Batch 69: the landing check reads the runtime mutations
+
+The stamp on `ef2ff422` stopped at its runtime step: `runtime-usage-zero` (`verify/runtime_mutations.py`) still
+named `const usable = settled && Budget.reportsTokens(usage)`, which batch 64 had replaced in
+`worker/CallBudget.vibe` with the proved `usableCall`. The landing check read only `mutations.py`, so the change
+landed. The case now mutates `recordCall`'s `usableCall(settled, Budget.reportsTokens(usage))` to
+`usableCall(settled, true)`, and `test/callBudget.test.vibe` "charges missing usage" still rejects it.
+`python3 verify/runtime_mutations.py --check` lists each case whose text its source holds other than exactly once,
+and the landing check refuses each as `stale runtime mutation:` (`verify/landing_test.cjs`; the real-tree test failed
+first).
+
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 
 Five shells compared `Number(content-length)` with a literal: accounts 2,048 bytes (sign-in and roles), issues 32 KiB,

@@ -10,7 +10,7 @@ const { branchFacts, record } = require('./branches.cjs');
 const app = path.resolve(__dirname, '..');
 
 /** Every reason the tree may not land. A contract needs a mutant unless it is a lemma or restates its table. */
-function refusals({ rows, decisionText, cases, staleCases = [], invalidMutants = [], branchRecord }) {
+function refusals({ rows, decisionText, cases, staleCases = [], staleRuntime = [], invalidMutants = [], branchRecord }) {
   const refused = [];
   for (const row of rows) {
     if (row.why.startsWith('Not yet proved')) refused.push(`not proved: ${row.file}:${row.line} ${row.label}`);
@@ -22,6 +22,7 @@ function refusals({ rows, decisionText, cases, staleCases = [], invalidMutants =
     if (!mutated.has(`${row.file}:${row.label}`)) refused.push(`no mutant: ${row.file}:${row.line} ${row.label}`);
   }
   for (const line of staleCases) refused.push(`stale mutation: ${line}`);
+  for (const line of staleRuntime) refused.push(`stale runtime mutation: ${line}`);
   refused.push(...invalidMutants);
   if (branchRecord !== undefined) refused.push(...branchFacts(rows, branchRecord).refused);
   return refused;
@@ -43,6 +44,15 @@ function mutationFacts() {
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
 }
 
+/** Every runtime adapter mutation (verify/runtime_mutations.py) whose text no longer matches its source exactly once. */
+function runtimeFacts() {
+  const run = spawnSync('python3', [path.join(__dirname, 'runtime_mutations.py'), '--check'], { cwd: app, encoding: 'utf8' });
+  if (run.error) throw run.error;
+  const lines = run.stdout.split('\n').filter(Boolean);
+  if (run.status !== 0 && lines.length === 0) throw Error(`runtime_mutations.py --check exited ${run.status}: ${run.stderr.slice(-4000)}`);
+  return lines;
+}
+
 /** Every mutant that no longer typechecks (verify/mutant_types.py, about 45 s), one refusal line each. */
 function mutantTypes() {
   const run = spawnSync('python3', [path.join(__dirname, 'mutant_types.py')], { cwd: app, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
@@ -55,7 +65,7 @@ function mutantTypes() {
 /** The facts for the tree on disk. */
 function treeFacts() {
   const rows = sourceFiles().flatMap(file => inventorySource(file, fs.readFileSync(file, 'utf8')));
-  return { rows, decisionText: fs.readFileSync(decision, 'utf8'), branchRecord: fs.readFileSync(record, 'utf8'), ...mutationFacts() };
+  return { rows, decisionText: fs.readFileSync(decision, 'utf8'), branchRecord: fs.readFileSync(record, 'utf8'), staleRuntime: runtimeFacts(), ...mutationFacts() };
 }
 
 function main() {

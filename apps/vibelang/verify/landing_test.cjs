@@ -47,6 +47,12 @@ test('a mutation case whose source moved is refused', () => {
     ['stale mutation: gone: missing function gone in worker/x.vibe']);
 });
 
+test('a runtime mutation whose source moved is refused', () => {
+  const source = '// Fixture.\nexport const limit = 1\n';
+  const line = 'runtime-usage-zero: worker/CallBudget.vibe holds its text 0 times, not once';
+  assert.deepEqual(refusals({ ...facts(source), staleRuntime: [line] }), [`stale runtime mutation: ${line}`]);
+});
+
 test('a mutant that no longer typechecks is refused by name', () => {
   const source = '// Fixture.\nexport const limit = 1\n';
   const line = 'invalid mutant: actions-click-epoch (src/web/main.vibe update): x.ts(1,1): error TS2322: Type null is not assignable to type number.';
