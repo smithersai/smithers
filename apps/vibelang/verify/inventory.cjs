@@ -585,6 +585,9 @@ function inventorySource(file, source) {
     }
     // A comparison, or a negation of a non-literal, passed or stored as a value (`h.AriaSelected(index === highlight)`,
     // `disabled: count === 0`): the value is a decision as much as an `if` test is (0018, "Decisions in views").
+    // A default value (`door = "slash"`, `{ k = 1 }`) chooses what an absent argument or field reads as, as a `??`
+    // does (batch 72). Its operand is the whole default, so one that calls a proved function is that function's choice.
+    if (owner && node.type === 'AssignmentPattern' && node.range) owner.branches.push(branchOf(node, 'default', node));
     if (predicate) predicates.add(predicate);
     if (owner && slot(node, parent) && !predicates.has(node) && ((node.type === 'BinaryExpression' && COMPARISONS.has(node.operator))
       || (node.type === 'UnaryExpression' && node.operator === '!' && node.argument.type !== 'Literal'))) {

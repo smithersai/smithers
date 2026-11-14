@@ -7726,6 +7726,21 @@ Each is recorded: 7 markdown parsing loops (the existing reason), the mock reply
 and 4 iterations over a list or range in order (the tour's stops, the meter's month intervals, a history snapshot's
 storage chunks), which choose no more than a `for ... of` does. 1,130 shell branches, 0 open.
 
+### Batch 72: a default value
+
+A default value (`door = "slash"`, `identity: FixtureIdentity = "maintainer"`, `{ k = 1 }`) chooses what an absent
+argument or field reads as, the same choice as a `??`, which batch 62 counts. A default that names a role would grant
+it to every caller that passes nothing, unseen. `verify/inventory.cjs` now records a `default` branch for every
+parameter and destructuring default in an unproved row; its operand is the whole default, so one that calls a proved
+function is that function's choice. `verify/landing_test.cjs` failed first.
+
+On main `094d7503` this adds 120 branches, each recorded: 35 view-helper display arguments (markup), 26 test seams (the
+production dependency, policy or store unless a test injects a faulty one), 17 mock mode, 12 empty values, 9 least
+privilege (an absent authority, gateway, principal or role is the signed-out viewer; an absent kind a person), 8 mode
+flags on the production path, 5 named limits, 5 JSON helpers answering 200 unless told, and 3 labels. The one default
+that could widen spend, `Reply.agentOf`'s unbounded budget, is passed by every production caller (Reply, WikiDraft,
+VipDraft, SpecificationReviewers); only `test/replyAgent.coverage.test.vibe` omits it. 1,251 shell branches, 0 open.
+
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 
 Five shells compared `Number(content-length)` with a literal: accounts 2,048 bytes (sign-in and roles), issues 32 KiB,

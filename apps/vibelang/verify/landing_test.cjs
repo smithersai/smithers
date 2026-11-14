@@ -122,6 +122,11 @@ test('a new branch in a shell row is refused until it is proved or recorded with
   const loops = '// Fixture.\nexport function l(xs: number[], n: number) {\n  let i = 0\n  while (i < n && xs[i] !== 0) i++\n'
     + '  for (let j = 0; j < n; j++) i++\n  do {\n    i--\n  } while (i > 9)\n  for (;;) break\n  while (true) break\n  return i\n}\n';
   assert.deepEqual(shellBranches(inventorySource(fixture, loops)).map(branch => branch.test), ['while i < n && xs[i] !== 0', 'for j < n', 'while i > 9']);
+  // A default value chooses what an absent argument or field reads as, as a `??` does (batch 72); one that calls a
+  // proved function is that function's choice.
+  const defaults = answer + 'export function d(n: number, door = "slash", p = size(n)) {\n  const { k = 1 } = { k: n }\n  return [door, p, k]\n}\n';
+  assert.deepEqual(shellBranches(inventorySource(fixture, defaults)).filter(branch => branch.kind === 'default').map(branch => branch.test),
+    ['default k = 1', 'default door = "slash"']);
   // A recorded value branch lands; its record names the kind before the text.
   const valueRecord = 'worker/landingFixture.vibe\tlt\tvalue a < b\tOpen: the fixture order\n';
   assert.deepEqual(branchFacts(inventorySource(fixture, 'export const lt = (a: number, b: number) => a < b\n'), valueRecord),
