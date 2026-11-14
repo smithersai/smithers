@@ -46,6 +46,17 @@ describe("the mock machine", () => {
     try Effect.try(() => { expect(empty).toBe(""); expect(listed).toBe("a.txt  notes/b.txt"); expect(blank).toBe("") })
   })
 
+  it.effect("a retried operation answers its first output, even after the file it read changed", () => effect {
+    const machines = memoryMachines()
+    try machines.start("m1", 1)
+    try machines.command("m1", 1, "op1", "echo first > a.txt")
+    const read = try machines.command("m1", 1, "op2", "cat a.txt")
+    try machines.command("m1", 1, "op3", "echo second > a.txt")
+    const retried = try machines.command("m1", 1, "op2", "cat a.txt")
+    const fresh = try machines.command("m1", 1, "op4", "cat a.txt")
+    try Effect.try(() => { expect(read).toBe("first\n"); expect(retried).toBe("first\n"); expect(fresh).toBe("second\n") })
+  })
+
   it.effect("a machine that never started holds no lease and runs no command", () => effect {
     const machines = memoryMachines()
     const lease = try machines.lease("never", 1, 1000)

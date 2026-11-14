@@ -1,6 +1,6 @@
 // Third-lane batch 8 (0018): the mock factory's decisions, proved in mockFactoryDecision as MockFactory uses them.
 import { describe, expect, it } from "@effect/vitest"
-import { actorKey, afterCursor, appliedIndexes, draftOutcome, fixtureLogin, liveEvent, replyKind, replayedTo, restoredCounter, selfGrant } from "../src/core/mockFactoryDecision.vibe"
+import { actorKey, afterCursor, appliedIndexes, draftOutcome, fixtureLogin, liveEvent, replyKind, replayedTo, restoredCounter, reviewRefusal, selfGrant } from "../src/core/mockFactoryDecision.vibe"
 
 describe("the mock factory", () => {
   it("chooses a review, then a wiki page, an issue, a sandbox, the history, else its script", () => {
@@ -33,6 +33,10 @@ describe("the mock factory", () => {
   })
   it("lets a signed-in person change only their own grant without the roles gate (batch 10)", () => {
     expect([selfGrant("4", "4"), selfGrant("4", "5"), selfGrant("", "")]).toEqual([true, false, false])
+  })
+  it("answers a refused review request with the role's refusal, and any other refusal as a failure", () => {
+    expect(reviewRefusal("forbidden")).toBe("Only contributors can request a specification review.")
+    for (const reason of ["review", "no-model", "unavailable", ""]) expect(reviewRefusal(reason)).toBe("Couldn't request that review.")
   })
   it("names a new fixture person by role and id", () => {
     expect([fixtureLogin("new", "11"), fixtureLogin("maintainer", "12")]).toEqual(["joss11", "maintainer12"])

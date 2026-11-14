@@ -943,6 +943,282 @@ answering false, and `editedIssue` copying the issue it should return.
 | 295 | 1 | `test/sandboxDecision.test.vibe` |
 | 324 | 1 | `test/sandboxHost.coverage.test.vibe`, `test/meterDelay.test.vibe`, `test/sandboxMeterCadence.test.vibe` |
 
+### Every other `src/core` file: the test that runs each browser-open arm (vl-coverage-core, session 13, 2026-11-14)
+
+The 26 `src/core` files below the session 12 table hold the other 146 arms `s12full2` left open. Each of the 99 test
+files that imports one of them ran alone under coverage of all 26 (nyc-01 `~/vl/vl-coverage-evidence/s13/attrN/`),
+then the files that reach the rest through other modules (`attrM/`), and the whole unit suite once under coverage of
+the six files with a gap (`union6/`, 331 files, 2,856 passed). An arm counts for a run when the arm at its own start,
+or at its branch's start on the same line, ran: the build's and Vitest's structures place an operand holding `try` at
+different columns (`MockAccounts.vibe:123`: column 17 in the build, 29 in Vitest), so a start-only match reads it as
+unrun although `test/fixtureRecoveryEdges.coverage.test.vibe:44` runs it. The page check for each arm is its file's
+row under "Browser gate scope" above.
+
+Five sites ran in no unit or Worker suite; each now has a test that fails when its guard is removed:
+
+| Site | Test | Mutant it rejects |
+| --- | --- | --- |
+| `replayDecision.vibe` `conversationStep`, `replayedLog`, `replayedLogPrefix` (8 arms; specification only, run before by the fuzz target) | `test/conversationSpecifications.coverage.test.vibe` (new), holding each to the sequencer's replay as `test/historySpecifications.coverage.test.vibe` holds the history's | the capacity guard always applying; the fold's base case; the prefix lemma's base case answering false |
+| `flows.vibe:334` (a step whose narration the sequencer refuses because the tour ended) | `test/tourHostRefusal.coverage.test.vibe` (new): the real sequencer's tour ends after its drive, before its first line; the walk stops with no reading hold | the `return` removed: the walk waits on its gate past the 5 s timeout |
+| `sandboxMock.vibe:67` (a retried operation) | `test/sandboxKernelEdges.coverage.test.vibe` "a retried operation answers its first output" | the recorded output ignored |
+| `mockFactoryDecision.vibe:52` (`reviewRefusal` of a refusal other than the role's) | `test/mockFactoryDecision.test.vibe` "answers a refused review request" | none needed: the arm returns a literal; the test pins both texts |
+
+`test/tourHostRefusal.coverage.test.vibe` was written in lane vl-coverage2 (2026-11-10) and kept outside the app's
+tests because VibeLang 0.0.12 lost a service shape's methods in an object spread
+(`~/vl/vibelang-bugs/service-method-spread/`). The app's 0.0.13 compiles it; the only change is today's
+`toursOf(sequencer, wake)` signature.
+
+**`src/core/specification.vibe`** (16 arms, 13 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 28 | 1 | `test/specificationEdges.coverage.test.vibe` |
+| 31 | 1 | `test/specificationEdges.coverage.test.vibe` |
+| 32 | 1 | `test/specificationEdges.coverage.test.vibe`, `test/issuesBoundary.coverage.test.vibe` |
+| 36 | 1 | `test/specificationEdges.coverage.test.vibe` |
+| 37 | 1 | `test/specificationEdges.coverage.test.vibe`, `test/issuesBoundary.coverage.test.vibe` |
+| 40 | 1 | `test/specificationEdges.coverage.test.vibe`, `test/issuesBoundary.coverage.test.vibe`, `test/gates.test.vibe` |
+| 47 | 2 | `test/specificationEdges.coverage.test.vibe`, `test/gates.test.vibe` |
+| 49 | 1 | `test/issuesBoundary.coverage.test.vibe` |
+| 50 | 1 | `test/issuesBoundary.coverage.test.vibe` |
+| 52 | 1 | `test/specificationEdges.coverage.test.vibe`, `test/gates.test.vibe` |
+| 55 | 1 | `test/gates.test.vibe` |
+| 64 | 1 | `test/specificationEdges.coverage.test.vibe` |
+| 66 | 3 | `test/specificationEdges.coverage.test.vibe` |
+
+**`src/core/sandboxHostDecision.vibe`** (13 arms, 12 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 27 | 1 | `test/sandboxHostDecision.test.vibe` |
+| 34 | 1 | `test/sandboxHostDecision.test.vibe`, `test/sandboxProbe.test.vibe` |
+| 146 | 2 | `test/sandboxHostDecision.test.vibe` |
+| 169 | 1 | `test/sandboxHostDecision.test.vibe` |
+| 174 | 1 | `test/sandboxHostDecision.test.vibe` |
+| 183 | 1 | `test/sandboxHostDecision.test.vibe` |
+| 188 | 1 | `test/sandboxHostDecision.test.vibe` |
+| 238 | 1 | `test/http.coverage.test.vibe`, `test/mockFactory.coverage.test.vibe`, `test/sandboxHostDecision.test.vibe` and 1 more |
+| 240 | 1 | `test/sandboxHostDecision.test.vibe` |
+| 242 | 1 | `test/sandboxHostDecision.test.vibe` |
+| 243 | 1 | `test/sandboxHostDecision.test.vibe` |
+| 291 | 1 | `test/sandboxHostDecision.test.vibe` |
+
+**`src/core/wikiLinkDecision.vibe`** (11 arms, 6 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 26 | 1 | `test/coreShellDecisions.test.vibe`, `test/smallEdges.coverage.test.vibe` |
+| 41 | 3 | `test/coreShellDecisions.test.vibe`, `test/smallEdges.coverage.test.vibe` |
+| 56 | 2 | `test/coreShellDecisions.test.vibe` |
+| 77 | 2 | `test/coreShellDecisions.test.vibe`, `test/smallEdges.coverage.test.vibe` |
+| 84 | 2 | `test/coreShellDecisions.test.vibe`, `test/smallEdges.coverage.test.vibe` |
+| 91 | 1 | `test/coreShellDecisions.test.vibe`, `test/smallEdges.coverage.test.vibe` |
+
+**`src/core/wikiPageDecision.vibe`** (11 arms, 11 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 32 | 1 | `test/mockFactory.coverage.test.vibe`, `test/wikiBoundary.coverage.test.vibe`, `test/wikiDelegated.coverage.test.vibe` and 2 more |
+| 41 | 1 | `test/decisionEdges.coverage.test.vibe`, `test/wikiPageDecision.test.vibe` |
+| 69 | 1 | `test/wikiPageDecision.test.vibe` |
+| 104 | 1 | `test/wikiPageDecision.test.vibe`, `test/wiki.test.vibe` |
+| 105 | 1 | `test/decisionEdges.coverage.test.vibe`, `test/wikiPageDecision.test.vibe` |
+| 126 | 1 | `test/fixtureRecoveryEdges.coverage.test.vibe`, `test/liveWiki.coverage.test.vibe`, `test/wikiPageDecision.test.vibe` and 1 more |
+| 127 | 1 | `test/factoryHosts.coverage.test.vibe`, `test/wikiPageDecision.test.vibe` |
+| 128 | 1 | `test/mockFactory.coverage.test.vibe`, `test/wikiPageDecision.test.vibe`, `test/wikiEdit.http.test.vibe` |
+| 131 | 1 | `test/liveWiki.coverage.test.vibe`, `test/wikiPageDecision.test.vibe`, `test/wikiEdit.http.test.vibe` |
+| 132 | 1 | `test/wikiPageDecision.test.vibe` |
+| 156 | 1 | `test/coreShellDecisions.test.vibe`, `test/wikiPageDecision.test.vibe` |
+
+**`src/core/IssuesFactory.vibe`** (10 arms, 10 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 52 | 1 | `test/factoryEngineFaults.coverage.test.vibe`, `test/factoryHosts.coverage.test.vibe`, `test/issuesFactoryEdges.coverage.test.vibe` and 4 more |
+| 67 | 1 | `test/factoryEngineFaults.coverage.test.vibe`, `test/factoryHosts.coverage.test.vibe`, `test/issuesFactoryEdges.coverage.test.vibe` and 4 more |
+| 68 | 1 | `test/factoryHosts.coverage.test.vibe`, `test/gates.test.vibe` |
+| 76 | 1 | `test/issuesFactoryEdges.coverage.test.vibe` |
+| 92 | 1 | `test/factoryEngineFaults.coverage.test.vibe`, `test/issuesFactoryEdges.coverage.test.vibe`, `test/gates.test.vibe` and 2 more |
+| 103 | 1 | `test/factoryEngineFaults.coverage.test.vibe`, `test/factoryHosts.coverage.test.vibe`, `test/issuesFactoryEdges.coverage.test.vibe` and 3 more |
+| 109 | 1 | `test/issuesFactoryEdges.coverage.test.vibe` |
+| 119 | 1 | `test/factoryEngineFaults.coverage.test.vibe` |
+| 120 | 1 | `test/issuesFactoryEdges.coverage.test.vibe` |
+| 122 | 1 | `test/factoryEngineFaults.coverage.test.vibe`, `test/issuesFactoryEdges.coverage.test.vibe` |
+
+**`src/core/MockAccounts.vibe`** (9 arms, 8 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 76 | 1 | `test/actionObjects.coverage.test.vibe`, `test/recoveredActionObjects.coverage.test.vibe`, `test/accounts.test.vibe` |
+| 90 | 1 | `test/actionObjects.coverage.test.vibe`, `test/fixtureRecoveryEdges.coverage.test.vibe`, `test/recoveredActionObjects.coverage.test.vibe` and 1 more |
+| 91 | 1 | `test/fixtureRecoveryEdges.coverage.test.vibe` |
+| 93 | 1 | `test/fixtureRecoveryEdges.coverage.test.vibe` |
+| 102 | 1 | `test/fixtureRecoveryEdges.coverage.test.vibe` |
+| 114 | 1 | `test/accounts.test.vibe` |
+| 117 | 2 | `test/accounts.test.vibe` |
+| 123 | 1 | `test/fixtureRecoveryEdges.coverage.test.vibe` |
+
+**`src/core/flows.vibe`** (8 arms, 7 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 153 | 1 | `test/tour.test.vibe` |
+| 257 | 1 | `test/tour.test.vibe` |
+| 258 | 2 | `test/tourHostRefusal.coverage.test.vibe`, `test/tour.test.vibe`, `test/postTourOrdering.test.vibe` |
+| 264 | 1 | `test/tour.test.vibe` |
+| 334 | 1 | `test/tourHostRefusal.coverage.test.vibe` |
+| 407 | 1 | `test/mockReplyRace.coverage.test.vibe` |
+| 486 | 1 | `test/wikiTool.test.vibe` |
+
+**`src/core/liveAnswerDecision.vibe`** (8 arms, 4 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 31 | 1 | `test/liveAnswerDecision.test.vibe`, `test/liveClients.coverage.test.vibe`, `test/accountsClientHttp.test.vibe` |
+| 32 | 1 | `test/liveAnswerDecision.test.vibe`, `test/liveClientsEdges.coverage.test.vibe` |
+| 41 | 2 | `test/liveAnswerDecision.test.vibe`, `test/liveClients.coverage.test.vibe`, `test/accountsClientHttp.test.vibe` |
+| 42 | 4 | `test/liveAnswerDecision.test.vibe`, `test/liveClients.coverage.test.vibe`, `test/accountsClientHttp.test.vibe` |
+
+**`src/core/replayDecision.vibe`** (8 arms, 3 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 22 | 4 | `test/conversationSpecifications.coverage.test.vibe` |
+| 30 | 2 | `test/conversationSpecifications.coverage.test.vibe` |
+| 40 | 2 | `test/conversationSpecifications.coverage.test.vibe` |
+
+**`src/core/sandboxMock.vibe`** (7 arms, 7 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 45 | 1 | `test/sandboxMockFaults.coverage.test.vibe` |
+| 48 | 1 | `test/sandboxMockFaults.coverage.test.vibe` |
+| 49 | 1 | `test/sandboxMockFaults.coverage.test.vibe` |
+| 50 | 1 | `test/sandboxMockFaults.coverage.test.vibe` |
+| 62 | 1 | `test/sandboxKernelEdges.coverage.test.vibe` |
+| 67 | 1 | `test/sandboxKernelEdges.coverage.test.vibe` |
+| 78 | 1 | `test/sandboxKernelEdges.coverage.test.vibe`, `test/sandboxFactory.test.vibe` |
+
+**`src/core/specificationDecision.vibe`** (7 arms, 7 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 14 | 1 | `test/specificationDecision.test.vibe`, `test/gates.test.vibe` |
+| 15 | 1 | `test/specificationDecision.test.vibe`, `test/specificationEdges.coverage.test.vibe` |
+| 16 | 1 | `test/specificationDecision.test.vibe`, `test/specificationEdges.coverage.test.vibe` |
+| 30 | 1 | `test/specificationDecision.test.vibe`, `test/specificationEdges.coverage.test.vibe` |
+| 37 | 1 | `test/coreShellDecisions.test.vibe`, `test/specificationEdges.coverage.test.vibe` |
+| 48 | 1 | `test/coreShellDecisions.test.vibe`, `test/specificationEdges.coverage.test.vibe`, `test/gates.test.vibe` |
+| 49 | 1 | `test/coreShellDecisions.test.vibe` |
+
+**`src/core/LiveAccounts.vibe`** (6 arms, 4 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 16 | 1 | `test/liveClients.coverage.test.vibe`, `test/accountsClientHttp.test.vibe` |
+| 17 | 1 | `test/liveClientsEdges.coverage.test.vibe` |
+| 26 | 2 | `test/liveClients.coverage.test.vibe`, `test/accountsClientHttp.test.vibe` |
+| 27 | 2 | `test/liveClients.coverage.test.vibe`, `test/accountsClientHttp.test.vibe` |
+
+**`src/core/mockFactoryDecision.vibe`** (5 arms, 4 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 44 | 1 | `test/mockFactory.coverage.test.vibe`, `test/mockFactoryDecision.test.vibe` |
+| 52 | 1 | `test/mockFactoryDecision.test.vibe` |
+| 60 | 1 | `test/mockFactory.coverage.test.vibe`, `test/mockFactoryDecision.test.vibe` |
+| 121 | 2 | `test/mockFactoryDecision.test.vibe` |
+
+**`src/core/sandboxMeter.vibe`** (5 arms, 5 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 11 | 1 | `test/sandboxMeter.test.vibe` |
+| 25 | 1 | `test/sandboxMeterEdges.coverage.test.vibe` |
+| 26 | 1 | `test/sandboxMeterEdges.coverage.test.vibe` |
+| 37 | 1 | `test/sandboxMeterEdges.coverage.test.vibe`, `test/sandboxMeter.test.vibe`, `test/sandboxRecovery.test.vibe` |
+| 40 | 1 | `test/sandboxMeterEdges.coverage.test.vibe` |
+
+**`src/core/LiveWiki.vibe`** (4 arms, 2 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 9 | 2 | `test/liveWiki.coverage.test.vibe` |
+| 12 | 2 | `test/liveWiki.coverage.test.vibe` |
+
+**`src/core/tourDecision.vibe`** (3 arms, 3 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 26 | 1 | `test/pageTourProtocol.test.vibe` |
+| 37 | 1 | `test/coreShellDecisions.test.vibe`, `test/walkthrough.test.vibe` |
+| 38 | 1 | `test/coreShellDecisions.test.vibe`, `test/walkthrough.test.vibe` |
+
+**`src/core/wikiIndex.vibe`** (3 arms, 3 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 27 | 1 | `test/wikiPageDecision.test.vibe`, `test/wiki.test.vibe` |
+| 30 | 1 | `test/wikiPageDecision.test.vibe` |
+| 33 | 1 | `test/decisionEdges.coverage.test.vibe`, `test/wikiPageDecision.test.vibe` |
+
+**`src/core/wikiLinks.vibe`** (3 arms, 3 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 5 | 1 | `test/smallEdges.coverage.test.vibe` |
+| 12 | 1 | `test/smallEdges.coverage.test.vibe` |
+| 14 | 1 | `test/smallEdges.coverage.test.vibe` |
+
+**`src/core/wiki.vibe`** (2 arms, 2 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 9 | 1 | `test/mainUpdate.coverage.test.vibe`, `test/wikiPageDecision.test.vibe` |
+| 10 | 1 | `test/mainUpdate.coverage.test.vibe`, `test/wikiPageDecision.test.vibe` |
+
+**`src/core/LiveFactory.vibe`** (1 arms, 1 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 28 | 1 | `test/clientPaths.test.vibe`, `test/wire.test.vibe` |
+
+**`src/core/LiveIssues.vibe`** (1 arms, 1 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 12 | 1 | `test/liveClients.coverage.test.vibe` |
+
+**`src/core/followDecision.vibe`** (1 arms, 1 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 17 | 1 | `test/actionObjects.coverage.test.vibe`, `test/recoveredActionObjects.coverage.test.vibe`, `test/stackDecision.test.vibe` and 2 more |
+
+**`src/core/mockReplies.vibe`** (1 arms, 1 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 136 | 1 | `test/smallEdges.coverage.test.vibe` |
+
+**`src/core/sandboxMockDecision.vibe`** (1 arms, 1 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 29 | 1 | `test/sandboxKernelEdges.coverage.test.vibe`, `test/sandboxMockDecision.test.vibe` |
+
+**`src/core/walkthroughSteps.vibe`** (1 arms, 1 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 19 | 1 | `test/walkthrough.test.vibe` |
+
+**`src/core/wire.vibe`** (1 arms, 1 sites)
+
+| Line | Arms | Test files that run it |
+| --- | ---: | --- |
+| 48 | 1 | `test/clientPaths.test.vibe`, `test/wire.test.vibe` |
+
 ### The Export journey counts turns, not milliseconds (vl-coverage-core, session 12, 2026-11-14)
 
 `e2e/core-export-longtask.spec.ts` failed once in `s12full1`: its longest task was 204 ms against a 200 ms budget

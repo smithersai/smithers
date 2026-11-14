@@ -1,0 +1,66 @@
+// The conversation's replay specifications against the code they specify (0016, "Specification functions"), as
+// test/historySpecifications.coverage.test.vibe holds the history's. VibeLang has no specification-only function yet
+// (~/vl/vibelang-bugs/spec-only-function), so each one is runtime code: a drift between a specification and the
+// sequencer's replay fails here as well as in `pnpm verify` and fuzz/conversation.fuzz.vibe.
+import { describe, expect, it } from "@effect/vitest"
+import { empty, type Conversation, type Event } from "../src/core/conversation.vibe"
+import type { Intent } from "../src/core/decide.vibe"
+import { conversationStep, recordedConversation, replayedLog, replayedLogPrefix, replayLog } from "../src/core/replayDecision.vibe"
+
+/** A post, its reply streamed and finished, then a second post: the sequencer's intents for one question and answer. */
+const intents: ReadonlyArray<Intent> = [
+  { type: "Post", id: "m1", clientId: "s-1", name: "Ada", text: "What is VibeLang?" },
+  { type: "StartReply", id: "r1", inReplyTo: "m1" },
+  { type: "AppendReply", id: "r1", text: "A language" },
+  { type: "FinishReply", id: "r1" },
+  { type: "Post", id: "m2", clientId: "s-2", name: "Ada", text: "Thanks" },
+]
+
+/** Records `from` on `empty`, keeping the log of accepted events. */
+const logOf = (from: ReadonlyArray<Intent>) => {
+  let conversation: Conversation = empty
+  let log: ReadonlyArray<Event> = []
+  for (const intent of from) {
+    const recorded = recordedConversation(empty, conversation, log, intent)
+    conversation = recorded.conversation
+    log = recorded.log
+  }
+  return { conversation, log }
+}
+
+describe("conversation replay specifications", () => {
+  it("the fold replays every prefix of a log to the conversation the loop replays", () => {
+    const { conversation, log } = logOf(intents)
+    expect(log.length).toBe(intents.length)
+    expect(replayedLog(empty, log, log.length)).toEqual(conversation)
+    for (let count = 0; count <= log.length; count++) {
+      expect(replayedLog(empty, log, count)).toEqual(replayLog(empty, log.slice(0, count)))
+    }
+    expect(replayedLog(empty, log, 0)).toBe(empty)
+  })
+
+  it("a step outside the cursor's capacity leaves the conversation as it was", () => {
+    const { log } = logOf(intents)
+    const event = log[0]!
+    expect(conversationStep(empty, event)).toEqual(replayLog(empty, [event]))
+    for (const conversation of [{ ...empty, seq: -1 }, { ...empty, seq: Number.MAX_SAFE_INTEGER }]) {
+      expect(conversationStep(conversation, { ...event, seq: conversation.seq + 1 })).toBe(conversation)
+    }
+  })
+
+  it("logs that agree on a prefix replay it alike, and recording keeps the conversation its log's replay", () => {
+    const { conversation, log } = logOf(intents.slice(0, -1))
+    const recorded = recordedConversation(empty, conversation, log, intents[intents.length - 1]!)
+    expect(recorded.decision.ok).toBe(true)
+    expect(recorded.log.length).toBe(log.length + 1)
+    for (let count = 0; count <= log.length; count++) {
+      expect(replayedLogPrefix(empty, log, recorded.log, count)).toBe(true)
+      expect(replayedLog(empty, recorded.log, count)).toEqual(replayedLog(empty, log, count))
+    }
+    expect(replayedLog(empty, recorded.log, recorded.log.length)).toEqual(recorded.conversation)
+    const refused = recordedConversation(empty, recorded.conversation, recorded.log, intents[0]!)
+    expect(refused.decision.ok).toBe(false)
+    expect(refused.conversation).toBe(recorded.conversation)
+    expect(refused.log).toBe(recorded.log)
+  })
+})

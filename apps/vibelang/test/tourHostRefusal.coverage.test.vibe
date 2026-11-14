@@ -1,0 +1,26 @@
+// @vitest-environment node
+// A narration refusal from the real sequencer: the tour ends after its drive, before its first line.
+import { expect, it } from "@effect/vitest"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { Tours, walk } from "../src/core/flows.vibe"
+import { conversation, toursOf, type Storage } from "../worker/Objects.vibe"
+import { within } from "./support/durableWriters.vibe"
+
+it.live("a walk whose tour ends before narration stops without another reading hold or destination", () => scoped(effect {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (storage) => sync(() => storage.close()))
+  const sequencer = try conversation(raw as unknown as Storage)
+  try sequencer.startTour()
+  const actual = toursOf(sequencer, () => Effect.void)
+  // This host loses the tour just before committing its narration. Its refusal and final state stay real.
+  const refused: Tours.Shape = {
+    ...actual,
+    say: (tour, text) => actual.end().pipe(Effect.andThen(actual.say(tour, text))),
+  }
+  const answer = try within(Layer.succeed(Tours, refused), Effect.as(walk("t1"), "ended")).pipe(Effect.timeout("5 seconds"))
+  const snapshot = try sequencer.read(0)
+  expect(answer).toBe("ended")
+  expect(snapshot.seq).toBe(3)
+  const state = try sequencer.snapshot()
+  expect(state.agent).toBe("idle")
+  expect(snapshot.entries).toMatchObject([{ id: "t1", author: "agent", text: "", done: true }])
+}), 15_000)
