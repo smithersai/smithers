@@ -2150,6 +2150,18 @@ route refuse by its declared length before reading, with the proved `validBodyLe
 `httpBoundaries.coverage.test`; the oracle still modelled read-then-check. It now applies `validBodyLength(length,
 1024)` first, as it does for `post`. The parent's `worker/Http.vibe` is the mutant: caught.
 
+#### Two arms new since `full24` (`full26`)
+
+`full26` (main `5659767d`, job `9f7d95c02de2f2ebee72132c`): 107 files, 319 tests passed; exit 1 on two branch gates.
+`worker/Http.vibe` 111 (99/100): since `05ec4144` a tour control reaches its refusal only with an exact declared
+length and a valid body, so the arm waited on the draw. `every-route` gains three chosen controls (answered, refused,
+no tour), and a tour control's 409 must name its refusal (the room's word, or `not-replying`); answering `{}` was a
+surviving mutant before that check. `worker/Wiki.vibe` 168 (176/178): `ad982a9d` reads `review.files[0]?.filename ?? ""`
+and `?.status ?? ""` eagerly, so their fallbacks need a review with no files. The node fake gains `hideFiles` (a pull
+it opens records no files, `changed_files` 0; with the count left at 1 the package answers `partial`, as it should),
+and `wiki/steered-host`'s delegated scenario requires such a review to answer `unavailable`. Mutant: dropping
+`|| !changed` from the evidence guard answers `ok`: caught.
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the

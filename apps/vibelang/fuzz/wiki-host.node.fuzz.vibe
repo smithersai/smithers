@@ -353,6 +353,11 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
         Effect.provide(WebCrypto.layer), Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: error._tag })),
       )), 150)
       if (reasonOf(foreign) !== "unavailable") throw new Finding({ report: `a review under another author answered ${reasonOf(foreign)}` })
+      // GitHub reports the review with no files: no evidence it changes this page, so the person gets unavailable.
+      fake.hideFiles = true
+      const fileless = try stepped(via({ ...proposal, key: `fileless-${pick}` }), 150)
+      fake.hideFiles = false
+      if (reasonOf(fileless) !== "unavailable") throw new Finding({ report: `a review with no files answered ${reasonOf(fileless)}` })
       // The delegation ends at smithers.sh: the read falls back to the public page and reports the loss.
       try site.end()
       const lostBefore = try Ref.get(lost)

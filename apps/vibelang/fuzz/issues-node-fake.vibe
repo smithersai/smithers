@@ -93,6 +93,8 @@ export interface Fake {
   endlessComments: boolean
   dropAssignees: boolean
   noMain: boolean
+  /** A pull the fake opens records no files (GitHub's count agrees: 0). */
+  hideFiles: boolean
   /** Repository text by path; a pull that changes one of these reports it as modified. */
   files: Record<string, string>
   /** Commit-pinned reads see this text: main advanced after the first read. */
@@ -126,7 +128,7 @@ export function seed(): Fake {
     pulls: [], forks: {}, branches: { "o/r": { main: "a".repeat(40) } }, commits: {}, pullAdditions: {},
     writes: 0, nextId: 1000, nextIssue: 100, nextPull: 600, nextSha: 1,
     forbiddenNext: false, endlessIssues: false, endlessTimeline: false, endlessReviews: false, malformedIssues: false,
-    endlessComments: false, dropAssignees: false, noMain: false, files: {}, pinnedText: undefined, contentStatus: 200, refStatus: 200, outage: 200, dropAfterLink: 0, dropping: 0, hideVip: false,
+    endlessComments: false, dropAssignees: false, noMain: false, hideFiles: false, files: {}, pinnedText: undefined, contentStatus: 200, refStatus: 200, outage: 200, dropAfterLink: 0, dropping: 0, hideVip: false,
   }
   seedIssue(fake, 1, "open", [], "A plain issue", [])
   fake.comments[1] = [{ id: 900, node_id: "comment-900", body: "First note", user: { id: 8, login: "reviewer" }, created_at: "2026-01-02T00:00:00Z", updated_at: "2026-01-02T00:00:00Z", issue_url: `${API}/repos/o/r/issues/1` }]
@@ -445,8 +447,8 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
           state: "open", user: author, head: { ref: branch, sha },
           base: { ref: baseRef, sha: baseSha, repo: { default_branch: "main" } },
           commits: 1, additions: added, deletions: removed, mergeable_state: "unknown",
-          changed_files: additions.length, created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", closed_at: null,
-          files: additions.map((filename) => ({ filename, status: before[filename] === undefined ? "added" as const : "modified" as const })),
+          changed_files: fake.hideFiles ? 0 : additions.length, created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", closed_at: null,
+          files: fake.hideFiles ? [] : additions.map((filename) => ({ filename, status: before[filename] === undefined ? "added" as const : "modified" as const })),
         })
         {
           const pull = fake.pulls.at(-1)!
