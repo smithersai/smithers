@@ -3661,3 +3661,94 @@ reach its steps only through the caller's context. So `MockActions` keeps forkin
 `Effect.provideContext` in Effect 4.1.1 merges onto the caller's context, as its type says (`Exclude<R, XR>` leaves
 the rest to the caller): a five-line reproduction prints both the provided and the caller's service. That is Effect's
 documented behavior, not an Effect bug.
+
+**`src/history/exportDecision.vibe` in Chromium.** `export-linear` and `export-tree` close `commitVerdict`; `export-conflict`
+and `export-lost` close `confirmed`'s `unchanged` and `conflict`. vl-proveall's `9445c9c6` removed `treeSource`'s
+`?? 0` arm. With the gate below and the linear and tree run, 32 of 47 branches ran. The 15 left are not reachable in
+the browser:
+
+| Arms | Reason |
+| --- | --- |
+| `writable` (148-149, 8 arms) | Only `guarded` calls it, and only the Worker's export wraps its repository in `guarded` (`worker/HistoryExport.vibe`). The mock's repository is not guarded. `test/historyExport.test.vibe` covers it. |
+| `batchOutcome` (246-247, 4 arms), `publishOutcome` (262, 2 arms) | Only the History object's paced publisher calls them (`src/history/publish.vibe`, `vibelang/history/Publish`). The page's Export runs one batch or answers `paced`. `test/historyPublish.test.vibe` covers both. |
+| `treeOrigin`'s `empty` (178) | A history's first commit that folds no real commit. Every browser history starts from the seed, whose first commit folds real commits. An empty history shows "No mythical history yet." with no Plan or Export (`historyView.vibe`), so the page cannot write a first commit there. |
+
+**Full browser gate (session 37).** Box job `0608d4ba7a57353c731fc3d1` (image `playwright`, 4 vCPU), on main
+`335ba343` plus this session's seam, before `export-linear` and `export-tree`: 806 passed, 12 skipped, 1 failed, 56.8
+min, exit 1 (thresholds, and the failure). The failure was `e2e/core-live.spec.ts:124` on phone (34.1 s), in
+vl-coverage-core's half; it passed in light and dark. Alone on phone with `--repeat-each 4` it failed 2 of 4 and 3 of 4
+(Playwright's 30 s test timeout, box jobs `675c725c4fd1f8cd09285787` and the next), then passed 4 of 4 at 29.7 to 31.9 s
+with 3 workers and 9.9 s alone: it sits at its budget under load. Handed to vl-coverage-core. Totals against session
+35's gate:
+
+| Metric | Session 35 | Session 37 |
+| --- | --- | --- |
+| Lines | 90.13% | 91.07% (5268/5784) |
+| Statements | 86.55% | 87.82% |
+| Branches | 82.82% (5145/6212) | 84.85% (5235/6169) |
+| Functions | 90.29% | 91.39% (2337/2557) |
+
+My half (`src/history`, `src/actions`, `src/web`): 3841/4414 branches, 573 open in 60 files. Files below 100% branches, largest first:
+
+| File | Session 35 | Session 37 | Open |
+| --- | --- | --- | --- |
+| `src/web/main.vibe` | 574/625 | 546/598 | 52 |
+| `src/history/flowMachine.vibe` | 72/110 | 73/110 | 37 |
+| `src/web/issueDecision.vibe` | 220/255 | 220/255 | 35 |
+| `src/history/trailerDecision.vibe` | 39/77 | 41/75 | 34 |
+| `src/history/mythical.vibe` | 158/199 | 166/199 | 33 |
+| `src/history/areaDecision.vibe` | 23/58 | 29/58 | 29 |
+| `src/web/issuesView.vibe` | 262/285 | 207/226 | 19 |
+| `src/history/exportDecision.vibe` | 28/47 | 30/47 | 17 |
+| `src/actions/LiveActions.vibe` | 4/19 | 4/19 | 15 |
+| `src/web/issuesViewDecision.vibe` | 184/198 | 185/198 | 13 |
+| `src/web/viewDecision.vibe` | 137/150 | 137/150 | 13 |
+| `src/web/viewport.vibe` | 27/40 | 27/40 | 13 |
+| `src/history/LiveMythical.vibe` | 0/12 | 0/12 | 12 |
+| `src/history/export.vibe` | 64/77 | 65/77 | 12 |
+| `src/history/stackDecision.vibe` | 12/25 | 13/25 | 12 |
+| `src/web/historyStartup.vibe` | 13/25 | 13/25 | 12 |
+| `src/web/markdown.vibe` | 70/82 | 70/82 | 12 |
+| `src/web/historyApp.vibe` | 54/65 | 51/62 | 11 |
+| `src/web/modelDecision.vibe` | 108/118 | 107/118 | 11 |
+| `src/web/screenDecision.vibe` | 102/113 | 102/113 | 11 |
+| `src/actions/MockActions.vibe` | 48/64 | 54/64 | 10 |
+| `src/history/replayDecision.vibe` | 2/12 | 2/12 | 10 |
+| `src/web/modelWrite.vibe` | 51/61 | 51/61 | 10 |
+| `src/web/actionFollowDecision.vibe` | 15/24 | 15/24 | 9 |
+| `src/web/view.vibe` | 112/125 | 96/105 | 9 |
+| `src/actions/actionHostDecision.vibe` | 38/49 | 42/49 | 7 |
+| `src/web/tourDecision.vibe` | 47/54 | 47/54 | 7 |
+| `src/web/updateDecision.vibe` | 98/105 | 98/105 | 7 |
+| `src/web/viewGateDecision.vibe` | - | 36/43 | 7 |
+| `src/history/Sequencer.vibe` | 26/34 | 28/34 | 6 |
+| `src/history/pageDecision.vibe` | 19/25 | 19/25 | 6 |
+| `src/history/pages.vibe` | 5/12 | 6/12 | 6 |
+| `src/web/actionViewDecision.vibe` | 90/96 | 90/96 | 6 |
+| `src/web/actionView.vibe` | 83/88 | 83/88 | 5 |
+| `src/web/markdownDecision.vibe` | 25/30 | 25/30 | 5 |
+| `src/web/theatreDecision.vibe` | 67/72 | 67/72 | 5 |
+| `src/web/wikiEditorDecision.vibe` | 17/22 | 17/22 | 5 |
+| `src/actions/execution.vibe` | 32/38 | 34/38 | 4 |
+| `src/history/wire.vibe` | 0/4 | 0/4 | 4 |
+| `src/web/paneDecision.vibe` | 44/48 | 44/48 | 4 |
+| `src/web/screenRead.vibe` | 12/16 | 12/16 | 4 |
+| `src/web/actionModel.vibe` | 15/19 | 10/13 | 3 |
+| `src/web/historyDecision.vibe` | 28/31 | 28/31 | 3 |
+| `src/web/historyViewDecision.vibe` | 57/60 | 57/60 | 3 |
+| `src/web/theatre.vibe` | 23/26 | 23/26 | 3 |
+| `src/history/flows.vibe` | 29/45 | 43/45 | 2 |
+| `src/history/tools.vibe` | 44/47 | 45/47 | 2 |
+| `src/web/accountViewDecision.vibe` | 38/40 | 38/40 | 2 |
+| `src/web/issues.vibe` | 32/34 | 32/34 | 2 |
+| `src/web/viewLabelDecision.vibe` | - | 36/38 | 2 |
+| `src/web/wikiView.vibe` | 80/82 | 76/78 | 2 |
+| `src/web/wikiViewDecision.vibe` | 52/54 | 52/54 | 2 |
+| `src/history/MockMythical.vibe` | 23/24 | 24/25 | 1 |
+| `src/history/toolDecision.vibe` | 3/4 | 3/4 | 1 |
+| `src/web/backend.vibe` | 12/13 | 12/13 | 1 |
+| `src/web/historyBackend.vibe` | 5/6 | 5/6 | 1 |
+| `src/web/roleView.vibe` | 39/40 | 37/38 | 1 |
+| `src/web/sandboxView.vibe` | 64/68 | 59/60 | 1 |
+| `src/web/startupDecision.vibe` | 27/28 | 27/28 | 1 |
+| `src/web/viewStateDecision.vibe` | - | 35/36 | 1 |
