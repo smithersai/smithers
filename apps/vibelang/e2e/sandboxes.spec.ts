@@ -22,6 +22,12 @@ test("sandbox: write, stop, restart and read bytes", async ({ page }) => {
   await expect(page.getByLabel("Terminal output")).toContainText("saved")
   await page.getByRole("button", { name: "Maximize Sandboxes" }).click()
   await expect(page.getByRole("table", { name: "Minutes by role" })).toBeVisible()
+  // Minimize returns the pane beside the chat (src/web/viewDecision.vibe `maximizeSandbox`).
+  await page.getByRole("button", { name: "Minimize Sandboxes" }).click()
+  await expect(page.getByRole("region", { name: "Sandboxes" })).toHaveAttribute("data-maximized", "false")
+  await expect(page.getByRole("table", { name: "Minutes by role" })).toBeHidden()
+  await page.getByRole("button", { name: "Maximize Sandboxes" }).click()
+  await expect(page.getByRole("table", { name: "Minutes by role" })).toBeVisible()
   await page.keyboard.press("Escape")
   await expect(page.getByRole("table", { name: "Minutes by role" })).toBeHidden()
 })
