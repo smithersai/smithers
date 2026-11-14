@@ -36,6 +36,11 @@ function otherDraft(role: typeof Role.Type) {
   return backendChanged(role, (factory) => ({ wiki: Object.assign(Object.create(factory.wiki), { read: (page: string) => map(factory.wiki.read(page), (snapshot) => ({ ...snapshot, draft: { page: `${page}-other`, text: "# Other" } })) }) }))
 }
 
+/** The mock's wiki, every read answered with a saved draft of the page read. */
+function ownDraft(role: typeof Role.Type) {
+  return backendChanged(role, (factory) => ({ wiki: Object.assign(Object.create(factory.wiki), { read: (page: string) => map(factory.wiki.read(page), (snapshot) => ({ ...snapshot, draft: { page, text: "# Mine" } })) }) }))
+}
+
 /** The page's address, as the Commands read and write it. */
 effect function location() {
   const window = try (try Experimental.Window.Window).current
@@ -122,7 +127,7 @@ const CommandArms = Schema.Struct({ role: Role, number: Int, key: Schema.Literal
  * recovery; a resumed load of a completed write does the same; a maintainer's grant to a member answers GrantedRole;
  * signing out without accounts answers the viewer; signing in live goes to the sign-in route; an unreachable tour
  * names its reason and a refused one its refusal; a refused sandbox read names its refusal; another page's draft
- * never fills the editor; a role stream without an accounts service sends nothing, and a failing or ended one sends
+ * never fills the editor, and the page's own draft does; a role stream without an accounts service sends nothing, and a failing or ended one sends
  * FailedRoles once; a lost action follow reports disconnection; explicit reconnect delivers the run. A tour control that is
  * done or refused keeps the tour's connection, and one unreachable or without controls loses it; reading a started run
  * answers it; a failing actions load names its epoch; an issue write answered without a role takes the mode's default.
@@ -449,7 +454,8 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       const editable = pages.filter((entry) => wikiEditable(entry.id))
       const page = editable[input.number % editable.length]!.id
       const got = try Effect.provide(answer(() => OpenWikiEditor({ page, request: input.number })), otherDraft(role))
-      return got._tag === "BeganWikiEdit" && got.draft === ""
+      const own = try Effect.provide(answer(() => OpenWikiEditor({ page, request: input.number })), ownDraft(role))
+      return got._tag === "BeganWikiEdit" && got.draft === "" && own._tag === "BeganWikiEdit" && own.draft === "# Mine"
     }
   }
 }

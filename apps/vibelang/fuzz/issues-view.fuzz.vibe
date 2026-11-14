@@ -360,6 +360,8 @@ type Chosen = {
   readonly record?: (item: Item) => Item
   /** A control to type into, by role and name. */
   readonly type?: readonly [string, string]
+  /** A key to press in a control, by role and name, instead of typing, and whether the control handles it. */
+  readonly press?: readonly [string, string, string, boolean]
   readonly holds: (html: Html, ui: IssuesUi) => boolean
 }
 
@@ -371,8 +373,8 @@ const note = { author: "ada" as const, text: "added the language label" as const
 
 /**
  * The pane's arms that only a particular record or screen reaches, each run in every execution: Commit for an open
- * issue and Uncommit for a task; a VIP's approval named without a time; an event note without an age; the VIP form's prior
- * art step while busy, while a write waits for a retry, and idle; an accepted specification with its suites; and each
+ * issue and Uncommit for a task; a VIP's approval named without a time; an event note without an age; the VIP form's
+ * title step, where Enter goes on to the next step (a new issue's does not), its example step (its one code field) and its prior art step while busy, while a write waits for a retry, and idle; an accepted specification with its suites; and each
  * field's typed text becoming its value (search, comment, title, prior art, specification text).
  */
 const CHOSEN: ReadonlyArray<Chosen> = [
@@ -387,6 +389,9 @@ const CHOSEN: ReadonlyArray<Chosen> = [
   { name: "prior-busy", input: { screen: VIP, step: 3, busy: true, role: "maintainer" }, holds: (html) => getAllByRole("textbox", { name: "Prior art" })(html).length === 1 && disabledNode(getAllByRole("textbox", { name: "Prior art" })(html)[0]!) },
   { name: "prior-retry", input: { screen: VIP, step: 3, busy: false, retry: "propose", role: "maintainer" }, holds: (html) => getAllByRole("textbox", { name: "Prior art" })(html).some(disabledNode) },
   { name: "prior-idle", input: { screen: VIP, step: 3, busy: false, role: "maintainer" }, type: ["textbox", "Prior art"], holds: (html) => getAllByRole("textbox", { name: "Prior art" })(html).length === 1 },
+  { name: "vip-title-enter", input: { screen: VIP, step: 1, busy: false, role: "maintainer" }, press: ["textbox", "Title", "Enter", true], holds: (html) => getAllByRole("textbox", { name: "Example" })(html).length === 1 },
+  { name: "issue-title-enter", input: { screen: NEW, step: 1, busy: false, role: "maintainer" }, press: ["textbox", "Title", "Enter", false], holds: (html) => getAllByRole("textbox", { name: "Title" })(html).length === 1 && getAllByRole("textbox", { name: "Example" })(html).length === 0 },
+  { name: "example", input: { screen: VIP, step: 2, busy: false, role: "maintainer" }, type: ["textbox", "Example"], holds: (html) => getAllByRole("textbox", { name: "Example" })(html).some((node) => (node as { data?: { attrs?: Record<string, unknown> } }).data?.attrs?.["data-code"] !== undefined) },
   { name: "title", input: { screen: NEW, step: 1, busy: false, role: "maintainer" }, type: ["textbox", "Title"], holds: (html) => getAllByRole("textbox", { name: "Title" })(html).length === 1 },
   { name: "search", input: { screen: 0, role: "viewer" }, type: ["searchbox", "Search issues"], holds: () => true },
   {
@@ -432,7 +437,8 @@ it.live("screens/issues-chosen", () => scoped(effect {
         if (chosen.type !== undefined && !getAllByRole(chosen.type[0], { name: chosen.type[1] })(html).some((node) => valueOf(node) === typed.toWellFormed())) why.push(`typed value ${JSON.stringify(getAllByRole(chosen.type[0], { name: chosen.type[1] })(html).map(valueOf))}`)
         return simulation
       }
-      try Effect.try(() => chosen.type === undefined ? scene({ update, view }, given(model), check) : scene({ update, view }, given(model), typeInto(locate(chosen.type[0], { name: chosen.type[1] }), typed), check))
+      const press = chosen.press
+      try Effect.try(() => press !== undefined ? scene({ update, view }, given(model), keydown(locate(press[0], { name: press[1] }), press[2]), (press[3] ? expectHandled() : expectIgnored()) as unknown as Step, check) : chosen.type === undefined ? scene({ update, view }, given(model), check) : scene({ update, view }, given(model), typeInto(locate(chosen.type[0], { name: chosen.type[1] }), typed), check))
       if (why.length > 0) throw new Finding({ report: `${chosen.name} does not hold: ${why.join(", ")} ${shownText}` })
     }
     // The chat's issue card: a parent lists its children; a record without labels names only its number and age.

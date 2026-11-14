@@ -1437,6 +1437,13 @@ reads the slash). Deleting `historyStartup` 69's return does not compile: only a
 `tools.vibe` 94 is not closed here: VibeLang 0.0.13 still lowers that exhaustive object-pattern match to a final `if`
 and `$noMatch` (ruling VL-37; `~/vl/vibelang-bugs/coverage-exhaustive-match/`).
 
+The pair at `ffdaf4c5` (seeds 20261410, 20261411) left three `src/web` arms to the draw at 20261411 only, each now
+chosen: `issuesView` 192 and 201, the VIP form's example step (its code field) and Enter in a title, which goes on to
+the next step in a VIP and is ignored in a new issue (`screens/issues-chosen` `example`, `vip-title-enter`,
+`issue-title-enter`, the last two asserting handled and ignored); `main` 953, the editor opening over the page's own
+saved draft (`web/command-arms` `editor-other-draft`). Mutants caught: Enter advancing a new issue, Enter never
+advancing, and a draft of another page filling the editor.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
