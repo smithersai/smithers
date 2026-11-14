@@ -89,11 +89,18 @@ test('a new branch in a shell row is refused until it is proved or recorded with
   // Presence, variant and host type tests decide nothing of their own; beside one, a comparison is still a branch.
   const guards = '// Fixture.\nexport function g(x: { _tag: string } | undefined, n: number) {\n  if (x === undefined || x._tag === "A" || !Number.isSafeInteger(n)) return 0\n  return typeof n === "number" && n > 1 ? 1 : 0\n}\n';
   assert.deepEqual(shellBranches(inventorySource(fixture, guards)).map(branch => branch.test), ['typeof n === "number" && n > 1']);
-  // Moving a callback changes its label's line, not its record; views in src/web are out of scope.
+  // Moving a callback changes its label's line, not its record.
   const callback = '// Fixture.\nexport const f = (xs: number[]) => xs.map(x => x > 1 ? x : 0)\n';
   const k = 'worker/landingFixture.vibe\tf/callback\tx > 1\tOpen: fixture\n';
   assert.deepEqual(branchFacts(inventorySource(fixture, '\n\n' + callback), k).refused, []);
-  assert.deepEqual(branchFacts(inventorySource(path.join(app, 'src/web/landingFixture.vibe'), shell), '').branches, 0);
+  // Views in src/web are in scope (0018, "Decisions in views"); there a `??`, a `switch`, and an `&&` or `||` used as a
+  // value choose what a person sees too. Outside src/web only `if` and conditional tests count, as before.
+  const web = path.join(app, 'src/web/landingFixture.vibe');
+  assert.deepEqual(branchFacts(inventorySource(web, shell), '').branches, 2);
+  const view = '// Fixture.\nexport function v(m: { label?: string, busy: boolean, kind: string }, ok: boolean) {\n  const label = m.label ?? "None"\n'
+    + '  const off = m.busy || !ok\n  switch (m.kind) {\n    case "a": return 1\n  }\n  return [label, off, ok && "shown", ok ? 1 : 2]\n}\n';
+  assert.deepEqual(shellBranches(inventorySource(web, view)).map(branch => branch.test), ['?? m.label', '|| m.busy || !ok', 'switch m.kind', '&& ok && "shown"', 'ok']);
+  assert.deepEqual(shellBranches(inventorySource(fixture, view)).map(branch => branch.test), ['ok']);
 });
 
 // One read of the real tree (about 15 s): the inventory of every source, decision 0018 and mutations.py's cases.

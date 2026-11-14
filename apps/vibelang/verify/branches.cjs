@@ -1,5 +1,6 @@
-// Branches in shell rows (decision 0018, "Decisions in shell rows"): an `if` or conditional inside a row that is not
-// proved, outside the view markup in src/web/, with an operand (split at `&&`, `||` and `!`) that neither calls a
+// Branches in shell rows (decision 0018, "Decisions in shell rows" and "Decisions in views"): an `if` or conditional
+// inside a row that is not proved (in src/web/ also a `switch`, the left side of a `??`, and an `&&` or `||` used as a
+// value: what a view shows or enables), with an operand (split at `&&`, `||` and `!`) that neither calls a
 // proved function, nor reads a `const` whose value calls one (in its row or an enclosing row) as a flag or against a
 // literal (`replay === "replay-refused"`, `cut < 0`: the proved function's answer), nor calls a function whose whole
 // body returns a proved call, nor is a
@@ -13,7 +14,10 @@ const app = path.resolve(__dirname, '..');
 const record = path.join(__dirname, 'shell-branches.tsv');
 const HEADER = '# file\tfunction\tcondition\treason (decision 0018, "Decisions in shell rows"; "Open:" = still to prove)';
 
-const inScope = file => !file.startsWith('src/web/');
+// Every file is in scope. In views (src/web/) a `??`, a `switch` and a value `&&` or `||` choose too; elsewhere only an
+// `if` or conditional test counts (the worker audit's rule, unchanged).
+const views = file => file.startsWith('src/web/');
+const counted = (file, branch) => (branch.kind ?? 'if') === 'if' || views(file);
 // Callback labels carry their line (`answer/callback@88`); the record does not, so moving code changes nothing.
 const stable = label => label.replace(/@\d+/g, '');
 const key = ({ file, label, test }) => `${file}\t${stable(label)}\t${test}`;
@@ -31,10 +35,12 @@ function shellBranches(rows) {
   const decidedFlags = row => new Set(rows.filter(other => other.file === row.file && other.bindings
     && (other.label === row.label || row.label.startsWith(other.label + '/')))
     .flatMap(other => other.bindings.filter(binding => callsProved(binding.calls)).map(binding => binding.name)));
-  return rows.filter(row => row.category !== 'proved' && inScope(row.file) && row.branches).flatMap(row => {
+  return rows.filter(row => row.category !== 'proved' && row.branches).flatMap(row => {
     const flags = decidedFlags(row);
-    return row.branches.filter(branch => !branch.operands.every(operand => operand.neutral || callsProved(operand.calls) || flags.has(operand.flag) || flags.has(operand.compared)))
-      .map(branch => ({ file: row.file, line: branch.line, label: row.label, test: branch.test }));
+    return row.branches.filter(branch => counted(row.file, branch))
+      .filter(branch => !branch.operands.every(operand => operand.neutral || callsProved(operand.calls) || flags.has(operand.flag) || flags.has(operand.compared)))
+      // The record names a view's `??`, `switch`, `&&` or `||` by its kind before the tested text.
+      .map(branch => ({ file: row.file, line: branch.line, label: row.label, kind: branch.kind, test: (branch.kind ?? 'if') === 'if' ? branch.test : `${branch.kind} ${branch.test}` }));
   });
 }
 

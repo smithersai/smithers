@@ -531,15 +531,29 @@ function inventorySource(file, source) {
     || (node.type === 'CallExpression' && GUARDS.has(memberPath(node.callee)?.join('.')));
   const flagName = node => node.type === 'Identifier' ? node.name
     : node.type === 'MemberExpression' && !node.computed ? flagName(node.object) : node.type === 'ChainExpression' ? flagName(node.expression) : undefined;
+  const branchOf = (node, kind, tested) => ({ line: source.slice(0, node.range[0]).split('\n').length, kind,
+    test: source.slice(tested.range[0], tested.range[1]).replace(/\s+/g, ' '),
+    operands: (kind === '??' ? [tested] : operands(tested)).map(operand => ({ calls: calledNames(operand), flag: flagName(operand), neutral: kind !== '??' && neutral(operand),
+      compared: operand.type === 'BinaryExpression' && ['===', '!==', '<', '>', '<=', '>='].includes(operand.operator)
+        ? (operand.right.type === 'Literal' ? flagName(operand.left) : operand.left.type === 'Literal' ? flagName(operand.right) : undefined) : undefined })) });
   function walk(node, parent, parents = [], provedParent = false, owner = undefined) {
     let next = parents;
     let proved = provedParent;
-    if (owner && (node.type === 'IfStatement' || node.type === 'ConditionalExpression') && node.test?.range) {
-      owner.branches.push({ line: source.slice(0, node.range[0]).split('\n').length,
-        test: source.slice(node.test.range[0], node.test.range[1]).replace(/\s+/g, ' '),
-        operands: operands(node.test).map(operand => ({ calls: calledNames(operand), flag: flagName(operand), neutral: neutral(operand),
-          compared: operand.type === 'BinaryExpression' && ['===', '!==', '<', '>', '<=', '>='].includes(operand.operator)
-            ? (operand.right.type === 'Literal' ? flagName(operand.left) : operand.left.type === 'Literal' ? flagName(operand.right) : undefined) : undefined })) });
+    // A predicate handed to a list method (`items.filter(i => i.state === "open")`): which items a count or list holds.
+    const predicate = functions.has(node.type) && node.body?.type !== 'BlockStatement' && parent?.type === 'CallExpression'
+      && parent.arguments?.[0] === node && parent.callee?.type === 'MemberExpression'
+      && ['filter', 'find', 'findIndex', 'findLast', 'some', 'every'].includes(parent.callee.property?.name)
+      && ['BinaryExpression', 'LogicalExpression', 'UnaryExpression', 'CallExpression'].includes(node.body?.type) ? node.body : undefined;
+    // The tested expression of each choice: an `if` or conditional test, a `switch` discriminant, the left side of a
+    // `??` (what shows when it is absent), and an `&&` or `||` used as a value rather than as a test (`ok && h.div(...)`).
+    const tested = predicate ?? ((node.type === 'IfStatement' || node.type === 'ConditionalExpression') ? node.test
+      : node.type === 'SwitchStatement' ? node.discriminant
+      : node.type === 'LogicalExpression' && node.operator === '??' ? node.left
+      : node.type === 'LogicalExpression' && !['LogicalExpression', 'UnaryExpression', 'IfStatement'].includes(parent?.type) && !(parent?.type === 'ConditionalExpression' && parent.test === node) ? node
+      : undefined);
+    const kind = node.type === 'SwitchStatement' ? 'switch' : node.type === 'LogicalExpression' ? node.operator : predicate ? parent.callee.property.name : 'if';
+    if (owner && tested?.range && !predicate) {
+      owner.branches.push(branchOf(node, kind, tested));
     }
     if (owner && node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && node.init) {
       owner.bindings.push({ name: node.id.name, calls: calledNames(node.init) });
@@ -581,6 +595,7 @@ function inventorySource(file, source) {
       Object.defineProperty(owner, 'delegate', { value: only?.type === 'CallExpression' && only.callee?.type === 'Identifier' ? only.callee.name : undefined, enumerable: false });
       rows.push(owner);
       next = [...parents, name];
+      if (predicate) owner.branches.push(branchOf(node, kind, predicate));
     }
     for (const child of children(node)) walk(child, node, next, proved, owner);
   }

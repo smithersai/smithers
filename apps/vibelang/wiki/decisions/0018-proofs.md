@@ -7336,6 +7336,139 @@ The open-candidate count by batch: 150 after batch 46 (counting operands as the 
 87 after batch 49, 0 after batch 50. Unreviewed records: 357 after landing batch 50 (three conditions main rewrote
 received reasons), 283 after batch 51, 141 after batch 52 (none in `worker/`), 0 after batch 53.
 
+## Decisions in views (vl-proveall3, 2026-11-14)
+
+Will asked that all functionality be formally verified. The worker audit ("Decisions in shell rows") left `src/web` out:
+the views decide which actions a role sees or may press, what is enabled, which state (error, empty, loading) shows, and
+what a count or label says. This section audits every such branch and records each one's proof or reason.
+
+### The rule
+
+`verify/branches.cjs` now covers `src/web`. In a `src/web` row that no proof covers, a branch is an `if` or conditional
+test (as elsewhere), and also a `switch` discriminant, the left side of a `??` (what shows when it is absent), an `&&` or
+`||` used as a value rather than a test (`ok && h.div(...)`, `h.Disabled(busy || retrying)`), and the predicate handed to
+`filter`, `find`, `findIndex`, `some` or `every` (which items a list or count holds). Its operands follow the existing
+rule: an operand that calls a proved function, reads a flag bound to one, or is a presence, variant or host type test
+decides nothing of its own. The record names a non-`if` branch by its kind before the tested text (`?? model.wikiQuery`).
+Outside `src/web` only `if` and conditional tests count, unchanged; the same sites there (`??`, `switch`, value logic)
+number 242 on main `d5e5279e` and are follow-up, not refused. Not counted anywhere: a comparison passed straight as a
+value (`h.AriaSelected(index === highlight)`); the one such site that enables a control, the tour's Back button
+(`step === 1`), was found by reading and is listed below.
+
+### The count on main `d5e5279e`
+
+485 branches in `src/web`: 281 if/ternary, 111 ??, 21 find, 20 ||, 18 filter, 18 &&, 10 some, 5 switch, 1 findIndex.
+133 are decisions (`Open:` in the record), plus the Back button; 352 decide nothing:
+
+| Reason | Branches |
+| --- | --- |
+| Default | 81 |
+| Lookup | 44 |
+| Forwards | 42 |
+| Host boundary | 38 |
+| Markup | 35 |
+| Markdown parsing | 28 |
+| Startup flags | 21 |
+| Empty text | 20 |
+| Presence | 8 |
+| Empty list | 8 |
+| Result | 7 |
+| Mock mode (VL-13) | 6 |
+| Translation | 6 |
+| Commands | 5 |
+| Zero | 2 |
+| Search | 1 |
+
+Each reason's full text is in `verify/shell-branches.tsv`, one line per branch.
+
+### The decisions, by kind
+
+Proved in this order: role and permission gating and enablement, then state, then labels and counts. A row leaves this
+table when its branch calls a proved function; the batch that proves it says so.
+
+| Kind | Decision | Sites (`src/web/`) |
+| --- | --- | --- |
+| gate | only a grant to the signed-in person changes the page's role | historyStartup.vibe:72 |
+| gate | the mode switch shows once the mode is known | historyView.vibe:70, roleView.vibe:17 |
+| gate | the roles table: Promote by the role policy, the rest by issue permission | issuesView.vibe:128 |
+| gate | New issue or Propose shows only when connected and permitted | issuesView.vibe:142 |
+| gate | an open issues dialog closes when the new role may not use it | main.vibe:590 |
+| gate | viewer is never an assignable role | roleView.vibe:62 |
+| gate | with no sandbox answer the pane acts for a viewer | sandboxView.vibe:20 |
+| gate | Stop shows only while a sandbox runs | sandboxView.vibe:31 |
+| gate | during the tour the docs pane hides its toggle and its frame is inert | view.vibe:187, view.vibe:192, view.vibe:193 |
+| enable | issue controls lock while busy or while a failed request waits for Retry | issuesView.vibe:185, issuesView.vibe:201, issuesView.vibe:210, issuesView.vibe:218, issuesView.vibe:220 |
+| enable | the terminal takes input only while running and idle | sandboxView.vibe:49 |
+| enable | the wiki editor locks while busy or while a submission waits | wikiView.vibe:54, wikiView.vibe:57 |
+| enable | the tour's Back is disabled on the first stop | view.vibe:155 (not a branch: `step === 1` passed to the button) |
+| state | an action with no runs says No runs yet | actionView.vibe:30 |
+| state | any disconnected run shows Reconnect | actionView.vibe:73 |
+| state | two reads are the same read (sameRead): kind, id and offset | historyApp.vibe:224 |
+| state | a result clears only its own read's failure (sameRead) | historyApp.vibe:228 |
+| state | Show more reads from the commits already shown | historyApp.vibe:294 |
+| state | a write that names no commit leaves the address | historyApp.vibe:329 |
+| state | Escape closes the plan only while it is open | historyApp.vibe:339 |
+| state | a failed read of the shown commit fails the commit page | historyView.vibe:48 |
+| state | matches are busy until they arrive or their read fails | historyView.vibe:136 |
+| state | an epic's failed reads show in its list | historyView.vibe:156 |
+| state | an epic's list is busy until it arrives or its read fails | historyView.vibe:158 |
+| state | which failed reads the page shows (outline, shown commit, current search) | historyView.vibe:217, historyView.vibe:222 |
+| state | Back from the list closes the issues; from a page it opens the list | issuesView.vibe:73 |
+| state | GitHub connection: yes, no or unknown | issuesView.vibe:98 |
+| state | the list's error banner hides when empty or when the list itself failed | issuesView.vibe:143 |
+| state | the list shows issues in the chosen state that match the search | issuesView.vibe:137 |
+| state | the Tree card shows for a non-VIP with a parent or children | issuesView.vibe:173 |
+| state | Enter continues from the VIP title | issuesView.vibe:192 |
+| state | the dialog's body by kind: assignee, split or link | issuesView.vibe:218 |
+| state | Enter commits in the assignee picker | issuesView.vibe:218 |
+| state | an assignee choice with a blank name is not offered | issuesView.vibe:218 |
+| state | the account changed: a different person after a known one | main.vibe:590 |
+| state | an issues dialog is open | main.vibe:590 |
+| state | a detail screen with a selected issue loads its card | main.vibe:404 |
+| state | a late tour success ends a tour no longer shown | main.vibe:444 |
+| state | an action follow answer applies only to the current epoch, generation and runs | main.vibe:522, main.vibe:523 |
+| state | a slash pick of mode/ switches mode, else launches the action | main.vibe:532 |
+| state | Retry acts only on a waiting post | main.vibe:538 |
+| state | Learn more closes an open palette first | main.vibe:687 |
+| state | a failed tour end resumes only an active tour at a real stop | main.vibe:759 |
+| state | what a submitted draft is: a mode switch, sandbox, slash command or post | main.vibe:789 |
+| state | an action's input: blank JSON is an empty object, text is text | main.vibe:998 |
+| state | the actions clock ticks while a connected run is queued or running | main.vibe:1094 |
+| state | which links open in place: wiki pages and wiki drafts | main.vibe:1118, main.vibe:1128 |
+| state | which paths are wiki locations | main.vibe:1136 |
+| state | the sandbox polls while the chat shows and no request is in flight | main.vibe:1217, main.vibe:1218 |
+| state | issues load ahead while the chat shows a known mode | main.vibe:1236 |
+| state | tour keys: Command-K, Tab, Space, arrows | main.vibe:1278, main.vibe:1279 |
+| state | which live issue writes rewrite the address for resume | main.vibe:1446, main.vibe:1454, main.vibe:1458 |
+| state | the start body shows only while no sandbox runs | sandboxView.vibe:36 |
+| state | New sandbox before a sandbox exists, Start after | sandboxView.vibe:41, sandboxView.vibe:43 |
+| state | Wiki is the current nav link while the chat shows a wiki page | view.vibe:69 |
+| state | a failed event stream shows Reconnect | view.vibe:225 |
+| state | an agent entry that links a known issue shows its card | view.vibe:252 |
+| state | Retry reopens the requested page, else the index | wikiView.vibe:71 |
+| label | a refused action's wording per flow (resultText) | actionModel.vibe:35, actionModel.vibe:36 |
+| label | a bootstrap note names no author | historyView.vibe:276 |
+| label | an issue card's badge: open leaf, closed leaf, or its children count | issuesView.vibe:61, issuesView.vibe:62 |
+| label | a blank card link reads Open #n | issuesView.vibe:64 |
+| label | Propose a VIP or New issue by the list's kind | issuesView.vibe:139, issuesView.vibe:142 |
+| label | the state filters read Open and Closed | issuesView.vibe:145 |
+| label | an issue row's meta: parent, children, assignee | issuesView.vibe:151 |
+| label | an issue's state reads Open or Closed | issuesView.vibe:170 |
+| label | an unassigned issue says No one | issuesView.vibe:188 |
+| label | the agent's comments carry the agent badge | issuesView.vibe:184 |
+| label | the form's title and back link by VIP or issue | issuesView.vibe:198, issuesView.vibe:199, issuesView.vibe:201 |
+| label | an issue failure's wording: connect, fork, install | main.vibe:416 |
+| label | the sandbox minute notice: out, low, clear, keep | main.vibe:1346 |
+| label | the signed-in person's row says you | roleView.vibe:58 |
+| label | a running sandbox's bar names it | sandboxView.vibe:28 |
+| label | a running sandbox's minutes say left | sandboxView.vibe:30 |
+| label | the sandbox Sign in button says Signing in while pending | sandboxView.vibe:35 |
+| label | a role with no minutes shows a dash | sandboxView.vibe:56 |
+| label | the tour's Play or Pause and Sound on or off follow its state | view.vibe:156, view.vibe:158 |
+| label | a person's own post is labeled You | view.vibe:256 |
+| count | the Open and Closed filters count their issues | issuesView.vibe:145 |
+| count | the Issues button counts open issues | view.vibe:212 |
+
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 
 Five shells compared `Number(content-length)` with a literal: accounts 2,048 bytes (sign-in and roles), issues 32 KiB,
