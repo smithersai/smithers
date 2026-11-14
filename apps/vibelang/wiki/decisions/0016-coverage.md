@@ -646,6 +646,98 @@ tests' `makeIssueFactory()` default; the page's `MockFactory` always passes the 
 `StoreUnavailable`, and the page never reuses an issue key with a changed request (`ExecutionIdentityConflict`). Both
 stay, unit-tested, no browser input (session 11).
 
+### `src/core` in the browser gate after session 12 (`s12full1`, 2026-11-14)
+
+`pnpm e2e:coverage` with `--writes` on main `0f4888ed`: 848 passed, 12 skipped, 1 failed (`core-export-longtask`
+light, 204 ms against 200; below), 39.8 min. Open `src/core` arms: 358 (`s10full1`) → 342 of 1,755 in 49 files, 10
+fully covered. Method: `s10/table.js` (Istanbul branch arms; a line counts once any statement starting on it ran).
+
+| File | Open arms | Arms | Statements | Functions | Lines |
+| --- | --- | --- | --- | --- | --- |
+| `src/core/conversation.vibe` | 32 | 375 | 293/316 | 72/74 | 227/233 |
+| `src/core/WikiFactory.vibe` | 25 | 66 | 68/81 | 18/19 | 56/64 |
+| `src/core/decide.vibe` | 24 | 97 | 59/84 | 3/3 | 52/55 |
+| `src/core/issueGraphDecision.vibe` | 24 | 57 | 39/64 | 9/24 | 26/46 |
+| `src/core/flowDecision.vibe` | 22 | 48 | 23/35 | 14/15 | 22/28 |
+| `src/core/MockFactory.vibe` | 18 | 138 | 339/364 | 87/91 | 277/294 |
+| `src/core/issueFixtureDecision.vibe` | 17 | 68 | 30/43 | 9/12 | 26/29 |
+| `src/core/sandboxDecision.vibe` | 17 | 72 | 58/71 | 19/20 | 50/52 |
+| `src/core/sandboxHost.vibe` | 17 | 119 | 211/237 | 31/32 | 182/198 |
+| `src/core/specification.vibe` | 16 | 40 | 39/43 | 6/6 | 34/34 |
+| `src/core/sandboxHostDecision.vibe` | 13 | 107 | 61/70 | 32/32 | 51/51 |
+| `src/core/wikiLinkDecision.vibe` | 11 | 26 | 17/20 | 7/8 | 14/15 |
+| `src/core/wikiPageDecision.vibe` | 11 | 50 | 44/51 | 12/12 | 31/32 |
+| `src/core/IssuesFactory.vibe` | 10 | 70 | 71/78 | 12/12 | 63/66 |
+| `src/core/MockAccounts.vibe` | 9 | 30 | 95/110 | 23/26 | 80/86 |
+| `src/core/flows.vibe` | 8 | 54 | 193/197 | 71/72 | 187/190 |
+| `src/core/liveAnswerDecision.vibe` | 8 | 12 | 4/8 | 3/4 | 4/6 |
+| `src/core/replayDecision.vibe` | 8 | 10 | 10/13 | 2/5 | 9/12 |
+| `src/core/sandboxMock.vibe` | 7 | 53 | 76/79 | 23/23 | 47/49 |
+| `src/core/specificationDecision.vibe` | 7 | 27 | 9/11 | 5/5 | 8/8 |
+| `src/core/LiveAccounts.vibe` | 6 | 10 | 21/37 | 6/13 | 19/31 |
+| `src/core/mockFactoryDecision.vibe` | 5 | 30 | 27/28 | 11/12 | 21/22 |
+| `src/core/sandboxMeter.vibe` | 5 | 36 | 39/44 | 7/7 | 37/37 |
+| `src/core/LiveWiki.vibe` | 4 | 4 | 5/26 | 1/11 | 5/18 |
+| `src/core/tourDecision.vibe` | 3 | 10 | 5/7 | 3/3 | 5/5 |
+| `src/core/wikiIndex.vibe` | 3 | 15 | 18/21 | 5/5 | 14/17 |
+| `src/core/wikiLinks.vibe` | 3 | 8 | 8/9 | 1/1 | 8/8 |
+| `src/core/wiki.vibe` | 2 | 4 | 3/3 | 1/1 | 3/3 |
+| `src/core/followDecision.vibe` | 1 | 2 | 2/2 | 2/2 | 2/2 |
+| `src/core/LiveFactory.vibe` | 1 | 24 | 75/95 | 15/19 | 66/85 |
+| `src/core/LiveIssues.vibe` | 1 | 6 | 15/19 | 4/8 | 12/12 |
+| `src/core/mockReplies.vibe` | 1 | 4 | 18/19 | 5/6 | 17/17 |
+| `src/core/sandboxMockDecision.vibe` | 1 | 14 | 12/12 | 2/2 | 7/7 |
+| `src/core/walkthroughSteps.vibe` | 1 | 2 | 3/3 | 1/1 | 3/3 |
+| `src/core/wire.vibe` | 1 | 2 | 12/18 | 1/1 | 12/17 |
+| `src/core/clientProtocolDecision.vibe` | 0 | 10 | 7/7 | 5/5 | 6/6 |
+| `src/core/Factory.vibe` | 0 | 0 | 7/7 | 0/0 | 5/5 |
+| `src/core/flowPolicyDecision.vibe` | 0 | 13 | 10/10 | 10/10 | 10/10 |
+| `src/core/identityDecision.vibe` | 0 | 4 | 3/3 | 1/1 | 2/2 |
+| `src/core/issueFlows.vibe` | 0 | 12 | 35/38 | 10/11 | 30/33 |
+| `src/core/issueSchemas.vibe` | 0 | 0 | 14/15 | 1/2 | 13/14 |
+| `src/core/mockDecision.vibe` | 0 | 6 | 19/19 | 4/4 | 17/17 |
+| `src/core/MockJournal.vibe` | 0 | 0 | 5/5 | 3/3 | 2/2 |
+| `src/core/roles.vibe` | 0 | 1 | 13/13 | 1/1 | 11/11 |
+| `src/core/sandboxPolicy.vibe` | 0 | 0 | 2/5 | 0/3 | 2/3 |
+| `src/core/schemas.vibe` | 0 | 0 | 24/24 | 0/0 | 24/24 |
+| `src/core/wikiDecision.vibe` | 0 | 3 | 1/1 | 1/1 | 1/1 |
+| `src/core/wikiFlows.vibe` | 0 | 16 | 37/40 | 10/11 | 32/35 |
+| `src/core/wikiSchemas.vibe` | 0 | 0 | 6/6 | 0/0 | 5/5 |
+
+Reached after this run (vl-coverage-core, session 12; focused run `s12e2e3`, 108 passed):
+
+| Arm | How |
+| --- | --- |
+| `sandboxDecision.vibe:325` `meterDelay`'s `due` (the allowance ends before the next interval) | Fault `sandbox-last-minute` moves the meter's clock, once the sandbox starts, to 30 seconds before the allowance runs out; the next read re-arms the meter for those seconds. `e2e/core-sandbox-minute.spec.ts`. |
+| `issueFixtureDecision.vibe:27` `fixtureFailure`'s `title` | The agent asked `File an issue:` with no title files nothing and says "No issue filed." `e2e/core-agent-requests.spec.ts`. |
+
+Kept, with the reason no page input reaches them:
+
+| Arm | Why |
+| --- | --- |
+| `issueFixtureDecision.vibe:32` (`comment` with blank text) | The page no longer sends a blank comment: `issueDecision.vibe` `issueAction` ignores Comment while the box is blank (session 12's fix; before, the host refused it and the page showed "Couldn't save. Retry."). The agent surfaces still can (`src/surfaces/commands.vibe` `Issue`), so the host keeps its own check; `test/issueFixtureDecision.test.vibe` covers it. |
+| `sandboxDecision.vibe:324` (`ceiling < 1`) | `meterDelay` runs only when `arm` meters a running sandbox with no operation pending. `sandboxHost.vibe` `metered`, which every arming path follows, gives each running sandbox a pending stop when no minutes are left and completes it, so at zero minutes `arm` either retries a pending stop or finds nothing running. |
+| `sandboxDecision.vibe:38`, `:39` (`runningCountPrefix`) and `conversation.vibe:943` (`pendingCount`) | Specification only: they state `runningCount`'s and the pending list's contracts and nothing calls them at run time (`~/vl/vibelang-bugs/spec-only-function/`, still open in VibeLang). |
+
+### The Export journey counts turns, not milliseconds (vl-coverage-core, session 12, 2026-11-14)
+
+`e2e/core-export-longtask.spec.ts` failed once in `s12full1`: its longest task was 204 ms against a 200 ms budget
+(light). Under `--repeat-each 6 --workers 3` the longest task was 153 to 223 ms at `EXPORT_CHUNK` 500 and 102 to 206
+ms at 250 (`s12lt1`), so the chunk size is not the cause; on a second page the coverage fixture does not instrument it
+was still 92 to 327 ms (`s12lt3`, 5 of 12 failed), so instrumentation is not either. A task's length on a shared box
+measures the box. The journey now counts the page's turns during the Export with a timer that re-arms itself, which
+runs only between tasks: 88 to 183 with the Export's turns (3 workers, all projects) and 150 alone; 20 to 24 with
+`EXPORT_CHUNK` set past the history's length, which removes them (`s12lt4`). It requires 50. The unloaded durations
+stay recorded in session 11 (`s11lt7`: 55, 72, 54 ms).
+
+### The live post-limit journey (vl-coverage-core, session 12, 2026-11-14)
+
+`e2e/core-live.spec.ts`'s post-limit journey ran about 30 s on phone against its 30 s limit (vl-coverage's gate: 2
+of 4, then 3 of 4). Step timings (`s12probe1`, phone, 3 workers): every wait on page state took under 1.5 s; the
+full-page screenshot of 88,000 characters of posts took 14 s on phone and 3.5 to 4 s on desktop. It is now two
+journeys (the sequencer's 409 and the next message sent; two 413s and a retry that fails again), each with a viewport
+screenshot: 24/24 under `--repeat-each 4 --workers 3`, phone 7.4 to 14.5 s (`s12live1`, `628357df`).
+
 ### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
 
 **History fallbacks.** Five `historyView.vibe` fallbacks are for data the history never holds. The proved `decide`

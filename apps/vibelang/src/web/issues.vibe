@@ -63,6 +63,7 @@ function issueFacts(ui: IssuesUi, action: string, value: string): IssueDecision.
     blankSummary: ui.summary.trim() === "",
     blankExample: ui.example.trim() === "",
     blankPrior: ui.prior.trim() === "",
+    blankComment: ui.comment.trim() === "",
   }
 }
 function issueRequestFor(ui: IssuesUi, action: string, value: string, serial: number): IssueRequest {

@@ -42,6 +42,7 @@ export interface IssueFacts {
   readonly blankSummary: boolean
   readonly blankExample: boolean
   readonly blankPrior: boolean
+  readonly blankComment: boolean
 }
 export interface IssueStep { readonly state: IssueScreen; readonly request: IssueRequestPlan; readonly focusCommit: boolean }
 export interface IssueResponse { readonly state: IssueScreen; readonly clearRetry: boolean; readonly closeDialog: boolean }
@@ -136,9 +137,10 @@ export function issueStepError(step: number, blankTitle: boolean, blankSummary: 
 //@ ensures issueIsOperation(action) && (state.busy || !f.allowed) ==> \result == { state: state, request: "idle", focusCommit: false }
 //@ ensures issueIsOperation(action) && !state.busy && f.allowed && (action == "new" || action == "split") && f.blankTitle ==> \result == { state: { ...state, error: "Add a title." }, request: "none", focusCommit: false }
 //@ ensures issueIsOperation(action) && !state.busy && f.allowed && action == "propose" && f.blankTitle ==> \result == { state: { ...state, error: "Name the feature." }, request: "none", focusCommit: false }
+//@ ensures issueIsOperation(action) && !state.busy && f.allowed && f.retryOp != action && action == "comment" && f.blankComment ==> \result == { state: state, request: "idle", focusCommit: false }
 //@ ensures issueIsOperation(action) && !state.busy && f.allowed && !((action == "new" || action == "split" || action == "propose") && f.blankTitle) && f.retryOp == action ==> \result == { state: { ...state, busy: true, error: "" }, request: "saved", focusCommit: false }
-//@ ensures issueIsOperation(action) && !state.busy && f.allowed && !((action == "new" || action == "split" || action == "propose") && f.blankTitle) && f.retryOp != "" && f.retryOp != action && issueOpRemembered(action) ==> \result == { state: { ...state, error: "Retry the saved action." }, request: "none", focusCommit: false }
-//@ ensures issueIsOperation(action) && !state.busy && f.allowed && !((action == "new" || action == "split" || action == "propose") && f.blankTitle) && f.retryOp == "" && issueOpRemembered(action) ==> \result == { state: { ...state, busy: true, serial: state.serial + 1, error: "" }, request: "fresh", focusCommit: false }
+//@ ensures issueIsOperation(action) && !state.busy && f.allowed && !((action == "new" || action == "split" || action == "propose") && f.blankTitle) && !(action == "comment" && f.blankComment) && f.retryOp != "" && f.retryOp != action && issueOpRemembered(action) ==> \result == { state: { ...state, error: "Retry the saved action." }, request: "none", focusCommit: false }
+//@ ensures issueIsOperation(action) && !state.busy && f.allowed && !((action == "new" || action == "split" || action == "propose") && f.blankTitle) && !(action == "comment" && f.blankComment) && f.retryOp == "" && issueOpRemembered(action) ==> \result == { state: { ...state, busy: true, serial: state.serial + 1, error: "" }, request: "fresh", focusCommit: false }
 //@ ensures issueIsOperation(action) && !state.busy && f.allowed && f.retryOp != action && !issueOpRemembered(action) ==> \result == { state: { ...state, busy: true, serial: state.serial + 1, error: "" }, request: "transient", focusCommit: false }
 //@ ensures !issueKnownAction(action) ==> \result == { state: state, request: "idle", focusCommit: false }
 export function issueAction(state: IssueScreen, action: string, value: string, f: IssueFacts): IssueStep {
@@ -190,6 +192,8 @@ export function issueAction(state: IssueScreen, action: string, value: string, f
   if ((action === "new" || action === "split") && f.blankTitle) return { state: { ...state, error: "Add a title." }, request: "none", focusCommit: false }
   if (action === "propose" && f.blankTitle) return { state: { ...state, error: "Name the feature." }, request: "none", focusCommit: false }
   if (f.retryOp === action) return { state: { ...state, busy: true, error: "" }, request: "saved", focusCommit: false }
+  // A blank comment sends nothing, as a blank chat draft does; a saved comment is resent above whatever the box holds.
+  if (action === "comment" && f.blankComment) return idle
   if (f.retryOp !== "" && issueOpRemembered(action)) return blocked
   return { state: { ...state, busy: true, serial: state.serial + 1, error: "" }, request: issueOpRemembered(action) ? "fresh" : "transient", focusCommit: false }
 }

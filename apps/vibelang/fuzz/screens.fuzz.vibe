@@ -48,7 +48,7 @@ it.live("screens/issues-update-sequences", () => run("screens/issues-update-sequ
 }, undefined, { codec: issuesCorpusCodec(Sequence) }))
 
 it.live("screens/issues-requests-decode", () => run("screens/issues-requests-decode", Schema.Struct({ parent: Schema.Union([Text, Schema.Literals(["", "0", " 7 ", "1.5", "-1", "1e3", "NaN", "9007199254740993"])]), title: Text, action: Schema.Literals(["new", "comment", "link", "split", "commit", "propose", "read"]) }), ({ parent, title, action }) => {
-  const ui: IssuesUi = { ...initialIssues, role: "maintainer", keyPrefix: "k", serial: 1, selected: 1, parent, title: `title ${title.toWellFormed()}` }
+  const ui: IssuesUi = { ...initialIssues, role: "maintainer", keyPrefix: "k", serial: 1, selected: 1, parent, title: `title ${title.toWellFormed()}`, comment: `comment ${title.toWellFormed()}` }
   const result = issuesUpdate(ui, action, "")
   // JSON carries NaN as null, which the Worker refuses; the request must survive the wire it is sent over.
   return result.request !== undefined && Schema.decodeUnknownExit(Schema.fromJsonString(IssueRequest))(JSON.stringify(result.request))._tag === "Success"

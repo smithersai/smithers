@@ -543,7 +543,7 @@ it.live("web/sandbox-minutes", () => run("web/sandbox-minutes", MinuteAnswers, (
     if (out && !(notice.startsWith("Out of minutes") && notice.includes(snapshot.id))) throw new Finding({ report: "a sandbox stopped out of minutes did not say so" })
     const low = !out && snapshot.remaining > 0 && snapshot.remaining <= 10
     if (low && !lows.has(snapshot.resetAt)) {
-      if (notice !== `${snapshot.remaining} minutes left`) throw new Finding({ report: "minutes ran low and no notice said how many were left" })
+      if (notice !== (snapshot.remaining === 1 ? "1 minute left" : `${snapshot.remaining} minutes left`)) throw new Finding({ report: "minutes ran low and no notice said how many were left" })
       lows.add(snapshot.resetAt)
     } else if (!out && notice !== "" && notice !== (before.minuteNotice ?? "")) throw new Finding({ report: "a minutes notice appeared without minutes newly running low" })
     if (!out && snapshot.remaining > 10 && before.sandbox !== undefined && before.sandbox.resetAt !== snapshot.resetAt && notice !== "") throw new Finding({ report: "a new month with minutes to spare kept the notice" })

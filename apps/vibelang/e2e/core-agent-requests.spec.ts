@@ -1,7 +1,7 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
 // What the scripted agent (src/core/MockFactory.vibe) does with a request, by the asker's role: a contributor's sandbox
 // starts; a new person's sandbox, specification review and wiki draft are each refused in words; a signed-out
-// visitor's issue and split requests file nothing.
+// visitor's issue and split requests file nothing; an issue request with no title files nothing.
 import { expect, test } from "./coverage"
 import type { Page } from "./coverage"
 
@@ -40,4 +40,13 @@ test("a visitor's issue and split requests file nothing, and say so", async ({ p
   await page.getByRole("button", { name: "Ask the agent", exact: true }).click()
   await expect(await ask(page, "File an issue: Preserve named tuple labels", 1)).toContainText("No issue filed.")
   await expect(await ask(page, "Split #38 into three children, linked under it.", 2)).toContainText("Filed 0 children.")
+})
+
+test("an issue request with no title files nothing, and says so", async ({ page }) => {
+  await page.goto("/?agent=mock")
+  await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+  await expect(page.locator(".vl-nav-role")).toHaveText("Maintainer")
+  await page.getByRole("button", { name: "Ask the agent", exact: true }).click()
+  await expect(await ask(page, "File an issue:   ", 1)).toContainText("No issue filed.")
+  await expect(page.getByRole("button", { name: "Open issue", exact: true })).toHaveCount(0)
 })

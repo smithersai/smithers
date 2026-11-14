@@ -39,6 +39,11 @@ it("warns once, then shows a stop at zero; a new month clears the old notice", (
     Subscription.emit(Message.LoadedSandbox({ conversation: "home", request: 0, snapshot: { ...snapshot, id: "sturdy-goggles", resetAt: 200 } })), expect(role("status", { name: "Sandbox minutes" })).toBeAbsent())
 })
 
+it("counts one minute left in the singular", () => {
+  scene({ update, view }, given({ ...chat, sandboxPane: "pane", sandbox: { ...snapshot, id: "sturdy-goggles", status: "running" } }),
+    Subscription.emit(Message.LoadedSandbox({ conversation: "home", request: 0, snapshot: { ...snapshot, id: "sturdy-goggles", status: "running", remaining: 1 } })), expect(role("status", { name: "Sandbox minutes" })).toHaveText("1 minute left"))
+})
+
 it("keeps Stop available while a command is unresolved", () => {
   scene({ update, view }, given({ ...chat, sandboxPane: "pane", sandboxBusy: true, sandboxOperation: "command", sandboxRequest: 2, sandbox: { ...snapshot, id: "sturdy-goggles", generation: 1, status: "running" } }),
     click(role("button", { name: "Stop" })),

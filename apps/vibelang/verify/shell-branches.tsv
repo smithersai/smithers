@@ -429,6 +429,7 @@ src/web/historyView.vibe	view/callback	find each.id === model.hash	Lookup: finds
 src/web/issues.vibe	issueFacts	?? ui.data.specification?.text	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/issues.vibe	issueFacts	?? ui.retry?.op	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/issues.vibe	issueFacts	?? ui.retry?.reviewer	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/web/issues.vibe	issueFacts	value ui.comment.trim() === ""	Observation: one comparison stored as a named fact (a `const` or a facts object field) that a proved function reads and decides on (batch 70)
 src/web/issues.vibe	issueFacts	value ui.example.trim() === ""	Observation: one comparison stored as a named fact (a `const` or a facts object field) that a proved function reads and decides on (batch 70)
 src/web/issues.vibe	issueFacts	value ui.prior.trim() === ""	Observation: one comparison stored as a named fact (a `const` or a facts object field) that a proved function reads and decides on (batch 70)
 src/web/issues.vibe	issueFacts	value ui.summary.trim() === ""	Observation: one comparison stored as a named fact (a `const` or a facts object field) that a proved function reads and decides on (batch 70)

@@ -11,7 +11,7 @@ import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
 import { faultyMachines, machineFault, type MachineFault } from "./faultyMachines.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-clock-read" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | "held-tour" | "held-tour-step" | MachineFault
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-last-minute" | "sandbox-clock" | "sandbox-clock-read" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | "held-tour" | "held-tour-step" | MachineFault
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -83,8 +83,9 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
 /**
  * Lose #3 once, or break before #4 mid-reply. Subsequent subscriptions use the unmodified real stream. `sandbox-read`
  * fails every sandbox read; `sandbox-start` fails the first start; each `machine-*` fault fails the mock sandbox's
- * machine once (faultyMachines.vibe); `sandbox-low` and `sandbox-out` move the sandbox
- * meter's clock, once the first sandbox starts, to five minutes before the allowance runs out or a minute past it;
+ * machine once (faultyMachines.vibe); `sandbox-low`, `sandbox-last-minute` and `sandbox-out` move the sandbox
+ * meter's clock, once the first sandbox starts, to five minutes or 30 seconds before the allowance runs out, or a
+ * minute past it;
  * `sandbox-replay` is a transport that loses the answers to the first sandbox start and the first command and sends each
  * again with its operation id, then reuses the first command's id for the second command, as a client with a stale id
  * does: the writer answers a resend from its receipt and refuses a different request under a used id.
@@ -142,7 +143,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     // The sandbox meter's faulty clock: the wall clock plus `skew`. It starts on the 15th of this month (UTC), so the
     // jump when the first sandbox starts, at most a contributor's 600 minutes, never crosses into the next month.
     const wall = try Clock.Clock
-    const skewed = fault === "sandbox-low" || fault === "sandbox-out" || fault === "machine-command-exhausted"
+    const skewed = fault === "sandbox-low" || fault === "sandbox-last-minute" || fault === "sandbox-out" || fault === "machine-command-exhausted"
     const clockFault = fault === "sandbox-clock" || fault === "sandbox-clock-read" || fault === "machine-stop-clock"
     let broken = false
     const built = new Date(wall.currentTimeMillisUnsafe())
@@ -273,7 +274,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         if (fault === "machine-command-exhausted") remaining = started.remaining
         if (skewed && !jumped && fault !== "machine-command-exhausted") {
           jumped = true
-          skew += (fault === "sandbox-low" ? started.remaining - 5 : started.remaining + 1) * 60_000
+          skew += fault === "sandbox-last-minute" ? started.remaining * 60_000 - 30_000 : (fault === "sandbox-low" ? started.remaining - 5 : started.remaining + 1) * 60_000
           skewNanos = try Effect.orDie(Effect.try(() => BigInt(skew) * 1_000_000n))
           try Effect.logInfo("vibelang.e2e.sandbox-clock").pipe(Effect.annotateLogs({ fault }))
         }

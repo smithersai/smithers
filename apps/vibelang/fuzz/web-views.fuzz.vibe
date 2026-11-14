@@ -8,7 +8,7 @@ import type { SandboxSnapshot } from "../src/core/Factory.vibe"
 import type { Registered, Run, Step } from "../src/actions/Actions.vibe"
 import { type ActionView, initial as actionsInitial } from "../src/web/actionModel.vibe"
 import { actionTitle, stepKey } from "../src/web/actionViewDecision.vibe"
-import { issueAction, issueAssigneeAfter, issueFailureText, issueKnownAction, issueRecoveredView, issueStepError, type IssueFacts, type IssueScreen } from "../src/web/issueDecision.vibe"
+import { issueAction, issueAssigneeAfter, issueDetailsFailed, issueFailureText, issueKnownAction, issueRecoveredView, issueStepError, type IssueFacts, type IssueScreen } from "../src/web/issueDecision.vibe"
 import { sandboxPaneView } from "../src/web/viewDecision.vibe"
 import { mayStart } from "../src/core/sandboxDecision.vibe"
 import { init, Message, Model, update } from "../src/web/main.vibe"
@@ -285,7 +285,7 @@ const KNOWN = [
 ] as const
 const REASONS = [["no-model", "Review unavailable"], ["forbidden", "Not allowed"], ["tree", "Choose another parent."], ["assignee", "Choose an assignee."], ["closed", "Issue closed."]] as const
 const SCREEN: IssueScreen = { open: true, screen: "detail", kind: "All", state: "open", query: "", selected: 1, dialog: "", status: "ready", busy: false, title: "T", summary: "S", example: "", prior: "", comment: "", parent: "", assignee: "", step: 1, error: "e", serial: 3 }
-const FACTS: IssueFacts = { retryOp: "", retryReviewer: "", retryAllowed: true, allowed: true, specText: "", number: 1, kind: "All", listState: "open", blankTitle: false, blankSummary: false, blankExample: false, blankPrior: false }
+const FACTS: IssueFacts = { retryOp: "", retryReviewer: "", retryAllowed: true, allowed: true, specText: "", number: 1, kind: "All", listState: "open", blankTitle: false, blankSummary: false, blankExample: false, blankPrior: false, blankComment: false }
 
 const IssueDecisionInput = Schema.Struct({ action: Text, reason: Text, reviewer: Schema.Literals(["astra", "sol", "fable", "opus"]), current: Text, agent: Text })
 
@@ -326,5 +326,14 @@ it.live("web/issue-decisions", () => run("web/issue-decisions", IssueDecisionInp
   }
   const unnamed = issueAction({ ...SCREEN, screen: "vip" }, "propose", "", { ...FACTS, blankTitle: true })
   if (unnamed.request !== "none" || unnamed.state.error !== "Name the feature.") throw new Finding({ report: "an unnamed VIP" })
+  // A comment load that failed says so and keeps the rest of the screen.
+  const unloaded = issueDetailsFailed({ ...SCREEN, comment: input.current })
+  if (unloaded.error !== "Couldn't load comments. Retry." || unloaded.comment !== input.current || unloaded.serial !== SCREEN.serial) throw new Finding({ report: "a failed comment load" })
+  // A blank comment sends nothing unless a saved comment is resent; a written one is a fresh request.
+  for (const retryOp of ["", "comment"]) for (const blankComment of [false, true]) {
+    const sent = issueAction(SCREEN, "comment", "", { ...FACTS, retryOp, blankComment })
+    const expected = retryOp === "comment" ? "saved" : blankComment ? "idle" : "fresh"
+    if (sent.request !== expected || (expected === "idle" && sent.state !== SCREEN)) throw new Finding({ report: `comment ${retryOp} ${blankComment}` })
+  }
   return true
 }))

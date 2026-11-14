@@ -17,7 +17,7 @@ const screen: IssueScreen = {
 }
 const facts: IssueFacts = {
   retryOp: "", retryReviewer: "", retryAllowed: false, allowed: true, specText: "", number: 7, kind: "Issues", listState: "open",
-  blankTitle: false, blankSummary: false, blankExample: false, blankPrior: false,
+  blankTitle: false, blankSummary: false, blankExample: false, blankPrior: false, blankComment: false,
 }
 const none: SpecificationReview = { verdict: "", grade: "", revision: 0, link: "" }
 const spec: Specification = { revision: 3, text: "spec", astra: none, sol: none, fable: none, opus: none }

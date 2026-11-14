@@ -114,6 +114,14 @@ describe("the issues screen", () => {
       expect(other.ui.error).toBe("Retry the saved action.")
       expect(other.request).toBeUndefined()
     })
+    it("a blank comment with nothing saved sends nothing and shows no error", () => {
+      for (const comment of ["", "   "]) {
+        const blank = issuesUpdate(ready({ comment }), "comment", "")
+        expect(blank.request).toBeUndefined()
+        expect(blank.ui).toMatchObject({ busy: false, error: "" })
+      }
+      expect(issuesUpdate(ready({ comment: "Sent." }), "comment", "").request).toMatchObject({ op: "comment", text: "Sent." })
+    })
     it("a specification revision names the revision it was written against", () => {
       const spec = { revision: 3, text: "x" } as NonNullable<IssuesUi["data"]["specification"]>
       expect(issuesUpdate(ready({ data: { seq: 1, items: [], specification: spec } }), "spec-revise", "").request?.revision).toBe(3)

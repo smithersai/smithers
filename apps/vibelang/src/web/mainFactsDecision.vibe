@@ -115,16 +115,16 @@ export function tourKey(key: string, lower: string, meta: boolean, control: bool
   return key === "Tab" ? "focus" : key === " " ? "pause" : key === "ArrowLeft" ? "back" : key === "ArrowRight" ? "skip" : "none"
 }
 
-/** The sandbox minutes notice for each proved notice: out names the stopped sandbox, low counts what is left, clear
+/** The sandbox minutes notice for each proved notice: out names the stopped sandbox, low counts what is left (one minute in the singular), clear
  * empties it, keep leaves it. */
 //@ verify
 //@ ensures notice == "out" ==> \result == "Out of minutes — " + id + " stopped"
-//@ ensures notice == "low" ==> \result == remaining + " minutes left"
+//@ ensures notice == "low" ==> \result == remaining + (remaining == "1" ? " minute left" : " minutes left")
 //@ ensures notice == "clear" ==> \result == ""
 //@ ensures notice != "out" && notice != "low" && notice != "clear" ==> \result == kept
 export function minuteNoticeText(notice: string, id: string, remaining: string, kept: string): string {
   if (notice === "out") return "Out of minutes — " + id + " stopped"
-  if (notice === "low") return remaining + " minutes left"
+  if (notice === "low") return remaining + (remaining === "1" ? " minute left" : " minutes left")
   if (notice === "clear") return ""
   return kept
 }
