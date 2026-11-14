@@ -1276,9 +1276,10 @@ const treeInputFiles = async (
     }).catch(async (cause: unknown) => {
       // A file() naming a link to a directory is a link the author meant to
       // declare: say which constructor declares it, not only what it is not.
-      const linked = await Fs.lstat(absolute).then((stats) => stats.isSymbolicLink(), () => false)
-      const directory = linked && await Fs.stat(absolute).then((stats) => stats.isDirectory(), () => false)
-      if (!directory) throw cause
+      // Two guards, not `linked && await ...`: V8 gives the statement after
+      // that expression the right operand's count, so coverage misread the guard.
+      if (!await Fs.lstat(absolute).then((stats) => stats.isSymbolicLink(), () => false)) throw cause
+      if (!await Fs.stat(absolute).then((stats) => stats.isDirectory(), () => false)) throw cause
       throw new PackageError(
         "link_input_refused",
         `S.file(${JSON.stringify(declaration.path)}): ${path} is a symbolic link to a directory; ` +

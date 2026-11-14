@@ -157,6 +157,75 @@ it("takes one arm here and the other in a tsx child", () => {
   }
 }, 90_000)
 
+it("counts a tsx child's arms on Vite's counters where the two conversions disagree on columns", () => {
+  // Vite's map and tsx's map place one node's start and end at different columns, so two conversions of the file
+  // keyed their counters apart and the child's arms reported 0. The child's hits now convert through Vite's code.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "vitest-loader-columns-coverage-")))
+  const require = createRequire(import.meta.url)
+  const resolution = new URL("../../smithers/build/build-cli/src/effect-resolution.js", import.meta.url).href
+  try {
+    symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
+    writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }))
+    writeFileSync(join(root, "writer.ts"), `type Sink = { readonly write: (text: string) => string }
+
+const sinkOf = (name: string): Sink => ({ write: (text: string) => name + ":" + text })
+
+export const writerOf = (child: boolean, stdout?: Sink, stderr?: Sink) =>
+  child
+    ? (stream: string, text: string) =>
+      (stream === "stdout" ?
+        stdout ?? sinkOf("out") :
+        stderr ?? sinkOf("err")).write(text)
+    : (stream: string, text: string) => stream + "=" + text
+
+if (process.env.CHILD === "1") {
+  const write = writerOf(true)
+  console.log(write("stdout", "a"), write("stderr", "b"))
+  const given = writerOf(true, sinkOf("o"), sinkOf("e"))
+  console.log(given("stdout", "c"), given("stderr", "d"))
+}
+`)
+    writeFileSync(join(root, "entry.js"), `import { importDeclarationModule, installEffectResolution } from ${JSON.stringify(resolution)}
+installEffectResolution()
+await importDeclarationModule(new URL("./writer.ts", import.meta.url).href, import.meta.url)
+`)
+    writeFileSync(join(root, "vitest.config.mjs"), `export default {
+  test: {
+    include: ["probe.test.ts"],
+    coverage: { enabled: true, provider: "v8", autoAttachSubprocess: true, include: ["writer.ts"], reporter: ["json"] }
+  }
+}`)
+    writeFileSync(join(root, "probe.test.ts"), `import { execFileSync } from "node:child_process"
+import { expect, it } from "vitest"
+import { writerOf } from "./writer.ts"
+it("writes plainly here and through sinks in a tsx child", () => {
+  expect(writerOf(false)("stdout", "x")).toBe("stdout=x")
+  const env = { ...process.env, CHILD: "1" }
+  expect(execFileSync(process.execPath, ["entry.js"], { encoding: "utf8", env }).trim()).toBe("out:a err:b\\no:c e:d")
+})
+`)
+    execFileSync(process.execPath, [join(dirname(require.resolve("vitest/package.json")), "vitest.mjs"), "run", "--root", root, "--maxWorkers=1"], {
+      cwd: root,
+      timeout: 60_000,
+      stdio: "pipe",
+      env: { ...process.env, FORCE_COLOR: "0" }
+    })
+    const coverage = JSON.parse(readFileSync(join(root, "coverage/coverage-final.json"), "utf8"))
+    const file = coverage[join(root, "writer.ts")]
+    const arms = (line: number) =>
+      (Object.entries(file.branchMap) as Array<[string, { loc: { start: { line: number } } }]>)
+        .filter(([, branch]) => branch.loc.start.line === line).map(([id]) => file.b[id])
+    // The worker takes the plain writer; the child takes both streams with and without sinks.
+    expect(arms(6), "child or plain writer").toEqual([[2, 1]])
+    expect(arms(8), "stdout or stderr").toEqual([[2, 2]])
+    expect(arms(9), "given or default stdout").toEqual([[2, 1]])
+    expect(arms(10), "given or default stderr").toEqual([[2, 1]])
+    expect(Object.values(file.s).filter((hits) => hits === 0), "statements left uncovered").toEqual([])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
 it("keeps a child's native script of a worker-imported file off Vite's transformed offsets", () => {
   // Vite's SSR transform rewrites `import` and every imported binding, so a worker's script of `shared.js` indexes
   // other offsets than a child's native script of the same file. Merging the two scripts read one through the

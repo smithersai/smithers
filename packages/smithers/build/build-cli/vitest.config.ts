@@ -81,6 +81,8 @@ const complete = [
   "src/internal/InputPackage.ts",
   "src/internal/OutputCas.ts",
   "src/internal/PackageOptions.ts",
+  "src/internal/PackagePlanner.ts",
+  "src/internal/PackageRunner.ts",
   "src/internal/ParseModule.ts",
   "src/internal/Path.ts",
   "src/internal/PathTools.ts",
@@ -143,7 +145,7 @@ export default defineConfig({
       // Keep every implementation file in the denominator; the goal remains 100%.
       // A file that reaches 100% joins `complete` and may not fall below it.
       thresholds: {
-        branches: 99.97,
+        branches: 100,
         functions: 100,
         lines: 100,
         statements: 100,

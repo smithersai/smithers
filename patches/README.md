@@ -71,6 +71,13 @@ The ordinary negative control in `sourceCoverage.test.vibe` retains the unvisite
 Remove the normalization hunk when the upstream provider merges these source ranges correctly and all six controls
 pass without it. Minimal raw before/after evidence is in the coverage lane report; no upstream write is authorized.
 
+A child process's script of a file Vite also transforms (a tsx child, issue #5462) converts through Vite's code
+and map, not against the file as written. Each position of Vite's code takes the child's count at the file position
+Vite's map names for it. Two conversions of one file otherwise placed one node's start and end at different columns,
+so the child's counters never met Vite's and its arms reported 0. The tsx remap also keeps an offset's distance past
+the map entry before it: tsx's map names an operand but not the `??` after it, where V8 starts the right operand's
+range. `repo-targets/test/NativeCoverage.test.ts` covers both.
+
 The named-import regression (vl-bench resume 8, 2026-11-11) removes the provider's overly broad member-initializer
 filter. Vite rewrites a user's `let tree = Mod.EMPTY` to a member chain rooted in `__vite_ssr_import_*`; that is still
 an executed source statement. Only Vite's generated binding names are filtered, and unmapped scaffolding is discarded
