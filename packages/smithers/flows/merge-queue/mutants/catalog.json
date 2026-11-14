@@ -798,5 +798,131 @@
       "original": "    && run.batch.length !== 1\n",
       "mutated": "\n"
     }
+  },
+  {
+    "name": "prune-drops-a-change-being-fixed",
+    "what": "Forget a change that is still being fixed, not only the ones that ended.",
+    "lean": {
+      "file": "lean/MergeQueue/Compact.lean",
+      "original": "changes := s.changes.filter (fun c => !c.status.isTerminal), landed := []",
+      "mutated": "changes := s.changes.filter (fun c => c.status.isQueued), landed := []"
+    },
+    "ts": {
+      "file": "src/Compact.ts",
+      "original": "  changes: state.changes.filter((change) => !isTerminal(change.status)),",
+      "mutated": "  changes: state.changes.filter((change) => change.status._tag === \"queued\"),"
+    }
+  },
+  {
+    "name": "prune-keeps-ended-changes",
+    "what": "Keep the changes that ended, so the state grows with every change the queue ever saw.",
+    "lean": {
+      "file": "lean/MergeQueue/Compact.lean",
+      "original": "changes := s.changes.filter (fun c => !c.status.isTerminal), landed := []",
+      "mutated": "changes := s.changes, landed := []"
+    },
+    "ts": {
+      "file": "src/Compact.ts",
+      "original": "  changes: state.changes.filter((change) => !isTerminal(change.status)),",
+      "mutated": "  changes: state.changes,"
+    }
+  },
+  {
+    "name": "prune-keeps-landings",
+    "what": "Keep the landings, so the state grows with every landing.",
+    "lean": {
+      "file": "lean/MergeQueue/Compact.lean",
+      "original": "(fun c => !c.status.isTerminal), landed := [] }",
+      "mutated": "(fun c => !c.status.isTerminal), landed := s.landed }"
+    },
+    "ts": {
+      "file": "src/Compact.ts",
+      "original": "  landed: []\n",
+      "mutated": "  landed: state.landed\n"
+    }
+  },
+  {
+    "name": "fresh-allows-an-ended-id",
+    "what": "Let a new change be handed in under the id of a change that ended.",
+    "lean": {
+      "file": "lean/MergeQueue/Compact.lean",
+      "original": "  | .enqueue id _ => !s.changes.any fun c => c.id == id && c.status.isTerminal",
+      "mutated": "  | .enqueue id _ => !s.changes.any fun c => c.id == id && c.status.isTerminal && false"
+    },
+    "ts": {
+      "file": "src/Compact.ts",
+      "original": "  (event._tag !== \"enqueue\" && event._tag !== \"foreign\")",
+      "mutated": "  (event._tag !== \"foreign\")"
+    }
+  },
+  {
+    "name": "cut-keeps-run-bases",
+    "what": "Cut the target's tree but leave every run's base as it was.",
+    "lean": {
+      "file": "lean/MergeQueue/Settle.lean",
+      "original": "def Run.cut (k : Nat) (r : Run) : Run := { r with base := r.base.drop k }",
+      "mutated": "def Run.cut (k : Nat) (r : Run) : Run := { r with base := r.base.drop (k - k) }"
+    },
+    "ts": {
+      "file": "src/Compact.ts",
+      "original": "  runs: state.runs.map((held) => ({ ...held, base: held.base.slice(count) }))",
+      "mutated": "  runs: state.runs.map((held) => ({ ...held, base: held.base }))"
+    }
+  },
+  {
+    "name": "cut-keeps-the-target",
+    "what": "Cut every run's base but leave the target's tree as it was.",
+    "lean": {
+      "file": "lean/MergeQueue/Settle.lean",
+      "original": "  { s with main := s.main.drop k, runs := s.runs.map (Run.cut k) }",
+      "mutated": "  { s with main := s.main.drop (k - k), runs := s.runs.map (Run.cut k) }"
+    },
+    "ts": {
+      "file": "src/Compact.ts",
+      "original": "  main: state.main.slice(count),",
+      "mutated": "  main: state.main,"
+    }
+  },
+  {
+    "name": "settled-ignores-the-runs",
+    "what": "Call the whole target tree settled although a run was built on less of it.",
+    "lean": {
+      "file": "lean/MergeQueue/Settle.lean",
+      "original": "  s.runs.foldl (fun k r => min k r.base.length) s.main.length",
+      "mutated": "  s.runs.foldl (fun k _ => k) s.main.length"
+    },
+    "ts": {
+      "file": "src/Compact.ts",
+      "original": "  state.runs.reduce((count, held) => Math.min(count, held.base.length), state.main.length)",
+      "mutated": "  state.main.length"
+    }
+  },
+  {
+    "name": "settled-takes-the-longest-base",
+    "what": "Call settled what the run with the longest base was built on, not the shortest.",
+    "lean": {
+      "file": "lean/MergeQueue/Settle.lean",
+      "original": "  s.runs.foldl (fun k r => min k r.base.length) s.main.length",
+      "mutated": "  s.runs.foldl (fun k r => max k r.base.length) s.main.length"
+    },
+    "ts": {
+      "file": "src/Compact.ts",
+      "original": "Math.min(count, held.base.length)",
+      "mutated": "Math.max(count, held.base.length)"
+    }
+  },
+  {
+    "name": "cut-ignores-the-count",
+    "what": "Cut every settled part from the target's tree, whatever count was asked for.",
+    "lean": {
+      "file": "lean/MergeQueue/Settle.lean",
+      "original": "  { s with main := s.main.drop k, runs := s.runs.map (Run.cut k) }",
+      "mutated": "  { s with main := s.main.drop (s.runs.foldl (fun n r => min n r.base.length) s.main.length), runs := s.runs.map (Run.cut k) }"
+    },
+    "ts": {
+      "file": "src/Compact.ts",
+      "original": "  main: state.main.slice(count),",
+      "mutated": "  main: state.main.slice(settled(state)),"
+    }
   }
 ]

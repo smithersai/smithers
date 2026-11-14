@@ -2,7 +2,7 @@
 
 Written by `node scripts/mutants.ts --write`. Do not edit: run it again.
 
-58 planted bugs; 58 caught on both sides.
+67 planted bugs; 67 caught on both sides.
 
 Each bug is planted in the Lean reference and in the TypeScript kernel. In Lean it must break a proof, or, when
 every proof still holds (the bug changes the policy, not a guarantee), make the differential fuzz differ. In
@@ -48,7 +48,7 @@ TypeScript the recorded reference digests or the theorem checks must notice.
 | `history-keeps-one-too-many` | Remember one duration more than the window. | proof: `record_bounded` | reference digest (seed 1); Inv.step (seed 1) |
 | `bisect-does-not-narrow` | Retest the whole failing prefix instead of a shorter one. | proof: `bisectStep_bounds` | reference digest (seed 5); plan_takes_effect (seed 5); the policy settles (seed 5) |
 | `speculate-past-the-queue` | Start a run on more changes than are ready. | proof: `State.nextStart_some` | reference digest (seed 2); plan_takes_effect (seed 2); the policy settles (seed 2) |
-| `never-cancel` | Never cancel a run the queue no longer needs. | differential: every proof still holds; the kernel and the mutated reference differ | reference digest (seed 1) |
+| `never-cancel` | Never cancel a run the queue no longer needs. | proof: `pruned_plan` | reference digest (seed 1) |
 | `ignore-the-run-limit-in-policy` | Plan a start when no run slot is free. | proof: `State.nextStart_some`, `no_deadlock`, `bisection_narrows` | reference digest (seed 1); plan_takes_effect (seed 1); the policy settles (seed 1) |
 | `estimate-takes-the-fastest` | Predict the fastest sample instead of the median. | proof: `estimate_is_a_sample` | reference digest (seed 1) |
 | `schedule-drops-a-check` | Leave a required check out of the schedule. | proof: `schedule_perm`, `schedule_slowest_first` | reference digest (seed 1) |
@@ -58,13 +58,22 @@ TypeScript the recorded reference digests or the theorem checks must notice.
 | `push-while-pushing` | Start a second push while one is under way. | no Lean mutant: the reference cannot express it | reference digest (seed 86) |
 | `foreign-leaves-the-target` | Adopt someone else's commit without moving the target's tree, so runs on the old tip stay live. | proof: `Inv.foreign` | reference digest (seed 1); Inv.step (seed 1); foreign_kills_every_run, moved_target_refuses_landing, moved_target_keeps_the_queue (seed 1) |
 | `foreign-is-unrecorded` | Adopt someone else's commit without recording it as foreign. | proof: `Inv.foreign` | reference digest (seed 1); Inv.step (seed 1) |
-| `withdraw-a-pushing-change` | Withdraw a change that is on its way onto the target. | proof: `withdraw_takes_effect`, `pushing_change_is_not_withdrawn` | reference digest (seed 1) |
+| `withdraw-a-pushing-change` | Withdraw a change that is on its way onto the target. | proof: `State.pruned_withdraw`, `withdraw_takes_effect`, `pushing_change_is_not_withdrawn` | reference digest (seed 1) |
 | `cancel-the-pushing-run` | Let the policy forget the run it is pushing. | differential: every proof still holds; the kernel and the mutated reference differ | reference digest (seed 260) |
 | `land-keeps-pushing` | Record a landing without ending the push. | proof: `State.landNow_cases` | reference digest (seed 1) |
 | `bisect-one-at-a-time` | Bisect with one run at a time although more run slots are free. | proof: `bisectStep_bounds` | reference digest (seed 30) |
 | `fixed-keeps-its-place` | Re-queue a fixed change in its old place, ahead of the runs in flight. | proof: `Inv.fixedNow` | reference digest (seed 2) |
 | `probe-over-the-run-limit` | Start a probe when no run slot is free. | proof: `State.probe_cases` | reference digest (seed 4); Inv.step (seed 4) |
-| `probe-a-change-that-ended` | Probe a change that is not queued any more. | proof: `State.probe_cases` | reference digest (seed 14); Inv.step (seed 14) |
+| `probe-a-change-that-ended` | Probe a change that is not queued any more. | proof: `State.probe_cases` | reference digest (seed 14); Inv.step (seed 14); pruned_plan, pruned_step (seed 14) |
 | `probe-on-a-stale-tip` | Build a probe on the empty tree instead of the target's tip. | proof: `State.probe_cases` | reference digest (seed 1); step_idempotent (seed 1); the policy settles (seed 1) |
 | `never-probe` | Never probe a ready change, so a failing change is found only when it reaches the front. | proof: `plan_takes_effect` | reference digest (seed 1) |
 | `probes-hold-the-queue` | Let a pending probe stop the queue from starting its next run. | differential: every proof still holds; the kernel and the mutated reference differ | reference digest (seed 1) |
+| `prune-drops-a-change-being-fixed` | Forget a change that is still being fixed, not only the ones that ended. | proof: `State.pruned_changes`, `State.pruned_congr`, `State.pruned_rewrite`, `State.pruned_fixed`, `State.pruned_landNow` | pruned_changes, pruned_landed (seed 1); pruned_plan, pruned_step (seed 1) |
+| `prune-keeps-ended-changes` | Keep the changes that ended, so the state grows with every change the queue ever saw. | proof: `State.pruned_changes`, `State.pruned_pruned`, `State.pruned_congr`, `State.pruned_rewrite`, `State.pruned_enqueue`, `State.pruned_foreign` and 2 more | pruned_changes, pruned_landed (seed 1) |
+| `prune-keeps-landings` | Keep the landings, so the state grows with every landing. | proof: `Status.fixing_not_terminal`, `State.pruned_congr` | pruned_changes, pruned_landed (seed 1) |
+| `fresh-allows-an-ended-id` | Let a new change be handed in under the id of a change that ended. | proof: `State.pruned_enqueue` | Event.fresh (seed 3); pruned_plan, pruned_step (seed 3) |
+| `cut-keeps-run-bases` | Cut the target's tree but leave every run's base as it was. | proof: `Run.cut_tree`, `State.cut_live`, `State.cut_treeEq`, `Run.cut_tree_length`, `State.cut_start`, `State.cut_probe` and 2 more | cut_plan, cut_step (seed 1) |
+| `cut-keeps-the-target` | Cut every run's base but leave the target's tree as it was. | proof: `State.cut_live`, `State.cut_foreign`, `State.cut_start`, `State.cut_probe`, `State.cut_landNow` | cut_plan, cut_step (seed 1) |
+| `settled-ignores-the-runs` | Call the whole target tree settled although a run was built on less of it. | proof: `State.settled_le_main`, `State.settled_le_base` | State.settled, settled_le_main, settled_le_base (seed 1) |
+| `settled-takes-the-longest-base` | Call settled what the run with the longest base was built on, not the shortest. | proof: `State.settled_le_main`, `State.settled_le_base` | State.settled, settled_le_main, settled_le_base (seed 1) |
+| `cut-ignores-the-count` | Cut every settled part from the target's tree, whatever count was asked for. | proof: `State.cut_live`, `State.cut_result`, `State.cut_cancel`, `State.cut_foreign`, `State.cut_start`, `State.cut_probe` and 2 more | cut_plan, cut_step (seed 1) |

@@ -27,6 +27,10 @@ export interface Kernel {
   readonly complete: (config: Config, results: ReadonlyArray<Result>) => boolean
   readonly failed: (results: ReadonlyArray<Result>) => boolean
   readonly passed: (results: ReadonlyArray<Result>, check: number) => boolean
+  readonly pruned: (state: State) => State
+  readonly fresh: (state: State, event: Event) => boolean
+  readonly settled: (state: State) => number
+  readonly cut: (state: State, count: number) => State
 }
 
 /** One event of one trace, with the state before and after it. */
@@ -64,6 +68,10 @@ export const steps = (kernel: Kernel, seeds: number, length: number): ReadonlyAr
 
 /** Whether two states hold the same values. */
 export const same = (left: State, right: State): boolean => JSON.stringify(left) === JSON.stringify(right)
+
+/** The change id an `enqueue` or a `foreign` event hands in. */
+const idOf = (event: Event): number | undefined =>
+  event._tag === "enqueue" || event._tag === "foreign" ? event.id : undefined
 
 /** One theorem of the reference, as a check on one step. */
 export interface Theorem {
@@ -176,6 +184,68 @@ export const theorems: ReadonlyArray<Theorem> = [
       entry.after.runs.every((run) =>
         kernel.green(entry.config, run.results) || same(kernel.landNow(entry.config, entry.after, run.id), entry.after)
       )
+  },
+  {
+    name: "pruned_changes, pruned_landed",
+    statement: "what the queue keeps is the changes that have not ended, no landings, and the rest untouched",
+    holds: (kernel, entry) =>
+      same(kernel.pruned(entry.after), {
+        ...entry.after,
+        changes: entry.after.changes.filter((change) => !kernel.isTerminal(change.status)),
+        landed: []
+      })
+  },
+  {
+    name: "Event.fresh",
+    statement: "the only events the id rule refuses hand in the id of a change that has ended",
+    holds: (kernel, entry) =>
+      kernel.fresh(entry.before, entry.event) === !(
+        (entry.event._tag === "enqueue" || entry.event._tag === "foreign")
+        && entry.before.changes.some((change) => change.id === idOf(entry.event) && kernel.isTerminal(change.status))
+      )
+  },
+  {
+    name: "pruned_plan, pruned_step",
+    statement: "the queue that forgets ended changes decides and steps as the queue that keeps them",
+    holds: (kernel, entry) =>
+      JSON.stringify(kernel.plan(entry.config, kernel.pruned(entry.after)))
+        === JSON.stringify(kernel.plan(entry.config, entry.after))
+      && (!kernel.fresh(entry.before, entry.event)
+        || same(
+          kernel.pruned(kernel.step(entry.config, kernel.pruned(entry.before), entry.event)),
+          kernel.pruned(entry.after)
+        ))
+  },
+  {
+    name: "State.settled, settled_le_main, settled_le_base",
+    statement:
+      "the settled parts are the ones every run was built on: the shortest base, or the whole tree with no run",
+    holds: (kernel, entry) =>
+      kernel.settled(entry.after)
+        === Math.min(entry.after.main.length, ...entry.after.runs.map((held) => held.base.length))
+  },
+  {
+    name: "cut_plan, cut_step",
+    statement: "cutting settled parts drops them from the tree and every base, and changes no decision and no step",
+    holds: (kernel, entry) => {
+      // Every prefix the state is on may be cut, not only the longest: all the settled parts, and one fewer.
+      const most = Math.min(entry.before.main.length, ...entry.before.runs.map((held) => held.base.length))
+      return [...new Set([most, Math.max(0, most - 1)])].every((count) => {
+        const dropped = kernel.cut(entry.before, count)
+        return same(dropped, {
+          ...entry.before,
+          main: entry.before.main.slice(count),
+          runs: entry.before.runs.map((held) => ({ ...held, base: held.base.slice(count) }))
+        })
+          && JSON.stringify(kernel.plan(entry.config, dropped))
+            === JSON.stringify(kernel.plan(entry.config, entry.before))
+          // A landing records the base it landed on, which the cut shortens; the queue keeps no landing.
+          && same(
+            { ...kernel.step(entry.config, dropped, entry.event), landed: [] },
+            { ...kernel.cut(entry.after, count), landed: [] }
+          )
+      })
+    }
   },
   {
     name: "the policy settles",
