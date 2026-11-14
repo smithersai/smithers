@@ -2049,6 +2049,64 @@ in again forgets it.
 `actions/http-surface`'s saved regression predates the principal's name, so `named` is optional and absent means named,
 as every saved principal was. Each new target costs under 0.4 s an execution, so none needs a `FLOORS` entry.
 
+### Session 20: history, actions and sign-in, and two findings fixed (vl-fuzz2, 2026-11-14)
+
+The lead split the last 20 failing files (board, 04:39Z): vl-fuzzpkg keeps `src/web` and the ten history files of its
+unlanded change (areaDecision, seedTextDecision, trailerDecision, seedSanitizeDecision, bucketDecision, seed, export,
+exportDecision, flows, publish); this lane takes the other eight. `fuzz2-full22` (job `63c130f5`) listed their gates;
+a vitest-only run of the 29 history, actions and surfaces targets (`unit23`) gave their lines and arms.
+
+| File (full22 gates) | Open | Case | Mutant |
+| --- | --- | --- | --- |
+| `history/flowMachine` (br 104/110, st 76/82) | `historyRefusal` 262, 269-273: `no-task` and the six export refusals | `history/machine-contracts` draws every refusal word and holds each sentence to the contract table; every execution also checks the whole table | a wrong `no-task` and a wrong `paced` sentence: both caught |
+| `history/schemas` (fn 2/3, st 33/34) | `decodeStoredHistory`'s failure, 95 | new `storage/history-snapshot-corrupt`: the History object's store over SQLite, a torn chunk or a rank its cursor does not cover; the load dies with "Invalid history state" | caught |
+| `history/LiveMythical` (ln 42/43) | `publish`'s answer, 88 | new `clients/history-answers`: every write over a fitting server answers what it wrote, at the six write URLs in order | `written: 0`: caught |
+| `actions/MockActions` (fn 37/38, st 147/148) | a policy refusal, 34 | `actions/mock-factories`: a policy stricter than the roles (a workflow's) refuses `forbidden` and lists no command | `unavailable` instead: caught |
+| `actions/execution` (br 37/38, st 47/48) | `prepareHistory` refusing a post or tour, 43 | new `actions/prepare-history`: what `prepare` accepts as a post or tour is `not-found` to the history host; a show prepares as `prepare` does | `input` instead: caught |
+| `surfaces/signin` (br 88/89, fn 28/29) | a wait that fails, 129; device flow off, 160 | `signin/steered-waits` "wait-settings-unsecured": a `FileSystem` whose `chmod` fails once the device flow is pending; `signin/steered` "device-disabled": GitHub answers `device_flow_disabled` | `expired` for `failed`; the wrong reason: both caught |
+| `surfaces/signinDecision` (br 34/35) | an `https:` origin, 9 | new `signin/decisions`: all twelve decisions against their ensures, over nine chosen tuples (one per arm) and the draw | caught |
+| `history/tools` (br 46/47) | `show`'s match fallback | new `history/agent-tool-out-of-type`: an input outside `ShowInput` reads nothing and dies with the match's TypeError | the fallback folded into the last arm: see Checks |
+
+`history/tools` is not a missing case. D209 proves a match exhaustive only over literals, `null`, `undefined`,
+`void` and objects with a literal `_tag`; `PageRequest` discriminates on `what`, so the match keeps its `$noMatch`
+fallback, and D294 drops a last test only where D209 proves it. The lead ruled (board, 05:23Z) that the arm exists by
+design and is covered by its own behavior, not removed: Will's W1 (VIP-34) removes type-driven lowering, so every
+match will keep its fallback, and more such arms will need the same case.
+
+#### Two findings fixed
+
+Session 19 recorded both as "found, not changed". Each now has a failing test first.
+
+- **A restarted machine kept the previous lease.** `start` copied `{ ...previous, generation, phase }`, so generation
+  2's first command ran under generation 1's `leaseUntil`. A lease is admitted only for the current running
+  generation (`lease`'s `currentRunning` check), so it is that generation's grant; `start` now drops it. The host
+  leases every running box in `metered` before work, so no product path changes. Test:
+  `test/machineObject.coverage.test.vibe` "starts a new generation with no lease" (failed: `{ ok: true, output:
+  "early\n" }`); `sandbox/machine-object` checks a restart every execution.
+- **A refused delegation survived the write.** A write smithers.sh answers `connect` calls `lost`, which forgot the
+  delegation of whoever the session named when the write failed. A person who signed out in another tab while the
+  write ran kept the refused copy, and the next sign-in showed them connected until a write failed again; an agent's
+  failed write forgot its person's own delegation, which it never used. The per-request authority now records whose
+  connection `current` returned, and `lost` forgets that one. Test: `test/accountsDelegationLost.test.vibe` (failed:
+  `delegation/7` still stored); `accounts/broker-sequences` check 300 now requires the copy gone.
+
+`test/accountsRoutes.coverage.test.vibe` pinned the old behavior for a read ("forgets no one": the copy stayed until
+the person's next read). It now expects the copy gone, and the person's next read, signed in again, asks smithers.sh
+nothing.
+
+#### Checks
+
+| Check | Where | Exit | Counts |
+| --- | --- | ---: | --- |
+| `unit23`: 29 history, actions and surfaces targets, 5 s, coverage | playwright box | 0 | 29 files pass; the lines and arms above |
+| `cases20a`: the six changed targets, 5 s, coverage on the eight files | playwright box | 0 | 6 files pass; every listed line and arm reached |
+| `fixes20a`: `sandbox-objects`, `accounts-broker`, coverage on `Accounts` and `machineObject` | playwright box | 0 | 2 files pass; no new line or arm missed |
+| mutants `mut20`, `mut20d` (one per case) | playwright boxes | 0 | 13 run, 13 caught (`tools`' after its oracle pinned the match's own message-less TypeError) |
+| failing tests first, then fixed | nyc-01 | 1, then 0 | `machineObject` 1 of 4 failed, `accountsDelegationLost` 1 of 1 failed; after the fixes 5 of 5 |
+| `verify/inventory.cjs --write` | nyc-01 | 0 | 4,147 inventoried |
+| `gate20`: `typecheck`, `test`, nine changed fuzz files at 5 s | node26 box | 1 | typecheck 0; test 2,829 passed, 1 failed (`accountsRoutes`, above); fuzz 9 files, 41 tests, 0 |
+| `test/accountsRoutes.coverage.test.vibe` after its update | nyc-01 | 0 | 1 file |
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the
