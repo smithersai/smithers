@@ -37,8 +37,9 @@ export function MockActions(principal: Principal) {
     const scope = try Effect.scope
     // A run starts in this world's services alone, never its caller's. The agent requests a run from inside its reply,
     // and a flow's action takes the services its run carries over the ones it was wired with (@smthrs/flow
-    // `Action.make`), so a tour the agent asked for recorded its start in the replying conversation, where the agent is
-    // working, and was refused as busy (0016 session 36). `updateContext` replaces them; `provideContext` merges.
+    // `Action.make`, by design: its guide "Know which services a run sees"), so a tour the agent asked for recorded its
+    // start in the replying conversation, where the agent is working, and was refused as busy (0016 session 36).
+    // `updateContext` replaces them; `provideContext` merges.
     const world = try Effect.context<Factory | ConversationRead | Scope.Scope>()
     const catalog = try orDie(bundled)
     const state = try Ref.make<Conversation>(empty)

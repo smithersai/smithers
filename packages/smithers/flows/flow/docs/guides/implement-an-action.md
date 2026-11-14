@@ -85,6 +85,40 @@ The implementation may also require services of its own. Those requirements
 appear on the returned layer, so a composition that forgot a database client
 fails to compile the same way a missing action implementation does.
 
+## Know which services a run sees
+
+An implementation runs with the services its layer was built with, under the
+services of the fiber that runs the flow. Where both hold the same service, the
+run's wins. That is how the runtime hands each step its dispatch identity,
+resume context and deadline, and how a test substitutes one service for one
+`execute` call:
+
+```ts
+// A step that reads Greeting sees "caller", whatever its layer was built with.
+Checkout.execute(payload, { executionId }).pipe(
+  Effect.provide(wired),
+  Effect.provideService(Greeting, "caller")
+)
+```
+
+So a flow started from inside another flow's implementation, or from a fiber
+forked there, runs its steps with that implementation's services. When the run
+belongs to another composition, start it in that composition's own context,
+captured where the composition is built:
+
+```ts
+const own = yield* Effect.context<never>()
+// Later, inside another flow's implementation:
+const run = Effect.updateContext<string, unknown, never, never>(
+  Checkout.execute(payload, { executionId }),
+  (): Context.Context<never> => own
+)
+```
+
+`Effect.provideContext` does not isolate a run: it adds the services it is
+given to the caller's, so the caller's other services stay visible.
+`test/ActionServices.test.ts` checks all three cases.
+
 ## Choose the tier
 
 The tier tells the engine what retrying this action means. It is part of the step
