@@ -2,7 +2,7 @@
 // run on (src/history/MockMythical.vibe `wire`), not above it as test/support/FaultyMythical.vibe's are, so Fold's
 // and Export's own failure paths run. Each fault a page's `?fault=` names happens once, and every call after it is real.
 import { Repository } from "@smthrs/jj"
-import { type Pace, UNPACED } from "../../src/history/export.vibe"
+import { Manifest, type Pace, UNPACED } from "../../src/history/export.vibe"
 import { type ExportTarget, MainUnavailable } from "../../src/history/flows.vibe"
 import { AFTER_SEED, MockMythical, type MockWiring, seeded } from "../../src/history/MockMythical.vibe"
 import type { Role } from "../../src/history/roles.vibe"
@@ -14,14 +14,23 @@ import { HistoryBackend } from "../../src/web/historyBackend.vibe"
  * first ref read, `export-check` its first commit read after a write, `export-publish` its ref update and
  * `export-confirm` the ref read after that; `export-linear` and `export-tree` answer its check's read of the first commit it
  * wrote, its chain's first, with a parent or a tree the export did not write; `export-conflict` moves the first ref before the update does, and
- * `export-lost` answers the update without making it.
+ * `export-lost` answers the update without making it. The check's own reads after the export wrote: `export-header`
+ * answers the manifest naming a mythical tip the export did not write, `export-ends` the manifest without its last
+ * commit, `export-manifest` the manifest bookmark's tree without the manifest, and `export-notes` the notes tree
+ * without its first note; `export-reads` paces the export at no tree reads.
  */
-export type MockFault = "main-read" | "export-empty" | "export-paced" | "export-prepare" | "export-check" | "export-publish" | "export-confirm" | "export-linear" | "export-tree" | "export-conflict" | "export-lost"
+export type MockFault = "main-read" | "export-empty" | "export-paced" | "export-prepare" | "export-check" | "export-publish" | "export-confirm" | "export-linear" | "export-tree" | "export-conflict" | "export-lost" | "export-reads" | "export-header" | "export-ends" | "export-manifest" | "export-notes"
 
-const MOCK_FAULTS: ReadonlyArray<MockFault> = ["main-read", "export-empty", "export-paced", "export-prepare", "export-check", "export-publish", "export-confirm", "export-linear", "export-tree", "export-conflict", "export-lost"]
+const MOCK_FAULTS: ReadonlyArray<MockFault> = ["main-read", "export-empty", "export-paced", "export-prepare", "export-check", "export-publish", "export-confirm", "export-linear", "export-tree", "export-conflict", "export-lost", "export-reads", "export-header", "export-ends", "export-manifest", "export-notes"]
 
 /** One write per batch: any export with more to write is the publisher's. */
 const ONE_WRITE: Pace = { writes: 1, reads: Number.POSITIVE_INFINITY, pauseMs: 0 }
+
+/** No tree reads per batch: any export that must read a tree is the publisher's. */
+const NO_READS: Pace = { writes: Number.POSITIVE_INFINITY, reads: 0, pauseMs: 0 }
+
+/** A notes tree names each entry by the 40-digit commit it notes. */
+const NOTE_NAME = /^[0-9a-f]{40}$/
 
 /** An object id the export never wrote. */
 const FOREIGN = "0".repeat(40)
@@ -65,6 +74,20 @@ export function faultyWiring(faults: ReadonlyArray<MockFault>) {
         if (revision !== chained) return real.readCommit(revision)
         return Effect.map(real.readCommit(revision), (header) => first("export-linear") ? { ...header, parents: [FOREIGN] } : first("export-tree") ? { ...header, tree: FOREIGN } : header)
       }),
+      readBlob: effect (oid) => {
+        const text = try real.readBlob(oid)
+        if (!wrote || !(faults.includes("export-header") || faults.includes("export-ends"))) return text
+        const manifest = try Effect.orDie(Schema.decodeUnknownEffect(Schema.fromJsonString(Manifest))(text))
+        if (first("export-header")) return JSON.stringify({ ...manifest, mythical: FOREIGN })
+        if (first("export-ends")) return JSON.stringify({ ...manifest, commits: manifest.commits.slice(0, -1) })
+        return text
+      },
+      readTree: (tree) => Effect.map(real.readTree(tree), (entries) => {
+        if (!wrote) return entries
+        if (entries.some((entry) => entry.name === "manifest.json") && first("export-manifest")) return entries.filter((entry) => entry.name !== "manifest.json")
+        if (entries.length > 0 && entries.every((entry) => NOTE_NAME.test(entry.name)) && first("export-notes")) return entries.slice(1)
+        return entries
+      }),
       readRefs: (refs) => Effect.suspend(() => (updated ? first("export-confirm") : first("export-prepare")) ? Effect.fail(unreachable("readRefs")) : real.readRefs(refs)),
       updateRefs: effect (transaction) => {
         updated = true
@@ -77,7 +100,7 @@ export function faultyWiring(faults: ReadonlyArray<MockFault>) {
     })
     const target: ExportTarget.Shape = {
       names: mock.target.names,
-      get pace() { return first("export-paced") ? ONE_WRITE : mock.target.pace ?? UNPACED },
+      get pace() { return first("export-paced") ? ONE_WRITE : first("export-reads") ? NO_READS : mock.target.pace ?? UNPACED },
     }
     return {
       stack: { ...mock.stack, read: () => Effect.suspend(() => first("export-empty") ? Effect.map(mock.stack.read(), (history) => ({ ...history, commits: [] })) : mock.stack.read()) },
