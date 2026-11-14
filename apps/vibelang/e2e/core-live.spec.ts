@@ -146,9 +146,11 @@ test("a live message past the sequencer's limit is refused, two past the body li
   await retry.nth(1).click()
   await expect(failed).toHaveCount(2)
   await expect(retry).toHaveCount(3)
-  await message.fill("short and sent")
+  // The live conversation outlives an attempt: a retry or repeat must not find the earlier attempt's post.
+  const sent = `short and sent ${info.repeatEachIndex}-${info.retry}`
+  await message.fill(sent)
   await message.press("Enter")
-  await expect(page.getByText("short and sent")).toBeVisible()
+  await expect(page.getByText(sent)).toBeVisible()
   await expect(page.getByText("Message too long")).toBeVisible()
   await page.screenshot({ path: info.outputPath("live-post-limits.png"), fullPage: true })
 })
