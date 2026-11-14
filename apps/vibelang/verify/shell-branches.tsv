@@ -217,7 +217,7 @@ src/web/historyStartup.vibe	mockRole	?? new URLSearchParams(window.location.sear
 src/web/historyStartup.vibe	mockRole	?? window.localStorage.getItem("vibelang.role")	Startup flags: copies a flag init reads from the URL or storage into the Model; startupDecision proves the flags
 src/web/historyStartup.vibe	mockRole	asked === ""	Startup flags: copies a flag init reads from the URL or storage into the Model; startupDecision proves the flags
 src/web/historyStartup.vibe	signedRoles/callback	!("ledger" in identity)	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
-src/web/historyStartup.vibe	signedRoles/callback/callback	event.type === "RoleGranted" && event.id === identity.id	Open: gate: only a grant to the signed-in person changes the page's role
+src/web/historyStartup.vibe	signedRoles/callback/callback	event.type === "RoleGranted" && grantsMe(event.type, event.id, identity.id)	Variant dispatch: narrows to the grant variant for its role; the proved grantsMe decides whose grant counts
 src/web/historyView.vibe	body	|| model.error !== "" || model.readFailures.some(({ read }) => read.kind === "commit" && read.id === model.hash)	Open: state: a failed read of the shown commit fails the commit page
 src/web/historyView.vibe	body/callback	&& read.kind === "commit" && read.id === model.hash	Open: state: a failed read of the shown commit fails the commit page
 src/web/historyView.vibe	body/callback	some read.kind === "commit" && read.id === model.hash	Open: state: a failed read of the shown commit fails the commit page
@@ -246,7 +246,6 @@ src/web/historyView.vibe	row	?? model.outline.epics.find((each) => each.id === c
 src/web/historyView.vibe	row	withEpic	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/historyView.vibe	row/callback	find each.id === commit.epic	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/historyView.vibe	timeline/step	action.length === 0	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
-src/web/historyView.vibe	top	model.mode === "pending"	Open: gate: the mode switch shows once the mode is known
 src/web/historyView.vibe	view	?? commit?.title	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/historyView.vibe	view	?? epic?.title	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/historyView.vibe	view	?? shown?.commit	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -264,7 +263,6 @@ src/web/issuesView.vibe	connection	ui.data.connected === false	Open: state: GitH
 src/web/issuesView.vibe	connection	ui.data.connected === true	Open: state: GitHub connection: yes, no or unknown
 src/web/issuesView.vibe	detail	?? i.approvedAt	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/issuesView.vibe	detail	?? i.approvedAt	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/issuesView.vibe	detail	|| ui.busy || ui.retry !== undefined	Open: enable: issue controls lock while busy or while a failed request waits for Retry
 src/web/issuesView.vibe	detail	i.assignee === ""	Open: label: an unassigned issue says No one
 src/web/issuesView.vibe	detail	i.state === "open"	Open: label: an issue's state reads Open or Closed
 src/web/issuesView.vibe	detail	i.task === ""	Empty text: an empty string shows nothing; any other text shows as given
@@ -283,24 +281,16 @@ src/web/issuesView.vibe	detail/callback	isAgent(n.author)	Open: label: the agent
 src/web/issuesView.vibe	detail/callback	n.age === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	detail/callback	n.age === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	dialog	?? ui.data.assignees	Default: the assignee choices a host sends, else the fixture list (mock mode, VL-13)
-src/web/issuesView.vibe	dialog	|| ui.busy || ui.retry !== undefined	Open: enable: issue controls lock while busy or while a failed request waits for Retry
-src/web/issuesView.vibe	dialog	|| ui.busy || ui.retry !== undefined	Open: enable: issue controls lock while busy or while a failed request waits for Retry
 src/web/issuesView.vibe	dialog	ui.dialog === ""	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/issuesView.vibe	dialog	ui.dialog === "commit"	Open: state: the dialog's body by kind: assignee, split or link
 src/web/issuesView.vibe	dialog	ui.dialog === "split"	Open: state: the dialog's body by kind: assignee, split or link
 src/web/issuesView.vibe	dialog	ui.error === ""	Empty text: an empty string shows nothing; any other text shows as given
-src/web/issuesView.vibe	dialog/callback	|| ui.busy || ui.retry !== undefined	Open: enable: issue controls lock while busy or while a failed request waits for Retry
 src/web/issuesView.vibe	dialog/callback	filter choice.display.trim() !== ""	Open: state: an assignee choice with a blank name is not offered
 src/web/issuesView.vibe	dialog/callback	key === "Enter"	Open: state: Enter commits in the assignee picker
 src/web/issuesView.vibe	field	action === "title"	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/issuesView.vibe	field	code	Open: state: Enter continues from the VIP title
 src/web/issuesView.vibe	field	code	Open: state: Enter continues from the VIP title
 src/web/issuesView.vibe	field/callback	key === "Enter" && advance	Open: state: Enter continues from the VIP title
-src/web/issuesView.vibe	form	|| ui.busy || ui.retry !== undefined	Open: enable: issue controls lock while busy or while a failed request waits for Retry
-src/web/issuesView.vibe	form	|| ui.busy || ui.retry !== undefined	Open: enable: issue controls lock while busy or while a failed request waits for Retry
-src/web/issuesView.vibe	form	|| ui.busy || ui.retry !== undefined	Open: enable: issue controls lock while busy or while a failed request waits for Retry
-src/web/issuesView.vibe	form	|| ui.busy || ui.retry !== undefined	Open: enable: issue controls lock while busy or while a failed request waits for Retry
-src/web/issuesView.vibe	form	|| ui.busy || ui.retry !== undefined	Open: enable: issue controls lock while busy or while a failed request waits for Retry
 src/web/issuesView.vibe	form	ui.error === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/issuesView.vibe	form	vip	Open: label: the form's title and back link by VIP or issue
 src/web/issuesView.vibe	form	vip	Open: label: the form's title and back link by VIP or issue
@@ -323,10 +313,6 @@ src/web/issuesView.vibe	issueChatCard	issue.state === "open"	Open: label: an iss
 src/web/issuesView.vibe	issueChatCard	label.trim() === ""	Open: label: a blank card link reads Open #n
 src/web/issuesView.vibe	issueChatCard/callback	filter child.parent === issue.number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/issuesView.vibe	issueLink	full	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
-src/web/issuesView.vibe	list	connected(ui) && issuePermission(ui.role, propose ? "propose" : "new")	Open: gate: New issue or Propose shows only when connected and permitted
-src/web/issuesView.vibe	list	propose	Open: label: Propose a VIP or New issue by the list's kind
-src/web/issuesView.vibe	list	propose	Open: label: Propose a VIP or New issue by the list's kind
-src/web/issuesView.vibe	list	propose	Open: label: Propose a VIP or New issue by the list's kind
 src/web/issuesView.vibe	list	ui.error === "" || ui.status === "error"	Open: state: the list's error banner hides when empty or when the list itself failed
 src/web/issuesView.vibe	list/callback	&& i.state === ui.state && `${i.title} #${i.number} ${i.labels.join(" ")}`.toLowerCase().includes(ui.query.toLowerCase())	Open: state: the list shows issues in the chosen state that match the search
 src/web/issuesView.vibe	list/callback	filter i.state === ui.state && `${i.title} #${i.number} ${i.labels.join(" ")}`.toLowerCase().includes(ui.query.toLowerCase())	Open: state: the list shows issues in the chosen state that match the search
@@ -343,7 +329,8 @@ src/web/issuesView.vibe	list/callback/callback	filter i.state === state	Open: co
 src/web/issuesView.vibe	list/callback/callback	some c.parent === i.number	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/issuesView.vibe	references/callback	/^#[1-9][0-9]*$/.test(part)	Host boundary: the issue-reference regexp (regexp.ts)
 src/web/issuesView.vibe	references/callback/callback	find item.number === Number(part.slice(1))	Host boundary: the issue-reference regexp (regexp.ts)
-src/web/issuesView.vibe	rolesView/callback/callback	row.op === "roles"	Open: gate: the roles table: Promote by the role policy, the rest by issue permission
+src/web/issuesView.vibe	rolesView/callback/callback	allowed	Forwards: the cell's mark and class follow its permission, the proved issuePermission or may
+src/web/issuesView.vibe	rolesView/callback/callback	allowed	Forwards: the cell's mark and class follow its permission, the proved issuePermission or may
 src/web/issuesView.vibe	specificationView	?? ui.data.specification	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/issuesView.vibe	specificationView	?? ui.data.specificationHistory	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/issuesView.vibe	specificationView	ui.error === ""	Empty text: an empty string shows nothing; any other text shows as given
@@ -449,9 +436,8 @@ src/web/main.vibe	subscriptions/callback/modelToDependencies/callback	&& (run.st
 src/web/main.vibe	subscriptions/callback/modelToDependencies/callback	some (run.state === "queued" || run.state === "running") && !actionsOf(model).disconnected.includes(run.id)	Open: state: the actions clock ticks while a connected run is queued or running
 src/web/main.vibe	subscriptions/scrolled	value	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	touringHere	?? model.tourClient	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/main.vibe	update	&& (accountOf(model).epoch > 0 || before.id !== "") && before.id !== after.id	Open: state: the account changed: a different person after a known one
-src/web/main.vibe	update	&& issues !== undefined && issues.dialog !== ""	Open: state: an issues dialog is open
-src/web/main.vibe	update	|| issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog)	Open: gate: an open issues dialog closes when the new role may not use it
+src/web/main.vibe	update	?? issues?.dialog	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/web/main.vibe	update	|| issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog)	Forwards: the policy is read only for an open dialog (narrowing to an operation); the proved afterUpdate closes a dialog only when dialogOpen and not permitted, so the guard changes nothing
 src/web/main.vibe	update/AccountLoaded	?? snapshot	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/AccountLoaded	commands.length > 0	Commands: sends the commands a proved step returned, or none; Foldkit batching, no decision
 src/web/main.vibe	update/ClickedIssues	?? model.issues	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -547,31 +533,22 @@ src/web/roleView.vibe	accountOverlays	?? person?.login	Default: an absent option
 src/web/roleView.vibe	accountOverlays	?? person?.role	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/roleView.vibe	accountOverlays	account.pending	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/roleView.vibe	accountOverlays/callback	find person.id === account.target	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-src/web/roleView.vibe	identityNav	!tools.mode || model.mode === "pending"	Open: gate: the mode switch shows once the mode is known
 src/web/roleView.vibe	identityNav	account.menu	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/roleView.vibe	peoplePane/callback	person.id === account.identity.id	Open: label: the signed-in person's row says you
-src/web/roleView.vibe	peoplePane/callback/callback	filter role !== "viewer"	Open: gate: viewer is never an assignable role
 src/web/sandboxView.vibe	icon	max	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/sandboxView.vibe	minutes	?? model.sandbox?.remaining	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/sandboxView.vibe	sandboxPane	!running	Open: state: the start body shows only while no sandbox runs
 src/web/sandboxView.vibe	sandboxPane	?? snapshot?.allowance	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
+src/web/sandboxView.vibe	sandboxPane	?? snapshot?.id	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/sandboxView.vibe	sandboxPane	?? snapshot?.remaining	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/sandboxView.vibe	sandboxPane	?? snapshot?.role	Open: gate: with no sandbox answer the pane acts for a viewer
-src/web/sandboxView.vibe	sandboxPane	?? snapshot?.role	Open: gate: with no sandbox answer the pane acts for a viewer
-src/web/sandboxView.vibe	sandboxPane	|| !running || !!model.sandboxBusy	Open: enable: the terminal takes input only while running and idle
-src/web/sandboxView.vibe	sandboxPane	account.pending	Open: label: the sandbox Sign in button says Signing in while pending
+src/web/sandboxView.vibe	sandboxPane	?? snapshot?.role	Default: read only with no sandbox answer, where the proved sandboxControls acts for a viewer anyway
+src/web/sandboxView.vibe	sandboxPane	?? snapshot?.role	Default: read only with no sandbox answer, where the proved sandboxControls acts for a viewer anyway
+src/web/sandboxView.vibe	sandboxPane	?? snapshot?.status	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/sandboxView.vibe	sandboxPane	allowance === 0	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/sandboxView.vibe	sandboxPane	max	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/sandboxView.vibe	sandboxPane	max	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/sandboxView.vibe	sandboxPane	model.minuteNotice	Presence: renders a part only while its value exists; what it holds is decided where it is set
 src/web/sandboxView.vibe	sandboxPane	model.sandboxError	Presence: renders a part only while its value exists; what it holds is decided where it is set
-src/web/sandboxView.vibe	sandboxPane	running	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
-src/web/sandboxView.vibe	sandboxPane	running	Open: gate: Stop shows only while a sandbox runs
-src/web/sandboxView.vibe	sandboxPane	running	Open: label: a running sandbox's bar names it
-src/web/sandboxView.vibe	sandboxPane	running	Open: label: a running sandbox's minutes say left
 src/web/sandboxView.vibe	sandboxPane	snapshot	Presence: renders a part only while its value exists; what it holds is decided where it is set
-src/web/sandboxView.vibe	sandboxPane	snapshot?.id	Open: state: New sandbox before a sandbox exists, Start after
-src/web/sandboxView.vibe	sandboxPane	snapshot?.id	Open: state: New sandbox before a sandbox exists, Start after
 src/web/sandboxView.vibe	sandboxPane	snapshot?.id	Presence: renders a part only while its value exists; what it holds is decided where it is set
 src/web/sandboxView.vibe	sandboxPane/callback	allowance	Open: label: a role with no minutes shows a dash
 src/web/startup.vibe	main	new URLSearchParams(window.location.search).has("resume-key")	Startup flags: copies a flag init reads from the URL or storage into the Model; startupDecision proves the flags
@@ -605,9 +582,6 @@ src/web/view.vibe	control	model.tourError === ""	Empty text: an empty string sho
 src/web/view.vibe	control/callback	model.theatre.paused	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/view.vibe	docsPane	maximized	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/view.vibe	docsPane	maximized	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
-src/web/view.vibe	docsPane	model.tour	Open: gate: during the tour the docs pane hides its toggle and its frame is inert
-src/web/view.vibe	docsPane	model.tour	Open: gate: during the tour the docs pane hides its toggle and its frame is inert
-src/web/view.vibe	docsPane	model.tour	Open: gate: during the tour the docs pane hides its toggle and its frame is inert
 src/web/view.vibe	entryView	?? model.issues?.data.items	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/view.vibe	entryView	entry.author === "agent" && issue !== undefined && linked !== null	Open: state: an agent entry that links a known issue shows its card
 src/web/view.vibe	entryView	entry.author === "person" && ownPost(entry.clientId, model.session)	Open: label: a person's own post is labeled You
@@ -638,8 +612,6 @@ src/web/wikiView.vibe	observedHtml	?? observed?.source	Default: an absent option
 src/web/wikiView.vibe	observedHtml/callback	find entry.id === page.id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/wikiView.vibe	wikiPane	?? model.wikiQuery	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/wikiView.vibe	wikiPane	?? model.wikiRequested	Open: state: Retry reopens the requested page, else the index
-src/web/wikiView.vibe	wikiPane	|| editing.busy || editing.submission !== undefined	Open: enable: the wiki editor locks while busy or while a submission waits
-src/web/wikiView.vibe	wikiPane	|| editing.busy || editing.submission !== undefined	Open: enable: the wiki editor locks while busy or while a submission waits
 src/web/wikiView.vibe	wikiPane	decisions.length	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
 src/web/wikiView.vibe	wikiPane	editing.error === ""	Empty text: an empty string shows nothing; any other text shows as given
 src/web/wikiView.vibe	wikiPane	loading	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new

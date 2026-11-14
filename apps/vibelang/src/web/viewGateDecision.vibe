@@ -1,0 +1,124 @@
+// Gating and enablement the views decided inline (0018 "Decisions in views", batch 57, lane vl-proveall3): which
+// controls a role or a state shows, and what is enabled. The views pass plain values; role checks stay the shared
+// policy's (issuePermission, may), passed in as booleans.
+import type { Role } from "../core/conversation.vibe"
+
+/** The live/mock switch shows where the page offers it, once the mode is known: the mode it switches from, else "". */
+//@ verify
+//@ ensures \result == (offered && mode != "pending" ? mode : "")
+export function switchedMode(offered: boolean, mode: "live" | "mock" | "pending"): "live" | "mock" | "" {
+  return offered && mode !== "pending" ? mode : ""
+}
+
+/** Only a grant to the signed-in person changes the page's role. */
+//@ verify
+//@ ensures \result == (type == "RoleGranted" && id == me)
+export function grantsMe(type: string, id: string, me: string): boolean {
+  return type === "RoleGranted" && id === me
+}
+
+/** Viewer is the signed-out role: no one is assigned it. */
+//@ verify
+//@ ensures \result == (role != "viewer")
+export function assignableRole(role: string): boolean {
+  return role !== "viewer"
+}
+
+/** The issues list's New issue or Propose a VIP: the VIPs list proposes; either needs a connection and its permission. */
+export interface NewIssueControl { readonly shown: boolean; readonly label: string; readonly action: string }
+//@ verify
+//@ ensures \result.shown == (connected && (kind == "VIPs" ? mayPropose : mayFile))
+//@ ensures \result.label == (kind == "VIPs" ? "Propose a VIP" : "New issue")
+//@ ensures \result.action == (kind == "VIPs" ? "vip-form" : "new-form")
+export function newIssueControl(kind: string, connected: boolean, mayPropose: boolean, mayFile: boolean): NewIssueControl {
+  const vip = kind === "VIPs"
+  return { shown: connected && (vip ? mayPropose : mayFile), label: vip ? "Propose a VIP" : "New issue", action: vip ? "vip-form" : "new-form" }
+}
+
+/** An issue page's controls lock while a request runs or while a failed one waits for Retry. */
+//@ verify
+//@ ensures \result == (busy || waiting)
+export function issueLocked(busy: boolean, waiting: boolean): boolean {
+  return busy || waiting
+}
+
+/** The wiki editor's text and Cancel lock while a save runs or while a submission waits. */
+//@ verify
+//@ ensures \result == (busy || submitted)
+export function wikiEditorLocked(busy: boolean, submitted: boolean): boolean {
+  return busy || submitted
+}
+
+/** The tour's Back is disabled on its first stop. */
+//@ verify
+//@ ensures \result == (step == 1)
+export function backDisabled(step: number): boolean {
+  return step === 1
+}
+
+/** The docs pane while the tour drives it: no maximize toggle, an inert frame out of the tab order. */
+export interface DocsChrome { readonly toggle: boolean; readonly inert: boolean; readonly body: string; readonly tabindex: number }
+//@ verify
+//@ ensures \result.toggle == !tour
+//@ ensures \result.inert == tour
+//@ ensures \result.body == (tour ? "vl-docs-body" : "vl-docs-content")
+//@ ensures \result.tabindex == (tour ? -1 : 0)
+export function docsChrome(tour: boolean): DocsChrome {
+  return { toggle: !tour, inert: tour, body: tour ? "vl-docs-body" : "vl-docs-content", tabindex: tour ? -1 : 0 }
+}
+
+/** The Sandboxes pane's controls. Running: the bar names the sandbox, minutes say left, Stop shows and the terminal
+ * takes input while idle. Stopped: the start body shows, New sandbox before a sandbox exists and Start after. With no
+ * answer the pane acts for a viewer. */
+export interface SandboxControls {
+  readonly running: boolean
+  readonly title: string
+  readonly suffix: string
+  readonly stop: boolean
+  readonly startBody: boolean
+  readonly create: boolean
+  readonly start: boolean
+  readonly terminalDisabled: boolean
+  readonly actor: Role
+  readonly signIn: string
+}
+//@ verify
+//@ ensures \result.running == (present && status == "running")
+//@ ensures \result.title == (present && status == "running" ? id : "Sandboxes")
+//@ ensures \result.suffix == (present && status == "running" ? " left" : "")
+//@ ensures \result.stop == (present && status == "running")
+//@ ensures \result.startBody == !(present && status == "running")
+//@ ensures \result.create == (!present || id == "")
+//@ ensures \result.start == (present && id != "")
+//@ ensures \result.terminalDisabled == (!(present && status == "running") || busy)
+//@ ensures \result.actor == (present ? role : "viewer")
+//@ ensures \result.signIn == (pending ? "Signing in…" : "Sign in")
+export function sandboxControls(present: boolean, status: string, id: string, role: Role, busy: boolean, pending: boolean): SandboxControls {
+  const running = present && status === "running"
+  return {
+    running,
+    title: running ? id : "Sandboxes",
+    suffix: running ? " left" : "",
+    stop: running,
+    startBody: !running,
+    create: !present || id === "",
+    start: present && id !== "",
+    terminalDisabled: !running || busy,
+    actor: present ? role : "viewer",
+    signIn: pending ? "Signing in…" : "Sign in",
+  }
+}
+
+/** The account changed: a different person after a known one (an observed account, or a signed-in start). */
+//@ verify
+//@ ensures \result == ((epoch > 0 || before != "") && before != after)
+export function personChanged(epoch: number, before: string, after: string): boolean {
+  return (epoch > 0 || before !== "") && before !== after
+}
+
+/** An issues dialog is open: the issues screen exists and names a dialog. */
+//@ verify
+//@ ensures \result == (present && dialog != "")
+export function dialogOpen(present: boolean, dialog: string): boolean {
+  return present && dialog !== ""
+}

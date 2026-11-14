@@ -1,5 +1,6 @@
 import { failureOf, postFailure, statusLabel, canSend, entryDisplay, showMedia, mediaDecision } from "./viewDecision.vibe"
 import * as V from "./viewDecision.vibe"
+import * as G from "./viewGateDecision.vibe"
 export { failureOf } from "./viewDecision.vibe"
 import { issuesView, issueChatCard } from "./issuesView.vibe"
 // The web app's view. Chat parts use @smthrs/ui's classes (`sui-chat-*`, `sui-cmd-*`), so the conversation looks the
@@ -152,7 +153,7 @@ function control(model: Model, h: H): ReadonlyArray<Html> {
       // The composer is hidden during the tour, so a failed tour request is named here.
       ...(model.tourError === "" ? [] : [h.p([h.Class("vl-theatre-error"), h.Role("alert")], [postFailure(model.tourError)])]),
       h.div([h.Class("vl-theatre-controls")], [
-        button("Back", "⏮", Message.ClickedBackStop(), step === 1),
+        button("Back", "⏮", Message.ClickedBackStop(), G.backDisabled(step)),
         button(model.theatre.paused ? "Play" : "Pause", model.theatre.paused ? "▶" : "Ⅱ", Message.ClickedPauseTour()),
         button("Skip", "⏭", Message.ClickedSkipStop()),
         h.button([h.Type("button"), h.AriaLabel(model.theatre.sound ? "Sound off" : "Sound on"), h.AriaPressed(String(model.theatre.sound)), h.OnClick(Message.ToggledTourSound())], [model.theatre.sound ? "🔊" : "🔇"]),
@@ -179,18 +180,19 @@ function paneView(model: Model, h: H): Html {
 function docsPane(model: Model, h: H): Html {
   const page = model.client.conversation.pane
   const maximized = model.docs === "max"
+  const chrome = G.docsChrome(model.tour)
   return h.section(
     [h.Class("vl-docs"), h.AriaLabel("Docs"), h.DataAttribute("maximized", String(maximized)), h.DataAttribute("driving", String(model.tour))],
     [
       h.div([h.Class("vl-docs-bar")], [
         h.span([h.Class("vl-docs-page")], [V.docsAddress(page)]),
-        ...(model.tour ? [] : [h.button(
+        ...(!chrome.toggle ? [] : [h.button(
           [h.Class("vl-docs-toggle"), h.Type("button"), h.AriaLabel(maximized ? "Minimize the docs" : "Maximize the docs"), h.OnClick(Message.ClickedDocs())],
           [paneIcon(h, maximized ? MINIMIZE : MAXIMIZE)],
         )]),
       ]),
-      h.div([h.Class(model.tour ? "vl-docs-body" : "vl-docs-content")], [
-        h.iframe([h.Class("vl-docs-frame"), h.Src(page), h.Title("VibeLang docs"), h.Inert(model.tour), h.Tabindex(model.tour ? -1 : 0)], []),
+      h.div([h.Class(chrome.body)], [
+        h.iframe([h.Class("vl-docs-frame"), h.Src(page), h.Title("VibeLang docs"), h.Inert(chrome.inert), h.Tabindex(chrome.tabindex)], []),
 
       ]),
     ],

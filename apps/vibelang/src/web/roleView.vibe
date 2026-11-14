@@ -3,6 +3,7 @@ import type { Role, SignedRole } from "../core/conversation.vibe"
 import { accountOf, Message, type Model, type Message as AppMessage } from "./main.vibe"
 import { modeSwitch } from "./modeSwitch.vibe"
 import * as D from "./accountViewDecision.vibe"
+import * as G from "./viewGateDecision.vibe"
 
 type H = HtmlBuilder<AppMessage>
 const roles: ReadonlyArray<Role> = ["viewer", "new", "community", "contributor", "maintainer"]
@@ -13,8 +14,9 @@ export function identityNav(model: Model, h: H): ReadonlyArray<Html> {
   const account = accountOf(model)
   const identity = account.identity
   const tools = D.identityTools(model.mode, identity.id, account.pending)
+  const switched = G.switchedMode(tools.mode, model.mode)
   return [h.div([h.Class("vl-identity-tools")], [
-    ...(!tools.mode || model.mode === "pending" ? [] : [modeSwitch(model.mode, h)]),
+    ...(switched === "" ? [] : [modeSwitch(switched, h)]),
     ...(tools.visit ? [
       h.label([h.Class("vl-visit")], [
         h.span([h.Class("vl-visit-as")], ["Visit as"]),
@@ -59,7 +61,7 @@ export function peoplePane(model: Model, h: H): ReadonlyArray<Html> {
         ]),
         ...(D.canChangeRole(account.identity.role, person.id, account.identity.id) ? [
           h.select([h.Key(person.id + account.target), h.Class("sui-select-trigger"), h.AriaLabel("Role for " + person.login), h.Value(person.role), h.OnChange(role => Message.SelectedRole({ id: person.id, role: role as SignedRole }))],
-            roles.filter(role => role !== "viewer").map(role => h.option([h.Value(role), h.Disabled(D.roleOptionDisabled(role))], [D.roleName(role)]))),
+            roles.filter(G.assignableRole).map(role => h.option([h.Value(role), h.Disabled(D.roleOptionDisabled(role))], [D.roleName(role)]))),
         ] : [badge(h, person.role)]),
       ]))),
     ]),

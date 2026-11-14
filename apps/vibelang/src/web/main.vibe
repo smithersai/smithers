@@ -32,6 +32,7 @@ import { DurableText } from "../core/wire.vibe"
 import * as PaneDecision from "./paneDecision.vibe"
 import * as UpdateDecision from "./updateDecision.vibe"
 import * as ArmDecision from "./armDecision.vibe"
+import * as Gate from "./viewGateDecision.vibe"
 import * as WikiEditorDecision from "./wikiEditorDecision.vibe"
 import { pages, wikiEditable, wikiPage } from "../core/wiki.vibe"
 import { Navigation } from "foldkit"
@@ -587,7 +588,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
   const issues = next.model.issues
   // The first session answer confirms startup identity; it must preserve a request already recovered for that session.
   // Once an account has been observed, changing people still drops the prior person's pending write.
-  const after2 = UpdateDecision.afterUpdate(issues !== undefined, before.role !== after.role, (accountOf(model).epoch > 0 || before.id !== "") && before.id !== after.id, issues !== undefined && issues.dialog !== "", issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog), next.model.tour, message)
+  const after2 = UpdateDecision.afterUpdate(issues !== undefined, before.role !== after.role, Gate.personChanged(accountOf(model).epoch, before.id, after.id), Gate.dialogOpen(issues !== undefined, issues?.dialog ?? ""), issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog), next.model.tour, message)
   if (after2.kind === "issues" && issues !== undefined) {
     return { ...next, model: ModelWrite.afterIssuesWrite(next.model, issues, after.role, after2), commands: [...next.commands, ...(after2.closeDialog ? [CloseIssueDialog({})] : [])] }
   }

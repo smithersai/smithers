@@ -6,6 +6,7 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { historyBadge, historyRefusal } from "../history/flowMachine.vibe"
 import { modeSwitch } from "./modeSwitch.vibe"
 import * as V from "./historyViewDecision.vibe"
+import * as G from "./viewGateDecision.vibe"
 import type { Commit } from "../history/mythical.vibe"
 import { type CommitPage, type EpicCount, type Head, MAX_QUERY } from "../history/pages.vibe"
 import { clipQuery } from "../history/pageDecision.vibe"
@@ -64,10 +65,11 @@ function body(model: HistoryModel, shown: CommitPage | undefined, epic: EpicCoun
 }
 
 function top(model: HistoryModel, h: H): Html {
+  const switched = G.switchedMode(true, model.mode)
   return h.header([h.Class("vl-top")], [
     h.a([h.Class("vl-home"), h.Href("/"), h.AriaLabel("Home")], [h.span([h.Class("vl-logo")], [h.img([h.Src("/media/logo-dark.svg"), h.Alt("VibeLang")])])]),
     h.nav([h.Class("vl-nav")], [
-      ...(model.mode === "pending" ? [] : [modeSwitch(model.mode, h)]),
+      ...(switched === "" ? [] : [modeSwitch(switched, h)]),
       h.a([h.Class("vl-nav-link"), h.Href(DOCS_URL)], ["Docs", away(h)]),
       h.a([h.Class("vl-nav-link"), h.Href(REPOSITORY_URL)], ["GitHub", away(h)]),
     ]),

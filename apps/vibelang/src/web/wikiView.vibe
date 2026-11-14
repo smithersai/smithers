@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { pages, wikiLink } from "../core/wiki.vibe"
 import { toHtml } from "./markdown.vibe"
 import * as W from "./wikiViewDecision.vibe"
+import * as G from "./viewGateDecision.vibe"
 import { wikiPermission } from "../core/conversation.vibe"
 import { staleMark } from "./issuesView.vibe"
 import { accountOf, Message, type Model } from "./main.vibe"
@@ -51,10 +52,10 @@ export function wikiPane(model: Model, h: H, documents: ReadonlyArray<WikiPage> 
     ])]),
     ...(editing !== undefined ? [
       h.div([h.Class("vl-wiki-edit-body")], [
-        h.textarea([h.Class("sui-textarea"), h.DataAttribute("code", "true"), h.Id("vl-wiki-editor"), h.AriaLabel(`Edit ${page!.label}`), h.Value(editing.text), h.Disabled(editing.busy || editing.submission !== undefined), h.OnInput(value => Message.UpdatedWikiEdit({ value }))]),
+        h.textarea([h.Class("sui-textarea"), h.DataAttribute("code", "true"), h.Id("vl-wiki-editor"), h.AriaLabel(`Edit ${page!.label}`), h.Value(editing.text), h.Disabled(G.wikiEditorLocked(editing.busy, editing.submission !== undefined)), h.OnInput(value => Message.UpdatedWikiEdit({ value }))]),
         ...(editing.error === "" ? [] : [h.div([h.Role("alert"), h.Class("vl-wiki-edit-error")], [editing.error, ...(W.wikiErrorAction(editing.error) === "connect" ? [h.form([h.Method("post"), h.Action(`/api/auth/connect?wiki-page=${editing.page}`)], [h.button([h.Class("sui-button"), h.Type("submit")], ["Connect GitHub"])])] : W.wikiErrorAction(editing.error) === "fork" ? [h.a([h.Class("sui-button"), h.Href("https://github.com/smithersai/smithers/fork")], ["Fork"])] : W.wikiErrorAction(editing.error) === "install" ? [h.a([h.Class("sui-button"), h.Href("/api/auth/install")], ["Install"])] : [])])]),
         h.div([h.Class("vl-wiki-edit-footer")], [
-          h.button([h.Class("sui-button"), h.Type("button"), h.Disabled(editing.busy || editing.submission !== undefined), h.OnClick(Message.CanceledWikiEdit())], ["Cancel"]),
+          h.button([h.Class("sui-button"), h.Type("button"), h.Disabled(G.wikiEditorLocked(editing.busy, editing.submission !== undefined)), h.OnClick(Message.CanceledWikiEdit())], ["Cancel"]),
           h.button([h.Class("sui-button sui-button-solid"), h.Type("button"), h.Disabled(editing.busy), h.OnClick(Message.SubmittedWikiEdit())], [W.wikiSubmitLabel(editing.submission !== undefined, editing.busy, wikiPermission(role, "save"))]),
         ]),
       ]),

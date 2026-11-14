@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { ALLOWANCES, mayStart } from "../core/sandboxDecision.vibe"
 import { roleName } from "./accountViewDecision.vibe"
 import { minutesTone, sandboxPaneView } from "./viewDecision.vibe"
+import { sandboxControls } from "./viewGateDecision.vibe"
 import { accountOf, Message, type Message as AppMessage, type Model } from "./main.vibe"
 type H = HtmlBuilder<AppMessage>
 
@@ -16,8 +17,8 @@ function minutes(model: Model, h: H, suffix = ""): Html {
 export function sandboxPane(model: Model, h: H): Html {
   const snapshot = model.sandbox
   const account = accountOf(model)
-  const running = snapshot?.status === "running"
-  const pane = sandboxPaneView(model.sandboxPane, running, model.sandboxBusy, mayStart(snapshot?.role ?? "viewer"), snapshot?.role ?? "", model.sandboxOperation, snapshot?.remaining === 0)
+  const c = sandboxControls(snapshot !== undefined, snapshot?.status ?? "", snapshot?.id ?? "", snapshot?.role ?? "viewer", !!model.sandboxBusy, account.pending)
+  const pane = sandboxPaneView(model.sandboxPane, c.running, model.sandboxBusy, mayStart(c.actor), snapshot?.role ?? "", model.sandboxOperation, snapshot?.remaining === 0)
   if (!pane.open) return h.button([h.Class("vl-pane"), h.Type("button"), h.AriaLabel("Sandboxes"), h.OnClick(Message.ClickedSandboxes())], [icon(h), h.span([h.Class("vl-pane-text")], ["Sandboxes"]), ...(snapshot ? [minutes(model, h)] : []), icon(h, true)])
   const remaining = snapshot?.remaining ?? 0
   const allowance = snapshot?.allowance ?? 0
@@ -25,28 +26,28 @@ export function sandboxPane(model: Model, h: H): Html {
   const button = (label: string, message: AppMessage, extra = "", disabled = false) => h.button([h.Type("button"), h.Class(`sui-button sui-button-sm ${extra}`), h.Disabled(disabled), h.OnClick(message)], [label])
   return h.section([h.Class("vl-docs vl-sandboxes"), h.AriaLabel("Sandboxes"), h.DataAttribute("maximized", String(max))], [
     h.div([h.Class("vl-docs-bar")], [
-      h.span([h.Class("vl-docs-page")], [icon(h), running ? snapshot!.id : "Sandboxes"]),
+      h.span([h.Class("vl-docs-page")], [icon(h), c.title]),
       h.div([h.Class("vl-sb-controls")], [
-        minutes(model, h, running ? " left" : ""),
-        ...(running ? [button("Stop", Message.StoppedSandbox(), "sui-button-destructive", pane.stopDisabled)] : []),
+        minutes(model, h, c.suffix),
+        ...(c.stop ? [button("Stop", Message.StoppedSandbox(), "sui-button-destructive", pane.stopDisabled)] : []),
         h.button([h.Type("button"), h.Class("vl-docs-toggle"), h.AriaLabel(max ? "Minimize Sandboxes" : "Maximize Sandboxes"), h.OnClick(Message.MaximizedSandboxes())], [icon(h, true)]),
       ]),
     ]),
-    ...(pane.gate !== "ok" ? [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], [pane.gate === "sign-in" ? "Sign in to start a sandbox" : "Contributor required"]), ...(pane.gate === "sign-in" ? [h.button([h.Class("sui-button sui-empty-action"), h.Type("button"), h.Disabled(account.pending), h.OnClick(Message.ClickedSignIn())], [account.pending ? "Signing in…" : "Sign in"])] : [])])] : [
-      ...(!running ? [h.div([h.Class("vl-sb-body")], [
+    ...(pane.gate !== "ok" ? [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], [pane.gate === "sign-in" ? "Sign in to start a sandbox" : "Contributor required"]), ...(pane.gate === "sign-in" ? [h.button([h.Class("sui-button sui-empty-action"), h.Type("button"), h.Disabled(account.pending), h.OnClick(Message.ClickedSignIn())], [c.signIn])] : [])])] : [
+      ...(c.startBody ? [h.div([h.Class("vl-sb-body")], [
         h.div([h.Class("vl-sb-head")], [
           h.div([h.Class("sui-kpi vl-sb-kpi")], [h.span([h.Class("sui-kpi-value")], [String(remaining)]), h.span([h.Class("sui-kpi-label")], [`min left of ${allowance}`]),
             h.div([h.Class("sui-progress"), h.Role("progressbar"), h.AriaLabel("Minutes left"), h.AriaValuemin(0), h.AriaValuemax(allowance), h.AriaValuenow(remaining)], [h.div([h.Class("sui-progress-indicator"), h.Style({ width: `${allowance === 0 ? 0 : (remaining / allowance) * 100}%` })], [])]),
             h.span([h.Class("sui-kpi-hint")], ["Resets monthly"])]),
-          ...(snapshot?.id ? [] : [button("New sandbox", Message.StartedSandbox(), "sui-button-default vl-sb-new", pane.startDisabled)]),
+          ...(!c.create ? [] : [button("New sandbox", Message.StartedSandbox(), "sui-button-default vl-sb-new", pane.startDisabled)]),
         ]),
-        ...(snapshot?.id ? [h.div([h.Class("sui-row-button vl-sb")], [h.span([h.Class("vl-dot")], []), h.span([h.Class("vl-sb-name")], [snapshot.id]), button("Start", Message.StartedSandbox(), "sui-button-ghost", pane.startDisabled)])] : []),
+        ...(c.start ? [h.div([h.Class("sui-row-button vl-sb")], [h.span([h.Class("vl-dot")], []), h.span([h.Class("vl-sb-name")], [snapshot!.id]), button("Start", Message.StartedSandbox(), "sui-button-ghost", pane.startDisabled)])] : []),
       ])] : []),
       h.span([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Sandbox")], [pane.status]),
       ...(pane.starting ? [h.div([h.Class("vl-sb-starting")], ["Starting", h.div([h.Class("sui-progress")], [h.div([h.Class("vl-ind")], [])])])] : []),
-      ...(snapshot?.id ? [h.div([h.Class(`vl-term${running ? "" : " vl-term-off"}`)], [
+      ...(snapshot?.id ? [h.div([h.Class(`vl-term${c.running ? "" : " vl-term-off"}`)], [
         h.pre([h.Class("vl-term-body"), h.DataAttribute("scroll-surface", "true"), h.Tabindex(0), h.AriaLabel("Terminal output")], [snapshot.output]),
-        h.form([h.Class("vl-term-prompt"), h.OnSubmit(Message.SubmittedTerminal())], [h.span([h.Class("vl-term-p"), h.AriaHidden(true)], ["$"]), h.input([h.Class("vl-term-input"), h.Type("text"), h.AriaLabel("Terminal command"), h.Value(model.terminalDraft), h.Disabled(!running || !!model.sandboxBusy), h.OnInput((value) => Message.UpdatedTerminal({ value }))])]),
+        h.form([h.Class("vl-term-prompt"), h.OnSubmit(Message.SubmittedTerminal())], [h.span([h.Class("vl-term-p"), h.AriaHidden(true)], ["$"]), h.input([h.Class("vl-term-input"), h.Type("text"), h.AriaLabel("Terminal command"), h.Value(model.terminalDraft), h.Disabled(c.terminalDisabled), h.OnInput((value) => Message.UpdatedTerminal({ value }))])]),
       ])] : []),
     ]),
     ...(model.sandboxError ? [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [pane.error, ...(pane.retry === "none" ? [] : [button("Retry", pane.retry === "stop" ? Message.StoppedSandbox() : Message.StartedSandbox())])])] : []),

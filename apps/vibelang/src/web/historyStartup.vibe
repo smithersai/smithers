@@ -1,4 +1,5 @@
 import { preferenceWrite, wantsMock, startupRole } from "./startupDecision.vibe"
+import { grantsMe } from "./viewGateDecision.vibe"
 // The history page's startup (wiki/decisions/0020-mythical-history.md): renders at once with mode `pending`, then the
 // backend selection resolves. In mock mode the page lets you be any role, with `?role=<role>` or the `vibelang.role`
 // storage key (maintainer when neither says); live, the server decides who you are (decision 0019): a viewer until the
@@ -69,7 +70,7 @@ function signedRoles(): Stream.Stream<HistoryMessage, never, Accounts> {
     if (!("ledger" in identity)) return asked
     const granted: Stream.Stream<HistoryMessage, never, Accounts> = accounts.events(identity.ledger.seq).pipe(
       Stream.flatMap((event): Stream.Stream<HistoryMessage> =>
-        event.type === "RoleGranted" && event.id === identity.id ? Stream.fromEffect(message(() => HistoryMessage.ResolvedRole({ role: event.role }))) : Stream.empty),
+        event.type === "RoleGranted" && grantsMe(event.type, event.id, identity.id) ? Stream.fromEffect(message(() => HistoryMessage.ResolvedRole({ role: event.role }))) : Stream.empty),
       Stream.catch(() => again("role events lost; following again")),
     )
     return Stream.concat(asked, granted)

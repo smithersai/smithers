@@ -18,6 +18,7 @@ from extended_mutations import cases as extended_cases
 from web_mutations import cases as web_cases
 from worker_mutations import cases as worker_cases
 from arm_mutations import cases as arm_cases
+from view_mutations import cases as view_cases
 # These mutate native adapters and are rejected by behavioral tests, not Dafny.
 # The full verify:broken gate runs both registries and reports their counts separately.
 from runtime_mutations import CASES as runtime_cases
@@ -316,6 +317,7 @@ cases += [
 cases += web_cases
 cases += worker_cases
 cases += arm_cases
+cases += view_cases
 def source_of(module,fn):
     """The module a case's function lives in: decide and its constructors moved out of conversation.vibe."""
     return 'src/core/decide.vibe' if module=='src/core/conversation.vibe' and fn in {'decide','accepted','refused'} else module
