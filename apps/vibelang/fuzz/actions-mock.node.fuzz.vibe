@@ -277,7 +277,7 @@ it.live("actions/mock-before-run", () => run("actions/mock-before-run", Schema.S
     const other = (try accounts.current()).id !== owner
     return other ? last?.state === "failed" && last.steps.length === 0 : last?.state === "passed"
   }
-}), undefined, { minimum: "10 seconds" }), 120000)
+}), undefined, { minimum: "10 seconds", chosen: [{ first: "maintainer", then: "contributor", cancel: false }] }), 120000)
 
 /** A world whose scope has closed refuses new runs as `closed`, and reads what it had. */
 it.live("actions/mock-closed", () => run("actions/mock-closed", Role, (role) => effect {

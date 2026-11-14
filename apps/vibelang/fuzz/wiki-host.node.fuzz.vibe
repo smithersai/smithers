@@ -101,7 +101,7 @@ const hostCalls = (input: typeof Call.Type) => effect {
   if (write && (!(result.value.review ?? "").startsWith("https://github.com/o/r/pull/") || fake.pulls.length !== pullsBefore + 1 || input.fork === false)) throw new Finding({ report: `a ${input.op} answered without one review on the person's fork` })
   return true
 }
-it.live("wiki/host-calls", () => Effect.andThen(run("wiki/host-calls", Call, hostCalls), reached("wiki/host-calls", calls, hostCalls, {
+it.live("wiki/host-calls", () => Effect.andThen(run("wiki/host-calls", Call, hostCalls, undefined, { chosen: [{ op: "draft", role: "maintainer", caller: "person", authorize: "absent", writer: true, stored: false, fresh: false, base: "current", text: "Edited text.", main: "present", fork: true }] }), reached("wiki/host-calls", calls, hostCalls, {
   op: "propose", role: "maintainer", caller: "person", authorize: "absent", writer: false, stored: false, fresh: false, base: "current", text: "Edited text.", main: "present", fork: true,
 })))
 

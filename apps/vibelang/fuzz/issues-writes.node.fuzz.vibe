@@ -68,4 +68,4 @@ const hostWrites = (steps: typeof Steps.Type) => effect {
   }
   return true
 }
-it.live("issues/host-writes", () => Effect.andThen(run("issues/host-writes", Steps, hostWrites), reached("issues/host-writes", counter, hostWrites, [{ op: "commit", number: 1, parent: 0, assignee: "fuzz", role: "maintainer", agent: false, dropAssignees: false }])))
+it.live("issues/host-writes", () => Effect.andThen(run("issues/host-writes", Steps, hostWrites, undefined, { chosen: [[{ op: "commit", number: 1, parent: 0, assignee: "fuzz", role: "maintainer", agent: false, dropAssignees: true }]] }), reached("issues/host-writes", counter, hostWrites, [{ op: "commit", number: 1, parent: 0, assignee: "fuzz", role: "maintainer", agent: false, dropAssignees: false }])))
