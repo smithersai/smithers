@@ -22,7 +22,8 @@ test("a maintainer runs Tour from the live Actions pane, follows its trace, canc
   await page.keyboard.press("Enter")
   await page.getByRole("button", { name: "Expand Actions", exact: true }).click()
   const pane = page.getByRole("region", { name: "Actions", exact: true })
-  await pane.getByRole("button", { name: "Tour", exact: true }).click()
+  // The flow's button adds its last run's duration ("Tour 0s") once the project's Worker holds a Tour run.
+  await pane.getByRole("button", { name: /^Tour( \S+)?$/ }).click()
   await pane.getByRole("button", { name: "Run", exact: true }).click()
   const card = page.getByRole("button", { name: /Open Tour run/ }).first()
   // The card waits on the Worker's durable engine answering the start and the page's read of it. With three projects'
@@ -32,9 +33,12 @@ test("a maintainer runs Tour from the live Actions pane, follows its trace, canc
   await expect(pane.getByLabel("Logs", { exact: true })).toContainText(/start|guide/)
   await pane.getByRole("button", { name: "Cancel", exact: true }).click()
   await expect(pane.getByText("Cancelled", { exact: true }).first()).toBeVisible()
-  // A run that ended offers Re-run, which starts a new run of the same flow (POST /runs/<id>/rerun).
+  // A run that ended offers Re-run, which starts a new run of the same flow (POST /runs/<id>/rerun). The project's
+  // Worker is shared, so other tests' Tour runs may be listed too: count the new card from the runs listed now.
+  const runs = page.getByRole("button", { name: /Open Tour run/ })
+  const listed = await runs.count()
   await pane.getByRole("button", { name: "Re-run", exact: true }).click()
-  await expect(page.getByRole("button", { name: /Open Tour run/ })).toHaveCount(2)
+  await expect(runs).toHaveCount(listed + 1)
   await expect(pane.getByText("Running", { exact: true })).toBeVisible()
   await pane.getByRole("button", { name: "Cancel", exact: true }).click()
   await expect(pane.getByText("Running", { exact: true })).toHaveCount(0)
