@@ -708,7 +708,8 @@ Reached after this run (vl-coverage-core, session 12; focused run `s12e2e3`, 108
 
 | Arm | How |
 | --- | --- |
-| `sandboxDecision.vibe:325` `meterDelay`'s `due` (the allowance ends before the next interval) | Fault `sandbox-last-minute` moves the meter's clock, once the sandbox starts, to 30 seconds before the allowance runs out; the next read re-arms the meter for those seconds. `e2e/core-sandbox-minute.spec.ts`. |
+| `sandboxDecision.vibe:325` `meterDelay`'s `due` (the allowance ends before the next interval) | Fault `sandbox-last-minute` moves the meter's clock, once the sandbox starts, to eight seconds before the allowance runs out; the next read re-arms the meter for those seconds, and the read after they end stops the sandbox. `e2e/core-sandbox-minute.spec.ts`. |
+| `sandboxDecision.vibe:307` `leaseMilliseconds`'s one-second floor | The same journey: a read in the last second renews the lease with under a second left. Reached in each of 9 runs merged (`s12last2`); a read that skips the last second leaves it for the next run. |
 | `issueFixtureDecision.vibe:27` `fixtureFailure`'s `title` | The agent asked `File an issue:` with no title files nothing and says "No issue filed." `e2e/core-agent-requests.spec.ts`. |
 | `sandboxDecision.vibe:116` `meterStep` at the month's boundary | Fault `sandbox-month-end` leaves five minutes, then, once the person stops, moves the meter's clock to three seconds before the next UTC month. The sandbox started again runs across it: the badge shows the new month's 600 minutes and the old month's low notice clears. `e2e/core-sandbox-month.spec.ts`, 6/6 (`s12month5`). |
 

@@ -84,7 +84,7 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * Lose #3 once, or break before #4 mid-reply. Subsequent subscriptions use the unmodified real stream. `sandbox-read`
  * fails every sandbox read; `sandbox-start` fails the first start; each `machine-*` fault fails the mock sandbox's
  * machine once (faultyMachines.vibe); `sandbox-low`, `sandbox-last-minute` and `sandbox-out` move the sandbox
- * meter's clock, once the first sandbox starts, to five minutes or 30 seconds before the allowance runs out, or a
+ * meter's clock, once the first sandbox starts, to five minutes or eight seconds before the allowance runs out, or a
  * minute past it; `sandbox-month-end` leaves five minutes too, and once the first stop ends moves the clock to
  * three seconds before the next UTC month, so a sandbox started again runs across the month's end;
  * `sandbox-replay` is a transport that loses the answers to the first sandbox start and the first command and sends each
@@ -275,7 +275,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         if (fault === "machine-command-exhausted") remaining = started.remaining
         if (skewed && !jumped && fault !== "machine-command-exhausted") {
           jumped = true
-          skew += fault === "sandbox-last-minute" ? started.remaining * 60_000 - 30_000 : (fault === "sandbox-low" || fault === "sandbox-month-end" ? started.remaining - 5 : started.remaining + 1) * 60_000
+          skew += fault === "sandbox-last-minute" ? started.remaining * 60_000 - 8_000 : (fault === "sandbox-low" || fault === "sandbox-month-end" ? started.remaining - 5 : started.remaining + 1) * 60_000
           skewNanos = try Effect.orDie(Effect.try(() => BigInt(skew) * 1_000_000n))
           try Effect.logInfo("vibelang.e2e.sandbox-clock").pipe(Effect.annotateLogs({ fault }))
         }
