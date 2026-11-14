@@ -6,7 +6,7 @@ exactly the same inputs and tools (proof_cache.py).
 import hashlib,json,os,pathlib,re,subprocess,sys,tempfile
 root=pathlib.Path(__file__).resolve().parent
 from sources import production_sources
-from mutation_results import validate_rejection
+from mutation_results import unrejected
 production=production_sources(root.parent)
 before={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in production}
 (root/'.checks').mkdir(exist_ok=True)
@@ -28,12 +28,14 @@ for result in dependencies:
     if result['exit']:raise SystemExit(f"FAIL: imported dependency was not proved: {result['file']}")
 results=[r for r in summary['results'] if r['mutation']]
 if len(results)!=len(manifest) or code!=1:raise SystemExit('FAIL: unexpected mutation count / runner exit')
-for result in results:
-    item=manifest[pathlib.Path(result['file']).stem]
-    try:validate_rejection(result,item['function'])
-    except ValueError as error:raise SystemExit(f"FAIL: {result['file']}: {error}")
 if production_sources(root.parent)!=production or any(hashlib.sha256(p.read_bytes()).hexdigest()!=digest for p,digest in before.items()):
     raise SystemExit('FAIL: production source changed during the run')
+# Every mutant is judged, so one stale case names itself instead of hiding the rest of its batch.
+failed=unrejected(results,manifest)
+if failed:
+    print('\n'.join(failed))
+    count=lambda kind:sum(line.startswith(kind) for line in failed)
+    raise SystemExit(f"FAIL: {len(results)-len(failed)}/{len(results)} mutations rejected; {count('INVALID')} invalid, {count('SURVIVED')} survived, {count('MISSING')} missing")
 reused=sum(bool(r.get('cached')) for r in dependencies)
 print(f"BROKEN PASS: {len(results)}/{len(results)} executable mutations rejected by Dafny; {len(dependencies)} dependency modules proved ({reused} reused); {summary['seconds']}s")
 if not sys.argv[1:]:

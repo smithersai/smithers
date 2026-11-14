@@ -10,7 +10,7 @@ const { branchFacts, record } = require('./branches.cjs');
 const app = path.resolve(__dirname, '..');
 
 /** Every reason the tree may not land. A contract needs a mutant unless it is a lemma or restates its table. */
-function refusals({ rows, decisionText, cases, staleCases = [], branchRecord }) {
+function refusals({ rows, decisionText, cases, staleCases = [], invalidMutants = [], branchRecord }) {
   const refused = [];
   for (const row of rows) {
     if (row.why.startsWith('Not yet proved')) refused.push(`not proved: ${row.file}:${row.line} ${row.label}`);
@@ -22,6 +22,7 @@ function refusals({ rows, decisionText, cases, staleCases = [], branchRecord }) 
     if (!mutated.has(`${row.file}:${row.label}`)) refused.push(`no mutant: ${row.file}:${row.line} ${row.label}`);
   }
   for (const line of staleCases) refused.push(`stale mutation: ${line}`);
+  refused.push(...invalidMutants);
   if (branchRecord !== undefined) refused.push(...branchFacts(rows, branchRecord).refused);
   return refused;
 }
@@ -37,8 +38,18 @@ function mutationFacts() {
     const checked = run([out, '--check']);
     if (checked.error) throw checked.error;
     const staleCases = checked.status === 0 ? [] : (checked.stderr.trim().split('\n').filter(line => line && line !== 'Stale mutations:'));
-    return { cases: JSON.parse(listed.stdout), staleCases };
+    // A stale case writes no mutant, so only a tree with none is typechecked.
+    return { cases: JSON.parse(listed.stdout), staleCases, invalidMutants: staleCases.length ? [] : mutantTypes() };
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
+}
+
+/** Every mutant that no longer typechecks (verify/mutant_types.py, about 45 s), one refusal line each. */
+function mutantTypes() {
+  const run = spawnSync('python3', [path.join(__dirname, 'mutant_types.py')], { cwd: app, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (run.error) throw run.error;
+  const lines = run.stdout.split('\n').filter(line => line.startsWith('invalid mutant: ') || line.startsWith('typecheck failure outside any mutant: '));
+  if (run.status !== 0 && lines.length === 0) throw Error(`mutant_types.py exited ${run.status}: ${(run.stderr || run.stdout).slice(-4000)}`);
+  return lines;
 }
 
 /** The facts for the tree on disk. */
@@ -54,7 +65,8 @@ function main() {
   const contracts = facts.rows.filter(row => row.proof === 'contract').length;
   // Counts only: no source text, names or paths beyond the refused rows themselves.
   const branches = branchFacts(facts.rows, facts.branchRecord);
-  console.log(`landing check: ${facts.rows.length} rows, ${contracts} contracts, ${facts.cases.length} mutation cases, `
+  console.log(`landing check: ${facts.rows.length} rows, ${contracts} contracts, ${facts.cases.length} mutation cases `
+    + `(${facts.invalidMutants.length} invalid), `
     + `${branches.branches} shell branches (${branches.open} open), ${refused.length} refused, ${Date.now() - started} ms`);
   if (refused.length) { console.error(refused.join('\n')); process.exitCode = 1; }
 }

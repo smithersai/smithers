@@ -28,7 +28,10 @@ and contracts remain present and are unchanged from the production module. Their
 a direct check of a broken copy checks all functions. This avoids repeating unrelated proofs for every mutation.
 The selftest requires exit `4` and a primary error for the intended function's own postcondition, invariant or assertion
 in the generated target file. Callee preconditions and related-location references never qualify; a backend error or
-timeout fails the selftest. It uses two workers by default; set `CHECK_JOBS=1` to limit
+timeout fails the selftest. A mutant that does not typecheck is counted invalid, never proved, and the rest of its
+batch still runs; the run then fails, naming every invalid (`INVALID`) and surviving (`SURVIVED`) mutant. Any other
+typecheck failure (a staged dependency, a declaration) stops the run. `python3 verify/mutant_types.py` typechecks every
+mutant without Dafny (about 40 s); the landing check runs it. It uses two workers by default; set `CHECK_JOBS=1` to limit
 it further. Negative solvers use one core and the whole pipeline runs under `nice`.
 
 Artifacts, source hashes, command/exit transcripts, CSV proof timings and summaries stay in `.checks/run-*`. A module's

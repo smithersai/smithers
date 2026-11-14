@@ -387,6 +387,70 @@ class MutationRegistry(unittest.TestCase):
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertEqual(os.listdir(out), [])
 
+class InvalidMutants(unittest.TestCase):
+    """A mutant that no longer typechecks is counted invalid and named; the rest of its batch still runs. Before,
+    one (`actions-click-epoch`, 2026-11-13) stopped the typecheck of the whole batch and voided a full gate run."""
+
+    def test_an_ill_typed_mutant_is_invalid_and_the_rest_of_its_batch_is_proved(self):
+        from mutation_results import unrejected
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            app = pathlib.Path(folder)
+            (app / 'src/core').mkdir(parents=True)
+            config = json.dumps({'extends': str(ROOT.parent / 'tsconfig.json'), 'files': [], 'include': []})
+            (app / 'tsconfig.json').write_text(config)
+            (app / 'src/core/decide.vibe').write_text('//@ verify\n//@ ensures \\result == input\nexport function same(input: number): number { return input }\n')
+            (app / 'src/core/caller.vibe').write_text('import { same } from "./decide.vibe"\n//@ verify\n//@ ensures \\result == input\nexport function call(input: number): number { return same(input) }\n')
+            mutants = app / 'mutants'; mutants.mkdir()
+            (mutants / 'tsconfig.json').write_text(config)
+            (mutants / 'decide.vibe.ts').write_text((app / 'src/core/decide.vibe').read_text())
+            head = 'import { same } from "./decide.vibe"\n//@ verify\n//@ ensures \\result == input\nexport function call(input: number): number { '
+            (mutants / 'call-wrong.ts').write_text(head + 'return same(input) + 1 }\n')
+            (mutants / 'call-ill-typed.ts').write_text(head + 'return null }\n')
+            manifest = {name: {'source': 'src/core/caller.vibe', 'function': 'call'} for name in ['call-wrong', 'call-ill-typed']}
+            (mutants / 'manifest.json').write_text(json.dumps(manifest))
+            env = {k: v for k, v in os.environ.items() if k != 'VERIFY_FRESH'}
+            env.update(VIBELANG_VERIFY_ROOT=str(app), CHECK_JOBS='2', VERIFY_MUTATION_MANIFEST=str(mutants / 'manifest.json'))
+            result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(mutants)], capture_output=True, text=True, env=env, timeout=300)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('1 invalid mutants', result.stdout)
+            self.assertIn(f'INVALID {mutants / "call-ill-typed.ts"}', result.stdout)
+            summary = json.loads(next((app / 'verify/.checks').glob('run-*/summary.json')).read_text())
+            results = {pathlib.Path(r['file']).stem: r for r in summary['results'] if r['mutation']}
+            self.assertEqual(sorted(results), ['call-ill-typed', 'call-wrong'])
+            self.assertTrue(results['call-ill-typed']['invalid'])
+            self.assertEqual(results['call-wrong']['exit'], 4, results['call-wrong']['output'])
+            dafny = [pathlib.Path(c['argv'][-1]).stem for c in summary['commands'] if pathlib.Path(c['argv'][0]).name == 'dafny']
+            self.assertIn('call-wrong', dafny)
+            self.assertNotIn('call-ill-typed', dafny)
+            self.assertEqual(unrejected(list(results.values()), manifest), ['INVALID call-ill-typed: the mutant does not typecheck (src/core/caller.vibe call)'])
+
+    def test_every_unrejected_mutant_is_named_not_only_the_first(self):
+        from mutation_results import unrejected
+        manifest = {name: {'source': 's.vibe', 'function': 'f'} for name in ['a', 'b', 'c']}
+        results = [{'file': '/m/a.ts', 'invalid': True, 'exit': 3}, {'file': '/m/b.ts', 'exit': 0, 'output': ''}]
+        self.assertEqual(unrejected(results, manifest), [
+            'INVALID a: the mutant does not typecheck (s.vibe f)',
+            'SURVIVED b: not a Dafny contract failure (s.vibe f)',
+            'MISSING c: no result (s.vibe f)'])
+
+    def test_a_diagnostic_is_charged_to_its_own_mutant_and_a_dependency_error_to_no_mutant(self):
+        import mutant_types
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            out = pathlib.Path(folder)
+            (out / 'dep.vibe.ts').write_text('export function same(n: number): number { return n }\n')
+            (out / 'good.ts').write_text('import { same } from "./dep.vibe"\nexport function f(n: number): number { return same(n) }\n')
+            (out / 'bad.ts').write_text('import { same } from "./dep.vibe"\nexport function f(n: number): number { return same("x") }\n')
+            diagnostics, files = mutant_types.typecheck([out])
+            self.assertEqual(files, 3)
+            invalid, other = mutant_types.split(diagnostics, [out / 'good.ts', out / 'bad.ts'])
+            self.assertEqual(list(invalid), [str((out / 'bad.ts').resolve())])
+            self.assertIn('TS2345', invalid[str((out / 'bad.ts').resolve())])
+            self.assertEqual(other, {})
+            (out / 'dep.vibe.ts').write_text('export function same(n: number): number { return "n" }\n')
+            invalid, other = mutant_types.split(mutant_types.typecheck([out])[0], [out / 'good.ts', out / 'bad.ts'])
+            self.assertEqual(list(other), [str((out / 'dep.vibe.ts').resolve())])
+
+
 class MutantTimeLimits(unittest.TestCase):
     def test_a_named_slow_mutant_gets_its_own_limit_and_others_keep_thirty_seconds(self):
         from mutation_targets import TIME_LIMITS, time_limit

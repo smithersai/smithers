@@ -182,18 +182,31 @@ def verify(item):
 KEYWORDS=dafny_keywords()
 initial_hashes={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
 
-tc_code,tc_output=command(['node',str(ROOT/'typecheck.cjs'),*[str(p) for p in files]],ROOT)
-print(tc_output,end='')
-if tc_code:
- (run/'typecheck.log').write_text(tc_output)
- raise SystemExit(tc_code)
+# A mutation run counts a mutant that does not typecheck as invalid and proves the rest of its batch; broken.py fails on
+# it by name. Any other typecheck failure (a staged dependency, a declaration) still stops the run.
+invalid={}
+if manifest_path:
+ import mutant_types
+ diagnostics,checked=mutant_types.typecheck(files,ROOT)
+ found,other=mutant_types.split(diagnostics,mutant_files)
+ if other:
+  text=''.join(other.values()); print(text,end=''); (run/'typecheck.log').write_text(text)
+  raise SystemExit(1)
+ invalid={ts:found[str(ts.resolve())] for ts in files if str(ts.resolve()) in found}
+ print(f'TypeScript: {checked} files checked (strict); {len(invalid)} invalid mutants')
+else:
+ tc_code,tc_output=command(['node',str(ROOT/'typecheck.cjs'),*[str(p) for p in files]],ROOT)
+ print(tc_output,end='')
+ if tc_code:
+  (run/'typecheck.log').write_text(tc_output)
+  raise SystemExit(tc_code)
 
 jobs=int(os.environ.get('CHECK_JOBS','1'))
 if not 1<=jobs<=8: raise SystemExit('CHECK_JOBS must be 1..8')
 results=[]
 def report(r):
  results.append(r)
- print(f"{'PASS' if r['exit']==0 else 'FAIL'} {r['locations']} "+(f"(reused: proved in {r['cached']})" if r.get('cached') else f"({r['seconds']:.3f}s)"))
+ print(f"{'PASS' if r['exit']==0 else 'INVALID' if r.get('invalid') else 'FAIL'} {r['locations']} "+(f"(reused: proved in {r['cached']})" if r.get('cached') else f"({r['seconds']:.3f}s)"))
  if r['exit']:
   for m in r['mapped']: print(m)
   print(r['output'],end='')
@@ -209,7 +222,10 @@ for item in dependency_items:
  result=verify(item);report(result)
  if result['exit']:break
 else:
- remaining=[item for item in enumerate(files) if item not in dependency_items]
+ for ts,text in invalid.items():
+  log=run/(ts.stem+'.typecheck.log'); log.write_text(text)
+  report({'sha256':hashlib.sha256(ts.read_bytes()).hexdigest(),'file':str(ts),'exit':3,'invalid':True,'seconds':0.0,'locations':str(ts),'mapped':[],'output':'ERROR: the mutant does not typecheck\n'+text,'log':str(log),'dfy':None,'diagnostics':[],'mutation':True,'key':None})
+ remaining=[item for item in enumerate(files) if item not in dependency_items and item[1] not in invalid]
  with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
   for result in pool.map(verify,remaining):report(result)
 for path,digest in dependency_hashes.items():

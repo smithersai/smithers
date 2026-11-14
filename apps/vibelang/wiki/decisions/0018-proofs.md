@@ -7190,8 +7190,8 @@ check, and `land-main` runs no tests, so three things reached `main` unrefused: 
 gained 10 between two full runs), a generated table that no longer matched its sources (main `a54642d6` held one:
 `src/web/main.vibe` and `src/core/sandboxHost.vibe` had moved), and a new contract with no mutation case.
 
-`verify/landing.cjs` refuses all of them, from the inventory and `mutations.py`'s case list only, never Dafny
-(about 15 s):
+`verify/landing.cjs` refuses all of them, from the inventory, `mutations.py`'s case list and a typecheck of its
+mutants, never Dafny (about 55 s):
 
 | Refusal | Rule |
 | --- | --- |
@@ -7200,6 +7200,7 @@ gained 10 between two full runs), a generated table that no longer matched its s
 | `no mutant: <file>:<line> <name>` | A top-level `//@ verify` function with a contract and no case in `mutations.py` (`--cases`) |
 | `stale mutation: <case>` | A case whose text no longer matches its source exactly once (`mutations.py OUT --check`) |
 | `unrecorded branch: <file>:<line> <function>` | A branch in a shell row that `verify/shell-branches.tsv` does not record ("Decisions in shell rows", below) |
+| `invalid mutant: <case> (<file> <function>): <diagnostic>` | A case whose mutant no longer typechecks (`verify/mutant_types.py`) |
 
 Exempt from `no mutant`: a lemma, whose executable body is `return true` or `return <base> ? true : <itself>(...)`, so
 a mutant has nothing to change; and a contract whose reason is "Specification restated". A function marked `//@ verify`
@@ -7216,6 +7217,21 @@ It runs in two places:
 
 To fix a refusal: prove the row (contract and mutation case), or give its inventory reason; run
 `node verify/inventory.cjs --write`; rerun `node verify/landing.cjs`.
+
+**Invalid mutants (2026-11-14).** `400d0ee8` narrowed `LoadActions.epoch` to `number`, so `actions-click-epoch`'s
+mutant `epoch: null` stopped typechecking. The case's text still matched once, so the landing check passed, and
+`verify:broken` stopped at the typecheck of the whole batch: 257 mutants voided, a full gate run on `cf4c78264e3e`
+stopped and rerun. Now `check.py`, in a mutation run, charges each diagnostic to its file: a diagnostic in a mutant
+marks that mutant invalid (exit 3, never proved) and the rest of the batch runs; a diagnostic anywhere else still stops
+the run. `broken.py` judges every result and fails with one line per mutant not rejected (`INVALID`, `SURVIVED`,
+`MISSING`) and the counts, instead of stopping at the first. The landing check typechecks every mutant in strict
+programs of 500 (`verify/mutant_types.py`: 3,027 mutants in 7 programs, 40 s on nyc-02, two programs at a time; one
+program over all of them peaked at 2.5 GB and ran out of heap on a box) and refuses each invalid one. The landing check
+went from about 15 s to 55 s. Regression tests: `harness_test.py` `InvalidMutants` (an ill-typed mutant beside a valid one:
+the valid one is proved and rejected, the ill-typed one is named invalid and never reaches Dafny; diagnostics are
+charged to their own file; every unrejected mutant is named) and `landing_test.cjs` "a mutant that no longer
+typechecks is refused by name". Putting `epoch: null` back makes `node verify/landing.cjs` refuse
+`invalid mutant: actions-click-epoch (src/web/modelDecision.vibe clickedActions): ... TS2322`.
 
 ## Decisions in shell rows (vl-proveall3, 2026-11-13)
 

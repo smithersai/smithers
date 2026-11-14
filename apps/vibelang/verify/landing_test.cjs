@@ -47,6 +47,12 @@ test('a mutation case whose source moved is refused', () => {
     ['stale mutation: gone: missing function gone in worker/x.vibe']);
 });
 
+test('a mutant that no longer typechecks is refused by name', () => {
+  const source = '// Fixture.\nexport const limit = 1\n';
+  const line = 'invalid mutant: actions-click-epoch (src/web/main.vibe update): x.ts(1,1): error TS2322: Type null is not assignable to type number.';
+  assert.deepEqual(refusals({ ...facts(source), invalidMutants: [line] }), [line]);
+});
+
 test('a new branch in a shell row is refused until it is proved or recorded with a reason', () => {
   const shell = '// Fixture.\nexport function pick(role: string, n: number) {\n  if (role === "maintainer") return n\n  return n > 2 ? 1 : 0\n}\n';
   const rows = inventorySource(fixture, shell);

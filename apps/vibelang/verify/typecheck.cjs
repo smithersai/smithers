@@ -1,7 +1,10 @@
 const {Project, ts} = require('../../../packages/lemmascript/node_modules/ts-morph');
 const fs = require('fs');
 const path = require('path');
-const inputs = process.argv.slice(2).map(value => path.resolve(value));
+// --json prints {files, diagnostics: {file: text}} and exits 0 whatever it finds, so a mutation run can tell an
+// ill-typed mutant from a broken dependency (check.py); a diagnostic with no file is keyed "".
+const json = process.argv[2] === '--json';
+const inputs = process.argv.slice(json ? 3 : 2).map(value => path.resolve(value));
 const project = new Project({compilerOptions:{strict:true,noEmit:true,target:ts.ScriptTarget.ESNext,module:ts.ModuleKind.NodeNext,moduleResolution:ts.ModuleResolutionKind.NodeNext,skipLibCheck:true,types:[]}});
 function scan(p) {
  for(const entry of fs.readdirSync(p,{withFileTypes:true})) {
@@ -16,5 +19,13 @@ for (const input of inputs) {
 }
 if (project.getSourceFiles().length === 0) { console.error('No proof sources selected for strict typechecking'); process.exit(1); }
 const diagnostics=project.getPreEmitDiagnostics();
-if(diagnostics.length){process.stderr.write(project.formatDiagnosticsWithColorAndContext(diagnostics));process.exit(1);}
-console.log(`TypeScript: ${project.getSourceFiles().length} files checked (strict)`);
+if(json){
+ const host={getCanonicalFileName:f=>f,getCurrentDirectory:()=>process.cwd(),getNewLine:()=>'\n'};
+ const byFile={};
+ for(const d of diagnostics){
+  const file=d.getSourceFile()?.getFilePath() ?? '';
+  byFile[file]=(byFile[file] ?? '')+ts.formatDiagnostic(d.compilerObject,host);
+ }
+ process.stdout.write(JSON.stringify({files:project.getSourceFiles().length,diagnostics:byFile}));
+} else if(diagnostics.length){process.stderr.write(project.formatDiagnosticsWithColorAndContext(diagnostics));process.exitCode=1;}
+else console.log(`TypeScript: ${project.getSourceFiles().length} files checked (strict)`);
