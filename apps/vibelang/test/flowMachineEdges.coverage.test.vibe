@@ -61,6 +61,10 @@ describe("the words for a history refusal", () => {
     ["full", "History full."],
     ["unavailable", "The history can't be reached."],
     ["paced", "Publishing in the background."],
+    // A repository holding what the export did not write (a manifest bookmark with no manifest, a ref to a missing
+    // object) fails the export's check; its code is never shown.
+    ["invalid", "The export failed its check."],
+    ["not_found", "The export failed its check."],
   ] as const)("%s reads %j", (refusal, words) => {
     expect(historyRefusal(refusal)).toBe(words)
   })

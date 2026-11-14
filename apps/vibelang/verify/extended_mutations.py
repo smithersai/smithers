@@ -5697,6 +5697,8 @@ cases.extend([('src/history/flowMachine.vibe', *case) for case in [
 ('flow-least-export', 'leastRole', 'case "export": return "maintainer"', 'case "export": return "contributor"', 'only a maintainer exports'),
 ('flow-refusal-export-off', 'historyRefusal', 'if (refusal === "unsupported") return "Export is off."', 'if (refusal === "unsupported") return refusal', 'an off export says so'),
 ('flow-refusal-export-check', 'historyRefusal', 'refusal === "tree" || refusal === "linear" || ', 'refusal === "tree" || ', 'every check refusal reads the same'),
+('flow-refusal-export-invalid', 'historyRefusal', 'if (refusal === "invalid" || refusal === "not_found") return "The export failed its check."', 'if (refusal === "not_found") return "The export failed its check."', 'a repository holding what the export did not write reads as a failed check'),
+('flow-refusal-export-missing', 'historyRefusal', 'if (refusal === "invalid" || refusal === "not_found") return "The export failed its check."', 'if (refusal === "invalid") return "The export failed its check."', 'a ref to a missing object reads as a failed check'),
 ('flow-refusal-export-paced', 'historyRefusal', 'if (refusal === "paced") return "Publishing in the background."', 'if (refusal === "paced") return refusal', 'a paced export says it runs in the background'),
 ]])
 # Lane vl-mythical-publish: the export never moves main, the `vibe` branch or a ref outside its three names.
