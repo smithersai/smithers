@@ -94,6 +94,8 @@ brick                                   state         proof
   Session 24: unit 7/202 files below 100%, all named in 0016; browser 477 checks green, 1,820 of 6,307 branches open.
   Session 35: browser 714 checks, 82.82% branches; the history, actions and web half holds 627 open arms (656 before),
   `main.vibe` 51; 58 arms in two history files are proof specifications awaiting VIP-43.
+  Session 36: the mock folds six real main commits in main's order; an agent-requested tour or post no longer runs in
+  the replying conversation (it failed busy); process suites name `pnpm build:scripts` when it was skipped.
 
 - **Unit coverage, second lane (0016, lane vl-coverage2): partial.** `worker/Http.vibe`, `src/web/backend.vibe`,
   `src/actions/MockActions.vibe`, `src/actions/execution.vibe`, `src/core/conversation.vibe` and `src/core/LiveWiki.vibe`

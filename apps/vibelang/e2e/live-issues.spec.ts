@@ -68,7 +68,9 @@ test("a refused comment comes back as its issue with no retry", async ({ page },
   const refused = await write(page, origin, { op: "comment", key, number: 124, text: "  " })
   expect(await refused.json()).toEqual({ reason: "empty", unwritten: true })
   await open(page, origin, `issues=1&resume-op=comment&resume-key=${key}`)
-  await expect(page.getByRole("textbox", { name: "Comment", exact: true })).toBeVisible()
+  // The issue opens once the page has read the refused run's record and loaded #124 from the Worker, a write's round
+  // trip, so this wait has the same bound; it failed at 5 s on a loaded box (0016 session 36).
+  await expect(page.getByRole("textbox", { name: "Comment", exact: true })).toBeVisible(settled)
   await expect(page.locator(".sui-issue-form-error")).toHaveCount(0)
   await expect(page.getByRole("region", { name: "Issues pane" }).getByRole("button", { name: "Retry", exact: true })).toHaveCount(0)
 })

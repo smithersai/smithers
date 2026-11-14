@@ -3472,3 +3472,67 @@ hours (session 34's took 44 minutes); the failing `actions`, `tourfix` and `core
 on rerun (job `ef8abb94cc2e11b9880f2c96`). Branches 82.82% (5145/6212), lines 90.13%, functions 90.29%, statements
 86.55%. In `src/history`, `src/actions` and `src/web`, 57 files hold 627 open arms (session 34: 656); `main.vibe`
 574/625 branches (session 34: 558/625).
+
+## Real main commits, tours nobody watches and process suites (vl-coverage, session 36, 2026-11-14)
+
+**`AFTER_SEED` in main's order.** `MainLog.since` reads main oldest first. The mock listed its three outside commits
+newest first, so a Fold reported `0c6cea2cde78`, the oldest, as Folded through. `AFTER_SEED`
+(`src/history/MockMythical.vibe`) now holds six real commits from VibeLang's main after the seed's snapshot, oldest
+first. Each message is recorded whole with `jj log -r <sha> -T description` in a VibeLang checkout, and each change id
+is that checkout's (VL-36: a recording, not an invention). `e2e/history-paths.spec.ts` checks each commit's epic and
+that the newest is Folded through.
+
+| sha | change | Title or message shape | Arms it closes in Chromium |
+| --- | --- | --- | --- |
+| `0c6cea2cde78` | `omuptzumoqml` | an emoji first | (session 33) |
+| `0c40c2c6e9a0` | `snpryryqvkrx` | `type(scope):`, a scope no area names | (session 33) |
+| `0121839c9be7` | `zwmwmsyukorp` | `fix(cli):`; last paragraph is prose whose first line reads `Validation:` | `trailerDecision` `trailerLine`'s continuation test (10) |
+| `301689a33565` | `nqvmoolynsxq` | `type(scope):` | (session 33) |
+| `ba26e8a1ade9` | `mzrmptwprsnk` | `fix(docs,release):` | `areaDecision` `readScopeEnd`'s comma arms (154) |
+| `47422f47d257` | `upuoqwuuskmu` | `docs:` | `areaDecision` `titleScope`'s type-as-scope arm (101), `readParenScope`'s no-parenthesis arm (162) |
+
+`areaDecision.vibe`'s other runtime arms no real post-seed commit reaches:
+
+| Arms | Reason |
+| --- | --- |
+| A bare `Scope:` prefix (103, 105) | No title of that shape reached VibeLang's main after the snapshot. The newest is `8d4cfc9045b6` (2026-10-17, `docs/tools: …`), which the seed holds. `test/regexDecisions.test.vibe` covers it. |
+| `findLowerEnd` and `findUnitFrom` with `at < 0` (115, 133); `readScopeEnd` with no `)` (152); `readParenScope` with `end <= open` (164) | Guards that make each proved function total over every input its contract names. `titleScope` calls them only at 0 or `open + 1`, after its expression matched a closed `(…)`. Removing a guard needs a `requires` and a new proof; `test/regexDecisions.test.vibe` covers each. |
+
+**Bug: a tour the agent requests always failed (mock mode).** "Run /tour" in chat gave a Tour run that failed at its
+`start` step; a tour started from Actions ran. The scripted agent requests a run from inside its reply, and
+`MockActions.start` forked the run from that fiber, so the run carried the replying conversation's services. A flow's
+action takes the services its run carries over the ones it was wired with (`@smthrs/flow` `Action/make.ts`,
+`Context.merge(services, input)`), so the tour's room recorded its start through the chat room's `Tours`, where the
+agent was working: `busy`. Each run now starts in the Actions world's own services (`Effect.updateContext` with the
+context the world was built in; `Effect.provideContext` merges onto the caller's and left `Tours` in place). A post the agent
+requested had the same fault: it was recorded in the chat, not in its run's own conversation. Live is not affected:
+the Worker starts a run from its own request. `test/agentTour.test.vibe` posts "Run /tour" through
+`BrowserFactory`'s mock and fails without the change (`expected 'failed' to be 'passed'`).
+
+**`src/actions/MockActions.vibe` in Chromium.** `e2e/action-inputs.spec.ts` asks the scripted agent for a post with
+text (`command`'s `{ text: rest }`), a history read whose JSON is an array (`start`'s `{}` payload), and a tour. An
+action's tour runs in its run's own conversation (`action-<id>`, as live's `worker/apiObjects.vibe` opens it), which
+the page does not show, so nobody ends it: the journey runs the page clock until the tour walks its last step and the
+guide step passes. The arms left:
+
+| Arms | Reason |
+| --- | --- |
+| `runs` (165) | Only the Worker's HTTP API and the agent's tools list runs by flow (`worker/apiObjects.vibe`); the page reads runs from its conversation. `test/mockActions.coverage.test.vibe` covers it. |
+| `ownerRefused` (126), a closed scope (139), `rerun` of an unknown id (172) | `start` records the person who starts a run as its owner, and the run's fiber starts within that task, so the person never changes between the two. The page's world closes only with the page. Rerun appears only on a run the page holds. The unit suite covers each. |
+| A world with no policy (34) | `mockFactoryFor` always provides `accounts.policy`. |
+| The history caller's `Guest` (79) | History flows need a contributor (`catalogDecision.vibe` `leastRoleOf`), so a viewer, the one mock account with no login, is refused before the caller runs. `test/mockActions.coverage.test.vibe` forges a maintainer with no login to cover it. |
+| Cancel of a run that settled meanwhile (193), of a run other than a tour (201) | Only a tour's run waits on the person. The mock's other flows wait on nothing the person controls, so a Cancel on one races its settlement, and every Cancel journey cancels a tour. The unit suite covers both. |
+| A guide whose tour fails (113, `ReplyFailed`) | The mock's tour narrates through the scripted agent, which never fails a reply. |
+
+**Process suites.** `test/wikiProcess.test.vibe` and the other three suites that run an emitted script
+(`agentContext`, `fuzzPreflight`, `mythicalSeedProcess`) failed under `vitest` alone with ENOENT deep in the run.
+`test/support/processes.vibe` `builtScript` checks the script first and fails with one message: `… is missing: run
+\`pnpm build:scripts\` first (\`pnpm test\` runs it)`. Without the step all four files fail with that message; with it,
+5 of 5 tests pass.
+
+**Load timing.** `e2e/live-issues.spec.ts` "a refused comment comes back as its issue with no retry" waited 5 s for the
+issue's Comment box. The box appears after the page reads the refused run's record and loads #124 from the Worker, a
+write's round trip, so the wait now has the file's 20 s `settled` bound. It failed in the session 35 gate (light) and
+alone on a box (dark, job `37bdbb05651bafa3c092f578`), and passed in the other projects. `e2e/actions.spec.ts` "the
+agent reads an epic …" ran six agent runs in one test and hit its time limit on the slow box; it is now one test per
+read.
