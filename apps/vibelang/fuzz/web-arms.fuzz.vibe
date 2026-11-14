@@ -69,7 +69,7 @@ const SCENARIOS = [
   "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
   "control-tour", "read-action", "actions-faulty-epoch", "draft-link", "theatre-keys", "auto-tour", "tour-events",
   "wiki-unlisted", "wiki-unwritten", "sign-in-mock", "wiki-link",
-  "end-tour", "run-epoch", "issue-count", "details-mock", "details-faulty",
+  "end-tour", "run-epoch", "issue-count", "details-mock", "details-faulty", "editor-faulty",
   "sandbox-poll-unreachable", "open-wiki", "run-json-blank", "people-faulty",
 ] as const
 
@@ -426,6 +426,13 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
         return blank._tag === "StartedAction" && broken._tag === "FailedActions" && broken.code === "input"
       }
     }
+    case "editor-faulty": {
+      // An editor whose page the repository cannot read says it failed, for that request.
+      provide backend("faulty", role) {
+        const got = try answer(() => OpenWikiEditor({ page: "index", request: input.number }))
+        return got._tag === "FailedWikiEdit" && got.request === input.number
+      }
+    }
     case "editor-other-draft": {
       // Only an editable page has a source to edit (the decisions index is built, not stored).
       const editable = pages.filter((entry) => wikiEditable(entry.id))
@@ -450,7 +457,7 @@ const UPDATES = [
   "assignees-without-agent", "submit-without-request", "began-stale", "walkthrough-posted", "learn-more-palette", "control-clears-error",
   "pane-closes-editor", "scroll-stale", "tour-gap", "sandbox-polled-failure", "chat-from-splash",
   "account-retries", "sign-in-unavailable", "action-failures", "learn-more-same-conversation",
-  "tour-late-dismissed", "wiki-saved-without-review", "end-failed-elsewhere",
+  "tour-late-dismissed", "wiki-saved-without-review", "end-failed-elsewhere", "docs-reveal-wiki", "slash-launch",
 ] as const
 const UpdateArms = Schema.Struct({ flags: Flags, step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), seek: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), overlay: Schema.Boolean, text: Text })
 
@@ -477,7 +484,9 @@ function names(result: { readonly commands?: ReadonlyArray<{ readonly name: stri
  * tour's own conversation keeps its messages; from another conversation it starts with none. A tour start that lands
  * after the person dismissed it ends it; one that lands after any other end does not. A save that opened no review
  * closes the editor and links no review; one that opened a review links it for its page. A tour end that failed
- * presents the walkthrough's stop again while this tab still tours, and none once its tour stopped.
+ * presents the walkthrough's stop again while this tab still tours, and none once its tour stopped. Shrinking
+ * maximized docs over a wiki page reveals the page, and over anything else does not. A command picked from the slash
+ * menu runs with the words after it.
  */
 function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.Type): boolean {
   const base: Model = { ...init(input.flags).model, mode: "mock", surface: "chat" }
@@ -665,6 +674,17 @@ function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.
       const stopped: Model = { ...model, tourClient: { ...model.tourClient!, conversation: { ...conversation, agent: "idle" } } }
       const elsewhere = update(stopped, Message.FailedEndTour())
       return valid(elsewhere.model) && names(touring).includes("PresentTour") && !names(elsewhere).includes("PresentTour")
+    }
+    case "docs-reveal-wiki": {
+      const over = (pane: string) => update({ ...base, docs: "max", client: { ...base.client, conversation: { ...base.client.conversation, pane } } }, Message.ClickedDocs())
+      return valid(over("/wiki/index").model) && names(over("/wiki/index")).includes("RevealWiki") && !names(over("")).includes("RevealWiki")
+    }
+    case "slash-launch": {
+      const command = { name: "vibelang/Post", title: "Post", detail: "Post", command: "/post", runnable: true, least: "viewer" as const, input: "text" as const }
+      const model: Model = { ...base, draft: "/post hello there", actions: { ...actionsOf(base), slash: true, input: "unused", commands: [command], entries: [command] } }
+      const next = update(model, Message.PickedSlash({ name: command.name }))
+      const runs = (next.commands ?? []).filter((entry) => entry.name === "RunAction")
+      return valid(next.model) && runs.length === 1 && (runs[0]!.args as { text?: string; door?: string }).text === "hello there" && (runs[0]!.args as { door?: string }).door === "slash"
     }
     case "walkthrough-posted": {
       const seq = base.client.conversation.seq

@@ -149,6 +149,8 @@ const Gesture = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("follow"), back: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2 })) }),
   Schema.Struct({ kind: Schema.Literal("layout"), chat: Schema.Boolean, palette: Schema.Boolean, newest: Schema.Boolean }),
 ])
+const upKey = (key: "PageUp" | "ArrowUp" | "Home") => ({ kind: "key" as const, key, alt: false, ctrl: false, meta: false, prevented: false, on: "page" as const })
+const CHOSEN: ReadonlyArray<typeof Gesture.Type> = [{ kind: "scroll", y: 380 }, upKey("PageUp"), { kind: "scroll", y: 390 }, upKey("ArrowUp"), upKey("Home")]
 const Gestures = Schema.Struct({ hostless: Schema.Boolean, detached: Schema.optionalKey(Schema.Boolean), height: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 800 })), gestures: Schema.Array(Gesture).check(Schema.isMaxLength(40)) })
 
 /**
@@ -162,7 +164,9 @@ it.live("web/viewport-gestures", () => run("web/viewport-gestures", Gestures, ({
   // A document without a window (one built by the page, not shown) has no scroll position of its own.
   const page = detached === true ? try Effect.try(() => current.implementation.createHTMLDocument("")) : current
   const window = try (try Experimental.Window.Window).current
-  return try Effect.try(() => gesturesHold(page, window, hostless, detached === true, height, gestures))
+  // Every execution first reads a page scrolled down, then each upward key in turn on the shown page (0015).
+  const chosen = try Effect.try(() => gesturesHold(current, window, false, false, 400, CHOSEN))
+  return chosen && (try Effect.try(() => gesturesHold(page, window, hostless, detached === true, height, gestures)))
 }, Layer.merge(ExperimentalBrowserDocument.layer, ExperimentalBrowserWindow.layer))))
 
 function gesturesHold(page: Document, window: Window, hostless: boolean, detached: boolean, height: number, gestures: typeof Gestures.Type["gestures"]): boolean {
@@ -214,11 +218,16 @@ function gesturesHold(page: Document, window: Window, hostless: boolean, detache
         const event = new dom.KeyboardEvent("keydown", { key: gesture.key, altKey: gesture.alt, ctrlKey: gesture.ctrl, metaKey: gesture.meta, cancelable: true, bubbles: true })
         if (gesture.prevented) event.preventDefault()
         let result: ReturnType<typeof viewport.key> = undefined
+        const before = y
         const listen = (value: Event) => { result = viewport.key(value as KeyboardEvent) }
         if (gesture.on === "page") { page.addEventListener("keydown", listen); page.dispatchEvent(event); page.removeEventListener("keydown", listen) }
         else { target.addEventListener("keydown", listen); target.dispatchEvent(event); target.removeEventListener("keydown", listen) }
         if (result !== undefined && (gesture.on === "editor" || gesture.on === "surface" || gesture.prevented || gesture.alt)) return false
         if (!hostless && result !== undefined && event.defaultPrevented === detached) return false
+        // A handled key on a shown page scrolls it: Home (or Meta+ArrowUp) to the top, PageUp by seven eighths of the
+        // 300 px viewport (262 px), any other upward key by a 40 px line.
+        const top = gesture.key === "Home" || gesture.key === "ArrowUp" && gesture.meta
+        if (!hostless && !detached && result !== undefined && y !== (top ? 0 : Math.max(0, before - (gesture.key === "PageUp" ? 262 : 40)))) return false
         if (!accept(result, true)) return false
         break
       }
