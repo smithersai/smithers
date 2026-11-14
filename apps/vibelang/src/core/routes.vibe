@@ -1,6 +1,7 @@
 // The API Worker's routing of the conversation API (wiki/decisions/0010-live-agent.md): the route a request's method
 // and path name. Only the Worker routes requests, so no browser code imports this file; the paths are in `wire.vibe`.
-import { routeKind, validConversationLength } from "./protocolDecision.vibe"
+import { routeKind } from "./protocolDecision.vibe"
+import { validConversationLength } from "./clientProtocolDecision.vibe"
 import { CONVERSATIONS, MAX_CONVERSATION } from "./wire.vibe"
 
 /** A route of the conversation API: the conversation and what is asked of it. */

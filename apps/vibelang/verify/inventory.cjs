@@ -73,7 +73,7 @@ const shellBoundaries = {
   'src/web/main.vibe': 'Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved.',
   'src/web/viewport.vibe': 'Calls the proved pause, scroll, follow, key, page-scroll distance, active, scrollable and touch steps in screenDecision. Host boundaries: DOM reads and writes and the touch lookup by identifier.',
   'src/core/mockReplies.vibe': 'First matching script is proved in mockDecision; Unicode casing and slicing chunks remain unproved (unicode-case.ts, slice-clamp reproduction).',
-  'src/core/wire.vibe': 'Paths and schemas; the conversation path calls the proved validConversationLength (protocolDecision: 1 to MAX_CONVERSATION units; vl-proveall3 batch 55), then native encodeURIComponent, which throws on a lone surrogate (uri-codec.ts).',
+  'src/core/wire.vibe': 'Paths and schemas; the conversation path calls the proved validConversationLength (clientProtocolDecision: 1 to MAX_CONVERSATION units; vl-proveall3 batch 55), then native encodeURIComponent, which throws on a lone surrogate (uri-codec.ts).',
   'src/core/routes.vibe': 'Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts).',
   'src/core/LiveFactory.vibe': 'HTTP outcome choice is proved in clientProtocolDecision; HTTP/SSE and Schema codecs remain runtime boundaries (json-codec.ts).',
   'src/core/LiveRead.vibe': 'HTTP outcome choice is proved in clientProtocolDecision; HTTP/SSE and Schema codecs remain runtime boundaries (json-codec.ts).',

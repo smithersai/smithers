@@ -1,13 +1,6 @@
 // Pure decisions of the API Worker, its routes and the command hosts. Parsing and encoding stay at the edge. The
 // browser's own protocol decisions are in `clientProtocolDecision.vibe`, so no browser code imports this file.
 
-/** The wire's conversation length contract. */
-//@ verify
-//@ ensures \result == (length > 0 && length <= maximum)
-export function validConversationLength(length: number, maximum: number): boolean {
-  return length > 0 && length <= maximum
-}
-
 /** The CLI/MCP registry accepts nonempty conversation identifiers. */
 //@ verify
 //@ ensures \result == (value.length >= 1)

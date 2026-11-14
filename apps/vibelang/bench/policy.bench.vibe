@@ -102,7 +102,7 @@ it("screen, protocol and scripted-agent decisions", async ({ bench }) => {
     expect(S.screenKey("x", true, false, false)).toBe("escape")
     expect(S.screenKey("x", false, false, false)).toBe("")
     for (const [size, accepted] of [[0, false], [1, true], [10, true], [11, false]] as const) {
-      expect(P.validConversationLength(size, 10)).toBe(accepted)
+      expect(Client.validConversationLength(size, 10)).toBe(accepted)
       expect(P.validBodyLength(size, 10)).toBe(accepted)
     }
     expect(P.commandConversation("")).toBe(false)

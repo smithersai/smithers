@@ -1,6 +1,14 @@
 // Pure protocol decisions a browser client makes, shared with the API Worker where both sides check the same value:
-// the cursor a read resumes from, a tour control's step, whether health chose live, and how a reply's status reads.
+// a conversation id's length, the cursor a read resumes from, a tour control's step, whether health chose live, and how
+// a reply's status reads.
 // The Worker's and command hosts' own decisions are in `protocolDecision.vibe`. Parsing and encoding stay at the edge.
+
+/** The wire's conversation length contract. */
+//@ verify
+//@ ensures \result == (length > 0 && length <= maximum)
+export function validConversationLength(length: number, maximum: number): boolean {
+  return length > 0 && length <= maximum
+}
 
 /** Cursor validation after the shared integer schema has rejected fractional/unsafe values. */
 //@ verify

@@ -8,7 +8,7 @@
 //   POST   /api/conversations/<id>/tour                starts the agent's tour → 200 {} | 409 Refusal
 //   DELETE /api/conversations/<id>/tour                ends it → 200 {} | 409 Refusal
 import { MAX_TEXT } from "./decide.vibe"
-import { validConversationLength } from "./protocolDecision.vibe"
+import { validConversationLength } from "./clientProtocolDecision.vibe"
 import { Seq } from "./schemas.vibe"
 
 export const HEALTH_PATH = "/api/health"
