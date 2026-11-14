@@ -4143,3 +4143,16 @@ core-site issue specs now run under a 90 s test timeout.
 and `ageText`'s non-compact arm (108) need a comment age that is not digits and `d` or `w`. The mock's ages are all
 of that form ("3d", "1w") or "just now", which `ageText` returns before it asks; live mode shows absolute dates
 (`absoluteDates`), which return first too. `test/paneViewDecisions.test.vibe` and `fuzz/decision-arms.fuzz.vibe` cover them.
+
+**Inputs that keep following.** `e2e/viewport-inputs.spec.ts` (touch enabled): a wheel down at the bottom keeps
+following and a wheel up then pauses it; a finger moving up at the bottom keeps following; a swipe and a wheel up on
+the start screen, before the chat exists, leave the first answers following. Closes `viewport.vibe` 27, 30, 49, 53
+(2 arms), 54 and 55. Two first drafts were wrong inputs, not product faults: a Ctrl+wheel zooms the page, and the
+resize leaves it off the bottom, so `scrolled` pauses it; a touch move under an id the page never saw starts a native
+scroll, which pauses too. A wheel up on a chat too short to scroll never happened: one answer scrolls in all three
+projects.
+
+**Not reachable in the browser: a viewport with no document.** `viewport.vibe` 6, 16, 21 and 23 (5 arms) are the
+`page?.` and `defaultView?.… ?? 0` fallbacks. `startup.vibe` always passes `document`, whose `defaultView` is the
+window; only `test/viewport.boundaries.test.vibe` and `fuzz/view-branches.fuzz.vibe` call `transcriptViewport()`
+with none.
