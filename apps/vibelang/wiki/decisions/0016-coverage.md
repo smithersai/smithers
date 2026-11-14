@@ -3905,3 +3905,85 @@ once; alone, the whole journey took 6 s. It waits on the Worker's durable engine
 three Workers boot their engines at the same time. The wait is bounded at 20 s, as `e2e/live-issues.spec.ts`'s
 `settled` bounds a live write; the journey then took 14 s.
 
+### `src/web/main.vibe` after session 38
+
+Of session 37's 52 open arms, one is deleted: `RunAction`'s `format ?? ""` (its only sender passes the catalog
+entry's required `input`; the command now requires `format`). Session 35's table above classifies most of the rest.
+Three more have no page input:
+
+| Site | Reason |
+| --- | --- |
+| `CompletedWikiEdit`'s save with no review link, and the save answer's `revision ?? ""` and `review ?? ""` (492, 968) | Both hosts answer every save and proposal with a review and the saved page: `worker/Wiki.vibe` returns `review` after the pull request it opened, and `WikiFactory` records one per proposal. `review` is optional in `WikiResult` only because a read has none. |
+| `runEscape`'s docs step without a reveal (619) | The docs maximize only by their toggle or the tour's wiki step, and every pane is a `/wiki/` path (`OpenWiki`), so `wikiPane` is false only with an empty pane, which no page action produces while the docs are maximized. |
+| `switchMode`'s refusal (784) | Its callers pass `/mock` or `/live` (`submitFacts`) or a slash pick of `mode/` plus `modeCommandTarget`'s answer, which is only `mock` or `live`. |
+
+### Gate (session 38, `392fd0b2`'s tree, job `a83115987de7d33a762f1c2c`)
+
+851 passed, 12 skipped, 1 failed: `core-live.spec.ts:124` (vl-coverage-core's) at 7.3 s in dark, as at 8.6 s in light
+in this session's first gate (`cdbadd5e7621af61f533879e`, before either live spec existed). Lines 93.47% (5371/5746),
+statements 90.01%, branches 85.90% (5301/6171), functions 92.85% (2380/2563); session 37: 91.07%, 87.82%, 84.85%
+(5235/6169), 91.39%. In `src/history`, `src/actions` and `src/web`: 3888/4416 branches, 528 open in 57 files (session
+37: 573 in 60). `main.vibe` lost two arms with `RunAction`'s fallback (598 to 596), one of them covered. One arm
+each in `issuesView.vibe` (148) and `issuesViewDecision.vibe` `connectionControl` (145), the Connect GitHub control,
+ran in session 37 and not here, with no change to either file; the journeys that render it are in
+`e2e/fault-paths.spec.ts`, `e2e/issues.spec.ts` and `e2e/authbroker.spec.ts`. Not yet explained (vl-coverage, next).
+
+| File | Session 37 | Session 38 | Open |
+| --- | --- | --- | --- |
+| `src/web/main.vibe` | 546/598 | 545/596 | 51 |
+| `src/web/issueDecision.vibe` | 220/255 | 220/255 | 35 |
+| `src/history/trailerDecision.vibe` | 41/75 | 41/75 | 34 |
+| `src/history/mythical.vibe` | 166/199 | 166/199 | 33 |
+| `src/history/flowMachine.vibe` | 73/110 | 80/110 | 30 |
+| `src/history/areaDecision.vibe` | 29/58 | 29/58 | 29 |
+| `src/web/issuesView.vibe` | 207/226 | 206/226 | 20 |
+| `src/history/exportDecision.vibe` | 30/47 | 37/51 | 14 |
+| `src/web/issuesViewDecision.vibe` | 185/198 | 184/198 | 14 |
+| `src/web/viewport.vibe` | 27/40 | 27/40 | 13 |
+| `src/history/stackDecision.vibe` | 13/25 | 13/25 | 12 |
+| `src/web/markdown.vibe` | 70/82 | 70/82 | 12 |
+| `src/web/viewDecision.vibe` | 137/150 | 138/150 | 12 |
+| `src/web/historyApp.vibe` | 51/62 | 51/62 | 11 |
+| `src/web/screenDecision.vibe` | 102/113 | 102/113 | 11 |
+| `src/actions/MockActions.vibe` | 54/64 | 54/64 | 10 |
+| `src/history/replayDecision.vibe` | 2/12 | 2/12 | 10 |
+| `src/web/modelDecision.vibe` | 107/118 | 108/118 | 10 |
+| `src/web/modelWrite.vibe` | 51/61 | 51/61 | 10 |
+| `src/actions/LiveActions.vibe` | 4/19 | 10/19 | 9 |
+| `src/history/export.vibe` | 65/77 | 68/77 | 9 |
+| `src/web/actionFollowDecision.vibe` | 15/24 | 15/24 | 9 |
+| `src/web/view.vibe` | 96/105 | 96/105 | 9 |
+| `src/actions/actionHostDecision.vibe` | 42/49 | 42/49 | 7 |
+| `src/web/tourDecision.vibe` | 47/54 | 47/54 | 7 |
+| `src/web/updateDecision.vibe` | 98/105 | 98/105 | 7 |
+| `src/history/Sequencer.vibe` | 28/34 | 28/34 | 6 |
+| `src/history/pageDecision.vibe` | 19/25 | 19/25 | 6 |
+| `src/history/pages.vibe` | 6/12 | 6/12 | 6 |
+| `src/history/LiveMythical.vibe` | 0/12 | 7/12 | 5 |
+| `src/web/actionViewDecision.vibe` | 90/96 | 91/96 | 5 |
+| `src/web/markdownDecision.vibe` | 25/30 | 25/30 | 5 |
+| `src/web/theatreDecision.vibe` | 67/72 | 67/72 | 5 |
+| `src/web/viewGateDecision.vibe` | 36/43 | 38/43 | 5 |
+| `src/web/wikiEditorDecision.vibe` | 17/22 | 17/22 | 5 |
+| `src/actions/execution.vibe` | 34/38 | 34/38 | 4 |
+| `src/web/actionView.vibe` | 83/88 | 84/88 | 4 |
+| `src/web/paneDecision.vibe` | 44/48 | 44/48 | 4 |
+| `src/web/screenRead.vibe` | 12/16 | 12/16 | 4 |
+| `src/web/actionModel.vibe` | 10/13 | 10/13 | 3 |
+| `src/web/historyDecision.vibe` | 28/31 | 28/31 | 3 |
+| `src/web/historyStartup.vibe` | 13/25 | 22/25 | 3 |
+| `src/web/historyViewDecision.vibe` | 57/60 | 57/60 | 3 |
+| `src/web/theatre.vibe` | 23/26 | 23/26 | 3 |
+| `src/history/flows.vibe` | 43/45 | 43/45 | 2 |
+| `src/history/tools.vibe` | 45/47 | 45/47 | 2 |
+| `src/web/accountViewDecision.vibe` | 38/40 | 38/40 | 2 |
+| `src/web/issues.vibe` | 32/34 | 32/34 | 2 |
+| `src/web/viewLabelDecision.vibe` | 36/38 | 36/38 | 2 |
+| `src/web/viewStateDecision.vibe` | 35/36 | 34/36 | 2 |
+| `src/web/wikiView.vibe` | 76/78 | 76/78 | 2 |
+| `src/web/wikiViewDecision.vibe` | 52/54 | 52/54 | 2 |
+| `src/history/MockMythical.vibe` | 24/25 | 24/25 | 1 |
+| `src/history/toolDecision.vibe` | 3/4 | 3/4 | 1 |
+| `src/web/backend.vibe` | 12/13 | 12/13 | 1 |
+| `src/web/roleView.vibe` | 37/38 | 37/38 | 1 |
+| `src/web/sandboxView.vibe` | 59/60 | 59/60 | 1 |
