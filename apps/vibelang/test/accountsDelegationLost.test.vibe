@@ -1,0 +1,91 @@
+// @vitest-environment node
+// A write that smithers.sh answers `connect` (the delegation it issued has ended) forgets the site's copy of that
+// delegation, even when the person signed out in another tab while the write ran (worker/Accounts.vibe `lost`;
+// wiki/decisions/0015-fuzzing.md, session 20). GitHub is the injected token service; smithers.sh is the real
+// delegation host in process (fuzz/delegated.vibe), reached through the site's injected HttpClient.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
+import * as Accounts from "../worker/Accounts.vibe"
+import { wikiRepository } from "../worker/Wiki.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+import { delegated, reach } from "../fuzz/delegated.vibe"
+
+const SITE = "https://factory.example"
+const KEY = Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+
+/** GitHub with one person per numeric code. */
+const github: GitHub.Auth.GitHubAuth["Service"] = {
+  authorizeUrl: ({ state, redirectUri }) => `https://github.test/login?state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+  exchange: ({ code }) => succeed({ accessToken: Redacted.make(Redacted.value(code)), expiresAt: null, refreshToken: null }),
+  refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
+  user: (token) => succeed({ id: Number(Redacted.value(token)), login: `p${Redacted.value(token)}` }),
+  permission: () => succeed("read"),
+  revoke: () => Effect.void,
+  deviceCode: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+  deviceToken: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+}
+/** GitHub's API behind the delegation: down, so no write lands. */
+const githubDown = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 503 })))))
+
+describe("a delegated write on a delegation smithers.sh ended", () => {
+  it.live("forgets that delegation, even when the person signed out while the write ran", () => scoped(effect {
+    const smithers = try delegated(githubDown, reach(), "p7", { api: wikiRepository.api, repository: `${wikiRepository.owner}/${wikiRepository.name}`, repositoryId: 1, token: Redacted.make("fixture-token") })
+    const storage = try Effect.try(() => objectStorage())
+    // Armed, the site's next call to smithers.sh first ends every session: the other tab's sign-out.
+    let vanish = false
+    const client = HttpClient.make((request) => effect {
+      if (vanish) {
+        vanish = false
+        for (const key of (try promise(() => storage.list({ prefix: "session/" }))).keys()) try promise(() => storage.delete(key))
+      }
+      return try smithers.http.execute(request)
+    })
+    const accounts = try Effect.provideService(Accounts.make("accounts-delegation-lost", storage as unknown as Storage, {
+      origin: SITE, initialMaintainer: "1", clientId: "fixture-client-id", github, signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
+      encryptionKey: KEY, delegate: smithers.delegate,
+    }), HttpClient.HttpClient, client)
+    const jar = new Map<string, string>()
+    effect function ask(path: string, method: "GET" | "POST" = "GET", body?: string) {
+      let request = HttpClientRequest.make(method)(SITE + path)
+      if (method === "POST") request = HttpClientRequest.setHeader(request, "origin", SITE)
+      if (jar.size > 0) request = HttpClientRequest.setHeader(request, "cookie", [...jar].map(([name, value]) => `${name}=${value}`).join("; "))
+      if (body !== undefined) request = HttpClientRequest.bodyText(request, body, "application/json")
+      const response = try Effect.provideService(accounts.fetch, HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request)))
+      const answer = HttpServerResponse.toWeb(response)
+      for (const cookie of answer.headers.getSetCookie()) {
+        const pair = cookie.split(";")[0]!
+        const at = pair.indexOf("=")
+        if (pair.slice(at + 1) === "") jar.delete(pair.slice(0, at))
+        else jar.set(pair.slice(0, at), pair.slice(at + 1))
+      }
+      const text = response.status === 200 || response.status >= 400 ? try promise(() => answer.text()) : ""
+      return { status: response.status, location: answer.headers.get("location") ?? "", text }
+    }
+    effect function signIn(person: string) {
+      const start = try ask("/api/auth/sign-in")
+      const state = new URL(start.location).searchParams.get("state") ?? ""
+      try ask(`${Accounts.CALLBACK}?state=${state}&code=${person}`)
+    }
+    const parsed = (text: string) => Effect.orDie(Effect.try(() => JSON.parse(text) as unknown))
+    const who = effect { return ((try parsed((try ask("/api/auth/session")).text)) as { readonly id: string }).id }
+
+    // The maintainer lets person 7 propose wiki edits; person 7 holds smithers.sh's delegation, which smithers.sh ends.
+    try signIn("1")
+    expect((try ask("/api/roles", "POST", JSON.stringify({ id: "7", role: "contributor" }))).status).toBe(200)
+    expect((try ask("/api/auth/sign-out", "POST")).status).toBe(204)
+    try signIn("7")
+    expect(try who).toBe("7")
+    try promise(() => storage.put("delegation/7", { person: smithers.connection.person, delegation: smithers.connection.delegation, expires: Date.now() + 3_600_000 }))
+    try smithers.end()
+
+    vanish = true
+    const proposed = try ask("/api/wiki", "POST", JSON.stringify({ op: "propose", page: "index", base: "", text: "Edited", key: "k1" }))
+    expect(proposed.status).toBe(401)
+    expect(((try parsed(proposed.text)) as { readonly reason?: string }).reason).toBe("connect")
+    expect(try who).toBe("")
+    // Signed in again, the person is not shown connected to a delegation smithers.sh refused.
+    expect(try promise(() => storage.get("delegation/7"))).toBeUndefined()
+  }), 60_000)
+})

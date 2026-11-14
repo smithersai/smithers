@@ -98,14 +98,20 @@ it.live("sandbox/machine-object", () => run("sandbox/machine-object", MachineInp
       || changed.ok || reason(changed) !== "receipt-conflict" || pending.ok || reason(pending) !== "receipt-conflict" || local.state.executed.length !== ran
       || expired.ok || reason(expired) !== "lease-expired") return false
   }
-  // Every execution: a command on a machine started but never leased (a fresh object; a restart keeps the previous
-  // generation's lease end) has no lease to run under, and does not run.
+  // Every execution: a command on a machine started but never leased (a fresh object, or a restart: a lease is its
+  // generation's, so the next generation starts with none) has no lease to run under, and does not run.
   {
     const fresh = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
     const unleasedMachine = try machineObject(fresh.box as unknown as MachineBox, stateOf(try Effect.try(() => objectStorage()), "m-unleased"))
     const started = try unleasedMachine.apply("start", 1, "op-unleased-start", "")
     const unleased = try unleasedMachine.apply("command", 1, "op-unleased", "echo hi")
     if (!started.ok || unleased.ok || !("reason" in unleased) || unleased.reason !== "lease-expired" || fresh.state.executed.length !== 0) return false
+    const again = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
+    const restarted = try machineObject(again.box as unknown as MachineBox, stateOf(try Effect.try(() => objectStorage()), "m-restarted"))
+    const first = [try restarted.apply("start", 1, "op-r1", ""), try restarted.apply("lease", 1, "op-r1", "60000"), try restarted.apply("stop", 1, "op-r1", ""), try restarted.apply("start", 2, "op-r2", "")]
+    const ran = again.state.executed.length
+    const inherited = try restarted.apply("command", 2, "op-r2", "echo hi")
+    if (!first.every((answer) => answer.ok) || inherited.ok || !("reason" in inherited) || inherited.reason !== "lease-expired" || again.state.executed.length !== ran) return false
   }
   for (const step of [...lifecycle, ...faultWalk, ...input.steps]) {
     faulted(local.faults, step.fault)

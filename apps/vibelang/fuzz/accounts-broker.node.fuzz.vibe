@@ -525,17 +525,18 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
       }
       case "vanishing-write": {
         // The person signs out in another tab while their write runs on a delegation smithers.sh has ended: the write is
-        // answered `connect`, and with no session left the site cannot tell whose copy to forget, so it forgets none.
+        // answered `connect`, and the site forgets the copy that write used, though no session is left to name it.
         if (signedIn === undefined || !real || !revoked) break
         const wiki = op.n % 2 === 0
         const held = [...kvOf(w).keys()].filter((key) => key.startsWith("delegation/")).length
+        const had = kvOf(w).has("delegation/" + signedIn.id)
         w.vanishNext()
         const body = wiki ? { op: "propose", page: "index", base: "", text: "Fuzzed", key: `v${op.n}` } : { op: "new", number: 0, parent: 0, title: "Fuzzed", text: "Fuzzed", assignee: "", example: "", prior: "", key: `v${op.n}` }
         const answer = try seen(try stepped(w.ask(SITE + (wiki ? "/api/wiki" : "/api/issues"), { method: "POST", origin: SITE, body: JSON.stringify(body) }), 20))
         const reason = answer.status === 200 ? "" : ((try parsed(answer.text)) as { readonly reason?: string }).reason
         const session = (try parsed((try w.ask(SITE + "/api/auth/session")).text)) as { readonly id: string }
         const kept = [...kvOf(w).keys()].filter((key) => key.startsWith("delegation/")).length
-        if (answer.status !== 401 || reason !== "connect" || session.id !== "" || kept !== held) return try refute(op.kind, 300)
+        if (answer.status !== 401 || reason !== "connect" || session.id !== "" || kvOf(w).has("delegation/" + signedIn.id) || kept !== held - (had ? 1 : 0)) return try refute(op.kind, 300)
         signedIn = undefined
         break
       }

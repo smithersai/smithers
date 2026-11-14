@@ -29,6 +29,16 @@ describe("the machine object", () => {
     expect(try machine.apply("lease", 1, "", "60000")).toEqual({ ok: true, output: "running" })
   }), 30_000)
 
+  it.live("starts a new generation with no lease: its first command waits for that generation's own", () => provided(effect {
+    const { machine } = try started()
+    expect(try machine.apply("lease", 1, "", "60000")).toEqual({ ok: true, output: "running" })
+    expect(try machine.apply("stop", 1, "stop", "")).toMatchObject({ ok: true })
+    expect(try machine.apply("start", 2, "start-2", "")).toEqual({ ok: true, output: "" })
+    expect(try machine.apply("command", 2, "early", "echo early")).toEqual(refused("lease-expired"))
+    expect(try machine.apply("lease", 2, "", "60000")).toEqual({ ok: true, output: "running" })
+    expect((try machine.apply("command", 2, "leased", "echo leased")).ok).toBe(true)
+  }), 30_000)
+
   it.live("answers a repeated operation from its receipt without running it again", () => provided(effect {
     const { local, machine } = try started()
     try machine.apply("lease", 1, "", "60000")

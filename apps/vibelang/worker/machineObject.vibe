@@ -58,7 +58,9 @@ export function machineObject(box: MachineBox, state: ObjectState) {
       }
       if (kind === "start") {
         if (startRefused(generation, previous.generation, previous.phase)) return refused("phase")
-        const starting: Saved = { ...previous, generation, phase: "starting" }
+        // A lease is granted to one running generation (`lease` above); a new generation starts without one.
+        const { leaseUntil: _ended, ...kept } = previous
+        const starting: Saved = { ...kept, generation, phase: "starting" }
         try promise(() => state.raw.storage.put("machine", starting))
         try SandboxObject.wake({ ...box, start: (options) => box.start({ ...restoredOptions(options, previous.snapshot), entrypoint: ENTRYPOINT }) }, { intercepts: [], instance: "lite", inactivityTimeoutMs: 150000, startTimeoutMs: 150000 })
         if (!(try box.running)) return refused("not-running-after-wake")

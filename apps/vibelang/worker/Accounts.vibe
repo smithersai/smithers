@@ -419,11 +419,18 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       let body: string | undefined
       if (url.pathname === "/api/issues") {
         if (!sameSiteRequest(url.origin, setup.origin, request.method, request.headers.origin)) return json({ error: "origin" }, 403)
+        // `lost` forgets the delegation this request's write used, named when `current` read it: the person may sign
+        // out while the write runs, and a session read afterwards could name nobody. A write that held none (an agent
+        // acting for a connected person) forgets nothing.
+        let used: string | undefined
         const authority: IssueAuthority.Shape = {
-          current: () => connections.current(presented(request)),
+          current: effect () => {
+            const principal = try connections.current(presented(request))
+            if (principal?.connection !== undefined) used = principal.id
+            return principal
+          },
           lost: effect () => {
-            const live = try session(presented(request))
-            if (live !== undefined) try connections.forget(live.value.id)
+            if (used !== undefined) try connections.forget(used)
           },
           authorize: effect (op) => {
             if (openOperation(op)) return
@@ -437,11 +444,16 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       }
       if (url.pathname === "/api/wiki") {
         if (!sameSiteRequest(url.origin, setup.origin, request.method, request.headers.origin)) return json({ error: "origin" }, 403)
+        // As for issues: the delegation the write used, not the session's person when the write failed.
+        let used: string | undefined
         const wikiAuthority: WikiAuthority.Shape = {
-          current: () => connections.current(presented(request)),
+          current: effect () => {
+            const principal = try connections.current(presented(request))
+            if (principal?.connection !== undefined) used = principal.id
+            return principal
+          },
           lost: effect () => {
-            const live = try session(presented(request))
-            if (live !== undefined) try connections.forget(live.value.id)
+            if (used !== undefined) try connections.forget(used)
           },
           authorize: effect (op) => {
             if (openOperation(op)) return

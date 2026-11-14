@@ -147,7 +147,7 @@ describe("the principal behind a wiki request", () => {
     expect([disconnect.status, disconnect.headers.get("location"), w.hooks.sent.length - before]).toEqual([303, "/?issues=1", 0])
   }))
 
-  it.live("a read whose person signs out while smithers.sh refuses the ended connection still answers, and forgets no one", () => scoped(effect {
+  it.live("a read whose person signs out while smithers.sh refuses the ended connection still answers, and forgets that connection", () => scoped(effect {
     const w = try world()
     const ada = try w.signIn(7)
     try w.connect("7")
@@ -160,9 +160,10 @@ describe("the principal behind a wiki request", () => {
     const page = (try body(wiki)) as { readonly pages: ReadonlyArray<{ readonly source: string }> }
     const again = try w.signIn(7)
     const issues = try w.call("GET", "/api/issues", again)
-    expect([wiki.status, page.pages[0]?.source, askedForWiki, issues.status, w.hooks.sent.includes(BROKER)]).toEqual([200, SOURCE, true, 200, true])
-    // No session is left to name whose connection ended, so the stored one stays until the person's next read.
-    expect(try w.connection("7")).toBeDefined()
+    // The read named the connection it used when it began, so the ended one is gone though no session was left
+    // (0015, session 20: it stayed until the person's next read). Signed in again, the next read asks smithers.sh nothing.
+    expect([wiki.status, page.pages[0]?.source, askedForWiki, issues.status, w.hooks.sent.includes(BROKER)]).toEqual([200, SOURCE, true, 200, false])
+    expect(try w.connection("7")).toBeUndefined()
   }))
 
   it.live("the per-site token migration runs once: a restarted object keeps a github/ record written after it", () => scoped(effect {
