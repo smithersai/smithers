@@ -19,7 +19,8 @@ export default defineConfig(({ mode }) => ({
     target: "es2022", sourcemap: true,
     // Source coverage preserves branch statements before minifier folding (0017); timing uses the normal build. The
     // e2e build is measured too (0016, 0015): unminified, its ranges are the compiler's, so Chromium credits them.
-    ...(mode === "bench-coverage" || mode === "e2e" ? { minify: false as const } : {}),
+    // `--mode fuzz` is the fuzz suite's browser phase: the e2e build's unminified site without the e2e-only pages.
+    ...(mode === "bench-coverage" || mode === "e2e" || mode === "fuzz" ? { minify: false as const } : {}),
     ...(mode === "e2e" ? { rolldownOptions: { input: ["index.html", "e2e/runtime/index.html", "e2e/actions-runtime/index.html", "e2e/history-runtime/index.html", "e2e/coverage-fixtures/index.html"] } } : {}),
   },
   server: { port: 5178 },

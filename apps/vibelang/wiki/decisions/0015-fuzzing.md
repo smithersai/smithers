@@ -2221,6 +2221,86 @@ F="$(node verify/fuzz_affected.cjs --list)" && ~/lanes/bin/run-heavy --name vl-<
 `--writes` brings the receipt back from a box; a box has no jj, so `--list` names the files on the host first.
 Regression tests: `verify/fuzz_affected_test.cjs` (in `pnpm test:proofs`).
 
+### Session 22: a cheap landing check (vl-fuzz2, 2026-11-14)
+
+Every `apps/vibelang` landing pays for `pnpm fuzz:affected`. Session 21's tracer on one `src/web` file took 883 s for
+16 targets and returned 94 MB. The selection, the seeded floor and the 100% rule stay as they were; what changed is
+where the time and the bytes went.
+
+**Where the 883 s went** (playwright box `a68f9887d43e526884fc20c7`, `src/web/viewport.vibe`, 4 vCPUs):
+
+```
+upload, accept, unpack   35 s  ██
+pnpm install             42 s  ███
+flow start               29 s  ██
+prepare (Chromium)       11 s  █
+build:surfaces           71 s  █████            wiki:build 26 s + surfaces compile 65 s
+targets (15 Vitest)     325 s  █████████████████████  2 workers; transform 28%
+browser                 443 s  ████████████████████████████  site build ~218 s, 5 tests 141 s (1 worker), reporter 83 s
+report                    2 s
+return 94 MB             35 s  ██             5,701 files: every intermediate report and build output
+```
+
+Measured on single boxes (`prof2` to `prof6`): the e2e site build takes 88 to 91 s cold; one whole-project compile of
+`tsconfig.json` is 57 to 80 s of it. VibeLang's compile cache answers a repeat in 4 s, but it missed every time the
+fuzz flow asked, because the run's own outputs invalidate it (below).
+
+**What changed**
+
+| Part | Change | Effect |
+| --- | --- | --- |
+| Return size | `prune()` in `verify/fuzz_affected.cjs`: the intermediate reports (`coverage/fuzz-unit`, `coverage/fuzz-browser`, `fuzz/test-results*`) go once the summary is read; a failure keeps the merged, scoped report and Playwright's traces. `--results-only` (a box run) also drops every file the run made, measured from `--snapshot` taken before the install, and keeps new regressions under `fuzz/__fuzz__` | 94 MB → under 1 MiB inline (t1); a shard returns 6 to 11 files, about 14 kB each |
+| Reports | In affected mode (`FUZZ_REPORT_FILES`) Vitest seeds and reports only the changed sources plus the emitted programs (`fuzz.config.ts`), Chromium's reporter seeds only them (`fuzz/browser-reporter.ts`), the report stage filters before merging (`fuzz/coverage.vibe`), and workerd's counters skip, before their remap, every module whose map names no changed source (`workerdEvidence(…, keep)`) | no HTML, lcov or text tables for 400 files; the report stage still takes 50 to 75 s in a Vitest shard, which points to the same cold compile (limit 1, not yet confirmed with `VIBELANG_REGISTER_DEBUG`) |
+| Surfaces | `FUZZ_SURFACES=0` (flow `surfaces: false`) when no selected target reaches `dist-factory` (`needsSurfaces`); 2 of 108 targets do | −65 s on 106 targets' runs |
+| Site | `--mode fuzz` (`vite.config.ts`): the e2e build's unminified site without the four e2e-only pages, which no browser target visits; the build stage has already run `wiki:build` | one `wiki:build` fewer (−26 s) |
+| Workers | `FUZZ_WORKERS` (Vitest, default 2; a box shard sets 4) and `FUZZ_BROWSER_WORKERS` (Playwright, default 1, `fullyParallel`) | Vitest 322 s → 182 s for 15 files. Two browser workers took the 5 browser tests from 141 s to 70 s before `9363e205` turned Chromium's compilation cache off; with it off they make each test 50% slower (abB: 34 to 38 s against abA's 23 to 25 s) and the phase no faster, so shards keep 1 |
+| Boxes | `--boxes N`: shards planned from `verify/fuzz_costs.json` (`--costs` records each target's floor seconds from the shard logs), each shard on its own box through `FUZZ_AFFECTED_BOX`; the browser phase alone on a `playwright` box (flow `unit: false`), Vitest shards on `node26`. The host sums the shards' Node reports (identical structure, else refused) and credits Chromium by source start, the report stage's rule; one receipt as before | see the table below |
+
+Flow `vibelang-fuzz/v10` adds `surfaces` and `unit`.
+
+**Before and after**
+
+| Run | Where | Targets | Wall | Returned |
+| --- | --- | --- | --- | --- |
+| Session 21 tracer, `src/web/viewport.vibe` | 1 playwright box `a68f9887d43e526884fc20c7` | 16 incl. browser | 883 s (fuzz:affected), 977 s box wall | 94 MB, 5,701 files |
+| t1, same file | 1 playwright box `2e0f8563360b4627b1fb6ab1` | 16 incl. browser | 546 s (fuzz:affected), 633 s box wall | under 1 MiB inline, 118 files |
+| b2, same file, `--boxes 8` | 5 boxes (1 playwright, 4 node26) | 16 incl. browser | 553 s | 5 shard files, 67 kB |
+| b3, `worker/Wiki.vibe`, `--boxes 8` | 7 node26 boxes asked for, 5 given | 22 | failed after 1,833 s: two shards got no box in cfbox's 1,800 s wait; the receipt names the 7 targets they held | 5 shard files, 300 kB |
+| abA, browser shard alone, `--mode fuzz`, rebased on `17dd6fde` | playwright `8c310ec08ffc3f69250b28af` | browser | 392 s command | shard file |
+| abC, the same with main's e2e site build | playwright `1ef13e5670ec9b26c7b47594` | browser | 465 s command | shard file |
+
+**Three limits, all measured**
+
+1. The browser shard is the critical path: 411 s of command time in b2, 324 s of it the browser stage. It compiles the
+   app project cold three times (Playwright's VibeLang loader for `fuzz/browser.spec.ts`, the site build, the Chromium
+   reporter's seeding), because each step's outputs invalidate VibeLang's project cache for the next: a new `dist/`
+   in the app root, which the cache scans only for the named root files, and Playwright's `fuzz/test-results/`.
+   VibeLang gap, minimal reproduction at `~/vl/vibelang-bugs/cache-new-directory-miss/` on nyc-01 (`bash repro.sh`;
+   five compiles, both directory cases miss with "gained or lost a file"). Not worked around here.
+2. One of four browser runs after `9363e205` still lost block coverage (playwright `384404074d6a221d3e36fb2c`,
+   `browser/accounts-and-authority`, "Block coverage lost for 1733 executed functions in 9 scripts"); abA, abB and
+   abC on the same tree were clean. `9363e205`'s check turns that loss into a red run instead of a silent gap; reported
+   to vl-fuzzpkg.
+3. Boxes are shared and capped. b2's boxes waited 17 to 119 s to be accepted; in b3, six of seven shards waited
+   ("Maximum number of running container instances exceeded") 386 to 1,191 s, and two never got one. Each shard that
+   ran took 278 to 309 s of command time. More shards help only while the pool has room; `--boxes 4` is the default
+   in the rule below, and a shard without a box fails the receipt rather than passing it.
+
+**The rule for every lane**, from `apps/vibelang` in its workspace (jj there names the changed files; the coordinator
+hands them to each box):
+
+```sh
+FUZZ_AFFECTED_BOX="$HOME/lanes/bin/run-heavy --name vl-<lane>:{name} --cores 4 --where cfbox --image {image} --writes $PWD --" node verify/fuzz_affected.cjs --boxes 4
+```
+
+The one-box command of session 21 still works and now returns only the receipt and the summary when it adds
+`--results-only` after `pnpm fuzz:affected`. Regression tests: `verify/fuzz_affected_test.cjs` (23 cases, in
+`pnpm test:proofs`) and `test/workerdCoverageShape.test.ts` (the workerd filter, failing first).
+
+Gates on `9a962dd1` with this change: `pnpm typecheck && pnpm test` on node26 box `545f775e9eb8f58514db808a` (331/331
+files, 2,847 tests, `test:proofs` 45/45); whole-app `pnpm fuzz:coverage` on playwright box `2e54d17deb21b23a1f89a8a7`
+(exit 0, 107/107 files, merged 100 / 100 / 100 / 100, 2,288 s).
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the

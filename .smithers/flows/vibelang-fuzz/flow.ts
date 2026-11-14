@@ -4,7 +4,7 @@ import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
 import { FuzzPhaseFailed, runStage } from "./run.vibe"
 
-const version = "vibelang-fuzz/v9"
+const version = "vibelang-fuzz/v10"
 const settings = {
   coverage: Schema.Boolean,
   budget: Schema.String,
@@ -16,7 +16,11 @@ const settings = {
   floorOnly: Schema.optionalKey(Schema.Boolean),
   targets: Schema.optionalKey(Schema.Array(Schema.String)),
   reportFiles: Schema.optionalKey(Schema.Array(Schema.String)),
-  browser: Schema.optionalKey(Schema.Boolean)
+  browser: Schema.optionalKey(Schema.Boolean),
+  // false: the build stage runs only wiki:build, when no target runs the CLI and MCP surfaces (dist-factory).
+  surfaces: Schema.optionalKey(Schema.Boolean),
+  // false: no Vitest targets and no report stage, the browser phase alone (`pnpm fuzz:affected --boxes`' browser shard).
+  unit: Schema.optionalKey(Schema.Boolean)
 }
 const Request = Schema.Struct(settings)
 const Stage = Schema.Struct({
@@ -32,7 +36,7 @@ const Run = Action.make("vibelang-fuzz/stage", {
   capabilities: [
     "fs:read:**",
     "fs:write:**",
-    "proc:spawn:env E2E_4501 E2E_PORT E2E_SERVER_SECONDS FUZZ_BROWSER FUZZ_BUDGET FUZZ_COLLECT_PARTIAL FUZZ_EXECUTIONS FUZZ_FLOOR_ONLY FUZZ_REPORT_FILES FUZZ_SEED NODE_OPTIONS PLAYWRIGHT_BROWSERS_PATH WORKERD_COVERAGE WORKERD_COVERAGE_DIR -- pnpm *",
+    "proc:spawn:env E2E_4501 E2E_PORT E2E_SERVER_SECONDS FUZZ_BROWSER FUZZ_BROWSER_WORKERS FUZZ_BUDGET FUZZ_COLLECT_PARTIAL FUZZ_EXECUTIONS FUZZ_FLOOR_ONLY FUZZ_REPORT_FILES FUZZ_SEED FUZZ_SHARD FUZZ_WORKERS NODE_OPTIONS PLAYWRIGHT_BROWSERS_PATH WORKERD_COVERAGE WORKERD_COVERAGE_DIR -- pnpm *",
     "net:get:**",
     "net:post:**",
     "net:private:**"
@@ -58,7 +62,7 @@ export default Flow.make("vibelang-fuzz", {
   capabilities: [
     "fs:read:**",
     "fs:write:**",
-    "proc:spawn:env E2E_4501 E2E_PORT E2E_SERVER_SECONDS FUZZ_BROWSER FUZZ_BUDGET FUZZ_COLLECT_PARTIAL FUZZ_EXECUTIONS FUZZ_FLOOR_ONLY FUZZ_REPORT_FILES FUZZ_SEED NODE_OPTIONS PLAYWRIGHT_BROWSERS_PATH WORKERD_COVERAGE WORKERD_COVERAGE_DIR -- pnpm *",
+    "proc:spawn:env E2E_4501 E2E_PORT E2E_SERVER_SECONDS FUZZ_BROWSER FUZZ_BROWSER_WORKERS FUZZ_BUDGET FUZZ_COLLECT_PARTIAL FUZZ_EXECUTIONS FUZZ_FLOOR_ONLY FUZZ_REPORT_FILES FUZZ_SEED FUZZ_SHARD FUZZ_WORKERS NODE_OPTIONS PLAYWRIGHT_BROWSERS_PATH WORKERD_COVERAGE WORKERD_COVERAGE_DIR -- pnpm *",
     "net:get:**",
     "net:post:**",
     "net:private:**"
@@ -76,13 +80,14 @@ export default Flow.make("vibelang-fuzz", {
   error: FuzzPhaseFailed,
   body: Node.capture({ version }, (settings) => {
     const browser = settings.browser !== false
-    const report = settings.coverage ? Run.call({ stage: "report", ...settings }) : Node.succeed(undefined)
+    const unit = settings.unit !== false
+    const report = settings.coverage && unit ? Run.call({ stage: "report", ...settings }) : Node.succeed(undefined)
     return Node.andThen(
       browser ? Run.call({ stage: "prepare", ...settings }) : Node.succeed(undefined),
       Node.andThen(
         Run.call({ stage: "build", ...settings }),
         Node.andThen(
-          Run.call({ stage: "targets", ...settings }),
+          unit ? Run.call({ stage: "targets", ...settings }) : Node.succeed(undefined),
           browser ? Node.andThen(Run.call({ stage: "browser", ...settings }), report) : report
         )
       )

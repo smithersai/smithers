@@ -20,6 +20,8 @@ export effect function main() {
   // `pnpm fuzz:affected` (apps/vibelang/verify/fuzz_affected.cjs) names its targets and sources, space-separated.
   const floorOnly = try Config.Boolean("FUZZ_FLOOR_ONLY").pipe(Config.withDefault(false))
   const browser = try Config.Boolean("FUZZ_BROWSER").pipe(Config.withDefault(true))
+  const surfaces = try Config.Boolean("FUZZ_SURFACES").pipe(Config.withDefault(true))
+  const unit = try Config.Boolean("FUZZ_UNIT").pipe(Config.withDefault(true))
   const words = (name: string) => Config.option(Config.String(name)).pipe(Config.map(Option.map((text) => text.split(/\s+/).filter((word) => word !== ""))))
   const targets = try words("FUZZ_TARGETS")
   const reportFiles = try words("FUZZ_REPORT_FILES")
@@ -38,7 +40,7 @@ export effect function main() {
     StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), registered,
   ).pipe(Layer.provide(host))
   try Console.log(`Fuzz run: ${executionId}`)
-  try scoped(Effect.provide(flow.execute({ coverage, budget, browserBudget, seed, ...(Option.isSome(executions) ? { executions: executions.value } : {}), ...(floorOnly ? { floorOnly } : {}), ...(browser ? {} : { browser }), ...(Option.isSome(targets) ? { targets: targets.value } : {}), ...(Option.isSome(reportFiles) ? { reportFiles: reportFiles.value } : {}) }, { executionId }), runtime))
+  try scoped(Effect.provide(flow.execute({ coverage, budget, browserBudget, seed, ...(Option.isSome(executions) ? { executions: executions.value } : {}), ...(floorOnly ? { floorOnly } : {}), ...(browser ? {} : { browser }), ...(surfaces ? {} : { surfaces }), ...(unit ? {} : { unit }), ...(Option.isSome(targets) ? { targets: targets.value } : {}), ...(Option.isSome(reportFiles) ? { reportFiles: reportFiles.value } : {}) }, { executionId }), runtime))
 }
 
 Boundary.runMain(Effect.provide(main(), Layer.mergeAll(NodeHost.layer, NodeHost.NodeCrypto.layer, ExperimentalNodeProcess.layer)))

@@ -47,6 +47,7 @@ pnpm test:sandboxes-live   # real Cloudflare Containers in the vl-test stage, on
 pnpm agent-context  # regenerate worker/agentContext.vibe after a VibeLang upgrade
 pnpm e2e            # browser tests against the built app (dark, light, phone), on the mock
 pnpm fuzz:affected  # before land-main: the fuzz targets that reach each changed src/ or worker/ source, at their floor; writes the receipt the landing check needs (0015)
+FUZZ_AFFECTED_BOX="$HOME/lanes/bin/run-heavy --name vl-<lane>:{name} --cores 4 --where cfbox --image {image} --writes $PWD --" pnpm fuzz:affected --boxes 4   # the same, split across boxes (0015, session 22)
 pnpm wiki:build && pnpm exec alchemy dev --stage dev   # site + API Worker locally at http://localhost:1337 (NODE_OPTIONS=--import=vibelang/register)
 E2E_LIVE_URL=http://localhost:1337 pnpm exec playwright test e2e/live.spec.ts   # the live agent in a browser
 pnpm run deploy     # Alchemy, with Cloudflare credentials, VIBELANG_DOMAIN and the model's key set (0010)

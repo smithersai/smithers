@@ -32,14 +32,16 @@ export effect function main() {
   const browser = try Config.Boolean("FUZZ_BROWSER").pipe(Config.withDefault(true))
   const reportFiles = try Config.option(Config.String("FUZZ_REPORT_FILES"))
   const scope = Option.map(reportFiles, (text) => new Set(text.split(/\s+/).filter((word) => word !== "").map((file) => path.join(root, file))))
+  // The changed sources' entries only, before merging: merging every source cost 49 s on a box (0015).
+  const scoped = (report: Record<string, FileCoverageJSON>) => Option.isNone(scope) ? report : Object.fromEntries(Object.entries(report).filter(([file]) => scope.value.has(file)))
   const inputs: Array<Record<string, FileCoverageJSON>> = []
   for (const directory of browser ? ["coverage/fuzz-unit", "coverage/fuzz-browser"] : ["coverage/fuzz-unit"]) {
     const source = try fs.readFileString(path.join(root, directory, "coverage-final.json"))
-    inputs.push(try Effect.try(() => JSON.parse(source) as Record<string, FileCoverageJSON>))
+    inputs.push(try Effect.try(() => scoped(JSON.parse(source) as Record<string, FileCoverageJSON>)))
   }
   // Each fuzz workerd isolate's Istanbul counters, remapped to the .vibe sources (test/support/workerd.vibe).
-  const workerd = try tryPromise(() => workerdEvidence(path.join(root, "coverage/fuzz-unit/workerd-raw"), root.replace(/\/$/, "")))
-  inputs.push(try Effect.try(() => workerd.toJSON() as unknown as Record<string, FileCoverageJSON>))
+  const workerd = try tryPromise(() => workerdEvidence(path.join(root, "coverage/fuzz-unit/workerd-raw"), root.replace(/\/$/, ""), (file) => Option.isNone(scope) || scope.value.has(file)))
+  inputs.push(try Effect.try(() => scoped(workerd.toJSON() as unknown as Record<string, FileCoverageJSON>)))
   // Node's whole-source structure is the gate, even for files Node never executed; workerd's counters and Chromium credit it only at identical source starts (0015).
   const coverage = try Effect.try(() => createCoverageMap(mergeByPosition(inputs[0]!, inputs.slice(1), true)))
   // The unit gate's denominator: every source under src/, worker/, scripts/ and infra/, none excluded (VL-14).
@@ -49,6 +51,9 @@ export effect function main() {
   try fs.writeFileString(path.join(directory, "coverage-final.json"), JSON.stringify(coverage))
   const context = try Effect.try(() => createContext({ dir: directory, coverageMap: coverage }))
   for (const format of ["text", "json-summary", "html", "lcovonly"]) try Effect.try(() => reports.create(format as "text").execute(context))
+  // One shard of `pnpm fuzz:affected --boxes` (FUZZ_SHARD) gates nothing: the coordinator gates the shards' sum.
+  const shard = try Config.Boolean("FUZZ_SHARD").pipe(Config.withDefault(false))
+  if (shard) return
   let missed = 0
   for (const file of coverage.files()) {
     const summary = coverage.fileCoverageFor(file).toSummary()

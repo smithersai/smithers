@@ -8,13 +8,13 @@ export schema error FuzzPhaseFailed {
 }
 
 /** Runs exactly one phase; the flow supplies ordering, persistence and recovery. */
-export effect function runStage(stage: "prepare" | "build" | "targets" | "browser" | "report", coverage: boolean, settings: { readonly budget: string; readonly browserBudget: string; readonly seed: string; readonly executions?: number; readonly floorOnly?: boolean; readonly targets?: ReadonlyArray<string>; readonly reportFiles?: ReadonlyArray<string>; readonly browser?: boolean }) {
+export effect function runStage(stage: "prepare" | "build" | "targets" | "browser" | "report", coverage: boolean, settings: { readonly budget: string; readonly browserBudget: string; readonly seed: string; readonly executions?: number; readonly floorOnly?: boolean; readonly targets?: ReadonlyArray<string>; readonly reportFiles?: ReadonlyArray<string>; readonly browser?: boolean; readonly surfaces?: boolean; readonly unit?: boolean }) {
   return effect {
   const root = (try Path.Path).resolve((try Workspace.Workspace).root, "apps/vibelang")
   const { seed } = settings
   const budget = stage === "browser" ? settings.browserBudget : settings.budget
   const bootstrap: Record<string, string> = {}
-  for (const name of ["PATH", "HOME", "USER", "LANG", "TERM", "TMPDIR", "SHELL", "E2E_SERVER_SECONDS"]) {
+  for (const name of ["PATH", "HOME", "USER", "LANG", "TERM", "TMPDIR", "SHELL", "E2E_SERVER_SECONDS", "FUZZ_WORKERS", "FUZZ_BROWSER_WORKERS", "FUZZ_SHARD"]) {
     const value = try Config.option(Config.String(name))
     if (Option.isSome(value)) bootstrap[name] = value.value
   }
@@ -22,7 +22,7 @@ export effect function runStage(stage: "prepare" | "build" | "targets" | "browse
   // stage (apps/vibelang/fuzz/coverage.vibe); workerd has no V8 precise coverage (0015, 0016).
   // A lane running beside others names its own browser port; 4501 is the suite's.
   const port = Option.getOrElse(try Config.option(Config.String("E2E_PORT")), () => "4501")
-  const argv = stage === "prepare" ? ["exec", "playwright", "install", "chromium"] : stage === "build" ? ["build:surfaces"]
+  const argv = stage === "prepare" ? ["exec", "playwright", "install", "chromium"] : stage === "build" ? [settings.surfaces === false ? "wiki:build" : "build:surfaces"]
     : stage === "targets" ? ["exec", "vitest", "run", "--config", "fuzz.config.ts", ...(coverage ? ["--coverage"] : []), ...(settings.targets ?? [])]
     : stage === "browser" ? ["exec", "playwright", "test", "--config", "fuzz/browser.config.ts"]
     : ["exec", "node", "--import=vibelang/register", "fuzz/coverage.vibe"]

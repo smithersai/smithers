@@ -8,13 +8,13 @@ import { expect, it } from "vitest"
 import { build } from "esbuild"
 import vibelang from "vibelang-unplugin/esbuild"
 import { fileURLToPath } from "node:url"
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createServer } from "node:http"
 import { createHash } from "node:crypto"
 import { alchemyWorker } from "./support/alchemyBundle.vibe"
-import { dumpWorkerdCoverage, instrumentModules, sourceCoverage } from "./support/workerdCoverage.ts"
+import { dumpWorkerdCoverage, instrumentModules, sourceCoverage, workerdEvidence } from "./support/workerdCoverage.ts"
 
 const fixture = fileURLToPath(new URL("./support/coverageShape.vibe", import.meta.url))
 
@@ -64,6 +64,36 @@ it("a measured module that does not compile reports the compiler's diagnostics",
     await expect(built).rejects.not.toThrow(/without a source map/)
   } finally {
     await rm(directory, { recursive: true, force: true })
+  }
+}, 240_000)
+
+// `pnpm fuzz:affected`'s report stage remaps only the modules whose maps name a changed source (0015).
+it("workerd evidence for kept sources skips every other module before its remap", async () => {
+  const app = await mkdtemp(join(tmpdir(), "workerd-keep-"))
+  try {
+    await mkdir(join(app, "src"))
+    const kept = join(app, "src", "kept.vibe")
+    const other = join(app, "src", "other.vibe")
+    await writeFile(kept, "export const kept = (flag: boolean) => flag ? 1 : 2\n")
+    await writeFile(other, "export const other = (flag: boolean) => flag ? 3 : 4\n")
+    await writeFile(join(app, "src", "entry.vibe"), 'import { kept } from "./kept.vibe"\nimport { other } from "./other.vibe"\nexport const both = () => kept(true) + other(false)\n')
+    await writeFile(join(app, "tsconfig.json"), JSON.stringify({ include: ["src"], compilerOptions: { strict: true, allowImportingTsExtensions: true, noEmit: true, module: "ESNext", moduleResolution: "Bundler", target: "ES2022" } }))
+    const result = await build({
+      entryPoints: [join(app, "src", "entry.vibe")], bundle: true, write: false, format: "esm", platform: "browser", target: "es2022",
+      logLevel: "silent", plugins: [instrumentModules(vibelang({ root: app }), (file) => file === kept || file === other)],
+    })
+    const scope = globalThis as { __coverage__?: Record<string, unknown> }
+    delete scope.__coverage__
+    const module = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0]!.text).toString("base64")}`) as { both: () => number }
+    expect(module.both()).toBe(5)
+    await mkdir(join(app, "dumps"))
+    await writeFile(join(app, "dumps", "0.json"), JSON.stringify({ coverage: scope.__coverage__ }))
+    delete scope.__coverage__
+    expect((await workerdEvidence(join(app, "dumps"), app)).files().sort()).toEqual([kept, other])
+    expect((await workerdEvidence(join(app, "dumps"), app, (file) => file === kept)).files()).toEqual([kept])
+    expect((await workerdEvidence(join(app, "dumps"), app, () => false)).files()).toEqual([])
+  } finally {
+    await rm(app, { recursive: true, force: true })
   }
 }, 240_000)
 

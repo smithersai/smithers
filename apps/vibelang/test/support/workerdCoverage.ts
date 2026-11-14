@@ -2,6 +2,7 @@
 // evidence collection is plain CDP over a WebSocket; the VibeLang pipeline imports this from workerd.vibe.
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
+import { dirname, resolve } from "node:path"
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { normalizeEndColumns, type FileCoverageJSON } from "./coverageUnion.ts"
 
@@ -110,7 +111,24 @@ export async function sourceCoverage(coverage: Record<string, unknown>): Promise
  * module's counters carry the VibeLang compiler's own map, the one Vitest's V8 remap uses, so a statement sits at the
  * same source start in both runtimes (0016, 0017). A missing directory is no evidence.
  */
-export async function workerdEvidence(directory: string, appRoot: string): Promise<CoverageMap> {
+/**
+ * The source files a dumped module's counters remap to: its compiler map's sources (paths or `file:` URLs, resolved
+ * beside the module), else the module itself.
+ */
+function mappedSources(module: string, entry: unknown): ReadonlyArray<string> {
+  const map = (entry as { inputSourceMap?: { sources?: unknown; sourceRoot?: unknown } }).inputSourceMap
+  if (!Array.isArray(map?.sources)) return [module]
+  const base = typeof map.sourceRoot === "string" && map.sourceRoot !== "" ? map.sourceRoot : dirname(module)
+  return map.sources.filter((source): source is string => typeof source === "string")
+    .map((source) => source.startsWith("file:") ? fileURLToPath(source) : resolve(base, source))
+}
+
+/**
+ * Each dump's counters remapped to the app's `.vibe` sources. `keep` (`pnpm fuzz:affected`'s changed sources) skips
+ * a module before its remap when none of its map's sources is kept: the remap is the report stage's cost, and such a
+ * module credits only files the report drops anyway (0015, "A cheap landing check").
+ */
+export async function workerdEvidence(directory: string, appRoot: string, keep: (file: string) => boolean = () => true): Promise<CoverageMap> {
   const merged = libCoverage.createCoverageMap()
   const names = await readdir(directory).catch((error: { code?: string }) => {
     if (error.code === "ENOENT") return []
@@ -119,7 +137,8 @@ export async function workerdEvidence(directory: string, appRoot: string): Promi
   const roots = ["src", "worker", "infra", "scripts"].map((root) => `${appRoot}/${root}/`)
   for (const name of names.filter((name) => name.endsWith(".json")).sort()) {
     const dump = JSON.parse(await readFile(`${directory}/${name}`, "utf8")) as { coverage: Record<string, unknown> }
-    const sourceLevel = await sourceCoverage(dump.coverage)
+    const kept = Object.fromEntries(Object.entries(dump.coverage).filter(([module, entry]) => mappedSources(module, entry).some(keep)))
+    const sourceLevel = await sourceCoverage(kept)
     const filtered = libCoverage.createCoverageMap()
     for (const file of sourceLevel.files()) {
       if (!file.endsWith(".vibe") || !roots.some((root) => file.startsWith(root))) continue
