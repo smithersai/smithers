@@ -704,6 +704,10 @@ fully covered. Method: `s10/table.js` (Istanbul branch arms; a line counts once 
 | `src/core/wikiFlows.vibe` | 0 | 16 | 37/40 | 10/11 | 32/35 |
 | `src/core/wikiSchemas.vibe` | 0 | 0 | 6/6 | 0/0 | 5/5 |
 
+After this session's commits (`s12full2`, main `9839e125`): 882 passed, 12 skipped, 0 unexpected, 47.1 min; exit 1 from
+thresholds only. Open `src/core` arms 342 → 338: `sandboxDecision.vibe` 17 → 14, `issueFixtureDecision.vibe` 17 → 16
+(`~/vl/vl-coverage-evidence/s12/full2/core-table.md`).
+
 Reached after this run (vl-coverage-core, session 12; focused run `s12e2e3`, 108 passed):
 
 | Arm | How |
@@ -727,6 +731,7 @@ Kept, with the reason no page input reaches them:
 | `issueFixtureDecision.vibe:98` (a request with no key) | Every page request carries `issueKey(prefix, serial)`, reads carry `read-N` and the agent's requests carry the conversation and post. |
 | `MockFactory.vibe:392`, `:401`, `:402` (a reply's post with no recorded person or owner) | A reply runs only for a post the mock accepted, and acceptance records both maps first (line 327, `decision.ok`). |
 | `MockFactory.vibe:436`, `:453` (an agent's issue or wiki actor) and `issueFixtureDecision.vibe:96` (`agentRefused`) | The agent signs in only through the agent surfaces (`src/surfaces/signin.vibe`, `MockAccounts.vibe` `signInAgent`), which the page does not run; Visit as clears the agent flag, and the scripted agent acts as the poster. |
+| `sandboxDecision.vibe:96` (`elapsedMilliseconds`'s `: 0`) | Its only caller, `sandboxMeter.vibe` `meter`, loops `while (cursor < high)` with `end > cursor`. The clamp is the kernel's specified rollback property (`test/sandboxDecision.test.vibe`, mutant `clock-highwater`), kept for any later caller. |
 | `sandboxDecision.vibe:38`, `:39` (`runningCountPrefix`) and `conversation.vibe:943` (`pendingCount`) | Specification only: they state `runningCount`'s and the pending list's contracts and nothing calls them at run time (`~/vl/vibelang-bugs/spec-only-function/`, still open in VibeLang). |
 
 ### The Export journey counts turns, not milliseconds (vl-coverage-core, session 12, 2026-11-14)
