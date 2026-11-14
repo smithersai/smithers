@@ -189,5 +189,15 @@ cases = [
 (H, 'finish-error', 'finishedClean', 'return done && error === ""', 'return done', 'a failed reply did not finish cleanly'),
 (H, 'issue-blank', 'blankPart', 'return trimmed === ""', 'return false', 'a blank part is incomplete'),
 (H, 'wiki-owned-api', 'wikiOwnedPath', 'return !path.startsWith("/api/") && canonical === path', 'return canonical === path', 'an API path is never the wiki'),
+# Batch 68: the last open labels and the export planner's checks.
+('src/core/wikiPageDecision.vibe', 'wiki-path-index', 'pathOrIndex', 'return raw === "" ? "index" : raw', 'return raw', 'an empty wiki path is the index'),
+('src/core/wikiPageDecision.vibe', 'wiki-path-kept', 'pathOrIndex', 'return raw === "" ? "index" : raw', 'return "index"', 'a named path stays itself'),
+('src/surfaces/commandDecision.vibe', 'cli-sandbox-unnamed', 'sandboxLabel', 'return id === "" ? "Sandboxes" : id', 'return id', 'an unnamed sandbox is called Sandboxes'),
+('src/surfaces/commandDecision.vibe', 'cli-sandbox-named', 'sandboxLabel', 'return id === "" ? "Sandboxes" : id', 'return "Sandboxes"', 'a sandbox is named by its id'),
+('src/history/exportDecision.vibe', 'export-source-tree', 'hasSourceTree', 'return source !== ""', 'return true', 'an entry with no source names no tree'),
+('src/history/exportDecision.vibe', 'export-needs-source', 'needsTree', 'return hasSourceTree(source) && !known', 'return !known', 'a commit with no source needs no tree'),
+('src/history/exportDecision.vibe', 'export-needs-known', 'needsTree', 'return hasSourceTree(source) && !known', 'return hasSourceTree(source)', 'a known tree is not read again'),
+('src/history/exportDecision.vibe', 'export-notes-all', 'notesComplete', 'return n === noted.length', 'return n > 0 || noted.length === 0', 'one missing note refuses the export'),
+('src/history/exportDecision.vibe', 'export-notes-each', 'notesComplete', 'while (n < noted.length && noted[n]) {', 'while (n < noted.length) {', 'each commit needs its own note'),
 (H, 'wiki-owned-canonical', 'wikiOwnedPath', 'return !path.startsWith("/api/") && canonical === path', 'return !path.startsWith("/api/")', 'only the wiki spelling of a page is the wiki'),
 ]

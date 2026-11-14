@@ -1,4 +1,4 @@
-import { collectAnswer, answerOutcome, failureMessage, historyReads, historyTotal, issueDetail, issueResume, knownEpic, planHow, planTarget, runSettled, runWaitFails, wikiPage, writeFailure, type AskProgress } from "./commandDecision.vibe"
+import { collectAnswer, answerOutcome, failureMessage, historyReads, historyTotal, issueDetail, issueResume, knownEpic, planHow, planTarget, runSettled, runWaitFails, wikiPage, writeFailure, sandboxLabel, type AskProgress } from "./commandDecision.vibe"
 import { commandConversation } from "../core/protocolDecision.vibe"
 import { IssueRequest, IssuesState, SpecificationReviewer } from "../core/issueSchemas.vibe"
 import { WikiState } from "../core/wikiSchemas.vibe"
@@ -252,7 +252,7 @@ export schema TerminalOutput { readonly output: string }
 const sandboxFlags = { conversation: Flag.String("conversation").pipe(Flag.withDefault("home")), operationId: Flag.String("operation-id").pipe(Flag.withDefault("")) }
 /** How a sandbox command reports the allowance or generation refusing it. */
 export const SANDBOX_REFUSED = "The sandbox refused it"
-export const Sandboxes = define("sandboxes", "Read the sandbox and minutes in a conversation.", ReadInput, SandboxSnapshot, { conversation: sandboxFlags.conversation, after: Flag.Int("after").pipe(Flag.withSchema(Seq)).pipe(Flag.withDefault(0)) }, effect (input) => (try (try Factory).sandbox(input.conversation)), (s) => `${s.id || "Sandboxes"}  ${s.status}  ${s.remaining} min`, SANDBOX_REFUSED)
+export const Sandboxes = define("sandboxes", "Read the sandbox and minutes in a conversation.", ReadInput, SandboxSnapshot, { conversation: sandboxFlags.conversation, after: Flag.Int("after").pipe(Flag.withSchema(Seq)).pipe(Flag.withDefault(0)) }, effect (input) => (try (try Factory).sandbox(input.conversation)), (s) => `${sandboxLabel(s.id)}  ${s.status}  ${s.remaining} min`, SANDBOX_REFUSED)
 export const StartSandbox = define("sandbox-start", "Start a sandbox through the shared allowance flow.", SandboxInput, SandboxSnapshot, sandboxFlags, effect (input) => {
   const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
   return try (try Factory).startSandbox(input.conversation, id)

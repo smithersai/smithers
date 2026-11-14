@@ -1,6 +1,6 @@
 // The commands' argument decisions (src/surfaces/commandDecision.vibe, proved; 0018 "Command argument decisions").
 import { describe, expect, it } from "@effect/vitest"
-import { failureMessage, historyReads, historyTotal, issueDetail, issueResume, knownEpic, planHow, planTarget, runSettled, runWaitFails, wikiPage, writeFailure } from "../src/surfaces/commandDecision.vibe"
+import { failureMessage, historyReads, historyTotal, issueDetail, issueResume, knownEpic, planHow, planTarget, runSettled, runWaitFails, wikiPage, writeFailure, sandboxLabel } from "../src/surfaces/commandDecision.vibe"
 
 describe("plan's flags", () => {
   it("amend before insert before append, and name the commit each acts on", () => {
@@ -60,5 +60,11 @@ describe("failures and defaults", () => {
     expect(runWaitFails(true, "passed")).toBe(false)
     expect(runWaitFails(true, "failed")).toBe(true)
     expect(runWaitFails(false, "")).toBe(true)
+  })
+})
+
+describe("the CLI's sandbox label (0018 batch 68)", () => {
+  it("names a sandbox by its id, and one with no id Sandboxes", () => {
+    expect([sandboxLabel(""), sandboxLabel("sb-1")]).toEqual(["Sandboxes", "sb-1"])
   })
 })

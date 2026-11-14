@@ -2,10 +2,10 @@
 // never src/core/wiki.vibe, so the API Worker's startup never parses the pages' Markdown and HTML
 // (wiki/decisions/0033-worker-startup.md). The flow admits only these pages.
 import { pages } from "../assets/wikiIndex.generated.vibe"
-import { editable, firstWithPrefix, longestIncluded, pageIdOf, pageIndex, sectionAnchor, wikiHref, wikiRequest } from "./wikiPageDecision.vibe"
+import { editable, firstWithPrefix, longestIncluded, pageIdOf, pageIndex, pathOrIndex, sectionAnchor, wikiHref, wikiRequest } from "./wikiPageDecision.vibe"
 export { pages }
 export function wikiPath(page: string): string | undefined {
-  const normalized = page.replace(/^\/wiki\/?/, "").replace(/\.md(?=#|$)/, "") || "index"
+  const normalized = pathOrIndex(page.replace(/^\/wiki\/?/, "").replace(/\.md(?=#|$)/, ""))
   const [raw, hash] = normalized.split("#")
   const id = pageIdOf(raw!)
   if (pageIndex(pages, id) < 0) return undefined

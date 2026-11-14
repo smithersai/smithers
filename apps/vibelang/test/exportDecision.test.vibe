@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { chainEnds, commitVerdict, headerAgrees, linkedTo, manifestChanged, pacedOut, parentsOf, rewritesMythical, treeOrigin, waitsForTrees, writesChange } from "../src/history/exportDecision.vibe"
+import { chainEnds, commitVerdict, headerAgrees, linkedTo, manifestChanged, pacedOut, parentsOf, rewritesMythical, treeOrigin, waitsForTrees, writesChange, hasSourceTree, needsTree, notesComplete } from "../src/history/exportDecision.vibe"
 
 describe("the export planner's and check's decisions", () => {
   it("links each commit to exactly the one before it", () => {
@@ -17,5 +17,15 @@ describe("the export planner's and check's decisions", () => {
     expect([manifestChanged(false, "", "x"), manifestChanged(true, "x", "x"), manifestChanged(true, "x", "y")]).toEqual([true, false, true])
     expect([rewritesMythical("", false), rewritesMythical("t", true), rewritesMythical("t", false)]).toEqual([false, false, true])
     expect([waitsForTrees(0), waitsForTrees(1), pacedOut(60, 60), pacedOut(61, 60), pacedOut(5, Number.POSITIVE_INFINITY)]).toEqual([false, true, false, true, false])
+  })
+})
+
+describe("the export's known trees and notes (0018 batch 68)", () => {
+  it("knows only entries with a source tree, and waits only for an unknown source", () => {
+    expect([hasSourceTree(""), hasSourceTree("abc")]).toEqual([false, true])
+    expect([needsTree("abc", false), needsTree("abc", true), needsTree("", false), needsTree("", true)]).toEqual([true, false, false, false])
+  })
+  it("checks that every manifest commit has its note", () => {
+    expect([notesComplete([]), notesComplete([true]), notesComplete([true, true, true]), notesComplete([false]), notesComplete([true, false, true]), notesComplete([true, true, false])]).toEqual([true, true, true, false, false, false])
   })
 })

@@ -14,7 +14,7 @@
 // parent's, so the bookmark's tree is always the tree of the last real commit it folds. The commits' author, committer
 // and date are fixed, so the same history is the same commits, and preparing again writes nothing new.
 import { Repository } from "@smthrs/jj"
-import { chainEnds, commitVerdict, headerAgrees, kept, lastFolds, linkedTo, manifestChanged, moves, pacedOut, parentsOf, rewritesMythical, treeOrigin, type RefNames, type Refs, treeSource, waitsForTrees, writable, writesChange } from "./exportDecision.vibe"
+import { chainEnds, commitVerdict, headerAgrees, kept, lastFolds, linkedTo, manifestChanged, moves, pacedOut, parentsOf, rewritesMythical, treeOrigin, type RefNames, type Refs, treeSource, waitsForTrees, writable, writesChange, hasSourceTree, needsTree, notesComplete } from "./exportDecision.vibe"
 import type { Commit, History, Real } from "./mythical.vibe"
 import { stacked } from "./pages.vibe"
 
@@ -167,12 +167,12 @@ export interface Planned {
  */
 export effect function planned(repository: Repository.Repository, history: History, published: Published, trees: ReadonlyMap<string, string>) {
   const { previous, notesTree, noted } = published
-  const known = new Map<string, string>((previous?.commits ?? []).filter((entry) => entry[2] !== "").map((entry) => [entry[2], entry[3]]))
+  const known = new Map<string, string>((previous?.commits ?? []).filter((entry) => hasSourceTree(entry[2])).map((entry) => [entry[2], entry[3]]))
   for (const [source, tree] of trees) known.set(source, tree)
   const commits = stacked(history)
   // One pass over the real commits finds every commit's last fold (`lastFolds`, proved).
   const folds = lastFolds(history.real)
-  const needs = [...new Set(commits.map((commit) => treeSource(history.real, folds, commit.id)).filter((source) => source !== "" && !known.has(source)))]
+  const needs = [...new Set(commits.map((commit) => treeSource(history.real, folds, commit.id)).filter((source) => needsTree(source, known.has(source))))]
   if (waitsForTrees(needs.length)) {
     const waiting: Planned = { needs, pending: [], candidate: NONE, written: 0 }
     return waiting
@@ -300,7 +300,7 @@ export effect function check(published: Refs, candidate: Refs) {
   if (refusal === null && !chainEnds(parent, candidate.mythical)) refusal = "linear"
   if (refusal === null) {
     const noted = new Set((try repository.readTree((try repository.readCommit(candidate.notes)).tree)).map((entry) => entry.name))
-    if (!manifest.commits.every((entry) => noted.has(entry[1]))) refusal = "notes"
+    if (!notesComplete(manifest.commits.map((entry) => noted.has(entry[1])))) refusal = "notes"
   }
   const result: Checked = { checked, refusal }
   return result

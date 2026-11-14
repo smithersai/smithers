@@ -177,22 +177,16 @@ src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag.endsWith("Exec
 src/core/WikiFactory.vibe	makeWikiFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
 src/core/WikiFactory.vibe	personOf	identity === "maintainer"	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
 src/core/wikiIndex.vibe	wikiPath	?? hash	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/core/wikiIndex.vibe	wikiPath	|| page.replace(/^\/wiki\/?/, "").replace(/\.md(?=#|$)/, "") || "index"	Open: state: an empty wiki path is the index
 src/core/wikiLinks.vibe	wikiLink	?? hash	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/history/export.vibe	check	!manifest.commits.every((entry) => noted.has(entry[1]))	Host boundary: Set membership; the notes tree holds a note for every manifest commit
 src/history/export.vibe	check	!old.has(oid)	Host boundary: Set membership; a commit the last publication holds was checked when it was published
 src/history/export.vibe	check	published.manifest === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
-src/history/export.vibe	check/callback	every noted.has(entry[1])	Open: state: an export checks that every manifest commit has its note
 src/history/export.vibe	noteOf/of/callback	filter note.section === kind	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/export.vibe	planned	?? folded.get(link.commit.id)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/export.vibe	planned	?? noted.get(link.oid)	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/history/export.vibe	planned	?? previous?.commits	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 src/history/export.vibe	planned	?? previous?.commits	Default: an absent stored or ledger value is its initial one (empty, zero); nothing chosen
 src/history/export.vibe	planned	history.main === ""	Formatting: the manifest message names main, or nothing before main has a commit
-src/history/export.vibe	planned/callback	&& source !== "" && !known.has(source)	Open: state: the export waits for trees it does not know yet
-src/history/export.vibe	planned/callback	filter entry[2] !== ""	Open: state: only published entries with a source tree are known trees
 src/history/export.vibe	planned/callback	filter oid !== ""	Empty text: an empty string shows nothing; any other text shows as given
-src/history/export.vibe	planned/callback	filter source !== "" && !known.has(source)	Open: state: the export waits for trees it does not know yet
 src/history/export.vibe	planned/callback	some link.oid === published.refs.mythical	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/history/export.vibe	publish/callback	move.before === ""	Forwards: an empty before is git's null, a ref the swap creates
 src/history/export.vibe	readManifest/callback	find each.name === MANIFEST_FILE	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -278,7 +272,6 @@ src/surfaces/commands.vibe	callback	|| input.key || (try IdGenerator.defaultIdGe
 src/surfaces/commands.vibe	callback	|| input.operationId || (try IdGenerator.defaultIdGenerator.generateId())	Default: a caller without its own key or operation id gets a fresh one
 src/surfaces/commands.vibe	callback	|| input.operationId || (try IdGenerator.defaultIdGenerator.generateId())	Default: a caller without its own key or operation id gets a fresh one
 src/surfaces/commands.vibe	callback	|| input.operationId || (try IdGenerator.defaultIdGenerator.generateId())	Default: a caller without its own key or operation id gets a fresh one
-src/surfaces/commands.vibe	callback	|| s.id || "Sandboxes"	Open: label: an unnamed sandbox is called Sandboxes
 src/surfaces/commands.vibe	callback	input.op === "read"	Variant dispatch on the wiki operation: a read goes to read, any other op to act, whose authority is the proved wiki gate
 src/surfaces/commands.vibe	callback	input.recovery === ""	Forwards: an empty recovery key is left out of the request
 src/surfaces/commands.vibe	callback	input.wait	Variant dispatch on the caller's option: wait for the run's end, which the proved runSettled and runWaitFails decide
@@ -788,7 +781,7 @@ worker/Http.vibe	handleConversations	url.pathname === HEALTH_PATH	Variant dispat
 worker/index.vibe	fetch	?? wikiPath(url.pathname)	Default: a path the wiki cannot spell reads as empty, which no site path equals (the proved wikiOwnedPath refuses it)
 worker/Issues.vibe	executeIssues/callback	!known	Host boundary: whether the engine knows the recovery execution
 worker/Issues.vibe	executeIssues/callback	?? completed.value.selected	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-worker/Issues.vibe	executeIssues/callback	&& Option.isSome(failure) && failure.value.unwritten === true	Open: state: a resumed write that failed before writing is unwritten
+worker/Issues.vibe	executeIssues/callback	&& Option.isSome(failure) && failure.value.unwritten === true	Forwards the proved unwritten: the resumed failure carries the flag unwritten set when it failed; no failure is not unwritten
 worker/Issues.vibe	executeIssues/callback	find f._tag === `vibelang/issues/${payload.op}`	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
 worker/Issues.vibe	executeIssues/callback	Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)	Host boundary: the recorded payload's decode and field-by-field equality; a changed payload under a reused key is refused
@@ -803,8 +796,8 @@ worker/Issues.vibe	executeIssues/perform	?? saved.specificationHistory	Default: 
 worker/Issues.vibe	executeIssues/perform	request.op === "accept" && current !== undefined	Variant dispatch: an accept records the person's approval through the proved approveVip
 worker/Issues.vibe	executeIssues/perform	request.op === "spec-revise" || request.op === "spec-review"	Variant dispatch on the specification operations, which the proved issuePermission admits
 worker/Issues.vibe	executeIssues/perform/callback	item.number === request.number	Selects the requested issue
-worker/Issues.vibe	executeIssues/perform/callback/callback	&& old.number === item.number && old.approvedBy !== undefined	Open: state: an issue keeps a VIP approval it already had
-worker/Issues.vibe	executeIssues/perform/callback/callback	find old.number === item.number && old.approvedBy !== undefined	Open: state: an issue keeps a VIP approval it already had
+worker/Issues.vibe	executeIssues/perform/callback/callback	&& old.number === item.number && old.approvedBy !== undefined	Lookup: the stored record of the same issue that holds an approval; whether the issue keeps it is the proved projectedVip
+worker/Issues.vibe	executeIssues/perform/callback/callback	find old.number === item.number && old.approvedBy !== undefined	Lookup: the stored record of the same issue that holds an approval; whether the issue keeps it is the proved projectedVip
 worker/Issues.vibe	githubHost/perform/callback	!after.items.some((item) => item.number === existing.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase()))	Host boundary: GitHub’s assignee read-back, matched case-insensitively with toLowerCase (Unicode casing)
 worker/Issues.vibe	githubHost/perform/callback	!observed.items.some(issue => issue.number === made.number && issue.vip !== "")	Host boundary: GitHub's read-back of the proposed VIP
 worker/Issues.vibe	githubHost/perform/callback	?? current.parent_issue_url	Default: an absent optional value reads as its empty value; nothing of the view's own choosing

@@ -174,3 +174,11 @@ export function runWaitFails(seen: boolean, state: string): boolean {
 export function failureMessage(tag: string, code: string, reason: string, refused: string, refusal: string, message: string): string {
   return tag === "ActionFailure" ? "Action: " + code : commandError(tag, reason, refused, refusal, message)
 }
+
+/** The CLI names a sandbox by its id; one with no id yet is called Sandboxes (0018 batch 68). */
+//@ verify
+//@ ensures id == "" ==> \result == "Sandboxes"
+//@ ensures id != "" ==> \result == id
+export function sandboxLabel(id: string): string {
+  return id === "" ? "Sandboxes" : id
+}

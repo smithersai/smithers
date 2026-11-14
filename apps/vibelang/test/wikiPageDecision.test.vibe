@@ -1,7 +1,7 @@
 // Third-lane batch 9 (0018): wiki page decisions, proved in wikiPageDecision as wiki.vibe and worker/Wiki.vibe use them.
 import { describe, expect, it } from "@effect/vitest"
 import { pages, requestedWiki, wikiEditable, wikiPage, wikiPath } from "../src/core/wiki.vibe"
-import { editable, firstWithPrefix, fixtureVerdict, longestIncluded, pageIdOf, pageIndex, reviewNumber, wikiHref, wikiRequest } from "../src/core/wikiPageDecision.vibe"
+import { editable, firstWithPrefix, fixtureVerdict, longestIncluded, pageIdOf, pageIndex, pathOrIndex, reviewNumber, wikiHref, wikiRequest } from "../src/core/wikiPageDecision.vibe"
 import { wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
 
 /** The request rule as it read before batch 9, kept to show the proved form answers alike. */
@@ -66,5 +66,12 @@ describe("wiki pages", () => {
   it("answers each wiki refusal with its HTTP status", () => {
     const reasons = ["forbidden", "sign-in", "connect", "missing", "unknown", "conflict", "empty", "invalid", "fork", "install", "partial", "rate-limited", "unavailable"]
     expect(reasons.map(wikiRefusalStatus)).toEqual([403, 401, 401, 404, 409, 409, 400, 400, 400, 400, 503, 503, 503])
+  })
+})
+
+describe("an empty wiki path (0018 batch 68)", () => {
+  it("names the index, and leaves a named path as it is", () => {
+    expect([pathOrIndex(""), pathOrIndex("benchmarks"), pathOrIndex("index")]).toEqual(["index", "benchmarks", "index"])
+    expect([wikiPath("/wiki"), wikiPath("/wiki/"), wikiPath("")]).toEqual(["/wiki/index", "/wiki/index", "/wiki/index"])
   })
 })
