@@ -5,7 +5,7 @@ import { faultyFactory, trace } from "../../test/support/FaultyFactory.vibe"
 import { forgedSeqs } from "../../test/support/forgedEvents.vibe"
 import { application } from "../../test/support/application.vibe"
 import { MediaAssets } from "../../src/web/media.vibe"
-import { init } from "../../src/web/main.vibe"
+import { init, LoadAccount } from "../../src/web/main.vibe"
 import { stylesheet } from "../../src/web/styles.vibe"
 import { main as startup, page as startupPage } from "../../src/web/startup.vibe"
 import { heldHealth } from "../../test/support/heldHealth.vibe"
@@ -15,7 +15,7 @@ import { canonical } from "./probe.vibe"
 /** The fault this page's `?fault=` names; a missing or unknown one drops an event. */
 function faultOf(search: string) {
   const requested = new URLSearchParams(search).get("fault")
-  if (requested === "issue-write" || requested === "wiki" || requested === "wiki-edit" || requested === "wiki-repository" || requested === "tour-control" || requested === "live-header" || requested === "thinking" || requested === "streaming" || requested === "tour-refuse" || requested === "tour-unavailable" || requested === "end-tour-unavailable" || requested === "sandbox-read" || requested === "sandbox-start" || requested === "sandbox-low" || requested === "sandbox-out" || requested === "sandbox-clock" || requested === "sandbox-replay" || requested === "machine-start" || requested === "machine-lost" || requested === "machine-command" || requested === "machine-stop" || requested === "roles" || requested === "roles-gap" || requested === "accounts" || requested === "live-details" || requested === "tour-events" || requested === "stale" || requested === "issue-connect" || requested === "issue-fork" || requested === "issue-install" || requested === "issue-forbidden" || requested === "issue-closed" || requested === "issue-no-model" || requested === "issue-assignee" || requested === "wiki-forbidden" || requested === "wiki-conflict" || requested === "wiki-connect" || requested === "wiki-fork" || requested === "wiki-install" || requested === "post-empty" || requested === "post-duplicate" || requested === "post-not-replying" || requested === "post-full" || requested === "end-twice" || requested === "forged" || requested === "held-details" || requested === "held-actions" || requested === "held-start" || requested === "held-start-failed") return requested
+  if (requested === "issue-write" || requested === "wiki" || requested === "wiki-edit" || requested === "wiki-repository" || requested === "tour-control" || requested === "live-header" || requested === "thinking" || requested === "streaming" || requested === "tour-refuse" || requested === "tour-unavailable" || requested === "end-tour-unavailable" || requested === "sandbox-read" || requested === "sandbox-start" || requested === "sandbox-low" || requested === "sandbox-out" || requested === "sandbox-clock" || requested === "sandbox-replay" || requested === "machine-start" || requested === "machine-lost" || requested === "machine-command" || requested === "machine-stop" || requested === "roles" || requested === "roles-gap" || requested === "accounts" || requested === "live-details" || requested === "tour-events" || requested === "stale" || requested === "issue-connect" || requested === "issue-fork" || requested === "issue-install" || requested === "issue-forbidden" || requested === "issue-closed" || requested === "issue-no-model" || requested === "issue-assignee" || requested === "wiki-forbidden" || requested === "wiki-conflict" || requested === "wiki-connect" || requested === "wiki-fork" || requested === "wiki-install" || requested === "post-empty" || requested === "post-duplicate" || requested === "post-not-replying" || requested === "post-full" || requested === "end-twice" || requested === "forged" || requested === "held-details" || requested === "held-actions" || requested === "held-start" || requested === "held-start-failed" || requested === "account-read" || requested === "held-wiki-read" || requested === "held-wiki-read-failed" || requested === "held-wiki-save") return requested
   return requested === "issues" ? "issues" : requested === "refuse" ? "refuse" : requested === "end" ? "end" : requested === "disconnect" ? "disconnect" : "drop"
 }
 
@@ -38,7 +38,12 @@ export effect function main() {
     ? heldActions(heldFault === "held-actions" ? "commands" : heldFault === "held-start" ? "start" : "start-failed", () => { observation.faulted = true })
     : undefined
   const program = application(root, faultyFactory(faultOf(window.location.search), observation), (value) => { model = value },
-    (flags) => { const started = init(flags); return empty ? { ...started, model: { ...started.model, surface: "chat" as const } } : started },
+    (flags) => {
+      const initialized = init(flags)
+      // `account-read`: the page reads its account at start, as production's ResolvedMode does (startup.vibe).
+      const started = heldFault === "account-read" ? { ...initialized, commands: [...(initialized.commands ?? []), LoadAccount({})] } : initialized
+      return empty ? { ...started, model: { ...started.model, surface: "chat" as const } } : started
+    },
     held?.layer)
   window.recovery = {
     snapshot: () => ({ client: model.client, subscriptions: observation.subscriptions, delivered: observation.delivered.map((event) => event.seq), forged: forgedSeqs(observation.forgery), faulted: observation.faulted, actionEntries: model.actions?.entries.length ?? 0 }),

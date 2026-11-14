@@ -18,6 +18,7 @@ async function ask(page: Page, text: string, count: number) {
 test("the agent starts a contributor's sandbox when asked", async ({ page }) => {
   await page.goto("/?agent=mock")
   await page.getByRole("combobox", { name: "Visit as" }).selectOption("contributor")
+  await expect(page.locator(".vl-nav-role")).toHaveText("Contributor")
   await page.getByRole("button", { name: "Ask the agent", exact: true }).click()
   await expect(await ask(page, "Start a sandbox", 1)).toContainText(/Started \S+\./)
 })

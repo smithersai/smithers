@@ -10,7 +10,7 @@ import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
 import { faultyMachines, machineFault, type MachineFault } from "./faultyMachines.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | MachineFault
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | MachineFault
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -103,6 +103,9 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * `forged` inserts events that break the conversation's rules into the home and tour conversations (forgedEvents.vibe).
  * `held-actions`, `held-start` and `held-start-failed` fault nothing here: the host's Actions hold a list or a start
  * until the page releases it (heldActions.vibe).
+ * `account-read` fails the first read of the signed-in account. `held-wiki-read` holds the editor's first page read
+ * until the page releases it; `held-wiki-read-failed` then fails it. `held-wiki-save` holds the first wiki save or
+ * proposal until the page releases it, then writes it. `faulted` turns true as each hold ends.
  * `wiki-repository` faults nothing: its fixture repository's Benchmarks page is the recorded GitHub copy (recordedWiki.vibe).
  * Each fault happens once.
  */
@@ -155,15 +158,24 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       : run
     return {
       mode: fault === "live-header" || fault === "live-details" || fault === "held-details" ? "live" : base.mode,
-      accounts: fault === "roles" ? rolesFault(base.accounts, () => first("roles")) : fault === "roles-gap" ? rolesGapFault(base.accounts, () => first("roles-gap")) : fault === "accounts" ? accountsFault(base.accounts, first) : base.accounts,
+      accounts: fault === "account-read" ? { ...base.accounts, current: () => first("account-read") ? Effect.fail(new AccountUnavailable({ reason: "accounts unavailable" })) : base.accounts.current() } : fault === "roles" ? rolesFault(base.accounts, () => first("roles")) : fault === "roles-gap" ? rolesGapFault(base.accounts, () => first("roles-gap")) : fault === "accounts" ? accountsFault(base.accounts, first) : base.accounts,
       ...(base.policy === undefined ? {} : { policy: base.policy }),
       wiki: {
         read: effect (page) => {
+          if ((fault === "held-wiki-read" || fault === "held-wiki-read-failed") && first(`${fault}:read`)) {
+            try Deferred.await(released)
+            try sync(() => { observation.faulted = true })
+            if (fault === "held-wiki-read-failed") throw new WikiFailure({ reason: "unavailable" })
+          }
           const read = try base.wiki.read(page)
           return fault === "stale" ? { ...read, stale: STALE_AT } : read
         },
         // `wiki-edit`: the first save or proposal fails before anything is written; later ones are real.
         act: effect (request) => {
+          if (request.op !== "read" && first("held-wiki-save:act")) {
+            try Deferred.await(released)
+            try sync(() => { observation.faulted = true })
+          }
           if (request.op !== "read" && first("wiki-edit:act")) throw new WikiFailure({ reason: "unavailable", unwritten: true })
           if (wikiRefusal !== undefined && request.op !== "read" && first(fault)) throw new WikiFailure({ reason: wikiRefusal })
           return try base.wiki.act(request)

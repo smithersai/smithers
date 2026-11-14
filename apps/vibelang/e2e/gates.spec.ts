@@ -3,6 +3,7 @@ import { expect, test } from "./coverage"
 test("the maintainer proposal gate and four reviewer specification gate", async ({ page }) => {
   await page.goto("/?agent=mock")
   await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+  await expect(page.locator(".vl-nav-role")).toHaveText("Maintainer")
   await page.getByRole("button", { name: "Ask the agent", exact: true }).click()
   await page.getByRole("dialog").getByRole("textbox", { name: "Message" }).fill("Accept VIP #45")
   await page.getByRole("dialog").getByRole("button", { name: "Send", exact: true }).click()

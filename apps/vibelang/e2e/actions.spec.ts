@@ -69,6 +69,7 @@ test("a history note the scripted agent requests is signed as the agent's", asyn
   // Live starts an agent-door run as the agent (worker/actionsDecision.vibe `startActor`); the mock does the same.
   await chat(page)
   await page.getByRole("combobox", { name: "Visit as" }).selectOption("contributor")
+  await expect(page.locator(".vl-nav-role")).toHaveText("Contributor")
   const input = page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })
   await input.fill('Run /note {"id":"m1","section":"tried","text":"From the chat."}')
   await input.press("Enter")
@@ -114,7 +115,7 @@ test("the agent runs each history and sandbox command a maintainer may run", asy
   // One run of each kind the action host prepares and executes (src/actions/execution.vibe), through the agent's door.
   test.setTimeout(90_000)
   await chat(page)
-  await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+  await asMaintainer(page)
   const input = page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })
   const plan = { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(actions): planned by the agent", task: "" }
   const commands: ReadonlyArray<readonly [string, RegExp]> = [
@@ -243,7 +244,7 @@ test("a lost action follow exposes Reconnect and resumes the same run", async ({
 
 test("a command picked from the slash menu starts its run and clears the composer", async ({ page }) => {
   await chat(page)
-  await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+  await asMaintainer(page)
   const composer = page.locator('form[data-docked="true"]')
   const input = composer.getByRole("textbox", { name: "Message", exact: true })
   await input.fill("/post What is a tuple?")
