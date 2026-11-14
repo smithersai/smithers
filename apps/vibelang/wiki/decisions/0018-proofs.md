@@ -7446,8 +7446,8 @@ Each reason's full text is in `verify/shell-branches.tsv`, one line per branch.
 
 ### The decisions, by kind
 
-Proved in this order: role and permission gating and enablement, then state, then labels and counts. A row leaves this
-table when its branch calls a proved function; the batch that proves it says so.
+Proved in this order: role and permission gating and enablement, then state, then labels and counts, by batches 57 to
+60 below. None is open now; the table stays as the audit's list.
 
 | Kind | Decision | Sites (`src/web/`) |
 | --- | --- | --- |
@@ -7531,6 +7531,31 @@ table when its branch calls a proved function; the batch that proves it says so.
 | label | a person's own post is labeled You | view.vibe:256 |
 | count | the Open and Closed filters count their issues | issuesView.vibe:145 |
 | count | the Issues button counts open issues | view.vibe:212 |
+
+### Batches 57 to 60: every view decision proved
+
+Each kind of decision moved into one proved module; the view calls it, and its branch then reads a proved answer.
+Every contract has executable mutants, and every mutant is rejected.
+
+| Batch | Module | Decides | Mutants | Open after |
+| --- | --- | --- | --- | --- |
+| 57 | `src/web/viewGateDecision.vibe` | Role gates and enablement: the live/mock switch once the mode is known, a grant only to the signed-in person, no assignable viewer, New issue or Propose a VIP, the issue and wiki editor locks, the tour's Back, the driven docs pane, the Sandboxes pane's controls, an account change, an open issues dialog | 38 | 97 |
+| 58 | `src/web/viewStateDecision.vibe` | Which state shows: the same history read, the failed reads a page shows, the failed history page, the issues connection, list membership, the error banner, the Tree card, the dialog body, Back, Enter keys, unnamed assignee choices, no runs, Reconnect, an agent entry's issue card, the current Wiki link | 33 | 64 |
+| 59 | `src/web/viewLabelDecision.vibe` | Labels and counts: a refused action's words, note authors, the signed-in person's row, minutes, the tour's buttons, You, which issues count as open or in a state, state words and filters, an issue card's badge, a blank card link, row meta, No one, the agent mark, the issue form's labels | 30 | 32 |
+| 60 | `src/web/mainFactsDecision.vibe` | The facts `main.vibe` decided inline: a restored detail screen, a late tour start, a mode/ pick, Retry, a failed tour end, a submitted draft, an action's input, the actions clock, links that open in place, wiki locations, sandbox reads, issue prefetch, the tour keys, the minutes notice, the resume mark, an issue failure's words | 47 | 0 |
+
+Two choices kept a branch out without a proof call. The roles table's rows now carry their own permission
+(`issuePermission` for each issue row, `may(role, "roles")` for Promote), so no cell tests which row it is. Seven records
+changed from `Open:` to a reason once read closely: `actionFollowCurrent` only conjoins two proved calls; Learn more
+and Escape act on the palette's and the plan's own open flags; Show more, Retry on the wiki and a write's address each
+read a value that is set by construction where they run; the guard before the issues dialog's permission only narrows the
+type, since the proved `afterUpdate` closes a dialog only when it is open and not permitted.
+
+Gates: module boxes b57 1/1 proved and 37/38 rejected with one ill-typed mutant (`gate-mode-pending`: the return type
+already excludes `pending`; replaced by `gate-mode-live`), b58 2/2 and 71/71 (batches 57 and 58), m60 2/2 and 77/77
+(batches 59 and 60). No product defect surfaced: every moved decision kept its answer, and the views' tests pass unchanged.
+
+On the stack's tip, 710 shell branches across the app, 0 open in `src/web`, 0 refused.
 
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 
