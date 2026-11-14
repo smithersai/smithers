@@ -54,9 +54,9 @@ export function digitsStart(line: string, end: number): number {
 //@ ensures \result != "" ==> forall(i, 1 <= i && i < \result.length ==> digitUnit(\result.charCodeAt(i)))
 //@ ensures !\matches("^Mythical:\\s*m\\d+$", line) ==> \result == ""
 export function mythicalNameSpec(line: string): string {
-  if (!/^Mythical:\s*m\d+$/.test(line)) return ""
+  // The name's shape first: every line the pattern matches has it, but the proof does not read the pattern.
   const at = digitsStart(line, line.length)
-  if (at < 1 || at === line.length || line.charCodeAt(at - 1) !== 109) return ""
+  if (at < 1 || at === line.length || line.charCodeAt(at - 1) !== 109 || !/^Mythical:\s*m\d+$/.test(line)) return ""
   return line.slice(at - 1)
 }
 
@@ -155,9 +155,9 @@ export function findDigitsStart(line: string, end: number): number {
 //@ ensures \result != "" ==> \result.length >= 2 && \result.charCodeAt(0) == 109 && line.endsWith(\result)
 //@ ensures \result != "" ==> forall(i, 1 <= i && i < \result.length ==> digitUnit(\result.charCodeAt(i)))
 export function mythicalName(line: string): string {
-  if (!/^Mythical:\s*m\d+$/.test(line)) return ""
+  // The name's shape first: every line the pattern matches has it, but the proof does not read the pattern.
   const at = findDigitsStart(line, line.length)
-  if (at < 1 || at === line.length || line.charCodeAt(at - 1) !== 109) return ""
+  if (at < 1 || at === line.length || line.charCodeAt(at - 1) !== 109 || !/^Mythical:\s*m\d+$/.test(line)) return ""
   return line.slice(at - 1)
 }
 

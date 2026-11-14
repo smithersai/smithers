@@ -100,11 +100,10 @@ export function titleScope(title: string): string {
     const scope = readParenScope(title)
     return scope !== "" ? scope : title.slice(0, findLowerEnd(title, 0))
   }
-  if (/^[A-Za-z][\w./-]*:\s/.test(title)) {
-    const colon = findUnitFrom(title, 0, 58)
-    return colon < 0 ? "" : title.slice(0, colon).toLowerCase()
-  }
-  return ""
+  // The colon first: a title without one is no prefix, and the pattern, which the proof does not read, has one.
+  const colon = findUnitFrom(title, 0, 58)
+  if (colon < 0 || !/^[A-Za-z][\w./-]*:\s/.test(title)) return ""
+  return title.slice(0, colon).toLowerCase()
 }
 
 /** The lower-case run specification, executed as a loop for unbounded titles. */

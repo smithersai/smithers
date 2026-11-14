@@ -6,7 +6,7 @@ import { Repository } from "@smthrs/jj"
 import { HttpClient } from "effect/http"
 import * as D from "../src/history/exportDecision.vibe"
 import type { Intent, Real } from "../src/history/mythical.vibe"
-import { EXPORTER, REF_NAMES } from "../src/history/export.vibe"
+import { EXPORTER, guarded, type Pace, REF_NAMES } from "../src/history/export.vibe"
 import { exporterOf, off } from "../worker/HistoryExport.vibe"
 import { chainOf, told, world } from "../test/support/exportFlow.vibe"
 import { StoryCommits, storyOf } from "./history-stories.vibe"
@@ -45,6 +45,7 @@ it.live("history/export-decisions", () => run("history/export-decisions", Decisi
 /** What the repository does wrong, if anything, and the refusal the export answers for it. */
 const FAULTS = {
   none: null, tree: "tree", parent: "linear", note: "notes", manifest: "linear", unreadable: "unavailable", refused: "unavailable", lost: null, race: "conflict", bare: "invalid", short: "linear",
+  unconfirmed: "unavailable", silent: "unavailable", guarded: "invalid",
 } as const
 type Fault = keyof typeof FAULTS
 
@@ -61,16 +62,33 @@ function faulty(fault: Fault, first: string) {
       case "unreadable": return { ...repository, readBlob: () => Effect.fail(Repository.repositoryError("unavailable", "readBlob", "down")) }
       case "refused": return { ...repository, updateRefs: () => Effect.fail(Repository.repositoryError("unavailable", "updateRefs", "refused")) }
       case "lost": return { ...repository, updateRefs: (transaction) => Effect.flatMap(repository.updateRefs(transaction), () => Effect.fail(Repository.repositoryError("unavailable", "updateRefs", "lost"))) }
+      // The refs move, then can't be read back: the export can't confirm what it published.
+      case "unconfirmed": {
+        let moved = false
+        return { ...repository, updateRefs: (transaction) => Effect.map(repository.updateRefs(transaction), () => { moved = true }), readRefs: (refs) => (moved ? Effect.fail(Repository.repositoryError("unavailable", "readRefs", "down")) : repository.readRefs(refs)) }
+      }
+      // The repository answers the publication without moving a ref.
+      case "silent": return { ...repository, updateRefs: () => Effect.void }
       case "race": return { ...repository, updateRefs: (transaction) => Effect.flatMap(repository.updateRefs({ operation: "other", updates: [{ ref: transaction.updates[2]!.ref, before: transaction.updates[2]!.before, after: transaction.updates[0]!.after }] }), () => repository.updateRefs(transaction)) }
       default: return repository
     }
   }
 }
 
+/** A landed commit and a working one: a real commit's tree to read, and objects to write. */
+const LANDED: typeof StoryCommits.Type = [{ epic: "e1", state: "landed", folds: 2, insert: false }, { epic: "e2", state: "working", folds: 1, insert: false }]
+
+/** One batch of the pace is all a person's export does; past it the publisher works (`paced`). */
+const PACES: Record<string, Pace | undefined> = {
+  none: undefined, reads: { writes: Number.POSITIVE_INFINITY, reads: 0, pauseMs: 0 }, writes: { writes: 0, reads: Number.POSITIVE_INFINITY, pauseMs: 0 },
+}
+
 const Story = Schema.Struct({
   commits: StoryCommits,
   more: Schema.Boolean,
   fault: Schema.Literals(Object.keys(FAULTS) as Array<Fault>),
+  pace: Schema.optionalKey(Schema.Literals(["none", "reads", "writes"])),
+  untold: Schema.optionalKey(Schema.Boolean),
 })
 
 it.live("history/export-flow", () => run("history/export-flow", Story, (input) => scoped(effect {
@@ -79,7 +97,15 @@ it.live("history/export-flow", () => run("history/export-flow", Story, (input) =
   const landed = [...story].reverse().find((intent) => intent.type === "Fold")
   // A tree fault needs a real commit to answer it; with none, the story publishes as if nothing were wrong.
   const fault: Fault = input.fault === "tree" && landed === undefined ? "none" : input.fault
-  const { sequencer, repository, run: exported, refs } = try world({ wrap: faulty(fault, landed?.type === "Fold" ? landed.sha : "") })
+  // Every export runs behind the guard, as worker/HistoryExport's does; `guarded` names the `vibe` branch as its bookmark.
+  const names = fault === "guarded" ? { ...REF_NAMES, mythical: "refs/heads/vibe" } : REF_NAMES
+  const pace = fault === "none" ? PACES[input.pace ?? "none"] : undefined
+  const { sequencer, repository, run: exported, refs } = try world({ names, ...(pace === undefined ? {} : { pace }), wrap: (each) => guarded(faulty(fault, landed?.type === "Fold" ? landed.sha : "")(each), names) })
+  if (input.untold) {
+    // No commit: nothing to export, and nothing moves.
+    const answer = try exported()
+    return answer.refusal === "nothing" && answer.written === 0 && (try refs()).every((oid) => oid === null)
+  }
   try told(sequencer, story)
   if (fault === "bare") {
     // A manifest bookmark that holds no manifest: the export refuses it rather than guess.
@@ -89,8 +115,10 @@ it.live("history/export-flow", () => run("history/export-flow", Story, (input) =
   const history = try sequencer.read()
   const answer = try exported()
   const [mythical] = try refs()
+  // Past the pace's one batch nothing is written here: reads when a real commit's tree is needed, writes always.
+  if (pace !== undefined) return answer.refusal === (input.pace === "writes" || landed !== undefined ? "paced" : null) && (answer.refusal === null) === (mythical !== null)
   const expected = FAULTS[fault]
-  if (expected !== null) return answer.refusal === expected && (fault === "race" || fault === "bare" || mythical === null)
+  if (expected !== null) return answer.refusal === expected && (fault === "race" || fault === "bare" || (fault === "unconfirmed") === (mythical !== null))
   if (answer.refusal !== null || mythical === null || answer.mythical !== mythical || answer.written !== history.commits.length) return false
   // Linear, in stack order: each commit's only parent is the one before, its tree its last fold's or its parent's.
   const chain = try chainOf(repository, mythical)
@@ -115,7 +143,12 @@ it.live("history/export-flow", () => run("history/export-flow", Story, (input) =
   const grown = try exported()
   const after = try chainOf(repository, (try refs())[0]!)
   return grown.refusal === null && after.length === chain.length + 1 && (front ? grown.written >= 2 || after[0]!.message.startsWith("one more") : grown.written >= 1)
-})))
+}), undefined, { chosen: [
+  ...(["unconfirmed", "silent", "guarded"] as const).map((fault) => ({ commits: LANDED, more: false, fault })),
+  ...(["reads", "writes"] as const).map((pace) => ({ commits: LANDED, more: false, fault: "none" as const, pace })),
+  { commits: [{ epic: "e1", state: "planned", folds: 1, insert: false }], more: false, fault: "none", pace: "reads" },
+  { commits: LANDED, more: false, fault: "none", untold: true },
+] satisfies ReadonlyArray<typeof Story.Type> }))
 
 const Setting = Schema.Struct({
   setting: Schema.UndefinedOr(Schema.Union([Schema.Literals(["off", "github:codeplanesmithers/smithers-vibelang-e2e", "github:smithersai/vibelang", "github:a/b/c", "github:/x", "gitlab:a/b"]), Schema.String])),

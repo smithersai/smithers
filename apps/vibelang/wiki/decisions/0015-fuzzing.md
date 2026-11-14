@@ -1384,6 +1384,59 @@ accepted, Show more on a read epic, a read outline answered as failed, People wi
 member list loading empty, a missing page read as no match (caught by both targets), and a moving finger emitting an
 undeclared Message.
 
+### The mythical history's proved scans, the export's pace and faults, and two draws (twenty-second session)
+
+The last pair (seeds 20261349 and 20261350, `33b60fbb`) left 10 files of `src/history` below 100%, most of it the
+recursive specifications that `pnpm verify` names and only proofs run (0018 third-lane batches 24 to 36), and two
+`src/web` arms reached at one seed only. The lead's split (04:39Z) gave `src/history` to vl-fuzz2; these 10 were kept
+here because this change closes them.
+
+`fuzz/history-scans.fuzz.vibe`, five targets over drawn text (tokens the scans branch on, or any short text) and
+indexes from -2 to 40:
+
+| Target | Every execution checks |
+| --- | --- |
+| `history/area-scans` | `lowerEnd`, `unitFrom` (four units), `scopeEnd`, `parenScope` equal `findLowerEnd`, `findUnitFrom`, `readScopeEnd`, `readParenScope`; `titleScope` equals the two patterns it decides, with the captures stated directly |
+| `history/text-scans` | `spaceUnit` and `wordUnit` equal `\s` and `\w` on any code unit; `spacesEnd`, `captureStart` equal their loops; `firstLine`, `regeneratedTitle` (`\b`), `revertedTitle` and `evidenceStart` equal the regular expressions they replaced |
+| `history/trailer-scans` | the seven recursive trailer scans equal their loops; `trailerName` equals the trailer-paragraph rule written as a search |
+| `history/sanitize-scans` | `runFrom`, `matchEnd`, `redactedFrom`, `tailStart`, `boundaryEnd`, `boundariesFrom` equal their loops; each redaction kind, the tail trim and the sentence lookahead equal the expressions seed.vibe used |
+| `history/bucket-graphs` | `topological` over any parent indexes; a parents-first graph buckets as a brute-force search of owners says (the oldest main commit reaching a commit off main), through `bucketOrder` and `bucketsOf`; any other order has no buckets |
+
+Chosen inputs take every arm: negative and past-the-end indexes, each path prefix, a host after a word character or
+before one, `nyc-` without digits, sentence ends before a quote, a capital or nothing, two merges sharing a side
+commit, an unreachable commit.
+
+Three guards ran after a regular expression that already implies them, so no input reached them; the proofs need
+them because they do not read the pattern (0016 lists `mythicalName`'s): `titleScope`'s and `evidenceStart`'s colon
+check, and the name-shape check of `mythicalName` and `mythicalNameSpec`. Each now runs before the pattern, in the same
+refusal: the answers are the same, and a title or line without a colon, or a line not ending in `m` and digits, now
+takes the guard. `pnpm verify` on the four history decision files: 4/4 verified, 0 errors.
+
+`history/export-flow` runs every export behind `guarded`, as `worker/HistoryExport.vibe` does, and adds: a pace of
+no reads (`paced` when a real commit's tree is needed) or no writes (`paced`), an empty history (`nothing`), and faults
+`unconfirmed` (the refs move, then can't be read back: `unavailable`), `silent` (the update answers without moving:
+`unavailable`) and `guarded` (the bookmark named `refs/heads/vibe`: `invalid`, nothing moves). `history/publisher`
+adds an empty history and faults `lost` (objects refused, `not_found`), `unread` (refs refused) and `offline` (main's
+log unavailable): the first round publishes nothing, or for `offline` folds nothing and still publishes, and the next
+round publishes the person's export's refs; `limited` (one rate limit of a minute) is waited out with the clock stepped
+under the alarm, as `stepped` does. New input keys are optional, so the saved failures still decode.
+
+`src/web`: `historyStartup` 69 (a visitor's session, which has no ledger) was reached only when the page read the
+answer before `history/startup` closed its scope; the visitor scenario now waits 500 ms on loopback before checking
+that no grant stream opened, which the earlier check could not see. `main` 999 (a retry from the panel): `web/command-arms`
+`run-retry` reruns a started run as a new run of the same flow, and a retry of a run never started fails `not-found`.
+
+Mutants, each at the floor alone (seed 20261401): 18 of 19 caught, among them `findUnitFrom`'s negative index,
+`readScopeEnd` at a comma at 0, `regeneratedTitle` reading unit 22, `findParagraphStart` reaching line 1,
+`findFirstNamed` stopping one line early, the host's word-boundary check dropped, the sentence boundary without
+whitespace, `takesOwner` reversed, `topological` admitting -2, the guard passing every ref, `writable` admitting
+`vibe`, the reads pace ignored, an unconfirmed export read as published, an empty history exported, the reading batch
+dropped, a refused `begin` ignored, and a retry started fresh. Equivalent: `/private/`'s prefix length 8 (the path run
+reads the slash). Deleting `historyStartup` 69's return does not compile: only a signed-in session has a `ledger`.
+
+`tools.vibe` 94 is not closed here: VibeLang 0.0.13 still lowers that exhaustive object-pattern match to a final `if`
+and `$noMatch` (ruling VL-37; `~/vl/vibelang-bugs/coverage-exhaustive-match/`).
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

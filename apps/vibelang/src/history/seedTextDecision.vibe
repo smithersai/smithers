@@ -69,9 +69,9 @@ export function spacesEnd(text: string, at: number): number {
 //@ ensures \result != "" ==> \matches("^(?:Validation|Tests?|Regression|Before|After):\\s*.+$", line)
 //@ ensures \result != "" ==> 0 <= unitFrom(line, 0, 58) && 0 <= captureStart(line, unitFrom(line, 0, 58) + 1) && captureStart(line, unitFrom(line, 0, 58) + 1) <= line.length && \result == line.slice(0, unitFrom(line, 0, 58)) + ": " + line.slice(captureStart(line, unitFrom(line, 0, 58) + 1))
 export function evidenceStart(line: string): string {
-  if (!/^(?:Validation|Tests?|Regression|Before|After):\s*.+$/.test(line)) return ""
+  // The colon first: a line without one is no evidence, and the pattern, which the proof does not read, has one.
   const colon = findUnitFrom(line, 0, 58)
-  if (colon < 0) return ""
+  if (colon < 0 || !/^(?:Validation|Tests?|Regression|Before|After):\s*.+$/.test(line)) return ""
   const start = findCaptureStart(line, colon + 1)
   return line.slice(0, colon) + ": " + line.slice(start)
 }

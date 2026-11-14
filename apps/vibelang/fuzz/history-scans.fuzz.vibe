@@ -1,0 +1,193 @@
+// The mythical history's proved scans (0018 third-lane batches 24 to 36) against what they claim. Each recursive
+// specification (`lowerEnd`, `unitFrom`, `spacesEnd`, `digitsStart`, `runFrom`, `matchEnd`, `boundaryEnd` and the rest)
+// runs only inside proofs, so here it is checked equal to the loop that runs, over drawn text and indexes, negative
+// and past the end included. Each running decision is then checked against an independent regular expression (the
+// one it replaced in seed.vibe) or, for the buckets, a brute-force search of the commit graph.
+import { it } from "@effect/vitest"
+import * as A from "../src/history/areaDecision.vibe"
+import * as B from "../src/history/bucketDecision.vibe"
+import * as S from "../src/history/seedSanitizeDecision.vibe"
+import * as T from "../src/history/seedTextDecision.vibe"
+import * as R from "../src/history/trailerDecision.vibe"
+import { bucketsOf, type RawCommit } from "../src/history/seed.vibe"
+import { run, same } from "./run.vibe"
+
+const Token = Schema.Literals([
+  "a", "z", "m", "feat", "fix", "A", "Z", "M", "0", "7", "_", "-", ".", "/", "(", ")", ",", ":", ";", "!", "?", " ",
+  "\t", "\n", " ", "　", "\"", "'", "`", "[", "]", "é", "~/", "/home/", "/Users/", "/tmp/", "/private/", "/var/",
+  "nyc-", "Mythical:", "Revert \"", "chore(docs): regenerate", "Validation:", "Tests:", "Test:", "Regression:", "Before:", "After:",
+])
+/** Tokens the scans branch on, or any short text: a chosen input is a single piece. */
+const Piece = Schema.Union([Token, Schema.String.check(Schema.isMaxLength(60))])
+const Pieces = Schema.Array(Piece).check(Schema.isMaxLength(12))
+const At = Schema.Int.check(Schema.isBetween({ minimum: -2, maximum: 40 }))
+const Unit = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 65535 }))
+const Scan = Schema.Struct({ pieces: Pieces, at: At, unit: Unit })
+type ScanInput = typeof Scan.Type
+
+const scan = (text: string, at: number, unit: number): ScanInput => ({ pieces: [text], at, unit })
+
+/** `type(scope, more)!: `'s first scope or the type; `Scope: `'s prefix in lower case; else "" (titleScope's doc). */
+function expectedScope(title: string): string {
+  const typed = /^([a-z]+)(?:\(([^)]*)\))?!?:\s/.exec(title)
+  if (typed !== null) {
+    const first = (typed[2] ?? "").split(",")[0]!.trim()
+    return first !== "" ? first : typed[1]!
+  }
+  const bare = /^([A-Za-z][\w./-]*):\s/.exec(title)
+  return bare === null ? "" : bare[1]!.toLowerCase()
+}
+
+/** Every area scan equals its specification at any index; titleScope agrees with the patterns it decides. */
+it.live("history/area-scans", () => run("history/area-scans", Scan, ({ pieces, at }) => {
+  const text = pieces.join("")
+  if (A.lowerEnd(text, at) !== A.findLowerEnd(text, at)) return false
+  if (![40, 41, 44, 58].every((unit) => A.unitFrom(text, at, unit) === A.findUnitFrom(text, at, unit))) return false
+  if (A.scopeEnd(text, at) !== A.readScopeEnd(text, at)) return false
+  if (A.parenScope(text) !== A.readParenScope(text)) return false
+  return A.titleScope(text) === expectedScope(text)
+}, undefined, { chosen: [
+  scan("feat(a, b)!: x", -1, 0), scan("feat(abc", 0, 0), scan("feat(abc", 4, 0), scan("feat(): x", 40, 0),
+  scan("Fix/Up: x", 2, 0), scan("feat: x", 0, 0), scan("", 0, 0), scan("x", 7, 0), scan("x", -2, 0), scan(",a)", -1, 0),
+  scan("Fix", 0, 0),
+] }))
+
+/** The text scans equal their specifications; each decision equals the `\s`, `\w`, `\b` or capture it replaced. */
+it.live("history/text-scans", () => run("history/text-scans", Scan, ({ pieces, at, unit }) => {
+  const text = pieces.join("")
+  const char = String.fromCharCode(unit)
+  if (T.spaceUnit(unit) !== /\s/.test(char) || T.wordUnit(unit) !== /\w/.test(char)) return false
+  if (T.spacesEnd(text, at) !== T.findSpacesEnd(text, at) || T.captureStart(text, at) !== T.findCaptureStart(text, at)) return false
+  if (T.firstLine(text) !== text.split("\n")[0]) return false
+  if (T.regeneratedTitle(text) !== /^chore\(docs\): regenerate\b/.test(text)) return false
+  if (T.revertedTitle(text) !== (/^Revert "(.+)"$/.exec(text)?.[1] ?? "")) return false
+  const evidence = /^(Validation|Tests?|Regression|Before|After):\s*(.+)$/.exec(text)
+  return T.evidenceStart(text) === (evidence === null ? "" : `${evidence[1]}: ${evidence[2]}`)
+}, undefined, { chosen: [
+  scan("chore(docs): regenerate0", -1, 48), scan("chore(docs): regenerateA", 23, 65), scan("chore(docs): regeneratea", 40, 97),
+  scan("chore(docs): regenerate_", 0, 95), scan("chore(docs): regenerate", 0, 12288), scan("Tests: ", 6, 32), scan("Test: \t", 5, 9),
+  scan("Validation:  ok", 11, 160), scan("Revert \"x\"", 0, 0), scan("", 0, 10), scan("chore(docs): regenerate docs", 0, 0),
+  scan("Tests ok", 0, 0),
+] }))
+
+const LineToken = Schema.Literals([
+  "", "Mythical: m12", "Mythical:m3", "Mythical:  m45x", "Mythical: M1", "Mythical: m", "Mythical: m1 m2", "m12", "Fixes: #1",
+  " continued", "\tcontinued", "Co-Authored-By: X <x>", "Key-2: v", "plain text", "-x: y",
+])
+const Line = Schema.Union([LineToken, Schema.String.check(Schema.isMaxLength(20))])
+const Lines = Schema.Struct({ lines: Schema.Array(Line).check(Schema.isMaxLength(10)), at: At, end: At })
+type LinesInput = typeof Lines.Type
+
+/** The message's `Mythical:` name, from the trailer paragraph's definition stated directly. */
+function expectedTrailer(lines: ReadonlyArray<string>): string {
+  let end = lines.length
+  while (end > 0 && lines[end - 1] === "") end--
+  let start = -1
+  for (let i = end - 1; i >= 2; i--) {
+    if (lines[i - 1] === "" && lines[i] !== "") {
+      start = i
+      break
+    }
+  }
+  if (start < 0) return ""
+  const paragraph = lines.slice(start, end)
+  if (!paragraph.every((line, i) => /^[A-Za-z0-9][A-Za-z0-9-]*:/.test(line) || (i > 0 && /^[ \t]/.test(line)))) return ""
+  for (const line of paragraph) {
+    const name = /^Mythical:\s*(m\d+)$/.exec(line)
+    if (name !== null) return name[1]!
+  }
+  return ""
+}
+
+/** Every trailer scan equals its specification at any index; trailerName agrees with the paragraph rule. */
+it.live("history/trailer-scans", () => run("history/trailer-scans", Lines, ({ lines, at, end }) => {
+  for (const line of lines) {
+    const name = /^Mythical:\s*(m\d+)$/.exec(line)?.[1] ?? ""
+    if (R.mythicalNameSpec(line) !== name || R.mythicalName(line) !== name) return false
+    if (R.digitsStart(line, Math.min(at, line.length)) !== R.findDigitsStart(line, Math.min(at, line.length))) return false
+    if (R.digitsStart(line, line.length) !== R.findDigitsStart(line, line.length)) return false
+  }
+  if (R.textEnd(lines, Math.min(end, lines.length)) !== R.findTextEnd(lines, Math.min(end, lines.length))) return false
+  if (R.paragraphStart(lines, at) !== R.findParagraphStart(lines, at)) return false
+  if (R.firstNamed(lines, at, end) !== R.findFirstNamed(lines, at, end) || R.nameAt(lines, at) !== R.readNameAt(lines, at)) return false
+  if (R.lastParagraph(lines) !== R.findLastParagraph(lines)) return false
+  return R.trailerName(lines) === expectedTrailer(lines)
+}, undefined, { chosen: [
+  { lines: ["fix: x", "", "body", "", "Fixes: #1", " continued", "Mythical: m12", ""], at: 4, end: 7 },
+  { lines: ["fix: x", "", "Mythical:m3", "plain text"], at: -1, end: 4 },
+  { lines: ["Mythical: m12", "Mythical: m1 m2", "m12"], at: 0, end: 3 },
+  { lines: ["a", "", "", "Key-2: v"], at: 40, end: -1 },
+  { lines: [], at: 0, end: 0 },
+  { lines: ["", "x", "y"], at: 2, end: 3 },
+  { lines: ["5", "abc", "x5", "xm5", "Mythical: m7"], at: 0, end: 5 },
+] satisfies ReadonlyArray<LinesInput> }))
+
+const Kind = Schema.Int.check(Schema.isBetween({ minimum: -1, maximum: 5 }))
+const Sanitize = Schema.Struct({ pieces: Pieces, at: At, kind: Kind })
+type SanitizeInput = typeof Sanitize.Type
+const sanitize = (text: string, at: number, kind: number): SanitizeInput => ({ pieces: [text], at, kind })
+
+/** The substitution seed.vibe made with a regular expression before its scans were proved. */
+function expectedRedaction(text: string, kind: number): string {
+  if (kind === 0) return text.replace(/(?:~\/|\/home\/|\/Users\/|\/tmp\/|\/private\/|\/var\/)[^\s'"`),;]*/g, "<path>")
+  if (kind === 1) return text.replace(/\bnyc-\d+\b/g, "<host>")
+  return text.replace(/\s+/g, " ")
+}
+
+/** Every sanitizing scan equals its specification; each substitution and lookahead equals the expression it replaced. */
+it.live("history/sanitize-scans", () => run("history/sanitize-scans", Sanitize, ({ pieces, at, kind }) => {
+  const text = pieces.join("")
+  if (S.runFrom(text, at, kind) !== S.runEnd(text, at, kind)) return false
+  if (S.matchEnd(text, at, kind) !== S.findMatchEnd(text, at, kind)) return false
+  const redacted = S.redactText(text, kind)
+  if (S.redactedFrom(text, 0, kind) !== redacted || redacted !== expectedRedaction(text, kind)) return false
+  const tail = S.sentenceTail(text)
+  if (text.slice(0, S.tailStart(text, text.length)) !== tail || tail !== text.replace(/[\s,;:]+$/, "")) return false
+  if (S.boundaryEnd(text, at) !== S.findBoundaryEnd(text, at)) return false
+  const ends = [...text.matchAll(/[.!?]["'`)\]]*(?=\s+["'`(\[]?[A-Z0-9])/g)].map((found) => found.index + found[0].length)
+  return same(S.boundariesFrom(text, 0), S.sentenceEnds(text)) && same(S.sentenceEnds(text), ends)
+}, undefined, { chosen: [
+  sanitize("see ~/a and /home/b, /Users/c; /tmp/d) /private/e /var/f'", 0, 0), sanitize("/home/x", -1, 0), sanitize("/opt/x", 0, 0),
+  sanitize("nyc-12 xnyc-3 nyc-x nyc-4a nyc-5", 0, 1), sanitize("nyc-12", 0, 1), sanitize("xnyc-3", 1, 1), sanitize("nyc-x", 0, 1),
+  sanitize("nyc-4a", 0, 1), sanitize("a \t b", 1, 2), sanitize("a  b", 0, 5), sanitize("a 　b", 1, -1), sanitize("x", 3, 3),
+  sanitize("Done.) \"Next one? x! A", 4, 4), sanitize("Done. (A", 4, 0), sanitize("Done. x", 4, 0), sanitize("Done.", 4, 0),
+  sanitize("Done.  ", 4, 0), sanitize("a, b;: ", 0, 4), sanitize("", 0, 2),
+] }))
+
+const Graph = Schema.Array(Schema.Array(Schema.Int.check(Schema.isBetween({ minimum: -2, maximum: 12 }))).check(Schema.isMaxLength(3))).check(Schema.isMaxLength(10))
+
+/** The buckets bucketDecision.vibe documents, by search: each commit's owner is the oldest main commit reaching it off main. */
+function expectedBuckets(parents: ReadonlyArray<ReadonlyArray<number>>): ReadonlyArray<B.Bucket> {
+  const main = new Set<number>()
+  for (let at = parents.length - 1; at >= 0; at = parents[at]![0] ?? -1) main.add(at)
+  const owner = parents.map(() => -1)
+  for (const step of [...main].sort((a, b) => b - a)) {
+    const seen = new Set<number>([step])
+    const queue = [step]
+    while (queue.length > 0) {
+      for (const parent of parents[queue.pop()!]!) {
+        if (parent >= 0 && !main.has(parent) && !seen.has(parent)) {
+          seen.add(parent)
+          queue.push(parent)
+        }
+      }
+    }
+    for (const commit of seen) owner[commit] = step
+  }
+  return owner.flatMap((step, commit) => (step < 0 ? [] : [{ commit, step }])).sort((a, b) => a.step - b.step || a.commit - b.commit)
+}
+
+/** A graph in parents-first order buckets as the search says; any other order has no buckets. */
+it.live("history/bucket-graphs", () => run("history/bucket-graphs", Graph, (rows) => {
+  if (B.topological(rows) !== rows.every((row, i) => row.every((parent) => parent >= -1 && parent < i))) return false
+  const commits: ReadonlyArray<RawCommit> = rows.map((row, i) => ({
+    sha: `c${i}`, change: "", description: "", parents: row.map((parent) => (parent >= 0 && parent < rows.length ? `c${parent}` : "outside")),
+  }))
+  const parents = rows.map((row) => row.map((parent) => (parent >= 0 && parent < rows.length ? parent : -1)))
+  const buckets = bucketsOf(commits)
+  if (!parents.every((row, i) => row.every((parent) => parent < i))) return buckets.length === 0
+  const expected = expectedBuckets(parents)
+  return same(B.bucketOrder(parents), expected) && same(buckets.map((each) => [each.commit.sha, each.step]), expected.map((each) => [`c${each.commit}`, `c${each.step}`]))
+}, undefined, { chosen: [
+  [[], [0], [0, 1], [2, 1]], [[], [0], [0]], [[], [-2]], [[1], []], [[], [5]], [], [[], [0], [1, 0], [2]],
+] }))

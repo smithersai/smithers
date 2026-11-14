@@ -2,8 +2,9 @@
 // main") over random stories: the real engine in the object's SQLite, driven by the object's alarm in virtual time, on
 // the mock's repository, held to the refs a person's export of the same story publishes.
 import { it } from "@effect/vitest"
+import { Repository } from "@smthrs/jj"
 import { REF_NAMES, type Pace } from "../src/history/export.vibe"
-import type { MainUnavailable } from "../src/history/flows.vibe"
+import { MainUnavailable } from "../src/history/flows.vibe"
 import { mockRepository } from "../src/history/MockMythical.vibe"
 import type { MainCommit } from "../src/history/Sequencer.vibe"
 import * as HistoryObject from "../worker/HistoryObject.vibe"
@@ -13,11 +14,14 @@ import { told, world as exportWorld } from "../test/support/exportFlow.vibe"
 import { StoryCommits, storyOf } from "./history-stories.vibe"
 import { run, same } from "./run.vibe"
 
-const Input = Schema.Struct({ commits: StoryCommits, writes: Schema.Literals([1, 3, 50]), follow: Schema.Boolean })
+const Input = Schema.Struct({ commits: StoryCommits, writes: Schema.Literals([1, 3, 50]), follow: Schema.Boolean, fault: Schema.optionalKey(Schema.Literals(["lost", "limited", "unread", "offline"])), untold: Schema.optionalKey(Schema.Boolean) })
 
 /**
  * The publisher starts once (the same start again before its first alarm, then `running`), publishes in paced rounds exactly the refs a person's
  * export of the story publishes, moves nothing in a quiet round, and folds a commit main gains into the next round.
+ * With no commit it publishes nothing. A repository that refuses every object (`lost`) or its refs (`unread`) ends the
+ * first round's export with nothing published, and the next round publishes the same refs; one rate limit (`limited`)
+ * is waited out, and a main log that can't be read (`offline`) folds nothing that round but still publishes.
  */
 it.live("history/publisher", () => run("history/publisher", Input, (input) => scoped(effect {
   provide TestClock.layer() {
@@ -25,20 +29,56 @@ it.live("history/publisher", () => run("history/publisher", Input, (input) => sc
     const kv = try Effect.try(() => objectStorage())
     const storage = kv as unknown as Objects.Storage
     const sequencer = try HistoryObject.history(storage)
-    const repository = mockRepository(sequencer)
+    const mock = mockRepository(sequencer)
+    // While `failing`, object reads and writes fail; the refs still read. A rate limit fails one request only.
+    let failing: "lost" | "limited" | "unread" | "offline" | undefined = undefined
+    const objects = () => failing === "lost" || failing === "limited"
+    const refused = (operation: string) => {
+      const limited = failing === "limited"
+      if (limited) failing = undefined
+      return Effect.fail(limited ? Repository.repositoryError("unavailable", operation, "rate limited", undefined, 60_000) : Repository.repositoryError("not_found", operation, "lost"))
+    }
+    const repository: Repository.Repository = {
+      ...mock,
+      readCommit: (revision) => (objects() ? refused("readCommit") : mock.readCommit(revision)),
+      readBlob: (oid) => (objects() ? refused("readBlob") : mock.readBlob(oid)),
+      writeBlob: (text) => (objects() ? refused("writeBlob") : mock.writeBlob(text)),
+      writeTree: (entries) => (objects() ? refused("writeTree") : mock.writeTree(entries)),
+      writeCommit: (commit) => (objects() ? refused("writeCommit") : mock.writeCommit(commit)),
+      readRefs: (refs) => (failing === "unread" ? refused("readRefs") : mock.readRefs(refs)),
+    }
     const main: Array<MainCommit> = []
-    const log = { since: (sha: string): ReadonlyArray<MainCommit>!MainUnavailable => sync(() => main.slice(main.findIndex((commit) => commit.sha === sha) + 1)) }
+    const log = { since: (sha: string): ReadonlyArray<MainCommit>!MainUnavailable => (failing === "offline" ? Effect.fail(new MainUnavailable({ reason: "offline" })) : sync(() => main.slice(main.findIndex((commit) => commit.sha === sha) + 1))) }
     const pace: Pace = { writes: input.writes, reads: 1, pauseMs: 120_000 }
     const publishing = HistoryObject.publisher("history-publisher-fuzz", storage, sequencer, log, { repository, names: REF_NAMES, pace })
-    const refs = () => Effect.map(repository.readRefs([REF_NAMES.mythical, REF_NAMES.notes, REF_NAMES.manifest]), (each) => each.map((ref) => ref.oid))
+    const refs = () => Effect.map(mock.readRefs([REF_NAMES.mythical, REF_NAMES.notes, REF_NAMES.manifest]), (each) => each.map((ref) => ref.oid))
+    // A batch's retry waits inside the alarm, so while a rate limit is pending the clock steps under it (as `stepped`).
+    const alarmed = effect () => {
+      if (failing !== "limited") return try publishing.alarm()
+      const fiber = try forkChild(publishing.alarm())
+      for (let step = 0; step < 4 * 600 && fiber.pollUnsafe() === undefined; step++) {
+        try TestClock.withLive(sleep("10 millis"))
+        try TestClock.adjust("250 millis")
+      }
+      const exit = fiber.pollUnsafe()
+      if (exit === undefined) {
+        try Fiber.interrupt(fiber)
+        return undefined
+      }
+      return try exit
+    }
     // Alarms, each at the time the last one armed, until a round ends; false if 400 alarms end none.
     const round = effect () => {
       for (let n = 0; n < 400; n++) {
         const armed = kv.alarmAt
         if (armed !== undefined && armed > (try Clock.currentTimeMillis)) try TestClock.setTime(armed)
-        if ((try publishing.alarm())._tag === "Continued") return true
+        if ((try alarmed())?._tag === "Continued") return true
       }
       return false
+    }
+    if (input.untold) {
+      if ((try publishing.start()) !== "started" || !(try round())) return false
+      return (try refs()).every((oid) => oid === null)
     }
     try told(sequencer, story)
     const once = try exportWorld()
@@ -48,6 +88,12 @@ it.live("history/publisher", () => run("history/publisher", Input, (input) => sc
     const started = try publishing.start()
     const again = try publishing.start()
     if (started !== "started" || again !== "started" || answer.refusal !== null) return false
+    if (input.fault !== undefined) {
+      failing = input.fault
+      const unpublished = input.fault === "lost" || input.fault === "unread"
+      if (!(try round()) || (unpublished && !(try refs()).every((oid) => oid === null))) return false
+      failing = undefined
+    }
     if (!(try round())) return false
     const published = try refs()
     if ((try publishing.start()) !== "running") return false
@@ -61,4 +107,11 @@ it.live("history/publisher", () => run("history/publisher", Input, (input) => sc
     const followed = try refs()
     return (try sequencer.read()).real.some((real) => real.sha === "c1c1c1c1c1c1") && followed[0] !== published[0]
   }
-})))
+}), undefined, { chosen: [
+  // Two real commits' trees at one read a batch: the first batch only reads (publish.vibe `reading`).
+  ...(["lost", "limited", "unread", "offline", undefined] as const).map((fault) => ({
+    commits: [{ epic: "e1", state: "landed", folds: 2, insert: false }, { epic: "e2", state: "landed", folds: 1, insert: false }],
+    writes: 1, follow: fault === "offline", ...(fault === undefined ? {} : { fault }),
+  }) satisfies typeof Input.Type),
+  { commits: [{ epic: "e1", state: "planned", folds: 1, insert: false }], writes: 3, follow: false, untold: true },
+] }))
