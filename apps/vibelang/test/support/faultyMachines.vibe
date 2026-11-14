@@ -1,22 +1,29 @@
 // Faulty sandbox machines for the browser gate (decision 0016): the product mock's real memoryMachines, with one step
-// failing once per owner. `machine-start` fails the first start, `machine-command` the first command and `machine-stop`
+// failing once per owner. `machine-start` fails the first start, `machine-command` (and `machine-command-replay`, whose
+// transport also resends that command) the first command and `machine-stop` (and `machine-stop-clock`, whose clock also
+// breaks) the first stop; `machine-command-exhausted` holds the first command while the allowance runs out, until the
+// meter has stopped the sandbox under it; and `machine-stop`
 // the first stop; `machine-lost` answers the first lease as a machine that is gone, as a crashed container's does.
 import { Unavailable } from "../../src/core/Factory.vibe"
 import type { Machines } from "../../src/core/sandboxHost.vibe"
 import { memoryMachines } from "../../src/core/sandboxMock.vibe"
 
-export type MachineFault = "machine-start" | "machine-lost" | "machine-command" | "machine-stop"
+export type MachineFault = "machine-start" | "machine-lost" | "machine-command" | "machine-command-replay" | "machine-command-exhausted" | "machine-stop" | "machine-stop-clock"
 
 /** The machine fault a page's fault names, if it names one. */
 export function machineFault(fault: string): MachineFault | undefined {
-  return fault === "machine-start" || fault === "machine-lost" || fault === "machine-command" || fault === "machine-stop" ? fault : undefined
+  return fault === "machine-start" || fault === "machine-lost" || fault === "machine-command" || fault === "machine-command-replay" || fault === "machine-command-exhausted" || fault === "machine-stop" || fault === "machine-stop-clock" ? fault : undefined
 }
 
-/** A device maker for `mockFactoryFor`: each owner's machines, failing once at the step `fault` names. */
-export function faultyMachines(fault: MachineFault): () => Machines {
+/**
+ * A device maker for `mockFactoryFor`: each owner's machines, failing once at the step `fault` names. `exhaust` moves the
+ * meter's clock past the allowance (FaultyFactory owns that clock).
+ */
+export function faultyMachines(fault: MachineFault, exhaust: Effect.Effect<void> = Effect.void): () => Machines {
   return () => {
     const real = memoryMachines()
     let failed = false
+    let stopped = false
     const once = (step: MachineFault) => {
       if (failed || fault !== step) return false
       failed = true
@@ -35,11 +42,16 @@ export function faultyMachines(fault: MachineFault): () => Machines {
         return try real.lease(id, generation, milliseconds)
       },
       stop: effect (id, generation) => {
-        if (once("machine-stop")) throw new Unavailable({ reason: "machine-stop" })
+        if (once("machine-stop") || once("machine-stop-clock")) throw new Unavailable({ reason: "machine-stop" })
         try real.stop(id, generation)
+        stopped = true
       },
       command: effect (id, generation, operationId, command) => {
-        if (once("machine-command")) throw new Unavailable({ reason: "machine-command" })
+        if (once("machine-command") || once("machine-command-replay")) throw new Unavailable({ reason: "machine-command" })
+        if (once("machine-command-exhausted")) {
+          try exhaust
+          for (let wait = 0; wait < 200 && !stopped; wait++) try sleep("50 millis")
+        }
         return try real.command(id, generation, operationId, command)
       },
     }

@@ -11,7 +11,7 @@ import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
 import { faultyMachines, machineFault, type MachineFault } from "./faultyMachines.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | "held-tour" | "held-tour-step" | MachineFault
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "sandbox-clock-read" | "sandbox-replay" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "issue-assignee" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "end-twice" | "forged" | "held-details" | "held-actions" | "held-start" | "held-start-failed" | "account-read" | "held-wiki-read" | "held-wiki-read-failed" | "held-wiki-save" | "held-tour" | "held-tour-step" | MachineFault
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -117,6 +117,8 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  */
 export function faultyFactory(fault: Fault, observation: Trace) {
   const device = machineFault(fault)
+  // The faulty machines move the meter's clock, which the Factory below owns.
+  const meterClock: { exhaust: Effect.Effect<void> } = { exhaust: Effect.void }
   // Reads pass through to the mock; the page never reads (Factory.vibe `ConversationRead`).
   return Layer.merge(Layer.effect(ConversationRead, effect { return try ConversationRead }), Layer.effect(Factory, effect {
     const base = try Factory
@@ -140,8 +142,8 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     // The sandbox meter's faulty clock: the wall clock plus `skew`. It starts on the 15th of this month (UTC), so the
     // jump when the first sandbox starts, at most a contributor's 600 minutes, never crosses into the next month.
     const wall = try Clock.Clock
-    const skewed = fault === "sandbox-low" || fault === "sandbox-out"
-    const clockFault = fault === "sandbox-clock"
+    const skewed = fault === "sandbox-low" || fault === "sandbox-out" || fault === "machine-command-exhausted"
+    const clockFault = fault === "sandbox-clock" || fault === "sandbox-clock-read" || fault === "machine-stop-clock"
     let broken = false
     const built = new Date(wall.currentTimeMillisUnsafe())
     let skew = skewed ? Date.UTC(built.getUTCFullYear(), built.getUTCMonth(), 15) - built.getTime() : 0
@@ -149,6 +151,13 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     let jumped = false
     // `sandbox-replay`: the first command's operation id, which the second command reuses.
     let firstCommand = ""
+    // `machine-command-exhausted`: the minutes left when the sandbox started, and the jump past them, which the
+    // machine asks for while it holds the first command.
+    let remaining = 0
+    meterClock.exhaust = effect {
+      skew += (remaining + 1) * 60_000
+      skewNanos = try Effect.orDie(Effect.try(() => BigInt(skew) * 1_000_000n))
+    }
     const clock: Clock.Clock = {
       currentTimeMillisUnsafe: () => broken ? -1 : wall.currentTimeMillisUnsafe() + skew,
       currentTimeMillis: sync(() => broken ? -1 : wall.currentTimeMillisUnsafe() + skew),
@@ -251,13 +260,18 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       },
       sandbox: effect (conversation) => {
         if (fault === "sandbox-read") throw new Unavailable({ reason: "sandbox unavailable" })
+        // `sandbox-clock-read`: the clock reads before 1970 for the first sandbox read, before the writer has saved
+        // anything; that read fails, and the clock mends when it ends.
+        if (first("sandbox-clock-read:read")) broken = true
         return try metered(base.sandbox(conversation))
       },
       startSandbox: effect (conversation, operationId) => {
         if (first("sandbox-start")) throw new Unavailable({ reason: "sandbox unavailable" })
         if (first("sandbox-replay:start")) try metered(base.startSandbox(conversation, operationId))
         const started = try metered(base.startSandbox(conversation, operationId))
-        if (skewed && !jumped) {
+        // `machine-command-exhausted` jumps when the machine holds the first command, not at the start.
+        if (fault === "machine-command-exhausted") remaining = started.remaining
+        if (skewed && !jumped && fault !== "machine-command-exhausted") {
           jumped = true
           skew += (fault === "sandbox-low" ? started.remaining - 5 : started.remaining + 1) * 60_000
           skewNanos = try Effect.orDie(Effect.try(() => BigInt(skew) * 1_000_000n))
@@ -269,7 +283,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       // `sandbox-clock` breaks the clock for the first command, not the next call of any kind: a status read that
       // came first under load stopped the sandbox before the person could type one.
       sandboxCommand: effect (conversation, operationId, command, generation) => {
-        if (clockFault && !jumped && !broken) {
+        if ((fault === "sandbox-clock" || fault === "machine-stop-clock") && !jumped && !broken) {
           broken = true
           try Effect.logInfo("vibelang.e2e.sandbox-clock").pipe(Effect.annotateLogs({ fault }))
         }
@@ -277,6 +291,9 @@ export function faultyFactory(fault: Fault, observation: Trace) {
           firstCommand = operationId
           try metered(base.sandboxCommand(conversation, operationId, command, generation))
         } else if (first("sandbox-replay:reuse")) return try metered(base.sandboxCommand(conversation, firstCommand, command, generation))
+        // `machine-command-replay`: the machine refuses the first command and its answer is lost, so the transport sends
+        // it again under the same operation id.
+        if (first("machine-command-replay:lost")) try Effect.ignore(metered(base.sandboxCommand(conversation, operationId, command, generation)))
         return try metered(base.sandboxCommand(conversation, operationId, command, generation))
       },
       events: (conversation, after) => Stream.unwrap(effect {
@@ -310,7 +327,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         return forged ? Stream.concat(Stream.fromIterable(resumed.first), real.pipe(Stream.flatMap((event) => Stream.fromIterable(forge(forging, conversation, event))))) : real
       }),
     }
-  })).pipe(Layer.provide((fault === "wiki-repository" ? mockFactoryFor(undefined, recordedWikiStore()) : device !== undefined ? mockFactoryFor(undefined, makeWikiStore(), faultyMachines(device)) : MockFactory).pipe(Layer.provide(fault === "held-tour-step" ? heldStepJournal(observation) : Layer.empty))))
+  })).pipe(Layer.provide((fault === "wiki-repository" ? mockFactoryFor(undefined, recordedWikiStore()) : device !== undefined ? mockFactoryFor(undefined, makeWikiStore(), faultyMachines(device, Effect.suspend(() => meterClock.exhaust))) : MockFactory).pipe(Layer.provide(fault === "held-tour-step" ? heldStepJournal(observation) : Layer.empty))))
 }
 
 /** `held-tour-step`'s journal: the first write that records a tour's step waits for the page's release. */

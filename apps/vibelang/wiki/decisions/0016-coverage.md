@@ -605,6 +605,40 @@ any statement starting on it ran. Open arms in `src/core`: 409 in `s9full1`, 358
 | `src/core/wikiFlows.vibe` | 0 | 16 | 37/42 | 10/11 | 32/37 |
 | `src/core/wikiSchemas.vibe` | 0 | 0 | 6/6 | 0/0 | 5/5 |
 
+
+### `src/core/sandboxHost.vibe` arms (vl-coverage-core, session 11, 2026-11-14)
+
+Session 10's gate left 24 open arms. Five new faults in `test/support/faultyMachines.vibe` and `FaultyFactory.vibe`
+(each a real failure: a lost answer, a broken clock, a machine that fails or is slow while the minutes run out) reach
+seven; the other 17 stay, each for the reason below. None is deleted.
+
+| Line | Arm | What reaches it | Outcome |
+| --- | --- | --- | --- |
+| 14 | a refused receipt with no recorded cause | a command the machine refused, resent under its operation id (`machine-command-replay`) | reached, `e2e/core-sandbox-replay.spec.ts` |
+| 234 | a resent operation whose receipt is refused | the same resend | reached, same journey |
+| 95 | the clock fails before anything is saved | the clock reads before 1970 on the pane's first read (`sandbox-clock-read`) | reached, `e2e/core-sandbox-clock.spec.ts` |
+| 197 | the fail-closed stop itself fails | a broken clock and a machine that fails its first stop (`machine-stop-clock`) | reached, same file |
+| 281 (2 arms) | the command's pending was cleared while it ran | the minutes run out while the machine holds a command; the meter stops the sandbox under it (`machine-command-exhausted`) | reached, `e2e/core-sandbox-faults.spec.ts` |
+| 168 | a stopped sandbox beside running ones when the minutes run out | credited in the focused run `s11sbx2` | reached |
+| 57, 59, 61 | a failure that is not an object, or has no string `_tag` | not the browser: every failure the page's host sees is a tagged Effect error. `failureReason` is total over `unknown` by contract: `test/sandboxHost.coverage.test.vibe` specifies `defect`, and `fuzz/sandbox-races.node.fuzz.vibe` passes squashed causes, defects included. Constraining it to tagged errors fails the typecheck there (`s11tc1`). | stays, Node-reached |
+| 72, 74 | a successful answer that is a refusal | only `worker/machineObject.vibe` passes `refusalOf` (the container's `{ ok: false, reason }`) | stays, Worker-reached |
+| 227 | an operation or conversation id outside its alphabet | the page's ids are a random session and fixed conversation names; the Worker's HTTP API takes any client's | stays, Worker-reached |
+| 217 | a pending start for a person who may no longer start | a start left pending by an evicted Durable Object, then a demotion; the mock completes every start under its lock | stays, Worker-reached |
+| 99 | a ledger of another owner | the mock builds one host per owner with that owner's policy; the Durable Object is one per person, and this check fails closed if storage ever held another's ledger | stays, fail-closed |
+| 116 | the ledger's sequence has no room | 2^53 transitions; it establishes `decideSandbox`'s proved `requires sequence < 9007199254740991` | stays, proof precondition |
+| 244 | the generation has no room | 2^53 starts; it keeps `pendingGeneration`'s `+ 1` safe | stays, proof precondition |
+| 118 | a completion's decision refused | admission (`freshAdmission`), `outOfMinutes` and recovery's `drop-start` refuse first; the branch is the narrowing `SandboxDecision`'s union needs | stays, type narrowing |
+| `sandboxDecision.vibe` 268, 269, 272, 273 | `decideSandbox`'s four refusals | the host calls it only after the same refusals of its own (line 118's guards), so in the page every decision is accepted; the proved contract states each refusal | stays, proved contract |
+| 124 | a pending operation whose receipt exists | a crash between writing a receipt and clearing its pending: both stores write the two together (`transactionSync`; the mock in one step), so recovery never finds it; it keeps `complete` idempotent | stays, recovery guard |
+| 138 | the minutes ran out while the machine provisioned | the meter charges running sandboxes only, and the one starting is not yet running: another of the person's sandboxes must run meanwhile, which the page's single conversation pane does not make (tried: `machine-start-exhausted` jumped the clock during provisioning and charged nothing, `s11sbx4`) | stays, Worker-reached |
+| 193 | a stopped sandbox in the fail-closed loop | a broken clock with a stopped sandbox beside a running one: two sandboxes of one person, which the page's single conversation pane does not make | stays, Worker-reached |
+| 272, 273 (2 arms) | a command's receipt written while it ran | only the command's own fiber writes it; the Worker's settle skips a command its incarnation holds (`worker/Sandboxes.vibe` `running`) | stays, at-most-once guard |
+
+`src/core/MockFactory.vibe` line 369 (`control`'s `walkthrough?.revision ?? 0`, `walkthrough ?? null` and a refused
+control): a tour control before the tour's first step is driven. The page shows the tour's controls only once a step
+is on screen, and a Pause during `held-tour-step`'s held first step waits for the room's lock and reads the driven step
+(`e2e/core-tour-race.spec.ts`, 12/12 in `s11tour1`, the `?? 0` arm still 0). Stays, no browser input.
+
 ### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
 
 **History fallbacks.** Five `historyView.vibe` fallbacks are for data the history never holds. The proved `decide`

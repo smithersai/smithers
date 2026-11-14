@@ -48,3 +48,18 @@ test("a stop the machine fails is retried until the sandbox stops", async ({ pag
   await page.getByRole("button", { name: "Retry" }).click()
   await expect(status(page)).toHaveText("Stopped", { timeout: 20_000 })
 })
+
+// fault=machine-command-exhausted: the allowance runs out while the machine holds the first command. The meter stops
+// the sandbox under it (sandboxHost.vibe `metered`), and the command, back from the stopped machine, is refused and
+// leaves the stop's state alone (`command`'s write, `clearsPending`).
+test("a command still running when the minutes run out is refused, and the sandbox stops", async ({ page }) => {
+  await sandboxes(page, "machine-command-exhausted")
+  await expect(status(page)).toHaveText("Running")
+  const command = page.getByRole("textbox", { name: "Terminal command" })
+  await command.fill("pwd")
+  await command.press("Enter")
+  await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole("status", { name: "Sandbox", exact: true })).toHaveText("Stopped", { timeout: 20_000 })
+  await expect(page.getByRole("status", { name: "Sandbox minutes" })).toHaveText(/^Out of minutes/)
+  await expect(page.getByLabel("Terminal output")).not.toContainText("/workspace")
+})
