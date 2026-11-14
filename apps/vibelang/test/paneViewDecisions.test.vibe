@@ -258,6 +258,9 @@ describe("issues view decisions", () => {
       for (const absolute of [false, true]) for (const long of [false, true]) expect(I.ageText(absolute, age, long)).toBe(regexp(absolute, age, long))
     }
   })
+  it("reads digits as one or more of 0 to 9, so empty text is no count", () => {
+    expect(["", "0", "12", "1a", "/", ":"].map(I.digits)).toEqual([false, true, true, false, false, false])
+  })
   it("words links, titles, screens and the connection", () => {
     expect(I.childrenWord(1)).toBe("child")
     expect(I.childrenWord(2)).toBe("children")

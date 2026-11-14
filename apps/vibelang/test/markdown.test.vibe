@@ -17,6 +17,11 @@ describe("reply Markdown", () => {
     expect(blocks("\n\none\n\ntwo\n")).toEqual([{ kind: "prose", text: "one" }, { kind: "prose", text: "two" }])
     expect(blocks("")).toEqual([])
   })
+  it("ends a paragraph at a heading, list or quote with no blank line between", () => {
+    const nodes = compile("Intro\nmore\n# Title\n- item\n> quote")
+    expect(nodes.map(n => n.tag)).toEqual(["p", "h1", "ul", "blockquote"])
+    expect(nodes[0]!.children).toEqual(["Intro\nmore"])
+  })
   it("keeps inline code, including an odd backtick while streaming", () => {
     expect(inline("Use `try` here")).toEqual([{ code: false, text: "Use " }, { code: true, text: "try" }, { code: false, text: " here" }])
     expect(inline("Use `try")).toEqual([{ code: false, text: "Use " }, { code: true, text: "try" }])
