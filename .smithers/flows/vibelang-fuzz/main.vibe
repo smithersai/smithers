@@ -17,6 +17,12 @@ export effect function main() {
   const browserBudget = Option.getOrElse(configuredBudget, () => "25 seconds")
   const seed = try Config.String("FUZZ_SEED").pipe(Config.withDefault("20261107"))
   const executions = try Config.option(Config.Int("FUZZ_EXECUTIONS"))
+  // `pnpm fuzz:affected` (apps/vibelang/verify/fuzz_affected.cjs) names its targets and sources, space-separated.
+  const floorOnly = try Config.Boolean("FUZZ_FLOOR_ONLY").pipe(Config.withDefault(false))
+  const browser = try Config.Boolean("FUZZ_BROWSER").pipe(Config.withDefault(true))
+  const words = (name: string) => Config.option(Config.String(name)).pipe(Config.map(Option.map((text) => text.split(/\s+/).filter((word) => word !== ""))))
+  const targets = try words("FUZZ_TARGETS")
+  const reportFiles = try words("FUZZ_REPORT_FILES")
   const hostId = try Config.String("HOSTNAME").pipe(Config.withDefault("vibelang-fuzz-local"))
   const requested = try Config.option(Config.String("FUZZ_RUN_ID"))
   const executionId = Option.isSome(requested) ? requested.value : `vibelang-fuzz/${try (try SecureRandom.SecureRandom).uuidV4()}`
@@ -32,7 +38,7 @@ export effect function main() {
     StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), registered,
   ).pipe(Layer.provide(host))
   try Console.log(`Fuzz run: ${executionId}`)
-  try scoped(Effect.provide(flow.execute({ coverage, budget, browserBudget, seed, ...(Option.isSome(executions) ? { executions: executions.value } : {}) }, { executionId }), runtime))
+  try scoped(Effect.provide(flow.execute({ coverage, budget, browserBudget, seed, ...(Option.isSome(executions) ? { executions: executions.value } : {}), ...(floorOnly ? { floorOnly } : {}), ...(browser ? {} : { browser }), ...(Option.isSome(targets) ? { targets: targets.value } : {}), ...(Option.isSome(reportFiles) ? { reportFiles: reportFiles.value } : {}) }, { executionId }), runtime))
 }
 
 Boundary.runMain(Effect.provide(main(), Layer.mergeAll(NodeHost.layer, NodeHost.NodeCrypto.layer, ExperimentalNodeProcess.layer)))

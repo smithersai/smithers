@@ -46,6 +46,7 @@ pnpm test:workerd   # the API Worker's Durable Objects in local workerd, through
 pnpm test:sandboxes-live   # real Cloudflare Containers in the vl-test stage, on demand (0024: deploy:sandboxes-test first)
 pnpm agent-context  # regenerate worker/agentContext.vibe after a VibeLang upgrade
 pnpm e2e            # browser tests against the built app (dark, light, phone), on the mock
+pnpm fuzz:affected  # before land-main: the fuzz targets that reach each changed src/ or worker/ source, at their floor; writes the receipt the landing check needs (0015)
 pnpm wiki:build && pnpm exec alchemy dev --stage dev   # site + API Worker locally at http://localhost:1337 (NODE_OPTIONS=--import=vibelang/register)
 E2E_LIVE_URL=http://localhost:1337 pnpm exec playwright test e2e/live.spec.ts   # the live agent in a browser
 pnpm run deploy     # Alchemy, with Cloudflare credentials, VIBELANG_DOMAIN and the model's key set (0010)

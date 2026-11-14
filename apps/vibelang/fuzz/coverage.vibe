@@ -28,8 +28,12 @@ export effect function main() {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const root = try path.fromFileUrl(new URL("../", import.meta.url))
+  // `pnpm fuzz:affected` skips the browser phase when it reaches no changed source, and reports only those sources.
+  const browser = try Config.Boolean("FUZZ_BROWSER").pipe(Config.withDefault(true))
+  const reportFiles = try Config.option(Config.String("FUZZ_REPORT_FILES"))
+  const scope = Option.map(reportFiles, (text) => new Set(text.split(/\s+/).filter((word) => word !== "").map((file) => path.join(root, file))))
   const inputs: Array<Record<string, FileCoverageJSON>> = []
-  for (const directory of ["coverage/fuzz-unit", "coverage/fuzz-browser"]) {
+  for (const directory of browser ? ["coverage/fuzz-unit", "coverage/fuzz-browser"] : ["coverage/fuzz-unit"]) {
     const source = try fs.readFileString(path.join(root, directory, "coverage-final.json"))
     inputs.push(try Effect.try(() => JSON.parse(source) as Record<string, FileCoverageJSON>))
   }
@@ -39,7 +43,7 @@ export effect function main() {
   // Node's whole-source structure is the gate, even for files Node never executed; workerd's counters and Chromium credit it only at identical source starts (0015).
   const coverage = try Effect.try(() => createCoverageMap(mergeByPosition(inputs[0]!, inputs.slice(1), true)))
   // The unit gate's denominator: every source under src/, worker/, scripts/ and infra/, none excluded (VL-14).
-  try Effect.try(() => coverage.filter((file) => file.startsWith(root) && /\/(?:src|worker|scripts|infra)\/.*\.vibe$/.test(file)))
+  try Effect.try(() => coverage.filter((file) => file.startsWith(root) && /\/(?:src|worker|scripts|infra)\/.*\.vibe$/.test(file) && (Option.isNone(scope) || scope.value.has(file))))
   const directory = path.join(root, "coverage/fuzz")
   try fs.makeDirectory(directory, { recursive: true })
   try fs.writeFileString(path.join(directory, "coverage-final.json"), JSON.stringify(coverage))

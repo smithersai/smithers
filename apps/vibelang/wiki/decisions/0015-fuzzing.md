@@ -2171,6 +2171,56 @@ items (`breathe`); a fuzz story has at most five commits, so the turn never ran.
 second export writes nothing. A mutant of the turn changes no answer in Node, so it is equivalent here; the turn's
 effect is measured in Chromium by `e2e/core-export-longtask.spec.ts`.
 
+### Session 21: fuzz before landing (vl-fuzz2, 2026-11-14)
+
+The whole-app gate went red four times on 2026-11-14 (`4b3bd97d`, `05ec4144`, `ad982a9d`, `f2858758`), each time
+because a lane landed a source no fuzz target reached at 100%. The lead ruled (03:37 PST) that each changed file's
+targets run before landing, outside `land-main`'s lock, which every lane shares.
+
+```
+lane workspace                                   land-main (lock)
+──────────────                                   ────────────────
+pnpm fuzz:affected                               node verify/landing.cjs
+  jj diff main@origin..@ → src/, worker/ .vibe     same changed files → sha256 each
+  module graph → targets that reach them           one passing receipt with exactly
+  flow: floor only, coverage, those targets          these hashes, or refuse (exit 7)
+  report: those files at 100% on 4 metrics
+  → fuzz-results/affected/<hash>.json
+```
+
+**Selection is the module graph, never a name** (`verify/fuzz_affected.cjs`). A target is a `fuzz/*.fuzz.vibe` file,
+plus the browser phase, whose roots are `fuzz/browser.spec.ts` and `index.html` (its web server builds the site from
+it). An edge is any quoted relative specifier that names an app file: static and dynamic imports, re-exports,
+`new URL(…, import.meta.url)`, and the workerd `bundle(…)` calls in `test/support/workerd.vibe`; in HTML, every
+root-absolute `src`. A specifier into an emitted program's `outDir` (each `tsconfig*.json` with one) reaches the source
+it was compiled from, and the `outDir` itself reaches every source of that program: that is how
+`fuzz/scripts.node.fuzz.vibe` reaches `scripts/**` and, through `scripts/wiki.vibe`, `src/core/wikiPage.vibe`, and how
+`test/surface-host.vibe` reaches `src/surfaces/cli-entry.vibe`. On main `628357df` all 231 sources under `src/` and
+`worker/` are reached (fewest: `src/core/wikiPage.vibe`, 1 target; most: `src/core/decide.vibe`, all 108), in 90 ms.
+
+**The run is the fuzz flow, narrowed** (`vibelang-fuzz/v9`): `floorOnly` runs exactly each target's seeded floor, the
+inputs every run covers; `targets` passes only the selected files to Vitest; `browser: false` skips the `prepare` and
+`browser` stages when the browser phase reaches no changed source; `reportFiles` limits `fuzz/coverage.vibe` to the
+changed sources. `fuzz:affected` then reads `coverage/fuzz/coverage-summary.json` itself and fails on any changed file
+below 100% on lines, branches, functions or statements, or missing from the report. A changed source no target reaches
+fails before anything runs. A file edited during the run fails it.
+
+**The receipt** holds the changed files' sha256, the targets, the seed, the flow's exit code, each shortfall and the
+result. The landing check refuses a range that changes a measured source unless one passing receipt holds every changed
+file with its current hash. A rebase that touches none of them keeps the receipt valid; one that touches any needs a
+rerun. Receipts from several runs are never combined: a changed source can change what another one's targets reach.
+The check reads jj, so it runs in `landing.cjs`'s `main()` under `land-main`, not in `treeFacts()`, which `pnpm test`
+calls on boxes without jj.
+
+The rule for every lane that changes `apps/vibelang/src/` or `worker/`, from `apps/vibelang` in its workspace:
+
+```sh
+F="$(node verify/fuzz_affected.cjs --list)" && ~/lanes/bin/run-heavy --name vl-<lane>:fuzz-affected --image playwright --writes . -- "cd ../.. && pnpm install --frozen-lockfile --filter '@smthrs/vibelang-site...' --filter '@smithers/release-workflows...' >/dev/null && cd apps/vibelang && FUZZ_AFFECTED_FILES='$F' pnpm fuzz:affected"
+```
+
+`--writes` brings the receipt back from a box; a box has no jj, so `--list` names the files on the host first.
+Regression tests: `verify/fuzz_affected_test.cjs` (in `pnpm test:proofs`).
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the

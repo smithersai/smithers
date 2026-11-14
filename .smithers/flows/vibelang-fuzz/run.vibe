@@ -8,7 +8,7 @@ export schema error FuzzPhaseFailed {
 }
 
 /** Runs exactly one phase; the flow supplies ordering, persistence and recovery. */
-export effect function runStage(stage: "prepare" | "build" | "targets" | "browser" | "report", coverage: boolean, settings: { readonly budget: string; readonly browserBudget: string; readonly seed: string; readonly executions?: number }) {
+export effect function runStage(stage: "prepare" | "build" | "targets" | "browser" | "report", coverage: boolean, settings: { readonly budget: string; readonly browserBudget: string; readonly seed: string; readonly executions?: number; readonly floorOnly?: boolean; readonly targets?: ReadonlyArray<string>; readonly reportFiles?: ReadonlyArray<string>; readonly browser?: boolean }) {
   return effect {
   const root = (try Path.Path).resolve((try Workspace.Workspace).root, "apps/vibelang")
   const { seed } = settings
@@ -23,12 +23,12 @@ export effect function runStage(stage: "prepare" | "build" | "targets" | "browse
   // A lane running beside others names its own browser port; 4501 is the suite's.
   const port = Option.getOrElse(try Config.option(Config.String("E2E_PORT")), () => "4501")
   const argv = stage === "prepare" ? ["exec", "playwright", "install", "chromium"] : stage === "build" ? ["build:surfaces"]
-    : stage === "targets" ? ["exec", "vitest", "run", "--config", "fuzz.config.ts", ...(coverage ? ["--coverage"] : [])]
+    : stage === "targets" ? ["exec", "vitest", "run", "--config", "fuzz.config.ts", ...(coverage ? ["--coverage"] : []), ...(settings.targets ?? [])]
     : stage === "browser" ? ["exec", "playwright", "test", "--config", "fuzz/browser.config.ts"]
     : ["exec", "node", "--import=vibelang/register", "fuzz/coverage.vibe"]
   try withSpan(scoped(effect {
     try Effect.logInfo("vibelang.fuzz.phase").pipe(Effect.annotateLogs({ stage, outcome: "started" }))
-    const process = try ChildProcess.make("pnpm", argv, { cwd: root, stdout: "inherit", stderr: "inherit", env: { ...bootstrap, E2E_PORT: port, E2E_4501: port, FUZZ_BUDGET: budget, FUZZ_SEED: seed, ...(settings.executions === undefined ? {} : { FUZZ_EXECUTIONS: String(settings.executions) }), FUZZ_COLLECT_PARTIAL: coverage ? "1" : "0", ...(coverage && stage === "targets" ? { WORKERD_COVERAGE: "1", WORKERD_COVERAGE_DIR: "coverage/fuzz-unit/workerd-raw" } : {}), NODE_OPTIONS: "--import=vibelang/register", PLAYWRIGHT_BROWSERS_PATH: (try Path.Path).join(root, "node_modules/.cache/ms-playwright") }, extendEnv: false })
+    const process = try ChildProcess.make("pnpm", argv, { cwd: root, stdout: "inherit", stderr: "inherit", env: { ...bootstrap, E2E_PORT: port, E2E_4501: port, FUZZ_BUDGET: budget, FUZZ_SEED: seed, ...(settings.executions === undefined ? {} : { FUZZ_EXECUTIONS: String(settings.executions) }), ...(settings.floorOnly === true ? { FUZZ_FLOOR_ONLY: "1" } : {}), ...(settings.reportFiles === undefined ? {} : { FUZZ_REPORT_FILES: settings.reportFiles.join(" ") }), FUZZ_BROWSER: settings.browser === false ? "0" : "1", FUZZ_COLLECT_PARTIAL: coverage ? "1" : "0", ...(coverage && stage === "targets" ? { WORKERD_COVERAGE: "1", WORKERD_COVERAGE_DIR: "coverage/fuzz-unit/workerd-raw" } : {}), NODE_OPTIONS: "--import=vibelang/register", PLAYWRIGHT_BROWSERS_PATH: (try Path.Path).join(root, "node_modules/.cache/ms-playwright") }, extendEnv: false })
     const status = Number(try process.exitCode)
     try Metric.update(Metric.counter("vibelang_fuzz_phases", { incremental: true }), 1)
     try Effect.logInfo("vibelang.fuzz.phase").pipe(Effect.annotateLogs({ stage, outcome: status === 0 ? "passed" : "failed", status }))

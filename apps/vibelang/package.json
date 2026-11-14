@@ -11,7 +11,7 @@
     "typecheck": "pnpm wiki:build && vibelang -p tsconfig.json --noEmit && vibelang -p worker/tsconfig.json --noEmit",
     "test:designs": "node --test wiki/designs/build.test.mjs",
     "test:design-shots": "node --test wiki/designs/shots.test.mjs",
-    "test:proofs": "node --test verify/inventory_test.cjs verify/landing_test.cjs",
+    "test:proofs": "node --test verify/inventory_test.cjs verify/landing_test.cjs verify/fuzz_affected_test.cjs",
     "test": "pnpm test:designs && pnpm test:proofs && pnpm build:surfaces && pnpm build:scripts && vitest run",
     "test:sandboxes-live": "vitest run --mode sandboxes-live",
     "record:model": "pnpm build:surfaces && pnpm build:scripts && VIBE_MODEL=record vitest run test/model.recorded.test.vibe",
@@ -37,6 +37,7 @@
     "bench:browser": "BENCH_LIVE=0 playwright test --config bench/playwright.config.ts",
     "fuzz": "pnpm build:scripts && node dist-scripts/fuzz-preflight.js && pnpm --workspace-root exec node --import=vibelang/register .smithers/flows/vibelang-fuzz/main.vibe",
     "fuzz:coverage": "FUZZ_COVERAGE=1 pnpm fuzz",
+    "fuzz:affected": "node verify/fuzz_affected.cjs",
     "test:coverage": "pnpm build && pnpm build:surfaces && pnpm build:scripts && { COVERAGE_MERGE=1 vitest run --coverage; unit=$?; COVERAGE_MERGE=1 WORKERD_COVERAGE=1 WORKERD_COVERAGE_DIR=coverage/unit/workerd-raw vitest run --mode workerd --coverage --coverage.reportsDirectory=coverage/unit/workerd-node; workerd=$?; node --import=vibelang/register test/unitCoverageGate.vibe && exit $((unit > workerd ? unit : workerd)); }",
     "e2e:coverage": "E2E_COVERAGE_GATE=1 playwright test",
     "wiki:build": "node --import=vibelang/register scripts/wiki.vibe"
