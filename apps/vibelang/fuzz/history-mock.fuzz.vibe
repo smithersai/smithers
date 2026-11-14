@@ -17,8 +17,9 @@ function refusal<E>(result: Exit.Exit<unknown, E>): string | undefined {
   return value.refusal
 }
 
-it.live("history/mock-roles-and-flows", () => run("history/mock-roles-and-flows", Input, ({ principal, id, text }) => effect {
-  provide MockMythical(principal, () => succeed(empty)) {
+/** The flows refuse exactly what `principal` may not do, whether the door names it or `Caller.current` answers it. */
+const walk = (principal: typeof Principal.Type, id: number, text: string, mock: Layer.Layer<Mythical>) => effect {
+  provide mock {
     const history = try Mythical
     if ((try history.outline()).seq !== 0) return false
     const planned = try exit(history.plan({ how: "append", epic: "", newEpic: "Epic", target: "", title: `Change ${id}`, task: "" }))
@@ -33,7 +34,16 @@ it.live("history/mock-roles-and-flows", () => run("history/mock-roles-and-flows"
     const folded = try exit(history.fold())
     return may(principal, "fold") ? folded._tag === "Success" && folded.value === 0 : refusal(folded) === "forbidden"
   }
-}))
+}
+
+// Every execution walks twice: as the door's principal, then as `Caller.current`'s answer behind a door of the opposite
+// role, so a flow that reads the door instead of the current caller is refused or admitted wrongly. The chosen
+// contributor is both admitted (append) and refused (approve) on the current-caller walk.
+it.live("history/mock-roles-and-flows", () => run("history/mock-roles-and-flows", Input, ({ principal, id, text }) => effect {
+  if (!(try walk(principal, id, text, MockMythical(principal, () => succeed(empty))))) return false
+  const door = { ...principal, role: principal.role === "maintainer" ? "viewer" as const : "maintainer" as const }
+  return try walk(principal, id, text, MockMythical(door, () => succeed(empty), () => succeed(principal)))
+}, undefined, { chosen: [{ principal: { role: "contributor", name: "Fuzz", agent: false }, id: 1, text: "note" }] }))
 
 it.live("history/mock-lifecycle", () => run("history/mock-lifecycle", Schema.Struct({ id: Int, text: TextOrBoundary }), ({ id, text }) => effect {
   provide MockMythical({ role: "maintainer", name: "Fuzz", agent: false }, () => succeed(empty)) {

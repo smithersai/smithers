@@ -91,7 +91,8 @@ it.live("mock/scripted-actions", () => run("mock/scripted-actions", Input, ({ wa
     }
   }
   return try signedOutCommand(room)
-}, undefined, { minimum: STEERED_FLOOR }), 300_000)
+// The chosen viewer is refused every request whatever the draw: no issue filed (MockFactory's failed `act`), no split.
+}, undefined, { minimum: STEERED_FLOOR, chosen: [{ walk: true, role: "viewer", kinds: ["issue"], room: 0 }] }), 300_000)
 
 /**
  * A maintainer's slash command whose poster signed out before the reply ran: the post waits behind a running tour, the
