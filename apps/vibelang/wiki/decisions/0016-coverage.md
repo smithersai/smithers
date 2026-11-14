@@ -3893,3 +3893,15 @@ Still open in `LiveMythical`: replay through public HTTP (30, refused by design:
 non-200 answers need a History object that fails. An unknown commit address (`#m999999`) shows the outline and
 issues no failing read, so it is no route to 49.
 
+**The Actions pane in live mode.** `e2e/live-actions.spec.ts`, on the same site: a maintainer runs Tour from the
+Actions pane, opens its card, reads its trace, cancels it, runs it again with Re-run and cancels that run. 3 of 3 pass
+(box job `97bf31684f2756301c33d8a9`; job `cc78a0046a8ff344c0208710` failed all three before the bounded wait below). It closes 9 arms against this
+session's gate: `src/actions/LiveActions.vibe` 6 (POST and DELETE requests, a request body, the follow stream and its
+mapping), `actionView.vibe`, `actionViewDecision.vibe` and `modelDecision.vibe` 1 each. `LiveActions.command`'s 6 arms
+serve the agent's door, which runs in the Worker: the browser sends a slash command through `start`.
+
+**A bounded wait, not a timer.** The first run card appeared after expect's 5 s default in all three projects at
+once; alone, the whole journey took 6 s. It waits on the Worker's durable engine answering `POST /runs` and the page's read of the run;
+three Workers boot their engines at the same time. The wait is bounded at 20 s, as `e2e/live-issues.spec.ts`'s
+`settled` bounds a live write; the journey then took 14 s.
+
