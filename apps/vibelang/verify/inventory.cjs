@@ -548,6 +548,16 @@ function inventorySource(file, source) {
     operands: (kind === '??' ? [tested] : operands(tested)).map(operand => ({ calls: calledNames(operand), flag: flagName(operand), neutral: kind !== '??' && neutral(operand),
       compared: operand.type === 'BinaryExpression' && ['===', '!==', '<', '>', '<=', '>='].includes(operand.operator)
         ? (operand.right.type === 'Literal' ? flagName(operand.left) : operand.left.type === 'Literal' ? flagName(operand.right) : undefined) : undefined })) });
+  const COMPARISONS = new Set(['===', '!==', '==', '!=', '<', '>', '<=', '>=']);
+  // Where a value goes: an argument, an array element, an object property, a `const`, an assignment, or a return.
+  const slot = (node, parent) => ((parent?.type === 'CallExpression' || parent?.type === 'NewExpression') && parent.arguments.includes(node) ? 'passed'
+    : parent?.type === 'ArrayExpression' ? 'passed'
+    : (parent?.type === 'Property' && parent.value === node) || (parent?.type === 'VariableDeclarator' && parent.init === node)
+      || (parent?.type === 'AssignmentExpression' && parent.right === node) ? 'stored'
+    : parent?.type === 'ReturnStatement' || (functions.has(parent?.type) && parent.body === node) ? 'returned'
+    : undefined);
+  // A list predicate's body is already its own branch (`filter`, `find`, ...).
+  const predicates = new WeakSet();
   function walk(node, parent, parents = [], provedParent = false, owner = undefined) {
     let next = parents;
     let proved = provedParent;
@@ -566,6 +576,13 @@ function inventorySource(file, source) {
     const kind = node.type === 'SwitchStatement' ? 'switch' : node.type === 'LogicalExpression' ? node.operator : predicate ? parent.callee.property.name : 'if';
     if (owner && tested?.range && !predicate) {
       owner.branches.push(branchOf(node, kind, tested));
+    }
+    // A comparison, or a negation of a non-literal, passed or stored as a value (`h.AriaSelected(index === highlight)`,
+    // `disabled: count === 0`): the value is a decision as much as an `if` test is (0018, "Decisions in views").
+    if (predicate) predicates.add(predicate);
+    if (owner && slot(node, parent) && !predicates.has(node) && ((node.type === 'BinaryExpression' && COMPARISONS.has(node.operator))
+      || (node.type === 'UnaryExpression' && node.operator === '!' && node.argument.type !== 'Literal'))) {
+      owner.branches.push(branchOf(node, 'value', node));
     }
     if (owner && node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && node.init) {
       owner.bindings.push({ name: node.id.name, calls: calledNames(node.init) });

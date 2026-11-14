@@ -7448,7 +7448,7 @@ test (as elsewhere), and also a `switch` discriminant, the left side of a `??` (
 rule: an operand that calls a proved function, reads a flag bound to one, or is a presence, variant or host type test
 decides nothing of its own. The record names a non-`if` branch by its kind before the tested text (`?? model.wikiQuery`).
 Outside `src/web` only `if` and conditional tests count, unchanged; the same sites there (`??`, `switch`, value logic)
-number 242 on main `d5e5279e` and are follow-up, not refused. Not counted anywhere: a comparison passed straight as a
+number 242 on main `d5e5279e` and are follow-up, not refused. Not counted anywhere (until batch 70): a comparison passed straight as a
 value (`h.AriaSelected(index === highlight)`); the one such site that enables a control, the tour's Back button
 (`step === 1`), was found by reading and is listed below.
 
@@ -7683,6 +7683,35 @@ landed. The case now mutates `recordCall`'s `usableCall(settled, Budget.reportsT
 `python3 verify/runtime_mutations.py --check` lists each case whose text its source holds other than exactly once,
 and the landing check refuses each as `stale runtime mutation:` (`verify/landing_test.cjs`; the real-tree test failed
 first).
+
+### Batch 70: a comparison passed as a value
+
+Batch 62 left one shape uncounted: a comparison that is a value rather than a test, such as
+`h.AriaSelected(index === highlight)` or `disabled: count === 0`. `verify/inventory.cjs` now records a `value` branch
+for a comparison (`===`, `!==`, `==`, `!=`, `<`, `>`, `<=`, `>=`) or a `!` of a non-literal that is a call or `new`
+argument, an array element, an object property's value, a `const` initializer, an assignment's right side, or a return
+or arrow body. A list predicate's body stays its own `filter` or `find` branch, and the operand rule is unchanged: a
+presence, variant or host type test (`x === undefined`, `_tag`) decides nothing. The record names the kind before the
+text (`value index === actionsOf(model).highlight`). `verify/landing_test.cjs` failed first on the old walker.
+
+On main `55a0af1c` the rule finds 162 unrecorded branches in 44 files (src/web 82, src/core 27, src/surfaces 7,
+src/history 4, src/actions 2, worker 40). None needed a new proof; each is recorded with its reason:
+
+| Reason | Sites | Example |
+| --- | --- | --- |
+| Observation passed whole to a proved function | 90 | `wikiEditRefusal(request.base === current.text, ...)` |
+| Observation stored as a named fact a proved function reads | 17 | `blankTitle: ui.title.trim() === ""` (issueAction) |
+| Markup for the option or pane the Model names | 16 | `h.AriaSelected(index === actionsOf(model).highlight)` |
+| Mock mode (VL-13) | 15 | the fixture issue and wiki hosts' refusal facts |
+| A durable flow's branch on its payload or a step's answer | 6 | `if: (step) => step === "login"` |
+| An absent optional flag reads as false (`=== true`) | 6 | `ui.data.absoluteDates === true` |
+| Others, one or two each | 12 | the actor kind, startup flags, the probe's digest compare, the Command-K toggle |
+
+An observation is one comparison of a field with a literal, empty text or another field. The proved function that
+receives it quantifies over both answers, so the decision is proved for either; the comparison chooses which field
+value the proof sees, as a field read does, and the inventory counts no field read. Every branch in every file is
+proved or recorded: 1,122 shell branches, 0 open. The count drops one stale record (`?? format` in `execute`, removed
+from `src/web/main.vibe` since the last stamp).
 
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 

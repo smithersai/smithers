@@ -108,6 +108,19 @@ test('a new branch in a shell row is refused until it is proved or recorded with
     + '  const off = m.busy || !ok\n  switch (m.kind) {\n    case "a": return 1\n  }\n  return [label, off, ok && "shown", ok ? 1 : 2]\n}\n';
   assert.deepEqual(shellBranches(inventorySource(web, view)).map(branch => branch.test), ['?? m.label', '|| m.busy || !ok', 'switch m.kind', '&& ok && "shown"', 'ok']);
   assert.deepEqual(shellBranches(inventorySource(fixture, view)).map(branch => branch.test), ['?? m.label', '|| m.busy || !ok', 'switch m.kind', '&& ok && "shown"', 'ok']);
+  // A comparison, or a `!` of a non-literal, passed or stored as a value chooses too (batch 70): an argument, an
+  // element, a property, a `const`, a return or arrow body. A list predicate's body stays one `find` branch; a
+  // presence test and a literal's negation decide nothing.
+  const values = '// Fixture.\nexport function w(m: { i: number, n: number, ok: boolean, s?: string }, xs: number[]) {\n'
+    + '  const none = m.n === 0\n  const found = xs.find(x => x === m.i)\n'
+    + '  return [h(m.i === 1), { off: !m.ok, on: !true, gone: m.s === undefined }, none, found, xs.map(x => x > m.n)]\n}\n'
+    + 'export function h(b: boolean) {\n  return b\n}\nexport const lt = (a: number, b: number) => a < b\n';
+  assert.deepEqual(shellBranches(inventorySource(fixture, values)).map(branch => branch.test),
+    ['value m.n === 0', 'value m.i === 1', 'value !m.ok', 'find x === m.i', 'value x > m.n', 'value a < b']);
+  // A recorded value branch lands; its record names the kind before the text.
+  const valueRecord = 'worker/landingFixture.vibe\tlt\tvalue a < b\tOpen: the fixture order\n';
+  assert.deepEqual(branchFacts(inventorySource(fixture, 'export const lt = (a: number, b: number) => a < b\n'), valueRecord),
+    { refused: [], branches: 1, open: 1, stale: [] });
 });
 
 // One read of the real tree (about 15 s): the inventory of every source, decision 0018 and mutations.py's cases.
@@ -131,5 +144,7 @@ test('adding an unproved decision to the real tree is refused', () => {
   assert.deepEqual(refusals({ ...tree, rows }), [
     'not proved: worker/landingFixture.vibe:2 admitted',
     'stale inventory: run node verify/inventory.cjs --write',
+    // Its returned comparison is a value branch too (batch 70).
+    'unrecorded branch: worker/landingFixture.vibe:3 admitted: prove its decision, or add to verify/shell-branches.tsv: worker/landingFixture.vibe\tadmitted\tvalue role === "maintainer"\t<reason>',
   ]);
 });
