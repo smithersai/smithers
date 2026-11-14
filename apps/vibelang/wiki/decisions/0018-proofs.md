@@ -7824,6 +7824,27 @@ No decision, recorded with the reason:
 
 23 mutation cases. Records: 343 branches, 0 open, 0 unreviewed, 0 reviewed rules not yet proved.
 
+## Stamp: the whole gate on main `ec310181`, the first with every branch in every file proved or recorded (vl-proveall3, 2026-11-14)
+
+The whole proof and mutation gate ran on one main revision, `ec310181bcf6` (batches 66 to 69 landed, 0 open branches
+in any file), in 12 node26 box shards from nyc-01 (`~/vl/pa3-gate/r10-ec310181bcf6/`). Every shard exited 0. An
+earlier run on `ef2ff422` stopped at its runtime step on the stale `runtime-usage-zero` case (batch 69) and was
+discarded.
+
+| Shard | Exit | Seconds | Result |
+| --- | --- | --- | --- |
+| proof-heavy | 0 | 3,451 | 7/7 files |
+| proof-1 | 0 | 465 | 32/32 runs |
+| proof-2 | 0 | 495 | 31/31 runs |
+| proof-3 | 0 | 735 | 28/28 runs; runtime mutants 3/3 rejected |
+| broken-conversation | 0 | 4,056 | 217/217 rejected |
+| broken-heavy | 0 | 2,880 | 251/251 rejected |
+| broken-1 to broken-6 | 0 | 1,000 to 2,195 | 464, 464, 465, 463, 463, 463 rejected (all of each) |
+
+Totals: `pnpm verify` 92 sources, 98 Dafny runs, 20,460 obligations, 0 errors; `pnpm verify:broken` 3,250/3,250 rejected
+(0 survived, 0 invalid, 0 missing); runtime mutants 3/3 rejected. Landing check on the same tree: 4,242 rows, 0 not
+proved, 1,275 contracts, 3,250 mutation cases, 961 shell branches, 0 open, 0 refused.
+
 ## Stamp: the whole gate on main `257bbf03`, the first with every view decision proved (vl-proveall3, 2026-11-14)
 
 The whole proof and mutation gate ran on one main revision, `257bbf03481c` (batches 56 to 61 landed, 0 view decisions
