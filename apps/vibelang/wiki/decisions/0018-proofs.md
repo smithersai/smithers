@@ -7596,6 +7596,26 @@ reading. Regressions in `test/httpBoundaries.coverage.test.vibe`: a tour control
 (was 409), and one declared at 2,048 bytes whose body fails mid-read answers 413 without reading (was 400). Both failed
 first.
 
+### Batches 63 and 64: the worker's gates and counts
+
+| Batch | Module | Decides | Mutants | Open outside `src/web` after |
+| --- | --- | --- | --- | --- |
+| 63 | `worker/actorDecision.vibe` | No principal acts as a viewer; an unstated kind is a person; execution keys; the sandbox probe's token check; the actions command list; a wiki review that is the signed-in actor's own and changes exactly its page | 17 | 31 |
+| 64 | `worker/hostFactsDecision.vibe` | A model call's tokens (the provider's total, else input and output, each 0 when unreported); a spend reporting usage only when valid and not failed; a call's usable tokens; a clean reply finish; a blank issue part; the site paths the wiki owns | 13 | 22 |
+
+The issues and wiki hosts each read their principal through one helper (`roleOf`, `kindOf`, `keyOf`), so 20 inline
+`??` defaults became three proved calls per host. The two hosts key a signed-out principal differently: the issues host
+keeps an empty id as given, the wiki host keys it as `public`. Both behaviors are kept and proved as they are
+(`issueExecutionActor`, `wikiExecutionActor`); unifying them would change the execution keys of existing runs, so it is
+left for a ruling. The resumed-request match (`Object.entries` with dynamic keys, outside LemmaScript's subset) is
+recorded as a host boundary with its two tests.
+
+Still open outside `src/web` (22, each `Open:` in `verify/shell-branches.tsv`): the action runs' reply states (13 sites
+in `worker/ActionRuns.vibe`), the export planner's known trees and note check (5 in `src/history/export.vibe`), an issue
+keeping its VIP approval and a resumed write that failed unwritten (3 in `worker/Issues.vibe`), an empty wiki path as
+the index (`src/core/wikiIndex.vibe`, browser-loaded, so its rule belongs in a client module), and the CLI's unnamed
+sandbox label.
+
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 
 Five shells compared `Number(content-length)` with a literal: accounts 2,048 bytes (sign-in and roles), issues 32 KiB,
