@@ -75,13 +75,13 @@ function main() {
   // A range that changes a src/ or worker/ source lands only with its passing `pnpm fuzz:affected` receipt (0015,
   // "Fuzz before landing"). It reads jj, so it runs here, under land-main, and never in `pnpm test`'s treeFacts.
   const fuzz = landingRefusals();
-  const refused = [...refusals(facts), ...fuzz];
+  const refused = [...refusals(facts), ...fuzz.refused];
   const contracts = facts.rows.filter(row => row.proof === 'contract').length;
   // Counts only: no source text, names or paths beyond the refused rows themselves.
   const branches = branchFacts(facts.rows, facts.branchRecord);
   console.log(`landing check: ${facts.rows.length} rows, ${contracts} contracts, ${facts.cases.length} mutation cases `
     + `(${facts.invalidMutants.length} invalid), `
-    + `${branches.branches} shell branches (${branches.open} open), ${fuzz.length ? 'no' : 'a'} fuzz receipt, ${refused.length} refused, ${Date.now() - started} ms`);
+    + `${branches.branches} shell branches (${branches.open} open), fuzz receipt: ${fuzz.receipt}, ${refused.length} refused, ${Date.now() - started} ms`);
   if (refused.length) { console.error(refused.join('\n')); process.exitCode = 1; }
 }
 module.exports = { refusals, treeFacts };

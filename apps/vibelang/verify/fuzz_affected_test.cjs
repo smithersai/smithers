@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
-const { main, closure, emittedPrograms, suite, select, hashes, changedFiles, receiptRefusals, readReceipts, shortfalls, RECEIPT_VERSION } = require('./fuzz_affected.cjs');
+const { main, closure, emittedPrograms, suite, select, hashes, changedFiles, landingRefusals, receiptRefusals, readReceipts, shortfalls, RECEIPT_VERSION } = require('./fuzz_affected.cjs');
 
 /** A throwaway app: each key is a path, each value its text. */
 function app(files) {
@@ -122,4 +122,27 @@ test('the changed sources are the measured files jj diff names under the app, de
   fs.rmSync(path.join(root, 'apps/site/src/gone.vibe'));
   fs.writeFileSync(path.join(root, 'apps/site/README.md'), 'changed\n');
   assert.deepEqual(changedFiles(path.join(root, 'apps/site'), 'main'), ['src/kept.vibe', 'worker/added.vibe']);
+});
+
+test('outside a jj repository the landing check refuses with one line, not a stack trace', () => {
+  const verdict = landingRefusals(app(FIXTURE));
+  assert.equal(verdict.receipt, 'missing');
+  assert.equal(verdict.refused.length, 1);
+  assert.match(verdict.refused[0], /^fuzz receipt: jj diff failed: /);
+});
+
+test('the landing verdict is not needed, matched or missing', () => {
+  const root = app({ 'apps/site/src/kept.vibe': 'a\n' });
+  const site = path.join(root, 'apps/site');
+  const jj = (...args) => assert.equal(spawnSync('jj', args, { cwd: root, encoding: 'utf8', env: { ...process.env, JJ_USER: 'fixture', JJ_EMAIL: 'fixture@example.com' } }).status, 0);
+  jj('git', 'init');
+  jj('bookmark', 'create', 'main', '-r', '@');
+  jj('new');
+  assert.deepEqual(landingRefusals(site, 'main'), { receipt: 'not needed', refused: [] });
+  fs.writeFileSync(path.join(site, 'src/kept.vibe'), 'changed\n');
+  assert.equal(landingRefusals(site, 'main').receipt, 'missing');
+  const directory = path.join(site, 'fuzz-results', 'affected');
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, 'r.json'), JSON.stringify(receipt(hashes(site, ['src/kept.vibe']))));
+  assert.deepEqual(landingRefusals(site, 'main'), { receipt: 'matched', refused: [] });
 });

@@ -140,9 +140,17 @@ function readReceipts(directory) {
   });
 }
 
-/** The landing check's refusals for the working copy against main@origin. Receipts live in the lane's own workspace, in an ignored directory. */
-function landingRefusals(root = app) {
-  return receiptRefusals(hashes(root, changedFiles(root)), readReceipts(path.join(root, 'fuzz-results', 'affected')));
+/**
+ * The landing check's verdict for the working copy against `base`: `not needed` (no measured source changed),
+ * `matched` or `missing`, with its refusals. Receipts live in the lane's own workspace, in an ignored directory. A jj
+ * failure is one refusal line, so land-main shows the reason rather than a stack trace.
+ */
+function landingRefusals(root = app, base = 'main@origin') {
+  let changed;
+  try { changed = changedFiles(root, base); } catch (error) { return { receipt: 'missing', refused: [`fuzz receipt: jj diff failed: ${error.message}`] }; }
+  if (changed.length === 0) return { receipt: 'not needed', refused: [] };
+  const refused = receiptRefusals(hashes(root, changed), readReceipts(path.join(root, 'fuzz-results', 'affected')));
+  return { receipt: refused.length ? 'missing' : 'matched', refused };
 }
 
 /** Each changed file's four metrics from the merged report's summary, and every one below 100% (or missing). */
