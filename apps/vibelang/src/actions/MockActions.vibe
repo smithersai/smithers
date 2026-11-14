@@ -35,6 +35,11 @@ export function MockActions(principal: Principal) {
       return person
     }
     const scope = try Effect.scope
+    // A run starts in this world's services alone, never its caller's. The agent requests a run from inside its reply,
+    // and a flow's action takes the services its run carries over the ones it was wired with (@smthrs/flow
+    // `Action.make`), so a tour the agent asked for recorded its start in the replying conversation, where the agent is
+    // working, and was refused as busy (0016 session 36). `updateContext` replaces them; `provideContext` merges.
+    const world = try Effect.context<Factory | ConversationRead | Scope.Scope>()
     const catalog = try orDie(bundled)
     const state = try Ref.make<Conversation>(empty)
     const ids = try Ref.make(0)
@@ -139,7 +144,8 @@ export function MockActions(principal: Principal) {
       invocations.set(id, { input, flow: name, owner: person.id, conversation: (principal.conversation ?? `action-${id}`) })
       // The run waits until its request is recorded.
       const recorded = try Deferred.make<void>()
-      fibers.set(id, try forkIn(Effect.andThen(Deferred.await(recorded), run(id, name, payload, door)), scope))
+      const body: Effect.Effect<void> = Effect.andThen(Deferred.await(recorded), run(id, name, payload, door))
+      fibers.set(id, try forkIn(Effect.updateContext<void, never, never, never>(body, (): Context.Context<never> => world), scope))
       try record({ type: "RequestAction", id, flow: name, door, actor: actionActor(door, principal.actor), at: try Clock.currentTimeMillis }).pipe(Effect.ensuring(Deferred.succeed(recorded, undefined)))
       return id
     }

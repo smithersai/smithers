@@ -1,0 +1,27 @@
+// @vitest-environment node
+// A tour the scripted agent requests runs in its run's own conversation, as a tour a person starts from Actions does
+// (VL-13; 0016 session 36). The agent requests it from inside its reply, where the replying conversation's agent is
+// working, so a start recorded there is refused as busy and the run fails at its first step.
+import "../src/core/MockFactory.vibe"
+import { expect, it } from "@effect/vitest"
+import { Actions } from "../src/actions/Actions.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { BrowserFactory } from "../src/web/backend.vibe"
+import { heldHealth } from "./support/heldHealth.vibe"
+
+it.live("a tour the agent requests while it replies starts, and its guide runs", () => scoped(effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", true, "maintainer").pipe(Layer.provide(health.layer)) {
+    const factory = try Factory
+    const actions = try Actions
+    try factory.post("home", "c1", "Ada", "Run /tour")
+    const requested = Option.getOrThrow(try Stream.runHead(factory.events("home", 0).pipe(Stream.filter((event) => event.type === "ActionRequested"))))
+    const id = requested.type === "ActionRequested" ? requested.id : ""
+    const start = (run: { readonly steps: ReadonlyArray<{ readonly name: string; readonly state: string }> }) => run.steps.find((step) => step.name === "vibelang/tour/start")
+    const run = Option.getOrThrow(try Stream.runHead(actions.follow(id).pipe(Stream.filter((run) => run.state === "failed" || (start(run) !== undefined && start(run)!.state !== "running")))))
+    try Effect.try(() => {
+      expect(run.state).toBe("running")
+      expect(start(run)?.state).toBe("passed")
+    })
+  }
+}), 30_000)
