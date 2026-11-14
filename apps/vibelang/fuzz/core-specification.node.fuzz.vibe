@@ -2,31 +2,40 @@
 // `revisedSpecificationState`) on any state and request, with no reviewer service, a scripted one, or an injected
 // reviewer that answers, answers a stale revision, or fails. Oracle: specificationDecision.vibe's contracts, written
 // again here; a refused request writes nothing and says why; an accepted review is recorded for its own reviewer only.
+// A specification revised once from empty is the first one Opus can review unanswered (production keeps the seats, so
+// only this state reaches the scripted B+), and a reviewer may answer without review text.
 import { it } from "@effect/vitest"
-import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
-import { emptySpecification, fixtureSpecification, fixtureSpecificationHistory, performSpecification, revisedSpecificationState, SpecificationReviewers } from "../src/core/specification.vibe"
+import { IssueFailure, type IssueRequest, type IssuesApi } from "../src/core/issueSchemas.vibe"
+import { emptySpecification, fixtureSpecification, fixtureSpecificationHistory, performSpecification, requestedSpecificationReview, revisedSpecificationState, reviewers as SEATS, SpecificationReviewers } from "../src/core/specification.vibe"
 import { reviewAnswerAccepted, scriptedGrade, specificationRefusal } from "../src/core/specificationDecision.vibe"
 import { run } from "./run.vibe"
 
 const REVIEWERS = ["astra", "sol", "fable", "opus"] as const
 const Input = Schema.Struct({
-  spec: Schema.Literals(["none", "empty", "fixture", "capacity"]),
+  spec: Schema.Literals(["none", "empty", "revised", "fixture", "capacity"]),
   history: Schema.Boolean,
   revise: Schema.Boolean,
   key: Schema.Literals(["", "k1"]),
   revision: Schema.Literals(["current", "stale", "absent"]),
   text: Schema.Literals(["", "  ", "# Spec\n\nNew text.", "same"]),
   reviewer: Schema.Union([Schema.Null, Schema.Literals(REVIEWERS)]),
-  provider: Schema.Literals(["absent", "answers", "stale", "unlinked", "fails"]),
+  provider: Schema.Literals(["absent", "answers", "bare", "stale", "unlinked", "fails"]),
   scripted: Schema.Boolean,
   policy: Schema.Literals(["keep", "reset"]),
 })
 
 /** A revision whose text is the specification's own: no revision, the state unchanged, under either policy. */
 const unchangedChosen: ReadonlyArray<typeof Input.Type> = (["keep", "reset"] as const).map((policy) => ({ spec: "fixture", history: true, revise: true, key: "k1", revision: "current", text: "same", reviewer: null, provider: "absent", scripted: true, policy }))
+/** Scripted Opus on its first review of a revised specification (B+), and a reviewer's answer with no review text. */
+const reviewChosen: ReadonlyArray<typeof Input.Type> = [
+  { spec: "revised", history: false, revise: false, key: "k1", revision: "current", text: "", reviewer: "opus", provider: "absent", scripted: true, policy: "keep" },
+  { spec: "fixture", history: true, revise: false, key: "k1", revision: "current", text: "", reviewer: "sol", provider: "bare", scripted: false, policy: "keep" },
+]
+/** The specification revised once from empty: revision 1, no seat answered. */
+const revised = revisedSpecificationState({ seq: 0, items: [] }, "# Spec\n\nFirst text.", "2026-11-10T00:00:00Z").specification!
 
 it.live("issues/specification-transitions", () => run("issues/specification-transitions", Input, (input) => effect {
-  const spec = input.spec === "none" ? undefined : input.spec === "empty" ? emptySpecification : input.spec === "fixture" ? fixtureSpecification : { ...fixtureSpecification, revision: Number.MAX_SAFE_INTEGER }
+  const spec = input.spec === "none" ? undefined : input.spec === "empty" ? emptySpecification : input.spec === "revised" ? revised : input.spec === "fixture" ? fixtureSpecification : { ...fixtureSpecification, revision: Number.MAX_SAFE_INTEGER }
   const before = { seq: 3, items: [], ...(spec === undefined ? {} : { specification: spec }), ...(input.history ? { specificationHistory: fixtureSpecificationHistory } : {}) }
   const current = (spec ?? emptySpecification).revision
   const text = input.text === "same" ? (spec ?? emptySpecification).text : input.text
@@ -38,7 +47,7 @@ it.live("issues/specification-transitions", () => run("issues/specification-tran
   const answered = input.provider === "stale" ? current - 1 : current
   const reviewers = Layer.succeed(SpecificationReviewers, {
     review: (reviewer) => input.provider === "fails" ? fail(new IssueFailure({ reason: "no-model", unwritten: true }))
-      : succeed({ verdict: "LGTM" as const, grade: "A", revision: answered, link: input.provider === "unlinked" ? "" : `#review-${reviewer}`, review: "Reviewed" }),
+      : succeed({ verdict: "LGTM" as const, grade: "A", revision: answered, link: input.provider === "unlinked" ? "" : `#review-${reviewer}`, ...(input.provider === "bare" ? {} : { review: "Reviewed" }) }),
   })
   const performed = performSpecification(before, request, input.scripted) as unknown as Effect.Effect<typeof before, IssueFailure>
   const result = try Effect.result(input.provider === "absent" ? performed : Effect.provide(performed, reviewers))
@@ -71,5 +80,41 @@ it.live("issues/specification-transitions", () => run("issues/specification-tran
   // Only the named reviewer's seat changes; a scripted Opus answers B+ until it has a verdict.
   if (REVIEWERS.some((r) => r !== reviewer && recorded[r] !== base[r]) || recorded[reviewer].revision !== current || recorded[reviewer].verdict !== "LGTM") return false
   const grade = provided ? "A" : scriptedGrade(reviewer, base.opus.verdict, fixtureSpecification[reviewer].grade)
-  return recorded[reviewer].grade === grade && grade === (provided ? "A" : reviewer === "opus" && base.opus.verdict === "" ? "B+" : fixtureSpecification[reviewer].grade)
-}, undefined, { chosen: unchangedChosen }))
+  if (recorded[reviewer].grade !== grade || grade !== (provided ? "A" : reviewer === "opus" && base.opus.verdict === "" ? "B+" : fixtureSpecification[reviewer].grade)) return false
+  // The history entry keeps the answer's review text, empty when the reviewer gave none.
+  const entry = result.success.specificationHistory?.at(-1) as { readonly reviewer: string; readonly review?: string } | undefined
+  return entry?.reviewer === reviewer && entry.review === (input.provider === "bare" ? "" : provided ? "Reviewed" : "Scripted review")
+}, undefined, { chosen: [...unchangedChosen, ...reviewChosen] }))
+
+const PROMPTS = ["Ask Claude Opus to review the specification", "Specification review by Codex Sol, please", "Please review the specification", "Ask Codex Astra about tuples"] as const
+const RequestInput = Schema.Struct({
+  prompt: Schema.Literals(PROMPTS),
+  read: Schema.Literals(["specification", "none"]),
+  act: Schema.Literals(["recorded", "none", "fails"]),
+})
+/** An issues service whose state has no specification, on its read and on its answer. */
+const requestChosen: ReadonlyArray<typeof RequestInput.Type> = [{ prompt: PROMPTS[0], read: "none", act: "none" }, { prompt: PROMPTS[1], read: "specification", act: "recorded" }]
+
+/**
+ * The chat agent's review request (`requestedSpecificationReview`) over an issues service that answers with a
+ * specification, without one (a live host may omit it), or fails. Oracle: a prompt that names no seat or is not about
+ * the specification requests nothing; otherwise exactly one spec-review at the read revision (0 with none), and the
+ * reply names the seat's verdict, grade and revision from the answer, blank when the answer has none.
+ */
+it.live("issues/requested-review", () => run("issues/requested-review", RequestInput, (input) => effect {
+  const asked: Array<IssueRequest> = []
+  const state = { seq: 3, items: [], role: "maintainer" as const }
+  const withSpec = { ...state, specification: fixtureSpecification }
+  const api: IssuesApi = {
+    read: () => succeed(input.read === "none" ? state : withSpec),
+    act: (request) => input.act === "fails" ? fail(new IssueFailure({ reason: "unavailable" })) : sync(() => { asked.push(request); return input.act === "none" ? state : withSpec }),
+  }
+  const result = try Effect.result(requestedSpecificationReview(api, input.prompt, "chat-k"))
+  const seat = /review.*specification|specification.*review/i.test(input.prompt) ? SEATS.find((entry) => input.prompt.includes(entry.name)) : undefined
+  if (seat === undefined) return result._tag === "Success" && result.success === undefined && asked.length === 0
+  if (input.act === "fails") return result._tag === "Failure" && result.failure.reason === "unavailable"
+  if (result._tag === "Failure" || asked.length !== 1 || asked[0]!.op !== "spec-review" || asked[0]!.reviewer !== seat.id || asked[0]!.key !== "chat-k") return false
+  if (asked[0]!.revision !== (input.read === "none" ? 0 : fixtureSpecification.revision)) return false
+  const answer = input.act === "none" ? undefined : fixtureSpecification[seat.id]
+  return result.success === `${seat.name} · ${answer?.verdict ?? ""} · ${answer?.grade ?? ""} · r${answer?.revision ?? 0}`
+}, undefined, { chosen: requestChosen }))

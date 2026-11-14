@@ -1,4 +1,7 @@
 import { it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { IssueFailure } from "../src/core/issueSchemas.vibe"
 import { fixtureIssues, makeIssueFactory, type FixturePerson } from "../src/core/IssuesFactory.vibe"
 import { agentRefused } from "../src/core/flowPolicyDecision.vibe"
 import { applyIssues, issuePermission } from "../src/core/conversation.vibe"
@@ -120,3 +123,29 @@ it.live("issues/identity-changes", () => run("issues/identity-changes", Schema.S
   return true
 }))
 
+
+/** The memory engine, except that every execution ends with `cause` (a host's engine faults, injected as a service). */
+const faultyEngine = (cause: Cause.Cause<FlowRuntime.StoreUnavailable>) => Layer.effect(FlowRuntime.FlowRuntime)(effect {
+  const real = try FlowRuntime.FlowRuntime
+  return { ...real, execute: () => Effect.failCause(cause) }
+}).pipe(Layer.provide(FlowEngine.layerMemory))
+const held = new FlowRuntime.ExecutionIdentityConflict({ executionId: "issues/a", field: "payload", expected: "a", actual: "b", message: "held identity" })
+const FAULTS = ["conflict", "conflict-and-defect", "defect", "unavailable"] as const
+
+/**
+ * A fixture issue write over an engine that fails: a held identity alone is the typed conflict; the same conflict
+ * beside another defect, or a defect alone, reaches the caller unchanged, every defect kept; a store outage is
+ * `unavailable`.
+ */
+it.live("issues/engine-faults", () => run("issues/engine-faults", Schema.Struct({ fault: Schema.Literals(FAULTS), op: Schema.Literals(["comment", "new"]) }), ({ fault, op }) => scoped(effect {
+  const cause = fault === "conflict" ? Cause.die(held) : fault === "conflict-and-defect" ? Cause.combine(Cause.die(held), Cause.die(new Error("second")))
+    : fault === "defect" ? Cause.die(new Error("first")) : Cause.fail(new FlowRuntime.StoreUnavailable({ executionId: "write" }))
+  const api = try makeIssueFactory("maintainer", undefined, undefined, faultyEngine(cause))
+  const request = { op, number: op === "comment" ? 1 : 0, parent: 0, title: op === "new" ? "Engine fault" : "", text: "Engine fault", example: "", prior: "", assignee: "", key: `fault-${fault}` } as const
+  const result = try exit(api.act(request))
+  if (result._tag !== "Failure") return false
+  const failure = Option.getOrUndefined(Cause.findErrorOption(result.cause))
+  if (fault === "conflict") return failure instanceof IssueFailure && failure.reason === "conflict"
+  if (fault === "unavailable") return failure instanceof IssueFailure && failure.reason === "unavailable"
+  return failure === undefined && result.cause.reasons.filter(Cause.isDieReason).length === cause.reasons.length
+}), undefined, { chosen: FAULTS.map((fault) => ({ fault, op: "comment" as const })) }))

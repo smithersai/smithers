@@ -1,17 +1,25 @@
 // The mock Factory's room edges (src/core/MockFactory.vibe) that the scripted targets reach only by chance: a journal
 // retained mid-reply or with an unanswered post, tour controls outside the protocol, with no tour and on a running one,
 // a post behind a running tour, a tour asked for right after a post, calls after the Factory's scope closed, and a
-// journal numbered out of order.
+// journal numbered out of order; retained posts that ask for a sandbox or an action, whose poster is unknown; a signed-in
+// agent's issue and wiki writes; and a Factory built over a host's own Digest.
 // Oracle: a known wiki page opens and an unknown one is refused as empty; a reply cut off by a reload fails in words and the next post is answered; a retained post is answered; a
 // malformed control is Unavailable and a control with no tour is Refused, both writing nothing; every control on a
 // driven walkthrough answers; a post behind a tour, or contended by one, is answered once the tour ends; a closed
-// Factory answers Unavailable.
+// Factory answers Unavailable. A retained post's reply never acts as the signed-in person: it starts no sandbox and
+// requests no action. An agent is refused what only a person may do, which the same person is not. A host's Digest is the
+// one the engine uses.
 import { it } from "@effect/vitest"
 import type { Event } from "../src/core/conversation.vibe"
 import { ConversationRead, Factory, Refused, Unavailable } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { MockJournal } from "../src/core/MockJournal.vibe"
 import { replyIdOf } from "../src/core/flows.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { AgentActions } from "../src/actions/agent.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { Digest } from "effect/crypto"
 import { run, Int, Text } from "./run.vibe"
 
 const Input = Schema.Struct({ text: Text, step: Int, action: Schema.Literals(["pause", "resume", "seek", "jump"]) })
@@ -140,3 +148,66 @@ it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, st
   if (late._tag !== "Failure" || !(Cause.squash(late.cause) instanceof Unavailable)) throw new Refuted({ check: 11 })
   return true
 })))
+
+/**
+ * Posts a page retained but nobody answered have no recorded poster (`postOwners`): the replies run as a guest while a
+ * maintainer is signed in, so a sandbox request starts nothing and a slash command requests no action.
+ */
+it.live("mock/retained-unowned", () => run("mock/retained-unowned", Input, ({ step }) => scoped(effect {
+  const room = `unowned-${step}`
+  const retained = journal({ [room]: [
+    { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "Please start a sandbox for this" },
+    { type: "Posted", seq: 2, id: "m2", clientId: "b", name: "Ada", text: "run /history" },
+  ] })
+  const actions = Context.get(try Layer.build(MockActions({ role: "maintainer", actor: "agent" }).pipe(Layer.provide(MockFactory))), Actions)
+  provide mockFactoryFor("maintainer").pipe(Layer.provide(retained)), AgentActions = { actions } {
+    const factory = try Factory
+    try settled(factory, room, "m2")
+    const sandbox = try reply(factory, room, "m1")
+    const action = try reply(factory, room, "m2")
+    if (sandbox?.done !== true || sandbox.text !== "Couldn't start a sandbox" || action?.done !== true || action.text !== "Action unavailable.") throw new Refuted({ check: 40 })
+    const events = Array.from(try Stream.runCollect(factory.events(room, 0).pipe(Stream.take((try (try ConversationRead).read(room, 0)).seq), Stream.timeout("20 seconds"))))
+    if (events.some((event) => event.type === "ActionRequested")) throw new Refuted({ check: 41 })
+    return true
+  }
+})), 120_000)
+
+/** A maintainer's agent (device sign-in) is refused a VIP verdict and a wiki proposal; the maintainer is not. */
+it.live("mock/agent-actor", () => run("mock/agent-actor", Input, ({ step }) => scoped(effect {
+  provide mockFactoryFor("maintainer") {
+    const factory = try Factory
+    const issue = { op: "accept" as const, number: 1 + step, parent: 0, title: "", text: "", example: "", prior: "", assignee: "", key: `accept-${step}` }
+    const page = { op: "propose" as const, page: "roadmap", base: "", text: `Agent text ${step}`, key: `propose-${step}` }
+    const reasonOf = (exit: Exit.Exit<unknown, { readonly reason: string }>) => exit._tag === "Failure" ? Option.getOrUndefined(Cause.findErrorOption(exit.cause))?.reason : "ok"
+    const asPerson = [reasonOf(try exit(factory.issues.act(issue))), reasonOf(try exit(factory.wiki.act(page)))]
+    try factory.accounts.signInAgent()
+    const asAgent = [reasonOf(try exit(factory.issues.act({ ...issue, key: `agent-${issue.key}` }))), reasonOf(try exit(factory.wiki.act({ ...page, key: `agent-${page.key}` })))]
+    if (asAgent.some((reason) => reason !== "forbidden") || asPerson.some((reason) => reason === "forbidden")) throw new Refuted({ check: 50 })
+    return true
+  }
+})), 120_000)
+
+/** A host that supplies its own Digest: the engine digests what it journals with it, and the reply still ends. */
+it.live("mock/host-services", () => run("mock/host-services", Input, ({ step }) => scoped(effect {
+  let digests = 0
+  const platform = try Effect.provide(Digest.Digest, Digest.layerWebCrypto)
+  // Every call through the host's Digest counts, whichever of its operations the engine uses.
+  const counting = Layer.succeed(Digest.Digest, new Proxy(platform, {
+    get: (target, key) => {
+      const value = Reflect.get(target, key) as unknown
+      return typeof value === "function" ? (...args: ReadonlyArray<unknown>) => { digests++; return Reflect.apply(value, target, args) } : value
+    },
+  }))
+  provide mockFactoryFor("maintainer").pipe(Layer.provide(counting)) {
+    const factory = try Factory
+    const room = `services-${step}`
+    try factory.post(room, "a", "Ada", "Please start a sandbox for this")
+    const post = (try (try ConversationRead).read(room, 0)).entries.find((entry) => entry.clientId === "a")
+    if (post === undefined) throw new Refuted({ check: 60 })
+    try settled(factory, room, post.id)
+    const answer = try reply(factory, room, post.id)
+    if (answer?.done !== true || answer.error !== "" || !answer.text.startsWith("Started ")) throw new Refuted({ check: 61 })
+    if (digests === 0) throw new Refuted({ check: 62 })
+    return true
+  }
+})), 120_000)

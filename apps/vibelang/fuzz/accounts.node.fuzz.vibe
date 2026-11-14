@@ -292,3 +292,37 @@ effect function brokerSite(input: BrokerSite) {
     return available === valid && (valid ? signIn.status === 302 && (signIn.headers.get("location") ?? "").startsWith(input.broker + "/") : signIn.status === 503)
   })
 }
+
+const BootInput = Schema.Struct({ initial: Schema.Literals(["1", "2", "", "01", "x"]), person: Schema.Literals(["1", "2"]), restart: Schema.Boolean })
+/** No initial maintainer configured, a malformed one, and an object restarted over storage it already migrated. */
+const bootChosen: ReadonlyArray<typeof BootInput.Type> = [{ initial: "", person: "1", restart: true }, { initial: "01", person: "1", restart: false }, { initial: "1", person: "1", restart: true }]
+
+/**
+ * The first maintainer is granted only for a positive decimal id with no leading zero (accountsDecision.vibe
+ * `bootstrapGrant`); anyone else signs in as new, and a malformed initial id is granted nothing. An object restarted over its storage keeps the session and role it
+ * issued, and the legacy-token migration it already ran leaves keys stored since untouched.
+ */
+it.live("accounts/bootstrap-and-restart", () => run("accounts/bootstrap-and-restart", BootInput, ({ initial, person, restart }) => effect {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const storage = raw as unknown as Objects.Storage
+  userPerson = person
+  failExchange = false
+  const configured = { ...setup("Fuzz User"), initialMaintainer: initial }
+  const first = try Effect.provideService(Accounts.make("accounts-boot", storage, configured), HttpClient.HttpClient, offlineClient)
+  const signIn = try ask(first, { cookies: new Map() }, "GET", "/api/auth/sign-in")
+  const state = [...(try promise(() => storage.list({ prefix: "sign-in/" }))).keys()].at(-1)?.slice("sign-in/".length)
+  const callback = try ask(first, signIn.jar, "GET", `/api/auth/callback?state=${state}&code=code`)
+  const role = /^[1-9][0-9]*$/.test(initial) && initial === person ? "maintainer" : "new"
+  const seen = try ask(first, callback.jar, "GET", "/api/auth/session")
+  const before = try Effect.try(() => JSON.parse(seen.text))
+  if (before.id !== person || before.role !== role) return false
+  // An initial id that is not a positive decimal grants nobody: neither it nor the signed-out owner ("") is a maintainer.
+  if (!/^[1-9][0-9]*$/.test(initial) && ((try first.role(initial)) === "maintainer" || (try first.role("")) === "maintainer")) return false
+  if (!restart) return true
+  // A key under the migrated prefix, stored after the migration ran: a restart must not run it again.
+  try promise(() => storage.put("github/after-migration", true))
+  const second = try Effect.provideService(Accounts.make("accounts-boot", storage, configured), HttpClient.HttpClient, offlineClient)
+  const again = try ask(second, callback.jar, "GET", "/api/auth/session")
+  const after = try Effect.try(() => JSON.parse(again.text))
+  return after.id === person && after.role === role && (try promise(() => storage.get("github/after-migration"))) === true
+}, undefined, { chosen: bootChosen }))

@@ -1,7 +1,7 @@
 // The sandbox protocol and the per-person allowance object, over real SQLite and the real durable engine. A Machines
 // service that fails on demand stands in for live Containers, which stay off here.
 import { it } from "@effect/vitest"
-import { HttpClientRequest, HttpServerRequest } from "effect/http"
+import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Refused, Unavailable, type SandboxSnapshot } from "../src/core/Factory.vibe"
 import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
 import type { Machines } from "../src/core/sandboxHost.vibe"
@@ -101,7 +101,18 @@ const surfaceChosen: ReadonlyArray<typeof HttpInput.Type> = [
   { method: "POST", route: "stop", body: "no-generation", length: "true", gateway: "ok" },
   { method: "POST", route: "command", body: "no-generation", length: "true", gateway: "ok" },
 ]
+/** A read the gateway refuses with a reason: the answer carries the refusal and its reason, at the refusal's status. */
+effect function reasonedRefusal() {
+  const refusing = () => fail(new Refused({ refusal: "forbidden", reason: "container-binding" }))
+  const gateway: Gateway = { sandbox: refusing, startSandbox: refusing, stopSandbox: refusing, sandboxCommand: refusing }
+  const delivered = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.get(`${ORIGIN}/api/sandboxes/c-1`)))
+  const response = try Effect.provideService(sandboxRequest(gateway), HttpServerRequest.HttpServerRequest, delivered)
+  const text = try promise(() => HttpServerResponse.toWeb(response).text())
+  return response.status === 403 && text === JSON.stringify({ refusal: "forbidden", reason: "container-binding" })
+}
+
 it.live("sandbox/http-surface", () => run("sandbox/http-surface", HttpInput, (input) => effect {
+  if (!(try reasonedRefusal())) return false
   // Every execution: each signed-out write with a well-formed body, refused by the signed-out gateway.
   for (const route of ["start", "stop", "command"] as const) {
     if (!(try surface({ method: "POST", route, body: "valid", length: "true", gateway: "signed-out" }))) return false

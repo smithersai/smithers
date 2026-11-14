@@ -9,6 +9,7 @@ import { ActionDevice } from "../src/actions/execution.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import * as Runs from "../worker/ActionRuns.vibe"
+import { REASONS } from "../worker/Reply.vibe"
 import { ExecutionObject } from "@smthrs/platform-cloudflare"
 import { Post, Tour } from "../src/core/flows.vibe"
 import { Show } from "../src/history/tools.vibe"
@@ -28,7 +29,8 @@ effect function bounded<A, E, R>(label: string, body: A!E!R) {
 
 const Config = Schema.Struct({
   flow: Schema.Literals(["vibelang/Post", "vibelang/Tour"]),
-  reply: Schema.Literals(["answer", "refused", "credit", "garbage", "prose"]),
+  // `uncounted`: an answer whose reported usage totals past the safe integers, so the budget cannot charge it.
+  reply: Schema.Literals(["answer", "refused", "credit", "garbage", "prose", "uncounted"]),
   text: Text,
   ledger: Schema.Literals(["admit", "refuse", "die"]),
   demote: Schema.Literals(["none", "new", "community", "contributor"]),
@@ -47,8 +49,11 @@ const scriptOf = (input: typeof Config.Type): Scripted => {
     case "refused": return { kind: "status", status: 400, code: "content_policy" }
     case "credit": return { kind: "status", status: 402, code: "out_of_credit" }
     case "garbage": return { kind: "garbage" }
+    case "uncounted": return { kind: "stream", pieces: [cell(JSON.stringify(`Answer: ${input.text}`))], prompt: Number.MAX_SAFE_INTEGER, completion: 1 }
   }
 }
+/** A plain post whose model answers with usage the budget cannot count. */
+const uncountedChosen: ReadonlyArray<typeof Input.Type> = [[{ flow: "vibelang/Post", reply: "uncounted", text: "x", ledger: "admit", demote: "none", alarms: 2, cancel: "none" }]]
 
 /**
  * A run object whose conversation log dies on the reply's first settle write (`finish` or `fail`), as a reset store
@@ -91,8 +96,14 @@ it.live("actions/run-answers", () => run("actions/run-answers", Input, (configs)
         }
         if (started !== null) throw new Finding({ report: `a permitted ${input.flow} start answered ${started}` })
         const settled = new Map<string, string>()
+        // The reply's own log line, at Info, for the answer whose usage cannot be counted (the suite logs Warn and up).
+        const outcomes: Array<unknown> = []
+        const capture = Layer.mergeAll(Logger.layer([Logger.make((options) => {
+          if (String(options.message) === "vibelang.reply.agent") outcomes.push(options.fiber.getRef(References.CurrentLogAnnotations).outcome)
+        })]), Layer.succeed(References.MinimumLogLevel, "Info"))
         for (let turn = 0; turn < input.alarms; turn++) {
-          const outcome = try exit(object.host.alarm(spend, model, product))
+          const alarm = object.host.alarm(spend, model, product)
+          const outcome = try exit(input.reply === "uncounted" ? Effect.provide(alarm, capture) : alarm)
           if (outcome._tag === "Failure" && input.ledger !== "die") throw new Finding({ report: "an alarm failed with a working ledger" })
           if (turn === 0 && input.cancel !== "none") {
             const answer = try object.host.cancel(input.cancel === "child" ? `${id}-reply` : id, "maintainer", w.person.id)
@@ -118,6 +129,12 @@ it.live("actions/run-answers", () => run("actions/run-answers", Input, (configs)
             if (reply.error !== "" && child.state === "passed") throw new Finding({ report: "a failed reply's run passed" })
           }
         }
+        // An answer whose usage cannot be counted is not shown: the reply fails with the general reason.
+        if (input.reply === "uncounted" && input.flow === "vibelang/Post" && input.ledger === "admit" && input.cancel === "none" && input.demote === "none" && input.settle === undefined) {
+          const reply = (try object.sequencer.read(0)).entries.find((entry) => entry.author === "agent")
+          if (reply?.done !== true || reply.error !== REASONS.failed) throw new Finding({ report: `an uncounted answer reads ${reply?.done === true ? "done" : "not done"} with ${reply?.error === REASONS.failed ? "the general reason" : "another reason"}` })
+          if (!outcomes.includes("invalid-usage")) throw new Finding({ report: "an uncounted answer's log names no invalid usage" })
+        }
         // A reply whose execution failed is failed in the conversation and in its run, never left running.
         if (input.settle !== undefined && input.flow === "vibelang/Post" && input.ledger === "admit" && input.cancel === "none" && input.demote === "none") {
           const reply = (try object.sequencer.read(0)).entries.find((entry) => entry.author === "agent")
@@ -128,7 +145,7 @@ it.live("actions/run-answers", () => run("actions/run-answers", Input, (configs)
     }
   }
   return true
-})))
+}), undefined, { chosen: uncountedChosen }))
 
 /**
  * Every execution runs both held states: the conversation log dies on the reply's first settle write, and the reply

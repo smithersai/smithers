@@ -370,3 +370,21 @@ it.live("sandbox/host-limits", () => run("sandbox/host-limits", Schema.Struct({ 
     return true
   }
 }))
+
+/**
+ * A host that never saved state, under an impossible clock: every call fails closed as Unavailable before writing,
+ * and with no saved ledger there is nothing to meter or stop (sandboxHost.vibe `load`).
+ */
+it.live("sandbox/host-first-clock", () => run("sandbox/host-first-clock", Schema.Struct({ role: Schema.Literals(["viewer", "contributor", "maintainer"]), call: Schema.Literals(["snapshot", "start", "tick"]) }), ({ role, call }) => effect {
+  const store = try memoryStore()
+  const stops = try Ref.make(0)
+  const machines: Machines = { ...flakyMachines, start: () => Effect.void, stop: () => Ref.update(stops, (n) => n + 1) }
+  provide mockPolicy(role) {
+    const host = try makeSandboxHost(store, machines)
+    const work = call === "snapshot" ? Effect.asVoid(host.snapshot("c0")) : call === "start" ? Effect.asVoid(host.start("c0", "op-1")) : Effect.asVoid(host.tick())
+    const answer = try exit(Effect.provide(work, brokenClock))
+    const failure = answer._tag === "Failure" ? Cause.squash(answer.cause) : undefined
+    if (!(failure instanceof Unavailable) || failure.reason !== "invalid-clock") return false
+    return (try Ref.get(store.state)) === undefined && (try Ref.get(store.receipts)).size === 0 && (try Ref.get(stops)) === 0
+  }
+}, undefined, { chosen: [{ role: "contributor", call: "snapshot" }] }))

@@ -17,6 +17,8 @@ import { run, Int, STEERED_FLOOR } from "./run.vibe"
 const PROMPTS = {
   wiki: "Open the wiki rulings page",
   draft: "Draft an edit to the wiki roadmap",
+  // The decisions index is built, not edited: a contributor's draft of it fails, a non-contributor's is refused.
+  index: "Draft an edit to the wiki decisions",
   issue: "File an issue: Module cycles crash the checker",
   split: "Split #38 into three children, linked under it.",
   sandbox: "Please start a sandbox for this",
@@ -28,7 +30,7 @@ const PROMPTS = {
 const Input = Schema.Struct({
   walk: Schema.Boolean,
   role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
-  kinds: Schema.Array(Schema.Literals(["wiki", "draft", "issue", "split", "sandbox", "history", "review", "action", "unnamed"])).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
+  kinds: Schema.Array(Schema.Literals(["wiki", "draft", "index", "issue", "split", "sandbox", "history", "review", "action", "unnamed"])).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
   room: Int,
 })
 
@@ -43,6 +45,7 @@ function expected(kind: keyof typeof PROMPTS, text: string, maintainer: boolean,
   switch (kind) {
     case "wiki": return text === "Opened rulings."
     case "draft": return text.startsWith("Drafted an edit to ") ? !viewer : text === "Only contributors can draft wiki edits." ? !maintainer : text === "Couldn't draft that edit." && !maintainer
+    case "index": return text === (contributes ? "Couldn't draft that edit." : "Only contributors can draft wiki edits.")
     case "issue": return /^Filed #[0-9]+\.\n\n\[Open issue\]\(#issue-[0-9]+\)$/.test(text) ? !viewer : text === "No issue filed." && !maintainer
     case "split": return text === "Split #38 into three children, linked under it.\n\n[Open #38](#issue-38)" ? !viewer : /^Filed [0-2] children\.\n\n\[Open #38\]\(#issue-38\)$/.test(text) && !maintainer
     case "sandbox": return text.startsWith("Started ") ? !viewer : text === "Couldn't start a sandbox" && !maintainer
@@ -58,7 +61,7 @@ function expected(kind: keyof typeof PROMPTS, text: string, maintainer: boolean,
 it.live("mock/scripted-actions", () => run("mock/scripted-actions", Input, ({ walk, role, kinds: drawn, room }) => effect {
   // Every execution asks for each action kind once, then the drawn ones, so none depends on the draw. History, whose
   // first read imports the large seed module, is drawn only; other targets reach its reply.
-  const kinds = [...(["wiki", "draft", "issue", "split", "sandbox", "review", "action", "unnamed"] as const), ...(walk ? [] : drawn)]
+  const kinds = [...(["wiki", "draft", "index", "issue", "split", "sandbox", "review", "action", "unnamed"] as const), ...(walk ? [] : drawn)]
   // The app binds its actions service for the agent; the mock's actions run over their own mock Factory.
   const actions = Context.get(try Layer.build(MockActions({ role, actor: "agent" }).pipe(Layer.provide(MockFactory))), Actions)
   provide mockFactoryFor(role), AgentActions = { actions } {

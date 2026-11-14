@@ -98,6 +98,15 @@ it.live("sandbox/machine-object", () => run("sandbox/machine-object", MachineInp
       || changed.ok || reason(changed) !== "receipt-conflict" || pending.ok || reason(pending) !== "receipt-conflict" || local.state.executed.length !== ran
       || expired.ok || reason(expired) !== "lease-expired") return false
   }
+  // Every execution: a command on a machine started but never leased (a fresh object; a restart keeps the previous
+  // generation's lease end) has no lease to run under, and does not run.
+  {
+    const fresh = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
+    const unleasedMachine = try machineObject(fresh.box as unknown as MachineBox, stateOf(try Effect.try(() => objectStorage()), "m-unleased"))
+    const started = try unleasedMachine.apply("start", 1, "op-unleased-start", "")
+    const unleased = try unleasedMachine.apply("command", 1, "op-unleased", "echo hi")
+    if (!started.ok || unleased.ok || !("reason" in unleased) || unleased.reason !== "lease-expired" || fresh.state.executed.length !== 0) return false
+  }
   for (const step of [...lifecycle, ...faultWalk, ...input.steps]) {
     faulted(local.faults, step.fault)
     const target = step.next ? generation + 1 : step.current ? generation : step.generation

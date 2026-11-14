@@ -5,16 +5,19 @@ import { allowed, bundled, registration } from "../src/actions/catalog.vibe"
 import { ACTIONS_PATH } from "../src/actions/wire.vibe"
 import * as ActionIdentity from "../worker/ActionIdentity.vibe"
 import * as ActionsHttp from "../worker/ActionsHttp.vibe"
-import { run, Finding, Int } from "./run.vibe"
+import { run, virtually, Finding, Int } from "./run.vibe"
 
 const ORIGIN = "https://actions.invalid"
 const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
 const Input = Schema.Struct({
   method: Schema.Literals(["GET", "POST", "DELETE", "PUT"]),
-  route: Schema.Literals(["list", "commands", "runs", "run", "rerun", "events", "bad-id", "deep"]),
-  body: Schema.Literals(["none", "garbage", "valid", "bad-id", "huge", "bad-length"]),
+  route: Schema.Literals(["list", "commands", "runs", "all-runs", "run", "rerun", "events", "bad-id", "deep"]),
+  body: Schema.Literals(["none", "garbage", "valid", "bad-id", "huge", "bad-length", "stalled"]),
   role: Role,
   agent: Schema.Boolean,
+  // A principal with no display name (a session that never stored one) acts as "Guest". Optional, so values saved
+  // before it decode; absent is named, as every principal was then.
+  named: Schema.optionalKey(Schema.Boolean),
   door: Schema.Literals(["button", "slash", "agent"]),
   foreign: Schema.Boolean,
   flow: Int,
@@ -23,9 +26,11 @@ const Input = Schema.Struct({
 })
 
 /** A maintainer's start and rerun with each body the boundary refuses before the API sees it. */
-const bodyChosen: ReadonlyArray<typeof Input.Type> = (["runs", "rerun"] as const).flatMap((route) => (["none", "garbage", "bad-id", "huge", "bad-length"] as const).map((body) => ({
-  method: "POST" as const, route, body, role: "maintainer" as const, agent: false, door: "button" as const, foreign: false, flow: 0, refusal: "none" as const, found: true,
+const bodyChosen: ReadonlyArray<typeof Input.Type> = (["runs", "rerun"] as const).flatMap((route) => (["none", "garbage", "bad-id", "huge", "bad-length", "stalled", "valid"] as const).map((body) => ({
+  method: "POST" as const, route, body, role: "maintainer" as const, agent: false, named: body !== "valid", door: "button" as const, foreign: false, flow: 0, refusal: "none" as const, found: true,
 })))
+/** The runs list with no flow named lists every flow. */
+const listChosen: typeof Input.Type = { ...bodyChosen[0]!, method: "GET", route: "all-runs", body: "none" }
 
 /** Every request shape gets a typed status, and the API is never asked to act on a refused request. */
 it.live("actions/http-surface", () => run("actions/http-surface", Input, (input) => effect {
@@ -35,20 +40,21 @@ it.live("actions/http-surface", () => run("actions/http-surface", Input, (input)
   const refusal = input.refusal === "none" ? null : input.refusal
   const stored = { id: "arun1" } as unknown as Run
   const api: ActionsHttp.ActionsApi = {
-    list: () => succeed([]),
-    start: (request) => effect { calls.push(`start:${request.actor}`); return refusal },
-    rerun: () => effect { calls.push("rerun"); return refusal },
+    list: (flow) => effect { calls.push(`list:${flow}`); return [] },
+    start: (request) => effect { calls.push(`start:${request.actor}:${request.name}`); return refusal },
+    rerun: (_id, _next, _role, _owner, caller) => effect { calls.push(`rerun:${caller?.name}`); return refusal },
     cancel: () => effect { calls.push("cancel"); return refusal },
     read: () => succeed(input.found ? [stored] : []),
     events: () => succeed(HttpServerResponse.empty({ status: 200 })),
   }
   const identity: ActionIdentity.ActionIdentity.Shape = {
-    request: () => succeed({ owner: input.role === "viewer" ? "" : "1", role: input.role, name: "Ada", agent: input.agent }),
+    request: () => succeed({ owner: input.role === "viewer" ? "" : "1", role: input.role, ...(input.named !== false ? { name: "Ada" } : {}), agent: input.agent }),
     role: () => succeed(input.role),
   }
   const path = input.route === "list" ? ACTIONS_PATH
     : input.route === "commands" ? `${ACTIONS_PATH}/commands`
     : input.route === "runs" ? `${ACTIONS_PATH}/runs?flow=${encodeURIComponent(flow)}`
+    : input.route === "all-runs" ? `${ACTIONS_PATH}/runs`
     : input.route === "run" ? `${ACTIONS_PATH}/runs/arun1`
     : input.route === "rerun" ? `${ACTIONS_PATH}/runs/arun1/rerun`
     : input.route === "events" ? `${ACTIONS_PATH}/runs/arun1/events`
@@ -57,33 +63,40 @@ it.live("actions/http-surface", () => run("actions/http-surface", Input, (input)
   const valid = { id: "anext1", flow, input: {}, door: input.door }
   const text = input.body === "none" ? undefined : input.body === "garbage" ? "{not json" : input.body === "bad-id" ? JSON.stringify({ ...valid, id: "!" }) : input.body === "huge" ? "x".repeat(32_001) : JSON.stringify(valid)
   let request = HttpClientRequest.make(input.method)(`${ORIGIN}${path}`)
-  if (text !== undefined && input.method !== "GET") request = HttpClientRequest.bodyText(request, text)
+  // A stalled body is a stream that never ends: the boundary stops reading after 3 seconds.
+  if (input.body === "stalled" && input.method !== "GET") request = HttpClientRequest.bodyStream(request, Stream.never)
+  else if (text !== undefined && input.method !== "GET") request = HttpClientRequest.bodyText(request, text)
   const web = try HttpClientRequest.toWeb(request)
   // A Web Request forbids these two headers, so they go on the server request a real proxy would deliver.
   const delivered = HttpServerRequest.fromWeb(web)
   const server = delivered.modify({ headers: { ...delivered.headers, ...(input.foreign ? { origin: "https://evil.invalid" } : {}), ...(input.body === "bad-length" ? { "content-length": "not-a-number" } : {}) } })
-  const response = try Effect.provideService(
+  const handled = Effect.provideService(
     ActionsHttp.handle(api, new URL(path, ORIGIN)).pipe(Effect.provideService(ActionIdentity.ActionIdentity, identity)),
     HttpServerRequest.HttpServerRequest,
     server,
   )
+  const answered = try virtually(handled, 5)
+  if (Option.isNone(answered)) throw new Finding({ report: `${input.method} ${input.route} with a ${input.body} body outlived its read deadline` })
+  const response = answered.value
   if (![200, 202, 400, 403, 404, 408, 409, 413].includes(response.status)) return false
   if (input.foreign && input.method !== "GET") return response.status === 403 && calls.length === 0
   // A body the boundary cannot read or decode is the caller's: 413 past the limit, 400 otherwise, and no call.
   if (input.method === "POST" && (input.route === "runs" || input.route === "rerun")) {
-    const refused = input.body === "huge" ? 413 : input.body === "none" || input.body === "garbage" || input.body === "bad-id" ? 400 : undefined
+    const refused = input.body === "huge" ? 413 : input.body === "stalled" ? 408 : input.body === "none" || input.body === "garbage" || input.body === "bad-id" ? 400 : undefined
     if (refused !== undefined && (response.status !== refused || calls.length !== 0)) throw new Finding({ report: `${input.route} with a ${input.body} body answered ${response.status}` })
   }
   if (input.method === "POST" && input.route === "runs") {
     const permitted = allowed(input.role, registration(flow))
     const admitted = input.body === "valid" && permitted
     if (admitted !== (calls.length === 1)) return false
-    if (admitted && calls[0] !== `start:${input.agent || input.door === "agent" ? "agent" : "person"}`) return false
+    if (admitted && calls[0] !== `start:${input.agent || input.door === "agent" ? "agent" : "person"}:${input.named !== false ? "Ada" : "Guest"}`) return false
     if (admitted) return response.status === (refusal === null ? 202 : refusal === "forbidden" ? 403 : 409)
     if (input.body === "valid") return response.status === 403
   }
-  if (input.method === "POST" && input.route === "rerun" && input.body === "valid") return calls.length === 1 && response.status === (refusal === null ? 202 : refusal === "forbidden" ? 403 : 404)
+  if (input.method === "POST" && input.route === "rerun" && input.body === "valid") return calls.length === 1 && calls[0] === `rerun:${input.named !== false ? "Ada" : "Guest"}` && response.status === (refusal === null ? 202 : refusal === "forbidden" ? 403 : 404)
+  // The runs list reads the flow it names, and every flow when it names none.
+  if (input.method === "GET" && (input.route === "runs" || input.route === "all-runs")) return response.status === 200 && calls.length === 1 && calls[0] === `list:${input.route === "runs" ? flow : ""}`
   if (input.method === "DELETE" && input.route === "run") return calls.length === 1 && response.status === (refusal === null ? 200 : refusal === "forbidden" ? 403 : 404)
   if (input.route === "bad-id") return response.status === 404
   return true
-}, undefined, { chosen: bodyChosen }))
+}, undefined, { chosen: [...bodyChosen, listChosen] }))

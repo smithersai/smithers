@@ -1,0 +1,59 @@
+// Small decisions of worker/ and src/core/ on arbitrary arguments, each against its contract written again here, with
+// a chosen input for each arm the hosts reach only on a rare stream, clock, length or error (0015, "Branch arms"):
+// how a tour stopped when its stream ended with no event (src/core/flows.vibe `stoppedBy`), the elapsed time when the
+// clock did not move forward (src/core/sandboxDecision.vibe), where a transcript longer than 32768 units is kept from
+// (src/core/sandboxHostDecision.vibe), a wiki file's page id without `.md` and the earlier of two fields
+// (src/core/wikiBuildDecision.vibe), and the broker reason of an error with no details (worker/GitHubDelegate.vibe).
+import { it } from "@effect/vitest"
+import type { Event } from "../src/core/conversation.vibe"
+import { stoppedBy } from "../src/core/flows.vibe"
+import { elapsedMilliseconds } from "../src/core/sandboxDecision.vibe"
+import { transcriptStart } from "../src/core/sandboxHostDecision.vibe"
+import { earlier, pageId } from "../src/core/wikiBuildDecision.vibe"
+import { refusalOf } from "../worker/GitHubDelegate.vibe"
+import { run } from "./run.vibe"
+
+const Count = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 70000 }))
+const Field = Schema.Int.check(Schema.isBetween({ minimum: -2, maximum: 40 }))
+const ERRORS = ["undefined", "null", "plain", "empty-details", "delegation", "refused"] as const
+const Input = Schema.Struct({
+  last: Schema.Literals(["none", "ReplyFinished", "ReplyFailed", "TourEnded"]),
+  earlier: Count, later: Count, length: Count,
+  file: Schema.Literals(["", "a", "a.md", ".md", "md", "a.mdx", "decisions/0015.md"]),
+  a: Field, b: Field,
+  error: Schema.Literals(ERRORS),
+})
+
+/** One input per rare arm: an empty stream, a clock that stood still, a long transcript, a file that is not `.md`, both fields present in either order, and each error shape. */
+const base: typeof Input.Type = { last: "none", earlier: 5, later: 5, length: 40000, file: "a", a: 3, b: 7, error: "undefined" }
+const chosen: ReadonlyArray<typeof Input.Type> = [
+  base,
+  { ...base, last: "ReplyFinished", earlier: 9, later: 2, length: 32769, file: "a.md", a: 7, b: 3, error: "plain" },
+  { ...base, last: "TourEnded", earlier: 0, later: 1, length: 32768, file: "md", a: 4, b: 4, error: "empty-details" },
+  ...ERRORS.map((error) => ({ ...base, error })),
+]
+
+/** The error each shape builds, and the broker reason it carries: only a delegation refusal or its detail names one. */
+function errorOf(shape: typeof ERRORS[number]): unknown {
+  switch (shape) {
+    case "undefined": return undefined
+    case "null": return null
+    case "plain": return new Error("transport")
+    case "empty-details": return { _tag: "IntegrationError", details: {} }
+    case "delegation": return { _tag: "IntegrationError", details: { delegation: "fork" } }
+    default: return { _tag: "@smthrs/integrations/DelegationRefused", reason: "install" }
+  }
+}
+
+it.live("decisions/core-arms", () => run("decisions/core-arms", Input, (input) => {
+  const last = input.last === "none" ? Option.none<Event>() : Option.some({ type: input.last, seq: 1, id: "t" } as unknown as Event)
+  if (stoppedBy(last) !== (input.last === "ReplyFinished" ? "finished" : "ended")) return false
+  if (elapsedMilliseconds(input.earlier, input.later) !== Math.max(0, input.later - input.earlier)) return false
+  const start = transcriptStart(input.length)
+  // `slice(-32768)` of a transcript of that length keeps exactly what starts here.
+  if (start !== "x".repeat(input.length).length - "x".repeat(input.length).slice(-32768).length) return false
+  if (pageId(input.file) !== input.file.replace(/\.md$/, "")) return false
+  if (earlier(input.a, input.b) !== (input.a < 0 ? input.b : input.b < 0 ? input.a : Math.min(input.a, input.b))) return false
+  const reason = refusalOf(errorOf(input.error))
+  return reason === (input.error === "delegation" ? "fork" : input.error === "refused" ? "install" : undefined)
+}, undefined, { chosen }))

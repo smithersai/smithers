@@ -27,7 +27,7 @@ const KEY = Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 const STATE = "__Host-vibelang-sign-in"
 
 const Op = Schema.Struct({
-  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall", "lost", "reads", "queued", "propose", "revoke", "file"]),
+  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall", "lost", "reads", "queued", "propose", "revoke", "file", "vanishing-write"]),
   person: Schema.Literals(["1", "2", "7", "0"]),
   tamper: Schema.Literals(["none", "none", "state", "cookie", "code", "replay", "null-same", "null-cross", "foreign-origin", "expired", "corrupt", "huge"]),
   query: Schema.Literals(["", "?wiki-page=index", "?wiki-page=../x", "?resume-op=new&resume-key=k1", "?resume-op=new", "?resume-op=bad&resume-key=k1", "?resume-op=new&resume-key=k1&resume-recovery=r1", "?resume-recovery=r1", "?resume-op=new&resume-key=k1&resume-recovery=bad%20key"]),
@@ -103,8 +103,18 @@ effect function world(slug: boolean, brokered: boolean, named: boolean, legacy =
   const durable = { ...broker, callback: (...args: Parameters<typeof broker.callback>) => inFlow(broker.callback(...args)), consent: (...args: Parameters<typeof broker.consent>) => inFlow(broker.consent(...args)) }
   const serveBroker = GitHub.Auth.Broker.serve(durable, BROKER)
   // The site's own HttpClient: smithers.sh's routes, served in process; anything else is unreachable.
+  // When armed, the next call to smithers.sh first ends every session: the person signs out in another tab while
+  // their delegated write is in flight.
+  let vanish = false
   const client = HttpClient.make((request, url) => effect {
-    if (smithers !== undefined && url.origin !== BROKER) return try smithers.http.execute(request)
+    if (smithers !== undefined && url.origin !== BROKER) {
+      if (vanish) {
+        vanish = false
+        const sessions = [...(try promise(() => storage.list({ prefix: "session/" }))).keys()]
+        for (const key of sessions) try promise(() => storage.delete(key))
+      }
+      return try smithers.http.execute(request)
+    }
     const response = try Effect.provideService(serveBroker, HttpServerRequest.HttpServerRequest, HttpServerRequest.fromClientRequest(request))
     return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(response))
   })
@@ -142,7 +152,7 @@ effect function world(slug: boolean, brokered: boolean, named: boolean, legacy =
     return { status: response.status, location: answer.headers.get("location") ?? "", text, cookies } satisfies Answer
   }
   const revoke = smithers === undefined ? Effect.void : smithers.end()
-  return { storage, accounts, ask, jars, setLost, setSqlLost, setCustodian: (healthy: boolean) => { custodian = healthy }, issued, revoke }
+  return { storage, accounts, ask, jars, setLost, setSqlLost, setCustodian: (healthy: boolean) => { custodian = healthy }, issued, revoke, vanishNext: () => { vanish = true } }
 }
 type World = Effect.Success<ReturnType<typeof world>>
 const kvOf = (w: World) => (w.storage as unknown as { readonly kv: ReadonlyMap<string, unknown> }).kv
@@ -205,6 +215,10 @@ it.live("accounts/broker-sequences", () => run("accounts/broker-sequences", Inpu
   const as = (kind: Op["kind"], person: Op["person"], role: Op["role"] = "community", n = 0): Op => ({ kind, person, tamper: "none", query: "", answer: "connect", install: true, role, body: "valid", n })
   const ended = [as("sign-in", "1"), as("grant", "1", "contributor", 6), as("sign-out", "1"), as("sign-in", "7"), as("connect", "7"), as("revoke", "7"), as("propose", "7", "community", 2), as("connect", "7"), as("file", "7", "community", 3)]
   if (!(try play({ ...input, ops: ended }, true, false, false, true))) return false
+  // The same ended delegation, with the person signed out elsewhere while each write is in flight: a wiki proposal,
+  // then (signed in and connected again) a new issue (check 300).
+  const vanishing = [...ended.slice(0, 6), as("vanishing-write", "7", "community", 0), as("sign-in", "7"), as("connect", "7"), as("vanishing-write", "7", "community", 1)]
+  if (!(try play({ ...input, ops: vanishing }, true, false, false, true))) return false
   // smithers.sh's real delegation to a GitHub that serves the issue repository: a new person's first issue lands and
   // records their participation (checks 273 and 274).
   if (!(try play({ ...input, ops: [as("sign-in", "7"), as("connect", "7"), as("file", "7", "community", 4)] }, true, false, false, true, true))) return false
@@ -507,6 +521,22 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
         const connected = expected[1] === "connect" && held && proposal.status === 503
         if (!connected && (proposal.status !== expected[0] || reason !== expected[1])) return try refute(op.kind, 260)
         if (signedIn !== undefined && reason === "connect" && kvOf(w).has("delegation/" + signedIn.id)) return try refute(op.kind, 261)
+        break
+      }
+      case "vanishing-write": {
+        // The person signs out in another tab while their write runs on a delegation smithers.sh has ended: the write is
+        // answered `connect`, and with no session left the site cannot tell whose copy to forget, so it forgets none.
+        if (signedIn === undefined || !real || !revoked) break
+        const wiki = op.n % 2 === 0
+        const held = [...kvOf(w).keys()].filter((key) => key.startsWith("delegation/")).length
+        w.vanishNext()
+        const body = wiki ? { op: "propose", page: "index", base: "", text: "Fuzzed", key: `v${op.n}` } : { op: "new", number: 0, parent: 0, title: "Fuzzed", text: "Fuzzed", assignee: "", example: "", prior: "", key: `v${op.n}` }
+        const answer = try seen(try stepped(w.ask(SITE + (wiki ? "/api/wiki" : "/api/issues"), { method: "POST", origin: SITE, body: JSON.stringify(body) }), 20))
+        const reason = answer.status === 200 ? "" : ((try parsed(answer.text)) as { readonly reason?: string }).reason
+        const session = (try parsed((try w.ask(SITE + "/api/auth/session")).text)) as { readonly id: string }
+        const kept = [...kvOf(w).keys()].filter((key) => key.startsWith("delegation/")).length
+        if (answer.status !== 401 || reason !== "connect" || session.id !== "" || kept !== held) return try refute(op.kind, 300)
+        signedIn = undefined
         break
       }
       case "revoke": {

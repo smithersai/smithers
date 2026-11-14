@@ -1,0 +1,77 @@
+// The action directory's edges (worker/ActionDirectory.vibe) that the object targets reach only on legacy or faulty
+// hosts: a request journaled with no owner, a reply child whose parent's route was never reserved (an object older
+// than route keys), a start whose downstream service fails or dies with a held identity and a second defect, and a cancel of a run whose object stores no
+// request (one started before requests were stored). Oracle: an ownerless request is judged as a signed-out caller's,
+// whatever role it carries; an unreserved child resolves to its stored parent; a downstream failure stays that failure,
+// never an identity conflict, and lists no run; a run with no stored request is judged by its own flow.
+import { it } from "@effect/vitest"
+import { FlowRuntime } from "@smthrs/flow"
+import type { RunRequest } from "../src/actions/wire.vibe"
+import { allowed, registration } from "../src/actions/catalog.vibe"
+import * as Directory from "../worker/ActionDirectory.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { request, world } from "../test/support/actionObjects.vibe"
+import { run, Finding, Int } from "./run.vibe"
+
+const Input = Schema.Struct({
+  flow: Schema.Literals(["vibelang/Tour", "vibelang/Post"]),
+  role: Schema.Literals(["viewer", "contributor", "maintainer"]),
+  fault: Schema.Literals(["unreachable", "conflict-and-defect"]),
+  n: Int,
+})
+/** Each flow without an owner, and each downstream fault. */
+const chosen: ReadonlyArray<typeof Input.Type> = [
+  { flow: "vibelang/Post", role: "maintainer", fault: "unreachable", n: 0 },
+  { flow: "vibelang/Tour", role: "viewer", fault: "conflict-and-defect", n: 1 },
+]
+
+/** A directory over `w`'s objects whose downstream start is `start`; every other operation is real. */
+function faulty(w: Effect.Success<ReturnType<typeof world>>, start: Directory.Runs["start"]) {
+  return effect {
+    const storage = (try w.object("fault-index")).storage
+    return Directory.directory("fault-index", storage, {
+      request: effect (id) => { const obj = try w.object(id); return try promise(() => obj.storage.get<RunRequest>("action/request")) },
+      read: effect (id) => try Runs.read((try w.object(id)).sequencer),
+      start,
+      cancel: effect (id, role, owner) => try Effect.mapError((try w.object(id)).host.cancel(id, role, owner), () => new Unreachable({ what: "action" })),
+    }, w.authority)
+  }
+}
+
+it.live("actions/directory-edges", () => run("actions/directory-edges", Input, ({ flow, role, fault, n }) => scoped(effect {
+  const w = try world()
+  const input = flow === "vibelang/Post" ? { text: `Answer ${n}.` } : {}
+  // Journaled with no owner: the directory asks the authority about a signed-out caller, not the role it was handed.
+  const { owner: _owner, ...ownerless } = request(`ownerless-${n}`, flow, input, w.person.id)
+  const admitted = try w.directory.start(ownerless, role)
+  if (admitted !== (allowed("viewer", registration(flow)) ? null : "forbidden")) throw new Finding({ report: "directory-edges check 1" })
+  // The same request through a recording downstream: refused here, it never reaches the run object (which would
+  // refuse it again).
+  const handed: Array<string> = []
+  const recording = try faulty(w, (request) => effect { handed.push(request.id); return null })
+  const relayed = try recording.start({ ...ownerless, id: `relayed-${n}` }, role)
+  if (relayed !== (allowed("viewer", registration(flow)) ? null : "forbidden") || handed.length !== (relayed === null ? 1 : 0)) throw new Finding({ report: "directory-edges check 8" })
+  const owned = request(`owned-${n}`, flow, input, w.person.id)
+  if ((try w.directory.start(owned, role)) !== null) throw new Finding({ report: "directory-edges check 2" })
+  if (flow === "vibelang/Post") {
+    // An object older than route keys: its child resolves through the parent's stored request.
+    // The world's directory keeps its routes in the storage it shares with the budget.
+    try promise(() => w.budgetStorage.delete(`action-root/${owned.id}`))
+    try promise(() => w.budgetStorage.delete(`action-root/${owned.id}-reply`))
+    if ((try w.directory.root(`${owned.id}-reply`)) !== owned.id) throw new Finding({ report: "directory-edges check 3" })
+  }
+  // An object that never stored its request: a signed-out cancel is judged by the run's own flow alone.
+  const legacy = (try w.object(owned.id)).storage
+  try promise(() => legacy.delete("action/request"))
+  const cancelled = try w.directory.cancel(owned.id, "maintainer", "")
+  if (cancelled !== (allowed("viewer", registration(flow)) ? null : "forbidden")) throw new Finding({ report: "directory-edges check 4" })
+  // A downstream start that fails, or dies with a held identity beside a second defect, keeps its cause and lists nothing.
+  const held = new FlowRuntime.ExecutionIdentityConflict({ executionId: "request/x", field: "payload", expected: "a", actual: "b", message: "first" })
+  const broken = try faulty(w, fault === "unreachable" ? () => fail(new Unreachable({ what: "action" })) : () => Effect.failCause(Cause.combine(Cause.die(held), Cause.die(new Error("second")))))
+  const result = try exit(broken.start(request(`broken-${n}`, "vibelang/Tour", {}, w.person.id), "maintainer"))
+  if (result._tag !== "Failure") throw new Finding({ report: "directory-edges check 6" })
+  const told = Cause.pretty(result.cause)
+  if (fault === "unreachable" ? !told.includes("Unreachable") : !told.includes("second")) throw new Finding({ report: "directory-edges check 7" })
+  return (try broken.list("")).length === 0
+}), undefined, { chosen }), 120_000)
