@@ -78,7 +78,7 @@ it("browser action and sandbox commands keep run identities and retained termina
       const factory = try Factory
       try factory.accounts!.choose("maintainer")
       const catalog = try execute(() => LoadActions({ flow: "", epoch: 3 }))
-      const started = try execute(() => RunAction({ name: "vibelang/Tour", text: "", door: "button", epoch: 3 }))
+      const started = try execute(() => RunAction({ name: "vibelang/Tour", text: "", door: "button", format: "none", epoch: 3 }))
       try Effect.try(() => expect(started._tag).toBe("StartedAction"))
       if (started._tag !== "StartedAction") return try Effect.die("action did not start")
       const read = try execute(() => ReadAction({ id: started.run.id }))

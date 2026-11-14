@@ -179,7 +179,7 @@ const JsonText = Schema.Union([TextOrBoundary, Schema.Literals(["{\"a\":1}", "[1
 const RunId = Schema.Literals(["started", "unknown"])
 const Epoch = Int
 const Body = Schema.Union([
-  Schema.Struct({ command: Schema.Literal("RunAction"), name: Name, text: JsonText, epoch: Epoch, door: Schema.Literals(["button", "slash"]), retry: Schema.optionalKey(RunId), format: Schema.optionalKey(Schema.Literals(["none", "text", "path", "json"])) }),
+  Schema.Struct({ command: Schema.Literal("RunAction"), name: Name, text: JsonText, epoch: Epoch, door: Schema.Literals(["button", "slash"]), retry: Schema.optionalKey(RunId), format: Schema.Literals(["none", "text", "path", "json"]) }),
   Schema.Struct({ command: Schema.Literals(["ReadAction", "CancelAction"]), id: RunId }),
   Schema.Struct({ command: Schema.Literal("LoadActions"), flow: Schema.Literals(["", "vibelang/Post", "vibelang/nope"]), epoch: Epoch }),
   Schema.Struct({ command: Schema.Literal("SandboxAction"), kind: Schema.Literals(["start", "stop", "command"]), operationId: Text, request: Int, generation: Int, text: TextOrBoundary }),
@@ -222,7 +222,7 @@ effect function fixtures(body: typeof Body.Type) {
 
 function commandOf(body: typeof Body.Type, { run, member }: { readonly run: string; readonly member: string }) {
   switch (body.command) {
-    case "RunAction": return RunAction({ name: body.name, text: body.text, door: body.door, epoch: body.epoch, ...(body.format === undefined ? {} : { format: body.format }), ...(body.retry === undefined ? {} : { retry: run }) })
+    case "RunAction": return RunAction({ name: body.name, text: body.text, door: body.door, epoch: body.epoch, format: body.format, ...(body.retry === undefined ? {} : { retry: run }) })
     case "ReadAction": return ReadAction({ id: run })
     case "CancelAction": return CancelAction({ id: run })
     case "LoadActions": return LoadActions({ flow: body.flow, epoch: body.epoch })

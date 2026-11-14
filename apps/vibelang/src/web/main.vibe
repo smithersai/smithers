@@ -993,11 +993,11 @@ export const LoadActions = Command.define("LoadActions", {
   },
 })
 export const RunAction = Command.define("RunAction", {
-  args: { name: Schema.String, text: Schema.String, epoch: Schema.Number, door: Schema.Literals(["button", "slash"]), retry: Schema.optionalKey(Schema.String), format: Schema.optionalKey(Schema.Literals(["none", "text", "path", "json"])) }, messages: [Message.StartedAction, Message.FailedActions],
+  args: { name: Schema.String, text: Schema.String, epoch: Schema.Number, door: Schema.Literals(["button", "slash"]), retry: Schema.optionalKey(Schema.String), format: Schema.Literals(["none", "text", "path", "json"]) }, messages: [Message.StartedAction, Message.FailedActions],
   execute: effect ({ name, text, door, retry, format, epoch }) => {
     const actions = try Actions
     return (effect {
-      const kind = Facts.inputKind(format ?? "", text.trim())
+      const kind = Facts.inputKind(format, text.trim())
       const input = kind === "json" ? (try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(text), () => new ActionFailure({ code: "input" }))) : kind === "empty" ? {} : { text }
       const id = try (retry === undefined ? actions.start(name, input, door) : actions.rerun(retry))
       const run = try actions.read(id)

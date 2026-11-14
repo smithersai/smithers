@@ -388,8 +388,8 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
     }
     case "run-epoch": {
       provide backend("mock", "maintainer") {
-        const got = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: 0 }))
-        const epoched = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: input.number }))
+        const got = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", format: "text", epoch: 0 }))
+        const epoched = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", format: "text", epoch: input.number }))
         return got._tag === "StartedAction" && got.epoch === 0 && epoched._tag === "StartedAction" && epoched.epoch === input.number
       }
     }
@@ -427,10 +427,10 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
     }
     case "run-retry": {
       provide backend("mock", "maintainer") {
-        const first = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: 0 }))
+        const first = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", format: "text", epoch: 0 }))
         if (first._tag !== "StartedAction") return false
-        const again = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: 1, retry: first.run.id }))
-        const unknown = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: 2, retry: "never-started" }))
+        const again = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", format: "text", epoch: 1, retry: first.run.id }))
+        const unknown = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", format: "text", epoch: 2, retry: "never-started" }))
         return again._tag === "StartedAction" && again.epoch === 1 && again.run.id !== first.run.id && again.run.flow === first.run.flow
           && unknown._tag === "FailedActions" && unknown.code === "not-found" && unknown.epoch === 2
       }
