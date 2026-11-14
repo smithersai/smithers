@@ -87,6 +87,9 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
     try check(`ageText ${absolute} ${long} ${age}`, IssuesView.ageText(absolute, age, long) === expected)
   }
   // Booleans: every combination.
+  for (const key of ["Enter", "a"]) for (const meta of [false, true]) for (const control of [false, true]) {
+    try check(`commentKey ${key} ${meta} ${control}`, IssuesView.commentKey(key, meta, control) === (key === "Enter" && (meta || control)))
+  }
   for (const live of [false, true]) for (const unavailable of [false, true]) try check("signInRefused", ModelD.signInRefused(live, unavailable) === (live && unavailable))
   for (const tour of [false, true]) for (const paused of [false, true]) {
     try check("pauseTour", same(Tour.pauseTour(tour, paused), { action: !tour ? "none" : paused ? "resume" : "pause", step: 0 }))

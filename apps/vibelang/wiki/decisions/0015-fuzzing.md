@@ -1448,6 +1448,10 @@ At `9c81b43e` (seeds 20261414, 20261415) one more: `roleView` 61, the People lis
 `d9e6f4e1`. `screens/wiki-and-people` now lists you beside Bo: one "you", no role to choose for yourself (the mutant
 that never marks you is caught).
 
+At `da184b57` (the default seed and 20261416), `issuesViewDecision` 245, `commentKey`'s Control operand, was left to
+`screens/issues-keys`' draws; `web/decision-arms` now checks `commentKey` over Enter and another key with every
+meta and control combination (the mutant that ignores Control is caught).
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
