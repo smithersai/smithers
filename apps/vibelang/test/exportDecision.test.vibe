@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { chainEnds, commitVerdict, headerAgrees, linkedTo, manifestChanged, pacedOut, parentsOf, rewritesMythical, treeOrigin, waitsForTrees, writesChange, hasSourceTree, needsTree, notesComplete } from "../src/history/exportDecision.vibe"
+import { breathes, chainEnds, commitVerdict, headerAgrees, linkedTo, manifestChanged, pacedOut, parentsOf, rewritesMythical, treeOrigin, waitsForTrees, writesChange, hasSourceTree, needsTree, notesComplete } from "../src/history/exportDecision.vibe"
 
 describe("the export planner's and check's decisions", () => {
   it("links each commit to exactly the one before it", () => {
@@ -17,6 +17,10 @@ describe("the export planner's and check's decisions", () => {
     expect([manifestChanged(false, "", "x"), manifestChanged(true, "x", "x"), manifestChanged(true, "x", "y")]).toEqual([true, false, true])
     expect([rewritesMythical("", false), rewritesMythical("t", true), rewritesMythical("t", false)]).toEqual([false, false, true])
     expect([waitsForTrees(0), waitsForTrees(1), pacedOut(60, 60), pacedOut(61, 60), pacedOut(5, Number.POSITIVE_INFINITY)]).toEqual([false, true, false, true, false])
+  })
+  it("gives the page a turn once every chunk of a loop, never before its first item", () => {
+    expect([0, 1, 499, 500, 501, 1000].map((index) => breathes(index, 500))).toEqual([false, false, false, true, false, true])
+    expect([0, 1, 2].map((index) => breathes(index, 1))).toEqual([false, true, true])
   })
 })
 

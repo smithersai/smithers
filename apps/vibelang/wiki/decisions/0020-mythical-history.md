@@ -334,6 +334,8 @@ vibelang-factory note m5704 --section tried "A cache; it went stale."
     candidate value; `confirmed` is `published` exactly when the refs read are the candidate, `unchanged` exactly when
     they are still the published tuple, else `conflict`. Item 7's `may` now names `export` beside approve and fold.
     `writable` is one of the three names and never `refs/heads/main` or `refs/heads/vibe`, whatever the names say.
+    `breathes` gives the page a turn before every `chunk`-th item of an export's loop and never before its first, so a
+    long export never holds the page for one task (0016, "The page's turns during an Export").
 
 **"A fold never runs before its approval", precisely.** The property is about the Fold flow, which maps a commit of
 `main` onto the stack. A real commit whose message carries `Mythical: m<n>` folds into `m<n>` only if `m<n>` exists

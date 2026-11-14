@@ -8,6 +8,7 @@
 //   published, candidate ──moves──▶ one compare-and-swap of all three refs, each from its published value
 //   observed, published, candidate ──confirmed──▶ published | unchanged | conflict
 //   names, ref ──writable──▶ only the three names, and never main or the `vibe` branch
+//   index, chunk ──breathes──▶ whether a loop gives the page a turn before item `index`
 //
 // VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
 // file's own text (0005). Every function is total.
@@ -288,4 +289,15 @@ export function notesComplete(noted: ReadonlyArray<boolean>): boolean {
     n = n + 1
   }
   return n === noted.length
+}
+
+/**
+ * Whether an export's loop gives the page a turn before item `index`: once every `chunk` items, never before the
+ * first. Each hash resolves within the task that asked for it, so without a turn a whole export is one task.
+ */
+//@ verify
+//@ requires chunk > 0
+//@ ensures \result == (index > 0 && index % chunk == 0)
+export function breathes(index: number, chunk: number): boolean {
+  return index > 0 && index % chunk === 0
 }

@@ -472,6 +472,38 @@ the old code read 242,200 at 400 commits, 15.6 times its 100-commit count; the t
 most 8 reads per commit. `bench/history-export.bench.vibe` adds `history-export-1000` and `history-export-4000`
 (`prepare` alone over a synthetic history): means 155 ms and 619 ms on nyc-01, a ratio of 4.0.
 
+### The page's turns during an Export (vl-coverage-core, session 11, 2026-11-14)
+
+After session 10 the first Export of the mock's whole history (about 5,700 mythical and 6,700 real commits) still ran
+as one task: 1,018 ms in Chromium's profile (`s11prof1`), so the page took no input and painted nothing. Each
+`crypto.subtle.digest` resolves within the task that asked for it, and an async resumption resets Effect's operation
+budget, so the fiber never yields on its own. A plain `Effect.yieldNow` did not help (`s11prof2`, 1,979 ms): the page
+runs on Foldkit's `browserScheduler`, whose dispatcher hands a yielding fiber to `queueMicrotask`, and a microtask never
+lets the browser run.
+
+`export.vibe` `breathe(index)` yields once every `EXPORT_CHUNK` (500) items of each per-commit loop (`planned`'s chain
+and notes, `prepare`'s tree reads and writes, `check`'s read-back), as `exportDecision.vibe` `breathes` decides
+(proved; mutants `export-breathes-first` and `export-breathes-chunk`). The notes tree, one entry per commit, is the one
+object too large to split: its hash in `planned` and its write each get a turn of their own. The turn is an
+`Effect.yieldNow` on Effect's default `MixedScheduler`, provided for that yield only, which hands the fiber to
+`setTimeout` in a browser and `setImmediate` in Node; the rest of the page stays on Foldkit's scheduler.
+
+Two other turns were tried. A `MessageChannel` turn (no 4 ms timer clamp) is refused by VibeLang (EK4402: a host global
+in `.vibe`), and `@smthrs/platform-browser`'s `BrowserScheduler`, which is one, is not an app dependency and brings
+wa-sqlite and ZenFS (VL-5). The timer's 4 ms clamp costs about 70 turns, 280 ms, per first export. Smaller chunks cost
+more turns: at 500 items each chunk measured 54 to 59 ms under the profiler, about half that without it.
+
+`@smthrs/jj` `Repository.encodeTree` took most of the notes tree's task: it now compares names as strings in code point
+order and writes one buffer, and the memory repository's `writeTree` sorts once (25 ms to 8.0 ms for 5,700 entries in
+Node; the same bytes, pinned by git's ids for names outside ASCII and a lone surrogate).
+
+| Evidence | Before | After |
+| --- | --- | --- |
+| `e2e/core-export-longtask.spec.ts`: longest task from the click to `Exported` (box playwright) | 1,094 ms, fails (`s11lt-old2`) | passes 9/9 alone, dark, light and phone, `--repeat-each 3` (`s11lt3`); passes beside the 72 other history journeys (`s11lt7`, 81/81) |
+| Long tasks over 50 ms in the first export, under the profiler (`s11prof1` → `s11lt7`) | one of 1,018 ms | 3: 55, 72 and 54 ms |
+| The same journey beside the history journeys, before the notes tree's own turns (`s11hist1`, `s11lt6`) | | failed at 244, 414, 423 ms, then 205 ms |
+| `history-export-4000` mean, old then new, twice, back to back on nyc-01 (`bench-ab.log`) | 663, 1,129 ms | 736, 742 ms (inside the bench's ±60%) |
+
 ### Three journeys that outran their budget under load (vl-coverage-core, session 9, 2026-11-13)
 
 The full browser gate `s8full1` (main `1ec1ba13`) failed three journeys that passed in a focused rerun. Not product bugs.

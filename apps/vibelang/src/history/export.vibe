@@ -14,7 +14,8 @@
 // parent's, so the bookmark's tree is always the tree of the last real commit it folds. The commits' author, committer
 // and date are fixed, so the same history is the same commits, and preparing again writes nothing new.
 import { Repository } from "@smthrs/jj"
-import { chainEnds, commitVerdict, headerAgrees, kept, lastFolds, linkedTo, manifestChanged, moves, pacedOut, parentsOf, rewritesMythical, treeOrigin, type RefNames, type Refs, treeSource, waitsForTrees, writable, writesChange, hasSourceTree, needsTree, notesComplete } from "./exportDecision.vibe"
+import * as Scheduler from "effect/Scheduler"
+import { breathes, chainEnds, commitVerdict, headerAgrees, kept, lastFolds, linkedTo, manifestChanged, moves, pacedOut, parentsOf, rewritesMythical, treeOrigin, type RefNames, type Refs, treeSource, waitsForTrees, writable, writesChange, hasSourceTree, needsTree, notesComplete } from "./exportDecision.vibe"
 import type { Commit, History, Real } from "./mythical.vibe"
 import { stacked } from "./pages.vibe"
 
@@ -92,6 +93,29 @@ export function noteOf(commit: Commit, folded: ReadonlyArray<Real>): string {
     section("Folded", folded.map((real) => `${real.sha} ${real.title}`)),
     section("Superseded", of("superseded")),
   ].join("\n")
+}
+
+/**
+ * How many items of a loop an export does between turns it gives the page: under 50 ms in Chromium on a 4-vCPU box
+ * (`e2e/core-export-longtask.spec.ts` measures the longest task; 0016 has the profile and the choice).
+ */
+export const EXPORT_CHUNK = 500
+
+// Effect's default scheduler, which hands a yielding fiber to the event loop (`setTimeout` in a browser, `setImmediate`
+// in Node). The page runs on Foldkit's scheduler, which hands it to a microtask, so a yield there never lets the
+// browser handle input or paint.
+const TURNS = new Scheduler.MixedScheduler()
+
+/** One turn of the event loop for the page, on `TURNS`. */
+const turn = Effect.provideService(Effect.yieldNow, Scheduler.Scheduler, TURNS)
+
+/**
+ * Gives the page a turn before item `index` of a loop, once every `EXPORT_CHUNK` items (`breathes`, proved). Each
+ * WebCrypto digest resolves within the task that asked for it, so without a turn the first export of a long history
+ * ran as one task that blocked input for a second or more.
+ */
+effect function breathe(index: number) {
+  if (breathes(index, EXPORT_CHUNK)) try turn
 }
 
 /** One planned commit of the chain. */
@@ -180,7 +204,8 @@ export effect function planned(repository: Repository.Repository, history: Histo
   const chain: Array<Link> = []
   let parent = ""
   let parentTree = EMPTY_TREE
-  for (const commit of commits) {
+  for (const [index, commit] of commits.entries()) {
+    try breathe(index)
     const source = treeSource(history.real, folds, commit.id)
     // `needs` is empty, so every source's tree is known.
     const tree = source === "" ? parentTree : known.get(source) as string
@@ -201,18 +226,21 @@ export effect function planned(repository: Repository.Repository, history: Histo
     else into.push(real)
   }
   const entries: Array<Repository.TreeEntry> = []
-  for (const link of chain) {
+  for (const [index, link] of chain.entries()) {
+    try breathe(index)
     const text = noteOf(link.commit, folded.get(link.commit.id) ?? [])
     const blob = try Repository.hashBlob(text)
     if (writesChange(noted.get(link.oid) ?? "", blob)) pending.push({ oid: blob, write: () => repository.writeBlob(text) })
     entries.push({ name: link.oid, mode: "100644", oid: blob })
   }
   let notes = published.refs.notes
+  // The notes tree holds an entry per commit: the export's largest hash, and its write below, each get a turn first.
+  try turn
   const tree = try Repository.hashTree(entries)
   if (writesChange(notesTree, tree)) {
     const object: Repository.CommitObject = { tree, parents: parentsOf(published.refs.notes), author: EXPORTER, committer: EXPORTER, message: "Notes for the mythical history\n" }
     notes = try Repository.hashCommit(object)
-    pending.push({ oid: tree, write: () => repository.writeTree(entries) }, { oid: notes, write: () => repository.writeCommit(object) })
+    pending.push({ oid: tree, write: () => Effect.andThen(turn, repository.writeTree(entries)) }, { oid: notes, write: () => repository.writeCommit(object) })
   }
 
   const mythical = parent
@@ -254,11 +282,17 @@ export effect function prepare(history: History, names: RefNames, pace: Pace = U
   // More than one batch of `pace` is the publisher's work, paced across hours: nothing is read or written here.
   if (pacedOut(plan.needs.length, pace.reads)) return undefined
   if (waitsForTrees(plan.needs.length)) {
-    for (const source of plan.needs) trees.set(source, (try repository.readCommit(source)).tree)
+    for (const [index, source] of plan.needs.entries()) {
+      try breathe(index)
+      trees.set(source, (try repository.readCommit(source)).tree)
+    }
     plan = try planned(repository, history, published, trees)
   }
   if (pacedOut(plan.pending.length, pace.writes)) return undefined
-  for (const each of plan.pending) try each.write()
+  for (const [index, each] of plan.pending.entries()) {
+    try breathe(index)
+    try each.write()
+  }
   const prepared: Prepared = { published: refs, candidate: plan.candidate, written: plan.written }
   return prepared
 }
@@ -284,8 +318,9 @@ export effect function check(published: Refs, candidate: Refs) {
   let parent = ""
   let checked = 0
   let refusal: CheckRefusal | null = headerAgrees(manifest.mythical, manifest.notes, candidate.mythical, candidate.notes) ? null : "linear"
-  for (const [, oid, source] of manifest.commits) {
+  for (const [index, [, oid, source]] of manifest.commits.entries()) {
     if (refusal !== null) break
+    try breathe(index)
     if (!old.has(oid)) {
       const commit = try repository.readCommit(oid)
       const origin = treeOrigin(source, parent)

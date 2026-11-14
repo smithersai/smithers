@@ -6094,4 +6094,6 @@ cases += [
 ('src/web/actionFollowDecision.vibe', 'follow-watching-running', 'watching', '(run.state === "queued" || run.state === "running") && !stopped', 'run.state === "queued" && !stopped', 'a running run is watched'),
 ('src/web/actionFollowDecision.vibe', 'follow-same-element', 'same', '    if (left[index] !== right[index]) return false\n', '', 'a changed follow set fences old messages'),
 ('src/web/actionFollowDecision.vibe', 'follow-same-length', 'same', '  if (left.length !== right.length) return false\n', '  if (left.length > right.length) return false\n', 'sets of different sizes differ'),
+('src/history/exportDecision.vibe', 'export-breathes-first', 'breathes', 'index > 0 && index % chunk === 0', 'index % chunk === 0', 'the first item of a loop gets no turn'),
+('src/history/exportDecision.vibe', 'export-breathes-chunk', 'breathes', 'index % chunk === 0', 'index % chunk === 1', 'a turn comes once every chunk items'),
 ]
