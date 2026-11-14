@@ -148,7 +148,8 @@ export effect function cancel(hostId: string, storage: Objects.Storage, sequence
   const run = (try read(sequencer)).find((run) => run.id === id)
   if (run === undefined) return "not-found"
   const request = try promise(() => storage.get<RunRequest>("action/request"))
-  const child = isReplyChild(run.flow === Reply._tag, request?.flow === Post._tag, id, request?.id ?? "")
+  // With no stored request there is no post, so the run is no reply child (isReplyChild's contract); no stand-in id.
+  const child = request !== undefined && isReplyChild(run.flow === Reply._tag, request.flow === Post._tag, id, request.id)
   if (!allowed(try authority.role(owner), registration(child ? Post._tag : run.flow))) return "forbidden"
   if (!cancellable(run.state)) return null
   if (child) {

@@ -44,6 +44,14 @@ export function draftOutcome(failed: boolean, reason: string): DraftOutcome {
   return reason === "forbidden" ? "forbidden" : "failed"
 }
 
+/** What the scripted agent says when a specification review it requested is refused: the role's refusal, else a failure. */
+//@ verify
+//@ ensures reason == "forbidden" ==> \result == "Only contributors can request a specification review."
+//@ ensures reason != "forbidden" ==> \result == "Couldn't request that review."
+export function reviewRefusal(reason: string): string {
+  return reason === "forbidden" ? "Only contributors can request a specification review." : "Couldn't request that review."
+}
+
 /** The kind an actor acts as: a device sign-in is an agent, anyone else a person. */
 //@ verify
 //@ ensures agent ==> \result == "agent"

@@ -69,8 +69,9 @@ export function sideShas(fetched: ReadonlyArray<LogCommit>, bySha: Map<string, n
     const top = stack[stack.length - 1]!
     stack = stack.slice(0, stack.length - 1)
     group.add(top)
-    const at = bySha.get(top)
-    stack = at === undefined ? stack : [...stack, ...fetched[at]!.parents]
+    // The loop above stopped at a listed commit (`bySha.has(top)`), so its index is defined; an absent arm never ran (0015).
+    const at = bySha.get(top)!
+    stack = [...stack, ...fetched[at]!.parents]
   }
   return group
 }

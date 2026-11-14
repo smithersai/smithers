@@ -5373,6 +5373,7 @@ cases.extend([('src/core/mockFactoryDecision.vibe', *case) for case in [
 ('mock-kind-history', 'replyKind', 'return history ? "history" : "script"', 'return "script"', 'the history is read when asked about'),
 ('mock-draft-forbidden', 'draftOutcome', 'return reason === "forbidden" ? "forbidden" : "failed"', 'return "failed"', 'a role refusal says so'),
 ('mock-draft-ok', 'draftOutcome', 'if (!failed) return "drafted"', 'if (reason === "") return "drafted"', 'only a success is drafted'),
+('mock-review-refusal', 'reviewRefusal', '''return reason === "forbidden" ? "Only contributors can request a specification review." : "Couldn't request that review."''', '''return "Couldn't request that review."''', 'a role refusal says so'),
 ('mock-actor-kind', 'actorKind', 'return agent ? "agent" : "person"', 'return agent ? "agent" : "agent"', 'a person acts as a person'),
 ('mock-actor-key-sep', 'actorKey', 'return id + "/" + actorKind(agent)', 'return id + actorKind(agent)', 'the id and kind are kept apart'),
 ('mock-restored-max', 'restoredCounter', 'return counter >= seq ? counter : seq', 'return counter', 'ids resume past the journal'),
