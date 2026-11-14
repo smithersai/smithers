@@ -4015,3 +4015,10 @@ Closed: `issuesView.vibe` 148 (both arms) and 170 (an issue's Connect), `issuesV
 A probe of `authbroker.spec.ts`'s round trip with `--repeat-each 5` answered its write 401 in 5 of 15 runs. The repeats
 ran at once on one project's broker host as the same person (`ada`); the gate runs each test once per project, and it
 passed in every gate. Not reproduced one run at a time; not chased further.
+
+**Stop during a command.** `viewDecision.vibe` `canSandboxAction`'s `kind === "stop"` (107) runs only when a person
+acts while a sandbox action is busy. It read 0 in session 37, 1 in session 38's gate and 0 in this session's first
+full run: no journey held a command, so a click landed inside the busy window only by chance. The new
+`machine-command-held` machine fault (`test/support/faultyMachines.vibe`) holds the first command until the sandbox
+stops, 10 s at most. `core-sandbox-faults.spec.ts` "Stop works while a command runs": the terminal is disabled, Stop is
+enabled, and Stop stops the sandbox. 54 of 54 passed with `--repeat-each 3`; line 107's four arms ran.

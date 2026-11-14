@@ -2,17 +2,18 @@
 // failing once per owner. `machine-start` fails the first start, `machine-command` (and `machine-command-replay`, whose
 // transport also resends that command) the first command and `machine-stop` (and `machine-stop-clock`, whose clock also
 // breaks) the first stop; `machine-command-exhausted` holds the first command while the allowance runs out, until the
-// meter has stopped the sandbox under it; and `machine-stop`
+// meter has stopped the sandbox under it; `machine-command-held` holds the first command until the sandbox stops; and
+// `machine-stop`
 // the first stop; `machine-lost` answers the first lease as a machine that is gone, as a crashed container's does.
 import { Unavailable } from "../../src/core/Factory.vibe"
 import type { Machines } from "../../src/core/sandboxHost.vibe"
 import { memoryMachines } from "../../src/core/sandboxMock.vibe"
 
-export type MachineFault = "machine-start" | "machine-lost" | "machine-command" | "machine-command-replay" | "machine-command-exhausted" | "machine-stop" | "machine-stop-clock"
+export type MachineFault = "machine-start" | "machine-lost" | "machine-command" | "machine-command-replay" | "machine-command-exhausted" | "machine-command-held" | "machine-stop" | "machine-stop-clock"
 
 /** The machine fault a page's fault names, if it names one. */
 export function machineFault(fault: string): MachineFault | undefined {
-  return fault === "machine-start" || fault === "machine-lost" || fault === "machine-command" || fault === "machine-command-replay" || fault === "machine-command-exhausted" || fault === "machine-stop" || fault === "machine-stop-clock" ? fault : undefined
+  return fault === "machine-start" || fault === "machine-lost" || fault === "machine-command" || fault === "machine-command-replay" || fault === "machine-command-exhausted" || fault === "machine-command-held" || fault === "machine-stop" || fault === "machine-stop-clock" ? fault : undefined
 }
 
 /**
@@ -52,6 +53,8 @@ export function faultyMachines(fault: MachineFault, exhaust: Effect.Effect<void>
           try exhaust
           for (let wait = 0; wait < 200 && !stopped; wait++) try sleep("50 millis")
         }
+        // `machine-command-held`: the first command runs until the person stops the sandbox (10 s at most).
+        if (once("machine-command-held")) for (let wait = 0; wait < 200 && !stopped; wait++) try sleep("50 millis")
         return try real.command(id, generation, operationId, command)
       },
     }

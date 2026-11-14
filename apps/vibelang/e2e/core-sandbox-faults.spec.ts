@@ -63,3 +63,18 @@ test("a command still running when the minutes run out is refused, and the sandb
   await expect(page.getByRole("status", { name: "Sandbox minutes" })).toHaveText(/^Out of minutes/)
   await expect(page.getByLabel("Terminal output")).not.toContainText("/workspace")
 })
+
+// fault=machine-command-held: the machine holds the first command until the sandbox stops. While a command runs the
+// terminal is closed to the next one and Stop stays open (viewDecision.vibe `canSandboxAction`, `sandboxPaneView`).
+test("Stop works while a command runs, and the sandbox stops", async ({ page }) => {
+  await sandboxes(page, "machine-command-held")
+  await expect(status(page)).toHaveText("Running")
+  const command = page.getByRole("textbox", { name: "Terminal command" })
+  await command.fill("pwd")
+  await command.press("Enter")
+  await expect(command).toBeDisabled()
+  const stop = page.getByRole("button", { name: "Stop", exact: true })
+  await expect(stop).toBeEnabled()
+  await stop.click()
+  await expect(status(page)).toHaveText("Stopped", { timeout: 20_000 })
+})
