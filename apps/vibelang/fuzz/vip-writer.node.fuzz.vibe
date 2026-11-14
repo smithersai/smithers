@@ -107,5 +107,7 @@ it.live("vip/writer", () => run("vip/writer", Input, (input) => scoped(effect {
   const refusal = try Effect.flip(bare.run({ op: "draft", key: "d1", number: 0, parent: 0, title: input.title, text: input.text, example: "", prior: "", assignee: "" }, undefined as never) as never as Effect<never, IssueFailure>)
   if (bare.available || refusal.reason !== "no-model") return false
   for (const agent of Agents) if (!(try drafts({ ...input, agent, admission: "admit" }))) return false
+  // A refused and an unreachable admission, every execution: `budget`, and no agent runs.
+  for (const admission of ["refuse", "fault"] as const) if (!(try drafts({ ...input, agent: "model-draft", admission }))) return false
   return try drafts(input)
 })))

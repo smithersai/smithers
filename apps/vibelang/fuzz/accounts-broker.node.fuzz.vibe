@@ -203,9 +203,10 @@ const ALLOWED = new Set([200, 204, 302, 303, 400, 401, 403, 404, 405, 408, 413, 
  * own session and stores a delegation only after consent; a device session stays an agent; nothing answers 500. */
 it.live("accounts/broker-sequences", () => run("accounts/broker-sequences", Input, (input) => scoped(effect {
   // Every execution walks the brokered world and GitHub's own OAuth, so neither depends on the draw (one execution
-  // takes seconds, so a drawn walk might never run at a short budget); drawn ops then run in the drawn world.
+  // takes seconds, so a drawn walk might never run at a short budget); drawn ops then run in the drawn world. The
+  // second walk takes the other app slug, so every execution installs with one and without one.
   if (!(try play(input, true, false, true))) return false
-  if (!(try play(input, false, false, true))) return false
+  if (!(try play({ ...input, slug: !input.slug }, false, false, true))) return false
   if (!(try play(input, false, true, true))) return false
   // Lost storage as a fresh brokered world's first step, with no session cookie (0015).
   if (!(try play({ ...input, ops: [{ kind: "lost", person: "1", tamper: "none", query: "", answer: "connect", install: true, role: "new", body: "valid", n: 0 }] }, true, false, false))) return false

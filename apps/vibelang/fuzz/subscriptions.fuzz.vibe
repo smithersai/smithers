@@ -121,5 +121,10 @@ it.live("web/subscriptions", () => run("web/subscriptions", Input, ({ model, bac
       if (message._tag === "WikiLocationChanged" && !(message.page.startsWith("/wiki/") || message.page === "/" || message.page.startsWith("/#"))) throw new Finding({ report: `${name}: followed ${message.page}` })
     }
   }
+  // Every execution: an open conversation whose events fail ends its stream with that failure's reason.
+  const feed = all.events!
+  const open = feed.modelToDependencies({ ...model, stream: "open" })
+  const failed = Array.from(try Effect.provide(Stream.runCollect(feed.dependenciesToStream(open, () => open)), backend("faulty", role)))
+  if (!failed.some((message) => message._tag === "FailedEvents" && message.reason === "fault")) throw new Finding({ report: "events: a failed stream ended without its reason" })
   return true
 }, Layer.mergeAll(backend(kind, role), ExperimentalBrowserDocument.layer, ExperimentalBrowserWindow.layer)), undefined, { codec: issuesCorpusCodec(Input) }))

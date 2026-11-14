@@ -316,7 +316,8 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
  */
 // The two complete scripted-model walks take 15 s without coverage; allow replay and new exploration on four CPUs.
 it.live("api-objects/world", () => run("api-objects/world", World, (input) => effect {
-  try drive({ ...input, signIn: false, agent: "tools" }, WALK)
+  // The first walk under an ample limit, so its agent always spends, writes history and drafts the wiki.
+  try drive({ ...input, signIn: false, agent: "tools", limit: 1000000 }, WALK)
   try drive({ ...input, signIn: true, agent: "tools" }, WALK)
   try drive(input, input.steps)
   return true

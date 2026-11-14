@@ -212,11 +212,12 @@ function issuesWikiReplies(input: typeof Replies.Type) {
 
 it.live("clients/issues-wiki-replies", () => run("clients/issues-wiki-replies", Replies, (input) => effect {
   // Every execution: each call over a 200 whose body is not JSON, and one that is JSON but not a state, is `protocol`;
-  // over a 409 whose body is a protocol refusal, it keeps that refusal's reason.
+  // over a 409 whose body is a protocol refusal, it keeps that refusal's reason; over a 502 whose body is not JSON, `unavailable`.
   for (const op of [0, 1, 2, 3]) for (const body of ["not-json", "other-json"] as const) {
     if (!(try issuesWikiReplies({ ...input, op, transport: false, status: 200, body }))) return false
   }
   for (const op of [0, 1, 2, 3]) if (!(try issuesWikiReplies({ ...input, op, transport: false, status: 409, body: "refusal" }))) return false
+  for (const op of [1, 3]) if (!(try issuesWikiReplies({ ...input, op, transport: false, status: 502, body: "not-json" }))) return false
   return try issuesWikiReplies(input)
 }))
 

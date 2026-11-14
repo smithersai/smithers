@@ -112,6 +112,11 @@ it.live("sandbox/machine-object", () => run("sandbox/machine-object", MachineInp
     const ran = again.state.executed.length
     const inherited = try restarted.apply("command", 2, "op-r2", "echo hi")
     if (!first.every((answer) => answer.ok) || inherited.ok || !("reason" in inherited) || inherited.reason !== "lease-expired" || again.state.executed.length !== ran) return false
+    // A stop of a stopped machine answers at once and never touches the box.
+    try restarted.apply("stop", 2, "op-r2-stop", "")
+    const destroyed = again.state.destroys
+    const twice = try restarted.apply("stop", 2, "op-r2-again", "")
+    if (!twice.ok || twice.output !== "" || again.state.destroys !== destroyed) return false
   }
   for (const step of [...lifecycle, ...faultWalk, ...input.steps]) {
     faulted(local.faults, step.fault)
