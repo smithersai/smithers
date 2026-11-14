@@ -89,23 +89,33 @@ effect function digestOf() {
   }
 }
 
+/** The services the mock's flows run on: its sequencer, its main, its repository and where an export writes. */
+export interface MockWiring {
+  readonly stack: Stack.Shape
+  readonly main: MainLog.Shape
+  readonly repository: Repository.Repository
+  readonly target: ExportTarget.Shape
+}
+
 /**
  * The mock history for `principal`, bootstrapped from `seed` (the real one by default). Its main holds `outside`
- * before the approved commits: `AFTER_SEED` with the real seed, none with another.
+ * before the approved commits: `AFTER_SEED` with the real seed, none with another. `wire` answers the services its
+ * flows run on from the mock's own; a test injects a faulty one there (test/support/FaultyMockHistory.vibe).
  */
-export function MockMythical(principal: Principal, seed: () => History!! = seeded, current?: () => Principal!!, outside: ReadonlyArray<MainCommit> = seed === seeded ? AFTER_SEED : []) {
+export function MockMythical(principal: Principal, seed: () => History!! = seeded, current?: () => Principal!!, outside: ReadonlyArray<MainCommit> = seed === seeded ? AFTER_SEED : [], wire: (mock: MockWiring) => MockWiring = (mock) => mock) {
   return Layer.effect(Mythical, effect {
     const sequencer = try make(try memoryStore())
     const digest = try digestOf()
     const executions = try Ref.make(0)
+    const wired = wire({ stack: stackOf(sequencer, seed), main: mockMain(sequencer, outside), repository: mockRepository(sequencer), target: { names: REF_NAMES } })
     const flows = Layer.mergeAll(historyRegistration, exportRegistration).pipe(
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provide(Layer.mergeAll(
-        Layer.succeed(Stack, stackOf(sequencer, seed)),
-        Layer.succeed(MainLog, mockMain(sequencer, outside)),
+        Layer.succeed(Stack, wired.stack),
+        Layer.succeed(MainLog, wired.main),
         Layer.succeed(Caller, { principal, ...(current === undefined ? {} : { current }) }),
-        Layer.succeed(Repository.Repository, mockRepository(sequencer)),
-        Layer.succeed(ExportTarget, { names: REF_NAMES }),
+        Layer.succeed(Repository.Repository, wired.repository),
+        Layer.succeed(ExportTarget, wired.target),
       )),
       Layer.provide(Layer.succeed(Digest.Digest, digest)),
     )

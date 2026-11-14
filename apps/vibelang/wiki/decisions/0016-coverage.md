@@ -3622,4 +3622,42 @@ new on main, no refusal, Folded through unchanged, which closes `foldCommits`' `
 | --- | --- |
 | `loadBootstrap`'s `exists` (355) | Each mock history bootstraps its own new sequencer once (`MockMythical.vibe`), so a load always loads. A History object that restarts over a loaded store answers `exists`; `test/historyFlows.test.vibe` covers it. |
 | `authorizer`'s refusal (255) | The page offers a history write only to a role that may make it, and `MockActions` refuses one before its flow runs (`catalogDecision.vibe` `leastRoleOf`). |
-| `readMain` unavailable (277); Export with no commits (328), paced (329), refused at prepare (331) or check (342), and a publish or confirm that fails (347-349) | The mock's `MainLog` and repository are memory and never fail, its history is never empty, and its target is unpaced. They need a faulty `MainLog`, `Repository` or `ExportTarget` under the mock history; `test/support/FaultyMythical.vibe` injects faults above it, at `Mythical`. Next: a fault seam under `MockMythical`. |
+| `readMain` unavailable (277); Export with no commits (328), paced (329), refused at prepare (331) or check (342), and a publish or confirm that fails (347-349) | The mock's `MainLog` and repository are memory and never fail, its history is never empty, and its target is unpaced. Closed in session 37 by a fault seam under the mock history (below). |
+
+## Faults under the mock history (vl-coverage, session 37, 2026-11-14)
+
+**A fault seam under `MockMythical`.** `test/support/FaultyMythical.vibe` injects faults above the mock history, at
+`Mythical`, so Fold's and Export's own failure paths never ran in Chromium: the mock's main and repository are memory
+and never fail. `MockMythical` now takes a fifth argument, `wire`, which answers the services its flows run on (`Stack`,
+`MainLog`, `Repository`, `ExportTarget`) from the mock's own; production passes none and gets the mock's own.
+`test/support/FaultyMockHistory.vibe` wraps them with one fault each, once, as `FaultyFactory.vibe` wraps the
+Factory. The history fault host (`e2e/history-runtime`) runs the mock with those faults when `?fault=` names one.
+
+| Fault | Where it fails | Arm it closes in `src/history/flows.vibe` | The page says |
+| --- | --- | --- | --- |
+| `main-read` | the first `MainLog.since` | `readMain` unavailable (277) | The history can't be reached. |
+| `export-empty` | the first `Stack.read` answers no commits | prepare with no commits (328) | Nothing to export. |
+| `export-paced` | the first export's pace is one write | prepare paced (329) | Publishing in the background. |
+| `export-prepare` | the first `readRefs` | prepare refused (331) | The history can't be reached. |
+| `export-check` | the first `readCommit` after a write | check refused (342) | The history can't be reached. |
+| `export-publish` | the first `updateRefs` | publish refused (347, 349) | The history can't be reached. |
+| `export-confirm` | the first `readRefs` after `updateRefs` | confirm refused (347, 349) | The history can't be reached. |
+| `export-linear` | the check's read of the first commit the export wrote answers a parent it did not write | `commitVerdict` `linear` (`exportDecision.vibe` 187), check refused (342) | The export failed its check. |
+| `export-tree` | the same read answers a tree it did not write | `commitVerdict` `tree` (`exportDecision.vibe` 188) | The export failed its check. |
+| `export-lost` | the first `updateRefs` answers without moving a ref | refs unchanged, no refusal: `unavailable` (349) | The history can't be reached. |
+| `export-conflict` | another writer moves the first ref before the export's compare-and-swap | `conflict` (349) | The refs moved. Export again. |
+
+`e2e/history-mock-faults.spec.ts` checks each message, then that Fold or Export works on the next try: 33 tests in 3
+projects, all passed (box jobs `d9f473871c943237f0324c9c` and `4161ffdc6db850d9609aa7e1`). In that file alone, every branch of `readMain`, `runExport` and
+`finish` was taken. `authorizer`'s refusal (255) and `loadBootstrap`'s `exists` (355) remain, for the reasons in
+session 36's table.
+
+**A run inherits its caller's services, by design.** `@smthrs/flow` resolves an action's services as its wiring under
+the services of the fiber that runs it (`Action/make.ts` and `@smthrs/engine` `DeclaredHandler.ts`, both
+`Context.merge(wiring, caller)`). Flipping the order to wiring-first fails 4 package tests (`Sleep`,
+`MemoryResumeContext`, `PlacedAction`, `RunDeadline`): a run's dispatch identity, resume context and deadline lineage
+reach its steps only through the caller's context. So `MockActions` keeps forking each run in its own world's context
+(session 36), and the flow package's guide now says how to start a run from inside another flow.
+`Effect.provideContext` in Effect 4.1.1 merges onto the caller's context, as its type says (`Exclude<R, XR>` leaves
+the rest to the caller): a five-line reproduction prints both the provided and the caller's service. That is Effect's
+documented behavior, not an Effect bug.

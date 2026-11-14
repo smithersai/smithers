@@ -1,0 +1,97 @@
+// Faults under the history page's mock history (e2e/history-runtime): a faulty service among the ones the mock's flows
+// run on (src/history/MockMythical.vibe `wire`), not above it as test/support/FaultyMythical.vibe's are, so Fold's
+// and Export's own failure paths run. Each fault a page's `?fault=` names happens once, and every call after it is real.
+import { Repository } from "@smthrs/jj"
+import { type Pace, UNPACED } from "../../src/history/export.vibe"
+import { type ExportTarget, MainUnavailable } from "../../src/history/flows.vibe"
+import { AFTER_SEED, MockMythical, type MockWiring, seeded } from "../../src/history/MockMythical.vibe"
+import type { Role } from "../../src/history/roles.vibe"
+import { HistoryBackend } from "../../src/web/historyBackend.vibe"
+
+/**
+ * A fault under the mock history. `main-read` fails the first read of main. The rest fail the first export:
+ * `export-empty` answers it a history with no commits, `export-paced` a pace of one write; `export-prepare` fails its
+ * first ref read, `export-check` its first commit read after a write, `export-publish` its ref update and
+ * `export-confirm` the ref read after that; `export-linear` and `export-tree` answer its check's read of the first commit it
+ * wrote, its chain's first, with a parent or a tree the export did not write; `export-conflict` moves the first ref before the update does, and
+ * `export-lost` answers the update without making it.
+ */
+export type MockFault = "main-read" | "export-empty" | "export-paced" | "export-prepare" | "export-check" | "export-publish" | "export-confirm" | "export-linear" | "export-tree" | "export-conflict" | "export-lost"
+
+const MOCK_FAULTS: ReadonlyArray<MockFault> = ["main-read", "export-empty", "export-paced", "export-prepare", "export-check", "export-publish", "export-confirm", "export-linear", "export-tree", "export-conflict", "export-lost"]
+
+/** One write per batch: any export with more to write is the publisher's. */
+const ONE_WRITE: Pace = { writes: 1, reads: Number.POSITIVE_INFINITY, pauseMs: 0 }
+
+/** An object id the export never wrote. */
+const FOREIGN = "0".repeat(40)
+
+/** The faults a page's `?fault=` names, comma-separated; any other name is ignored. */
+export function mockFaults(search: string): ReadonlyArray<MockFault> {
+  const named = (new URLSearchParams(search).get("fault") ?? "").split(",")
+  return MOCK_FAULTS.filter((fault) => named.includes(fault))
+}
+
+/** The mock's services with `faults` injected, each once. */
+export function faultyWiring(faults: ReadonlyArray<MockFault>) {
+  return (mock: MockWiring): MockWiring => {
+    const spent = new Set<MockFault>()
+    const first = (fault: MockFault) => {
+      if (!faults.includes(fault) || spent.has(fault)) return false
+      spent.add(fault)
+      return true
+    }
+    let wrote = false
+    let updated = false
+    // The first commit the export writes: its chain's first.
+    let chained: string | undefined = undefined
+    const unreachable = (method: string) => Repository.repositoryError("unavailable", method, "the repository can't be reached")
+    const real = mock.repository
+    const writing = <A>(write: () => A!Repository.RepositoryError) => Effect.suspend(() => {
+      wrote = true
+      return write()
+    })
+    const repository = Repository.make({
+      ...real,
+      writeBlob: (text) => writing(() => real.writeBlob(text)),
+      writeTree: (entries) => writing(() => real.writeTree(entries)),
+      writeCommit: (commit) => writing(() => Effect.map(real.writeCommit(commit), (oid) => {
+        chained ??= oid
+        return oid
+      })),
+      readCommit: (revision) => Effect.suspend(() => {
+        if (!wrote) return real.readCommit(revision)
+        if (first("export-check")) return Effect.fail(unreachable("readCommit"))
+        if (revision !== chained) return real.readCommit(revision)
+        return Effect.map(real.readCommit(revision), (header) => first("export-linear") ? { ...header, parents: [FOREIGN] } : first("export-tree") ? { ...header, tree: FOREIGN } : header)
+      }),
+      readRefs: (refs) => Effect.suspend(() => (updated ? first("export-confirm") : first("export-prepare")) ? Effect.fail(unreachable("readRefs")) : real.readRefs(refs)),
+      updateRefs: effect (transaction) => {
+        updated = true
+        if (first("export-publish")) throw unreachable("updateRefs")
+        if (first("export-lost")) return
+        // Another writer moves the first ref, so the export's compare-and-swap finds it moved.
+        if (first("export-conflict")) try real.updateRefs({ ...transaction, updates: transaction.updates.slice(0, 1) })
+        try real.updateRefs(transaction)
+      },
+    })
+    const target: ExportTarget.Shape = {
+      names: mock.target.names,
+      get pace() { return first("export-paced") ? ONE_WRITE : mock.target.pace ?? UNPACED },
+    }
+    return {
+      stack: { ...mock.stack, read: () => Effect.suspend(() => first("export-empty") ? Effect.map(mock.stack.read(), (history) => ({ ...history, commits: [] })) : mock.stack.read()) },
+      main: { since: (sha) => Effect.suspend(() => first("main-read") ? Effect.fail(new MainUnavailable({ reason: "main can't be read" })) : mock.main.since(sha)) },
+      repository,
+      target,
+    }
+  }
+}
+
+/** The history page's Mythical as the mock history for a `role` person, with `faults` under it. */
+export function faultyMock(faults: ReadonlyArray<MockFault>, role: Role) {
+  return Layer.merge(
+    MockMythical({ role, name: "Guest", agent: false }, seeded, undefined, AFTER_SEED, faultyWiring(faults)),
+    Layer.succeed(HistoryBackend, { ready: succeed("mock" as const) }),
+  )
+}
