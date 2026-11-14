@@ -24,6 +24,15 @@ export effect function run(command: string, args: ReadonlyArray<string>, env: Re
   })
 }
 
+/**
+ * `script`, a file `pnpm build:scripts` emits for these suites. A run that skipped that step (`vitest` alone) fails here,
+ * before the test touches the emitted tree, with one message naming the step.
+ */
+export effect function builtScript(script: string) {
+  if (!(try (try FileSystem.FileSystem).exists(script))) try Effect.die(new Error(`${script} is missing: run \`pnpm build:scripts\` first (\`pnpm test\` runs it)`))
+  return script
+}
+
 /** The Node.js executable running these tests, for the emitted surfaces and scripts. */
 export effect function node() {
   return try (try Experimental.Process.Process).execPath

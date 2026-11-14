@@ -3,7 +3,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
 import { expect, it } from "@effect/vitest"
-import { node, run } from "./support/processes.vibe"
+import { builtScript, node, run } from "./support/processes.vibe"
 
 interface Page {
   readonly id: string
@@ -22,6 +22,7 @@ it.live("builds the wiki command's links, metadata and suite receipts determinis
     const fs = try FileSystem.FileSystem
     const path = try Path.Path
     const root = try path.fromFileUrl(new URL("../dist-script-tests/", import.meta.url))
+    const script = try builtScript(path.join(root, "scripts/wiki.js"))
     const wiki = path.join(root, "wiki")
     const target = path.join(root, "src/assets/wiki.generated.vibe")
     const indexTarget = path.join(root, "src/assets/wikiIndex.generated.vibe")
@@ -48,7 +49,6 @@ it.live("builds the wiki command's links, metadata and suite receipts determinis
     }
     for (const [file, content] of Object.entries(input)) try fs.writeFileString(path.join(wiki, file), content)
     const executable = try node()
-    const script = path.join(root, "scripts/wiki.js")
     // A clean wiki build must not depend on its own generated output.
     try fs.remove(path.join(root, "src/assets/wiki.generated.js"), { force: true })
     const built = try run(executable, [script])

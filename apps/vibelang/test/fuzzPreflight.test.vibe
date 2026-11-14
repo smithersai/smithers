@@ -5,7 +5,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { expect, it } from "@effect/vitest"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
-import { node, run } from "./support/processes.vibe"
+import { builtScript, node, run } from "./support/processes.vibe"
 
 const flowPackages = ["vibelang-runtime", "vibelang", "effect", "@effect/platform-node", "@smthrs/flow", "@smthrs/plan", "@smthrs/engine-store", "@smthrs/platform-node", "@smthrs/kernel", "@smthrs/run-store"]
 
@@ -14,7 +14,7 @@ it.live("names each missing flow package and the install command, and passes onc
     const fs = try FileSystem.FileSystem
     const path = try Path.Path
     const root = try fs.makeTempDirectoryScoped()
-    const script = try path.fromFileUrl(new URL("../dist-scripts/fuzz-preflight.js", import.meta.url))
+    const script = try builtScript(try path.fromFileUrl(new URL("../dist-scripts/fuzz-preflight.js", import.meta.url)))
     const executable = try node()
     const check = () => run(executable, [script], { FUZZ_REPOSITORY_ROOT: root })
     for (const name of flowPackages.slice(1)) {

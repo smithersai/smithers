@@ -7,7 +7,7 @@ import { expect, it } from "@effect/vitest"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { main as seedMain } from "../scripts/mythical-seed-program.vibe"
 import type { History } from "../src/history/mythical.vibe"
-import { node, run } from "./support/processes.vibe"
+import { builtScript, node, run } from "./support/processes.vibe"
 
 /** Run an actual jj command, retaining its diagnostics when fixture setup fails. */
 effect function jj(args: ReadonlyArray<string>) {
@@ -44,7 +44,7 @@ it.live("bootstraps real commits and queue attempts deterministically, and prese
     ]
     try fs.writeFileString(queue, `\nnot json\n{}\n${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`)
     const emitted = try path.fromFileUrl(new URL("../dist-script-tests/", import.meta.url))
-    const script = path.join(emitted, "scripts/mythical-seed.js")
+    const script = try builtScript(path.join(emitted, "scripts/mythical-seed.js"))
     const target = path.join(emitted, "src/history/seed/vibelang.vibe")
     try fs.makeDirectory(path.join(emitted, "src/history/seed"), { recursive: true })
     try fs.remove(target, { force: true })
