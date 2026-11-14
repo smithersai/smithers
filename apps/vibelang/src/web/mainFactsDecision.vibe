@@ -1,0 +1,161 @@
+// The facts main.vibe's update, commands and subscriptions decided inline before (0018 "Decisions in views",
+// batch 60, lane vl-proveall3): which messages a key or a link means, what a submitted draft is, when a stream runs,
+// and when the address keeps a live issue write for resume. Plain values in; main.vibe builds the messages.
+import type { SubmitFacts } from "./updateDecision.vibe"
+
+/** A restored detail screen with a selected issue loads its comments and timeline, where the mode loads them. */
+//@ verify
+//@ ensures \result == (screen == "detail" && selected > 0 && loads)
+export function restoresDetail(screen: string, selected: number, loads: boolean): boolean {
+  return screen === "detail" && selected > 0 && loads
+}
+
+/** A tour start that lands late ends only a tour the person dismissed: a shown or undismissed tour stays. */
+//@ verify
+//@ ensures \result == (tour || !dismissed)
+export function tourStillShown(tour: boolean, dismissed: boolean): boolean {
+  return tour || !dismissed
+}
+
+/** A slash pick of a mode/ command switches the mode; every other pick launches its action. */
+//@ verify
+//@ ensures \result == name.startsWith("mode/")
+export function modePick(name: string): boolean {
+  return name.startsWith("mode/")
+}
+
+/** Retry finds no waiting post at a negative index. */
+//@ verify
+//@ ensures \result == (index < 0)
+export function noRetry(index: number): boolean {
+  return index < 0
+}
+
+/** A failed tour end resumes an active tour only at a real stop. */
+//@ verify
+//@ ensures \result == (active && step <= stops)
+export function resumesTour(active: boolean, step: number, stops: number): boolean {
+  return active && step <= stops
+}
+
+/** What the trimmed draft says, for the proved submitKind: /mock or /live, /sandbox, any slash, a pick, or nothing. */
+//@ verify
+//@ ensures \result.mode == (text == "/mock" || text == "/live")
+//@ ensures \result.sandbox == (text == "/sandbox")
+//@ ensures \result.slashed == text.startsWith("/")
+//@ ensures \result.selected == selected
+//@ ensures \result.empty == (text == "")
+export function submitFacts(text: string, selected: boolean): SubmitFacts {
+  return { mode: text === "/mock" || text === "/live", sandbox: text === "/sandbox", slashed: text.startsWith("/"), selected, empty: text === "" }
+}
+
+/** An action's input: a JSON action's blank text is an empty object, other JSON is decoded, other text is text. */
+//@ verify
+//@ ensures \result == (format == "json" ? (trimmed == "" ? "empty" : "json") : "text")
+export function inputKind(format: string, trimmed: string): "empty" | "json" | "text" {
+  return format === "json" ? (trimmed === "" ? "empty" : "json") : "text"
+}
+
+/** The actions clock ticks for a queued or running run that is still connected. */
+//@ verify
+//@ ensures \result == ((state == "queued" || state == "running") && !disconnected)
+export function ticks(state: string, disconnected: boolean): boolean {
+  return (state === "queued" || state === "running") && !disconnected
+}
+
+/** A link inside a wiki page opens in place when it names a wiki page. */
+//@ verify
+//@ ensures \result == href.startsWith("/wiki/")
+export function wikiLink(href: string): boolean {
+  return href.startsWith("/wiki/")
+}
+
+/** A link in the chat opens a wiki draft in place when it names one. */
+//@ verify
+//@ ensures \result == href.startsWith("#wiki-draft-")
+export function draftLink(href: string): boolean {
+  return href.startsWith("#wiki-draft-")
+}
+
+/** Back and forward reach the page's wiki state at a wiki path or the root. */
+//@ verify
+//@ ensures \result == (pathname.startsWith("/wiki/") || pathname == "/")
+export function wikiLocation(pathname: string): boolean {
+  return pathname.startsWith("/wiki/") || pathname === "/"
+}
+
+/** The sandbox reads while the chat shows and no sandbox request is in flight. */
+//@ verify
+//@ ensures \result == (surface == "chat" && !busy)
+export function sandboxReads(surface: string, busy: boolean): boolean {
+  return surface === "chat" && !busy
+}
+
+/** The sandbox read repeats while a sandbox runs or its pane is open. */
+//@ verify
+//@ ensures \result == (status == "running" || pane != "closed")
+export function sandboxLive(status: string, pane: string): boolean {
+  return status === "running" || pane !== "closed"
+}
+
+/** Issues load ahead once the mode is known and the chat shows. */
+//@ verify
+//@ ensures \result == (mode != "pending" && surface == "chat")
+export function issuesPrefetch(mode: string, surface: string): boolean {
+  return mode !== "pending" && surface === "chat"
+}
+
+/** The tour's keys: Command or Control with K focuses the prompt (no other modified key acts); Tab moves focus, Space
+ * pauses, the left and right arrows go back and skip. */
+//@ verify
+//@ ensures (meta || control) ==> \result == (lower == "k" ? "prompt" : "none")
+//@ ensures !(meta || control) ==> \result == (key == "Tab" ? "focus" : key == " " ? "pause" : key == "ArrowLeft" ? "back" : key == "ArrowRight" ? "skip" : "none")
+export function tourKey(key: string, lower: string, meta: boolean, control: boolean): "prompt" | "focus" | "pause" | "back" | "skip" | "none" {
+  if (meta || control) return lower === "k" ? "prompt" : "none"
+  return key === "Tab" ? "focus" : key === " " ? "pause" : key === "ArrowLeft" ? "back" : key === "ArrowRight" ? "skip" : "none"
+}
+
+/** The sandbox minutes notice for each proved notice: out names the stopped sandbox, low counts what is left, clear
+ * empties it, keep leaves it. */
+//@ verify
+//@ ensures notice == "out" ==> \result == "Out of minutes — " + id + " stopped"
+//@ ensures notice == "low" ==> \result == remaining + " minutes left"
+//@ ensures notice == "clear" ==> \result == ""
+//@ ensures notice != "out" && notice != "low" && notice != "clear" ==> \result == kept
+export function minuteNoticeText(notice: string, id: string, remaining: string, kept: string): string {
+  if (notice === "out") return "Out of minutes — " + id + " stopped"
+  if (notice === "low") return remaining + " minutes left"
+  if (notice === "clear") return ""
+  return kept
+}
+
+/** A live issue write other than a read or a draft keeps itself in the address, so a reload resumes it. */
+//@ verify
+//@ ensures \result == (mode == "live" && op != "read" && op != "draft")
+export function marksResume(mode: string, op: string): boolean {
+  return mode === "live" && op !== "read" && op !== "draft"
+}
+
+/** The resume mark leaves the address once the write settled: it succeeded, or failed before writing anything. */
+//@ verify
+//@ ensures \result == (success || unwritten)
+export function resumeSettled(success: boolean, unwritten: boolean): boolean {
+  return success || unwritten
+}
+
+/** A resumed live read that completed the saved write clears the address. */
+//@ verify
+//@ ensures \result == (mode == "live" && status == "completed")
+export function resumeCompleted(mode: string, status: string): boolean {
+  return mode === "live" && status === "completed"
+}
+
+/** An issue failure's words: connect, fork and install name their step; every other reason reads as given. */
+//@ verify
+//@ ensures reason == "connect" ==> \result == "Connect GitHub."
+//@ ensures reason == "fork" ==> \result == "Fork on GitHub."
+//@ ensures reason == "install" ==> \result == "Install Smithers on your fork."
+//@ ensures reason != "connect" && reason != "fork" && reason != "install" ==> \result == other
+export function issueFailureWords(reason: string, other: string): string {
+  return reason === "connect" ? "Connect GitHub." : reason === "fork" ? "Fork on GitHub." : reason === "install" ? "Install Smithers on your fork." : other
+}

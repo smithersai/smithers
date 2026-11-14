@@ -297,20 +297,18 @@ src/web/main.vibe	driveWalkthrough/callback	some entry.clientId === `${walkthrou
 src/web/main.vibe	endTour	recorded	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/main.vibe	endTour	recorded	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/main.vibe	execute	!mock	Mock mode (VL-13): the forced mock backend, not a product decision
+src/web/main.vibe	execute	?? result.success.saved?.status	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	execute	closed	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/main.vibe	execute	dock	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
-src/web/main.vibe	execute	factory.mode === "live" && request.op !== "read" && request.op !== "draft"	Open: state: which live issue writes rewrite the address for resume
-src/web/main.vibe	execute	factory.mode === "live" && request.op !== "read" && request.op !== "draft" && (result._tag === "Success" || result.failure.unwritten === true)	Open: state: which live issue writes rewrite the address for resume
-src/web/main.vibe	execute	factory.mode === "live" && result._tag === "Success" && result.success.saved?.status === "completed"	Open: state: which live issue writes rewrite the address for resume
 src/web/main.vibe	execute	failed	Result: an effect's outcome becomes its success or failure message; the failure is the host's
 src/web/main.vibe	execute	open	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	execute	opened	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
+src/web/main.vibe	execute/callback	?? format	Default: an action registered without an input format takes text, so a missing format is not JSON
 src/web/main.vibe	execute/callback	?? result.success.pages.find((entry) => entry.id === request.page)?.revision	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	execute/callback	?? result.success.review	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	execute/callback	content	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	execute/callback	factory.controlTour	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	execute/callback	failed	Result: an effect's outcome becomes its success or failure message; the failure is the host's
-src/web/main.vibe	execute/callback	format === "json"	Open: state: an action's input: blank JSON is an empty object, text is text
 src/web/main.vibe	execute/callback	hash	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	execute/callback	hash	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	execute/callback	kind === "start"	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
@@ -323,7 +321,6 @@ src/web/main.vibe	execute/callback	posted === ""	Result: an effect's outcome bec
 src/web/main.vibe	execute/callback	reached	Result: an effect's outcome becomes its success or failure message; the failure is the host's
 src/web/main.vibe	execute/callback	result.success.draft !== undefined && result.success.draft.page === page	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	execute/callback	started === ""	Result: an effect's outcome becomes its success or failure message; the failure is the host's
-src/web/main.vibe	execute/callback	text.trim() === ""	Open: state: an action's input: blank JSON is an empty object, text is text
 src/web/main.vibe	execute/callback	window.location.pathname + window.location.hash !== url	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	execute/callback/callback	find entry.id === page	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	execute/callback/callback	find entry.id === request.page	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
@@ -344,10 +341,8 @@ src/web/main.vibe	knownWikiSource/callback	find entry.id === page	Lookup: finds 
 src/web/main.vibe	launchAction	door === "slash"	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/main.vibe	launchAction/callback	find entry.name === name	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	launchAction/callback	some entry.name === name	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-src/web/main.vibe	learnMore	model.palette	Open: state: Learn more closes an open palette first
-src/web/main.vibe	minuteNotice	switch notice	Open: label: the sandbox minute notice: out, low, clear, keep
+src/web/main.vibe	learnMore	model.palette	Forwards: Learn more closes the palette on its own open flag; there is nothing to close while it is closed
 src/web/main.vibe	receiveTour	?? model.tourClient	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/main.vibe	recoverEndTour	!active || state === undefined || state.step > WALKTHROUGH.length	Open: state: a failed tour end resumes only an active tour at a real stop
 src/web/main.vibe	recoverEndTour	|| state.target || WALKTHROUGH[state.step - 1]!.target	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	runAccount	step.commands.length === 0	Commands: sends the commands a proved step returned, or none; Foldkit batching, no decision
 src/web/main.vibe	runActions	step.commands.length === 0	Commands: sends the commands a proved step returned, or none; Foldkit batching, no decision
@@ -356,7 +351,6 @@ src/web/main.vibe	runEscape	step.reveal	Forwards: reads a value or flag another 
 src/web/main.vibe	runEscape	switch step.kind	Translation: dispatches a proved step or command variant to its Foldkit message or command (test/translation.property.test.vibe)
 src/web/main.vibe	runTourControl	control.action === "none"	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/main.vibe	sandboxAction	?? model.sandbox?.generation	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/main.vibe	submit	|| text === "/mock" || text === "/live"	Open: state: what a submitted draft is: a mode switch, sandbox, slash command or post
 src/web/main.vibe	subscriptions/callback	?? page?.defaultView	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	subscriptions/callback	?? page?.defaultView	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	subscriptions/callback	?? page?.defaultView	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
@@ -368,23 +362,10 @@ src/web/main.vibe	subscriptions/callback/dependenciesToStream	active	Forwards: r
 src/web/main.vibe	subscriptions/callback/dependenciesToStream	ids.length === 0	Empty list: no items show nothing or the list's empty mark; which items is decided where the list is built
 src/web/main.vibe	subscriptions/callback/dependenciesToStream	live	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/main.vibe	subscriptions/callback/dependenciesToStream	person === ""	Empty text: an empty string shows nothing; any other text shows as given
-src/web/main.vibe	subscriptions/callback/dependenciesToStream/filterMapEvent	(event as KeyboardEvent).metaKey || (event as KeyboardEvent).ctrlKey	Open: state: tour keys: Command-K, Tab, Space, arrows
-src/web/main.vibe	subscriptions/callback/dependenciesToStream/filterMapEvent	key === " "	Open: state: tour keys: Command-K, Tab, Space, arrows
-src/web/main.vibe	subscriptions/callback/dependenciesToStream/filterMapEvent	key === "ArrowLeft"	Open: state: tour keys: Command-K, Tab, Space, arrows
-src/web/main.vibe	subscriptions/callback/dependenciesToStream/filterMapEvent	key === "ArrowRight"	Open: state: tour keys: Command-K, Tab, Space, arrows
-src/web/main.vibe	subscriptions/callback/dependenciesToStream/filterMapEvent	key === "Tab"	Open: state: tour keys: Command-K, Tab, Space, arrows
-src/web/main.vibe	subscriptions/callback/dependenciesToStream/filterMapEvent	key.toLowerCase() === "k"	Open: state: tour keys: Command-K, Tab, Space, arrows
-src/web/main.vibe	subscriptions/callback/filterMapEvent	href?.startsWith("/wiki/")	Open: state: which links open in place: wiki pages and wiki drafts
-src/web/main.vibe	subscriptions/callback/filterMapEvent	href?.startsWith("#wiki-draft-")	Open: state: which links open in place: wiki pages and wiki drafts
 src/web/main.vibe	subscriptions/callback/filterMapEvent	keyboard.defaultPrevented	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
-src/web/main.vibe	subscriptions/callback/filterMapEvent	location && (location.pathname.startsWith("/wiki/") || location.pathname === "/")	Open: state: which paths are wiki locations
 src/web/main.vibe	subscriptions/callback/filterMapEvent	mouse.button !== 0 || mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	subscriptions/callback/filterMapEvent	mouse.button !== 0 || mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
-src/web/main.vibe	subscriptions/callback/modelToDependencies	&& model.mode !== "pending" && model.surface === "chat" && model.issues === undefined	Open: state: issues load ahead while the chat shows a known mode
-src/web/main.vibe	subscriptions/callback/modelToDependencies	&& model.surface === "chat" && !model.sandboxBusy	Open: state: the sandbox polls while the chat shows and no request is in flight
-src/web/main.vibe	subscriptions/callback/modelToDependencies	|| model.sandbox?.status === "running" || model.sandboxPane !== "closed"	Open: state: the sandbox polls while the chat shows and no request is in flight
-src/web/main.vibe	subscriptions/callback/modelToDependencies/callback	&& (run.state === "queued" || run.state === "running") && !actionsOf(model).disconnected.includes(run.id)	Open: state: the actions clock ticks while a connected run is queued or running
-src/web/main.vibe	subscriptions/callback/modelToDependencies/callback	some (run.state === "queued" || run.state === "running") && !actionsOf(model).disconnected.includes(run.id)	Open: state: the actions clock ticks while a connected run is queued or running
+src/web/main.vibe	subscriptions/callback/modelToDependencies	?? model.sandbox?.status	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	subscriptions/scrolled	value	Host boundary: DOM, window, URL, storage, keyboard, pointer, speech or media APIs (screenDecision and theatreDecision own the decisions)
 src/web/main.vibe	touringHere	?? model.tourClient	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update	?? issues?.dialog	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -392,13 +373,12 @@ src/web/main.vibe	update	|| issues === undefined || issues.dialog === "" || Mach
 src/web/main.vibe	update/AccountLoaded	?? snapshot	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/AccountLoaded	commands.length > 0	Commands: sends the commands a proved step returned, or none; Foldkit batching, no decision
 src/web/main.vibe	update/ClickedIssues	?? model.issues	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/main.vibe	update/ClickedRetry	index < 0 || !waiting	Open: state: Retry acts only on a waiting post
 src/web/main.vibe	update/CompletedWikiEdit	?? model.wikiPages	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/main.vibe	update/FailedActionFollow	!actionFollowCurrent(model, epoch, generation, ids)	Open: state: an action follow answer applies only to the current epoch, generation and runs
+src/web/main.vibe	update/FailedActionFollow	!actionFollowCurrent(model, epoch, generation, ids)	Forwards: actionFollowCurrent conjoins the proved ActionFollow.current and ActionFollow.same; it decides nothing of its own
 src/web/main.vibe	update/FailedActions	?? epoch	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/FailedActions	?? op	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/FailedSandbox/callback	polled === true	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
-src/web/main.vibe	update/FollowedAction	!actionFollowCurrent(model, epoch, generation, ids)	Open: state: an action follow answer applies only to the current epoch, generation and runs
+src/web/main.vibe	update/FollowedAction	!actionFollowCurrent(model, epoch, generation, ids)	Forwards: actionFollowCurrent conjoins the proved ActionFollow.current and ActionFollow.same; it decides nothing of its own
 src/web/main.vibe	update/IssueProjectionLoaded	?? model.issues	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/IssueProjectionLoaded	?? model.issues?.data.seq	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/IssuesFailed	?? key	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -406,9 +386,6 @@ src/web/main.vibe	update/IssuesFailed	?? model.issues	Default: an absent optiona
 src/web/main.vibe	update/IssuesFailed	?? op	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/IssuesFailed	?? ui.retry?.key	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/IssuesFailed	?? ui.retry?.op	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/main.vibe	update/IssuesFailed	reason === "connect"	Open: label: an issue failure's wording: connect, fork, install
-src/web/main.vibe	update/IssuesFailed	reason === "fork"	Open: label: an issue failure's wording: connect, fork, install
-src/web/main.vibe	update/IssuesFailed	reason === "install"	Open: label: an issue failure's wording: connect, fork, install
 src/web/main.vibe	update/IssuesLoaded	?? data.assignees.find((a) => a.label === "VibeLang agent")?.login	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	update/IssuesLoaded	?? data.draft?.example	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/IssuesLoaded	?? data.draft?.prior	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -420,7 +397,6 @@ src/web/main.vibe	update/IssuesLoaded	?? model.issues	Default: an absent optiona
 src/web/main.vibe	update/IssuesLoaded	?? op	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/IssuesLoaded	?? ui.retry?.key	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/IssuesLoaded	?? ui.retry?.op	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/main.vibe	update/IssuesLoaded	step.state.screen === "detail" && selected > 0 && IssueDecision.issueCardLoadsDetails(model.mode)	Open: state: a detail screen with a selected issue loads its card
 src/web/main.vibe	update/IssuesLoaded/callback	find a.label === "VibeLang agent"	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	update/IssuesLoaded/callback	some a.login === ui.assignee	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
 src/web/main.vibe	update/LoadedSandbox	?? model.minuteNotice	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -431,7 +407,6 @@ src/web/main.vibe	update/LoadedSandbox	polled === true	Forwards: reads a value o
 src/web/main.vibe	update/OpenIssueCard	?? model.issues	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/OpenIssueCard	?? model.issues	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/OpenIssueCard	?? model.issues?.serial	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
-src/web/main.vibe	update/PickedSlash	name.startsWith("mode/")	Open: state: a slash pick of mode/ switches mode, else launches the action
 src/web/main.vibe	update/ReceivedEvent	?? announcedAnswer?.text	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/ReceivedEvent	?? answer?.error	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	update/ReceivedEvent	?? answer?.text	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
@@ -445,7 +420,6 @@ src/web/main.vibe	update/ReceivedRole	?? account.members.find(person => person.i
 src/web/main.vibe	update/ReceivedRole	commands.length > 0	Commands: sends the commands a proved step returned, or none; Foldkit batching, no decision
 src/web/main.vibe	update/ReceivedRole	event.type === "RoleGranted"	Forwards: reads a value or flag another proved decision or the message set; chooses nothing new
 src/web/main.vibe	update/ReceivedRole/callback	find person.id === event.id	Lookup: finds the record a view or step names by id or name; which one is named is decided elsewhere
-src/web/main.vibe	update/SucceededTour	|| model.tour || model.tourDismissed !== true	Open: state: a late tour success ends a tour no longer shown
 src/web/main.vibe	update/TickedActions	?? actionsOf(model).now	Default: an absent optional value reads as its empty value; nothing of the view's own choosing
 src/web/main.vibe	viewTransition	!!previousModel.issues?.open !== !!model.issues?.open	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision
 src/web/main.vibe	viewTransition	model.issues?.open	Markup: an icon, class, element or size follows a display flag (maximized, open, primary, latest); no product decision

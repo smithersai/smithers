@@ -33,6 +33,7 @@ import * as PaneDecision from "./paneDecision.vibe"
 import * as UpdateDecision from "./updateDecision.vibe"
 import * as ArmDecision from "./armDecision.vibe"
 import * as Gate from "./viewGateDecision.vibe"
+import * as Facts from "./mainFactsDecision.vibe"
 import * as WikiEditorDecision from "./wikiEditorDecision.vibe"
 import { pages, wikiEditable, wikiPage } from "../core/wiki.vibe"
 import { Navigation } from "foldkit"
@@ -402,7 +403,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
         const { request, status, unwritten, selected } = data.saved
         const step = IssueDecision.issueRecovered(issueScreen(ui), request.op, status === "completed", unwritten, selected, request.title, request.text, request.example, request.prior, String(request.parent), request.assignee)
         // The recovery read returns the list; a restored detail view still needs its comments and timeline.
-        const commands = step.state.screen === "detail" && selected > 0 && IssueDecision.issueCardLoadsDetails(model.mode)
+        const commands = Facts.restoresDetail(step.state.screen, selected, IssueDecision.issueCardLoadsDetails(model.mode))
           ? [LoadIssueDetails({ number: selected, key: `${model.session}-restored-${selected}` })] : []
         return { model: ModelWrite.issueResponseWrite(model, ui, step.state, data, role, model.session, step.clearRetry, request), commands }
       }
@@ -414,7 +415,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     IssuesFailed: ({ reason, op, key, unwritten }) => {
       const ui = model.issues ?? initialIssues
       const relevant = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
-      const step = IssueDecision.issueFailed(issueScreen(ui), ui.data.items.length === 0, relevant, unwritten === true, reason === "connect" ? "Connect GitHub." : reason === "fork" ? "Fork on GitHub." : reason === "install" ? "Install Smithers on your fork." : IssueDecision.issueFailureText(reason))
+      const step = IssueDecision.issueFailed(issueScreen(ui), ui.data.items.length === 0, relevant, unwritten === true, Facts.issueFailureWords(reason, IssueDecision.issueFailureText(reason)))
       return { model: ModelWrite.issueResponseWrite(model, ui, step.state, ui.data, ui.role, ui.keyPrefix, step.clearRetry, ui.retry) }
     },
     IssueDetailsLoaded: ({ data, number }) => model.issues === undefined || !ModelDecision.issueDetailsApply(model.issues.selected, number, data.seq, model.issues.data.seq) ? { model } : { model: ModelWrite.issueDetailsWrite(model, model.issues, data) },
@@ -442,7 +443,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     // Ended before the tour was even recorded: end it now that it is.
     // Only the person's end (a dismissal) ends a start that lands late: an earlier tour's recorded end, replayed while
     // this start was in flight, also leaves `tour` false and must not end the new tour.
-    SucceededTour: () => TourDecision.endsLateTour(model.tour || model.tourDismissed !== true) ? { model, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) })] } : { model },
+    SucceededTour: () => TourDecision.endsLateTour(Facts.tourStillShown(model.tour, model.tourDismissed === true)) ? { model, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) })] } : { model },
     // Busy while this tab's own tour runs (a Learn more racing an Escape): that tour keeps control.
     FailedTour: ({ reason }) => TourDecision.failedTourKeeps(touringHere(model), model.recoverTour === true, reason) ? { model: ModelWrite.keptTourWrite(model, TourDecision.keptTour()) } : {
       model: ModelWrite.failedTourWrite(model, failScreenTour(ScreenRead.screenOf(model), reason, false)),
@@ -530,13 +531,13 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const menu = completions(model)
       return { model: ModelWrite.highlightWrite(model, actionsOf(model), ModelDecision.slashHighlight(actionsOf(model).highlight, delta, menu.length)) }
     },
-    PickedSlash: ({ name }) => name.startsWith("mode/") ? switchMode(model, name.slice("mode/".length)) : launchAction(model, name, "slash"),
+    PickedSlash: ({ name }) => Facts.modePick(name) ? switchMode(model, name.slice("mode/".length)) : launchAction(model, name, "slash"),
     SubmittedDraft: () => submit(model),
     SucceededPost: () => ({ model }),
     ClickedRetry: ({ clientId }) => {
       const index = UpdateDecision.retryIndex(model.client.pending, clientId)
       const waiting = model.client.pending[index]
-      if (index < 0 || !waiting) return { model }
+      if (Facts.noRetry(index) || waiting === undefined) return { model }
       return {
         model: ModelWrite.clientWrite(model, Machine.retryPost(model.client, clientId)),
         commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text: waiting.text }), FocusComposer({})],
@@ -757,7 +758,7 @@ function recoverEndTour(model: Model): Update.Return<Model, Message, Factory | A
   const active = touringHere(model)
   const state = model.tourClient?.conversation.walkthrough
   const next: Update.Return<Model, Message, Factory | Actions> = { model: ModelWrite.endFailedWrite(model, failedScreenEnd(ScreenRead.screenOf(model), active), active) }
-  if (!active || state === undefined || state.step > WALKTHROUGH.length) return next
+  if (state === undefined || !Facts.resumesTour(active, state.step, WALKTHROUGH.length)) return next
   const recovered = ModelWrite.theatreWrite(next.model, state.step, state.target || WALKTHROUGH[state.step - 1]!.target, state.paused)
   return driveWalkthrough({ model: recovered, commands: [PresentTour({ step: state.step, sound: recovered.theatre.sound, active: true, paused: state.paused })] }, state)
 }
@@ -787,7 +788,7 @@ function switchMode(model: Model, to: string): Update.Return<Model, Message, Fac
 function submit(model: Model): Update.Return<Model, Message, Factory | Actions> {
   const text = model.draft.trim()
   const selected = completions(model)[actionsOf(model).highlight]
-  const kind = UpdateDecision.submitKind({ mode: text === "/mock" || text === "/live", sandbox: text === "/sandbox", slashed: text.startsWith("/"), selected: selected !== undefined, empty: text === "" })
+  const kind = UpdateDecision.submitKind(Facts.submitFacts(text, selected !== undefined))
   if (kind === "mode") return switchMode(model, text.slice(1))
   if (kind === "sandbox") {
     const next = sandboxAction(ModelWrite.sandboxSubmitWrite(model), "start")
@@ -996,7 +997,8 @@ export const RunAction = Command.define("RunAction", {
   execute: effect ({ name, text, door, retry, format, epoch }) => {
     const actions = try Actions
     return (effect {
-      const input = format === "json" ? (text.trim() === "" ? {} : try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(text), () => new ActionFailure({ code: "input" }))) : { text }
+      const kind = Facts.inputKind(format ?? "", text.trim())
+      const input = kind === "json" ? (try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(text), () => new ActionFailure({ code: "input" }))) : kind === "empty" ? {} : { text }
       const id = try (retry === undefined ? actions.start(name, input, door) : actions.rerun(retry))
       const run = try actions.read(id)
       return try message(() => Message.StartedAction({ run, epoch }))
@@ -1092,7 +1094,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
     value ? Option.some(Message.ScrolledTranscript(value)) : Option.none()
   return Subscription.make<Model, Message, Factory | Actions>()((entry) => ({
     actionTime: entry({ active: Schema.Boolean }, {
-      modelToDependencies: (model: Model) => ({ active: actionsOf(model).runs.some((run) => (run.state === "queued" || run.state === "running") && !actionsOf(model).disconnected.includes(run.id)) }),
+      modelToDependencies: (model: Model) => ({ active: actionsOf(model).runs.some((run) => Facts.ticks(run.state, actionsOf(model).disconnected.includes(run.id))) }),
       dependenciesToStream: ({ active }) => active ? Stream.tick("1 second").pipe(Stream.mapEffect(effect () => { const at = try Clock.currentTimeMillis; return try message(() => Message.TickedActions({ at })) })) : Stream.empty,
     }),
     actionRuns: entry({ ids: Schema.Array(Schema.String), epoch: Schema.Number, generation: Schema.Number }, {
@@ -1116,7 +1118,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         const element = event.target as Element | null
         const link = element?.closest?.(".vl-wiki-content a")
         const href = link?.getAttribute("href")
-        return href?.startsWith("/wiki/") ? Option.some(Message.ClickedWiki({ page: href })) : Option.none()
+        return href !== undefined && href !== null && Facts.wikiLink(href) ? Option.some(Message.ClickedWiki({ page: href })) : Option.none()
       },
     })),
     wikiDraftLinks: Subscription.persistentEntry(Dom.streamFromEventFilterMapPreventDefault({
@@ -1126,7 +1128,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         if (mouse.button !== 0 || mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey) return Option.none()
         const link = (event.target as Element | null)?.closest?.(".sui-chat-bubble a")
         const href = link?.getAttribute("href")
-        const page = href?.startsWith("#wiki-draft-") ? href.slice("#wiki-draft-".length) : undefined
+        const page = href !== undefined && href !== null && Facts.draftLink(href) ? href.slice("#wiki-draft-".length) : undefined
         return page !== undefined && wikiPage(`/wiki/${page}`) !== undefined ? Option.some(Message.ClickedWikiDraft({ page })) : Option.none()
       },
     })),
@@ -1134,7 +1136,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
       target: page?.defaultView ?? keys, type: "popstate",
       filterMapEvent: () => {
         const location = page?.defaultView?.location
-        return location && (location.pathname.startsWith("/wiki/") || location.pathname === "/") ? Option.some(Message.WikiLocationChanged({ page: location.pathname + location.hash })) : Option.none()
+        return location !== undefined && Facts.wikiLocation(location.pathname) ? Option.some(Message.WikiLocationChanged({ page: location.pathname + location.hash })) : Option.none()
       },
     })),
     keyboard: Subscription.persistentEntry(
@@ -1215,8 +1217,8 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         modelToDependencies: (model: Model) => ({
           conversation: model.conversation,
           request: model.sandboxRequest,
-          active: model.surface === "chat" && !model.sandboxBusy,
-          live: model.sandbox?.status === "running" || model.sandboxPane !== "closed",
+          active: Facts.sandboxReads(model.surface, !!model.sandboxBusy),
+          live: Facts.sandboxLive(model.sandbox?.status ?? "", model.sandboxPane),
           finished: model.client.conversation.entries.filter((entry) => entry.done).length,
         }),
         dependenciesToStream: ({ conversation, request, active, live }) => {
@@ -1234,7 +1236,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
     issueCount: entry(
       { active: Schema.Boolean },
       {
-        modelToDependencies: (model: Model) => ({ active: model.mode !== "pending" && model.surface === "chat" && model.issues === undefined }),
+        modelToDependencies: (model: Model) => ({ active: Facts.issuesPrefetch(model.mode, model.surface) && model.issues === undefined }),
         dependenciesToStream: ({ active }) => active ? Stream.fromEffect(effect {
           const api = (try Factory).issues
           const result = try Effect.result(api.read())
@@ -1276,8 +1278,8 @@ export function subscriptions(keys: EventTarget, page?: Document) {
       modelToDependencies: (model: Model) => ({ active: model.tour }),
       dependenciesToStream: ({ active }) => !active ? Stream.empty : Dom.streamFromEventFilterMapPreventDefault({ target: keys, type: "keydown", options: { capture: true }, filterMapEvent: event => {
         const key = (event as KeyboardEvent).key
-        if ((event as KeyboardEvent).metaKey || (event as KeyboardEvent).ctrlKey) return key.toLowerCase() === "k" ? Option.some(Message.FocusedPrompt()) : Option.none()
-        return key === "Tab" ? Option.some(Message.MovedTourFocus({ backward: (event as KeyboardEvent).shiftKey })) : key === " " ? Option.some(Message.ClickedPauseTour()) : key === "ArrowLeft" ? Option.some(Message.ClickedBackStop()) : key === "ArrowRight" ? Option.some(Message.ClickedSkipStop()) : Option.none()
+        const act = Facts.tourKey(key, key.toLowerCase(), (event as KeyboardEvent).metaKey, (event as KeyboardEvent).ctrlKey)
+        return act === "prompt" ? Option.some(Message.FocusedPrompt()) : act === "focus" ? Option.some(Message.MovedTourFocus({ backward: (event as KeyboardEvent).shiftKey })) : act === "pause" ? Option.some(Message.ClickedPauseTour()) : act === "back" ? Option.some(Message.ClickedBackStop()) : act === "skip" ? Option.some(Message.ClickedSkipStop()) : Option.none()
       } }),
     }),
     theatreWindow: Subscription.persistentEntry(Stream.merge(
@@ -1344,12 +1346,7 @@ function wikiDraft(request: WikiRequest | undefined): WikiEditorDecision.WikiDra
 function wikiRequest(draft: WikiEditorDecision.WikiDraft): WikiRequest { return ScreenRead.wikiRequest(draft) }
 
 function minuteNotice(notice: PaneDecision.SandboxNotice, id: string, remaining: number, kept: string): string {
-  switch (notice) {
-    case "out": return `Out of minutes — ${id} stopped`
-    case "low": return `${remaining} minutes left`
-    case "clear": return ""
-    case "keep": return kept
-  }
+  return Facts.minuteNoticeText(notice, id, String(remaining), kept)
 }
 export const SandboxAction = Command.define("SandboxAction", {
   args: { conversation: Schema.String, operationId: Schema.String, request: Schema.Number, kind: Schema.Literals(["start", "stop", "command"]), generation: Schema.Number, command: Schema.String },
@@ -1444,7 +1441,7 @@ export const LoadIssues = Command.define("LoadIssues", {
     const result = try Effect.result(effect {
       return resumeOp === undefined || resumeKey === undefined ? try factory.issues.read() : try factory.issues.act({ op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: `resume-${try Clock.currentTimeMillis}`, resumeOp, resumeKey, ...(resumeRecovery === undefined ? {} : { resumeRecovery }) })
     })
-    if (factory.mode === "live" && result._tag === "Success" && result.success.saved?.status === "completed") try Navigation.replaceUrl("/?issues=1")
+    if (result._tag === "Success" && Facts.resumeCompleted(factory.mode, result.success.saved?.status ?? "")) try Navigation.replaceUrl("/?issues=1")
     return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: false, role: result.success.role }) : Message.IssuesFailed({ reason: result.failure.reason }))
   },
 })
@@ -1452,11 +1449,11 @@ export const ActOnIssue = Command.define("ActOnIssue", {
   args: { request: IssueRequest }, messages: [Message.IssuesLoaded, Message.IssuesFailed],
   execute: effect ({ request }) => {
     const factory = try Factory
-    if (factory.mode === "live" && request.op !== "read" && request.op !== "draft") try Navigation.replaceUrl(`/?issues=1&resume-op=${request.op}&resume-key=${request.key}` + (request.recovery === undefined ? "" : `&resume-recovery=${request.recovery}`))
+    if (Facts.marksResume(factory.mode, request.op)) try Navigation.replaceUrl(`/?issues=1&resume-op=${request.op}&resume-key=${request.key}` + (request.recovery === undefined ? "" : `&resume-recovery=${request.recovery}`))
     const result = try Effect.result(effect {
       return try factory.issues.act(request)
     })
-    if (factory.mode === "live" && request.op !== "read" && request.op !== "draft" && (result._tag === "Success" || result.failure.unwritten === true)) try Navigation.replaceUrl("/?issues=1")
+    if (Facts.marksResume(factory.mode, request.op) && Facts.resumeSettled(result._tag === "Success", result._tag === "Success" ? false : result.failure.unwritten === true)) try Navigation.replaceUrl("/?issues=1")
     return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: ["new", "split", "propose"].includes(request.op), op: request.op, key: request.key, role: result.success.role }) : Message.IssuesFailed({ reason: result.failure.reason, op: request.op, key: request.key, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
   },
 })
