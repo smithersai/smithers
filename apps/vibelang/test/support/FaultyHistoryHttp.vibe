@@ -1,0 +1,40 @@
+// Faults in the live history page's HTTP (e2e/history-runtime with `?http=`): a faulty HttpClient under LiveMythical,
+// so LiveMythical's own answers to a History object that fails run in the browser. Each fault a page names answers the
+// first request it matches once, and every request after it is real.
+import { HttpClient, type HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { HISTORY_PATH } from "../../src/history/wire.vibe"
+
+/**
+ * An HTTP fault under the live history. `outline` answers the first outline read 503, `events` the first events
+ * request 503, and `write` the first write 500 with an empty JSON body: neither accepted nor refused.
+ */
+export type HttpFault = "outline" | "events" | "write"
+
+const HTTP_FAULTS: ReadonlyArray<HttpFault> = ["outline", "events", "write"]
+
+/** The faults a page's `?http=` names, comma-separated; any other name is ignored. */
+export function httpFaults(search: string): ReadonlyArray<HttpFault> {
+  const named = (new URLSearchParams(search).get("http") ?? "").split(",")
+  return HTTP_FAULTS.filter((fault) => named.includes(fault))
+}
+
+/** Whether `fault` answers `request`. */
+function answers(fault: HttpFault, request: HttpClientRequest.HttpClientRequest): boolean {
+  const path = new URL(request.url, "http://history.invalid").pathname
+  if (fault === "outline") return request.method === "GET" && path === HISTORY_PATH
+  if (fault === "events") return request.method === "GET" && path === `${HISTORY_PATH}/events`
+  return request.method === "POST" && path.startsWith(`${HISTORY_PATH}/`)
+}
+
+/** `real` with `faults` injected, each once. */
+export function faultyHttp(faults: ReadonlyArray<HttpFault>, real: HttpClient.HttpClient): HttpClient.HttpClient {
+  if (faults.length === 0) return real
+  const spent = new Set<HttpFault>()
+  return HttpClient.make((request) => {
+    const fault = faults.find((named) => !spent.has(named) && answers(named, request))
+    if (fault === undefined) return real.execute(request)
+    spent.add(fault)
+    const status = fault === "write" ? 500 : 503
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({}, { status }))))
+  })
+}

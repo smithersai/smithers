@@ -1,8 +1,10 @@
 // Built only in e2e mode: the real history page over a faulty Mythical (test/support/FaultyMythical.vibe), with the
 // faults `?fault=` names. Add `agent=mock` to run it on the mock history. A fault under the mock history
-// (test/support/FaultyMockHistory.vibe) runs the mock with that fault among its services instead.
-import { FetchHttpClient } from "effect/http"
+// (test/support/FaultyMockHistory.vibe) runs the mock with that fault among its services instead. On a live site,
+// `?http=` names faults in the page's HTTP under the live history (test/support/FaultyHistoryHttp.vibe).
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { Runtime } from "foldkit"
+import { faultyHttp, httpFaults } from "../../test/support/FaultyHistoryHttp.vibe"
 import { faultyMock, mockFaults } from "../../test/support/FaultyMockHistory.vibe"
 import { faultyMythical, historyFaults, namedRefusal } from "../../test/support/FaultyMythical.vibe"
 import { historyMain, mockRole } from "../../src/web/historyStartup.vibe"
@@ -12,6 +14,8 @@ const services = Layer.merge(page, FetchHttpClient.layer)
 const { application, flags } = await runPromise(Effect.provide(effect {
   const window = try (try Experimental.Window.Window).current
   const under = mockFaults(window.location.search)
-  return try historyMain((layer) => under.length > 0 ? faultyMock(under, mockRole(window)) : faultyMythical(historyFaults(window.location.search), layer, namedRefusal(window.location.search)))
+  const http = faultyHttp(httpFaults(window.location.search), try HttpClient.HttpClient)
+  const main = historyMain((layer) => under.length > 0 ? faultyMock(under, mockRole(window)) : faultyMythical(historyFaults(window.location.search), layer, namedRefusal(window.location.search)))
+  return try Effect.provideService(main, HttpClient.HttpClient, http)
 }, services) |> Effect.orDie(%))
 Runtime.embed(application, { flags: succeed(flags) })
