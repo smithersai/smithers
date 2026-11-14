@@ -73,7 +73,7 @@ Named browser sites and status:
 | `src/history/tools.vibe:93` | The compiler's exhaustive-match fallthrough arm (ruling VL-37; the fleet lead's compiler change). |
 | `src/web/wikiView.vibe:88` (`toHtml`) | `toHtml` runs since session 19: the GitHub-recorded repository copy differs from the build. Its link resolver still never runs: the recorded page has no links (session 21). |
 | `src/web/main.vibe:391`–`394` and `issueRecovered`, `issueRecoveredView` (`issueDecision.vibe`) | Closed in session 20: the browser uses production issue routes on workerd over recorded GitHub. Pending new issues and VIPs restore their forms; completed and unwritten-refused comments restore their issue. |
-| `src/web/main.vibe:1375`–`1376` (`LoadAccount` failure) | Only `startup.vibe`'s mode resolution sends `LoadAccount`; the fault pages start in mock mode without it. The same `AccountFailed` arm runs from sign-in and Visit as. |
+| `src/web/main.vibe:1375`–`1376` (`LoadAccount` failure) | Closed in session 35: under `fault=account-read` the fault page sends `LoadAccount` at start, as `startup.vibe`'s mode resolution does, and the first account read fails (`e2e/edge-inputs.spec.ts`). |
 | `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code: 28 of the file's browser branch arms. It becomes a `spec function` when the compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`, session 24). |
 | `src/web/historyStartup.vibe` (`signedRoles`) | Runs only live: the preview has no API Worker, and the mock plays the role the page chose. The unit suite drives it through the real startup over a loopback API (`test/historyStartup.test.vibe`). |
 | `src/core/conversation.vibe` `apply`: a fractional or negative walkthrough `step`, `duration` or seek | The page decodes every event with `EventSchema`, whose `Seq` is a non-negative integer, so such an event fails decoding first (vl-coverage-core: the forged fault crashed Foldkit's schema check when it sent one). The contracts keep the checks because Dafny's numbers are not integers. |
@@ -81,6 +81,7 @@ Named browser sites and status:
 | `src/core/conversation.vibe` `holdRemaining`: `remaining < 0` | A walkthrough's remainder is a `WalkthroughDriven` duration, which `apply` admits only when it is 0 or more, or `holdRemaining`'s own answer, which is never negative. The guard keeps the function total for its proof. |
 | `src/core/conversation.vibe` `tourWalkthrough` answering `null` for a walkthrough it holds | `TourStarted` clears the last tour's walkthrough (`c5a2f3f9`) and `WalkthroughDriven` applies only to the running tour, so a walkthrough always belongs to the running tour; `flows.vibe` `walk`, the only reader, runs only for a running tour. |
 | `src/core/flowDecision.vibe` `tourLawful` (18 arms) | Called only by proof contracts, `test/decisions.coverage.test.vibe` and the fuzz oracle (`fuzz/core-flow-decisions.node.fuzz.vibe`), never by product code. It becomes a `spec function` when a compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`). |
+| `src/history/areaDecision.vibe`: `lowerEnd`, `unitFrom`, `scopeEnd`, `parenScope` (24 arms) | The recursive specifications the `find*` and `read*` loops' invariants and `ensures` name; `titleScope` calls only the loops. Spec functions once a compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`, session 35). |
 | `src/history/trailerDecision.vibe`: `digitsStart`, `mythicalNameSpec`, `textEnd`, `paragraphStart`, `firstNamed`, `nameAt`, `lastParagraph` (34 arms) | The recursive specifications the `find*` loops' invariants name; `trailerName` calls only the loops. Spec functions once a compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`). |
 | `src/history/trailerDecision.vibe` `mythicalName`'s second refusal (160), `findFirstNamed`'s `-1` guard (211) | No input reaches them: the regex on the line before already requires `m` and digits to end the line, and `trailerName` passes `findLastParagraph`'s start, which its contract puts in `0 <= start < end`. The proof needs both, because it does not model the regex or the caller. |
 | `src/history/trailerDecision.vibe` a trailer line that continues the one before (10), a last paragraph of more than one line (191) | Every message on the mock's main has a one-line last paragraph: the three `AFTER_SEED` commits and each landed commit (`MockMythical.vibe`). `test/sequencerTrailer.test.vibe` folds both shapes (lines 9 and 15). |
@@ -3407,3 +3408,46 @@ nonblank task, names a landed commit and that commit has no task), so no event t
 A skip needs a journal written by something other than `decide`: `test/mythicalEdges.coverage.test.vibe` replays one
 and covers every skip arm.
 
+## Late wiki and tour answers, ignored inputs and quiet failures (vl-coverage, session 35, 2026-11-14)
+
+Sixteen open arms of `src/web/main.vibe` and one of `src/actions/MockActions.vibe` now run in Chromium. Four faults
+join the faulty Factory (`test/support/FaultyFactory.vibe`): `account-read` fails the first account read, and the
+fault page then reads its account at start as `startup.vibe`'s `ResolvedMode` does; `held-wiki-read` and
+`held-wiki-read-failed` hold the editor's first page read until the page releases it; `held-wiki-save` holds the first
+save; `held-tour` holds the first tour start.
+
+| Journey | Arms it closes |
+| --- | --- |
+| `e2e/late-wiki.spec.ts`: an editor read that ends after Cancel, with the page or failed; a failed editor read; Edit on another page during a save | `BeganWikiEdit` and `FailedWikiEdit` with no editor, `OpenWikiEditor`'s failure, `beginWikiEdit`'s `reopen` plan |
+| `e2e/edge-inputs.spec.ts`: an unknown slash command, an empty terminal line, `/sandbox` before any sandbox loaded, a JSON command with an empty input, a slash command while a run starts, an issue count that fails in chat, an account that fails to load, an unknown agent command | `submit`'s `ignore`, `sandboxAction`'s refusal and absent generation, `RunAction`'s empty JSON input, `launchAction`'s `ignore`, `issueCount`'s failure, `LoadAccount`'s failure; `MockActions.command`'s `unknown-command` |
+| `e2e/edge-links.spec.ts`: a chat draft link for a person who may not draft, Back to an address outside the wiki, a recovery address in mock mode | `beginWikiEdit`'s `none` plan, the popstate filter's `none`, `init`'s and `LoadIssues`'s `resumeRecovery` and resumed read |
+| `e2e/late-tour.spec.ts`: a tour start that answers after Esc | `SucceededTour`'s late end |
+
+**Load timing.** `e2e/actions.spec.ts` (two journeys), `e2e/core-agent-requests.spec.ts` and `e2e/gates.spec.ts` asked
+the agent right after choosing Visit as, so under load the request could run as the previous person. Each now waits
+until the role badge reads the chosen role, the session 34 fix for the agent-door journeys.
+
+### `src/web/main.vibe` arms the browser does not reach (after session 35)
+
+| Class | Sites | Reason |
+| --- | --- | --- |
+| A response to an issues pane the page never opened | `OpenIssueCard`, `IssuesLoaded`, `IssuesFailed` and `IssueDetailsLoaded`'s `model.issues ?? initialIssues` and `=== undefined` (381, 399, 414, 419) | Every sender writes `model.issues` first (session 31's table). |
+| Controls disabled or absent while the guard holds | `UpdatedWikiEdit`, `CanceledWikiEdit`, `SubmittedWikiEdit` and its `ignore`/`refuse` plan (471-478); `SelectedRole` without permission (362); `learnMore` while touring (684); a tour control with no tour (692) | The editor and Cancel are disabled during a submission, Save exists only with an editor, a role change that would refuse closes the editor first, a person's role select shows only when `canChangeRole` holds, and Learn more and the tour keys exist only outside or inside a tour. |
+| Host features the mock always has | `page?.defaultView ?? keys` (1133, 1283, 1284); `ShowPalette`'s failed dialog (847); a backend without `controlTour` (1512) | A browser document always has a window; the mock Factory implements tour control. |
+| Role events other than a grant | `ReceivedRole`'s non-grant arms (369, 372) | The mock's account events are `RoleGranted` only. |
+| Proof scaffolding in two history files | `areaDecision.vibe` and `trailerDecision.vibe` spec functions (58 arms) | The table under "Browser gate scope". |
+
+The other `main.vibe` arms are races between two answers (a stale follow, a scroll that crosses a render) or answers
+the mock never gives (a polled sandbox refusal, a missing page in the editor's read); the fuzz targets that send any
+Message in any Model (`fuzz/pane-messages.fuzz.vibe`) reach them.
+
+**`src/history/areaDecision.vibe`'s runtime arms.** A Fold calls `areaOf` only for a main commit without a
+`Mythical:` trailer, so the browser reaches `titleScope` only through the mock main's `AFTER_SEED` commits, all real.
+The shapes it has not met (a type with no scope, a bare `Scope:` prefix, several scopes) need a real post-seed main
+commit of that shape in `AFTER_SEED`; `test/regexDecisions.test.vibe` covers them meanwhile.
+
+**Gate (c6809622's tree, job `043cdc465b5a41355ecf41f6`).** 714 passed, 12 skipped, 15 failed on a box that took 1.3
+hours (session 34's took 44 minutes); the failing `actions`, `tourfix` and `core-tour-repeat` journeys pass 54 of 54
+on rerun (job `ef8abb94cc2e11b9880f2c96`). Branches 82.82% (5145/6212), lines 90.13%, functions 90.29%, statements
+86.55%. In `src/history`, `src/actions` and `src/web`, 57 files hold 627 open arms (session 34: 656); `main.vibe`
+574/625 branches (session 34: 558/625).
