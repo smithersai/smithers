@@ -4022,3 +4022,11 @@ full run: no journey held a command, so a click landed inside the busy window on
 `machine-command-held` machine fault (`test/support/faultyMachines.vibe`) holds the first command until the sandbox
 stops, 10 s at most. `core-sandbox-faults.spec.ts` "Stop works while a command runs": the terminal is disabled, Stop is
 enabled, and Stop stops the sandbox. 54 of 54 passed with `--repeat-each 3`; line 107's four arms ran.
+
+**A live specification with no revision.** The mock's specification is the accepted fixture, so the In review badge,
+a review with no link, a review with no revision and the screen without self-consistency suites never rendered.
+`e2e/live-specification.spec.ts` opens Specification on the core live site, whose Worker answers
+`emptySpecification`: Revision 0, In review, four reviewers with "—" for verdict, grade and revision, no Request
+review for a visitor. Closes `issuesView.vibe` 240 (2 arms), 245 (2), 253 and `issuesViewDecision.vibe` `cellText`
+(305). `issuesView.vibe` 235 and 237 (`?? emptySpecification`, `?? []`) stay open: the Worker and the mock always
+answer both fields, so they apply only before the first read answers or after it fails.
