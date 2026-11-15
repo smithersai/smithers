@@ -35,6 +35,8 @@ const test = Smithers.Vitest({
     Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("{test,examples}/**/*.{ts,vibe}"),
     Smithers.glob("test/fixtures/**/*"),
+    // The extract-intent example's worker prompt, which its flow test reads from disk.
+    Smithers.file("examples/use-cases/extract-intent/src/instructions.md"),
     Smithers.file("docs/api.md"),
     Smithers.file("docs/guides/model-backed-steps.md"),
     Smithers.file("docs/quickstart.md"),

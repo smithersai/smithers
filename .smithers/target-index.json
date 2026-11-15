@@ -58910,6 +58910,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/build/build-cli/src/internal/InputPackage.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/effect-resolution.js"
       }
     ],
     "outputs": [],
@@ -68163,6 +68167,10 @@
         "kind": "glob",
         "pattern": "packages/smithers/agent/test/fixtures/**/*",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/examples/use-cases/extract-intent/src/instructions.md"
       },
       {
         "kind": "file",

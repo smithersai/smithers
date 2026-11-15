@@ -8,5 +8,8 @@
     "composite": false,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "test/**/*", "examples/**/*"]
+  "include": ["src/**/*", "test/**/*", "examples/**/*"],
+  // Examples and their tests may use VibeLang's experimental modules (examples/use-cases/extract-intent runs on
+  // Experimental.Durable); the library builds from tsconfig.json, which does not opt in.
+  "vibe": { "experimental": ["builtins"] }
 }

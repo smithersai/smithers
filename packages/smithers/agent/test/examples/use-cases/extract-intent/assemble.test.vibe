@@ -1,0 +1,88 @@
+import { describe, expect, it } from "@effect/vitest"
+import type { Prompt } from "../../../../examples/use-cases/extract-intent/src/collect.vibe"
+import type { Pick } from "../../../../examples/use-cases/extract-intent/src/label.vibe"
+import { itemsOf, markdown, merge, readState, redact, write } from "../../../../examples/use-cases/extract-intent/src/assemble.vibe"
+import { live, tree } from "./fixtures.vibe"
+
+// Invented credentials of the right shape; none is real.
+const fakes = [
+  `sk-${"a1B2".repeat(6)}`,
+  `ghp_${"Z9y8".repeat(6)}`,
+  `github_pat_${"Ab_1".repeat(6)}`,
+  "xoxb-1234567890-abcdef",
+  "AKIAABCDEFGHIJKLMNOP",
+  `npm_${"q".repeat(32)}`,
+  `AIza${"x".repeat(32)}`,
+  `eyJ${"a".repeat(16)}.${"b".repeat(16)}.${"c".repeat(12)}`,
+  "-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----",
+  `123456789:${"A".repeat(35)}`,
+  `0x${"f".repeat(64)}`,
+  `API_KEY = ${"k".repeat(20)}`,
+  `password: ${"p".repeat(18)}`,
+]
+
+describe("redact", () => {
+  it("replaces every credential pattern", () => {
+    for (const fake of fakes) expect(redact(`before ${fake} after`, false)).toEqual({ text: "before [REDACTED] after", count: 1 })
+  })
+
+  it("replaces phone numbers, and leaves dates, times, versions and ids alone", () => {
+    for (const phone of ["+1 415 555 0134", "+14155550134", "+44 20 7946 0958", "(415) 555-0134", "415-555-0134", "415.555.0134"]) {
+      expect(redact(`call ${phone} today`, false).text).toBe("call [REDACTED] today")
+    }
+    for (const other of ["2026-11-14", "14:05:09", "v1.2.3", "1754619416", "pr #4243", "1.0.0-rc.16", "+5 points", "100 tests"]) {
+      expect(redact(`see ${other} now`, false).text).toBe(`see ${other} now`)
+    }
+  })
+
+  it("replaces any long token only in a prompt flagged as holding a secret, sparing lowercase slugs", () => {
+    const token = "Qw3rTy".repeat(8)
+    expect(redact(`use ${token}`, false).text).toBe(`use ${token}`)
+    expect(redact(`use ${token}`, true).text).toBe("use [REDACTED]")
+    expect(redact("see the-very-long-lowercase-slug-of-a-design-document-name", true).count).toBe(0)
+  })
+})
+
+const promptOf = (key: string, ts: number, text: string, pastes: ReadonlyArray<string> = []): Prompt => ({
+  key, tool: "claude", ts, folder: "/work/alpha", session: "sess-0001", account: "acct", text, pastes,
+})
+const pickOf = (key: string, extra: Partial<Pick> = {}): Pick => ({
+  key, kind: "spec", strength: "core", project: "alpha", topic: "a topic", context: "", paste: false, secret: false, ...extra,
+})
+
+describe("assemble", () => {
+  it("joins picks with the exact text, keeps pastes only when the paste carries the intent, and redacts both", () => {
+    const prompts = [promptOf("k1", 1000, "call me at 415-555-0134", ["my own spec text"]), promptOf("k2", 2000, "two", ["log output"])]
+    const { items, redacted } = itemsOf([pickOf("k1", { paste: true, project: "Beta App" }), pickOf("k2"), pickOf("missing")], prompts)
+    expect(items.map((item) => [item.id, item.project, item.text, item.pastes, item.paste_chars])).toEqual([
+      ["k1", "beta-app", "call me at [REDACTED]", ["my own spec text"], 16],
+      ["k2", "alpha", "two", [], 10],
+    ])
+    expect(redacted).toBe(1)
+  })
+
+  it("writes one file per project with 8 or more, a supporting file, and gathers the rest", () => {
+    const prompts = Array.from({ length: 10 }, (_, n) => promptOf(`k${n}`, n * 1000, `message ${n}`))
+    const picks = prompts.map((prompt, n) => pickOf(prompt.key, { project: n < 8 ? "alpha" : `tiny-${n}`, strength: n === 0 ? "supporting" : "core" }))
+    const files = markdown(itemsOf(picks, prompts).items, "2026-11-14")
+    expect(files.map((file) => file.name)).toEqual(["alpha.md", "alpha (supporting).md", "other projects.md"])
+    expect(files[0]!.text).toContain("8 messages, 1970-01-01 to 1970-01-01. 7 state a goal")
+    expect(files[0]!.text).toContain("> message 1\n\n<sub>#k1 · claude · folder `/work/alpha` · session `sess-000`</sub>")
+    expect(files[2]!.text).toContain("### 1970-01-01 00:00 · spec · tiny-8: a topic")
+  })
+
+  it.effect("adds a later run's items to the output directory and records the state", () => live(effect {
+    const out = try tree({})
+    const first = itemsOf([pickOf("k1")], [promptOf("k1", 1000, "first")]).items
+    try write(out, first, { watermark: 1000, runs: 1 }, "2026-11-14")
+    const second = itemsOf([pickOf("k2")], [promptOf("k2", 2000, "second")]).items
+    const total = try write(out, second, { watermark: 2000, runs: 2 }, "2026-11-15")
+    const state = try readState(out)
+    const all = try (try FileSystem.FileSystem).readFileString(`${out}/all.jsonl`)
+    try Effect.try(() => {
+      expect(total).toBe(2)
+      expect(state).toEqual({ watermark: 2000, runs: 2 })
+      expect(merge(all, []).map((item) => item.id)).toEqual(["k1", "k2"])
+    })
+  }))
+})

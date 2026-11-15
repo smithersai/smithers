@@ -1,0 +1,91 @@
+// Which prompts are candidates, and how a model reads them.
+//
+//   collected ─ drop slash commands, "ultrathink", under 60 typed characters without a 400-character paste, relays
+//             ─▶ candidates ─ 64 at a time, oldest first ─▶ Jev's states
+//                           ─ grouped by folder, largest folder first, packed into chunks of `target` characters
+//                             ─▶ one block per prompt, numbered within its chunk
+import type { Prompt } from "./collect.vibe"
+
+const placeholder = /\[Pasted text #\d+(?: \+\d+ lines)?\]|\[Image #\d+\]|\[\.\.\.Truncated text #\d+[^\]]*\]/g
+const relay = /^(From [a-z0-9][\w-]* ?[,(:]|FYI from |\[?(peer|relay)\b|<task-notification|<system-reminder)/i
+
+const length = (text: string) => Array.from(text).length
+const pasted = (prompt: Prompt) => prompt.pastes.reduce((sum, paste) => sum + length(paste), 0)
+
+/** What the person typed themselves: the prompt without its paste and image placeholders. */
+export const typedOf = (prompt: Prompt) => prompt.text.trim().replace(placeholder, "").trim()
+
+/** A prompt the person typed little of but pasted at least 400 characters into. */
+export const purePaste = (prompt: Prompt) => length(typedOf(prompt)) < 60 && pasted(prompt) >= 400
+
+/** Why a prompt is not a candidate, or undefined when it is one. */
+export function dropped(prompt: Prompt): "slash" | "ultrathink" | "short" | "relay" | undefined {
+  const typed = typedOf(prompt)
+  if (prompt.text.trim().startsWith("/") && length(typed) < 150) return "slash"
+  if (/^(\s*ultrathink\s*)+$/i.test(typed === "" ? "x" : typed)) return "ultrathink"
+  if (length(typed) < 60 && !purePaste(prompt)) return "short"
+  if (relay.test(typed)) return "relay"
+  return undefined
+}
+
+/**
+ * The newest `last` candidates of a first run (`since` 0), or every candidate. A later run never slices: it would move
+ * the watermark past the prompts it skipped, for good.
+ */
+export const sliced = (candidates: ReadonlyArray<Prompt>, since: number, last: number) => (last > 0 && since === 0 ? candidates.slice(-last) : [...candidates])
+
+/** The folder's last path segment, which names its project. */
+export const projectOf = (folder: string) => folder.replace(/\/+$/, "").split("/").at(-1) || "?"
+
+/** A time as `YYYY-MM-DD HH:MM`, in UTC. */
+export const when = (ts: number) => new Date(ts).toISOString().slice(0, 16).replace("T", " ")
+
+/** One prompt as a model reads it: a header, the text cut at 2,200 characters, and the start of up to three pastes. */
+export function render(prompt: Prompt, id: number): string {
+  const text = prompt.text.length > 2200 ? `${prompt.text.slice(0, 2200)} [...+${prompt.text.length - 2200} more chars]` : prompt.text
+  let out = `### ${id} | ${when(prompt.ts)} | ${prompt.folder} | s:${prompt.session.slice(0, 8)}\n${text}\n`
+  const limit = purePaste(prompt) ? 700 : 500
+  prompt.pastes.slice(0, 3).forEach((paste, index) => {
+    out += `> (paste ${index + 1}, ${paste.length} chars) ${paste.slice(0, limit).replaceAll("\n", "\n> ")}${paste.length > limit ? " [...]" : ""}\n`
+  })
+  return `${out}\n`
+}
+
+/** A chunk's text, its prompts numbered from 1. */
+export const renderChunk = (prompts: ReadonlyArray<Prompt>) => prompts.map((prompt, index) => render(prompt, index + 1)).join("")
+
+/**
+ * Prompts packed into chunks of at most `target` characters, grouped by project, the largest
+ * project first, each group in time order. A group over 60% of `target` starts and ends a chunk of its own.
+ */
+export function chunks(prompts: ReadonlyArray<Prompt>, target: number): Array<Array<Prompt>> {
+  const groups = new Map<string, Array<Prompt>>()
+  for (const prompt of prompts) groups.set(projectOf(prompt.folder), [...(groups.get(projectOf(prompt.folder)) ?? []), prompt])
+  const sized = [...groups.values()].map((group) => ({ group, sizes: group.map((prompt) => render(prompt, 0).length) }))
+  const total = (sizes: ReadonlyArray<number>) => sizes.reduce((sum, size) => sum + size, 0)
+  sized.sort((a, b) => total(b.sizes) - total(a.sizes))
+  const out: Array<Array<Prompt>> = []
+  let current: Array<Prompt> = []
+  let size = 0
+  const flush = () => {
+    if (current.length > 0) out.push(current)
+    current = []
+    size = 0
+  }
+  for (const { group, sizes } of sized) {
+    const big = total(sizes) > target * 0.6
+    if (big) flush()
+    group.forEach((prompt, index) => {
+      if (size + sizes[index]! > target) flush()
+      current.push(prompt)
+      size += sizes[index]!
+    })
+    if (big) flush()
+  }
+  flush()
+  return out
+}
+
+/** Consecutive runs of at most `size`, in order. */
+export const batches = <A>(items: ReadonlyArray<A>, size: number): Array<ReadonlyArray<A>> =>
+  Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size))

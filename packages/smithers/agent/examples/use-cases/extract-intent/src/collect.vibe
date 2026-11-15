@@ -1,0 +1,267 @@
+// Reads the prompts a person typed into Claude Code and Codex from each tool's own files, and what the assistant said
+// just before each one. Nothing else is opened: never auth.json, .credentials.json or a keychain.
+//
+//   Claude Code  <root>/history.jsonl                  { display, pastedContents, timestamp (ms), project, sessionId }
+//                <root>/paste-cache/<hash>.txt           a paste that history.jsonl names by contentHash
+//                <root>/projects/**/<session>.jsonl      the session's transcript, read for context only
+//   Codex        <root>/history.jsonl                  { session_id, ts (s), text }
+//                <root>/sessions/**/rollout-…-<session>.jsonl, and archived_sessions/: the first line is session_meta
+//                { id, cwd, originator, source }; an interactive session's turns are event_msg user_message or
+//                item_completed UserMessage records. Exec and subagent sessions are agents, not a person, and are skipped.
+
+/** One typed prompt. */
+export schema Prompt {
+  /** Stable across runs: the tool, the time and the session. */
+  key: string
+  tool: "claude" | "codex"
+  /** Epoch milliseconds. */
+  ts: number
+  /** The directory the person typed it in, or "?". */
+  folder: string
+  session: string
+  /** The base name of the config directory it came from. */
+  account: string
+  text: string
+  pastes: ReadonlyArray<string>
+}
+
+/** Where to read: Claude Code config directories and Codex homes. */
+export schema Roots { claude: ReadonlyArray<string>; codex: ReadonlyArray<string> }
+
+type Row = Omit<Prompt, "key">
+
+function parse(line: string): unknown {
+  try {
+    return JSON.parse(line)
+  } catch {
+    return undefined
+  }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value)
+const text = (value: unknown): string => (typeof value === "string" ? value : "")
+const records = (lines: string): Array<Record<string, unknown>> => lines.split("\n").map(parse).filter(isRecord)
+
+/** A pasted text as Claude's history.jsonl records it: inline, or by hash in paste-cache/. */
+export interface Paste { readonly content: string; readonly hash: string }
+
+/** Claude Code's history.jsonl, with each paste still to resolve. */
+export function claudeRows(history: string, account: string): Array<Row & { readonly refs: ReadonlyArray<Paste> }> {
+  return records(history).map((row) => {
+    const refs: Array<Paste> = []
+    const pasted = row["pastedContents"]
+    if (isRecord(pasted)) {
+      for (const value of Object.values(pasted)) {
+        if (isRecord(value) && text(value["type"] ?? "text") === "text") refs.push({ content: text(value["content"]), hash: text(value["contentHash"]) })
+      }
+    }
+    return {
+      tool: "claude" as const, ts: Number(row["timestamp"] ?? 0) || 0, folder: text(row["project"]) || "?",
+      session: text(row["sessionId"]), account, text: text(row["display"]), pastes: [], refs,
+    }
+  })
+}
+
+/** Codex's history.jsonl. Its rows name no folder; the session's rollout does. */
+export function codexHistoryRows(history: string, account: string): Array<Row> {
+  return records(history).map((row) => ({
+    tool: "codex" as const, ts: (Number(row["ts"] ?? 0) || 0) * 1000, folder: "?",
+    session: text(row["session_id"]), account, text: text(row["text"]), pastes: [],
+  }))
+}
+
+/** A rollout's session_meta: its session, folder, and whether a person drove it. */
+export interface SessionMeta { readonly session: string; readonly folder: string; readonly interactive: boolean }
+
+export function sessionMeta(firstLine: string): SessionMeta | undefined {
+  const row = parse(firstLine)
+  if (!isRecord(row) || row["type"] !== "session_meta" || !isRecord(row["payload"])) return undefined
+  const meta = row["payload"]
+  const source = meta["source"]
+  return {
+    session: text(meta["id"]), folder: text(meta["cwd"]) || "?",
+    interactive: typeof source === "string" && source !== "exec" && text(meta["originator"]) !== "codex_exec",
+  }
+}
+
+/** The turns a person typed in an interactive rollout, in either record shape Codex has written. */
+export function rolloutRows(rollout: string, meta: SessionMeta, account: string): Array<Row> {
+  const rows: Array<Row> = []
+  for (const row of records(rollout)) {
+    if (row["type"] !== "event_msg" || !isRecord(row["payload"])) continue
+    const payload = row["payload"]
+    let typed = ""
+    if (payload["type"] === "user_message") typed = text(payload["message"])
+    if (payload["type"] === "item_completed" && isRecord(payload["item"]) && payload["item"]["type"] === "UserMessage") {
+      const content = payload["item"]["content"]
+      typed = (Array.isArray(content) ? content : []).filter(isRecord).map((part) => text(part["text"])).join("\n")
+    }
+    if (typed.trim() === "") continue
+    rows.push({ tool: "codex", ts: Date.parse(text(row["timestamp"])) || 0, folder: meta.folder, session: meta.session, account, text: typed, pastes: [] })
+  }
+  return rows
+}
+
+/** Sorted by time, with a key that names the same prompt in every run. */
+export function keyed(rows: ReadonlyArray<Row>): Array<Prompt> {
+  const sorted = [...rows].sort((a, b) => a.ts - b.ts || a.tool.localeCompare(b.tool) || a.session.localeCompare(b.session) || a.text.localeCompare(b.text))
+  const seen = new Map<string, number>()
+  return sorted.map((row) => {
+    const base = `${row.tool === "claude" ? "c" : "x"}-${row.ts}-${row.session.slice(0, 8)}`
+    const n = (seen.get(base) ?? 0) + 1
+    seen.set(base, n)
+    return { key: n === 1 ? base : `${base}-${n}`, ...row }
+  })
+}
+
+/** The first line of a file, read without loading the rest. */
+effect function firstLine(file: string) {
+  const lines = try (Stream.splitLines(Stream.decodeText((try FileSystem.FileSystem).stream(file, { chunkSize: 64 * 1024 }))) |> Stream.take(%, 1) |> Stream.runCollect(%))
+  return Array.from(lines)[0] ?? ""
+}
+
+/** Each root once, by its real path, and only roots that exist. */
+effect function existing(roots: ReadonlyArray<string>) {
+  const fs = try FileSystem.FileSystem
+  const found = new Map<string, string>()
+  for (const root of roots) {
+    if (root === "" || !(try fs.exists(root))) continue
+    const real = try fs.realPath(root)
+    if (!found.has(real)) found.set(real, root)
+  }
+  return [...found.keys()]
+}
+
+/** Files under `directory` whose name passes `keep`, as absolute paths. */
+effect function filesUnder(directory: string, keep: (name: string) => boolean) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  if (!(try fs.exists(directory))) return [] as Array<string>
+  return (try fs.readDirectory(directory, { recursive: true })).filter((name) => keep(path.basename(name))).map((name) => path.join(directory, name))
+}
+
+/** Every Codex rollout under a home, by the session id that ends its name. */
+effect function rollouts(home: string) {
+  const path = try Path.Path
+  const isRollout = (name: string) => name.startsWith("rollout-") && name.endsWith(".jsonl")
+  const files = [...(try filesUnder(path.join(home, "sessions"), isRollout)), ...(try filesUnder(path.join(home, "archived_sessions"), isRollout))]
+  return files.map((file) => ({ file, session: path.basename(file, ".jsonl").slice(-36) }))
+}
+
+/** Every prompt under `roots`, once each, oldest first. */
+export effect function collect(roots: Roots) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const claude = try existing(roots.claude)
+  const codex = try existing(roots.codex)
+  const rows: Array<Row> = []
+  const seen = new Set<string>()
+  const add = (row: Row, id: string) => {
+    if (seen.has(id)) return
+    seen.add(id)
+    rows.push(row)
+  }
+  for (const root of claude) {
+    const history = path.join(root, "history.jsonl")
+    if (!(try fs.exists(history))) continue
+    for (const row of claudeRows(try fs.readFileString(history), path.basename(root))) {
+      const pastes: Array<string> = []
+      for (const ref of row.refs) {
+        let content = ref.content
+        for (const other of claude) {
+          if (content !== "" || ref.hash === "") break
+          const cached = path.join(other, "paste-cache", `${ref.hash}.txt`)
+          if (try fs.exists(cached)) content = try fs.readFileString(cached)
+        }
+        if (content !== "") pastes.push(content)
+      }
+      const { refs: _refs, ...prompt } = row
+      add({ ...prompt, pastes }, `claude\0${row.ts}\0${row.text}`)
+    }
+  }
+  for (const home of codex) {
+    const account = path.basename(home)
+    const metas = new Map<string, SessionMeta & { readonly file: string }>()
+    for (const { file } of try rollouts(home)) {
+      const meta = sessionMeta(try firstLine(file))
+      if (meta !== undefined) metas.set(meta.session, { ...meta, file })
+    }
+    // history.jsonl first: its time is when the prompt was typed. An interactive rollout adds what history lacks.
+    const history = path.join(home, "history.jsonl")
+    if (try fs.exists(history)) {
+      for (const row of codexHistoryRows(try fs.readFileString(history), account)) {
+        add({ ...row, folder: metas.get(row.session)?.folder ?? "?" }, `codex\0${row.session}\0${row.text}`)
+      }
+    }
+    for (const meta of metas.values()) {
+      if (meta.interactive) for (const row of rolloutRows(try fs.readFileString(meta.file), meta, account)) add(row, `codex\0${row.session}\0${row.text}`)
+    }
+  }
+  return keyed(rows)
+}
+
+/** The longest stretch of a prompt between paste placeholders, which its transcript repeats word for word. */
+export function needleOf(prompt: string): string {
+  const parts = prompt.split(/\[Pasted text #\d+(?: \+\d+ lines)?\]|\[Image #\d+\]/)
+  return parts.reduce((best, part) => (part.length > best.length ? part : best), "").trim().slice(0, 60)
+}
+
+const textParts = (content: unknown): string =>
+  typeof content === "string" ? content : (Array.isArray(content) ? content : []).filter(isRecord).filter((part) => ["text", "output_text", "input_text"].includes(text(part["type"]))).map((part) => text(part["text"])).join("\n")
+
+/**
+ * For each prompt of one session, the last 1,500 characters the assistant said before it, read from the session's
+ * transcript: a Claude Code project transcript or a Codex rollout.
+ */
+export function contextIn(transcript: string, tool: "claude" | "codex", prompts: ReadonlyArray<Prompt>): Map<string, string> {
+  const found = new Map<string, string>()
+  const waiting = prompts.map((prompt) => ({ key: prompt.key, needle: needleOf(prompt.text) })).filter((entry) => entry.needle !== "")
+  let last = ""
+  for (const line of transcript.split("\n")) {
+    if (waiting.length === found.size) break
+    const row = parse(line)
+    if (!isRecord(row)) continue
+    let said = ""
+    let typed = ""
+    if (tool === "claude") {
+      const message = isRecord(row["message"]) ? row["message"] : {}
+      if (row["type"] === "assistant") said = textParts(message["content"])
+      if (row["type"] === "user" && row["isSidechain"] !== true) typed = textParts(message["content"])
+    } else {
+      const payload = isRecord(row["payload"]) ? row["payload"] : {}
+      if (row["type"] === "response_item" && payload["type"] === "message" && payload["role"] === "assistant") said = textParts(payload["content"])
+      if (row["type"] === "event_msg" && payload["type"] === "user_message") typed = text(payload["message"])
+      if (row["type"] === "event_msg" && payload["type"] === "item_completed" && isRecord(payload["item"]) && payload["item"]["type"] === "UserMessage") typed = textParts(payload["item"]["content"])
+    }
+    if (said.trim() !== "") last = said
+    if (typed === "") continue
+    for (const entry of waiting) {
+      if (!found.has(entry.key) && typed.includes(entry.needle)) found.set(entry.key, last === "" ? "(nothing: the first message of the session)" : last.slice(-1500))
+    }
+  }
+  return found
+}
+
+/** What the assistant said just before each prompt, for the prompts whose transcript is still on disk. */
+export effect function contextOf(roots: Roots, prompts: ReadonlyArray<Prompt>) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const transcripts = new Map<string, Array<string>>()
+  const index = (session: string, file: string) => transcripts.set(session, [...(transcripts.get(session) ?? []), file])
+  if (prompts.some((prompt) => prompt.tool === "claude")) {
+    for (const root of try existing(roots.claude)) for (const file of try filesUnder(path.join(root, "projects"), (name) => name.endsWith(".jsonl"))) index(path.basename(file, ".jsonl"), file)
+  }
+  if (prompts.some((prompt) => prompt.tool === "codex")) {
+    for (const root of try existing(roots.codex)) for (const { file, session } of try rollouts(root)) index(session, file)
+  }
+  const sessions = new Map<string, Array<Prompt>>()
+  for (const prompt of prompts) sessions.set(`${prompt.tool}\0${prompt.session}`, [...(sessions.get(`${prompt.tool}\0${prompt.session}`) ?? []), prompt])
+  const context = new Map<string, string>()
+  for (const group of sessions.values()) {
+    const first = group[0]!
+    for (const file of transcripts.get(first.session) ?? []) {
+      for (const [key, said] of contextIn(try fs.readFileString(file), first.tool, group.filter((prompt) => !context.has(prompt.key)))) context.set(key, said)
+    }
+  }
+  return context
+}

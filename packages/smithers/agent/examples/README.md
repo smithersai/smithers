@@ -37,6 +37,12 @@ one test:
 pnpm exec vitest run test/examples/use-cases/triage.test.ts
 ```
 
+`use-cases/extract-intent/` is a program of several VibeLang files, not a port: it pulls your strategy and spec
+statements out of your Claude Code and Codex history. It runs on VibeLang's `Experimental.Durable`, so it compiles
+with `tsconfig.test.json`, the config that opts in to VibeLang's experimental modules. Its tests in
+`test/examples/use-cases/extract-intent/` script Jev and the agent CLI instead of using `kit.ts`. See
+[its README](use-cases/extract-intent/README.md).
+
 The shared kit uses stable callback admission. Declare every semantic capture
 with `Node.capture` and read the frozen snapshot through `this` in a function
 expression. Include an implementation version when a callback delegates to a

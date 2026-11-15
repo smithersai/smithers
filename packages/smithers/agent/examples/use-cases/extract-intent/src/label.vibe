@@ -1,0 +1,185 @@
+// The two model passes. Jev, Smithers' cheap judge (@smthrs/model's Classifier over an Evaluator), decides each
+// candidate's relevance; only what it keeps or cannot settle reaches the worker, Claude Code or Codex, which writes the
+// labels Jev cannot: kind, strength, project, topic and the context note.
+//
+//   candidate ─▶ Jev: P(relevant) ≥ 0.8 keep, ≤ 0.2 drop, between unsure ─▶ keep and unsure ─▶ worker ─▶ picks
+import * as Classifier from "@smthrs/model/Classifier"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
+import type { Prompt } from "./collect.vibe"
+import { projectOf } from "./prepare.vibe"
+
+/** What Jev reads about one prompt: its project, its text and the start of what was pasted into it. */
+export schema JevState { folder: string; text: string; pasted: string }
+
+/** Jev's verdict on one prompt. */
+export schema Verdict = "keep" | "unsure" | "drop"
+
+/** At or above this probability Jev keeps a prompt; at or below `DROP` it drops one; between, it is unsure. */
+export const KEEP = 0.8
+export const DROP = 0.2
+
+/** Jev could not answer: the gateway refused, timed out or sent an answer that does not read. */
+export schema error JevFailed { reason: string }
+
+export const stateOf = (prompt: Prompt): JevState => ({
+  folder: projectOf(prompt.folder),
+  text: prompt.text.slice(0, 6000),
+  pasted: prompt.pastes.join("\n\n").slice(0, 2000),
+})
+
+/** instructions.md's keep and drop rules, as one question. */
+export const relevance = Classifier.make("extract-intent/relevant", {
+  description: "Judge one prompt a person typed into a coding agent: does it state strategy, a spec or a standing process rule worth keeping on record?",
+  state: JevState,
+  questions: {
+    relevant: Classifier.boolean({
+      instructions: "Does this prompt, typed by the person who owns these projects, state strategy, a spec or a standing process rule that outlives the task at hand?",
+      criteria: {
+        true: "It says where a project or the company is going and why (goals, priorities, what to build or not, order of work, releases, positioning, audience, pricing, naming); what a product, feature, API, UI, doc or system must do or look like (requirements, design decisions, quality bars, corrections such as \"no, it should work like X\"); or a standing rule for how work is done (tools, review, delegation, releases, writing style, how agents behave). It counts even inside a task instruction.",
+        false: "It is a one-off command with nothing durable (fix the test, continue, commit and push, try again), debugging back-and-forth, an error report, a status check, a permission answer, a curiosity question that states no intent, pasted logs or command output, text an agent or tool wrote rather than the person (relayed reports, handoffs, third-person reports of what the person said, machine-made briefs), or a test prompt or filler.",
+      },
+    }),
+  },
+})
+
+/** Jev's verdict on each state, in order. Any state Jev cannot answer fails the batch: no other model stands in. */
+export effect function judge(states: ReadonlyArray<JevState>) {
+  const verdicts: Array<Verdict> = []
+  for (const answer of try relevance.evaluateAll(states)) {
+    if (Result.isFailure(answer)) throw new JevFailed({ reason: `${answer.failure.code}: ${answer.failure.message}` })
+    const probability = answer.success.relevant.probability
+    verdicts.push(probability >= KEEP ? "keep" : probability <= DROP ? "drop" : "unsure")
+  }
+  return verdicts
+}
+
+/** One labeled prompt: the worker's labels on the prompt `key` names. */
+export schema Pick {
+  key: string
+  kind: "strategy" | "spec" | "process"
+  strength: "core" | "supporting"
+  project: string
+  topic: string
+  context: string
+  paste: boolean
+  secret: boolean
+}
+
+/** The worker could not label a chunk: it failed to start, exited non-zero (a usage limit included) or timed out. */
+export schema error WorkerFailed { reason: string }
+
+function parse(line: string): unknown {
+  try {
+    return JSON.parse(line)
+  } catch {
+    return undefined
+  }
+}
+
+const word = (value: unknown) => (typeof value === "string" ? value.trim() : "")
+
+/** The worker's reply read as picks: one JSON line per kept prompt, its `id` the prompt's number in the chunk. */
+export function picksOf(reply: string, prompts: ReadonlyArray<Prompt>): Array<Pick> {
+  const picks = new Map<string, Pick>()
+  for (const line of reply.split("\n")) {
+    const row = parse(line.trim().replace(/^```(?:json)?/, "").replace(/```$/, "").trim())
+    if (typeof row !== "object" || row === null || Array.isArray(row)) continue
+    const fields = row as Record<string, unknown>
+    const prompt = prompts[Number(fields["id"]) - 1]
+    if (prompt === undefined || !Number.isInteger(Number(fields["id"]))) continue
+    const kind = word(fields["kind"])
+    picks.set(prompt.key, {
+      key: prompt.key,
+      kind: kind === "strategy" || kind === "process" ? kind : "spec",
+      strength: word(fields["strength"]) === "core" ? "core" : "supporting",
+      project: word(fields["project"]).toLowerCase().replaceAll(" ", "-").replaceAll("/", "-") || projectOf(prompt.folder).toLowerCase(),
+      topic: word(fields["topic"]),
+      context: word(fields["context"]),
+      paste: fields["paste"] === true,
+      secret: fields["secret"] === true,
+    })
+  }
+  return [...picks.values()]
+}
+
+/** One chunk's prompt for the worker, and the context files beside it. */
+export interface Job {
+  readonly prompt: string
+  readonly files: ReadonlyArray<{ readonly name: string; readonly text: string }>
+}
+
+/** A worker that reads a job in a directory of its own and replies with text. */
+export service Worker {
+  label(job: Job): string!WorkerFailed
+}
+
+/** How to start the worker: which tool, the command that runs it, and the model, when not the tool's default. */
+export interface WorkerOptions {
+  readonly tool: "claude" | "codex"
+  readonly command: string
+  readonly model: string
+}
+
+/** The command line for one job in `directory`; the prompt goes on stdin. */
+export function commandOf(options: WorkerOptions, directory: string, reply: string): ReadonlyArray<string> {
+  const model = options.model === "" ? [] : options.tool === "claude" ? ["--model", options.model] : ["-m", options.model]
+  if (options.tool === "claude") {
+    return ["-p", "--output-format", "json", "--no-session-persistence", "--setting-sources", "project,local", "--tools", "Read", "--permission-mode", "dontAsk", ...model]
+  }
+  return ["exec", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "-C", directory, "-o", reply, ...model, "-"]
+}
+
+/** Claude Code's `--output-format json` result: the reply, or why there is none. */
+function claudeReply(stdout: string): { readonly ok: boolean; readonly text: string } {
+  const result = parse(stdout.trim().split("\n").at(-1) ?? "")
+  if (typeof result !== "object" || result === null) return { ok: false, text: stdout.slice(0, 300) }
+  const fields = result as Record<string, unknown>
+  return { ok: fields["is_error"] !== true && typeof fields["result"] === "string", text: word(fields["result"]) }
+}
+
+const failed = (reason: string) => new WorkerFailed({ reason: reason.trim().slice(0, 400) })
+
+/** The real worker: the Claude Code or Codex CLI, read-only, in a temporary directory that holds the job's files. */
+export const cliWorker = (options: WorkerOptions) => Layer.effect(Worker, effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const spawner = try ChildProcessSpawner.ChildProcessSpawner
+  return Worker.of({
+    label: (job: Job) => Effect.mapError(Effect.scoped(effect {
+      const directory = try fs.makeTempDirectoryScoped({ prefix: "extract-intent-" })
+      for (const file of job.files) {
+        try fs.makeDirectory(path.dirname(path.join(directory, file.name)), { recursive: true })
+        try fs.writeFileString(path.join(directory, file.name), file.text)
+      }
+      const reply = path.join(directory, "reply.txt")
+      const child = try spawner.spawn(ChildProcess.make(options.command, commandOf(options, directory, reply), {
+        cwd: directory, extendEnv: true, stdin: Stream.make(new TextEncoder().encode(job.prompt)), forceKillAfter: "10 seconds",
+      }))
+      const [stdout, stderr] = try.all [Stream.mkString(Stream.decodeText(child.stdout)), Stream.mkString(Stream.decodeText(child.stderr))]
+      const code = Number(try child.exitCode)
+      if (options.tool === "claude") {
+        const read = claudeReply(stdout)
+        if (code !== 0 || !read.ok) throw failed(`claude exited ${code}: ${read.text || stderr}`)
+        return read.text
+      }
+      if (code !== 0) throw failed(`codex exited ${code}: ${stderr.split("\n").filter((line) => line.trim() !== "").slice(-3).join(" ")}`)
+      return try fs.readFileString(reply)
+    }), (error) => (error instanceof WorkerFailed ? error : failed(`${options.command} could not run: ${error.message}`))),
+  })
+})
+
+/** The worker's instructions, from instructions.md beside this file. */
+export effect function instructions() {
+  const path = try Path.Path
+  const file = try (Effect.try(() => new URL("instructions.md", import.meta.url)) |> Effect.flatMap(%, path.fromFileUrl))
+  return try (try FileSystem.FileSystem).readFileString(file)
+}
+
+/** The job for one chunk: the instructions, the chunk's prompts, and a context file per prompt whose transcript has one. */
+export function jobOf(instructionsText: string, chunk: string, prompts: ReadonlyArray<Prompt>, context: ReadonlyMap<string, string>): Job {
+  const files = prompts.flatMap((prompt, index) => {
+    const said = context.get(prompt.key)
+    return said === undefined ? [] : [{ name: `context/${index + 1}.md`, text: `What the assistant said just before message ${index + 1} (tail):\n\n${said}\n` }]
+  })
+  return { prompt: `${instructionsText}${chunk}`, files }
+}

@@ -1,0 +1,186 @@
+// extract-intent as one durable workflow on VibeLang's Experimental.Durable. Every step is journaled in SQLite, so a
+// run killed or stopped halfway resumes where it stopped: finished steps replay from the journal and never run again.
+//
+//   extract-intent/run { out, run, since, last, target, roots }        identity: equal payloads name one run
+//     extract-intent/collect   the candidates newer than `since`; on a first run, the newest `last` of them when last > 0
+//     extract-intent/judge/n   Jev on 64 candidates at a time          keep, unsure or drop each
+//     extract-intent/label/n   the worker on one chunk of what Jev kept or left unsure
+//     extract-intent/assemble  the output directory, then state.json { watermark, runs }
+//
+// A later run starts from state.json: `since` is the last run's newest prompt and `run` its count plus one, so it is a
+// new run over newer prompts only. A step that fails (a usage limit, Jev unreachable) fails the run; the next start
+// rewinds the run to that step and resumes it, with whichever worker that start names.
+import { SqliteClient } from "@effect/sql-sqlite-node"
+import { collect, contextOf, Prompt, Roots } from "./collect.vibe"
+import { batches, chunks, dropped, renderChunk, sliced } from "./prepare.vibe"
+import { JevFailed, JevState, Pick, Verdict, WorkerFailed, instructions, jobOf, judge, picksOf, stateOf, Worker } from "./label.vibe"
+import { itemsOf, readState, write } from "./assemble.vibe"
+
+const Durable = Experimental.Durable
+
+/** The durable engine, journaling every run in the SQLite file `filename`. */
+export const engineAt = (filename: string) => Layer.provide(Durable.layerSql, SqliteClient.layer({ filename }))
+
+/** Reading the tools' files or writing the output failed. */
+export schema error IoFailed { reason: string }
+
+const ioFailed = (error: { readonly message: string }) => new IoFailed({ reason: error.message.slice(0, 400) })
+
+/** What collect found. */
+export schema Found {
+  candidates: ReadonlyArray<Prompt>
+  /** Every prompt newer than `since`, before the filters. */
+  collected: number
+  /** The newest prompt's time, or `since` when there is none. */
+  newest: number
+}
+
+/** What a run did. */
+export schema Report {
+  run: number
+  since: number
+  newest: number
+  collected: number
+  candidates: number
+  jevKept: number
+  jevUnsure: number
+  jevDropped: number
+  /** Worker calls this run made, and the calls it would have made with no Jev pass. */
+  chunks: number
+  chunksWithoutJev: number
+  picked: number
+  /** Items in the output directory after this run. */
+  total: number
+}
+
+export const Collect = Durable.task("extract-intent/collect", {
+  payload: { roots: Roots, since: Schema.Number, last: Schema.Number },
+  success: Found,
+  error: IoFailed,
+})
+
+export const Judge = Durable.task("extract-intent/judge", {
+  payload: { states: Schema.Array(JevState), batch: Schema.Number, of: Schema.Number },
+  success: Schema.Array(Verdict),
+  error: JevFailed,
+  retryPolicy: { initialMs: 2000, factor: 2, maxMs: 20000, maxAttempts: 3 },
+})
+
+export const Label = Durable.task("extract-intent/label", {
+  payload: { roots: Roots, prompts: Schema.Array(Prompt), chunk: Schema.Number, of: Schema.Number },
+  success: Schema.Array(Pick),
+  error: WorkerFailed,
+  attemptTimeoutMs: 60 * 60 * 1000,
+})
+
+export const Assemble = Durable.task("extract-intent/assemble", {
+  payload: { out: Schema.String, picks: Schema.Array(Pick), prompts: Schema.Array(Prompt), report: Report },
+  success: Report,
+  error: IoFailed,
+})
+
+export const Extract = Durable.workflow("extract-intent/run", {
+  payload: { out: Schema.String, run: Schema.Number, since: Schema.Number, last: Schema.Number, target: Schema.Number, roots: Roots },
+  success: Report,
+  error: Schema.Union([IoFailed, JevFailed, WorkerFailed]),
+})
+
+/** The plan: collect, Jev per batch, the worker per chunk, assemble. Each `try` of a task is one journaled step. */
+export const ExtractLive = Extract.toLayer((job) => effect {
+  const found = try Collect({ roots: job.roots, since: job.since, last: job.last })
+  const passed: Array<Prompt> = []
+  const counts = { keep: 0, unsure: 0, drop: 0 }
+  const groups = batches(found.candidates, 64)
+  for (const [index, batch] of groups.entries()) {
+    const verdicts = try Judge({ states: batch.map(stateOf), batch: index + 1, of: groups.length })
+    batch.forEach((prompt, at) => {
+      const verdict = verdicts[at] ?? "unsure"
+      counts[verdict] += 1
+      if (verdict !== "drop") passed.push(prompt)
+    })
+  }
+  const parts = chunks(passed, job.target)
+  const picks: Array<Pick> = []
+  for (const [index, prompts] of parts.entries()) picks.push(...(try Label({ roots: job.roots, prompts, chunk: index + 1, of: parts.length })))
+  const picked = new Set(picks.map((pick) => pick.key))
+  return try Assemble({
+    out: job.out, picks, prompts: passed.filter((prompt) => picked.has(prompt.key)),
+    report: {
+      run: job.run, since: job.since, newest: found.newest, collected: found.collected, candidates: found.candidates.length,
+      jevKept: counts.keep, jevUnsure: counts.unsure, jevDropped: counts.drop,
+      chunks: parts.length, chunksWithoutJev: chunks(found.candidates, job.target).length, picked: picks.length, total: 0,
+    },
+  })
+})
+
+/** The steps' implementations. Jev's Evaluator and the Worker are the caller's to provide. */
+export const steps = Layer.mergeAll(
+  Collect.toLayer(({ roots, since, last }) => Effect.mapError(effect {
+    const all = (try collect(roots)).filter((prompt) => prompt.ts > since)
+    const kept = all.filter((prompt) => dropped(prompt) === undefined)
+    const candidates = sliced(kept, since, last)
+    try Console.log(`collect: ${all.length} prompts newer than the last run, ${kept.length} candidates${candidates.length < kept.length ? `, taking the newest ${candidates.length}` : ""}`)
+    return { candidates, collected: all.length, newest: all.reduce((newest, prompt) => Math.max(newest, prompt.ts), since) }
+  }, ioFailed)),
+  Judge.toLayer(({ states, batch, of }) => effect {
+    const verdicts = try judge(states)
+    const count = (verdict: Verdict) => verdicts.filter((each) => each === verdict).length
+    try Console.log(`jev ${batch}/${of}: keep ${count("keep")}, unsure ${count("unsure")}, drop ${count("drop")}`)
+    return verdicts
+  }),
+  Label.toLayer(({ roots, prompts, chunk, of }) => effect {
+    const unreadable = (error: { readonly message: string }) => new WorkerFailed({ reason: error.message.slice(0, 400) })
+    const text = try Effect.mapError(instructions(), unreadable)
+    const context = try Effect.mapError(contextOf(roots, prompts), unreadable)
+    try Console.log(`label ${chunk}/${of}: ${prompts.length} prompts, ${context.size} with context`)
+    const picks = picksOf(try (try Worker).label(jobOf(text, renderChunk(prompts), prompts, context)), prompts)
+    try Console.log(`label ${chunk}/${of}: kept ${picks.length}, core ${picks.filter((pick) => pick.strength === "core").length}`)
+    return picks
+  }),
+  Assemble.toLayer(({ out, picks, prompts, report }) => Effect.mapError(effect {
+    const { items, redacted } = itemsOf(picks, prompts)
+    const date = new Date(try Clock.currentTimeMillis).toISOString().slice(0, 10)
+    const total = try write(out, items, { watermark: report.newest, runs: report.run }, date)
+    try Console.log(`assemble: ${items.length} added, ${total} in ${out}, ${redacted} redactions`)
+    return { ...report, total }
+  }, ioFailed)),
+)
+
+/** The step names a run's journal holds as finished, oldest first. */
+export effect function finishedSteps(run: string) {
+  const entries = Array.from(try Stream.runCollect(Durable.history(run)))
+  return entries.flatMap((entry) => {
+    const step = entry.payload as { readonly step?: string; readonly exit?: { readonly _tag?: string } }
+    return entry.eventType === "StepCompleted" && step.exit?._tag === "Success" && step.step !== undefined ? [step.step] : []
+  })
+}
+
+/**
+ * When run `run` failed at a step (its last step failed, then the run), rewinds it to just before that step's last
+ * attempt, so the next execution resumes there.
+ * Returns the step it rewound to, if any.
+ */
+export effect function rewindFailed(run: string) {
+  const entries = Array.from(try Stream.runCollect(Durable.history(run)))
+  const step = (entry: { readonly payload: unknown }) => entry.payload as { readonly step?: string; readonly attempt?: number; readonly exit?: { readonly _tag?: string }; readonly status?: string }
+  const end = entries.at(-1)
+  const failed = entries.filter((entry) => entry.eventType === "StepCompleted").at(-1)
+  if (end?.eventType !== "RunCompleted" || step(end).status !== "failed" || failed === undefined || step(failed).exit?._tag !== "Failure") return undefined
+  const started = entries.find((entry) => entry.eventType === "StepStarted" && step(entry).step === step(failed).step && step(entry).attempt === step(failed).attempt)
+  if (started === undefined) return undefined
+  try Effect.orDie(Durable.rewind({ run, seq: started.seq }))
+  return step(failed).step
+}
+
+/** The payload of the next run over `out`: newer than its state's watermark, numbered after its last finished run. */
+export effect function nextRun(out: string, roots: Roots, last: number, target: number) {
+  const state = try readState(out)
+  return { out, run: state.runs + 1, since: state.watermark, last, target, roots }
+}
+
+/** Readies `payload`'s run: rewinds it if it failed at a step, and names the steps that will replay. */
+export effect function ready(payload: typeof Extract.payloadSchema.Type) {
+  const id = try Extract.executionId(payload)
+  const rewound = try rewindFailed(id)
+  return { id, rewound, finished: try finishedSteps(id) }
+}

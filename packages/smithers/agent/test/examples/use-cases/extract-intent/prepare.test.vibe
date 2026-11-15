@@ -1,0 +1,64 @@
+import { describe, expect, it } from "@effect/vitest"
+import type { Prompt } from "../../../../examples/use-cases/extract-intent/src/collect.vibe"
+import { batches, chunks, dropped, render, renderChunk, sliced } from "../../../../examples/use-cases/extract-intent/src/prepare.vibe"
+
+const prompt = (text: string, extra: Partial<Prompt> = {}): Prompt => ({
+  key: `c-${extra.ts ?? 0}-s`, tool: "claude", ts: 0, folder: "/work/alpha", session: "session-1234", account: "acct", text, pastes: [], ...extra,
+})
+const sentence = "Every public API change needs a migration note and a test that fails without it."
+
+describe("filter", () => {
+  it("drops slash commands, ultrathink, short prompts and relays, and keeps candidates", () => {
+    expect(dropped(prompt("/compact"))).toBe("slash")
+    expect(dropped(prompt("ultrathink ultrathink"))).toBe("ultrathink")
+    expect(dropped(prompt("continue"))).toBe("short")
+    expect(dropped(prompt("[Pasted text #1 +40 lines] see this", { pastes: ["x".repeat(400)] }))).toBeUndefined()
+    expect(dropped(prompt("[Pasted text #1 +40 lines] see this", { pastes: ["x".repeat(399)] }))).toBe("short")
+    expect(dropped(prompt(`From reviewer-2: ${sentence}`))).toBe("relay")
+    expect(dropped(prompt(`<task-notification> ${sentence}`))).toBe("relay")
+    expect(dropped(prompt(`/goal ${sentence} ${sentence}`))).toBeUndefined()
+    expect(dropped(prompt(sentence))).toBeUndefined()
+  })
+})
+
+describe("slice", () => {
+  it("takes the newest candidates on a first run only", () => {
+    const three = [prompt("a", { key: "1" }), prompt("b", { key: "2" }), prompt("c", { key: "3" })]
+    expect(sliced(three, 0, 2).map((each) => each.key)).toEqual(["2", "3"])
+    expect(sliced(three, 5000, 2).map((each) => each.key)).toEqual(["1", "2", "3"])
+    expect(sliced(three, 0, 0).length).toBe(3)
+  })
+})
+
+describe("render", () => {
+  it("writes the header, cuts the text at 2,200 characters and shows the start of each paste", () => {
+    expect(render(prompt("Hello\nworld", { ts: Date.UTC(2026, 0, 2, 3, 4), pastes: ["line one\nline two"] }), 7)).toBe(
+      "### 7 | 2026-01-02 03:04 | /work/alpha | s:session-\nHello\nworld\n> (paste 1, 17 chars) line one\n> line two\n\n",
+    )
+    expect(render(prompt("y".repeat(2300)), 1)).toContain(`${"y".repeat(2200)} [...+100 more chars]`)
+    expect(render(prompt("short", { pastes: ["p".repeat(800)] }), 1)).toContain(`${"p".repeat(700)} [...]`)
+    expect(renderChunk([prompt("a"), prompt("b")])).toMatch(/^### 1 \|[\s\S]*### 2 \|/)
+  })
+})
+
+describe("chunk", () => {
+  it("groups by project, largest first, and gives a big project chunks of its own", () => {
+    const big = Array.from({ length: 6 }, (_, n) => prompt(sentence.repeat(4), { key: `big-${n}`, folder: "/work/big" }))
+    const small = [prompt(sentence, { key: "s1", folder: "/work/one" }), prompt(sentence, { key: "s2", folder: "/w/two/" })]
+    const size = render(big[0]!, 0).length
+    const parts = chunks([small[0]!, ...big, small[1]!], size * 4)
+    expect(parts.map((part) => part.map((each) => each.key))).toEqual([["big-0", "big-1", "big-2", "big-3"], ["big-4", "big-5"], ["s1", "s2"]])
+  })
+
+  it("never exceeds the target unless one prompt does", () => {
+    const many = Array.from({ length: 50 }, (_, n) => prompt(`${sentence} ${n}`, { key: `k${n}`, folder: `/work/p${n % 7}` }))
+    const target = 1000
+    for (const part of chunks(many, target)) expect(part.length === 1 || part.reduce((sum, each) => sum + render(each, 0).length, 0) <= target).toBe(true)
+    expect(chunks(many, target).flat().length).toBe(50)
+  })
+
+  it("batches in order", () => {
+    expect(batches([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]])
+    expect(batches([], 64)).toEqual([])
+  })
+})

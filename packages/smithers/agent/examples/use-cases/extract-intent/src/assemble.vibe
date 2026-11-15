@@ -1,0 +1,186 @@
+// Joins the worker's picks with the exact text, redacts credentials and phone numbers, and writes the output directory,
+// with what a later run needs to add to it.
+//
+//   <out>/projects/<project>.md               the core messages of each project with 8 or more, oldest first
+//   <out>/projects/<project> (supporting).md  its supporting messages
+//   <out>/projects/other projects.md          every project with fewer than 8
+//   <out>/all.jsonl                           every item, each run's added to the last's
+//   <out>/state.json                          { watermark, runs }: the next run takes only prompts newer than watermark
+import type { Prompt } from "./collect.vibe"
+import type { Pick } from "./label.vibe"
+import { when } from "./prepare.vibe"
+
+const secrets = new RegExp([
+  String.raw`sk-[A-Za-z0-9_\-]{20,}`,
+  String.raw`gh[pousr]_[A-Za-z0-9]{20,}`,
+  String.raw`github_pat_[A-Za-z0-9_]{20,}`,
+  String.raw`xox[baprs]-[A-Za-z0-9\-]{10,}`,
+  String.raw`AKIA[0-9A-Z]{16}`,
+  String.raw`npm_[A-Za-z0-9]{30,}`,
+  String.raw`AIza[0-9A-Za-z_\-]{30,}`,
+  String.raw`eyJ[A-Za-z0-9_\-]{15,}\.[A-Za-z0-9_\-]{15,}\.[A-Za-z0-9_\-]{10,}`,
+  String.raw`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`,
+  String.raw`\b\d{8,10}:[A-Za-z0-9_\-]{35}\b`,
+  String.raw`\b0x[0-9a-fA-F]{64}\b`,
+].map((source) => `(?:${source})`).join("|"), "g")
+const assigned = /(?:token|secret|password|passwd|api[_-]?key|bearer)["']?\s*[:=]\s*["']?[A-Za-z0-9_\-./+]{16,}/gi
+/** Any long run of token characters: redacted only in a prompt the worker flagged as holding a secret. */
+const long = /\b[A-Za-z0-9_\-]{40,}\b/g
+/** A number with a leading +, or a North American number written with separators. */
+const international = /(?<![\w+])\+\d[\d\s().-]{6,18}\d(?!\w)/g
+const national = /(?<!\w)(?:\(\d{3}\)\s?|\d{3}[\s.-])\d{3}[\s.-]\d{4}(?!\w)/g
+
+/** `text` with credentials and phone numbers replaced by [REDACTED], and how many were. */
+export function redact(text: string, flagged: boolean): { readonly text: string; readonly count: number } {
+  let count = 0
+  const hide = () => {
+    count += 1
+    return "[REDACTED]"
+  }
+  let out = text.replace(secrets, hide).replace(assigned, hide)
+  out = out.replace(international, (match) => {
+    const digits = match.replace(/\D/g, "").length
+    return digits >= 8 && digits <= 15 ? hide() : match
+  }).replace(national, hide)
+  if (flagged) out = out.replace(long, (match) => (/[a-z]/.test(match) && match === match.toLowerCase() && match.includes("-") ? match : hide()))
+  return { text: out, count }
+}
+
+/** One message in the output. */
+export schema Item {
+  id: string
+  ts: number
+  when: string
+  project: string
+  kind: "strategy" | "spec" | "process"
+  strength: "core" | "supporting"
+  topic: string
+  context: string
+  tool: "claude" | "codex"
+  folder: string
+  session: string
+  account: string
+  text: string
+  pastes: ReadonlyArray<string>
+  paste_chars: number
+}
+
+/** A project name that is safe as a file name. */
+export const projectName = (project: string) =>
+  project.trim().toLowerCase().replaceAll(" ", "-").replaceAll("/", "-").replace(/[^a-z0-9._-]/g, "-").replace(/^[.-]+/, "") || "unknown"
+
+/** The picks joined with their prompts' exact text, redacted. */
+export function itemsOf(picks: ReadonlyArray<Pick>, prompts: ReadonlyArray<Prompt>): { readonly items: Array<Item>; readonly redacted: number } {
+  const byKey = new Map(prompts.map((prompt) => [prompt.key, prompt]))
+  let redacted = 0
+  const items = picks.flatMap((pick) => {
+    const prompt = byKey.get(pick.key)
+    if (prompt === undefined) return []
+    const scrub = (text: string) => {
+      const result = redact(text, pick.secret)
+      redacted += result.count
+      return result.text
+    }
+    const pastes = pick.paste ? prompt.pastes.map((paste) => {
+      const clean = scrub(paste)
+      return clean.length <= 20000 ? clean : `${clean.slice(0, 20000)}\n[... ${clean.length - 20000} more characters not shown]`
+    }) : []
+    return [{
+      id: prompt.key, ts: prompt.ts, when: when(prompt.ts), project: projectName(pick.project), kind: pick.kind, strength: pick.strength,
+      topic: pick.topic, context: pick.context, tool: prompt.tool, folder: prompt.folder, session: prompt.session, account: prompt.account,
+      text: scrub(prompt.text), pastes, paste_chars: prompt.pastes.reduce((sum, paste) => sum + paste.length, 0),
+    } satisfies Item]
+  })
+  return { items, redacted }
+}
+
+function parse(line: string): unknown {
+  try {
+    return JSON.parse(line)
+  } catch {
+    return undefined
+  }
+}
+
+/** The items of an earlier run's all.jsonl, and this run's, once each by id, oldest first. */
+export function merge(previous: string, items: ReadonlyArray<Item>): Array<Item> {
+  const all = new Map<string, Item>()
+  for (const line of previous.split("\n")) {
+    const row = parse(line)
+    if (typeof row === "object" && row !== null && typeof (row as { id?: unknown }).id === "string") all.set((row as Item).id, row as Item)
+  }
+  for (const item of items) all.set(item.id, item)
+  return [...all.values()].sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id))
+}
+
+const quote = (text: string) => text.trimEnd().split("\n").map((line) => (line.trim() === "" ? ">" : `> ${line}`)).join("\n")
+
+function entry(item: Item, topic: string): string {
+  let out = `### ${item.when} · ${item.kind} · ${topic}\n\n`
+  if (item.context !== "") out += `*Context: ${item.context}*\n\n`
+  out += `${quote(item.text)}\n\n`
+  item.pastes.forEach((paste, index) => {
+    out += `Pasted text ${index + 1}:\n\n${quote(paste)}\n\n`
+  })
+  if (item.paste_chars > 0 && item.pastes.length === 0) out += `<sub>pasted text of ${item.paste_chars.toLocaleString("en-US")} characters not shown</sub>\n\n`
+  return `${out}<sub>#${item.id} · ${item.tool} · folder \`${item.folder}\` · session \`${item.session.slice(0, 8) || "unknown"}\`</sub>\n\n`
+}
+
+/** Every Markdown file of the projects directory, by name. Times are UTC. */
+export function markdown(items: ReadonlyArray<Item>, date: string): Array<{ readonly name: string; readonly text: string }> {
+  const front = `---\nlifecycle: artifact\ndate: ${date}\n---\n\n`
+  const byProject = new Map<string, Array<Item>>()
+  for (const item of items) byProject.set(item.project, [...(byProject.get(item.project) ?? []), item])
+  const files: Array<{ readonly name: string; readonly text: string }> = []
+  const write = (name: string, title: string, group: ReadonlyArray<Item>, note: string, topic: (item: Item) => string) => {
+    const core = group.filter((item) => item.strength === "core")
+    const supporting = group.filter((item) => item.strength !== "core")
+    const head = `${front}# ${title}: what you said\n\n${group.length} messages, ${group[0]!.when.slice(0, 10)} to ${group.at(-1)!.when.slice(0, 10)}. ${core.length} state a goal, requirement or decision outright; ${supporting.length} carry some intent inside a task. ${note}Each quote is your exact text. Oldest first; times are UTC.\n\n`
+    files.push({ name: `${name}.md`, text: head + core.map((item) => entry(item, topic(item))).join("") })
+    if (supporting.length > 0) {
+      files.push({ name: `${name} (supporting).md`, text: `${front}# ${title}: supporting messages\n\nMessages that are mostly a task but carry some intent. The main ones are in \`${name}.md\`. Oldest first.\n\n${supporting.map((item) => entry(item, topic(item))).join("")}` })
+    }
+  }
+  const ordered = [...byProject.entries()].sort((a, b) => b[1].length - a[1].length)
+  const rest: Array<Item> = []
+  for (const [project, group] of ordered) {
+    if (group.length < 8) rest.push(...group)
+    else write(project, project, group, "", (item) => item.topic)
+  }
+  if (rest.length > 0) {
+    rest.sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id))
+    write("other projects", "Other projects", rest, "These are projects with fewer than 8 messages each; the project name starts each heading. ", (item) => `${item.project}: ${item.topic}`)
+  }
+  return files
+}
+
+/** What a run leaves for the next: the newest prompt it saw, and how many runs have finished. */
+export schema State { watermark: number; runs: number }
+
+/** The state an output directory holds, or the start. */
+export effect function readState(out: string) {
+  const fs = try FileSystem.FileSystem
+  const file = (try Path.Path).join(out, "state.json")
+  if (!(try fs.exists(file))) return { watermark: 0, runs: 0 } satisfies State
+  const row = parse(try fs.readFileString(file)) as Partial<State> | undefined
+  return { watermark: Number(row?.watermark ?? 0) || 0, runs: Number(row?.runs ?? 0) || 0 } satisfies State
+}
+
+/** Writes `items` added to what `out` already holds, then the new state, each file replaced whole. */
+export effect function write(out: string, items: ReadonlyArray<Item>, state: State, date: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  try fs.makeDirectory(out, { recursive: true })
+  const allFile = path.join(out, "all.jsonl")
+  const all = merge((try fs.exists(allFile)) ? try fs.readFileString(allFile) : "", items)
+  const fresh = path.join(out, "projects.next")
+  try fs.remove(fresh, { recursive: true, force: true })
+  try fs.makeDirectory(fresh, { recursive: true })
+  for (const file of markdown(all, date)) try fs.writeFileString(path.join(fresh, file.name), file.text)
+  try fs.remove(path.join(out, "projects"), { recursive: true, force: true })
+  try fs.rename(fresh, path.join(out, "projects"))
+  try fs.writeFileString(`${allFile}.next`, all.map((item) => JSON.stringify(item)).join("\n") + (all.length > 0 ? "\n" : ""))
+  try fs.rename(`${allFile}.next`, allFile)
+  try fs.writeFileString(path.join(out, "state.json"), `${JSON.stringify(state)}\n`)
+  return all.length
+}

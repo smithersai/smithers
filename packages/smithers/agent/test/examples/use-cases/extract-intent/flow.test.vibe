@@ -1,0 +1,93 @@
+// The whole flow on the real durable engine over a SQLite file, with Jev scripted through @smthrs/model's own
+// Evaluator.layerScripted and the worker replaced by a script. Each `start` builds the engine afresh, as a new process
+// would: a run the worker stopped at chunk 2 resumes there, and a later run judges and labels only newer prompts.
+import { describe, expect, it } from "@effect/vitest"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import { engineAt, Extract, ExtractLive, nextRun, ready, steps } from "../../../../examples/use-cases/extract-intent/src/flow.vibe"
+import { Worker, WorkerFailed, type Job } from "../../../../examples/use-cases/extract-intent/src/label.vibe"
+import { claudeLine, live, long, tree } from "./fixtures.vibe"
+
+/** Every call the scripts answered, across starts. */
+interface Calls { jev: number; worker: Array<number>; failAt: number }
+
+const scriptedJev = (calls: Calls) => Evaluator.layerScripted((request) => {
+  calls.jev += 1
+  const text = String((request.state as { readonly text?: unknown }).text)
+  return { relevant: { probability: text.includes("weather") ? 0.03 : 0.93 } }
+})
+
+/** Labels every prompt of a chunk as core; the call numbered `failAt` fails as a usage limit does. */
+const scriptedWorker = (calls: Calls) => Layer.succeed(Worker, Worker.of({
+  label: (job: Job) => effect {
+    const call = calls.worker.length + 1
+    const ids = [...job.prompt.matchAll(/^### (\d+) \|/gm)].map((match) => Number(match[1]))
+    calls.worker.push(ids.length)
+    if (call === calls.failAt) throw new WorkerFailed({ reason: "usage limit reached" })
+    return ids.map((id) => JSON.stringify({ id, kind: "spec", strength: "core", project: "alpha", topic: `topic ${id}`, context: "", paste: false, secret: false })).join("\n")
+  },
+}))
+
+const history = (count: number, from = 0) => Array.from({ length: count }, (_, n) => claudeLine(long(`release ${from + n}`), 1_000_000 + (from + n) * 1000, n % 2 === 0 ? "/work/alpha" : "/work/beta", "session-a")).join("\n")
+
+/** One start of the program: a fresh engine over `db`, the next run's payload, rewound if it failed, then executed. */
+const start = (out: string, root: string, calls: Calls) => effect {
+  const engine = engineAt(`${out}/durable.sqlite`)
+  provide Layer.provideMerge(Layer.provideMerge(ExtractLive, steps), Layer.mergeAll(engine, scriptedJev(calls), scriptedWorker(calls))) {
+    const payload = try nextRun(out, { claude: [root], codex: [] }, 0, 900)
+    const { rewound, finished } = try ready(payload)
+    const result = try Effect.result(Extract.execute(payload))
+    return { rewound, finished, result }
+  }
+}
+
+describe("the durable flow", () => {
+  it.live("a run stopped at a chunk resumes there, and a later run takes only newer prompts", () => live(effect {
+    const fs = try FileSystem.FileSystem
+    const weather = claudeLine("What is the weather like in the city today, and should I bring a coat for the evening walk?", 999_000, "/work/alpha", "session-a")
+    const short = claudeLine("continue", 998_000, "/work/alpha", "session-a")
+    const root = try tree({ "history.jsonl": [short, weather, history(6)].join("\n") })
+    const out = try tree({})
+    const calls: Calls = { jev: 0, worker: [], failAt: 2 }
+
+    // First start: Jev judges 7 candidates and drops one; the worker labels chunk 1, then stops at chunk 2.
+    const first = try start(out, root, calls)
+    try Effect.try(() => {
+      expect(first.finished).toEqual([])
+      expect(first.result._tag).toBe("Failure")
+      expect(calls.jev).toBe(7)
+      expect(calls.worker.length).toBe(2)
+    })
+
+    // Second start: the run rewinds to chunk 2. Collect, Jev and chunk 1 replay; only chunk 2 onward is labeled.
+    const jevBefore = calls.jev
+    const workerBefore = calls.worker.length
+    const second = try start(out, root, calls)
+    if (second.result._tag !== "Success") return try Effect.die(second.result)
+    const report = second.result.success
+    try Effect.try(() => {
+      expect(second.rewound).toBe("extract-intent/label/2")
+      expect(second.finished).toEqual(["extract-intent/collect/1", "extract-intent/judge/1", "extract-intent/label/1"])
+      expect(calls.jev).toBe(jevBefore)
+      expect(calls.worker.length - workerBefore).toBe(report.chunks - 1)
+      expect([report.candidates, report.jevKept, report.jevUnsure, report.jevDropped, report.picked, report.total]).toEqual([7, 6, 0, 1, 6, 6])
+      expect(report.chunksWithoutJev).toBeGreaterThanOrEqual(report.chunks)
+    })
+
+    // A prompt typed later: the third start is run 2, after the watermark, so only it is judged and labeled.
+    try fs.writeFileString(`${root}/history.jsonl`, `\n${history(1, 6)}`, { flag: "a" })
+    const jevThen = calls.jev
+    const workerThen = calls.worker.length
+    const third = try start(out, root, calls)
+    if (third.result._tag !== "Success") return try Effect.die(third.result)
+    const later = third.result.success
+    try Effect.try(() => {
+      expect(third.finished).toEqual([])
+      expect(later.run).toBe(2)
+      expect([later.candidates, calls.jev - jevThen, calls.worker.length - workerThen]).toEqual([1, 1, 1])
+      expect(later.total).toBe(7)
+    })
+    const files = try fs.readDirectory(`${out}/projects`)
+    // Seven items in all: fewer than 8, so their project is gathered into other projects.md.
+    try Effect.try(() => expect(files.sort()).toEqual(["other projects.md"]))
+  }))
+})

@@ -1,0 +1,40 @@
+// Tiny invented histories in both tools' formats, written to a temporary directory. No real prompt appears here.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+
+/** One Claude Code history.jsonl row. */
+export const claudeLine = (display: string, timestamp: number, project: string, sessionId: string, pastedContents: Record<string, unknown> = {}) =>
+  JSON.stringify({ display, pastedContents, timestamp, project, sessionId })
+
+/** One Codex history.jsonl row; `ts` is in seconds. */
+export const codexLine = (text: string, ts: number, session_id: string) => JSON.stringify({ session_id, ts, text })
+
+/** A Codex rollout's first line. */
+export const sessionMetaLine = (id: string, cwd: string, source: unknown, originator = "codex-tui") =>
+  JSON.stringify({ timestamp: "2026-01-01T00:00:00.000Z", type: "session_meta", payload: { id, cwd, source, originator, cli_version: "0.0.0" } })
+
+export const userItemLine = (timestamp: string, text: string) =>
+  JSON.stringify({ timestamp, type: "event_msg", payload: { type: "item_completed", item: { type: "UserMessage", id: "u", content: [{ type: "text", text }] } } })
+
+export const userMessageLine = (timestamp: string, message: string) =>
+  JSON.stringify({ timestamp, type: "event_msg", payload: { type: "user_message", message, images: [] } })
+
+export const assistantLine = (timestamp: string, text: string) =>
+  JSON.stringify({ timestamp, type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text }] } })
+
+/** Writes `files` (relative path to content) under a fresh temporary directory and returns it. */
+export effect function tree(files: Readonly<Record<string, string>>) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped({ prefix: "extract-intent-test-" })
+  for (const [name, text] of Object.entries(files)) {
+    try fs.makeDirectory(path.dirname(path.join(root, name)), { recursive: true })
+    try fs.writeFileString(path.join(root, name), text)
+  }
+  return root
+}
+
+/** Runs a test body on the real file system, in a scope that removes its temporary directories. */
+export const live = <A, E>(body: A!E!(FileSystem.FileSystem | Path.Path | Scope.Scope)) => Effect.provide(Effect.scoped(body), NodeServices.layer)
+
+/** A sentence long enough to be a candidate. */
+export const long = (topic: string) => `From now on the ${topic} work follows one rule: every change ships with a test and a short note on why it exists.`

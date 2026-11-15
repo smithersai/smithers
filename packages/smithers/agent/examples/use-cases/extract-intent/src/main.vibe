@@ -1,0 +1,93 @@
+// Runs extract-intent (flow.vibe) over this machine's Claude Code and Codex files. From packages/smithers/agent:
+//   VIBELANG_PROJECT=tsconfig.test.json node --import vibelang/register examples/use-cases/extract-intent/src/main.vibe --out <dir>
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { FetchHttpClient } from "effect/http"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import { engineAt, Extract, ExtractLive, nextRun, ready, steps } from "./flow.vibe"
+import { cliWorker } from "./label.vibe"
+import { when } from "./prepare.vibe"
+
+export const usage = `usage: main.vibe --out <dir> [--worker claude|codex] [--worker-command <cmd>] [--model <id>]
+                 [--claude <dir>]... [--codex <dir>]... [--last <n>] [--chunk-chars <n>]
+  --out            output directory; it also holds the run journal (durable.sqlite) and state.json
+  --worker         who writes the labels (default claude); --worker-command runs another binary in its place
+  --claude/--codex extra Claude Code config dirs or Codex homes, beside ~/.claude, $CLAUDE_CONFIG_DIR, ~/.codex, $CODEX_HOME
+  --last           a first run takes only the newest n candidates
+  --chunk-chars    worker chunk size in characters (default 230000)
+Jev needs AI_GATEWAY_API_KEY, a Vercel AI Gateway key.`
+
+/** The command line, read. */
+export interface Options {
+  readonly out: string
+  readonly tool: "claude" | "codex"
+  readonly command: string
+  readonly model: string
+  readonly claude: ReadonlyArray<string>
+  readonly codex: ReadonlyArray<string>
+  readonly last: number
+  readonly target: number
+}
+
+/** The options `args` give, or what is wrong with them. */
+export function optionsOf(args: ReadonlyArray<string>): Options | string {
+  let out = ""
+  let tool = "claude"
+  let command = ""
+  let model = ""
+  let last = 0
+  let target = 230000
+  const claude: Array<string> = []
+  const codex: Array<string> = []
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index]!
+    const value = args[index + 1]
+    if (value === undefined) return `${flag} needs a value`
+    if (flag === "--out") out = value
+    else if (flag === "--worker") tool = value
+    else if (flag === "--worker-command") command = value
+    else if (flag === "--model") model = value
+    else if (flag === "--claude") claude.push(value)
+    else if (flag === "--codex") codex.push(value)
+    else if (flag === "--last") last = Number(value)
+    else if (flag === "--chunk-chars") target = Number(value)
+    else return `unknown option ${flag}`
+  }
+  if (out === "") return "--out is required"
+  if (tool !== "claude" && tool !== "codex") return "--worker is claude or codex"
+  if (!Number.isInteger(last) || last < 0) return "--last is a whole number"
+  if (!Number.isInteger(target) || target < 1000) return "--chunk-chars is a whole number of at least 1000"
+  return { out, tool, command: command === "" ? tool : command, model, claude, codex, last, target }
+}
+
+error Usage { message: string }
+
+export effect function main() {
+  const options = optionsOf(try (try Stdio.Stdio).args)
+  if (typeof options === "string") throw new Usage({ message: `${options}\n${usage}` })
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const out = path.resolve(options.out)
+  try fs.makeDirectory(out, { recursive: true })
+  const home = try Config.withDefault(Config.String("HOME"), "")
+  const env = (name: string) => Config.withDefault(Config.String(name), "")
+  const unique = (dirs: ReadonlyArray<string>) => [...new Set(dirs.filter((dir) => dir !== "").map((dir) => path.resolve(dir)))]
+  const roots = {
+    claude: unique([home === "" ? "" : path.join(home, ".claude"), try env("CLAUDE_CONFIG_DIR"), ...options.claude]),
+    codex: unique([home === "" ? "" : path.join(home, ".codex"), try env("CODEX_HOME"), ...options.codex]),
+  }
+  const payload = try nextRun(out, roots, options.last, options.target)
+  const engine = engineAt(path.join(out, "durable.sqlite"))
+  const jev = Layer.provide(Evaluator.layerVercelGateway({ apiKey: Config.Redacted("AI_GATEWAY_API_KEY"), timeoutMs: 20000 }), FetchHttpClient.layer)
+  provide Layer.provideMerge(Layer.provideMerge(ExtractLive, steps), Layer.mergeAll(engine, jev, cliWorker(options))) {
+    const { id, rewound, finished } = try ready(payload)
+    if (rewound !== undefined) try Console.log(`run ${id} stopped at ${rewound}; resuming it there`)
+    try Console.log(finished.length === 0
+      ? `run ${id} (#${payload.run}): new, over prompts after ${payload.since === 0 ? "the beginning" : `${when(payload.since)} UTC`}, worker ${options.command}`
+      : `run ${id} (#${payload.run}): ${finished.length} finished steps replay from the journal, not run again: ${finished.join(" ")}`)
+    const report = try (Extract.execute(payload) |> Effect.tapError(%, (error) => Console.error(`stopped: ${error._tag}: ${error.reason}\nFinished steps are kept in ${path.join(out, "durable.sqlite")}; run the same command again to resume.`)))
+    try Console.log(JSON.stringify(report))
+  }
+}
+
+NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))

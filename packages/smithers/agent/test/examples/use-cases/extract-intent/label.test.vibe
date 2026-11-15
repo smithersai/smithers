@@ -1,0 +1,59 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import type { Prompt } from "../../../../examples/use-cases/extract-intent/src/collect.vibe"
+import { commandOf, JevFailed, jobOf, judge, picksOf } from "../../../../examples/use-cases/extract-intent/src/label.vibe"
+
+const prompt = (key: string): Prompt => ({ key, tool: "codex", ts: 0, folder: "/work/beta", session: "s", account: "a", text: "t", pastes: [] })
+const state = { folder: "beta", text: "a prompt", pasted: "" }
+
+describe("Jev", () => {
+  it.effect("keeps at 0.8 or more, drops at 0.2 or less, and is unsure between", () => effect {
+    const probabilities = [0.95, 0.8, 0.5, 0.2, 0.01]
+    let asked = 0
+    const scripted = Evaluator.layerScripted(() => ({ relevant: { probability: probabilities[asked++]! } }))
+    provide scripted {
+      const verdicts = try judge(probabilities.map(() => state))
+      try Effect.try(() => expect(verdicts).toEqual(["keep", "keep", "unsure", "drop", "drop"]))
+    }
+  })
+
+  it.effect("fails the batch when Jev cannot answer, so no other model stands in", () => effect {
+    const unreachable = Evaluator.layerScripted(() => Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "no route" })))
+    provide unreachable {
+      const failure = try Effect.flip(judge([state]))
+      try Effect.try(() => {
+        expect(failure).toBeInstanceOf(JevFailed)
+        expect(failure.reason).toContain("unreachable")
+      })
+    }
+  })
+})
+
+describe("the worker", () => {
+  it("reads one JSON line per kept prompt, by its number in the chunk", () => {
+    const prompts = [prompt("k1"), prompt("k2"), prompt("k3")]
+    const reply = [
+      "```json",
+      JSON.stringify({ id: 1, kind: "strategy", strength: "core", project: "Beta App", topic: "launch order", context: "", paste: false, secret: false }),
+      JSON.stringify({ id: 3, kind: "nonsense", strength: "maybe", project: "", topic: "x" }),
+      JSON.stringify({ id: 9, kind: "spec" }),
+      "not json",
+      "```",
+    ].join("\n")
+    expect(picksOf(reply, prompts)).toEqual([
+      { key: "k1", kind: "strategy", strength: "core", project: "beta-app", topic: "launch order", context: "", paste: false, secret: false },
+      { key: "k3", kind: "spec", strength: "supporting", project: "beta", topic: "x", context: "", paste: false, secret: false },
+    ])
+  })
+
+  it("starts Claude Code or Codex read-only, with the prompt on stdin", () => {
+    expect(commandOf({ tool: "claude", command: "claude", model: "" }, "/tmp/d", "/tmp/d/reply.txt")).toEqual(["-p", "--output-format", "json", "--no-session-persistence", "--setting-sources", "project,local", "--tools", "Read", "--permission-mode", "dontAsk"])
+    expect(commandOf({ tool: "codex", command: "codex", model: "m" }, "/tmp/d", "/tmp/d/reply.txt")).toEqual(["exec", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "-C", "/tmp/d", "-o", "/tmp/d/reply.txt", "-m", "m", "-"])
+  })
+
+  it("gives each prompt with context a file named by its number", () => {
+    const job = jobOf("RULES\n", "### 1 | …\n", [prompt("k1"), prompt("k2")], new Map([["k2", "the assistant's words"]]))
+    expect(job.prompt).toBe("RULES\n### 1 | …\n")
+    expect(job.files).toEqual([{ name: "context/2.md", text: "What the assistant said just before message 2 (tail):\n\nthe assistant's words\n" }])
+  })
+})
