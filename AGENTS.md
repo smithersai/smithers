@@ -30,6 +30,13 @@ win (rulings section 20).
   to SQLite or Postgres and never mentions sync; the sync engine works in the
   background and handles conflicts and time offline. A record can stay private
   to a client or be shared with its host, like a branch (CORE-13 to CORE-16).
+- **A client has five layers, like an Ethereum client:** storage (files and
+  database), execution (the durable engine), common (platform and injected
+  services), sync (local-first, CRDT based) and the external API (one method
+  set over any transport) (CORE-18).
+- **Propose, do not leave:** functionality found outside the core that belongs
+  in it is proposed to Will with what it is, where it was found, where it goes,
+  its Node API and its commands (CORE-17).
 - **A factory such as Vibe is a configuration of Smithers in web standards,**
   not an application. `apps/vibelang` is a proof of concept and reference code
   (CORE-9, CORE-10).

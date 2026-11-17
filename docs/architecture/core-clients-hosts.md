@@ -16,13 +16,18 @@ every running copy of it is a local-first node in a tree of clients and hosts.
 
 Will set this architecture on 2026-11-16 and called it vital: "It's extremely
 important we are architected like this truly", and "if we mess this up we might
-mess everything up". His words are recorded as rulings CORE-1 to CORE-16 in
+mess everything up". His words are recorded as rulings CORE-1 to CORE-18 in
 [the rulings](../../apps/mvp/docs/rulings.md), section 20. This page explains
 them. Where this page and a ruling disagree, the ruling wins and this page is
 the bug.
 
-These are requirements. On 2026-11-16 no audit had confirmed that the code on
-`main` meets them, so do not read this page as a description of the code.
+These are requirements, not a description of the code. Three audits of `main`
+at commit `ae8286fe` on 2026-11-16 found that the durable engine conforms and
+most of the rest does not: the only complete local host is assembled inside the
+command-line package, the issue-to-merge loop lives only in `apps/mvp`, the
+Cloudflare deployment runs a second control plane beside the core's, no code
+models a tree of hosts, and the sync route on `smthrs serve` refuses every
+read. Treat every section below as the target.
 
 ## The eight rules
 
@@ -131,6 +136,36 @@ database and/or postgres database and these things sync and have clients".
 
 "Client" here means a running copy of Smithers, not only a screen. Smithers
 cloud is one such client. A laptop is another. A sandbox is another.
+
+### The inside of a client
+
+A client is built the way an Ethereum client is built (CORE-18): five layers
+with fixed jobs. Will named each layer and its analogue.
+
+```
+ Ethereum client                     Smithers client
+ ─────────────────────────────────────────────────────────────────────────────
+ JSON-RPC, over HTTP, WebSocket      external API, one method set served over
+ or a local socket                   any transport that is plugged in
+ ─────────────────────────────────────────────────────────────────────────────
+ consensus                           sync: local-first, CRDT based
+ ─────────────────────────────────────────────────────────────────────────────
+ execution (the EVM)                 execution: the durable execution engine
+ ─────────────────────────────────────────────────────────────────────────────
+ database and state                  storage: the file system (jj or git) and
+                                     the database (SQLite or Postgres)
+ ─────────────────────────────────────────────────────────────────────────────
+ common: shared primitives           common: the platform and everything else
+ and configuration                   that is dependency injected
+```
+
+The analogy breaks in one place on purpose. Ethereum consensus makes every node
+agree on one order before anything counts. A local-first client accepts its own
+writes at once and merges with others later.
+
+The interfaces between these layers are not designed yet. A design was started
+on 2026-11-16 for Will to review; until he accepts one, this section states the
+shape and nothing more.
 
 ## 4. Every client is local-first
 
