@@ -7,6 +7,31 @@ then his decision-queue answers, then the decision records in
 is out of date; fix it or report it (Will, 2026-10-20, SCOPE-9). Each rule
 below cites its ruling ID.
 
+## One core, clients and hosts (Will, 2026-11-16, vital)
+
+Read [the architecture page](docs/architecture/core-clients-hosts.md) before
+designing or building anything. Will: "if we mess this up we might mess
+everything up". Where a section below disagrees with these rules, these rules
+win (rulings section 20).
+
+- **The core works with no user interface.** An interface is one type of
+  client. The command line has feature parity with the interface, and the
+  interface is a thin wrapper around the core (CORE-1, CORE-4).
+- **A capability lands in the core first:** the TypeScript API, then a
+  command-line verb, then a screen. Don't put product logic in a view or in a
+  server that belongs to one app (CORE-12).
+- **The core runs on all platforms through Effect dependency injection.** The
+  Cloudflare deployment is one expression of it, so nothing may work only there
+  (CORE-5, CORE-6).
+- **Everything is a tree of clients and hosts.** A client is a file system and
+  a database; a sandbox or a VM is a new client whose host is the client that
+  started it (CORE-7, CORE-8).
+- **A factory such as Vibe is a configuration of Smithers in web standards,**
+  not an application. `apps/vibelang` is a proof of concept and reference code
+  (CORE-9, CORE-10).
+- **Smithers builds Smithers,** and the minimum product has the final product's
+  shape and starts headless (CORE-2, CORE-3).
+
 ## What we are building now (Will, 2026-10-19 and 2026-10-20)
 
 - **The app is [`apps/mvp`](apps/mvp/AGENTS.md),** built from scratch one

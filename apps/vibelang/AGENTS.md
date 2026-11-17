@@ -1,5 +1,11 @@
 # apps/vibelang
 
+> **Proof of concept and reference code (Will, 2026-11-16, CORE-10).** This app was "never meant to be a seperate app
+> it's just us playing around with app and features in a way where we weren't slowed down by smithers". The real Vibe
+> factory is an expression of configuring a Smithers app
+> ([the architecture](../../docs/architecture/core-clients-hosts.md)). Read this code for what was tried; do not extend
+> it as the product.
+
 vibelang.smithers.sh, the VibeLang factory. Read [the wiki](wiki/index.md) first: [Will's rulings](wiki/rulings.md)
 (VL-1 to VL-39) are the source of truth for this app, and every decision lands in `wiki/decisions/` in the same change
 as its code (VL-23).

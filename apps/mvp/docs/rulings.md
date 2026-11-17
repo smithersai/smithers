@@ -19,6 +19,8 @@ Anything in this repository, in our private operations notes, or in agent memory
 
 ## What we are building now
 
+**2026-11-16:** [section 20](#20-one-core-clients-and-hosts-will-2026-11-16) sets the architecture every app is built on: one core that works with no user interface, clients over it, and a tree of hosts. Where the block below disagrees with section 20, section 20 wins. Whether `apps/mvp` is the final app or reference code is an open question in section 18.
+
 ```
 apps/mvp (hosted only, smithers.sh)
   browser: React view ─ framework-free Effect state machine ─ TanStack DB (local-first, OPFS)
@@ -361,6 +363,11 @@ These are real gaps. Agents settle micro choices themselves (PROC-16) and queue 
 | Should the deployment's own repository (`GITHUB_REPOSITORY`) move from `smithersai/smithers` to `smithersai/vibelang`? | Secrets and domains work only on `GITHUB_REPOSITORY` until decision 0079's later slices land (homes, issue sync, triage, commitments and merging work per repository); production sets it to `smithersai/smithers`. | Will |
 | Is the secrets egress (`SANDBOX_SECRETS`) turned on in production, and when? | Off by default. [Secrets](features/secrets.md) says turning it on is Will's call, which he never said; the [CI/CD parity plan](proposals/ci-cd-parity.md) turns it on once its e2e passes. | Will |
 | What does "The main branch sandbox will be tied to main" (ARCH-15) mean? | Decision 0005 §2 designs `branch/Follow`: main's sandbox follows main's head and is the base for new branches (not built). Decision 0013 and [sandbox tools](features/sandbox-tools.md) say `main` has no machine for people. | Will |
+| Does "everything before now was just a poc and reference code" (CORE-10) include `apps/mvp`? | SCOPE-1 builds the Smithers app in `apps/mvp`. CORE-10 names `apps/vibelang` as a proof of concept and says "we are building the real app now"; CORE-11 says "build the final version of smithers ui app". | Will |
+| What does the minimum product (CORE-3) contain? | Will, 2026-11-16 16:20: "So we already have a cli right? Maybe the mvp is just that?" Not ruled. The [architecture page](../../../docs/architecture/core-clients-hosts.md#open-questions) proposes: the command line, once it carries one change through the whole loop on this repository. | Will |
+| "These things sync" (CORE-8): do two clients' databases sync in both directions, and does a client cut off from its host keep working? | Not ruled. The architecture page proposes one owner per run with read-only followers, and clients that work alone. | Will |
+| "Clients can talk to other clients" (CORE-7): directly, or through their common host? | Not ruled. | Will |
+| Which web standards does a factory use (CORE-9)? | Not ruled. The architecture page proposes JSON with a schema, ES modules on `Request` and `Response`, Markdown, custom elements and URLs. | Will |
 
 Settled since this table was first written (updated 2026-10-25):
 
@@ -373,9 +380,28 @@ Settled since this table was first written (updated 2026-10-25):
 
 - **FE-23** “Add your model” is one dismissable call to action on the shared toast stack, titled “Add your model” with “Open settings”. It overlays the page, persists until a usable model is added, and resolves automatically. It never takes conversation or timeline space (FE-21). Empty signed-out `/app` onboarding remains separate. Will, 2026-10-31 about 20:25 PDT, on smithers.sh: "Another problem is this add your model ui is taking up so much space that the timeline and the chat could be using. It should be a toast notification using that UI like any other call to action would be using that UI like needing approvals and stuff".
 
-## 19. vibelang.smithers.sh (Will, 2026-11-07)
+## 19. vibelang.smithers.sh (Will, 2026-11-07; replaced 2026-11-16)
 
-vibelang.smithers.sh, the VibeLang factory, is its own app, `apps/vibelang`: a Foldkit app written in VibeLang on
-Effect, on Cloudflare by Alchemy. Its rulings, VL-1 to VL-26, live in its wiki,
-[apps/vibelang/wiki/rulings.md](../../vibelang/wiki/rulings.md), which is the source of truth for that app (VL-23).
-VL-22 brings back the mythical history for it, which TODO-2 deferred for apps/mvp.
+`apps/vibelang` is a proof of concept and reference code, not a separate app (CORE-10). The Vibe factory is an
+expression of configuring a Smithers app (CORE-9). The proof of concept's rulings, VL-1 onward, stay in its wiki,
+[apps/vibelang/wiki/rulings.md](../../vibelang/wiki/rulings.md), as a record of what was tried; they do not bind the
+real app. **Replaces:** "vibelang.smithers.sh, the VibeLang factory, is its own app, `apps/vibelang`: a Foldkit app
+written in VibeLang on Effect, on Cloudflare by Alchemy", with its wiki as "the source of truth for that app" (this
+section, 2026-11-07).
+
+## 20. One core, clients and hosts (Will, 2026-11-16)
+
+Times in this section are Pacific Standard Time (PST, UTC−8). [The architecture page](../../../docs/architecture/core-clients-hosts.md) explains these rulings with diagrams, and [decision 0167](decisions/0167-one-core-clients-and-hosts.md) records what they replace. Will on their weight, 2026-11-16 16:37: "It's extremely important we are architected like this truly which is why I had those agents get deployed but this is absolutely vital  if we mess this up we might mess everything up".
+
+- **CORE-1** The core works with no user interface; a user interface is one type of client attached to it. Will, 2026-11-16 16:19: "The core smithers should work with no UI. Ui is just one type of client to attatch to smithers."
+- **CORE-2** Smithers is dogfooded to build Smithers. Will, 2026-11-16 16:19: "Furthermore, we should be able to dogfood smitehrs to build smithers itself."
+- **CORE-3** We build iteratively from a minimum product that has the shape of the final product and starts headless. Will, 2026-11-16 16:19: "I think we should build iteratively anyways. Let's decide what is the minimum product we should support." and "So I think the MVP as you describe it should be in the shape of the final product we are trending to but start off being headless". What the minimum product contains is not ruled (section 18). **Replaces:** SCOPE-5's "not an MVP scope" (2026-10-19), as far as the order of work goes.
+- **CORE-4** The core is a true core, the command line has feature parity with the interface, and the interface is a thin wrapper around the core. Will, 2026-11-16 16:36: "I expect our core to be a true core. I expect our CLI to have feature parity with our UI. I expect the UI to be just a thin wrapper around the core." This goes further than ARCH-8 and FE-5, which keep the logic out of React: the logic belongs in the core, not in an app.
+- **CORE-5** The core is extremely modular through Effect dependency injection, and it runs on all platforms. Will, 2026-11-16 16:36: "I expect that core to utilize dependency injection via effect to be extremely modular. And I expect it to run on all platforms." This rules how the core is built, not what ships: SCOPE-8 still defers the self-hosted install.
+- **CORE-6** The deployed Cloudflare infrastructure is one expression of the core. Will, 2026-11-16 16:36: "I expect our deployed cloudflare infra to just be one expression of this core that runs anywhere." (ARCH-7 already keeps Cloudflare behind dependency injection.)
+- **CORE-7** Everything is a tree of clients and hosts: clients can talk to other clients, some clients have a specific host, each client can itself be a host, and Smithers cloud is the top host unless someone self-hosts. Will, 2026-11-16 16:36: "I expect client architecture and clients can talk to toher clients. Some clients have a specific host.  Smithers cloud is always the top host unless someone is self hosting but everything is like a tree of clients and host and each client can itself be a host."
+- **CORE-8** A client is a file system and a database, and a client that spins up a sandbox or a VM creates a new client with itself as host. Will, 2026-11-16 16:29: "When I think about how smithers should be working from an engineering perspective I think of it as being a file system (jj/git) and a sqlite database and/or postgres database and these things sync and have clients. I think of smithers cloud being one such client. CLients have ability to spin up sandboxes and vms which are essentially creating new clients using that client as a host."
+- **CORE-9** Most functionality lives in Smithers; a factory such as Vibe is an expression of configuring a Smithers app, and that expression uses web standards. Will, 2026-11-16 16:38: "Most functionality should exist in smithers and then something like vibelang should be just an expression of configuring a smithers app. This expression should utilize web standards." Which standards is not ruled (section 18). (PLUGIN-1 already says not to hardcode what a plugin could declare.)
+- **CORE-10** `apps/vibelang` was never meant to be a separate app; it and everything before 2026-11-16 are proofs of concept and reference code, and the real app is built now. Will, 2026-11-16 16:39, asked whether CORE-9 retires `apps/vibelang` as a separate app: "Yes apps/vibelang was never meant to be a seperate app it's just us playing around with app and features in a way where we weren't slowed down by smithers. I'ts a POC and we are building the real app now everything before now was just a poc and reference code". **Replaces:** section 19 (2026-11-07). Whether "everything before now" includes `apps/mvp` is an open question (section 18).
+- **CORE-11** The product spec is a pure product spec: it takes all previous code into account, and it does not discuss Will's passing decisions or unfinished work. Will, 2026-11-16 16:19: "What I want is a product spec. This product spec takes into account all our previous code but it shoudln't be talking about random decisions I make workt aht isn't done yet etc. It should be a pure product spec because what we are actually about to do is build the final version of smithers ui app."
+- **CORE-12** The command line holds no functionality that the TypeScript API lacks, and no app holds functionality that the TypeScript API and the command line lack. Will, 2026-11-16 16:26: "can you have a subagent verify that the cli doesn't have any functionality that should be upstreamed to the typescript api?" 16:29: "is there anything our apps whether it's the smithers app this vibelang app or any of our many pocs we have built that is functionality that should exist in the typescript api and cli but actually has all it's logic in the ui only? We want to make sure the core is good."
