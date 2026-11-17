@@ -26,6 +26,10 @@ win (rulings section 20).
 - **Everything is a tree of clients and hosts.** A client is a file system and
   a database; a sandbox or a VM is a new client whose host is the client that
   started it (CORE-7, CORE-8).
+- **Every client is local-first.** Feature code writes to the file system and
+  to SQLite or Postgres and never mentions sync; the sync engine works in the
+  background and handles conflicts and time offline. A record can stay private
+  to a client or be shared with its host, like a branch (CORE-13 to CORE-16).
 - **A factory such as Vibe is a configuration of Smithers in web standards,**
   not an application. `apps/vibelang` is a proof of concept and reference code
   (CORE-9, CORE-10).

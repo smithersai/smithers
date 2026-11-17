@@ -4,6 +4,7 @@ owner: Will
 depends_on:
   - apps/mvp/docs/rulings.md
   - apps/mvp/docs/decisions/0167-one-core-clients-and-hosts.md
+  - apps/mvp/docs/decisions/0168-every-client-is-local-first.md
 verified: 2026-11-16
 ---
 
@@ -11,11 +12,11 @@ verified: 2026-11-16
 
 Smithers is one core that works with no user interface. Everything a person or
 an agent touches is a client of that core. The core runs on every platform, and
-every running copy of it is a node in a tree of clients and hosts.
+every running copy of it is a local-first node in a tree of clients and hosts.
 
 Will set this architecture on 2026-11-16 and called it vital: "It's extremely
 important we are architected like this truly", and "if we mess this up we might
-mess everything up". His words are recorded as rulings CORE-1 to CORE-12 in
+mess everything up". His words are recorded as rulings CORE-1 to CORE-16 in
 [the rulings](../../apps/mvp/docs/rulings.md), section 20. This page explains
 them. Where this page and a ruling disagree, the ruling wins and this page is
 the bug.
@@ -23,7 +24,7 @@ the bug.
 These are requirements. On 2026-11-16 no audit had confirmed that the code on
 `main` meets them, so do not read this page as a description of the code.
 
-## The seven rules
+## The eight rules
 
 | # | Rule | Ruling |
 | --- | --- | --- |
@@ -33,7 +34,8 @@ These are requirements. On 2026-11-16 no audit had confirmed that the code on
 | 4 | The core is extremely modular through Effect dependency injection, and it runs on all platforms. | CORE-5 |
 | 5 | The deployed Cloudflare infrastructure is one expression of the core, which runs anywhere. | CORE-6 |
 | 6 | Everything is a tree of clients and hosts. Each client can itself be a host. | CORE-7, CORE-8 |
-| 7 | Most functionality lives in Smithers. A factory such as Vibe is an expression of configuring a Smithers app, written with web standards. | CORE-9 |
+| 7 | Every client is local-first. It writes to its own files and database, and sync is a background concern that is never programmed per feature. | CORE-13 to CORE-16 |
+| 8 | Most functionality lives in Smithers. A factory such as Vibe is an expression of configuring a Smithers app, written with web standards. | CORE-9 |
 
 Two rules set the order of work:
 
@@ -130,7 +132,60 @@ database and/or postgres database and these things sync and have clients".
 "Client" here means a running copy of Smithers, not only a screen. Smithers
 cloud is one such client. A laptop is another. A sandbox is another.
 
-## 4. The tree of clients and hosts
+## 4. Every client is local-first
+
+A client follows all the rules of local-first (CORE-13). It reads and writes
+its own files and its own database, and it keeps working when its host is out
+of reach.
+
+```
+ a feature's code                       the sync engine, in the background
+ ┌──────────────────────────┐          ┌───────────────────────────────────┐
+ │ write a file              │          │ carries changes to the host        │
+ │ write a row               │   ───▶   │ brings other clients' changes back │
+ │ read either               │          │ handles conflicts                  │
+ │                           │          │ catches up after time offline      │
+ │ never mentions sync       │          │                                    │
+ └──────────────────────────┘          └───────────────────────────────────┘
+          this client's files and database are always the thing it reads and writes
+```
+
+The rule for feature code is strict: it writes to the file system and to SQLite
+or Postgres, and that is all (CORE-14). A feature that contains its own sync,
+retry-to-server or conflict code is built wrong. Will calls making this "just
+work" a major engineering concern.
+
+Local-first also gives the product multiplayer: two clients of one host see
+each other's changes, routed through that host (CORE-13).
+
+```
+ client A ──▶ host ──▶ client B          a change made on A reaches B through their host
+ client A ◀── host ◀── client B          and the other way
+```
+
+One limit comes from the architecture, not from a rule: a client that runs its
+sandboxes on a host cannot reach those sandboxes while it is disconnected from
+that host.
+
+### Private and shared
+
+A record does not have to leave the client that made it (CORE-16). A person can
+keep their own issues while working, the same way they keep their own branches.
+
+```
+                      stays on this client        also lives on the host
+ ──────────────────────────────────────────────────────────────────────────
+ files, in jj or git   a private branch            a branch that always syncs
+ records, in the       a private issue             a shared issue
+ database
+ ──────────────────────────────────────────────────────────────────────────
+                      nobody else sees it          everyone with access sees it
+```
+
+Branches already work this way. The product makes the same choice formal for
+records.
+
+## 5. The tree of clients and hosts
 
 ```
  Smithers cloud                       the top host
@@ -156,7 +211,7 @@ cloud is one such client. A laptop is another. A sandbox is another.
 - Smithers cloud is always the top host, unless someone is self-hosting.
 - Clients can talk to other clients.
 
-## 5. Smithers and a factory
+## 6. Smithers and a factory
 
 ```
  ┌──────────────────────────────────────────────────────────────┐
@@ -180,7 +235,7 @@ What this rules out:
 - A factory format that needs a framework Smithers does not load on every
   platform.
 
-## 6. The order of work
+## 7. The order of work
 
 ```
  1  core, headless        the TypeScript API and the command line
@@ -199,9 +254,9 @@ this page. The positions are the documenting agent's proposals, not rulings.
 
 | Question | Proposal, not ruled |
 | --- | --- |
-| "These things sync": does every client's database sync with its host's in both directions? | No. One client owns each run and writes its history. Every other client follows that history read-only, and a change travels as a command to the owner. Files move through jj. |
-| Does a client that is cut off from its host keep working, and catch its host up later? | Yes. Every client is the whole core with its own files and database. A host adds identity, permission and a place others follow. |
-| "Clients can talk to other clients": directly, or through their common host? | Not proposed yet. |
+| Which sync engine carries rule 7? It must sync files and SQLite or Postgres rows between any client and its host, in both directions, with conflicts handled and no per-feature code. | Not proposed yet. It is the largest engineering risk on this page: a client that is itself a host may hold SQLite, so an engine that reads only from Postgres cannot serve the whole tree. |
+| How is "private" against "shared with the host" made formal? | One scope on every record and every branch: private to this client, or shared with a named host. Sharing a private record is one explicit act, like pushing a branch. |
+| May two clients sync directly, with no host between them? | Not proposed yet. Routing through a host is ruled (CORE-13). |
 | Which web standards does a factory use? | JSON with a published schema for what it declares, ES modules on `Request` and `Response` for what it runs, Markdown for what it says, custom elements for what it draws, URLs for where things live. |
 | Is the existing command line the minimum product? | Only once it carries one change through the whole loop on the Smithers repository with no web page opened. |
 | Does "everything before now was just a poc and reference code" include `apps/mvp`? | Not proposed. Ask Will. |
