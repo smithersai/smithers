@@ -114,8 +114,8 @@ A job with one of these is never run and never becomes a target:
 | `write-permission` | may write outside its checkout (`permissions: ... write`)                      |
 | `changes-machine`  | changes the machine it runs on; see [Your machine](#your-machine)              |
 | `docker`           | has a step that runs `docker`, `podman` or `nerdctl`; `--allow-docker` runs it |
-| `services`         | starts service containers, which Smithers CI does not start                    |
-| `container`        | runs inside a container, which Smithers CI does not start                      |
+| `services`         | needs service containers, which only GitHub starts                             |
+| `container`        | runs inside a container, which only GitHub starts                              |
 | any other feature  | except `host-action`, `trigger-filter` and `condition-false`, which are safe   |
 
 A GitHub Actions step runs as it does on a runner: its `${{ }}` and `if:` are

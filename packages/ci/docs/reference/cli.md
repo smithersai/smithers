@@ -179,7 +179,7 @@ what the job names.
 | `condition`            | runs only when a condition holds that a replay cannot check                                                 |
 | `condition-false`      | does not run on this kind of change                                                                         |
 | `conditional`          | depends on a Make conditional                                                                               |
-| `container`            | runs inside a container, which Smithers CI does not start                                                   |
+| `container`            | runs inside a container, which only GitHub starts; the job stays in your CI as it is                        |
 | `continue-on-error`    | may fail without failing the run, so its result says nothing                                                |
 | `default-rule`         | relies on the Makefile's default rule                                                                       |
 | `define`               | uses a Make `define` block                                                                                  |
@@ -231,7 +231,7 @@ what the job names.
 | `secret-env`           | builds a variable from a secret, which a replay never has                                                   |
 | `secret-value`         | holds a value shaped like a secret                                                                          |
 | `self-hosted`          | runs on a self-hosted runner, which has things this machine does not                                        |
-| `services`             | starts service containers, which Smithers CI does not start                                                 |
+| `services`             | needs service containers, which only GitHub starts; the job stays in your CI as it is                       |
 | `setting`              | depends on a Justfile setting that changes how recipes run                                                  |
 | `shell`                | runs in a shell other than bash or sh                                                                       |
 | `smithers-build`       | already builds with Smithers build                                                                          |

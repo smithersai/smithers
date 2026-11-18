@@ -54,7 +54,10 @@ export const reasons: Readonly<Record<string, Reason>> = {
   condition: { sentence: "runs only when a condition holds that a replay cannot check" },
   "condition-false": { sentence: "does not run on this kind of change" },
   conditional: { sentence: "depends on a Make conditional" },
-  container: { sentence: "runs inside a container, which Smithers CI does not start" },
+  container: {
+    sentence: "runs inside a container, which only GitHub starts",
+    next: "the job stays in your CI as it is"
+  },
   "continue-on-error": { sentence: "may fail without failing the run, so its result says nothing" },
   "default-rule": { sentence: "relies on the Makefile's default rule" },
   define: { sentence: "uses a Make `define` block" },
@@ -137,7 +140,10 @@ export const reasons: Readonly<Record<string, Reason>> = {
   "secret-env": { sentence: "builds a variable from a secret, which a replay never has" },
   "secret-value": { sentence: "holds a value shaped like a secret" },
   "self-hosted": { sentence: "runs on a self-hosted runner, which has things this machine does not" },
-  services: { sentence: "starts service containers, which Smithers CI does not start" },
+  services: {
+    sentence: "needs service containers, which only GitHub starts",
+    next: "the job stays in your CI as it is"
+  },
   setting: { sentence: "depends on a Justfile setting that changes how recipes run" },
   shell: { sentence: "runs in a shell other than bash or sh" },
   "smithers-build": { sentence: "already builds with Smithers build" },

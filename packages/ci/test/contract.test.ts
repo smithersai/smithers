@@ -134,7 +134,8 @@ describe("contract 4: inventory", () => {
     expect(Inventory.reasonsText(reasons)).toBe("docker (runs docker compose), services")
     expect(Reasons.reasonsSentence(reasons)).toBe(
       "runs docker compose, and a container daemon can reach every file of this machine; " +
-        "pass --allow-docker to replay it; starts service containers, which Smithers CI does not start"
+        "pass --allow-docker to replay it; needs service containers, which only GitHub starts; " +
+        "the job stays in your CI as it is"
     )
     expect(Inventory.blockers(read.jobs[0] as Inventory.Job).map((entry) => entry.feature)).toContain("docker")
     // Allowing Docker takes that one reason away, from a copy: every other reason stays, and the reading is as it was.
@@ -1074,7 +1075,7 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
       [
         "0 of 2 CI jobs can be reproduced on this machine",
         "  ci.yml:deploy  builds a variable from a secret, which a replay never has; runs only when a condition holds that a replay cannot check",
-        "  ci.yml:e2e     starts service containers, which Smithers CI does not start"
+        "  ci.yml:e2e     needs service containers, which only GitHub starts; the job stays in your CI as it is"
       ].join("\n")
     )
     expect(Inventory.refusal(decode({ ...inventory, jobs: [] }))).toBe(

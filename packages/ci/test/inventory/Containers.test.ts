@@ -156,7 +156,7 @@ describe("a job GitHub runs with containers it starts itself", () => {
     const read = allowingDocker(inventory([services]))
     expect(ci(read).jobs).toEqual([])
     expect(reasonsSentence(notReplayed(read)[0]?.reasons ?? [])).toBe(
-      "starts service containers, which Smithers CI does not start"
+      "needs service containers, which only GitHub starts; the job stays in your CI as it is"
     )
   })
 })
