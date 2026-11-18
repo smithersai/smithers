@@ -419,6 +419,10 @@ describe("a confined run", () => {
     // The undeclared file moves and the key does not: a stored result here would be stale.
     await write(inPackage("data.txt"), "other data\n")
     expect(await run("test")).toEqual({ test: "ran" })
+    // An edit to a declared source is a new key and the same declaration: still no second attempt.
+    await write(inPackage("source.ts"), "export const value = 3\n")
+    expect(await run("test")).toEqual({ test: "ran" })
+    expect(await attempts()).toEqual([first])
     // Declared, the same read is keyed, the run passes confined, and the result is reused.
     const declared = await fixture({ behaviour: "/bin/cat data.txt > /dev/null", data: ["data.txt"] })
     expect(await declared.run("test")).toEqual({ test: "ran" })

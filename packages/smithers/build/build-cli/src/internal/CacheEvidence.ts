@@ -97,24 +97,34 @@ export const decide = (node: {
 export const isEvidence = (decision: Evidence | { readonly reason: string }): decision is Evidence => "mode" in decision
 
 /**
- * The identity of what a node declares it reads and writes: its label, rule
- * and confinement request, never a file's content. A confined attempt that
- * failed is remembered under it, so editing a source does not try again and
- * declaring the missing input does.
+ * The identity of what a node declares: its label, rule, sandbox policy,
+ * declared inputs as written (a glob's pattern, never the files it matches),
+ * dependencies and installed trees. A confined attempt that failed is
+ * remembered under it, so adding a file under a declared glob or editing a
+ * source does not try again, and declaring the missing input does.
  *
  * @category attempts
  * @since 1.0.0
  */
-export const declarationIdentity = (label: string, rule: string, request: ExecSandbox.Request): string =>
+export const declarationIdentity = (declaration: {
+  readonly label: string
+  readonly rule: string
+  readonly sandbox: ExecSandbox.Policy | undefined
+  /** Each declared input as its declaration wrote it. */
+  readonly inputs: ReadonlyArray<unknown>
+  readonly dependencies: ReadonlyArray<string>
+  /** Paths the rule itself reads beside its declared inputs. */
+  readonly reads: ReadonlyArray<string>
+  readonly installedTrees: ReadonlyArray<string>
+}): string =>
   createHash("sha256").update(JSON.stringify([
-    label,
-    rule,
-    request.policy ?? null,
-    [...request.reads].sort(),
-    [...(request.links ?? [])].map((link) => [link.path, link.target]).sort(),
-    [...request.writes].sort(),
-    [...(request.writeFiles ?? [])].sort(),
-    [...(request.externalReads ?? [])].sort()
+    declaration.label,
+    declaration.rule,
+    declaration.sandbox ?? null,
+    declaration.inputs,
+    [...declaration.dependencies].sort(),
+    [...declaration.reads].sort(),
+    [...declaration.installedTrees].sort()
   ])).digest("hex")
 
 /**

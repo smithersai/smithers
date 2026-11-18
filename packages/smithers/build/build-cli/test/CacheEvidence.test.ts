@@ -3,7 +3,6 @@
  * gets its evidence, and what one failed confined attempt is remembered as.
  */
 import { Smithers as S } from "@smthrs/targets"
-import type * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
@@ -79,32 +78,37 @@ describe("decide", () => {
   })
 })
 
-const request: ExecSandbox.Request = {
-  policy: undefined,
-  reads: ["src/b.ts", "src/a.ts"],
-  links: [{ path: "node_modules/tool", target: ".pnpm/tool/node_modules/tool" }],
-  writes: [".flows"],
-  writeFiles: ["out.txt"],
-  externalReads: ["/opt/tool"]
-}
+const declaration = {
+  label: "//pkg:test",
+  rule: "Vitest",
+  sandbox: undefined,
+  inputs: [{ _tag: "Glob", pattern: "test/**/*.ts" }, { _tag: "File", path: "config.json" }],
+  dependencies: ["//pkg:lib", "//other:lib"],
+  reads: ["pkg/package.json"],
+  installedTrees: ["pkg/node_modules", "node_modules"]
+} as const
 
 describe("declarationIdentity", () => {
-  it("is one value for one declaration, in any order, and moves with each part of it", () => {
-    const identity = CacheEvidence.declarationIdentity("//pkg:test", "Vitest", request)
+  it("is one value for one declaration and moves with each part of it", () => {
+    const identity = CacheEvidence.declarationIdentity(declaration)
     expect(identity).toMatch(/^[0-9a-f]{64}$/)
-    expect(CacheEvidence.declarationIdentity("//pkg:test", "Vitest", { ...request, reads: ["src/a.ts", "src/b.ts"] }))
-      .toBe(identity)
-    const differs = (label: string, rule: string, override: Partial<ExecSandbox.Request>): void => {
-      expect(CacheEvidence.declarationIdentity(label, rule, { ...request, ...override })).not.toBe(identity)
+    // Order of the unordered parts does not matter.
+    expect(CacheEvidence.declarationIdentity({
+      ...declaration,
+      dependencies: ["//other:lib", "//pkg:lib"],
+      installedTrees: ["node_modules", "pkg/node_modules"]
+    })).toBe(identity)
+    const differs = (override: Partial<Parameters<typeof CacheEvidence.declarationIdentity>[0]>): void => {
+      expect(CacheEvidence.declarationIdentity({ ...declaration, ...override })).not.toBe(identity)
     }
-    differs("//other:test", "Vitest", {})
-    differs("//pkg:test", "NodeTest", {})
-    differs("//pkg:test", "Vitest", { policy: {} })
-    differs("//pkg:test", "Vitest", { reads: ["src/a.ts", "src/b.ts", "src/c.ts"] })
-    differs("//pkg:test", "Vitest", { links: undefined })
-    differs("//pkg:test", "Vitest", { writes: [] })
-    differs("//pkg:test", "Vitest", { writeFiles: undefined })
-    differs("//pkg:test", "Vitest", { externalReads: undefined })
+    differs({ label: "//other:test" })
+    differs({ rule: "NodeTest" })
+    differs({ sandbox: {} })
+    // Declaring the input a confined run could not read is what tries again.
+    differs({ inputs: [...declaration.inputs, { _tag: "Glob", pattern: "test/fixtures/**" }] })
+    differs({ dependencies: ["//pkg:lib"] })
+    differs({ reads: [] })
+    differs({ installedTrees: ["node_modules"] })
   })
 })
 

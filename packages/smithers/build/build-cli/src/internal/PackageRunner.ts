@@ -1178,7 +1178,15 @@ export const executeEffect = (
           const exit = yield* run(scratch, live)
           return { exit, evidenced: Exit.isSuccess(exit) }
         }
-        const identity = CacheEvidence.declarationIdentity(node.label, node.rule, scratch)
+        const identity = CacheEvidence.declarationIdentity({
+          label: node.label,
+          rule: node.rule,
+          sandbox: node.sandbox,
+          inputs: node.declaredInputs.map((input) => input.declaration),
+          dependencies: node.dependencies,
+          reads: node.readSet,
+          installedTrees: node.installedTrees ?? []
+        })
         if (yield* joined(() => CacheEvidence.attemptFailed(root, cacheDirectory, identity))) return yield* unproven
         const buffered: Array<readonly ["stdout" | "stderr", string]> = []
         // A failed attempt is discarded whole, so a test runner is told to
