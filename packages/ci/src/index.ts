@@ -29,6 +29,14 @@ export * as Command from "./contract/Command.ts"
 export * as Inventory from "./contract/Inventory.ts"
 
 /**
+ * Contract 10: how the parts are called.
+ *
+ * @category contracts
+ * @since 0.1.0
+ */
+export * as Parts from "./contract/Parts.ts"
+
+/**
  * Contract 2: the targets a change selects.
  *
  * @category contracts

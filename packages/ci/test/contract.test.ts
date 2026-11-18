@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { Closure, Command, Inventory, Plan, ReplayReport, RunRecord, Selection, Shard } from "../src/index.ts"
+import { Closure, Command, Inventory, Parts, Plan, ReplayReport, RunRecord, Selection, Shard } from "../src/index.ts"
 
 const fixture = (name: string): unknown =>
   JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"))
@@ -175,5 +175,14 @@ describe("contract 9: dependency closure", () => {
     expect(Closure.isComplete(closure)).toBe(true)
     expect(Closure.isAffectedBy({ ...closure, dynamic: [open] }, ["README.md"])).toBe(true)
     expect(Closure.isAffectedBy({ ...closure, unresolved: [open] }, ["README.md"])).toBe(true)
+  })
+})
+
+describe("contract 10: parts", () => {
+  it("names the part and a known reason in every failure", () => {
+    const failure = { code: "unsupported", message: "bun install is not supported yet", part: "replay" }
+    expect(Schema.decodeUnknownSync(Parts.Failure)(failure)).toEqual(failure)
+    expect(() => Schema.decodeUnknownSync(Parts.Failure)({ ...failure, code: "oops" })).toThrow()
+    expect(() => Schema.decodeUnknownSync(Parts.Failure)({ ...failure, part: "billing" })).toThrow()
   })
 })
