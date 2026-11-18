@@ -3,7 +3,7 @@ title: Fast Smithers CI (customer zero for smithers-ci)
 status: in-progress
 area: build
 owner: Claude Fable, Will's chat session 20474551, since 2026-11-17 16:50 PST
-updated: 2026-11-17 17:05 PST
+updated: 2026-11-17 17:40 PST
 links: [ci-cd-parity.md, ci-parity-cache.md, second-build-machine.md, release-burn-down.md, ../../../../packages/smithers/build/docs/workspace/caching.md, ../../../../packages/smithers/build/docs/workspace/adoption.md]
 ---
 
@@ -78,6 +78,45 @@ What the numbers say:
 4. Run targets across machines, so wall time is the longest target.
 5. Cacheable `check`, `lib` and `lint`.
 6. `smithers-ci`: the same replay as a read-only report on another repository.
+
+## The product, built splash page first
+
+Will, 2026-11-17: "I do end user driven development for products." The order is
+the splash page, then the docs, then tests and the public API from the docs,
+then the implementation. One piece at a time.
+
+Smithers CI is the first step toward Smithers Cloud, the hosted service that
+replaces GitHub Actions, and toward coding factories such as
+`vibelang.smithers.sh`.
+
+| Piece | State |
+| --- | --- |
+| Name | Smithers CI; `bunx smithers-ci`; `ci.smithers.sh`. Proposed by the agent, not objected to |
+| Eyebrow | "Smart CI that only runs what changed" (Will) |
+| Tagline | Open |
+| Buttons, install command, stats | Not started |
+
+## Fast mode (Will, 2026-11-17)
+
+A second mode beside the normal one.
+
+- **Normal mode** is the Bazel way: it runs every target a change affects and
+  never reuses a result it cannot prove.
+- **Fast mode** skips everything normal mode skips, and also plans what it
+  judges safe to skip even when the dependency graph says the target is
+  affected. Will: Facebook "use agents to guess what needs to run. We will
+  build a similar workflow."
+
+Not designed yet. Three constraints the design must meet, the agent's reading
+and not Will's words:
+
+1. `AGENTS.md` says "never weaken affected selection to compensate for missing
+   cache contracts." Fast mode is a separate, named mode; it does not change
+   what normal mode selects.
+2. A target fast mode skips is recorded as skipped by prediction. It is never
+   stored or reported as passed, and never becomes a cache hit.
+3. The replay measures it: run N commits in both modes and count the failures
+   fast mode missed. Fast mode ships with that number.
 
 ## Parked, so we don't forget
 
