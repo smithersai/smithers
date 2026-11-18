@@ -24,6 +24,17 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-17, seventh round** (asked for by the splitter and replay lanes):
+
+- `Step.inputs` are globs as Smithers build's `glob` reads them. **A target generated from a step with `inputs` must
+  run under Smithers build's enforced read sandbox**, never `sandbox: "none"`: an undeclared read then fails the
+  target instead of passing stale. A step whose inputs cannot be enforced stays whole.
+- Contract 2's comment now says what `smthrs ci --plan` really prints; the replay's `planOfPrinted` converts it.
+- Not adopted yet: a flag that names a repository's own wrapper script as standing for `turbo`. It waits until a
+  repository's CI passes the sixth-round rule and only the wrapper stops a split.
+- `land.sh` now refuses a push whose lockfile no longer installs: three commits reached `main` with a broken
+  `pnpm-lock.yaml` from concurrent rebases.
+
 **2026-11-17, sixth round** (found by the lead reading eliza's 15 CI jobs: one posts to the GitHub API, most read
 `$RUNNER_TEMP` or `$GITHUB_OUTPUT`, and none of that was stopping a run):
 

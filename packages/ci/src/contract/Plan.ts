@@ -2,7 +2,9 @@
  * Contract 2: the plan.
  *
  * The targets one change selects, with each target's key and dependencies.
- * It is what `smthrs ci --plan --format json` already prints. Shard
+ * `smthrs ci --plan --format json` prints the same facts under two other
+ * names, `target` for `rule` and `keyPreview` for `key`, and no `mode`; the
+ * replay converts what it prints (`planOfPrinted` in `src/replay`). Shard
  * assignment, the replay, and fast mode's scorer all read it.
  *
  * @since 0.1.0

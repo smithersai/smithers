@@ -35,9 +35,13 @@ export type Source = typeof Source.Type
  * secret name. `command`, `cwd` and `env` values may hold
  * `${{ matrix.<key> }}`, which `withVariant` fills in.
  *
- * `inputs` lists every file the step reads, as paths or globs from the
- * repository root; without it the step reads the whole repository, so every
- * change reruns it. `from` is the id of the step this one was split from.
+ * `inputs` lists every file the step reads, from the repository root, in the
+ * forms Smithers build's `glob` reads: a path, `dir/**`, `dir/*`, `*`, `**`
+ * (dot files match; files git ignores never do). Without `inputs` the step
+ * reads the whole repository, so every change reruns it. A target generated
+ * from a step with `inputs` runs where a read outside them fails: inputs
+ * nobody enforces would let a step pass on a file it never declared, which
+ * is a stale pass. `from` is the id of the step this one was split from.
  *
  * @category models
  * @since 0.1.0
