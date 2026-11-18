@@ -22,6 +22,8 @@ import {
 } from "../src/generate/Render.ts"
 import { compiledCode as replayed } from "../src/replay/index.ts"
 
+const releaseVersion: string = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version
+
 const fixture = (name: string): InventoryDocument =>
   Schema.decodeUnknownSync(Inventory)(JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8")))
 
@@ -512,7 +514,7 @@ describe("how many targets run at once", () => {
     expect(mapOf(two).maxJobs).toBe(1)
     expect(workflowOf(two)).toContain(
       "      # Targets that can write the same files run one at a time.\n" +
-        "      - run: npx --yes --package=@smthrs/cli@next smthrs ci '//...' --jobs 1\n"
+        `      - run: npx --yes --package=@smthrs/cli@${releaseVersion} smthrs ci '//...' --jobs 1\n`
     )
     // A target that can write the tree beside one held to its inputs: the held one could read a half-written file.
     const beside = inventory([job("a", [part("a:1:ui", "ui")]), job("b", [step("b:1", "make")])])
