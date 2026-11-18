@@ -659,6 +659,21 @@ the target files there, which `apply` commits once. For every way it leaves
 out what happens before a CI machine is ready: starting the machine, fetching
 the repository over the network, installing tools and moving the cache.
 
+Beside the wall time of each way, the report gives the CPU time its steps
+used, every process they started included, for the same run the wall time
+covers. On a busy machine the wall time says how long you waited, and the CPU
+time how much work was done:
+
+```text
+the steps used 26m 10s of CPU time as the baseline and 4m 02s in normal mode (6.5× less)
+```
+
+A step's CPU time does not reach the program that started it, so the replay
+reads the machine's processes every two seconds while a step runs and counts
+each process under the step for itself. What a step uses in its last moments
+is not seen, and neither is a process that leaves the step where no jail holds
+it. On a machine whose processes cannot be read, the report has no CPU time.
+
 Every step that failed in a way is named, with its exit code and the first line
 of its error output. When the step wrote no error, a line of what it printed
 stands in. When its program is missing, the report says `` `docker` is not

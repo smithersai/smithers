@@ -55,6 +55,11 @@ directly, so the parts are built at the same time.
   off. `ReplayReport.reruns` (`{ count, ms }`, optional) says how many steps ran again and how long that took,
   which is in no other time. Measured cause: on eliza a failed step cost three runs of its 25-minute job, in each
   way.
+- **CPU time beside wall time** (`sci-warm-start`). `RunTotals.cpuMs` (optional) is the CPU time a run's steps
+  used, every process they started included, over the run its wall time covers; `ReplayReport.baselineCpuMs`,
+  `normalCpuMs` and `fastCpuMs` (optional) add it up over the commits the wall times cover. The report prints one
+  line. A step's CPU time is not handed up to the replay (a jail keeps it), so the replay reads the machine's
+  processes while a step runs; a machine whose processes cannot be read has no CPU time in its report.
 - **An install under the step's own home is not a machine change** (`sci-replay-robust`): `go install`,
   `cargo install`, `pip install --user` and the like, on a host where steps run in the jail. `changes-machine` stays
   for what needs root or writes outside the checkout and the home, and on a host with no jail.

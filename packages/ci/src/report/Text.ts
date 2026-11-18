@@ -17,7 +17,8 @@
  * exit code and the first line of its error output. The run of each way
  * before the first counted commit has one line with its times, or a line
  * that says why that commit started with an empty cache. When failed steps
- * ran again, a line says how many and how long that took.
+ * ran again, a line says how many and how long that took. A line gives the
+ * CPU time each way's steps used, when this machine's processes could be read.
  *
  * Labels, reasons and commit ids come from the repository being replayed, so control
  * characters in them are replaced before they reach a terminal.
@@ -33,6 +34,7 @@ import {
   commitsLeftOut,
   count,
   coverage,
+  cpuTime,
   duration,
   failedSteps,
   failureText,
@@ -150,6 +152,8 @@ export const text: RenderReport = (report) => {
       commitsLeftOut(commitsLeft.length)
     }${leftOut(jobsLeftOut(report))}${unread(notRead.length)}`
   ])
+  const cpu = cpuTime(report)
+  if (cpu !== undefined) sections.push([cpu])
   if (report.trialMs !== undefined) sections.push([trialTime(report.trialMs)])
   if (report.firstRun !== undefined) sections.push([firstRunTime(report.firstRun)])
   if (report.cold !== undefined) sections.push([clean(coldStart(report.cold))])

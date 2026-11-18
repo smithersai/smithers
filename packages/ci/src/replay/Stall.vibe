@@ -44,8 +44,28 @@ effect function outputOf(command: string, args: ReadonlyArray<string>) {
   }) catch () => undefined
 }
 
-/** Every process, from `/proc`. A process that ends while it is read is left out. */
+/**
+ * Every process, from `/proc`, read by one program in one go. Read file by
+ * file, 2,500 processes cost the reader 700 ms of its own processor time,
+ * and a replay reads them every two seconds for the CPU time its steps use.
+ * `undefined` when no such program can be started or it prints nothing.
+ */
+effect function readProcAtOnce() {
+  const text = try outputOf("sh", ["-c", "cat /proc/[0-9]*/stat 2>/dev/null; true"])
+  if (text === undefined || text === "") return undefined
+  return text.split("\n").flatMap((line) => {
+    const entry = fromStat(line)
+    return entry === undefined ? [] : [entry]
+  })
+}
+
+/** Every process, from `/proc`: in one go, or file by file where that cannot be done. */
 effect function readProc() {
+  return (try readProcAtOnce()) ?? (try readProcByFile())
+}
+
+/** Every process, from `/proc`, file by file. A process that ends while it is read is left out. */
+effect function readProcByFile() {
   const fs = try FileSystem.FileSystem
   const names = fs.readDirectory("/proc") catch () => undefined
   if (names === undefined) return undefined

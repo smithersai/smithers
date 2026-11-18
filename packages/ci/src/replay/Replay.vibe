@@ -42,6 +42,8 @@ import { check } from "../apply/index.ts"
 import { refusal as ownWorkspace } from "../native/Workspace.ts"
 import { withReasons } from "../native/Results.ts"
 import { type Confined, confine, held, reading, type Way } from "./Confine.vibe"
+import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "./Cpu.ts"
+import { cpuWatch } from "./CpuWatch.vibe"
 import {
   ambientEnvironment,
   coreCount,
@@ -159,7 +161,8 @@ export type Host = ChildProcessSpawner | FileSystem.FileSystem | Path.Path
  * hold a step in a file-system jail; without it the machine is asked. `cores`
  * is how many baseline jobs run at once when the request sets no limit; without
  * it, the machine's core count. `processes` is where a step's processes are
- * read and stopped. `environment` holds the variables of the person who runs
+ * read and stopped, and `cpuTick` how often they are read for the CPU time
+ * the steps use. `environment` holds the variables of the person who runs
  * the replay, which the program keeps out of its own process; without it they
  * are read from the process. `smthrsWithToken` starts Smithers build as
  * `smthrs` does and reads the token of the shared cache from its standard input;
@@ -176,6 +179,7 @@ export service Options {
   readonly confine?: (() => Probe) | undefined
   readonly cores?: number | undefined
   readonly processes?: Table | undefined
+  readonly cpuTick?: Duration.Input | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   readonly smthrsWithToken?: readonly [string, ...Array<string>] | undefined
   static readonly defaultValue = () => ({
@@ -210,7 +214,18 @@ export type Execute<R> = (targets: ReadonlyArray<string> | undefined) => Readonl
 interface Measured {
   readonly results: ReadonlyArray<TargetResult>
   readonly wallMs: number
+  /** The CPU time the first pass's steps used, when their processes could be read. */
+  readonly cpuMs: number | undefined
 }
+
+/**
+ * Says which run the steps that start from now on belong to: their CPU time
+ * is added to its bucket. With `undefined` they belong to none.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Counting = (bucket: CpuBucket | undefined) => void
 
 /** What one commit's own CI gives the replay: the files to write, the units to run, and what is left out. */
 interface Prepared {
@@ -274,7 +289,8 @@ export effect function settle<R>(
  * and the first pass, which a CI machine spends too. It leaves out `equip`,
  * what only a replay does between the two, and the reruns that label flaky
  * targets. `last` holds what the way's steps failed with in its run before,
- * and afterwards what they failed with in this one.
+ * and afterwards what they failed with in this one. The CPU time of the first
+ * pass's steps is counted, through `counting`, and of nothing else.
  */
 effect function measure<R>(
   checkout: void!Failure!R,
@@ -283,18 +299,21 @@ effect function measure<R>(
   targets: ReadonlyArray<string> | undefined,
   reruns: number,
   last: LastFailures,
-  tally: RerunTally
+  tally: RerunTally,
+  counting: Counting = () => undefined
 ) {
   const start = try Clock.currentTimeMillis
   try checkout
   const checkedOut = try Clock.currentTimeMillis
   try equip
   const equipped = try Clock.currentTimeMillis
-  const first = try execute(targets)
+  const used: CpuBucket = { ms: 0, seen: false }
+  counting(used)
+  const first = try ensuring(execute(targets), sync(() => counting(undefined)))
   const wallMs = (try Clock.currentTimeMillis) - equipped + (checkedOut - start)
   const results = try settle(execute, first, reruns, first.length, last, tally)
   remember(last, results)
-  return { results, wallMs } satisfies Measured
+  return { results, wallMs, cpuMs: usedBy(used) } satisfies Measured
 }
 
 /**
@@ -373,6 +392,13 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * line it failed with in the same way's run of the commit before, or in the
  * first run, is not run again: twice the same is broken. The report says how
  * many steps ran again and how long that took (`ReplayReport.reruns`).
+ *
+ * The CPU time of each way's steps is in the report beside its wall time
+ * (`RunTotals.cpuMs`), for the same run the wall time covers. A step's CPU
+ * time does not reach the program that started it, so the machine's
+ * processes are read while the step runs, and every process under the step
+ * is counted for itself. On a machine whose processes cannot be read the
+ * report has no CPU time.
  *
  * When the model fast mode needs stops answering, the baseline and normal mode
  * still run for every commit, fast mode runs for no further commit, and the
@@ -641,7 +667,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const watch = try watchFor(stall.minutes, stall.table)
       const environment = { ...startEnv(copy, place), ...(try givenAt(commit, place, own)), ...printsNotes }
       const handed = starter === undefined ? undefined : token
-      const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard, watch, handed)
+      const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard, watch, handed, count)
       const stalled = try Ref.get(watch.stalled)
       const record = effect {
         const text = try fs.readFileString(file)
@@ -668,6 +694,19 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     const stall: StallLimit = {
       minutes: request.stallMinutes ?? defaultStallMinutes,
       table: options.processes ?? tableFor()
+    }
+    // The CPU time of a step is read from its processes while it runs: none of it reaches this program.
+    const cpu = try cpuWatch(stall.table, options.cpuTick)
+    // The run whose steps are counted now: a way's first pass of a commit, or none.
+    let counted: CpuBucket | undefined = undefined
+    const counting: Counting = (bucket) => {
+      counted = bucket
+    }
+    const count: Count = (pid) => {
+      const bucket = counted
+      if (bucket === undefined) return uncounted(pid)
+      const ended = cpu.track(pid)
+      return () => addTo(bucket, ended())
     }
 
     /**
@@ -704,7 +743,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           const run = givenTo(step.command, given)
           const environment = stepEnvironment({ ...found, ...place.daemon, ...run, ...step.env, ...told }, place)
           // A step that cannot start, for example because its directory does not exist at this commit, has failed.
-          const output = runStep(program, argv, path.join(copy, step.cwd), environment, stepLimit, stall)
+          const output = runStep(program, argv, path.join(copy, step.cwd), environment, stepLimit, stall, count)
             catch (cause) => ({ timedOut: false, stalled: false, exitCode: undefined, stderr: `could not start: ${describe(cause)}`, stdout: "" } satisfies StepRun)
           const durationMs = (try Clock.currentTimeMillis) - start
           if (output.exitCode === 0) {
@@ -928,7 +967,16 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       const normalCauses = new Map<string, string>()
       const fastCauses = new Map<string, string>()
       try progress.say(`${at} baseline`)
-      const base = try measure(Effect.void, Effect.void, baseline(commit, own), undefined, reruns, last.baseline, tally)
+      const base = try measure(
+        Effect.void,
+        Effect.void,
+        baseline(commit, own),
+        undefined,
+        reruns,
+        last.baseline,
+        tally,
+        counting
+      )
       const baseRecord = recordOf(base.results, commit, base.wallMs)
       baselines.push(baseRecord)
       const names = stepNames(own.units)
@@ -940,7 +988,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         undefined,
         reruns,
         last.normal,
-        tally
+        tally,
+        counting
       )
       const normalRecord = recordOf(normal.results, commit, normal.wallMs, "normal")
       let fastPart: Pick<ReplayCommit, "fast"> = {}
@@ -963,9 +1012,20 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
             labels,
             reruns,
             last.fast,
-            tally
+            tally,
+            counting
           )
-          const run = fastRunOf(normal.results, fast.results, commit, fast.wallMs, baseRecord, names, own.splits, fastCauses)
+          const run = fastRunOf(
+            normal.results,
+            fast.results,
+            commit,
+            fast.wallMs,
+            baseRecord,
+            names,
+            own.splits,
+            fastCauses,
+            fast.cpuMs
+          )
           fastPart = run.part
           fastMismatches = run.mismatches
           fastFlaky += run.flaky
@@ -976,8 +1036,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       commitsDone.push({
         commit,
         changedFiles: changed.length,
-        baseline: totalsOf(baseRecord, names),
-        normal: totalsOf(normalRecord, names),
+        baseline: totalsOf(baseRecord, names, base.cpuMs),
+        normal: totalsOf(normalRecord, names, normal.cpuMs),
         mismatches: [...mismatchesOf("normal", baseRecord, normalRecord, own.splits, normalCauses), ...fastMismatches],
         ...fastPart
       })

@@ -18,6 +18,8 @@ import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport } from "..
 import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
 import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { type Confined, confine, held, reading, type Way } from "../replay/Confine.vibe"
+import { addTo, type Count, type CpuBucket, uncounted, usedBy } from "../replay/Cpu.ts"
+import { cpuWatch } from "../replay/CpuWatch.vibe"
 import { gitConfig, pushesGoNowhere, searchPath, stepEnvironment } from "../replay/Environment.ts"
 import { probeWith } from "../replay/Jail.ts"
 import {
@@ -117,7 +119,7 @@ export effect function committedWorkspace(root: string, commit = "HEAD") {
  * `smthrs` they bring. It never fails: a checkout that cannot be installed is
  * a failed commit, not a failed replay. An install runs the scripts of the
  * commit's dependencies, so it runs as a step does: in `place`, and stopped
- * at a step's time limit.
+ * at a step's time limit. `count` is told each install's process.
  *
  * @category internals
  * @since 0.1.0
@@ -127,7 +129,8 @@ export effect function install(
   workspaceFile: string,
   place: Confined,
   limit: Duration.Input = Duration.hours(stepTimeoutHours),
-  stall: StallLimit = defaultStall()
+  stall: StallLimit = defaultStall(),
+  count: Count = uncounted
 ): Installed!!Host {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
@@ -138,7 +141,7 @@ export effect function install(
     if (manager === undefined) continue
     const [command, ...args] = held(place, [checkout], manager.command)
     const environment = stepEnvironment(place.daemon, place)
-    const ran = runStep(command, args, path.join(checkout, directory), environment, limit, stall)
+    const ran = runStep(command, args, path.join(checkout, directory), environment, limit, stall, count)
       catch () => ({ timedOut: false, stalled: false, exitCode: 127 })
     if (ran.stalled) return { ok: false, reason: commandStopped(manager.command, directory, noProgress(stall.minutes)) }
     if (ran.timedOut) return { ok: false, reason: commandStopped(manager.command, directory, pastLimit(limit)) }
@@ -165,6 +168,8 @@ interface Measured {
   readonly results: ReadonlyArray<TargetResult>
   readonly wallMs: number
   readonly state: Installed
+  /** The CPU time the install and the first pass used, when their processes could be read. */
+  readonly cpuMs: number | undefined
 }
 
 /** What one commit's own CI and tree give its run: the patterns to replay and the workspace file to install for. */
@@ -187,7 +192,9 @@ interface CommitCi {
  * Each is then installed, and its own `smthrs` runs the patterns. Wall time
  * covers the checkout, the install and the first pass, the same in every
  * mode; the reruns that label flaky targets, and the cleaning of a copy after
- * its run, are not counted. A failed target runs again `request.reruns` times,
+ * its run, are not counted. The CPU time of what is timed is in the report
+ * beside it (`RunTotals.cpuMs`), read from the processes while they run. A
+ * failed target runs again `request.reruns` times,
  * or as often as the host sets, and not at all when it failed the same way in
  * the same way's run of the commit before, or in the first run.
  *
@@ -246,6 +253,16 @@ export const own = <R>(
       minutes: request.stallMinutes ?? defaultStallMinutes,
       table: options.processes ?? tableFor()
     }
+    // The CPU time of an install or a run is read from its processes while it runs: none of it reaches this program.
+    const cpu = try cpuWatch(stall.table, options.cpuTick)
+    // The run whose processes are counted now: a way's install and first pass of a commit, or none.
+    let counted: CpuBucket | undefined = undefined
+    const count: Count = (pid) => {
+      const bucket = counted
+      if (bucket === undefined) return uncounted(pid)
+      const ended = cpu.track(pid)
+      return () => addTo(bucket, ended())
+    }
     const work = try orFail(fs.makeTempDirectoryScoped({ prefix: "smithers-ci-own-" }), "could not make a directory")
     const source = path.join(work, "source")
     const root = path.resolve(request.root)
@@ -299,7 +316,7 @@ export const own = <R>(
       file: string
     ) {
       try checkoutAt(copy, commit, place, kept)
-      return try install(copy, file, place, stepLimit, stall)
+      return try install(copy, file, place, stepLimit, stall, count)
     }
 
     const normalCopy = try copyOf("normal")
@@ -387,7 +404,7 @@ export const own = <R>(
       // The cache's address is the one thing the copy's own `smthrs` gets beyond what a target gets.
       const environment = { ...stepEnvironment(place.daemon, place), ...printsNotes, ...(cached ? cacheEnv : {}) }
       const watch = try watchFor(stall.minutes, stall.table)
-      const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard, watch)
+      const output = try exec(command, args, copy, environment, printedLimit, undefined, true, heard, watch, undefined, count)
       const record = effect {
         const text = try fs.readFileString(file)
         return try Schema.decodeUnknownEffect(Schema.fromJsonString(RunRecord))(text)
@@ -516,19 +533,27 @@ export const own = <R>(
     ) {
       const place = places[way]
       try progress.say(at)
-      const start = try Clock.currentTimeMillis
-      const state = try ready(copy, commit, cached ? [cacheDirectory] : [], place, ci.workspaceFile)
-      // Finding what to leave out is the replay's own work, so it is not timed.
-      const planning = try Clock.currentTimeMillis
-      const patterns = targets === undefined ? try firstPass(copy, state, place, ci.patterns) : ci.patterns
-      const planned = (try Clock.currentTimeMillis) - planning
-      const execute = smthrs(copy, cached, state, place, patterns)
-      const first = try execute(targets)
-      const wallMs = (try Clock.currentTimeMillis) - start - planned
+      // What is timed is also what is counted: the install and the first pass.
+      const used: CpuBucket = { ms: 0, seen: false }
+      counted = used
+      const timed = effect {
+        const start = try Clock.currentTimeMillis
+        const state = try ready(copy, commit, cached ? [cacheDirectory] : [], place, ci.workspaceFile)
+        // Finding what to leave out is the replay's own work, so it is not timed.
+        const planning = try Clock.currentTimeMillis
+        const patterns = targets === undefined ? try firstPass(copy, state, place, ci.patterns) : ci.patterns
+        const planned = (try Clock.currentTimeMillis) - planning
+        const execute = smthrs(copy, cached, state, place, patterns)
+        const first = try execute(targets)
+        return { state, execute, first, wallMs: (try Clock.currentTimeMillis) - start - planned }
+      }
+      const { state, execute, first, wallMs } = try ensuring(timed, sync(() => {
+        counted = undefined
+      }))
       const results = try settle(execute, first, times, first.length, last[way], tally)
       remember(last[way], results)
       for (const line of linesOf(at, results, wallMs)) try progress.say(line)
-      return { results, wallMs, state } satisfies Measured
+      return { results, wallMs, state, cpuMs: usedBy(used) } satisfies Measured
     }
 
     /**
@@ -645,7 +670,17 @@ export const own = <R>(
             )
           const fast = try measure(`${at} fast`, fastCopy, commit, true, labels, "fast", ci)
           try cleanCopy(fastCopy, [cacheDirectory], places.fast)
-          const run = fastRunOf(normal.results, fast.results, commit, fast.wallMs, baseRecord)
+          const run = fastRunOf(
+            normal.results,
+            fast.results,
+            commit,
+            fast.wallMs,
+            baseRecord,
+            undefined,
+            undefined,
+            undefined,
+            fast.cpuMs
+          )
           fastPart = run.part
           fastMismatches = run.mismatches
           fastFlaky += run.flaky
@@ -656,8 +691,8 @@ export const own = <R>(
       replayed.push({
         commit,
         changedFiles: changed.length,
-        baseline: totalsOf(baseRecord),
-        normal: totalsOf(normalRecord),
+        baseline: totalsOf(baseRecord, undefined, base.cpuMs),
+        normal: totalsOf(normalRecord, undefined, normal.cpuMs),
         mismatches: [...mismatchesOf("normal", baseRecord, normalRecord), ...fastMismatches],
         ...fastPart
       })

@@ -1275,6 +1275,17 @@ describe("what a report says about a failure", () => {
     expect(request.warm).toBe(true)
   })
 
+  it("holds the CPU time each way's steps used, for a commit and over the commits the times cover", () => {
+    const decoded = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(report)
+    expect(decoded.commits[0]?.baseline.cpuMs).toBe(4_200_000)
+    expect(decoded.commits[0]?.normal.cpuMs).toBe(600_000)
+    expect(decoded.commits[0]?.fast?.cpuMs).toBe(210_000)
+    // A run whose processes could not be read has no number.
+    expect(decoded.commits[1]?.baseline.cpuMs).toBeUndefined()
+    expect(decoded).toMatchObject({ baselineCpuMs: 4_200_000, normalCpuMs: 600_000, fastCpuMs: 210_000 })
+    expect(() => Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, baselineCpuMs: "much" })).toThrow()
+  })
+
   it("holds how many failed steps ran again and how long that took", () => {
     const decoded = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(report)
     expect(decoded.reruns).toEqual({ count: 2, ms: 2_600_000 })

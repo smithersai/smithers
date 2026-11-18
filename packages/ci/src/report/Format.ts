@@ -308,6 +308,33 @@ export const firstRunTime = (run: FirstRun): string => {
   return `the first run, with an empty cache, took ${listed}; it happens once and is in none of these times`
 }
 
+/** How a mode's CPU time compares with the baseline's: ` (6.5× less)`, or nothing when the mode used none. */
+const beside = (baselineMs: number, modeMs: number): string => {
+  const less = ratio(baselineMs, modeMs)
+  if (less === undefined) return ""
+  return less >= 1 ? ` (${times(less)} less)` : ` (${times(1 / less)} more)`
+}
+
+/**
+ * The CPU time each way's steps used, as one line, or nothing when it could
+ * not be read: `the steps used 26m 10s of CPU time as the baseline and 4m 02s
+ * in normal mode (6.5× less)`.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const cpuTime = (report: ReplayReport): string | undefined => {
+  const { baselineCpuMs: baseline, normalCpuMs: normal, fastCpuMs: fast } = report
+  if (baseline === undefined || normal === undefined) return undefined
+  const modes = [
+    `${duration(normal)} in normal mode${beside(baseline, normal)}`,
+    ...(fast === undefined ? [] : [`${duration(fast)} in fast mode${beside(baseline, fast)}`])
+  ]
+  return `the steps used ${duration(baseline)} of CPU time as the baseline${modes.length === 1 ? " and" : ","} ${
+    modes.join(" and ")
+  }`
+}
+
 /**
  * How many times failed steps ran again and what that took, as one line:
  * `2 failed steps ran again, which took 50m 10s and is in none of these times`.

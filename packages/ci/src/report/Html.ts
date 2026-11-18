@@ -18,6 +18,7 @@ import {
   commitsLeftOut,
   count,
   coverage,
+  cpuTime,
   duration,
   type FailedStep,
   failedSteps,
@@ -285,6 +286,8 @@ export const html: RenderReport = (report) => {
         flaky(report.flaky ?? 0)
       }${commitsLeftOut(commitsLeft.length)}${leftOut(jobsLeftOut(report))}${unread(notRead.length)}</p>`
     )
+    const cpu = cpuTime(report)
+    if (cpu !== undefined) body.push(`<p class="summary">${cpu}</p>`)
     if (report.trialMs !== undefined) body.push(`<p class="summary">${trialTime(report.trialMs)}</p>`)
     if (report.firstRun !== undefined) body.push(`<p class="summary">${firstRunTime(report.firstRun)}</p>`)
     if (report.cold !== undefined) body.push(`<p class="summary">${escape(coldStart(report.cold))}</p>`)

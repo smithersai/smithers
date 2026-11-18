@@ -882,20 +882,26 @@ export const recordOf = (
 /**
  * Wall time, work time, counts and failures of one run. The reruns that label
  * flaky targets are measurement, not CI, so neither time includes them. `names`
- * says what the failed results are called in the report.
+ * says what the failed results are called in the report, and `cpuMs` is the
+ * CPU time the run's steps used, when it could be read.
  *
  * @category report
  * @throws {never}
  * @since 0.1.0
  */
-export const totalsOf = (record: RunRecord, names: StepNames = new Map()): RunTotals => {
+export const totalsOf = (
+  record: RunRecord,
+  names: StepNames = new Map(),
+  cpuMs?: number | undefined
+): RunTotals => {
   const failures = failuresOf(record.results, names)
   return {
     ok: record.ok,
     wallMs: record.durationMs ?? 0,
     workMs: record.results.reduce((sum, result) => sum + result.durationMs, 0),
     counts: record.counts,
-    ...(failures.length === 0 ? {} : { failures })
+    ...(failures.length === 0 ? {} : { failures }),
+    ...(cpuMs === undefined ? {} : { cpuMs })
   }
 }
 
@@ -1061,6 +1067,16 @@ export const reportOf = (
   const normalWallMs = sum((commit) => commit.normal.wallMs)
   const unread = notRead(inventory)
   const empty = withheldOf(inventory)
+  // A way's CPU time is a number only when every commit the wall times cover has one.
+  const cpu = (way: (commit: ReplayCommit) => RunTotals | undefined): number | undefined => {
+    const used = measured.map((commit) => way(commit)?.cpuMs)
+    return used.length === 0 || used.includes(undefined)
+      ? undefined
+      : used.reduce((total: number, each) => total + (each as number), 0)
+  }
+  const baselineCpuMs = cpu((commit) => commit.baseline)
+  const normalCpuMs = cpu((commit) => commit.normal)
+  const fastCpuMs = found.selection === undefined ? undefined : cpu((commit) => commit.fast)
   return {
     version: 1,
     repository: inventory.repository,
@@ -1081,6 +1097,9 @@ export const reportOf = (
     ...(found.selection === undefined
       ? {}
       : { fastWallMs: sum((commit) => commit.fast?.wallMs ?? 0), selection: found.selection }),
+    ...(baselineCpuMs === undefined ? {} : { baselineCpuMs }),
+    ...(normalCpuMs === undefined ? {} : { normalCpuMs }),
+    ...(fastCpuMs === undefined ? {} : { fastCpuMs }),
     ...(found.fastNotMeasured === undefined ? {} : { fastNotMeasured: found.fastNotMeasured }),
     ...(found.left.length === 0 ? {} : { notReplayed: found.left }),
     ...(found.commitsLeft === undefined || found.commitsLeft.length === 0
@@ -1095,6 +1114,7 @@ export const reportOf = (
 /**
  * What fast mode's run of one commit adds to the report. `fast` is what it
  * ran, and a target of `normal` it did not run was skipped as predicted safe.
+ * `cpuMs` is the CPU time its steps used, when it could be read.
  *
  * @category report
  * @throws {never}
@@ -1108,7 +1128,8 @@ export const fastRunOf = (
   baseline: RunRecord,
   names: StepNames = new Map(),
   split: ReadonlyMap<string, ReadonlyArray<string>> = new Map(),
-  causes: ReadonlyMap<string, string> = new Map()
+  causes: ReadonlyMap<string, string> = new Map(),
+  cpuMs?: number | undefined
 ): {
   readonly part: Pick<ReplayCommit, "fast">
   readonly mismatches: ReadonlyArray<Mismatch>
@@ -1118,7 +1139,7 @@ export const fastRunOf = (
   const merged = normal.map((result) => byLabel.get(result.label) ?? predictedSafe(result.label))
   const record = recordOf(merged, commit, wallMs, "fast")
   return {
-    part: { fast: totalsOf(record, names) },
+    part: { fast: totalsOf(record, names, cpuMs) },
     mismatches: mismatchesOf("fast", baseline, record, split, causes),
     flaky: flakyOf([record])
   }

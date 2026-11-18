@@ -162,6 +162,19 @@ many there were and what they took (`reruns` under `--json`):
 2 failed steps ran again, which took 50m 10s and is in none of these times
 ```
 
+### CPU time
+
+The report gives the CPU time each way's steps used beside its wall time, on
+one line, and for each commit and way under `--json` (`cpuMs`; `baselineCpuMs`,
+`normalCpuMs` and `fastCpuMs` over the commits the wall times cover):
+
+```text
+the steps used 26m 10s of CPU time as the baseline and 4m 02s in normal mode (6.5× less)
+```
+
+It is read from the machine's processes while each step runs. A machine whose
+processes cannot be read gives a report with no CPU time.
+
 ### Steps that stop making progress
 
 A step whose whole process tree uses less than one hundredth of a CPU core and

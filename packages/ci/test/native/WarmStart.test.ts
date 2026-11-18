@@ -85,6 +85,9 @@ describe("a replay of own targets that starts warm", { timeout: 900_000 }, () =>
     // The baseline's first run is the one that finds what passes here: there is no other.
     expect(report.trialMs).toBeUndefined()
     expect(report.jobs).toEqual({ replayed: 3, total: 3 })
+    // The install and the run of each way were read while they ran.
+    expect(report.baselineCpuMs).toBeGreaterThan(0)
+    expect(report.normalCpuMs).toBeGreaterThan(0)
     expect(text(report)).toMatch(
       /^the first run, with an empty cache, took .+ as the baseline and .+ in normal mode; it happens once and is in none of these times$/m
     )

@@ -89,6 +89,8 @@ describe("text", () => {
       "",
       "2 commits · 1 mismatch",
       "",
+      "the steps used 1h 10m of CPU time as the baseline, 10m 00s in normal mode (7.0× less) and 3m 30s in fast mode (20.0× less)",
+      "",
       "the first run, with an empty cache, took 23m 10s as the baseline, 24m 30s in normal mode and 24m 40s in fast mode; it happens once and is in none of these times",
       "",
       "2 failed steps ran again, which took 43m 20s and is in none of these times",
@@ -742,6 +744,24 @@ describe("failed steps", () => {
     )
     expect(text(normalOnly())).not.toContain("the first run")
     expect(html(normalOnly())).not.toContain("the first run")
+  })
+
+  it("gives the CPU time each way's steps used on one line, in the text and on the page", () => {
+    const report: ReplayReport = { ...normalOnly(), baselineCpuMs: 1_570_000, normalCpuMs: 242_000 }
+    const line = "the steps used 26m 10s of CPU time as the baseline and 4m 02s in normal mode (6.5× less)"
+    expect(text(report).split("\n")).toContain(line)
+    expect(body(html(report))).toContain(`<p class="summary">${line}</p>`)
+    // A mode that used more says so, and one that used none is not compared.
+    expect(text({ ...report, normalCpuMs: 3_140_000 })).toContain("52m 20s in normal mode (2.0× more)")
+    expect(text({ ...report, normalCpuMs: 0 }).split("\n")).toContain(
+      "the steps used 26m 10s of CPU time as the baseline and 0ms in normal mode"
+    )
+    expect(body(html(example))).toContain("10m 00s in normal mode (7.0× less) and 3m 30s in fast mode (20.0× less)")
+    // On a machine whose processes could not be read there is no such line.
+    for (const unread of [normalOnly(), { ...normalOnly(), baselineCpuMs: 1 }, { ...normalOnly(), normalCpuMs: 1 }]) {
+      expect(text(unread)).not.toContain("CPU time")
+      expect(html(unread)).not.toContain("CPU time")
+    }
   })
 
   it("says how many failed steps ran again and what that took, in the text and on the page", () => {

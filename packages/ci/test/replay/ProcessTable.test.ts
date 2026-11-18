@@ -19,7 +19,15 @@ const onNode = <A, E, R>(work: Effect.Effect<A, E, R>): Promise<A> =>
 describe("the formats", () => {
   it("reads a line of /proc, with a name that holds spaces and parentheses", () => {
     const fields = "S 7 1 1 0 -1 0 0 0 0 0 3 2 4 1 20 0 1 0 5 6 7"
-    expect(fromStat(`42 (a (b) c) ${fields}`)).toEqual({ pid: 42, parent: 7, cpuMs: 100 })
+    // The process itself used 3 + 2 ticks, the children it waited for 4 + 1, and it started at tick 5.
+    expect(fromStat(`42 (a (b) c) ${fields}`)).toEqual({
+      pid: 42,
+      parent: 7,
+      cpuMs: 100,
+      ownMs: 50,
+      waitedMs: 50,
+      started: 5
+    })
   })
 
   it("refuses what is not such a line", () => {
@@ -84,10 +92,35 @@ describe.each(["linux", "darwin"])("the table read the way %s reads it", (host) 
   })
 })
 
+describe("the table of Linux where no program reads it in one go", () => {
+  const noPrograms = Layer.succeed(ChildProcessSpawner, makeSpawner(() => Effect.fail(denied("spawn"))))
+  /** Every program started prints nothing and passes. */
+  const silent = Layer.effect(
+    ChildProcessSpawner,
+    Effect.gen(function*() {
+      const real = yield* ChildProcessSpawner
+      return makeSpawner(() => real.spawn(ChildProcess.make("true", [])))
+    })
+  )
+
+  it.each([["cannot be started", noPrograms], ["prints nothing", silent]])(
+    "is read file by file when the program %s",
+    async (_what, programs) => {
+      const child = spawn("sleep", ["60"], { stdio: "ignore" })
+      const entries = await onNode(tableFor("linux").read.pipe(Effect.provide(programs)))
+      child.kill("SIGKILL")
+      expect(entries?.find((entry) => entry.pid === child.pid)?.parent).toBe(process.pid)
+    }
+  )
+})
+
 describe("a table that cannot be read", () => {
-  it("is no table on Linux when /proc cannot be listed", async () => {
+  const noPrograms = Layer.succeed(ChildProcessSpawner, makeSpawner(() => Effect.fail(denied("spawn"))))
+
+  it("is no table on Linux when /proc cannot be listed, by a program or file by file", async () => {
     const noProc = FileSystem.layerNoop({ readDirectory: () => Effect.fail(denied("readDirectory")) })
-    expect(await onNode(tableFor("linux").read.pipe(Effect.provide(noProc)))).toBeUndefined()
+    const unreadable = Layer.merge(noProc, noPrograms)
+    expect(await onNode(tableFor("linux").read.pipe(Effect.provide(unreadable)))).toBeUndefined()
   })
 
   it("leaves out a process that ends while it is read", async () => {
@@ -95,7 +128,8 @@ describe("a table that cannot be read", () => {
       readDirectory: () => Effect.succeed(["1", "self"]),
       readFileString: () => Effect.fail(denied("readFileString"))
     })
-    expect(await onNode(tableFor("linux").read.pipe(Effect.provide(vanishing)))).toEqual([])
+    const byFile = Layer.merge(vanishing, noPrograms)
+    expect(await onNode(tableFor("linux").read.pipe(Effect.provide(byFile)))).toEqual([])
   })
 
   it("is no table when ps fails", async () => {

@@ -42,7 +42,9 @@ export type StepFailure = typeof StepFailure.Type
 /**
  * One way of running one commit. `wallMs` is elapsed time; `workMs` is the
  * sum of every target's own time. `failures` names every step that failed in
- * the end, and is absent when none did.
+ * the end, and is absent when none did. `cpuMs` is the CPU time the run's
+ * steps used, every process they started included, over the run `wallMs`
+ * times; it is absent when this machine's processes could not be read.
  *
  * @category models
  * @since 0.1.0
@@ -52,7 +54,8 @@ export const RunTotals = Schema.Struct({
   wallMs: Schema.Finite,
   workMs: Schema.Finite,
   counts: StatusCounts,
-  failures: Schema.optionalKey(Schema.Array(StepFailure))
+  failures: Schema.optionalKey(Schema.Array(StepFailure)),
+  cpuMs: Schema.optionalKey(Schema.Finite)
 })
 
 /**
@@ -192,6 +195,10 @@ export type FirstRun = typeof FirstRun.Type
  * that found the jobs that pass on this machine took, when there was one. It
  * is in no other time.
  *
+ * `baselineCpuMs`, `normalCpuMs` and `fastCpuMs` are the CPU time each way's
+ * steps used over the commits the wall times cover. A way has the number
+ * when each of those commits has one (`RunTotals.cpuMs`).
+ *
  * `reruns` says how many times a failed step ran again to tell a flaky
  * failure from a broken one, in every way and in the first run, and how long
  * those runs took together. That time is in no other time. It is absent when
@@ -220,6 +227,9 @@ export const ReplayReport = Schema.Struct({
   cold: Schema.optionalKey(Schema.NonEmptyString),
   mismatches: Schema.Int,
   fastWallMs: Schema.optionalKey(Schema.Finite),
+  baselineCpuMs: Schema.optionalKey(Schema.Finite),
+  normalCpuMs: Schema.optionalKey(Schema.Finite),
+  fastCpuMs: Schema.optionalKey(Schema.Finite),
   selection: Schema.optionalKey(Metrics),
   fastNotMeasured: Schema.optionalKey(Schema.NonEmptyString),
   flaky: Schema.optionalKey(Schema.Int),

@@ -1,0 +1,76 @@
+/**
+ * Reads the machine's processes while a replay runs, and keeps the CPU time
+ * of each step that is running.
+ *
+ * @since 0.1.0
+ */
+
+import { cpuMsOf, type CpuMeter, meterOf, observe } from "./Cpu.ts"
+import type { Table, TableHost } from "./Stall.vibe"
+
+/**
+ * How often the processes are read when no one says. A step's last moments
+ * before it ends are not seen, so a shorter time counts more of a short step
+ * and costs more reading.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const defaultCpuTick: Duration.Input = "2 seconds"
+
+/**
+ * Counts the CPU time of process trees. `track` starts counting the tree
+ * under a process and gives what ends the count: the milliseconds the tree
+ * was seen to use, or `undefined` when this machine's processes could not be
+ * read while it ran.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface CpuWatch {
+  readonly track: (pid: number) => () => number | undefined
+}
+
+/**
+ * A watch that reads `table` every `tick` until its scope closes.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export effect function cpuWatch(table: Table, tick: Duration.Input = defaultCpuTick) {
+  const meters = new Map<CpuMeter, { read: boolean }>()
+  effect function reading() {
+    while (true) {
+      try sleep(tick)
+      // Nothing is read while no step runs.
+      if (meters.size === 0) continue
+      const entries = try table.read
+      if (entries === undefined) continue
+      for (const [meter, state] of meters) {
+        observe(meter, entries)
+        state.read = true
+      }
+    }
+  }
+  fork.scoped reading()
+  return {
+    track: (pid) => {
+      const meter = meterOf(pid)
+      const state = { read: false }
+      meters.set(meter, state)
+      return () => {
+        meters.delete(meter)
+        return state.read ? cpuMsOf(meter) : undefined
+      }
+    }
+  } satisfies CpuWatch
+}
+
+/**
+ * The host services a watch needs: what reading the processes needs, and the
+ * scope its reading ends with.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type CpuHost = TableHost | Scope.Scope

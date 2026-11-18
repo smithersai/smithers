@@ -9,19 +9,22 @@
         "ok": true,
         "wallMs": 1320000,
         "workMs": 1320000,
-        "counts": { "hit": 0, "ran": 40, "failed": 0, "skipped": 0 }
+        "counts": { "hit": 0, "ran": 40, "failed": 0, "skipped": 0 },
+        "cpuMs": 4200000
       },
       "normal": {
         "ok": true,
         "wallMs": 240000,
         "workMs": 610000,
-        "counts": { "hit": 33, "ran": 7, "failed": 0, "skipped": 0 }
+        "counts": { "hit": 33, "ran": 7, "failed": 0, "skipped": 0 },
+        "cpuMs": 600000
       },
       "fast": {
         "ok": true,
         "wallMs": 90000,
         "workMs": 200000,
-        "counts": { "hit": 33, "ran": 3, "failed": 0, "skipped": 4 }
+        "counts": { "hit": 33, "ran": 3, "failed": 0, "skipped": 4 },
+        "cpuMs": 210000
       },
       "mismatches": []
     },
@@ -68,6 +71,9 @@
   "baselineWallMs": 1320000,
   "normalWallMs": 240000,
   "fastWallMs": 90000,
+  "baselineCpuMs": 4200000,
+  "normalCpuMs": 600000,
+  "fastCpuMs": 210000,
   "speedup": 5.5,
   "speedupCommits": 1,
   "reruns": { "count": 2, "ms": 2600000 },

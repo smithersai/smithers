@@ -820,6 +820,31 @@ describe("reportOf", () => {
     })
   })
 
+  it("carries a run's CPU time when it could be read", () => {
+    const record = recordOf([ran("//:b")], "c", 4)
+    expect(totalsOf(record, new Map(), 250).cpuMs).toBe(250)
+    expect(totalsOf(record)).not.toHaveProperty("cpuMs")
+  })
+
+  it("adds up each way's CPU time over the commits the wall times cover, when each has one", () => {
+    const used = (wallMs: number, cpuMs: number) => ({ ...totals(wallMs), cpuMs })
+    const counted = { ...entry, baseline: used(30, 100), normal: used(10, 40) }
+    const failing = { ...counted, baseline: { ...used(1000, 9000), ok: false } }
+    expect(reportOf(read, [counted, failing, counted], nothing)).toMatchObject({ baselineCpuMs: 200, normalCpuMs: 80 })
+    // One commit whose processes could not be read in a way takes that way's number away.
+    const partly = reportOf(read, [counted, { ...counted, normal: totals(10) }], nothing)
+    expect(partly.baselineCpuMs).toBe(200)
+    expect(partly).not.toHaveProperty("normalCpuMs")
+    // No commit covered, no number.
+    expect(reportOf(read, [failing], nothing)).not.toHaveProperty("baselineCpuMs")
+    // Fast mode has a number only where it was measured.
+    const metrics = selectionOf([], new Map())
+    const fast = { ...counted, fast: used(4, 15) }
+    expect(reportOf(read, [fast, fast], { ...nothing, selection: metrics }).fastCpuMs).toBe(30)
+    expect(reportOf(read, [fast, counted], { ...nothing, selection: metrics })).not.toHaveProperty("fastCpuMs")
+    expect(reportOf(read, [fast, fast], nothing)).not.toHaveProperty("fastCpuMs")
+  })
+
   it("is 0 when nothing ran, and sums fast mode when it ran", () => {
     expect(reportOf(read, [], nothing).speedup).toBe(0)
     const metrics = selectionOf([], new Map())

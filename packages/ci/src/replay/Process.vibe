@@ -10,6 +10,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import type * as PlatformError from "effect/PlatformError"
 import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { type Confined, held } from "./Confine.vibe"
+import { type Count, uncounted } from "./Cpu.ts"
 import { noPushUrl, stepEnvironment } from "./Environment.ts"
 import type { StepOutput } from "./Failures.ts"
 import {
@@ -132,6 +133,7 @@ const keep = (
  * waits in is stopped, so a run of `smthrs` can still write its record.
  * `handed` is text the command reads from its standard input in place of end
  * of file: what it must be given and no process beside it may read.
+ * `count` is told the process when it starts, and when it has ended.
  *
  * @category running
  * @since 0.1.0
@@ -146,7 +148,8 @@ export effect function exec(
   whole = false,
   heard: (chunk: string) => void!! = () => Effect.void,
   watch: Watch | undefined = undefined,
-  handed: string | undefined = undefined
+  handed: string | undefined = undefined,
+  count: Count = uncounted
 ) {
   const spawner = try ChildProcessSpawner
   return scoped(effect {
@@ -159,6 +162,8 @@ export effect function exec(
         forceKillAfter: "5 seconds"
       })
     )
+    const counted = count(Number(handle.pid))
+    try addFinalizer(() => sync(counted))
     const kept = try Ref.make("")
     const printed = watch === undefined ? output(handle) : touching(output(handle), watch)
     const reader = fork keep(printed, kept, (text, chunk) => (text + chunk).slice(-limit), heard)
@@ -177,7 +182,8 @@ export effect function exec(
  * `env` is its whole environment, and it is stopped, and has failed, when it
  * runs longer than `limit` or makes no progress for `stall`. The start of its error output and the end of what
  * it printed are kept: the first says why it failed, and the second does when
- * it wrote no error.
+ * it wrote no error. `count` is told the process when it starts, and when it
+ * has ended.
  *
  * @category running
  * @since 0.1.0
@@ -188,7 +194,8 @@ export effect function runStep(
   cwd: string,
   env: Readonly<Record<string, string | undefined>>,
   limit: Duration.Input,
-  stall: StallLimit = defaultStall()
+  stall: StallLimit = defaultStall(),
+  count: Count = uncounted
 ) {
   const spawner = try ChildProcessSpawner
   return try scoped(effect {
@@ -201,6 +208,8 @@ export effect function runStep(
         forceKillAfter: "5 seconds"
       })
     )
+    const counted = count(Number(handle.pid))
+    try addFinalizer(() => sync(counted))
     const stderr = try Ref.make("")
     const stdout = try Ref.make("")
     const watch = try watchFor(stall.minutes, stall.table)

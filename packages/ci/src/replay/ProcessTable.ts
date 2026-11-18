@@ -9,7 +9,11 @@
 
 /**
  * One process. `cpuMs` is the CPU time it has used, with the time of the
- * children it has waited for where the system counts that.
+ * children it has waited for where the system counts that. Where the system
+ * gives the two apart, `ownMs` is the time of the process itself and
+ * `waitedMs` that of the children it has waited for, and `started` is when
+ * the process started, in the system's own count: with the process id it
+ * names one process, where an id alone is used again.
  *
  * @category models
  * @since 0.1.0
@@ -18,6 +22,9 @@ export interface ProcessEntry {
   readonly pid: number
   readonly parent: number
   readonly cpuMs: number
+  readonly ownMs?: number | undefined
+  readonly waitedMs?: number | undefined
+  readonly started?: number | undefined
 }
 
 /**
@@ -40,8 +47,9 @@ const msPerTick = 10
 /**
  * One line of `/proc/<pid>/stat`. The program's name stands in parentheses
  * and may hold spaces, so the fields are counted from its end: the parent is
- * the second after it, and the eleventh to fourteenth are the CPU time of the
- * process and of the children it waited for.
+ * the second after it, the twelfth to fifteenth are the CPU time of the
+ * process and of the children it waited for, and the twentieth is when it
+ * started.
  *
  * @throws {never}
  * @category parsing
@@ -51,12 +59,22 @@ export const fromStat = (text: string): ProcessEntry | undefined => {
   const end = text.lastIndexOf(")")
   if (end === -1) return undefined
   const fields = text.slice(end + 2).trim().split(" ")
-  const [pid, parent, ...ticks] = [text.slice(0, text.indexOf(" ")), fields[1], ...fields.slice(11, 15)].map(Number)
-  if (ticks.length !== 4 || ![pid, parent, ...ticks].every(Number.isInteger)) return undefined
+  const [pid, parent, started, ...ticks] = [
+    text.slice(0, text.indexOf(" ")),
+    fields[1],
+    fields[19],
+    ...fields.slice(11, 15)
+  ]
+    .map(Number)
+  if (ticks.length !== 4 || ![pid, parent, started, ...ticks].every(Number.isInteger)) return undefined
+  const [user, system, waitedUser, waitedSystem] = ticks as [number, number, number, number]
   return {
     pid: pid as number,
     parent: parent as number,
-    cpuMs: ticks.reduce((sum, count) => sum + count, 0) * msPerTick
+    cpuMs: (user + system + waitedUser + waitedSystem) * msPerTick,
+    ownMs: (user + system) * msPerTick,
+    waitedMs: (waitedUser + waitedSystem) * msPerTick,
+    started: started as number
   }
 }
 

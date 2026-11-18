@@ -74,7 +74,8 @@ When they leave some out, the speedup says what it covers:
 commit, the report prints no speedup. A line gives the time of each way's first
 run, which is in no other number:
 `the first run, with an empty cache, took 4m 10s as the baseline and 5m 02s in normal mode; it happens once and is in none of these times`.
-Then it gives one line for each
+A line gives the CPU time each way's steps used, which on a busy machine says
+more than the time on the clock. Then it gives one line for each
 commit: the files it changed, and whether each way passed, with its wall
 time. Under them it lists:
 
@@ -90,8 +91,8 @@ time. Under them it lists:
   read;
 - every tool your machine has at another version than a job asks for.
 
-`--json` also gives, for each commit and each way, its work time (the sum of
-every target's own time), how many targets were cache hits, ran, failed or
+`--json` also gives, for each commit and each way, its CPU time, its work time
+(the sum of every target's own time), how many targets were cache hits, ran, failed or
 were skipped, and each failed step's name, exit code, first error line and
 command. The HTML page has a line for each commit with its times, `fail` beside
 the time of a run that failed, its mismatches and its failed steps.
