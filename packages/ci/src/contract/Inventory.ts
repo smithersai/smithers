@@ -56,6 +56,13 @@ export type Source = typeof Source.Type
  * them: their bytes are in its key, so another toolchain reruns it, and a
  * target held to its inputs can start them.
  *
+ * `runner` is shell text that runs `command` the way the CI's own runner
+ * does: it sets the variables a runner gives a step, loads what earlier
+ * steps of the job wrote for later steps, decides whether the step runs,
+ * and fills in what `${{ }}` in `command` stands for. It defines the shell
+ * function `runnerEntry`, which takes `command`. A step with a `runner` is
+ * run as `script` gives it, by the baseline and by its target alike.
+ *
  * `sealed` is true when `inputs` name every file the step reads whatever ran
  * before it in its working tree: it reads no file an earlier step wrote. Its
  * target stays held to its inputs after any step. Each step before it in its
@@ -84,7 +91,8 @@ export const Step = Schema.Struct({
   from: Schema.optionalKey(Schema.NonEmptyString),
   tools: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   sealed: Schema.optionalKey(Schema.Boolean),
-  withheld: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
+  withheld: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+  runner: Schema.optionalKey(Schema.NonEmptyString)
 })
 
 /**
@@ -247,6 +255,50 @@ export const shell = ["bash", "-e", "-c"] as const
  * @since 0.1.0
  */
 export const toolCache = ".flows/tools"
+
+/**
+ * The shell function a step's `runner` text defines.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const runnerEntry = "__smithers_ci_step"
+
+/**
+ * The text `shell` runs for a step: its `command`, or, for a step with a
+ * `runner`, the runner text and then `runnerEntry` with the command as its
+ * one argument, in single quotes.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const script = (step: Pick<Step, "command" | "runner">): string =>
+  step.runner === undefined
+    ? step.command
+    : `${step.runner}\n${runnerEntry} '${step.command.replaceAll("'", `'\\''`)}'`
+
+/**
+ * The line a step's `runner` text holds when the step reads the commit it
+ * runs at, or that commit's parent. Its verdict belongs to that commit.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const commitNote = "# reads the commit"
+
+/**
+ * Whether a step's verdict belongs to the commit it ran at: its runner text
+ * says it reads the commit (`commitNote`). The generator never holds such a
+ * step to narrower inputs than the whole repository, so its result is never
+ * reused for another commit.
+ *
+ * @throws {never}
+ * @category accessors
+ * @since 0.1.0
+ */
+export const readsCommit = (step: Pick<Step, "runner">): boolean =>
+  step.runner !== undefined && step.runner.split("\n").includes(commitNote)
 
 /**
  * How long one step may run, in hours. The baseline stops a step that runs
@@ -441,6 +493,16 @@ export const hostActions: ReadonlyArray<string> = [
 export const triggerFilter = "trigger-filter"
 
 /**
+ * The `Unsupported.feature` of a step left out because its `if:` is false
+ * for the event a replay stands for, such as a step kept for a release. The
+ * CI would not run it either, so leaving it out changes no verdict.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const conditionFalse = "condition-false"
+
+/**
  * The `Unsupported.feature` of a workflow whose only change trigger is a
  * push limited to tags. It runs for a release, never for a change, so its
  * jobs are never run.
@@ -473,7 +535,7 @@ export const writePermission = "write-permission"
 export const secret = "secret"
 
 /**
- * The only features a job may have and still be run. Every other feature
+ * The features a job may have and still be run. Every other feature
  * means the job's commands, run on this machine, are not what its CI runs:
  * a condition nobody evaluated, a variable only the CI host sets, a secret,
  * a service container, an action with no command, a release.
@@ -481,7 +543,7 @@ export const secret = "secret"
  * @category constants
  * @since 0.1.0
  */
-export const harmless: ReadonlyArray<string> = [hostAction, triggerFilter]
+export const harmless: ReadonlyArray<string> = [hostAction, triggerFilter, conditionFalse]
 
 /**
  * The reasons a job cannot be reproduced on this machine: its unsupported
@@ -530,8 +592,8 @@ export const expand = (text: string, variant: Readonly<Record<string, string>>):
   )
 
 /**
- * A step with one matrix variant filled into its command, directory and
- * environment values.
+ * A step with one matrix variant filled into its command, directory,
+ * environment values and runner text.
  *
  * @throws {never}
  * @category accessors
@@ -541,7 +603,8 @@ export const withVariant = (step: Step, variant: Readonly<Record<string, string>
   ...step,
   command: expand(step.command, variant),
   cwd: expand(step.cwd, variant),
-  env: Object.fromEntries(Object.entries(step.env).map(([name, value]) => [name, expand(value, variant)]))
+  env: Object.fromEntries(Object.entries(step.env).map(([name, value]) => [name, expand(value, variant)])),
+  ...(step.runner === undefined ? {} : { runner: expand(step.runner, variant) })
 })
 
 /**

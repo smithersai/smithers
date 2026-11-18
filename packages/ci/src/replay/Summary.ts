@@ -19,6 +19,7 @@ import {
   type NotReplayed,
   otherSystem,
   reasonsText,
+  script,
   treeOf,
   type Unsupported,
   withheldOf,
@@ -197,7 +198,7 @@ export const replayable = (inventory: Ci, map: TargetMap, host: string): Replaya
           id: step.id,
           label: targets.length > 1 ? stepKey(step.id, variant) : (targets[0] as string),
           targets,
-          command: filled.command,
+          command: script(filled),
           cwd: filled.cwd,
           env: filled.env
         }

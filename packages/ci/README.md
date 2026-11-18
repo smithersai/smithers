@@ -40,6 +40,33 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-18, twelfth round** (the eliza lane: a GitHub Actions step is run as a runner runs it; every change adds
+and none removes):
+
+- `Step.runner` (optional): shell text that runs the step's `command` the way its CI's runner does. It gives the
+  runner's variables, loads what earlier steps wrote to `GITHUB_ENV` and `GITHUB_PATH`, decides the step's `if:`,
+  and fills in what `${{ }}` in the command stands for while the job runs. It defines the function
+  `Inventory.runnerEntry`. The importer writes it for every GitHub Actions step.
+- `Inventory.script(step)` is the text `Inventory.shell` runs for a step: its command, or its runner text followed
+  by `runnerEntry` with the command as one quoted word. The baseline and the generator both run it, so a step with
+  runner text does the same thing on each side. A part that copies a step, as the splitter does, keeps `runner`.
+- `Inventory.withVariant` also fills matrix values into `runner`.
+- `Inventory.conditionFalse` (`condition-false`) joins `harmless`: a step whose `if:` is false for the event a
+  replay stands for is left out and listed, and its job still runs.
+- `Inventory.commitNote` and `Inventory.readsCommit(step)`: runner text holds the note when its step reads the
+  commit it runs at, or that commit's parent. The generator holds a step with runner text to its inputs only when
+  it is the first step of its job and does not read the commit: a later step reads what earlier steps left for
+  the job, which no input names, and a step that reads the commit has a verdict of that commit only.
+- The runner text of a job's first step names no job unless its script reads `GITHUB_JOB`. Two jobs that start
+  with the same step so have the same first step, and the generator still runs it once for both.
+- Only a step that reads the commit is given `GITHUB_SHA` and `GITHUB_EVENT_PATH`, and only it asks git. Every
+  other step reads the files it opens and what earlier steps of its job left, and nothing that differs from one
+  run to the next. So a step the generator has observed (`observe` of `Shell.Test`) is reused until one of those
+  changes: `test/cli/observedRunner.test.ts` replays that under `strace`. The only step of a job leaves no state.
+- A `command` may hold a `${{ }}` that is not a matrix value, such as `${{ steps.diff.outputs.base }}`: the runner
+  text replaces it when the step runs. The generator writes only matrix values into a step that has runner text,
+  and passes it no runner variable of the machine: the runner text sets them all.
+
 **2026-11-18, eleventh round** (optional additions by the needlefish lane, for a step that runs `zig build`):
 
 - `Step.tools` (optional): the programs the step starts that the machine provides, by name. The generator names them

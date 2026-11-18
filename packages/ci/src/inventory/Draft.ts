@@ -73,6 +73,8 @@ export interface StepInput {
   readonly secrets?: ReadonlyArray<string>
   readonly secretEnv?: ReadonlyMap<string, string>
   readonly name?: string | undefined
+  /** The text that runs the command as its CI's runner does (`Step.runner`). */
+  readonly runner?: string | undefined
 }
 
 /**
@@ -87,7 +89,9 @@ export interface StepInput {
 export const addStep = (job: Draft, input: StepInput): void => {
   const command = input.command.trim()
   if (command === "") return note(job, "empty-command", `${input.where} has no command`)
-  if (hasSecretValue(command)) return note(job, "secret-value", `${input.where} holds a value shaped like a secret`)
+  if (hasSecretValue(command) || (input.runner !== undefined && hasSecretValue(input.runner))) {
+    return note(job, "secret-value", `${input.where} holds a value shaped like a secret`)
+  }
   const env: Array<[string, string]> = []
   const secretEnv = new Map(input.secretEnv)
   for (const [name, value] of input.env ?? []) {
@@ -105,7 +109,8 @@ export const addStep = (job: Draft, input: StepInput): void => {
     env: Object.fromEntries(env),
     secrets: [...new Set([...(input.secrets ?? []), ...secretEnv.values()])],
     ...(secretEnv.size === 0 ? {} : { secretEnv: Object.fromEntries(secretEnv) }),
-    ...(input.name === undefined ? {} : { name: input.name })
+    ...(input.name === undefined ? {} : { name: input.name }),
+    ...(input.runner === undefined ? {} : { runner: input.runner })
   })
 }
 

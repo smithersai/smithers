@@ -36,7 +36,11 @@ Smithers CI slower, never wrong.
 
 - **Steps with no command.** A hosted service container, or a third-party
   GitHub Action that runs no shell command, is listed in the inventory as
-  unsupported, with the reason.
+  unsupported, with the reason. A checkout, a setup action, a cache, a local
+  composite action and a local workflow a job calls are read: see
+  [GitHub Actions workflows](../concepts/github-actions.md).
+- **What only GitHub knows.** A job that reads a secret, a pull request's
+  title, or what another job gave is left out, and the report says which.
 - **Jobs for another operating system.** A job, or a matrix variant, that runs
   on another system than your machine is listed and not run. When every job
   is for another system, the command names the system and exits with code 3.

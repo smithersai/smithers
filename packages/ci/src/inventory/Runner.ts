@@ -1,0 +1,656 @@
+/**
+ * The shell text that runs a workflow step the way a GitHub runner does.
+ *
+ * A runner gives each step a set of variables (`GITHUB_WORKSPACE`,
+ * `RUNNER_TEMP`, `CI`), three files a step writes for the steps after it
+ * (`GITHUB_ENV`, `GITHUB_PATH`, `GITHUB_OUTPUT`), and fills `${{ }}` into the
+ * step's script before a shell reads it. This module writes that as shell
+ * text, so a baseline step and a generated target run the same thing.
+ *
+ * A job keeps its state in one directory of its own under
+ * `/tmp/smithers-ci-runner-<user id>`, named after the repository's place and
+ * the job. The job's first step starts the state anew, as a runner empties
+ * `RUNNER_TEMP` when a job starts, writes the shared functions there for the
+ * steps after it, and removes the state of any checkout that is gone.
+ *
+ * A job's first step does not name its job: its text is the same for two
+ * jobs that start alike, so it can run once for both. What it leaves is kept
+ * under a mark made from what it does, and each job's second step takes a
+ * copy of that as the job's own state.
+ *
+ * An expression that could not be finished when the workflow was read is
+ * finished here, in the shell, for the forms a shell decides exactly: text
+ * compared with text, `&&`, `||`, `!`, `format`, `contains`, `startsWith` and
+ * `endsWith`. Any other form is refused when the workflow is read.
+ *
+ * @since 0.1.0
+ */
+
+import { commitNote, runnerEntry } from "../contract/Inventory.ts"
+import { shardOf } from "../contract/Shard.ts"
+import { formatPieces, type Part, type Residual, toText, truthy, type Variable } from "./Expression.ts"
+
+/**
+ * What a job's steps share: the job's name for its state directory, the
+ * matrix keys that tell its variants apart, and the runner variables whose
+ * values are known when the workflow is read.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface JobFacts {
+  readonly id: string
+  readonly matrixKeys: ReadonlyArray<string>
+  readonly variables: Readonly<Record<string, string>>
+  /** The event file's JSON, with `commitMark` and `parentMark` where the commit and its first parent go. */
+  readonly event: string
+}
+
+/**
+ * What one step needs from its runner.
+ *
+ * - `key`: the step's name in the job's state, in upper case.
+ * - `after`: the mark of the job's first step, whose state a later step takes over; `undefined` for the first
+ *   step itself, which starts the state.
+ * - `job`: the job's key, given as `GITHUB_JOB`. A first step is given none unless its script names the variable,
+ *   so two jobs that start with the same step share it.
+ * - `second`: the step is the second of its job, so it starts the job's own state from what the first step left.
+ * - `cwd`: the directory the step is started in, from the repository root.
+ * - `directory`: a directory decided while the job runs, which the step enters from the root before its script.
+ * - `start`: the shell and its flags; the script follows `-c`.
+ * - `own`: the variables the step sets itself, which `GITHUB_ENV` never replaces.
+ * - `keeps`: values worked out once here and kept for later steps under a name, as the `with:` values of a local
+ *   action are worked out when the action starts.
+ * - `condition`: the rest of the step's `if:`, or `undefined` when it always runs.
+ * - `outer`: the variables of the job and the workflow whose values are decided while the job runs.
+ * - `env`: the step's own variables whose values are decided while the job runs.
+ * - `fills`: the `${{ }}` texts left in the script, each with the expression that replaces it.
+ * - `commit`: the step's script names the commit, so its verdict belongs to one commit.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface StepFacts {
+  readonly key: string
+  readonly after: string | undefined
+  readonly second: boolean
+  readonly job: string | undefined
+  readonly cwd: string
+  readonly directory: ReadonlyArray<Part> | undefined
+  readonly start: ReadonlyArray<string>
+  readonly own: ReadonlyArray<string>
+  readonly keeps: ReadonlyArray<readonly [name: string, parts: ReadonlyArray<Part>]>
+  readonly condition: Residual | undefined
+  readonly outer: ReadonlyArray<readonly [name: string, parts: ReadonlyArray<Part>]>
+  readonly env: ReadonlyArray<readonly [name: string, parts: ReadonlyArray<Part>]>
+  readonly fills: ReadonlyArray<readonly [written: string, residual: Residual]>
+  readonly commit: boolean
+}
+
+/**
+ * The runner text of a step with the mark of its job's first step, or why
+ * its expressions cannot be finished in a shell. `alone` is the text of a
+ * first step that turns out to be the only step of its job: nothing reads
+ * what it leaves, so it leaves nothing and looks at no state but its own.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Written =
+  | { readonly text: string; readonly mark: string; readonly alone: string }
+  | { readonly problem: string }
+
+/** Ends a compilation that cannot go on. Caught where it started. */
+class Refused {
+  readonly why: string
+  constructor(why: string) {
+    this.why = why
+  }
+}
+
+/**
+ * One word for a POSIX shell, always in single quotes.
+ *
+ * @category shell
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
+
+const marker = "__SMITHERS_CI_LIB__"
+
+/**
+ * Where the commit goes in `JobFacts.event`. A control character cannot be part of a branch or repository name,
+ * so nothing else in the JSON reads as this mark.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const commitMark = "\u0001commit"
+
+/**
+ * Where the commit's first parent goes in `JobFacts.event`.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const parentMark = "\u0001parent"
+
+/** The event file's text as shell words: all of it in single quotes, but the commit and its parent. */
+const eventText = (event: string): string =>
+  quote(event)
+    .replaceAll(JSON.stringify(commitMark).slice(1, -1), `'"$GITHUB_SHA"'`)
+    .replaceAll(JSON.stringify(parentMark).slice(1, -1), `'"$__parent"'`)
+
+/**
+ * The functions every step of a job shares. A value is held as text with a
+ * tag: `s` for text, `t` for a value that is true and is not text, `f` for
+ * one that is false and is not text (`null`, `false`, `0`).
+ */
+const library = (job: JobFacts): string =>
+  [
+    `__ci_fail() { echo "smithers-ci: $1" >&2; exit 1; }`,
+    // GitHub compares text without case. Here the letters a to z are folded. Text with other letters that is not
+    // equal as written may still be equal on GitHub, which this cannot tell: the step stops and says so.
+    `__ci_upper() { __u=$(printf '%sx' "$1" | LC_ALL=C tr 'a-z' 'A-Z'); __u=\${__u%X}; }`,
+    `__ci_plain() {`,
+    `  [ -z "$(printf %s "$1" | LC_ALL=C tr -d '\\000-\\177')" ] ||`,
+    `    __ci_fail "text with letters beyond a to z is compared without case, which only GitHub decides"`,
+    `}`,
+    `__ci_folded() { __ci_plain "$1$2"; __ci_upper "$1"; __a=$__u; __ci_upper "$2"; __b=$__u; }`,
+    `__ci_same() { [ "$1" = "$2" ] && return 0; __ci_folded "$1" "$2"; [ "$__a" = "$__b" ]; }`,
+    `__ci_true() { [ "$1" = t ] || { [ "$1" = s ] && [ -n "$2" ]; }; }`,
+    // Text equals null when the number it spells is 0, and an empty text spells 0.
+    `__ci_zero_re='^[[:space:]]*([+-]?(0+\\.?0*|\\.0+)([eE][+-]?[0-9]+)?|0[xX]0+|0[oO]0+)?[[:space:]]*$'`,
+    `__ci_zero() { [[ $1 =~ $__ci_zero_re ]]; }`,
+    `__ci_equal() {`,
+    `  if [ "$1" = s ] && [ "$3" = s ]; then __ci_same "$2" "$4"`,
+    `  elif [ "$1" = s ]; then __ci_zero "$2"`,
+    `  elif [ "$3" = s ]; then __ci_zero "$4"`,
+    `  else return 0; fi`,
+    `}`,
+    `__ci_has() { case $1 in *"$2"*) return 0;; esac; __ci_folded "$1" "$2"; case $__a in *"$__b"*) return 0;; esac; return 1; }`,
+    `__ci_starts() { case $1 in "$2"*) return 0;; esac; __ci_folded "$1" "$2"; case $__a in "$__b"*) return 0;; esac; return 1; }`,
+    `__ci_ends() { case $1 in *"$2") return 0;; esac; __ci_folded "$1" "$2"; case $__a in *"$__b") return 0;; esac; return 1; }`,
+    `__ci_read() { __v=; __t=f; [ -f "$1" ] || return 0; IFS= read -r -d '' __v < "$1"; __t=s; }`,
+    `__ci_sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }`,
+    // hashFiles: the SHA-256 of each file's SHA-256, in the order written; empty when no file is there.
+    `__ci_hash() {`,
+    `  __v=; __t=s; __h=`,
+    `  for __f in "$@"; do`,
+    // GitHub hashes every file under a directory, in an order only its runner's disk decides.
+    `    [ ! -d "$__root/$__f" ] || __ci_fail "hashFiles of the directory $__f is worked out only on GitHub"`,
+    `    [ -f "$__root/$__f" ] || continue`,
+    `    __d=$(__ci_sha < "$__root/$__f") || __ci_fail "could not hash $__f"`,
+    `    __h=$__h\${__d%% *}`,
+    `  done`,
+    `  [ -n "$__h" ] || return 0`,
+    `  __v=$(printf "$(printf %s "$__h" | sed 's/../\\\\x&/g')" | __ci_sha) || __ci_fail "could not hash"`,
+    `  __v=\${__v%% *}`,
+    `}`,
+    // The variables a runner gives every step.
+    `__ci_start() {`,
+    `  mkdir -p -- "$__state/temp" "$__state/tool-cache" "$__state/env" "$__state/steps" || exit 1`,
+    // The commit, the event file and the job's name are given to the step that names them, by the lines after
+    // this. What the machine holds under those names is not the workflow's.
+    `  unset GITHUB_SHA GITHUB_EVENT_PATH GITHUB_JOB`,
+    `  case $(uname -m) in arm64|aarch64) RUNNER_ARCH=ARM64;; x86_64|amd64) RUNNER_ARCH=X64;; *) RUNNER_ARCH=$(uname -m);; esac`,
+    `  case $(uname -s) in Linux) RUNNER_OS=Linux;; Darwin) RUNNER_OS=macOS;; *) RUNNER_OS=Windows;; esac`,
+    `  export RUNNER_OS RUNNER_ARCH GITHUB_WORKSPACE="$__root" RUNNER_TEMP="$__state/temp" RUNNER_TOOL_CACHE="$__state/tool-cache"`,
+    // A workflow may set CI itself. Every other runner variable is the runner's to set.
+    `  export CI="\${CI-true}"${
+      Object.entries(job.variables).map(([name, held]) => ` ${name}=${quote(held)}`).join("")
+    }`,
+    `}`,
+    // The commit and the event file, for a step that reads them. A step that does not never asks git, so nothing
+    // it reads changes from one commit to the next but the files it opens itself.
+    `__ci_commit() {`,
+    `  GITHUB_SHA=$(git -C "$__root" rev-parse --verify --quiet HEAD) ||`,
+    `    __ci_fail "this step reads the commit, and git cannot be read in $__root"`,
+    `  export GITHUB_SHA GITHUB_EVENT_PATH="$__state/event.json"`,
+    `  [ ! -f "$GITHUB_EVENT_PATH" ] || return 0`,
+    `  __parent=$(git -C "$__root" rev-parse --verify --quiet 'HEAD^') || __parent=0000000000000000000000000000000000000000`,
+    `  printf '%s\\n' ${eventText(job.event)} > "$GITHUB_EVENT_PATH"`,
+    `}`,
+    // What earlier steps wrote to GITHUB_ENV and GITHUB_PATH. A step's own variables, and the runner's, stay.
+    `__ci_load() {`,
+    `  for __f in "$__state"/env/*; do`,
+    `    [ -f "$__f" ] || continue`,
+    `    __n=\${__f##*/}`,
+    `    case " $1 " in *" $__n "*) continue;; esac`,
+    `    case $__n in GITHUB_*|RUNNER_*) continue;; esac`,
+    `    IFS= read -r -d '' __v < "$__f"`,
+    `    export "$__n=$__v"`,
+    `  done`,
+    `  [ -f "$__state/path" ] || return 0`,
+    `  while IFS= read -r __p || [ -n "$__p" ]; do PATH=$__p:$PATH; done < "$__state/path"`,
+    `  export PATH`,
+    `}`,
+    `__ci_outcome() { mkdir -p -- "$__state/steps/$1" && printf %s "$2" > "$__state/steps/$1/outcome" || exit 1; }`,
+    // A directory decided while the job runs: one of the repository, as a step's `working-directory` is.
+    `__ci_enter() {`,
+    `  __to=$1`,
+    `  case $__to in "$__root"/*) __to=\${__to#"$__root"/};; "$__root") __to=.;; esac`,
+    `  case $__to in /*) __ci_fail "the step's directory $1 is outside the repository";; esac`,
+    `  cd -- "$__root/$__to" 2>/dev/null || __ci_fail "the step's directory $1 is not in the repository"`,
+    `  case $(pwd -P)/ in "$(cd -- "$__root" && pwd -P)"/*) ;; *) __ci_fail "the step's directory $1 is outside the repository";; esac`,
+    `}`,
+    `__ci_keep() { mkdir -p -- "$__state/kept" && printf %s "$2" > "$__state/kept/$1" || exit 1; }`,
+    // Puts each value in the place of its \${{ }} text, in one pass from the left: a value is never read again
+    // as a \${{ }} text, as it is not on GitHub.
+    `__ci_fill() {`,
+    `  __rest=$__script; __script=`,
+    `  while :; do`,
+    `    __at=; __before=`,
+    `    for __i in "\${!__fk[@]}"; do`,
+    `      case $__rest in`,
+    `        *"\${__fk[__i]}"*)`,
+    `          __head=\${__rest%%"\${__fk[__i]}"*}`,
+    `          if [ -z "$__at" ] || [ \${#__head} -lt \${#__before} ]; then __at=$__i; __before=$__head; fi;;`,
+    `      esac`,
+    `    done`,
+    `    [ -n "$__at" ] || break`,
+    `    __script=$__script$__before\${__fv[__at]}`,
+    `    __rest=\${__rest#"$__before\${__fk[__at]}"}`,
+    `  done`,
+    `  __script=$__script$__rest`,
+    `}`,
+    `__ci_skip() {`,
+    `  __ci_outcome "$1" skipped`,
+    `  echo "smithers-ci: not run, its condition is false"`,
+    `  exit 0`,
+    `}`,
+    // The two forms a runner reads: NAME=value, and NAME<<MARK with the value on the lines up to MARK.
+    `__ci_each() {`,
+    `  __file=$1; shift`,
+    `  while IFS= read -r __line || [ -n "$__line" ]; do`,
+    `    [ -n "$__line" ] || continue`,
+    `    __eq=\${__line%%=*}; __he=\${__line%%<<*}`,
+    `    if [ "$__he" != "$__line" ] && [ \${#__he} -lt \${#__eq} ]; then`,
+    `      __name=$__he; __mark=\${__line#*<<}; __value=; __sep=; __done=`,
+    `      while IFS= read -r __line || [ -n "$__line" ]; do`,
+    `        if [ "$__line" = "$__mark" ]; then __done=1; break; fi`,
+    `        __value=$__value$__sep$__line; __sep=$'\\n'`,
+    `      done`,
+    `      [ -n "$__done" ] || __ci_fail "a value the step wrote for later steps has no closing line"`,
+    `    elif [ "$__eq" != "$__line" ]; then`,
+    `      __name=$__eq; __value=\${__line#*=}`,
+    `    else`,
+    `      __ci_fail "a line the step wrote for later steps is neither NAME=value nor NAME<<MARK"`,
+    `    fi`,
+    `    "$@" "$__name" "$__value"`,
+    `  done < "$__file"`,
+    `}`,
+    `__ci_output() {`,
+    `  __ci_upper "$2"`,
+    `  case $__u in ''|*[!A-Z0-9_-]*) return 0;; esac`,
+    `  printf %s "$3" > "$__state/steps/$1/out.$__u" || exit 1`,
+    `}`,
+    `__ci_env() {`,
+    `  case $1 in`,
+    `    NODE_OPTIONS) __ci_fail "a step may not set NODE_OPTIONS for later steps: GitHub refuses it";;`,
+    `    ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*) __ci_fail "a step set a variable for later steps under a name a shell cannot hold";;`,
+    `  esac`,
+    `  printf %s "$2" > "$__state/env/$1" || exit 1`,
+    `}`,
+    `__ci_run() {`,
+    `  __key=$1; __script=$2; shift 2`,
+    `  __files=$(mktemp -d "$__state/step.XXXXXX") || exit 1`,
+    `  : > "$__files/output"; : > "$__files/env"; : > "$__files/path"; : > "$__files/summary"; : > "$__files/state"`,
+    `  export GITHUB_OUTPUT="$__files/output" GITHUB_ENV="$__files/env" GITHUB_PATH="$__files/path"`,
+    `  export GITHUB_STEP_SUMMARY="$__files/summary" GITHUB_STATE="$__files/state"`,
+    `  "$@" -c "$__script"`,
+    `  __status=$?`,
+    `  [ "$__status" -eq 0 ] || exit "$__status"`,
+    `  mkdir -p -- "$__state/steps/$__key" || exit 1`,
+    `  __ci_each "$__files/output" __ci_output "$__key"`,
+    `  __ci_each "$__files/env" __ci_env`,
+    `  while IFS= read -r __p || [ -n "$__p" ]; do [ -z "$__p" ] || printf '%s\\n' "$__p" >> "$__state/path"; done < "$__files/path"`,
+    `  __ci_outcome "$__key" success`,
+    `  rm -rf -- "$__files"`,
+    `  exit 0`,
+    `}`
+  ].join("\n")
+
+/** Where a variable's value is while the job runs: shell text that sets `__v` and `__t`. */
+const loadOf = (found: Variable): string => {
+  const [kind, ...rest] = found.id.split(":")
+  const detail = rest.join(":")
+  if (kind === "output") {
+    const [step, name] = detail.split("/") as [string, string]
+    return `__ci_read "$__state/steps/${step}/out.${name}"`
+  }
+  if (kind === "outcome") return `__ci_read "$__state/steps/${detail}/outcome"`
+  if (kind === "env") {
+    const { name, held } = JSON.parse(detail) as { readonly name: string; readonly held: string | null }
+    const fallback = held === null ? `__v=; __t=f` : `__v=${quote(held)}; __t=s`
+    return `__ci_read "$__state/env/${name}"; [ "$__t" = s ] || { ${fallback}; }`
+  }
+  if (kind === "kept") return `__ci_read "$__state/kept/${detail}"; __t=s`
+  if (kind === "process") return `__v=\${${detail}-}; __t=s`
+  if (kind === "hash") return `__ci_hash ${(JSON.parse(detail) as ReadonlyArray<string>).map(quote).join(" ")}`
+  if (kind === "matrix") return `__v='\${{ matrix.${detail} }}'; __t=s`
+  if (kind === "path") return `__v=$__root/${quote(detail)}; __t=s`
+  if (kind === "base") {
+    return `__v=$(git -C "$__root" rev-parse --verify --quiet 'HEAD^') || `
+      + `__ci_fail "this commit has no parent to stand for the base of ${detail}"; __t=s`
+  }
+  if (kind === "before") {
+    return `__v=$(git -C "$__root" rev-parse --verify --quiet 'HEAD^') || `
+      + `__v=0000000000000000000000000000000000000000; __t=s`
+  }
+  return `__v=$${shellNames.get(kind as string) as string}; __t=s`
+}
+
+/** The variables a step reads from its runner's own shell variables. */
+const shellNames: ReadonlyMap<string, string> = new Map([
+  ["sha", "GITHUB_SHA"],
+  ["os", "RUNNER_OS"],
+  ["workspace", "__root"],
+  ["temp", "RUNNER_TEMP"],
+  ["toolcache", "RUNNER_TOOL_CACHE"],
+  ["arch", "RUNNER_ARCH"]
+])
+
+/**
+ * The ids a `Variable` may have, by their first part. An expression names a
+ * runtime value with one of these and the runner text knows where it is.
+ *
+ * - `output:STEP/NAME`: what a step wrote to `GITHUB_OUTPUT`, both in upper case.
+ * - `outcome:STEP`: `success` or `skipped`.
+ * - `env:{"name","held"}`: a variable a step may have set through `GITHUB_ENV`, and its value when none did.
+ * - `process:NAME`: a variable of the job or the workflow, as the step finds it once `GITHUB_ENV` is loaded.
+ * - `kept:NAME`: a value an earlier step of the job worked out and kept (`StepFacts.keeps`).
+ * - `hash:[...]`: `hashFiles` of the files named, from the repository root.
+ * - `matrix:key`: a matrix value, filled in for each variant.
+ * - `path:dir`: a directory of the repository.
+ * - `base:what`: the commit's first parent, which must exist; `before`: the same, or 40 zeros.
+ * - `sha`, `workspace`, `temp`, `toolcache`, `arch`.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const variableKinds: ReadonlyArray<string> = [
+  "output",
+  "outcome",
+  "env",
+  "process",
+  "kept",
+  "hash",
+  "matrix",
+  "path",
+  "base",
+  "before",
+  ...shellNames.keys()
+]
+
+interface Emitter {
+  readonly lines: Array<string>
+  count: number
+}
+
+const callTests: ReadonlyMap<string, string> = new Map([
+  ["contains", "__ci_has"],
+  ["startswith", "__ci_starts"],
+  ["endswith", "__ci_ends"]
+])
+
+/** What a value can be when the job runs: text, empty text, `null`, `true`, `false`, or something a shell cannot tell. */
+type Kind = "text" | "empty" | "null" | "true" | "false" | "other"
+
+const truthyKinds: ReadonlyArray<Kind> = ["text", "true", "other"]
+const falsyKinds: ReadonlyArray<Kind> = ["empty", "null", "false", "other"]
+
+/**
+ * Every kind of value a residual can give. `a && b` gives `a` when it is false and `b` otherwise, so
+ * `x == 'y' && 'one' || 'two'` is always text. A number, a list and a variable that is a number or a boolean on
+ * GitHub are `other`: their text is known and what they are is not.
+ */
+const kindsOf = (node: Residual): ReadonlyArray<Kind> => {
+  if (node.kind === "literal") {
+    const held = node.value
+    if (typeof held === "string") return [held === "" ? "empty" : "text"]
+    if (held === null) return ["null"]
+    // Whether a written number is true is known. A list or a mapping is never used with a run-time value.
+    return typeof held === "object" ? ["other"] : [truthy(held) ? "true" : "false"]
+  }
+  if (node.kind === "variable") {
+    if (node.variable.typed) return ["other"]
+    return node.variable.nullable ? ["text", "empty", "null"] : ["text", "empty"]
+  }
+  if (node.kind === "call" && node.name === "format") return ["text", "empty"]
+  if (node.kind !== "binary" || (node.operator !== "&&" && node.operator !== "||")) return ["true", "false"]
+  const kept = node.operator === "&&" ? falsyKinds : truthyKinds
+  return [...new Set([...kindsOf(node.left).filter((kind) => kept.includes(kind)), ...kindsOf(node.right)])]
+}
+
+/**
+ * Whether an expression still to finish is true whatever its variables hold: `x && false` is never true and
+ * `x || 'fallback'` always is. `undefined` when its variables decide.
+ *
+ * @category shell
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const settled = (node: Residual): boolean | undefined => {
+  const kinds = kindsOf(node)
+  if (kinds.every((kind) => kind !== "other" && falsyKinds.includes(kind))) return false
+  return kinds.every((kind) => kind !== "other" && truthyKinds.includes(kind)) ? true : undefined
+}
+
+/**
+ * A value that is tested or compared must be one a shell can tell apart. A matrix value that is a number on
+ * GitHub is only known here as text: `0` is false there and `'0'` is true, so it is never tested.
+ */
+const tested = (node: Residual, compared: boolean): Residual => {
+  const kinds = kindsOf(node)
+  if (kinds.includes("other") || (compared && (kinds.includes("true") || kinds.includes("false")))) {
+    throw new Refused(
+      compared
+        ? "a comparison decided while the job runs is between values that are not both text"
+        : "a value decided while the job runs is tested, and it may be a number or a list"
+    )
+  }
+  return node
+}
+
+/**
+ * Writes the shell lines that work a residual out. Returns the number of
+ * the pair `__v<n>` and `__t<n>` that holds the result.
+ */
+const compile = (node: Residual, emitter: Emitter): number => {
+  emitter.count += 1
+  const n = emitter.count
+  const set = (held: string, tag: string): string => `__v${n}=${held}; __t${n}=${tag}`
+  const decide = (test: string): string => `if ${test}; then ${set("true", "t")}; else ${set("false", "f")}; fi`
+  const pair = (index: number): string => `"$__t${index}" "$__v${index}"`
+  if (node.kind === "literal") {
+    const held = node.value
+    if (typeof held === "object" && held !== null) {
+      throw new Refused("a list or mapping is used with a value decided while the job runs")
+    }
+    emitter.lines.push(set(quote(toText(held)), typeof held === "string" ? "s" : truthy(held) ? "t" : "f"))
+  } else if (node.kind === "variable") {
+    emitter.lines.push(`${loadOf(node.variable)}; ${set("$__v", "$__t")}`)
+  } else if (node.kind === "not") {
+    const operand = compile(tested(node.operand, false), emitter)
+    emitter.lines.push(decide(`! __ci_true ${pair(operand)}`))
+  } else if (node.kind === "call") {
+    const args = node.args.map((arg) => compile(arg, emitter))
+    const test = callTests.get(node.name)
+    const [template] = node.args
+    if (test !== undefined) {
+      emitter.lines.push(decide(`${test} "$__v${args[0]}" "$__v${args[1]}"`))
+    } else if (node.name === "format" && template?.kind === "literal") {
+      const pieces = formatPieces(toText(template.value))
+      if (pieces === undefined || pieces.some((piece) => typeof piece === "number" && args[piece + 1] === undefined)) {
+        throw new Refused("format was given a template that names a value it does not have")
+      }
+      const text = pieces.map((piece) => typeof piece === "string" ? quote(piece) : `"$__v${args[piece + 1]}"`).join("")
+      emitter.lines.push(set(text, "s"))
+    } else {
+      throw new Refused(`${node.name} of a value decided while the job runs`)
+    }
+  } else if (node.operator === "&&" || node.operator === "||") {
+    const left = compile(tested(node.left, false), emitter)
+    // The right side is read only when the left side does not decide, as GitHub reads it.
+    const inner: Emitter = { lines: [], count: emitter.count }
+    const right = compile(node.right, inner)
+    emitter.count = inner.count
+    emitter.lines.push(
+      `if ${node.operator === "&&" ? "" : "! "}__ci_true ${pair(left)}; then`,
+      ...inner.lines.map((line) => `  ${line}`),
+      `  ${set(`$__v${right}`, `$__t${right}`)}`,
+      `else ${set(`$__v${left}`, `$__t${left}`)}; fi`
+    )
+  } else if (node.operator === "==" || node.operator === "!=") {
+    const left = compile(tested(node.left, true), emitter)
+    const right = compile(tested(node.right, true), emitter)
+    emitter.lines.push(decide(`${node.operator === "==" ? "" : "! "}__ci_equal ${pair(left)} ${pair(right)}`))
+  } else {
+    throw new Refused(
+      `${node.operator} orders values decided while the job runs, which a shell does not do as GitHub does`
+    )
+  }
+  return n
+}
+
+/**
+ * The runner text of one step: the shell function `Inventory.runnerEntry`,
+ * which takes the step's command.
+ *
+ * @category shell
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const write = (job: JobFacts, step: StepFacts, command: string): Written => {
+  const emitter: Emitter = { lines: [], count: 0 }
+  // Each matrix value under its key, so two variants never share a state.
+  const variant = job.matrixKeys.map((key) => `|${key}=\${{ matrix.${key} }}`).join("")
+  /** The shell words that give a value made of pieces. */
+  const words = (parts: ReadonlyArray<Part>): string =>
+    parts.length === 0
+      ? "''"
+      : parts.map((part) => typeof part === "string" ? quote(part) : `"$__v${compile(part.residual, emitter)}"`).join(
+        ""
+      )
+  const exported = (entries: StepFacts["env"]): void => {
+    for (const [name, parts] of entries) emitter.lines.push(`export ${name}=${words(parts)}`)
+  }
+  try {
+    // A variable of the job is set before what earlier steps wrote is loaded, so GITHUB_ENV replaces it.
+    exported(step.outer)
+    emitter.lines.push(`__ci_load ${quote(step.own.join(" "))}`)
+    for (const [name, parts] of step.keeps) emitter.lines.push(`__ci_keep ${quote(name)} ${words(parts)}`)
+    if (step.condition !== undefined) {
+      const result = compile(tested(step.condition, false), emitter)
+      emitter.lines.push(`__ci_true "$__t${result}" "$__v${result}" || __ci_skip ${quote(step.key)}`)
+    }
+    exported(step.env)
+    if (step.directory !== undefined) emitter.lines.push(`__ci_enter ${words(step.directory)}`)
+    emitter.lines.push(`__script=$1`)
+    if (step.fills.length > 0) {
+      emitter.lines.push(`__fk=(); __fv=()`)
+      for (const [index, [written, residual]] of step.fills.entries()) {
+        emitter.lines.push(`__fk[${index}]=${quote(written)}; __fv[${index}]=$__v${compile(residual, emitter)}`)
+      }
+      emitter.lines.push(`__ci_fill`)
+    }
+  } catch (refused) {
+    // Anything else thrown here is the stack running out on an expression nested thousands deep.
+    return { problem: refused instanceof Refused ? refused.why : "it nests too deep to finish in a shell" }
+  }
+  // A step that reads the commit, or its parent, says so: its verdict is that commit's and no other's.
+  const commit = step.commit || emitter.lines.some((line) => /\$GITHUB_SHA|'HEAD\^'/.test(line))
+  const fail = (why: string): string => `{ echo "smithers-ci: ${why}" >&2; exit 1; }`
+  const shared = library(job)
+  // What a first step does names what it leaves: its text, its command and the functions it writes.
+  const work = JSON.stringify([
+    shared,
+    emitter.lines,
+    step.key,
+    step.cwd,
+    step.start,
+    step.job,
+    commit,
+    command
+  ])
+  const mark = step.after ??
+    `${shardOf(work, 0x1_0000_0000).toString(36)}-${shardOf(`${work}\n`, 0x1_0000_0000).toString(36)}`
+  /** The lines that name a directory of the state after the repository's place and `name`. */
+  const named = (target: string, name: string): ReadonlyArray<string> => [
+    `__sum=$(printf %s "$__root|"${quote(`${name}${variant}`)} | cksum)`,
+    `case \${__sum// /} in ''|*[!0-9]*) ${fail("cksum gave no checksum to name the job's state with")};; esac`,
+    `${target}=$__base/\${__sum%% *}-\${__sum##* }`
+  ]
+  const textOf = (alone: boolean): string =>
+    [
+      `${runnerEntry}() {`,
+      ...(commit ? [commitNote] : []),
+      `set +e`,
+      `__cwd=${quote(step.cwd)}`,
+      `__root=$PWD`,
+      `if [ -n "$__cwd" ]; then`,
+      `  case $PWD in`,
+      `    */"$__cwd") __root=\${PWD%"/$__cwd"};;`,
+      `    *) __root=$(git rev-parse --show-toplevel 2>/dev/null) || ${fail("$PWD is not $__cwd in a repository")};;`,
+      `  esac`,
+      `fi`,
+      // The state is under /tmp whatever the step's own TMPDIR is, in a directory only this user can enter. Where
+      // /tmp cannot be written, as inside a step held to its inputs, it is under the TMPDIR that step is given.
+      `__base=/tmp; [ -w /tmp ] || __base=\${TMPDIR:-/tmp}`,
+      `__base=$__base/smithers-ci-runner-$(id -u)`,
+      `mkdir -p -m 700 -- "$__base" 2>/dev/null; [ -d "$__base" ] && [ -O "$__base" ] || ${
+        fail("$__base is not a directory of this user")
+      }`,
+      ...(step.after === undefined
+        ? [
+          ...(alone
+            // The only step of a job keeps its state in a directory of this run alone and removes it as it ends:
+            // nothing reads what it leaves. It looks at no state but its own, so what it reads is the same from
+            // one run to the next, whatever other jobs, or steps split from this one, leave beside it.
+            ? [
+              `__state=$(mktemp -d "$__base/only.XXXXXX") || exit 1`,
+              `trap 'rm -rf -- "$__state"' EXIT`
+            ]
+            : [
+              ...named("__state", `first|${mark}`),
+              // The state of a checkout that is gone, such as a replay's copy, is removed with the first step of a
+              // job.
+              `for __d in "$__base"/*; do`,
+              `  [ -f "$__d/root" ] || continue`,
+              `  IFS= read -r -d '' __r < "$__d/root"; [ -d "$__r" ] || rm -rf -- "$__d"`,
+              `done`,
+              `rm -rf -- "$__state"`
+            ]),
+          `mkdir -p -- "$__state" && printf %s "$__root" > "$__state/root" || exit 1`,
+          `cat > "$__state/lib.sh" <<'${marker}'`,
+          shared,
+          marker
+        ]
+        : [
+          ...named("__state", job.id),
+          ...(step.second
+            ? [
+              ...named("__first", `first|${mark}`),
+              `[ -f "$__first/lib.sh" ] || ${fail("the first step of this job has not run in $__root")}`,
+              // The job's own state starts as a copy of what its first step left: that step may have run for
+              // another job that starts the same way. The event file is the first step's own and stays there.
+              `rm -rf -- "$__state"; mkdir -- "$__state" || exit 1`,
+              `for __e in "$__first"/*; do`,
+              `  case \${__e##*/} in event.json) ;; *) cp -R "$__e" "$__state/" || exit 1;; esac`,
+              `done`
+            ]
+            : [])
+        ]),
+      `[ -f "$__state/lib.sh" ] || ${fail("the steps before this one have not run in $__root")}`,
+      `. "$__state/lib.sh" || exit 1`,
+      `__ci_start`,
+      ...(step.job === undefined ? [] : [`export GITHUB_JOB=${quote(step.job)}`]),
+      ...(commit ? [`__ci_commit`] : []),
+      ...emitter.lines,
+      `__ci_run ${quote(step.key)} "$__script" ${step.start.map(quote).join(" ")}`,
+      `}`
+    ].join("\n")
+  return { mark, text: textOf(false), alone: textOf(true) }
+}

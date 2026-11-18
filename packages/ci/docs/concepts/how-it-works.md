@@ -107,12 +107,19 @@ Smithers CI cannot run, the command stops with exit code 3.
 
 A job with one of these is never run and never becomes a target:
 
-| Feature            | The job                                                   |
-| ------------------ | --------------------------------------------------------- |
-| `secret`           | has a step that receives a secret                         |
-| `release-trigger`  | is in a workflow that only a pushed tag starts            |
-| `write-permission` | may write outside its checkout (`permissions: ... write`) |
-| any other feature  | except `host-action` and `trigger-filter`, which are safe |
+| Feature            | The job                                                                      |
+| ------------------ | ---------------------------------------------------------------------------- |
+| `secret`           | has a step that receives a secret                                            |
+| `release-trigger`  | is in a workflow that only a pushed tag starts                               |
+| `write-permission` | may write outside its checkout (`permissions: ... write`)                    |
+| any other feature  | except `host-action`, `trigger-filter` and `condition-false`, which are safe |
+
+A GitHub Actions step runs as it does on a runner: its `${{ }}` and `if:` are
+evaluated, it is given the runner's variables, and what it writes to
+`GITHUB_ENV`, `GITHUB_PATH` and `GITHUB_OUTPUT` reaches the steps after it. A
+step whose `if:` is false for the event a replay stands for
+(`condition-false`) is left out, as its CI leaves it out. See
+[GitHub Actions workflows](github-actions.md).
 
 A workflow limited to some branches or paths (`trigger-filter`) is run for
 every change: more often than its CI runs it, never less.

@@ -13,6 +13,7 @@ import { uncommittedChanges } from "../contract/Inventory.ts"
 import type { Failure, ReadInventory } from "../contract/Parts.ts"
 import { workspace } from "../native/Detect.vibe"
 import { found } from "../native/Workspace.ts"
+import type { Facts } from "./Contexts.ts"
 import { assemble, fileProblem, type Parsed } from "./Draft.ts"
 import { readWorkflow } from "./GithubActions.ts"
 import { readJustfile } from "./Justfile.ts"
@@ -28,6 +29,7 @@ import {
 import { repositoryName } from "./Repository.ts"
 import { readToolFile, toolFiles } from "./Toolchains.ts"
 import { readTurbo } from "./Turbo.ts"
+import { normalizeDirectory } from "./Values.ts"
 
 /** Directories a workspace pattern never walks into. */
 const skipped = (name: string) => name === "node_modules" || name.startsWith(".")
@@ -83,11 +85,15 @@ effect function optional(tree: Tree, file: string) {
   return loaded.kind === "text" ? loaded.text : undefined
 }
 
-/** Reads one file with `read`; a file that exists and cannot be read is recorded. */
-effect function readWith(tree: Tree, file: string, read: (text: string) => Parsed): Parsed!! {
-  const loaded = try load(tree, file)
+/** What a loaded file adds, read with `read`; a file that exists and cannot be read is recorded. */
+const parsedOf = (file: string, loaded: Loaded, read: (text: string) => Parsed): Parsed => {
   if (loaded.kind === "text") return read(loaded.text)
   return loaded.kind === "absent" ? nothing : fileProblem(file, "unreadable-file", loaded.reason)
+}
+
+/** Reads one file with `read`. */
+effect function readWith(tree: Tree, file: string, read: (text: string) => Parsed): Parsed!! {
+  return parsedOf(file, try load(tree, file), read)
 }
 
 effect function isDirectory(tree: Tree, directory: string) {
@@ -132,16 +138,53 @@ effect function walk(
   return found
 }
 
-effect function readWorkflows(tree: Tree) {
-  const directory = ".github/workflows"
-  const parts: Array<Parsed> = []
-  for (const name of try list(tree, directory)) {
-    if (/\.ya?ml$/.test(name)) {
-      const file = `${directory}/${name}`
-      parts.push(try readWith(tree, file, (text) => readWorkflow(file, text)))
+/**
+ * The files of this repository that workflows name with `uses: ./...`: a local action's `action.yml`, and a
+ * workflow another calls. An action can use another, so each file found is searched too.
+ */
+effect function readLocal(tree: Tree, texts: ReadonlyArray<string>) {
+  const found = new Map<string, string>()
+  const pending = [...texts]
+  for (let at = 0; at < pending.length; at++) {
+    for (const match of (pending[at] as string).matchAll(/\buses:\s*["']?\.\/([^\s"'#]+)/g)) {
+      const path = normalizeDirectory(match[1] as string)
+      const files = path === undefined ? [] : /\.ya?ml$/.test(path) ? [path] : [`${path}/action.yml`, `${path}/action.yaml`]
+      for (const file of files) {
+        const text = found.has(file) ? undefined : try optional(tree, file)
+        if (text !== undefined) {
+          found.set(file, text)
+          pending.push(text)
+        }
+      }
     }
   }
-  return parts
+  return found
+}
+
+/**
+ * The branch a replayed commit is on: the one the remote names as its default, else the one checked out.
+ * `undefined` when neither is known, and then an expression that reads it leaves its job out.
+ */
+effect function defaultBranch(root: string) {
+  const remote = try git(root, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])
+  const branch = remote === "" ? try git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]) : remote.slice(remote.indexOf("/") + 1)
+  return branch === "" ? undefined : branch
+}
+
+effect function readWorkflows(tree: Tree, repository: string) {
+  const directory = ".github/workflows"
+  const loaded: Array<readonly [string, Loaded]> = []
+  for (const name of try list(tree, directory)) {
+    if (/\.ya?ml$/.test(name)) loaded.push([`${directory}/${name}`, try load(tree, `${directory}/${name}`)])
+  }
+  const local = try readLocal(tree, loaded.flatMap(([, file]) => file.kind === "text" ? [file.text] : []))
+  const facts: Facts = {
+    // A name with no owner is the directory's, taken when the repository has no remote.
+    ...(repository.includes("/") ? { repository } : {}),
+    defaultBranch: try defaultBranch(tree.root),
+    read: (path) => local.get(path)
+  }
+  return loaded.map(([file, found]) => parsedOf(file, found, (text) => readWorkflow(file, text, facts)))
 }
 
 effect function readPackages(tree: Tree, rootText: string | undefined, runner: Runner) {
@@ -196,7 +239,8 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
     : [{ ...nothing, unsupported: [{ feature: uncommittedChanges, detail: `the working tree differs from ${commit}` }] }]
   const own = try workspace(root)
   if (own !== undefined) parts.push({ ...nothing, unsupported: [found(own)] })
-  parts.push(...try readWorkflows(tree))
+  const repository = repositoryName(remote, path.basename(path.resolve(root)))
+  parts.push(...try readWorkflows(tree, repository))
   for (const name of rootFiles) {
     if (/^\.?justfile$/i.test(name)) {
       parts.push(try readWith(tree, name, (text) => readJustfile(name, text)))
@@ -220,5 +264,5 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
     const text = rootFiles.includes(name) ? try optional(tree, name) : undefined
     if (text !== undefined) parts.push({ ...nothing, toolchains: readToolFile(name, text) })
   }
-  return assemble(repositoryName(remote, path.basename(path.resolve(root))), commit, parts)
+  return assemble(repository, commit, parts)
 }

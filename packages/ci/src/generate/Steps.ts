@@ -52,11 +52,14 @@
 import * as Result from "effect/Result"
 import {
   type Ci,
+  expand,
   generatedWorkflow,
   type Host,
   hostOf,
   type Inventory,
   type Job,
+  readsCommit,
+  script,
   shell,
   type Step,
   type Toolchain,
@@ -457,9 +460,11 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     dependencies: ReadonlyArray<string>,
     scoped: boolean,
     own: boolean,
-    installs: ReadonlyArray<Toolchain>
+    installs: ReadonlyArray<Toolchain>,
+    alone: boolean
   ): Draft | undefined => {
-    const command = forShell(step.command, variant)
+    // A step with runner text is run as that text. It fills in its own `${{ }}`, so only matrix values are written.
+    const command = step.runner === undefined ? forShell(step.command, variant) : expand(script(step), variant)
     const cwd = forText(step.cwd, variant)
     const directory = cwd === undefined ? undefined : directoryOf(cwd)
     if (command === undefined || directory === undefined) {
@@ -474,16 +479,23 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     }
     // The runner's own variables reach a step only when it names them. They
     // enter its key, so a step that reads the commit reruns on every commit.
-    const inheritEnv = sorted([...command.matchAll(runnerVariable)].map((match) => match[1] as string))
-      .filter((name) => name !== "GITHUB_TOKEN" && !Object.hasOwn(env, name))
+    // Runner text gives its step every runner variable itself.
+    const inheritEnv = step.runner !== undefined
+      ? []
+      : sorted([...command.matchAll(runnerVariable)].map((match) => match[1] as string))
+        .filter((name) => name !== "GITHUB_TOKEN" && !Object.hasOwn(env, name))
     const title = `${job.name} / ${step.name ?? step.id}`
     const inputs = step.inputs !== undefined && !step.inputs.includes(everything) ? step.inputs : undefined
     // A sealed step reads nothing an earlier step wrote, so its inputs stand for all it reads after any step. A
     // name with a line break in it cannot be listed for the targets before it to check.
     const sealed = !scoped && inputs !== undefined && step.sealed === true &&
       !inputs.some((input) => input.includes("\n"))
+    // A step with runner text reads what the steps before it in its job left for it, which no input names, so it
+    // is held to its inputs only as the first step of its tree. One that reads the commit is never held to them:
+    // its verdict is that commit's.
+    const free = step.runner === undefined || (alone && !readsCommit(step))
     // Kept only for a step whose reads its inputs can stand for: see `scoped` where the steps are walked.
-    const files = (scoped || sealed) && inputs !== undefined
+    const files = free && (scoped || sealed) && inputs !== undefined
       ? { inputs: sorted(inputs), outputs: outputsOf(step) }
       : { inputs: undefined, outputs: undefined }
     const tools = sorted(step.tools ?? [])
@@ -496,7 +508,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       return same
     }
     const label = uniqueLabel(step, variant)
-    if (sealed) sealedLabels.add(label)
+    if (sealed && free) sealedLabels.add(label)
     const draft: Draft = {
       label,
       env,
@@ -545,7 +557,8 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
         // of another such job. Steps split from one step are kept apart.
         const own = job.source === "github-actions" && group.length === 1 && group[0]?.from === undefined
         for (const step of group) {
-          const draft = draftOf(job, step, variant, host, previous, scoped, own, variantTools)
+          const alone = !(sharesTree && previous.length > 0)
+          const draft = draftOf(job, step, variant, host, previous, scoped, own, variantTools, alone)
           if (draft === undefined) continue
           drafts.set(draft.label, draft)
           made.push(draft)

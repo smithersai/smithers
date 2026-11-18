@@ -120,6 +120,72 @@ it.layer(NodeServices.layer)("read", (it) => {
       })
     })
 
+  it.effect("reads the local actions and workflows a workflow names, for the branch the remote calls its default", () =>
+    effect {
+      const root = try repository({
+        ".github/workflows/ci.yml": `
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - if: github.ref == 'refs/heads/trunk' && github.repository == 'acme/widgets'
+        run: echo on trunk
+      - uses: ./.github/actions/setup
+      - uses: ./../outside
+  shared:
+    uses: ./.github/workflows/called.yml
+`,
+        ".github/workflows/other.yaml": "on: push\njobs: { again: { runs-on: ubuntu-latest, steps: [{ uses: ./.github/actions/setup }] } }",
+        ".github/workflows/called.yml": "on: { workflow_call: }\njobs: { c: { runs-on: ubuntu-latest, steps: [{ run: echo called }] } }",
+        ".github/actions/setup/action.yml":
+          "runs: { using: composite, steps: [{ uses: ./.github/actions/inner }, { run: echo setup, shell: bash }] }",
+        ".github/actions/inner/action.yaml": "runs: { using: composite, steps: [{ run: echo inner, shell: bash }] }"
+      })
+      try git(root, ["remote", "add", "origin", "https://github.com/acme/widgets.git"])
+      try git(root, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"])
+      const inventory = try read(root)
+      const commandsOf = (id: string) => inventory.jobs.find((job) => job.id === id)?.steps.map((step) => step.command)
+      try Effect.try(() => {
+        expect(commandsOf("ci.yml:build")).toEqual(["echo on trunk", "echo inner", "echo setup"])
+        expect(commandsOf("other.yaml:again")).toEqual(["echo inner", "echo setup"])
+        expect(commandsOf("ci.yml:shared/c")).toEqual(["echo called"])
+        expect(inventory.jobs.find((job) => job.id === "ci.yml:build")?.unsupported).toEqual([
+          { feature: "uses", detail: ".github/workflows/ci.yml: ./../outside has no command to run" }
+        ])
+      })
+    })
+
+  it.effect("takes the branch checked out as the default when no remote names one, and none when HEAD is detached", () =>
+    effect {
+      const workflow = `
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - if: github.ref == 'refs/heads/dev'
+        run: echo on dev
+      - run: echo \${{ github.repository }}
+`
+      const root = try repository({ ".github/workflows/ci.yml": workflow })
+      try git(root, ["checkout", "--quiet", "-b", "dev"])
+      const onBranch = try read(root)
+      try git(root, ["checkout", "--quiet", "--detach"])
+      const detached = try read(root)
+      const notes = (inventory: typeof onBranch) => inventory.jobs[0]?.unsupported.map((entry) => entry.detail)
+      const unnamed = ".github/workflows/ci.yml: build step 2 depends on github.repository: the repository's name is not known here"
+      try Effect.try(() => {
+        expect(onBranch.jobs[0]?.steps.map((step) => step.command)).toEqual(["echo on dev"])
+        expect(notes(onBranch)).toEqual([unnamed])
+        expect(detached.jobs[0]?.steps).toEqual([])
+        expect(notes(detached)).toEqual([
+          ".github/workflows/ci.yml: build step 1 runs only if github.ref == 'refs/heads/dev': the default branch is not known here",
+          unnamed
+        ])
+      })
+    })
+
   it.effect("names a repository with no remote after its directory and reads no CI as no jobs", () =>
     effect {
       const path = try Path.Path
@@ -180,11 +246,13 @@ it.layer(NodeServices.layer)("read", (it) => {
       const path = try Path.Path
       const root = try repository({ "readme.md": "x" })
       try fs.makeDirectory(path.join(root, "package.json"))
+      try fs.makeDirectory(path.join(root, ".github/workflows/odd.yml"), { recursive: true })
       const inventory = try read(root)
       try Effect.try(() => {
         expect(inventory.jobs).toEqual([])
-        expect(inventory.unsupported?.[0]?.feature).toBe("unreadable-file")
-        expect(inventory.unsupported?.[0]?.detail).toContain("package.json: it could not be read")
+        expect(inventory.unsupported?.map((entry) => entry.feature)).toEqual(["unreadable-file", "unreadable-file"])
+        expect(inventory.unsupported?.[0]?.detail).toContain(".github/workflows/odd.yml: it could not be read")
+        expect(inventory.unsupported?.[1]?.detail).toContain("package.json: it could not be read")
       })
     })
 

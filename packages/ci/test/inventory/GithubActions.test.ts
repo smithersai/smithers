@@ -68,9 +68,17 @@ jobs:
           command: "bun install --frozen-lockfile",
           cwd: "",
           env: {},
-          secrets: []
+          secrets: [],
+          runner: expect.any(String)
         },
-        { id: "ci.yml:build:2", command: "bun run build\nbun run check", cwd: "", env: {}, secrets: [] }
+        {
+          id: "ci.yml:build:2",
+          command: "bun run build\nbun run check",
+          cwd: "",
+          env: {},
+          secrets: [],
+          runner: expect.any(String)
+        }
       ],
       unsupported: []
     })
@@ -169,7 +177,10 @@ jobs:
     ])
     expect(job.runsOn).toBeUndefined()
     expect(job.needs).toEqual([])
-    expect(details(job)).toContain(`${file}: test runs only if github.ref == 'refs/heads/main'`)
+    // Without the default branch nobody can say what `github.ref` is, so the job stays out.
+    expect(details(job)).toContain(
+      `${file}: test runs only if github.ref == 'refs/heads/main': the default branch is not known here`
+    )
   })
 
   it("reports a reusable workflow, a job with no steps and a job that is not a mapping", () => {
@@ -243,14 +254,20 @@ describe("readWorkflow steps", () => {
     expect(details(job)[1]).toBe(`${file}: test step 2 (Nothing) has neither run nor uses`)
   })
 
-  it("reports a step condition and a step allowed to fail, and keeps the command", () => {
+  it("reports a step allowed to fail, and keeps the command", () => {
     const job = jobOf(withSteps(`
       - run: bun test
         if: always()
         continue-on-error: true
+      - run: bun lint
+        continue-on-error: false
+      - run: bun fmt
+        continue-on-error: \${{ runner.environment == 'github-hosted' }}
 `))
-    expect(job.steps).toHaveLength(1)
-    expect(features(job)).toEqual(["condition", "continue-on-error"])
+    expect(job.steps).toHaveLength(3)
+    expect(job.unsupported).toEqual([
+      { feature: "continue-on-error", detail: `${file}: test step 1 may fail without failing the job` }
+    ])
   })
 
   it("merges env from workflow, job and step, the nearest winning", () => {
@@ -275,22 +292,30 @@ jobs:
       EMPTY: "",
       FROM_ENV: "1-x"
     })
-    expect(second?.command).toBe("echo job")
+    // A step after the first reads a variable of the job when it runs: any step before it may have set it anew.
+    expect(second?.command).toBe("echo \${{ env.LEVEL }}")
+    expect(second?.env).toMatchObject({ LEVEL: "job" })
   })
 
   it("reports env it cannot read and leaves those variables out", () => {
     const job = jobOf(withSteps(`
-      - run: echo \${{ env.SHA }}
+      - run: echo \${{ env.TITLE }}
         env:
-          SHA: \${{ github.sha }}
+          TITLE: \${{ github.retention_days }}
           LIST: [a]
       - run: echo ok
         env: \${{ fromJSON(vars.ENV) }}
 `))
     expect(job.steps.map((step) => step.command)).toEqual(["echo ok"])
-    expect(job.steps[0]?.env).toEqual({})
-    expect(features(job)).toEqual(["expression", "malformed-env", "expression", "expression"])
-    expect(details(job)[0]).toContain("sets SHA from github.sha")
+    expect(job.steps.map((step) => step.env)).toEqual([{}])
+    const unread = "github.retention_days: github.retention_days is known only on GitHub"
+    expect(job.unsupported).toEqual([
+      { feature: "expression", detail: `${file}: test step 1 sets TITLE from ${unread}` },
+      { feature: "malformed-env", detail: `${file}: test step 1 sets LIST to a list or mapping` },
+      // A variable nobody could read is not read as empty: the step that reads it is refused.
+      { feature: "expression", detail: `${file}: test step 1 depends on env.TITLE: ${unread}` },
+      { feature: "expression", detail: `${file}: test step 2 computes its whole environment` }
+    ])
   })
 
   it("keeps matrix variables as written and resolves nothing else it cannot know", () => {
@@ -314,16 +339,15 @@ jobs:
       { shard: "1", "node.version": "20" },
       { shard: "2", "node.version": "20" }
     ])
-    expect(job.steps).toHaveLength(1)
     expect(job.steps[0]).toMatchObject({
       command: "bun test --shard=${{ matrix.shard }}/2 --node=${{ matrix.node.version }}",
       cwd: "packages/${{ matrix.shard }}",
       env: { SHARD: "${{ matrix.shard }}" }
     })
-    expect(details(job)).toEqual([
-      `${file}: test step 2 depends on matrix.missing`,
-      `${file}: test step 3 depends on github.sha, inputs.name`
-    ])
+    // GitHub reads a matrix key no variant has, and an input a push does not give, as empty. The commit is
+    // filled in when the step runs.
+    expect(job.steps.slice(1).map((step) => step.command)).toEqual(["echo", "echo ${{ github.sha }}"])
+    expect(job.unsupported).toEqual([])
   })
 
   it("reports a matrix it cannot read", () => {
@@ -439,19 +463,34 @@ jobs:
         working-directory: \${{ steps.root.outputs.dir }}
       - run: i
         working-directory: \${{ secrets.DIR }}
+      - id: made
+        run: j
+      - run: k
+        working-directory: \${{ steps.made.outputs.dir }}
+      - run: l
+        working-directory: \${{ github.retention_days }}/x
+      - run: m
+        working-directory: \${{ github.workspace }}
 `)
     expect(job.steps.map((step) => [step.command, step.cwd])).toEqual([
       ["a", "from-workflow"],
       ["b", "packages/y"],
-      ["c", "packages/a"],
+      // Steps ran before these two, so a directory from a variable or a step's output is entered when the step runs.
+      ["c", ""],
       ["d", "tools"],
-      ["e", ""]
+      ["e", ""],
+      // No step is named `root`, so GitHub reads its output as empty: the repository root.
+      ["h", ""],
+      ["j", "from-workflow"],
+      ["k", ""],
+      ["m", ""]
     ])
+    expect(job.steps[2]?.runner).toContain(`__ci_enter "$__v`)
     expect(details(job)).toEqual([
       `${file}: test step 6: its directory /tmp is outside the repository`,
       `${file}: test step 7: its directory ../outside is outside the repository`,
-      `${file}: test step 8: its directory comes from steps.root.outputs.dir`,
-      `${file}: test step 9: its directory comes from DIR`
+      `${file}: test step 9: its directory comes from secret DIR`,
+      `${file}: test step 12: its directory comes from github.retention_days: github.retention_days is known only on GitHub`
     ])
   })
 
@@ -466,7 +505,8 @@ jobs:
     steps:
       - run: a
 `)
-    expect(job.steps[0]).toMatchObject({ cwd: "job", command: "sh -e -c a" })
+    expect(job.steps[0]).toMatchObject({ cwd: "job", command: "a" })
+    expect(job.steps[0]?.runner).toContain(`"$__script" 'sh' '-e'`)
     const shellOnly = jobOf(`
 on: push
 defaults: { run: { working-directory: workflow } }
@@ -477,10 +517,13 @@ jobs:
     steps:
       - run: a
 `)
-    expect(shellOnly.steps[0]).toMatchObject({ cwd: "workflow", command: "sh -e -c a" })
+    expect(shellOnly.steps[0]).toMatchObject({ cwd: "workflow", command: "a" })
+    expect(shellOnly.steps[0]?.runner).toContain(`"$__script" 'sh' '-e'`)
   })
 
-  it("keeps the shell a step names in its command", () => {
+  // "Workflow syntax: jobs.<job_id>.steps[*].shell": `bash` is `bash --noprofile --norc -eo pipefail {0}`, and a
+  // step that names no shell runs under `bash -e {0}`.
+  it("runs a step under the shell it names", () => {
     const job = jobOf(withSteps(`
       - run: echo "it's"
         shell: bash
@@ -490,10 +533,13 @@ jobs:
         shell: python
       - run: echo three
         shell: 7
+      - run: echo four
 `))
-    expect(job.steps.map((step) => step.command)).toEqual([
-      `bash --noprofile --norc -eo pipefail -c 'echo "it'\\''s"'`,
-      "bash -e -c 'echo two'"
+    expect(job.steps.map((step) => step.command)).toEqual([`echo "it's"`, "echo two", "echo four"])
+    expect(job.steps.map((step) => step.runner?.split("\n").at(-2))).toEqual([
+      `__ci_run '-1' "$__script" 'bash' '--noprofile' '--norc' '-eo' 'pipefail'`,
+      `__ci_run '-2' "$__script" 'bash' '-e'`,
+      `__ci_run '-5' "$__script" 'bash' '-e'`
     ])
     expect(details(job)).toEqual([
       `${file}: test step 3 runs in python`,
@@ -539,12 +585,21 @@ jobs:
     expect(partial.unsupported).toEqual([])
   })
 
-  it("reports commands that read the runner's own variables", () => {
+  it("reports a command that reads a runner variable a replay cannot give", () => {
     const job = jobOf(withSteps(`
-      - run: echo x >> "$GITHUB_OUTPUT"; echo "$RUNNER_TEMP $GITHUB_OUTPUT"
+      - run: echo x >> "$GITHUB_OUTPUT"; echo "$RUNNER_TEMP $GITHUB_WORKSPACE $GITHUB_SHA $CI"
+      - run: gh api "repos/$GITHUB_REPOSITORY" --jq "$GITHUB_TOKEN$GITHUB_REF_PROTECTED"
+      - run: echo "$GITHUB_REF"
+        env: { GITHUB_REF: mine }
 `))
-    expect(job.steps).toHaveLength(1)
-    expect(details(job)).toEqual([`${file}: test step 1 reads GITHUB_OUTPUT, RUNNER_TEMP`])
+    // The repository's name is not known in this test, and no runner says whether a ref is protected.
+    expect(job.steps.map((step) => step.id)).toEqual(["ci.yml:test:1", "ci.yml:test:2"])
+    expect(job.unsupported).toEqual([
+      {
+        feature: "runner-variable",
+        detail: `${file}: test step 2 reads GITHUB_REPOSITORY, GITHUB_TOKEN, GITHUB_REF_PROTECTED`
+      }
+    ])
   })
 })
 
@@ -604,8 +659,8 @@ jobs:
 `)
     expect(job.steps[0]?.env).toEqual({ A: "x" })
     expect(details(job).sort()).toEqual([
-      `${file}: test sets C from env.A`,
-      `${file}: the workflow sets B from env.A`
+      `${file}: test sets C from env.A: env is not a context an expression can read`,
+      `${file}: the workflow sets B from env.A: env is not a context an expression can read`
     ])
   })
 
@@ -669,8 +724,7 @@ jobs:
         shell: bash
       - run: t \${{ matrix.a }}
 `)
-    expect(job.steps.map((step) => step.command)).toEqual(["t \${{ matrix.a }}"])
-    expect(details(job)).toEqual([`${file}: test step 1 puts a matrix value holding a quote into its script`])
+    expect(details(job)).toEqual([`${file}: test puts a matrix value holding a quote into a script`])
   })
 
   it("reads a numeric directory and reports one that is not a scalar", () => {
@@ -879,7 +933,8 @@ jobs:
         cwd: "",
         env: { TURBO_TOKEN: "", TURBO_TEAM: "" },
         secrets: [],
-        withheld: ["TURBO_TEAM", "TURBO_TOKEN"]
+        withheld: ["TURBO_TEAM", "TURBO_TOKEN"],
+        runner: expect.any(String)
       },
       {
         id: "ci.yml:lint:2",
@@ -887,7 +942,8 @@ jobs:
         cwd: "",
         env: { TURBO_TOKEN: "", TURBO_TEAM: "acme" },
         secrets: [],
-        withheld: ["TURBO_TOKEN"]
+        withheld: ["TURBO_TOKEN"],
+        runner: expect.any(String)
       }
     ])
     // No secret is passed, and none is named as received.
@@ -928,14 +984,13 @@ describe("readWorkflow malformed files", () => {
   it("copies problems of the workflow's own env onto every job", () => {
     const { jobs } = read(`
 on: push
-env: { SHA: "\${{ github.sha }}" }
+env: { DAYS: "\${{ github.retention_days }}" }
 jobs:
   a: { runs-on: x, steps: [] }
   b: { runs-on: x, steps: [] }
 `)
-    expect(jobs.map((job) => details(job))).toEqual([
-      [`${file}: the workflow sets SHA from github.sha`],
-      [`${file}: the workflow sets SHA from github.sha`]
-    ])
+    const problem =
+      `${file}: the workflow sets DAYS from github.retention_days: github.retention_days is known only on GitHub`
+    expect(jobs.map((job) => details(job))).toEqual([[problem], [problem]])
   })
 })

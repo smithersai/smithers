@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { parse as parseYaml } from "yaml"
 import type { Ci, Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
-import { ci, Inventory, shell } from "../src/contract/Inventory.ts"
+import { ci, commitNote, Inventory, runnerEntry, script, shell } from "../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateFiles } from "../src/contract/Parts.ts"
 import { shardOf } from "../src/contract/Shard.ts"
 import { labelsOf, path as targetMapPath, TargetMap } from "../src/contract/TargetMap.ts"
@@ -320,6 +320,49 @@ describe("what a step becomes", () => {
     expect(declaration(source, "a-3")).toContain(`inheritEnv: ["GIT_CONFIG_COUNT","GIT_TERMINAL_PROMPT","RUNNER_OS"]`)
     // Without the option a target passes on only what its step names.
     expect(declaration(targetsOf(document), "a-3")).not.toContain("inheritEnv")
+  })
+
+  it("runs a step with runner text as that text, and leaves the runner's variables to it", () => {
+    const runner = `${runnerEntry}() { export RUNNER_TEMP=/tmp/\${{ matrix.os }}; bash -e -c "$1"; }`
+    const written = step("a:1", "echo ${{ steps.pick.outputs.lane }} $RUNNER_TEMP $GITHUB_SHA ${{ matrix.os }}", {
+      runner
+    })
+    const source = targetsOf(inventory([job("a", [written], { matrix: [{ os: "linux" }], runsOn: "ubuntu-latest" })]))
+    const target = declaration(source, "a-1--linux")
+    // The target runs what the baseline runs: the runner text, then its function with the command as one word.
+    // Only matrix values are written into either: the runner text fills in what else `${{ }}` stands for.
+    const text = script({ ...written, runner: runner.replace("${{ matrix.os }}", "linux") }).replace(
+      "${{ matrix.os }}",
+      "linux"
+    )
+    expect(text).toContain("echo ${{ steps.pick.outputs.lane }} $RUNNER_TEMP $GITHUB_SHA linux")
+    expect(target).toContain(JSON.stringify(`${shell.join(" ")} '${text.replaceAll("'", `'\\''`)}'`))
+    expect(target).not.toContain("inheritEnv")
+    expect(source).not.toContain("not generated")
+  })
+
+  it("holds a step with runner text to its inputs only as its job's first step, and never when it reads the commit", () => {
+    const runner = `${runnerEntry}() { bash -e -c "$1"; }`
+    const reads = `${runnerEntry}() {\n${commitNote}\nbash -e -c "$1"\n}`
+    const install = { inputs: ["bun.lock"], outputs: ["node_modules/**"] }
+    const tests = { inputs: ["packages/a/**"] }
+    const source = targetsOf(inventory([
+      job("first", [step("first:1", "bun test", { runner, ...tests })]),
+      job("commit", [step("commit:1", "bun test", { runner: reads, ...tests })]),
+      job("later", [
+        step("later:1", "bun install", { runner, ...install }),
+        step("later:2", "bun test", { runner, ...tests })
+      ]),
+      job("plain", [step("plain:1", "bun install", install), step("plain:2", "bun test", tests)])
+    ]))
+    const held = `sandbox: { network: true }`
+    expect(declaration(source, "first-1")).toContain(held)
+    // Its verdict is one commit's, so it declares the whole repository and is never reused for another.
+    expect(declaration(source, "commit-1")).toContain(`sandbox: "none"`)
+    expect(declaration(source, "commit-1")).toContain("data: [repository]")
+    // It reads what the step before it left for the job, which is in no input.
+    expect(declaration(source, "later-2")).toContain(`sandbox: "none"`)
+    expect(declaration(source, "plain-2")).toContain(held)
   })
 
   it("enters the step's directory and refuses one outside the repository", () => {

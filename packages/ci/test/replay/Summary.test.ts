@@ -105,6 +105,15 @@ describe("replayable", () => {
     expect(units.map((unit) => unit.tree)).toEqual([undefined, undefined])
   })
 
+  it("runs a step with runner text as that text, with the variant's values in it and in the command", () => {
+    const runner = `__smithers_ci_step() { echo '\${{ matrix.size }}'; bash -e -c "$1"; }`
+    const sized = { id: "s", command: "echo ${{ matrix.size }}", cwd: "", env: {}, secrets: [], runner }
+    const units = unitsOf(inventory([job("a", { steps: [sized], matrix: [{ size: "big" }] })]))
+    expect(units[0]?.steps[0]?.command).toBe(
+      `__smithers_ci_step() { echo 'big'; bash -e -c "$1"; }\n__smithers_ci_step 'echo big'`
+    )
+  })
+
   it("runs a job once per matrix variant with its values filled in, and finds each target", () => {
     const size = {
       id: "s",

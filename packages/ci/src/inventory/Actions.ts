@@ -1,0 +1,160 @@
+/**
+ * What the reader knows about the actions a workflow step can use.
+ *
+ * A step that uses an action has no command. Four kinds are understood:
+ * the checkout, which is the copy a replay already made; an action that
+ * installs a tool, which a replay looks for on the machine (`Tools.ts`); a
+ * cache or an upload, which changes no verdict of its own job; and a local
+ * composite action, whose steps are read in its place. Any other action
+ * leaves its job out.
+ *
+ * @since 0.1.0
+ */
+
+import { parseDocument } from "yaml"
+import type { Residual } from "./Expression.ts"
+import { asScalar, isRecord } from "./Values.ts"
+
+/**
+ * The variables a setup action sets for the steps after it, by the name
+ * `Setup.ts` gives the tool it installs. A replay installs nothing and sets
+ * none of them, so a step that reads one is not what its CI runs.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const setupVariables: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
+  ["node", ["NODE_AUTH_TOKEN", "NPM_CONFIG_USERCONFIG"]],
+  ["go", ["GOROOT", "GOTOOLCHAIN"]],
+  [
+    "python",
+    ["pythonLocation", "PKG_CONFIG_PATH", "Python_ROOT_DIR", "Python2_ROOT_DIR", "Python3_ROOT_DIR", "LD_LIBRARY_PATH"]
+  ],
+  ["java", ["JAVA_HOME"]],
+  ["bun", ["BUN_INSTALL"]],
+  ["pnpm", ["PNPM_HOME"]],
+  ["rust", ["CARGO_HOME", "RUSTUP_HOME", "CARGO_INCREMENTAL", "CARGO_TERM_COLOR", "RUSTFLAGS", "RUST_BACKTRACE"]],
+  ["dotnet", ["DOTNET_ROOT"]]
+])
+
+/**
+ * The cache actions. A replay has no cache to restore from, so a cache step
+ * restores nothing and its `cache-hit` output is empty, as after a miss.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const cacheActions: ReadonlyArray<string> = ["actions/cache", "actions/cache/restore", "actions/cache/save"]
+
+/** True when every outcome of a `ref:` is the commit under replay, or no ref at all. */
+const isCommit = (residual: Residual): boolean => {
+  if (residual.kind === "variable") return residual.variable.id === "sha"
+  if (residual.kind === "literal") return residual.value === null || residual.value === ""
+  return residual.kind === "binary" && (residual.operator === "||" || residual.operator === "&&")
+    && isCommit(residual.left) && isCommit(residual.right)
+}
+
+/**
+ * Why a checkout step is not the copy a replay made: it names another
+ * repository, another directory, another commit, submodules or large files.
+ * `read` gives an input's value: text, an expression still to finish, or
+ * `undefined` when it cannot be read.
+ *
+ * @category accessors
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const checkoutProblems = (
+  inputs: unknown,
+  repository: string | undefined,
+  read: (text: string) => string | Residual | undefined
+): ReadonlyArray<string> => {
+  if (!isRecord(inputs)) return []
+  const problems: Array<string> = []
+  const given = (name: string): string | Residual | undefined => {
+    const scalar = asScalar(inputs[name])
+    if (inputs[name] === undefined) return ""
+    return scalar === undefined ? undefined : read(scalar)
+  }
+  const other = given("repository")
+  if (other !== "" && (other !== repository || repository === undefined)) problems.push("checks out another repository")
+  if (given("path") !== "") problems.push("checks the repository out into another directory")
+  const ref = given("ref")
+  if (ref === undefined || (typeof ref === "string" ? ref !== "" : !isCommit(ref))) {
+    problems.push("checks out a commit that may not be the one under replay")
+  }
+  for (const [name, what] of [["submodules", "submodules"], ["lfs", "large files"]] as const) {
+    const held = given(name)
+    if (held !== "" && held !== "false") problems.push(`checks out ${what}`)
+  }
+  // A checkout of some of the files is not the copy a replay made.
+  if (given("sparse-checkout") !== "" || given("filter") !== "") problems.push("checks out part of the repository")
+  return problems
+}
+
+/**
+ * A local composite action: its inputs with their defaults, the expression
+ * of each output, and its steps as written.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Composite {
+  readonly inputs: ReadonlyMap<string, string | undefined>
+  readonly outputs: ReadonlyMap<string, string>
+  readonly steps: ReadonlyArray<unknown>
+}
+
+/**
+ * Parses YAML text into plain values, or says why it cannot.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const parseYaml = (text: string): { readonly value: unknown } | { readonly problem: string } => {
+  const document = parseDocument(text)
+  const error = document.errors[0]
+  if (error !== undefined) return { problem: `${error.code} at line ${error.linePos?.[0].line}` }
+  try {
+    const value: unknown = document.toJS()
+    // An alias that names itself makes a value with no end: writing it out fails, and so would reading it.
+    JSON.stringify(value)
+    return { value }
+  } catch {
+    return { problem: "its aliases cannot be expanded" }
+  }
+}
+
+/**
+ * Reads an `action.yml`. Only a composite action has steps to read; one that
+ * runs JavaScript or a container gives the reason.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const readAction = (text: string): Composite | { readonly problem: string } => {
+  const parsed = parseYaml(text)
+  if ("problem" in parsed) return { problem: `its action file does not parse (${parsed.problem})` }
+  const action = parsed.value
+  const runs = isRecord(action) ? action["runs"] : undefined
+  if (!isRecord(action) || !isRecord(runs)) return { problem: "its action file has no runs mapping" }
+  if (runs["using"] !== "composite" || !Array.isArray(runs["steps"])) {
+    const using = asScalar(runs["using"]) ?? "a value that is not text"
+    return { problem: `it runs with ${using}, and only a composite action has steps to read` }
+  }
+  const entries = (raw: unknown, field: string): ReadonlyArray<readonly [string, string | undefined]> =>
+    isRecord(raw)
+      ? Object.entries(raw).map(([name, entry]) =>
+        [name.toLowerCase(), isRecord(entry) ? asScalar(entry[field]) : undefined] as const
+      )
+      : []
+  return {
+    inputs: new Map(entries(action["inputs"], "default")),
+    outputs: new Map(
+      entries(action["outputs"], "value").flatMap(([name, held]) => held === undefined ? [] : [[name, held] as const])
+    ),
+    steps: runs["steps"] as ReadonlyArray<unknown>
+  }
+}

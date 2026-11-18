@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import {
@@ -251,6 +252,29 @@ describe("contract 4: inventory", () => {
     expect(Inventory.expand("${{ matrix.constructor }} ${{ matrix.toString }}", {}))
       .toBe("${{ matrix.constructor }} ${{ matrix.toString }}")
     expect(Inventory.withVariant(step, {})).toEqual(step)
+  })
+
+  it("runs a step with runner text as that text, then the runner's function with the command as its one word", () => {
+    const command = `echo "it's" \${{ matrix.n }}`
+    const plain: Inventory.Step = { id: "ci:1", command, cwd: "", env: {}, secrets: [] }
+    expect(Inventory.script(plain)).toBe(command)
+    const step = { ...plain, runner: `${Inventory.runnerEntry}() { echo '\${{ matrix.n }}'; bash -e -c "$1"; }` }
+    expect(Schema.decodeUnknownSync(Inventory.Step)(step)).toEqual(step)
+    // A matrix value is filled into the runner text as it is into the command.
+    const filled = Inventory.withVariant(step, { n: "2" })
+    expect(filled.runner).toBe(`${Inventory.runnerEntry}() { echo '2'; bash -e -c "$1"; }`)
+    expect(Inventory.script(filled)).toBe(`${filled.runner}\n${Inventory.runnerEntry} 'echo "it'\\''s" 2'`)
+    const [program, ...flags] = Inventory.shell
+    const ran = spawnSync(program, [...flags, Inventory.script(filled)], { encoding: "utf8" })
+    expect(ran.stdout).toBe("2\nit's 2\n")
+  })
+
+  it("knows a step that reads the commit by the note in its runner text", () => {
+    const step = { runner: `${Inventory.runnerEntry}() {\n${Inventory.commitNote}\nbash -e -c "$1"\n}` }
+    expect(Inventory.readsCommit(step)).toBe(true)
+    // The note is a line of its own: a script that happens to hold the words is not one.
+    expect(Inventory.readsCommit({ runner: `echo '${Inventory.commitNote}'` })).toBe(false)
+    expect(Inventory.readsCommit({})).toBe(false)
   })
 
   it("runs a job only when it has a step and exits", () => {
@@ -773,7 +797,8 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
   })
 
   it("runs a job only when every unsupported feature is harmless", () => {
-    expect(Inventory.harmless).toEqual(["host-action", "trigger-filter"])
+    // A step left out because its condition is false for the event is one its CI would not run either.
+    expect(Inventory.harmless).toEqual(["host-action", "trigger-filter", Inventory.conditionFalse])
     expect(Inventory.hostActions).toContain("actions/checkout")
     expect(Inventory.hostActions).not.toContain("actions/download-artifact")
     expect(Inventory.ci(inventory).jobs.map((entry) => [entry.id, entry.needs])).toEqual([

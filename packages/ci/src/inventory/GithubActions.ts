@@ -1,162 +1,459 @@
 /**
  * Reads one GitHub Actions workflow file.
  *
- * A step becomes a command only when its text is known exactly. GitHub replaces
- * `${{ }}` expressions before the shell starts, so an expression is resolved
- * here when its value is in the file, kept as written when it is a matrix
- * variable the variants list, and otherwise the step is reported, not guessed.
+ * A step becomes a command only when what it does is known exactly. GitHub
+ * fills `${{ }}` in before the shell starts and decides `if:` before a step
+ * runs, so every expression is evaluated here as GitHub evaluates it for the
+ * event a replay stands for (see `Contexts.ts`). A value known only while
+ * the job runs, such as a step's output, is worked out by the step's runner
+ * text (see `Runner.ts`). A condition that is false leaves its step or job
+ * out, and an expression nobody can evaluate here leaves its job out with
+ * the reason: nothing is guessed.
  *
  * @since 0.1.0
  */
 
-import { parseDocument } from "yaml"
 import {
   changeTriggers,
+  conditionFalse,
   expand,
+  type Host,
   hostAction,
   hostActions,
   hostOf,
   releaseTrigger,
-  secret,
+  secret as receivesSecret,
   type Toolchain,
   triggerFilter,
   writePermission
 } from "../contract/Inventory.ts"
+import { cacheActions, checkoutProblems, parseYaml, readAction, setupVariables } from "./Actions.ts"
 import { leaveCacheEmpty } from "./CacheCredentials.ts"
+import {
+  type Event,
+  eventFile,
+  eventName,
+  eventOf,
+  type Facts,
+  github,
+  runner as runnerContext,
+  startedVariables,
+  variables
+} from "./Contexts.ts"
 import { addStep, type Draft, draft, fileProblem, note, type Parsed } from "./Draft.ts"
+import {
+  type Context,
+  evaluate,
+  fields,
+  fill,
+  type Filled,
+  type Part,
+  type Residual,
+  type Scope as Expressions,
+  truthy,
+  unknown,
+  value,
+  type Variable,
+  variable,
+  whole
+} from "./Expression.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
+import { type JobFacts, settled, write } from "./Runner.ts"
 import { isLiteralSecret, isSecretName } from "./Secrets.ts"
 import { readSetup, type Setup } from "./Setup.ts"
-import { asScalar, asStrings, isRecord, normalizeDirectory, shellQuote } from "./Values.ts"
+import { asScalar, asStrings, isRecord, normalizeDirectory } from "./Values.ts"
 
 const source = "github-actions"
 
-/** What an expression can see at one level of a workflow. */
-interface Scope {
-  readonly env: ReadonlyMap<string, string>
+/** The pieces of one value: text, and expressions finished while the job runs. */
+type Entry = ReadonlyArray<Part>
+
+/** The variables one level of a workflow sets, and the secrets they receive. */
+interface Env {
+  readonly entries: ReadonlyMap<string, Entry>
   /** Variable name to the secret it receives. */
   readonly secretEnv: ReadonlyMap<string, string>
   /** Secrets used inside longer values, which reach no variable here. */
   readonly secrets: ReadonlyArray<string>
-  readonly matrix: Matrix
+  /** The names a step sets itself. `GITHUB_ENV` never replaces these. */
+  readonly own: ReadonlySet<string>
+  /** Variables whose value nobody can know here, each with the reason. An expression that reads one is refused. */
+  readonly unread: ReadonlyMap<string, string>
 }
 
-interface Resolved {
-  readonly text: string
-  readonly unresolved: ReadonlyArray<string>
-  readonly secrets: ReadonlyArray<string>
+const noEnv: Env = { entries: new Map(), secretEnv: new Map(), secrets: [], own: new Set(), unread: new Map() }
+
+/** Whether a step runs: always, never, when an expression says so, or nobody can tell. */
+type Condition =
+  | { readonly kind: "always" }
+  | { readonly kind: "never" }
+  | { readonly kind: "when"; readonly residual: Residual }
+  | { readonly kind: "problem"; readonly why: string }
+
+const always: Condition = { kind: "always" }
+
+/** What later steps read of a step: its outputs and how it ended. */
+interface StepRecord {
+  readonly outputs: Context
+  readonly outcome: Context
 }
+
+/** Where a step is read: the job's own steps, or the steps of a composite action one of them uses. */
+interface StepScope {
+  readonly env: Env
+  readonly inputs: Context
+  readonly steps: Map<string, StepRecord>
+  /** Starts the key of each step, so the steps of two actions never share one. */
+  readonly prefix: string
+  /** The condition of the step that uses the action. */
+  readonly condition: Residual | undefined
+  readonly actionPath: string | undefined
+  readonly depth: number
+  readonly where: string
+}
+
+interface RunDefaults {
+  readonly shell: unknown
+  readonly cwd: unknown
+}
+
+/** What an expression of a job reads of the job and its workflow. */
+interface Shape {
+  readonly facts: Facts
+  readonly event: Event | undefined
+  readonly key: string
+  readonly workflow: string
+  readonly matrix: Matrix
+  /** Matrix keys whose value is text in every variant: only these can be compared. */
+  readonly textKeys: ReadonlySet<string>
+}
+
+/** One job while its steps are read. */
+interface JobState extends Shape {
+  readonly file: string
+  readonly job: Draft
+  readonly host: Host | undefined
+  readonly defaults: RunDefaults
+  readonly windowsOnly: boolean
+  readonly toolchains: Array<Toolchain>
+  readonly runner: JobFacts
+  /**
+   * True once the job has a command. Any step can set a variable for later steps: a program it starts can write to
+   * `GITHUB_ENV` with the step's text never naming the file. So from the second command on, a variable of the job
+   * is read when the step runs.
+   */
+  ran: boolean
+  /** Variables a setup action that ran would have set. */
+  readonly setupNames: Set<string>
+  /** The mark of the job's first command, by which the commands after it find what it left. */
+  mark: string | undefined
+  /** The runner text the job's first command takes when no command follows it. */
+  only: string | undefined
+  /** Values to work out once, when the next command starts, and keep for later steps under a name. */
+  readonly keeps: Array<readonly [name: string, parts: Entry]>
+  /** How many local actions the job has had read, which a job that nests them without end would not stop. */
+  actions: number
+}
+
+/** A job is read with this many local actions and no more. */
+const maxActions = 64
+
+/** A value as a note shows it: its text, or that it has none. */
+const shown = (raw: unknown): string => asScalar(raw) ?? "a value that is not text"
+
+const identifier = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/** The variable that tells a step of an action where the action is. */
+const actionPathVariable = "GITHUB_ACTION_PATH"
+
+const actionDirectory = (directory: string): Variable => ({
+  id: `path:${directory}`,
+  name: "github.action_path",
+  nullable: false,
+  typed: false
+})
 
 const matrixReferences = (text: string): ReadonlyArray<string> =>
   [...text.matchAll(/\$\{\{\s*matrix\.([\w.-]+)\s*\}\}/g)].map((match) => match[1] as string)
 
-const resolve = (text: string, scope: Scope): Resolved => {
-  const unresolved: Array<string> = []
-  const secrets: Array<string> = []
-  const resolved = text.replace(/\$\{\{([\s\S]*?)\}\}/g, (whole, inner: string) => {
-    const expression = inner.trim()
-    const secret = /^secrets\.([\w-]+)$/.exec(expression)?.[1]
-      ?? (expression === "github.token" ? "GITHUB_TOKEN" : undefined)
-    if (secret !== undefined) {
-      secrets.push(secret)
-      return whole
+const matrixKey = (part: Part): string | undefined =>
+  typeof part !== "string" && part.residual.kind === "variable" && part.residual.variable.id.startsWith("matrix:")
+    ? part.residual.variable.id.slice("matrix:".length)
+    : undefined
+
+/** The text of a value known before the run. A matrix value stays as `${{ matrix.<key> }}`, filled in per variant. */
+const textOf = (parts: Entry): string | undefined => {
+  let text = ""
+  for (const part of parts) {
+    const key = matrixKey(part)
+    if (typeof part !== "string" && key === undefined) return undefined
+    text += typeof part === "string" ? part : `\${{ matrix.${key} }}`
+  }
+  return text
+}
+
+/** One expression for a value made of several pieces. */
+const residualOf = (parts: Entry): Residual => {
+  const [only] = parts
+  if (parts.length === 1 && only !== undefined && typeof only !== "string") return only.residual
+  const args: Array<Residual> = []
+  const template = parts.map((part) => {
+    if (typeof part === "string") return part.replaceAll("{", "{{").replaceAll("}", "}}")
+    args.push(part.residual)
+    return `{${args.length - 1}}`
+  }).join("")
+  return { kind: "call", name: "format", args: [{ kind: "literal", value: template }, ...args] }
+}
+
+/** What a filled text stands for when another expression reads it. */
+const contextOf = (filled: Filled): Context => {
+  if (filled.kind === "problem") return unknown(filled.why)
+  if (filled.kind === "secret") return filled
+  const text = textOf(filled.parts)
+  return text !== undefined && !text.includes("${{")
+    ? value(text)
+    : { kind: "residual", residual: residualOf(filled.parts) }
+}
+
+const matrixContext = (state: Shape): Context => {
+  const { matrix, textKeys } = state
+  if (matrix.problem !== undefined) return unknown(`the matrix is not known before the run (${matrix.problem})`)
+  // GitHub reads a matrix key without case.
+  const written = new Map([...matrix.keys].map((key) => [key.toLowerCase(), key]))
+  const under = (lower: string): Context | undefined => {
+    const key = written.get(lower)
+    if (key !== undefined) {
+      // A value is filled in per variant where its key is written, which reads only these characters.
+      return /^[\w.-]+$/.test(key)
+        ? variable(`matrix:${key}`, `matrix.${key}`, false, !textKeys.has(key))
+        : unknown(`matrix key ${JSON.stringify(key)} has a name whose value is not filled in here`)
     }
-    if (expression.startsWith("matrix.") && scope.matrix.keys.has(expression.slice("matrix.".length))) {
-      return `\${{ ${expression} }}`
+    return [...written.keys()].some((other) => other.startsWith(`${lower}.`))
+      ? fields((name) => under(`${lower}.${name}`))
+      : undefined
+  }
+  return fields(under)
+}
+
+/** `hashFiles` of files named without a wildcard. */
+const hashFiles = (patterns: ReadonlyArray<string>): Context =>
+  patterns.every((pattern) =>
+      !/[*?[\]{}!~]/.test(pattern) && normalizeDirectory(pattern) !== undefined && pattern !== ""
+    )
+    ? variable(`hash:${JSON.stringify(patterns.map((pattern) => normalizeDirectory(pattern)))}`, "hashFiles")
+    : unknown("hashFiles with a wildcard or a path outside the repository is not worked out off GitHub")
+
+const envContext = (state: JobState, env: Env): Context =>
+  fields((name) => {
+    const secret = env.secretEnv.get(name)
+    if (secret !== undefined) return { kind: "secret", name: secret }
+    const why = env.unread.get(name)
+    if (why !== undefined) return unknown(why)
+    const entry = env.entries.get(name)
+    const text = entry === undefined ? undefined : textOf(entry)
+    // A value written out under a name that says it is a secret is one: only its name is kept.
+    if (text !== undefined && isLiteralSecret(name, text)) return { kind: "secret", name }
+    if (entry === undefined && state.setupNames.has(name)) {
+      return unknown(`env.${name} is set by a setup action, which a replay does not run`)
     }
-    const name = /^env\.([\w-]+)$/.exec(expression)?.[1] ?? ""
-    const value = scope.env.get(name)
-    if (value === undefined) {
-      unresolved.push(expression)
-      return whole
+    // A step's own variable is never replaced. Any other may have been by a step that ran before, so it is read
+    // when the step runs: from the step's own environment when the workflow sets it, else from what was written.
+    if (!env.own.has(name) && state.ran && identifier.test(name)) {
+      return entry === undefined
+        ? variable(`env:${JSON.stringify({ name, held: null })}`, `env.${name}`, true)
+        : variable(`process:${name}`, `env.${name}`)
     }
-    if (!isLiteralSecret(name, value)) return value
-    secrets.push(name)
-    return whole
-  })
-  return { text: resolved, unresolved, secrets }
+    return entry === undefined ? undefined : contextOf({ kind: "ok", parts: entry })
+  }, true)
+
+/** The contexts an expression of a job can read; with `step`, those of one of its steps too. */
+const expressions = (
+  state: Shape,
+  inputs: Context,
+  step?: { readonly state: JobState; readonly scope: StepScope; readonly env: Env }
+): Expressions => {
+  const place = { job: state.key, workflow: state.workflow, actionPath: step?.scope.actionPath }
+  const contexts = new Map<string, () => Context>([
+    ["github", () => github(state.event, state.facts, place)],
+    ["vars", () => fields(() => undefined)],
+    ["inputs", () => inputs],
+    ["matrix", () => matrixContext(state)],
+    ["strategy", () =>
+      fields((name) =>
+        name === "job-total"
+          ? value(Math.max(1, state.matrix.variants.length))
+          : name === "job-index" && state.matrix.variants.length === 0 && state.matrix.problem === undefined
+          ? value(0)
+          : unknown(`strategy.${name} is known only while the run goes`)
+      )],
+    ["needs", () => unknown("what another job gave is known only while the run goes")],
+    ["secrets", () => fields((name) => ({ kind: "secret", name }), true)]
+  ])
+  if (step !== undefined) {
+    contexts.set("env", () => envContext(step.state, step.env))
+    contexts.set("runner", () => runnerContext(step.state.host))
+    contexts.set(
+      "job",
+      () => fields((name) => name === "status" ? value("success") : unknown(`job.${name} is known only on GitHub`))
+    )
+    contexts.set("steps", () =>
+      fields((id) => {
+        const record = step.scope.steps.get(id)
+        return record === undefined
+          ? undefined
+          : fields((name) =>
+            name === "outputs"
+              ? record.outputs
+              : name === "outcome" || name === "conclusion"
+              ? record.outcome
+              : undefined
+          )
+      }))
+  }
+  return {
+    context: (name) => contexts.get(name)?.(),
+    // A step or job is reached only when what ran before it passed: the baseline and the targets both stop at a failure.
+    status: { success: true, always: true, cancelled: false, failure: false },
+    ...(step === undefined ? {} : { hashFiles })
+  }
 }
 
 /**
- * Adds one `env:` block to a scope. A value that is not known is left out and
- * reported. Only a step's block may read `env`; GitHub offers no `env` context
- * to the workflow's or a job's.
+ * Reads an `if:`. It may be written with or without `${{ }}`. With any text around a `${{ }}`, even a line end
+ * after it, GitHub reads the whole as text, and text that is not empty is true: `if: ${{ false }} ` runs.
  */
-const withEnv = (scope: Scope, raw: unknown, job: Draft, where: string, readsEnv: boolean): Scope => {
-  if (raw === undefined) return scope
+const readCondition = (raw: unknown, scope: Expressions): Condition => {
+  if (raw === undefined) return always
+  const scalar = asScalar(raw)
+  if (scalar === undefined) return { kind: "problem", why: "it is not text" }
+  const expression = whole(scalar, true)
+  const settle = (residual: Residual): Condition => {
+    // `x && false` is false whatever `x` is when the job runs.
+    const known = residual.kind === "literal" ? truthy(residual.value) : settled(residual)
+    if (known === undefined) return { kind: "when", residual }
+    return known ? always : { kind: "never" }
+  }
+  if (expression === undefined) {
+    const filled = fill(scalar, scope)
+    if (filled.kind === "secret") return { kind: "problem", why: `it reads secret ${filled.name}` }
+    if (filled.kind === "problem") return filled
+    const text = textOf(filled.parts)
+    return settle(
+      text === undefined || text.includes("${{") ? residualOf(filled.parts) : { kind: "literal", value: text }
+    )
+  }
+  const evaluated = evaluate(expression, scope)
+  if (evaluated.kind === "secret") return { kind: "problem", why: `it reads secret ${evaluated.name}` }
+  return evaluated.kind === "problem" ? evaluated : settle(evaluated.residual)
+}
+
+/** A step of an action runs when the step that uses the action does, and its own condition holds. */
+const within = (outer: Residual | undefined, inner: Condition): Condition => {
+  if (outer === undefined || inner.kind === "never" || inner.kind === "problem") return inner
+  return {
+    kind: "when",
+    residual: inner.kind === "always" ? outer : { kind: "binary", operator: "&&", left: outer, right: inner.residual }
+  }
+}
+
+/**
+ * Adds one `env:` block to the variables above it. A value nobody can know
+ * is left out and reported. With `own` the block is a step's.
+ */
+const withEnv = (above: Env, raw: unknown, job: Draft, where: string, scope: Expressions, own: boolean): Env => {
+  if (raw === undefined) return above
   if (!isRecord(raw)) {
     note(job, "expression", `${where} computes its whole environment`)
-    return scope
+    return above
   }
-  const visible = readsEnv ? scope : { ...scope, env: new Map<string, string>() }
-  const env = new Map(scope.env)
-  const secretEnv = new Map(scope.secretEnv)
-  const secrets = [...scope.secrets]
+  const entries = new Map(above.entries)
+  const secretEnv = new Map(above.secretEnv)
+  const secrets = [...above.secrets]
+  const names = new Set(above.own)
+  const unread = new Map(above.unread)
   for (const [name, rawValue] of Object.entries(raw)) {
-    env.delete(name)
+    entries.delete(name)
     secretEnv.delete(name)
+    unread.delete(name)
+    if (own) names.add(name)
     const scalar = asScalar(rawValue)
     if (scalar === undefined) {
       note(job, "malformed-env", `${where} sets ${name} to a list or mapping`)
       continue
     }
-    const value = resolve(scalar, visible)
-    const only = value.secrets[0]
-    if (only !== undefined && value.secrets.length === 1 && /^\s*\$\{\{[^}]*\}\}\s*$/.test(scalar)) {
-      secretEnv.set(name, only)
+    const filled = fill(scalar, scope)
+    if (filled.kind === "ok") {
+      entries.set(name, filled.parts)
+    } else if (filled.kind === "problem") {
+      note(job, "expression", `${where} sets ${name} from ${filled.why}`)
+      unread.set(name, filled.why)
+    } else if (whole(scalar) !== undefined) {
+      // The value is one expression that reads a secret: the variable receives it.
+      secretEnv.set(name, filled.name)
     } else {
-      secrets.push(...value.secrets)
-      for (const secret of value.secrets) note(job, "secret-env", `${where} builds ${name} from secret ${secret}`)
+      secrets.push(filled.name)
+      note(job, "secret-env", `${where} builds ${name} from secret ${filled.name}`)
     }
-    for (const expression of value.unresolved) note(job, "expression", `${where} sets ${name} from ${expression}`)
-    if (value.secrets.length === 0 && value.unresolved.length === 0) env.set(name, value.text)
   }
-  return { ...scope, env, secretEnv, secrets: [...new Set(secrets)] }
+  return { entries, secretEnv, secrets: [...new Set(secrets)], own: names, unread }
 }
 
 /** The directory a step runs in, relative to the repository root. */
-const readCwd = (raw: string, scope: Scope): { readonly cwd: string } | { readonly problem: string } => {
-  const value = resolve(raw.replace(/^\$\{\{\s*github\.workspace\s*\}\}\/?/, ""), scope)
-  const first = [...value.unresolved, ...value.secrets][0]
-  if (first !== undefined) return { problem: `its directory comes from ${first}` }
-  const outside = { problem: `its directory ${value.text} is outside the repository` }
-  if (!value.text.includes("${{")) {
-    const cwd = normalizeDirectory(value.text)
+const readCwd = (
+  raw: string,
+  matrix: Matrix,
+  scope: Expressions
+): { readonly cwd: string; readonly directory?: Entry } | { readonly problem: string } => {
+  const filled = fill(raw, scope)
+  if (filled.kind !== "ok") {
+    return { problem: `its directory comes from ${filled.kind === "secret" ? `secret ${filled.name}` : filled.why}` }
+  }
+  const [first, second] = filled.parts
+  // `${{ github.workspace }}/dir` is a directory of the repository.
+  const rooted = first !== undefined && typeof first !== "string" && first.residual.kind === "variable"
+    && first.residual.variable.id === "workspace"
+  const parts = !rooted
+    ? filled.parts
+    : typeof second === "string"
+    ? [second.replace(/^\/+/, ""), ...filled.parts.slice(2)]
+    : filled.parts.slice(1)
+  const text = textOf(parts)
+  // A directory decided while the job runs: the step starts in the repository root and enters it from there.
+  if (text === undefined) return { cwd: "", directory: parts }
+  const outside = { problem: `its directory ${text} is outside the repository` }
+  if (!text.includes("${{")) {
+    const cwd = normalizeDirectory(text)
     return cwd === undefined ? outside : { cwd }
   }
   // The variants decide where this is, so each must stay inside the repository.
-  if (scope.matrix.variants.some((variant) => normalizeDirectory(expand(value.text, variant)) === undefined)) {
-    return outside
-  }
-  return { cwd: value.text.replace(/^(?:\.\/)+/, "").replace(/\/+$/, "") }
+  if (matrix.variants.some((variant) => normalizeDirectory(expand(text, variant)) === undefined)) return outside
+  return { cwd: text.replace(/^(?:\.\/)+/, "").replace(/\/+$/, "") }
 }
 
-/** The shell command that starts a named shell, or `undefined` for one this cannot run. */
-const shellStart = (shell: string): string | undefined => {
-  if (shell === "bash") return "bash --noprofile --norc -eo pipefail -c"
-  if (shell === "sh") return "sh -e -c"
+/** The shell and its flags for a step, or `undefined` for a shell this cannot run. The script follows `-c`. */
+const shellStart = (shell: string | undefined): ReadonlyArray<string> | undefined => {
+  if (shell === undefined) return ["bash", "-e"]
+  if (shell === "bash") return ["bash", "--noprofile", "--norc", "-eo", "pipefail"]
+  if (shell === "sh") return ["sh", "-e"]
   const template = /^(bash|sh)((?: [-\w]+)*) \{0\}$/.exec(shell)
-  return template === null ? undefined : `${template[1]}${template[2]} -c`
+  return template === null
+    ? undefined
+    : [template[1] as string, ...(template[2] as string).split(" ").filter((flag) => flag !== "")]
 }
 
-/** The secrets among an action's inputs, by name. The token every job has is none: an action uses it to download. */
-const secretsIn = (inputs: unknown, scope: Scope): ReadonlyArray<string> => {
-  const values = isRecord(inputs) ? Object.values(inputs) : []
-  const names = values.flatMap((value) => resolve(asScalar(value) ?? "", scope).secrets)
-  return [...new Set(names)].filter((name) => name !== "GITHUB_TOKEN")
+/** The text of a tool's version when it is written out, or is a matrix value, which each variant fills in. */
+const versionOf = (written: string | undefined, scope: Expressions): string | undefined => {
+  const filled = written === undefined ? undefined : fill(written, scope)
+  const version = filled?.kind === "ok" ? textOf(filled.parts) : undefined
+  return version === "" ? undefined : version
 }
 
-/**
- * The tools a setup action stands for, as the inventory lists them: with the job that needs them, and the version
- * when it is written out or is a matrix value, which each variant fills in.
- */
-const toolchainsOf = (setup: Setup, uses: string, scope: Scope, job: Draft): ReadonlyArray<Toolchain> =>
+/** The tools a setup action stands for, as the inventory lists them: with the job that needs them. */
+const toolchainsOf = (setup: Setup, uses: string, scope: Expressions, job: Draft): ReadonlyArray<Toolchain> =>
   setup.tools.map((tool) => {
     const entry = { name: tool.name, source: job.file, job: job.id, action: uses }
-    const version = tool.version === undefined ? undefined : resolve(tool.version, scope)
-    return version === undefined || version.text === "" || version.unresolved.length > 0 || version.secrets.length > 0
-      ? entry
-      : { ...entry, version: version.text }
+    const version = versionOf(tool.version, scope)
+    return version === undefined ? entry : { ...entry, version }
   })
 
 /** Job keys that change what runs and cannot be reproduced from a command. */
@@ -201,11 +498,6 @@ const writeScopes = (permissions: unknown): ReadonlyArray<string> => {
   return Object.entries(permissions).flatMap(([scope, level]) => level === "write" ? [scope] : [])
 }
 
-interface RunDefaults {
-  readonly shell: unknown
-  readonly cwd: unknown
-}
-
 const readDefaults = (owner: Record<string, unknown>, parent: RunDefaults): RunDefaults => {
   const defaults = owner["defaults"]
   const run = isRecord(defaults) ? defaults["run"] : undefined
@@ -214,90 +506,342 @@ const readDefaults = (owner: Record<string, unknown>, parent: RunDefaults): RunD
     : parent
 }
 
-interface JobContext {
-  readonly job: Draft
-  readonly scope: Scope
-  readonly defaults: RunDefaults
-  readonly windowsOnly: boolean
-  readonly toolchains: Array<Toolchain>
+/** A step as later steps see it, from how it is known to run. */
+const recordOf = (
+  ran: Condition,
+  outputs: Context,
+  outcome: (() => Context) | undefined
+): StepRecord => {
+  if (ran.kind === "never") return { outputs: fields(() => undefined), outcome: value("skipped") }
+  if (ran.kind === "always") return { outputs, outcome: value("success") }
+  const unread = unknown("how a step ended is known only when its condition is")
+  return {
+    outputs: ran.kind === "problem" ? unread : outputs,
+    outcome: outcome === undefined || ran.kind === "problem" ? unread : outcome()
+  }
 }
 
-const readStep = (context: JobContext, raw: unknown, index: number): void => {
-  const { defaults, job, windowsOnly } = context
-  const number = index + 1
-  if (!isRecord(raw)) return note(job, "malformed-step", `step ${number} of ${job.name} is not a mapping`)
-  const stepName = typeof raw["name"] === "string" ? raw["name"] : undefined
-  const where = `${job.name} step ${number}${stepName === undefined ? "" : ` (${stepName})`}`
-  const scope = withEnv(context.scope, raw["env"], job, where, true)
+/** What one step is read with: where it is, its variables, and how it runs. */
+interface StepContext {
+  readonly state: JobState
+  readonly scope: StepScope
+  readonly where: string
+  readonly key: string
+  readonly name: string | undefined
+  readonly env: Env
+  readonly reads: Expressions
+  readonly ran: Condition & { readonly kind: "always" | "when" }
+}
 
-  if (raw["if"] !== undefined) note(job, "condition", `${where} runs only if ${String(raw["if"])}`)
-  if (raw["continue-on-error"] !== undefined) {
-    note(job, "continue-on-error", `${where} may fail without failing the job`)
+/** Adds a command to the job, with the runner text that runs it as its step. */
+const addRun = (
+  context: StepContext,
+  script: Entry,
+  start: ReadonlyArray<string>,
+  cwd: string,
+  directory?: Entry
+): void => {
+  const { env, state, where } = context
+  const { job } = state
+  const fills = new Map<string, Residual>()
+  const command = script.map((part) => {
+    const key = matrixKey(part)
+    if (typeof part === "string") return part
+    if (key !== undefined) return `\${{ matrix.${key} }}`
+    fills.set(part.written, part.residual)
+    return part.written
+  }).join("")
+
+  const inAction = context.scope.actionPath
+  const given = new Set([
+    ...Object.keys(state.runner.variables),
+    ...startedVariables,
+    ...env.entries.keys(),
+    ...(inAction === undefined ? [] : [actionPathVariable])
+  ])
+  const missing = [...new Set(command.match(/\b(?:GITHUB|RUNNER)_[A-Z0-9_]+\b/g))].filter((name) => !given.has(name))
+  if (missing.length > 0) return note(job, "runner-variable", `${where} reads ${missing.join(", ")}`)
+  // A variable a setup action sets on GitHub, such as JAVA_HOME, is not set here.
+  const unset = [...state.setupNames].filter((name) =>
+    !env.entries.has(name) && new RegExp(`\\$\\{?${name}\\b`).test(command)
+  )
+  if (unset.length > 0) {
+    return note(job, "runner-variable", `${where} reads ${unset.join(", ")}, which a setup action sets on GitHub`)
   }
 
-  const uses = raw["uses"]
-  if (typeof uses === "string") {
-    const setup = readSetup(uses, raw["with"])
-    if (setup === undefined) {
-      const prepares = hostActions.includes(uses.split("@")[0] as string)
-      return note(job, prepares ? hostAction : "uses", `${uses} has no command to run`)
+  const fixedEnv = new Map<string, string>()
+  // A step of an action is told where the action is.
+  const decided: Array<readonly [string, Entry, boolean]> = inAction === undefined
+    ? []
+    : [[
+      actionPathVariable,
+      [{ residual: { kind: "variable", variable: actionDirectory(inAction) }, written: "" }],
+      true
+    ]]
+  for (const [name, entry] of env.entries) {
+    const text = textOf(entry)
+    if (text !== undefined) fixedEnv.set(name, text)
+    else if (identifier.test(name)) decided.push([name, entry, env.own.has(name)])
+    else return note(job, "expression", `${where} sets ${name}, a name a shell cannot hold, while the job runs`)
+  }
+  const first = job.steps.length === 0
+  const written = write(state.runner, {
+    key: context.key,
+    after: first ? undefined : state.mark,
+    second: job.steps.length === 1,
+    // Two jobs that start with the same step run it once, so a first step is told its job only when it asks.
+    job: first && !/\bGITHUB_JOB\b/.test(command) ? undefined : state.key,
+    cwd,
+    directory,
+    start,
+    own: [...env.own].filter((name) => identifier.test(name)),
+    keeps: state.keeps.splice(0),
+    condition: context.ran.kind === "when" ? context.ran.residual : undefined,
+    outer: decided.filter(([, , own]) => !own).map(([name, entry]) => [name, entry] as const),
+    env: decided.filter(([, , own]) => own).map(([name, entry]) => [name, entry] as const),
+    fills: [...fills],
+    commit: /\bGITHUB_(?:SHA|EVENT_PATH)\b/.test(command)
+  }, command)
+  if ("problem" in written) return note(job, "expression", `${where}: ${written.problem}`)
+  const before = job.steps.length
+  addStep(job, {
+    where,
+    command,
+    cwd,
+    env: fixedEnv,
+    secrets: env.secrets,
+    secretEnv: env.secretEnv,
+    name: context.name,
+    runner: written.text
+  })
+  if (job.steps.length > before) {
+    state.ran = true
+    if (first) {
+      state.mark = written.mark
+      state.only = written.alone
     }
-    context.toolchains.push(...toolchainsOf(setup, uses, scope, job))
-    note(job, hostAction, `${uses} has no command to run`)
-    // With a secret the action does what a tool on the machine cannot stand for, such as signing a tool in.
-    const received = secretsIn(raw["with"], scope)
-    if (received.length > 0) note(job, secret, `${where}: ${uses} receives ${received.join(", ")}`)
-    if (setup.problem !== undefined) note(job, "uses", `${where}: ${uses} ${setup.problem}`)
-    if (setup.command === undefined) return
-    return addStep(job, {
-      where,
-      command: setup.command,
-      env: scope.env,
-      secrets: scope.secrets,
-      secretEnv: scope.secretEnv,
-      name: stepName ?? uses
-    })
   }
-  const run = raw["run"]
-  if (typeof run !== "string") return note(job, "malformed-step", `${where} has neither run nor uses`)
+}
 
+const noDefaults: RunDefaults = { shell: undefined, cwd: undefined }
+
+const readRun = (context: StepContext, raw: Record<string, unknown>, run: string): void => {
+  const { reads, state, where } = context
+  const { job, windowsOnly } = state
+  // "Creating a composite action": a step of an action names its own shell, and runs in the repository root
+  // unless it names a directory. The job's `defaults.run` do not reach it.
+  const defaults = context.scope.actionPath === undefined ? state.defaults : noDefaults
   const rawShell = raw["shell"] ?? defaults.shell
   if (rawShell !== undefined && typeof rawShell !== "string") {
     return note(job, "shell", `${where} names its shell with a value that is not text`)
   }
-  const start = rawShell === undefined ? "" : shellStart(rawShell)
+  const start = shellStart(rawShell)
   if (start === undefined) return note(job, "shell", `${where} runs in ${rawShell}`)
   if (rawShell === undefined && windowsOnly) return note(job, "shell", `${where} runs in PowerShell on Windows`)
 
-  const command = resolve(run, scope)
-  const blocking = [...command.unresolved, ...command.secrets.map((name) => `secret ${name}`)]
-  if (blocking.length > 0) return note(job, "expression", `${where} depends on ${blocking.join(", ")}`)
-
-  // GitHub pastes a matrix value into the script text, where a quote would end the quoting added here.
-  const references = matrixReferences(command.text)
-  const breaksQuoting = (variant: Readonly<Record<string, string>>) =>
-    references.some((key) => variant[key]?.includes("'"))
-  if (start !== "" && scope.matrix.variants.some(breaksQuoting)) {
-    return note(job, "shell", `${where} puts a matrix value holding a quote into its script`)
+  const script = fill(run, reads)
+  if (script.kind !== "ok") {
+    return note(
+      job,
+      "expression",
+      `${where} depends on ${script.kind === "secret" ? `secret ${script.name}` : script.why}`
+    )
   }
-
   const rawCwd = asScalar(raw["working-directory"] ?? defaults.cwd ?? "")
   if (rawCwd === undefined) return note(job, "working-directory", `${where} has a directory that is not text`)
-  const place = readCwd(rawCwd, scope)
+  const place = readCwd(rawCwd, state.matrix, reads)
   if ("problem" in place) return note(job, "working-directory", `${where}: ${place.problem}`)
+  addRun(context, script.parts, start, place.cwd, place.directory)
+}
 
-  const runnerNames = [...new Set(command.text.match(/\b(?:GITHUB|RUNNER)_[A-Z_]+\b/g))]
-  if (runnerNames.length > 0) note(job, "runner-variable", `${where} reads ${runnerNames.join(", ")}`)
+/** True for an expression whose value a later step of the job can change: a variable, or a hash of files. */
+const changes = (residual: Residual): boolean => {
+  if (residual.kind === "variable") return /^(?:env|process|hash):/.test(residual.variable.id)
+  if (residual.kind === "literal") return false
+  if (residual.kind === "not") return changes(residual.operand)
+  return residual.kind === "call" ? residual.args.some(changes) : changes(residual.left) || changes(residual.right)
+}
 
-  addStep(job, {
-    where,
-    command: start === "" ? command.text : `${start} ${shellQuote(command.text.trim())}`,
-    cwd: place.cwd,
-    env: scope.env,
-    secrets: scope.secrets,
-    secretEnv: scope.secretEnv,
-    name: stepName
+/**
+ * What a value given to an action or a called workflow stands for, under its input's name. A value written out
+ * under a name that says it is a secret is one, as it is for a variable.
+ */
+const inputOf = (name: string, text: string, scope: Expressions): Context => {
+  const found = contextOf(fill(text, scope))
+  return found.kind === "value" && typeof found.value === "string" && isLiteralSecret(name, found.value)
+    ? { kind: "secret", name }
+    : found
+}
+
+const readComposite = (context: StepContext, raw: Record<string, unknown>, uses: string): Context | undefined => {
+  const { reads, scope, state, where } = context
+  const { job } = state
+  const directory = normalizeDirectory(uses)
+  state.actions += 1
+  const text = directory === undefined || scope.depth >= 8 || state.actions > maxActions
+    ? undefined
+    : state.facts.read?.(`${directory}/action.yml`) ?? state.facts.read?.(`${directory}/action.yaml`)
+  if (text === undefined) return void note(job, "uses", `${uses} has no command to run`)
+  const action = readAction(text)
+  if ("problem" in action) return void note(job, "uses", `${uses}: ${action.problem}`)
+  const given = new Map(
+    (isRecord(raw["with"]) ? Object.entries(raw["with"]) : []).map(([name, held]) =>
+      [name.toLowerCase(), asScalar(held)] as const
+    )
+  )
+  // "Contexts: inputs": the values are worked out when the action starts. One that a step of the action could
+  // change by then, such as a variable, is worked out once by the next command and kept for the rest.
+  const values = new Map<string, Context>()
+  for (const name of new Set([...action.inputs.keys(), ...given.keys()])) {
+    const found = inputOf(name, given.get(name) ?? action.inputs.get(name) ?? "", reads)
+    if (found.kind === "residual" && changes(found.residual)) {
+      const kept = `${context.key}.${values.size}`
+      state.keeps.push([kept, [{ residual: found.residual, written: "" }]])
+      values.set(name, variable(`kept:${kept}`, `inputs.${name}`))
+    } else {
+      values.set(name, found)
+    }
+  }
+  const inputs = fields((name) => values.get(name))
+  const inner: StepScope = {
+    env: context.env,
+    inputs,
+    steps: new Map(),
+    prefix: `${context.key}.`,
+    condition: context.ran.kind === "when" ? context.ran.residual : undefined,
+    actionPath: directory,
+    depth: scope.depth + 1,
+    where: `${where} >`
+  }
+  action.steps.forEach((step, index) => readStep(state, inner, step, index))
+  // An output is read after the action's last step, with the action's own steps in reach.
+  const after = expressions(state, inputs, { state, scope: inner, env: inner.env })
+  return fields((name) => {
+    const held = action.outputs.get(name)
+    return held === undefined ? undefined : contextOf(fill(held, after))
   })
+}
+
+/** The secrets among an action's inputs, by name. The token every job has is none: an action uses it to download. */
+const secretsIn = (inputs: unknown, scope: Expressions): ReadonlyArray<string> => {
+  const names = (isRecord(inputs) ? Object.values(inputs) : []).flatMap((held) => {
+    const filled = fill(asScalar(held) ?? "", scope)
+    return filled.kind === "secret" ? [filled.name] : []
+  })
+  return [...new Set(names)].filter((name) => name !== "GITHUB_TOKEN")
+}
+
+const readUses = (context: StepContext, raw: Record<string, unknown>, uses: string): StepRecord => {
+  const { ran, reads, state, where } = context
+  const { job } = state
+  const action = uses.split("@")[0] as string
+  const noOutput = unknown(`an output of ${uses}, which a replay does not run`)
+  const notRun = fields(() => noOutput)
+  if (uses.startsWith("./")) {
+    const outputs = readComposite(context, raw, uses)
+    return recordOf(outputs === undefined ? { kind: "problem", why: "" } : ran, outputs ?? notRun, undefined)
+  }
+  const setup = readSetup(uses, raw["with"])
+  if (setup !== undefined) {
+    // The inventory lists the version as the workflow's own files give it. A replay looks for the tool on the
+    // machine before it runs the job (`Tools.ts`): nothing is installed here.
+    const listed = expressions(state, context.scope.inputs, {
+      state: { ...state, ran: false },
+      scope: context.scope,
+      env: context.env
+    })
+    state.toolchains.push(...toolchainsOf(setup, uses, listed, job))
+    note(job, hostAction, `${uses} has no command to run`)
+    // With a secret the action does what a tool on the machine cannot stand for, such as signing a tool in.
+    const received = secretsIn(raw["with"], reads)
+    if (received.length > 0) note(job, receivesSecret, `${where}: ${uses} receives ${received.join(", ")}`)
+    if (setup.problem !== undefined) note(job, "uses", `${where}: ${uses} ${setup.problem}`)
+    for (const entry of setup.tools) {
+      for (const name of setupVariables.get(entry.name) ?? []) state.setupNames.add(name)
+    }
+    // An input can make the action run a command too, such as installing what a lockfile names.
+    if (setup.command === undefined) return recordOf(ran, notRun, undefined)
+    addRun({ ...context, name: context.name ?? uses }, [setup.command], ["bash", "-e"], "")
+    return recordOf(ran, notRun, () => variable(`outcome:${context.key}`, `how ${where} ended`))
+  }
+  if (!hostActions.includes(action)) {
+    note(job, "uses", `${uses} has no command to run`)
+    return recordOf({ kind: "problem", why: "" }, notRun, undefined)
+  }
+  note(job, hostAction, `${uses} has no command to run`)
+  if (action === "actions/checkout") {
+    const read = (text: string): string | Residual | undefined => {
+      const filled = fill(text, reads)
+      if (filled.kind !== "ok") return undefined
+      const [only] = filled.parts
+      return filled.parts.length === 1 && only !== undefined && typeof only !== "string"
+        ? only.residual
+        : textOf(filled.parts)
+    }
+    for (const problem of checkoutProblems(raw["with"], state.facts.repository, read)) {
+      note(job, "checkout", `${where} ${problem}`)
+    }
+  }
+  // A replay restores no cache, so a cache step reports a miss.
+  const outputs = cacheActions.includes(action) ? fields((name) => name === "cache-hit" ? value("") : noOutput) : notRun
+  return recordOf(ran, outputs, undefined)
+}
+
+const readStep = (state: JobState, scope: StepScope, raw: unknown, index: number): void => {
+  const { job } = state
+  const number = index + 1
+  if (!isRecord(raw)) return note(job, "malformed-step", `step ${number} of ${scope.where} is not a mapping`)
+  const stepName = typeof raw["name"] === "string" ? raw["name"] : undefined
+  const where = `${scope.where} step ${number}${stepName === undefined ? "" : ` (${stepName})`}`
+  const id = typeof raw["id"] === "string" ? raw["id"] : undefined
+  // A step with no id is named by its place. An id never starts with a dash, so the two never meet.
+  const key = `${scope.prefix}${id ?? `-${number}`}`.toUpperCase().replace(/[^A-Z0-9_.-]/g, "_")
+  const outer = expressions(state, scope.inputs, { state, scope, env: scope.env })
+  const uses = raw["uses"]
+  // A step's own variables are set before its condition is read. Those of a step that uses an action a replay
+  // does not run reach nothing but that condition, so one that cannot be read is no reason to leave the job out.
+  const local = typeof uses !== "string" || uses.startsWith("./")
+  const unheard = draft({ id: job.id, source, file: job.file, name: job.name })
+  const env = withEnv(scope.env, raw["env"], local ? job : unheard, where, outer, true)
+  const own = expressions(state, scope.inputs, { state, scope, env })
+  const record = (found: StepRecord): void => {
+    if (id !== undefined) scope.steps.set(id.toLowerCase(), found)
+  }
+  const unread = recordOf({ kind: "problem", why: "" }, unknown(""), undefined)
+
+  const ran = within(scope.condition, readCondition(raw["if"], own))
+  if (ran.kind === "never") {
+    note(
+      job,
+      conditionFalse,
+      `${where} is left out: ${shown(raw["if"])} is false for ${eventName(state.event, state.facts)}`
+    )
+    return record(recordOf(ran, unknown(""), undefined))
+  }
+  if (ran.kind === "problem") {
+    note(job, "condition", `${where} runs only if ${shown(raw["if"])}: ${ran.why}`)
+    return record(unread)
+  }
+  const tolerated = raw["continue-on-error"]
+  if (tolerated !== undefined && readCondition(tolerated, own).kind !== "never") {
+    note(job, "continue-on-error", `${where} may fail without failing the job`)
+  }
+  const context: StepContext = { state, scope, where, key, name: stepName, env, reads: own, ran }
+  if (typeof uses === "string") return record(readUses(context, raw, uses))
+  const run = raw["run"]
+  if (typeof run !== "string") {
+    note(job, "malformed-step", `${where} has neither run nor uses`)
+    return record(unread)
+  }
+  const before = job.steps.length
+  readRun(context, raw, run)
+  if (job.steps.length === before) return record(unread)
+  const outputs = fields((name) =>
+    /^[a-z0-9_-]+$/.test(name)
+      ? variable(`output:${key}/${name.toUpperCase()}`, `steps.${id}.outputs.${name}`, true)
+      : unknown(`steps.${id}.outputs.${name} has a name a replay does not keep`)
+  )
+  record(recordOf(ran, outputs, () => variable(`outcome:${key}`, `steps.${id}.outcome`)))
 }
 
 /**
@@ -311,19 +855,29 @@ const windowsOnly = (runsOn: string | undefined, matrix: Matrix): boolean => {
   return names.every((name) => hostOf(name) === "win32")
 }
 
-const readRunsOn = (raw: unknown, job: { readonly name: string }, problems: Array<[string, string]>) => {
-  if (raw === undefined) return {}
-  const labels = asStrings(raw)
-  if (labels === undefined) {
-    problems.push(["runner", `${job.name} picks its runner by group`])
-    return {}
-  }
-  return { runsOn: labels.join(",") }
+/** The system every run of the job is on, or `undefined` when the variants differ or none is named. */
+const hostOfJob = (runsOn: string | undefined, matrix: Matrix): Host | undefined => {
+  if (runsOn === undefined) return undefined
+  const hosts = new Set(
+    (matrix.variants.length === 0 ? [{}] : matrix.variants).map((variant) => hostOf(expand(runsOn, variant)))
+  )
+  const [only] = hosts
+  return hosts.size === 1 ? only : undefined
 }
 
 /** GitHub reads a matrix key a variant lacks as empty, so a variant must say so. */
 const fillReferencedKeys = (job: Draft, matrix: Matrix): Draft => {
-  const texts = [job.runsOn ?? "", ...job.steps.flatMap((step) => [step.command, step.cwd, ...Object.values(step.env)])]
+  // The line that names a job's state holds every key, to tell the variants apart: it reads none of them.
+  const texts = [
+    job.runsOn ?? "",
+    ...job.steps.flatMap((step) => [
+      step.command,
+      step.cwd,
+      // Every step read from a workflow has runner text.
+      String(step.runner).replace(/^__sum=.*$/m, ""),
+      ...Object.values(step.env)
+    ])
+  ]
   const used = texts.flatMap(matrixReferences).filter((key) => matrix.keys.has(key))
   return {
     ...job,
@@ -334,53 +888,70 @@ const fillReferencedKeys = (job: Draft, matrix: Matrix): Draft => {
   }
 }
 
+/** The matrix keys whose value is text in every variant, read from the matrix as written. */
+const textKeysOf = (raw: unknown, matrix: Matrix): ReadonlySet<string> => {
+  // A matrix that was read has a list for each key, and mappings under `include`.
+  if (!isRecord(raw) || matrix.problem !== undefined) return new Set()
+  const { exclude: _exclude, include = [], ...lists } = raw as Record<string, ReadonlyArray<unknown>>
+  const written = new Map<string, Array<unknown>>()
+  const add = (key: string, held: unknown): void => void written.set(key, [...(written.get(key) ?? []), held])
+  for (const [key, values] of Object.entries(lists)) for (const held of values) add(key, held)
+  for (const entry of include as ReadonlyArray<Record<string, unknown>>) {
+    for (const [key, held] of Object.entries(entry)) add(key, held)
+  }
+  return new Set(
+    [...written].filter(([key, values]) =>
+      values.every((held) => typeof held === "string") &&
+      matrix.variants.every((variant) => Object.hasOwn(variant, key))
+    ).map(([key]) => key)
+  )
+}
+
 interface WorkflowContext {
   readonly file: string
-  readonly base: string
+  /** What starts the id of each job: `ci.yml:`, or the calling job's id and a slash. */
+  readonly prefix: string
+  readonly name: string
+  readonly facts: Facts
+  readonly event: Event | undefined
   readonly triggers: ReadonlyArray<string>
   readonly filters: ReadonlyArray<string>
   readonly release: string | undefined
   /** The scopes the workflow's `permissions` let every job write. */
   readonly writes: ReadonlyArray<string>
-  readonly scope: Scope
+  readonly env: Env
+  readonly inputs: Context
   readonly defaults: RunDefaults
   readonly toolchains: Array<Toolchain>
+  /** What the calling job waits for, and whether it runs, when another workflow calls this one. */
+  readonly needs: ReadonlyArray<string>
+  readonly called: ReadonlyArray<readonly [feature: string, reason: string]>
+  readonly depth: number
 }
 
-const readJobBody = (workflow: WorkflowContext, job: Draft, raw: Record<string, unknown>, matrix: Matrix): void => {
-  const { name } = job
-  for (const filter of workflow.filters) note(job, triggerFilter, filter)
-  if (workflow.release !== undefined) note(job, releaseTrigger, workflow.release)
-  // A job's own `permissions` replace the workflow's.
-  const writes = raw["permissions"] === undefined ? workflow.writes : writeScopes(raw["permissions"])
-  if (writes.length > 0) note(job, writePermission, `${name} may write ${writes.join(", ")}`)
-  if (matrix.problem !== undefined) note(job, "matrix", `${name}: ${matrix.problem}`)
-  if (raw["strategy"] !== undefined && !isRecord(raw["strategy"])) {
-    note(job, "matrix", `${name}: its strategy is computed when the workflow runs`)
+/** The runner name a `runs-on` value gives: its labels joined, with what is known filled in. */
+const readRunsOn = (
+  raw: unknown,
+  job: { readonly name: string },
+  scope: Expressions,
+  problems: Array<[string, string]>
+): { readonly runsOn?: string } => {
+  if (raw === undefined) return {}
+  const expression = typeof raw === "string" ? whole(raw) : undefined
+  const evaluated = expression === undefined ? undefined : evaluate(expression, scope)
+  const held = evaluated?.kind === "ok" && evaluated.residual.kind === "literal" ? evaluated.residual.value : raw
+  const labels = asStrings(held)
+  if (labels === undefined) {
+    problems.push(["runner", `${job.name} picks its runner by group`])
+    return {}
   }
-  if (raw["if"] !== undefined) note(job, "condition", `${name} runs only if ${String(raw["if"])}`)
-  for (const [jobKey, reason] of jobFeatures) {
-    if (raw[jobKey] !== undefined) note(job, jobKey, `${name} ${reason}`)
-  }
-
-  const jobScope = { ...workflow.scope, matrix }
-  if (job.runsOn !== undefined) {
-    const unknown = resolve(job.runsOn, jobScope).unresolved
-    if (unknown.length > 0) note(job, "runner", `${name} picks its runner from ${unknown.join(", ")}`)
-  }
-  if (typeof raw["uses"] === "string") {
-    return note(job, "uses", `${raw["uses"]} is a reusable workflow; its jobs were not read`)
-  }
-  const steps: unknown = raw["steps"]
-  if (!Array.isArray(steps)) return note(job, "malformed-job", `${name} has no list of steps`)
-  const context: JobContext = {
-    job,
-    scope: withEnv(jobScope, raw["env"], job, name, false),
-    defaults: readDefaults(raw, workflow.defaults),
-    windowsOnly: windowsOnly(job.runsOn, matrix),
-    toolchains: workflow.toolchains
-  }
-  steps.forEach((step: unknown, index) => readStep(context, step, index))
+  const filled = labels.map((label) => {
+    const parts = fill(label, scope)
+    const text = parts.kind === "ok" ? textOf(parts.parts) : undefined
+    if (text === undefined) problems.push(["runner", `${job.name} picks its runner from ${whole(label) ?? label}`])
+    return text ?? label
+  })
+  return { runsOn: filled.join(",") }
 }
 
 /** True when a variable named like a secret takes its value from the matrix, which would hold it in plain text. */
@@ -394,84 +965,276 @@ const matrixHoldsSecret = (raw: Record<string, unknown>, matrix: Matrix): boolea
   )
 }
 
-const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Draft => {
-  const { base, file, triggers } = workflow
-  const id = `${base}:${key}`
+/** The values a calling job gives a workflow it calls, with the defaults the workflow declares. */
+const calledInputs = (declared: unknown, given: unknown, scope: Expressions): Context => {
+  const known = new Map<string, Context>()
+  const lower = (raw: unknown): ReadonlyMap<string, unknown> =>
+    new Map(isRecord(raw) ? Object.entries(raw).map(([name, held]) => [name.toLowerCase(), held] as const) : [])
+  const [inputs, values] = [lower(declared), lower(given)]
+  const read = (name: string, held: unknown): Context => {
+    if (typeof held !== "string") return value(typeof held === "number" || typeof held === "boolean" ? held : null)
+    const expression = whole(held)
+    const evaluated = expression === undefined ? undefined : evaluate(expression, scope)
+    // One expression keeps its type, as a workflow's typed input does.
+    if (evaluated?.kind === "ok") return { kind: "residual", residual: evaluated.residual }
+    return inputOf(name, held, scope)
+  }
+  // "Workflow syntax: on.workflow_call.inputs": an input given no value and no default is `false` for a boolean,
+  // `0` for a number and empty for a string.
+  const unset = (input: unknown): Context => {
+    const type = isRecord(input) ? input["type"] : undefined
+    return value(type === "boolean" ? false : type === "number" ? 0 : "")
+  }
+  return fields((name) => {
+    const input = inputs.get(name)
+    if (input === undefined && !values.has(name)) return undefined
+    const written = values.has(name) ? values.get(name) : isRecord(input) ? input["default"] : undefined
+    const found = known.get(name) ?? (written === undefined || written === null ? unset(input) : read(name, written))
+    known.set(name, found)
+    return found
+  })
+}
+
+const readJob = (workflow: WorkflowContext, key: string, raw: unknown): ReadonlyArray<Draft> => {
+  const { file, prefix, triggers } = workflow
+  const id = `${prefix}${key}`
   if (!isRecord(raw)) {
     const job = draft({ id, source, file, name: key, triggers })
     note(job, "malformed-job", `job ${key} is not a mapping`)
-    return job
+    return [job]
   }
   const name = typeof raw["name"] === "string" ? raw["name"] : key
   const problems: Array<[string, string]> = []
   const needs = asStrings(raw["needs"] ?? [])
   if (needs === undefined) problems.push(["malformed-job", `${name} has a needs value that is not a job list`])
   const strategy = raw["strategy"]
-  const expanded = expandMatrix(isRecord(strategy) ? strategy["matrix"] : undefined)
+  const rawMatrix = isRecord(strategy) ? strategy["matrix"] : undefined
+  const expanded = expandMatrix(rawMatrix)
   const matrix = matrixHoldsSecret(raw, expanded)
     ? { ...noMatrix, problem: "a variable named like a secret reads it" }
     : expanded
+  const shape: Shape = {
+    facts: workflow.facts,
+    event: workflow.event,
+    key,
+    workflow: workflow.name,
+    matrix,
+    textKeys: textKeysOf(rawMatrix, matrix)
+  }
+  const before = expressions(shape, workflow.inputs)
   const job = draft({
     id,
     source,
     file,
     name,
-    needs: (needs ?? []).map((need) => `${base}:${need}`),
+    needs: [...(needs ?? []).map((need) => `${prefix}${need}`), ...workflow.needs],
     triggers,
-    ...readRunsOn(raw["runs-on"], { name }, problems)
+    ...readRunsOn(raw["runs-on"], { name }, before, problems)
   })
-  for (const [feature, reason] of problems) note(job, feature, reason)
-  readJobBody(workflow, job, raw, matrix)
-  return fillReferencedKeys(job, matrix)
-}
-
-const parseYaml = (text: string): { readonly value: unknown } | { readonly problem: string } => {
-  const document = parseDocument(text)
-  const error = document.errors[0]
-  if (error !== undefined) return { problem: `${error.code} at line ${error.linePos?.[0].line}` }
-  try {
-    // A remote build cache's credentials are left empty, as they are for a pull request from a fork.
-    return { value: leaveCacheEmpty(document.toJS()) }
-  } catch {
-    return { problem: "its aliases cannot be expanded" }
+  for (const [feature, reason] of [...problems, ...workflow.called]) note(job, feature, reason)
+  for (const filter of workflow.filters) note(job, triggerFilter, filter)
+  if (workflow.release !== undefined) note(job, releaseTrigger, workflow.release)
+  // A job's own `permissions` replace the workflow's.
+  const writes = raw["permissions"] === undefined ? workflow.writes : writeScopes(raw["permissions"])
+  if (writes.length > 0) note(job, writePermission, `${name} may write ${writes.join(", ")}`)
+  if (matrix.problem !== undefined) note(job, "matrix", `${name}: ${matrix.problem}`)
+  if (strategy !== undefined && !isRecord(strategy)) {
+    note(job, "matrix", `${name}: its strategy is computed when the workflow runs`)
   }
+  const runs = readCondition(raw["if"], before)
+  const event = eventName(workflow.event, workflow.facts)
+  if (runs.kind === "never") note(job, "condition", `${name} is left out: ${shown(raw["if"])} is false for ${event}`)
+  else if (runs.kind !== "always") {
+    const why = runs.kind === "problem" ? runs.why : "it is decided while the job runs"
+    note(job, "condition", `${name} runs only if ${shown(raw["if"])}: ${why}`)
+  }
+  for (const [jobKey, reason] of jobFeatures) {
+    if (raw[jobKey] !== undefined) note(job, jobKey, `${name} ${reason}`)
+  }
+
+  const uses = raw["uses"]
+  if (typeof uses === "string") {
+    const jobs = readCalled(workflow, job, raw, uses, before, writes)
+    return jobs ?? (note(job, "uses", `${uses} is a reusable workflow; its jobs were not read`), [job])
+  }
+  const steps: unknown = raw["steps"]
+  if (!Array.isArray(steps)) {
+    note(job, "malformed-job", `${name} has no list of steps`)
+    return [job]
+  }
+  const host = hostOfJob(job.runsOn, matrix)
+  const state: JobState = {
+    ...shape,
+    file,
+    job,
+    host,
+    defaults: readDefaults(raw, workflow.defaults),
+    windowsOnly: windowsOnly(job.runsOn, matrix),
+    toolchains: workflow.toolchains,
+    runner: {
+      id,
+      matrixKeys: [...matrix.keys].sort(),
+      variables: variables(workflow.event, workflow.facts, { job: key, workflow: workflow.name }),
+      event: eventFile(workflow.event, workflow.facts)
+    },
+    ran: false,
+    mark: undefined,
+    only: undefined,
+    setupNames: new Set(),
+    keeps: [],
+    actions: 0
+  }
+  const scope: StepScope = {
+    env: withEnv(workflow.env, raw["env"], job, name, before, false),
+    inputs: workflow.inputs,
+    steps: new Map(),
+    prefix: "",
+    condition: undefined,
+    actionPath: undefined,
+    depth: 0,
+    where: name
+  }
+  steps.forEach((step: unknown, index) => readStep(state, scope, step, index))
+  // A job's only command is told so: no later step reads what it leaves.
+  const [only] = job.steps
+  if (job.steps.length === 1 && only !== undefined && state.only !== undefined) {
+    job.steps[0] = { ...only, runner: state.only }
+  }
+  // A step's runner text holds its command, and each matrix value it names, in quotes, which a matrix value with a
+  // quote would end. The line that names the job's state names every key.
+  const quoted = job.steps.flatMap((step) => [step.command, step.cwd, String(step.runner)]).flatMap(matrixReferences)
+  if (matrix.variants.some((variant) => quoted.some((used) => variant[used]?.includes("'")))) {
+    note(job, "shell", `${name} puts a matrix value holding a quote into a script`)
+  }
+  return [fillReferencedKeys(job, matrix)]
 }
 
 /**
+ * Reads the jobs of a workflow in this repository that a job calls. The
+ * calling job stays as a job with no step that needs them, so a job that
+ * needs it waits for them all. `undefined` when the workflow cannot be read.
+ */
+const readCalled = (
+  workflow: WorkflowContext,
+  job: Draft,
+  raw: Record<string, unknown>,
+  uses: string,
+  scope: Expressions,
+  writes: ReadonlyArray<string>
+): ReadonlyArray<Draft> | undefined => {
+  // A matrix of calls runs the workflow once per variant, each with its own values: that is not read here.
+  const path = uses.startsWith("./") && raw["strategy"] === undefined ? normalizeDirectory(uses) : undefined
+  const text = path === undefined || workflow.depth >= 4 ? undefined : workflow.facts.read?.(path)
+  const parsed = text === undefined ? undefined : parseYaml(text)
+  const called = parsed !== undefined && "value" in parsed ? leaveCacheEmpty(parsed.value) : undefined
+  const on = isRecord(called) ? called["on"] : undefined
+  const call = isRecord(on) ? on["workflow_call"] : undefined
+  if (
+    path === undefined || !isRecord(called) || !isRecord(called["jobs"]) || !isRecord(on) || !("workflow_call" in on)
+  ) {
+    return undefined
+  }
+  const holder = draft({ id: job.id, source, file: path, name: job.name })
+  const inputs = calledInputs(isRecord(call) ? call["inputs"] : undefined, raw["with"], scope)
+  const context: WorkflowContext = {
+    ...workflow,
+    file: path,
+    prefix: `${job.id}/`,
+    // The calling workflow's variables do not reach a workflow it calls.
+    env: withEnv(noEnv, called["env"], holder, "the workflow", expressions(outside(workflow), inputs), false),
+    inputs,
+    defaults: readDefaults(called, { shell: undefined, cwd: undefined }),
+    // "Reusing workflows: Access and permissions": a called workflow can write what its calling job can and what
+    // its own `permissions` keep of that, never more.
+    writes: called["permissions"] === undefined || writes.length === 0 ? writes : writeScopes(called["permissions"]),
+    needs: job.needs,
+    // What keeps the calling job out keeps every job it calls out.
+    called: job.unsupported.filter((entry) => entry.feature === "condition" || entry.feature === "malformed-job")
+      .map((entry) => [entry.feature, entry.detail.slice(entry.detail.indexOf(": ") + 2)] as const),
+    depth: workflow.depth + 1
+  }
+  const jobs = Object.entries(called["jobs"]).flatMap(([key, entry]) => inherit(readJob(context, key, entry), holder))
+  return [{ ...job, needs: jobs.map((entry) => entry.id) }, ...jobs]
+}
+
+/** Copies what is wrong with a workflow's own variables onto each of its jobs, once. */
+const inherit = (jobs: ReadonlyArray<Draft>, holder: Draft): ReadonlyArray<Draft> => {
+  for (const job of jobs) {
+    for (const entry of holder.unsupported) {
+      if (!job.unsupported.some((held) => held.feature === entry.feature && held.detail === entry.detail)) {
+        job.unsupported.push(entry)
+      }
+    }
+  }
+  return jobs
+}
+
+/** What an expression outside any job reads, such as one in the workflow's own `env:`. */
+const outside = (workflow: Pick<WorkflowContext, "event" | "facts" | "name">): Shape => ({
+  facts: workflow.facts,
+  event: workflow.event,
+  key: "",
+  workflow: workflow.name,
+  matrix: noMatrix,
+  textKeys: new Set()
+})
+
+/**
  * Reads a workflow. A file that is not a workflow adds no jobs, only the
- * reason.
+ * reason. `facts` says what the repository is and gives the files a step or
+ * job names: without them an expression that reads the repository's name or
+ * its default branch, and a step that uses a local action, leave their job
+ * out.
  *
  * @category readers
  * @since 0.1.0
  * @throws {never}
  */
-export const readWorkflow = (file: string, text: string): Parsed => {
+export const readWorkflow = (file: string, text: string, facts: Facts = {}): Parsed => {
   const base = file.slice(file.lastIndexOf("/") + 1)
   const parsed = parseYaml(text)
   if ("problem" in parsed) return fileProblem(file, "malformed-file", parsed.problem)
-  const workflow = parsed.value
+  // A remote build cache's credentials are left empty, as they are for a pull request from a fork.
+  const workflow = leaveCacheEmpty(parsed.value)
   if (!isRecord(workflow) || !isRecord(workflow["jobs"])) {
     return fileProblem(file, "malformed-file", "it has no jobs mapping")
   }
   const { filters, release, triggers } = readTriggers(workflow["on"])
   const toolchains: Array<Toolchain> = []
   const holder = draft({ id: base, source, file, name: base })
-  const empty: Scope = { env: new Map(), secretEnv: new Map(), secrets: [], matrix: noMatrix }
+  const name = typeof workflow["name"] === "string" ? workflow["name"] : file
+  const on: unknown = workflow["on"]
+  const event = eventOf(
+    isRecord(on) ? on : Object.fromEntries(triggers.map((trigger) => [trigger, null])),
+    facts.defaultBranch
+  )
+  // A push, a pull request and a merge group give a workflow no inputs: each reads as `null`.
+  const inputs = fields(() => undefined)
   const context: WorkflowContext = {
     file,
-    base,
+    prefix: `${base}:`,
+    name,
+    facts,
+    event,
     triggers,
     filters,
     release,
     writes: writeScopes(workflow["permissions"]),
-    scope: withEnv(empty, workflow["env"], holder, "the workflow", false),
+    env: withEnv(
+      noEnv,
+      workflow["env"],
+      holder,
+      "the workflow",
+      expressions(outside({ event, facts, name }), inputs),
+      false
+    ),
+    inputs,
     defaults: readDefaults(workflow, { shell: undefined, cwd: undefined }),
-    toolchains
+    toolchains,
+    needs: [],
+    called: [],
+    depth: 0
   }
-  const jobs = Object.entries(workflow["jobs"]).map(([key, job]) => {
-    const read = readJob(context, key, job)
-    for (const entry of holder.unsupported) read.unsupported.push(entry)
-    return read
-  })
+  const jobs = Object.entries(workflow["jobs"]).flatMap(([key, job]) => inherit(readJob(context, key, job), holder))
   return { jobs, toolchains, unsupported: [] }
 }
