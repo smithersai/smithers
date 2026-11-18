@@ -43,6 +43,26 @@ same physical Effect and Smithers packages, so install the CLI in that
 workspace and run its local copy, as
 [Workspace target commands](#workspace-target-commands) shows.
 
+## Start time
+
+An installed `smthrs` runs as one file and keeps Node's compiled code between
+starts. `smthrs --version` answers in under half a second, and a run whose
+results are all stored adds about a second to the checks it skips. The first
+start after an install or an upgrade takes about half a second longer, while
+Node compiles the file.
+
+| Variable                       | Meaning                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------- |
+| `NODE_COMPILE_CACHE`           | The directory Node keeps compiled code in.                                |
+| `NODE_DISABLE_COMPILE_CACHE=1` | Keep no compiled code. Every start then takes about half a second longer. |
+
+With no directory named, `smthrs` keeps compiled code in
+`smthrs-compile-cache-<user id>` under the temporary directory and empties it
+when it holds more than 512 files. A directory you name is yours: Node adds a
+few small files to it on every start and removes none, so clear it now and
+then. On a CI runner, name one and keep it between runs as you keep the
+package manager's cache.
+
 ## Verify the install
 
 Provider SDKs load when their provider is selected. Version, help and unrelated

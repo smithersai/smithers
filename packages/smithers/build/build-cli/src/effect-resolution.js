@@ -73,6 +73,8 @@ const typescriptBootstrap = Symbol.for("smthrs/effect-resolution-typescript-boot
 const registration = Symbol.for("smthrs/effect-resolution-registration")
 const ownership = Symbol.for("smthrs/effect-resolution-ownership")
 const buildModuleParameter = "smithers-build-module"
+const bundle = Symbol.for("smthrs/bundle")
+const bundledScheme = "smthrs-bundled:"
 const admittedBuildModules = Symbol.for("smthrs/effect-resolution-build-modules")
 
 /**
@@ -118,6 +120,42 @@ const ownerOf = (specifier) => {
   return cliOwnedPackages.some((name) => specifier === name || specifier.startsWith(`${name}/`))
     ? cliParentUrl
     : undefined
+}
+
+/**
+ * The URL an owned specifier has when this CLI runs as one file, or
+ * `undefined` when it does not or the file does not hold the module.
+ *
+ * A published `@smthrs/cli` runs `dist/bundle/bin.js`, which holds Effect and
+ * the owned packages inside it and publishes them as `globalThis[bundle]`:
+ * `modules` maps each public specifier to a function returning that module's
+ * exports. The instances a declaration module must share are those, not the
+ * files beside the bundle, so an owned import resolves to a `smthrs-bundled:`
+ * URL and {@link bundledSource} is what it loads.
+ */
+const bundledUrl = (specifier) =>
+  globalThis[bundle]?.modules.has(specifier) ? `${bundledScheme}${specifier}` : undefined
+
+/**
+ * The module a `smthrs-bundled:` URL loads: every export of the bundle's own
+ * instance, under the same names. A name is read once, when the importing
+ * module first loads it; the owned packages assign no export after they
+ * initialize.
+ */
+const bundledSource = (url) => {
+  const specifier = url.slice(bundledScheme.length)
+  const names = Object.keys(globalThis[bundle].modules.get(specifier)())
+  return [
+    `const exports = globalThis[Symbol.for(${JSON.stringify(bundle.description)})].modules.get(${
+      JSON.stringify(specifier)
+    })()`,
+    ...names.map((name, index) => `const export${index} = exports[${JSON.stringify(name)}]`),
+    `export { ${
+      names.map((name, index) => `export${index} as ${name === "default" ? "default" : JSON.stringify(name)}`).join(
+        ", "
+      )
+    } }`
+  ].join("\n")
 }
 
 /** Workspace packages whose module-level state is compared by identity. */
@@ -281,9 +319,13 @@ const asBuildModule = (resolved, base) => {
  */
 const parentHooks = {
   resolve(specifier, context, nextResolve) {
+    // A module imported by the URL an earlier resolution returned.
+    if (specifier.startsWith(bundledScheme)) return { url: specifier, format: "module", shortCircuit: true }
     // CommonJS consumers must install their ordinary dependencies. Node 26
     // also sends require() through these synchronous hooks.
     const owner = ownerOf(specifier)
+    const bundled = owner !== undefined && !context.conditions.includes("require") ? bundledUrl(specifier) : undefined
+    if (bundled !== undefined) return { url: bundled, format: "module", shortCircuit: true }
     let resolved
     try {
       resolved = !context.conditions.includes("require") && owner !== undefined
@@ -299,8 +341,20 @@ const parentHooks = {
     }
     const url = withoutNamespace(resolved.url)
     return url === resolved.url ? resolved : { ...resolved, url }
+  },
+  load(url, context, nextLoad) {
+    return url.startsWith(bundledScheme)
+      ? { format: "module", source: bundledSource(url), shortCircuit: true }
+      : nextLoad(url, context)
   }
 }
+
+/**
+ * The parent hooks as this process registers them. Only a CLI that runs as
+ * one file has `smthrs-bundled:` modules to load, so only it gets the load
+ * hook: every other process keeps the hooks it had.
+ */
+const ownedHooks = () => globalThis[bundle] === undefined ? { resolve: parentHooks.resolve } : parentHooks
 
 /**
  * Pins a declaration module's format and identity. Runs after tsx's loader;
@@ -351,7 +405,7 @@ const formatHooks = {
  */
 const reassert = () => {
   globalThis[registration].deregister()
-  globalThis[registration] = registerHooks(parentHooks)
+  globalThis[registration] = registerHooks(ownedHooks())
 }
 
 /**
@@ -421,7 +475,7 @@ export const installEffectResolution = (packages = {}, options = {}) => {
     // tsx, and the parent hook in front of it. See the hook-order note above.
     installVibeLang()
     registerHooks(formatHooks)
-    globalThis[registration] = registerHooks(parentHooks)
+    globalThis[registration] = registerHooks(ownedHooks())
     // Promotion belongs to the first installation, even when a different
     // physical copy completes it. Older, fully installed resolvers have no
     // pending promotion and keep their original process-wide ownership.

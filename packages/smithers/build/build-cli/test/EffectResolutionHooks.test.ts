@@ -13,7 +13,7 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Vm from "node:vm"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import { buildModuleUrl, importDeclarationModule, installEffectResolution } from "../src/effect-resolution.js"
 
 const require = createRequire(import.meta.url)
@@ -154,6 +154,77 @@ describe("packages resolved from their owner, not the importer", () => {
       "import { copy } from \"owned-agent\"\nimport { tools } from \"owned-agent/tools\"\nexport const found = [copy, tools]\n"
     )
     expect((await load(url)).found).toEqual(["owner", "owner tools"])
+  })
+})
+
+/**
+ * A published `@smthrs/cli` runs as one file that holds Effect and the owned
+ * packages, and publishes a table of them under a global symbol. A declaration
+ * module must get those instances, not a second copy read from the files
+ * installed beside the bundle.
+ */
+describe("a CLI that runs as one file", () => {
+  const key = Symbol.for("smthrs/bundle")
+  const holder = globalThis as { [name: symbol]: unknown }
+
+  afterEach(() => {
+    delete holder[key]
+  })
+
+  it("answers an owned import with the bundle's own module, under the same export names", async () => {
+    const instance = { default: "the default", named: { shared: true }, "not-an-identifier": 2 }
+    let initialized = 0
+    holder[key] = {
+      url: import.meta.url,
+      modules: new Map([["effect/OneFileMarker", () => {
+        initialized += 1
+        return instance
+      }]])
+    }
+    const url = await write(
+      "one-file/PACKAGE.ts",
+      [
+        "import marker, * as all from \"effect/OneFileMarker\"",
+        "export const seen = { marker, named: all.named, odd: all[\"not-an-identifier\"], names: Object.keys(all).sort() }"
+      ].join("\n") + "\n"
+    )
+    const seen = (await load(url)).seen as { readonly named: unknown }
+    expect(seen).toEqual({
+      marker: "the default",
+      named: { shared: true },
+      odd: 2,
+      names: ["default", "named", "not-an-identifier"]
+    })
+    // The same object, not a copy of it.
+    expect(seen.named).toBe(instance.named)
+    expect(initialized).toBeGreaterThan(0)
+  })
+
+  it("leaves an owned import the bundle does not hold to the installation", async () => {
+    holder[key] = { url: import.meta.url, modules: new Map() }
+    const url = await write(
+      "one-file-absent/PACKAGE.ts",
+      "import * as Option from \"effect/Option\"\nexport const some: boolean = Option.isSome(Option.some(1))\n"
+    )
+    expect((await load(url)).some).toBe(true)
+  })
+
+  it("leaves a CommonJS require of an owned name to ordinary resolution", async () => {
+    holder[key] = { url: import.meta.url, modules: new Map([["effect/OneFileMarker", () => ({ named: 1 })]]) }
+    const url = await write(
+      "one-file-require/PACKAGE.ts",
+      [
+        "import { createRequire } from \"node:module\"",
+        "let code: unknown = \"loaded\"",
+        "try {",
+        "  createRequire(import.meta.url)(\"effect/OneFileMarker\")",
+        "} catch (cause) {",
+        "  code = (cause as { code?: unknown }).code",
+        "}",
+        "export const required = code"
+      ].join("\n") + "\n"
+    )
+    expect((await load(url)).required).toMatch(/NOT_FOUND|NOT_EXPORTED/)
   })
 })
 

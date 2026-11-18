@@ -50,6 +50,21 @@ export const assertExportTargets = (manifest, files, archiveName = "tarball") =>
   return literalTargets
 }
 
+/**
+ * The one file a package's executable runs, when its manifest names one as
+ * `smthrs.bundle`. The launcher falls back to the separate modules without it,
+ * so a tarball that lost the file still starts, several times slower, and no
+ * other check would say so.
+ */
+export const assertBundle = (manifest, files, archiveName = "tarball") => {
+  const bundle = manifest.smthrs?.bundle
+  if (bundle === undefined) return false
+  if (typeof bundle !== "string" || !bundle.startsWith("./") || !files.has(`package/${bundle.slice(2)}`)) {
+    throw new Error(`${manifest.name ?? "unnamed package"} bundle ${JSON.stringify(bundle)} is missing or is not a regular file in ${archiveName}`)
+  }
+  return true
+}
+
 /** Read only: no archive member is extracted onto the filesystem. Refuses any local credential entry. */
 export const assertPackedExportTargets = (tarball) => {
   const options = { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 30000 }
@@ -64,5 +79,6 @@ export const assertPackedExportTargets = (tarball) => {
   if (secrets.length > 0) throw new Error(`Local credential files ${secrets.join(", ")} in ${basename(tarball)}`)
   if (!files.has("package/package.json")) throw new Error(`Missing regular package/package.json in ${basename(tarball)}`)
   const manifest = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/package.json"], options))
+  assertBundle(manifest, files, basename(tarball))
   return { name: manifest.name, literalTargets: assertExportTargets(manifest, files, basename(tarball)) }
 }

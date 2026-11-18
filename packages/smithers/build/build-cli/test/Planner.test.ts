@@ -16,6 +16,7 @@ import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
+import { pathToFileURL } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import {
   encodeKeyMaterial,
@@ -493,7 +494,8 @@ describe("implementationFingerprint", () => {
   it("rejects aggregate source bytes across roots before hashing any root", async () => {
     const roots = await Promise.all([scratch(), scratch(), scratch()])
     for (const directory of roots) {
-      for (let index = 0; index < 22; index += 1) {
+      // Seven files of the largest size fit one root's ceiling; three such roots do not fit the aggregate.
+      for (let index = 0; index < 7; index += 1) {
         const source = NodePath.join(directory, `${String(index).padStart(3, "0")}.ts`)
         await Fs.writeFile(source, "x", "utf8")
         await Fs.truncate(source, maximumSourceFileBytes)
@@ -510,6 +512,33 @@ describe("implementationFingerprint", () => {
     await expect(fingerprintSources(roots.map((directory, index) => ({ name: `x${index}`, directory })), { io }))
       .rejects.toThrow(/implementation sources exceed/)
     expect(opened).toBe(0)
+  })
+
+  /**
+   * A published `@smthrs/cli` runs as one file that holds the packages the
+   * separate roots name, and publishes its address under a global symbol. The
+   * bytes that decide an execution are then that file and tsx, so those are
+   * what the fingerprint reads: a new release, or a patched file, is a new key.
+   */
+  it("fingerprints the one file a published CLI runs, and tsx beside it", async () => {
+    const directory = await Fs.realpath(await scratch())
+    const program = NodePath.join(directory, "bin.js")
+    await Fs.writeFile(program, "export const program = 1\n", "utf8")
+    const key = Symbol.for("smthrs/bundle")
+    const holder = globalThis as { [name: symbol]: unknown }
+    holder[key] = { url: pathToFileURL(program).href }
+    try {
+      const roots = productionSourceRoots()
+      expect(roots.map((root) => root.name)).toEqual(["bundle", "tsx"])
+      expect(roots[0]!.directory).toBe(directory)
+      const before = await fingerprintSources(roots)
+      expect(await fingerprintSources(roots)).toBe(before)
+      await Fs.writeFile(program, "export const program = 2\n", "utf8")
+      expect(await fingerprintSources(roots)).not.toBe(before)
+    } finally {
+      delete holder[key]
+    }
+    expect(productionSourceRoots()[0]!.name).toBe("cli")
   })
 
   it("rejects a source that grows after admission before hashing it", async () => {

@@ -92983,6 +92983,45 @@
     }
   },
   {
+    "label": "//packages/smithers:cliBundle",
+    "package": "packages/smithers",
+    "name": "cliBundle",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/build-bundle.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/build-bundle.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/bin/bundle-origin.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/effect-resolution.js"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers:lib"
+    ],
+    "source": {
+      "file": "packages/smithers/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers:cliInstall",
     "package": "packages/smithers",
     "name": "cliInstall",
@@ -93322,6 +93361,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/scripts/build-tui.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/build-bundle.mjs"
       },
       {
         "kind": "file",

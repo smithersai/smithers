@@ -130,10 +130,11 @@ const { check, circular, docs: readmeDocs, docsFiles, fmt, lib, lint } = BuildAn
   // aggregate coverage gate in one run, with twice the observed completed
   // duration available; individual test deadlines remain unchanged.
   testTimeoutMs: 40 * 60_000,
-  // `scripts/build.mjs` bundles the TUI that `smthrs tui` runs.
+  // `scripts/build.mjs` bundles the TUI that `smthrs tui` runs and the one file a published `smthrs` runs.
   buildInputs: [
     Smithers.glob("vendor/opentui-native/**"),
     Smithers.file("scripts/build-tui.mjs"),
+    Smithers.file("scripts/build-bundle.mjs"),
     Smithers.file("scripts/tui-native-editor.mjs")
   ],
   tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
@@ -340,6 +341,26 @@ const tuiBundleExternals = Smithers.NodeTest({
     Smithers.file("//apps/tui/package.json"),
     Smithers.file("//apps/tui/tsconfig.json"),
     Smithers.file("//tsconfig.base.json")
+  ],
+  deps: [lib]
+})
+
+/**
+ * The one file a published `smthrs` runs (`build-bundle.mjs`): an inlined
+ * module keeps the address it is published at, a package left outside
+ * resolves from its importer, every package a workspace file shares with the
+ * CLI is in the bundle's table, and the real program bundles.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const cliBundle = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/scripts/build-bundle.test.mjs")]),
+  srcs: [
+    Smithers.file("//packages/smithers/scripts/build-bundle.mjs"),
+    Smithers.file("//packages/smithers/bin/bundle-origin.mjs"),
+    Smithers.file("//packages/smithers/package.json"),
+    Smithers.file("//packages/smithers/build/build-cli/src/effect-resolution.js")
   ],
   deps: [lib]
 })
@@ -578,6 +599,7 @@ export const Package = Smithers.Package({
     hostProcessSampler,
     commonJsBuild,
     cliInstall,
+    cliBundle,
     tuiBundleExternals,
     lib,
     lint,

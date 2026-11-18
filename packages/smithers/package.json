@@ -5,6 +5,7 @@
   "license": "MIT",
   "smthrs": {
     "group": "agent",
+    "bundle": "./dist/bundle/bin.js",
     "privateEffectAdapters": [
       "@effect/platform-bun",
       "@effect/platform-node",

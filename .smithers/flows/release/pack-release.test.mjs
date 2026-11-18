@@ -10,7 +10,7 @@ import test from "node:test"
 import { gunzipSync } from "node:zlib"
 import { pathToFileURL } from "node:url"
 import { parse, stringify } from "yaml"
-import { assertExportTargets, assertPackedExportTargets, isLocalSecret } from "./packed-export-targets.mjs"
+import { assertBundle, assertExportTargets, assertPackedExportTargets, isLocalSecret } from "./packed-export-targets.mjs"
 import {
   assertEffectPins,
   effectDeclarations,
@@ -1071,6 +1071,33 @@ test("packed exports traverse nested conditions and arrays while preserving null
       return true
     })
   }
+})
+
+test("a package that names a bundle packs it, and one that names none is not asked for one", () => {
+  const files = new Set(["package/package.json", "package/dist/bundle/bin.js"])
+  assert.equal(assertBundle({ name: "plain" }, files), false)
+  assert.equal(assertBundle({ name: "bundled", smthrs: { bundle: "./dist/bundle/bin.js" } }, files), true)
+  for (const bundle of ["./dist/bundle/absent.js", "dist/bundle/bin.js", "./dist/bundle", 42, null]) {
+    assert.throws(
+      () => assertBundle({ name: "bundled", smthrs: { bundle } }, files, "fixture.tgz"),
+      /bundled bundle .* is missing or is not a regular file in fixture\.tgz/
+    )
+  }
+})
+
+test("the CLI names the one file its launcher runs, and its files globs pack it", () => {
+  const source = join(repoRoot, "packages/smithers")
+  const manifest = JSON.parse(readFileSync(join(source, "package.json"), "utf8"))
+  assert.equal(manifest.smthrs.bundle, "./dist/bundle/bin.js")
+  assert.equal(publicationManifest(manifest).smthrs.bundle, manifest.smthrs.bundle)
+  assert.ok(manifest.files.some((pattern) => packsPath(pattern, manifest.smthrs.bundle.slice(2))))
+  // The launcher and the file that finds the bundled packages' installed files ship beside it.
+  for (const file of ["bin/smithers.mjs", "bin/bundle-origin.mjs"]) {
+    assert.ok(existsSync(join(source, file)))
+    assert.ok(manifest.files.some((pattern) => packsPath(pattern, file)))
+  }
+  assert.match(readFileSync(join(source, "bin/smithers.mjs"), "utf8"), /"\.\.\/dist\/bundle\/bin\.js"/)
+  assert.match(readFileSync(join(source, "scripts/build.mjs"), "utf8"), /await buildBundle\(\)/)
 })
 
 test("packed export targets refuse unsafe paths and malformed leaves", () => {

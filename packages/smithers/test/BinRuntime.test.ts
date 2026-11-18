@@ -1,6 +1,17 @@
 /** Real executable contracts, scheduled in the bounded CLI worker pool. */
-import { spawn } from "node:child_process"
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { spawn, spawnSync } from "node:child_process"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
+import { stripTypeScriptTypes } from "node:module"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { describe, expect, it } from "vitest"
@@ -360,6 +371,167 @@ describe("the smithers bin shim", processBudget, () => {
       // `src/bin.ts` is right there and must not have run: an installed CLI
       // that type-stripped its own sources would be running unbuilt code.
       expect(result.stdout).not.toContain(Version.packageVersion)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * A published install: `dist/bundle/bin.js` beside `dist/esm`. The staged
+   * bundle is a marker that also proves what the shim sets up before it: an
+   * import the bundle leaves outside resolves from the package that imports
+   * it, and Node keeps compiled code between starts.
+   */
+  const stageInstallation = (root: string, minimum?: string): void => {
+    cpSync(binDirectory, join(root, "bin"), { recursive: true })
+    mkdirSync(join(root, "dist", "esm", "internal"), { recursive: true })
+    mkdirSync(join(root, "dist", "bundle"), { recursive: true })
+    const nodeVersion = stripTypeScriptTypes(
+      readFileSync(join(packageRoot, "src", "internal", "NodeVersion.ts"), "utf8")
+    )
+    writeFileSync(
+      join(root, "dist", "esm", "internal", "NodeVersion.js"),
+      minimum === undefined ? nodeVersion : nodeVersion.replace(/minimum = "[^"]+"/, `minimum = "${minimum}"`)
+    )
+    writeFileSync(join(root, "dist", "esm", "bin.js"), "process.stdout.write(\"separate modules ran\\n\")\n")
+    writeFileSync(
+      join(root, "dist", "bundle", "bin.js"),
+      [
+        "import { getCompileCacheDir } from \"node:module\"",
+        "import inner from \"smthrs-from:outer!inner\"",
+        "process.stdout.write(`one file ran with ${inner}, compile cache ${getCompileCacheDir() === undefined ? \"off\" : \"on\"}\\n`)"
+      ].join("\n") + "\n"
+    )
+    const inner = join(root, "node_modules", "outer", "node_modules", "inner")
+    mkdirSync(inner, { recursive: true })
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "@smthrs/cli", type: "module" }))
+    writeFileSync(join(root, "node_modules", "outer", "package.json"), JSON.stringify({ name: "outer" }))
+    writeFileSync(join(inner, "package.json"), JSON.stringify({ name: "inner", type: "module", exports: "./index.js" }))
+    writeFileSync(join(inner, "index.js"), "export default \"the importer's own inner\"\n")
+  }
+
+  /**
+   * Starts the staged installation with an environment of its own. The suite
+   * turns compiled-code caching off in the children it measures, and these
+   * cases are about what the launcher does with it on, so nothing of the
+   * suite's own caching reaches them.
+   */
+  const startStaged = (
+    root: string,
+    environment: Readonly<Record<string, string>> = { NODE_COMPILE_CACHE: join(root, "compile-cache") }
+  ) => {
+    mkdirSync(join(root, "tmp"), { recursive: true })
+    return spawnSync(process.execPath, [join(root, "bin", "smithers.mjs"), "--version"], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 180_000,
+      env: { PATH: process.env["PATH"] ?? "", HOME: root, TMPDIR: join(root, "tmp"), ...environment }
+    })
+  }
+
+  /** The launcher's own directory of compiled code, under the staged temporary directory. */
+  const ownCompiledCode = (root: string): string =>
+    join(root, "tmp", `smthrs-compile-cache-${process.getuid?.() ?? "user"}`)
+
+  const filesIn = (directory: string): ReadonlyArray<string> =>
+    existsSync(directory)
+      ? readdirSync(directory, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()).map((
+        entry
+      ) => entry.name)
+      : []
+
+  it("runs the one file when the installation has it", () => {
+    const root = mkdtempSync(temporaryDirectoryPrefix)
+    try {
+      stageInstallation(root)
+      const result = startStaged(root)
+      expect(result.error).toBeUndefined()
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toBe("one file ran with the importer's own inner, compile cache on\n")
+      expect(readdirSync(join(root, "compile-cache")).length).toBeGreaterThan(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps compiled code in a directory of its own when the person names none", () => {
+    const root = mkdtempSync(temporaryDirectoryPrefix)
+    try {
+      stageInstallation(root)
+      const result = startStaged(root, {})
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toBe("one file ran with the importer's own inner, compile cache on\n")
+      expect(filesIn(ownCompiledCode(root)).length).toBeGreaterThan(0)
+      expect(existsSync(join(root, "compile-cache"))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("empties its own directory of compiled code once it holds more than 512 files", () => {
+    // Each start leaves a few files no later start reads: a workspace's
+    // declaration files are compiled under a new address every time.
+    const root = mkdtempSync(temporaryDirectoryPrefix)
+    try {
+      stageInstallation(root)
+      const stale = join(ownCompiledCode(root), "left-by-earlier-starts")
+      mkdirSync(stale, { recursive: true })
+      for (let index = 0; index < 512; index++) writeFileSync(join(stale, `module-${index}`), "compiled")
+      // 512 files and one directory: one more than the limit.
+      expect(startStaged(root, {}).status).toBe(0)
+      expect(existsSync(stale)).toBe(false)
+      const kept = filesIn(ownCompiledCode(root))
+      expect(kept.length).toBeGreaterThan(0)
+      expect(kept.length).toBeLessThan(16)
+
+      // Under the limit nothing is removed.
+      mkdirSync(stale, { recursive: true })
+      for (let index = 0; index < 256; index++) writeFileSync(join(stale, `module-${index}`), "compiled")
+      expect(startStaged(root, {}).status).toBe(0)
+      expect(filesIn(stale).length).toBe(256)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("leaves a directory the person named alone, however much it holds", () => {
+    const root = mkdtempSync(temporaryDirectoryPrefix)
+    try {
+      stageInstallation(root)
+      const named = join(root, "compile-cache", "theirs")
+      mkdirSync(named, { recursive: true })
+      for (let index = 0; index < 600; index++) writeFileSync(join(named, `module-${index}`), "compiled")
+      expect(startStaged(root).status).toBe(0)
+      expect(filesIn(named).length).toBe(600)
+      expect(existsSync(ownCompiledCode(root))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps no compiled code when NODE_DISABLE_COMPILE_CACHE asks for none", () => {
+    const root = mkdtempSync(temporaryDirectoryPrefix)
+    try {
+      stageInstallation(root)
+      const result = startStaged(root, { NODE_DISABLE_COMPILE_CACHE: "1" })
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toBe("one file ran with the importer's own inner, compile cache off\n")
+      expect(existsSync(ownCompiledCode(root))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("runs the separate modules on a Node older than the supported one, so their entry can refuse it by name", () => {
+    // The bundle names every Node builtin the program uses when it loads, and
+    // an older Node may lack one. The staged installation asks for a Node no
+    // host has, which is how this Node stands in for an old one.
+    const root = mkdtempSync(temporaryDirectoryPrefix)
+    try {
+      stageInstallation(root, "999.0.0")
+      const result = startStaged(root)
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toBe("separate modules ran\n")
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

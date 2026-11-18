@@ -405,13 +405,14 @@ const maximumSourceDirectories = 50_000
 const maximumSourceEntries = 1_000_000
 const maximumSourceDepth = 128
 /**
- * Maximum bytes admitted from one implementation source file.
+ * Maximum bytes admitted from one implementation source file. The largest is
+ * the one file a published `@smthrs/cli` runs, about 32 MiB.
  *
  * @category limits
  * @since 0.1.0
  * @slop
  */
-export const maximumSourceFileBytes = 16 * 1024 * 1024
+export const maximumSourceFileBytes = 64 * 1024 * 1024
 const maximumSourceRootBytes = 512 * 1024 * 1024
 const maximumImplementationBytes = 1024 * 1024 * 1024
 
@@ -750,7 +751,18 @@ const loadedModuleRoot = (name: string, specifier: string): SourceRoot => ({
  * @since 0.1.0
  * @slop
  */
-export const productionSourceRoots = (): ReadonlyArray<SourceRoot> => [
+export const productionSourceRoots = (): ReadonlyArray<SourceRoot> => {
+  // A published `@smthrs/cli` runs as one file that holds every package below
+  // but tsx, so that file and tsx are the bytes that decide an execution.
+  const bundle = (globalThis as { [bundleKey]?: { readonly url: string } })[bundleKey]
+  return bundle !== undefined
+    ? [{ name: "bundle", directory: NodePath.dirname(fileURLToPath(bundle.url)) }, loadedModuleRoot("tsx", "tsx")]
+    : separateSourceRoots()
+}
+
+const bundleKey: unique symbol = Symbol.for("smthrs/bundle") as never
+
+const separateSourceRoots = (): ReadonlyArray<SourceRoot> => [
   { name: "cli", directory: cliSourceDirectory },
   loadedModuleRoot("targets", "@smthrs/targets"),
   loadedModuleRoot("platform-node", "@smthrs/platform-node"),
