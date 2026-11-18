@@ -78,8 +78,8 @@ describe("the first step of a job that needs another job", () => {
       commit: "0000000000000000000000000000000000000005",
       toolchains: [],
       jobs: [
-        // Its first step rewrites a file the next job is tested from. It always runs and names no outputs, so
-        // nobody knows what it wrote.
+        // Its first step rewrites a file the next job is tested from. It names no outputs, so nobody knows what
+        // it wrote but the record of its run.
         job("generate", [
           { id: "generate:1", command: "cat config.txt > src/a.txt", cwd: "", env: {}, secrets: [] },
           { id: "generate:2", command: "grep -q two src/a.txt", cwd: "", env: {}, secrets: [] }
@@ -108,8 +108,9 @@ describe("the first step of a job that needs another job", () => {
       expect(declared).toContain(`machine: "generate"`)
       const checked = (name: string) => {
         const { statuses, output } = execute(root, name)
-        expect(statuses["generate-1"], output).toBe("ran")
-        expect(statuses["generate-2"], output).not.toBe("failed")
+        // The needed job passes, run or answered from its records: nothing it read changes here.
+        expect(["ran", "hit"], output).toContain(statuses["generate-1"])
+        expect(["ran", "hit"], output).toContain(statuses["generate-2"])
         return statuses["check-1"]
       }
       // `generate` writes "two" into its own copy of the file, and its second step finds it there. `check` reads

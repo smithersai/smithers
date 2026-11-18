@@ -79,22 +79,25 @@ describe("a workflow whose steps pass values through GITHUB_ENV", () => {
           mismatches: replayed?.mismatches
         }
       }
-      // Five commands: two that pass a value on, which always run, and three checks.
-      expect(normal("base")).toEqual({ baseline: true, hit: 0, failed: 0, steps: 5, mismatches: [] })
-      // No check opened the docs. The one that names the commit runs again: its commit is another.
-      expect(normal("docs only")).toEqual({ baseline: true, hit: 2, failed: 0, steps: 5, mismatches: [] })
-      // The check of `version` was given another VERSION, so it runs again and fails as the workflow does on GitHub.
-      expect(normal("version 2")).toEqual({ baseline: false, hit: 1, failed: 1, steps: 5, mismatches: [] })
-      // Every value and file is as a passing run found it.
-      expect(normal("version 1 again")).toEqual({ baseline: true, hit: 2, failed: 0, steps: 5, mismatches: [] })
-      // All three checks opened the file.
-      expect(normal("the checked file changes")).toEqual({
-        baseline: true,
-        hit: 0,
-        failed: 0,
-        steps: 5,
-        mismatches: []
-      })
+      const counted = (name: string) => {
+        const { hit, failed, steps, baseline, mismatches } = normal(name)
+        return [name, baseline, hit, failed, steps, mismatches]
+      }
+      // Five commands: two that pass a value on, and three checks. Each line is a commit: whether the repository's
+      // own CI passes, the steps answered from the cache, the steps that failed, and the steps in all.
+      expect(["base", "docs only", "version 2", "version 1 again", "the checked file changes"].map(counted)).toEqual([
+        // Nothing to reuse yet.
+        ["base", true, 0, 0, 5, []],
+        // No step opened the docs. The check that names the commit runs: its commit is another.
+        ["docs only", true, 4, 0, 5, []],
+        // The step that reads `version.txt` runs and gives another VERSION, so the check of `version` runs again
+        // and fails as the workflow does on GitHub. `alone` and the first step of `sha` read neither.
+        ["version 2", false, 2, 1, 5, []],
+        // Every value and file is as a passing run found it.
+        ["version 1 again", true, 4, 0, 5, []],
+        // All three checks opened the file. The two steps that pass a value on did not.
+        ["the checked file changes", true, 2, 0, 5, []]
+      ])
       expect(report.mismatches).toBe(0)
       expect(outcome.code).toBe(0)
     },

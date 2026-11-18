@@ -222,8 +222,31 @@ when a file it read changed, when a file appeared in a directory it listed, or
 when a path it looked for now exists. A change to a file it never read, the
 docs for one, does not run it.
 
+The steps of a job follow each other in one checkout: an install leaves a
+tree, a build leaves its files, and the step after reads them. Each step is
+recorded the same way, and what each step left is kept with its record. A
+commit that changes nothing a job's steps read runs no step of it: no install,
+no build, no test, in a fresh checkout too. When one step has to run, what the
+steps before it left is put back first, and they do not run.
+
+| Commit changes             | `npm ci` | `npm run lint` | `npm test` |
+| -------------------------- | -------- | -------------- | ---------- |
+| Only docs                  | hit      | hit            | hit        |
+| A file only the tests read | hit      | hit            | runs       |
+| The lint configuration     | hit      | runs           | hit        |
+| `package-lock.json`        | runs     | runs           | runs       |
+
 A step that reached the network, or a program outside its own run, stores
-nothing and runs every time: what those answered is on no list. Recording
+nothing and runs every time: what those answered is on no list. An install
+that fetches exactly what a lockfile pins is the exception, because the
+lockfile it read fixes what it fetches: `npm ci`, `pnpm install
+--frozen-lockfile`, `yarn install --immutable`, `bun install
+--frozen-lockfile`, `uv sync --locked`, `pip install --require-hashes`, `go mod
+download` and `cargo fetch --locked` are stored like any other step. `npm
+install` and `pip install -r requirements.txt` may pick a version when they
+run, so they run every time. A step that restores or saves a cache, such as
+`actions/cache`, also runs every time: what it keeps lives from one run to the
+next, and the record of a run does not hold it. Recording
 needs Linux with `strace`, which the generated workflow installs on its
 runners. On any other system such a step runs on every change, as it does in
 the repository's CI today, and a replay says once on standard error that this

@@ -105,6 +105,17 @@ export const compiledCode = "node-compile-cache"
  */
 export const stateDirectory = "${{ runner.temp }}/smithers-ci"
 
+/**
+ * Where Smithers build keeps what each observed step left, in its cache
+ * directory: the generated workflow carries it from one run to the next with
+ * the results, so a step that has to run finds what the steps before it left
+ * without running them.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const keptFiles = "kept"
+
 // The limit a baseline step has, which is GitHub's for a job; the build's own default is 30 minutes.
 const stepTimeout = `${stepTimeoutHours}h`
 
@@ -149,28 +160,36 @@ const renderWorkspace = (inventory: Inventory): ReadonlyArray<string> => [
 
 // True for a target held to its step's inputs by the read sandbox.
 const narrows = (target: StepTarget, narrowed: boolean): boolean =>
-  narrowed && target.rule === "check" && target.inputs !== undefined
+  narrowed && target.rule === "check" && target.inputs !== undefined && !target.keeps
 
-// Paths a tool writes each time it starts and never reads to decide its result: npm keeps a log of every command
-// in the first, and Node keeps the code it compiled in the second, which is not the same bytes from one run to the
-// next. Left out of what an observed step read, they cannot make it run again. A job's temporary directory is
-// empty when the job starts, so a step that read the compiled code an earlier step of its job left would never
-// be reused.
-const bookkeeping: ReadonlyArray<string> = ["~/.npm/_logs", "$TMPDIR/node-compile-cache"]
+// Paths a tool writes as it runs and never reads to decide its result: npm keeps a log of every command in the
+// first, Node keeps the code it compiled in the second, which it checks against the source before it uses it and
+// which is not the same bytes from one run to the next, and Go's tools count their runs in the third. Left out of
+// what an observed step read, they cannot make it run again. A job's temporary directory is empty when the job
+// starts, so a step that read the compiled code an earlier step of its job left would never be reused.
+const bookkeeping: ReadonlyArray<string> = ["~/.npm/_logs", "$TMPDIR/node-compile-cache", "~/.config/go/telemetry"]
 
-// True for a target whose step names no inputs, so nobody knows what it reads. Smithers build observes it: the run
-// is traced, the result is stored with every path the run looked at, and the target runs again only when one of
-// those paths changed. The whole repository it declares is then the most it may read, not what reruns it.
+// True for a setup target that names what it reads and what it writes. It is a build that always runs: its inputs
+// enter the key of every target after it, and its outputs enter their read set.
+const builds = (target: StepTarget, narrowed: boolean): boolean =>
+  narrowed && target.rule === "setup" && target.outputs !== undefined
+
+// True for a target whose step does not say what it reads. Smithers build observes it: the run is traced, the
+// result is stored with every path the run looked at, and the target runs again only when one of those paths
+// changed. A setup target is observed too: what it left for the steps after it is kept with its record and put back
+// when one of them has to run.
+//
+// A step that keeps files in the build's cache directory from one run to the next is not observed: no record
+// holds what it found there, so it always runs, as a step that restores a cache must.
 const observes = (target: StepTarget, narrowed: boolean): boolean =>
-  target.rule === "check" && !narrows(target, narrowed)
+  !narrows(target, narrowed) && !builds(target, narrowed) && !target.keeps
 
 // The files a target declares.
 //
-// A setup target always runs. One that names what it reads and what it writes
-// declares both: its inputs enter the key of every target after it, and its
-// outputs enter their read set. Any other setup target declares no files: a
-// setup target that declared the repository would rerun every target after it
-// on any change, and a target after it declares the whole repository itself.
+// A setup target that names what it reads and what it writes declares both.
+// Any other setup target declares no files: a setup target that declared the
+// repository would change the key of every target after it on any change, and
+// a target after it declares the whole repository itself.
 //
 // Any other target declares its step's inputs, or the whole repository when
 // `inputs` is `undefined`.
@@ -179,10 +198,10 @@ const filesOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string> =
   return target.rule === "setup" ? [] : ["repository"]
 }
 
-// What a setup target declares it writes: the step's own outputs when it names them. It runs every time and its
-// result is never reused, so it may declare none.
-const outputsOf = (target: StepTarget, narrowed: boolean): ReadonlyArray<string> => {
-  const own = narrowed && target.outputs !== undefined ? target.outputs : { directories: [], files: [] }
+// What a setup target that is a build declares it writes: the step's own outputs. It runs every time and its
+// result is never reused.
+const outputsOf = (target: StepTarget): ReadonlyArray<string> => {
+  const own = target.outputs as NonNullable<StepTarget["outputs"]>
   return [
     ...(own.files.length === 0 ? [] : [`outFiles: [${own.files.map((file) => text(`//${file}`)).join(", ")}]`]),
     ...(own.directories.length === 0
@@ -234,9 +253,10 @@ const renderTarget = (
   const observed = observes(target, narrowed)
   const held = narrows(target, narrowed) && target.runEnv.length > 0
   const inheritEnv = inheritedBy(target, passed, observed || held)
+  const build = builds(target, narrowed)
   const fields = [
     `shell: ${text(target.script)}`,
-    ...(target.rule === "setup" ? outputsOf(target, narrowed) : []),
+    ...(build ? outputsOf(target) : target.keeps ? [`cache: false`] : []),
     // A step that keeps a tool's own cache names a directory under the tool cache, which is named whole, from
     // Smithers build's own cache directory: the same one on a machine and from any directory a step starts in.
     ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
@@ -256,7 +276,7 @@ const renderTarget = (
   return [
     comment(target.title),
     ...target.also.map((same) => comment(`${same.title}: the same step, run once`)),
-    `const step${index} = S.Shell.${target.rule === "setup" ? "Build" : "Test"}({`,
+    `const step${index} = S.Shell.${build || target.keeps ? "Build" : "Test"}({`,
     fields.map((field) => `  ${field}`).join(",\n"),
     `})`,
     ``
@@ -283,7 +303,7 @@ const renderDeclaration = (
     ...renderWorkspace(inventory),
     comment("A step can read any file, so a target declares the whole repository unless its step names what it reads."),
     comment("Such a target is observed: it runs again only when a file its last run read has changed."),
-    comment("A setup target always runs. It declares files only when its step names what it reads and writes."),
+    comment("What a step left for the steps after it is kept, and put back when one of them has to run."),
     comment(
       "The targets of one job name the job's machine, with a checkout, a home and a temporary directory of its own."
     ),
@@ -550,14 +570,16 @@ const renderWorkflow = (
     ...(confined ? sandboxSetup : [...(machines.size > 0 ? ownTmpSetup : []), ...tokenSetup(cache)]),
     ...(observed ? tracerSetup : []),
     `      ${yamlComment("Unconfined results never reach a remote cache, so the runner keeps its own.")}`,
-    `      ${yamlComment("It also keeps the compiled code of smthrs, so the next run starts sooner.")}`,
+    `      ${yamlComment("It also keeps what each step left, so a later step runs without the steps before it,")}`,
+    `      ${yamlComment("and the compiled code of smthrs, so the next run starts sooner.")}`,
     `      ${
-      yamlComment("Both are kept outside the checkout: a step that lists its files finds only the repository's.")
+      yamlComment("All of it is kept outside the checkout: a step that lists its files finds only the repository's.")
     }`,
     `      - uses: actions/cache@v4`,
     `        with:`,
     `          path: |`,
     `            ${stateDirectory}/cache`,
+    `            ${stateDirectory}/${keptFiles}`,
     ...(keepsTools ? [`            ${stateDirectory}/tools`] : []),
     `            ${stateDirectory}/${compiledCode}`,
     `          key: ${cacheKey}\${{ github.sha }}`,

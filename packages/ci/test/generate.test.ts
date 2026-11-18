@@ -30,6 +30,7 @@ import { forShell, forText } from "../src/generate/Expressions.ts"
 import { files } from "../src/generate/index.ts"
 import {
   compiledCode,
+  keptFiles,
   legsPath,
   noSharedCache,
   notesPath,
@@ -276,16 +277,63 @@ describe("files", () => {
 })
 
 describe("what a step becomes", () => {
-  it("replays only a step nothing later relies on", () => {
+  it("observes every step, and gives a step a later step relies on no files of its own", () => {
     const source = targetsOf(inventory([job("a", [step("a:1", "bun install"), step("a:2", "bun test")])]))
-    expect(declaration(source, "a-1")).toContain("S.Shell.Build(")
-    expect(declaration(source, "a-1")).toContain("cache: false")
-    // It is never reused, so it declares no file of its own to say that it ran: nothing is written for Smithers CI.
-    expect(declaration(source, "a-1")).not.toContain("outFiles")
+    // What the install left is not restored: the build runs it again when the test runs, and only then.
+    expect(declaration(source, "a-1")).toContain("S.Shell.Test(")
+    expect(declaration(source, "a-1")).toContain(`shell: "bash -e -c 'bun install'"`)
+    expect(declaration(source, "a-1")).toContain(
+      `observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache","~/.config/go/telemetry"] }`
+    )
+    expect(declaration(source, "a-1")).toContain("data: []")
+    // Nothing is written for Smithers CI: no step declares a file of its own to say that it ran.
+    expect(source).not.toContain("S.Shell.Build(")
+    expect(source).not.toContain("outFiles")
     expect(source).not.toContain(".flows/ci")
+    expect(source).toContain(
+      "// What a step left for the steps after it is kept, and put back when one of them has to run."
+    )
     expect(declaration(source, "a-2")).toContain("S.Shell.Test(")
+    expect(declaration(source, "a-2")).toContain(
+      `observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache","~/.config/go/telemetry"] }`
+    )
     expect(declaration(source, "a-2")).toContain(`shell: "bash -e -c 'bun test'"`)
     expect(declaration(source, "a-2")).toMatch(/data: \[repository, step\d+\]/)
+  })
+
+  it("always runs a step that keeps files in the build's cache directory, and observes the steps around it", () => {
+    // The text a step that restores or saves a cache is run as: it reads where Smithers build keeps its cache.
+    const runner = `${runnerEntry}() { __kept='{smthrs:cache-directory}'; bash -e -c "$1"; }`
+    const source = targetsOf(inventory([
+      job("a", [
+        step("a:1", "restore", { runner }),
+        step("a:2", "npm ci"),
+        step("a:3", "npm test"),
+        step("a:4", "save", { runner })
+      ])
+    ]))
+    for (const label of ["a-1", "a-4"]) {
+      // What the step finds in the cache directory is in no record, so no result of it is reused.
+      expect(declaration(source, label)).toContain("S.Shell.Build(")
+      expect(declaration(source, label)).toContain("cache: false")
+      expect(declaration(source, label)).not.toContain("observe")
+      expect(declaration(source, label)).not.toContain("outFiles")
+      expect(declaration(source, label)).toContain(`sandbox: "none"`)
+    }
+    expect(declaration(source, "a-1")).toContain("data: []")
+    expect(declaration(source, "a-4")).toMatch(/data: \[repository, step\d+\]/)
+    for (const label of ["a-2", "a-3"]) {
+      expect(declaration(source, label)).toContain("S.Shell.Test(")
+      expect(declaration(source, label)).toContain(
+        `observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache","~/.config/go/telemetry"] }`
+      )
+    }
+    // Alone in its job and naming its inputs, it still always runs: its inputs do not name the cache directory.
+    const alone = targetsOf(inventory([job("b", [step("b:1", "restore", { runner, inputs: ["lock.json"] })])]))
+    expect(declaration(alone, "b-1")).toContain(`data: [S.glob("//lock.json")]`)
+    expect(declaration(alone, "b-1")).toContain("S.Shell.Build(")
+    expect(declaration(alone, "b-1")).toContain("cache: false")
+    expect(declaration(alone, "b-1")).toContain(`sandbox: "none"`)
   })
 
   it("treats a needed job as setup only when the jobs share a working tree", () => {
@@ -293,12 +341,12 @@ describe("what a step becomes", () => {
       job("build", [step("build:1", "make")], { source: "justfile", triggers: [] }),
       job("test", [step("test:1", "make test")], { source: "justfile", triggers: [], needs: ["build"] })
     ]))
-    expect(declaration(shared, "build-1")).toContain("S.Shell.Build(")
+    expect(declaration(shared, "build-1")).toContain("data: []")
     const separate = targetsOf(inventory([
       job("build", [step("build:1", "make")]),
       job("test", [step("test:1", "make test")], { needs: ["build"] })
     ]))
-    expect(declaration(separate, "build-1")).toContain("S.Shell.Test(")
+    expect(declaration(separate, "build-1")).toContain("data: [repository]")
     expect(declaration(separate, "test-1")).toMatch(/data: \[repository, step0\]/)
   })
 
@@ -312,13 +360,13 @@ describe("what a step becomes", () => {
       })
     // `ci: build test`: neither recipe needs the other, and `just ci` still runs `build` first.
     const listed = targetsOf(inventory([recipe("build"), recipe("test")]))
-    expect(declaration(listed, "build-1")).toContain("S.Shell.Build(")
+    expect(declaration(listed, "build-1")).toContain("S.Shell.Test(")
     expect(declaration(listed, "build-1")).toContain("data: []")
     expect(declaration(listed, "test-1")).toContain("S.Shell.Test(")
     expect(declaration(listed, "test-1")).toContain("data: [repository, step0]")
     // `ci: test build` runs them the other way round.
     const reversed = targetsOf(inventory([recipe("test"), recipe("build")]))
-    expect(declaration(reversed, "test-1")).toContain("S.Shell.Build(")
+    expect(declaration(reversed, "test-1")).toContain("data: []")
     expect(declaration(reversed, "build-1")).toContain("data: [repository, step0]")
     // What a recipe needs runs before it, and each recipe waits for the one before it only once.
     const needing = targetsOf(inventory([
@@ -348,9 +396,7 @@ describe("what a step becomes", () => {
       job("c", [step("c:1", "#!/usr/bin/env bash\n[[ -f x ]]")], { source: "justfile", file: "justfile", name: "test" })
     ]))
     expect(declaration(source, "a-1")).toContain(
-      JSON.stringify(
-        `bash -e -c 'echo '\\''hi'\\'' && false\necho next'`
-      )
+      JSON.stringify(`bash -e -c 'echo '\\''hi'\\'' && false\necho next'`)
     )
     // A command of plain words is no exception: `source` and `time` are not `/bin/sh` words.
     expect(declaration(source, "a-2")).toContain(`shell: "${shell.join(" ")} 'source scripts/check.sh'"`)
@@ -436,23 +482,24 @@ describe("what a step becomes", () => {
       "GITHUB_SHA",
       "GITHUB_WORKFLOW_SHA"
     ])
-    // A step the steps after it wait for always runs and is not observed: every value is part of its key.
-    expect(declaration(source, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn(runGiven))}`)
-    expect(declaration(source, "a-1")).not.toContain("observe")
+    const ignore = JSON.stringify(["~/.npm/_logs", "$TMPDIR/node-compile-cache", "~/.config/go/telemetry"])
+    // A step the steps after it wait for is observed as the last one is: what a run gives is passed on with its
+    // value out of the key.
+    expect(declaration(source, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
+    expect(declaration(source, "a-1")).toContain(`observe: { ignore: ${ignore}, env: ${run} }`)
     // Smithers build refuses a variable a target both sets and passes on, and the step's value is the one it means.
     expect(declaration(source, "a-3")).toContain(
-      `inheritEnv: ${
-        JSON.stringify(passedOn(runGiven).filter((name) => name !== "GITHUB_SHA" && name !== eventsVariable))
-      }`
+      `inheritEnv: ${JSON.stringify(passedOn().filter((name) => name !== eventsVariable))}`
+    )
+    expect(declaration(source, "a-3")).toContain(
+      `observe: { ignore: ${ignore}, env: ${JSON.stringify(runGiven.filter((name) => name !== "GITHUB_SHA"))} }`
     )
     // A step without runner text is given no runner variable it does not name.
-    expect(declaration(source, "a-4")).toContain(`observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache"] }`)
+    expect(declaration(source, "a-4")).toContain(`observe: { ignore: ${ignore} }`)
     expect(declaration(source, "a-4")).not.toContain("inheritEnv")
     const last = targetsOf(inventory([job("a", [step("a:1", "npm test", { runner })])]))
     expect(declaration(last, "a-1")).toContain(`inheritEnv: ${JSON.stringify(passedOn())}`)
-    expect(declaration(last, "a-1")).toContain(
-      `observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache"], env: ${run} }`
-    )
+    expect(declaration(last, "a-1")).toContain(`observe: { ignore: ${ignore}, env: ${run} }`)
   })
 
   it("holds a step with runner text to its inputs only as its job's first step, and never when it reads the commit", () => {
@@ -632,7 +679,9 @@ describe("a step two jobs both run", () => {
     expect(labels(source)).toEqual(["lint-1", "lint-2", "test-1", "test-2"])
     expect(source).not.toContain("the same step, run once")
     for (const name of ["lint", "test"]) {
-      expect(declaration(source, `${name}-1`)).toContain("S.Shell.Build(")
+      // The install is recorded like any other step, and declares no files of its own.
+      expect(declaration(source, `${name}-1`)).toContain("S.Shell.Test(")
+      expect(declaration(source, `${name}-1`)).toContain("data: []")
       expect(declaration(source, `${name}-1`)).toContain(`machine: "${name}"`)
       expect(declaration(source, `${name}-2`)).toContain(`machine: "${name}"`)
     }
@@ -964,10 +1013,12 @@ describe("a step that names what it reads", () => {
     const source = targetsOf(inventory([job("a", [step("a:1", "npm ci"), step("a:2", "npm test")]), job("b", parts)]))
     // What the step reads is recorded when it runs; npm's own log directory is left out of the record.
     expect(declaration(source, "a-2")).toContain(
-      `  sandbox: "none",\n  observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache"] },\n`
+      `  sandbox: "none",\n  observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache","~/.config/go/telemetry"] },\n`
     )
-    // A step a later step relies on always runs, and a step held to its inputs is already known.
-    expect(declaration(source, "a-1")).not.toContain("observe")
+    // So is what a step a later step relies on reads; a step held to its inputs is already known.
+    expect(declaration(source, "a-1")).toContain(
+      `  sandbox: "none",\n  observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache","~/.config/go/telemetry"] },\n`
+    )
     expect(declaration(source, "a-2-ui")).not.toContain("observe")
     expect(declaration(source, "a-2-web")).not.toContain("observe")
   })
@@ -975,7 +1026,7 @@ describe("a step that names what it reads", () => {
   it("keeps the whole repository for a step that follows another in its working tree", () => {
     // The install wrote files the package steps read, and nothing says which files it read to write them.
     const source = targetsOf(split())
-    // The setup step always runs and declares no files.
+    // The setup step declares no files.
     expect(declaration(source, "a-1")).toMatch(/data: \[\]/)
     expect(declaration(source, "a-1")).toContain(`sandbox: "none"`)
     for (const label of ["a-2-ui", "a-2-web"]) {
@@ -1012,11 +1063,13 @@ describe("a step that names what it reads", () => {
     expect(declaration(last, "a-2-web")).not.toContain("step1")
     const followed = targetsOf(split([step("a:3", "pnpm run report")]))
     expect(declaration(followed, "a-3")).toMatch(/data: \[repository, step1, step2\]/)
-    // A later step relies on them, so they always run, unconfined, and declare no files.
-    expect(declaration(followed, "a-2-ui")).toContain("S.Shell.Build(")
+    // A later step relies on them, so they run unconfined, are observed, and declare no files.
+    expect(declaration(followed, "a-2-ui")).toContain("S.Shell.Test(")
     expect(declaration(followed, "a-2-ui")).toMatch(/data: \[step0\]/)
     expect(declaration(followed, "a-2-ui")).toContain(`sandbox: "none"`)
-    expect(declaration(followed, "a-2-web")).toContain("cache: false")
+    expect(declaration(followed, "a-2-web")).toContain(
+      `observe: { ignore: ["~/.npm/_logs","$TMPDIR/node-compile-cache","~/.config/go/telemetry"] }`
+    )
   })
 
   it("keeps the order of steps split from a command that ran its parts in order", () => {
@@ -1394,10 +1447,11 @@ describe("the workspace and workflow", () => {
     // Smithers build keeps its cache in a directory of the runner, outside the checkout.
     expect(stateDirectory).toBe("${{ runner.temp }}/smithers-ci")
     expect(workflow).toContain(`smthrs ci '//...' --cache-dir "${stateDirectory}"\n`)
-    // The runner keeps its results and the compiled code of smthrs, and the run reads both.
+    // The runner keeps its results, what each step left and the compiled code of smthrs, and the run reads them.
     expect(workflow).toContain(
-      `          path: |\n            ${stateDirectory}/cache\n            ${stateDirectory}/${compiledCode}\n`
+      `          path: |\n            ${stateDirectory}/cache\n            ${stateDirectory}/${keptFiles}\n            ${stateDirectory}/${compiledCode}\n`
     )
+    expect(keptFiles).toBe("kept")
     expect(workflow.indexOf(`            ${stateDirectory}/${compiledCode}`)).toBeLessThan(
       workflow.indexOf("smthrs ci")
     )

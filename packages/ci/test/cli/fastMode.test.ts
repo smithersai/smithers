@@ -126,7 +126,10 @@ describe("a real replay whose model is lost at the second of three commits", () 
   it("prints the whole normal-mode report and exits 4", async () => {
     // Each commit changes a different kind of file, so each asks the model a new question.
     const root = keep(repository(["first"]))
-    commit(root, "a CI that passes here", { justfile: passingJustfile })
+    // The test recipe reads the notes: a commit that changes them runs it, so the model is asked about it.
+    const reading = passingJustfile.replace("test: build\n    true", "test: build\n    cat notes.md")
+    expect(reading).not.toBe(passingJustfile)
+    commit(root, "a CI that passes here", { justfile: reading, "notes.md": "one\n" })
     commit(root, "second", { "notes.md": "two\n" })
     commit(root, "third", { "notes.txt": "three\n" })
     const lost = modelLostFor((items) => items.some((item) => item.changedFileExtensions.includes(".md")))

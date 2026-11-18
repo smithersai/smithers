@@ -105,35 +105,44 @@ describe("a repository whose CI is npm ci, then npm run lint and npm test", () =
           baseline: replayed?.baseline.ok,
           hit: counts?.hit,
           failed: counts?.failed,
-          // `npm ci` always runs; every other step ran, hit or failed.
+          // Every step ran, was answered from the cache or failed.
           steps: counts === undefined ? undefined : counts.hit + counts.ran + counts.failed + counts.skipped,
           mismatches: replayed?.mismatches
         }
       }
       const steps = normal("lockfile").steps
-      expect(steps).toBeGreaterThanOrEqual(3)
+      expect(steps).toBe(4)
+      // The verdict, the failures and the mismatches of every commit, with the steps that ran or failed.
+      const told = (subject: string) => {
+        const { hit, ...rest } = normal(subject)
+        return { subject, ...rest }
+      }
+      const subjectsOf = [
+        "lockfile",
+        "docs only",
+        "break what a test imports",
+        "repair it",
+        "a new test file that fails"
+      ]
+      expect(subjectsOf.map(told)).toEqual([
+        { subject: "lockfile", baseline: true, failed: 0, steps, mismatches: [] },
+        { subject: "docs only", baseline: true, failed: 0, steps, mismatches: [] },
+        // The test step read the file, so it runs again and fails as the repository's CI does.
+        { subject: "break what a test imports", baseline: false, failed: 1, steps, mismatches: [] },
+        { subject: "repair it", baseline: true, failed: 0, steps, mismatches: [] },
+        // A new file in a directory the test runner listed: the test step runs again and finds the failing test.
+        { subject: "a new test file that fails", baseline: false, failed: 1, steps, mismatches: [] }
+      ])
       // The first commit has nothing to reuse.
-      expect(normal("lockfile")).toEqual({ baseline: true, hit: 0, failed: 0, steps, mismatches: [] })
-      // Neither step read the docs, so both are answered from the cache.
-      expect(normal("docs only")).toEqual({ baseline: true, hit: 2, failed: 0, steps, mismatches: [] })
-      // The test step read the file, so it runs again and fails as the repository's CI does. Lint did not read it.
-      expect(normal("break what a test imports")).toEqual({
-        baseline: false,
-        hit: 1,
-        failed: 1,
-        steps,
-        mismatches: []
-      })
-      // Every file is as an earlier passing run left it.
-      expect(normal("repair it")).toEqual({ baseline: true, hit: 2, failed: 0, steps, mismatches: [] })
-      // A new file in a directory the test runner listed: the test step runs again and finds the failing test.
-      expect(normal("a new test file that fails")).toEqual({
-        baseline: false,
-        hit: 1,
-        failed: 1,
-        steps,
-        mismatches: []
-      })
+      expect(normal("lockfile").hit).toBe(0)
+      // No step read the docs: the lint and the tests are answered from the cache at every commit that leaves
+      // their files alone, and the lint when a test file changes. An install is answered too, unless the state
+      // its job's runner keeps under `/tmp` was left by an earlier commit's run or by another job: its first
+      // step reads that state, and it then runs again (`.../steps gained or lost an entry`).
+      expect(normal("docs only").hit).toBeGreaterThanOrEqual(2)
+      expect(normal("break what a test imports").hit).toBeGreaterThanOrEqual(1)
+      expect(normal("repair it").hit).toBeGreaterThanOrEqual(2)
+      expect(normal("a new test file that fails").hit).toBeGreaterThanOrEqual(1)
       expect(report.mismatches).toBe(0)
       expect(outcome.code).toBe(0)
     },

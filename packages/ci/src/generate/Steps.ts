@@ -3,19 +3,21 @@
  * variant, in dependency order.
  *
  * A job's steps share one machine, so a step can leave files the next step
- * needs. A cache hit restores no files, so only a step nothing later relies on
- * may be replayed. Every other step is a `setup` target, which always runs
- * and declares no files of its own. Steps split from one step (`Step.from`)
- * stand side by side: none relies on another, and the step after them waits
- * for all of them. Steps split from a command that ran its parts in order
- * (`Step.inOrder`) keep that order: each waits for the one before it, so a
- * part after one that failed does not run.
+ * needs. A step a later step relies on is a `setup` target. Smithers build
+ * records what each step read, and keeps what it left: a step is answered
+ * from the cache while everything it read is unchanged, and what it left is
+ * put back when a step after it has to run. A setup target declares no files
+ * of its own. Steps split from one step (`Step.from`) stand side by side:
+ * none relies on another, and the step after them waits for all of them.
+ * Steps split from a command that ran its parts in order (`Step.inOrder`)
+ * keep that order: each waits for the one before it, so a part after one
+ * that failed does not run.
  *
  * A step that follows another in one working tree can read what that step
  * wrote. Its target declares the step's inputs only when every earlier step
  * in the tree names both what it reads and what it writes (`Step.inputs` and
- * `Step.outputs`). Each of those is then a setup target that declares its
- * inputs and its outputs: Smithers build lets a target read what the targets
+ * `Step.outputs`). Each of those is then a setup target that always runs and
+ * declares its inputs and its outputs: Smithers build lets a target read what the targets
  * it depends on declare as outputs, and a target's key holds the keys of
  * those targets, so a change to a file a setup step read reruns every target
  * after it. Without that, the later target declares the whole repository, as
@@ -114,6 +116,12 @@ export interface StepTarget {
   /** The other steps this target runs too: the same work at the same point of another job or variant. */
   readonly also: ReadonlyArray<SameStep>
   /**
+   * True for a step that is told where Smithers build keeps its cache, as a step that restores or saves a cache
+   * is. It keeps files there from one run to the next, and what it finds there is in no record of what it read,
+   * so its target always runs.
+   */
+  readonly keeps: boolean
+  /**
    * True for a step split from a command that ran its parts at the same time (`Step.atOnce`). Two such targets of
    * one `step`, job and variant may run at once.
    */
@@ -187,6 +195,9 @@ export interface StepPlan {
   readonly legs: ReadonlyArray<Leg>
 }
 
+/** What Smithers build replaces with its cache directory in the text of a target's command. */
+const cacheDirectoryToken = "{smthrs:cache-directory}"
+
 /**
  * The generated GitHub Actions workflow. Reading a repository again finds it,
  * and it is never part of the CI being imported.
@@ -212,7 +223,7 @@ interface Tail {
   readonly versions: string
 }
 
-interface Draft extends Omit<StepTarget, "rule" | "script" | "job" | "also"> {
+interface Draft extends Omit<StepTarget, "rule" | "script" | "job" | "also" | "keeps"> {
   readonly job: Job
   readonly command: string
   readonly directory: string
@@ -619,10 +630,8 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
         outputs: declares ? draft.outputs : undefined,
         job: job.id,
         rule: setup ? "setup" : "check",
-        script: underVersions(
-          versions,
-          scriptOf(command, directory)
-        )
+        keeps: command.includes(cacheDirectoryToken),
+        script: underVersions(versions, scriptOf(command, directory))
       }
     }
   )

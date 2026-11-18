@@ -47,11 +47,11 @@ const zig = step("a:1", "zig build test", {
 describe("a step that keeps a tool's cache", () => {
   it("has the workflow save the tool cache with the results", () => {
     expect(generated([job("a", [zig])], workflowPath)).toContain(
-      `          path: |\n            ${stateDirectory}/cache\n            ${stateDirectory}/tools\n`
+      `          path: |\n            ${stateDirectory}/cache\n            ${stateDirectory}/kept\n            ${stateDirectory}/tools\n`
     )
     // A step can name the tool cache itself.
     expect(generated([job("a", [step("a:1", "true", { CACHE: toolCache })])], workflowPath)).toContain(
-      `            ${stateDirectory}/cache\n            ${stateDirectory}/tools\n`
+      `            ${stateDirectory}/cache\n            ${stateDirectory}/kept\n            ${stateDirectory}/tools\n`
     )
     expect(generated([job("a", [step("a:1", "true", { CACHE: toolCache })])], packagePath)).toContain(
       `env: {"CACHE":"${toolCache}"}`
@@ -59,7 +59,7 @@ describe("a step that keeps a tool's cache", () => {
     // A step that starts under the root names the same directory: it is named whole.
     const nested = step("a:1", "zig build test", { ZIG_LOCAL_CACHE_DIR: `${toolCache}/zig/local` }, "tools/gen")
     expect(generated([job("a", [nested])], workflowPath)).toContain(
-      `            ${stateDirectory}/cache\n            ${stateDirectory}/tools\n`
+      `            ${stateDirectory}/cache\n            ${stateDirectory}/kept\n            ${stateDirectory}/tools\n`
     )
   })
 

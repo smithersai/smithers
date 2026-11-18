@@ -205,11 +205,11 @@ describe.skipIf(!observes)("zig build test on a real repository", () => {
         const real = (try run(root, "sh", ["-c", "command -v zig"])).out.trim()
         try write(tools, "zig", `#!/bin/sh\nexec ${real} "$@"\n`, 0o755)
 
-        // `tidy` always runs: `test` follows it. Each test root runs in the open, and its run is recorded.
+        // Each step runs in the open and its run is recorded: `tidy`, which the test roots follow, and each root.
         const first = try statuses(root, state, "first", tools)
         expect([first.statuses, first.out]).toEqual([{ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "ran" }, first.out])
-        // Nothing changed, so no test root runs again, though `tidy` ran before each of them.
-        expect((try statuses(root, state, "second", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+        // Nothing changed, so no step runs again.
+        expect((try statuses(root, state, "second", tools)).statuses).toEqual({ [tidied]: "hit", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
         // Zig kept its caches in the tool cache, which is in Smithers build's cache directory and not in the
         // checkout. A test made its directory where it started, as Zig's tests do.
         expect(ZigSteps.environment["ZIG_LOCAL_CACHE_DIR"]).toBe(`${cacheToken}/tools/zig/local`)
@@ -219,18 +219,18 @@ describe.skipIf(!observes)("zig build test on a real repository", () => {
 
         // A file one root reads reruns that root.
         try append(root, "src/gamma.zig", "\n// edited\n")
-        expect((try statuses(root, state, "gamma", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "ran" })
+        expect((try statuses(root, state, "gamma", tools)).statuses).toEqual({ [tidied]: "hit", [alpha]: "hit", [beta]: "hit", [gamma]: "ran" })
         // A file two roots import reruns those two.
         try append(root, "src/shared.zig", "\n// edited\n")
-        expect((try statuses(root, state, "shared", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "hit" })
+        expect((try statuses(root, state, "shared", tools)).statuses).toEqual({ [tidied]: "hit", [alpha]: "ran", [beta]: "ran", [gamma]: "hit" })
         // A file no root reads reruns none.
         try write(root, "NOTES.md", "changed\n")
-        expect((try statuses(root, state, "notes", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+        expect((try statuses(root, state, "notes", tools)).statuses).toEqual({ [tidied]: "hit", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
 
-        // The Zig a root started is among the files it read: another Zig at the same place reruns all three.
+        // The Zig a step started is among the files it read: another Zig at the same place reruns all four.
         try write(tools, "zig", `#!/bin/sh\n# another release\nexec ${real} "$@"\n`, 0o755)
         expect((try statuses(root, state, "zig", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "ran", [beta]: "ran", [gamma]: "ran" })
-        expect((try statuses(root, state, "again", tools)).statuses).toEqual({ [tidied]: "ran", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
+        expect((try statuses(root, state, "again", tools)).statuses).toEqual({ [tidied]: "hit", [alpha]: "hit", [beta]: "hit", [gamma]: "hit" })
       })
     }
   }, limit)

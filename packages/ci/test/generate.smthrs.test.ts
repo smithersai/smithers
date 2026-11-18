@@ -126,7 +126,7 @@ describe("generated files under the real smthrs", () => {
     try {
       const targets = plan(root)
       expect(targets.map((target) => [target.label, target.target, target.cacheable, target.dependencies])).toEqual([
-        [`${prefix}justfile-build-1`, "Shell.Build", false, []],
+        [`${prefix}justfile-build-1`, "Shell.Test", true, []],
         [`${prefix}justfile-test-1`, "Shell.Test", true, [`${prefix}justfile-build-1`]]
       ])
     } finally {
@@ -145,14 +145,16 @@ describe("generated files under the real smthrs", () => {
     const root = repository(inventory, { justfile: "ci: build test\n" })
     try {
       expect(plan(root).map((target) => [target.label, target.target, target.dependencies])).toEqual([
-        [`${prefix}justfile-build-1`, "Shell.Build", []],
+        [`${prefix}justfile-build-1`, "Shell.Test", []],
         [`${prefix}justfile-test-1`, "Shell.Test", [`${prefix}justfile-build-1`]]
       ])
       const statuses = (name: string) => Object.fromEntries(execute(root, name).statuses)
       expect(statuses("first")).toEqual({ "justfile-build-1": "ran", "justfile-test-1": "ran" })
-      // A clean checkout: the build runs again before the test's verdict is replayed.
+      // A clean checkout. Where reads are recorded, neither recipe runs: the build would write what the test read.
+      // Elsewhere the build runs again before the test's verdict is replayed.
       rmSync(join(root, "out"), { recursive: true })
-      expect(statuses("second")).toEqual({ "justfile-build-1": "ran", "justfile-test-1": "hit" })
+      expect(statuses("second")).toEqual({ "justfile-build-1": observes ? "hit" : "ran", "justfile-test-1": "hit" })
+      expect(existsSync(join(root, "out"))).toBe(!observes)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -202,13 +204,18 @@ describe("generated files under the real smthrs", () => {
       // The job's steps ran on its machine: nothing was left in the checkout, as in a clean one.
       expect(existsSync(join(root, "made"))).toBe(false)
       const second = execute(root, "second")
-      expect(second.statuses.get("good-1")).toBe("ran")
-      expect(second.statuses.get("good-2")).toBe("ran")
+      expect(second.statuses.get("good-1")).toBe(observes ? "hit" : "ran")
+      expect(second.statuses.get("good-2")).toBe(observes ? "hit" : "ran")
       expect(second.statuses.get("good-3")).toBe("hit")
 
+      // The last step reads a changed file and runs. Where reads are recorded, no step before it runs; elsewhere
+      // both run again. The job's machine holds what its steps made, and the checkout nothing.
       writeFileSync(join(root, "input.txt"), "changed\n")
       const third = execute(root, "third")
+      expect(third.statuses.get("good-1")).toBe(observes ? "hit" : "ran")
+      expect(third.statuses.get("good-2")).toBe(observes ? "hit" : "ran")
       expect(third.statuses.get("good-3")).toBe("failed")
+      expect(existsSync(join(root, "made"))).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -399,7 +406,7 @@ describe("generated files under the real smthrs", () => {
       const statuses = (name: string) => Object.fromEntries(execute(root, name).statuses)
       // Held to `packages/a/**`, the step could not read `dist/out`: git ignores it, so no input names it.
       expect(statuses("first")).toEqual({ "ci-1": "ran", "ci-2-a": "ran", "ci-2-b": "ran" })
-      expect(statuses("second")).toEqual({ "ci-1": "ran", "ci-2-a": "hit", "ci-2-b": "hit" })
+      expect(statuses("second")).toEqual({ "ci-1": observes ? "hit" : "ran", "ci-2-a": "hit", "ci-2-b": "hit" })
       // The file the build read changes. A key made of `packages/a/**` would not: the step would hit, and pass stale.
       // The other package's step read neither file. Where its reads are recorded it is answered from the cache;
       // elsewhere it runs on every change.

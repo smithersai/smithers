@@ -95,20 +95,20 @@ task graph removes the repeat.
 
 ## What is never split
 
-| Left whole                                                                   | Why                                                                                                                              |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| A step with a command Smithers CI does not recognize                         | It can read any file                                                                                                             |
-| A step with shell it does not read: `$(…)`, globs, loops, subshells, `<`     | The commands it runs are not known                                                                                               |
-| A flag it does not know, or `--affected`, `--only`, `...`, `[ref]` selectors | The set of packages depends on more than the files                                                                               |
-| A script run through a wrapper, such as `bun scripts/run-turbo.ts run build` | The wrapper may do anything with its arguments                                                                                   |
-| A root script with a `pre` or `post` hook, or more than one command          | The hook reads files no package owns                                                                                             |
-| A workspace pattern with braces, classes or `?`; a package with no name      | The package manager may see packages Smithers CI does not                                                                        |
-| pnpm with `tasks` in `pnpm-workspace.yaml`                                   | pnpm orders tasks from a configuration Smithers CI does not run                                                                  |
-| A selector that matches the root package, when the root has the script       | The root package's script reads the whole repository                                                                             |
-| A `turbo` task nothing defines, or a task of the root package (`//#task`)    | Turborepo refuses the first; the second reads everything                                                                         |
-| A step that a later step of its job follows                                  | Its target always runs, so one command over every package is cheaper than one per package. It keeps its command and gains inputs |
-| A step that follows another step in its working tree                         | It can read what that step wrote. See [A step after another step](#a-step-after-another-step)                                    |
-| A step still holding a `${{ matrix.… }}` expression                          | Its command differs per variant                                                                                                  |
+| Left whole                                                                   | Why                                                                                           |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| A step with a command Smithers CI does not recognize                         | It can read any file                                                                          |
+| A step with shell it does not read: `$(…)`, globs, loops, subshells, `<`     | The commands it runs are not known                                                            |
+| A flag it does not know, or `--affected`, `--only`, `...`, `[ref]` selectors | The set of packages depends on more than the files                                            |
+| A script run through a wrapper, such as `bun scripts/run-turbo.ts run build` | The wrapper may do anything with its arguments                                                |
+| A root script with a `pre` or `post` hook, or more than one command          | The hook reads files no package owns                                                          |
+| A workspace pattern with braces, classes or `?`; a package with no name      | The package manager may see packages Smithers CI does not                                     |
+| pnpm with `tasks` in `pnpm-workspace.yaml`                                   | pnpm orders tasks from a configuration Smithers CI does not run                               |
+| A selector that matches the root package, when the root has the script       | The root package's script reads the whole repository                                          |
+| A `turbo` task nothing defines, or a task of the root package (`//#task`)    | Turborepo refuses the first; the second reads everything                                      |
+| A step that a later step of its job follows                                  | The later step reads what it left as one step's files. It keeps its command and gains inputs  |
+| A step that follows another step in its working tree                         | It can read what that step wrote. See [A step after another step](#a-step-after-another-step) |
+| A step still holding a `${{ matrix.… }}` expression                          | Its command differs per variant                                                               |
 
 A step that runs several recognized commands, or pipes one into `tee`, keeps
 its command and reads what all of them read. It is split only when the run is
@@ -250,9 +250,10 @@ Three kinds of target run in the open, as an unsplit step does:
 - A step with no inputs. What it reads is recorded when it runs, and it runs
   again only when one of those files changes: see
   [How it works](how-it-works.md#2-targets).
-- A step a later step follows. Its target always runs and its result is never
-  reused. It declares no files, unless it names what it reads and what it
-  writes.
+- A step a later step follows. Its reads are recorded too, and what it left
+  for the later step is kept: when that step has to run, the files are put
+  back and this step does not run. It declares no files, unless it names what
+  it reads and what it writes; then it always runs.
 - A step that follows a step that does not name what it reads and writes. Its
   reads are recorded in the same way.
 
@@ -311,7 +312,7 @@ one of those files changes. For a build those are the files the compiler
 read, Zig's own among them, so another Zig release runs it again.
 
 ```text
-just ci        tidy     etc/scripts/tidy.sh     always runs: test follows it
+just ci        tidy     etc/scripts/tidy.sh     runs again when a file it read changed
                test     zig build test          runs again when a file it read changed
 ```
 
