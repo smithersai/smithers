@@ -85,9 +85,12 @@ const hasCredential = (value: string): boolean => /^[a-z][a-z0-9+.-]*:\/\/[^/?#]
 
 /**
  * A usage error repeats the value it refuses, and a URL's user name and
- * password are a secret: they are cut out of what is printed.
+ * password are a secret: they are cut out of what is printed. Everything
+ * from a scheme's colon and slashes to the last `@` of the word goes, so a
+ * value written with one slash or none (`https:/user:word@host`, which a URL
+ * parser still reads as a credential) loses its password too.
  */
-const withoutCredential = (text: string): string => text.replace(/(:\/\/)[^\s"]*@/g, "$1")
+const withoutCredential = (text: string): string => text.replace(/(\b[a-z][a-z0-9+.-]*:\/*)[^\s"]*@/gi, "$1")
 
 const atLeastOne = (): string => "1 or more"
 

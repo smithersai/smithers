@@ -85,10 +85,14 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
       expect(named.code).toBe(exitCodes.usage)
       expect(named.stderr).toContain("SMITHERS_CACHE_TOKEN")
       expect(named.stderr).not.toContain(secret)
-      const other = await exec(["apply", "--cache", `ftp://ci-bot:${secret}@cache.example.invalid`], root)
-      expect(other.code).toBe(exitCodes.usage)
-      expect(other.stderr).toContain("http or https URL")
-      expect(other.stderr).not.toContain(secret)
+      // A URL parser reads a credential in each of these; none is an http URL as --cache wants it written.
+      for (const start of ["ftp://ci-bot:", "https:/ci-bot:", "https:ci-bot:", "HTTPS:\\\\ci-bot:", "ci-bot:"]) {
+        const other = await exec(["apply", "--cache", `${start}${secret}@cache.example.invalid`], root)
+        expect(other.code, start).toBe(exitCodes.usage)
+        expect(other.stderr, start).toContain("http or https URL")
+        expect(other.stderr, start).toContain("cache.example.invalid")
+        expect(other.stderr, start).not.toContain(secret)
+      }
     })
 
     it("accepts an @ after the host part", async () => {
