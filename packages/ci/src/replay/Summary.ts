@@ -39,6 +39,7 @@ import {
 } from "../contract/RunRecord.ts"
 import { type Metrics, metrics, type Row, type Score, select, type Settings } from "../contract/Selection.ts"
 import { labelsOf as targetsOfStep, type TargetMap } from "../contract/TargetMap.ts"
+import { failuresOf, type StepNames } from "./Failures.ts"
 
 /**
  * How many times a failed target reruns after its first run.
@@ -57,6 +58,8 @@ export const maxReruns = 10
  */
 export interface UnitStep {
   readonly id: string
+  /** The name a person knows the step by, with the matrix variant it ran in. */
+  readonly name: string
   /**
    * The name the step's verdict is compared under: its target's label, or, when it was split, its own id with the
    * matrix variant it ran in.
@@ -64,7 +67,10 @@ export interface UnitStep {
   readonly label: string
   /** The targets that run the step: one, or several when it was split. */
   readonly targets: ReadonlyArray<string>
+  /** What the shell runs: the step's command, with what its CI's runner does around it. */
   readonly command: string
+  /** The command as the CI file writes it, which is what a report shows. */
+  readonly written: string
   readonly cwd: string
   readonly env: Readonly<Record<string, string>>
 }
@@ -196,9 +202,11 @@ export const replayable = (inventory: Ci, map: TargetMap, host: string): Replaya
         const targets = targetsOfStep(map, job.id, step.id, variant)
         return {
           id: step.id,
+          name: stepKey(step.name === undefined ? step.id : `${job.id}: ${step.name}`, variant),
           label: targets.length > 1 ? stepKey(step.id, variant) : (targets[0] as string),
           targets,
           command: script(filled),
+          written: filled.command,
           cwd: filled.cwd,
           env: filled.env
         }
@@ -272,6 +280,23 @@ export const splitOf = (units: ReadonlyArray<Unit>): ReadonlyMap<string, Readonl
   new Map(
     units.flatMap((unit) =>
       unit.steps.flatMap((step) => step.targets.length > 1 ? [[step.label, step.targets] as const] : [])
+    )
+  )
+
+/**
+ * What each comparison name and target of the units is called in a report, and
+ * the command behind it.
+ *
+ * @category baseline
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const stepNames = (units: ReadonlyArray<Unit>): StepNames =>
+  new Map(
+    units.flatMap((unit) =>
+      unit.steps.flatMap((step) =>
+        [step.label, ...step.targets].map((label) => [label, { step: step.name, command: step.written }] as const)
+      )
     )
   )
 
@@ -471,7 +496,7 @@ export const addRerun = (result: TargetResult, rerun: TargetResult | undefined):
   const passed = rerun?.status === "ran" || rerun?.status === "hit"
   const attempts = [...(result.attempts ?? []), { passed, durationMs: rerun?.durationMs ?? 0 }]
   if (!passed) return { ...result, attempts }
-  const { error: _error, failureDigest: _failureDigest, ...rest } = result
+  const { command: _command, error: _error, exitCode: _exitCode, failureDigest: _failureDigest, ...rest } = result
   return { ...rest, status: "ran", attempts }
 }
 
@@ -528,19 +553,24 @@ export const recordOf = (
 }
 
 /**
- * Wall time, work time and counts of one run. The reruns that label flaky
- * targets are measurement, not CI, so neither time includes them.
+ * Wall time, work time, counts and failures of one run. The reruns that label
+ * flaky targets are measurement, not CI, so neither time includes them. `names`
+ * says what the failed results are called in the report.
  *
  * @category report
  * @throws {never}
  * @since 0.1.0
  */
-export const totalsOf = (record: RunRecord): RunTotals => ({
-  ok: record.ok,
-  wallMs: record.durationMs ?? 0,
-  workMs: record.results.reduce((sum, result) => sum + result.durationMs, 0),
-  counts: record.counts
-})
+export const totalsOf = (record: RunRecord, names: StepNames = new Map()): RunTotals => {
+  const failures = failuresOf(record.results, names)
+  return {
+    ok: record.ok,
+    wallMs: record.durationMs ?? 0,
+    workMs: record.results.reduce((sum, result) => sum + result.durationMs, 0),
+    counts: record.counts,
+    ...(failures.length === 0 ? {} : { failures })
+  }
+}
 
 /** `pass` and `flaky` agree: the step passed in the end. */
 const agree = (one: Verdict, other: Verdict): boolean =>
@@ -659,10 +689,13 @@ export const withoutFast = ({ fast: _fast, ...commit }: ReplayCommit): ReplayCom
 
 /**
  * The replay report of `inventory`'s repository. `speedup` is baseline wall
- * time over normal-mode wall time, and 0 when nothing ran in normal mode.
- * What the inventory could not read is listed as `notRead`, and each tool this
- * machine has at another version than a job asks for as `toolVersions`. The
- * cache credentials a kept job ran without are named in `withheld`.
+ * time over normal-mode wall time, and 0 when nothing ran in normal mode. It
+ * and the wall times cover the commits whose baseline passed: a failed
+ * baseline stops at its failure, so its time says nothing about the CI, and
+ * `speedupCommits` counts the commits covered. What the inventory could not
+ * read is listed as `notRead`, and each tool this machine has at another
+ * version than a job asks for as `toolVersions`. The cache credentials a kept
+ * job ran without are named in `withheld`.
  *
  * @category report
  * @throws {never}
@@ -673,8 +706,9 @@ export const reportOf = (
   commits: ReadonlyArray<ReplayCommit>,
   found: Findings
 ): ReplayReport => {
+  const measured = commits.filter((commit) => commit.baseline.ok)
   const sum = (wall: (commit: ReplayCommit) => number): number =>
-    commits.reduce((total, commit) => total + wall(commit), 0)
+    measured.reduce((total, commit) => total + wall(commit), 0)
   const baselineWallMs = sum((commit) => commit.baseline.wallMs)
   const normalWallMs = sum((commit) => commit.normal.wallMs)
   const unread = notRead(inventory)
@@ -686,6 +720,7 @@ export const reportOf = (
     baselineWallMs,
     normalWallMs,
     speedup: normalWallMs === 0 ? 0 : baselineWallMs / normalWallMs,
+    speedupCommits: measured.length,
     mismatches: commits.reduce((total, commit) => total + commit.mismatches.length, 0),
     flaky: found.flaky,
     ...(found.selection === undefined

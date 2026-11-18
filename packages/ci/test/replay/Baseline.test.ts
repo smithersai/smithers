@@ -67,12 +67,13 @@ describe("the recipes of one Justfile, in the baseline", () => {
   it("stop at the first failure, as `just ci` does", async () => {
     const out = track(makeEmptyDirectory())
     const root = track(makeSmallRepository([
-      recipe("ci", [], ["build", "test"]),
+      recipe("ci", [], ["lint", "build", "test"]),
+      recipe("lint", ["true"]),
       recipe("test", [`touch ${out}/test-ran`]),
       recipe("build", ["exit 1"])
     ]))
     const [commit] = (await replay(root)).commits
-    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 0, failed: 1, skipped: 1 })
+    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 1 })
     expect(existsSync(join(out, "test-ran"))).toBe(false)
   }, 600_000)
 
@@ -97,7 +98,7 @@ describe("the recipes of one Justfile, in the baseline", () => {
 describe("a baseline step", () => {
   it("is stopped at its time limit and has failed", async () => {
     // Review finding 14: nothing ended a step. The target of this one sleeps its 20 seconds and passes.
-    const root = track(makeSmallRepository([job("slow", "sleep 20")]))
+    const root = track(makeSmallRepository([job("slow", "sleep 20"), job("ok", "sh a.sh")]))
     const limited = Layer.succeed(Options, {
       smthrs: [smthrs],
       reruns: 0,
@@ -105,7 +106,7 @@ describe("a baseline step", () => {
       stepTimeout: "2 seconds"
     })
     const [commit] = (await replay(root, {}, {}, limited as never)).commits
-    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 0, failed: 1, skipped: 0 })
+    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
     expect(commit?.baseline.wallMs).toBeLessThan(15_000)
     expect(commit?.mismatches).toEqual([{ label: "//:slow0_0", mode: "normal", baseline: "fail", got: "pass" }])
   }, 600_000)

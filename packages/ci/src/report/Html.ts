@@ -16,19 +16,25 @@ import type { Metrics } from "../contract/Selection.ts"
 import {
   commitsLeftOut,
   count,
+  coverage,
   duration,
+  type FailedStep,
+  failedSteps,
+  failureText,
   fastNotMeasured,
   firstLine,
   flaky,
   leftEmpty,
   leftOut,
   mismatches,
+  noSpeedup,
   ownTargets,
   percent,
   ratio,
   reasons,
   shortCommit,
   speedup,
+  speedupCommits,
   times,
   toolVersion,
   unread,
@@ -146,9 +152,14 @@ const mismatchItem = (mismatch: Mismatch): string =>
     escape(mismatch.label)
   }</code> <span class="sub">${mismatch.mode}: ${mismatch.baseline} → ${mismatch.got}</span></li>`
 
+const failureItem = ({ failure, ways }: FailedStep): string =>
+  `<li><code>${escape(failure.step)}</code> <span class="sub">${ways.join(", ")}: ${
+    escape(failureText(failure))
+  }</span></li>`
+
 /**
- * A commit's times on one row, and its mismatches on a full-width row under
- * it, so a narrow screen never scrolls a mismatch out of sight.
+ * A commit's times on one row, and its mismatches and failed steps on a
+ * full-width row under it, so a narrow screen never scrolls them out of sight.
  */
 const commitRows = (commit: ReplayCommit, withFast: boolean): string => {
   const cells = [
@@ -157,9 +168,10 @@ const commitRows = (commit: ReplayCommit, withFast: boolean): string => {
     time(commit.normal),
     withFast ? time(commit.fast) : ""
   ].join("")
-  if (commit.mismatches.length === 0) return `<tr>${cells}</tr>`
+  const items = [...commit.mismatches.map(mismatchItem), ...failedSteps(commit).map(failureItem)]
+  if (items.length === 0) return `<tr>${cells}</tr>`
   return `<tr class="bad lead">${cells}</tr>\n<tr class="bad"><td colspan="${withFast ? 4 : 3}"><ul>${
-    commit.mismatches.map(mismatchItem).join("")
+    items.join("")
   }</ul></td></tr>`
 }
 
@@ -224,8 +236,9 @@ const commitTable = (commits: ReadonlyArray<ReplayCommit>): string => {
  * Renders a replay report as one self-contained HTML page, light and dark,
  * readable on a phone: the speedup, a bar per mode, fast mode's recall and
  * selection rate with the counts behind them, one row per commit with its
- * times, `fail` beside the time of a run that failed, and its mismatches,
- * the jobs not replayed and what was not read.
+ * times, `fail` beside the time of a run that failed, its mismatches and
+ * failed steps, the jobs not replayed and what was not read. The speedup covers
+ * the commits whose baseline passed and says so when that is not all of them.
  *
  * @category renderers
  * @since 0.1.0
@@ -250,8 +263,13 @@ export const html: RenderReport = (report) => {
     if (report.targets !== undefined) {
       body.push(`<p class="summary"><code>${escape(ownTargets(report.targets))}</code></p>`)
     }
-    body.push(`<p class="hero">${speedup(report.speedup)}</p>`)
-    body.push(bars(modes))
+    if (speedupCommits(report) === 0) {
+      body.push(`<p class="alert" role="alert">${noSpeedup}</p>`)
+    } else {
+      body.push(`<p class="hero">${speedup(report.speedup)}</p>`)
+      if (coverage(report) !== "") body.push(`<p class="summary">${coverage(report)}</p>`)
+      body.push(bars(modes))
+    }
     const left = report.notReplayed ?? []
     const notRead = report.notRead ?? []
     const commitsLeft = report.notReplayedCommits ?? []

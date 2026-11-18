@@ -40,9 +40,16 @@ describe("replaying five real commits", () => {
     expect(report.commits.map((entry) => entry.changedFiles)).toEqual([10, 1, 3, 3, 2])
   })
 
-  it("reports speedup as baseline wall time over normal-mode wall time", () => {
+  it("reports speedup as baseline wall time over normal-mode wall time, at the commits whose baseline passed", () => {
+    const passed = report.commits.filter((entry) => entry.baseline.ok)
+    expect(passed.map((entry) => entry.commit)).toEqual([
+      repository.commits[0],
+      repository.commits[1],
+      repository.commits[3]
+    ])
+    expect(report.speedupCommits).toBe(3)
     const sum = (wall: (entry: ReplayReport["commits"][number]) => number) =>
-      report.commits.reduce((total, entry) => total + wall(entry), 0)
+      passed.reduce((total, entry) => total + wall(entry), 0)
     expect(report.baselineWallMs).toBe(sum((entry) => entry.baseline.wallMs))
     expect(report.normalWallMs).toBe(sum((entry) => entry.normal.wallMs))
     expect(report.speedup).toBe(report.baselineWallMs / report.normalWallMs)

@@ -6,6 +6,7 @@
  */
 
 import { type NotReplayed, reasonsText, type ToolVersion } from "../contract/Inventory.ts"
+import type { ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
 
 /**
  * Elapsed time in the largest units that keep it short: `850ms`, `12.3s`,
@@ -205,3 +206,72 @@ export const ownTargets = (targets: ReadonlyArray<string>): string =>
   `own targets  ${targets.slice(0, shownTargets).join(" ")}${
     targets.length > shownTargets ? ` +${targets.length - shownTargets}` : ""
   }`
+
+/**
+ * How many commits the speedup covers: those whose baseline passed. A report
+ * that does not say covers every commit.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const speedupCommits = (report: ReplayReport): number => report.speedupCommits ?? report.commits.length
+
+/**
+ * What stands in the place of the speedup when no commit's baseline passed.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const noSpeedup = "no speedup: the CI failed at every replayed commit"
+
+/**
+ * Which commits the speedup covers, or nothing when it covers them all.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const coverage = (report: ReplayReport): string => {
+  const covered = speedupCommits(report)
+  return covered === report.commits.length ? "" : `over ${covered} of ${count(report.commits.length, "commit")}`
+}
+
+/**
+ * One failed step of a commit, with the ways of running it that it failed in.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface FailedStep {
+  readonly ways: ReadonlyArray<string>
+  readonly failure: StepFailure
+}
+
+/**
+ * The steps that failed at a commit. A step that failed the same way in the
+ * baseline and in a mode is one entry.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const failedSteps = (commit: ReplayCommit): ReadonlyArray<FailedStep> => {
+  const found = new Map<string, { readonly ways: Array<string>; readonly failure: StepFailure }>()
+  const runs = [["baseline", commit.baseline], ["normal", commit.normal], ["fast", commit.fast]] as const
+  for (const [way, totals] of runs) {
+    for (const failure of totals?.failures ?? []) {
+      const key = JSON.stringify([failure.step, failure.exitCode, failure.reason])
+      const entry = found.get(key) ?? { ways: [], failure }
+      if (!entry.ways.includes(way)) entry.ways.push(way)
+      found.set(key, entry)
+    }
+  }
+  return [...found.values()]
+}
+
+/**
+ * A failure's exit code and reason: `exit 127: docker is not installed`.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const failureText = (failure: StepFailure): string =>
+  `${failure.exitCode === undefined ? "" : `exit ${failure.exitCode}: `}${failure.reason}`

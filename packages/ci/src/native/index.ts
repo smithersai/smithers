@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+export { firstLine, nothingPassed } from "../replay/Failures.ts"
 export { workspace } from "./Detect.vibe"
 export {
   commandFailed,
@@ -18,11 +19,9 @@ export {
 } from "./Install.ts"
 export { committedWorkspace, type Host, install, own, run } from "./Replay.vibe"
 export {
-  firstLine,
   linesOf,
   noRecord,
   noRecordLabel,
-  nothingPassed,
   ranAgain,
   ranAgainLines,
   reasonsIn,

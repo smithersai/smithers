@@ -12,9 +12,11 @@
  * counted beside the mismatches. On a repository that
  * already builds with Smithers build, the patterns replayed stand above the
  * speedup. When fast mode was asked for and could not be measured, a line says
- * so and why.
+ * so and why. The speedup covers the commits whose baseline passed and says so
+ * when that is not all of them, and every step that failed is listed with its
+ * exit code and the first line of its error output.
  *
- * Labels and commit ids come from the repository being replayed, so control
+ * Labels, reasons and commit ids come from the repository being replayed, so control
  * characters in them are replaced before they reach a terminal.
  *
  * @since 0.1.0
@@ -26,18 +28,23 @@ import {
   bar,
   commitsLeftOut,
   count,
+  coverage,
   duration,
+  failedSteps,
+  failureText,
   fastNotMeasured,
   firstLine,
   flaky,
   leftEmpty,
   leftOut,
   mismatches,
+  noSpeedup,
   ownTargets,
   ratio,
   reasons,
   shortCommit,
   speedup,
+  speedupCommits,
   times,
   toolVersion,
   unread,
@@ -112,15 +119,19 @@ export const text: RenderReport = (report) => {
   const timeWidth = Math.max(...modes.map((mode) => duration(mode.ms).length))
   const ratioWidth = Math.max(...modes.map((mode) => (mode.ratio === undefined ? "" : times(mode.ratio)).length))
   if (report.targets !== undefined) sections.push([clean(ownTargets(report.targets))])
-  sections.push([speedup(report.speedup)])
-  sections.push(modes.map((mode) =>
-    [
-      mode.name.padEnd(8),
-      bar(mode.ms, max, width).padEnd(width),
-      duration(mode.ms).padStart(timeWidth),
-      ...(mode.ratio === undefined ? [] : [times(mode.ratio).padStart(ratioWidth)])
-    ].join("  ")
-  ))
+  if (speedupCommits(report) === 0) {
+    sections.push([noSpeedup])
+  } else {
+    sections.push([`${speedup(report.speedup)} ${coverage(report)}`.trimEnd()])
+    sections.push(modes.map((mode) =>
+      [
+        mode.name.padEnd(8),
+        bar(mode.ms, max, width).padEnd(width),
+        duration(mode.ms).padStart(timeWidth),
+        ...(mode.ratio === undefined ? [] : [times(mode.ratio).padStart(ratioWidth)])
+      ].join("  ")
+    ))
+  }
   const left = report.notReplayed ?? []
   const notRead = report.notRead ?? []
   const commitsLeft = report.notReplayedCommits ?? []
@@ -130,6 +141,17 @@ export const text: RenderReport = (report) => {
     }${leftOut(left.length)}${unread(notRead.length)}`
   ])
   sections.push([...commitLines(report.commits)])
+  const failed = report.commits.flatMap((commit) => failedSteps(commit).map((entry) => ({ ...entry, commit })))
+  if (failed.length > 0) {
+    sections.push([
+      "failed steps",
+      ...failed.map(({ commit, failure, ways }) =>
+        [clean(shortCommit(commit.commit)), ways.join(", "), clean(failure.step), clean(failureText(failure))].join(
+          "  "
+        )
+      )
+    ])
+  }
   if (commitsLeft.length > 0) {
     sections.push([
       "commits not replayed",

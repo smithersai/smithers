@@ -1,44 +1,41 @@
 /**
- * What a replay of a repository's own targets says about one run: the reason
- * each failed target gave, a line per run for the person waiting, and the
- * refusal when nothing passes on this machine.
+ * What a replay says about one run: the reason each failed target gave, and,
+ * for a repository's own targets, a line per run for the person waiting.
  *
  * @since 0.1.0
  */
 
-import { type RunRecord, type TargetResult, verdictOf } from "../contract/RunRecord.ts"
-
-const reasonLimit = 200
+import { type TargetResult, verdictOf } from "../contract/RunRecord.ts"
+import { failuresOf, firstLine, printedFailure, sentenceOf } from "../replay/Failures.ts"
 
 /**
- * The first line of a text that says something, without control characters,
- * cut at 200 characters.
+ * What `smthrs` printed for each failed target, by label. Its plain output
+ * gives a failure a line with the label, `failed`, the time and the reason,
+ * and then what the command printed, up to the next target or the closing
+ * `code:` line.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
-export const firstLine = (text: string): string => {
-  const line = text.split("\n").map((entry) => entry.replace(/\p{Cc}/gu, " ").trim()).find((entry) => entry !== "")
-  return (line ?? "").slice(0, reasonLimit)
+export const reasonsIn = (output: string): ReadonlyMap<string, string> => {
+  const found = new Map<string, Array<string>>()
+  let open: Array<string> | undefined
+  for (const line of output.split("\n")) {
+    const header = /^(\/\/\S+) +failed +\S+ +(.+)$/.exec(line)
+    if (header !== null) {
+      open = [header[2] as string]
+      found.set(header[1] as string, open)
+    } else if (/^(?:\/\/\S+ {2}|code: )/.test(line)) open = undefined
+    else open?.push(line)
+  }
+  return new Map([...found].map(([label, lines]) => [label, lines.join("\n").trimEnd()]))
 }
 
 /**
- * The reason `smthrs` printed for each failed target, by label. Its plain
- * output has one line per failure: the label, `failed`, the time, the reason.
- *
- * @throws {never}
- * @category accessors
- * @since 0.1.0
- */
-export const reasonsIn = (output: string): ReadonlyMap<string, string> =>
-  new Map(
-    [...output.matchAll(/^(\/\/\S+) +failed +\S+ +(.+)$/gm)].map((match) => [match[1] as string, match[2] as string])
-  )
-
-/**
  * The results with the reason `smthrs` printed added to each failed target
- * whose record has none. An older `smthrs` writes no reason in its run record.
+ * whose record has none, with its exit code and command when it gave them.
+ * `smthrs` writes no reason in its run record.
  *
  * @throws {never}
  * @category accessors
@@ -49,7 +46,7 @@ export const withReasons = (results: ReadonlyArray<TargetResult>, output: string
   return results.map((result) => {
     const reason = reasons.get(result.label)
     return result.status === "failed" && result.error === undefined && reason !== undefined
-      ? { ...result, error: reason }
+      ? { ...result, ...printedFailure(reason) }
       : result
   })
 }
@@ -94,8 +91,7 @@ export const noRecord = (output: string): TargetResult => ({
 
 const failedLimit = 5
 
-const whyOf = (result: TargetResult): string =>
-  `${result.label} failed: ${firstLine(result.error ?? "") || "smthrs gave no reason"}`
+const whyOf = (result: TargetResult): ReadonlyArray<string> => failuresOf([result]).map(sentenceOf)
 
 /**
  * What one mode of one commit did, for standard error: its counts and time,
@@ -119,7 +115,7 @@ export const linesOf = (
     `${at}: ${count("ran")} ran, ${count("hit")} from the cache, ${failed.length} failed, ${
       count("skipped")
     } skipped in ${Math.round(wallMs / 1000)} s`,
-    ...failed.slice(0, failedLimit).map((result) => `${at}: ${whyOf(result)}`),
+    ...failed.slice(0, failedLimit).flatMap(whyOf).map((why) => `${at}: ${why}`),
     ...(more > 0 ? [`${at}: and ${more} more failed`] : []),
     ...flaky.slice(0, failedLimit).map((result) => `${at}: ${result.label} failed, then passed when run again`)
   ]
@@ -160,27 +156,4 @@ export const ranAgainLines = (at: string, labels: ReadonlyArray<string>): Readon
       labels.slice(0, failedLimit).join(" ")
     }${more > 0 ? ` +${more}` : ""}`
   ]
-}
-
-/**
- * Why there is nothing to report, or `undefined` when a target passed in a
- * baseline. With no pass at any commit the build does not run on this
- * machine: the reason is the newest commit's first failure.
- *
- * @throws {never}
- * @category accessors
- * @since 0.1.0
- */
-export const nothingPassed = (baselines: ReadonlyArray<RunRecord>): string | undefined => {
-  const passed = baselines.some((record) =>
-    record.results.some((result) => result.status !== "failed" && result.status !== "skipped")
-  )
-  const newest = baselines.at(-1)
-  if (passed || newest === undefined) return undefined
-  const failed = newest.results.find((result) => result.status === "failed")
-  const commits = `${baselines.length} replayed commit${baselines.length === 1 ? "" : "s"}`
-  const at = (newest.commit ?? "").slice(0, 7)
-  return `no target passed at any of the ${commits}. At ${at}, ${
-    failed === undefined ? "the patterns selected no target that ran" : whyOf(failed)
-  }`
 }

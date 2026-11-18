@@ -376,10 +376,10 @@ describe("a replay that runs", () => {
   }, 600_000)
 
   it("fails a step whose directory is missing, without stopping the replay, and reports the mismatch", async () => {
-    const root = track(makeSmallRepository([job("a", "sh a.sh", { cwd: "gone" })]))
+    const root = track(makeSmallRepository([job("a", "sh a.sh", { cwd: "gone" }), job("ok", "sh a.sh")]))
     const report = await replay(root, {}, { cache: "http://127.0.0.1:9" })
     const [commit] = report.commits
-    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 0, failed: 1, skipped: 0 })
+    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
     expect(commit?.normal.ok).toBe(true)
     expect(commit?.mismatches).toEqual([{ label: "//:a0_0", mode: "normal", baseline: "fail", got: "pass" }])
   }, 600_000)

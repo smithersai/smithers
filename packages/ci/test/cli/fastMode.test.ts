@@ -10,7 +10,7 @@ import type { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import { unavailable } from "../../src/select/Failure.ts"
 import { answeringModel, inProcess, modelLostFor } from "./inProcess.vibe"
 import { parts } from "./parts.vibe"
-import { commit, head, recorder, remove, repository, temporary } from "./repo.ts"
+import { commit, head, passingJustfile, recorder, remove, repository, temporary } from "./repo.ts"
 
 const made: Array<string> = []
 const keep = (path: string): string => {
@@ -121,6 +121,7 @@ describe("a real replay whose model is lost at the second of three commits", () 
   it("prints the whole normal-mode report and exits 4", async () => {
     // Each commit changes a different kind of file, so each asks the model a new question.
     const root = keep(repository(["first"]))
+    commit(root, "a CI that passes here", { justfile: passingJustfile })
     commit(root, "second", { "notes.md": "two\n" })
     commit(root, "third", { "notes.txt": "three\n" })
     const lost = modelLostFor((items) => items.some((item) => item.changedFileExtensions.includes(".md")))

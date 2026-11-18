@@ -11,6 +11,9 @@ const example: ReplayReport = Schema.decodeUnknownSync(ReplayReport)(
 
 const [green, red] = example.commits as [ReplayCommit, ReplayCommit]
 
+/** What marks a run as failed, for a commit that names no failed step. */
+const counted = { ok: false } as const
+
 /** The example with every mismatch removed: fast mode caught the failure. */
 const clean: ReplayReport = {
   ...example,
@@ -78,17 +81,20 @@ describe("text", () => {
     expect(text(example)).toBe([
       "✗ 1 mismatch",
       "",
-      "6.0× faster",
+      "5.5× faster over 1 of 2 commits",
       "",
-      "baseline  ████████████████████████  43m 40s",
-      "normal    ████                       7m 20s   6.0×",
-      "fast      █▍                         2m 30s  17.5×",
+      "baseline  ████████████████████████  22m 00s",
+      "normal    ████▍                      4m 00s   5.5×",
+      "fast      █▋                         1m 30s  14.7×",
       "",
       "2 commits · 1 mismatch",
       "",
       "commit   files  baseline      normal       fast",
       "0000000      3  pass 22m 00s  pass 4m 00s  pass 1m 30s",
       "0000000      1  fail 21m 40s  fail 3m 20s  pass 1m 00s",
+      "",
+      "failed steps",
+      "0000000  baseline, normal  //packages/core:test  exit 1: expected 2, got 3",
       "",
       "0000000  fast    //packages/core:test  fail → skipped"
     ].join("\n"))
@@ -113,14 +119,15 @@ describe("text", () => {
     expect(text(normalOnly()).split("\n").at(-1)).toBe("a1b2c3d      3  pass 22m 00s  pass 4m 00s")
     // A commit fast mode did not run has an empty cell.
     const { fast: _fast, ...plain } = red
-    expect(text({ ...clean, commits: [green, { ...plain, mismatches: [] }] }).split("\n").at(-1)).toBe(
-      "0000000      1  fail 21m 40s  fail 3m 20s"
+    const unnamed = { ...plain, baseline: { ...green.baseline, ...counted }, normal: { ...green.normal, ...counted } }
+    expect(text({ ...clean, commits: [green, { ...unnamed, mismatches: [] }] }).split("\n").at(-1)).toBe(
+      "0000000      1  fail 22m 00s  fail 4m 00s"
     )
   })
 
   it("leads with the speedup when nothing mismatched", () => {
     const lines = text(clean).split("\n")
-    expect(lines[0]).toBe("6.0× faster")
+    expect(lines[0]).toBe("5.5× faster over 1 of 2 commits")
     expect(lines).toContain("2 commits · 0 mismatches")
     expect(text(clean)).not.toContain("✗")
   })
@@ -156,7 +163,7 @@ describe("text", () => {
     }
     const lines = text(twice).split("\n")
     expect(lines[0]).toBe("✗ 2 mismatches")
-    expect(lines.filter((line) => line.includes("//packages/core:test"))).toHaveLength(2)
+    expect(lines.filter((line) => line.includes("fail → skipped"))).toHaveLength(2)
   })
 
   it("says slower when normal mode took longer than the baseline", () => {
@@ -410,15 +417,15 @@ describe("html", () => {
     expect(page).toMatch(/^<!doctype html>/)
     expect(page).toContain("<title>example/bun-turbo-monorepo · Smithers CI</title>")
     expect(page).toContain("<p class=\"alert\" role=\"alert\">1 mismatch</p>")
-    expect(page).toContain("<p class=\"hero\">6.0× faster</p>")
-    expect(page).toContain("aria-label=\"baseline 43m 40s, normal 7m 20s, fast 2m 30s\"")
+    expect(page).toContain("<p class=\"hero\">5.5× faster</p>")
+    expect(page).toContain("aria-label=\"baseline 22m 00s, normal 4m 00s, fast 1m 30s\"")
     expect(page).toContain("<p class=\"summary\">2 commits · 1 mismatch</p>")
     expect(page.indexOf("role=\"alert\"")).toBeLessThan(page.indexOf("class=\"hero\""))
   })
 
   it("draws each bar as a share of the longest time", () => {
     const widths = [...html(example).matchAll(/class="fill (\w+)" style="width:([\d.]+)%"/g)].map((m) => [m[1], m[2]])
-    expect(widths).toEqual([["baseline", "100.00"], ["normal", "16.79"], ["fast", "5.73"]])
+    expect(widths).toEqual([["baseline", "100.00"], ["normal", "18.18"], ["fast", "6.82"]])
   })
 
   it("shows fast mode's recall and selection rate with the counts behind them", () => {
@@ -459,7 +466,7 @@ describe("html", () => {
       `<tr class="bad lead"><td><code title="${red.commit}">0000000</code></td>${failed("21m 40s")}${failed("3m 20s")}${
         time("1m 00s")
       }</tr>`,
-      "<tr class=\"bad\"><td colspan=\"4\"><ul><li><code>//packages/core:test</code> <span class=\"sub\">fast: fail → skipped</span></li></ul></td></tr>"
+      "<tr class=\"bad\"><td colspan=\"4\"><ul><li><code>//packages/core:test</code> <span class=\"sub\">fast: fail → skipped</span></li><li><code>//packages/core:test</code> <span class=\"sub\">baseline, normal: exit 1: expected 2, got 3</span></li></ul></td></tr>"
     ])
     expect(html(example)).toContain(
       "<th>commit</th><th class=\"num\">baseline</th><th class=\"num\">normal</th><th class=\"num\">fast</th></tr>"
@@ -602,5 +609,76 @@ describe("a report whose fast mode could not be measured", () => {
   it("says nothing when fast mode was measured or never asked for", () => {
     expect(text(normalOnly())).not.toContain("not measured")
     expect(html(normalOnly())).not.toContain("not measured")
+  })
+})
+
+describe("failed steps", () => {
+  const failure = { step: "lint <job>", reason: "`docker` is not installed on this machine", exitCode: 127 }
+  const failedTotals = { ...green.baseline, ok: false, failures: [failure] }
+  const { fast: _fast, ...plainGreen } = green
+  const failing: ReplayCommit = {
+    ...plainGreen,
+    commit: "b".repeat(40),
+    // A step split into two targets that fail alike is one failure.
+    baseline: { ...failedTotals, failures: [failure, failure] },
+    normal: { ...green.normal, ok: false, failures: [failure, { step: "other", reason: "no exit code" }] }
+  }
+  const partly: ReplayReport = {
+    ...normalOnly(),
+    commits: [{ ...plainGreen, commit: "a".repeat(40) }, failing],
+    speedupCommits: 1
+  }
+  const none: ReplayReport = {
+    ...partly,
+    commits: [failing],
+    baselineWallMs: 0,
+    normalWallMs: 0,
+    speedup: 0,
+    speedupCommits: 0
+  }
+
+  it("says in the text how many commits the speedup covers, and lists each failure once", () => {
+    const shown = text(partly)
+    expect(shown).toContain("5.5× faster over 1 of 2 commits\n")
+    expect(shown).toContain([
+      "failed steps",
+      "bbbbbbb  baseline, normal  lint <job>  exit 127: `docker` is not installed on this machine",
+      "bbbbbbb  normal  other  no exit code"
+    ].join("\n"))
+  })
+
+  it("prints no speedup and no bars in the text when no commit's baseline passed", () => {
+    const shown = text(none)
+    expect(shown).toContain("no speedup: the CI failed at every replayed commit")
+    expect(shown).not.toContain("faster")
+    expect(shown).not.toContain("█")
+  })
+
+  it("keeps a report that says nothing about coverage as it was", () => {
+    expect(text(normalOnly())).toContain("5.5× faster\n")
+  })
+
+  it("shows the same on the page, escaped", () => {
+    const page = body(html(partly))
+    expect(page).toContain("<p class=\"hero\">5.5× faster</p>\n<p class=\"summary\">over 1 of 2 commits</p>")
+    expect(page).toContain(
+      "<li><code>lint &lt;job&gt;</code> <span class=\"sub\">baseline, normal: exit 127: `docker` is not installed on this machine</span></li>"
+    )
+    expect(page).toContain("<span class=\"sub\">normal: no exit code</span>")
+    const nothing = body(html(none))
+    expect(nothing).toContain(
+      "<p class=\"alert\" role=\"alert\">no speedup: the CI failed at every replayed commit</p>"
+    )
+    expect(nothing).not.toContain("class=\"hero\"")
+    expect(nothing).not.toContain("class=\"bars\"")
+  })
+
+  it("replaces control characters a failure holds in the text", () => {
+    const hostileFailure = { step: "a\u001b[31m", reason: "b\u0007" }
+    const shown = text({
+      ...none,
+      commits: [{ ...failing, baseline: { ...failedTotals, failures: [hostileFailure] } }]
+    })
+    expect(shown).not.toMatch(/[\u0007\u001b]/u)
   })
 })

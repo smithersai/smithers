@@ -20,6 +20,7 @@ import { defaultSettings, type Row } from "../contract/Selection.ts"
 import { type Confined, confine, held } from "../replay/Confine.vibe"
 import { noPushUrl, searchPath, stepEnvironment } from "../replay/Environment.ts"
 import { probe } from "../replay/Jail.ts"
+import { nothingPassed, printedLimit } from "../replay/Failures.ts"
 import { type Execute, Options, Progress, settle } from "../replay/Replay.vibe"
 import {
   choose,
@@ -44,7 +45,7 @@ import {
   noSmthrs,
   smthrsBin
 } from "./Install.ts"
-import { linesOf, noRecord, noRecordLabel, nothingPassed, ranAgain, ranAgainLines, withReasons } from "./Results.ts"
+import { linesOf, noRecord, noRecordLabel, ranAgain, ranAgainLines, withReasons } from "./Results.ts"
 import { chosenFor } from "./Targets.ts"
 import { isGenerated } from "./Workspace.ts"
 
@@ -55,8 +56,6 @@ const noWorkspace =
 /** The cache directory, kept between commits in normal and fast mode. */
 const cacheDirectory = ".flows"
 const outputLimit = 4000
-/** Enough of what `smthrs ci` prints to hold the reason of every failed target. */
-const reasonsLimit = 256_000
 
 /**
  * The host services this replay uses.
@@ -312,7 +311,7 @@ export const own = <R>(
       ])
       // The cache's address is the one thing the copy's own `smthrs` gets beyond what a target gets.
       const environment = { ...stepEnvironment({}, place), ...(cached ? cacheEnv : {}) }
-      const output = try exec(command, args, copy, environment, reasonsLimit, "all", true)
+      const output = try exec(command, args, copy, environment, printedLimit, "all", true)
       // A run with no record is a commit `smthrs` could not plan: a failed commit, not a failed replay.
       const text = fs.readFileString(file) catch () => undefined
       if (text === undefined) return [noRecord(output.text)]

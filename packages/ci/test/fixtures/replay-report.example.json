@@ -32,13 +32,29 @@
         "ok": false,
         "wallMs": 1300000,
         "workMs": 1300000,
-        "counts": { "hit": 0, "ran": 39, "failed": 1, "skipped": 0 }
+        "counts": { "hit": 0, "ran": 39, "failed": 1, "skipped": 0 },
+        "failures": [
+          {
+            "step": "//packages/core:test",
+            "reason": "expected 2, got 3",
+            "exitCode": 1,
+            "command": "bun test packages/core"
+          }
+        ]
       },
       "normal": {
         "ok": false,
         "wallMs": 200000,
         "workMs": 500000,
-        "counts": { "hit": 35, "ran": 4, "failed": 1, "skipped": 0 }
+        "counts": { "hit": 35, "ran": 4, "failed": 1, "skipped": 0 },
+        "failures": [
+          {
+            "step": "//packages/core:test",
+            "reason": "expected 2, got 3",
+            "exitCode": 1,
+            "command": "bun test packages/core"
+          }
+        ]
       },
       "fast": {
         "ok": true,
@@ -49,10 +65,11 @@
       "mismatches": [{ "label": "//packages/core:test", "mode": "fast", "baseline": "fail", "got": "skipped" }]
     }
   ],
-  "baselineWallMs": 2620000,
-  "normalWallMs": 440000,
-  "fastWallMs": 150000,
-  "speedup": 5.954545454545454,
+  "baselineWallMs": 1320000,
+  "normalWallMs": 240000,
+  "fastWallMs": 90000,
+  "speedup": 5.5,
+  "speedupCommits": 1,
   "mismatches": 1,
   "flaky": 0,
   "selection": {

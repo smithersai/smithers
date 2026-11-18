@@ -63,3 +63,14 @@ export const Package = S.Package({ targets: {} })
 
 /** What a repository with a GitHub workflow holds besides its build files. */
 export const ciFiles = { ".github/workflows/ci.yml": workflow, "test.sh": "exit 0\n", ".gitignore": ".flows\n" }
+
+/** What a replay says when no step passed: the first failure of the newest commit, `at`. */
+export const refusedAt = (at: string, step: string, error: string, commits = 1): string =>
+  [
+    `this repository's CI does not pass on this machine, so there is no speedup to measure. No step passed at ${
+      commits === 1 ? "the 1 replayed commit" : `any of the ${commits} replayed commits`
+    }.`,
+    `First failure at ${at}:`,
+    `  step     ${step}`,
+    `  error    ${error}`
+  ].join("\n")

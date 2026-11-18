@@ -26,6 +26,7 @@ import {
   splitOf,
   stationsOf,
   stepKey,
+  stepNames,
   stepsThrough,
   targetsOf,
   totalsOf,
@@ -126,13 +127,38 @@ describe("replayable", () => {
     const [one, two] = unitsOf(inventory([job("m", { matrix: [{ size: "small" }, { size: "big" }], steps: [size] })]))
     expect(one?.steps[0]).toEqual({
       id: "s",
+      name: "s (size=small)",
       label: "//:s-small",
       targets: ["//:s-small"],
       command: "echo small",
+      written: "echo small",
       cwd: "small",
       env: { WHERE: "small" }
     })
     expect(two?.steps[0]).toMatchObject({ label: "//:s-big", targets: ["//:s-big"], command: "echo big" })
+  })
+
+  it("calls a step by its name in its job when it has one, and names every label and target of it", () => {
+    const named = { ...step("s", "make test"), name: "Run tests" }
+    const units = unitsOf(
+      inventory([job("j", { steps: [named, step("t", "true")] })]),
+      map([["j", "s", {}, "//:s-a"], ["j", "s", {}, "//:s-b"], ["j", "t", {}, "//:t"]])
+    )
+    expect(units[0]?.steps.map((entry) => entry.name)).toEqual(["j: Run tests", "t"])
+    expect([...stepNames(units)]).toEqual([
+      ["s", { step: "j: Run tests", command: "make test" }],
+      ["//:s-a", { step: "j: Run tests", command: "make test" }],
+      ["//:s-b", { step: "j: Run tests", command: "make test" }],
+      ["//:t", { step: "t", command: "true" }]
+    ])
+  })
+
+  it("shows a step's command as its CI file writes it, not the text that runs it", () => {
+    const wrapped = { ...step("s", "make test"), runner: "prepare_the_job" }
+    const [unit] = unitsOf(inventory([job("j", { steps: [wrapped] })]))
+    expect(unit?.steps[0]?.command).toContain("prepare_the_job")
+    expect(unit?.steps[0]?.written).toBe("make test")
+    expect(stepNames([unit!]).get("//:s")).toEqual({ step: "s", command: "make test" })
   })
 
   it("compares a split step under its own id, and runs every target it became", () => {
@@ -365,6 +391,10 @@ describe("attempts", () => {
   })
 
   it("makes a target that passes a rerun flaky and clears its failure", () => {
+    const said = { ...firstAttempt(failed("a")), error: "boom", exitCode: 1, command: "make" }
+    expect(addRerun(said, ran("a", 3))).not.toHaveProperty("exitCode")
+    expect(addRerun(said, ran("a", 3))).not.toHaveProperty("command")
+    expect(addRerun(said, failed("a"))).toMatchObject({ error: "boom", exitCode: 1, command: "make" })
     const after = addRerun(firstAttempt(failed("a")), ran("a", 3))
     expect(after).toEqual({
       label: "a",
@@ -578,6 +608,27 @@ describe("reportOf", () => {
       flaky: 0
     })
     expect(report.fastWallMs).toBeUndefined()
+  })
+
+  it("states what failed in a run, under the name the step has", () => {
+    const red = recordOf([{ ...failed("//:a"), error: "boom", exitCode: 2 }, ran("//:b")], "c", 4)
+    const names = new Map([["//:a", { step: "lint", command: "make lint" }]])
+    expect(totalsOf(red, names).failures).toEqual([
+      { step: "lint", reason: "boom", exitCode: 2, command: "make lint" }
+    ])
+    expect(totalsOf(recordOf([ran("//:b")], "c", 4))).not.toHaveProperty("failures")
+  })
+
+  it("covers only the commits whose baseline passed, and says how many", () => {
+    const failing = { ...entry, baseline: { ...totals(1000), ok: false } }
+    const report = reportOf(read, [entry, failing, { ...entry, fast: totals(4) }], nothing)
+    expect(report).toMatchObject({ baselineWallMs: 60, normalWallMs: 20, speedup: 3, speedupCommits: 2 })
+    expect(reportOf(read, [failing], nothing)).toMatchObject({
+      baselineWallMs: 0,
+      normalWallMs: 0,
+      speedup: 0,
+      speedupCommits: 0
+    })
   })
 
   it("is 0 when nothing ran, and sums fast mode when it ran", () => {

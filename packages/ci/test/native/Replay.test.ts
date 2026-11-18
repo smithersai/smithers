@@ -30,7 +30,7 @@ import {
   packageWithUncached,
   smthrs
 } from "./own.ts"
-import { commit, git, repository, temporary } from "./repo.ts"
+import { commit, git, refusedAt, repository, temporary } from "./repo.ts"
 
 const head = (root: string): string => git(root, "rev-parse", "HEAD").trim()
 import { cannotStart, noTemporaryDirectories, rows, scoreKeeping } from "./support.vibe"
@@ -155,7 +155,9 @@ describe("replaying six real commits of a repository's own targets", () => {
     expect(commit(0).mismatches).toEqual([])
     // Only b ran in normal mode and its score is low; a and c have no score, so they run.
     expect(commit(1).fast?.counts).toEqual({ hit: 0, ran: 2, failed: 0, skipped: 1 })
-    expect(report.fastWallMs).toBe(report.commits.reduce((total, entry) => total + (entry.fast?.wallMs ?? 0), 0))
+    const passed = report.commits.filter((entry) => entry.baseline.ok)
+    expect(report.speedupCommits).toBe(passed.length)
+    expect(report.fastWallMs).toBe(passed.reduce((total, entry) => total + (entry.fast?.wallMs ?? 0), 0))
     expect(report.selection).toBeDefined()
   })
 
@@ -168,8 +170,8 @@ describe("replaying six real commits of a repository's own targets", () => {
       .toBe(true)
     expect(said.some((line) => /^2\/6 \w{7} normal: 1 ran, 2 from the cache, 0 failed, 0 skipped in \d+ s$/.test(line)))
       .toBe(true)
-    expect(said.some((line) => line.startsWith(`3/6 ${short(2)} baseline: //:a failed: `))).toBe(true)
-    expect(said.some((line) => line.startsWith(`3/6 ${short(2)} normal: //:a failed: `))).toBe(true)
+    expect(said.some((line) => line.startsWith(`3/6 ${short(2)} baseline: //:a failed with exit code `))).toBe(true)
+    expect(said.some((line) => line.startsWith(`3/6 ${short(2)} normal: //:a failed with exit code `))).toBe(true)
   })
 
   it("says which targets it replays and which CI job it leaves out", () => {
@@ -355,9 +357,11 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     expect(failure).toEqual({
       code: "unsupported",
       part: "replay",
-      message: `no target passed at any of the 1 replayed commit. At ${
-        head(root).slice(0, 7)
-      }, (install) failed: npm ci --no-audit --no-fund exited 1 in the repository root`
+      message: refusedAt(
+        head(root).slice(0, 7),
+        "(install)",
+        "npm ci --no-audit --no-fund exited 1 in the repository root"
+      )
     })
   })
 
@@ -375,7 +379,7 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     expect(failure).toEqual({
       code: "unsupported",
       part: "replay",
-      message: `no target passed at any of the 1 replayed commit. At ${head(root).slice(0, 7)}, //:a failed: ${missing}`
+      message: refusedAt(head(root).slice(0, 7), "//:a", missing)
     })
   })
 
@@ -386,7 +390,7 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     const root = keep(makeOwnWith(none))
     const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
     expect(failure.code).toBe("unsupported")
-    expect(failure.message).toContain("the patterns selected no target that ran")
+    expect(failure.message).toContain("the patterns selected nothing that ran")
   })
 
   it("is unsupported, with what smthrs printed, when it writes no run record at any commit", async () => {
@@ -395,9 +399,7 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     expect(failure).toEqual({
       code: "unsupported",
       part: "replay",
-      message: `no target passed at any of the 1 replayed commit. At ${
-        head(root).slice(0, 7)
-      }, (smthrs) failed: no package at //:c`
+      message: refusedAt(head(root).slice(0, 7), "(smthrs)", "no package at //:c")
     })
   })
 
@@ -405,7 +407,7 @@ describe("replaying a repository's own targets", { timeout: 300_000 }, () => {
     const root = keep(makeOwnWith(fakeSmthrs(`echo '{"ok":' > "$results"`)))
     const failure = await failureOf(onNode(own(request(root), partsFor("none"), "WORKSPACE.ts")))
     expect(failure.code).toBe("unsupported")
-    expect(failure.message).toContain("(smthrs) failed: smthrs ci wrote no run record")
+    expect(failure.message).toContain("  step     (smthrs)\n  error    smthrs ci wrote no run record")
   })
 
   it("reports a commit smthrs cannot plan as failed in both modes, and goes on", async () => {

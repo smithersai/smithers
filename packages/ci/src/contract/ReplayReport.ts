@@ -16,8 +16,33 @@ import { Mode, StatusCounts, Verdict } from "./RunRecord.ts"
 import { Metrics } from "./Selection.ts"
 
 /**
+ * One step that failed: its name, why, and, when they are known, its exit code
+ * and its command. `reason` is the first line of the step's error output, or
+ * that a program it runs is not installed. A value shaped like a credential is
+ * withheld from `reason` and `command`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const StepFailure = Schema.Struct({
+  step: Schema.NonEmptyString,
+  reason: Schema.NonEmptyString,
+  exitCode: Schema.optionalKey(Schema.Int),
+  command: Schema.optionalKey(Schema.String)
+})
+
+/**
+ * A decoded `StepFailure`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type StepFailure = typeof StepFailure.Type
+
+/**
  * One way of running one commit. `wallMs` is elapsed time; `workMs` is the
- * sum of every target's own time.
+ * sum of every target's own time. `failures` names every step that failed in
+ * the end, and is absent when none did.
  *
  * @category models
  * @since 0.1.0
@@ -26,7 +51,8 @@ export const RunTotals = Schema.Struct({
   ok: Schema.Boolean,
   wallMs: Schema.Finite,
   workMs: Schema.Finite,
-  counts: StatusCounts
+  counts: StatusCounts,
+  failures: Schema.optionalKey(Schema.Array(StepFailure))
 })
 
 /**
@@ -109,7 +135,11 @@ export type NotReplayedCommit = typeof NotReplayedCommit.Type
  * The whole replay. Each commit in `commits` ran its own CI, read from its
  * own tree; a commit whose CI could not be replayed is in
  * `notReplayedCommits` and in no time. `speedup` is baseline wall time
- * divided by normal-mode wall time, summed over every commit. `flaky` is how many verdicts were
+ * divided by normal-mode wall time. It and the three wall times cover only the
+ * commits whose baseline passed, because a failed baseline stops early and its
+ * time measures nothing; `speedupCommits` says how many that is, and when it
+ * is 0 there is no speedup and `speedup` is 0. A document without it covers
+ * every commit. `flaky` is how many verdicts were
  * `flaky`, in the baseline and in every mode; they are counted apart from
  * `mismatches`. `notReplayed` lists the CI jobs, or matrix variants, that
  * were not run, and `notRead` what the inventory could not read at all, both
@@ -135,6 +165,7 @@ export const ReplayReport = Schema.Struct({
   baselineWallMs: Schema.Finite,
   normalWallMs: Schema.Finite,
   speedup: Schema.Finite,
+  speedupCommits: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   mismatches: Schema.Int,
   fastWallMs: Schema.optionalKey(Schema.Finite),
   selection: Schema.optionalKey(Metrics),

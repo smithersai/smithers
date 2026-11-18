@@ -58,7 +58,7 @@ describe("a copy the replay makes", () => {
       `git remote get-url --push origin >> ${out}/push`,
       "git push --force origin HEAD:refs/heads/published"
     ].join(" && ")
-    const root = track(makeSmallRepository([job("release", push)]))
+    const root = track(makeSmallRepository([job("release", push), job("ok", "sh a.sh")]))
     git(root, "remote", "add", "origin", url)
     git(root, "push", "--quiet", "origin", "main")
     const before = git(root, "ls-remote", "origin")
@@ -72,7 +72,7 @@ describe("a copy the replay makes", () => {
     const [commit] = (await replay(root, { read })).commits
 
     // The baseline's step ran, in a copy of its own, and its push failed: once at first and once as a rerun.
-    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 0, failed: 1, skipped: 0 })
+    expect(commit?.baseline.counts).toEqual({ hit: 0, ran: 1, failed: 1, skipped: 0 })
     expect(readFileSync(join(out, "fetch"), "utf8").trim().split("\n")).toEqual([url, url])
     expect(readFileSync(join(out, "push"), "utf8").trim().split("\n")).toEqual([noPushUrl, noPushUrl])
     // The copy the targets run in is the same.

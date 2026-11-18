@@ -35,6 +35,9 @@ export const justfile = [
     "\n"
   )
 
+/** A justfile whose every recipe passes, for a test that needs a CI that passes on any machine. */
+export const passingJustfile = "build:\n    true\n\ntest: build\n    true\n\nci: test\n"
+
 /** Runs git in `root` as a fixed author, apart from the machine's configuration. */
 export const git = (root: string, ...args: ReadonlyArray<string>): string =>
   execFileSync("git", args, {

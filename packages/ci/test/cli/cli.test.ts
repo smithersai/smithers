@@ -15,8 +15,10 @@ import { parts } from "./parts.vibe"
 import {
   bin,
   changed,
+  commit,
   head,
   type Outcome,
+  passingJustfile,
   program,
   read,
   recorder,
@@ -326,9 +328,8 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
   })
 
   it("replays a commit end to end with every part on main, and writes nothing to the repository", async () => {
-    // The fixture's recipes call `zig build` with no build file, so each step fails the same way in the
-    // baseline and as a target, on a machine with Zig and on one without: the verdicts agree.
     const root = repo()
+    commit(root, "a CI that passes here", { justfile: passingJustfile })
     const before = snapshot(root)
     const outcome = await spawn(bin, ["--commits", "1", "--json"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
@@ -338,9 +339,9 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     expect(report.repository).toBe(basename(root))
     expect(report.commits).toHaveLength(1)
     expect(report.commits[0]!.commit).toBe(head(root))
-    expect(report.commits[0]!.baseline.ok).toBe(false)
-    expect(report.commits[0]!.normal.ok).toBe(false)
-    expect(report.commits[0]!.normal.counts.failed).toBeGreaterThan(0)
+    expect(report.commits[0]!.baseline.ok).toBe(true)
+    expect(report.commits[0]!.normal.ok).toBe(true)
+    expect(report.speedupCommits).toBe(1)
     expect(report.mismatches).toBe(0)
     expect(report.notReplayed).toBeUndefined()
     expect(await main(["apply", "--commits", "1"], root, environment)).toBe(exitCodes.usage)

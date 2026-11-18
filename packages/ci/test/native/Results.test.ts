@@ -12,6 +12,7 @@ import {
   whyNoRecord,
   withReasons
 } from "../../src/native/index.ts"
+import { refusedAt } from "./repo.ts"
 
 const result = (label: string, status: TargetResult["status"], error?: string): TargetResult => ({
   label,
@@ -48,9 +49,47 @@ describe("the reasons smthrs prints", () => {
   it("are read from its plain output, one per failed target", () => {
     expect([...reasonsIn(plain)]).toEqual([
       ["//typescript:compiler", `host binary "go" is declared in S.Host({ bins }) but is not present on PATH`],
-      ["//packages:runtime-dist", "command failed (exit 127): /bin/sh -c cd packages/runtime"]
+      ["//packages:runtime-dist", "command failed (exit 127): /bin/sh -c cd packages/runtime\n$ tsc -p [REDACTED]"]
     ])
     expect(reasonsIn("//a:b  ran  3ms\nall good").size).toBe(0)
+  })
+
+  it("keep what a failed command printed under its line, up to the next target", () => {
+    const output = [
+      "//:a  failed  1ms  command failed (exit 7): /bin/sh -c bash -e -c 'sh check.sh'",
+      "the check broke",
+      "more",
+      "//:b  failed  1ms  command failed (exit 127): /bin/sh -c bash -e -c 'docker run x'",
+      "bash: line 1: docker: command not found",
+      "//:c  ran  1ms",
+      "not part of anything",
+      "code: targets_failed"
+    ].join("\n")
+    expect(withReasons([result("//:a", "failed"), result("//:b", "failed")], output)).toEqual([
+      { ...result("//:a", "failed", "the check broke"), exitCode: 7, command: "bash -e -c 'sh check.sh'" },
+      {
+        ...result("//:b", "failed", "`docker` is not installed on this machine"),
+        exitCode: 127,
+        command: "bash -e -c 'docker run x'"
+      }
+    ])
+  })
+
+  it("give a failed command's exit code, command and first error line, never the rest of its output", () => {
+    const printed = JSON.stringify({
+      _tag: "smithers-build/ExecError",
+      argv: ["bash", "-e", "-c", "./deploy --token=abc123"],
+      code: "exit_status",
+      cwd: ".",
+      exitCode: 2,
+      stderr: "deploy refused\nsecond line\n",
+      stdout: "private output\n"
+    })
+    expect(withReasons([result("//:a", "failed")], `//:a  failed  1ms  ${printed}`)).toEqual([{
+      ...result("//:a", "failed", "deploy refused"),
+      exitCode: 2,
+      command: "./deploy [withheld]"
+    }])
   })
 
   it("are added to a failed target whose record has none, and to nothing else", () => {
@@ -108,7 +147,7 @@ describe("linesOf", () => {
     expect(linesOf("2/3 abc1234 normal", results, 12_400)).toEqual([
       "2/3 abc1234 normal: 1 ran, 2 from the cache, 2 failed, 1 skipped in 12 s",
       "2/3 abc1234 normal: //:e failed: exit 1",
-      "2/3 abc1234 normal: //:f failed: smthrs gave no reason"
+      "2/3 abc1234 normal: //:f failed: no reason was given"
     ])
   })
 
@@ -181,18 +220,17 @@ describe("nothingPassed", () => {
   it("gives the newest commit's first failure when nothing passed at any commit", () => {
     const older = record("a".repeat(40), [result("//:a", "failed", "old reason")])
     const newest = record("b".repeat(40), [result("//:b", "skipped"), result("//:a", "failed", "host binary missing")])
-    expect(nothingPassed([older, newest])).toBe(
-      "no target passed at any of the 2 replayed commits. At bbbbbbb, //:a failed: host binary missing"
-    )
-    expect(nothingPassed([older])).toBe(
-      "no target passed at any of the 1 replayed commit. At aaaaaaa, //:a failed: old reason"
-    )
+    expect(nothingPassed([older, newest])).toBe(refusedAt("bbbbbbb", "//:a", "host binary missing", 2))
+    expect(nothingPassed([older])).toBe(refusedAt("aaaaaaa", "//:a", "old reason"))
   })
 
-  it("says so when no target ran at all", () => {
+  it("says so when nothing ran at all", () => {
     const { commit: _commit, ...unnamed } = record("", [])
     expect(nothingPassed([unnamed])).toBe(
-      "no target passed at any of the 1 replayed commit. At , the patterns selected no target that ran"
+      [
+        "this repository's CI does not pass on this machine, so there is no speedup to measure. No step passed at the 1 replayed commit.",
+        "At , the patterns selected nothing that ran."
+      ].join("\n")
     )
   })
 })

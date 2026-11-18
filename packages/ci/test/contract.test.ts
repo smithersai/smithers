@@ -1080,3 +1080,33 @@ describe("contract changes, sixth round: a job that cannot be reproduced is neve
     expect((await Effect.runPromise(files(once))).map((file) => file.path)).toEqual(["ci.yml:test.ts"])
   })
 })
+
+describe("what a report says about a failure", () => {
+  const report = fixture("replay-report.example.json") as { readonly commits: ReadonlyArray<object> }
+
+  it("holds each failed step's name, reason, exit code and command, and how many commits the speedup covers", () => {
+    const decoded = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(report)
+    expect(decoded.speedupCommits).toBe(1)
+    expect(decoded.commits[1]?.baseline.failures).toEqual([{
+      step: "//packages/core:test",
+      reason: "expected 2, got 3",
+      exitCode: 1,
+      command: "bun test packages/core"
+    }])
+    expect(decoded.commits[0]?.baseline.failures).toBeUndefined()
+  })
+
+  it("refuses a failure with no step or no reason, and a negative count of commits", () => {
+    const decode = Schema.decodeUnknownSync(ReplayReport.StepFailure)
+    expect(decode({ step: "a", reason: "b" })).toEqual({ step: "a", reason: "b" })
+    expect(() => decode({ step: "", reason: "b" })).toThrow()
+    expect(() => decode({ step: "a", reason: "" })).toThrow()
+    expect(() => Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, speedupCommits: -1 })).toThrow()
+  })
+
+  it("lets a run record's result say how its command ended", () => {
+    const result = { label: "//:a", status: "failed", key: "", durationMs: 1, exitCode: 127, command: "docker" }
+    expect(Schema.decodeUnknownSync(RunRecord.TargetResult)(result)).toEqual(result)
+    expect(() => Schema.decodeUnknownSync(RunRecord.TargetResult)({ ...result, exitCode: 1.5 })).toThrow()
+  })
+})

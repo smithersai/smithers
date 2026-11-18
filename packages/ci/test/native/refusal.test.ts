@@ -11,7 +11,7 @@ import { generatedMark } from "../../src/native/index.ts"
 import { run as generic } from "../../src/replay/index.ts"
 import { inProcess } from "../cli/inProcess.vibe"
 import { bin, changed, head, type Outcome, read, recorder, snapshot, spawn, temporary } from "../cli/repo.ts"
-import { ciFiles, ownPackage, ownWorkspace, repository } from "./repo.ts"
+import { ciFiles, ownPackage, ownWorkspace, refusedAt, repository } from "./repo.ts"
 
 const made: Array<string> = []
 const keep = (path: string): string => {
@@ -60,11 +60,18 @@ describe("smithers-ci on a repository with its own Smithers workspace", { timeou
         const outcome = await run(args, root)
         expect(outcome.code).toBe(exitCodes.unsupported)
         expect(outcome.stdout).toBe("")
-        expect(outcome.stderr.trimEnd().split("\n").at(-1)).toBe(
-          `smithers-ci: replay: no target passed at any of the 1 replayed commit. At ${
-            head(root).slice(0, 7)
-          }, (install) failed: no node_modules/.bin/smthrs in ${where} after the install; the repository must depend on @smthrs/cli`
-        )
+        expect(
+          outcome.stderr.trimEnd().endsWith(
+            `smithers-ci: replay: ${
+              refusedAt(
+                head(root).slice(0, 7),
+                "(install)",
+                `no node_modules/.bin/smthrs in ${where} after the install; the repository must depend on @smthrs/cli`
+              )
+            }`
+          ),
+          outcome.stderr
+        ).toBe(true)
       }
       expect(changed(before, snapshot(root))).toEqual([])
     }
