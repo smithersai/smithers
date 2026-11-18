@@ -1,4 +1,3 @@
-import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { spawnSync } from "node:child_process"
@@ -6,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { describe, expect, it } from "vitest"
 import type { Inventory as InventoryDocument, Job } from "../src/contract/Inventory.ts"
 import { Inventory } from "../src/contract/Inventory.ts"
 import { files } from "../src/generate/index.ts"
@@ -113,7 +113,8 @@ describe("generated files under the real smthrs", () => {
     const inventory = document([
       job("good", ["mkdir -p made && echo built > made/file", "test -f made/file", "grep -q source input.txt"]),
       job("bad", ["echo fail-first; false\necho unreachable"]),
-      job("blocked", ["true"], { needs: ["bad"] })
+      job("blocked", ["true"], { needs: ["bad"] }),
+      job("recipe", ["#!/usr/bin/env bash\n[[ -f input.txt ]]"], { source: "justfile" })
     ])
     const root = repository(inventory, { "input.txt": "source\n" })
     try {
@@ -124,7 +125,8 @@ describe("generated files under the real smthrs", () => {
         "good-2": "ran",
         "good-3": "ran",
         "bad-1": "failed",
-        "blocked-1": "skipped"
+        "blocked-1": "skipped",
+        "recipe-1": "ran"
       })
 
       // A clean checkout: what setup steps left behind is gone.

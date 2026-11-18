@@ -83,6 +83,7 @@ const renderTarget = (target: StepTarget, index: number, variables: ReadonlyMap<
       ? [`outFiles: [${text(`//${markerDirectory}/${target.label}`)}]`, `cache: false`]
       : []),
     ...(Object.keys(target.env).length === 0 ? [] : [`env: ${JSON.stringify(target.env)}`]),
+    ...(target.inheritEnv.length === 0 ? [] : [`inheritEnv: ${JSON.stringify(target.inheritEnv)}`]),
     ...(target.host === undefined ? [] : [`hosts: [${text(target.host)}]`]),
     `sandbox: "none"`,
     `timeout: ${text(stepTimeout)}`,

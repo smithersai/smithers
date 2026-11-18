@@ -36,6 +36,7 @@ export interface StepTarget {
   readonly rule: "setup" | "check"
   readonly script: string
   readonly env: Readonly<Record<string, string>>
+  readonly inheritEnv: ReadonlyArray<string>
   readonly host: Host | undefined
   readonly dependencies: ReadonlyArray<string>
   readonly title: string
@@ -74,6 +75,8 @@ interface Draft extends Omit<StepTarget, "rule" | "script"> {
   readonly directory: string
 }
 
+const runnerVariable = /\$\{?((?:GITHUB|RUNNER)_[A-Z0-9_]+)/g
+const secretReference = /\$\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const plainCommand = /^[A-Za-z0-9_./:=@%+,-]+(?: +[A-Za-z0-9_./:=@%+,-]+)*$/
 const workflowTriggers: ReadonlySet<string> = new Set(["merge_group", "pull_request", "push", "workflow_dispatch"])
 
@@ -117,29 +120,40 @@ const directoryOf = (cwd: string): string | undefined => {
   return cwd.startsWith("/") || parts.includes("..") ? undefined : parts.join("/")
 }
 
+// A recipe with its own interpreter line runs as a file, as Just runs it.
+const interpreterScript = (command: string): string =>
+  [
+    `script=$(mktemp) || exit`,
+    `printf '%s\\n' ${quote(command)} > "$script" || exit`,
+    `chmod +x "$script" || exit`,
+    `"$script"`,
+    `status=$?`,
+    `rm -f "$script"`,
+    `exit "$status"`
+  ].join("\n")
+
+const bodyOf = (job: Job, command: string): ReadonlyArray<string> => {
+  if (job.source === "github-actions") {
+    // GitHub runs each `run` block with `bash -e`. A command of plain words
+    // means the same in any shell and keeps its program visible to the key.
+    return [plainCommand.test(command) ? command : `bash --noprofile --norc -e -c ${quote(command)}`]
+  }
+  if (command.startsWith("#!")) return [interpreterScript(command)]
+  // Just and Make stop at the first failing line of a recipe.
+  return command.includes("\n") ? ["set -e", command] : [command]
+}
+
 const scriptOf = (
   job: Job,
   command: string,
   directory: string,
   marker: string | undefined
-): string => {
-  const github = job.source === "github-actions"
-  // GitHub runs each `run` block with `bash -e`. A command of plain words means
-  // the same in any shell and keeps its program visible to the cache key.
-  const body = github && !plainCommand.test(command)
-    ? `bash --noprofile --norc -e -c ${quote(command)}`
-    : command
-  const prelude = [
-    ...(marker === undefined ? [] : [`mkdir -p ${markerDirectory}`, `: > ${marker}`]),
-    ...(directory === "" ? [] : [`cd -- ${quote(directory)}`])
-  ]
-  return [
-    ...prelude.map((line) => `${line} || exit`),
-    // Just and Make stop at the first failing line of a recipe.
-    ...(!github && command.includes("\n") ? ["set -e"] : []),
-    body
+): string =>
+  [
+    ...(marker === undefined ? [] : [`mkdir -p ${markerDirectory} || exit`, `: > ${marker} || exit`]),
+    ...(directory === "" ? [] : [`cd -- ${quote(directory)} || exit`]),
+    ...bodyOf(job, command)
   ].join("\n")
-}
 
 const validate = (inventory: Inventory): Failure | undefined => {
   const fail = (message: string): Failure => ({ code: "invalid-document", message, part: "generate" })
@@ -230,10 +244,18 @@ export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure
       if (value === undefined) notes.add(`${step.id}: ${name} is not set, its value exists only on GitHub Actions.`)
       else env[name] = value
     }
-    for (const secret of step.secrets) notes.add(`${step.id}: secret ${secret} is not passed to the target.`)
+    const referenced = [...step.command.matchAll(secretReference)].map((match) => match[1] as string)
+    for (const secret of [...step.secrets, ...referenced]) {
+      notes.add(`${step.id}: secret ${secret} is not passed to the target.`)
+    }
+    // The runner's own variables reach a step only when it names them. They
+    // enter its key, so a step that reads the commit reruns on every commit.
+    const inheritEnv = sorted([...command.matchAll(runnerVariable)].map((match) => match[1] as string))
+      .filter((name) => name !== "GITHUB_TOKEN" && !Object.hasOwn(env, name))
     return {
       label: uniqueLabel(step, variant),
       env,
+      inheritEnv,
       host,
       dependencies,
       title: `${job.name} / ${step.name ?? step.id}`,
@@ -269,6 +291,10 @@ export const planSteps = (inventory: Inventory): Result.Result<StepPlan, Failure
 
   if (drafts.size === 0) {
     return Result.fail({ code: "unsupported", message: "No job has a command to run.", part: "generate" })
+  }
+
+  if ([...drafts.values()].every((draft) => draft.host === "win32")) {
+    return Result.fail({ code: "unsupported", message: "Every job runs only on Windows.", part: "generate" })
   }
 
   const targets = [...drafts.values()].map(({ command, directory, job, ...draft }): StepTarget => {

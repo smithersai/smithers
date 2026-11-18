@@ -17,13 +17,12 @@
 export type Variant = Readonly<Record<string, string>>
 
 const expression = /\$\{\{\s*(.*?)\s*\}\}/g
-const reference = /^(matrix|env|secrets|vars|github|runner)\.[A-Za-z_][A-Za-z0-9_-]*$/
+const reference = /^(matrix|env|secrets|github|runner)\.[A-Za-z_][A-Za-z0-9_-]*$/
 const variableName = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 const prefixes: ReadonlyMap<string, string> = new Map([
   ["env", ""],
   ["secrets", ""],
-  ["vars", ""],
   ["github", "GITHUB_"],
   ["runner", "RUNNER_"]
 ])
@@ -32,7 +31,8 @@ const matrixValue = (variant: Variant, name: string): string | undefined =>
   Object.hasOwn(variant, name) ? variant[name] : undefined
 
 const shellVariable = (context: string, name: string): string | undefined => {
-  if (!variableName.test(name)) return undefined
+  // `github.token` is a credential, and a target's environment enters its key.
+  if (!variableName.test(name) || (context === "github" && name === "token")) return undefined
   const prefix = prefixes.get(context) as string
   return `\${${prefix}${prefix === "" ? name : name.toUpperCase()}}`
 }

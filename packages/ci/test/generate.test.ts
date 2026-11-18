@@ -1,8 +1,8 @@
-import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
+import { describe, expect, it } from "vitest"
 import type { Inventory as InventoryDocument, Job, Step } from "../src/contract/Inventory.ts"
 import { Inventory } from "../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile, GenerateFiles } from "../src/contract/Parts.ts"
@@ -67,7 +67,7 @@ describe("expressions", () => {
   it("writes matrix values in place and names the variable GitHub documents for the rest", () => {
     const variant = { node: "22" }
     expect(forShell("use ${{ matrix.node }}", variant)).toBe("use 22")
-    expect(forShell("${{env.A}} ${{ secrets.B }} ${{ vars.C }}", variant)).toBe("${A} ${B} ${C}")
+    expect(forShell("${{env.A}} ${{ secrets.B }}", variant)).toBe("${A} ${B}")
     expect(forShell("${{ github.sha }} ${{ runner.os }}", variant)).toBe("${GITHUB_SHA} ${RUNNER_OS}")
   })
 
@@ -77,6 +77,8 @@ describe("expressions", () => {
     expect(forShell("${{ matrix.missing }}", {})).toBeUndefined()
     expect(forShell("${{ matrix.constructor }}", {})).toBeUndefined()
     expect(forShell("${{ env.not-a-name }}", {})).toBeUndefined()
+    expect(forShell("${{ vars.SETTING }}", {})).toBeUndefined()
+    expect(forShell("${{ github.token }}", {})).toBeUndefined()
   })
 
   it("allows only matrix values where no shell reads the text", () => {
@@ -154,6 +156,24 @@ describe("what a step becomes", () => {
   it("stops a multi-line recipe at its first failure", () => {
     const source = targetsOf(inventory([job("a", [step("a:1", "false\ntrue")], { source: "makefile" })]))
     expect(declaration(source, "a-1")).toContain(JSON.stringify("set -e\nfalse\ntrue"))
+  })
+
+  it("runs a recipe with an interpreter line as a file", () => {
+    const source = targetsOf(inventory([job("a", [step("a:1", "#!/usr/bin/env bash\n[[ -f x ]]")], {
+      source: "justfile"
+    })]))
+    expect(declaration(source, "a-1")).toContain("script=$(mktemp) || exit")
+    expect(declaration(source, "a-1")).not.toContain("set -e")
+  })
+
+  it("passes the runner's variables a command names, and never its token", () => {
+    const source = targetsOf(inventory([job("a", [
+      step("a:1", "echo ${{ github.sha }} $RUNNER_OS $GITHUB_TOKEN ${GITHUB_REF}", { env: { GITHUB_REF: "main" } }),
+      step("a:2", "echo ${{ secrets.DEPLOY_KEY }}")
+    ])]))
+    expect(declaration(source, "a-1")).toContain(`inheritEnv: ["GITHUB_SHA","RUNNER_OS"]`)
+    expect(declaration(source, "a-2")).not.toContain("inheritEnv")
+    expect(source).toContain("// a:2: secret DEPLOY_KEY is not passed to the target.")
   })
 
   it("enters the step's directory and refuses one outside the repository", () => {
@@ -265,6 +285,9 @@ describe("refusals", () => {
 
   it("says so when nothing can run", () => {
     expect(failureOf(inventory([job("a", [])]))).toMatchObject({ code: "unsupported", part: "generate" })
+    expect(failureOf(inventory([job("a", [step("a:1", "x")], { runsOn: "windows-latest" })])).message).toContain(
+      "Windows"
+    )
   })
 })
 
