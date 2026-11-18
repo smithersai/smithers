@@ -311,6 +311,16 @@ export const trialTime = (ms: number): string =>
   `found the jobs that pass on this machine in ${duration(ms)}, which is in none of these times`
 
 /**
+ * What the run of the newest commit with the files `apply` writes cost, as
+ * one line.
+ *
+ * @category formatting
+ * @since 0.1.0
+ */
+export const appliedTime = (ms: number): string =>
+  `ran the newest commit once more with the files apply writes in ${duration(ms)}, which is in none of these times`
+
+/**
  * What the run before the first counted commit took in each way, as one
  * line: `the first run, with an empty cache, took 4m 10s as the baseline and
  * 5m 02s in normal mode; it happens once and is in none of these times`.

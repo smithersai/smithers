@@ -63,14 +63,19 @@ describe("fast mode asks for the model before it works", () => {
   })
 
   it("replays when the model answers", async () => {
-    const outcome = await runIn(["--mode", "both", "--commits", "1"], keep(repository()), asking, answeringModel)
+    const outcome = await runIn(
+      ["--mode", "both", "--commits", "1", "--no-apply-check"],
+      keep(repository()),
+      asking,
+      answeringModel
+    )
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stderr).toContain("replay request:")
   })
 
   it("never asks the model in normal mode", async () => {
     const unasked: Parts<Host> = { ...parts, score: () => Effect.die("the model was asked") }
-    expect((await runIn(["--commits", "1"], keep(repository()), unasked)).code).toBe(exitCodes.ok)
+    expect((await runIn(["--commits", "1", "--no-apply-check"], keep(repository()), unasked)).code).toBe(exitCodes.ok)
   })
 
   it("reports any other failure of the question as that part's failure", async () => {
@@ -126,7 +131,7 @@ describe("a real replay whose model is lost at the second of three commits", () 
     commit(root, "third", { "notes.txt": "three\n" })
     const lost = modelLostFor((items) => items.some((item) => item.changedFileExtensions.includes(".md")))
     // The commit before these three has a CI that needs Zig: the count starts from nothing, not from a run of it.
-    const outcome = await runIn(["--mode", "both", "--commits", "3", "--cold"], root, onMain, lost)
+    const outcome = await runIn(["--mode", "both", "--commits", "3", "--no-apply-check", "--cold"], root, onMain, lost)
 
     expect(outcome.code, outcome.stderr).toBe(exitCodes.failed)
     expect(outcome.stdout).toContain("3 commits · 0 mismatches")

@@ -240,14 +240,30 @@ check the same one; the workflow does.
 ### When one of your tools reads a generated file
 
 A tool told to read every file, dot directories included, reads the files
-above. `cspell --dot` is one, and it stops at a word it does not know:
+above. `cspell --dot` is one.
+
+The replay finds it before `apply` does. At the newest commit it runs your
+steps once more with those files committed, as `apply` leaves your repository.
+A step that passes in your CI and fails there is a mismatch, and the report
+says why under it:
 
 ```text
-.smithers/WORKSPACE.smithers:2:19 - Unknown word (smthrs)
+3f2a1c9  normal  //:ci.yml-lint-1  pass → fail
+  cspell read .smithers/WORKSPACE.smithers, which Smithers CI wrote. Add .smithers to "ignorePaths" in the cspell configuration.
 ```
 
-Add `.smithers` to that tool's ignore list; for cspell that is `"ignorePaths"`
-in its configuration. No tool reads the cache: it is never in your checkout
+Add the path to that tool's ignore list and run the report again. A step that
+fails there without naming a file, such as one that counts the files at your
+root, is listed the same way, with the files `apply` writes.
+
+That run is one more run of your steps at one commit. Its time is on a line
+of its own in the report and in none of the totals. To leave it out:
+
+```bash
+bunx smithers-ci --no-apply-check
+```
+
+No tool reads the cache: it is never in your checkout
 (see [Where the cache is on a machine](../concepts/cache.md#where-the-cache-is-on-a-machine)).
 
 ## Next

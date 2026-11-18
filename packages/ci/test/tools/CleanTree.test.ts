@@ -114,7 +114,9 @@ describe("a repository whose CI checks that its checkout holds what the commit h
     commit(root, "docs only")
     write(root, { "src/m": "ok\n# 2\n" })
     commit(root, "a source")
-    const replayed = node(root, program, ["--commits", "3", "--json"])
+    // The copies a replay runs a commit in are what this test is about. The run as `apply` leaves the repository
+    // holds `.smithers`, committed, where `cleanls` rightly fails: `AsApplied.test.ts` is about that run.
+    const replayed = node(root, program, ["--commits", "3", "--no-apply-check", "--json"])
     expect(replayed.status, replayed.output).toBe(0)
     const report = Schema.decodeUnknownSync(Schema.fromJsonString(ReplayReport))(replayed.stdout)
     expect(report.commits).toHaveLength(3)

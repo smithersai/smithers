@@ -55,7 +55,7 @@ const machine = () => {
 }
 
 const replay = async (root: string, env: NodeJS.ProcessEnv, ...flags: ReadonlyArray<string>) => {
-  const outcome = await spawn(bin, ["--commits", "1", "--json", ...flags], root, env)
+  const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check", "--json", ...flags], root, env)
   expect(outcome.code, outcome.stderr).toBe(0)
   return JSON.parse(outcome.stdout) as ReplayReport
 }

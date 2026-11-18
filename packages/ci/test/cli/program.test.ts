@@ -91,7 +91,11 @@ describe.concurrent("smithers-ci from a directory of the repository", () => {
   it("replays the repository, not the subdirectory, and reads a relative --out from where it was started", async () => {
     const root = repo()
     const before = snapshot(root)
-    const outcome = await spawn(program, ["--commits", "1", "--out", "report.html"], join(root, "src"))
+    const outcome = await spawn(
+      program,
+      ["--commits", "1", "--no-apply-check", "--out", "report.html"],
+      join(root, "src")
+    )
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(requestOf(outcome.stderr)).toEqual({
       root,
@@ -115,7 +119,9 @@ describe.concurrent("smithers-ci from a directory of the repository", () => {
       stderr: `smithers-ci: inventory: ${directory} is not a git repository with a commit\n`
     })
     expect(await main(["inventory"], directory, environment)).toBe(exitCodes.unsupported)
-    expect(await main(["replay", "--commits", "1"], directory, environment)).toBe(exitCodes.unsupported)
+    expect(await main(["replay", "--commits", "1", "--no-apply-check"], directory, environment)).toBe(
+      exitCodes.unsupported
+    )
     expect(await main(["--bogus"], directory, environment)).toBe(exitCodes.usage)
   })
 })
@@ -124,7 +130,7 @@ describe.concurrent("what the default command says it wrote", () => {
   it("names the --out file as the one file written when it is inside the repository", async () => {
     const root = repo()
     const before = snapshot(root)
-    const outcome = await runIn(["--commits", "1", "--out", "pages/report.html"], root)
+    const outcome = await runIn(["--commits", "1", "--no-apply-check", "--out", "pages/report.html"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stdout).toContain(
       " files. This run wrote one file to the repository: pages/report.html."
@@ -136,7 +142,7 @@ describe.concurrent("what the default command says it wrote", () => {
   it("leaves .gitignore out of what apply would do when it already names the cache directory", async () => {
     const root = repo()
     commit(root, "ignore", { ".gitignore": ".flows\n" })
-    const outcome = await runIn(["--commits", "1"], root)
+    const outcome = await runIn(["--commits", "1", "--no-apply-check"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stdout).toMatch(
       /smithers-ci apply would write \d+ files\. This run wrote nothing to the repository\.\n$/
@@ -146,9 +152,11 @@ describe.concurrent("what the default command says it wrote", () => {
   it("says it wrote nothing when --out is outside the repository, or absent", async () => {
     const root = repo()
     const before = snapshot(root)
-    const outside = await runIn(["--commits", "1", "--out", `${scratch()}/report.html`], root)
+    const outside = await runIn(["--commits", "1", "--no-apply-check", "--out", `${scratch()}/report.html`], root)
     expect(outside.stdout).toContain("This run wrote nothing to the repository.")
-    expect((await runIn(["--commits", "1"], root)).stdout).toContain("This run wrote nothing to the repository.")
+    expect((await runIn(["--commits", "1", "--no-apply-check"], root)).stdout).toContain(
+      "This run wrote nothing to the repository."
+    )
     expect(changed(before, snapshot(root))).toEqual([])
   })
 })
@@ -162,7 +170,7 @@ describe.concurrent("what the default command says the replay did", () => {
   it("says the replay ran generated targets when the workspace file is not committed", async () => {
     const root = repo()
     writeFileSync(join(root, "WORKSPACE.ts"), ownWorkspace)
-    const outcome = await runIn(["--commits", "1"], root)
+    const outcome = await runIn(["--commits", "1", "--no-apply-check"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stdout.trimEnd().endsWith(`\n\n${uncommittedFooter("WORKSPACE.ts")}`)).toBe(true)
     expect(outcome.stdout).not.toContain("ran its own targets")
@@ -173,7 +181,7 @@ describe.concurrent("what the default command says the replay did", () => {
   it("says the replay ran the repository's own targets when the report holds them", async () => {
     const root = repo()
     commit(root, "own workspace", { "WORKSPACE.ts": ownWorkspace })
-    const outcome = await runIn(["--commits", "1", "--out", "report.html"], root, ownTargets)
+    const outcome = await runIn(["--commits", "1", "--no-apply-check", "--out", "report.html"], root, ownTargets)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(
       outcome.stdout.trimEnd().endsWith(
@@ -186,7 +194,7 @@ describe.concurrent("what the default command says the replay did", () => {
     const root = repo()
     commit(root, "own workspace", { "WORKSPACE.ts": ownWorkspace })
     rmSync(join(root, "WORKSPACE.ts"))
-    const outcome = await runIn(["--commits", "1"], root, ownTargets)
+    const outcome = await runIn(["--commits", "1", "--no-apply-check"], root, ownTargets)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stdout.trimEnd().endsWith(`\n\n${footer(undefined)}`)).toBe(true)
     expect(outcome.stdout).not.toContain("apply would write")
@@ -209,14 +217,14 @@ describe.concurrent("uncommitted changes", () => {
     it(`are named on standard error as not replayed, by ${named}`, async () => {
       const root = repo()
       writeFileSync(join(root, "src", "0.zig"), "pub const n = 100;\n")
-      const outcome = await runIn([...command, "--commits", "1"], root)
+      const outcome = await runIn([...command, "--commits", "1", "--no-apply-check"], root)
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
       expect(outcome.stderr.startsWith(notReplayed)).toBe(true)
       expect(outcome.stdout).not.toContain("not committed")
     })
 
     it(`are not named by ${named} on a clean working tree`, async () => {
-      const outcome = await runIn([...command, "--commits", "1"], repo())
+      const outcome = await runIn([...command, "--commits", "1", "--no-apply-check"], repo())
       expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
       expect(outcome.stderr).not.toContain("not committed")
     })
@@ -225,7 +233,7 @@ describe.concurrent("uncommitted changes", () => {
   it("are named by the installed program too, for an untracked file", async () => {
     const root = repo()
     writeFileSync(join(root, "notes.txt"), "not committed\n")
-    const outcome = await spawn(program, ["replay", "--commits", "1"], root)
+    const outcome = await spawn(program, ["replay", "--commits", "1", "--no-apply-check"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stderr.startsWith(notReplayed)).toBe(true)
   })
@@ -284,7 +292,7 @@ describe("a signal", () => {
         return () => void listeners.delete(name)
       }
       const chosen: Chosen = { ...parts, run: hanging(marker) }
-      const running = run(["replay", "--commits", "1"], repo(), environment, chosen, listen)
+      const running = run(["replay", "--commits", "1", "--no-apply-check"], repo(), environment, chosen, listen)
       const { directory, pid } = JSON.parse(await awaited(marker)) as { directory: string; pid: number }
       expect(existsSync(directory)).toBe(true)
       expect(alive(pid)).toBe(true)
@@ -331,7 +339,7 @@ describe("a signal", () => {
         execFileSync("ps", ["-A", "-ww", "-o", "args="], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }).split("\n")
           .filter((line) => line.includes(token))
       const replays = (): ReadonlyArray<string> => readdirSync(temp).filter((name) => name.startsWith("smithers-ci-"))
-      const running = start(bin, ["replay", "--commits", "1", "--no-trial"], root, { TMPDIR: temp })
+      const running = start(bin, ["replay", "--commits", "1", "--no-apply-check", "--no-trial"], root, { TMPDIR: temp })
       // In a jail the step's temporary directory is the replay's own, for its job in the baseline and for its way
       // in a mode; with no jail it is the program's.
       const made = (name: string): ReadonlyArray<string> => {

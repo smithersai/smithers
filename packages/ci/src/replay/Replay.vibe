@@ -33,7 +33,8 @@ import {
   type GeneratedFile,
   type ReplayParts,
   type ReplayRequest,
-  type ScoreRows
+  type ScoreRows,
+  writtenFiles
 } from "../contract/Parts.ts"
 import type { FirstRun, NotReplayedCommit, ReplayCommit, ReplayReport, StepFailure } from "../contract/ReplayReport.ts"
 import { RunRecord, type TargetResult } from "../contract/RunRecord.ts"
@@ -103,7 +104,9 @@ import {
   cycleIn,
   failedAt,
   failedTwice,
+  failsApplied,
   failure,
+  failureTexts,
   fastRunOf,
   finishedReport,
   firstAttempt,
@@ -123,6 +126,7 @@ import {
   recordOf,
   recovered,
   replayable,
+  seenIn,
   splitOf,
   type Station,
   stationsOf,
@@ -254,6 +258,9 @@ interface Prepared {
   readonly declaration: GeneratedFile
   /** Files an earlier smithers-ci wrote, which this commit holds where Smithers build would read them too. */
   readonly former: ReadonlyArray<string>
+  /** The files `apply` writes into the repository, and whether this commit lacks one: `apply` was not run on it. */
+  readonly generated: ReadonlyArray<GeneratedFile>
+  readonly applies: boolean
   readonly units: ReadonlyArray<Unit>
   /** Every target of the units, each once. */
   readonly labels: ReadonlyArray<string>
@@ -420,6 +427,16 @@ export effect function scoresOrReason<R>(score: ScoreRows<R>, rows: ReadonlyArra
  * directory, beside the copies, and Smithers build is pointed at them. No
  * ignore line, exclude entry or index bit hides anything: a step that lists
  * its checkout, by any means, sees what a fresh clone holds.
+ *
+ * After `apply` the repository holds the generated files, committed. With
+ * `request.applied` the newest commit runs once more, in normal mode, in a
+ * copy of its own made as `apply` leaves the repository: the files written
+ * and committed. A step that passed and fails there is a mismatch of normal
+ * mode at that commit, and says why (`Mismatch.cause`): which tool read
+ * which file as one of the repository's own, or that the step fails once
+ * those files are committed. A step that read none of them is answered from
+ * the cache. The run's time is `ReplayReport.appliedMs` and is in no way's
+ * time: `apply` is run once, by a person.
  *
  * The baseline, normal mode and fast mode each have a home and a temporary
  * directory of their own. No way is timed with a cache another way paid for.
@@ -598,6 +615,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         inventory,
         declaration,
         former: checked.former,
+        generated: writtenFiles(generated),
+        applies: checked.changes.some((change) => change.change === "missing"),
         units: replayed.units,
         labels,
         splits: splitOf(replayed.units),
@@ -633,13 +652,12 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
 
     /**
      * What points Smithers build at a site: the copy is the workspace, and the generated workspace file and the
-     * cache directory are beside it.
+     * cache directory are beside it. A copy as `apply` leaves it (`applied`) holds the workspace file itself.
      */
-    const pointed = (site: Site, own: Prepared): ReadonlyArray<string> => [
+    const pointed = (site: Site, own: Prepared, applied = false): ReadonlyArray<string> => [
       "--workspace",
       site.copy,
-      "--workspace-file",
-      declarationAt(site, own.declaration),
+      ...(applied ? [] : ["--workspace-file", declarationAt(site, own.declaration)]),
       "--cache-dir",
       site.cache
     ]
@@ -695,8 +713,17 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       return planOfPrinted(printed)
     }
 
-    /** Runs the targets of `commit` at a site, in the place of the way the site belongs to. */
-    const smithers = (commit: string, site: Site, own: Prepared): Execute<Host> => (targets) => effect {
+    /**
+     * Runs the targets of `commit` at a site, in the place of the way the site belongs to. With `causes` the
+     * site's copy is as `apply` leaves it, and `causes` gains, by label, why a target failed over a file `apply`
+     * wrote.
+     */
+    const smithers = (
+      commit: string,
+      site: Site,
+      own: Prepared,
+      causes?: Map<string, string>
+    ): Execute<Host> => (targets) => effect {
       const selected = targets ?? own.labels
       if (selected.length === 0) return []
       runs += 1
@@ -707,7 +734,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         ...(starter ?? options.smthrs),
         "ci",
         ...selected,
-        ...pointed(site, own),
+        ...pointed(site, own, causes !== undefined),
         "--results-file",
         file,
         "--ui",
@@ -727,9 +754,77 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
         throw failure("command-failed", `smthrs ci wrote no run record: ${output.text.slice(-outputLimit)}`)
       }
       const recorded = record === undefined ? undefined : withReasons(record.results, output.text)
-      return stalled
+      const results = stalled
         ? stoppedResults(recorded, selected, watch.limitMs, noProgress(stall.minutes))
         : recorded as ReadonlyArray<TargetResult>
+      if (causes !== undefined) {
+        // What a failed target printed may name a file `apply` wrote: a tool of the repository read it as one of
+        // its own. A mismatch of that target then says so.
+        const said = failureTexts(output.text)
+        const written = own.generated.map((file) => file.path)
+        for (const result of results) {
+          const cause = result.status === "failed" ? seenIn(said.get(result.label), written) : undefined
+          if (cause !== undefined) causes.set(result.label, cause)
+        }
+      }
+      return results
+    }
+
+    /** Who commits the generated files in a copy, as a person commits what `apply` wrote. */
+    const applier = ["-c", "user.name=smithers-ci", "-c", "user.email=smithers-ci@example.invalid", "-c", "commit.gpgsign=false"]
+
+    /**
+     * The newest commit once more, in normal mode, in a copy made as `apply` leaves a repository: the generated
+     * files written and committed. It is a copy of its own, so the copies the three ways run in hold the commit's
+     * files and nothing else. A step that read none of the files is answered from normal mode's cache. It gives
+     * how long the run took, and the mismatches of normal mode that only this run shows: every step that passed
+     * on the commit's files and fails here, each with the line that says why. It gives nothing when the request
+     * does not ask for the run, when no step passed, and at a commit that holds the files already: that one is as
+     * `apply` leaves it.
+     */
+    effect function asApplied(at: string, commit: string, own: Prepared, baseRecord: RunRecord, normalRecord: RunRecord) {
+      const passed = normalRecord.results.flatMap((result) =>
+        result.status === "ran" || result.status === "hit" ? [result.label] : []
+      )
+      if (request.applied !== true || !own.applies || passed.length === 0) return undefined
+      const start = try Clock.currentTimeMillis
+      try progress.say(`${at} with the files apply writes`)
+      const site = { ...normal, copy: path.join(work, "applied", path.basename(root)) } satisfies Site
+      try cloneAt(site.copy, commit, site.place)
+      for (const file of own.generated) {
+        const target = path.resolve(site.copy, file.path)
+        try orFail(fs.makeDirectory(path.dirname(target), { recursive: true }), `could not write ${file.path}`)
+        try orFail(fs.writeFileString(target, file.content), `could not write ${file.path}`)
+      }
+      for (const former of own.former) {
+        try orFail(fs.remove(path.resolve(site.copy, former)), `could not remove ${former}`)
+      }
+      const paths = [...own.generated.map((file) => file.path), ...own.former]
+      try git(site.copy, ["add", "--all", "--force", "--", ...paths], site.place)
+      const commits = ["commit", "--quiet", "--no-verify", "--allow-empty", "--message", "smithers-ci apply"]
+      try git(site.copy, [...applier, ...commits], site.place)
+      const causes = new Map<string, string>()
+      // Its reruns are not the replay's: they are in no count of the report.
+      const second = try measure(
+        Effect.void,
+        Effect.void,
+        smithers(commit, site, own, causes),
+        passed,
+        reruns,
+        new Map(),
+        { count: 0, ms: 0 }
+      )
+      const failed = new Map(second.results.flatMap((result) => result.status === "failed" ? [[result.label, result] as const] : []))
+      // A step that names none of the files still fails only beside them: the line says so and lists them.
+      const written = own.generated.map((file) => file.path)
+      for (const label of failed.keys()) {
+        if (!causes.has(label)) causes.set(label, failsApplied(written))
+      }
+      const results = normalRecord.results.map((result) => failed.get(result.label) ?? result)
+      // A step that this run failed carries its line; a mismatch normal mode already had carries none.
+      const mismatches = mismatchesOf("normal", baseRecord, { ...normalRecord, results }, own.splits, causes)
+        .filter((entry) => entry.cause !== undefined)
+      return { mismatches, ms: (try Clock.currentTimeMillis) - start }
     }
 
     const stepLimit = options.stepTimeout ?? Duration.hours(stepTimeoutHours)
@@ -1002,6 +1097,8 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
     let flaky = 0
     let fastFlaky = 0
     let fastNotMeasured: string | undefined = undefined
+    // How long the run as `apply` leaves the repository took, when there was one.
+    let appliedMs: number | undefined = undefined
     const selected = new Map<string, ReadonlyArray<string>>()
 
     for (const [index, commit] of commits.entries()) {
@@ -1083,12 +1180,21 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
           selected.set(commit, choice.selected)
         }
       }
+      // The newest commit is the one `apply` is run on.
+      const applied = index === commits.length - 1
+        ? try asApplied(at, commit, own, baseRecord, normalRecord)
+        : undefined
+      if (applied !== undefined) appliedMs = applied.ms
       commitsDone.push({
         commit,
         changedFiles: changed.length,
         baseline: totalsOf(baseRecord, names, base.cpuMs),
         normal: totalsOf(normalRecord, names, ran.cpuMs),
-        mismatches: [...mismatchesOf("normal", baseRecord, normalRecord, own.splits), ...fastMismatches],
+        mismatches: [
+          ...mismatchesOf("normal", baseRecord, normalRecord, own.splits),
+          ...(applied === undefined ? [] : applied.mismatches),
+          ...fastMismatches
+        ],
         ...fastPart
       })
     }
@@ -1106,6 +1212,7 @@ export const run = <R>(request: ReplayRequest, parts: ReplayParts<R>): ReplayRep
       fastNotMeasured,
       jobs: jobsCovered(newest.units, newest.left),
       trialMs,
+      appliedMs,
       reruns: tally,
       firstRun: started.firstRun,
       cold: started.cold

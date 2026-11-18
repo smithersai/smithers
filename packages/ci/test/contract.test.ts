@@ -1279,6 +1279,20 @@ describe("what a report says about a failure", () => {
     expect(request.warm).toBe(true)
   })
 
+  it("holds what the run as apply leaves the repository took, and a person can leave that run out", () => {
+    const decoded = Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, appliedMs: 41_000 })
+    expect(decoded.appliedMs).toBe(41_000)
+    expect(Schema.decodeUnknownSync(ReplayReport.ReplayReport)(report).appliedMs).toBeUndefined()
+    expect(() => Schema.decodeUnknownSync(ReplayReport.ReplayReport)({ ...report, appliedMs: "long" })).toThrow()
+    // The flag is named for what it leaves out, as `--no-trial` is, and takes no value.
+    expect(Command.flags["no-apply-check"]).toMatchObject({ on: ["", "replay"], default: "false" })
+    expect(Command.flags["no-apply-check"].help).toContain("the files apply writes")
+    expect(Command.syntax.value).toContain("`--no-apply-check`")
+    // A replay is asked for the run; without the word there is none.
+    const request: Parts.ReplayRequest = { root: ".", commits: 1, modes: ["normal"], applied: true }
+    expect(request.applied).toBe(true)
+  })
+
   it("holds the CPU time each way's steps used, for a commit and over the commits the times cover", () => {
     const decoded = Schema.decodeUnknownSync(ReplayReport.ReplayReport)(report)
     expect(decoded.commits[0]?.baseline.cpuMs).toBe(4_200_000)

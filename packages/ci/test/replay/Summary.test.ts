@@ -537,6 +537,20 @@ describe("failureTexts", () => {
       ["//:i", ""]
     ])
     expect([...failureTexts("")]).toEqual([])
+    // Two targets that ran at once: a line one printed while it ran is its own, whichever line it follows.
+    const atOnce = [
+      "//:b  failed  291ms  {\"stdout\":\"\",\"stderr\":\"\"}",
+      "//:a: .smithers/WORKSPACE.smithers:2:19 - Unknown word (smthrs)",
+      "//:b: what b printed",
+      "after b",
+      "//:a  failed  223ms  {\"stdout\":\".smithers/WORKSPACE.smithers:2:19 - Unknown word (smthrs)\\n\"}",
+      "//:b: late",
+      "code: targets_failed"
+    ].join("\n")
+    expect([...failureTexts(atOnce)]).toEqual([
+      ["//:b", "//:b: what b printed\nafter b"],
+      ["//:a", ".smithers/WORKSPACE.smithers:2:19 - Unknown word (smthrs)"]
+    ])
   })
 })
 

@@ -716,7 +716,7 @@ test:
     commit(root, "second", { "src/a.txt": "value 2\n" })
     commit(root, "third", { "src/b.txt": "more\n" })
 
-    const replay = await spawn(bin, ["replay", "--commits", "2", "--json"], root)
+    const replay = await spawn(bin, ["replay", "--commits", "2", "--no-apply-check", "--json"], root)
     expect(replay.code, replay.stderr).toBe(exitCodes.ok)
     const report = Schema.decodeUnknownSync(Schema.fromJsonString(ReplayReport))(replay.stdout)
     expect(report.commits).toHaveLength(2)

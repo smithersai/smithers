@@ -103,7 +103,7 @@ it.skipIf(process.platform === "win32" || !existsSync(npmPackage))(
     commit(root, "a is fixed", { "packages/a/value.js": "module.exports = \"ok\"\n// fixed\n" })
     const fixed = head(root)
 
-    const outcome = await start(bin, ["--commits", "3", "--json"], root, {
+    const outcome = await start(bin, ["--commits", "3", "--no-apply-check", "--json"], root, {
       HOME: home,
       PATH: `${tools}:${systemPath()}`
     }).done

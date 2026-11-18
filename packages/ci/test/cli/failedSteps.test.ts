@@ -41,7 +41,7 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
   it("measures the jobs that pass, names the share, lists the other with its step, exit code and error", async () => {
     const jobs = workflow("sh check.sh", "sh check.sh", failing)
     const root = repositoryOf({ [file]: jobs, "check.sh": "exit 0\n" }, { "note.txt": "x\n" })
-    const outcome = await spawn(bin, ["--commits", "2"], root)
+    const outcome = await spawn(bin, ["--commits", "2", "--no-apply-check"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     // The headline says how much of the CI the number covers.
     expect(outcome.stdout).toMatch(/× (faster|slower) over 2 of 3 jobs\n/)
@@ -50,7 +50,7 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
     expect(outcome.stdout).toMatch(
       /ci\.yml:job2 +fails on this machine: \S.*: exit 1: no docker here \(at \w{7} and \w{7}\)\n/
     )
-    const json = await spawn(bin, ["--commits", "2", "--json"], root)
+    const json = await spawn(bin, ["--commits", "2", "--no-apply-check", "--json"], root)
     const report = JSON.parse(json.stdout) as {
       readonly jobs: unknown
       readonly notReplayed: ReadonlyArray<{
@@ -65,7 +65,7 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
 
   it("does not measure a CI of which half the jobs cannot pass here: it lists them with why, and exits 3", async () => {
     const root = repositoryOf({ [file]: workflow("sh check.sh", failing), "check.sh": "exit 0\n" })
-    const outcome = await spawn(bin, ["--commits", "1"], root)
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.unsupported)
     expect(outcome.stdout).toBe("")
     expect(outcome.stderr).toContain(
@@ -80,7 +80,7 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
 
   it("exits 3 when no job passes", async () => {
     const root = repositoryOf({ [file]: workflow(failing) })
-    const outcome = await spawn(bin, ["--commits", "1"], root)
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.unsupported)
     expect(outcome.stdout).toBe("")
     expect(outcome.stderr).toContain(`No job passed at ${head(root).slice(0, 7)}.`)
@@ -89,7 +89,7 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
 
   it("with --no-trial runs every job, and the failing job fails each commit", async () => {
     const root = repositoryOf({ [file]: workflow("sh check.sh", failing), "check.sh": "exit 0\n" })
-    const outcome = await spawn(bin, ["--commits", "1", "--no-trial"], root)
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check", "--no-trial"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stdout).toContain("no speedup: the CI failed at every replayed commit")
     expect(outcome.stdout).not.toContain("fails on this machine")
@@ -99,7 +99,7 @@ describe("smithers-ci on a repository where one job cannot pass here", { timeout
     const blocked = "d=$(mktemp -d); mkfifo $d/pipe; cat $d/pipe"
     const jobs = workflow("sh check.sh", "sh check.sh", blocked)
     const root = repositoryOf({ [file]: jobs, "check.sh": "exit 0\n" })
-    const outcome = await spawn(bin, ["--commits", "1", "--stall-minutes", "0.1"], root)
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check", "--stall-minutes", "0.1"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stdout).toMatch(
       /ci\.yml:job2 +fails on this machine: \S.*: it made no progress for 0\.1 minutes \(at \w{7}\)\n/
@@ -126,7 +126,7 @@ describe("smithers-ci on a repository where normal mode gives another result tha
   it("prints the mismatches and what to do, and no speedup, as text and as JSON", async () => {
     const file = ".github/workflows/ci.yml"
     const root = repositoryOf({ [file]: workflow("sh fresh.sh"), "fresh.sh": fresh }, { "note.txt": "x\n" })
-    const outcome = await spawn(bin, ["--commits", "2", "--no-trial"], root)
+    const outcome = await spawn(bin, ["--commits", "2", "--no-apply-check", "--no-trial"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.mismatch)
     const lines = outcome.stdout.split("\n")
     expect(lines[0]).toMatch(/^✗ \d+ mismatch(es)?$/)
@@ -135,7 +135,7 @@ describe("smithers-ci on a repository where normal mode gives another result tha
     )
     expect(outcome.stdout).not.toMatch(/× (faster|slower)/)
     expect(outcome.stdout).toMatch(/^\w{7} {2}normal {2}\S+ {2}pass → fail$/m)
-    const json = await spawn(bin, ["--commits", "2", "--no-trial", "--json"], root)
+    const json = await spawn(bin, ["--commits", "2", "--no-apply-check", "--no-trial", "--json"], root)
     expect(json.code, json.stderr).toBe(exitCodes.mismatch)
     const report = JSON.parse(json.stdout) as Record<string, number>
     expect(report["mismatches"]).toBeGreaterThan(0)
@@ -161,7 +161,7 @@ describe("smithers-ci on a job whose middle step fails", { timeout: 600_000 }, (
       [file]: steps("sh check.sh", "echo 'the middle starts'; echo 'the middle broke' >&2; exit 7", "sh check.sh"),
       "check.sh": "exit 0\n"
     })
-    const json = await spawn(bin, ["--commits", "1", "--no-trial", "--json"], root)
+    const json = await spawn(bin, ["--commits", "1", "--no-apply-check", "--no-trial", "--json"], root)
     const report = JSON.parse(json.stdout) as {
       readonly commits: ReadonlyArray<Record<"baseline" | "normal", { readonly failures?: ReadonlyArray<unknown> }>>
     }
@@ -177,7 +177,7 @@ describe("smithers-ci on a job whose middle step fails", { timeout: 600_000 }, (
       [file]: steps("sh check.sh", "echo 'one'; echo 'two failed'; exit 6", "sh check.sh"),
       "check.sh": "exit 0\n"
     })
-    const outcome = await spawn(bin, ["--commits", "1", "--no-trial"], root)
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check", "--no-trial"], root)
     const listed = outcome.stdout.split("\n").filter((line) => line.includes("exit 6"))
     expect(listed).toHaveLength(1)
     expect(listed[0]).toMatch(/^\w{7} {2}baseline, normal {2}\S.* {2}exit 6: two failed$/)
@@ -188,7 +188,7 @@ describe("smithers-ci on a repository whose CI fails here", { timeout: 600_000 }
   it("exits 3 with the first failure and no speedup when no step ever passes", async () => {
     const file = ".github/workflows/ci.yml"
     const root = repositoryOf({ [file]: workflow(`${missing} --version`) }, { "note.txt": "a change\n" })
-    const outcome = await spawn(bin, ["--commits", "2"], root)
+    const outcome = await spawn(bin, ["--commits", "2", "--no-apply-check"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.unsupported)
     expect(outcome.stdout).toBe("")
     expect(outcome.stderr).not.toContain("faster")
@@ -209,11 +209,11 @@ describe("smithers-ci on a repository whose CI fails here", { timeout: 600_000 }
       { "check.sh": "echo 'the check broke' >&2\nexit 7\n" },
       { "check.sh": "exit 0\n" }
     )
-    const outcome = await spawn(bin, ["--commits", "3"], root)
+    const outcome = await spawn(bin, ["--commits", "3", "--no-apply-check"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     expect(outcome.stdout).toMatch(/× (faster|slower) over 2 of 3 commits\n/)
     expect(outcome.stdout).toMatch(/failed steps\n\w{7} {2}baseline, normal {2}\S+ {2}exit 7: the check broke\n/)
-    const json = await spawn(bin, ["--commits", "3", "--json"], root)
+    const json = await spawn(bin, ["--commits", "3", "--no-apply-check", "--json"], root)
     const report = JSON.parse(json.stdout) as {
       readonly speedupCommits: number
       readonly commits: ReadonlyArray<{ readonly baseline: { readonly failures?: ReadonlyArray<unknown> } }>

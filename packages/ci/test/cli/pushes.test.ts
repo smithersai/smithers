@@ -88,7 +88,7 @@ const fixture = () => {
 const program = async (root: string, refusal?: string) => {
   const sink = recorder()
   // The job that pushes fails, and this test is about what it did at every step: it is not left out.
-  const run = cli(["--commits", "1", "--no-trial"], root, parts)
+  const run = cli(["--commits", "1", "--no-apply-check", "--no-trial"], root, parts)
   const noJail = Layer.effect(
     Options,
     Effect.gen(function*() {

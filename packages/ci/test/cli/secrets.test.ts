@@ -168,7 +168,7 @@ const cache = async () => {
 const program = async (root: string, url: string, refusal?: string) => {
   for (const [name, value] of Object.entries(tokens)) vi.stubEnv(name, value)
   const sink = recorder()
-  const run = cli(["--commits", "1", "--json", "--cache", url], root, parts)
+  const run = cli(["--commits", "1", "--no-apply-check", "--json", "--cache", url], root, parts)
   const noJail = Layer.effect(
     Options,
     Effect.gen(function*() {
@@ -247,7 +247,7 @@ describe("smithers-ci started with tokens in its environment", () => {
     // Node: on a machine that keeps bubblewrap elsewhere there is no jail, and the step sees the program itself.
     // What the program reads of the person's variables it still reads, from memory: with Docker allowed, a step
     // is told where the person's daemon is.
-    const child = spawn(process.execPath, [bin, "--commits", "1", "--json", "--allow-docker"], {
+    const child = spawn(process.execPath, [bin, "--commits", "1", "--no-apply-check", "--json", "--allow-docker"], {
       cwd: fixture([`test "$DOCKER_HOST" = ${daemon}`]),
       env: {
         ...process.env,

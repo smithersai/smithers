@@ -66,7 +66,7 @@ describe("the software a runner comes with", () => {
     commit(root, "base", { ".github/workflows/ci.yml": workflow, "check.sh": check, "src.txt": "one\n" })
     commit(root, "a source change", { "src.txt": "two\n" })
 
-    const outcome = await spawnWith(bin, ["--commits", "2", "--json", "--no-trial"], root, {
+    const outcome = await spawnWith(bin, ["--commits", "2", "--no-apply-check", "--json", "--no-trial"], root, {
       ANDROID_HOME: sdk,
       ANDROID_SDK_ROOT: sdk,
       CONDA: "",
@@ -108,7 +108,7 @@ describe("the software a runner comes with", () => {
     })
 
     // A variable that names no place on this machine puts nothing back, and is still what the step is told.
-    const outcome = await spawnWith(bin, ["--commits", "1", "--json", "--no-trial"], root, {
+    const outcome = await spawnWith(bin, ["--commits", "1", "--no-apply-check", "--json", "--no-trial"], root, {
       ANDROID_HOME: sdk,
       CONDA: "relative/conda",
       JAVA_HOME: current,
@@ -128,7 +128,7 @@ describe("the software a runner comes with", () => {
     git(root, "init", "--quiet", "--initial-branch=main")
     commit(root, "base", { ".github/workflows/ci.yml": workflow, "check.sh": check, "src.txt": "one\n" })
 
-    const outcome = await spawnWith(bin, ["--commits", "1", "--json", "--no-trial"], root, {
+    const outcome = await spawnWith(bin, ["--commits", "1", "--no-apply-check", "--json", "--no-trial"], root, {
       ANDROID_HOME: "",
       ANDROID_SDK_ROOT: ""
     })

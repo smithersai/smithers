@@ -93,7 +93,7 @@ describe("a repository whose CI is npm ci, then npm run lint and npm test", () =
       })
 
       // The newest commit fails on purpose, and its verdict is what is compared: nothing is left out.
-      const outcome = await spawn(bin, ["--commits", "5", "--json", "--no-trial"], root)
+      const outcome = await spawn(bin, ["--commits", "5", "--no-apply-check", "--json", "--no-trial"], root)
       expect(outcome.stderr).not.toContain("reads are not observed")
       const report = JSON.parse(outcome.stdout) as ReplayReport
       const subjects = git(root, "log", "--reverse", "--format=%H %s", "-5").trim().split("\n")
@@ -147,7 +147,9 @@ describe("a repository whose CI is npm ci, then npm run lint and npm test", () =
       commit(root, "docs only", { "docs/readme.md": "# Fixture\n\nMore words.\n" })
       const tools = temporary("no-strace")
       made.push(tools)
-      const outcome = await spawnWith(bin, ["--commits", "2", "--json"], root, { PATH: pathWithout("strace", tools) })
+      const outcome = await spawnWith(bin, ["--commits", "2", "--no-apply-check", "--json"], root, {
+        PATH: pathWithout("strace", tools)
+      })
       const sentence = "smithers-ci: this machine cannot record what a step reads (strace is not installed). "
         + "A step that names no inputs runs on every commit. On Linux, install strace."
       expect(outcome.stderr.split("\n").filter((line) => line === sentence)).toHaveLength(1)

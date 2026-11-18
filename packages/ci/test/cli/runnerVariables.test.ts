@@ -101,7 +101,10 @@ describe("a workflow whose steps read a runner's variables from their own code",
       commit(root, "docs again", { "docs/readme.md": "# Fixture\n\nOther words.\n" })
       commit(root, "the file a test reads changes", { "src/value.txt": "ok, still\n" })
 
-      const outcome = await spawn(bin, ["--commits", "4", "--json"], root, { ...process.env, ...persons })
+      const outcome = await spawn(bin, ["--commits", "4", "--no-apply-check", "--json"], root, {
+        ...process.env,
+        ...persons
+      })
       expect(outcome.stderr).not.toContain("reads are not observed")
       const report = JSON.parse(outcome.stdout) as ReplayReport
       const subjects = git(root, "log", "--reverse", "--format=%H %s", "-4").trim().split("\n")

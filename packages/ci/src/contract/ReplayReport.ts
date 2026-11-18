@@ -73,11 +73,13 @@ export type RunTotals = typeof RunTotals.Type
  * mismatch; a skip of one that passed is not. A step that was split is a
  * mismatch when the mode never reported one of its targets.
  *
- * `cause` is present when the step passed in the baseline, failed in the
- * mode, and its output names a file Smithers CI wrote: a tool of the
- * repository read that file as one of its own. It is one line that names the
- * tool, the file, and what to add to the tool's ignore list. The mismatch
- * still counts.
+ * `cause` is present when the step passed in the baseline and on the
+ * commit's files in the mode, and failed in the copy made as `apply` leaves
+ * the repository (`ReplayRequest.applied`). It is one line. When the step's
+ * output names a file `apply` wrote, a tool of the repository read that file
+ * as one of its own, and the line names the tool, the file, and what to add
+ * to the tool's ignore list. Otherwise the line says the step fails once
+ * those files are committed, and lists them. The mismatch still counts.
  *
  * @category models
  * @since 0.1.0
@@ -194,7 +196,9 @@ export type FirstRun = typeof FirstRun.Type
  * `jobs` says how many of the CI's jobs the numbers cover: those replayed, of
  * those replayed and those in `notReplayed`. `trialMs` is how long the run
  * that found the jobs that pass on this machine took, when there was one. It
- * is in no other time.
+ * is in no other time. `appliedMs` is how long the run of the newest commit
+ * took in a copy made as `apply` leaves the repository
+ * (`ReplayRequest.applied`), when there was one. It is in no other time.
  *
  * `baselineCpuMs`, `normalCpuMs` and `fastCpuMs` are the CPU time each way's
  * steps used over the commits the wall times cover. A way has the number
@@ -223,6 +227,7 @@ export const ReplayReport = Schema.Struct({
   speedupCommits: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   jobs: Schema.optionalKey(Schema.Struct({ replayed: Schema.Int, total: Schema.Int })),
   trialMs: Schema.optionalKey(Schema.Finite),
+  appliedMs: Schema.optionalKey(Schema.Finite),
   reruns: Schema.optionalKey(Schema.Struct({ count: Schema.Int, ms: Schema.Finite })),
   firstRun: Schema.optionalKey(FirstRun),
   cold: Schema.optionalKey(Schema.NonEmptyString),

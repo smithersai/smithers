@@ -76,7 +76,7 @@ const passedEverywhere = (report: ReplayReport, commits: number): void => {
 describe("a replay of a job that uses actions/cache", () => {
   it("restores at the first counted commit what each way's first run saved, and leaves the job in", async () => {
     // The oldest counted commit passes only with what an earlier run saved: the first run, at the commit before it.
-    const outcome = await spawn(bin, ["--commits", "2", "--json"], repository())
+    const outcome = await spawn(bin, ["--commits", "2", "--no-apply-check", "--json"], repository())
     expect(outcome.stderr).not.toContain("error")
     const report = JSON.parse(outcome.stdout) as ReplayReport
     passedEverywhere(report, 2)
@@ -89,7 +89,7 @@ describe("a replay of a job that uses actions/cache", () => {
     "restores at a later commit what an earlier commit's run saved, from the repository's first commit on",
     async () => {
       // No commit comes before the first, so the job is judged there, where it needs no cache, and stays in.
-      const outcome = await spawn(bin, ["--commits", "4", "--json"], repository())
+      const outcome = await spawn(bin, ["--commits", "4", "--no-apply-check", "--json"], repository())
       expect(outcome.stderr).not.toContain("error")
       const report = JSON.parse(outcome.stdout) as ReplayReport
       passedEverywhere(report, 4)

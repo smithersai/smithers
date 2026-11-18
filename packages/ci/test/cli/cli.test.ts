@@ -60,7 +60,7 @@ const ways = {
 }
 
 /** What a replay is asked for unless the flags say otherwise. */
-const measuring = { trial: true, warm: true, reruns: 1, stallMinutes: 10 }
+const measuring = { trial: true, applied: true, warm: true, reruns: 1, stallMinutes: 10 }
 
 const commandNames = ["", "apply", "inventory", "replay"] as const
 const flagNames = Object.keys(flags) as ReadonlyArray<keyof typeof flags>
@@ -77,6 +77,7 @@ const sample = (flag: keyof typeof flags, out: string): ReadonlyArray<string> =>
     check: ["--check"],
     "allow-docker": ["--allow-docker"],
     "no-trial": ["--no-trial"],
+    "no-apply-check": ["--no-apply-check"],
     cold: ["--cold"],
     reruns: ["--reruns", "3"],
     "stall-minutes": ["--stall-minutes", "5"]
@@ -206,6 +207,7 @@ describe.each(Object.entries(ways))("smithers-ci %s", (_way, exec) => {
       const outcome = await exec([
         ...args,
         "--no-trial",
+        "--no-apply-check",
         "--cold",
         "--reruns",
         "0",
@@ -468,7 +470,9 @@ describe.concurrent("smithers-ci on main's parts, as the installed program", () 
     expect(outcome.stderr.trim().split("\n")).toEqual([
       `smithers-ci: checking which jobs pass on this machine at ${head(root).slice(0, 7)}`,
       `${at} baseline`,
-      `${at} normal`
+      `${at} normal`,
+      // The newest commit once more, as `apply` leaves the repository.
+      `${at} with the files apply writes`
     ])
     const report = decode(ReplayReport, outcome.stdout)
     expect(report.repository).toBe(basename(root))

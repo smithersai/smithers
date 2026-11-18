@@ -119,7 +119,9 @@ const toolFailureOf = Schema.decodeUnknownOption(
  * What a run of Smithers build printed for each target that failed: the
  * lines after `<label>  failed  ...`, up to the next target's line. The
  * line itself holds the step's command and is left out, unless it is a tool
- * failure, which holds the tool's output.
+ * failure, which holds the tool's output. A line a target printed while it
+ * ran starts with that target's label (`<label>: ...`): it is that target's
+ * alone, whichever target's line it follows.
  *
  * @category results
  * @throws {never}
@@ -128,10 +130,12 @@ const toolFailureOf = Schema.decodeUnknownOption(
 export const failureTexts = (output: string): ReadonlyMap<string, string> => {
   const texts = new Map<string, Array<string>>()
   let current: Array<string> | undefined
+  let owner: string | undefined
   for (const line of output.split("\n")) {
     const status = /^(\/\/\S*:\S+) {2}(hit|ran|failed|skipped|cancelled)\b(?: {2}\S+ {2}(.*))?/.exec(line)
     if (status !== null) {
       current = status[2] === "failed" ? [] : undefined
+      owner = status[1]
       if (current !== undefined) {
         const tool = Option.getOrUndefined(toolFailureOf(status[3] ?? ""))
         current.push(
@@ -143,6 +147,9 @@ export const failureTexts = (output: string): ReadonlyMap<string, string> => {
     }
     // The summary that ends a run starts with one of these keys.
     if (/^(code|verb|pattern|counts|ok): /.test(line)) current = undefined
+    // Two targets that run at once print between each other's lines.
+    const printedBy = /^(\/\/\S*:\S+): /.exec(line)?.[1]
+    if (printedBy !== undefined && printedBy !== owner) continue
     current?.push(line)
   }
   return new Map([...texts].map(([label, lines]) => [label, lines.join("\n")]))
@@ -184,6 +191,20 @@ export const seenIn = (error: string | undefined, written: ReadonlyArray<string>
     ? `A tool of this repository read ${file}, which Smithers CI wrote. Add ${ignored} to that tool's ignore list.`
     : `${tool.name} read ${file}, which Smithers CI wrote. ${tool.ignore(ignored)}.`
 }
+
+/**
+ * One line for a step that passes on the commit's files and fails in the
+ * copy made as `apply` leaves the repository, and names none of the files
+ * `apply` wrote in what it printed: what happened, and the files.
+ *
+ * @category report
+ * @throws {never}
+ * @since 0.1.0
+ */
+export const failsApplied = (written: ReadonlyArray<string>): string =>
+  `This step passes on the commit's files and fails once the files smithers-ci apply writes are committed: ${
+    written.join(", ")
+  }.`
 
 /**
  * How many times a failed target reruns after its first run, where a replay's
@@ -1055,6 +1076,8 @@ export interface Findings {
   readonly jobs?: { readonly replayed: number; readonly total: number } | undefined
   /** How long the run that found the jobs that pass here took, when there was one. */
   readonly trialMs?: number | undefined
+  /** How long the run of the newest commit as `apply` leaves the repository took, when there was one. */
+  readonly appliedMs?: number | undefined
   /** How many times failed steps ran again, and how long that took. */
   readonly reruns?: { readonly count: number; readonly ms: number } | undefined
   /** The run of each way before the first counted commit, when there was one. */
@@ -1127,6 +1150,7 @@ export const reportOf = (
     speedupCommits: measured.length,
     ...(found.jobs === undefined ? {} : { jobs: found.jobs }),
     ...(found.trialMs === undefined ? {} : { trialMs: found.trialMs }),
+    ...(found.appliedMs === undefined ? {} : { appliedMs: found.appliedMs }),
     ...(found.reruns === undefined || found.reruns.count === 0
       ? {}
       : { reruns: { count: found.reruns.count, ms: found.reruns.ms } }),
@@ -1207,6 +1231,8 @@ export interface Gathered {
   readonly jobs?: { readonly replayed: number; readonly total: number } | undefined
   /** How long the run that found the jobs that pass here took, when there was one. */
   readonly trialMs?: number | undefined
+  /** How long the run of the newest commit as `apply` leaves the repository took, when there was one. */
+  readonly appliedMs?: number | undefined
   /** How many times failed steps ran again, and how long that took. */
   readonly reruns?: { readonly count: number; readonly ms: number } | undefined
   /** The run of each way before the first counted commit, when there was one. */
@@ -1238,6 +1264,7 @@ export const finishedReport = (
     fastNotMeasured: gathered.fastNotMeasured,
     jobs: gathered.jobs,
     trialMs: gathered.trialMs,
+    appliedMs: gathered.appliedMs,
     reruns: gathered.reruns,
     firstRun: gathered.firstRun,
     cold: gathered.cold

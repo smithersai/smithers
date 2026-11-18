@@ -734,6 +734,17 @@ describe("failed steps", () => {
     expect(shown).not.toContain("█")
   })
 
+  it("says what the run with the files apply writes took, on a line of its own", () => {
+    const report: ReplayReport = { ...normalOnly(), appliedMs: 62_000 }
+    const line =
+      "ran the newest commit once more with the files apply writes in 1m 02s, which is in none of these times"
+    expect(text(report)).toContain(`\n${line}\n`)
+    expect(body(html(report))).toContain(`<p class="summary">${line}</p>`)
+    // A replay asked to leave that run out says nothing of it.
+    expect(text(normalOnly())).not.toContain("with the files apply writes")
+    expect(body(html(normalOnly()))).not.toContain("with the files apply writes")
+  })
+
   it("says how many jobs the numbers cover, beside the commits, and what finding them took", () => {
     const report: ReplayReport = { ...normalOnly(), jobs: { replayed: 3, total: 5 }, trialMs: 62_000 }
     const shown = text(report)

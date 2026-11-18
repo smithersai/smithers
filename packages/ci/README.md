@@ -32,6 +32,12 @@ directly, so the parts are built at the same time.
 - **`Command.declarationOf(files)`** (added): the generated file Smithers build reads as the workspace declaration,
   the written one at a place of `applyRefuses`. A replay writes that one file beside its copy of the repository and
   names it to Smithers build (`--workspace-file`). No other generated file is written in a replay.
+- **`Command.flags["no-apply-check"]`, `ReplayRequest.applied`, `ReplayReport.appliedMs`** (added): a replay runs
+  the newest commit once more, in normal mode, in a copy made as `apply` leaves the repository (the generated files
+  written and committed), unless the person passes `--no-apply-check`. A step that passes on the commit's files and
+  fails there is a mismatch of normal mode with `Mismatch.cause`: the tool, the file and what to add when the step's
+  output names a generated file, else a line that says it fails once those files are committed and lists them. The
+  run's time is `appliedMs`, on a line of its own, in no other time.
 - Not contracts, and changed with them: a replay's copy holds the commit's files and nothing else. Smithers build's
   cache directory, the compiled code of `smthrs`, the generated workspace file and the run records are beside the
   copy (`--cache-dir`, `--workspace-file`), with no ignore line, exclude entry or index bit. The generated workspace

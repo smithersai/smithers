@@ -180,6 +180,11 @@ const noTrial = Flag.Boolean("no-trial").pipe(
   Flag.withDescription(helpOf("no-trial"))
 )
 
+const noApplyCheck = Flag.Boolean("no-apply-check").pipe(
+  Flag.withDefault(false),
+  Flag.withDescription(helpOf("no-apply-check"))
+)
+
 const cold = Flag.Boolean("cold").pipe(
   Flag.withDefault(false),
   Flag.withDescription(helpOf("cold"))
@@ -204,6 +209,7 @@ const replayFlags = {
   cache,
   targets,
   noTrial,
+  noApplyCheck,
   cold,
   reruns,
   stallMinutes,
@@ -246,6 +252,7 @@ interface ReplayInput {
   readonly allowRoot: boolean
   readonly allowDocker: boolean
   readonly noTrial: boolean
+  readonly noApplyCheck: boolean
   readonly cold: boolean
   readonly reruns: number
   readonly stallMinutes: number
@@ -274,6 +281,7 @@ const requestOf = (root: string, input: ReplayInput): ReplayRequest => ({
   cache: Option.getOrUndefined(input.cache),
   targets: Option.getOrUndefined(input.targets),
   trial: !input.noTrial,
+  ...(input.noApplyCheck ? {} : { applied: true }),
   warm: !input.cold,
   reruns: input.reruns,
   stallMinutes: input.stallMinutes,

@@ -164,7 +164,7 @@ describe("a replayed commit that adds a package", () => {
     // The newest commit removes the package: targets made once, from the newest commit, would never run its test.
     git(root, "rm", "--quiet", "-r", "packages/c")
     git(root, "commit", "--quiet", "--message", "remove it")
-    const outcome = await spawn(bin, ["replay", "--commits", "2", "--json"], root)
+    const outcome = await spawn(bin, ["replay", "--commits", "2", "--no-apply-check", "--json"], root)
     expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
     const report = Schema.decodeUnknownSync(ReplayReport)(JSON.parse(outcome.stdout))
     const byCommit = new Map(report.commits.map((replayed) => [replayed.commit, replayed]))

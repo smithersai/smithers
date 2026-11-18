@@ -62,6 +62,12 @@ export const flags = {
     default: "false",
     help: "Replay every job, without first running the CI once to leave out the jobs that fail on this machine."
   },
+  "no-apply-check": {
+    on: ["", "replay"],
+    default: "false",
+    help:
+      "Skip the run of the newest commit with the files apply writes committed, which finds a step that fails over one of them."
+  },
   cold: {
     on: ["", "replay"],
     default: "false",
@@ -152,7 +158,7 @@ export const failureExitCodes = {
  */
 export const syntax = {
   value:
-    "A flag's value is the next argument, as in `--commits 5`. `--no-trial`, `--cold`, `--json`, `--allow-root`, `--check` and `--allow-docker` take no value.",
+    "A flag's value is the next argument, as in `--commits 5`. `--no-trial`, `--no-apply-check`, `--cold`, `--json`, `--allow-root`, `--check` and `--allow-docker` take no value.",
   help: "`--help` and `-h` are accepted on every command and print its commands and flags."
 } as const
 

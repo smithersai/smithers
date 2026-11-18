@@ -76,7 +76,7 @@ const repository = (): string => {
 describe("a workflow whose jobs pass only on machines of their own", () => {
   it("is replayed with no failure and no mismatch, in the baseline and in normal mode", async () => {
     const root = repository()
-    const outcome = await spawn(bin, ["--commits", "2", "--json"], root)
+    const outcome = await spawn(bin, ["--commits", "2", "--no-apply-check", "--json"], root)
     expect(outcome.code, outcome.stderr).toBe(0)
     const report = JSON.parse(outcome.stdout) as ReplayReport
     expect(report.commits).toHaveLength(2)
@@ -150,7 +150,7 @@ describe.skipIf(!mounts)("a workflow whose jobs each expect an empty /tmp", () =
   }
 
   it("is replayed with no failure and no mismatch, in the baseline and in normal mode", async () => {
-    const outcome = await spawn(bin, ["--commits", "2", "--json"], repositoryOf())
+    const outcome = await spawn(bin, ["--commits", "2", "--no-apply-check", "--json"], repositoryOf())
     expect(outcome.code, outcome.stderr).toBe(0)
     const report = JSON.parse(outcome.stdout) as ReplayReport
     expect(report.commits).toHaveLength(2)

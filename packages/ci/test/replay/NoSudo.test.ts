@@ -60,7 +60,7 @@ const machine = (installed: ReadonlyArray<string>) => {
 }
 
 const replay = async (root: string, env: NodeJS.ProcessEnv, flags: ReadonlyArray<string> = []) => {
-  const outcome = await spawn(bin, ["--commits", "1", "--json", ...flags], root, env)
+  const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check", "--json", ...flags], root, env)
   expect(outcome.stderr).not.toContain("error")
   expect(outcome.code).toBe(0)
   return JSON.parse(outcome.stdout) as ReplayReport
@@ -176,7 +176,7 @@ jobs:
 `,
       "build.sh": "exit 0\n"
     })
-    const outcome = await spawn(bin, ["--commits", "1"], root, env)
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check"], root, env)
     expect(outcome.code).toBe(0)
     expect(outcome.stdout).toContain("smithers-ci apply would write nothing")
     expect(existsSync(log)).toBe(false)

@@ -37,7 +37,7 @@ const other = process.platform === "darwin"
 
 describe.concurrent("a first run that cannot measure anything", () => {
   it("says in one line that every CI job runs on another system, and exits 3", async () => {
-    const outcome = await spawn(bin, ["--commits", "1"], repository(tests(other.runner)))
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check"], repository(tests(other.runner)))
     expect(outcome).toEqual({
       code: 3,
       stdout: "",
@@ -48,18 +48,20 @@ describe.concurrent("a first run that cannot measure anything", () => {
   it("says the same of a repository whose CI runs only on Windows", async () => {
     const root = repository(tests("windows-latest"))
     const line = "every CI job of this repository runs on Windows; smithers-ci runs on Linux and macOS\n"
-    expect(await spawn(bin, ["--commits", "1"], root)).toEqual({
+    expect(await spawn(bin, ["--commits", "1", "--no-apply-check"], root)).toEqual({
       code: 3,
       stdout: "",
       stderr: `smithers-ci: inventory: ${line}`
     })
-    expect((await spawn(bin, ["replay", "--commits", "1"], root)).stderr).toBe(`smithers-ci: replay: ${line}`)
+    expect((await spawn(bin, ["replay", "--commits", "1", "--no-apply-check"], root)).stderr).toBe(
+      `smithers-ci: replay: ${line}`
+    )
   })
 
   it("names the tool to install when the one job needs a tool this machine lacks, and exits 3", async () => {
     const setup = "      - uses: acme/setup-no-such-tool-of-smithers-ci@v2\n        with: { version: 9.1 }"
     const runner = process.platform === "darwin" ? "macos-latest" : "ubuntu-latest"
-    const outcome = await spawn(bin, ["--commits", "1"], repository(tests(runner, setup)))
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check"], repository(tests(runner, setup)))
     expect(outcome).toEqual({
       code: 3,
       stdout: "",

@@ -41,7 +41,7 @@ jobs:
       "src.txt": "one\n"
     })
 
-    const outcome = await spawn(bin, ["--commits", "1", "--json", "--no-trial"], root)
+    const outcome = await spawn(bin, ["--commits", "1", "--no-apply-check", "--json", "--no-trial"], root)
     const report = JSON.parse(outcome.stdout) as ReplayReport
     expect(report.commits[0]?.baseline.ok).toBe(true)
     expect(report.commits[0]?.normal.ok).toBe(true)

@@ -150,6 +150,15 @@ export interface ReplayRequest {
    */
   readonly trial?: boolean | undefined
   /**
+   * Runs the newest commit once more, in normal mode, in a copy made as
+   * `apply` leaves the repository: the generated files written and
+   * committed. A step that passes on the commit's files and fails there is a
+   * mismatch of normal mode at that commit, with `Mismatch.cause`. The run
+   * is in no time but `ReplayReport.appliedMs`. A commit that already holds
+   * the files has nothing more to run.
+   */
+  readonly applied?: boolean | undefined
+  /**
    * Runs every way once at the parent of the oldest replayed commit before
    * the first counted commit, so each starts with the caches a CI run finds.
    * That run is in no time but `ReplayReport.firstRun`. With `trial`, the

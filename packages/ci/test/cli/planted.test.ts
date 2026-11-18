@@ -81,7 +81,7 @@ const fixture = () => {
 /** Replays both commits in both modes. With `refusal`, the machine says it cannot jail a step. */
 const program = async (root: string, refusal?: string) => {
   const sink = recorder()
-  const run = cli(["--commits", "2", "--mode", "both"], root, judged)
+  const run = cli(["--commits", "2", "--no-apply-check", "--mode", "both"], root, judged)
   const noJail = Layer.effect(
     Options,
     Effect.gen(function*() {

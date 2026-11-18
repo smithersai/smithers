@@ -31,6 +31,7 @@
 import type { RenderReport } from "../contract/Parts.ts"
 import type { ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import {
+  appliedTime,
   bar,
   coldStart,
   commitsLeftOut,
@@ -159,6 +160,7 @@ export const text: RenderReport = (report) => {
   const cpu = cpuTime(report)
   if (cpu !== undefined) sections.push([cpu])
   if (report.trialMs !== undefined) sections.push([trialTime(report.trialMs)])
+  if (report.appliedMs !== undefined) sections.push([appliedTime(report.appliedMs)])
   if (report.firstRun !== undefined) sections.push([firstRunTime(report.firstRun)])
   if (report.cold !== undefined) sections.push([clean(coldStart(report.cold))])
   if (report.reruns !== undefined) sections.push([rerunTime(report.reruns)])

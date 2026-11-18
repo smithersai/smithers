@@ -58,7 +58,7 @@ describe("a repository with no lockfile whose CI is npm install, then npm test",
   it("passes in normal mode at every commit, as the repository's own CI does", async () => {
     const root = repository()
     commit(root, "the test says more", { "test.js": `${test}console.log("ok")\n` })
-    const outcome = await spawn(bin, ["--commits", "2", "--json"], root)
+    const outcome = await spawn(bin, ["--commits", "2", "--no-apply-check", "--json"], root)
     const report = JSON.parse(outcome.stdout) as ReplayReport
     expect(report.commits.map((entry) => [entry.baseline.ok, entry.normal?.ok, entry.mismatches])).toEqual([
       [true, true, []],

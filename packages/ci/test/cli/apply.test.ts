@@ -210,7 +210,7 @@ describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
       commit(root, "own workflow", { [workflow]: owners })
       const before = snapshot(root)
       // The default command measures what apply would write, so it refuses the same way.
-      for (const args of [["apply"], ["--commits", "1"]]) {
+      for (const args of [["apply"], ["--commits", "1", "--no-apply-check"]]) {
         expect(await exec(args, root)).toEqual({
           code: exitCodes.unsupported,
           stdout: "",

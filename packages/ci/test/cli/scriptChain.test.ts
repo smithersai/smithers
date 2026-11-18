@@ -169,7 +169,7 @@ describe.each(managers)("a repository whose CI runs a chain of scripts with $nam
       )
 
       // The newest commit fails on purpose, and its verdict is what is compared: nothing is left out.
-      const outcome = await spawn(bin, ["--commits", "3", "--json", "--no-trial"], root)
+      const outcome = await spawn(bin, ["--commits", "3", "--no-apply-check", "--json", "--no-trial"], root)
       expect(outcome.stderr).not.toContain("reads are not observed")
       const report = JSON.parse(outcome.stdout) as ReplayReport
       const subjects = git(root, "log", "--reverse", "--format=%H %s", "-3").trim().split("\n")

@@ -29,19 +29,19 @@ const run = async (args: ReadonlyArray<string>, isRoot: boolean) => {
 }
 
 it("a replay as root stops at one line, before anything runs", async () => {
-  for (const args of [["--commits", "1"], ["replay", "--commits", "1"]]) {
+  for (const args of [["--commits", "1", "--no-apply-check"], ["replay", "--commits", "1", "--no-apply-check"]]) {
     expect(await run(args, true)).toEqual({ code: exitCodes.usage, stdout: "", stderr: line })
   }
 })
 
 it("--allow-root lets it run", async () => {
-  const outcome = await run(["--commits", "1", "--allow-root"], true)
+  const outcome = await run(["--commits", "1", "--no-apply-check", "--allow-root"], true)
   expect(outcome.code).toBe(exitCodes.ok)
   expect(outcome.stderr).not.toContain("refusing")
 })
 
 it("another user is not asked for the flag", async () => {
-  expect((await run(["--commits", "1"], false)).code).toBe(exitCodes.ok)
+  expect((await run(["--commits", "1", "--no-apply-check"], false)).code).toBe(exitCodes.ok)
 })
 
 it("reading the CI runs no step, so root may do it", async () => {

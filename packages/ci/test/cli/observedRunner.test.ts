@@ -63,7 +63,7 @@ describe("a workflow whose steps pass values through GITHUB_ENV", () => {
       commit(root, "version 1 again", { "version.txt": "1\n" })
       commit(root, "the checked file changes", { "checked.txt": "still ok\n" })
 
-      const outcome = await spawn(bin, ["--commits", "5", "--json"], root)
+      const outcome = await spawn(bin, ["--commits", "5", "--no-apply-check", "--json"], root)
       expect(outcome.stderr).not.toContain("reads are not observed")
       const report = JSON.parse(outcome.stdout) as ReplayReport
       const subjects = git(root, "log", "--reverse", "--format=%H %s", "-5").trim().split("\n")

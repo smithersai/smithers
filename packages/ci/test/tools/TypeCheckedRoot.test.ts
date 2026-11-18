@@ -72,7 +72,7 @@ describe("a repository whose CI type-checks, lints and formats its root", () => 
     const first = ownCheck()
     expect(first.status, first.output).toBe(0)
 
-    const replayed = node(root, program, ["--commits", "1", "--json"])
+    const replayed = node(root, program, ["--commits", "1", "--no-apply-check", "--json"])
     expect(replayed.status, replayed.output).toBe(0)
     const report = Schema.decodeUnknownSync(Schema.fromJsonString(ReplayReport))(replayed.stdout)
     expect(report.mismatches).toBe(0)

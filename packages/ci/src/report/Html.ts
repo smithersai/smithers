@@ -14,6 +14,7 @@ import type { RenderReport } from "../contract/Parts.ts"
 import type { Mismatch, NotReplayedCommit, ReplayCommit, RunTotals } from "../contract/ReplayReport.ts"
 import type { Metrics } from "../contract/Selection.ts"
 import {
+  appliedTime,
   coldStart,
   commitsLeftOut,
   count,
@@ -291,6 +292,7 @@ export const html: RenderReport = (report) => {
     const cpu = cpuTime(report)
     if (cpu !== undefined) body.push(`<p class="summary">${cpu}</p>`)
     if (report.trialMs !== undefined) body.push(`<p class="summary">${trialTime(report.trialMs)}</p>`)
+    if (report.appliedMs !== undefined) body.push(`<p class="summary">${appliedTime(report.appliedMs)}</p>`)
     if (report.firstRun !== undefined) body.push(`<p class="summary">${firstRunTime(report.firstRun)}</p>`)
     if (report.cold !== undefined) body.push(`<p class="summary">${escape(coldStart(report.cold))}</p>`)
     if (report.reruns !== undefined) body.push(`<p class="summary">${rerunTime(report.reruns)}</p>`)
