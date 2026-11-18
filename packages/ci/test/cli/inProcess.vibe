@@ -41,6 +41,19 @@ export const fullDisk = Layer.effect(FileSystem.FileSystem, effect {
 })
 
 /**
+ * The real file system, except that it cannot say what kind of file a path holds.
+ */
+export const noStat = Layer.effect(FileSystem.FileSystem, effect {
+  const fs = try FileSystem.FileSystem
+  const blind: FileSystem.FileSystem = {
+    ...fs,
+    stat: (path: string) =>
+      Effect.fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "stat", pathOrDescriptor: path }))
+  }
+  return blind
+})
+
+/**
  * What the parts on `main` generate for the repository at `root`, for the shared cache named.
  */
 export async function generated(

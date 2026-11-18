@@ -42,7 +42,11 @@ export const flags = {
   commits: { on: ["", "replay"], default: "20", help: "How many past commits to replay." },
   mode: { on: ["", "replay"], default: "normal", help: "normal, fast, or both." },
   jobs: { on: ["", "replay"], default: "", help: "Most targets to run at once; the default is the machine's." },
-  cache: { on: ["", "replay", "apply"], default: "", help: "URL of a shared cache." },
+  cache: {
+    on: ["", "replay", "apply"],
+    default: "",
+    help: "URL of a shared cache, with no user name or password; its token is read from SMITHERS_CACHE_TOKEN."
+  },
   targets: {
     on: ["", "replay"],
     default: "",
@@ -135,7 +139,13 @@ export const environment = {
  * Where a repository's own Smithers workspace is, in the order Smithers build
  * looks. `apply` exits `unsupported` and writes nothing when one exists: the
  * repository's CI is already its targets, and there is nothing to convert.
- * `apply` also never writes over a build file it did not generate.
+ *
+ * `apply` checks every path before it writes any, and a refusal leaves
+ * nothing written. It replaces a file only when the file is absent or is one
+ * `smithers-ci` generated: it starts with the generated mark, and the target
+ * map, which is JSON and holds no mark, is a target map. That holds for every
+ * generated path, the workflow and the target map included. It also refuses
+ * a path whose real location is outside the repository: a link in the path.
  *
  * @category constants
  * @since 0.1.0
@@ -143,8 +153,9 @@ export const environment = {
 export const applyRefuses = [".smithers/WORKSPACE.ts", "WORKSPACE.ts"] as const
 
 /**
- * Lines `apply` adds to the repository's `.gitignore` when they are absent:
- * where Smithers build keeps its local cache.
+ * Lines `apply` adds to the repository's root `.gitignore` when they are
+ * absent, and prints that it did: where Smithers build keeps its local cache,
+ * which must not be committed.
  *
  * @category constants
  * @since 0.1.0

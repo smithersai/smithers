@@ -27,6 +27,7 @@ import type {
 import { ReplayReport } from "../contract/ReplayReport.ts"
 import type { Mode } from "../contract/RunRecord.ts"
 import * as Native from "../native/index.ts"
+import { check } from "./Apply.vibe"
 
 /**
  * The parts the program calls, one function each, as contract 10 names them.
@@ -78,6 +79,15 @@ effect function render(renderer: RenderReport, report: ReplayReport) {
 
 const isHttpUrl = (value: string): boolean => URL.canParse(value) && /^https?:\/\//i.test(value)
 
+/** A URL's user name and password sit before the last `@` of its host part. */
+const hasCredential = (value: string): boolean => /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(value)
+
+/**
+ * A usage error repeats the value it refuses, and a URL's user name and
+ * password are a secret: they are cut out of what is printed.
+ */
+const withoutCredential = (text: string): string => text.replace(/(:\/\/)[^\s"]*@/g, "$1")
+
 const atLeastOne = (): string => "1 or more"
 
 /** A flag's help from contract 7, with its default when it has a value. */
@@ -105,6 +115,10 @@ const jobs = Flag.Int("jobs").pipe(
 
 const cache = Flag.String("cache").pipe(
   Flag.filter(isHttpUrl, () => "an http or https URL"),
+  Flag.filter(
+    (value) => !hasCredential(value),
+    () => "a URL with no user name or password; the cache's token is read from SMITHERS_CACHE_TOKEN"
+  ),
   Flag.optional,
   Flag.withDescription(helpOf("cache"))
 )
@@ -237,11 +251,7 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
       if (why !== undefined) throw { code: "unsupported", message: why, part: "inventory" } satisfies Failure
       const split = try parts.decompose(root, ci(inventory))
       const files = try checkPaths(try parts.files(split, { cache: Option.getOrUndefined(cache) }))
-      const kept = try Native.replaced(root, files)
-      if (kept.length > 0) {
-        throw { code: "unsupported", message: Native.overwriteRefusal(kept), part: "generate" } satisfies Failure
-      }
-      return files
+      return { files, ignores: try check(root, files) }
     }
 
   effect function replayAndPrint(input: ReplayInput, footer: string) {
@@ -258,11 +268,16 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
   }
 
   const apply = Command.make("apply", { cache }, effect (input) => {
-    const files = try generate(try parts.read(root), input.cache)
+    // Every path was checked before the first is written, so a refusal leaves nothing written.
+    const { files, ignores } = try generate(try parts.read(root), input.cache)
     const paths = try Path.Path
     for (const file of files) {
       try write(paths.join(root, file.path), file.content)
       try Console.log(`wrote ${file.path}`)
+    }
+    if (ignores.added.length > 0) {
+      try write(paths.join(root, ".gitignore"), ignores.text)
+      try Console.log(`added ${ignores.added.join(", ")} to .gitignore`)
     }
     try Console.log(`${Surface.name}: wrote ${files.length} files`)
   }).pipe(Command.withDescription(Surface.commands.apply))
@@ -283,8 +298,9 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
       try replayAndPrint(input, `\n\n${Native.footer(own)}`)
       return
     }
-    const files = try generate(read, input.cache)
-    const footer = `\n\n${Surface.name} apply would write ${files.length} files. This run wrote nothing to the repository.`
+    const { files, ignores } = try generate(read, input.cache)
+    const adds = ignores.added.length === 0 ? "" : ` and add ${ignores.added.join(", ")} to .gitignore`
+    const footer = `\n\n${Surface.name} apply would write ${files.length} files${adds}. This run wrote nothing to the repository.`
     try replayAndPrint(input, footer)
   }).pipe(
     Command.withDescription(Surface.commands[""]),
@@ -293,7 +309,7 @@ function commandOf<R>(root: string, parts: Parts<R>, status: Ref.Ref<number>) {
 }
 
 const reasonsOf = (errors: ReadonlyArray<{ readonly message: string }>): string =>
-  errors.map((error) => error.message.replace(/\s+/g, " ").trim()).join("; ")
+  withoutCredential(errors.map((error) => error.message.replace(/\s+/g, " ").trim()).join("; "))
 
 /**
  * Help goes to standard output. A usage error is one line on standard error

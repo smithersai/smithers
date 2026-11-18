@@ -1,0 +1,315 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as Effect from "effect/Effect"
+import type * as FileSystem from "effect/FileSystem"
+import type * as Path from "effect/Path"
+import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+import { afterAll, describe, expect, it } from "vitest"
+import { check, ignoresFor } from "../../src/cli/Apply.vibe"
+import { applyIgnores, exitCodes } from "../../src/contract/Command.ts"
+import type { Failure, GeneratedFile } from "../../src/contract/Parts.ts"
+import * as TargetMap from "../../src/contract/TargetMap.ts"
+import { generatedMark } from "../../src/native/index.ts"
+import { unreadable } from "../native/support.vibe"
+import { generated, inProcess, noStat } from "./inProcess.vibe"
+import { parts } from "./parts.vibe"
+import {
+  bin,
+  changed,
+  commit,
+  type Outcome,
+  read,
+  recorder,
+  remove,
+  repository,
+  snapshot,
+  spawn,
+  temporary
+} from "./repo.ts"
+
+const made: Array<string> = []
+const keep = (path: string): string => {
+  made.push(path)
+  return path
+}
+afterAll(() => made.forEach(remove))
+
+const environment = { HOME: keep(temporary("home")), PATH: process.env["PATH"] }
+
+const repo = (): string => keep(repository(["first"]))
+const outside = (): string => keep(temporary("outside"))
+
+const runIn = async (args: ReadonlyArray<string>, root: string): Promise<Outcome> => {
+  const sink = recorder()
+  const code = await inProcess(args, root, parts, sink.service as never, environment)
+  return { code, stdout: sink.stdout(), stderr: sink.stderr() }
+}
+
+/** The program in this process, and the published executable as a process. */
+const ways = {
+  "in process": (args: ReadonlyArray<string>, root: string): Promise<Outcome> => runIn(args, root),
+  "as the installed program": (args: ReadonlyArray<string>, root: string): Promise<Outcome> => spawn(bin, args, root)
+}
+
+const workflow = ".github/workflows/smithers-ci.yml"
+const owners = "name: mine\non: push\njobs: {}\n"
+const secret = "s3cr3t-cache-token"
+
+/** Every file under `directory`, by name. */
+const filesIn = (directory: string): ReadonlyArray<string> =>
+  readdirSync(directory, { recursive: true, encoding: "utf8" })
+
+describe.each(Object.entries(ways))("smithers-ci apply %s", (_way, exec) => {
+  describe.concurrent("a shared cache URL", () => {
+    it("exits 2 on a URL with a user name or a password, names the token variable and never prints the secret", async () => {
+      for (const command of [["apply"], [], ["replay"]]) {
+        const root = repo()
+        const before = snapshot(root)
+        const outcome = await exec([...command, "--cache", `https://ci-bot:${secret}@cache.example.invalid/v1`], root)
+        expect(outcome.code).toBe(exitCodes.usage)
+        expect(outcome.stdout).toBe("")
+        expect(outcome.stderr).toContain("--cache")
+        expect(outcome.stderr).toContain("no user name or password")
+        expect(outcome.stderr).toContain("SMITHERS_CACHE_TOKEN")
+        expect(outcome.stderr).toContain("https://cache.example.invalid/v1")
+        expect(outcome.stderr).not.toContain(secret)
+        expect(outcome.stderr).not.toContain("ci-bot")
+        expect(outcome.stderr.trim().split("\n")).toHaveLength(1)
+        expect(changed(before, snapshot(root))).toEqual([])
+      }
+    })
+
+    it("refuses a user name alone, and prints no secret from a value that is not a URL", async () => {
+      const root = repo()
+      const named = await exec(["apply", "--cache", `https://${secret}@cache.example.invalid`], root)
+      expect(named.code).toBe(exitCodes.usage)
+      expect(named.stderr).toContain("SMITHERS_CACHE_TOKEN")
+      expect(named.stderr).not.toContain(secret)
+      const other = await exec(["apply", "--cache", `ftp://ci-bot:${secret}@cache.example.invalid`], root)
+      expect(other.code).toBe(exitCodes.usage)
+      expect(other.stderr).toContain("http or https URL")
+      expect(other.stderr).not.toContain(secret)
+    })
+
+    it("accepts an @ after the host part", async () => {
+      const root = repo()
+      const outcome = await exec(["apply", "--cache", "https://cache.example.invalid/teams/@ci?as=a@b"], root)
+      expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+      expect(read(`${root}/${workflow}`)).toContain("https://cache.example.invalid/teams/@ci?as=a@b")
+    })
+  })
+
+  describe.concurrent("a file the owner wrote", () => {
+    it("never replaces the owner's workflow, and writes nothing", async () => {
+      const root = repo()
+      commit(root, "own workflow", { [workflow]: owners })
+      const before = snapshot(root)
+      // The default command measures what apply would write, so it refuses the same way.
+      for (const args of [["apply"], ["--commits", "1"]]) {
+        expect(await exec(args, root)).toEqual({
+          code: exitCodes.unsupported,
+          stdout: "",
+          stderr: `smithers-ci: generate: ${workflow} was not written by smithers-ci and would be replaced\n`
+        })
+      }
+      expect(read(`${root}/${workflow}`)).toBe(owners)
+      expect(changed(before, snapshot(root))).toEqual([])
+    })
+
+    it("names every file it would replace, the target map included", async () => {
+      const root = repo()
+      commit(root, "own files", {
+        [workflow]: owners,
+        [TargetMap.path]: "{ \"mine\": true }\n",
+        "PACKAGE.ts": "export {}\n"
+      })
+      const before = snapshot(root)
+      const outcome = await exec(["apply"], root)
+      expect(outcome.code).toBe(exitCodes.unsupported)
+      expect(outcome.stderr).toBe(
+        `smithers-ci: generate: ${workflow}, PACKAGE.ts, ${TargetMap.path} were not written by smithers-ci and would be replaced\n`
+      )
+      expect(changed(before, snapshot(root))).toEqual([])
+    })
+
+    it("replaces every file it generated before, and only those", async () => {
+      const root = repo()
+      const files = await generated(root, parts, environment)
+      const stale: Record<string, string> = {}
+      for (const file of files) {
+        stale[file.path] = file.path === TargetMap.path
+          ? `${JSON.stringify({ version: 1, targets: [] })}\n`
+          : `${file.content.split("\n")[0]}\nstale\n`
+      }
+      commit(root, "an earlier apply", stale)
+      const outcome = await exec(["apply"], root)
+      expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+      for (const file of files) expect(read(`${root}/${file.path}`), file.path).toBe(file.content)
+    })
+  })
+
+  describe.concurrent("a link in a generated path", () => {
+    it("refuses a directory that is a link to outside the repository, and writes nothing anywhere", async () => {
+      const root = repo()
+      const elsewhere = outside()
+      symlinkSync(elsewhere, join(root, ".github"))
+      commit(root, "link")
+      const before = snapshot(root)
+      const outcome = await exec(["apply"], root)
+      expect(outcome.code).toBe(exitCodes.unsupported)
+      expect(outcome.stdout).toBe("")
+      expect(outcome.stderr).toMatch(/^smithers-ci: generate: \.github is a link to .*, outside the repository\n$/)
+      expect(filesIn(elsewhere)).toEqual([])
+      expect(changed(before, snapshot(root))).toEqual([])
+    })
+
+    it("refuses a file that is a link to a missing file outside, and does not make that file", async () => {
+      const root = repo()
+      const elsewhere = outside()
+      symlinkSync(join(elsewhere, "PACKAGE.ts"), join(root, "PACKAGE.ts"))
+      commit(root, "link")
+      const before = snapshot(root)
+      const outcome = await exec(["apply"], root)
+      expect(outcome.code).toBe(exitCodes.unsupported)
+      expect(outcome.stderr).toBe(
+        `smithers-ci: generate: PACKAGE.ts is a link to ${join(elsewhere, "PACKAGE.ts")}, which does not exist\n`
+      )
+      expect(filesIn(elsewhere)).toEqual([])
+      expect(changed(before, snapshot(root))).toEqual([])
+    })
+
+    it("refuses a file that is a link to a file smithers-ci generated outside the repository", async () => {
+      const root = repo()
+      const elsewhere = outside()
+      writeFileSync(join(elsewhere, "PACKAGE.ts"), `${generatedMark} Do not edit.\n`)
+      symlinkSync(join(elsewhere, "PACKAGE.ts"), join(root, "PACKAGE.ts"))
+      const outcome = await exec(["apply"], root)
+      expect(outcome.code).toBe(exitCodes.unsupported)
+      expect(outcome.stderr).toContain("PACKAGE.ts is a link to ")
+      expect(read(join(elsewhere, "PACKAGE.ts"))).toBe(`${generatedMark} Do not edit.\n`)
+    })
+
+    it("writes through a link that stays inside the repository", async () => {
+      const root = repo()
+      mkdirSync(join(root, "ci", "github"), { recursive: true })
+      symlinkSync(join("ci", "github"), join(root, ".github"))
+      const outcome = await exec(["apply"], root)
+      expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+      expect(read(join(root, "ci", "github", "workflows", "smithers-ci.yml"))).toContain("Generated by smithers-ci.")
+    })
+  })
+
+  describe.concurrent("a path that cannot hold the file", () => {
+    it("writes nothing when a directory is where a generated file must go", async () => {
+      const root = repo()
+      commit(root, "a directory", { [`${TargetMap.path}/README`]: "keep\n" })
+      const before = snapshot(root)
+      const outcome = await exec(["apply"], root)
+      expect(outcome).toEqual({
+        code: exitCodes.unsupported,
+        stdout: "",
+        stderr: `smithers-ci: generate: ${TargetMap.path} is not a file\n`
+      })
+      expect(changed(before, snapshot(root))).toEqual([])
+    })
+
+    it("writes nothing when a file is where a directory must go, and names each such path", async () => {
+      const root = repo()
+      commit(root, "a file", { ".github/workflows": "not a directory\n" })
+      mkdirSync(join(root, ".gitignore"))
+      const before = snapshot(root)
+      const outcome = await exec(["apply"], root)
+      expect(outcome).toEqual({
+        code: exitCodes.unsupported,
+        stdout: "",
+        stderr:
+          `smithers-ci: generate: .github/workflows is not a directory, so ${workflow} cannot be written; .gitignore is not a file\n`
+      })
+      expect(changed(before, snapshot(root))).toEqual([])
+    })
+  })
+
+  describe.concurrent("the cache directory", () => {
+    it("adds it to a .gitignore that lacks it, says so, and adds it once", async () => {
+      const root = repo()
+      commit(root, "ignore", { ".gitignore": "node_modules" })
+      const first = await exec(["apply"], root)
+      expect(first.code, first.stderr).toBe(exitCodes.ok)
+      expect(first.stdout).toContain("added .flows to .gitignore\n")
+      expect(read(`${root}/.gitignore`)).toBe("node_modules\n.flows\n")
+      const second = await exec(["apply"], root)
+      expect(second.code, second.stderr).toBe(exitCodes.ok)
+      expect(second.stdout).not.toContain(".gitignore")
+      expect(read(`${root}/.gitignore`)).toBe("node_modules\n.flows\n")
+    })
+
+    it("makes the .gitignore when there is none, and leaves one that names the directory", async () => {
+      const root = repo()
+      const outcome = await exec(["apply"], root)
+      expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+      expect(read(`${root}/.gitignore`)).toBe(applyIgnores.map((line) => `${line}\n`).join(""))
+      const named = repo()
+      commit(named, "ignore", { ".gitignore": "dist\r\n/.flows/\r\n" })
+      const kept = await exec(["apply"], named)
+      expect(kept.code, kept.stderr).toBe(exitCodes.ok)
+      expect(kept.stdout).not.toContain(".gitignore")
+      expect(read(`${named}/.gitignore`)).toBe("dist\r\n/.flows/\r\n")
+    })
+  })
+})
+
+describe.concurrent("what apply checks before it writes", () => {
+  const onNode = <A>(work: Effect.Effect<A, Failure, FileSystem.FileSystem | Path.Path>) =>
+    Effect.runPromise(Effect.provide(Effect.result(work), NodeServices.layer))
+  const files: ReadonlyArray<GeneratedFile> = [
+    { path: "PACKAGE.ts", content: `${generatedMark} Do not edit.\n` },
+    { path: ".smithers/ci/NOT-REPRODUCED.md", content: "# Not reproduced\n\nGenerated by smithers-ci. Do not edit.\n" }
+  ]
+
+  it("gives the lines .gitignore lacks, with its new text", () => {
+    expect(ignoresFor("")).toEqual({ added: [".flows"], text: ".flows\n" })
+    expect(ignoresFor("dist\n")).toEqual({ added: [".flows"], text: "dist\n.flows\n" })
+    expect(ignoresFor("dist")).toEqual({ added: [".flows"], text: "dist\n.flows\n" })
+    for (const line of [".flows", "/.flows", ".flows/", "  /.flows/  "]) {
+      expect(ignoresFor(`dist\n${line}\n`)).toEqual({ added: [], text: `dist\n${line}\n` })
+    }
+  })
+
+  it("passes absent files and files smithers-ci wrote", async () => {
+    const root = repo()
+    expect((await onNode(check(root, files)))._tag).toBe("Success")
+    for (const file of files) {
+      mkdirSync(join(root, file.path, ".."), { recursive: true })
+      writeFileSync(join(root, file.path), file.content)
+    }
+    expect(await onNode(check(root, files))).toMatchObject({ _tag: "Success", success: { added: [".flows"] } })
+    expect(existsSync(join(root, ".gitignore"))).toBe(false)
+  })
+
+  it("counts a file it cannot read as the owner's, and refuses a .gitignore it cannot read", async () => {
+    const root = repo()
+    writeFileSync(join(root, "PACKAGE.ts"), files[0]!.content)
+    writeFileSync(join(root, ".gitignore"), "dist\n")
+    const outcome = await onNode(Effect.provide(check(root, files), unreadable))
+    expect(outcome).toMatchObject({
+      _tag: "Failure",
+      failure: {
+        code: "unsupported",
+        message: "PACKAGE.ts was not written by smithers-ci and would be replaced; .gitignore cannot be read",
+        part: "generate"
+      }
+    })
+  })
+
+  it("refuses a path it cannot inspect", async () => {
+    const root = repo()
+    writeFileSync(join(root, "PACKAGE.ts"), files[0]!.content)
+    const outcome = await onNode(Effect.provide(check(root, [files[0]!]), noStat))
+    expect(outcome).toMatchObject({ _tag: "Failure", failure: { message: "PACKAGE.ts is not a file" } })
+  })
+
+  it("checks paths under a root that is not there yet", async () => {
+    const root = join(repo(), "missing")
+    expect(await onNode(check(root, files))).toMatchObject({ _tag: "Success", success: { text: ".flows\n" } })
+  })
+})

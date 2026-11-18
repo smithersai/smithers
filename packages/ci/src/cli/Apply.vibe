@@ -1,0 +1,137 @@
+/**
+ * What `apply` checks before it writes, and what it adds to `.gitignore`.
+ *
+ * Every generated path is checked before any is written, so a refusal leaves
+ * the repository as it was. A path is refused when its real location is
+ * outside the repository (a link in the path), when a file is where a
+ * directory must go or a directory where the file must go, and when the file
+ * there is one `smithers-ci` did not write.
+ *
+ * @since 0.1.0
+ */
+
+import { applyIgnores } from "../contract/Command.ts"
+import type { Failure, GeneratedFile } from "../contract/Parts.ts"
+import { overwriteRefusal, wrote } from "../native/Workspace.ts"
+
+const ignoreFile = ".gitignore"
+
+/**
+ * What `apply` adds to the root `.gitignore`: the lines of
+ * `Command.applyIgnores` it lacks, and the file's whole text with them.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Ignores {
+  readonly added: ReadonlyArray<string>
+  readonly text: string
+}
+
+/** What is at a path `apply` would write: nothing, a file, or something that stops the write. */
+data Place {
+  Absent
+  Present
+  Refused { why: string }
+}
+
+/** One refusal for everything wrong with the paths `apply` would write. */
+const refuse = (problems: ReadonlyArray<string>): Failure => ({
+  code: "unsupported",
+  message: problems.join("; "),
+  part: "generate"
+})
+
+/** A path and each directory above it, outermost first. */
+const prefixesOf = (path: string): ReadonlyArray<string> => {
+  const segments = path.split(/[\\/]/)
+  return segments.map((_, index) => segments.slice(0, index + 1).join("/"))
+}
+
+/** An ignore line as a person writes it: `/.flows/` names `.flows`. */
+const ignored = (line: string): string => line.trim().replace(/^\//, "").replace(/\/$/, "")
+
+/**
+ * The lines of `Command.applyIgnores` that `text` lacks, and `text` with
+ * them added at its end.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export function ignoresFor(text: string): Ignores {
+  const present = new Set(text.split("\n").map(ignored))
+  const added = applyIgnores.filter((line) => !present.has(line))
+  const start = text === "" || text.endsWith("\n") ? text : `${text}\n`
+  return { added, text: `${start}${added.map((line) => `${line}\n`).join("")}` }
+}
+
+/**
+ * What is at `path` in the repository at `root`, whose real location is
+ * `realRoot`. Each directory above the path is looked at too: a link in the
+ * path is followed by a write.
+ */
+effect function placeOf(root: string, realRoot: string, path: string) {
+  const fs = try FileSystem.FileSystem
+  const paths = try Path.Path
+  for (const prefix of prefixesOf(path)) {
+    const at = paths.join(root, prefix)
+    const real = fs.realPath(at) catch () => undefined
+    if (real === undefined) {
+      // Nothing is there, so it can be made; unless it is a link, which a write would follow.
+      const link = fs.readLink(at) catch () => undefined
+      return link === undefined
+        ? Place.Absent()
+        : Place.Refused({ why: `${prefix} is a link to ${link}, which does not exist` })
+    }
+    if (real !== realRoot && !real.startsWith(`${realRoot}${paths.sep}`)) {
+      return Place.Refused({ why: `${prefix} is a link to ${real}, outside the repository` })
+    }
+    const kind = fs.stat(at) catch () => undefined
+    if (prefix !== path && kind?.type !== "Directory") {
+      return Place.Refused({ why: `${prefix} is not a directory, so ${path} cannot be written` })
+    }
+    if (prefix === path && kind?.type !== "File") return Place.Refused({ why: `${path} is not a file` })
+  }
+  return Place.Present()
+}
+
+/** The text of the file at `path`, or `undefined` when it cannot be read. */
+effect function textOf(path: string) {
+  const fs = try FileSystem.FileSystem
+  return fs.readFileString(path) catch () => undefined
+}
+
+/**
+ * Checks every path `apply` would write in the repository at `root`, and
+ * writes nothing. It fails with one refusal that names every path that
+ * cannot be written; otherwise it gives what `.gitignore` gains.
+ *
+ * @category accessors
+ * @since 0.1.0
+ */
+export effect function check(root: string, files: ReadonlyArray<GeneratedFile>) {
+  const fs = try FileSystem.FileSystem
+  const paths = try Path.Path
+  const realRoot = fs.realPath(root) catch () => root
+  const problems: Array<string> = []
+  const kept: Array<string> = []
+  for (const file of files) {
+    const place = try placeOf(root, realRoot, file.path)
+    if (place._tag === "Refused") problems.push(place.why)
+    if (place._tag !== "Present") continue
+    // A file that cannot be read is the owner's.
+    const text = try textOf(paths.join(root, file.path))
+    if (text === undefined || !wrote(file.path, text)) kept.push(file.path)
+  }
+  if (kept.length > 0) problems.push(overwriteRefusal(kept))
+  const place = try placeOf(root, realRoot, ignoreFile)
+  let ignore = ""
+  if (place._tag === "Refused") problems.push(place.why)
+  if (place._tag === "Present") {
+    const text = try textOf(paths.join(root, ignoreFile))
+    if (text === undefined) problems.push(`${ignoreFile} cannot be read`)
+    else ignore = text
+  }
+  if (problems.length > 0) throw refuse(problems)
+  return ignoresFor(ignore)
+}

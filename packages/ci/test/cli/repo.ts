@@ -4,7 +4,16 @@
 
 import { execFile, execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -25,7 +34,8 @@ export const justfile = [
     "\n"
   )
 
-const git = (root: string, ...args: ReadonlyArray<string>): string =>
+/** Runs git in `root` as a fixed author, apart from the machine's configuration. */
+export const git = (root: string, ...args: ReadonlyArray<string>): string =>
   execFileSync("git", args, {
     cwd: root,
     encoding: "utf8",
@@ -67,6 +77,16 @@ export const repository = (subjects: ReadonlyArray<string> = ["first", "second",
   return root
 }
 
+/** Writes `files` under `root`, then commits everything there, links included. */
+export const commit = (root: string, subject: string, files: Readonly<Record<string, string>> = {}): void => {
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true })
+    writeFileSync(join(root, path), content)
+  }
+  git(root, "add", "--all")
+  git(root, "commit", "--quiet", "--message", subject)
+}
+
 /**
  * A git repository holding an npm workspace of two packages, `a` and `b`,
  * and a workflow whose one command runs both packages' tests.
@@ -101,7 +121,8 @@ export const workspace = (): string => {
 
 /**
  * Every file under `root`, `.git` included, by relative path: its mode and the
- * SHA-256 of its bytes. Equal snapshots mean a byte-identical tree.
+ * SHA-256 of its bytes, or where a link points. Equal snapshots mean a
+ * byte-identical tree.
  */
 export const snapshot = (root: string): Record<string, string> => {
   const files: Record<string, string> = {}
@@ -109,6 +130,7 @@ export const snapshot = (root: string): Record<string, string> => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name)
       if (entry.isDirectory()) walk(path)
+      else if (entry.isSymbolicLink()) files[relative(root, path)] = `link ${readlinkSync(path)}`
       else {
         const digest = createHash("sha256").update(readFileSync(path)).digest("hex")
         files[relative(root, path)] = `${statSync(path).mode.toString(8)} ${digest}`

@@ -29,9 +29,11 @@ not count.
   writes nothing.
 - The replay generates no workspace, no `PACKAGE.ts` and no workflow, in the
   repository or in its copies.
-- On any repository, a generated `WORKSPACE` or `PACKAGE` file is never written
-  over a file `smithers-ci` did not write. `apply` and the replay exit 3 and
-  name the file.
+- On any repository, a generated file is never written over a file
+  `smithers-ci` did not write: a `WORKSPACE` or `PACKAGE` file, the workflow,
+  or the target map. `apply` and the default command exit 3 and name the file,
+  and `apply` writes nothing. See
+  [the command reference](../reference/cli.md#commands).
 
 ## Which targets are replayed
 

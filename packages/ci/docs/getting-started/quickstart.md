@@ -97,7 +97,9 @@ bunx smithers-ci apply
 ```
 
 `apply` writes the Smithers workspace, the target files and the CI workflow the
-report was measured with. Review them as you would any change, and commit them.
+report was measured with, and adds the cache directory `.flows` to
+`.gitignore`. It never replaces a file it did not generate: it names the file
+and writes nothing. Review the files as you would any change, and commit them.
 
 ## Next
 

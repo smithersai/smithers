@@ -25,6 +25,11 @@ build remote cache protocol: `/ac` for results and `/cas` for file contents,
 over HTTP. See [Remote caching](../../../smithers/build/docs/workspace/remote-caching.md)
 for the protocol and its read and write credentials.
 
+The URL holds no credential. `apply` writes it into the generated workflow,
+which you commit, so a URL with a user name or a password is refused with
+exit 2. The cache's token goes in the `SMITHERS_CACHE_TOKEN` environment
+variable, which is never printed or written.
+
 ## What the cache never holds
 
 - **A fast-mode skip.** A target fast mode skipped did not run, so it has no
