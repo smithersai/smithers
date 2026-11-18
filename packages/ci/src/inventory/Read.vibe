@@ -178,7 +178,7 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
   const commit = try git(root, ["rev-parse", "--verify", "HEAD"])
   if (commit === "") throw notARepository(root)
   const remote = try git(root, ["remote", "get-url", "origin"])
-  const changes = try git(root, ["status", "--porcelain"])
+  const changes = try git(root, ["--no-optional-locks", "status", "--porcelain"])
   const tree: Tree = { fs, path, root }
   const rootFiles = try list(tree, "")
 

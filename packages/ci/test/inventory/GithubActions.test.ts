@@ -331,11 +331,12 @@ jobs:
     const job = jobOf(withSteps(`
       - run: curl -u ${value} example.test
       - run: echo ok
-        env: { API_KEY: plain-text, LOOKS_FINE: ${value}, READ_LATER: "$OTHER_TOKEN", API_TOKEN: "$FROM_SHELL" }
+        env: { API_KEY: plain-text, LOOKS_FINE: ${value}, READ_LATER: "$OTHER_TOKEN", API_TOKEN: "$ecret1" }
 `))
     expect(job.steps.map((step) => step.command)).toEqual(["echo ok"])
-    expect(job.steps[0]?.secrets).toEqual(["API_KEY", "LOOKS_FINE"])
-    expect(job.steps[0]?.env).toEqual({ READ_LATER: "$OTHER_TOKEN", API_TOKEN: "$FROM_SHELL" })
+    expect(job.steps[0]?.secrets).toEqual(["API_KEY", "LOOKS_FINE", "API_TOKEN"])
+    expect(job.steps[0]?.env).toEqual({ READ_LATER: "$OTHER_TOKEN" })
+    expect(JSON.stringify(job)).not.toContain("$ecret1")
     expect(JSON.stringify(job)).not.toContain(value)
     expect(JSON.stringify(job)).not.toContain("plain-text")
   })
@@ -563,6 +564,23 @@ jobs:
 `)
     expect(job.steps).toEqual([])
     expect(features(job)).toEqual(["shell"])
+  })
+
+  it.each([
+    ["the job", "    env: { API_KEY: \"\${{ matrix.k }}\" }\n    steps:\n      - run: go"],
+    ["a step", "    steps:\n      - run: go\n        env: { API_KEY: \"\${{ matrix.k }}\" }"]
+  ])("keeps a matrix value out of the inventory when %s gives it to a secret-named variable", (_where, rest) => {
+    const job = jobOf(`
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy: { matrix: { k: [hunter2] } }
+${rest}
+`)
+    expect(job.matrix).toEqual([])
+    expect(features(job)).toContain("matrix")
+    expect(JSON.stringify(job)).not.toContain("hunter2")
   })
 
   it("refuses a matrix value that would end the quoting around a script", () => {

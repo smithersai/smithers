@@ -12,7 +12,7 @@ import { repositoryName } from "../../src/inventory/Repository.ts"
 import { hasSecretValue, isLiteralSecret, scrub } from "../../src/inventory/Secrets.ts"
 import { readToolFile, toolFiles } from "../../src/inventory/Toolchains.ts"
 import { readTurbo } from "../../src/inventory/Turbo.ts"
-import { asScalar, asStrings, isRecord, normalizeDirectory, shellQuote } from "../../src/inventory/Values.ts"
+import { asScalar, asStrings, isRecord, normalizeDirectory, shellQuote, shellWord } from "../../src/inventory/Values.ts"
 
 const bun: Runner = chooseRunner(`{"packageManager":"bun@1.3.0"}`, [])
 const token = `ghp_${"a".repeat(30)}`
@@ -269,13 +269,20 @@ describe("secrets", () => {
     ["postgres://user:pa$$word@db.test/app"],
     ["API_TOKEN=abc123"],
     [`MY_SECRET_VALUE="abc123"`],
+    ["MYSQL_PWD=hunter2"],
+    ["DB_PASS=hunter3"],
+    ["SIGNING_KEY=abc"],
+    ["export api_token=abc123"],
+    [`curl -H "X-Api-Key: abc123" x.test`],
+    ["curl -u admin:hunter2 x.test"],
+    [`sk_live_${"a".repeat(20)}`],
     ["--password=abc123"],
     ["--token abc123"],
     ["Authorization: Bearer abc123def"],
     ["mysql -u root -phunter2"]
   ])("recognises %s", (value) => {
     expect(hasSecretValue(`before ${value} after`)).toBe(true)
-    expect(scrub(`before ${value} after`)).toContain("before [withheld]")
+    expect(scrub(`before ${value} after`)).toContain("[withheld]")
     expect(scrub(`before ${value} after`)).not.toContain(value)
   })
 
@@ -290,7 +297,13 @@ describe("secrets", () => {
     ["--token $TOKEN"],
     ["--password-stdin"],
     ["Authorization: Bearer $TOKEN"],
-    ["mysql -u root -p$PASSWORD"]
+    ["mysql -u root -p$PASSWORD"],
+    ["PASSWORD_FILE=/run/secrets/db"],
+    ["TOKEN_LIMIT=100"],
+    ["SECRET_NAME=app"],
+    ["API_KEY_FILE=key.txt"],
+    ["pass=0"],
+    ["curl -u $USER:$PASS x.test"]
   ])("leaves %s alone", (value) => {
     expect(hasSecretValue(value)).toBe(false)
   })
@@ -299,8 +312,13 @@ describe("secrets", () => {
     expect(isLiteralSecret("API_KEY", "abc")).toBe(true)
     expect(isLiteralSecret("NODE_AUTH_TOKEN", "abc")).toBe(true)
     expect(isLiteralSecret("API_KEY", "")).toBe(false)
-    expect(isLiteralSecret("API_KEY", "$OTHER")).toBe(false)
-    expect(isLiteralSecret("API_KEY", "\${OTHER}")).toBe(false)
+    expect(isLiteralSecret("API_KEY", "$ecret1")).toBe(true)
+    expect(isLiteralSecret("API_KEY", "\${hunter2}")).toBe(true)
+    expect(isLiteralSecret("GPG_PASSPHRASE", "abc")).toBe(true)
+    expect(isLiteralSecret("NPMTOKEN", "abc")).toBe(true)
+    expect(isLiteralSecret("auth", "none")).toBe(false)
+    expect(isLiteralSecret("pass", "1")).toBe(false)
+    expect(isLiteralSecret("TOKEN_FILE", "/run/token")).toBe(false)
     expect(isLiteralSecret("API_KEY", "\${{ matrix.key }}")).toBe(false)
     expect(isLiteralSecret("API_KEY", "pa$$word")).toBe(true)
     expect(isLiteralSecret("PGPASSWORD", "abc")).toBe(true)
@@ -406,6 +424,9 @@ describe("values", () => {
     expect(shellQuote("a/b:c")).toBe("a/b:c")
     expect(shellQuote("it's here")).toBe(`'it'\\''s here'`)
     expect(shellQuote("#x")).toBe("'#x'")
+    expect(shellQuote("-x")).toBe("'-x'")
+    expect(shellWord("-x")).toBe("-x")
+    expect(shellWord("a b")).toBe("'a b'")
     expect(shellQuote("a#x")).toBe("a#x")
   })
 

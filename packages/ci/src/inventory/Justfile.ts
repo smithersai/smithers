@@ -6,7 +6,7 @@
  * to evaluate is reported, not guessed.
  *
  * Contract 4 runs a step with `bash -e -c`, and `just` runs a line with
- * `sh -cu`, so a line that either shell could read differently names its shell.
+ * `sh -cu`, so a line the two shells could read differently names its shell.
  *
  * @since 0.1.0
  */
@@ -14,7 +14,7 @@
 import type { Unsupported } from "../contract/Inventory.ts"
 import { addStep, type Draft, draft, note, type Parsed } from "./Draft.ts"
 import { isLiteralSecret } from "./Secrets.ts"
-import { normalizeDirectory, shellQuote } from "./Values.ts"
+import { normalizeDirectory, shellQuote, shellWord } from "./Values.ts"
 
 const source = "justfile"
 const jobId = (name: string): string => `justfile:${name}`
@@ -182,7 +182,7 @@ const isOn = (value: string | undefined): boolean => value === undefined || valu
 const readShellSetting = (justfile: Justfile, value: string | undefined): void => {
   const words = quotedStrings(value ?? "")
   if (words.length === 0) justfile.blockers.push("shell")
-  else justfile.shell = words.map(shellQuote).join(" ")
+  else justfile.shell = words.map(shellWord).join(" ")
 }
 
 const readSetting = (justfile: Justfile, name: string, value: string | undefined): void => {
@@ -380,10 +380,21 @@ const shebangStart = (shebang: string): string | undefined => {
 
 const indentOf = (line: BodyLine): number => line.text.length - line.text.trimStart().length
 
+/** Commands the shell itself provides, which `sh` and `bash` do not run alike. */
+const shellBuiltins = new Set(
+  (". : [ alias bg bind break builtin caller cd command compgen complete continue declare dirs disown echo enable eval "
+    + "exec exit export false fc fg getopts hash help history jobs kill let local logout mapfile popd printf pushd pwd "
+    + "read readarray readonly return set shift shopt source suspend test times trap true type typeset ulimit umask "
+    + "unalias unset wait").split(" ")
+)
+
+/** True for a program and plain words, which mean the same to both shells. */
+const isPlainCommand = (line: string): boolean =>
+  /^[\w@%+=:,./ -]+$/.test(line) && !line.startsWith("-") && !shellBuiltins.has(line.split(" ")[0] as string)
+
 const inShell = (justfile: Justfile, line: string): string => {
   if (justfile.shell !== undefined) return `${justfile.shell} ${shellQuote(line)}`
-  // Plain words mean the same to both shells.
-  return /^[\w@%+=:,./ -]+$/.test(line) ? line : `sh -cu ${shellQuote(line)}`
+  return isPlainCommand(line) ? line : `sh -cu ${shellQuote(line)}`
 }
 
 const readLine = (context: RecipeContext, line: BodyLine): void => {
@@ -393,7 +404,7 @@ const readLine = (context: RecipeContext, line: BodyLine): void => {
   if (prefix.includes("-")) note(job, "ignored-failure", `${where} may fail without failing the recipe`)
   const command = fillIn(context, where, line.text.slice(prefix.length))
   if (command !== undefined && command.trim() === "") return note(job, "empty-command", `${where} has no command`)
-  if (command !== undefined) addStep(job, { where, command: inShell(justfile, command.trim()), cwd, env })
+  if (command !== undefined) addStep(job, { where, command: inShell(justfile, command.trimStart()), cwd, env })
 }
 
 const runsHere = (recipe: Recipe): boolean => {
@@ -421,7 +432,7 @@ const readDependencies = (job: Draft, recipe: Recipe, aliases: ReadonlyMap<strin
 /** The start of a `[script]` recipe, or `undefined` once the reason is recorded. */
 const scriptStart = (justfile: Justfile, job: Draft, recipe: Recipe, args: ReadonlyArray<string>) => {
   if (args.length === 0 && !justfile.customInterpreter) return "sh -eu"
-  if (/^(?:\S*\/)?(?:bash|sh)$/.test(args[0] ?? "")) return args.map(shellQuote).join(" ")
+  if (/^(?:\S*\/)?(?:bash|sh)$/.test(args[0] ?? "")) return args.map(shellWord).join(" ")
   note(job, "interpreter", `${recipe.name} runs in ${args.join(" ") || "the script interpreter the file sets"}`)
   return undefined
 }

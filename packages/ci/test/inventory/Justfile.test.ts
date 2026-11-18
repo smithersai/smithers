@@ -11,7 +11,13 @@ const jobOf = (text: string, name: string): Job => {
   return job
 }
 
-const commands = (job: Job) => job.steps.map((step) => step.command)
+/** The line each step runs, without any `sh -cu` around it. */
+const commands = (job: Job) =>
+  job.steps.map(({ command }) => {
+    if (!command.startsWith("sh -cu ")) return command
+    const word = command.slice("sh -cu ".length)
+    return word.startsWith("'") ? word.slice(1, -1).replaceAll(`'\\''`, "'") : word
+  })
 const features = (job: Job) => job.unsupported.map((entry) => entry.feature)
 const inSh = (line: string) => `sh -cu ${shellQuote(line)}`
 
@@ -73,7 +79,7 @@ ci: t build
 `,
       "run"
     )
-    expect(commands(job)).toEqual([inSh("docker run --rm alpine sh -c 'a && b'"), "tail"])
+    expect(commands(job)).toEqual(["docker run --rm alpine sh -c 'a && b'", "tail"])
     expect(commands(jobOf("run:\n  tail \\", "run"))).toEqual(["tail"])
   })
 
@@ -103,7 +109,7 @@ test filter='' *rest count="3":
 `,
       "test"
     )
-    expect(commands(job)).toEqual([inSh("zig build -Dmode=fast -Dfilter=  -Dcount=3 {{raw}}")])
+    expect(commands(job)).toEqual(["zig build -Dmode=fast -Dfilter=  -Dcount=3 {{raw}}"])
     expect(job.unsupported).toEqual([])
   })
 
@@ -298,8 +304,21 @@ run: devnet::up
 
 describe("readJustfile exactness", () => {
   it("names sh for a line the two shells could read differently", () => {
-    const job = jobOf(`run:\n  false; echo ok\n  echo "$UNSET"\n  zig build test\n`, "run")
-    expect(commands(job)).toEqual([inSh("false; echo ok"), inSh(`echo "$UNSET"`), "zig build test"])
+    const job = jobOf(`run:\n  false; echo ok\n  echo -e hi\n  source env.sh\n  zig build test\n`, "run")
+    expect(job.steps.map((step) => step.command)).toEqual([
+      inSh("false; echo ok"),
+      inSh("echo -e hi"),
+      inSh("source env.sh"),
+      "zig build test"
+    ])
+  })
+
+  it("does not let a line that starts with a dash read as a flag of sh", () => {
+    expect(jobOf("run:\n  --version\n", "run").steps[0]?.command).toBe("sh -cu '-version'")
+  })
+
+  it("fills in a variable whose name only resembles a secret word", () => {
+    expect(commands(jobOf(`auth := "none"\nrun:\n  t --auth={{auth}}\n`, "run"))).toEqual(["t --auth=none"])
   })
 
   it("runs every line in the shell the file sets", () => {
@@ -331,7 +350,7 @@ describe("readJustfile exactness", () => {
   })
 
   it("does not read a backslash followed by a space as a continuation", () => {
-    expect(commands(jobOf("run:\n  echo a \\ \n  echo b\n", "run"))).toEqual([inSh("echo a \\"), "echo b"])
+    expect(commands(jobOf("run:\n  echo a \\ \n  echo b\n", "run"))).toEqual(["echo a \\ ", "echo b"])
   })
 
   it.each([

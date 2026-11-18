@@ -86,6 +86,18 @@ describe("expandMatrix", () => {
     ])
   })
 
+  it("lets a later include entry replace a value an earlier one added", () => {
+    const include = [{ extra: { a: 1 } }, { extra: { b: 2 } }, { e2: 1 }, { e2: { z: 2 } }]
+    expect(expandMatrix({ n: [1], include }).variants).toEqual([{ n: "1", "extra.b": "2", "e2.z": "2" }])
+  })
+
+  it("keeps ordinary names that resemble secret words", () => {
+    expect(expandMatrix({ auth: ["none", "basic"], pass: [1] }).variants).toEqual([
+      { auth: "none", pass: "1" },
+      { auth: "basic", pass: "1" }
+    ])
+  })
+
   it.each([
     [{ include: [{ API_TOKEN: "abc123" }] }],
     [{ login: [{ password: "abc123" }] }]

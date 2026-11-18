@@ -117,7 +117,12 @@ export const expandMatrix = (raw: unknown): Matrix => {
   const added: Array<Assignment> = []
   for (const entry of included) {
     const joined = merged.filter((_, index) => fits(originals[index] as Assignment, entry))
-    for (const variant of joined) for (const [key, value] of entry) variant.set(key, value)
+    for (const variant of joined) {
+      // A later entry replaces a value an earlier one added, with all its fields.
+      const roots = new Set([...entry.keys()].map(rootOf))
+      for (const key of [...variant.keys()]) if (roots.has(rootOf(key))) variant.delete(key)
+      for (const [key, value] of entry) variant.set(key, value)
+    }
     if (joined.length === 0) added.push(entry)
   }
 

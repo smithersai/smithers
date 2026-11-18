@@ -13,7 +13,7 @@ import { parseDocument } from "yaml"
 import { expand, hostAction, hostActions, type Toolchain } from "../contract/Inventory.ts"
 import { addStep, type Draft, draft, fileProblem, note, type Parsed } from "./Draft.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
-import { isLiteralSecret } from "./Secrets.ts"
+import { isLiteralSecret, isSecretName } from "./Secrets.ts"
 import { asScalar, asStrings, isRecord, normalizeDirectory, shellQuote } from "./Values.ts"
 
 const source = "github-actions"
@@ -334,6 +334,17 @@ const readJobBody = (workflow: WorkflowContext, job: Draft, raw: Record<string, 
   steps.forEach((step: unknown, index) => readStep(context, step, index))
 }
 
+/** True when a variable named like a secret takes its value from the matrix, which would hold it in plain text. */
+const matrixHoldsSecret = (raw: Record<string, unknown>, matrix: Matrix): boolean => {
+  const steps: ReadonlyArray<unknown> = Array.isArray(raw["steps"]) ? raw["steps"] : []
+  return [raw["env"], ...steps.map((step) => (isRecord(step) ? step["env"] : undefined))].some((block) =>
+    isRecord(block) && Object.entries(block).some(([name, value]) =>
+      isSecretName(name) && typeof value === "string"
+      && matrixReferences(value).some((key) => matrix.keys.has(key))
+    )
+  )
+}
+
 const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Draft => {
   const { base, file, triggers } = workflow
   const id = `${base}:${key}`
@@ -347,7 +358,10 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Draft =>
   const needs = asStrings(raw["needs"] ?? [])
   if (needs === undefined) problems.push(["malformed-job", `${name} has a needs value that is not a job list`])
   const strategy = raw["strategy"]
-  const matrix = expandMatrix(isRecord(strategy) ? strategy["matrix"] : undefined)
+  const expanded = expandMatrix(isRecord(strategy) ? strategy["matrix"] : undefined)
+  const matrix = matrixHoldsSecret(raw, expanded)
+    ? { ...noMatrix, problem: "a variable named like a secret reads it" }
+    : expanded
   const job = draft({
     id,
     source,

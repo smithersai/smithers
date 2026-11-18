@@ -51,7 +51,17 @@ export const asStrings = (value: unknown): ReadonlyArray<string> | undefined => 
  * @throws {never}
  */
 export const shellQuote = (word: string): string =>
-  /^(?!#)[\w@%+=:,./#-]+$/.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`
+  /^(?![#-])[\w@%+=:,./#-]+$/.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`
+
+/**
+ * Quotes one word of a command that names a program and its flags, where a
+ * leading dash is meant.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const shellWord = (word: string): string => (/^-[\w-]+$/.test(word) ? word : shellQuote(word))
 
 /**
  * A directory relative to the repository root in its shortest form, the root
