@@ -104,9 +104,13 @@ A shared cache the workspace declares is off in every mode. `--no-cache` stops
 `smthrs` reading a cache, not writing one, so a baseline with the cache's
 credentials would store its results where the repository's CI reads them, and
 normal mode would then find them at the same commit. The replay gives a copy's
-install and its `smthrs` what a target gets of your environment (`PATH`, `HOME`
-and a few more) and no credential. `--cache` gives normal and fast mode the
-address of a shared cache, and only the address.
+install and its `smthrs` what a target gets of your environment (`PATH` and a
+few more), a home directory of its own, and no credential. `--cache` gives
+normal and fast mode the address of a shared cache, and only the address.
+
+An install runs the scripts of a commit's dependencies, so it and the copy's
+`smthrs` run under the rules every replayed step runs under: see
+[What a step can reach](how-it-works.md#what-a-step-can-reach).
 
 Fast mode runs in a third copy, as on any repository: the targets the patterns
 select, less the ones the scorer judges safe to skip. What a target depends on

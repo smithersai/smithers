@@ -214,10 +214,11 @@ a limit of six hours. It gets no other variable of yours: no token and no
 `SSH_AUTH_SOCK`.
 
 **No push.** Every `git` a step starts refuses to push. A `pre-push` hook,
-set through git's environment, stops the push before anything is sent, so
-`git remote add` and `git remote set-url` do not undo it. That `git` has no
-credential helper and never asks for a password. A copy fetches from the
-repository's remote and has no remote to push to.
+set through git's environment and in the step's home, stops the push before
+anything is sent, so `git remote add`, `git remote set-url` and a hooks
+directory of the repository's own do not undo it. That `git` has no credential
+helper and never asks for a password. A copy fetches from the repository's
+remote and has no remote to push to.
 
 **A jail.** On Linux with
 [bubblewrap](https://github.com/containers/bubblewrap) installed, a step can
