@@ -5,13 +5,13 @@ description: "Which CI sources and languages smithers-ci reads, the repositories
 
 ## CI it reads
 
-| Source         | Read from             |
-| -------------- | --------------------- |
-| GitHub Actions | `.github/workflows/*` |
-| Justfile       | a `Justfile`          |
-| Makefile       | a `Makefile`          |
-| `package.json` | its `scripts`         |
-| Turborepo      | `turbo.json`          |
+| Source         | Read from                                      |
+| -------------- | ---------------------------------------------- |
+| GitHub Actions | `.github/workflows/*`                          |
+| Justfile       | a `Justfile`                                   |
+| Makefile       | a root `Makefile`, `makefile` or `GNUmakefile` |
+| `package.json` | its `scripts`                                  |
+| Turborepo      | `turbo.json`                                   |
 
 Any other CI system, such as Jenkins, CircleCI or GitLab CI, is not read.
 

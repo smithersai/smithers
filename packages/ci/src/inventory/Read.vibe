@@ -16,6 +16,7 @@ import { found } from "../native/Workspace.ts"
 import { assemble, fileProblem, type Parsed } from "./Draft.ts"
 import { readWorkflow } from "./GithubActions.ts"
 import { readJustfile } from "./Justfile.ts"
+import { readMakefile } from "./Makefile.ts"
 import {
   chooseRunner,
   readGlobs,
@@ -30,6 +31,9 @@ import { readTurbo } from "./Turbo.ts"
 
 /** Directories a workspace pattern never walks into. */
 const skipped = (name: string) => name === "node_modules" || name.startsWith(".")
+
+/** The files Make looks for, in the order it looks: it reads only the first it finds. */
+const makefileNames = ["GNUmakefile", "makefile", "Makefile"]
 
 /** How deep `**` follows directories, which also ends a symbolic link cycle. */
 const maxDepth = 12
@@ -169,8 +173,9 @@ effect function readPackages(tree: Tree, rootText: string | undefined, runner: R
 
 /**
  * Reads the CI of the repository at `root`: GitHub Actions workflows, a
- * Justfile, `package.json` scripts and `turbo.json` tasks, with the tools the
- * repository pins. It fails with `not-a-repository` when `root` has no commit.
+ * Justfile, a Makefile, `package.json` scripts and `turbo.json` tasks, with the
+ * tools the repository pins. It fails with `not-a-repository` when `root` has
+ * no commit.
  *
  * @category parts
  * @since 0.1.0
@@ -196,6 +201,13 @@ export const read: ReadInventory<FileSystem.FileSystem | Path.Path | ChildProces
     if (/^\.?justfile$/i.test(name)) {
       parts.push(try readWith(tree, name, (text) => readJustfile(name, text)))
     }
+  }
+
+  const makefile = makefileNames.find((name) => rootFiles.includes(name))
+  if (makefile !== undefined) {
+    // Make skips a recipe or replaces it depending on which files exist.
+    const tracked = try git(root, ["ls-files", "-z"])
+    parts.push(try readWith(tree, makefile, (text) => readMakefile(makefile, text, tracked.split("\0"))))
   }
 
   const manifest = try optional(tree, "package.json")

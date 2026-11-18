@@ -99,9 +99,9 @@ standard input, and a limit of six hours. It gets no other variable of the
 person running the replay.
 
 In the baseline, a GitHub Actions job runs in a fresh checkout of its own.
-The recipes of one Justfile, and the scripts of one `package.json`, run one
-after another in one checkout, in the order the `ci` recipe lists them, and
-stop at the first failure.
+The recipes of one Justfile, the rules of one Makefile, and the scripts of one
+`package.json` run one after another in one checkout, in the order the `ci`
+recipe or rule lists them, and stop at the first failure.
 
 Three things are left out and listed in the report:
 
