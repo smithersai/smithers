@@ -14,7 +14,7 @@
 import type { Unsupported } from "../contract/Inventory.ts"
 import { addStep, type Draft, draft, note, type Parsed } from "./Draft.ts"
 import { isLiteralSecret } from "./Secrets.ts"
-import { normalizeDirectory, shellQuote, shellWord } from "./Values.ts"
+import { isPlainCommand, normalizeDirectory, shellQuote, shellWord } from "./Values.ts"
 
 const source = "justfile"
 const jobId = (name: string): string => `justfile:${name}`
@@ -379,18 +379,6 @@ const shebangStart = (shebang: string): string | undefined => {
 }
 
 const indentOf = (line: BodyLine): number => line.text.length - line.text.trimStart().length
-
-/** Commands the shell itself provides, which `sh` and `bash` do not run alike. */
-const shellBuiltins = new Set(
-  (". : [ alias bg bind break builtin caller cd command compgen complete continue declare dirs disown echo enable eval "
-    + "exec exit export false fc fg getopts hash help history jobs kill let local logout mapfile popd printf pushd pwd "
-    + "read readarray readonly return set shift shopt source suspend test times trap true type typeset ulimit umask "
-    + "unalias unset wait").split(" ")
-)
-
-/** True for a program and plain words, which mean the same to both shells. */
-const isPlainCommand = (line: string): boolean =>
-  /^[\w@%+=:,./ -]+$/.test(line) && !line.startsWith("-") && !shellBuiltins.has(line.split(" ")[0] as string)
 
 const inShell = (justfile: Justfile, line: string): string => {
   if (justfile.shell !== undefined) return `${justfile.shell} ${shellQuote(line)}`

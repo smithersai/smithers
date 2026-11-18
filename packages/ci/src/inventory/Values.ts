@@ -63,6 +63,25 @@ export const shellQuote = (word: string): string =>
  */
 export const shellWord = (word: string): string => (/^-[\w-]+$/.test(word) ? word : shellQuote(word))
 
+/** Commands the shell itself provides, which `sh` and `bash` do not run alike. */
+const shellBuiltins = new Set(
+  (". : [ alias bg bind break builtin caller cd command compgen complete continue declare dirs disown echo enable eval "
+    + "exec exit export false fc fg getopts hash help history jobs kill let local logout mapfile popd printf pushd pwd "
+    + "read readarray readonly return set shift shopt source suspend test times trap true type typeset ulimit umask "
+    + "unalias unset wait").split(" ")
+)
+
+/**
+ * True for a line that is a program and plain words, which `sh` and `bash`
+ * run alike, so it needs no shell named around it.
+ *
+ * @category readers
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const isPlainCommand = (line: string): boolean =>
+  /^[\w@%+=:,./ -]+$/.test(line) && !line.startsWith("-") && !shellBuiltins.has(line.split(" ")[0] as string)
+
 /**
  * A directory relative to the repository root in its shortest form, the root
  * being empty. A directory outside the repository is `undefined`.
