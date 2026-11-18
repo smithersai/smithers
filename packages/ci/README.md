@@ -24,6 +24,25 @@ directly, so the parts are built at the same time.
 
 Newest first. A part built before a change adopts it before it lands again.
 
+**2026-11-18, tenth round, open** (the independent review's 31 findings; three lanes fix them. The lead's
+decisions are in each lane's brief. This list holds what one lane asked of another; each is done by the lane named):
+
+- **Replay lane.** Before the replay writes generated files into a copy, at each commit, it calls the apply lane's
+  path check and drops its own `replaced` call. The check refuses a path whose real location is outside the copy, a
+  path with a file or directory in the way, and a file `smithers-ci` did not generate. Import it from where the
+  apply lane puts it (next item); until that lands, keep `replaced`.
+- **Apply lane.** The path check is used by `apply` and by the replay, so it lives in `src/apply/` (a new
+  directory, yours), not in `src/cli/`: the replay never imports the program.
+- **Replay lane.** The comment on `RunRecord.Attempt` and `docs/concepts/how-it-works.md` say: "A failed target
+  reruns up to the limit the program sets (two) or until it passes."
+- **Replay lane.** `Inventory.uncommittedChanges = "uncommitted-changes"` beside `Inventory.smithersBuild`; the
+  importer writes it. The apply lane then reads the constant in place of its literal.
+- **Decided, no change.** `apply` treats `.smithers/ci/NOT-REPRODUCED.md` as generated when the mark is the first
+  line under its heading, and the file at `TargetMap.path` as generated when it decodes as a target map. The
+  generator and contract 11 stay as they are.
+- **Lead, after the native lane exits.** `src/native/Detect.vibe` reads a path whose directory is a regular file as
+  "no workspace file", so `apply` gives its own message.
+
 **2026-11-17, ninth round** (asked for by the native lane):
 
 - `--targets` (`Command.flags.targets`) names Smithers build patterns to replay, on `smithers-ci` and `replay`. The
