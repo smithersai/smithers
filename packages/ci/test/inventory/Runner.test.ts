@@ -99,6 +99,7 @@ const defaults: StepFacts = {
   key: "STEP",
   after: "none",
   second: false,
+  apart: false,
   job: "build",
   cwd: "",
   directory: undefined,
@@ -126,17 +127,19 @@ const begun = new Set<string>()
 
 /** Writes the runner text of a step, composes it as `Inventory.script` does and runs it with `Inventory.shell`. */
 const run = ({ alone, first: started, ...facts }: Facts, command: string, options: Options = {}): Ran => {
-  const first = started === true || alone === true
-  const after = first ? undefined : mark ?? "none"
+  // A step a replay may leave out has no place: it neither starts the steps nor counts as one of them.
+  const apart = facts.apart === true
+  const first = !apart && (started === true || alone === true)
+  const after = first ? undefined : apart ? mark : mark ?? "none"
   const facts_ = options.job ?? job()
   const state = `${facts_.id} ${JSON.stringify(options.variant ?? {})}`
-  const second = !first && !begun.has(state)
+  const second = !first && after !== undefined && !begun.has(state)
   const written = write(facts_, { ...defaults, after, second, ...facts }, command)
   if (!("text" in written)) throw new Error(written.problem)
   if (first) {
     mark = written.mark
     begun.clear()
-  } else begun.add(state)
+  } else if (!apart) begun.add(state)
   const text = expand(script({ command, runner: alone === true ? written.alone : written.text }), options.variant ?? {})
   const [program, ...flags] = shell
   const ran = spawnSync(program, [...flags, text], {
@@ -831,6 +834,59 @@ describe("write", () => {
       expect(pass({ first: true, job: undefined }, `echo "[\${GITHUB_JOB-unset}]"`)).toBe("[unset]\n")
       expect(pass({ first: true, job: "lint" }, `echo "[$GITHUB_JOB]"`)).toBe("[lint]\n")
       expect(pass({ job: "lint" }, `echo "[$GITHUB_JOB]"`)).toBe("[lint]\n")
+    })
+  })
+
+  // A step that only installs packages is left out of a replay on a machine that has them. The steps around it
+  // must run the same with it and without it, so it has no place among them.
+  describe("a step a replay may leave out", () => {
+    const states = (): ReadonlyArray<string> => {
+      const base = join("/tmp", `smithers-ci-runner-${process.getuid?.() ?? ""}`)
+      return readdirSync(base).filter((name) => {
+        const root = join(base, name, "root")
+        return existsSync(root) && readFileSync(root, "utf8") === at.repo
+      })
+    }
+
+    it("runs before any other step with the runner's variables, and leaves no state", () => {
+      const show = `echo "$GITHUB_WORKSPACE $CI"; test -d "$RUNNER_TEMP"`
+      expect(pass({ apart: true, job: undefined }, show)).toBe(`${at.repo} true\n`)
+      expect(states()).toEqual([])
+    })
+
+    it("starts from what the steps before it left, and the steps after it find nothing of it", () => {
+      pass({ key: "ONE", first: true }, `echo "A=1" >> "$GITHUB_ENV"; echo x > "$RUNNER_TEMP/one.txt"`)
+      const seen = `echo "$A [\${B-}] $(ls "$RUNNER_TEMP")"`
+      // Between the first step and the second: it reads what the first left.
+      expect(pass({ apart: true }, `${seen}; echo junk > "$RUNNER_TEMP/junk"`)).toBe("1 [] one.txt\n")
+      // The step after it is the job's second step, as it is when the step is left out.
+      expect(pass({ key: "TWO" }, `${seen}; echo "B=2" >> "$GITHUB_ENV"`)).toBe("1 [] one.txt\n")
+      // After the second step: it reads the job's own state.
+      expect(pass({ apart: true }, `${seen}; echo junk > "$RUNNER_TEMP/junk"`)).toBe("1 [2] one.txt\n")
+      expect(pass({ key: "THREE" }, seen)).toBe("1 [2] one.txt\n")
+      // The first step's state and the job's: the step kept its own apart and removed it.
+      expect(states()).toHaveLength(2)
+    })
+
+    it.each(["GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH"])(
+      "stops when it wrote to %s: left out, it could not give later steps that value",
+      (file) => {
+        const ran = run({ apart: true }, `echo "X=1" >> "$${file}"`)
+        expect(ran.status).toBe(1)
+        expect(ran.stderr).toBe(
+          "smithers-ci: a step that only installs packages wrote a value for later steps, which a replay that "
+            + "leaves the step out cannot give them\n"
+        )
+      }
+    )
+
+    it("fails when the steps before it have not run", () => {
+      for (const second of [true, false]) {
+        const ran = run({ apart: true, after: "none", second }, "echo ran")
+        expect(ran.status).toBe(1)
+        expect(ran.stdout).toBe("")
+        expect(ran.stderr).toContain(`smithers-ci: the steps before this one have not run in ${at.repo}`)
+      }
     })
   })
 

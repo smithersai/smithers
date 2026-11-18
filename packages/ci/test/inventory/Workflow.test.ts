@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto"
+import { mkdirSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import type { Job } from "../../src/contract/Inventory.ts"
 import { readWorkflow } from "../../src/inventory/GithubActions.ts"
+import { installsOf } from "../../src/inventory/MachineChanges.ts"
 import { commits, jobsOf, type Repository, repository, runJob } from "./run.ts"
 
 const file = ".github/workflows/ci.yml"
@@ -1216,6 +1219,54 @@ runs:
       }
     )
     expect(jobOf(repo, "ci.yml:call/b").steps.map((step) => step.command)).toEqual(["echo [] 3"])
+  })
+})
+
+describe("a step that only installs packages", () => {
+  // `MachineChanges.withInstalled` leaves such a step out of a replay on a machine that has the packages. The
+  // steps around it are written to run the same with it and without it.
+  it("has no place among the job's steps, so the job runs the same when it is left out", () => {
+    const repo = withWorkflow(`
+on: pull_request
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update
+      - run: echo "MADE=yes" >> "$GITHUB_ENV"
+      - run: sudo apt-get install -y zsh
+      - run: echo "built $MADE" && echo "NEXT=1" >> "$GITHUB_ENV"
+      - run: echo "tested $MADE $NEXT"
+  reads:
+    runs-on: ubuntu-latest
+    steps:
+      - id: tools
+        run: sudo apt-get install -y zsh
+      - if: steps.tools.outcome == 'success'
+        run: echo never
+`)
+    const build = jobOf(repo, "ci.yml:build")
+    // A sudo that does nothing stands for the machine's.
+    const bin = join(repo.temp, "bin")
+    mkdirSync(bin)
+    writeFileSync(join(bin, "sudo"), `#!/bin/sh\necho "sudo $*"\n`, { mode: 0o755 })
+    const path = `${bin}:${process.env["PATH"] ?? ""}`
+    expect(outputs(runJob(repo, build, {}, path))).toEqual([
+      "sudo apt-get update",
+      "",
+      "sudo apt-get install -y zsh",
+      "built yes",
+      "tested yes 1"
+    ])
+    const without = { ...build, steps: build.steps.filter((step) => installsOf(step.command) === undefined) }
+    expect(without.steps).toHaveLength(3)
+    expect(outputs(runJob(repo, without))).toEqual(["", "built yes", "tested yes 1"])
+    // What such a step gave is not there when it is left out, so nothing may read it.
+    expect(details(jobOf(repo, "ci.yml:reads"))).toEqual([
+      "reads step 2 runs only if steps.tools.outcome == 'success': what reads step 1 gave: a step that only "
+      + "installs packages is left out when they are there"
+    ])
   })
 })
 

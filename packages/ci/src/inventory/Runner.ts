@@ -56,6 +56,10 @@ export interface JobFacts {
  *   so two jobs that start with the same step share it.
  * - `second`: the step is the second of its job, so it starts the job's own state from what the first step left,
  *   unless a step split from the same step has started it since the first step ran.
+ * - `apart`: the step takes no place among the job's steps, because a replay may leave it out: it only installs
+ *   packages, and the machine may have them. It starts from a copy of what the steps before it left (`after` and
+ *   `second` say which), leaves nothing, and stops when it wrote a value for later steps. The steps around it are
+ *   the first, the second and the rest whether or not it runs.
  * - `cwd`: the directory the step is started in, from the repository root.
  * - `directory`: a directory decided while the job runs, which the step enters from the root before its script.
  * - `start`: the shell and its flags; the script follows `-c`.
@@ -75,6 +79,7 @@ export interface StepFacts {
   readonly key: string
   readonly after: string | undefined
   readonly second: boolean
+  readonly apart: boolean
   readonly job: string | undefined
   readonly cwd: string
   readonly directory: ReadonlyArray<Part> | undefined
@@ -303,6 +308,13 @@ const library = (job: JobFacts): string =>
     `  "$@" -c "$__script"`,
     `  __status=$?`,
     `  [ "$__status" -eq 0 ] || exit "$__status"`,
+    // A step a replay may leave out leaves nothing for later steps. One that tried is stopped: without it the
+    // steps after it would run on other values.
+    `  if [ -n "\${__apart-}" ]; then`,
+    `    [ ! -s "$__files/output" ] && [ ! -s "$__files/env" ] && [ ! -s "$__files/path" ] ||`,
+    `      __ci_fail "a step that only installs packages wrote a value for later steps, which a replay that leaves the step out cannot give them"`,
+    `    exit 0`,
+    `  fi`,
     `  mkdir -p -- "$__state/steps/$__key" || exit 1`,
     `  __ci_each "$__files/output" __ci_output "$__key"`,
     `  __ci_each "$__files/env" __ci_env`,
@@ -604,7 +616,29 @@ export const write = (job: JobFacts, step: StepFacts, command: string): Written 
       `mkdir -p -m 700 -- "$__base" 2>/dev/null; [ -d "$__base" ] && [ -O "$__base" ] || ${
         fail("$__base is not a directory of this user")
       }`,
-      ...(step.after === undefined
+      ...(step.apart
+        // A step that may be left out keeps its state in a directory of this run alone, a copy of what the steps
+        // before it left, and removes it as it ends.
+        ? [
+          `__state=$(mktemp -d "$__base/only.XXXXXX") || exit 1`,
+          `trap 'rm -rf -- "$__state"' EXIT`,
+          ...(step.after === undefined
+            ? [
+              `printf %s "$__root" > "$__state/root" || exit 1`,
+              `cat > "$__state/lib.sh" <<'${marker}'`,
+              shared,
+              marker
+            ]
+            : [
+              ...named("__from", step.second ? `first|${mark}` : job.id),
+              `[ -f "$__from/lib.sh" ] || ${fail("the steps before this one have not run in $__root")}`,
+              `for __e in "$__from"/*; do`,
+              `  case \${__e##*/} in event.json) ;; *) cp -R "$__e" "$__state/" || exit 1;; esac`,
+              `done`
+            ]),
+          `__apart=1`
+        ]
+        : step.after === undefined
         ? [
           ...(alone
             // The only step of a job keeps its state in a directory of this run alone and removes it as it ends:

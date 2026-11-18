@@ -57,6 +57,7 @@ import {
   variable,
   whole
 } from "./Expression.ts"
+import { installsOf } from "./MachineChanges.ts"
 import { expandMatrix, type Matrix, noMatrix } from "./Matrix.ts"
 import { type JobFacts, settled, write } from "./Runner.ts"
 import { isLiteralSecret, isSecretName } from "./Secrets.ts"
@@ -145,6 +146,10 @@ interface JobState extends Shape {
   ran: boolean
   /** Variables a setup action that ran would have set. */
   readonly setupNames: Set<string>
+  /** How many commands of the job have a place among its steps: every one but those a replay may leave out. */
+  placed: number
+  /** True when the command added last is one a replay may leave out. */
+  apart: boolean
   /** The mark of the job's first command, by which the commands after it find what it left. */
   mark: string | undefined
   /** The runner text the job's first command takes when no command follows it. */
@@ -584,11 +589,16 @@ const addRun = (
     else if (identifier.test(name)) decided.push([name, entry, env.own.has(name)])
     else return note(job, "expression", `${where} sets ${name}, a name a shell cannot hold, while the job runs`)
   }
-  const first = job.steps.length === 0
+  // A step that only installs packages is left out of a replay on a machine that has them
+  // (`MachineChanges.withInstalled`). So it takes no place among the job's steps: the others are the first, the
+  // second and the rest with it or without it.
+  const apart = installsOf(command) !== undefined
+  const first = state.placed === 0
   const written = write(state.runner, {
     key: context.key,
     after: first ? undefined : state.mark,
-    second: job.steps.length === 1,
+    second: state.placed === 1,
+    apart,
     // Two jobs that start with the same step run it once, so a first step is told its job only when it asks.
     job: first && !/\bGITHUB_JOB\b/.test(command) ? undefined : state.key,
     cwd,
@@ -616,10 +626,13 @@ const addRun = (
   })
   if (job.steps.length > before) {
     state.ran = true
+    state.apart = apart
+    if (apart) return
     if (first) {
       state.mark = written.mark
       state.only = written.alone
     }
+    state.placed += 1
   }
 }
 
@@ -836,6 +849,11 @@ const readStep = (state: JobState, scope: StepScope, raw: unknown, index: number
   const before = job.steps.length
   readRun(context, raw, run)
   if (job.steps.length === before) return record(unread)
+  // Nothing may depend on a step a replay leaves out when the machine has its packages.
+  if (state.apart) {
+    const left = unknown(`what ${where} gave: a step that only installs packages is left out when they are there`)
+    return record({ outputs: left, outcome: left })
+  }
   const outputs = fields((name) =>
     /^[a-z0-9_-]+$/.test(name)
       ? variable(`output:${key}/${name.toUpperCase()}`, `steps.${id}.outputs.${name}`, true)
@@ -1078,6 +1096,8 @@ const readJob = (workflow: WorkflowContext, key: string, raw: unknown): Readonly
       event: eventFile(workflow.event, workflow.facts)
     },
     ran: false,
+    placed: 0,
+    apart: false,
     mark: undefined,
     only: undefined,
     setupNames: new Set(),

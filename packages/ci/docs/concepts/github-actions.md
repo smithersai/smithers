@@ -131,6 +131,12 @@ Two jobs that start with the same step run it once and share its result. So a
 job's first step is given `GITHUB_JOB` only when its script names it; every
 later step is given it always.
 
+A step that only installs system packages, such as `sudo apt-get install -y zsh`,
+is left out when your machine already has them. So it takes no part in what the
+steps pass to one another: it is given what earlier steps set, a step that reads
+its `outputs` or `outcome` leaves the job out, and one that writes to
+`GITHUB_ENV`, `GITHUB_PATH` or `GITHUB_OUTPUT` stops and says so.
+
 `RUNNER_ENVIRONMENT` is `self-hosted` because your machine is not one of
 GitHub's. A step a workflow keeps for GitHub's own machines, such as one that
 deletes system directories to free disk space, is left out.
