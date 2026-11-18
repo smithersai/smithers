@@ -12,6 +12,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "docs/**/*.md",
     "README.md"
   ],
@@ -25,13 +26,15 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "effect": "4.1.1"
+    "effect": "4.1.1",
+    "vibelang-runtime": "0.0.13"
   },
   "engines": {
     "node": ">=22.19.0"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
