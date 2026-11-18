@@ -14,6 +14,7 @@ import { forShell, forText } from "../src/generate/Expressions.ts"
 import { files } from "../src/generate/index.ts"
 import {
   compiledCode,
+  legsPath,
   noSharedCache,
   notesPath,
   packagePath,
@@ -965,63 +966,48 @@ describe("the workspace and workflow", () => {
     expect(compiledCode).toBe(replayed)
   })
 
-  it("installs the version a file pins when the CI's workflow holds none, and says the workflow's own is not kept", () => {
-    // What the importer writes for `node-version: ${{ matrix.node }}` with `node: [18, 20]`, beside an `.nvmrc`.
-    const generated = generate(inventory(
-      [job("ci.yml:test", [step("t:1", "node test.js")], { matrix: [{ node: "18" }, { node: "20" }] })],
-      {
-        toolchains: [
-          { name: "node", source: ".github/workflows/ci.yml" },
-          { name: "node", source: ".nvmrc", version: "20" }
-        ]
-      }
-    ))
-    // The entry with no version sorts first; it no longer wins over the one that has a version.
+  it("installs the version a file pins for a job that sets the tool up with none it can read", () => {
+    const generated = generate(inventory([job("ci.yml:test", [step("t:1", "node test.js")])], {
+      toolchains: [
+        { name: "node", source: ".github/workflows/ci.yml", job: "ci.yml:test" },
+        { name: "node", source: ".nvmrc", version: "20" }
+      ]
+    }))
     expect(content(generated, workflowPath)).toContain(
       `      - uses: actions/setup-node@v4\n        with:\n          node-version: "20"\n`
     )
     expect(content(generated, notesPath)).toContain(
-      "- node: .github/workflows/ci.yml sets it up with a version this inventory does not hold: none is written, " +
-        "or it is worked out when the workflow runs, as a matrix value is. Every target runs with node 20 (.nvmrc).\n"
+      "- node: ci.yml:test sets it up with no version smithers-ci can read, so its steps run with node 20 (.nvmrc).\n"
     )
     expect(content(generated, packagePath)).toContain(`// Not reproduced from the original CI: see ${notesPath}`)
   })
 
-  it("installs one version of each tool and names every other version the CI's own files hold", () => {
+  it("chooses one version of a tool for the steps whose jobs name none, and names what it leaves out", () => {
     const generated = generate(inventory([job("ci.yml:test", [step("t:1", "make")])], {
       toolchains: [
-        // Two jobs of the CI's workflow pin different versions: the inventory does not say which job has which.
-        { name: "node", source: ".github/workflows/ci.yml", version: "18" },
-        { name: "node", source: ".github/workflows/ci.yml", version: "20" },
-        // A pin file is less trusted than what the CI itself installs, so its version is no loss.
+        // The CI's job names Node, so a pin file's other version is no loss.
+        { name: "node", source: ".github/workflows/ci.yml", version: "18", job: "ci.yml:test" },
         { name: "node", source: ".nvmrc", version: "22" },
-        // A version still written as an expression is not one to install.
-        { name: "python", source: ".github/workflows/ci.yml", version: "${{ matrix.python }}" },
         // Two pin files disagree.
         { name: "zig", source: "build.zig.zon", version: "0.15.1" },
         { name: "zig", source: "a-later-file", version: "0.14.0" },
-        // Only workflows that are not CI name Go: the first version among them is used, and nothing is noted.
-        { name: "go", source: ".github/workflows/nightly.yml" },
-        { name: "go", source: ".github/workflows/release.yml", version: "1.22" },
-        { name: "go", source: ".github/workflows/weekly.yml", version: "1.21" },
-        // A pin file names Bun with no version: a workflow that is not CI is not asked for one.
+        // Only jobs that are not CI name Go: the first version among them is used, and nothing is noted.
+        { name: "go", source: ".github/workflows/nightly.yml", job: "nightly.yml:soak" },
+        { name: "go", source: ".github/workflows/release.yml", version: "1.22", job: "release.yml:publish" },
+        { name: "go", source: ".github/workflows/weekly.yml", version: "1.21", job: "weekly.yml:soak" },
+        // A pin file names Bun with no version: a job that is not CI is not asked for one.
         { name: "bun", source: "package.json" },
-        { name: "bun", source: ".github/workflows/release.yml", version: "1.2.0" }
+        { name: "bun", source: ".github/workflows/release.yml", version: "1.2.0", job: "release.yml:publish" }
       ]
     }))
     const workflow = content(generated, workflowPath)
     expect(workflow).toContain(`      - uses: oven-sh/setup-bun@v2\n      - uses: actions/setup-go@v5\n`)
     expect(workflow).toContain(`          go-version: "1.22"\n      - uses: actions/setup-node@v4\n`)
-    expect(workflow).toContain(`          node-version: "18"\n      - uses: actions/setup-python@v5\n      - uses:`)
+    expect(workflow).toContain(`          node-version: "18"\n`)
     expect(workflow).toContain(`          version: "0.14.0"\n`)
-    expect(workflow).not.toContain("${{ matrix.python }}")
     expect(content(generated, notesPath).split("\n").filter((line) => line.startsWith("- "))).toEqual([
-      "- node 20 (.github/workflows/ci.yml) is not installed: every target runs with node 18 " +
-      "(.github/workflows/ci.yml).",
-      "- python: .github/workflows/ci.yml sets it up with a version this inventory does not hold: none is written, " +
-      "or it is worked out when the workflow runs, as a matrix value is. Every target runs with the version its " +
-      "setup action installs by default.",
-      "- zig 0.15.1 (build.zig.zon) is not installed: every target runs with zig 0.14.0 (a-later-file)."
+      "- zig 0.15.1 (build.zig.zon) is not installed: a step whose job names no version runs with zig 0.14.0 " +
+      "(a-later-file)."
     ])
   })
 
@@ -1080,5 +1066,205 @@ describe("the workspace and workflow", () => {
     expect(workflow).toContain(`os: ["ubuntu-latest"]`)
     expect(workflow).toContain(`node-version: "22.20.0"`)
     expect(workflow).not.toContain(`node-version: "24"`)
+  })
+})
+
+describe("tool versions", () => {
+  const file = ".github/workflows/ci.yml"
+  const matrixNode = { name: "node", source: file, version: "${{ matrix.node }}", job: "ci.yml:test" }
+  const test = job("ci.yml:test", [step("ci.yml:test:1", "node test.js")], {
+    runsOn: "ubuntu-latest",
+    matrix: [{ node: "18" }, { node: "20" }]
+  })
+  const lint = job("ci.yml:lint", [step("ci.yml:lint:1", "node lint.js")], { runsOn: "ubuntu-latest" })
+  const pinned = (id: string, version: string) => ({ name: "node", source: file, version, job: id })
+  const include = (generated: ReadonlyArray<GeneratedFile>) =>
+    (parseYaml(content(generated, workflowPath)) as {
+      readonly jobs: { readonly ci: { readonly strategy: { readonly matrix: { readonly include?: unknown } } } }
+    }).jobs.ci.strategy.matrix.include
+
+  it("runs each matrix variant under its own version, on its own machine, with its own key", () => {
+    const generated = generate(inventory([test], { toolchains: [matrixNode] }))
+    expect(include(generated)).toEqual([
+      { os: "ubuntu-latest", leg: "1", tools: "node 18", "version-node": "18" },
+      { os: "ubuntu-latest", leg: "2", tools: "node 20", "version-node": "20" }
+    ])
+    const workflow = content(generated, workflowPath)
+    expect(workflow).toContain("          node-version: ${{ matrix.version-node }}\n")
+    expect(workflow).toContain(`$(awk -v leg='\${{ matrix.leg }}' '$1 == leg { print $2 }' ${legsPath}) --jobs 1`)
+    expect(workflow).not.toContain("'//...'")
+    // Each machine restores only results made under its own versions.
+    expect(workflow).toContain("key: smithers-ci-${{ matrix.os }}-${{ matrix.leg }}-${{ github.sha }}")
+    expect(workflow).toContain("restore-keys: smithers-ci-${{ matrix.os }}-${{ matrix.leg }}-\n")
+    expect(content(generated, legsPath)).toBe(
+      "# Generated by smithers-ci. Do not edit.\n1 //:ci.yml-test-1--18\n2 //:ci.yml-test-1--20\n"
+    )
+    const targets = content(generated, packagePath)
+    expect(targets).toContain(JSON.stringify("# Runs under node 18.\nbash -e -c 'node test.js'"))
+    expect(targets).toContain(JSON.stringify("# Runs under node 20.\nbash -e -c 'node test.js'"))
+    expect(content(generated, notesPath)).toBe("")
+  })
+
+  it("keeps one machine and today's workflow when every step runs under the same version", () => {
+    const generated = generate(inventory([{ ...test, matrix: [{ node: "20" }] }], { toolchains: [matrixNode] }))
+    expect(include(generated)).toBeUndefined()
+    const workflow = content(generated, workflowPath)
+    expect(workflow).toContain(`          node-version: "20"\n`)
+    expect(workflow).toContain("smthrs ci '//...'")
+    expect(workflow).toContain("key: smithers-ci-${{ matrix.os }}-${{ github.sha }}")
+    expect(generated.some((entry) => entry.path === legsPath)).toBe(false)
+    expect(content(generated, packagePath)).not.toContain("# Runs under")
+  })
+
+  it("does not make a step wait for a job that runs under other versions, and says so", () => {
+    const generated = generate(inventory([lint, { ...test, needs: ["ci.yml:lint"] }], {
+      toolchains: [matrixNode, pinned("ci.yml:lint", "22")]
+    }))
+    const targets = content(generated, packagePath)
+    // No target depends on another: each `data` holds only the repository.
+    expect(targets.match(/data: \[repository\]/g)).toHaveLength(3)
+    expect(content(generated, notesPath)).toContain(
+      "- ci.yml:test: runs with node 18, so it does not wait for ci.yml:lint, which runs with node 22. " +
+        "The workflow still fails when either fails.\n"
+    )
+    expect(content(generated, legsPath).split("\n").slice(1, -1)).toEqual([
+      "1 //:ci.yml-test-1--18",
+      "2 //:ci.yml-test-1--20",
+      "3 //:ci.yml-lint-1"
+    ])
+  })
+
+  it("makes a step wait for the variant of a needed job that runs under its versions", () => {
+    const build = {
+      ...test,
+      id: "ci.yml:build",
+      name: "build",
+      steps: [step("ci.yml:build:1", "node build.js")]
+    }
+    const generated = generate(inventory([build, { ...test, needs: ["ci.yml:build"] }], {
+      toolchains: [matrixNode, { ...matrixNode, job: "ci.yml:build" }]
+    }))
+    const targets = content(generated, packagePath)
+    const dataOf = (title: string): string => {
+      const start = targets.indexOf(`// ${title}`)
+      return /data: \[(.*)\]/.exec(targets.slice(start))?.[1] ?? ""
+    }
+    const variable = (label: string): string => new RegExp(`"${label}": (step\\d+)`).exec(targets)?.[1] as string
+    const tests = [...targets.matchAll(/\/\/ ci\.yml:test \/ ci\.yml:test:1\nconst (step\d+)[\s\S]*?data: \[(.*)\]/g)]
+      .map((match) => [match[1], match[2]])
+    expect(dataOf("ci.yml:test / ci.yml:test:1")).toContain("repository")
+    expect(tests).toEqual([
+      [variable("ci.yml-test-1--18"), `repository, ${variable("ci.yml-build-1--18")}`],
+      [variable("ci.yml-test-1--20"), `repository, ${variable("ci.yml-build-1--20")}`]
+    ])
+    expect(content(generated, notesPath)).toBe("")
+  })
+
+  it("runs a step whose job names no version under the repository's, or else the first a job names", () => {
+    const pin = { name: "node", source: ".nvmrc", version: "20" }
+    expect(content(generate(inventory([lint, test], { toolchains: [matrixNode, pin] })), legsPath)).toBe(
+      "# Generated by smithers-ci. Do not edit.\n1 //:ci.yml-test-1--18\n2 //:ci.yml-lint-1\n2 //:ci.yml-test-1--20\n"
+    )
+    expect(content(generate(inventory([lint, test], { toolchains: [matrixNode] })), legsPath)).toBe(
+      "# Generated by smithers-ci. Do not edit.\n1 //:ci.yml-lint-1\n1 //:ci.yml-test-1--18\n2 //:ci.yml-test-1--20\n"
+    )
+  })
+
+  it("takes the first version a job with no named runner fills", () => {
+    const { runsOn: _runsOn, ...anywhere } = test
+    const generated = generate(inventory([lint, anywhere], { toolchains: [matrixNode] }))
+    expect(content(generated, legsPath)).toContain("1 //:ci.yml-lint-1\n")
+  })
+
+  it("gives a variant the matrix does not fill the repository's version", () => {
+    const generated = generate(inventory([{ ...test, matrix: [{ node: "18" }, { node: "" }, { other: "x" }] }], {
+      toolchains: [matrixNode, { name: "node", source: ".nvmrc", version: "22" }]
+    }))
+    expect(content(generated, legsPath).split("\n").slice(1, -1)).toEqual([
+      "1 //:ci.yml-test-1--18",
+      // The two variants with no version do the same work, so they share one target.
+      "2 //:ci.yml-test-1--"
+    ])
+  })
+
+  it("runs one step for two jobs only when they run it under the same versions", () => {
+    const install = (id: string) => job(id, [step(`${id}:1`, "npm ci")], { runsOn: "ubuntu-latest" })
+    const targetsFor = (second: string) =>
+      content(
+        generate(inventory([install("ci.yml:a"), install("ci.yml:b")], {
+          toolchains: [pinned("ci.yml:a", "20"), pinned("ci.yml:b", second)]
+        })),
+        packagePath
+      ).match(/S\.Shell\.Test\(/g)
+    expect(targetsFor("20")).toHaveLength(1)
+    expect(targetsFor("22")).toHaveLength(2)
+  })
+
+  it("keeps a machine for each runner and versions, with only the targets for its system", () => {
+    const generated = generate(inventory([{
+      ...test,
+      runsOn: "${{ matrix.os }}",
+      matrix: [
+        { os: "ubuntu-latest", node: "18" },
+        { os: "macos-latest", node: "20" },
+        // Windows targets never run, so this version makes no machine.
+        { os: "windows-latest", node: "16" }
+      ]
+    }, job("ci.yml:any", [step("ci.yml:any:1", "x")])], { toolchains: [matrixNode] }))
+    expect(include(generated)).toEqual([
+      { os: "macos-latest", leg: "1", tools: "node 18", "version-node": "18" },
+      { os: "macos-latest", leg: "2", tools: "node 20", "version-node": "20" },
+      { os: "ubuntu-latest", leg: "3", tools: "node 18", "version-node": "18" }
+    ])
+    expect(content(generated, legsPath).split("\n").slice(1, -1)).toEqual([
+      "1 //:ci.yml-any-1",
+      "2 //:ci.yml-test-1--20--macos-latest",
+      "3 //:ci.yml-any-1",
+      "3 //:ci.yml-test-1--18--ubuntu-latest"
+    ])
+  })
+
+  it("sets up a tool every machine shares once, and one it cannot install with a comment", () => {
+    const generated = generate(inventory([test], {
+      toolchains: [
+        matrixNode,
+        { name: "pnpm", source: file, job: "ci.yml:test" },
+        { name: "python", source: ".python-version", version: "3.12" },
+        { name: "ruby", source: file, version: "${{ matrix.node }}", job: "ci.yml:test" }
+      ]
+    }))
+    const workflow = content(generated, workflowPath)
+    expect(workflow).toContain(`          python-version: "3.12"\n`)
+    expect(workflow).toContain("      - uses: pnpm/action-setup@v4\n      - uses: actions/setup-python@v5\n")
+    expect(workflow).toContain(`# ruby (${file}) has no known setup action.`)
+    expect(include(generated)).toEqual([
+      { os: "ubuntu-latest", leg: "1", tools: "node 18, python 3.12, ruby 18", "version-node": "18" },
+      { os: "ubuntu-latest", leg: "2", tools: "node 20, python 3.12, ruby 20", "version-node": "20" }
+    ])
+  })
+
+  it("names a version a job sets up twice, and keeps a line break out of a target's text", () => {
+    const generated = generate(inventory([{ ...job("ci.yml:a", [step("ci.yml:a:1", "x")]) }, {
+      ...job("ci.yml:b", [step("ci.yml:b:1", "y")])
+    }], {
+      toolchains: [
+        pinned("ci.yml:a", "18"),
+        pinned("ci.yml:a", "20"),
+        pinned("ci.yml:b", "22\nrm -rf /")
+      ]
+    }))
+    expect(content(generated, notesPath)).toContain(
+      "- node 20 is not installed for ci.yml:a: the job sets node up twice, and its steps run with node 18.\n"
+    )
+    expect(content(generated, packagePath)).toContain(JSON.stringify("# Runs under node 22 rm -rf /.\nbash -e -c 'y'"))
+  })
+
+  it("treats a version a job of one shared working tree names as the repository's", () => {
+    const recipe = job("justfile:test", [step("justfile:test:1", "x")], { source: "justfile", file: "justfile" })
+    const generated = generate(inventory([recipe], {
+      toolchains: [{ name: "node", source: "justfile", version: "18", job: "justfile:test" }]
+    }))
+    expect(content(generated, workflowPath)).toContain(`          node-version: "18"\n`)
+    expect(generated.some((entry) => entry.path === legsPath)).toBe(false)
   })
 })

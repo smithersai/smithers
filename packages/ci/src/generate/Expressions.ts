@@ -8,6 +8,8 @@
  * @since 0.1.0
  */
 
+import type { Job } from "../contract/Inventory.ts"
+
 /**
  * One matrix assignment. Empty when the job has no matrix.
  *
@@ -15,6 +17,29 @@
  * @since 0.1.0
  */
 export type Variant = Readonly<Record<string, string>>
+
+const compare = (left: string, right: string): number => left < right ? -1 : 1
+
+/**
+ * A variant as text that is equal only for equal variants.
+ *
+ * @category expressions
+ * @since 0.1.0
+ */
+export const variantKey = (variant: Variant): string =>
+  JSON.stringify(Object.keys(variant).sort(compare).map((name) => [name, variant[name]]))
+
+/**
+ * A job's distinct variants in a stable order: one empty variant when it has
+ * no matrix.
+ *
+ * @category expressions
+ * @since 0.1.0
+ */
+export const variantsOf = (job: Job): ReadonlyArray<Variant> => {
+  const unique = new Map<string, Variant>(job.matrix.map((variant) => [variantKey(variant), variant]))
+  return unique.size === 0 ? [{}] : [...unique.keys()].sort(compare).map((key) => unique.get(key) as Variant)
+}
 
 const expression = /\$\{\{\s*(.*?)\s*\}\}/g
 // `secrets` is not among them: a `Ci` never holds a step that receives a secret, and a target is given none.

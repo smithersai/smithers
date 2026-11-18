@@ -38,8 +38,9 @@ and a TypeScript monorepo driven by GitHub Actions and Turborepo look alike:
   environment values. A secret the step uses appears by name only, never by
   value. A value under `env:` that is a URL with a path of 20 or more
   characters is withheld the same way: a webhook's path is its credential.
-- A **toolchain** is a tool the repository pins, such as Zig or Bun, with the
-  file that pins it and its version when the file gives one.
+- A **toolchain** is a tool the repository uses, such as Zig or Bun, with the
+  file that names it, its version when the file gives one, and the job that
+  installs it. The version may be a matrix value.
 
 ### Setup actions
 
@@ -154,6 +155,12 @@ nothing and runs every time: what those answered is on no list. Recording
 needs Linux with `strace`, which the generated workflow installs on its
 runners. On any other system such a step runs on every change, as it does in
 the repository's CI today.
+
+Each step runs under the tool versions its job sets up, so a matrix over Node
+18 and 20 tests both. Steps that need different versions run on separate
+machines of the generated workflow, and a result made under one version is
+never reused for another. A step does not wait for a job that runs under other
+versions: both run, and the workflow fails when either fails.
 
 ## 3. Replay
 

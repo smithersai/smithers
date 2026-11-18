@@ -398,6 +398,14 @@ describe("drafts", () => {
     expect(assemble("o/r", "abc", []).unsupported).toBeUndefined()
     expect(inventory.toolchains).toEqual([{ name: "bun", source: "a", version: "1" }, { name: "zig", source: "b" }])
     expect(inventory.jobs[0]?.name).toBe("deploy [withheld]")
+    // Two jobs of one workflow that set up one version are two entries: each job has its version.
+    const setups = [{ name: "node", source: "w", version: "20", job: "w:a" }, {
+      name: "node",
+      source: "w",
+      version: "20",
+      job: "w:b"
+    }]
+    expect(assemble("o/r", "abc", [{ jobs: [], toolchains: setups, unsupported: [] }]).toolchains).toEqual(setups)
     expect(inventory).toMatchObject({ version: 1, repository: "o/r", commit: "abc" })
   })
 })

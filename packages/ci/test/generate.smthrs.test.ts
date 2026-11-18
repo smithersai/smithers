@@ -8,13 +8,15 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { parse as parseYaml } from "yaml"
 import type { Ci, Inventory as InventoryDocument, Job } from "../src/contract/Inventory.ts"
-import { Inventory, shell } from "../src/contract/Inventory.ts"
+import { ci, Inventory, shell } from "../src/contract/Inventory.ts"
 import { files } from "../src/generate/index.ts"
 import { workflowPath } from "../src/generate/Render.ts"
+import { assemble } from "../src/inventory/Draft.ts"
+import { readWorkflow } from "../src/inventory/GithubActions.ts"
 import { observes } from "./cli/repo.ts"
 
 const cli = fileURLToPath(new URL("../../smithers/bin/smithers.mjs", import.meta.url))
-const slow = 180_000
+const slow = 600_000
 const prefix = "//:"
 
 const fixture = (name: string): InventoryDocument =>
@@ -472,6 +474,90 @@ describe("generated files under the real smthrs", () => {
       expect(Object.fromEntries(bare.statuses)).toEqual({ "ci-1-a": "failed" })
       expect(bare.output).toContain("bwrap is not on PATH (install the bubblewrap package)")
       expect(Object.fromEntries(execute(root, "installed").statuses)).toEqual({ "ci-1-a": "ran" })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, slow)
+
+  it("runs each matrix variant on its own machine, and never replays one version's result for another", () => {
+    const runner = process.platform === "darwin" ? "macos-latest" : "ubuntu-latest"
+    const path = ".github/workflows/ci.yml"
+    const workflow = `
+on: push
+jobs:
+  lint:
+    runs-on: ${runner}
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: "true"
+  test:
+    needs: lint
+    runs-on: ${runner}
+    strategy: { matrix: { node: [18, 20] } }
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: "\${{ matrix.node }}" }
+      - run: "true"
+`
+    // The whole way from the workflow a person wrote: the importer, the CI rule and the generator.
+    const read = assemble("example/real", "0000000000000000000000000000000000000005", [readWorkflow(path, workflow)])
+    const root = repository(ci(read), { [path]: workflow })
+    try {
+      // `test` does not depend on `lint`: running it must not run `lint` under the wrong version.
+      expect(plan(root).map((target) => [target.label, target.dependencies])).toEqual([
+        [`${prefix}ci.yml-lint-1`, []],
+        [`${prefix}ci.yml-test-1--18`, []],
+        [`${prefix}ci.yml-test-1--20`, []]
+      ])
+      const generated = parseYaml(readFileSync(join(root, workflowPath), "utf8")) as {
+        readonly jobs: {
+          readonly ci: {
+            readonly strategy: { readonly matrix: { readonly include: ReadonlyArray<Record<string, string>> } }
+            readonly steps: ReadonlyArray<{ readonly run?: string }>
+          }
+        }
+      }
+      const { include } = generated.jobs.ci.strategy.matrix
+      expect(include.map((leg) => [leg["tools"], leg["version-node"]])).toEqual([
+        ["node 18", "18"],
+        ["node 20", "20"],
+        ["node 22", "22"]
+      ])
+      // The workflow's own command, as a runner would run it for each machine.
+      const command = generated.jobs.ci.steps.flatMap((step) =>
+        step.run?.startsWith("npx") ? [step.run] : []
+      )[0] as string
+      const selection = /\$\(awk .*\)/.exec(command)?.[0] as string
+      const runLeg = (leg: Record<string, string>, name: string) => {
+        const script = `set -- ${selection.replace("${{ matrix.leg }}", leg["leg"] as string)}; printf '%s\n' "$@"`
+        const labels = run(root, "bash", ["-c", script]).stdout.trim().split("\n")
+        const resultsFile = join(root, ".flows", `${name}.json`)
+        const outcome = run(root, process.execPath, [
+          cli,
+          "ci",
+          ...labels,
+          "--jobs",
+          "1",
+          "--results-file",
+          resultsFile
+        ])
+        expect(outcome.status, `${outcome.stdout}${outcome.stderr}`).toBe(0)
+        const { results } = JSON.parse(readFileSync(resultsFile, "utf8")) as {
+          readonly results: ReadonlyArray<{ readonly label: string; readonly status: string }>
+        }
+        return results.map((result) => [result.label, result.status])
+      }
+      const [node18, node20, node22] = include as [
+        Record<string, string>,
+        Record<string, string>,
+        Record<string, string>
+      ]
+      expect(runLeg(node18, "leg-18")).toEqual([[`${prefix}ci.yml-test-1--18`, "ran"]])
+      // One cache directory, the same command: only the versions in the text differ.
+      expect(runLeg(node20, "leg-20")).toEqual([[`${prefix}ci.yml-test-1--20`, "ran"]])
+      expect(runLeg(node22, "leg-22")).toEqual([[`${prefix}ci.yml-lint-1`, "ran"]])
+      expect(runLeg(node18, "leg-18-again")).toEqual([[`${prefix}ci.yml-test-1--18`, "hit"]])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

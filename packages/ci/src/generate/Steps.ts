@@ -34,6 +34,14 @@
  * `build` and then `test` for `ci: build test`, and what a later job relies
  * on is `setup` too.
  *
+ * A job's steps run under the tool versions the job names, once per matrix
+ * variant when a version is a matrix value. Each distinct set of versions is
+ * a leg of the generated workflow: one machine per runner that installs them
+ * and runs their targets. A target's text then names its versions, so its key
+ * differs from the same step's under another version. A target waits only for
+ * targets of its own leg, as it waits only for targets of its own system: a
+ * dependency would run under the wrong versions.
+ *
  * An inventory also lists work CI never runs on a change: release workflows,
  * and every recipe and script, such as `clean` or `start`. Only what runs on a
  * change becomes a target.
@@ -56,7 +64,7 @@ import {
 } from "../contract/Inventory.ts"
 import type { Failure } from "../contract/Parts.ts"
 import { shardOf } from "../contract/Shard.ts"
-import { forShell, forText, type Variant } from "./Expressions.ts"
+import { forShell, forText, type Variant, variantKey, variantsOf } from "./Expressions.ts"
 import { chooseToolchains } from "./Toolchains.ts"
 
 /**
@@ -126,6 +134,22 @@ export interface Outputs {
 }
 
 /**
+ * One machine of the generated workflow when targets need different tool
+ * versions: a runner, the versions it installs and the targets it runs.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Leg {
+  readonly id: string
+  readonly runner: string
+  /** The versions as a person reads them: `node 18, python 3.12`. */
+  readonly name: string
+  readonly toolchains: ReadonlyArray<Toolchain>
+  readonly labels: ReadonlyArray<string>
+}
+
+/**
  * Everything the renderer needs.
  *
  * @category models
@@ -136,8 +160,10 @@ export interface StepPlan {
   readonly notes: ReadonlyArray<string>
   readonly runners: ReadonlyArray<string>
   readonly triggers: ReadonlyArray<string>
-  /** The tools the generated workflow installs: one entry, and so one version, per tool. */
+  /** The tools every target runs under, one entry per tool. Without `legs`, what the workflow installs. */
   readonly toolchains: ReadonlyArray<Toolchain>
+  /** Empty when every target runs under the same versions. */
+  readonly legs: ReadonlyArray<Leg>
 }
 
 /**
@@ -171,6 +197,7 @@ interface Tail {
   readonly labels: ReadonlyArray<string>
   /** True when every step that ran in the working tree up to here names what it reads and what it writes. */
   readonly known: boolean
+  readonly versions: string
 }
 
 interface Draft extends Omit<StepTarget, "rule" | "script" | "job" | "also" | "guarded"> {
@@ -178,6 +205,8 @@ interface Draft extends Omit<StepTarget, "rule" | "script" | "job" | "also" | "g
   readonly command: string
   readonly directory: string
   readonly also: Array<SameStep>
+  readonly installs: ReadonlyArray<Toolchain>
+  readonly versions: string
 }
 
 const runnerVariable = /\$\{?((?:GITHUB|RUNNER)_[A-Z0-9_]+)/g
@@ -214,13 +243,9 @@ const slug = (text: string): string => {
   return /^[A-Za-z_]/.test(cleaned) ? cleaned : `s-${cleaned}`
 }
 
-const variantKey = (variant: Variant): string =>
-  JSON.stringify(Object.keys(variant).sort(compare).map((name) => [name, variant[name]]))
-
-const variantsOf = (job: Job): ReadonlyArray<Variant> => {
-  const unique = new Map<string, Variant>(job.matrix.map((variant) => [variantKey(variant), variant]))
-  return unique.size === 0 ? [{}] : [...unique.keys()].sort(compare).map((key) => unique.get(key) as Variant)
-}
+// The versions a target runs under, as a person reads them.
+const versionsText = (tools: ReadonlyArray<Toolchain>): string =>
+  tools.flatMap((tool) => tool.version === undefined ? [] : [`${tool.name} ${tool.version}`]).join(", ")
 
 const variantSuffix = (variant: Variant): string =>
   Object.keys(variant).sort(compare).map((name) => `--${clean(variant[name] as string)}`).join("")
@@ -368,6 +393,7 @@ const inDependencyOrder = (jobs: ReadonlyArray<Job>): ReadonlyArray<Job> | undef
 export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
   const problem = validate(inventory)
   if (problem !== undefined) return Result.fail(problem)
+  const choice = chooseToolchains(inventory)
   const jobs = inDependencyOrder(inTreeOrder(inventory.jobs))
   if (jobs === undefined) {
     return invalid("The jobs' needs form a cycle, or contradict the order the jobs of one working tree run in.")
@@ -403,15 +429,25 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     return label
   }
 
-  // The tails of the jobs a job needs that run on its system.
-  const upstreamOf = (job: Job, host: Host | undefined): ReadonlyArray<Tail> =>
-    job.needs.flatMap((need) =>
-      (tails.get(need) as ReadonlyArray<Tail>).filter((tail) => {
+  // The tails of the jobs a job needs that run on its system, under its tool versions. Running one under other
+  // versions would test the wrong thing, so the two run apart and the workflow fails when either fails.
+  const upstreamOf = (job: Job, host: Host | undefined, versions: string): ReadonlyArray<Tail> =>
+    job.needs.flatMap((need) => {
+      const here = (tails.get(need) as ReadonlyArray<Tail>).filter((tail) => {
         if (tail.host === undefined || tail.host === host) return true
         if (host === undefined) notes.add(`${job.id}: runs on every system, so it does not wait for ${need}.`)
         return false
       })
-    )
+      const same = here.filter((tail) => tail.versions === versions)
+      if (same.length > 0) return same
+      for (const tail of here) {
+        notes.add(
+          `${job.id}: runs with ${versions}, so it does not wait for ${need}, which runs with ${tail.versions}. ` +
+            `The workflow still fails when either fails.`
+        )
+      }
+      return []
+    })
 
   const draftOf = (
     job: Job,
@@ -420,7 +456,8 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     host: Host | undefined,
     dependencies: ReadonlyArray<string>,
     scoped: boolean,
-    own: boolean
+    own: boolean,
+    installs: ReadonlyArray<Toolchain>
   ): Draft | undefined => {
     const command = forShell(step.command, variant)
     const cwd = forText(step.cwd, variant)
@@ -450,7 +487,9 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       ? { inputs: sorted(inputs), outputs: outputsOf(step) }
       : { inputs: undefined, outputs: undefined }
     const tools = sorted(step.tools ?? [])
-    const work = JSON.stringify([host, command, directory, env, inheritEnv, dependencies, files, tools])
+    // Steps under different tool versions are different work, whatever their text.
+    const versions = versionsText(installs)
+    const work = JSON.stringify([host, command, directory, env, inheritEnv, dependencies, files, tools, versions])
     const same = own ? sameWork.get(work) : undefined
     if (same !== undefined) {
       same.also.push({ title, job: job.id, step: step.id, variant })
@@ -472,7 +511,9 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       also: [],
       job,
       command,
-      directory
+      directory,
+      installs,
+      versions
     }
     if (own) sameWork.set(work, draft)
     return draft
@@ -487,7 +528,9 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
       const host = hostOf(runsOn)
       if (host === "win32") notes.add(`${job.id}: runs only on Windows, which generated targets do not support.`)
       else if (runsOn !== undefined) runners.add(runsOn)
-      const upstream = upstreamOf(job, host)
+      const variantTools = choice.toolsOf(job, variant)
+      const versions = versionsText(variantTools)
+      const upstream = upstreamOf(job, host, versions)
       let previous = sorted(upstream.flatMap((tail) => tail.labels))
       let sharesTree = job.source !== "github-actions"
       // True while every step that ran before in this working tree names what it reads and what it writes.
@@ -502,7 +545,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
         // of another such job. Steps split from one step are kept apart.
         const own = job.source === "github-actions" && group.length === 1 && group[0]?.from === undefined
         for (const step of group) {
-          const draft = draftOf(job, step, variant, host, previous, scoped, own)
+          const draft = draftOf(job, step, variant, host, previous, scoped, own, variantTools)
           if (draft === undefined) continue
           drafts.set(draft.label, draft)
           made.push(draft)
@@ -514,7 +557,7 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
         previous = made.map((draft) => draft.label)
         known = made.every((draft) => draft.inputs !== undefined && draft.outputs !== undefined)
       }
-      jobTails.push({ host, labels: previous, known })
+      jobTails.push({ host, labels: previous, known, versions })
     }
   }
 
@@ -550,30 +593,56 @@ export const planSteps = (inventory: Ci): Result.Result<StepPlan, Failure> => {
     }
   }
 
-  const targets = [...drafts.values()].map(({ command, directory, job, ...draft }): StepTarget => {
-    const setup = reliedOn.has(draft.label)
-    const marker = setup ? `${markerDirectory}/${draft.label}` : undefined
-    const files = held.get(draft.label)
-    // A setup target declares what it reads only together with what it writes: the two let a later target stay
-    // narrowed. A target nothing relies on has no use for its outputs.
-    const declares = setup && draft.outputs !== undefined
-    return {
-      ...draft,
-      inputs: setup && !declares ? undefined : draft.inputs,
-      outputs: declares ? draft.outputs : undefined,
-      job: job.id,
-      rule: setup ? "setup" : "check",
-      script: scriptOf(command, directory, marker),
-      guarded: files === undefined ? undefined : guardedScriptOf(command, directory, marker, sorted(files))
-    }
-  })
+  // Targets for Windows are generated and never run, so their versions make no leg.
+  const running = [...drafts.values()].filter((draft) => draft.host !== "win32")
+  const sets = new Map(running.map((draft) => [draft.versions, draft.installs]))
+  const apart = sets.size > 1
+  // The line changes nothing the script does; it puts the versions in the target's text, and so in its key.
+  const underVersions = (versions: string, script: string): string =>
+    apart ? `# Runs under ${versions.replace(/[\r\n\u2028\u2029]+/g, " ")}.\n${script}` : script
 
-  const tools = chooseToolchains(inventory)
+  const targets = [...drafts.values()].map(
+    ({ command, directory, installs: _installs, job, versions, ...draft }): StepTarget => {
+      const setup = reliedOn.has(draft.label)
+      const marker = setup ? `${markerDirectory}/${draft.label}` : undefined
+      const files = held.get(draft.label)
+      // A setup target declares what it reads only together with what it writes: the two let a later target stay
+      // narrowed. A target nothing relies on has no use for its outputs.
+      const declares = setup && draft.outputs !== undefined
+      return {
+        ...draft,
+        inputs: setup && !declares ? undefined : draft.inputs,
+        outputs: declares ? draft.outputs : undefined,
+        job: job.id,
+        rule: setup ? "setup" : "check",
+        script: underVersions(versions, scriptOf(command, directory, marker)),
+        guarded: files === undefined
+          ? undefined
+          : underVersions(versions, guardedScriptOf(command, directory, marker, sorted(files)))
+      }
+    }
+  )
+
+  const machines = runners.size === 0 ? ["ubuntu-latest"] : sorted(runners)
+  const legs = !apart ? [] : machines
+    .flatMap((runner) =>
+      sorted(sets.keys()).flatMap((versions) => {
+        const labels = running
+          .filter((draft) => draft.versions === versions && (draft.host === undefined || draft.host === hostOf(runner)))
+          .map((draft) => draft.label)
+        return labels.length === 0
+          ? []
+          : [{ runner, name: versions, toolchains: sets.get(versions) as ReadonlyArray<Toolchain>, labels }]
+      })
+    )
+    .map((leg, index): Leg => ({ id: `${index + 1}`, ...leg }))
+
   return Result.succeed({
     targets,
-    toolchains: tools.toolchains,
-    notes: sorted([...notes, ...tools.notes]),
-    runners: runners.size === 0 ? ["ubuntu-latest"] : sorted(runners),
+    toolchains: (running[0] as Draft).installs,
+    legs,
+    notes: sorted([...notes, ...choice.notes]),
+    runners: machines,
     triggers: ((found) => found.length === 0 ? ["pull_request", "push"] : found)(
       sorted(jobs.flatMap((job) => job.triggers).filter((trigger) => workflowTriggers.has(trigger)))
     )
