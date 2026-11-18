@@ -149,6 +149,15 @@ const placesOf = (job: Job, host: string) => {
   }
 }
 
+/**
+ * True when a job has a variant that runs on `host`.
+ *
+ * @category accessors
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const runsOn = (job: Job, host: string): boolean => placesOf(job, host).here.length > 0
+
 /** The versions of one tool a job asks for in the variants that run here, each once. */
 const askedOf = (
   tools: ReadonlyArray<Toolchain>,
@@ -179,7 +188,7 @@ const runnable = (inventory: Inventory): ReadonlySet<string> => new Set(ci(inven
 export const neededTools = (inventory: Inventory, host: string): ReadonlyArray<string> => {
   const runs = runnable(inventory)
   const here = new Set(
-    inventory.jobs.filter((job) => runs.has(job.id) && placesOf(job, host).here.length > 0).map((job) => job.id)
+    inventory.jobs.filter((job) => runs.has(job.id) && runsOn(job, host)).map((job) => job.id)
   )
   return [
     ...new Set(inventory.toolchains.flatMap((tool) => tool.job !== undefined && here.has(tool.job) ? [tool.name] : []))

@@ -3,18 +3,29 @@
  * each CI job this machine cannot run marked, so it is left out and listed.
  *
  * It looks for the tools the CI's setup actions stand for, on `PATH`, and
- * asks each one found for its version, once while the program runs. It
- * installs nothing and changes nothing.
+ * asks each one found for its version, once while the program runs. It asks
+ * the package manager whether the packages a job installs are already there.
+ * It installs nothing and changes nothing.
  *
  * @since 0.1.0
  */
 
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { Inventory } from "../contract/Inventory.ts"
+import type { Inventory, Job } from "../contract/Inventory.ts"
 import type { ReadInventory } from "../contract/Parts.ts"
+import { answers, type Question, questionsFor, withInstalled } from "./MachineChanges.ts"
 import { read } from "./Read.vibe"
-import { type Found, type Machine, neededTools, onMachine, programsOf, thisMachine, versionIn } from "./Tools.ts"
+import {
+  type Found,
+  type Machine,
+  neededTools,
+  onMachine,
+  programsOf,
+  runsOn,
+  thisMachine,
+  versionIn
+} from "./Tools.ts"
 
 /** How long a program may take to print its version. One that takes longer is on the machine, at no known version. */
 const patience = "30 seconds"
@@ -72,21 +83,50 @@ effect function find(machine: Machine, tool: string): (Found | undefined)!!Child
   return undefined
 }
 
+/** What the package manager said of each package, by `PATH` and question. Packages do not come or go during a run. */
+const asked = new Map<string, boolean>()
+
+/** Whether the machine has a package. A manager that is absent, fails or takes too long has not said yes. */
+effect function installed(machine: Machine, question: Question) {
+  const key = `${machine.path ?? ""}\n${question.argv.join(" ")}\n${question.holds.join("\n")}`
+  const seen = asked.get(key)
+  if (seen !== undefined) return seen
+  const spawner = try ChildProcessSpawner
+  // The output counts only when the program succeeded.
+  const line = `out=$("$@" 2>/dev/null) || exit 0; printf '%s\\n' "$out"`
+  const command = ChildProcess.make("bash", ["-c", line, "smithers-ci", ...question.argv], {
+    stdin: "ignore",
+    ...(machine.path === undefined ? {} : { env: { PATH: machine.path }, extendEnv: true })
+  })
+  const output = timeout(spawner.string(command), machine.patience ?? patience) catch () => ""
+  const answer = answers(question, output)
+  asked.set(key, answer)
+  return answer
+}
+
 /**
- * The inventory as `machine` can run it: `Tools.onMachine` of what was found
- * there. It asks about a tool only when a CI job with a variant on the
+ * The inventory as `machine` can run it. A job that does nothing to the
+ * machine but install packages it already has runs without those steps
+ * (`MachineChanges.withInstalled`). The rest is `Tools.onMachine` of what was
+ * found there: it asks about a tool only when a CI job with a variant on the
  * machine's system sets it up.
  *
  * @category parts
  * @since 0.1.0
  */
 export effect function onThisMachine(inventory: Inventory, machine: Machine = thisMachine()) {
+  const here = (job: Job) => runsOn(job, machine.host)
+  const present = new Set<string>()
+  for (const question of questionsFor(inventory, here)) {
+    if (try installed(machine, question)) present.add(`${question.manager}\n${question.name}`)
+  }
+  const settled = withInstalled(inventory, here, (manager, name) => present.has(`${manager}\n${name}`))
   const found = new Map<string, Found>()
-  for (const tool of neededTools(inventory, machine.host)) {
+  for (const tool of neededTools(settled, machine.host)) {
     const have = try find(machine, tool)
     if (have !== undefined) found.set(tool, have)
   }
-  return onMachine(inventory, machine.host, found)
+  return onMachine(settled, machine.host, found)
 }
 
 /**

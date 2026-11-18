@@ -170,13 +170,18 @@ export const bin = join(packageRoot, "bin", "smithers-ci.mjs")
 export const program = join(packageRoot, "test", "cli", "program.mjs")
 
 /** Runs a Node entry as a child process in `cwd` and collects what it printed. */
-export const spawn = (entry: string, args: ReadonlyArray<string>, cwd: string): Promise<Outcome> =>
+export const spawn = (
+  entry: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<Outcome> =>
   new Promise((resolve, reject) => {
     execFile(
       process.execPath,
       [entry, ...args],
       // A real replay runs the repository's commands and the generated targets.
-      { cwd, encoding: "utf8", timeout: 540_000 },
+      { cwd, env, encoding: "utf8", timeout: 540_000 },
       (error, stdout, stderr) => {
         if (error !== null && typeof error.code !== "number") reject(error)
         else resolve({ code: error === null ? 0 : Number(error.code), stdout, stderr })

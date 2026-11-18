@@ -6,7 +6,7 @@ import { layer } from "../../src/cli/Host.vibe"
 import { main } from "../../src/cli/main.vibe"
 import { parts as onMain } from "../../src/cli/parts.ts"
 import { exitCodes, failureExitCodes, flags } from "../../src/contract/Command.ts"
-import { ci as ciOf, Inventory } from "../../src/contract/Inventory.ts"
+import { changesMachine, ci as ciOf, Inventory } from "../../src/contract/Inventory.ts"
 import type { Failure, GeneratedFile } from "../../src/contract/Parts.ts"
 import { ReplayReport } from "../../src/contract/ReplayReport.ts"
 import * as TargetMap from "../../src/contract/TargetMap.ts"
@@ -482,6 +482,22 @@ describe.concurrent("smithers-ci with a faulty part or host", () => {
       ])
       expect(changed(before, snapshot(root))).toEqual([])
     }
+  })
+
+  it("replays a CI whose every job installs what this machine has, and says apply writes nothing", async () => {
+    const root = repo()
+    const read = await Effect.runPromise(Effect.provide(parts.read(root), host))
+    const reason = { feature: changesMachine, detail: "installs zsh with apt-get" }
+    const marked = { ...read, jobs: read.jobs.map((job) => ({ ...job, unsupported: [reason] })) }
+    const outcome = await runIn(["--commits", "1"], root, {
+      ...parts,
+      read: () => Effect.succeed(marked),
+      readHere: () => Effect.succeed(read)
+    })
+    expect(outcome.code, outcome.stderr).toBe(exitCodes.ok)
+    expect(outcome.stdout).toContain(
+      "smithers-ci apply would write nothing: every job here changes the machine, so it stays in your CI as it is."
+    )
   })
 
   it("hands --cache to the generate part", async () => {

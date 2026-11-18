@@ -363,20 +363,40 @@ export const otherSystem = "other-system"
 export const missingTool = "missing-tool"
 
 /**
+ * The feature of a job with a step that changes the machine it runs on: it
+ * runs `sudo`, `su` or `doas`, installs or removes a system package, controls
+ * a service, or installs a program outside the checkout. Each `detail` says
+ * one thing the job does, or what to install so it can run. Such a job is
+ * never replayed, except that a step doing nothing but installing packages
+ * the machine already has is left out and the job runs without it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const changesMachine = "changes-machine"
+
+/** The features whose reasons are shown with their details, and what separates the details. */
+const detailed: ReadonlyMap<string, string> = new Map([[missingTool, ", "], [changesMachine, "; "]])
+
+/**
  * The reasons a job is left out, as one line: each feature once, in the
- * order found, and a missing tool with what to install, as in
- * `missing-tool (go 1.23, ruby 3.4.6)`.
+ * order found, a missing tool with what to install, as in
+ * `missing-tool (go 1.23, ruby 3.4.6)`, and a change to the machine with what
+ * the job does, as in `changes-machine (installs zsh with apt-get)`.
  *
  * @throws {never}
  * @category accessors
  * @since 0.1.0
  */
-export const reasonsText = (reasons: ReadonlyArray<Unsupported>): string => {
-  const tools = [...new Set(reasons.flatMap((reason) => reason.feature === missingTool ? [reason.detail] : []))]
-  return [...new Set(reasons.map((reason) => reason.feature))]
-    .map((feature) => feature === missingTool ? `${feature} (${tools.join(", ")})` : feature)
+export const reasonsText = (reasons: ReadonlyArray<Unsupported>): string =>
+  [...new Set(reasons.map((reason) => reason.feature))]
+    .map((feature) => {
+      const separator = detailed.get(feature)
+      if (separator === undefined) return feature
+      const details = new Set(reasons.flatMap((reason) => reason.feature === feature ? [reason.detail] : []))
+      return `${feature} (${[...details].join(separator)})`
+    })
     .join(", ")
-}
 
 /**
  * The `NotReplayed` feature of a CI job that has no command: every step of

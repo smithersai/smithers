@@ -6,6 +6,7 @@
 
 import type { Inventory, Job, Step, Toolchain, Unsupported } from "../contract/Inventory.ts"
 import { markWithheld } from "./CacheCredentials.ts"
+import { markChanges } from "./MachineChanges.ts"
 import { hasSecretValue, isLiteralSecret, scrub } from "./Secrets.ts"
 
 /**
@@ -128,9 +129,9 @@ export const fileProblem = (file: string, feature: string, reason: string): Pars
 })
 
 /**
- * Joins what each file contributed: jobs in reading order, each tool and file
- * pair once in a stable order, with nothing shaped like a credential left in
- * any field.
+ * Joins what each file contributed: jobs in reading order, each with what its
+ * steps do to the machine marked, each tool and file pair once in a stable
+ * order, with nothing shaped like a credential left in any field.
  *
  * @category constructors
  * @since 0.1.0
@@ -147,7 +148,7 @@ export const assemble = (repository: string, commit: string, parts: ReadonlyArra
     repository,
     commit,
     toolchains: [...toolchains.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, tool]) => tool),
-    jobs: parts.flatMap((part) => part.jobs).map(markWithheld),
+    jobs: parts.flatMap((part) => part.jobs).map(markWithheld).map(markChanges),
     ...(unsupported.length === 0 ? {} : { unsupported })
   })
 }

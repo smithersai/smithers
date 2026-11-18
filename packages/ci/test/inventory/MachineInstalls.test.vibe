@@ -1,0 +1,145 @@
+/** A real repository read for a machine whose package manager is a real program on its `PATH`. */
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { changesMachine, ci, notReplayed, reasonsText } from "../../src/contract/Inventory.ts"
+import { read } from "../../src/inventory/index.ts"
+import { onThisMachine } from "../../src/inventory/Machine.vibe"
+import { repository, toolbox } from "./corpus.vibe"
+
+const workflow = (install: string, extra = "") => `
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+${extra}
+      - run: ${install}
+      - run: make test
+`
+
+/** `dpkg -s` as Debian's answers: `zsh` is installed, `fish` was removed and left its settings, the rest are absent. */
+const dpkg = (log: string) => `script:echo "dpkg $*" >> ${log}
+case "$2" in
+  zsh) printf 'Package: zsh\\nStatus: install ok installed\\nVersion: 5.9\\n' ;;
+  fish) printf 'Package: fish\\nStatus: deinstall ok config-files\\nVersion: 3.7\\n' ;;
+  *) echo "dpkg-query: package '$2' is not installed" >&2; exit 1 ;;
+esac`
+
+const logging = (log: string, name: string) => `script:echo "${name} $*" >> ${log}; exit 0`
+
+effect function machine() {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const log = path.join(try fs.makeTempDirectoryScoped(), "calls.log")
+  try fs.writeFileString(log, "")
+  const bin = try toolbox({ dpkg: dpkg(log), sudo: logging(log, "sudo"), "apt-get": logging(log, "apt-get") })
+  return { log, machine: { host: "linux", path: bin } }
+}
+
+// Real programs are waited for, so the tests run on the real clock.
+it.layer(NodeServices.layer, { excludeTestServices: true })("the packages a job installs", (it) => {
+  it.effect("a job whose packages are all there runs without the install", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const { log, machine: here } = try machine()
+      const root = try repository({ ".github/workflows/ci.yml": workflow("sudo apt-get install -y zsh=5.9") })
+      const inventory = try onThisMachine(try read(root), here)
+      const calls = try fs.readFileString(log)
+      try Effect.try(() => {
+        expect(ci(inventory).jobs.map((job) => job.steps.map((step) => step.command))).toEqual([["make test"]])
+        expect(notReplayed(inventory)).toEqual([])
+        // Only the package manager was asked: nothing was run to install anything.
+        expect(calls).toBe("dpkg -s zsh\n")
+      })
+    })
+
+  it.effect("a job with a package missing is listed with what to install", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const { log, machine: here } = try machine()
+      const root = try repository({
+        ".github/workflows/ci.yml": workflow("sudo apt-get install -y zsh fish tmux zsh=5.8")
+      })
+      const inventory = try onThisMachine(try read(root), here)
+      const calls = try fs.readFileString(log)
+      try Effect.try(() => {
+        expect(ci(inventory).jobs).toEqual([])
+        const left = notReplayed(inventory)
+        expect(left.map((entry) => entry.job)).toEqual(["ci.yml:build"])
+        expect(reasonsText(left[0]?.reasons ?? [])).toBe(
+          "changes-machine (install fish, tmux and zsh=5.8 with apt-get to replay this job)"
+        )
+        expect(calls).not.toContain("sudo")
+        expect(calls).not.toContain("apt-get")
+      })
+    })
+
+  it.effect("a package manager that is not on the machine has none of its packages", () =>
+    effect {
+      const root = try repository({ ".github/workflows/ci.yml": workflow("brew install jq") })
+      const inventory = try onThisMachine(try read(root), { host: "linux", path: try toolbox({}) })
+      try Effect.try(() =>
+        expect(notReplayed(inventory)[0]?.reasons).toEqual([
+          { feature: changesMachine, detail: "install jq with brew to replay this job" }
+        ])
+      )
+    })
+
+  it.effect("a package manager that does not answer in time has not said yes", () =>
+    effect {
+      const root = try repository({ ".github/workflows/ci.yml": workflow("apk add jq") })
+      const bin = try toolbox({ apk: "script:exec /bin/sleep 3" })
+      const inventory = try onThisMachine(try read(root), { host: "linux", path: bin, patience: "200 millis" })
+      try Effect.try(() => expect(ci(inventory).jobs).toEqual([]))
+    })
+
+  it.effect("with no PATH given, the machine's own is asked", () =>
+    effect {
+      const name = "no-such-package-of-smithers-ci"
+      const root = try repository({ ".github/workflows/ci.yml": workflow(`brew install ${name}`) })
+      const inventory = try onThisMachine(try read(root), { host: "linux" })
+      try Effect.try(() =>
+        expect(notReplayed(inventory)[0]?.reasons).toEqual([
+          { feature: changesMachine, detail: `install ${name} with brew to replay this job` }
+        ])
+      )
+    })
+
+  it.effect("the same question is asked once while the program runs", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const { log, machine: here } = try machine()
+      const root = try repository({ ".github/workflows/ci.yml": workflow("sudo apt-get install zsh") })
+      const inventory = try read(root)
+      try onThisMachine(inventory, here)
+      try onThisMachine(inventory, here)
+      const calls = try fs.readFileString(log)
+      try Effect.try(() => expect(calls).toBe("dpkg -s zsh\n"))
+    })
+
+  it.effect("a tool of a job that runs after its installs are settled is looked for", () =>
+    effect {
+      const { machine: here } = try machine()
+      const setup = "      - uses: acme/setup-no-such-tool@v1"
+      const root = try repository({
+        ".github/workflows/ci.yml": workflow("sudo apt-get install zsh", setup)
+      })
+      const inventory = try onThisMachine(try read(root), here)
+      try Effect.try(() =>
+        expect(reasonsText(notReplayed(inventory)[0]?.reasons ?? [])).toBe("missing-tool (no-such-tool)")
+      )
+    })
+
+  it.effect("a job for another system is not asked about", () =>
+    effect {
+      const fs = try FileSystem.FileSystem
+      const { log, machine: here } = try machine()
+      const root = try repository({
+        ".github/workflows/ci.yml": workflow("sudo apt-get install zsh").replace("ubuntu-latest", "macos-latest")
+      })
+      try onThisMachine(try read(root), here)
+      const calls = try fs.readFileString(log)
+      try Effect.try(() => expect(calls).toBe(""))
+    })
+})
