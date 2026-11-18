@@ -25,12 +25,12 @@ Smithers CI slower, never wrong.
 
 ## The repositories it is built on
 
-| Repository           | Language   | CI driven by                              |
-| -------------------- | ---------- | ----------------------------------------- |
-| Smithers             | TypeScript | GitHub Actions running Smithers build     |
-| VibeLang             | TypeScript | Smithers build                            |
-| `refcell/needlefish` | Zig        | A Justfile; no GitHub workflows           |
-| `elizaOS/eliza`      | TypeScript | Bun, Turborepo, about 40 GitHub workflows |
+| Repository           | Language   | CI driven by                          |
+| -------------------- | ---------- | ------------------------------------- |
+| Smithers             | TypeScript | GitHub Actions running Smithers build |
+| VibeLang             | TypeScript | Smithers build                        |
+| `refcell/needlefish` | Zig        | A Justfile; no GitHub workflows       |
+| `elizaOS/eliza`      | TypeScript | Bun, Turborepo, 54 GitHub workflows   |
 
 ## What it does not run
 

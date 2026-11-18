@@ -149,11 +149,18 @@ bunx smithers-ci replay --cache https://cache.example.com
 
 ## Across machines
 
-One run can be divided across machines. Every machine computes the same plan
-and takes the steps whose name hashes to its index, so the machines agree on
-the split without talking to each other. A machine runs its own steps and
-anything they depend on that is not already a cache hit. Machines share
-results only through the cache.
+The workflow `smithers-ci apply` writes has one job per machine your CI names
+in `runs-on`. Each job checks out the repository and runs the targets for that
+machine's operating system. When your CI asks for several versions of a tool,
+each machine gets one job per set of versions, and each of those jobs runs the
+targets of its set.
+
+Each job keeps its own results between runs with `actions/cache`. Jobs share
+results only through the cache: with `SMITHERS_CACHE_URL` set, a job reuses what
+another job stored.
+
+`smithers-ci` and `smithers-ci replay` run every target on the machine you run
+them on.
 
 ## See also
 
