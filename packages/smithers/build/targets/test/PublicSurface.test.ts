@@ -114,7 +114,20 @@ describe("shell executable contract", () => {
         .toThrow(/received bun, shell/)
     }
     expect(() => Schema.decodeUnknownSync(Shell.BuildAttrs)({ shell: "true" }))
-      .toThrow(/at least one outDirs or outFiles/)
+      .toThrow("Shell.Build requires at least one outDirs or outFiles entry unless cache is false")
+  })
+
+  it("accepts an uncached build with no output and refuses a cached one", () => {
+    expect(Schema.decodeUnknownSync(Shell.BuildAttrs)({ shell: "true", cache: false })).toEqual({
+      shell: "true",
+      cache: false
+    })
+    for (const outputs of [{}, { outDirs: [] }, { outFiles: [] }, { outDirs: [], outFiles: [] }]) {
+      expect(() => Schema.decodeUnknownSync(Shell.BuildAttrs)({ shell: "true", ...outputs }))
+        .toThrow("Shell.Build requires at least one outDirs or outFiles entry unless cache is false")
+    }
+    expect(Schema.decodeUnknownSync(Shell.BuildAttrs)({ shell: "true", cache: false, outFiles: [] }).outFiles)
+      .toEqual([])
   })
 
   it("rejects an inherited name env also sets, and a name a shell cannot export", () => {

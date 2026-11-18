@@ -106,15 +106,21 @@ const executableCheck = Schema.makeFilter(executableIssue)
  */
 export const BuildAttrs = Schema.Struct({
   ...sharedFields,
-  /** External assembly inputs without complete identities must opt out of replay. */
+  /**
+   * External assembly inputs without complete identities must opt out of
+   * replay. An uncached build may declare no `outDirs` or `outFiles`: it runs
+   * every time, and its dependents run after it.
+   */
   cache: Schema.optional(Schema.Literal(false)),
   outDirs: Schema.optional(Schema.Array(Schema.NonEmptyString)),
   outFiles: Schema.optional(Schema.Array(Schema.NonEmptyString))
 }).check(
   executableCheck,
+  // An uncached build with no output is an action that runs every time and
+  // that other targets can depend on. A cached one needs an output to restore.
   Schema.makeFilter((attrs) =>
-    (attrs.outDirs?.length ?? 0) + (attrs.outFiles?.length ?? 0) === 0
-      ? "Shell.Build requires at least one outDirs or outFiles entry"
+    attrs.cache !== false && (attrs.outDirs?.length ?? 0) + (attrs.outFiles?.length ?? 0) === 0
+      ? "Shell.Build requires at least one outDirs or outFiles entry unless cache is false"
       : undefined
   )
 )

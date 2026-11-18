@@ -513,7 +513,8 @@ describe("Shell bodies", () => {
     expect(() => S.Shell.Run({} as never)).toThrow(/requires exactly one of bin, bun, shell, script.*none/)
     expect(() => S.Shell.Run({ shell: "true", bun: "await 1" } as never))
       .toThrow(/requires exactly one of bin, bun, shell, script.*bun, shell/)
-    expect(() => S.Shell.Build({ shell: "true" } as never)).toThrow(/at least one outDirs or outFiles/)
+    expect(() => S.Shell.Build({ shell: "true" } as never)).toThrow(/at least one outDirs or outFiles entry unless/)
+    expect(Target.metadata(S.Shell.Build({ shell: "true", cache: false })).attrs).toMatchObject({ cache: false })
   })
 })
 
