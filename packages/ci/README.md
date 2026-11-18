@@ -53,6 +53,12 @@ a generated file as one of theirs):
 - Not contracts, and changed with them: the generator writes the workspace and every target as one file,
   `.smithers/WORKSPACE.smithers`, and nothing at the repository's root. `Render.packagePath` is that file.
 
+**2026-11-18, a replay leaves the machine alone** (additive, by the no-sudo lane):
+
+- Contract 4: the feature `changesMachine` (`changes-machine`), a blocker the reader writes for a job with a step that
+  changes the machine. `reasonsText` shows its details.
+- Contract 7: the flag `allow-root`. `exitCodeHelp.usage` also names a replay as root without it.
+
 **2026-11-18, failures have names** (additive, by the replay's failure lane):
 
 - `TargetResult.exitCode` and `TargetResult.command` say how a failed target's command ended.

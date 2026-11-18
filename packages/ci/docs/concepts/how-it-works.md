@@ -112,6 +112,7 @@ A job with one of these is never run and never becomes a target:
 | `secret`           | has a step that receives a secret                                            |
 | `release-trigger`  | is in a workflow that only a pushed tag starts                               |
 | `write-permission` | may write outside its checkout (`permissions: ... write`)                    |
+| `changes-machine`  | changes the machine it runs on; see [Your machine](#your-machine)            |
 | any other feature  | except `host-action`, `trigger-filter` and `condition-false`, which are safe |
 
 A GitHub Actions step runs as it does on a runner: its `${{ }}` and `if:` are
@@ -282,14 +283,15 @@ The recipes of one Justfile, the rules of one Makefile, and the scripts of one
 `package.json` run one after another in one checkout, in the order the `ci`
 recipe or rule lists them, and stop at the first failure.
 
-Four things are left out and listed in the report:
+Five things are left out and listed in the report:
 
-| Feature        | What is not replayed                                                    |
-| -------------- | ----------------------------------------------------------------------- |
-| `other-system` | a matrix variant, or a whole job, that runs on another operating system |
-| `missing-tool` | a job that sets up a tool your machine does not have                    |
-| `no-target`    | a job with a step that has no target                                    |
-| `needs`        | a job that needs a job left out                                         |
+| Feature           | What is not replayed                                                    |
+| ----------------- | ----------------------------------------------------------------------- |
+| `other-system`    | a matrix variant, or a whole job, that runs on another operating system |
+| `missing-tool`    | a job that sets up a tool your machine does not have                    |
+| `changes-machine` | a job with a step that would change your machine                        |
+| `no-target`       | a job with a step that has no target                                    |
+| `needs`           | a job that needs a job left out                                         |
 
 A matrix over `ubuntu-latest`, `macos-latest` and `windows-latest` is replayed
 on Linux for its Ubuntu variants. The other variants are listed; the job is
@@ -301,6 +303,67 @@ here. The command says so in one line that names the system, and exits with
 code 3:
 
 > every CI job of this repository runs on macOS; run smithers-ci on a Mac
+
+### Your machine
+
+A replay installs nothing on your machine, starts no service and never runs
+`sudo`. A job with a step that would is not replayed. The report lists it as
+`changes-machine`, with what the job does:
+
+```text
+linux.yml:build  changes-machine (runs sudo install, sudo gpg and sudo tee; installs zsh and fish with apt-get)
+```
+
+| A step that runs                                  | Commands                                                                                                                                             |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a command as another user                         | `sudo`, `su`, `doas`                                                                                                                                 |
+| a system package manager, to change what is on it | `apt`, `apt-get`, `aptitude`, `dpkg`, `rpm`, `dnf`, `yum`, `microdnf`, `apk`, `pacman`, `zypper`, `brew`, `port`, `choco`, `winget`, `scoop`, `snap` |
+| a service manager, to change what runs            | `systemctl`, `service`, `launchctl`                                                                                                                  |
+| an install that writes outside the step's home    | the commands below                                                                                                                                   |
+
+| Command                                                          | What it writes                | Replayed                                                 |
+| ---------------------------------------------------------------- | ----------------------------- | -------------------------------------------------------- |
+| `npm install -g`, `npm link`                                     | npm's directory beside Node   | never                                                    |
+| `corepack enable`                                                | `pnpm` and `yarn` beside Node | never                                                    |
+| `gem install`                                                    | Ruby's own directory of gems  | with `--user-install`, `--install-dir` or `GEM_HOME` set |
+| `pip install --break-system-packages`, `uv pip install --system` | the system's Python           | never                                                    |
+
+`cargo install`, `go install`, `pnpm add -g`, `bun add -g`, `deno install -g`
+and `yarn global add` write under the home directory, which is the step's own,
+so they are replayed and leave nothing behind. A plain `pip install` is replayed
+too. It writes where the `python` on your `PATH` keeps its packages, so start
+the replay with a virtual environment active when that Python matters to you.
+
+**Packages you already have.** A step that does nothing but install named
+packages does not stop its job when every one of them is on your machine. The
+replay asks the package manager (`dpkg -s`, `rpm -q`, `brew list`, `pacman -Q`,
+`apk info -e`), skips the step in the baseline and in every mode, and replays
+the job. With a package missing, the report says what to install:
+
+```text
+ci.yml:build  changes-machine (install fish with apt-get to replay this job)
+```
+
+Any other use of `sudo` leaves the job out, whatever is installed.
+`smithers-ci apply` leaves these jobs in your CI as they are: what a job
+installs on its machine is in no cache.
+
+**Scripts.** A step can call `sudo` from a script the inventory does not read.
+Every step the replay starts finds stand-ins for `sudo`, `su` and `doas` first
+on its `PATH`. Each prints one line and exits 1:
+
+> smithers-ci does not run sudo: apt-get install zsh
+
+The step fails in the baseline and in each mode, so it is no mismatch. A script
+that starts the real program by its full path does not reach a stand-in, and
+neither does a step held to its inputs. In the jail, and in a step held to its
+inputs on Linux, `sudo` cannot gain any privilege and fails with its own message.
+
+**Root.** Run as root, a step needs no `sudo`, and every file of the machine is
+in its reach. `smithers-ci` and `smithers-ci replay` refuse to run as root and
+exit `2`. In a throwaway container, `--allow-root` lets them run.
+
+### Verdicts
 
 A failed target reruns up to the limit the program sets (two) or until it
 passes. Its attempts give its verdict:
