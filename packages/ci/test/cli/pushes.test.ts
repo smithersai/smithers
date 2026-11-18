@@ -15,6 +15,7 @@ import { afterAll, describe, expect, it } from "vitest"
 import { cli } from "../../src/cli/Cli.vibe"
 import { layer } from "../../src/cli/Host.vibe"
 import { parts } from "../../src/cli/parts.ts"
+import { pushRefused } from "../../src/replay/Environment.ts"
 import { Options } from "../../src/replay/index.ts"
 import { probe, unjailed } from "../../src/replay/Jail.ts"
 import { git, recorder, remove, temporary } from "./repo.ts"
@@ -138,6 +139,21 @@ describe("smithers-ci on a repository whose CI pushes", () => {
     for (const step of steps) expect(lines.some((line) => line.startsWith(`${step} ran`))).toBe(true)
     // The first push of the `pushes` job failed, so the steps after it never ran.
     expect(lines.some((line) => line.startsWith("added-remote ran"))).toBe(false)
+    // The report names each refused push: the step, the ways it failed in, its exit code and the line the hook
+    // printed, which is the first line of the step's error output.
+    expect(pushRefused).toBe("smithers-ci: a replayed step may not push; nothing was sent")
+    const refusedIn = (job: string): ReadonlyArray<string> =>
+      outcome.stdout.split("\n").filter((line) => line.endsWith(`  ci.yml:${job}:1  exit 1: ${pushRefused}`)).map(
+        (line) => line.split("  ")[1] as string
+      )
+    // A step that does nothing but push fails with that line in the baseline and as a target alike.
+    expect(refusedIn("alone-explicit-url")).toEqual(["baseline, normal"])
+    expect(refusedIn("alone-push-url-reset")).toEqual(["baseline, normal"])
+    // The other two were refused with it in the baseline, where each run starts from a fresh checkout.
+    for (const job of ["pushes", "alone-added-remote"]) {
+      expect(refusedIn(job)).toHaveLength(1)
+      expect(refusedIn(job)[0]).toMatch(/^baseline/)
+    }
     expect(outcome.stderr.split("\n").filter((line) => line.includes("jail"))).toEqual([
       `smithers-ci: ${unjailed(refusal)}`
     ])
