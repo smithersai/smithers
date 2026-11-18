@@ -751,6 +751,49 @@ A file the target declares that it writes, an `outFiles` entry or a file under
 an `outDirs` entry, is what it made, not what it read: a build that writes into
 a directory it also reads still stores its result.
 
+### A target whose writes nothing proves runs when another waits for it
+
+A result answered from the cache puts back the outputs the target declares. A
+confined run can write nothing else: a write it does not declare fails it. A
+run nothing confines can write any file, and nothing records which. Answered
+from the cache it would write none of them, and a target that waits for it
+would read a tree no run of it leaves.
+
+So such a target is not answered from the cache while a target that waits for
+it is in the run. It runs, and says why:
+
+```text
+//:generate  runs again: nothing confines or observes its run, and //:test waits for it
+```
+
+The summary carries the sentence as the target's `notReused`:
+`nothing confines or observes its run, and a target that waits for it is in this run`.
+Its result is still stored: a run that builds it alone, or with only a `Suite`,
+an `Alias` or a group of files waiting for it, is answered. The targets that
+wait for it keep their own results; each is planned again when it starts and
+is answered when the files it declares are the ones its last run read.
+
+| The target                                                                                    | While another waits for it                               |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `Shell.Build` or `Shell.Test` with `sandbox: "none"`, or in a workspace that confines nothing | Runs                                                     |
+| `NodeTest` or `ToolBuild` reused on `cache: true` alone, where nothing confines it            | Runs                                                     |
+| A confined target                                                                             | Answered                                                 |
+| A test, type check or lint reused [with evidence](#results-reused-with-evidence)              | Answered: its result is stored only after a confined run |
+| A `Shell.Test` with `observe` on a host that records reads                                    | Answered from its record, and what it left is put back   |
+| A group of files, a fetch, a bundler graph: what the build makes itself                       | Answered                                                 |
+
+On a machine only the targets of that machine count: no other target sees its
+copy. A target in the workspace counts for every target after it, because a
+machine made later copies what it left.
+
+To have it answered again while others wait for it, let the build prove what
+it writes: confine it (drop `sandbox: "none"`, and declare what it writes as
+`outFiles` or `outDirs`), or observe it (`observe: true` on a `Shell.Test`).
+
+`build-cli/test/RemeasuredInputs.test.ts`, "a target nothing confines or
+observes", runs the build that writes a file it does not declare, the same
+build with nothing waiting, two machines, and the build confined.
+
 A target that names a [machine](#a-machine-for-the-steps-of-a-job) reads its
 machine's copy of the workspace, so its inputs are measured there: a step that
 rewrites a file in the copy re-keys the step after it, and the workspace's own

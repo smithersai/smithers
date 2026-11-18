@@ -272,12 +272,15 @@ describe("a tool that links its binary into its installed directory on first use
     expect(linked()).toBe(false)
   })
 
-  confinedIt("answers every target from the cache on the second run when each one's result is reusable", async () => {
+  confinedIt("answers the second run from the cache where a result is reusable", async () => {
     const { run, linked, notCached } = await fixture()
     expect(await run("one", "test")).toEqual({ one: "ran", test: "ran" })
     expect(linked()).toBe(false)
     expect(notCached()).toEqual([])
-    expect(await run("one", "test")).toEqual({ one: "hit", test: "hit" })
+    // `one` asserts what it reads (`cache: true`) and nothing confines or observes its run. Built alone it is
+    // answered; while `test` waits for it, it runs again, because nothing says what it writes.
+    expect(await run("one")).toEqual({ one: "hit" })
+    expect(await run("one", "test")).toEqual({ one: "ran", test: "hit" })
   })
 
   confinedIt("runs a tool that cannot fall back once more with the tree open, and stores nothing", async () => {
@@ -298,11 +301,12 @@ describe("a tool that links its binary into its installed directory on first use
       "//pkg:one": changed,
       "//pkg:two": waited
     })
-    // The tree is settled now: this run stores, and the one after it hits.
+    // The tree is settled now: this run stores, and the one after it answers `two`.
     const second = await summarize(["one", "two"])
     expect(statuses(second)).toEqual({ one: "ran", two: "ran" })
     expect(second.notStored).toBeUndefined()
-    expect(await run("one", "two")).toEqual({ one: "hit", two: "hit" })
+    // `one` runs again while `two` waits for it: nothing confines or observes its run.
+    expect(await run("one", "two")).toEqual({ one: "ran", two: "hit" })
   })
 })
 
@@ -426,11 +430,11 @@ describe("a host that cannot protect an installed tree", () => {
     const reason = `not cached: ${changed}: pkg/node_modules unit formatter: native was written${unheld}`
     expect(notCached()).toEqual([`//pkg:one  ${reason}`, `//pkg:two  not cached: ${waited}`])
     expect(first.notStored).toEqual([{ reason: changed, count: 1 }, { reason: waited, count: 1 }])
-    // The second run plans the settled tree and stores; the third hits.
+    // The second run plans the settled tree and stores; the third answers `two`, and runs `one` again for it.
     const second = await summarize(["one", "two"], withoutMechanism)
     expect(statuses(second)).toEqual({ one: "ran", two: "ran" })
     expect(second.notStored).toBeUndefined()
-    expect(statuses(await summarize(["one", "two"], withoutMechanism))).toEqual({ one: "hit", two: "hit" })
+    expect(statuses(await summarize(["one", "two"], withoutMechanism))).toEqual({ one: "ran", two: "hit" })
   })
 
   confinedIt("runs unprotected when the mechanism is there and cannot start", async () => {

@@ -1317,12 +1317,56 @@ export const executeEffect = (
       return true
     }
 
+    /** Label → the target whose wait keeps that one from being answered from the cache, or nothing; asked once. */
+    const unproven = new Map<string, string | undefined>()
+    /** Why a target whose writes nothing proves runs though a result is stored for it. */
+    const unprovenWrites = "nothing confines or observes its run, and a target that waits for it is in this run"
+    /**
+     * The target that keeps `node` from being answered from the cache, or
+     * nothing. A run the host neither confines nor observes can write files
+     * it does not declare, and a result answered from the cache writes none
+     * of them: a target that waits for it would read a tree no run of this
+     * one leaves. So it runs whenever a target that reads the tree waits for
+     * it there.
+     *
+     * What a target wrote is proven where its result is stored only after a
+     * confined run (a rule that gathers evidence), where the host confines
+     * its run, where its run is observed, and where one of the build's own
+     * executors makes it (a bundler graph, a fetch, a group of files). A
+     * group of targets reads nothing another left. A shard answers for the
+     * target it was cut from.
+     */
+    const heldBack = (node: PackageNode): string | undefined => {
+      const whole = byLabel.get(node.label) ?? byLabel.get(node.label.slice(0, node.label.lastIndexOf("#")))!
+      if (unproven.has(whole.label)) return unproven.get(whole.label)
+      const proven = whole.observed !== undefined || whole.evidence !== undefined || whole.lane !== undefined ||
+        writesNothing.has(whole.rule) ||
+        ExecSandbox.enforceable(
+          sandboxRequest(whole, planned.nodes, index.workspace, cacheDirectory),
+          services.sandboxHost()
+        )
+      // What a target leaves in the workspace is in every copy a machine makes of it afterwards; what it leaves
+      // on a machine, only the targets of that machine see.
+      const waiting = proven ? undefined : [...dependentsOf(whole.label)].find((label) => {
+        const other = byLabel.get(label)!
+        return !writesNothing.has(other.rule) && (whole.machine === undefined || whole.machine === other.machine)
+      })
+      unproven.set(whole.label, waiting)
+      if (waiting !== undefined) {
+        unreusedReasons.set(whole.label, unprovenWrites)
+        log(`${whole.label}  runs again: nothing confines or observes its run, and ${waiting} waits for it`)
+      }
+      return waiting
+    }
+
     const cacheGet = (
       node: PackageNode,
       key: string = node.keyPreview
     ): Effect.Effect<{ readonly output: unknown } | undefined, unknown> =>
       Effect.gen(function*() {
         if (!readCache || !node.cacheable) return undefined
+        // A record of what an observed run read is looked up under its own key, and says what the run left.
+        if (key !== node.observed?.key && heldBack(node) !== undefined) return undefined
         const cached = yield* joined(() => store.get(key).catch(() => null))
         if (cached === null || !cached.exitOk || cached.target !== node.rule || cached.label !== node.label) {
           return undefined

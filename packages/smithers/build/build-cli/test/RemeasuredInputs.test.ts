@@ -12,6 +12,7 @@ import { Smithers as S } from "@smthrs/targets"
 import * as SafeFs from "@smthrs/targets/SafeFs"
 import * as Effect from "effect/Effect"
 import * as ChildProcess from "node:child_process"
+import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
@@ -30,6 +31,10 @@ afterEach(async () => {
 })
 
 const posixIt = it.skipIf(process.platform === "win32")
+/** True when this host can hold a run to the files it declares: bubblewrap on Linux, seatbelt on macOS. */
+const confines = process.platform === "darwin" ||
+  (process.platform === "linux" && ChildProcess.spawnSync("bwrap", ["--version"]).status === 0)
+const confinedIt = it.skipIf(!confines)
 
 type Targets = Parameters<typeof S.Package>[0]["targets"]
 
@@ -328,17 +333,18 @@ describe("the other ways a declared input changes under a target", () => {
     const generate = always("/bin/cat config.txt > src/b.ts")
     const closure = S.ImportClosure({ entries: S.glob(["//src/a.ts"]) })
     const test = reads("/usr/bin/grep -q one src/b.ts", [closure, generate])
-    // A second target after the closure's reader, so a later measurement closes what this one opened.
-    const after = reads("true", [S.file("//config.txt"), test])
+    // A second target measured after the closure's reader, so a later measurement closes what this one opened.
+    const after = reads("true", [S.file("//config.txt"), generate])
     const { statuses, write } = await fixture({ generate, closure, test, after }, {
       "config.txt": "export const b = \"one\"\n",
       "src/a.ts": "import { b } from \"./b.ts\"\nexport const a = b\n",
       "src/b.ts": "export const b = \"one\"\n"
     })
-    expect(await statuses(["after"])).toMatchObject({ generate: "ran", test: "ran", after: "ran" })
-    expect(await statuses(["after"])).toMatchObject({ generate: "ran", test: "hit", after: "hit" })
+    const both = ["test", "after"]
+    expect(await statuses(both)).toMatchObject({ generate: "ran", test: "ran", after: "ran" })
+    expect(await statuses(both)).toMatchObject({ generate: "ran", test: "hit", after: "hit" })
     await write("config.txt", "export const b = \"two\"\n")
-    expect(await statuses(["after"])).toMatchObject({ generate: "ran", test: "failed", after: "skipped" })
+    expect(await statuses(both)).toMatchObject({ generate: "ran", test: "failed", after: "ran" })
   })
 
   posixIt("an input a target it waits for makes unreadable fails the target by name", async () => {
@@ -358,11 +364,11 @@ describe("the other ways a declared input changes under a target", () => {
 })
 
 describe("a target that reads what a build it waits for left", () => {
-  posixIt("is answered in a fresh checkout, where the build's output is put back before it starts", async () => {
+  confinedIt("is answered in a fresh checkout, where the build's output is put back before it starts", async () => {
+    // Held to what it declares, so a result answered from the cache leaves all that its run left.
     const build = S.Shell.Build({
       shell: "/bin/cat config.txt > src/made.txt",
       outFiles: ["//src/made.txt"],
-      sandbox: "none",
       data: [S.file("//config.txt")]
     })
     const test = reads("/usr/bin/grep -q one src/made.txt", [S.glob("//src/**"), build])
@@ -386,11 +392,10 @@ describe("a target that reads what a build it waits for left", () => {
 })
 
 describe("which targets are measured again after a build's output is put back", () => {
-  posixIt("the ones whose inputs can name that output, whatever kind of input names it", async () => {
+  confinedIt("the ones whose inputs can name that output, whatever kind of input names it", async () => {
     const build = S.Shell.Build({
       shell: "/bin/cat config.txt > src/made.txt",
       outFiles: ["//src/made.txt"],
-      sandbox: "none",
       data: [S.file("//config.txt")]
     })
     const after = (data: ReadonlyArray<unknown>) => reads("true", [...data, build])
@@ -434,6 +439,90 @@ describe("which targets are measured again after a build's output is put back", 
       "//:installed",
       "//:workspace"
     ])
+  })
+})
+
+describe("a target nothing confines or observes, while a target waits for it", () => {
+  /** Writes the output it declares and, from config.txt, a file it does not. */
+  const building = (sandbox: "none" | undefined) =>
+    S.Shell.Build({
+      shell: "mkdir -p out && : > out/built && /bin/cat config.txt > src/gen.txt",
+      outFiles: ["//out/built"],
+      ...(sandbox === undefined ? {} : { sandbox }),
+      data: [S.file("//config.txt")]
+    })
+  const files = { "config.txt": "one\n", "src/a.txt": "" }
+  /** What a fresh checkout does not hold: everything the build wrote. */
+  const checkout = async (root: string): Promise<void> => {
+    await Fs.rm(Path.join(root, "src/gen.txt"), { force: true })
+    await Fs.rm(Path.join(root, "out"), { recursive: true, force: true })
+  }
+
+  posixIt("runs again, so the file it writes and does not declare is there for the target after it", async () => {
+    const build = building("none")
+    const test = reads("/usr/bin/grep -q one src/gen.txt", [S.glob("//src/**"), build])
+    const { logs, root, run } = await fixture({ build, test }, files)
+    expect((await run(["test"]))["test"]).toMatchObject({ status: "ran" })
+    await checkout(root)
+    // A result answered from the cache would put back out/built and never write src/gen.txt.
+    const again = await run(["test"])
+    expect(again["build"]).toMatchObject({
+      status: "ran",
+      notReused: "nothing confines or observes its run, and a target that waits for it is in this run"
+    })
+    expect(again["test"]).toMatchObject({ status: "hit" })
+    expect(logs).toContain("//:build  runs again: nothing confines or observes its run, and //:test waits for it")
+    expect(await Fs.readFile(Path.join(root, "src/gen.txt"), "utf8")).toBe("one\n")
+  })
+
+  posixIt("is answered when no target waits for it, or only a group of targets does", async () => {
+    const build = building("none")
+    const check = reads("true", [S.file("//config.txt")])
+    const suite = S.Suite({ tests: [check] })
+    const { statuses } = await fixture({ build, check, suite }, files)
+    expect(await statuses(["build", "suite"])).toMatchObject({ build: "ran", check: "ran" })
+    expect(await statuses(["build", "suite"])).toMatchObject({ build: "hit", check: "hit" })
+  })
+
+  posixIt("counts, for a target on a machine, only the targets of that machine", async () => {
+    const on = (machine: string, data: ReadonlyArray<unknown>) =>
+      S.Shell.Test({ shell: "true", sandbox: "none", machine, data: data as never })
+    const config = S.file("//config.txt")
+    // One machine: the second step reads the copy the first one wrote in.
+    const first = on("one", [config])
+    const second = on("one", [config, first])
+    // Two machines: neither sees the other's copy.
+    const alone = on("two", [config])
+    const apart = on("three", [config, alone])
+    // The workspace: every machine made after it copies what it left.
+    const shared = reads("true", [config])
+    const copied = on("four", [config, shared])
+    const { root, statuses } = await fixture({ first, second, alone, apart, shared, copied }, files)
+    const machines = `${root}-machines`
+    temporary.push(machines)
+    const settings = { environment: { SMTHRS_MACHINES: machines } }
+    const all = ["second", "apart", "copied"]
+    const every = (status: string) => ({ first: status, second: status, alone: status, apart: status })
+    expect(await statuses(all, settings)).toEqual({ ...every("ran"), shared: "ran", copied: "ran" })
+    expect(await statuses(all, settings)).toEqual({ ...every("hit"), first: "ran", shared: "ran", copied: "hit" })
+  })
+
+  confinedIt("is answered once its run is confined: what it does not declare, it cannot write", async () => {
+    // The same build, held to what it declares: the write it does not declare fails it.
+    const undeclared = building(undefined)
+    const build = S.Shell.Build({
+      shell: "mkdir -p out && /bin/cat config.txt > out/built",
+      outFiles: ["//out/built"],
+      data: [S.file("//config.txt")]
+    })
+    const test = reads("/usr/bin/grep -q one out/built", [S.glob("//src/**"), build])
+    const { root, run, statuses } = await fixture({ undeclared, build, test }, files)
+    expect((await run(["undeclared"]))["undeclared"]).toMatchObject({ status: "failed" })
+    expect(NodeFs.existsSync(Path.join(root, "src/gen.txt"))).toBe(false)
+    expect(await statuses(["test"])).toEqual({ build: "ran", test: "ran" })
+    await checkout(root)
+    expect(await statuses(["test"])).toEqual({ build: "hit", test: "hit" })
+    expect(await Fs.readFile(Path.join(root, "out/built"), "utf8")).toBe("one\n")
   })
 })
 
@@ -528,12 +617,11 @@ describe("a result whose inputs changed while its run was under way", () => {
 })
 
 describe("what measuring again costs", () => {
-  /** A build whose result is stored, and two tests that wait for it. */
+  /** A build held to what it declares, whose result is stored, and two tests that wait for it. */
   const graph = () => {
     const build = S.Shell.Build({
       shell: "mkdir -p out && /bin/cat config.txt > out/built",
       outFiles: ["//out/built"],
-      sandbox: "none",
       data: [S.file("//config.txt")]
     })
     const first = reads("true", [S.file("//src/a.txt"), build])
@@ -543,7 +631,7 @@ describe("what measuring again costs", () => {
     return { build, first, second, alone }
   }
 
-  posixIt("nothing in a run where every target is answered from the cache", async () => {
+  confinedIt("nothing in a run where every target is answered from the cache", async () => {
     const { statuses, write } = await fixture(graph(), { "config.txt": "one\n", "src/a.txt": "one\n" })
     const all = ["first", "second", "alone"]
     expect(await statuses(all)).toEqual({ build: "ran", first: "ran", second: "ran", alone: "ran" })
@@ -556,7 +644,7 @@ describe("what measuring again costs", () => {
     expect(calls).toEqual(["//:alone after"])
   })
 
-  posixIt("one measurement for each target that runs, shared by the targets that start together", async () => {
+  confinedIt("one measurement for each target that runs, shared by the targets that start together", async () => {
     const { run, statuses, write } = await fixture(graph(), { "config.txt": "one\n", "src/a.txt": "one\n" })
     const { calls, services } = counting()
     const results = await run(["first", "second"], { services })

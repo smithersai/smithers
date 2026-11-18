@@ -1176,14 +1176,16 @@ describe("materialization cache outage", () => {
         cache: (settings) =>
           executionServicesLive.cache(settings).pipe(Effect.map((store) => ({
             ...store,
+            // The build runs unconfined and the materializer waits for it, so the build is not looked up: the
+            // only read is the materializer's.
             get: (key) =>
-              ++reads === 2
+              ++reads === 1
                 ? Effect.runPromise(Effect.fail(new Error("materializer cache unavailable")))
                 : store.get(key)
           })))
       }))
     )
-    expect(reads).toBe(2)
+    expect(reads).toBe(1)
     expect(result.ok, JSON.stringify(result)).toBe(true)
     expect(result.results).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: "//:build", status: "ran" }),
